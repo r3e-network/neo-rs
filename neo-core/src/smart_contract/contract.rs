@@ -1,6 +1,6 @@
 //! Contract - matches C# Neo.SmartContract.Contract exactly
 
-use crate::cryptography::{ECPoint, Crypto};
+use crate::cryptography::{Crypto, ECPoint};
 use crate::error::CoreError;
 use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::ContractParameterType;
@@ -8,32 +8,21 @@ use crate::UInt160;
 use std::sync::OnceLock;
 
 /// Error type for multi-signature contract creation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MultiSigError {
     /// The m parameter is not in valid range (1..=n).
+    #[error("Invalid multi-sig parameters: m={m}, n={n}")]
     InvalidM { m: usize, n: usize },
     /// No public keys provided.
+    #[error("No public keys provided for multi-sig contract")]
     EmptyPublicKeys,
     /// Too many public keys (max 1024).
+    #[error("Too many public keys: {n} (max 1024)")]
     TooManyPublicKeys { n: usize },
     /// Failed to build the syscall portion of the script.
+    #[error("Failed to build contract script: {0}")]
     ScriptBuilder(String),
 }
-
-impl std::fmt::Display for MultiSigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidM { m, n } => write!(f, "Invalid multi-sig parameters: m={}, n={}", m, n),
-            Self::EmptyPublicKeys => write!(f, "No public keys provided for multi-sig contract"),
-            Self::TooManyPublicKeys { n } => {
-                write!(f, "Too many public keys: {} (max 1024)", n)
-            }
-            Self::ScriptBuilder(err) => write!(f, "Failed to build contract script: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for MultiSigError {}
 
 impl From<MultiSigError> for CoreError {
     fn from(err: MultiSigError) -> Self {

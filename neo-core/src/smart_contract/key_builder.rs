@@ -8,41 +8,22 @@ use crate::{CoreError, UInt160, UInt256};
 use num_bigint::BigInt;
 
 /// Error type for KeyBuilder operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KeyBuilderError {
     /// The max_length parameter was zero.
+    #[error("max_length must be greater than zero")]
     InvalidMaxLength,
     /// The input data exceeds the maximum key length.
+    #[error("Input data too large: current={current}, adding={adding}, max={max}")]
     DataTooLarge {
         current: usize,
         adding: usize,
         max: usize,
     },
     /// Attempted to add a negative BigInteger.
+    #[error("Cannot add negative BigInteger to key")]
     NegativeBigInteger,
 }
-
-impl std::fmt::Display for KeyBuilderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidMaxLength => write!(f, "max_length must be greater than zero"),
-            Self::DataTooLarge {
-                current,
-                adding,
-                max,
-            } => {
-                write!(
-                    f,
-                    "Input data too large: current={}, adding={}, max={}",
-                    current, adding, max
-                )
-            }
-            Self::NegativeBigInteger => write!(f, "Cannot add negative BigInteger to key"),
-        }
-    }
-}
-
-impl std::error::Error for KeyBuilderError {}
 
 impl From<KeyBuilderError> for CoreError {
     fn from(err: KeyBuilderError) -> Self {

@@ -6,43 +6,30 @@ use thiserror::Error;
 pub type TeeResult<T> = std::result::Result<T, TeeError>;
 
 /// Enclave initialization error details
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EnclaveInitError {
     /// Enclave is already initialized
+    #[error("enclave already initialized")]
     AlreadyInitialized,
     /// Sealed data directory cannot be created
+    #[error("failed to create sealed data directory")]
     DirectoryCreationFailed,
     /// Failed to derive sealing key
+    #[error("failed to derive sealing key")]
     SealingKeyDerivationFailed,
     /// Failed to load monotonic counter
+    #[error("failed to load monotonic counter")]
     CounterLoadFailed,
     /// Invalid configuration
+    #[error("invalid enclave configuration")]
     InvalidConfiguration,
     /// Hardware TEE not available
+    #[error("hardware TEE not available")]
     HardwareUnavailable,
     /// Debug mode not allowed in production
+    #[error("debug mode not allowed in production")]
     DebugNotAllowed,
 }
-
-impl std::fmt::Display for EnclaveInitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EnclaveInitError::AlreadyInitialized => write!(f, "enclave already initialized"),
-            EnclaveInitError::DirectoryCreationFailed => {
-                write!(f, "failed to create sealed data directory")
-            }
-            EnclaveInitError::SealingKeyDerivationFailed => {
-                write!(f, "failed to derive sealing key")
-            }
-            EnclaveInitError::CounterLoadFailed => write!(f, "failed to load monotonic counter"),
-            EnclaveInitError::InvalidConfiguration => write!(f, "invalid enclave configuration"),
-            EnclaveInitError::HardwareUnavailable => write!(f, "hardware TEE not available"),
-            EnclaveInitError::DebugNotAllowed => write!(f, "debug mode not allowed in production"),
-        }
-    }
-}
-
-impl std::error::Error for EnclaveInitError {}
 
 /// TEE-specific errors
 #[derive(Error, Debug)]

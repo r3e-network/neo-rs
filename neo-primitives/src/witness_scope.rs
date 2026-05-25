@@ -276,20 +276,11 @@ impl Not for WitnessScope {
 }
 
 /// Error type for invalid `WitnessScope` conversion.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "Invalid witness scope byte: 0x{0:02X}. Valid values are 0x00, 0x01, 0x10, 0x20, 0x40, 0x80, or valid combinations."
+)]
 pub struct InvalidWitnessScopeError(pub u8);
-
-impl std::fmt::Display for InvalidWitnessScopeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Invalid witness scope byte: 0x{:02X}. Valid values are 0x00, 0x01, 0x10, 0x20, 0x40, 0x80, or valid combinations.",
-            self.0
-        )
-    }
-}
-
-impl std::error::Error for InvalidWitnessScopeError {}
 
 impl TryFrom<u8> for WitnessScope {
     type Error = InvalidWitnessScopeError;
