@@ -1,9 +1,8 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::call_flags::CallFlags;
+use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
-use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
 
 /// The Treasury native contract.
@@ -25,46 +24,10 @@ impl TreasuryContract {
             Self::NAME,
         );
 
-        let methods = vec![
-            NativeMethod::safe(
-                "verify".to_string(),
-                1 << 5,
-                Vec::new(),
-                ContractParameterType::Boolean,
-            )
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "onNEP17Payment".to_string(),
-                1 << 5,
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Integer,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Void,
-            )
-            .with_parameter_names(vec![
-                "from".to_string(),
-                "amount".to_string(),
-                "data".to_string(),
-            ]),
-            NativeMethod::safe(
-                "onNEP11Payment".to_string(),
-                1 << 5,
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Integer,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Void,
-            )
-            .with_parameter_names(vec![
-                "from".to_string(),
-                "amount".to_string(),
-                "tokenId".to_string(),
-                "data".to_string(),
-            ]),
+        let methods = neo_native_methods![
+            safe "verify", fee = 1 << 5, flags = [READ_STATES], params = [], returns = Boolean;
+            safe "onNEP17Payment", fee = 1 << 5, flags = [], params = [Hash160, Integer, Any], returns = Void, names = ["from", "amount", "data"];
+            safe "onNEP11Payment", fee = 1 << 5, flags = [], params = [Hash160, Integer, ByteArray, Any], returns = Void, names = ["from", "amount", "tokenId", "data"];
         ];
 
         Self {
