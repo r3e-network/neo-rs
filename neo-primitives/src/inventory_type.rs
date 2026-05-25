@@ -1,58 +1,20 @@
 //! Inventory type identifiers (mirrors `Neo.Network.P2P.Payloads.InventoryType`).
 
+use crate::protocol_enum_repr;
 use serde::{Deserialize, Serialize};
 
-/// Represents the type of an inventory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum InventoryType {
-    /// Indicates that the inventory is a Transaction.
-    Transaction = 0x2b,
-
-    /// Indicates that the inventory is a Block.
-    Block = 0x2c,
-
-    /// Indicates that the inventory is a consensus payload.
-    Consensus = 0x2d,
-
-    /// Indicates that the inventory is an `ExtensiblePayload`.
-    Extensible = 0x2e,
-}
-
-impl InventoryType {
-    /// Convert from byte value.
-    #[must_use]
-    pub const fn from_byte(value: u8) -> Option<Self> {
-        match value {
-            0x2b => Some(Self::Transaction),
-            0x2c => Some(Self::Block),
-            0x2d => Some(Self::Consensus),
-            0x2e => Some(Self::Extensible),
-            _ => None,
-        }
-    }
-
-    /// Convert to byte value.
-    #[must_use]
-    pub const fn to_byte(self) -> u8 {
-        self as u8
-    }
-
-    /// Returns the string representation.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Transaction => "TX",
-            Self::Block => "Block",
-            Self::Consensus => "Consensus",
-            Self::Extensible => "Extensible",
-        }
-    }
-}
-
-impl std::fmt::Display for InventoryType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+protocol_enum_repr! {
+    /// Represents the type of an inventory.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub InventoryType {
+        /// Indicates that the inventory is a Transaction.
+        Transaction = 0x2b => "TX",
+        /// Indicates that the inventory is a Block.
+        Block = 0x2c,
+        /// Indicates that the inventory is a consensus payload.
+        Consensus = 0x2d,
+        /// Indicates that the inventory is an `ExtensiblePayload`.
+        Extensible = 0x2e,
     }
 }
 
@@ -62,10 +24,10 @@ mod tests {
 
     #[test]
     fn test_inventory_type_values() {
-        assert_eq!(InventoryType::Transaction as u8, 0x2b);
-        assert_eq!(InventoryType::Block as u8, 0x2c);
-        assert_eq!(InventoryType::Consensus as u8, 0x2d);
-        assert_eq!(InventoryType::Extensible as u8, 0x2e);
+        assert_eq!(InventoryType::Transaction.to_byte(), 0x2b);
+        assert_eq!(InventoryType::Block.to_byte(), 0x2c);
+        assert_eq!(InventoryType::Consensus.to_byte(), 0x2d);
+        assert_eq!(InventoryType::Extensible.to_byte(), 0x2e);
     }
 
     #[test]
@@ -97,5 +59,14 @@ mod tests {
     fn test_inventory_type_display() {
         assert_eq!(InventoryType::Transaction.to_string(), "TX");
         assert_eq!(InventoryType::Block.to_string(), "Block");
+    }
+
+    #[test]
+    fn inventory_type_serde_keeps_derived_enum_shape() {
+        let serialized = serde_json::to_string(&InventoryType::Transaction).unwrap();
+        assert_eq!(serialized, "\"Transaction\"");
+
+        let deserialized: InventoryType = serde_json::from_str("\"Block\"").unwrap();
+        assert_eq!(deserialized, InventoryType::Block);
     }
 }

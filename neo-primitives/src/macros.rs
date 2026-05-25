@@ -127,6 +127,69 @@ macro_rules! protocol_enum {
     };
 }
 
+/// Generates a `#[repr(u8)]` protocol enum with byte helpers and `Display`.
+///
+/// Unlike [`protocol_enum!`], this macro deliberately does not implement
+/// `Serialize` or `Deserialize`. Use it for public enums that already expose
+/// serde's derived enum-name shape while still needing protocol byte helpers.
+#[macro_export]
+macro_rules! protocol_enum_repr {
+    (
+        $(#[$enum_meta:meta])*
+        $vis:vis $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident = $byte:expr $(=> $display:expr)?
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        #[repr(u8)]
+        $vis enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant = $byte,
+            )+
+        }
+
+        impl $name {
+            /// Returns the protocol byte assigned to this enum value.
+            #[must_use]
+            #[inline]
+            pub const fn to_byte(self) -> u8 {
+                self as u8
+            }
+
+            /// Parses this enum from its protocol byte.
+            #[must_use]
+            pub const fn from_byte(value: u8) -> Option<Self> {
+                match value {
+                    $(
+                        $byte => Some(Self::$variant),
+                    )+
+                    _ => None,
+                }
+            }
+
+            /// Returns the canonical display name for this enum value.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(
+                        Self::$variant => $crate::__protocol_enum_display!($variant $(, $display)?),
+                    )+
+                }
+            }
+        }
+
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                write!(f, "{}", self.as_str())
+            }
+        }
+    };
+}
+
 /// Generates a protocol enum whose unknown byte values must round-trip.
 ///
 /// Use this for protocol surfaces where future or private extension bytes are
