@@ -21,7 +21,6 @@ pub use caching::{
     fifo_cache::FIFOCache,
     hashset_cache::HashSetCache,
     indexed_queue::IndexedQueue,
-    keyed_collection_slim::KeyedCollectionSlim,
     lru_cache::LRUCache,
     reflection_cache_attribute::ReflectionCacheAttribute,
     relay_cache::{InventoryHash, RelayCache},
