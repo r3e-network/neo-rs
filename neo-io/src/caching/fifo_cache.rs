@@ -1,6 +1,6 @@
 //! `FIFOCache` - matches C# Neo.IO.Caching.FIFOCache exactly
 
-use super::cache::{Cache, FifoPolicy};
+use super::cache::Cache;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 
@@ -10,7 +10,7 @@ where
     TKey: Eq + Hash + Clone,
     TValue: Clone,
 {
-    inner: Cache<TKey, TValue, FifoPolicy>,
+    inner: Cache<TKey, TValue>,
 }
 
 impl<TKey, TValue> FIFOCache<TKey, TValue>
@@ -34,7 +34,7 @@ where
     TKey: Eq + Hash + Clone,
     TValue: Clone,
 {
-    type Target = Cache<TKey, TValue, FifoPolicy>;
+    type Target = Cache<TKey, TValue>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner

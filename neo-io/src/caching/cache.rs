@@ -1,53 +1,13 @@
 //! Cache - matches C# Neo.IO.Caching.Cache exactly
 //!
-//! This module provides thread-safe caching implementations with configurable
-//! eviction policies (FIFO, LRU) matching the C# Neo reference implementation.
+//! This module provides the shared FIFO cache implementation used by the
+//! specialised cache wrappers.
 
 use crate::IoResult;
 use linked_hash_map::LinkedHashMap;
 use parking_lot::Mutex;
 use std::hash::Hash;
-use std::marker::PhantomData;
 use std::sync::Arc;
-
-/// Policy applied when cache entries are accessed.
-pub trait CachePolicy<TKey, TValue>
-where
-    TKey: Eq + Hash + Clone,
-{
-    /// Called when an entry is accessed, allowing the policy to reorder entries.
-    fn on_access(entries: &mut LinkedHashMap<TKey, TValue>, key: &TKey);
-}
-
-/// FIFO cache policy (matches C# `FIFOCache` behaviour where `OnAccess` is a no-op).
-///
-/// Entries are evicted in the order they were added, regardless of access patterns.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct FifoPolicy;
-
-impl<TKey, TValue> CachePolicy<TKey, TValue> for FifoPolicy
-where
-    TKey: Eq + Hash + Clone,
-{
-    #[inline]
-    fn on_access(_: &mut LinkedHashMap<TKey, TValue>, _: &TKey) {}
-}
-
-/// LRU cache policy (matches C# `LRUCache` behaviour moving entries to the head on access).
-///
-/// Recently accessed entries are moved to the end, making them less likely to be evicted.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct LruPolicy;
-
-impl<TKey, TValue> CachePolicy<TKey, TValue> for LruPolicy
-where
-    TKey: Eq + Hash + Clone,
-{
-    #[inline]
-    fn on_access(entries: &mut LinkedHashMap<TKey, TValue>, key: &TKey) {
-        entries.get_refresh(key);
-    }
-}
 
 #[derive(Debug)]
 struct CacheInner<TKey, TValue>
@@ -75,40 +35,36 @@ where
 /// Abstract cache base class matching C# Cache<`TKey`, `TValue`>.
 ///
 /// This is a thread-safe cache implementation that supports configurable eviction
-/// policies through the `Policy` type parameter.
+/// policy. LRU behavior is implemented by [`crate::caching::lru_cache::LRUCache`]
+/// using the upstream `lru` crate.
 ///
 /// # Type Parameters
 ///
 /// * `TKey` - The key type, must be hashable and cloneable
 /// * `TValue` - The value type, must be cloneable
-/// * `Policy` - The eviction policy (e.g., `FifoPolicy` or `LruPolicy`)
-///
 /// # Example
 ///
 /// ```rust,ignore
-/// use neo_io::caching::{IoCache, LruPolicy};
+/// use neo_io::caching::IoCache;
 ///
-/// let cache: IoCache<String, i32, LruPolicy> = IoCache::new(100, |v| format!("key_{}", v));
+/// let cache: IoCache<String, i32> = IoCache::new(100, |v| format!("key_{}", v));
 /// cache.add(42);
 /// assert!(cache.contains_key(&"key_42".to_string()));
 /// ```
-pub struct IoCache<TKey, TValue, Policy>
+pub struct IoCache<TKey, TValue>
 where
     TKey: Eq + Hash + Clone,
     TValue: Clone,
-    Policy: CachePolicy<TKey, TValue>,
 {
     max_capacity: usize,
     key_selector: Arc<dyn Fn(&TValue) -> TKey + Send + Sync>,
     inner: Mutex<CacheInner<TKey, TValue>>,
-    _policy: PhantomData<Policy>,
 }
 
-impl<TKey, TValue, Policy> IoCache<TKey, TValue, Policy>
+impl<TKey, TValue> IoCache<TKey, TValue>
 where
     TKey: Eq + Hash + Clone,
     TValue: Clone,
-    Policy: CachePolicy<TKey, TValue>,
 {
     /// Creates a new cache with the specified maximum capacity and key selector.
     ///
@@ -124,7 +80,6 @@ where
             max_capacity,
             key_selector: Arc::new(key_selector),
             inner: Mutex::new(CacheInner::with_capacity(max_capacity)),
-            _policy: PhantomData,
         }
     }
 
@@ -156,7 +111,6 @@ where
         let mut guard = self.inner.lock();
 
         if guard.entries.contains_key(&key) {
-            Policy::on_access(&mut guard.entries, &key);
             return;
         }
 
@@ -184,12 +138,7 @@ where
 
     /// Determines whether the cache contains an item with the specified key (C# Contains(TKey)).
     pub fn contains_key(&self, key: &TKey) -> bool {
-        let mut guard = self.inner.lock();
-        let exists = guard.entries.contains_key(key);
-        if exists {
-            Policy::on_access(&mut guard.entries, key);
-        }
-        exists
+        self.inner.lock().entries.contains_key(key)
     }
 
     /// Determines whether the cache contains the specified item (C# Contains(TValue)).
@@ -200,12 +149,7 @@ where
 
     /// Retrieves an item by key, returning `None` when it is absent (C# indexer).
     pub fn get(&self, key: &TKey) -> Option<TValue> {
-        let mut guard = self.inner.lock();
-        let result = guard.entries.get(key).cloned();
-        if result.is_some() {
-            Policy::on_access(&mut guard.entries, key);
-        }
-        result
+        self.inner.lock().entries.get(key).cloned()
     }
 
     /// Copies cache contents to the provided slice (C# `CopyTo`).
@@ -286,8 +230,8 @@ where
     }
 }
 
-/// Backwards-compatible alias matching the original `Cache<TKey, TValue, Policy>` name.
-pub type Cache<TKey, TValue, Policy> = IoCache<TKey, TValue, Policy>;
+/// Backwards-compatible alias matching the original `Cache<TKey, TValue>` name.
+pub type Cache<TKey, TValue> = IoCache<TKey, TValue>;
 
 #[cfg(test)]
 mod tests {
@@ -295,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_fifo_cache_basic_operations() {
-        let cache: IoCache<i32, i32, FifoPolicy> = IoCache::new(3, |v| *v);
+        let cache: IoCache<i32, i32> = IoCache::new(3, |v| *v);
 
         cache.add(1);
         cache.add(2);
@@ -314,27 +258,8 @@ mod tests {
     }
 
     #[test]
-    fn test_lru_cache_access_pattern() {
-        let cache: IoCache<i32, i32, LruPolicy> = IoCache::new(3, |v| *v);
-
-        cache.add(1);
-        cache.add(2);
-        cache.add(3);
-
-        // Access item 1 to make it recently used
-        cache.get(&1);
-
-        // Adding a 4th item should evict 2 (least recently used)
-        cache.add(4);
-        assert!(cache.contains_key(&1));
-        assert!(!cache.contains_key(&2));
-        assert!(cache.contains_key(&3));
-        assert!(cache.contains_key(&4));
-    }
-
-    #[test]
     fn test_copy_to_success() {
-        let cache: IoCache<i32, i32, FifoPolicy> = IoCache::new(3, |v| *v);
+        let cache: IoCache<i32, i32> = IoCache::new(3, |v| *v);
         cache.add(1);
         cache.add(2);
 
@@ -346,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_copy_to_bounds_error() {
-        let cache: IoCache<i32, i32, FifoPolicy> = IoCache::new(3, |v| *v);
+        let cache: IoCache<i32, i32> = IoCache::new(3, |v| *v);
         cache.add(1);
         cache.add(2);
 
@@ -356,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_clear() {
-        let cache: IoCache<i32, i32, FifoPolicy> = IoCache::new(3, |v| *v);
+        let cache: IoCache<i32, i32> = IoCache::new(3, |v| *v);
         cache.add(1);
         cache.add(2);
 
@@ -367,7 +292,7 @@ mod tests {
 
     #[test]
     fn test_remove() {
-        let cache: IoCache<i32, i32, FifoPolicy> = IoCache::new(3, |v| *v);
+        let cache: IoCache<i32, i32> = IoCache::new(3, |v| *v);
         cache.add(1);
         cache.add(2);
 
