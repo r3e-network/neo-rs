@@ -80,10 +80,13 @@ where
 
     /// Adds an item to the cache (C# Add).
     ///
-    /// If an item with the same key already exists, the access policy is applied
-    /// but the value is not updated. If the cache is at capacity, the oldest
-    /// entry (according to the policy) is evicted.
+    /// If an item with the same key already exists, the value is not updated.
+    /// If the cache is at capacity, the oldest entry is evicted.
     pub fn add(&self, item: TValue) {
+        if self.max_capacity == 0 {
+            return;
+        }
+
         let key = (self.key_selector)(&item);
         let mut entries = self.entries.lock();
 
@@ -155,7 +158,14 @@ where
 
         let entries = self.entries.lock();
         let count = entries.len();
-        if start_index + count > destination.len() {
+        let end_index =
+            start_index
+                .checked_add(count)
+                .ok_or_else(|| crate::IoError::InvalidData {
+                    context: "copy_to".to_string(),
+                    value: format!("start_index ({start_index}) + count ({count}) overflows"),
+                })?;
+        if end_index > destination.len() {
             return Err(crate::IoError::InvalidData {
                 context: "copy_to".to_string(),
                 value: format!(

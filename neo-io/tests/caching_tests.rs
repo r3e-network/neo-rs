@@ -1,6 +1,6 @@
 use neo_io::{
-    ECDsaCache, ECDsaCacheItem, ECPointCache, EncodablePoint, HashSetCache, InventoryHash,
-    LRUCache, RelayCache,
+    Cache, ECDsaCache, ECDsaCacheItem, ECPointCache, EncodablePoint, FIFOCache, HashSetCache,
+    InventoryHash, IoCache, LRUCache, RelayCache,
 };
 
 #[test]
@@ -88,6 +88,49 @@ fn hash_set_cache_copy_to_preserves_insertion_order() {
     cache.copy_to(&mut values, 1).unwrap();
 
     assert_eq!(values, [0, 1, 2, 3, 0]);
+}
+
+#[test]
+fn io_cache_public_alias_and_fifo_cache_preserve_fifo_order() {
+    let alias: Cache<i32, i32> = Cache::new(2, |value| *value);
+    alias.add(1);
+    alias.add(2);
+    alias.add(3);
+
+    assert_eq!(alias.values(), vec![2, 3]);
+    assert!(!alias.contains_key(&1));
+
+    let concrete = IoCache::new(2, |value: &i32| *value);
+    concrete.add(1);
+    concrete.add(2);
+    concrete.get(&1);
+    concrete.add(3);
+
+    assert_eq!(concrete.values(), vec![2, 3]);
+    assert!(!concrete.contains_key(&1));
+
+    let fifo = FIFOCache::new(2, |value: &i32| *value);
+    fifo.add(1);
+    fifo.add(2);
+    fifo.add(3);
+
+    assert_eq!(fifo.values(), vec![2, 3]);
+    assert!(!fifo.contains_key(&1));
+}
+
+#[test]
+fn io_cache_zero_capacity_keeps_no_items() {
+    let alias: Cache<i32, i32> = Cache::new(0, |value| *value);
+    alias.add(1);
+    alias.add_range([2, 3]);
+    assert!(alias.is_empty());
+    assert_eq!(alias.count(), 0);
+    assert!(!alias.contains_key(&1));
+
+    let fifo = FIFOCache::new(0, |value: &i32| *value);
+    fifo.add(1);
+    assert!(fifo.is_empty());
+    assert_eq!(fifo.values(), Vec::<i32>::new());
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
