@@ -17,12 +17,13 @@ protocol_message_flags! {
 
 impl std::fmt::Display for MessageFlags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0 == 0 {
+        let raw = self.to_byte();
+        if raw == 0 {
             write!(f, "None")
         } else if self.is_compressed() {
             write!(f, "Compressed")
         } else {
-            write!(f, "Flags(0x{:02x})", self.0)
+            write!(f, "Flags(0x{raw:02x})")
         }
     }
 }
@@ -60,6 +61,12 @@ mod tests {
         assert_eq!(unknown.to_byte(), 0x80);
         assert!(!unknown.is_compressed());
         assert_eq!(unknown.to_string(), "Flags(0x80)");
+        assert_eq!(
+            MessageFlags::from_bits(0x80)
+                .expect("unknown bits retained")
+                .to_byte(),
+            0x80
+        );
 
         let combined = MessageFlags::from_byte(0x81);
         assert_eq!(combined.to_byte(), 0x81);

@@ -68,7 +68,7 @@ fastbloom = { workspace = true }
 toml = { workspace = true }
 dirs = "5.0"
 if-addrs = "0.10"
-bitflags = "2.4"
+bitflags = { workspace = true }
 aes = "0.8"
 cbc = "0.1"
 cipher = "0.4"

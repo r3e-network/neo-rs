@@ -27,6 +27,9 @@
 //! let address_hash = UInt160::parse("0x0000000000000000000000000000000000000001").unwrap();
 //! ```
 
+#[doc(hidden)]
+pub use bitflags;
+
 pub mod blockchain;
 pub mod constants;
 pub mod contains_transaction_type;

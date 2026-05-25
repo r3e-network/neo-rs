@@ -623,7 +623,8 @@ macro_rules! p2p_message_command {
 ///
 /// Neo treats message flags as a raw byte with bit flags. Only bit `0x01`
 /// currently means "compressed"; all other bits must round-trip for forward
-/// compatibility.
+/// compatibility. The generated wrapper is backed by `bitflags`, but keeps the
+/// Neo byte-oriented API used by the network serializers.
 #[macro_export]
 macro_rules! protocol_message_flags {
     (
@@ -633,26 +634,30 @@ macro_rules! protocol_message_flags {
             from_byte = $from_byte:ident;
         }
     ) => {
-        $(#[$meta])*
-        $vis struct $name(u8);
+        $crate::bitflags::bitflags! {
+            $(#[$meta])*
+            $vis struct $name: u8 {
+                /// No flags are set.
+                const NONE = 0x00;
+                /// The payload is compressed.
+                const COMPRESSED = 0x01;
+                /// Preserve unknown flag bits for forward-compatible round-trips.
+                const _ = !0;
+            }
+        }
 
         impl $name {
-            /// No flags are set.
-            pub const NONE: Self = Self(0x00);
-            /// The payload is compressed.
-            pub const COMPRESSED: Self = Self(0x01);
-
             /// Creates a new flag set with the given raw value.
             #[must_use]
             pub const fn new(value: u8) -> Self {
-                Self(value)
+                Self::from_bits_retain(value)
             }
 
             /// Converts the flags to their byte representation.
             #[must_use]
             #[inline]
             pub const fn to_byte(self) -> u8 {
-                self.0
+                self.bits()
             }
 
             /// Alias for [`Self::to_byte`]; retained for backward compatibility.
@@ -668,29 +673,29 @@ macro_rules! protocol_message_flags {
             /// bits but preserving them for forward compatibility.
             #[must_use]
             pub fn $from_byte(byte: u8) -> Self {
-                if byte & !Self::COMPRESSED.0 != 0 {
+                if byte & !Self::COMPRESSED.bits() != 0 {
                     ::tracing::warn!(
                         target: $warn_target,
                         "message flags include unknown bits (0x{:02x}); preserving raw value",
                         byte
                     );
                 }
-                Self(byte)
+                Self::from_bits_retain(byte)
             }
 
             /// Returns `true` when the compressed flag is set.
             #[must_use]
             #[inline]
             pub const fn is_compressed(self) -> bool {
-                self.0 & Self::COMPRESSED.0 != 0
+                self.bits() & Self::COMPRESSED.bits() != 0
             }
 
             /// Sets the compressed flag.
             pub fn set_compressed(&mut self, compressed: bool) {
                 if compressed {
-                    self.0 |= Self::COMPRESSED.0;
+                    self.insert(Self::COMPRESSED);
                 } else {
-                    self.0 &= !Self::COMPRESSED.0;
+                    self.remove(Self::COMPRESSED);
                 }
             }
 
@@ -717,7 +722,7 @@ macro_rules! protocol_message_flags {
                 D: ::serde::Deserializer<'de>,
             {
                 let value = <u8 as ::serde::Deserialize>::deserialize(deserializer)?;
-                Ok(Self(value))
+                Ok(Self::from_bits_retain(value))
             }
         }
     };

@@ -33,6 +33,12 @@ mod tests {
         assert_eq!(unknown.to_byte(), 0x80);
         assert_eq!(unknown.as_byte(), 0x80);
         assert!(!unknown.is_compressed());
+        assert_eq!(
+            MessageFlags::from_bits(0x80)
+                .expect("unknown bits retained")
+                .to_byte(),
+            0x80
+        );
 
         let combined = MessageFlags::from_byte(0x81).unwrap();
         assert_eq!(combined.to_byte(), 0x81);
