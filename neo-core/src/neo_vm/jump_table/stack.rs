@@ -5,7 +5,7 @@
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::jump_table::JumpTable;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use crate::neo_vm::stack_item::StackItem;
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
@@ -14,22 +14,24 @@ use num_traits::ToPrimitive;
 
 /// Registers the stack operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    jump_table.register(OpCode::DUP, dup);
-    jump_table.register(OpCode::SWAP, swap);
-    jump_table.register(OpCode::TUCK, tuck);
-    jump_table.register(OpCode::OVER, over);
-    // TOALTSTACK and FROMALTSTACK removed - not in C# Neo
-    jump_table.register(OpCode::PICK, pick);
-    jump_table.register(OpCode::ROT, rot);
-    jump_table.register(OpCode::DEPTH, depth);
-    jump_table.register(OpCode::DROP, drop);
-    jump_table.register(OpCode::NIP, nip);
-    jump_table.register(OpCode::XDROP, xdrop);
-    jump_table.register(OpCode::CLEAR, clear);
-    jump_table.register(OpCode::ROLL, roll);
-    jump_table.register(OpCode::REVERSE3, reverse3);
-    jump_table.register(OpCode::REVERSE4, reverse4);
-    jump_table.register(OpCode::REVERSEN, reversen);
+    register_jump_handlers![
+        jump_table;
+        OpCode::DUP => dup,
+        OpCode::SWAP => swap,
+        OpCode::TUCK => tuck,
+        OpCode::OVER => over,
+        OpCode::PICK => pick,
+        OpCode::ROT => rot,
+        OpCode::DEPTH => depth,
+        OpCode::DROP => drop,
+        OpCode::NIP => nip,
+        OpCode::XDROP => xdrop,
+        OpCode::CLEAR => clear,
+        OpCode::ROLL => roll,
+        OpCode::REVERSE3 => reverse3,
+        OpCode::REVERSE4 => reverse4,
+        OpCode::REVERSEN => reversen,
+    ];
 }
 
 /// Implements the DUP operation.

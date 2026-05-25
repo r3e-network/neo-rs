@@ -5,19 +5,22 @@
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::jump_table::JumpTable;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use crate::neo_vm::stack_item::StackItem;
 use neo_vm_rs::{semantics::splice as splice_rules, Instruction, OpCode};
 use num_traits::ToPrimitive;
 
 /// Registers the splice operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    jump_table.register(OpCode::NEWBUFFER, new_buffer);
-    jump_table.register(OpCode::MEMCPY, memcpy);
-    jump_table.register(OpCode::CAT, cat);
-    jump_table.register(OpCode::SUBSTR, substr);
-    jump_table.register(OpCode::LEFT, left);
-    jump_table.register(OpCode::RIGHT, right);
+    register_jump_handlers![
+        jump_table;
+        OpCode::NEWBUFFER => new_buffer,
+        OpCode::MEMCPY => memcpy,
+        OpCode::CAT => cat,
+        OpCode::SUBSTR => substr,
+        OpCode::LEFT => left,
+        OpCode::RIGHT => right,
+    ];
 }
 
 /// Implements the NEWBUFFER operation.

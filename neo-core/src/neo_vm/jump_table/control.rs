@@ -2,12 +2,13 @@
 
 use crate::neo_vm::error::{VmError, VmResult};
 use crate::neo_vm::execution_engine::ExecutionEngine;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 
 /// Register all control handlers
-pub fn register_handlers(jump_table: &mut crate::neo_vm::jump_table::JumpTable) {
+pub fn register_handlers(jump_table: &mut JumpTable) {
     use OpCode::{
         ABORT, ABORTMSG, ASSERT, ASSERTMSG, CALL, CALLA, CALLT, CALL_L, ENDFINALLY, ENDTRY,
         ENDTRY_L, JMP, JMPEQ, JMPEQ_L, JMPGE, JMPGE_L, JMPGT, JMPGT_L, JMPIF, JMPIFNOT, JMPIFNOT_L,
@@ -15,41 +16,44 @@ pub fn register_handlers(jump_table: &mut crate::neo_vm::jump_table::JumpTable) 
         TRY, TRY_L,
     };
 
-    jump_table.register(NOP, nop);
-    jump_table.register(JMP, jmp);
-    jump_table.register(JMP_L, jmp_l);
-    jump_table.register(JMPIF, jmpif);
-    jump_table.register(JMPIF_L, jmpif_l);
-    jump_table.register(JMPIFNOT, jmpifnot);
-    jump_table.register(JMPIFNOT_L, jmpifnot_l);
-    jump_table.register(JMPEQ, jmpeq);
-    jump_table.register(JMPEQ_L, jmpeq_l);
-    jump_table.register(JMPNE, jmpne);
-    jump_table.register(JMPNE_L, jmpne_l);
-    jump_table.register(JMPGT, jmpgt);
-    jump_table.register(JMPGT_L, jmpgt_l);
-    jump_table.register(JMPGE, jmpge);
-    jump_table.register(JMPGE_L, jmpge_l);
-    jump_table.register(JMPLT, jmplt);
-    jump_table.register(JMPLT_L, jmplt_l);
-    jump_table.register(JMPLE, jmple);
-    jump_table.register(JMPLE_L, jmple_l);
-    jump_table.register(CALL, call);
-    jump_table.register(CALL_L, call_l);
-    jump_table.register(CALLA, calla);
-    jump_table.register(CALLT, callt);
-    jump_table.register(ABORT, abort);
-    jump_table.register(ABORTMSG, abortmsg);
-    jump_table.register(ASSERT, assert);
-    jump_table.register(ASSERTMSG, assertmsg);
-    jump_table.register(THROW, throw);
-    jump_table.register(TRY, r#try);
-    jump_table.register(TRY_L, try_l);
-    jump_table.register(ENDTRY, endtry);
-    jump_table.register(ENDTRY_L, endtry_l);
-    jump_table.register(ENDFINALLY, endfinally);
-    jump_table.register(RET, ret);
-    jump_table.register(SYSCALL, syscall);
+    register_jump_handlers![
+        jump_table;
+        NOP => nop,
+        JMP => jmp,
+        JMP_L => jmp_l,
+        JMPIF => jmpif,
+        JMPIF_L => jmpif_l,
+        JMPIFNOT => jmpifnot,
+        JMPIFNOT_L => jmpifnot_l,
+        JMPEQ => jmpeq,
+        JMPEQ_L => jmpeq_l,
+        JMPNE => jmpne,
+        JMPNE_L => jmpne_l,
+        JMPGT => jmpgt,
+        JMPGT_L => jmpgt_l,
+        JMPGE => jmpge,
+        JMPGE_L => jmpge_l,
+        JMPLT => jmplt,
+        JMPLT_L => jmplt_l,
+        JMPLE => jmple,
+        JMPLE_L => jmple_l,
+        CALL => call,
+        CALL_L => call_l,
+        CALLA => calla,
+        CALLT => callt,
+        ABORT => abort,
+        ABORTMSG => abortmsg,
+        ASSERT => assert,
+        ASSERTMSG => assertmsg,
+        THROW => throw,
+        TRY => r#try,
+        TRY_L => try_l,
+        ENDTRY => endtry,
+        ENDTRY_L => endtry_l,
+        ENDFINALLY => endfinally,
+        RET => ret,
+        SYSCALL => syscall,
+    ];
 }
 
 /// NOP - No operation

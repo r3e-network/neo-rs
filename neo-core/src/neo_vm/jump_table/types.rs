@@ -5,7 +5,7 @@
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::jump_table::JumpTable;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use crate::neo_vm::stack_item::{Array, StackItem, Struct};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::StackItemType;
@@ -13,9 +13,12 @@ use neo_vm_rs::{OpCode, StackValue};
 
 /// Registers the type operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    jump_table.register(OpCode::CONVERT, convert);
-    jump_table.register(OpCode::ISTYPE, is_type);
-    jump_table.register(OpCode::ISNULL, is_null);
+    register_jump_handlers![
+        jump_table;
+        OpCode::CONVERT => convert,
+        OpCode::ISTYPE => is_type,
+        OpCode::ISNULL => is_null,
+    ];
 }
 
 /// Implements the CONVERT operation.

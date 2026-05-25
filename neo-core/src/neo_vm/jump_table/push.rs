@@ -5,7 +5,7 @@
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::jump_table::JumpTable;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use crate::neo_vm::stack_item::StackItem;
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
@@ -15,37 +15,40 @@ const HASH_SIZE: usize = 32;
 
 /// Registers the push operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    jump_table.register(OpCode::PUSHINT8, push_int8);
-    jump_table.register(OpCode::PUSHINT16, push_int16);
-    jump_table.register(OpCode::PUSHINT32, push_int32);
-    jump_table.register(OpCode::PUSHINT64, push_int64);
-    jump_table.register(OpCode::PUSHINT128, push_int128);
-    jump_table.register(OpCode::PUSHINT256, push_int256);
-    jump_table.register(OpCode::PUSHA, push_a);
-    jump_table.register(OpCode::PUSHNULL, push_null);
-    jump_table.register(OpCode::PUSHDATA1, push_data);
-    jump_table.register(OpCode::PUSHDATA2, push_data);
-    jump_table.register(OpCode::PUSHDATA4, push_data);
-    jump_table.register(OpCode::PUSHM1, push_m1);
-    jump_table.register(OpCode::PUSH0, push_0);
-    jump_table.register(OpCode::PUSH1, push_1);
-    jump_table.register(OpCode::PUSH2, push_2);
-    jump_table.register(OpCode::PUSH3, push_3);
-    jump_table.register(OpCode::PUSH4, push_4);
-    jump_table.register(OpCode::PUSH5, push_5);
-    jump_table.register(OpCode::PUSH6, push_6);
-    jump_table.register(OpCode::PUSH7, push_7);
-    jump_table.register(OpCode::PUSH8, push_8);
-    jump_table.register(OpCode::PUSH9, push_9);
-    jump_table.register(OpCode::PUSH10, push_10);
-    jump_table.register(OpCode::PUSH11, push_11);
-    jump_table.register(OpCode::PUSH12, push_12);
-    jump_table.register(OpCode::PUSH13, push_13);
-    jump_table.register(OpCode::PUSH14, push_14);
-    jump_table.register(OpCode::PUSH15, push_15);
-    jump_table.register(OpCode::PUSH16, push_16);
-    jump_table.register(OpCode::PUSHT, push_t);
-    jump_table.register(OpCode::PUSHF, push_f);
+    register_jump_handlers![
+        jump_table;
+        OpCode::PUSHINT8 => push_int8,
+        OpCode::PUSHINT16 => push_int16,
+        OpCode::PUSHINT32 => push_int32,
+        OpCode::PUSHINT64 => push_int64,
+        OpCode::PUSHINT128 => push_int128,
+        OpCode::PUSHINT256 => push_int256,
+        OpCode::PUSHA => push_a,
+        OpCode::PUSHNULL => push_null,
+        OpCode::PUSHDATA1 => push_data,
+        OpCode::PUSHDATA2 => push_data,
+        OpCode::PUSHDATA4 => push_data,
+        OpCode::PUSHM1 => push_m1,
+        OpCode::PUSH0 => push_0,
+        OpCode::PUSH1 => push_1,
+        OpCode::PUSH2 => push_2,
+        OpCode::PUSH3 => push_3,
+        OpCode::PUSH4 => push_4,
+        OpCode::PUSH5 => push_5,
+        OpCode::PUSH6 => push_6,
+        OpCode::PUSH7 => push_7,
+        OpCode::PUSH8 => push_8,
+        OpCode::PUSH9 => push_9,
+        OpCode::PUSH10 => push_10,
+        OpCode::PUSH11 => push_11,
+        OpCode::PUSH12 => push_12,
+        OpCode::PUSH13 => push_13,
+        OpCode::PUSH14 => push_14,
+        OpCode::PUSH15 => push_15,
+        OpCode::PUSH16 => push_16,
+        OpCode::PUSHT => push_t,
+        OpCode::PUSHF => push_f,
+    ];
 }
 
 /// Helper to get current context or return error.

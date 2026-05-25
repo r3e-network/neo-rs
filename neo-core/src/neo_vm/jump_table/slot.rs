@@ -4,7 +4,7 @@ use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::jump_table::JumpTable;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
 
@@ -18,62 +18,59 @@ fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionConte
 
 /// Registers the slot operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    jump_table.register(OpCode::INITSSLOT, init_static_slot);
-    jump_table.register(OpCode::INITSLOT, init_slot);
-
-    // Static field operations (0-6 and generic)
-    jump_table.register(OpCode::LDSFLD0, |e, _| load_static_field_n(e, 0));
-    jump_table.register(OpCode::LDSFLD1, |e, _| load_static_field_n(e, 1));
-    jump_table.register(OpCode::LDSFLD2, |e, _| load_static_field_n(e, 2));
-    jump_table.register(OpCode::LDSFLD3, |e, _| load_static_field_n(e, 3));
-    jump_table.register(OpCode::LDSFLD4, |e, _| load_static_field_n(e, 4));
-    jump_table.register(OpCode::LDSFLD5, |e, _| load_static_field_n(e, 5));
-    jump_table.register(OpCode::LDSFLD6, |e, _| load_static_field_n(e, 6));
-    jump_table.register(OpCode::LDSFLD, load_static_field);
-    jump_table.register(OpCode::STSFLD0, |e, _| store_static_field_n(e, 0));
-    jump_table.register(OpCode::STSFLD1, |e, _| store_static_field_n(e, 1));
-    jump_table.register(OpCode::STSFLD2, |e, _| store_static_field_n(e, 2));
-    jump_table.register(OpCode::STSFLD3, |e, _| store_static_field_n(e, 3));
-    jump_table.register(OpCode::STSFLD4, |e, _| store_static_field_n(e, 4));
-    jump_table.register(OpCode::STSFLD5, |e, _| store_static_field_n(e, 5));
-    jump_table.register(OpCode::STSFLD6, |e, _| store_static_field_n(e, 6));
-    jump_table.register(OpCode::STSFLD, store_static_field);
-
-    // Local variable operations (0-6 and generic)
-    jump_table.register(OpCode::LDLOC0, |e, _| load_local_n(e, 0));
-    jump_table.register(OpCode::LDLOC1, |e, _| load_local_n(e, 1));
-    jump_table.register(OpCode::LDLOC2, |e, _| load_local_n(e, 2));
-    jump_table.register(OpCode::LDLOC3, |e, _| load_local_n(e, 3));
-    jump_table.register(OpCode::LDLOC4, |e, _| load_local_n(e, 4));
-    jump_table.register(OpCode::LDLOC5, |e, _| load_local_n(e, 5));
-    jump_table.register(OpCode::LDLOC6, |e, _| load_local_n(e, 6));
-    jump_table.register(OpCode::LDLOC, load_local);
-    jump_table.register(OpCode::STLOC0, |e, _| store_local_n(e, 0));
-    jump_table.register(OpCode::STLOC1, |e, _| store_local_n(e, 1));
-    jump_table.register(OpCode::STLOC2, |e, _| store_local_n(e, 2));
-    jump_table.register(OpCode::STLOC3, |e, _| store_local_n(e, 3));
-    jump_table.register(OpCode::STLOC4, |e, _| store_local_n(e, 4));
-    jump_table.register(OpCode::STLOC5, |e, _| store_local_n(e, 5));
-    jump_table.register(OpCode::STLOC6, |e, _| store_local_n(e, 6));
-    jump_table.register(OpCode::STLOC, store_local);
-
-    // Argument operations (0-6 and generic)
-    jump_table.register(OpCode::LDARG0, |e, _| load_argument_n(e, 0));
-    jump_table.register(OpCode::LDARG1, |e, _| load_argument_n(e, 1));
-    jump_table.register(OpCode::LDARG2, |e, _| load_argument_n(e, 2));
-    jump_table.register(OpCode::LDARG3, |e, _| load_argument_n(e, 3));
-    jump_table.register(OpCode::LDARG4, |e, _| load_argument_n(e, 4));
-    jump_table.register(OpCode::LDARG5, |e, _| load_argument_n(e, 5));
-    jump_table.register(OpCode::LDARG6, |e, _| load_argument_n(e, 6));
-    jump_table.register(OpCode::LDARG, load_argument);
-    jump_table.register(OpCode::STARG0, |e, _| store_argument_n(e, 0));
-    jump_table.register(OpCode::STARG1, |e, _| store_argument_n(e, 1));
-    jump_table.register(OpCode::STARG2, |e, _| store_argument_n(e, 2));
-    jump_table.register(OpCode::STARG3, |e, _| store_argument_n(e, 3));
-    jump_table.register(OpCode::STARG4, |e, _| store_argument_n(e, 4));
-    jump_table.register(OpCode::STARG5, |e, _| store_argument_n(e, 5));
-    jump_table.register(OpCode::STARG6, |e, _| store_argument_n(e, 6));
-    jump_table.register(OpCode::STARG, store_argument);
+    register_jump_handlers![
+        jump_table;
+        OpCode::INITSSLOT => init_static_slot,
+        OpCode::INITSLOT => init_slot,
+        OpCode::LDSFLD0 => |e, _| load_static_field_n(e, 0),
+        OpCode::LDSFLD1 => |e, _| load_static_field_n(e, 1),
+        OpCode::LDSFLD2 => |e, _| load_static_field_n(e, 2),
+        OpCode::LDSFLD3 => |e, _| load_static_field_n(e, 3),
+        OpCode::LDSFLD4 => |e, _| load_static_field_n(e, 4),
+        OpCode::LDSFLD5 => |e, _| load_static_field_n(e, 5),
+        OpCode::LDSFLD6 => |e, _| load_static_field_n(e, 6),
+        OpCode::LDSFLD => load_static_field,
+        OpCode::STSFLD0 => |e, _| store_static_field_n(e, 0),
+        OpCode::STSFLD1 => |e, _| store_static_field_n(e, 1),
+        OpCode::STSFLD2 => |e, _| store_static_field_n(e, 2),
+        OpCode::STSFLD3 => |e, _| store_static_field_n(e, 3),
+        OpCode::STSFLD4 => |e, _| store_static_field_n(e, 4),
+        OpCode::STSFLD5 => |e, _| store_static_field_n(e, 5),
+        OpCode::STSFLD6 => |e, _| store_static_field_n(e, 6),
+        OpCode::STSFLD => store_static_field,
+        OpCode::LDLOC0 => |e, _| load_local_n(e, 0),
+        OpCode::LDLOC1 => |e, _| load_local_n(e, 1),
+        OpCode::LDLOC2 => |e, _| load_local_n(e, 2),
+        OpCode::LDLOC3 => |e, _| load_local_n(e, 3),
+        OpCode::LDLOC4 => |e, _| load_local_n(e, 4),
+        OpCode::LDLOC5 => |e, _| load_local_n(e, 5),
+        OpCode::LDLOC6 => |e, _| load_local_n(e, 6),
+        OpCode::LDLOC => load_local,
+        OpCode::STLOC0 => |e, _| store_local_n(e, 0),
+        OpCode::STLOC1 => |e, _| store_local_n(e, 1),
+        OpCode::STLOC2 => |e, _| store_local_n(e, 2),
+        OpCode::STLOC3 => |e, _| store_local_n(e, 3),
+        OpCode::STLOC4 => |e, _| store_local_n(e, 4),
+        OpCode::STLOC5 => |e, _| store_local_n(e, 5),
+        OpCode::STLOC6 => |e, _| store_local_n(e, 6),
+        OpCode::STLOC => store_local,
+        OpCode::LDARG0 => |e, _| load_argument_n(e, 0),
+        OpCode::LDARG1 => |e, _| load_argument_n(e, 1),
+        OpCode::LDARG2 => |e, _| load_argument_n(e, 2),
+        OpCode::LDARG3 => |e, _| load_argument_n(e, 3),
+        OpCode::LDARG4 => |e, _| load_argument_n(e, 4),
+        OpCode::LDARG5 => |e, _| load_argument_n(e, 5),
+        OpCode::LDARG6 => |e, _| load_argument_n(e, 6),
+        OpCode::LDARG => load_argument,
+        OpCode::STARG0 => |e, _| store_argument_n(e, 0),
+        OpCode::STARG1 => |e, _| store_argument_n(e, 1),
+        OpCode::STARG2 => |e, _| store_argument_n(e, 2),
+        OpCode::STARG3 => |e, _| store_argument_n(e, 3),
+        OpCode::STARG4 => |e, _| store_argument_n(e, 4),
+        OpCode::STARG5 => |e, _| store_argument_n(e, 5),
+        OpCode::STARG6 => |e, _| store_argument_n(e, 6),
+        OpCode::STARG => store_argument,
+    ];
 }
 
 // ============================================================================

@@ -23,6 +23,16 @@ use neo_vm_rs::OpCode;
 /// A handler for a VM instruction.
 pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;
 
+macro_rules! register_jump_handlers {
+    ($jump_table:expr; $($opcode:expr => $handler:expr),+ $(,)?) => {
+        $(
+            $jump_table.register($opcode, $handler);
+        )+
+    };
+}
+
+pub(crate) use register_jump_handlers;
+
 /// Represents a jump table for the VM.
 #[derive(Clone)]
 pub struct JumpTable {

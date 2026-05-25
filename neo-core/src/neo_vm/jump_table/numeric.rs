@@ -3,7 +3,7 @@
 use crate::neo_vm::error::{VmError, VmResult};
 use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::jump_table::JumpTable;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use crate::neo_vm::stack_item::StackItem;
 use neo_vm_rs::semantics::{arithmetic, comparison};
 use neo_vm_rs::{Instruction, OpCode, StackValue};
@@ -69,39 +69,38 @@ fn ternary_numeric(
 
 /// Registers the numeric operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    jump_table.register(OpCode::INC, inc);
-    jump_table.register(OpCode::DEC, dec);
-    jump_table.register(OpCode::SIGN, sign);
-    jump_table.register(OpCode::NEGATE, negate);
-    jump_table.register(OpCode::ABS, abs);
-    jump_table.register(OpCode::SQRT, sqrt);
-    jump_table.register(OpCode::NOT, not);
-    jump_table.register(OpCode::NZ, nz);
-
-    jump_table.register(OpCode::ADD, add);
-    jump_table.register(OpCode::SUB, sub);
-    jump_table.register(OpCode::MUL, mul);
-    jump_table.register(OpCode::DIV, div);
-    jump_table.register(OpCode::MOD, modulo);
-    jump_table.register(OpCode::POW, pow);
-    jump_table.register(OpCode::SHL, shl);
-    jump_table.register(OpCode::SHR, shr);
-    jump_table.register(OpCode::MIN, min);
-    jump_table.register(OpCode::MAX, max);
-
-    jump_table.register(OpCode::LT, lt);
-    jump_table.register(OpCode::LE, le);
-    jump_table.register(OpCode::GT, gt);
-    jump_table.register(OpCode::GE, ge);
-    jump_table.register(OpCode::NUMEQUAL, numequal);
-    jump_table.register(OpCode::NUMNOTEQUAL, numnotequal);
-    jump_table.register(OpCode::WITHIN, within);
-
-    jump_table.register(OpCode::BOOLAND, booland);
-    jump_table.register(OpCode::BOOLOR, boolor);
-
-    jump_table.register(OpCode::MODMUL, modmul);
-    jump_table.register(OpCode::MODPOW, modpow);
+    register_jump_handlers![
+        jump_table;
+        OpCode::INC => inc,
+        OpCode::DEC => dec,
+        OpCode::SIGN => sign,
+        OpCode::NEGATE => negate,
+        OpCode::ABS => abs,
+        OpCode::SQRT => sqrt,
+        OpCode::NOT => not,
+        OpCode::NZ => nz,
+        OpCode::ADD => add,
+        OpCode::SUB => sub,
+        OpCode::MUL => mul,
+        OpCode::DIV => div,
+        OpCode::MOD => modulo,
+        OpCode::POW => pow,
+        OpCode::SHL => shl,
+        OpCode::SHR => shr,
+        OpCode::MIN => min,
+        OpCode::MAX => max,
+        OpCode::LT => lt,
+        OpCode::LE => le,
+        OpCode::GT => gt,
+        OpCode::GE => ge,
+        OpCode::NUMEQUAL => numequal,
+        OpCode::NUMNOTEQUAL => numnotequal,
+        OpCode::WITHIN => within,
+        OpCode::BOOLAND => booland,
+        OpCode::BOOLOR => boolor,
+        OpCode::MODMUL => modmul,
+        OpCode::MODPOW => modpow,
+    ];
 }
 
 #[inline]

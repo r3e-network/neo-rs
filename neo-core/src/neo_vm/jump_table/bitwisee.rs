@@ -3,7 +3,7 @@
 use crate::neo_vm::error::{VmError, VmResult};
 use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::jump_table::JumpTable;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use crate::neo_vm::stack_item::StackItem;
 use neo_vm_rs::semantics::arithmetic;
 use neo_vm_rs::{Instruction, OpCode, StackValue};
@@ -35,12 +35,15 @@ fn push_stack_value(ctx: &mut ExecutionContext, value: StackValue) -> VmResult<(
 
 /// Registers the bitwise operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    jump_table.register(OpCode::INVERT, invert);
-    jump_table.register(OpCode::AND, and);
-    jump_table.register(OpCode::OR, or);
-    jump_table.register(OpCode::XOR, xor);
-    jump_table.register(OpCode::EQUAL, equal);
-    jump_table.register(OpCode::NOTEQUAL, not_equal);
+    register_jump_handlers![
+        jump_table;
+        OpCode::INVERT => invert,
+        OpCode::AND => and,
+        OpCode::OR => or,
+        OpCode::XOR => xor,
+        OpCode::EQUAL => equal,
+        OpCode::NOTEQUAL => not_equal,
+    ];
 }
 
 fn invert(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {

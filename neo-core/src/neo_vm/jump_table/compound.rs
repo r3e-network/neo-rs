@@ -5,7 +5,7 @@
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::jump_table::JumpTable;
+use crate::neo_vm::jump_table::{register_jump_handlers, JumpTable};
 use crate::neo_vm::stack_item::{Array, Map, StackItem, Struct};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
@@ -55,27 +55,30 @@ fn pick_byte_sequence_item(value: neo_vm_rs::StackValue, index: usize) -> VmResu
 
 /// Registers the compound operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    jump_table.register(OpCode::NEWARRAY0, new_array0);
-    jump_table.register(OpCode::NEWARRAY, new_array);
-    jump_table.register(OpCode::NEWARRAY_T, new_array_t);
-    jump_table.register(OpCode::NEWSTRUCT0, new_struct0);
-    jump_table.register(OpCode::NEWSTRUCT, new_struct);
-    jump_table.register(OpCode::NEWMAP, new_map);
-    jump_table.register(OpCode::APPEND, append);
-    jump_table.register(OpCode::REVERSEITEMS, reverse);
-    jump_table.register(OpCode::REMOVE, remove);
-    jump_table.register(OpCode::CLEARITEMS, clear_items);
-    jump_table.register(OpCode::POPITEM, pop_item);
-    jump_table.register(OpCode::HASKEY, has_key);
-    jump_table.register(OpCode::KEYS, keys);
-    jump_table.register(OpCode::VALUES, values);
-    jump_table.register(OpCode::PACKMAP, pack_map);
-    jump_table.register(OpCode::PACKSTRUCT, pack_struct);
-    jump_table.register(OpCode::PACK, pack);
-    jump_table.register(OpCode::UNPACK, unpack);
-    jump_table.register(OpCode::PICKITEM, pick_item);
-    jump_table.register(OpCode::SETITEM, set_item);
-    jump_table.register(OpCode::SIZE, size);
+    register_jump_handlers![
+        jump_table;
+        OpCode::NEWARRAY0 => new_array0,
+        OpCode::NEWARRAY => new_array,
+        OpCode::NEWARRAY_T => new_array_t,
+        OpCode::NEWSTRUCT0 => new_struct0,
+        OpCode::NEWSTRUCT => new_struct,
+        OpCode::NEWMAP => new_map,
+        OpCode::APPEND => append,
+        OpCode::REVERSEITEMS => reverse,
+        OpCode::REMOVE => remove,
+        OpCode::CLEARITEMS => clear_items,
+        OpCode::POPITEM => pop_item,
+        OpCode::HASKEY => has_key,
+        OpCode::KEYS => keys,
+        OpCode::VALUES => values,
+        OpCode::PACKMAP => pack_map,
+        OpCode::PACKSTRUCT => pack_struct,
+        OpCode::PACK => pack,
+        OpCode::UNPACK => unpack,
+        OpCode::PICKITEM => pick_item,
+        OpCode::SETITEM => set_item,
+        OpCode::SIZE => size,
+    ];
 }
 
 /// Implements the NEWARRAY0 operation.
