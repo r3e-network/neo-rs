@@ -1,3 +1,5 @@
+#![cfg(feature = "server")]
+
 use neo_rpc::server::{RpcServerBlockchain, RpcServerWallet};
 
 #[test]
