@@ -186,6 +186,7 @@ rand = "0.8"
 # === Encoding ===
 hex = "0.4"
 bs58 = { version = "0.5", features = ["check"] }
+bip39 = { version = "2.2", features = ["all-languages", "zeroize"] }
 base64 = "0.22"
 
 # === Utility macros ===

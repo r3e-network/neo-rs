@@ -1,45 +1,21 @@
 //! BIP-39 mnemonic helpers (multi-language wordlists).
 
-use crate::cryptography::Crypto;
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use ::bip39::{Language, Mnemonic};
 use std::env;
 use zeroize::Zeroizing;
 
-// English last so reverse index prefers English for overlapping words.
-const WORDLIST_KEYS: [&str; 10] = [
-    "cs", "es", "fr", "it", "ja", "ko", "pt", "zh", "zh-hant", "en",
+const PARSE_LANGUAGES: [Language; 10] = [
+    Language::English,
+    Language::TraditionalChinese,
+    Language::SimplifiedChinese,
+    Language::Portuguese,
+    Language::Korean,
+    Language::Japanese,
+    Language::Italian,
+    Language::French,
+    Language::Spanish,
+    Language::Czech,
 ];
-
-static WORDLISTS: Lazy<HashMap<&'static str, Vec<&'static str>>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-    map.insert("cs", load_wordlist(include_str!("bip39_wordlists/cs.txt")));
-    map.insert("en", load_wordlist(include_str!("bip39_wordlists/en.txt")));
-    map.insert("es", load_wordlist(include_str!("bip39_wordlists/es.txt")));
-    map.insert("fr", load_wordlist(include_str!("bip39_wordlists/fr.txt")));
-    map.insert("it", load_wordlist(include_str!("bip39_wordlists/it.txt")));
-    map.insert("ja", load_wordlist(include_str!("bip39_wordlists/ja.txt")));
-    map.insert("ko", load_wordlist(include_str!("bip39_wordlists/ko.txt")));
-    map.insert("pt", load_wordlist(include_str!("bip39_wordlists/pt.txt")));
-    map.insert("zh", load_wordlist(include_str!("bip39_wordlists/zh.txt")));
-    map.insert(
-        "zh-hant",
-        load_wordlist(include_str!("bip39_wordlists/zh-Hant.txt")),
-    );
-    map
-});
-
-static WORDLIST_REVERSE_INDEX: Lazy<HashMap<&'static str, usize>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-    for key in WORDLIST_KEYS {
-        if let Some(wordlist) = WORDLISTS.get(key) {
-            for (i, word) in wordlist.iter().enumerate() {
-                map.insert(*word, i);
-            }
-        }
-    }
-    map
-});
 
 /// Generates a BIP-39 mnemonic from entropy using the current locale (falls back to English).
 ///
@@ -72,34 +48,9 @@ pub fn get_mnemonic_code_with_language(
         return Err("The length of entropy should be a multiple of 32 bits.".to_string());
     }
 
-    let wordlist = resolve_wordlist(language);
-    let entropy_bits = entropy.len() * 8;
-    let checksum_bits = entropy_bits / 32;
-    let total_bits = entropy_bits + checksum_bits;
-    let word_count = total_bits / 11;
-    let checksum = Crypto::sha256(entropy);
-
-    let mut mnemonic = Vec::with_capacity(word_count);
-    for i in 0..word_count {
-        let mut index = 0u16;
-        for j in 0..11 {
-            let bit_pos = i * 11 + j;
-            let bit = if bit_pos < entropy_bits {
-                get_bit_msb(entropy, bit_pos)
-            } else {
-                get_bit_msb(&checksum, bit_pos - entropy_bits)
-            };
-            if bit {
-                index |= 1u16 << (10 - j) as u16;
-            }
-        }
-        let word = wordlist
-            .get(index as usize)
-            .ok_or_else(|| "Mnemonic index out of range".to_string())?;
-        mnemonic.push((*word).to_string());
-    }
-
-    Ok(mnemonic)
+    let mnemonic = Mnemonic::from_entropy_in(resolve_language(language), entropy)
+        .map_err(|error| error.to_string())?;
+    Ok(mnemonic.words().map(str::to_string).collect())
 }
 
 /// Converts a BIP-39 mnemonic back to entropy (any supported language).
@@ -111,69 +62,27 @@ pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Zeroizing<Vec<u8>>, Stri
     if !(12..=24).contains(&word_count) || word_count % 3 != 0 {
         return Err("The number of words should be 12, 15, 18, 21 or 24.".to_string());
     }
-
-    let total_bits = word_count * 11;
-    let entropy_bits = total_bits * 32 / 33;
-    let checksum_bits = total_bits - entropy_bits;
-    let entropy_bytes = entropy_bits / 8;
-    let checksum_bytes = checksum_bits.div_ceil(8);
-
-    let mut entropy = vec![0u8; entropy_bytes];
-    let mut checksum = vec![0u8; checksum_bytes];
-
-    for (i, word) in mnemonic.iter().enumerate() {
-        let index = *WORDLIST_REVERSE_INDEX
-            .get(*word)
-            .ok_or_else(|| format!("The word '{}' is not in the BIP-39 wordlist.", word))?;
-        for j in 0..11 {
-            let bit_pos = i * 11 + j;
-            let bit = (index & (1 << (10 - j))) != 0;
-            if bit_pos < entropy_bits {
-                let byte_index = bit_pos / 8;
-                let bit_in_byte = 7 - (bit_pos % 8);
-                if bit {
-                    entropy[byte_index] |= 1 << bit_in_byte;
-                }
-            } else {
-                let cs_bit_pos = bit_pos - entropy_bits;
-                let byte_index = cs_bit_pos / 8;
-                let bit_in_byte = 7 - (cs_bit_pos % 8);
-                if bit {
-                    checksum[byte_index] |= 1 << bit_in_byte;
-                }
-            }
+    for word in mnemonic {
+        if word.trim() != *word || word.split_whitespace().count() != 1 {
+            return Err(unknown_word_error(word));
         }
     }
 
-    let hash = Crypto::sha256(&entropy);
-    for i in 0..checksum_bits {
-        let byte_index = i / 8;
-        let bit_in_byte = 7 - (i % 8);
-        let bit_from_hash = (hash[byte_index] & (1 << bit_in_byte)) != 0;
-        let bit_from_checksum = (checksum[byte_index] & (1 << bit_in_byte)) != 0;
-        if bit_from_hash != bit_from_checksum {
-            return Err("Invalid mnemonic: checksum does not match.".to_string());
-        }
-    }
+    let phrase = mnemonic.join(" ");
+    let parsed = parse_mnemonic_phrase(&phrase)?;
 
-    Ok(Zeroizing::new(entropy))
+    Ok(Zeroizing::new(parsed.to_entropy()))
 }
 
-fn load_wordlist(data: &'static str) -> Vec<&'static str> {
-    data.lines().filter(|line| !line.is_empty()).collect()
-}
-
-fn resolve_wordlist(language: &str) -> &'static Vec<&'static str> {
+fn resolve_language(language: &str) -> Language {
     let mut lang = normalize_language_code(language);
     if lang.is_empty() {
-        return WORDLISTS
-            .get("en")
-            .expect("English wordlist must be present");
+        return Language::English;
     }
 
     loop {
-        if let Some(wordlist) = WORDLISTS.get(lang.as_str()) {
-            return wordlist;
+        if let Some(language) = language_from_code(lang.as_str()) {
+            return language;
         }
         if let Some(pos) = lang.rfind('-') {
             lang.truncate(pos);
@@ -182,9 +91,50 @@ fn resolve_wordlist(language: &str) -> &'static Vec<&'static str> {
         }
     }
 
-    WORDLISTS
-        .get("en")
-        .expect("English wordlist must be present")
+    Language::English
+}
+
+fn language_from_code(language: &str) -> Option<Language> {
+    match language {
+        "cs" => Some(Language::Czech),
+        "en" => Some(Language::English),
+        "es" => Some(Language::Spanish),
+        "fr" => Some(Language::French),
+        "it" => Some(Language::Italian),
+        "ja" => Some(Language::Japanese),
+        "ko" => Some(Language::Korean),
+        "pt" => Some(Language::Portuguese),
+        "zh" | "zh-hans" | "zh-cn" | "zh-sg" => Some(Language::SimplifiedChinese),
+        "zh-hant" | "zh-tw" | "zh-hk" | "zh-mo" => Some(Language::TraditionalChinese),
+        _ => None,
+    }
+}
+
+fn parse_mnemonic_phrase(phrase: &str) -> Result<Mnemonic, String> {
+    let mut unknown_word = None;
+    let mut checksum_mismatch = false;
+    for language in PARSE_LANGUAGES {
+        match Mnemonic::parse_in(language, phrase) {
+            Err(::bip39::Error::InvalidChecksum) => {
+                checksum_mismatch = true;
+            }
+            Err(::bip39::Error::UnknownWord(index)) if unknown_word.is_none() => {
+                unknown_word = phrase.split_whitespace().nth(index);
+            }
+            Err(_) => {}
+            Ok(mnemonic) => return Ok(mnemonic),
+        }
+    }
+
+    if checksum_mismatch {
+        return Err("Invalid mnemonic: checksum does not match.".to_string());
+    }
+
+    Err(unknown_word_error(unknown_word.unwrap_or_default()))
+}
+
+fn unknown_word_error(word: &str) -> String {
+    format!("The word '{}' is not in the BIP-39 wordlist.", word)
 }
 
 fn normalize_language_code(language: &str) -> String {
@@ -215,10 +165,4 @@ fn current_language() -> Option<String> {
         }
     }
     None
-}
-
-fn get_bit_msb(data: &[u8], bit_index: usize) -> bool {
-    let byte_index = bit_index / 8;
-    let bit_in_byte = 7 - (bit_index % 8);
-    (data[byte_index] & (1 << bit_in_byte)) != 0
 }

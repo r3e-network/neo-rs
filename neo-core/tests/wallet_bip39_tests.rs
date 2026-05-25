@@ -13,6 +13,12 @@ fn entropy_not_multiple_of_4_throws() {
 }
 
 #[test]
+fn entropy_too_long_throws() {
+    let entropy = vec![0u8; 33];
+    assert!(get_mnemonic_code(&entropy).is_err());
+}
+
+#[test]
 fn test_vectors() {
     let cases = vec![
         (
@@ -134,4 +140,61 @@ fn language_fallbacks_to_parent_or_english() {
 
     let fallback = get_mnemonic_code_with_language(&entropy, "xx-YY").unwrap();
     assert_eq!(en, fallback);
+
+    let pt = get_mnemonic_code_with_language(&entropy, "pt").unwrap();
+    let pt_br = get_mnemonic_code_with_language(&entropy, "pt-BR").unwrap();
+    assert_eq!(pt, pt_br);
+
+    let zh = get_mnemonic_code_with_language(&entropy, "zh").unwrap();
+    let zh_cn = get_mnemonic_code_with_language(&entropy, "zh-CN").unwrap();
+    assert_eq!(zh, zh_cn);
+
+    let zh_hant = get_mnemonic_code_with_language(&entropy, "zh-Hant").unwrap();
+    let zh_hant_tw = get_mnemonic_code_with_language(&entropy, "zh-Hant-TW").unwrap();
+    let zh_tw = get_mnemonic_code_with_language(&entropy, "zh-TW").unwrap();
+    assert_eq!(zh_hant, zh_hant_tw);
+    assert_eq!(zh_hant, zh_tw);
+}
+
+#[test]
+fn supported_languages_roundtrip() {
+    let entropy: Vec<u8> = (0..32).map(|i| (i * 7 + 11) as u8).collect();
+    for language in ["cs", "es", "fr", "it", "ja", "ko", "pt", "zh", "zh-Hant"] {
+        let mnemonic = get_mnemonic_code_with_language(&entropy, language).unwrap();
+        let words: Vec<&str> = mnemonic.iter().map(String::as_str).collect();
+        let decoded = mnemonic_to_entropy(&words).unwrap();
+        assert_eq!(*decoded, entropy, "language {language}");
+    }
+}
+
+#[test]
+fn invalid_mnemonic_errors_remain_stable() {
+    assert_eq!(
+        mnemonic_to_entropy(&["abandon"; 11]).unwrap_err(),
+        "The number of words should be 12, 15, 18, 21 or 24."
+    );
+
+    let invalid_word = vec!["not-a-bip39-word"; 12];
+    assert_eq!(
+        mnemonic_to_entropy(&invalid_word).unwrap_err(),
+        "The word 'not-a-bip39-word' is not in the BIP-39 wordlist."
+    );
+    assert_eq!(
+        mnemonic_to_entropy(&[""; 12]).unwrap_err(),
+        "The word '' is not in the BIP-39 wordlist."
+    );
+    assert_eq!(
+        mnemonic_to_entropy(&["abandon abandon"; 12]).unwrap_err(),
+        "The word 'abandon abandon' is not in the BIP-39 wordlist."
+    );
+    assert_eq!(
+        mnemonic_to_entropy(&[" abandon"; 12]).unwrap_err(),
+        "The word ' abandon' is not in the BIP-39 wordlist."
+    );
+
+    let invalid_checksum = vec!["abandon"; 12];
+    assert_eq!(
+        mnemonic_to_entropy(&invalid_checksum).unwrap_err(),
+        "Invalid mnemonic: checksum does not match."
+    );
 }
