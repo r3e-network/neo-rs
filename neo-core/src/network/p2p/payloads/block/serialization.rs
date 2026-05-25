@@ -1,13 +1,13 @@
 use super::{Block, Header, Transaction};
 use crate::constants::{BLOCK_MAX_TX_WIRE_LIMIT, MAX_BLOCK_SIZE};
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::{
+    get_var_size, get_var_size_serializable_slice, serialize_array,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 
 impl Serializable for Block {
     fn size(&self) -> usize {
-        self.header.size()
-            + get_var_size(self.transactions.len() as u64)
-            + self.transactions.iter().map(|tx| tx.size()).sum::<usize>()
+        self.header.size() + get_var_size_serializable_slice(&self.transactions)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -17,14 +17,7 @@ impl Serializable for Block {
         if self.transactions.len() as u64 > MAX_TRANSACTIONS {
             return Err(IoError::invalid_data("Too many transactions"));
         }
-        writer.write_var_uint(self.transactions.len() as u64)?;
-
-        // Write transactions
-        for tx in &self.transactions {
-            writer.write_serializable(tx)?;
-        }
-
-        Ok(())
+        serialize_array(&self.transactions, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {

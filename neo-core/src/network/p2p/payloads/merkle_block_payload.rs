@@ -11,11 +11,13 @@
 
 use super::{block::Block, header::Header};
 use crate::cryptography::MerkleTree;
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::{
+    get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::CoreResult;
 use bitvec::prelude::{BitVec, Lsb0};
-use neo_primitives::{UInt256, UINT256_SIZE};
+use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -190,10 +192,8 @@ impl Serializable for MerkleBlockPayload {
     fn size(&self) -> usize {
         self.header.size()
             + std::mem::size_of::<u32>()
-            + get_var_size(self.hashes.len() as u64)
-            + self.hashes.len() * UINT256_SIZE
-            + get_var_size(self.flags.len() as u64)
-            + self.flags.len()
+            + get_var_size_serializable_slice(&self.hashes)
+            + get_var_size_bytes(&self.flags)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -206,10 +206,7 @@ impl Serializable for MerkleBlockPayload {
         writer.write_var_uint(self.tx_count as u64)?;
 
         // Write hashes
-        writer.write_var_uint(self.hashes.len() as u64)?;
-        for hash in &self.hashes {
-            writer.write_serializable(hash)?;
-        }
+        serialize_array(&self.hashes, writer)?;
 
         // Write flags
         let max_flags = (self.tx_count.max(1) as usize).div_ceil(8);
