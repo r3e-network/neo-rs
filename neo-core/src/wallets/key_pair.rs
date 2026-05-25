@@ -3,7 +3,7 @@
 //! This module provides cryptographic key pair functionality,
 //! converted from the C# Neo KeyPair class (@neo-sharp/src/Neo/Wallets/KeyPair.cs).
 
-use crate::cryptography::{Base58, CryptoError, ECCurve, ECDsa, ECC};
+use crate::cryptography::{Base58, CryptoError, ECCurve, ECDsa, Secp256r1Crypto, ECC};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
@@ -16,8 +16,6 @@ use cbc::{
     Decryptor, Encryptor,
 };
 use neo_vm_rs::OpCode;
-use rand::rngs::OsRng;
-use rand::RngCore;
 use scrypt::Params;
 use std::fmt;
 use subtle::ConstantTimeEq;
@@ -53,10 +51,9 @@ impl fmt::Debug for KeyPair {
 impl KeyPair {
     /// Creates a new random key pair.
     ///
-    /// Uses OsRng (cryptographically secure) for private key generation.
+    /// Uses the shared P-256 key generator from `neo-crypto`.
     pub fn generate() -> Result<Self> {
-        let mut private_key = Zeroizing::new([0u8; HASH_SIZE]);
-        OsRng.fill_bytes(private_key.as_mut());
+        let private_key = Zeroizing::new(Secp256r1Crypto::generate_private_key());
         Self::from_private_key(private_key.as_ref())
     }
 
