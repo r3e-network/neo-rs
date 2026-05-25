@@ -38,7 +38,7 @@
 
 use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreResult};
-use crate::neo_io::Serializable;
+use crate::neo_io::{serializable::helper::get_var_size_bytes, Serializable};
 use crate::smart_contract::helper::Helper;
 use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
@@ -138,10 +138,7 @@ impl Witness {
     ///
     /// The size in bytes
     pub fn get_size(&self) -> usize {
-        let invocation_size = self.get_var_size(&self.invocation_script);
-        let verification_size = self.get_var_size(&self.verification_script);
-
-        invocation_size + verification_size
+        get_var_size_bytes(&self.invocation_script) + get_var_size_bytes(&self.verification_script)
     }
 
     /// Converts the witness to JSON (matches C# `ToJson`).
@@ -150,21 +147,6 @@ impl Witness {
             "invocation": general_purpose::STANDARD.encode(&self.invocation_script),
             "verification": general_purpose::STANDARD.encode(&self.verification_script)
         })
-    }
-
-    /// Helper function to calculate variable length encoding size
-    fn get_var_size(&self, data: &[u8]) -> usize {
-        let len = data.len();
-        let var_int_size = if len < 0xFD {
-            1
-        } else if len <= 0xFFFF {
-            3
-        } else if len <= 0xFFFFFFFF {
-            5
-        } else {
-            9
-        };
-        var_int_size + len
     }
 
     /// Clones the witness.
@@ -377,10 +359,7 @@ impl Default for Witness {
 
 impl Serializable for Witness {
     fn size(&self) -> usize {
-        let invocation_size = self.get_var_size(&self.invocation_script);
-        let verification_size = self.get_var_size(&self.verification_script);
-
-        invocation_size + verification_size
+        self.get_size()
     }
 
     fn serialize(&self, writer: &mut crate::neo_io::BinaryWriter) -> crate::neo_io::IoResult<()> {
@@ -451,6 +430,27 @@ mod tests {
         let size = witness.get_size();
         assert_eq!(size, 8);
     }
+
+    #[test]
+    fn witness_size_matches_serialized_length_at_var_size_boundaries() {
+        for len in [0, 1, 252, 253, 254, 1024] {
+            let invocation = vec![0xAA; len];
+            let verification = vec![0xBB; len];
+            let witness = Witness::new_with_scripts(invocation, verification);
+            let mut writer = crate::neo_io::BinaryWriter::new();
+
+            <Witness as Serializable>::serialize(&witness, &mut writer).unwrap();
+
+            assert_eq!(witness.get_size(), writer.as_bytes().len());
+            assert_eq!(witness.size(), writer.as_bytes().len());
+            assert_eq!(
+                witness.get_size(),
+                get_var_size_bytes(&witness.invocation_script)
+                    + get_var_size_bytes(&witness.verification_script)
+            );
+        }
+    }
+
     #[test]
     fn test_witness_clone() {
         let original = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
