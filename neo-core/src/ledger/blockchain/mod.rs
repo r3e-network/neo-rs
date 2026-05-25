@@ -66,7 +66,7 @@ use crate::network::p2p::{
 use crate::persistence::DataCache;
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::runtime::{Actor, ActorContext, ActorResult, Props};
+use crate::runtime::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
 use crate::smart_contract::native::LedgerContract;
 use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
 use crate::{CoreResult, UInt160, UInt256};
@@ -123,6 +123,7 @@ pub struct Blockchain {
     _extensible_witness_white_list: Arc<RwLock<HashSet<UInt160>>>,
     _inventory_cache: Arc<DashMap<InventoryCacheKey, InventoryPayload>>,
     _inventory_cache_order: Arc<RwLock<VecDeque<InventoryCacheKey>>>,
+    _drain_timer: Option<ScheduleHandle>,
 }
 
 impl Blockchain {
@@ -135,6 +136,7 @@ impl Blockchain {
             _extensible_witness_white_list: Arc::new(RwLock::new(HashSet::new())),
             _inventory_cache: Arc::new(DashMap::with_capacity(2048)),
             _inventory_cache_order: Arc::new(RwLock::new(VecDeque::with_capacity(2048))),
+            _drain_timer: None,
         }
     }
 

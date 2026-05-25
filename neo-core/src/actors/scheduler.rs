@@ -1,12 +1,10 @@
 use super::actor_ref::ActorRef;
 use std::any::Any;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Handle;
-use tokio::sync::Notify;
 use tokio::task;
 use tokio::time;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct Scheduler {
@@ -28,7 +26,7 @@ impl Scheduler {
     where
         M: Any + Send + 'static,
     {
-        let token = Arc::new(CancelToken::new());
+        let token = CancellationToken::new();
         let cancel = token.clone();
 
         self.runtime.spawn(async move {
@@ -45,7 +43,7 @@ impl Scheduler {
                         let _ = target.tell_from(message, sender);
                     }
                 }
-                _ = cancel.notified() => {}
+                _ = cancel.cancelled() => {}
             }
         });
 
@@ -63,14 +61,14 @@ impl Scheduler {
     where
         M: Clone + Any + Send + 'static,
     {
-        let token = Arc::new(CancelToken::new());
+        let token = CancellationToken::new();
         let cancel = token.clone();
 
         self.runtime.spawn(async move {
             if !initial_delay.is_zero() {
                 tokio::select! {
                     _ = time::sleep(initial_delay) => {},
-                    _ = cancel.notified() => return,
+                    _ = cancel.cancelled() => return,
                 }
             }
 
@@ -92,7 +90,7 @@ impl Scheduler {
 
                 tokio::select! {
                     _ = time::sleep(interval) => {},
-                    _ = cancel.notified() => break,
+                    _ = cancel.cancelled() => break,
                 }
             }
         });
@@ -129,8 +127,9 @@ impl Scheduler {
 }
 
 #[derive(Clone)]
+#[must_use = "scheduled messages are cancelled when the handle is dropped"]
 pub struct ScheduleHandle {
-    token: Arc<CancelToken>,
+    token: CancellationToken,
 }
 
 impl ScheduleHandle {
@@ -146,36 +145,5 @@ impl ScheduleHandle {
 impl Drop for ScheduleHandle {
     fn drop(&mut self) {
         self.cancel();
-    }
-}
-
-struct CancelToken {
-    cancelled: AtomicBool,
-    notify: Notify,
-}
-
-impl CancelToken {
-    fn new() -> Self {
-        Self {
-            cancelled: AtomicBool::new(false),
-            notify: Notify::new(),
-        }
-    }
-
-    fn cancel(&self) {
-        if !self.cancelled.swap(true, Ordering::SeqCst) {
-            self.notify.notify_waiters();
-        }
-    }
-
-    fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::SeqCst)
-    }
-
-    async fn notified(&self) {
-        if self.is_cancelled() {
-            return;
-        }
-        self.notify.notified().await;
     }
 }

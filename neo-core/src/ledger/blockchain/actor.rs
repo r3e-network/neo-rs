@@ -14,13 +14,18 @@ const DRAIN_TIMER_INTERVAL: std::time::Duration = std::time::Duration::from_secs
 #[async_trait]
 impl Actor for Blockchain {
     async fn pre_start(&mut self, ctx: &mut ActorContext) -> ActorResult {
-        ctx.schedule_tell_repeatedly_cancelable(
+        self._drain_timer = Some(ctx.schedule_tell_repeatedly_cancelable(
             DRAIN_TIMER_INTERVAL,
             DRAIN_TIMER_INTERVAL,
             &ctx.self_ref(),
             BlockchainCommand::DrainUnverified,
             None,
-        );
+        ));
+        Ok(())
+    }
+
+    async fn post_stop(&mut self, _ctx: &mut ActorContext) -> ActorResult {
+        self._drain_timer.take();
         Ok(())
     }
 

@@ -142,6 +142,7 @@ neo-node = { path = "neo-node", version = "0.7.2" }
 # Async runtime
 # TODO: Reduce tokio features per-crate for faster compilation
 tokio = { version = "1.35", features = ["full"] }
+tokio-util = "0.7"
 async-trait = "0.1"
 futures = "0.3"
 

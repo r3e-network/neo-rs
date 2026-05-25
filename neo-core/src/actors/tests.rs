@@ -285,8 +285,45 @@ async fn scheduler_repeated_messages_can_be_cancelled() -> AkkaResult<()> {
     handle.cancel();
 
     let value_after_cancel = counter.load(Ordering::SeqCst);
+    assert!(
+        value_after_cancel > 0,
+        "retained schedule handle should allow repeated messages to fire"
+    );
     sleep(Duration::from_millis(30)).await;
     assert_eq!(value_after_cancel, counter.load(Ordering::SeqCst));
+
+    system.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn scheduler_repeated_messages_stop_when_handle_is_dropped() -> AkkaResult<()> {
+    let system = ActorSystem::new("akka-scheduler-drop")?;
+    let counter = Arc::new(AtomicUsize::new(0));
+    let actor_counter = counter.clone();
+    let ticker = system.actor_of(
+        Props::new(move || TickActor {
+            counter: actor_counter.clone(),
+        }),
+        "ticker",
+    )?;
+
+    let scheduler = system.scheduler();
+    let handle = scheduler.schedule_tell_repeatedly(
+        Duration::from_millis(5),
+        Duration::from_millis(5),
+        ticker.clone(),
+        Tick,
+        None,
+    );
+    drop(handle);
+
+    sleep(Duration::from_millis(30)).await;
+    assert_eq!(
+        0,
+        counter.load(Ordering::SeqCst),
+        "dropping the schedule handle should cancel repeated messages"
+    );
 
     system.shutdown().await?;
     Ok(())
