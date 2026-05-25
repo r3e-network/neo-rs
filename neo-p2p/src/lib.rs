@@ -87,7 +87,7 @@
 //!
 //! // Parse message command from byte
 //! let cmd = MessageCommand::from_byte(0x2b);
-//! assert_eq!(cmd, MessageCommand::GetData);
+//! assert_eq!(cmd, MessageCommand::Transaction);
 //!
 //! // Convert inventory type to message command
 //! let inv = InventoryType::Block;

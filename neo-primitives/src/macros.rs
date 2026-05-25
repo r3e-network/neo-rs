@@ -511,6 +511,29 @@ macro_rules! __p2p_message_command_shared_impls {
     };
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __p2p_message_command_compression_impl {
+    ($vis:vis $name:ident) => {
+        impl $name {
+            /// Returns true when C# Neo permits attempting LZ4 compression for this command.
+            $vis const fn allows_compression(self) -> bool {
+                matches!(
+                    self,
+                    Self::Block
+                        | Self::Extensible
+                        | Self::Transaction
+                        | Self::Headers
+                        | Self::Addr
+                        | Self::MerkleBlock
+                        | Self::FilterLoad
+                        | Self::FilterAdd
+                )
+            }
+        }
+    };
+}
+
 /// Generates Neo P2P `MessageCommand` definitions from the shared command table.
 #[macro_export]
 macro_rules! p2p_message_command {

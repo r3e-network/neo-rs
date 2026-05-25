@@ -17,22 +17,7 @@ neo_primitives::p2p_message_command! {
     }
 }
 
-impl MessageCommand {
-    /// Returns true when C# Neo permits attempting LZ4 compression for this command.
-    pub(crate) const fn allows_compression(self) -> bool {
-        matches!(
-            self,
-            Self::Block
-                | Self::Extensible
-                | Self::Transaction
-                | Self::Headers
-                | Self::Addr
-                | Self::MerkleBlock
-                | Self::FilterLoad
-                | Self::FilterAdd
-        )
-    }
-}
+neo_primitives::__p2p_message_command_compression_impl!(pub(crate) MessageCommand);
 
 #[cfg(test)]
 mod tests {
