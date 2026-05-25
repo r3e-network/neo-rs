@@ -63,9 +63,30 @@ pub fn write_var_int(value: u64, dst: &mut Vec<u8>) {
     }
 }
 
+/// Returns the number of bytes required to encode `value`.
+#[inline]
+#[must_use]
+pub const fn encoded_len(value: u64) -> usize {
+    if value < VAR_INT_U16_MARKER as u64 {
+        1
+    } else if value <= 0xFFFF {
+        3
+    } else if value <= 0xFFFF_FFFF {
+        5
+    } else {
+        9
+    }
+}
+
+/// Appends a Neo var-bytes payload to `dst`.
+pub fn write_var_bytes(bytes: &[u8], dst: &mut Vec<u8>) {
+    write_var_int(bytes.len() as u64, dst);
+    dst.extend_from_slice(bytes);
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{read_var_int_prefix, write_var_int};
+    use super::{encoded_len, read_var_int_prefix, write_var_bytes, write_var_int};
 
     #[test]
     fn reads_var_int_prefix_without_consuming() {
@@ -129,5 +150,31 @@ mod tests {
             write_var_int(*value, &mut encoded);
             assert_eq!(&encoded, expected);
         }
+    }
+
+    #[test]
+    fn calculates_encoded_var_int_length() {
+        let cases = [
+            (0, 1),
+            (0xFC, 1),
+            (0xFD, 3),
+            (0xFFFF, 3),
+            (0x1_0000, 5),
+            (0xFFFF_FFFF, 5),
+            (0x1_0000_0000, 9),
+        ];
+
+        for (value, expected) in cases {
+            assert_eq!(encoded_len(value), expected);
+        }
+    }
+
+    #[test]
+    fn writes_var_bytes_without_intermediate_writer() {
+        let mut encoded = Vec::new();
+
+        write_var_bytes(&[0xAA, 0xBB], &mut encoded);
+
+        assert_eq!(encoded, vec![0x02, 0xAA, 0xBB]);
     }
 }

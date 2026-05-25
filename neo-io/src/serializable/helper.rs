@@ -1,21 +1,13 @@
 //! Helper utilities mirroring C# Neo serialization helpers.
 
 use super::Serializable;
-use crate::{BinaryWriter, IoError, IoResult, MemoryReader};
+use crate::{var_int, BinaryWriter, IoError, IoResult, MemoryReader};
 
 /// Returns the number of bytes required to encode `value` using Neo variable-length encoding.
 #[inline]
 #[must_use]
 pub const fn get_var_size(value: u64) -> usize {
-    if value < 0xFD {
-        1
-    } else if value <= 0xFFFF {
-        1 + 2
-    } else if value <= 0xFFFF_FFFF {
-        1 + 4
-    } else {
-        1 + 8
-    }
+    var_int::encoded_len(value)
 }
 
 /// Convenience wrapper for `usize` inputs.

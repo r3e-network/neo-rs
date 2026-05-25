@@ -121,8 +121,8 @@ impl BinaryWriter {
 
     /// Writes a length-prefixed byte slice (variable-length integer prefix followed by raw bytes).
     pub fn write_var_bytes(&mut self, bytes: &[u8]) -> IoResult<()> {
-        self.write_var_int(bytes.len() as u64)?;
-        self.write_bytes(bytes)
+        var_int::write_var_bytes(bytes, &mut self.buffer);
+        Ok(())
     }
 
     /// Writes a UTF-8 string as length-prefixed bytes.

@@ -15,6 +15,7 @@ use crate::compression::{
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::{NetworkError, NetworkResult};
+use neo_io_crate::var_int::encoded_len as var_int_len;
 
 /// Header metadata attached to every P2P message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,7 +98,7 @@ impl NetworkMessage {
         };
 
         // Calculate exact capacity needed: 1 (flags) + 1 (command) + varint + payload
-        let varint_size = Self::calc_varint_size(final_payload.len());
+        let varint_size = var_int_len(final_payload.len() as u64);
         let total_size = 1 + 1 + varint_size + final_payload.len();
         let mut writer = BinaryWriter::with_capacity(total_size);
 
@@ -109,19 +110,6 @@ impl NetworkMessage {
             .write_var_bytes(&final_payload)
             .map_err(map_io_error)?;
         Ok(writer.into_bytes())
-    }
-
-    /// Calculates the size of a var_int encoding for the given value.
-    const fn calc_varint_size(value: usize) -> usize {
-        if value < 0xFD {
-            1
-        } else if value <= 0xFFFF {
-            3
-        } else if value <= 0xFFFF_FFFF {
-            5
-        } else {
-            9
-        }
     }
 
     /// Decodes a message that was previously produced by [`Self::to_bytes`].

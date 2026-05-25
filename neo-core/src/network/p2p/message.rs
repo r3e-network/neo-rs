@@ -13,6 +13,7 @@ use crate::compression::{
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::{NetworkError, NetworkResult as Result};
+use neo_io_crate::var_int::{encoded_len as var_int_len, write_var_bytes};
 use serde::{Deserialize, Serialize};
 
 /// Maximum payload size (matches `Neo.Network.P2P.Message.PayloadMaxSize`)
@@ -158,7 +159,7 @@ impl Message {
         };
 
         // Calculate exact size needed to avoid reallocations
-        let total_size = 1 + 1 + Self::get_var_size(payload.len()) + payload.len();
+        let total_size = 1 + 1 + var_int_len(payload.len() as u64) + payload.len();
         let mut writer = BinaryWriter::with_capacity(total_size);
 
         writer.write_u8(flags.to_byte())?;
@@ -186,35 +187,14 @@ impl Message {
         };
 
         // Reserve capacity to avoid reallocations
-        let required = 1 + 1 + Self::get_var_size(payload.len()) + payload.len();
+        let required = 1 + 1 + var_int_len(payload.len() as u64) + payload.len();
         buffer.reserve(required);
 
         buffer.push(flags.to_byte());
         buffer.push(self.command.to_byte());
-
-        // Write var_bytes manually for efficiency
-        Self::write_var_bytes_to_vec(payload, buffer)?;
+        write_var_bytes(payload, buffer);
 
         Ok(buffer.len() - start_len)
-    }
-
-    /// Helper: writes var_bytes to a Vec without intermediate allocations.
-    fn write_var_bytes_to_vec(bytes: &[u8], vec: &mut Vec<u8>) -> IoResult<()> {
-        let len = bytes.len();
-        if len < 0xFD {
-            vec.push(len as u8);
-        } else if len <= 0xFFFF {
-            vec.push(0xFD);
-            vec.extend_from_slice(&(len as u16).to_le_bytes());
-        } else if len <= 0xFFFF_FFFF {
-            vec.push(0xFE);
-            vec.extend_from_slice(&(len as u32).to_le_bytes());
-        } else {
-            vec.push(0xFF);
-            vec.extend_from_slice(&(len as u64).to_le_bytes());
-        }
-        vec.extend_from_slice(bytes);
-        Ok(())
     }
 
     /// Decompress payload when needed (matches `DecompressPayload`).
@@ -239,20 +219,7 @@ impl Message {
 
     /// Get payload size (matches C# `Size` property).
     pub fn size(&self) -> usize {
-        1 + 1 + Self::get_var_size(self.payload_compressed.len()) + self.payload_compressed.len()
-    }
-
-    /// Calculate the encoded length of a var-size integer.
-    const fn get_var_size(value: usize) -> usize {
-        if value < 0xFD {
-            1
-        } else if value <= 0xFFFF {
-            3
-        } else if value <= 0xFFFF_FFFF {
-            5
-        } else {
-            9
-        }
+        1 + 1 + var_int_len(self.payload_compressed.len() as u64) + self.payload_compressed.len()
     }
 
     /// Attempts to deserialize the payload into a strongly typed representation.
@@ -386,13 +353,13 @@ mod tests {
     }
 
     #[test]
-    fn get_var_size_calculation() {
-        assert_eq!(Message::get_var_size(0), 1);
-        assert_eq!(Message::get_var_size(0xFC), 1);
-        assert_eq!(Message::get_var_size(0xFD), 3);
-        assert_eq!(Message::get_var_size(0xFFFF), 3);
-        assert_eq!(Message::get_var_size(0x10000), 5);
-        assert_eq!(Message::get_var_size(0xFFFF_FFFF), 5);
-        assert_eq!(Message::get_var_size(0x1_0000_0000), 9);
+    fn uses_shared_var_int_size_calculation() {
+        assert_eq!(var_int_len(0), 1);
+        assert_eq!(var_int_len(0xFC), 1);
+        assert_eq!(var_int_len(0xFD), 3);
+        assert_eq!(var_int_len(0xFFFF), 3);
+        assert_eq!(var_int_len(0x10000), 5);
+        assert_eq!(var_int_len(0xFFFF_FFFF), 5);
+        assert_eq!(var_int_len(0x1_0000_0000), 9);
     }
 }
