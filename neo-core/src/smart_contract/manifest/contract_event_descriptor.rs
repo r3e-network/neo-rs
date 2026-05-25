@@ -2,6 +2,9 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::interoperable::Interoperable;
+use crate::smart_contract::manifest::stack_value_helpers::{
+    decode_stack_value_objects, required_struct_fields,
+};
 use crate::smart_contract::manifest::ContractParameterDefinition;
 use crate::vm_runtime::StackItem;
 use neo_vm_rs::StackValue;
@@ -87,18 +90,7 @@ impl ContractEventDescriptor {
 
     /// Updates this event descriptor from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(items) = stack_value else {
-            return Err(CoreError::invalid_format(
-                "ContractEventDescriptor expects Struct stack value",
-            ));
-        };
-
-        if items.len() < 2 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractEventDescriptor stack value must contain 2 elements, found {}",
-                items.len()
-            )));
-        }
+        let items = required_struct_fields(stack_value, "ContractEventDescriptor", 2)?;
 
         if let Some(bytes) = items[0].to_byte_string_bytes() {
             if let Ok(name) = String::from_utf8(bytes) {
@@ -106,15 +98,11 @@ impl ContractEventDescriptor {
             }
         }
 
-        if let StackValue::Array(param_items) | StackValue::Struct(param_items) = items[1].clone() {
-            self.parameters = param_items
-                .into_iter()
-                .map(|item| {
-                    let mut param = ContractParameterDefinition::default();
-                    param.from_stack_value(item)?;
-                    Ok(param)
-                })
-                .collect::<Result<Vec<_>, CoreError>>()?;
+        if let Some(parameters) = decode_stack_value_objects(
+            items[1].clone(),
+            ContractParameterDefinition::from_stack_value,
+        )? {
+            self.parameters = parameters;
         }
 
         Ok(())
@@ -212,6 +200,26 @@ mod tests {
         assert_eq!(
             event.parameters,
             vec![parameter("spender", ContractParameterType::Hash160)]
+        );
+    }
+
+    #[test]
+    fn event_descriptor_reads_struct_parameter_sequence() {
+        let mut event = ContractEventDescriptor::default();
+
+        event
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"Vote".to_vec()),
+                StackValue::Struct(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"candidate".to_vec()),
+                    StackValue::Integer(ContractParameterType::PublicKey as u8 as i64),
+                ])]),
+            ]))
+            .unwrap();
+
+        assert_eq!(
+            event.parameters,
+            vec![parameter("candidate", ContractParameterType::PublicKey)]
         );
     }
 }

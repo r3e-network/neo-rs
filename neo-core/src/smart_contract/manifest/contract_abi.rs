@@ -2,6 +2,9 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::interoperable::Interoperable;
+use crate::smart_contract::manifest::stack_value_helpers::{
+    decode_stack_value_objects, required_struct_fields,
+};
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
 use crate::vm_runtime::StackItem;
 use neo_vm_rs::StackValue;
@@ -145,46 +148,16 @@ impl ContractAbi {
 
     /// Updates this ABI from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(items) = stack_value else {
-            return Err(CoreError::invalid_format(
-                "ContractAbi expects Struct stack value",
-            ));
-        };
+        let items = required_struct_fields(stack_value, "ContractAbi", 2)?;
 
-        if items.len() < 2 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractAbi stack value must contain 2 elements, found {}",
-                items.len()
-            )));
-        }
-
-        let methods = match items[0].clone() {
-            StackValue::Array(method_items) | StackValue::Struct(method_items) => Some(
-                method_items
-                    .into_iter()
-                    .map(|item| {
-                        let mut method = ContractMethodDescriptor::default();
-                        method.from_stack_value(item)?;
-                        Ok(method)
-                    })
-                    .collect::<Result<Vec<_>, CoreError>>()?,
-            ),
-            _ => None,
-        };
-
-        let events = match items[1].clone() {
-            StackValue::Array(event_items) | StackValue::Struct(event_items) => Some(
-                event_items
-                    .into_iter()
-                    .map(|item| {
-                        let mut event = ContractEventDescriptor::default();
-                        event.from_stack_value(item)?;
-                        Ok(event)
-                    })
-                    .collect::<Result<Vec<_>, CoreError>>()?,
-            ),
-            _ => None,
-        };
+        let methods = decode_stack_value_objects(
+            items[0].clone(),
+            ContractMethodDescriptor::from_stack_value,
+        )?;
+        let events = decode_stack_value_objects(
+            items[1].clone(),
+            ContractEventDescriptor::from_stack_value,
+        )?;
 
         if let Some(methods) = methods {
             self.methods = methods;
@@ -293,5 +266,19 @@ mod tests {
         assert!(abi.get_method("old", 0).is_none());
         assert!(abi.get_method("new", 0).is_some());
         assert_eq!(abi.events, vec![event("Updated")]);
+    }
+
+    #[test]
+    fn contract_abi_reads_struct_sequences_from_neo_vm_rs_stack_value() {
+        let mut abi = ContractAbi::default();
+
+        abi.from_stack_value(StackValue::Struct(vec![
+            StackValue::Struct(vec![method("main").to_stack_value()]),
+            StackValue::Struct(vec![event("Notify").to_stack_value()]),
+        ]))
+        .unwrap();
+
+        assert_eq!(abi.methods, vec![method("main")]);
+        assert_eq!(abi.events, vec![event("Notify")]);
     }
 }

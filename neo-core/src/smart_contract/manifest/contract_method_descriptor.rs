@@ -2,6 +2,9 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::interoperable::Interoperable;
+use crate::smart_contract::manifest::stack_value_helpers::{
+    decode_stack_value_objects, required_struct_fields,
+};
 use crate::smart_contract::manifest::ContractParameterDefinition;
 use crate::smart_contract::ContractParameterType;
 use crate::vm_runtime::StackItem;
@@ -143,18 +146,7 @@ impl ContractMethodDescriptor {
 
     /// Updates this method descriptor from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(items) = stack_value else {
-            return Err(CoreError::invalid_format(
-                "ContractMethodDescriptor expects Struct stack value",
-            ));
-        };
-
-        if items.len() < 5 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractMethodDescriptor stack value must contain 5 elements, found {}",
-                items.len()
-            )));
-        }
+        let items = required_struct_fields(stack_value, "ContractMethodDescriptor", 5)?;
 
         if let Some(bytes) = items[0].to_byte_string_bytes() {
             if let Ok(name) = String::from_utf8(bytes) {
@@ -162,14 +154,11 @@ impl ContractMethodDescriptor {
             }
         }
 
-        if let StackValue::Array(param_items) | StackValue::Struct(param_items) = items[1].clone() {
-            let mut params = Vec::new();
-            for item in param_items {
-                let mut param = ContractParameterDefinition::default();
-                param.from_stack_value(item)?;
-                params.push(param);
-            }
-            self.parameters = params;
+        if let Some(parameters) = decode_stack_value_objects(
+            items[1].clone(),
+            ContractParameterDefinition::from_stack_value,
+        )? {
+            self.parameters = parameters;
         }
 
         if let Some(integer) = items[2].to_i128() {
@@ -291,6 +280,29 @@ mod tests {
         assert_eq!(method.return_type, ContractParameterType::String);
         assert_eq!(method.offset, 12);
         assert!(method.safe);
+    }
+
+    #[test]
+    fn method_descriptor_reads_struct_parameter_sequence() {
+        let mut method = ContractMethodDescriptor::default();
+
+        method
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"verify".to_vec()),
+                StackValue::Struct(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"signature".to_vec()),
+                    StackValue::Integer(ContractParameterType::Signature as u8 as i64),
+                ])]),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(5),
+                StackValue::Boolean(false),
+            ]))
+            .unwrap();
+
+        assert_eq!(
+            method.parameters,
+            vec![parameter("signature", ContractParameterType::Signature)]
+        );
     }
 
     #[test]
