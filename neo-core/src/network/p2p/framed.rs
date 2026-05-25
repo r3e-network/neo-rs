@@ -15,6 +15,10 @@ const FRAME_HEADER_LEN: usize = 2;
 /// Buffer size for vectored writes.
 const WRITE_BUFFER_SIZE: usize = 4096;
 
+pub(crate) fn new_read_buffer() -> BytesMut {
+    BytesMut::with_capacity(INITIAL_READ_CAPACITY)
+}
+
 /// Minimal framed reader/writer that wraps Neo P2P length-prefixing with timeouts,
 /// size guards, and vectored I/O support.
 pub struct FramedSocket<'a> {
@@ -494,7 +498,7 @@ impl<'a> FramedSocket<'a> {
     pub fn new(stream: &'a mut TcpStream) -> Self {
         Self {
             stream,
-            read_buffer: BytesMut::with_capacity(INITIAL_READ_CAPACITY),
+            read_buffer: new_read_buffer(),
         }
     }
 
@@ -509,6 +513,16 @@ impl<'a> FramedSocket<'a> {
         cfg: &FrameConfig,
         handshake_complete: bool,
     ) -> NetworkResult<Vec<u8>> {
+        Self::read_frame_from_stream(self.stream, &mut self.read_buffer, cfg, handshake_complete)
+            .await
+    }
+
+    pub(crate) async fn read_frame_from_stream(
+        stream: &mut TcpStream,
+        read_buffer: &mut BytesMut,
+        cfg: &FrameConfig,
+        handshake_complete: bool,
+    ) -> NetworkResult<Vec<u8>> {
         let timeout_duration = if handshake_complete {
             cfg.read_timeout_active
         } else {
@@ -517,17 +531,16 @@ impl<'a> FramedSocket<'a> {
 
         let mut codec = NeoMessageCodec::default();
         loop {
-            if let Some(frame) = codec.decode(&mut self.read_buffer)? {
+            if let Some(frame) = codec.decode(read_buffer)? {
                 return Ok(frame);
             }
 
-            let bytes_read = timeout(
-                timeout_duration,
-                self.stream.read_buf(&mut self.read_buffer),
-            )
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|err| NetworkError::ConnectionError(format!("Failed to read frame: {err}")))?;
+            let bytes_read = timeout(timeout_duration, stream.read_buf(read_buffer))
+                .await
+                .map_err(|_| NetworkError::Timeout)?
+                .map_err(|err| {
+                    NetworkError::ConnectionError(format!("Failed to read frame: {err}"))
+                })?;
 
             if bytes_read == 0 {
                 return Err(NetworkError::ConnectionError(

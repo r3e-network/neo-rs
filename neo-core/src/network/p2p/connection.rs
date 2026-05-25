@@ -8,12 +8,13 @@
 
 use super::{
     channels_config::ChannelsConfig,
-    framed::{FrameConfig, FramedSocket, WriteBuffer},
+    framed::{new_read_buffer, FrameConfig, FramedSocket, WriteBuffer},
 };
 use crate::network::{
     error::{NetworkError, NetworkResult},
     p2p::messages::NetworkMessage,
 };
+use bytes::BytesMut;
 use std::net::SocketAddr;
 use tokio::{io::AsyncWriteExt, net::TcpStream, sync::mpsc};
 
@@ -123,6 +124,10 @@ pub struct PeerConnection {
     /// Write buffer for batching small writes.
     write_buffer: WriteBuffer,
 
+    /// Persistent read buffer so frames already read from TCP remain available
+    /// across consecutive receive calls.
+    read_buffer: BytesMut,
+
     /// Statistics for monitoring I/O performance.
     stats: ConnectionStats,
 }
@@ -168,6 +173,7 @@ impl PeerConnection {
             last_activity: now,
             connected_at: now,
             write_buffer: WriteBuffer::default(),
+            read_buffer: new_read_buffer(),
             stats: ConnectionStats::default(),
         }
     }
@@ -344,10 +350,13 @@ impl PeerConnection {
             ));
         }
 
-        let mut framed = FramedSocket::new(&mut self.stream);
-        let message_bytes = framed
-            .read_frame(&self.frame_config, handshake_complete)
-            .await?;
+        let message_bytes = FramedSocket::read_frame_from_stream(
+            &mut self.stream,
+            &mut self.read_buffer,
+            &self.frame_config,
+            handshake_complete,
+        )
+        .await?;
 
         let message = NetworkMessage::from_bytes(&message_bytes)?;
 
@@ -481,6 +490,7 @@ mod tests {
     use crate::network::p2p::payloads::ping_payload::PingPayload;
     use crate::network::p2p::ProtocolMessage;
     use std::time::Duration;
+    use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;
 
     async fn tcp_pair() -> Option<(TcpStream, TcpStream)> {
@@ -583,6 +593,46 @@ mod tests {
         server_handle.abort();
     }
 
+    #[tokio::test]
+    async fn receive_message_preserves_second_frame_from_single_tcp_write() {
+        let Some((client_stream, mut server_stream)) = tcp_pair().await else {
+            return;
+        };
+        let mut connection = PeerConnection::from_channels_config(
+            client_stream,
+            "127.0.0.1:0".parse().unwrap(),
+            false,
+            &ChannelsConfig::default(),
+        );
+
+        let first = NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(
+            11, 101,
+        )));
+        let second = NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(
+            22, 202,
+        )));
+        let mut wire = first.to_bytes(false).expect("first message serializes");
+        wire.extend(second.to_bytes(false).expect("second message serializes"));
+
+        server_stream
+            .write_all(&wire)
+            .await
+            .expect("server writes both frames together");
+
+        let received_first = connection
+            .receive_message(false)
+            .await
+            .expect("first frame");
+        let received_second = connection
+            .receive_message(false)
+            .await
+            .expect("second buffered frame");
+
+        assert_ping(&received_first, 11, 101);
+        assert_ping(&received_second, 22, 202);
+        assert_eq!(connection.stats().messages_received, 2);
+    }
+
     #[test]
     fn connection_stats_default() {
         let stats = ConnectionStats::default();
@@ -590,5 +640,15 @@ mod tests {
         assert_eq!(stats.messages_received, 0);
         assert_eq!(stats.bytes_sent, 0);
         assert_eq!(stats.bytes_received, 0);
+    }
+
+    fn assert_ping(message: &NetworkMessage, height: u32, nonce: u32) {
+        match &message.payload {
+            ProtocolMessage::Ping(payload) => {
+                assert_eq!(payload.last_block_index, height);
+                assert_eq!(payload.nonce, nonce);
+            }
+            other => panic!("expected ping payload, got {other:?}"),
+        }
     }
 }
