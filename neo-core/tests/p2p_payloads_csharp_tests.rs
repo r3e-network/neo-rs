@@ -2,7 +2,7 @@ use hex::{decode as hex_decode, encode as hex_encode};
 use neo_core::cryptography::bloom_filter::BloomFilter;
 use neo_core::cryptography::{Crypto, ECCurve, ECPoint};
 use neo_core::ledger::create_genesis_block;
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
+use neo_core::neo_io::{BinaryWriter, IoError, MemoryReader, Serializable, SerializableExt};
 use neo_core::network::p2p::capabilities::{NodeCapability, NodeCapabilityType};
 use neo_core::network::p2p::payloads::headers_payload::MAX_HEADERS_COUNT;
 use neo_core::network::p2p::payloads::inv_payload::MAX_HASHES_COUNT;
@@ -43,6 +43,14 @@ fn create_payload_genesis_block(settings: &ProtocolSettings) -> Block {
     Block {
         header,
         transactions: ledger_block.transactions,
+    }
+}
+
+fn assert_invalid_data_value<T>(result: Result<T, IoError>, expected: &str) {
+    match result {
+        Err(IoError::InvalidData { value, .. }) => assert_eq!(value, expected),
+        Err(error) => panic!("expected InvalidData({expected}), got {error:?}"),
+        Ok(_) => panic!("expected InvalidData({expected}), got Ok"),
     }
 }
 
@@ -526,7 +534,55 @@ fn csharp_ut_transaction_duplicate_signers_rejected() {
     const DUP_HEX: &str = "000403020100e1f5050000000001000000000000000403020102090807060504030201000908070605040302010080090807060504030201000908070605040302010001000111010000";
     let bytes = hex_decode(DUP_HEX).expect("hex");
     let mut reader = MemoryReader::new(&bytes);
-    assert!(<Transaction as Serializable>::deserialize(&mut reader).is_err());
+    assert_invalid_data_value(
+        <Transaction as Serializable>::deserialize(&mut reader),
+        "Duplicate signer",
+    );
+}
+
+#[test]
+fn csharp_ut_transaction_zero_signers_rejected() {
+    let mut tx = Transaction::new();
+    tx.set_version(0);
+    tx.set_nonce(0x01020304);
+    tx.set_system_fee(100_000_000);
+    tx.set_network_fee(1);
+    tx.set_valid_until_block(0x01020304);
+    tx.set_signers(Vec::new());
+    tx.set_attributes(Vec::new());
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
+    tx.set_witnesses(Vec::new());
+
+    let bytes = tx.to_array().expect("serialize");
+    let mut reader = MemoryReader::new(&bytes);
+    assert_invalid_data_value(
+        <Transaction as Serializable>::deserialize(&mut reader),
+        "Signer count cannot be zero",
+    );
+}
+
+#[test]
+fn csharp_ut_transaction_duplicate_attributes_rejected() {
+    let mut tx = Transaction::new();
+    tx.set_version(0);
+    tx.set_nonce(0x01020304);
+    tx.set_system_fee(100_000_000);
+    tx.set_network_fee(1);
+    tx.set_valid_until_block(0x01020304);
+    tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+    tx.set_attributes(vec![
+        TransactionAttribute::HighPriority,
+        TransactionAttribute::HighPriority,
+    ]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
+    tx.set_witnesses(vec![Witness::empty()]);
+
+    let bytes = tx.to_array().expect("serialize");
+    let mut reader = MemoryReader::new(&bytes);
+    assert_invalid_data_value(
+        <Transaction as Serializable>::deserialize(&mut reader),
+        "Duplicate attribute",
+    );
 }
 
 #[test]

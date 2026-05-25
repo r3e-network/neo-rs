@@ -83,23 +83,17 @@ impl Transaction {
         reader: &mut MemoryReader,
         max_count: usize,
     ) -> IoResult<Vec<Signer>> {
-        let count = reader.read_var_int(max_count as u64)? as usize;
-        if count == 0 {
-            return Err(IoError::invalid_data("Signer count cannot be zero"));
-        }
-        if count > max_count {
-            return Err(IoError::invalid_data("Too many signers"));
-        }
-
-        let mut signers = Vec::with_capacity(count);
         let mut hashset = HashSet::new();
-
-        for _ in 0..count {
+        let signers = deserialize_array_with(reader, max_count, |reader| {
             let signer = <Signer as Serializable>::deserialize(reader)?;
             if !hashset.insert(signer.account) {
                 return Err(IoError::invalid_data("Duplicate signer"));
             }
-            signers.push(signer);
+            Ok(signer)
+        })?;
+
+        if signers.is_empty() {
+            return Err(IoError::invalid_data("Signer count cannot be zero"));
         }
 
         Ok(signers)
@@ -109,23 +103,14 @@ impl Transaction {
         reader: &mut MemoryReader,
         max_count: usize,
     ) -> IoResult<Vec<TransactionAttribute>> {
-        let count = reader.read_var_int(max_count as u64)? as usize;
-        if count > max_count {
-            return Err(IoError::invalid_data("Too many attributes"));
-        }
-
-        let mut attributes = Vec::with_capacity(count);
         let mut hashset = HashSet::new();
-
-        for _ in 0..count {
+        deserialize_array_with(reader, max_count, |reader| {
             let attribute = <TransactionAttribute as Serializable>::deserialize(reader)?;
             if !attribute.allow_multiple() && !hashset.insert(attribute.get_type()) {
                 return Err(IoError::invalid_data("Duplicate attribute"));
             }
-            attributes.push(attribute);
-        }
-
-        Ok(attributes)
+            Ok(attribute)
+        })
     }
 }
 

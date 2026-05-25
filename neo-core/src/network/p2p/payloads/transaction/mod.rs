@@ -16,7 +16,8 @@ use super::{
 use crate::cryptography::{Crypto, Secp256r1Crypto};
 use crate::hardfork::Hardfork;
 use crate::neo_io::serializable::helper::{
-    deserialize_exact_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
+    deserialize_array_with, deserialize_exact_array, get_var_size_bytes,
+    get_var_size_serializable_slice, serialize_array,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::helper;
