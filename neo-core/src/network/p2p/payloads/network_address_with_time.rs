@@ -3,7 +3,7 @@
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::capabilities::{
     deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
-    NodeCapability, ServerCapability,
+    NodeCapability,
 };
 use crate::network::p2p::payloads::version_payload::MAX_CAPABILITIES;
 use serde::{Deserialize, Serialize};
@@ -91,11 +91,5 @@ impl Serializable for NetworkAddressWithTime {
             address,
             capabilities,
         })
-    }
-}
-
-impl From<ServerCapability> for NetworkAddressWithTime {
-    fn from(server: ServerCapability) -> Self {
-        Self::new(0, IpAddr::V4(Ipv4Addr::UNSPECIFIED), vec![server.into()])
     }
 }

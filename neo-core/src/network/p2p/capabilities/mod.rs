@@ -1,31 +1,52 @@
 //! Neo network capability descriptors.
 //!
-//! This module mirrors the C# `Neo.Network.P2P.Capabilities` namespace by
-//! splitting each capability into its own Rust module while still providing the
-//! same ergonomic constructors that the rest of the Rust port expects.
+//! `NodeCapability` is the single wire container. Free constructors remain for
+//! callers that prefer the old module-level helper style.
 
-/// Archival node capability.
-pub mod archival_node_capability;
-/// Disable compression capability.
-pub mod disable_compression_capability;
-/// Full node capability.
-pub mod full_node_capability;
 /// Base node capability trait.
 pub mod node_capability;
 /// Node capability type enumeration.
 pub mod node_capability_type;
-/// Server capability (TCP/WS).
-pub mod server_capability;
-/// Unknown capability handler.
-pub mod unknown_capability;
 
-pub use archival_node_capability::archival_node;
-pub use disable_compression_capability::{disable_compression, DisableCompressionCapability};
-pub use full_node_capability::full_node;
+use crate::neo_io::IoResult;
+
 pub(crate) use node_capability::{
     deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
 };
 pub use node_capability::{NodeCapability, MAX_UNKNOWN_CAPABILITY_DATA};
 pub use node_capability_type::NodeCapabilityType;
-pub use server_capability::{tcp_server, ws_server, ServerCapability};
-pub use unknown_capability::{unknown, unknown_from_byte};
+
+/// Creates an archival node capability descriptor.
+pub fn archival_node() -> NodeCapability {
+    NodeCapability::archival_node()
+}
+
+/// Creates a disable-compression capability descriptor.
+pub fn disable_compression() -> NodeCapability {
+    NodeCapability::disable_compression()
+}
+
+/// Creates a full node capability descriptor.
+pub fn full_node(start_height: u32) -> NodeCapability {
+    NodeCapability::full_node(start_height)
+}
+
+/// Creates a TCP server capability descriptor.
+pub fn tcp_server(port: u16) -> NodeCapability {
+    NodeCapability::tcp_server(port)
+}
+
+/// Creates a WebSocket server capability descriptor.
+pub fn ws_server(port: u16) -> NodeCapability {
+    NodeCapability::ws_server(port)
+}
+
+/// Builds an opaque capability descriptor, preserving the raw payload bytes.
+pub fn unknown(ty: NodeCapabilityType, data: Vec<u8>) -> IoResult<NodeCapability> {
+    NodeCapability::unknown(ty, data)
+}
+
+/// Convenience helper for constructing unknown capabilities from a raw byte identifier.
+pub fn unknown_from_byte(raw_type: u8, data: Vec<u8>) -> IoResult<NodeCapability> {
+    NodeCapability::unknown_from_byte(raw_type, data)
+}
