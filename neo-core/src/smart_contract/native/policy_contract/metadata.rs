@@ -1,10 +1,10 @@
 use super::PolicyContract;
 use crate::hardfork::Hardfork;
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
+use crate::smart_contract::native::metadata_macros::event_descriptor;
 use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::NativeMethod;
-use crate::smart_contract::ContractParameterType;
 
 impl PolicyContract {
     pub(super) fn native_methods() -> Vec<NativeMethod> {
@@ -46,58 +46,27 @@ impl PolicyContract {
             return Vec::new();
         }
 
-        let mut events = vec![ContractEventDescriptor::new(
-            Self::MILLISECONDS_PER_BLOCK_CHANGED_EVENT_NAME.to_string(),
-            vec![
-                ContractParameterDefinition::new("old".to_string(), ContractParameterType::Integer)
-                    .expect("MillisecondsPerBlockChanged.old"),
-                ContractParameterDefinition::new("new".to_string(), ContractParameterType::Integer)
-                    .expect("MillisecondsPerBlockChanged.new"),
-            ],
-        )
-        .expect("MillisecondsPerBlockChanged event descriptor")];
+        let mut events = vec![event_descriptor!(
+            Self::MILLISECONDS_PER_BLOCK_CHANGED_EVENT_NAME,
+            expect = "MillisecondsPerBlockChanged",
+            ["old" => Integer, "new" => Integer]
+        )];
 
         if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
-            events.push(
-                ContractEventDescriptor::new(
-                    "WhitelistFeeChanged".to_string(),
-                    vec![
-                        ContractParameterDefinition::new(
-                            "contract".to_string(),
-                            ContractParameterType::Hash160,
-                        )
-                        .expect("WhitelistFeeChanged.contract"),
-                        ContractParameterDefinition::new(
-                            "method".to_string(),
-                            ContractParameterType::String,
-                        )
-                        .expect("WhitelistFeeChanged.method"),
-                        ContractParameterDefinition::new(
-                            "argCount".to_string(),
-                            ContractParameterType::Integer,
-                        )
-                        .expect("WhitelistFeeChanged.argCount"),
-                        ContractParameterDefinition::new(
-                            "fee".to_string(),
-                            ContractParameterType::Any,
-                        )
-                        .expect("WhitelistFeeChanged.fee"),
-                    ],
-                )
-                .expect("WhitelistFeeChanged event descriptor"),
-            );
+            events.push(event_descriptor!(
+                "WhitelistFeeChanged",
+                [
+                    "contract" => Hash160,
+                    "method" => String,
+                    "argCount" => Integer,
+                    "fee" => Any,
+                ]
+            ));
 
-            events.push(
-                ContractEventDescriptor::new(
-                    "RecoveredFund".to_string(),
-                    vec![ContractParameterDefinition::new(
-                        "account".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("RecoveredFund.account")],
-                )
-                .expect("RecoveredFund event descriptor"),
-            );
+            events.push(event_descriptor!(
+                "RecoveredFund",
+                ["account" => Hash160]
+            ));
         }
 
         events

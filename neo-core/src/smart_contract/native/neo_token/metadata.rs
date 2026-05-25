@@ -1,11 +1,10 @@
 use super::NeoToken;
 use crate::hardfork::Hardfork;
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::metadata_macros::event_descriptor;
 use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::{FungibleToken, NativeMethod};
-use crate::smart_contract::ContractParameterType;
 
 impl NeoToken {
     pub(super) fn native_methods() -> Vec<NativeMethod> {
@@ -54,74 +53,21 @@ impl NeoToken {
                 "Transfer",
                 ["from" => Hash160, "to" => Hash160, "amount" => Integer]
             ),
-            ContractEventDescriptor::new(
-                "CandidateStateChanged".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "pubkey".to_string(),
-                        ContractParameterType::PublicKey,
-                    )
-                    .expect("CandidateStateChanged.pubkey"),
-                    ContractParameterDefinition::new(
-                        "registered".to_string(),
-                        ContractParameterType::Boolean,
-                    )
-                    .expect("CandidateStateChanged.registered"),
-                    ContractParameterDefinition::new(
-                        "votes".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("CandidateStateChanged.votes"),
-                ],
-            )
-            .expect("CandidateStateChanged event descriptor"),
-            ContractEventDescriptor::new(
-                "Vote".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "account".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("Vote.account"),
-                    ContractParameterDefinition::new(
-                        "from".to_string(),
-                        ContractParameterType::PublicKey,
-                    )
-                    .expect("Vote.from"),
-                    ContractParameterDefinition::new(
-                        "to".to_string(),
-                        ContractParameterType::PublicKey,
-                    )
-                    .expect("Vote.to"),
-                    ContractParameterDefinition::new(
-                        "amount".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Vote.amount"),
-                ],
-            )
-            .expect("Vote event descriptor"),
+            event_descriptor!(
+                "CandidateStateChanged",
+                ["pubkey" => PublicKey, "registered" => Boolean, "votes" => Integer]
+            ),
+            event_descriptor!(
+                "Vote",
+                ["account" => Hash160, "from" => PublicKey, "to" => PublicKey, "amount" => Integer]
+            ),
         ];
 
         if settings.is_hardfork_enabled(Hardfork::HfCockatrice, block_height) {
-            events.push(
-                ContractEventDescriptor::new(
-                    "CommitteeChanged".to_string(),
-                    vec![
-                        ContractParameterDefinition::new(
-                            "old".to_string(),
-                            ContractParameterType::Array,
-                        )
-                        .expect("CommitteeChanged.old"),
-                        ContractParameterDefinition::new(
-                            "new".to_string(),
-                            ContractParameterType::Array,
-                        )
-                        .expect("CommitteeChanged.new"),
-                    ],
-                )
-                .expect("CommitteeChanged event descriptor"),
-            );
+            events.push(event_descriptor!(
+                "CommitteeChanged",
+                ["old" => Array, "new" => Array]
+            ));
         }
 
         events

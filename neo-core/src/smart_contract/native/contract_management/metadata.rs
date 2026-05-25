@@ -1,8 +1,8 @@
 use super::ContractManagement;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
+use crate::smart_contract::native::metadata_macros::event_descriptor;
 use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::NativeMethod;
-use crate::smart_contract::ContractParameterType;
 
 impl ContractManagement {
     pub(super) fn native_methods() -> Vec<NativeMethod> {
@@ -24,21 +24,9 @@ impl ContractManagement {
 
     pub(super) fn event_descriptors() -> Vec<ContractEventDescriptor> {
         vec![
-            Self::event_descriptor("Deploy"),
-            Self::event_descriptor("Update"),
-            Self::event_descriptor("Destroy"),
+            event_descriptor!("Deploy", ["Hash" => Hash160]),
+            event_descriptor!("Update", ["Hash" => Hash160]),
+            event_descriptor!("Destroy", ["Hash" => Hash160]),
         ]
-    }
-
-    fn event_descriptor(name: &str) -> ContractEventDescriptor {
-        ContractEventDescriptor::new(
-            name.to_string(),
-            vec![ContractParameterDefinition::new(
-                "Hash".to_string(),
-                ContractParameterType::Hash160,
-            )
-            .expect("contract management event hash parameter")],
-        )
-        .expect("contract management event descriptor")
     }
 }

@@ -1,10 +1,10 @@
 use super::RoleManagement;
 use crate::hardfork::Hardfork;
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
+use crate::smart_contract::native::metadata_macros::event_descriptor;
 use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::NativeMethod;
-use crate::smart_contract::ContractParameterType;
 
 impl RoleManagement {
     pub(super) fn native_methods() -> Vec<NativeMethod> {
@@ -18,30 +18,16 @@ impl RoleManagement {
         settings: &ProtocolSettings,
         block_height: u32,
     ) -> Vec<ContractEventDescriptor> {
-        let mut parameters = vec![
-            ContractParameterDefinition::new("Role".to_string(), ContractParameterType::Integer)
-                .expect("Designation.Role"),
-            ContractParameterDefinition::new(
-                "BlockIndex".to_string(),
-                ContractParameterType::Integer,
-            )
-            .expect("Designation.BlockIndex"),
-        ];
-
         if settings.is_hardfork_enabled(Hardfork::HfEchidna, block_height) {
-            parameters.push(
-                ContractParameterDefinition::new("Old".to_string(), ContractParameterType::Array)
-                    .expect("Designation.Old"),
-            );
-            parameters.push(
-                ContractParameterDefinition::new("New".to_string(), ContractParameterType::Array)
-                    .expect("Designation.New"),
-            );
+            return vec![event_descriptor!(
+                "Designation",
+                ["Role" => Integer, "BlockIndex" => Integer, "Old" => Array, "New" => Array]
+            )];
         }
 
-        vec![
-            ContractEventDescriptor::new("Designation".to_string(), parameters)
-                .expect("Designation event descriptor"),
-        ]
+        vec![event_descriptor!(
+            "Designation",
+            ["Role" => Integer, "BlockIndex" => Integer]
+        )]
     }
 }
