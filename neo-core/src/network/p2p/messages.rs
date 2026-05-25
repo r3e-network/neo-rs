@@ -232,17 +232,7 @@ impl ProtocolMessage {
     }
 
     fn should_try_compress(&self) -> bool {
-        matches!(
-            self,
-            Self::Block(_)
-                | Self::Extensible(_)
-                | Self::Transaction(_)
-                | Self::Headers(_)
-                | Self::Addr(_)
-                | Self::MerkleBlock(_)
-                | Self::FilterLoad(_)
-                | Self::FilterAdd(_)
-        )
+        !matches!(self, Self::Unknown { .. }) && self.command().allows_compression()
     }
 
     /// Serializes the payload into its binary representation.
@@ -454,3 +444,36 @@ impl_payload_codec!(ExtensiblePayload);
 impl_payload_codec!(FilterLoadPayload);
 impl_payload_codec!(FilterAddPayload);
 impl_payload_codec!(MerkleBlockPayload);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_protocol_message_never_uses_command_compression_whitelist() {
+        let bytes = vec![0xAB; COMPRESSION_MIN_SIZE + 64];
+        let message = NetworkMessage::new(ProtocolMessage::Unknown {
+            command: MessageCommand::Block,
+            bytes: bytes.clone(),
+        });
+
+        let encoded = message.to_bytes(true).unwrap();
+
+        assert_eq!(encoded[0], MessageFlags::NONE.to_byte());
+        assert_eq!(encoded[1], MessageCommand::Block.to_byte());
+        assert!(encoded.ends_with(&bytes));
+    }
+
+    #[test]
+    fn network_message_uses_inclusive_compression_min_size_threshold() {
+        let payload =
+            ProtocolMessage::FilterAdd(FilterAddPayload::new(vec![0xAB; COMPRESSION_MIN_SIZE - 1]));
+        assert_eq!(payload.to_bytes().unwrap().len(), COMPRESSION_MIN_SIZE);
+        let message = NetworkMessage::new(payload);
+
+        let encoded = message.to_bytes(true).unwrap();
+
+        assert_eq!(encoded[0], MessageFlags::COMPRESSED.to_byte());
+        assert_eq!(encoded[1], MessageCommand::FilterAdd.to_byte());
+    }
+}

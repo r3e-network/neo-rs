@@ -17,6 +17,23 @@ neo_primitives::p2p_message_command! {
     }
 }
 
+impl MessageCommand {
+    /// Returns true when C# Neo permits attempting LZ4 compression for this command.
+    pub(crate) const fn allows_compression(self) -> bool {
+        matches!(
+            self,
+            Self::Block
+                | Self::Extensible
+                | Self::Transaction
+                | Self::Headers
+                | Self::Addr
+                | Self::MerkleBlock
+                | Self::FilterLoad
+                | Self::FilterAdd
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,5 +51,26 @@ mod tests {
         assert_eq!(serialized, "153");
         let deserialized: MessageCommand = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized, command);
+    }
+
+    #[test]
+    fn compression_whitelist_matches_protocol_commands() {
+        let compressible = [
+            MessageCommand::Block,
+            MessageCommand::Extensible,
+            MessageCommand::Transaction,
+            MessageCommand::Headers,
+            MessageCommand::Addr,
+            MessageCommand::MerkleBlock,
+            MessageCommand::FilterLoad,
+            MessageCommand::FilterAdd,
+        ];
+
+        for command in compressible {
+            assert!(command.allows_compression(), "{command:?}");
+        }
+
+        assert!(!MessageCommand::Ping.allows_compression());
+        assert!(!MessageCommand::Unknown(0x99).allows_compression());
     }
 }

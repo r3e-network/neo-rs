@@ -86,7 +86,7 @@ impl Message {
         // C# uses strict > comparison for compression threshold
         // Match this exactly to ensure cross-implementation compatibility
         if enable_compression
-            && Self::should_try_compress(command)
+            && command.allows_compression()
             && message.payload_compressed.len() > COMPRESSION_MIN_SIZE
         {
             if let Ok(compressed) = compress_lz4(&message.payload_compressed) {
@@ -114,21 +114,6 @@ impl Message {
         };
         message.decompress_payload()?;
         Ok(message)
-    }
-
-    /// Returns true if the payload should attempt compression.
-    fn should_try_compress(command: MessageCommand) -> bool {
-        matches!(
-            command,
-            MessageCommand::Block
-                | MessageCommand::Extensible
-                | MessageCommand::Transaction
-                | MessageCommand::Headers
-                | MessageCommand::Addr
-                | MessageCommand::MerkleBlock
-                | MessageCommand::FilterLoad
-                | MessageCommand::FilterAdd
-        )
     }
 
     /// Returns `true` when the payload is currently compressed.
@@ -306,6 +291,20 @@ mod tests {
         assert!(!ping_msg.is_compressed());
         assert_eq!(ping_msg.payload(), data.as_slice());
         assert_eq!(ping_msg.payload_compressed(), data.as_slice());
+    }
+
+    #[test]
+    fn create_uses_strict_compression_min_size_threshold() {
+        let data = vec![0xAB; COMPRESSION_MIN_SIZE];
+        let payload = DummyPayload {
+            bytes: data.clone(),
+        };
+
+        let message = Message::create(MessageCommand::Block, Some(&payload), true).unwrap();
+
+        assert!(!message.is_compressed());
+        assert_eq!(message.payload(), data.as_slice());
+        assert_eq!(message.payload_compressed(), data.as_slice());
     }
 
     #[test]
