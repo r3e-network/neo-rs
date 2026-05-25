@@ -203,6 +203,7 @@ hashbrown = { version = "0.14", features = ["serde"] }
 indexmap = { version = "2.1", features = ["serde"] }
 lru = "0.12"
 fastbloom = { version = "0.17", default-features = false }
+bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 dashmap = "5.5"
 
 # === Storage ===

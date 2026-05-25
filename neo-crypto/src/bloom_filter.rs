@@ -1,7 +1,9 @@
 use crate::error::{CryptoError, CryptoResult};
 use crate::murmur::murmur32;
+use bitvec::prelude::{BitVec, Lsb0};
 
 const SEED_MULTIPLIER: u32 = 0xFBA4_C795;
+type BloomBits = BitVec<u8, Lsb0>;
 
 /// Probabilistic data structure for testing set membership.
 ///
@@ -9,7 +11,7 @@ const SEED_MULTIPLIER: u32 = 0xFBA4_C795;
 #[derive(Clone, Debug)]
 pub struct BloomFilter {
     seeds: Vec<u32>,
-    bits: Vec<u8>,
+    bits: BloomBits,
     bit_size: usize,
     tweak: u32,
 }
@@ -34,7 +36,7 @@ impl BloomFilter {
         let byte_len = bit_size.div_ceil(8);
         Ok(Self {
             seeds,
-            bits: vec![0u8; byte_len],
+            bits: BloomBits::from_vec(vec![0u8; byte_len]),
             bit_size,
             tweak,
         })
@@ -48,8 +50,10 @@ impl BloomFilter {
         elements: &[u8],
     ) -> CryptoResult<Self> {
         let mut filter = Self::new(bit_size, hash_functions, tweak)?;
-        let copy_len = filter.bits.len().min(elements.len());
-        filter.bits[..copy_len].copy_from_slice(&elements[..copy_len]);
+        let mut bytes = vec![0u8; bit_size.div_ceil(8)];
+        let copy_len = bytes.len().min(elements.len());
+        bytes[..copy_len].copy_from_slice(&elements[..copy_len]);
+        filter.bits = BloomBits::from_vec(bytes);
         Ok(filter)
     }
 
@@ -93,24 +97,15 @@ impl BloomFilter {
     /// Returns a copy of the underlying bit array.
     #[must_use]
     pub fn bits(&self) -> Vec<u8> {
-        self.bits.clone()
+        self.bits.clone().into_vec()
     }
 
     fn set_bit(&mut self, index: usize) {
-        let byte = index / 8;
-        let offset = index % 8;
-        if let Some(entry) = self.bits.get_mut(byte) {
-            *entry |= 1 << offset;
-        }
+        self.bits.set(index, true);
     }
 
     fn test_bit(&self, index: usize) -> bool {
-        let byte = index / 8;
-        let offset = index % 8;
-        match self.bits.get(byte) {
-            Some(entry) => (*entry & (1 << offset)) != 0,
-            None => false,
-        }
+        self.bits.get(index).is_some_and(|bit| *bit)
     }
 }
 
