@@ -72,6 +72,10 @@ ws_event_types! {
     }
 }
 
+fn prefixed_hash(hash: &UInt256) -> String {
+    format!("0x{}", hex::encode(hash.as_bytes()))
+}
+
 /// WebSocket event payload
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "method", content = "params")]
@@ -123,7 +127,7 @@ impl WsEvent {
     #[must_use]
     pub fn block_added(hash: &UInt256, height: u32) -> Self {
         Self::BlockAdded {
-            hash: format!("0x{}", hex::encode(hash.as_bytes())),
+            hash: prefixed_hash(hash),
             height,
         }
     }
@@ -132,7 +136,7 @@ impl WsEvent {
     #[must_use]
     pub fn transaction_added(hash: &UInt256) -> Self {
         Self::TransactionAdded {
-            hash: format!("0x{}", hex::encode(hash.as_bytes())),
+            hash: prefixed_hash(hash),
         }
     }
 
@@ -140,10 +144,7 @@ impl WsEvent {
     #[must_use]
     pub fn transaction_removed(hashes: &[UInt256], reason: &str) -> Self {
         Self::TransactionRemoved {
-            hashes: hashes
-                .iter()
-                .map(|h| format!("0x{}", hex::encode(h.as_bytes())))
-                .collect(),
+            hashes: hashes.iter().map(prefixed_hash).collect(),
             reason: reason.to_string(),
         }
     }
@@ -152,7 +153,7 @@ impl WsEvent {
     #[must_use]
     pub fn notification(contract: &UInt256, event_name: &str, state: serde_json::Value) -> Self {
         Self::Notification {
-            contract: format!("0x{}", hex::encode(contract.as_bytes())),
+            contract: prefixed_hash(contract),
             event_name: event_name.to_string(),
             state,
         }

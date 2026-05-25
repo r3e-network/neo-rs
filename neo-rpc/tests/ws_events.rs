@@ -1,3 +1,4 @@
+use neo_primitives::UInt256;
 use neo_rpc::server::{WsEvent, WsEventType, WsNotification};
 use serde_json::json;
 
@@ -50,5 +51,37 @@ fn websocket_notification_keeps_neo_notification_field_names() {
     assert_eq!(
         notification.params,
         json!({ "contract": "0xfeed", "eventname": "Transfer", "state": [1, 2, 3] })
+    );
+}
+
+#[test]
+fn websocket_event_constructors_prefix_hashes() {
+    let hash = UInt256::from_bytes(&[0xabu8; 32]).expect("hash");
+    let other_hash = UInt256::from_bytes(&[0xcdu8; 32]).expect("other hash");
+    let expected = format!("0x{}", "ab".repeat(32));
+    let other_expected = format!("0x{}", "cd".repeat(32));
+
+    let block = WsEvent::block_added(&hash, 7);
+    assert_eq!(
+        WsNotification::from_event(&block).params,
+        json!({ "hash": expected, "height": 7 })
+    );
+
+    let added = WsEvent::transaction_added(&hash);
+    assert_eq!(
+        WsNotification::from_event(&added).params,
+        json!({ "hash": expected })
+    );
+
+    let removed = WsEvent::transaction_removed(&[hash, other_hash], "expired");
+    assert_eq!(
+        WsNotification::from_event(&removed).params,
+        json!({ "hashes": [expected, other_expected], "reason": "expired" })
+    );
+
+    let notification = WsEvent::notification(&hash, "Transfer", json!([]));
+    assert_eq!(
+        WsNotification::from_event(&notification).params,
+        json!({ "contract": expected, "eventname": "Transfer", "state": [] })
     );
 }
