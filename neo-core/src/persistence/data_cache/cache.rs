@@ -85,38 +85,38 @@ impl DataCache {
 
     /// Attempt to add an item to the cache, returning an error when read-only.
     pub fn try_add(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
-        if self.read_only {
-            return Err(DataCacheError::ReadOnly);
-        }
-        self.add(key, value);
+        self.ensure_writable()?;
+        self.add_writable(key, value);
         Ok(())
     }
 
     /// Attempt to update an item in the cache, returning an error when read-only.
     pub fn try_update(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
-        if self.read_only {
-            return Err(DataCacheError::ReadOnly);
-        }
-        self.update(key, value);
+        self.ensure_writable()?;
+        self.update_writable(key, value);
         Ok(())
     }
 
     /// Attempt to delete an item in the cache, returning an error when read-only.
     pub fn try_delete(&self, key: &StorageKey) -> DataCacheResult {
-        if self.read_only {
-            return Err(DataCacheError::ReadOnly);
-        }
-        self.delete(key);
+        self.ensure_writable()?;
+        self.delete_writable(key);
         Ok(())
     }
 
     /// Attempts to commit, returning an error when read-only.
     pub fn try_commit(&self) -> DataCacheResult {
-        if self.read_only {
-            return Err(DataCacheError::ReadOnly);
-        }
-        self.commit();
+        self.ensure_writable()?;
+        self.commit_writable();
         Ok(())
+    }
+
+    fn ensure_writable(&self) -> DataCacheResult {
+        if self.read_only {
+            Err(DataCacheError::ReadOnly)
+        } else {
+            Ok(())
+        }
     }
 
     /// Creates a new DataCache with an optional backing store.
@@ -344,10 +344,12 @@ impl DataCache {
         let mut state = self.state.write();
         // Check if we're approaching the max entries limit
         if state.dictionary.len() < self.config.max_entries {
-            state
-                .dictionary
-                .entry(key.clone())
-                .or_insert_with(|| Trackable::new(item.clone(), crate::persistence::track_state::TrackState::None));
+            state.dictionary.entry(key.clone()).or_insert_with(|| {
+                Trackable::new(
+                    item.clone(),
+                    crate::persistence::track_state::TrackState::None,
+                )
+            });
         }
     }
 
@@ -369,11 +371,12 @@ impl DataCache {
 
     /// Adds an item to the cache.
     pub fn add(&self, key: StorageKey, value: StorageItem) {
-        if self.read_only {
+        if self.try_add(key, value).is_err() {
             warn!("attempted to add to read-only DataCache");
-            return;
         }
+    }
 
+    fn add_writable(&self, key: StorageKey, value: StorageItem) {
         // Invalidate read cache for this key
         if let Some(ref cache) = self.read_cache {
             cache.remove(&key);
@@ -410,11 +413,12 @@ impl DataCache {
 
     /// Updates an item in the cache.
     pub fn update(&self, key: StorageKey, value: StorageItem) {
-        if self.read_only {
+        if self.try_update(key, value).is_err() {
             warn!("attempted to update read-only DataCache");
-            return;
         }
+    }
 
+    fn update_writable(&self, key: StorageKey, value: StorageItem) {
         // Update read cache with new value
         if let Some(ref cache) = self.read_cache {
             let size = value.value_bytes().len() + std::mem::size_of::<StorageKey>();
@@ -466,11 +470,12 @@ impl DataCache {
 
     /// Deletes an item from the cache.
     pub fn delete(&self, key: &StorageKey) {
-        if self.read_only {
+        if self.try_delete(key).is_err() {
             warn!("attempted to delete from read-only DataCache");
-            return;
         }
+    }
 
+    fn delete_writable(&self, key: &StorageKey) {
         // Invalidate read cache for this key
         if let Some(ref cache) = self.read_cache {
             cache.remove(key);
@@ -611,6 +616,10 @@ impl DataCache {
         if self.read_only {
             return;
         }
+        self.commit_writable();
+    }
+
+    fn commit_writable(&self) {
         if let Some(apply) = &self.commit_apply {
             let tracked = self.tracked_items();
             if !tracked.is_empty() {
