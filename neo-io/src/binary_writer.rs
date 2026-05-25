@@ -1,4 +1,5 @@
 use crate::{serializable::Serializable, var_int, IoResult};
+use bytes::BufMut;
 
 /// A sequential binary writer for serializing Neo protocol data in little-endian format.
 ///
@@ -64,37 +65,37 @@ impl BinaryWriter {
 
     /// Writes a `u16` in little-endian byte order.
     pub fn write_u16(&mut self, value: u16) -> IoResult<()> {
-        self.buffer.extend_from_slice(&value.to_le_bytes());
+        self.buffer.put_u16_le(value);
         Ok(())
     }
 
     /// Writes an `i16` in little-endian byte order.
     pub fn write_i16(&mut self, value: i16) -> IoResult<()> {
-        self.buffer.extend_from_slice(&value.to_le_bytes());
+        self.buffer.put_i16_le(value);
         Ok(())
     }
 
     /// Writes a `u32` in little-endian byte order.
     pub fn write_u32(&mut self, value: u32) -> IoResult<()> {
-        self.buffer.extend_from_slice(&value.to_le_bytes());
+        self.buffer.put_u32_le(value);
         Ok(())
     }
 
     /// Writes an `i32` in little-endian byte order.
     pub fn write_i32(&mut self, value: i32) -> IoResult<()> {
-        self.buffer.extend_from_slice(&value.to_le_bytes());
+        self.buffer.put_i32_le(value);
         Ok(())
     }
 
     /// Writes an `i64` in little-endian byte order.
     pub fn write_i64(&mut self, value: i64) -> IoResult<()> {
-        self.buffer.extend_from_slice(&value.to_le_bytes());
+        self.buffer.put_i64_le(value);
         Ok(())
     }
 
     /// Writes a `u64` in little-endian byte order.
     pub fn write_u64(&mut self, value: u64) -> IoResult<()> {
-        self.buffer.extend_from_slice(&value.to_le_bytes());
+        self.buffer.put_u64_le(value);
         Ok(())
     }
 
