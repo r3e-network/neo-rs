@@ -5,6 +5,8 @@ use std::str;
 
 use thiserror::Error;
 
+use crate::var_int::read_var_int_prefix;
+
 /// Errors that can occur while reading Neo binary data.
 #[derive(Debug, Error)]
 pub enum IoError {
@@ -275,13 +277,17 @@ impl<'a> MemoryReader<'a> {
     /// Reads a variable-length integer (C# `ReadVarInt`)
     #[inline]
     pub fn read_var_int(&mut self, max: u64) -> IoResult<u64> {
-        let prefix = self.read_byte()?;
-        let value = match prefix {
-            0xfd => u64::from(self.read_uint16()?),
-            0xfe => u64::from(self.read_uint32()?),
-            0xff => self.read_uint64()?,
-            _ => u64::from(prefix),
+        let unread = &self.buffer[self.position..];
+        let (value, width) = match read_var_int_prefix(unread) {
+            Some(decoded) => decoded,
+            None => {
+                if !unread.is_empty() {
+                    self.position += 1;
+                }
+                return Err(IoError::Format);
+            }
         };
+        self.position += width;
         if value > max {
             return Err(IoError::Format);
         }

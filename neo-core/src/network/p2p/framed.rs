@@ -2,6 +2,7 @@
 use super::{channels_config::ChannelsConfig, message::PAYLOAD_MAX_SIZE};
 use crate::network::{NetworkError, NetworkResult};
 use bytes::{BufMut, BytesMut};
+use neo_io_crate::var_int::{read_var_int_prefix, write_var_int};
 use std::io::IoSlice;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -102,57 +103,6 @@ impl NeoMessageCodec {
     pub fn new(max_payload_size: usize) -> Self {
         Self { max_payload_size }
     }
-
-    fn read_var_int(src: &[u8]) -> NetworkResult<Option<(u64, usize)>> {
-        let Some(prefix) = src.first().copied() else {
-            return Ok(None);
-        };
-
-        match prefix {
-            0xFD => {
-                if src.len() < 3 {
-                    return Ok(None);
-                }
-                Ok(Some((u16::from_le_bytes([src[1], src[2]]) as u64, 3)))
-            }
-            0xFE => {
-                if src.len() < 5 {
-                    return Ok(None);
-                }
-                Ok(Some((
-                    u32::from_le_bytes([src[1], src[2], src[3], src[4]]) as u64,
-                    5,
-                )))
-            }
-            0xFF => {
-                if src.len() < 9 {
-                    return Ok(None);
-                }
-                Ok(Some((
-                    u64::from_le_bytes([
-                        src[1], src[2], src[3], src[4], src[5], src[6], src[7], src[8],
-                    ]),
-                    9,
-                )))
-            }
-            value => Ok(Some((value as u64, 1))),
-        }
-    }
-
-    fn write_var_int(value: u64, dst: &mut Vec<u8>) {
-        if value < 0xFD {
-            dst.push(value as u8);
-        } else if value <= 0xFFFF {
-            dst.push(0xFD);
-            dst.extend_from_slice(&(value as u16).to_le_bytes());
-        } else if value <= 0xFFFF_FFFF {
-            dst.push(0xFE);
-            dst.extend_from_slice(&(value as u32).to_le_bytes());
-        } else {
-            dst.push(0xFF);
-            dst.extend_from_slice(&value.to_le_bytes());
-        }
-    }
 }
 
 impl Default for NeoMessageCodec {
@@ -170,7 +120,7 @@ impl Decoder for NeoMessageCodec {
             return Ok(None);
         }
 
-        let Some((payload_length, varint_len)) = Self::read_var_int(&src[FRAME_HEADER_LEN..])?
+        let Some((payload_length, varint_len)) = read_var_int_prefix(&src[FRAME_HEADER_LEN..])
         else {
             return Ok(None);
         };
@@ -200,7 +150,7 @@ impl Decoder for NeoMessageCodec {
         let frame = src.split_to(frame_len);
         let mut message = Vec::with_capacity(frame_len.max(INITIAL_READ_CAPACITY));
         message.extend_from_slice(&frame[..FRAME_HEADER_LEN]);
-        Self::write_var_int(payload_length as u64, &mut message);
+        write_var_int(payload_length as u64, &mut message);
         message.extend_from_slice(&frame[FRAME_HEADER_LEN + varint_len..]);
         Ok(Some(message))
     }
@@ -493,6 +443,17 @@ mod tests {
     }
 
     #[test]
+    fn neo_message_codec_waits_for_partial_payload_after_var_int() {
+        let mut codec = NeoMessageCodec::default();
+        let mut input = BytesMut::from(&[0x00, 0x01, 0x03, 0xAA][..]);
+
+        let frame = codec.decode(&mut input).expect("partial decode succeeds");
+
+        assert!(frame.is_none());
+        assert_eq!(&input[..], &[0x00, 0x01, 0x03, 0xAA]);
+    }
+
+    #[test]
     fn neo_message_codec_rejects_oversized_payload() {
         let mut codec = NeoMessageCodec::new(1);
         let mut input = BytesMut::from(&[0x00, 0x01, 0x02][..]);
@@ -506,6 +467,19 @@ mod tests {
     fn neo_message_codec_canonicalizes_var_int_prefix() {
         let mut codec = NeoMessageCodec::default();
         let mut input = BytesMut::from(&[0x00, 0x01, 0xFD, 0x01, 0x00, 0xAA][..]);
+
+        let frame = codec
+            .decode(&mut input)
+            .expect("decode succeeds")
+            .expect("frame is complete");
+
+        assert_eq!(frame, vec![0x00, 0x01, 0x01, 0xAA]);
+    }
+
+    #[test]
+    fn neo_message_codec_canonicalizes_large_non_canonical_var_int_prefix() {
+        let mut codec = NeoMessageCodec::default();
+        let mut input = BytesMut::from(&[0x00, 0x01, 0xFE, 0x01, 0x00, 0x00, 0x00, 0xAA][..]);
 
         let frame = codec
             .decode(&mut input)

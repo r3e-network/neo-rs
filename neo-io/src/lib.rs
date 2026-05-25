@@ -8,6 +8,7 @@ mod binary_writer;
 // Core interfaces
 mod memory_reader;
 pub mod serializable;
+pub mod var_int;
 
 pub use binary_writer::BinaryWriter;
 pub use memory_reader::{IoError, IoResult, MemoryReader};

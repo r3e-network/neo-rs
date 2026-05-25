@@ -204,6 +204,21 @@ fn test_read_var_int() {
     assert_eq!(0x12345678, reader.read_var_int(u64::MAX).unwrap());
 }
 
+#[test]
+fn test_read_var_int_error_position_matches_legacy_reader() {
+    let data = vec![0xfd, 0x01];
+    let mut reader = MemoryReader::new(&data);
+
+    assert!(reader.read_var_int(u64::MAX).is_err());
+    assert_eq!(1, reader.position());
+
+    let data = vec![0xfd, 0x34, 0x12];
+    let mut reader = MemoryReader::new(&data);
+
+    assert!(reader.read_var_int(0x1233).is_err());
+    assert_eq!(3, reader.position());
+}
+
 /// Test ReadVarString functionality (matches C# TestReadVarString)
 #[test]
 fn test_read_var_string_basic() {

@@ -1,4 +1,4 @@
-use crate::{serializable::Serializable, IoResult};
+use crate::{serializable::Serializable, var_int, IoResult};
 
 /// A sequential binary writer for serializing Neo protocol data in little-endian format.
 ///
@@ -109,18 +109,7 @@ impl BinaryWriter {
     /// Values below 0xFD are stored as a single byte; larger values use a
     /// 2-, 4-, or 8-byte little-endian representation prefixed by 0xFD/0xFE/0xFF.
     pub fn write_var_int(&mut self, value: u64) -> IoResult<()> {
-        if value < 0xFD {
-            self.write_u8(value as u8)?;
-        } else if value <= 0xFFFF {
-            self.write_u8(0xFD)?;
-            self.write_u16(value as u16)?;
-        } else if value <= 0xFFFF_FFFF {
-            self.write_u8(0xFE)?;
-            self.write_u32(value as u32)?;
-        } else {
-            self.write_u8(0xFF)?;
-            self.write_u64(value)?;
-        }
+        var_int::write_var_int(value, &mut self.buffer);
         Ok(())
     }
 
