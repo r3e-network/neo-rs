@@ -10,7 +10,9 @@
 // modifications are permitted.
 
 use super::header::Header;
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::{
+    deserialize_array, get_var_size_serializable_slice, serialize_array,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
@@ -33,8 +35,7 @@ impl HeadersPayload {
 
 impl Serializable for HeadersPayload {
     fn size(&self) -> usize {
-        get_var_size(self.headers.len() as u64)
-            + self.headers.iter().map(|h| h.size()).sum::<usize>()
+        get_var_size_serializable_slice(&self.headers)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -42,23 +43,13 @@ impl Serializable for HeadersPayload {
             return Err(IoError::invalid_data("Too many headers"));
         }
 
-        writer.write_var_uint(self.headers.len() as u64)?;
-        for header in &self.headers {
-            Serializable::serialize(header, writer)?;
-        }
-
-        Ok(())
+        serialize_array(&self.headers, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let count = reader.read_var_int(MAX_HEADERS_COUNT as u64)?;
-        if count == 0 {
+        let headers = deserialize_array(reader, MAX_HEADERS_COUNT)?;
+        if headers.is_empty() {
             return Err(IoError::invalid_data("Empty headers list"));
-        }
-
-        let mut headers = Vec::with_capacity(count as usize);
-        for _ in 0..count {
-            headers.push(<Header as Serializable>::deserialize(reader)?);
         }
 
         Ok(Self { headers })

@@ -10,7 +10,9 @@
 // modifications are permitted.
 
 use super::network_address_with_time::NetworkAddressWithTime;
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::{
+    deserialize_array, get_var_size_serializable_slice, serialize_array,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
@@ -35,8 +37,7 @@ impl AddrPayload {
 
 impl Serializable for AddrPayload {
     fn size(&self) -> usize {
-        get_var_size(self.address_list.len() as u64)
-            + self.address_list.iter().map(|a| a.size()).sum::<usize>()
+        get_var_size_serializable_slice(&self.address_list)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -44,24 +45,13 @@ impl Serializable for AddrPayload {
             return Err(IoError::invalid_data("Too many addresses"));
         }
 
-        writer.write_var_uint(self.address_list.len() as u64)?;
-        for address in &self.address_list {
-            writer.write_serializable(address)?;
-        }
-        Ok(())
+        serialize_array(&self.address_list, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let count = reader.read_var_int(MAX_COUNT_TO_SEND as u64)? as usize;
-        if count == 0 {
+        let address_list = deserialize_array(reader, MAX_COUNT_TO_SEND)?;
+        if address_list.is_empty() {
             return Err(IoError::invalid_data("Empty address list"));
-        }
-
-        let mut address_list = Vec::with_capacity(count);
-        for _ in 0..count {
-            address_list.push(<NetworkAddressWithTime as Serializable>::deserialize(
-                reader,
-            )?);
         }
 
         Ok(Self { address_list })
