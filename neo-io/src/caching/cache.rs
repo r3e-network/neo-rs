@@ -9,29 +9,6 @@ use parking_lot::Mutex;
 use std::hash::Hash;
 use std::sync::Arc;
 
-#[derive(Debug)]
-struct CacheInner<TKey, TValue>
-where
-    TKey: Eq + Hash + Clone,
-{
-    entries: IndexMap<TKey, TValue>,
-}
-
-impl<TKey, TValue> CacheInner<TKey, TValue>
-where
-    TKey: Eq + Hash + Clone,
-{
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            entries: IndexMap::with_capacity(capacity),
-        }
-    }
-
-    fn remove_oldest(&mut self) {
-        self.entries.shift_remove_index(0);
-    }
-}
-
 /// Abstract cache base class matching C# Cache<`TKey`, `TValue`>.
 ///
 /// This is a thread-safe cache implementation that supports configurable eviction
@@ -58,7 +35,7 @@ where
 {
     max_capacity: usize,
     key_selector: Arc<dyn Fn(&TValue) -> TKey + Send + Sync>,
-    inner: Mutex<CacheInner<TKey, TValue>>,
+    entries: Mutex<IndexMap<TKey, TValue>>,
 }
 
 impl<TKey, TValue> IoCache<TKey, TValue>
@@ -79,20 +56,20 @@ where
         Self {
             max_capacity,
             key_selector: Arc::new(key_selector),
-            inner: Mutex::new(CacheInner::with_capacity(max_capacity)),
+            entries: Mutex::new(IndexMap::with_capacity(max_capacity)),
         }
     }
 
     /// Gets the number of cached entries (C# Count property).
     #[inline]
     pub fn count(&self) -> usize {
-        self.inner.lock().entries.len()
+        self.entries.lock().len()
     }
 
     /// Indicates whether the cache is empty (C# `IsEmpty` helper via `ICollection`).
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.inner.lock().entries.is_empty()
+        self.entries.lock().is_empty()
     }
 
     /// Indicates whether the cache is read-only (always false in C# implementation).
@@ -108,17 +85,17 @@ where
     /// entry (according to the policy) is evicted.
     pub fn add(&self, item: TValue) {
         let key = (self.key_selector)(&item);
-        let mut guard = self.inner.lock();
+        let mut entries = self.entries.lock();
 
-        if guard.entries.contains_key(&key) {
+        if entries.contains_key(&key) {
             return;
         }
 
-        if guard.entries.len() >= self.max_capacity {
-            guard.remove_oldest();
+        if entries.len() >= self.max_capacity {
+            entries.shift_remove_index(0);
         }
 
-        guard.entries.insert(key, item);
+        entries.insert(key, item);
     }
 
     /// Adds a range of items to the cache (C# `AddRange`).
@@ -133,12 +110,12 @@ where
 
     /// Clears the cache (C# Clear).
     pub fn clear(&self) {
-        self.inner.lock().entries.clear();
+        self.entries.lock().clear();
     }
 
     /// Determines whether the cache contains an item with the specified key (C# Contains(TKey)).
     pub fn contains_key(&self, key: &TKey) -> bool {
-        self.inner.lock().entries.contains_key(key)
+        self.entries.lock().contains_key(key)
     }
 
     /// Determines whether the cache contains the specified item (C# Contains(TValue)).
@@ -149,7 +126,7 @@ where
 
     /// Retrieves an item by key, returning `None` when it is absent (C# indexer).
     pub fn get(&self, key: &TKey) -> Option<TValue> {
-        self.inner.lock().entries.get(key).cloned()
+        self.entries.lock().get(key).cloned()
     }
 
     /// Copies cache contents to the provided slice (C# `CopyTo`).
@@ -176,8 +153,8 @@ where
             });
         }
 
-        let guard = self.inner.lock();
-        let count = guard.entries.len();
+        let entries = self.entries.lock();
+        let count = entries.len();
         if start_index + count > destination.len() {
             return Err(crate::IoError::InvalidData {
                 context: "copy_to".to_string(),
@@ -190,7 +167,7 @@ where
             });
         }
 
-        for (offset, value) in guard.entries.values().cloned().enumerate() {
+        for (offset, value) in entries.values().cloned().enumerate() {
             destination[start_index + offset] = value;
         }
 
@@ -201,7 +178,7 @@ where
     ///
     /// Returns `true` if the item was found and removed, `false` otherwise.
     pub fn remove_key(&self, key: &TKey) -> bool {
-        self.inner.lock().entries.shift_remove(key).is_some()
+        self.entries.lock().shift_remove(key).is_some()
     }
 
     /// Removes an item (C# Remove(TValue)).
@@ -220,7 +197,7 @@ where
 
     /// Returns a snapshot of the cache values preserving access order (C# `GetEnumerator`).
     pub fn values(&self) -> Vec<TValue> {
-        self.inner.lock().entries.values().cloned().collect()
+        self.entries.lock().values().cloned().collect()
     }
 
     /// Maximum number of elements allowed in the cache.
