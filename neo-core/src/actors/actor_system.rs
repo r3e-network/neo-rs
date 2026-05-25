@@ -11,8 +11,9 @@ use super::{
 };
 use async_trait::async_trait;
 use parking_lot::RwLock;
-use std::{any::Any, collections::HashMap, fmt, sync::Arc};
+use std::{any::Any, collections::HashMap, fmt, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
+use tokio_util::task::TaskTracker;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ActorPath {
@@ -71,11 +72,13 @@ pub(crate) enum MailboxCommand {
 
 /// Default mailbox capacity for bounded channels.
 const MAILBOX_CAPACITY: usize = 65536;
+const ACTOR_SYSTEM_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(crate) struct ActorSystemInner {
     pub name: String,
     registry: RwLock<HashMap<String, mpsc::Sender<MailboxCommand>>>,
     runtime: tokio::runtime::Handle,
+    actor_tasks: TaskTracker,
     event_stream: Arc<EventStream>,
 }
 
@@ -88,6 +91,7 @@ impl ActorSystemInner {
             name,
             registry: RwLock::new(HashMap::new()),
             runtime,
+            actor_tasks: TaskTracker::new(),
             event_stream: EventStream::new(),
         }))
     }
@@ -148,11 +152,32 @@ impl ActorSystemInner {
         let mailbox = props.create_mailbox();
         let cell = ActorCell::new(system, actor, props, mailbox, rx, actor_ref.clone(), parent);
 
-        self.runtime.spawn(async move {
-            cell.run().await;
-        });
+        self.actor_tasks.spawn_on(
+            async move {
+                cell.run().await;
+            },
+            &self.runtime,
+        );
 
         Ok(actor_ref)
+    }
+
+    async fn shutdown(&self) -> AkkaResult<()> {
+        self.request_actor_stops();
+        self.actor_tasks.close();
+        tokio::time::timeout(ACTOR_SYSTEM_SHUTDOWN_TIMEOUT, self.actor_tasks.wait())
+            .await
+            .map_err(|_| AkkaError::system("actor system shutdown timed out"))?;
+        Ok(())
+    }
+
+    fn request_actor_stops(&self) {
+        let mailboxes: Vec<_> = self.registry.read().values().cloned().collect();
+        for mailbox in mailboxes {
+            let _ = mailbox.try_send(MailboxCommand::Message(MailboxMessage::System(
+                SystemMessage::Stop,
+            )));
+        }
     }
 
     pub(crate) fn unregister(&self, path: &ActorPath) {
@@ -226,8 +251,7 @@ impl ActorSystem {
     }
 
     pub async fn shutdown(&self) -> AkkaResult<()> {
-        self.user_guardian.stop()?;
-        Ok(())
+        self.inner.shutdown().await
     }
 
     pub fn guardian(&self) -> ActorRef {

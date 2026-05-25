@@ -237,6 +237,54 @@ async fn event_stream_publish_delivers_messages() -> AkkaResult<()> {
     Ok(())
 }
 
+struct StopProbe {
+    stopped: Option<oneshot::Sender<()>>,
+}
+
+#[async_trait]
+impl Actor for StopProbe {
+    async fn handle(
+        &mut self,
+        message: Box<dyn Any + Send>,
+        _ctx: &mut ActorContext,
+    ) -> ActorResult {
+        drop(message);
+        Ok(())
+    }
+
+    async fn post_stop(&mut self, _ctx: &mut ActorContext) -> ActorResult {
+        if let Some(stopped) = self.stopped.take() {
+            let _ = stopped.send(());
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn shutdown_stops_and_waits_for_user_actors() -> AkkaResult<()> {
+    let system = ActorSystem::new("akka-shutdown-waits")?;
+    let (stopped_tx, stopped_rx) = oneshot::channel();
+    let stopped_holder = Arc::new(Mutex::new(Some(stopped_tx)));
+    let actor_holder = stopped_holder.clone();
+
+    let actor = system.actor_of(
+        Props::new(move || StopProbe {
+            stopped: actor_holder.lock().take(),
+        }),
+        "probe",
+    )?;
+    let actor_path = actor.path().to_string();
+
+    system.shutdown().await?;
+    timeout(Duration::from_millis(500), stopped_rx)
+        .await
+        .map_err(|_| AkkaError::AskTimeout)?
+        .map_err(|_| AkkaError::AskTimeout)?;
+
+    assert!(system.actor_selection(&actor_path).is_none());
+    Ok(())
+}
+
 #[derive(Clone)]
 struct Tick;
 
