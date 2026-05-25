@@ -21,6 +21,7 @@ use crate::network::p2p::payloads::header::Header;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::time_provider::TimeProvider;
 use crate::UInt256;
+use thiserror::Error;
 
 /// Maximum allowed timestamp drift from current time (15 minutes in milliseconds)
 pub const MAX_TIMESTAMP_DRIFT_MS: u64 = 15 * 60 * 1000; // 15 minutes
@@ -32,113 +33,51 @@ pub const MIN_TIMESTAMP_MS: u64 = 1468595301000;
 const MAX_WITNESS_SCRIPT_SIZE: usize = 1024;
 
 /// Block validation error types
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Error, PartialEq)]
 pub enum BlockValidationError {
     /// Block exceeds maximum size
+    #[error("Block size {size} exceeds maximum {max_size}")]
     BlockTooLarge { size: usize, max_size: usize },
     /// Too many transactions in block
+    #[error("Transaction count {count} exceeds maximum {max_count}")]
     TooManyTransactions { count: usize, max_count: usize },
     /// Timestamp is in the future beyond allowed drift
+    #[error("Timestamp {timestamp} is too far in future (current: {current})")]
     TimestampTooFarInFuture { timestamp: u64, current: u64 },
     /// Timestamp is too old (before genesis)
+    #[error("Timestamp {timestamp} is before minimum {min}")]
     TimestampTooOld { timestamp: u64, min: u64 },
     /// Timestamp is not strictly increasing from previous
+    #[error("Timestamp {timestamp} must be greater than previous {prev_timestamp}")]
     TimestampNotIncreasing { timestamp: u64, prev_timestamp: u64 },
     /// Merkle root does not match computed root
+    #[error("Merkle root mismatch: expected {expected}, computed {computed}")]
     InvalidMerkleRoot {
         expected: UInt256,
         computed: UInt256,
     },
     /// Duplicate transaction hashes found
+    #[error("Block contains duplicate transactions")]
     DuplicateTransactions,
     /// Transaction verification failed
+    #[error("Transaction {hash} at index {index} failed verification")]
     TransactionVerificationFailed { index: usize, hash: UInt256 },
     /// Witness script validation failed
+    #[error("Invalid witness script: {reason}")]
     InvalidWitnessScript { reason: String },
     /// Empty block when transactions expected
+    #[error("Block has empty transaction list")]
     EmptyTransactionList,
     /// Block version not supported
+    #[error("Block version {version} is not supported")]
     UnsupportedVersion { version: u32 },
     /// Primary index out of range
+    #[error("Primary index {index} exceeds maximum validator count {max}")]
     InvalidPrimaryIndex { index: u8, max: i32 },
     /// Header validation failed
+    #[error("Header validation failed: {reason}")]
     HeaderValidationFailed { reason: String },
 }
-
-impl std::fmt::Display for BlockValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BlockValidationError::BlockTooLarge { size, max_size } => {
-                write!(f, "Block size {} exceeds maximum {}", size, max_size)
-            }
-            BlockValidationError::TooManyTransactions { count, max_count } => {
-                write!(
-                    f,
-                    "Transaction count {} exceeds maximum {}",
-                    count, max_count
-                )
-            }
-            BlockValidationError::TimestampTooFarInFuture { timestamp, current } => {
-                write!(
-                    f,
-                    "Timestamp {} is too far in future (current: {})",
-                    timestamp, current
-                )
-            }
-            BlockValidationError::TimestampTooOld { timestamp, min } => {
-                write!(f, "Timestamp {} is before minimum {}", timestamp, min)
-            }
-            BlockValidationError::TimestampNotIncreasing {
-                timestamp,
-                prev_timestamp,
-            } => {
-                write!(
-                    f,
-                    "Timestamp {} must be greater than previous {}",
-                    timestamp, prev_timestamp
-                )
-            }
-            BlockValidationError::InvalidMerkleRoot { expected, computed } => {
-                write!(
-                    f,
-                    "Merkle root mismatch: expected {}, computed {}",
-                    expected, computed
-                )
-            }
-            BlockValidationError::DuplicateTransactions => {
-                write!(f, "Block contains duplicate transactions")
-            }
-            BlockValidationError::TransactionVerificationFailed { index, hash } => {
-                write!(
-                    f,
-                    "Transaction {} at index {} failed verification",
-                    hash, index
-                )
-            }
-            BlockValidationError::InvalidWitnessScript { reason } => {
-                write!(f, "Invalid witness script: {}", reason)
-            }
-            BlockValidationError::EmptyTransactionList => {
-                write!(f, "Block has empty transaction list")
-            }
-            BlockValidationError::UnsupportedVersion { version } => {
-                write!(f, "Block version {} is not supported", version)
-            }
-            BlockValidationError::InvalidPrimaryIndex { index, max } => {
-                write!(
-                    f,
-                    "Primary index {} exceeds maximum validator count {}",
-                    index, max
-                )
-            }
-            BlockValidationError::HeaderValidationFailed { reason } => {
-                write!(f, "Header validation failed: {}", reason)
-            }
-        }
-    }
-}
-
-impl std::error::Error for BlockValidationError {}
 
 /// Validates block size against maximum allowed size.
 ///
@@ -432,6 +371,97 @@ pub fn validate_primary_index(
 mod tests {
     use super::*;
     use crate::network::p2p::payloads::witness::Witness;
+
+    #[test]
+    fn block_validation_error_display_messages_remain_stable() {
+        let hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
+        assert_eq!(
+            BlockValidationError::BlockTooLarge {
+                size: 11,
+                max_size: 10
+            }
+            .to_string(),
+            "Block size 11 exceeds maximum 10"
+        );
+        assert_eq!(
+            BlockValidationError::TooManyTransactions {
+                count: 12,
+                max_count: 11
+            }
+            .to_string(),
+            "Transaction count 12 exceeds maximum 11"
+        );
+        assert_eq!(
+            BlockValidationError::TimestampTooFarInFuture {
+                timestamp: 20,
+                current: 10
+            }
+            .to_string(),
+            "Timestamp 20 is too far in future (current: 10)"
+        );
+        assert_eq!(
+            BlockValidationError::TimestampTooOld {
+                timestamp: 1,
+                min: 2
+            }
+            .to_string(),
+            "Timestamp 1 is before minimum 2"
+        );
+        assert_eq!(
+            BlockValidationError::TimestampNotIncreasing {
+                timestamp: 7,
+                prev_timestamp: 8
+            }
+            .to_string(),
+            "Timestamp 7 must be greater than previous 8"
+        );
+        assert_eq!(
+            BlockValidationError::InvalidMerkleRoot {
+                expected: hash,
+                computed: UInt256::default()
+            }
+            .to_string(),
+            format!(
+                "Merkle root mismatch: expected {}, computed {}",
+                hash,
+                UInt256::default()
+            )
+        );
+        assert_eq!(
+            BlockValidationError::DuplicateTransactions.to_string(),
+            "Block contains duplicate transactions"
+        );
+        assert_eq!(
+            BlockValidationError::TransactionVerificationFailed { index: 3, hash }.to_string(),
+            format!("Transaction {} at index 3 failed verification", hash)
+        );
+        assert_eq!(
+            BlockValidationError::InvalidWitnessScript {
+                reason: "bad opcode".to_string()
+            }
+            .to_string(),
+            "Invalid witness script: bad opcode"
+        );
+        assert_eq!(
+            BlockValidationError::EmptyTransactionList.to_string(),
+            "Block has empty transaction list"
+        );
+        assert_eq!(
+            BlockValidationError::UnsupportedVersion { version: 2 }.to_string(),
+            "Block version 2 is not supported"
+        );
+        assert_eq!(
+            BlockValidationError::InvalidPrimaryIndex { index: 8, max: 7 }.to_string(),
+            "Primary index 8 exceeds maximum validator count 7"
+        );
+        assert_eq!(
+            BlockValidationError::HeaderValidationFailed {
+                reason: "bad header".to_string()
+            }
+            .to_string(),
+            "Header validation failed: bad header"
+        );
+    }
 
     #[test]
     fn validate_block_version_accepts_version_0() {
