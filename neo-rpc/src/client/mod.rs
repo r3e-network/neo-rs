@@ -21,6 +21,8 @@ mod nep17_api;
 mod policy_api;
 mod rpc_client;
 mod state_api;
+#[cfg(test)]
+mod test_helpers;
 mod transaction_manager;
 mod transaction_manager_factory;
 mod utility;

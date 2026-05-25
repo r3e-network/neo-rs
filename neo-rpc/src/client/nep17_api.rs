@@ -488,6 +488,7 @@ impl Nep17Api {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
     use neo_core::script_builder::ScriptBuilder;
@@ -500,18 +501,6 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
-
-    fn localhost_binding_permitted() -> bool {
-        std::net::TcpListener::bind("127.0.0.1:0").is_ok()
-    }
-
-    fn rpc_response(result: JToken) -> String {
-        let mut response = JObject::new();
-        response.insert("jsonrpc".to_string(), JToken::String("2.0".to_string()));
-        response.insert("id".to_string(), JToken::Number(1.0));
-        response.insert("result".to_string(), result);
-        JToken::Object(response).to_string()
-    }
 
     fn invoke_response(stack: Vec<JToken>, gas_consumed: i64) -> String {
         let mut result = JObject::new();

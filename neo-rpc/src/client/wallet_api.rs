@@ -439,6 +439,7 @@ pub struct WalletAccountState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
     use neo_config::ProtocolSettings;
@@ -449,21 +450,8 @@ mod tests {
     use regex::escape;
     use reqwest::Url;
     use std::fs;
-    use std::net::TcpListener;
     use std::path::PathBuf;
     use std::sync::Arc;
-
-    fn localhost_binding_permitted() -> bool {
-        TcpListener::bind("127.0.0.1:0").is_ok()
-    }
-
-    fn rpc_response(result: JToken) -> String {
-        let mut response = JObject::new();
-        response.insert("jsonrpc".to_string(), JToken::String("2.0".to_string()));
-        response.insert("id".to_string(), JToken::Number(1.0));
-        response.insert("result".to_string(), result);
-        JToken::Object(response).to_string()
-    }
 
     fn load_rpc_case_result(name: &str) -> Option<JObject> {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
