@@ -20,30 +20,32 @@ neo_primitives::p2p_message_command! {
 neo_primitives::__p2p_message_command_compression_impl!(pub(crate) MessageCommand);
 
 impl MessageCommand {
+    pub(crate) const SINGLE_QUEUED_COMMANDS: [Self; 7] = [
+        Self::Addr,
+        Self::GetAddr,
+        Self::GetBlocks,
+        Self::GetHeaders,
+        Self::Mempool,
+        Self::Ping,
+        Self::Pong,
+    ];
+
+    pub(crate) const HIGH_PRIORITY_COMMANDS: [Self; 7] = [
+        Self::Alert,
+        Self::Extensible,
+        Self::FilterAdd,
+        Self::FilterClear,
+        Self::FilterLoad,
+        Self::GetAddr,
+        Self::Mempool,
+    ];
+
     pub(crate) fn is_single_queued(self) -> bool {
-        matches!(
-            self,
-            MessageCommand::Addr
-                | MessageCommand::GetAddr
-                | MessageCommand::GetBlocks
-                | MessageCommand::GetHeaders
-                | MessageCommand::Mempool
-                | MessageCommand::Ping
-                | MessageCommand::Pong
-        )
+        Self::SINGLE_QUEUED_COMMANDS.contains(&self)
     }
 
     pub(crate) fn is_high_priority_queue(self) -> bool {
-        matches!(
-            self,
-            MessageCommand::Alert
-                | MessageCommand::Extensible
-                | MessageCommand::FilterAdd
-                | MessageCommand::FilterClear
-                | MessageCommand::FilterLoad
-                | MessageCommand::GetAddr
-                | MessageCommand::Mempool
-        )
+        Self::HIGH_PRIORITY_COMMANDS.contains(&self)
     }
 }
 
@@ -101,17 +103,20 @@ mod tests {
 
     #[test]
     fn outbound_queue_single_command_set_matches_remote_node_policy() {
-        let single = [
-            MessageCommand::Addr,
-            MessageCommand::GetAddr,
-            MessageCommand::GetBlocks,
-            MessageCommand::GetHeaders,
-            MessageCommand::Mempool,
-            MessageCommand::Ping,
-            MessageCommand::Pong,
-        ];
+        assert_eq!(
+            MessageCommand::SINGLE_QUEUED_COMMANDS,
+            [
+                MessageCommand::Addr,
+                MessageCommand::GetAddr,
+                MessageCommand::GetBlocks,
+                MessageCommand::GetHeaders,
+                MessageCommand::Mempool,
+                MessageCommand::Ping,
+                MessageCommand::Pong,
+            ]
+        );
 
-        for command in single {
+        for command in MessageCommand::SINGLE_QUEUED_COMMANDS {
             assert!(command.is_single_queued(), "{command:?}");
         }
 
@@ -121,17 +126,20 @@ mod tests {
 
     #[test]
     fn outbound_queue_high_priority_set_matches_remote_node_policy() {
-        let high_priority = [
-            MessageCommand::Alert,
-            MessageCommand::Extensible,
-            MessageCommand::FilterAdd,
-            MessageCommand::FilterClear,
-            MessageCommand::FilterLoad,
-            MessageCommand::GetAddr,
-            MessageCommand::Mempool,
-        ];
+        assert_eq!(
+            MessageCommand::HIGH_PRIORITY_COMMANDS,
+            [
+                MessageCommand::Alert,
+                MessageCommand::Extensible,
+                MessageCommand::FilterAdd,
+                MessageCommand::FilterClear,
+                MessageCommand::FilterLoad,
+                MessageCommand::GetAddr,
+                MessageCommand::Mempool,
+            ]
+        );
 
-        for command in high_priority {
+        for command in MessageCommand::HIGH_PRIORITY_COMMANDS {
             assert!(command.is_high_priority_queue(), "{command:?}");
         }
 
