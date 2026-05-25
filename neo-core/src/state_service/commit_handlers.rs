@@ -15,7 +15,7 @@ use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::ledger::{block::Block, blockchain_application_executed::ApplicationExecuted};
 use crate::persistence::data_cache::DataCache;
 use crate::state_service::StateStore;
-use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+use crate::unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
 use tracing::error;
 
 /// Handlers for wiring state root calculation into block persistence.
@@ -43,7 +43,7 @@ impl StateServiceCommitHandlers {
         error!(
             target: "neo::state_service",
             phase,
-            error = panic_message(&payload),
+            error = panic_message(payload.as_ref(), "unknown panic payload"),
             "state service handler panicked"
         );
         self.apply_exception_policy();
@@ -75,7 +75,7 @@ impl StateServiceCommitHandlers {
                 "state service commit handler failed during {phase}: {err}"
             ))),
             Err(payload) => {
-                let message = panic_message(&payload);
+                let message = panic_message(payload.as_ref(), "unknown panic payload");
                 self.handle_panic(payload, phase);
                 Err(CoreError::system(format!(
                     "state service commit handler panicked during {phase}: {message}"
@@ -168,16 +168,6 @@ impl CommittedHandler for StateServiceCommitHandlers {
     fn blockchain_committed_handler(&self, _system: &dyn Any, _block: &Block) {
         // MPT persist is now handled by the background thread spawned in
         // blockchain_committing_handler. No work needed here.
-    }
-}
-
-fn panic_message(payload: &Box<dyn Any + Send>) -> String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        message.to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else {
-        "unknown panic payload".to_string()
     }
 }
 

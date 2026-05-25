@@ -6,6 +6,7 @@ use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::neo_system::NeoSystem;
 use crate::persistence::{DataCache, IStore, StoreSnapshot};
 use crate::smart_contract::{NotifyEventArgs, TriggerType};
+use crate::unhandled_exception_policy::panic_message;
 use crate::vm_runtime::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
 use crate::vm_runtime::StackItem;
 use crate::UInt256;
@@ -79,7 +80,7 @@ impl ApplicationLogsService {
         error!(
             target: "neo::application_logs",
             phase,
-            error = panic_message(&payload),
+            error = panic_message(payload.as_ref(), "unknown panic payload"),
             "application logs handler panicked"
         );
         self.settings
@@ -272,16 +273,6 @@ impl CommittedHandler for ApplicationLogsService {
             Ok(Err(err)) => self.handle_error(&err, "committed"),
             Err(payload) => self.handle_panic(payload, "committed"),
         }
-    }
-}
-
-fn panic_message(payload: &Box<dyn Any + Send>) -> String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        message.to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else {
-        "unknown panic payload".to_string()
     }
 }
 

@@ -1,6 +1,7 @@
 //! Shared unhandled exception policy for plugin-like services.
 
 use serde::Deserialize;
+use std::any::Any;
 
 /// Exception handling policy for plugin-style services.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -37,9 +38,21 @@ impl UnhandledExceptionPolicy {
     }
 }
 
+/// Extracts a loggable message from a panic payload while preserving caller
+/// specific fallback wording for non-string payloads.
+pub fn panic_message(payload: &(dyn Any + Send), fallback: &'static str) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        message.to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        fallback.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::UnhandledExceptionPolicy;
+    use super::{panic_message, UnhandledExceptionPolicy};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]
@@ -66,5 +79,27 @@ mod tests {
 
         assert!(!should_continue);
         assert!(stopped.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn panic_message_extracts_string_payloads() {
+        let str_payload: Box<dyn std::any::Any + Send> = Box::new("borrowed panic");
+        let string_payload: Box<dyn std::any::Any + Send> = Box::new("owned panic".to_string());
+
+        assert_eq!(
+            panic_message(str_payload.as_ref(), "fallback"),
+            "borrowed panic"
+        );
+        assert_eq!(
+            panic_message(string_payload.as_ref(), "fallback"),
+            "owned panic"
+        );
+    }
+
+    #[test]
+    fn panic_message_uses_caller_fallback_for_unknown_payloads() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(7_u8);
+
+        assert_eq!(panic_message(payload.as_ref(), "fallback"), "fallback");
     }
 }

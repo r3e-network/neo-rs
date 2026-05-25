@@ -10,6 +10,7 @@ use super::trackers::tracker_base::Tracker;
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::neo_ledger::{ApplicationExecuted, Block};
 use crate::persistence::{DataCache, IStore};
+use crate::unhandled_exception_policy::panic_message;
 use crate::NeoSystem;
 use parking_lot::RwLock;
 use std::any::Any;
@@ -74,7 +75,7 @@ impl TokensTracker {
     }
 
     fn handle_panic(&self, tracker: &str, action: &str, payload: Box<dyn Any + Send>) -> bool {
-        let message = panic_message(&payload);
+        let message = panic_message(payload.as_ref(), "panic");
         self.handle_failure(tracker, action, "panicked", message)
     }
 
@@ -234,15 +235,5 @@ mod tests {
 
         assert!(should_continue);
         assert!(!tracker.disabled.load(Ordering::Relaxed));
-    }
-}
-
-fn panic_message(payload: &Box<dyn Any + Send>) -> String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        message.to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else {
-        "panic".to_string()
     }
 }
