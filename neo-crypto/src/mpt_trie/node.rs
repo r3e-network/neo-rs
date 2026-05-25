@@ -1,7 +1,7 @@
 use super::error::{MptError, MptResult};
 use super::node_type::NodeType;
 use crate::Crypto;
-use neo_io::serializable::helper::get_var_size;
+use neo_io::serializable::helper::{get_var_size, get_var_size_bytes};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use neo_primitives::UINT256_SIZE;
@@ -327,7 +327,7 @@ impl Node {
             self.next.is_some(),
             "extension node missing child during size computation"
         );
-        let key_size = get_var_size(self.key.len() as u64) + self.key.len();
+        let key_size = get_var_size_bytes(&self.key);
         key_size
             + self
                 .next
@@ -337,7 +337,7 @@ impl Node {
     }
 
     fn leaf_size(&self) -> usize {
-        get_var_size(self.value.len() as u64) + self.value.len()
+        get_var_size_bytes(&self.value)
     }
 
     const fn hash_size(&self) -> usize {

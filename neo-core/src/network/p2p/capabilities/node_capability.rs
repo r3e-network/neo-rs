@@ -150,7 +150,7 @@ impl Serializable for NodeCapability {
             Self::TcpServer { .. } | Self::WsServer { .. } => 1 + 2,
             Self::DisableCompression | Self::ArchivalNode => 1 + 1,
             Self::FullNode { .. } => 1 + 4,
-            Self::Unknown { data, .. } => 1 + helper::get_var_size(data.len() as u64) + data.len(),
+            Self::Unknown { data, .. } => 1 + helper::get_var_size_bytes(data),
         }
     }
 

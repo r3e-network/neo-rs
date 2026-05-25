@@ -1,7 +1,6 @@
 //! Inventory payload (mirrors `Neo.Network.P2P.Payloads.InvPayload`).
 
 use super::InventoryType;
-use crate::neo_config::HASH_SIZE;
 use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -71,7 +70,7 @@ impl InvPayload {
 
 impl Serializable for InvPayload {
     fn size(&self) -> usize {
-        1 + helper::get_var_size(self.hashes.len() as u64) + self.hashes.len() * HASH_SIZE
+        1 + helper::get_var_size_serializable_slice(&self.hashes)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
