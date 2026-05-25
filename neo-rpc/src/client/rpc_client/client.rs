@@ -31,11 +31,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::builder::RpcClientBuilder;
-use super::helpers::{
-    parse_plugins, token_as_number, token_as_object, token_as_string,
-};
+use super::helpers::{parse_plugins, token_as_number, token_as_object, token_as_string};
 use super::hooks::RpcRequestOutcome;
 use super::{RpcClient, RpcClientHooks, MAX_JSON_NESTING, RPC_NAME_REGEX};
+
+fn serialize_to_base64<T: Serializable>(value: &T) -> Result<String, ClientRpcError> {
+    let mut writer = BinaryWriter::new();
+    value
+        .serialize(&mut writer)
+        .map_err(|err| ClientRpcError::new(-32603, format!("serialization failed: {err}")))?;
+    Ok(general_purpose::STANDARD.encode(writer.into_bytes()))
+}
 
 impl RpcClient {
     /// Creates a configurable builder for the RPC client.
@@ -754,10 +760,7 @@ impl RpcClient {
     /// Calculates the network fee for a transaction.
     /// Matches C# `CalculateNetworkFeeAsync`
     pub async fn calculate_network_fee(&self, tx: &Transaction) -> Result<i64, ClientRpcError> {
-        let mut writer = BinaryWriter::new();
-        tx.serialize(&mut writer)
-            .map_err(|err| ClientRpcError::new(-32603, format!("serialization failed: {err}")))?;
-        let base64 = general_purpose::STANDARD.encode(writer.into_bytes());
+        let base64 = serialize_to_base64(tx)?;
         let result = self
             .rpc_send_async("calculatenetworkfee", vec![JToken::String(base64)])
             .await?;
@@ -778,10 +781,7 @@ impl RpcClient {
     /// Broadcasts a raw transaction.
     /// Returns the transaction hash on success (C# parity).
     pub async fn send_raw_transaction(&self, tx: &Transaction) -> Result<UInt256, ClientRpcError> {
-        let mut writer = BinaryWriter::new();
-        tx.serialize(&mut writer)
-            .map_err(|err| ClientRpcError::new(-32603, format!("serialization failed: {err}")))?;
-        let base64 = general_purpose::STANDARD.encode(writer.into_bytes());
+        let base64 = serialize_to_base64(tx)?;
         let result = self
             .rpc_send_async("sendrawtransaction", vec![JToken::String(base64)])
             .await?;
@@ -797,11 +797,7 @@ impl RpcClient {
     /// Broadcasts a block.
     /// Returns the block hash on success (C# parity).
     pub async fn submit_block(&self, block: &Block) -> Result<UInt256, ClientRpcError> {
-        let mut writer = BinaryWriter::new();
-        block
-            .serialize(&mut writer)
-            .map_err(|err| ClientRpcError::new(-32603, format!("serialization failed: {err}")))?;
-        let base64 = general_purpose::STANDARD.encode(writer.into_bytes());
+        let base64 = serialize_to_base64(block)?;
         let result = self
             .rpc_send_async("submitblock", vec![JToken::String(base64)])
             .await?;
