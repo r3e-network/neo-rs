@@ -14,9 +14,12 @@ use crate::cryptography::MerkleTree;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::CoreResult;
+use bitvec::prelude::{BitVec, Lsb0};
 use neo_primitives::{UInt256, UINT256_SIZE};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+
+type MerkleBlockFlags = BitVec<u8, Lsb0>;
 
 /// Represents a block that is filtered by a BloomFilter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,19 +101,17 @@ fn pad_flags(mut flags: Vec<bool>, depth: usize) -> Vec<bool> {
 }
 
 fn pack_flags(flags: &[bool]) -> Vec<u8> {
-    let mut bytes = vec![0u8; flags.len().div_ceil(8)];
-    for (index, flag) in flags.iter().enumerate() {
-        if *flag {
-            bytes[index / 8] |= 1 << (index % 8);
-        }
-    }
-    bytes
+    flags
+        .iter()
+        .copied()
+        .collect::<MerkleBlockFlags>()
+        .into_vec()
 }
 
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use super::{pad_flags, MerkleBlockPayload};
+    use super::{pack_flags, pad_flags, MerkleBlockPayload};
     use crate::network::p2p::payloads::block::Block;
     use crate::network::p2p::payloads::signer::Signer;
     use crate::network::p2p::payloads::transaction::Transaction;
@@ -149,6 +150,13 @@ mod tests {
 
         let padded = pad_flags(vec![true, true, true, true, true], 3);
         assert_eq!(padded, vec![true, true, true, true]);
+    }
+
+    #[test]
+    fn pack_flags_uses_neo_lsb_first_byte_order() {
+        let packed = pack_flags(&[true, false, true, true, false, false, false, false, true]);
+
+        assert_eq!(packed, vec![0b0000_1101, 0b0000_0001]);
     }
 
     #[test]

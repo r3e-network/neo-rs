@@ -69,6 +69,7 @@ toml = { workspace = true }
 dirs = "5.0"
 if-addrs = "0.10"
 bitflags = { workspace = true }
+bitvec = { workspace = true }
 aes = "0.8"
 cbc = "0.1"
 cipher = "0.4"
