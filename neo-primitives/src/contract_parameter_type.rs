@@ -1,74 +1,44 @@
 //! `ContractParameterType` - matches C# Neo.SmartContract.ContractParameterType exactly
 
+use crate::protocol_enum_repr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
 
-/// Represents the type of `ContractParameter` (matches C# `ContractParameterType`)
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum ContractParameterType {
-    /// Indicates that the parameter can be of any type
-    #[default]
-    Any = 0x00,
-
-    /// Indicates that the parameter is of Boolean type
-    Boolean = 0x10,
-
-    /// Indicates that the parameter is an integer
-    Integer = 0x11,
-
-    /// Indicates that the parameter is a byte array
-    ByteArray = 0x12,
-
-    /// Indicates that the parameter is a string
-    String = 0x13,
-
-    /// Indicates that the parameter is a 160-bit hash
-    Hash160 = 0x14,
-
-    /// Indicates that the parameter is a 256-bit hash
-    Hash256 = 0x15,
-
-    /// Indicates that the parameter is a public key
-    PublicKey = 0x16,
-
-    /// Indicates that the parameter is a signature
-    Signature = 0x17,
-
-    /// Indicates that the parameter is an array
-    Array = 0x20,
-
-    /// Indicates that the parameter is a map
-    Map = 0x22,
-
-    /// Indicates that the parameter is an interoperable interface
-    InteropInterface = 0x30,
-
-    /// It can be only used as the return type of a method, meaning that the method has no return value
-    Void = 0xff,
+protocol_enum_repr! {
+    /// Represents the type of `ContractParameter` (matches C# `ContractParameterType`)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    pub ContractParameterType {
+        /// Indicates that the parameter can be of any type
+        #[default]
+        Any = 0x00,
+        /// Indicates that the parameter is of Boolean type
+        Boolean = 0x10,
+        /// Indicates that the parameter is an integer
+        Integer = 0x11,
+        /// Indicates that the parameter is a byte array
+        ByteArray = 0x12,
+        /// Indicates that the parameter is a string
+        String = 0x13,
+        /// Indicates that the parameter is a 160-bit hash
+        Hash160 = 0x14,
+        /// Indicates that the parameter is a 256-bit hash
+        Hash256 = 0x15,
+        /// Indicates that the parameter is a public key
+        PublicKey = 0x16,
+        /// Indicates that the parameter is a signature
+        Signature = 0x17,
+        /// Indicates that the parameter is an array
+        Array = 0x20,
+        /// Indicates that the parameter is a map
+        Map = 0x22,
+        /// Indicates that the parameter is an interoperable interface
+        InteropInterface = 0x30,
+        /// It can be only used as the return type of a method, meaning that the method has no return value
+        Void = 0xff,
+    }
 }
 
 impl ContractParameterType {
-    /// Returns the canonical manifest name for this parameter type (matches C# enum names).
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Any => "Any",
-            Self::Boolean => "Boolean",
-            Self::Integer => "Integer",
-            Self::ByteArray => "ByteArray",
-            Self::String => "String",
-            Self::Hash160 => "Hash160",
-            Self::Hash256 => "Hash256",
-            Self::PublicKey => "PublicKey",
-            Self::Signature => "Signature",
-            Self::Array => "Array",
-            Self::Map => "Map",
-            Self::InteropInterface => "InteropInterface",
-            Self::Void => "Void",
-        }
-    }
-
     /// Parse from string (case-insensitive)
     ///
     /// # Errors
@@ -96,28 +66,7 @@ impl ContractParameterType {
     /// Try to convert from u8 value
     #[must_use]
     pub const fn try_from_u8(value: u8) -> Option<Self> {
-        match value {
-            0x00 => Some(Self::Any),
-            0x10 => Some(Self::Boolean),
-            0x11 => Some(Self::Integer),
-            0x12 => Some(Self::ByteArray),
-            0x13 => Some(Self::String),
-            0x14 => Some(Self::Hash160),
-            0x15 => Some(Self::Hash256),
-            0x16 => Some(Self::PublicKey),
-            0x17 => Some(Self::Signature),
-            0x20 => Some(Self::Array),
-            0x22 => Some(Self::Map),
-            0x30 => Some(Self::InteropInterface),
-            0xff => Some(Self::Void),
-            _ => None,
-        }
-    }
-}
-
-impl std::fmt::Display for ContractParameterType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+        Self::from_byte(value)
     }
 }
 
@@ -134,7 +83,7 @@ impl Serialize for ContractParameterType {
     where
         S: Serializer,
     {
-        serializer.serialize_str(self.as_str())
+        serializer.serialize_str((*self).as_str())
     }
 }
 
