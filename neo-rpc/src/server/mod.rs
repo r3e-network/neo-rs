@@ -27,8 +27,6 @@ mod rpc_server_utilities;
 mod rpc_server_wallet;
 mod session;
 pub mod smart_contract;
-mod tree;
-mod tree_node;
 pub mod ws;
 
 // Public exports

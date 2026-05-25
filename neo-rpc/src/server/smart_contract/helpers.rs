@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::witness::Witness;
@@ -13,18 +11,16 @@ use neo_core::UInt160;
 use neo_json::JToken;
 use neo_vm_rs::{StackValue, VmState};
 use num_traits::ToPrimitive;
-use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
-use crate::server::diagnostic::Diagnostic;
+use crate::server::diagnostic::{Diagnostic, DiagnosticInvocation};
 use crate::server::model::signers_and_witnesses::SignersAndWitnesses;
 use crate::server::parameter_converter::{ConversionContext, ParameterConverter};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
-use crate::server::tree_node::TreeNode;
 
 const INVALID_OPERATION_CODE: i32 = -2146233079;
 
@@ -209,21 +205,21 @@ pub(super) fn notification_to_json(
 }
 
 pub(super) fn diagnostic_invocation_to_json(diagnostic: &Diagnostic) -> Value {
-    fn to_json_node(node_arc: Arc<Mutex<TreeNode<UInt160>>>) -> Value {
-        let (hash, children) = {
-            let node = node_arc.lock();
-            (node.item().to_string(), node.children().to_vec())
-        };
+    fn to_json_node(node: DiagnosticInvocation) -> Value {
         let mut obj = Map::new();
-        obj.insert("hash".to_string(), Value::String(hash));
-        if !children.is_empty() {
-            let children = children.into_iter().map(to_json_node).collect::<Vec<_>>();
+        obj.insert("hash".to_string(), Value::String(node.hash.to_string()));
+        if !node.children.is_empty() {
+            let children = node
+                .children
+                .into_iter()
+                .map(to_json_node)
+                .collect::<Vec<_>>();
             obj.insert("call".to_string(), Value::Array(children));
         }
         Value::Object(obj)
     }
 
-    match diagnostic.root() {
+    match diagnostic.invocation_root() {
         Some(root) => to_json_node(root),
         None => Value::Null,
     }
