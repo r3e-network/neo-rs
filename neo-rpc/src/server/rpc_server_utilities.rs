@@ -1,11 +1,9 @@
 use serde_json::{json, Value};
-use std::sync::Arc;
 
 use neo_core::wallets::Helper as WalletHelper;
 
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
-use super::rpc_method_attribute::RpcMethodDescriptor;
 use super::rpc_server::{RpcHandler, RpcServer};
 use neo_core::application_logs::ApplicationLogsService;
 use neo_core::tokens_tracker::TokensTrackerService;
@@ -14,17 +12,10 @@ pub struct RpcServerUtilities;
 
 impl RpcServerUtilities {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![
-            Self::handler("listplugins", Self::list_plugins_handler),
-            Self::handler("validateaddress", Self::validate_address_handler),
+        super::rpc_handlers![
+            "listplugins" => Self::list_plugins_handler,
+            "validateaddress" => Self::validate_address_handler,
         ]
-    }
-
-    fn handler(
-        name: &'static str,
-        func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-    ) -> RpcHandler {
-        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn list_plugins_handler(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {

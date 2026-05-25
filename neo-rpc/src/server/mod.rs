@@ -11,6 +11,7 @@ mod routes;
 mod rpc_error;
 mod rpc_error_factory;
 mod rpc_exception;
+mod rpc_handler_macros;
 pub mod rpc_helpers;
 mod rpc_method_attribute;
 mod rpc_relay;
@@ -33,6 +34,7 @@ pub mod ws;
 // Public exports
 pub use rpc_error::RpcError as ServerRpcError;
 pub use rpc_exception::RpcException;
+pub(crate) use rpc_handler_macros::rpc_handlers;
 pub use rpc_method_attribute::RpcMethodDescriptor;
 pub use rpc_server::{
     build_tls_config_from_settings, get_server, register_server, remove_server, RpcCallback,

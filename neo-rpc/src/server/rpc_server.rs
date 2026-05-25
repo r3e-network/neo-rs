@@ -69,6 +69,20 @@ impl RpcHandler {
     }
 }
 
+pub(crate) fn rpc_handler(
+    name: &'static str,
+    func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
+) -> RpcHandler {
+    RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
+}
+
+pub(crate) fn protected_rpc_handler(
+    name: &'static str,
+    func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
+) -> RpcHandler {
+    RpcHandler::new(RpcMethodDescriptor::new_protected(name), Arc::new(func))
+}
+
 pub static RPC_REQ_TOTAL: Lazy<Counter> = Lazy::new(|| {
     let counter =
         Counter::new("neo_rpc_requests_total", "Total RPC requests").unwrap_or_else(|_| {

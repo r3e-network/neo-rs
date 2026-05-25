@@ -2,7 +2,6 @@
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
-use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -27,20 +26,13 @@ pub struct RpcServerNode;
 
 impl RpcServerNode {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![
-            Self::handler("getconnectioncount", Self::get_connection_count),
-            Self::handler("getpeers", Self::get_peers),
-            Self::handler("getversion", Self::get_version),
-            Self::handler("sendrawtransaction", Self::send_raw_transaction),
-            Self::handler("submitblock", Self::submit_block),
+        super::rpc_handlers![
+            "getconnectioncount" => Self::get_connection_count,
+            "getpeers" => Self::get_peers,
+            "getversion" => Self::get_version,
+            "sendrawtransaction" => Self::send_raw_transaction,
+            "submitblock" => Self::submit_block,
         ]
-    }
-
-    fn handler(
-        name: &'static str,
-        func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-    ) -> RpcHandler {
-        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn get_connection_count(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {

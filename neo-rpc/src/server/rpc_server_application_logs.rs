@@ -3,30 +3,20 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
-use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use neo_core::application_logs::ApplicationLogsService;
 use neo_core::smart_contract::TriggerType;
 use neo_core::UInt256;
 use serde_json::Value;
 use std::str::FromStr;
-use std::sync::Arc;
 
 pub struct RpcServerApplicationLogs;
 
 impl RpcServerApplicationLogs {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![Self::handler(
-            "getapplicationlog",
-            Self::get_application_log,
-        )]
-    }
-
-    fn handler(
-        name: &'static str,
-        func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-    ) -> RpcHandler {
-        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
+        super::rpc_handlers![
+            "getapplicationlog" => Self::get_application_log,
+        ]
     }
 
     fn get_application_log(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {

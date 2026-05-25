@@ -1,7 +1,6 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
-use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::cryptography::{ECCurve, ECPoint};
@@ -13,17 +12,9 @@ pub struct RpcServerOracle;
 
 impl RpcServerOracle {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![Self::handler(
-            "submitoracleresponse",
-            Self::submit_oracle_response,
-        )]
-    }
-
-    fn handler(
-        name: &'static str,
-        func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-    ) -> RpcHandler {
-        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
+        super::rpc_handlers![
+            "submitoracleresponse" => Self::submit_oracle_response,
+        ]
     }
 
     fn submit_oracle_response(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {

@@ -1,7 +1,6 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
-use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::script_builder::ScriptBuilder;
@@ -10,8 +9,7 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::contract_management::ContractManagement;
 use neo_core::smart_contract::{ApplicationEngine, TriggerType};
 use neo_core::tokens_tracker::{
-    find_prefix, Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey,
-    Nep17Tracker, TokenBalance,
+    find_prefix, Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance,
 };
 use neo_core::vm_runtime::StackItem;
 use neo_core::wallets::helper::Helper as WalletHelper;
@@ -34,20 +32,13 @@ const NEP11_PROPERTIES: [&str; 4] = ["name", "description", "image", "tokenURI"]
 
 impl RpcServerTokensTracker {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![
-            Self::handler("getnep11balances", Self::get_nep11_balances),
-            Self::handler("getnep11transfers", Self::get_nep11_transfers),
-            Self::handler("getnep11properties", Self::get_nep11_properties),
-            Self::handler("getnep17balances", Self::get_nep17_balances),
-            Self::handler("getnep17transfers", Self::get_nep17_transfers),
+        super::rpc_handlers![
+            "getnep11balances" => Self::get_nep11_balances,
+            "getnep11transfers" => Self::get_nep11_transfers,
+            "getnep11properties" => Self::get_nep11_properties,
+            "getnep17balances" => Self::get_nep17_balances,
+            "getnep17transfers" => Self::get_nep17_transfers,
         ]
-    }
-
-    fn handler(
-        name: &'static str,
-        func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-    ) -> RpcHandler {
-        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn get_nep11_balances(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {

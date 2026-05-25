@@ -3,7 +3,6 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
-use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
@@ -21,21 +20,14 @@ pub struct RpcServerState;
 
 impl RpcServerState {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![
-            Self::handler("getstateheight", Self::get_state_height),
-            Self::handler("getstateroot", Self::get_state_root),
-            Self::handler("getproof", Self::get_proof),
-            Self::handler("verifyproof", Self::verify_proof),
-            Self::handler("getstate", Self::get_state),
-            Self::handler("findstates", Self::find_states),
+        super::rpc_handlers![
+            "getstateheight" => Self::get_state_height,
+            "getstateroot" => Self::get_state_root,
+            "getproof" => Self::get_proof,
+            "verifyproof" => Self::verify_proof,
+            "getstate" => Self::get_state,
+            "findstates" => Self::find_states,
         ]
-    }
-
-    fn handler(
-        name: &'static str,
-        func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-    ) -> RpcHandler {
-        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn state_store(server: &RpcServer) -> Result<Arc<StateStore>, RpcException> {

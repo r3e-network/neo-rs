@@ -6,7 +6,6 @@ use crate::server::model::contract_name_or_hash_or_id::ContractNameOrHashOrId;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
-use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
@@ -32,38 +31,30 @@ use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
-use std::sync::Arc;
 
 pub struct RpcServerBlockchain;
 
 impl RpcServerBlockchain {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![
-            Self::handler("getbestblockhash", Self::get_best_block_hash),
-            Self::handler("getblockcount", Self::get_block_count),
-            Self::handler("getblockheadercount", Self::get_block_header_count),
-            Self::handler("getblockhash", Self::get_block_hash),
-            Self::handler("getblock", Self::get_block),
-            Self::handler("getblockheader", Self::get_block_header),
-            Self::handler("getblocksysfee", Self::get_block_sys_fee),
-            Self::handler("getrawmempool", Self::get_raw_mem_pool),
-            Self::handler("getrawtransaction", Self::get_raw_transaction),
-            Self::handler("getcontractstate", Self::get_contract_state),
-            Self::handler("getstorage", Self::get_storage),
-            Self::handler("findstorage", Self::find_storage),
-            Self::handler("getnativecontracts", Self::get_native_contracts),
-            Self::handler("getnextblockvalidators", Self::get_next_block_validators),
-            Self::handler("getcandidates", Self::get_candidates),
-            Self::handler("gettransactionheight", Self::get_transaction_height),
-            Self::handler("getcommittee", Self::get_committee),
+        super::rpc_handlers![
+            "getbestblockhash" => Self::get_best_block_hash,
+            "getblockcount" => Self::get_block_count,
+            "getblockheadercount" => Self::get_block_header_count,
+            "getblockhash" => Self::get_block_hash,
+            "getblock" => Self::get_block,
+            "getblockheader" => Self::get_block_header,
+            "getblocksysfee" => Self::get_block_sys_fee,
+            "getrawmempool" => Self::get_raw_mem_pool,
+            "getrawtransaction" => Self::get_raw_transaction,
+            "getcontractstate" => Self::get_contract_state,
+            "getstorage" => Self::get_storage,
+            "findstorage" => Self::find_storage,
+            "getnativecontracts" => Self::get_native_contracts,
+            "getnextblockvalidators" => Self::get_next_block_validators,
+            "getcandidates" => Self::get_candidates,
+            "gettransactionheight" => Self::get_transaction_height,
+            "getcommittee" => Self::get_committee,
         ]
-    }
-
-    fn handler(
-        name: &'static str,
-        func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-    ) -> RpcHandler {
-        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn get_best_block_hash(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
