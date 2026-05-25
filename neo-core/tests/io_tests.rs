@@ -8,7 +8,7 @@ use neo_core::extensions::{
 };
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::*;
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind};
 use std::str::FromStr;
 
 // ============================================================================
@@ -381,6 +381,65 @@ fn test_binary_reader_read_var_int() {
     let data = writer.to_bytes();
     let mut reader = Cursor::new(data);
     assert!(reader.read_var_int(0xFFFF_FFFF).is_err());
+}
+
+#[test]
+fn test_binary_reader_read_var_int_eof_positions() {
+    let cases: &[(&[u8], u64)] = &[
+        (&[], 0),
+        (&[0xFD], 1),
+        (&[0xFD, 0x01], 2),
+        (&[0xFE], 1),
+        (&[0xFE, 0, 0, 0], 4),
+        (&[0xFF], 1),
+        (&[0xFF, 0, 0, 0, 0, 0, 0, 0], 8),
+    ];
+
+    for (encoded, expected_position) in cases {
+        let mut reader = Cursor::new(encoded.to_vec());
+        let error = reader.read_var_int(u64::MAX).unwrap_err();
+
+        assert_eq!(ErrorKind::UnexpectedEof, error.kind());
+        assert_eq!(*expected_position, reader.position());
+    }
+}
+
+#[test]
+fn test_binary_reader_read_var_int_max_violation_consumes_encoded_width() {
+    let mut reader = Cursor::new(vec![0xFD, 0x02, 0x00, 0xAA]);
+    let error = reader.read_var_int(1).unwrap_err();
+
+    assert_eq!(ErrorKind::InvalidData, error.kind());
+    assert_eq!(3, reader.position());
+}
+
+#[test]
+fn test_binary_reader_read_var_int_accepts_non_canonical_encoding() {
+    for encoded in [
+        vec![0xFD, 0x01, 0x00],
+        vec![0xFE, 0x01, 0x00, 0x00, 0x00],
+        vec![0xFF, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    ] {
+        let mut reader = Cursor::new(encoded);
+
+        assert_eq!(1, reader.read_var_int(u64::MAX).unwrap());
+        assert_eq!(reader.get_ref().len() as u64, reader.position());
+    }
+}
+
+#[test]
+fn test_binary_reader_read_var_bytes_error_positions() {
+    let mut too_large = Cursor::new(vec![0x03, 0xAA, 0xBB, 0xCC]);
+    let error = too_large.read_var_bytes(2).unwrap_err();
+
+    assert_eq!(ErrorKind::InvalidData, error.kind());
+    assert_eq!(1, too_large.position());
+
+    let mut partial_payload = Cursor::new(vec![0x03, 0xAA, 0xBB]);
+    let error = partial_payload.read_var_bytes(10).unwrap_err();
+
+    assert_eq!(ErrorKind::UnexpectedEof, error.kind());
+    assert_eq!(3, partial_payload.position());
 }
 
 // ============================================================================

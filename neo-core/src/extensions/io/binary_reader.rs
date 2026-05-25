@@ -1,3 +1,4 @@
+use neo_io_crate::var_int::read_var_int_prefix;
 use std::io::{Error, ErrorKind, Read, Result};
 
 /// Extension helpers for [`Read`] mirroring `Neo.Extensions.IO.BinaryReaderExtensions`.
@@ -52,26 +53,19 @@ impl<T: Read> BinaryReaderExtensions for T {
     }
 
     fn read_var_int(&mut self, max: u64) -> Result<u64> {
-        let mut prefix = [0u8; 1];
-        self.read_exact(&mut prefix)?;
-        let value = match prefix[0] {
-            0xFD => {
-                let mut buf = [0u8; 2];
-                self.read_exact(&mut buf)?;
-                u16::from_le_bytes(buf) as u64
-            }
-            0xFE => {
-                let mut buf = [0u8; 4];
-                self.read_exact(&mut buf)?;
-                u32::from_le_bytes(buf) as u64
-            }
-            0xFF => {
-                let mut buf = [0u8; 8];
-                self.read_exact(&mut buf)?;
-                u64::from_le_bytes(buf)
-            }
-            value => value as u64,
+        let mut buf = [0u8; 9];
+        self.read_exact(&mut buf[..1])?;
+        let width = match buf[0] {
+            0xFD => 3,
+            0xFE => 5,
+            0xFF => 9,
+            _ => 1,
         };
+        self.read_exact(&mut buf[1..width])?;
+
+        let (value, decoded_width) = read_var_int_prefix(&buf[..width])
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Invalid Neo var-int prefix"))?;
+        debug_assert_eq!(decoded_width, width);
 
         if value > max {
             return Err(Error::new(
