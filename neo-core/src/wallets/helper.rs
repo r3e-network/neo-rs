@@ -44,6 +44,8 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use std::sync::Arc;
 
+const SIGNATURE_INVOCATION_SCRIPT_LENGTH: usize = 2 + 64;
+
 /// A helper class related to wallets.
 /// Matches C# Helper class exactly
 pub struct Helper;
@@ -619,12 +621,15 @@ fn calculate_network_fee_impl(
         }
 
         if ContractHelper::is_signature_contract(&witness_script) {
-            size += 67 + var_size_with_payload(witness_script.len());
+            size += (get_var_size(SIGNATURE_INVOCATION_SCRIPT_LENGTH as u64)
+                + SIGNATURE_INVOCATION_SCRIPT_LENGTH
+                + get_var_size_bytes(&witness_script)) as i64;
             network_fee += exec_fee_factor * ContractHelper::signature_contract_cost();
         } else if let Some((m, n)) = parse_multi_sig_contract(&witness_script) {
-            let invocation_len = 66 * m as i64;
-            size += var_size_with_payload(invocation_len as usize);
-            size += var_size_with_payload(witness_script.len());
+            let invocation_len = SIGNATURE_INVOCATION_SCRIPT_LENGTH * m as usize;
+            size += (get_var_size(invocation_len as u64)
+                + invocation_len
+                + get_var_size_bytes(&witness_script)) as i64;
             network_fee +=
                 exec_fee_factor * ContractHelper::multi_signature_contract_cost(m as i32, n as i32);
         } else {
@@ -641,22 +646,6 @@ fn calculate_network_fee_impl(
     }
 
     Ok(network_fee)
-}
-
-fn var_size_prefix(len: usize) -> i64 {
-    if len < 0xFD {
-        1
-    } else if len <= 0xFFFF {
-        3
-    } else if len <= 0xFFFF_FFFF {
-        5
-    } else {
-        9
-    }
-}
-
-fn var_size_with_payload(len: usize) -> i64 {
-    var_size_prefix(len) + len as i64
 }
 
 /// Finds paying accounts for a required amount (C# FindPayingAccounts).

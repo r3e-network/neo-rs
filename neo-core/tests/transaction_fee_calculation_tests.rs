@@ -2,6 +2,7 @@
 //!
 //! Verifies that transaction fee calculation matches Neo C# v3.9.1 implementation.
 
+use neo_core::neo_io::serializable::helper::get_var_size;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::application_engine::CHECK_SIG_PRICE;
 use neo_core::smart_contract::helper::Helper;
@@ -58,4 +59,29 @@ fn test_check_sig_price_constant() {
     // Verify CHECK_SIG_PRICE = 1 << 15 = 32768
     assert_eq!(CHECK_SIG_PRICE, 32768);
     assert_eq!(CHECK_SIG_PRICE, 1 << 15);
+}
+
+#[test]
+fn test_signature_invocation_script_var_size() {
+    const SIGNATURE_INVOCATION_SCRIPT_LENGTH: usize = 2 + 64;
+
+    assert_eq!(
+        get_var_size(SIGNATURE_INVOCATION_SCRIPT_LENGTH as u64)
+            + SIGNATURE_INVOCATION_SCRIPT_LENGTH,
+        67
+    );
+
+    for signature_count in [1usize, 2, 16] {
+        let invocation_len = SIGNATURE_INVOCATION_SCRIPT_LENGTH * signature_count;
+        let expected_size = if invocation_len < 0xFD {
+            1 + invocation_len
+        } else {
+            3 + invocation_len
+        };
+
+        assert_eq!(
+            get_var_size(invocation_len as u64) + invocation_len,
+            expected_size
+        );
+    }
 }
