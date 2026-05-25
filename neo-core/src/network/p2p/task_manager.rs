@@ -8,8 +8,7 @@
 //! - `completion_flow`: inventory completion and persistence callbacks.
 //! - `block_validation`: block/hash consistency checks.
 //! - `restart_flow` and `timeout_pruning`: restart and timer cleanup paths.
-//! - `known_hash_cache`, `state`, `session_lifecycle`, and `peer_commands`:
-//!   small support modules.
+//! - `state`, `session_lifecycle`, and `peer_commands`: small support modules.
 //!
 //! This keeps protocol behavior centralized while separating pure scheduling
 //! decisions from mailbox delivery.
@@ -34,6 +33,7 @@ use crate::runtime::{
 };
 use crate::UInt256;
 use async_trait::async_trait;
+use neo_io_crate::HashSetCache;
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -42,7 +42,6 @@ use tracing::warn;
 
 mod block_validation;
 mod completion_flow;
-mod known_hash_cache;
 mod peer_commands;
 mod request_flow;
 mod restart_flow;
@@ -50,7 +49,6 @@ mod scheduling;
 mod session_lifecycle;
 mod state;
 mod timeout_pruning;
-use known_hash_cache::KnownHashCache;
 use peer_commands::send_mempool;
 
 /// Interval for task manager housekeeping.
@@ -99,7 +97,7 @@ fn request_mempool_once(actor: &ActorRef, session: &mut TaskSession) -> bool {
 pub struct TaskManager {
     system: Option<Arc<NeoSystemContext>>,
     sessions: HashMap<String, SessionEntry>,
-    known_hashes: KnownHashCache,
+    known_hashes: HashSetCache<UInt256>,
     event_stream: Option<EventStreamHandle>,
     last_seen_persisted_index: u32,
     global_inv_tasks: HashMap<UInt256, u32>,
@@ -113,7 +111,7 @@ impl TaskManager {
         Self {
             system: None,
             sessions: HashMap::with_capacity(32),
-            known_hashes: KnownHashCache::new(1024),
+            known_hashes: HashSetCache::new(1024),
             event_stream: None,
             last_seen_persisted_index: 0,
             global_inv_tasks: HashMap::with_capacity(256),

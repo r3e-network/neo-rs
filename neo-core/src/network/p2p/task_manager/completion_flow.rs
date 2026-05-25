@@ -18,7 +18,7 @@ impl TaskManager {
     }
 
     fn record_known_hash(&mut self, hash: UInt256) {
-        self.known_hashes.remember(hash);
+        self.known_hashes.try_add(hash);
     }
 
     pub(super) fn complete_inventory(

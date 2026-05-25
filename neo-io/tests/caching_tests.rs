@@ -47,6 +47,37 @@ fn hash_set_cache_duplicate_does_not_refresh_fifo_order() {
 }
 
 #[test]
+fn hash_set_cache_capacity_change_trims_on_next_insert_attempt() {
+    let mut cache = HashSetCache::new(3);
+
+    assert!(cache.try_add(1));
+    assert!(cache.try_add(2));
+    assert!(cache.try_add(3));
+
+    cache.set_capacity(2);
+    assert!(cache.contains(&1));
+    assert!(cache.contains(&2));
+    assert!(cache.contains(&3));
+
+    assert!(cache.try_add(4));
+    assert!(!cache.contains(&1));
+    assert!(!cache.contains(&2));
+    assert!(cache.contains(&3));
+    assert!(cache.contains(&4));
+}
+
+#[test]
+fn hash_set_cache_zero_capacity_after_set_keeps_no_items() {
+    let mut cache = HashSetCache::new(1);
+
+    cache.set_capacity(0);
+    assert!(cache.try_add(1));
+    assert_eq!(cache.count(), 0);
+    assert!(!cache.contains(&1));
+    assert!(cache.try_add(1));
+}
+
+#[test]
 fn hash_set_cache_copy_to_preserves_insertion_order() {
     let mut cache = HashSetCache::new(3);
     cache.add(1);

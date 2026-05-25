@@ -36,7 +36,7 @@ impl TaskManager {
     }
 
     pub(super) fn forget_hash(&mut self, hash: &UInt256) {
-        self.known_hashes.forget(hash);
+        self.known_hashes.remove(hash);
     }
 
     pub(super) fn is_known_hash(&self, hash: &UInt256) -> bool {

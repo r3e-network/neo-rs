@@ -76,13 +76,20 @@ where
 
     /// Attempts to add an item; evicts the oldest when the capacity is exceeded (C# `TryAdd`).
     pub fn try_add(&mut self, item: T) -> bool {
-        if !self.items.insert(item) {
-            return false;
-        }
-        if self.items.len() > self.capacity {
+        let inserted = self.items.insert(item);
+        self.trim_to_capacity();
+        inserted
+    }
+
+    /// Updates the maximum capacity. Existing overflow is trimmed on the next insertion attempt.
+    pub fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity;
+    }
+
+    fn trim_to_capacity(&mut self) {
+        while self.items.len() > self.capacity {
             self.items.shift_remove_index(0);
         }
-        true
     }
 
     /// Checks whether the cache already contains the item (C# `Contains`).
