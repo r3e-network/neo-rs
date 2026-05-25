@@ -3,7 +3,7 @@ use super::{channels_config::ChannelsConfig, message::PAYLOAD_MAX_SIZE};
 use crate::network::{NetworkError, NetworkResult};
 use bytes::{BufMut, BytesMut};
 use std::io::IoSlice;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration};
 use tokio_util::codec::{Decoder, Encoder};
@@ -17,6 +17,72 @@ const WRITE_BUFFER_SIZE: usize = 4096;
 
 pub(crate) fn new_read_buffer() -> BytesMut {
     BytesMut::with_capacity(INITIAL_READ_CAPACITY)
+}
+
+async fn write_all_vectored_with_timeout<W>(
+    writer: &mut W,
+    timeout_duration: Duration,
+    buffers: &[&[u8]],
+) -> NetworkResult<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    timeout(timeout_duration, async {
+        let mut buffer_index = 0;
+        let mut offset = 0;
+
+        loop {
+            while buffer_index < buffers.len() && offset == buffers[buffer_index].len() {
+                buffer_index += 1;
+                offset = 0;
+            }
+
+            if buffer_index == buffers.len() {
+                return Ok(());
+            }
+
+            let io_slices: Vec<IoSlice<'_>> = buffers[buffer_index..]
+                .iter()
+                .enumerate()
+                .filter_map(|(index, buffer)| {
+                    let slice = if index == 0 {
+                        &buffer[offset..]
+                    } else {
+                        buffer
+                    };
+                    (!slice.is_empty()).then(|| IoSlice::new(slice))
+                })
+                .collect();
+
+            let written = writer.write_vectored(&io_slices).await.map_err(|err| {
+                NetworkError::ConnectionError(format!("Failed to write frame (vectored): {err}"))
+            })?;
+
+            if written == 0 {
+                return Err(NetworkError::ConnectionError(
+                    "Failed to write frame (vectored): wrote zero bytes".to_string(),
+                ));
+            }
+
+            let mut remaining = written;
+            while remaining > 0 && buffer_index < buffers.len() {
+                let available = buffers[buffer_index].len().saturating_sub(offset);
+                if available == 0 {
+                    buffer_index += 1;
+                    offset = 0;
+                } else if remaining < available {
+                    offset += remaining;
+                    remaining = 0;
+                } else {
+                    remaining -= available;
+                    buffer_index += 1;
+                    offset = 0;
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| NetworkError::Timeout)?
 }
 
 /// Minimal framed reader/writer that wraps Neo P2P length-prefixing with timeouts,
@@ -263,8 +329,73 @@ impl Default for WriteBuffer {
 mod tests {
     use super::*;
     use crate::network::error::NetworkError;
-    use tokio::io::AsyncWriteExt;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::{AsyncWrite, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
+
+    struct ShortVectoredWriter {
+        written: Vec<u8>,
+        max_bytes_per_write: usize,
+        vectored_calls: usize,
+    }
+
+    impl ShortVectoredWriter {
+        fn new(max_bytes_per_write: usize) -> Self {
+            Self {
+                written: Vec::new(),
+                max_bytes_per_write,
+                vectored_calls: 0,
+            }
+        }
+    }
+
+    impl AsyncWrite for ShortVectoredWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let written = buf.len().min(self.max_bytes_per_write);
+            self.written.extend_from_slice(&buf[..written]);
+            Poll::Ready(Ok(written))
+        }
+
+        fn poll_write_vectored(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            bufs: &[IoSlice<'_>],
+        ) -> Poll<std::io::Result<usize>> {
+            self.vectored_calls += 1;
+
+            let mut remaining = self.max_bytes_per_write;
+            let mut written = 0;
+            for buf in bufs {
+                if remaining == 0 {
+                    break;
+                }
+
+                let bytes_to_write = buf.len().min(remaining);
+                self.written.extend_from_slice(&buf[..bytes_to_write]);
+                remaining -= bytes_to_write;
+                written += bytes_to_write;
+            }
+
+            Poll::Ready(Ok(written))
+        }
+
+        fn is_write_vectored(&self) -> bool {
+            true
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
 
     async fn silent_pair() -> Option<(TcpStream, TcpStream)> {
         let listener = match TcpListener::bind("127.0.0.1:0").await {
@@ -382,6 +513,34 @@ mod tests {
             .expect("frame is complete");
 
         assert_eq!(frame, vec![0x00, 0x01, 0x01, 0xAA]);
+    }
+
+    #[tokio::test]
+    async fn write_all_vectored_with_timeout_finishes_short_writes() {
+        let mut writer = ShortVectoredWriter::new(2);
+        let buffers: [&[u8]; 4] = [&b"ab"[..], &[][..], &b"cde"[..], &b"f"[..]];
+
+        write_all_vectored_with_timeout(&mut writer, Duration::from_secs(1), &buffers)
+            .await
+            .expect("short vectored writes are retried until complete");
+
+        assert_eq!(writer.written, b"abcdef");
+        assert!(writer.vectored_calls > 1);
+    }
+
+    #[tokio::test]
+    async fn write_all_vectored_with_timeout_rejects_zero_byte_write() {
+        let mut writer = ShortVectoredWriter::new(0);
+        let buffers: [&[u8]; 1] = [&b"a"[..]];
+
+        let result =
+            write_all_vectored_with_timeout(&mut writer, Duration::from_secs(1), &buffers).await;
+
+        assert!(
+            matches!(result, Err(NetworkError::ConnectionError(ref message)) if message.contains("wrote zero bytes")),
+            "expected zero-write connection error, got: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -576,17 +735,7 @@ impl<'a> FramedSocket<'a> {
             return Ok(());
         }
 
-        // Use vectored I/O for multiple buffers
-        let io_slices: Vec<IoSlice<'_>> = buffers.iter().map(|buf| IoSlice::new(buf)).collect();
-
-        timeout(cfg.write_timeout, self.stream.write_vectored(&io_slices))
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|e| {
-                NetworkError::ConnectionError(format!("Failed to write frame (vectored): {e}"))
-            })?;
-
-        Ok(())
+        write_all_vectored_with_timeout(self.stream, cfg.write_timeout, buffers).await
     }
 
     /// Writes a complete message frame with optional buffering.
