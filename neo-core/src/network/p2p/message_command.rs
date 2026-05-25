@@ -1,156 +1,72 @@
 //! Message command identifiers (mirrors `Neo.Network.P2P.MessageCommand`).
 
 use crate::NetworkError;
+use neo_primitives::protocol_enum_with_unknown;
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt, net::SocketAddr, str::FromStr};
 
-/// Neo message command (single-byte discriminator).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MessageCommand {
-    /// Version handshake message.
-    Version,
-    /// Version acknowledgment message.
-    Verack,
-    /// Request for peer addresses.
-    GetAddr,
-    /// Response with peer addresses.
-    Addr,
-    /// Ping message for keepalive.
-    Ping,
-    /// Pong response to ping.
-    Pong,
-    /// Request for block headers.
-    GetHeaders,
-    /// Response with block headers.
-    Headers,
-    /// Request for block hashes.
-    GetBlocks,
-    /// Request for mempool transactions.
-    Mempool,
-    /// Inventory announcement.
-    Inv,
-    /// Request for specific data.
-    GetData,
-    /// Request block by index.
-    GetBlockByIndex,
-    /// Data not found response.
-    NotFound,
-    /// Transaction payload.
-    Transaction,
-    /// Block payload.
-    Block,
-    /// Extensible message payload.
-    Extensible,
-    /// Rejection message.
-    Reject,
-    /// Load bloom filter.
-    FilterLoad,
-    /// Add to bloom filter.
-    FilterAdd,
-    /// Clear bloom filter.
-    FilterClear,
-    /// Merkle block for SPV.
-    MerkleBlock,
-    /// Alert message.
-    Alert,
-    /// Command value that is not recognised by this implementation.
-    Unknown(u8),
+protocol_enum_with_unknown! {
+    /// Neo message command (single-byte discriminator).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub MessageCommand {
+        from_byte = from_byte_unchecked;
+        unknown
+        /// Command value that is not recognised by this implementation.
+        Unknown(u8) => "unknown";
+
+        /// Version handshake message.
+        Version = 0x00 => "version",
+        /// Version acknowledgment message.
+        Verack = 0x01 => "verack",
+        /// Request for peer addresses.
+        GetAddr = 0x10 => "getaddr",
+        /// Response with peer addresses.
+        Addr = 0x11 => "addr",
+        /// Ping message for keepalive.
+        Ping = 0x18 => "ping",
+        /// Pong response to ping.
+        Pong = 0x19 => "pong",
+        /// Request for block headers.
+        GetHeaders = 0x20 => "getheaders",
+        /// Response with block headers.
+        Headers = 0x21 => "headers",
+        /// Request for block hashes.
+        GetBlocks = 0x24 => "getblocks",
+        /// Request for mempool transactions.
+        Mempool = 0x25 => "mempool",
+        /// Inventory announcement.
+        Inv = 0x27 => "inv",
+        /// Request for specific data.
+        GetData = 0x28 => "getdata",
+        /// Request block by index.
+        GetBlockByIndex = 0x29 => "getblkbyidx",
+        /// Data not found response.
+        NotFound = 0x2a => "notfound",
+        /// Transaction payload.
+        Transaction = 0x2b => "tx",
+        /// Block payload.
+        Block = 0x2c => "block",
+        /// Extensible message payload.
+        Extensible = 0x2e => "extensible",
+        /// Rejection message.
+        Reject = 0x2f => "reject",
+        /// Load bloom filter.
+        FilterLoad = 0x30 => "filterload",
+        /// Add to bloom filter.
+        FilterAdd = 0x31 => "filteradd",
+        /// Clear bloom filter.
+        FilterClear = 0x32 => "filterclear",
+        /// Merkle block for SPV.
+        MerkleBlock = 0x38 => "merkleblock",
+        /// Alert message.
+        Alert = 0x40 => "alert",
+    }
 }
 
 impl MessageCommand {
-    /// Returns the wire-format byte associated with the command.
-    pub fn to_byte(self) -> u8 {
-        match self {
-            Self::Version => 0x00,
-            Self::Verack => 0x01,
-            Self::GetAddr => 0x10,
-            Self::Addr => 0x11,
-            Self::Ping => 0x18,
-            Self::Pong => 0x19,
-            Self::GetHeaders => 0x20,
-            Self::Headers => 0x21,
-            Self::GetBlocks => 0x24,
-            Self::Mempool => 0x25,
-            Self::Inv => 0x27,
-            Self::GetData => 0x28,
-            Self::GetBlockByIndex => 0x29,
-            Self::NotFound => 0x2a,
-            Self::Transaction => 0x2b,
-            Self::Block => 0x2c,
-            Self::Extensible => 0x2e,
-            Self::Reject => 0x2f,
-            Self::FilterLoad => 0x30,
-            Self::FilterAdd => 0x31,
-            Self::FilterClear => 0x32,
-            Self::MerkleBlock => 0x38,
-            Self::Alert => 0x40,
-            Self::Unknown(value) => value,
-        }
-    }
-
-    /// Alias for [`Self::to_byte`]; retained for backward compatibility.
-    pub fn as_byte(self) -> u8 {
-        self.to_byte()
-    }
-
     /// Creates a command value from its byte representation.
     pub fn from_byte(byte: u8) -> Result<Self, NetworkError> {
-        match byte {
-            0x00 => Ok(Self::Version),
-            0x01 => Ok(Self::Verack),
-            0x10 => Ok(Self::GetAddr),
-            0x11 => Ok(Self::Addr),
-            0x18 => Ok(Self::Ping),
-            0x19 => Ok(Self::Pong),
-            0x20 => Ok(Self::GetHeaders),
-            0x21 => Ok(Self::Headers),
-            0x24 => Ok(Self::GetBlocks),
-            0x25 => Ok(Self::Mempool),
-            0x27 => Ok(Self::Inv),
-            0x28 => Ok(Self::GetData),
-            0x29 => Ok(Self::GetBlockByIndex),
-            0x2a => Ok(Self::NotFound),
-            0x2b => Ok(Self::Transaction),
-            0x2c => Ok(Self::Block),
-            0x2e => Ok(Self::Extensible),
-            0x2f => Ok(Self::Reject),
-            0x30 => Ok(Self::FilterLoad),
-            0x31 => Ok(Self::FilterAdd),
-            0x32 => Ok(Self::FilterClear),
-            0x38 => Ok(Self::MerkleBlock),
-            0x40 => Ok(Self::Alert),
-            other => Ok(Self::Unknown(other)),
-        }
-    }
-
-    /// Returns the canonical string representation used by the Neo protocol.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Version => "version",
-            Self::Verack => "verack",
-            Self::GetAddr => "getaddr",
-            Self::Addr => "addr",
-            Self::Ping => "ping",
-            Self::Pong => "pong",
-            Self::GetHeaders => "getheaders",
-            Self::Headers => "headers",
-            Self::GetBlocks => "getblocks",
-            Self::Mempool => "mempool",
-            Self::Inv => "inv",
-            Self::GetData => "getdata",
-            Self::GetBlockByIndex => "getblkbyidx",
-            Self::NotFound => "notfound",
-            Self::Transaction => "tx",
-            Self::Block => "block",
-            Self::Extensible => "extensible",
-            Self::Reject => "reject",
-            Self::FilterLoad => "filterload",
-            Self::FilterAdd => "filteradd",
-            Self::FilterClear => "filterclear",
-            Self::MerkleBlock => "merkleblock",
-            Self::Alert => "alert",
-            Self::Unknown(_) => "unknown",
-        }
+        Ok(Self::from_byte_unchecked(byte))
     }
 
     /// Parses a command from its textual form.
@@ -194,11 +110,6 @@ impl MessageCommand {
                 violation: format!("Unknown message command: {}", other),
             }),
         }
-    }
-
-    /// Returns `true` when the command is part of the official Neo enumeration.
-    pub fn is_known(self) -> bool {
-        !matches!(self, Self::Unknown(_))
     }
 }
 

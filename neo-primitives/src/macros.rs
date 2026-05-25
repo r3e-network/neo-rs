@@ -126,3 +126,139 @@ macro_rules! protocol_enum {
         }
     };
 }
+
+/// Generates a protocol enum whose unknown byte values must round-trip.
+///
+/// Use this for protocol surfaces where future or private extension bytes are
+/// valid on the wire. The macro generates:
+/// - The enum definition, including one tuple-style unknown variant.
+/// - `to_byte() -> u8`, `as_byte() -> u8`, `from_byte(u8) -> Self`.
+/// - `as_str() -> &str` and `is_known() -> bool`.
+///
+/// `Display`, `FromStr`, and `serde` are intentionally left to the caller so
+/// each protocol surface can preserve its existing public/API encoding shape.
+/// Callers that need to preserve an existing fallible `from_byte` API can add
+/// `from_byte = from_byte_unchecked;` before `unknown` and wrap the generated
+/// helper in their own impl.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use neo_primitives::protocol_enum_with_unknown;
+///
+/// protocol_enum_with_unknown! {
+///     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///     pub MessageCommand {
+///         unknown
+///         /// Unknown command byte.
+///         Unknown(u8) => "unknown";
+///
+///         Version = 0x00 => "version",
+///         Transaction = 0x2b => "tx",
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! protocol_enum_with_unknown {
+    (
+        $(#[$enum_meta:meta])*
+        $vis:vis $name:ident {
+            from_byte = $from_byte:ident;
+            unknown
+            $(#[$unknown_meta:meta])*
+            $unknown:ident(u8) => $unknown_display:expr;
+
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident = $byte:expr $(=> $display:expr)?
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        $vis enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant,
+            )+
+            $(#[$unknown_meta])*
+            $unknown(u8),
+        }
+
+        impl $name {
+            /// Returns the protocol byte assigned to this enum value.
+            #[must_use]
+            #[inline]
+            pub const fn to_byte(self) -> u8 {
+                match self {
+                    $(
+                        Self::$variant => $byte,
+                    )+
+                    Self::$unknown(value) => value,
+                }
+            }
+
+            /// Alias for [`Self::to_byte`]; retained for backward compatibility.
+            #[must_use]
+            #[inline]
+            pub const fn as_byte(self) -> u8 {
+                self.to_byte()
+            }
+
+            /// Parses this enum from its protocol byte, preserving unknown bytes.
+            #[must_use]
+            pub const fn $from_byte(value: u8) -> Self {
+                match value {
+                    $(
+                        $byte => Self::$variant,
+                    )+
+                    other => Self::$unknown(other),
+                }
+            }
+
+            /// Returns the canonical display name for this enum value.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(
+                        Self::$variant => $crate::__protocol_enum_display!($variant $(, $display)?),
+                    )+
+                    Self::$unknown(_) => $unknown_display,
+                }
+            }
+
+            /// Returns `true` for known protocol variants.
+            #[must_use]
+            pub const fn is_known(self) -> bool {
+                !matches!(self, Self::$unknown(_))
+            }
+        }
+    };
+    (
+        $(#[$enum_meta:meta])*
+        $vis:vis $name:ident {
+            unknown
+            $(#[$unknown_meta:meta])*
+            $unknown:ident(u8) => $unknown_display:expr;
+
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident = $byte:expr $(=> $display:expr)?
+            ),+ $(,)?
+        }
+    ) => {
+        $crate::protocol_enum_with_unknown! {
+            $(#[$enum_meta])*
+            $vis $name {
+                from_byte = from_byte;
+                unknown
+                $(#[$unknown_meta])*
+                $unknown(u8) => $unknown_display;
+
+                $(
+                    $(#[$variant_meta])*
+                    $variant = $byte $(=> $display)?
+                ),+
+            }
+        }
+    };
+}
