@@ -5,6 +5,40 @@
 use super::*;
 use neo_vm_rs::StackValue;
 
+fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
+    match value {
+        StackValue::Integer(value) => Ok(BigInt::from(*value)),
+        StackValue::Boolean(value) => Ok(BigInt::from(i32::from(*value))),
+        StackValue::BigInteger(bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
+        StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
+            Ok(BigInt::from_signed_bytes_le(bytes))
+        }
+        _ => Err("cannot convert stack value to integer".to_string()),
+    }
+}
+
+fn stack_value_to_bool(value: &StackValue) -> Result<bool, String> {
+    match value {
+        StackValue::Null => Ok(false),
+        StackValue::Boolean(value) => Ok(*value),
+        StackValue::Integer(value) => Ok(*value != 0),
+        StackValue::BigInteger(bytes) => Ok(bytes.iter().any(|byte| *byte != 0)),
+        StackValue::ByteString(bytes) if bytes.len() <= 32 => {
+            Ok(bytes.iter().any(|byte| *byte != 0))
+        }
+        StackValue::ByteString(_) => {
+            Err("cannot convert oversized byte string to boolean".to_string())
+        }
+        StackValue::Buffer(_) => Ok(true),
+        StackValue::Array(_)
+        | StackValue::Struct(_)
+        | StackValue::Map(_)
+        | StackValue::Pointer(_)
+        | StackValue::Interop(_)
+        | StackValue::Iterator(_) => Ok(true),
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NeoAccountState {
     pub(crate) balance: BigInt,
@@ -14,15 +48,12 @@ pub(crate) struct NeoAccountState {
 }
 
 impl NeoAccountState {
-    fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
-        match value {
-            StackValue::Integer(value) => Ok(BigInt::from(*value)),
-            StackValue::Boolean(value) => Ok(BigInt::from(i32::from(*value))),
-            StackValue::BigInteger(bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
-                Ok(BigInt::from_signed_bytes_le(bytes))
-            }
-            _ => Err("cannot convert stack value to integer".to_string()),
+    fn legacy_balance(balance: BigInt) -> Self {
+        Self {
+            balance,
+            balance_height: 0,
+            vote_to: None,
+            last_gas_per_vote: BigInt::zero(),
         }
     }
 
@@ -41,10 +72,10 @@ impl NeoAccountState {
                     return Err("NeoAccountState struct missing fields".to_string());
                 }
 
-                let balance = Self::stack_value_to_bigint(&entries[0])
+                let balance = stack_value_to_bigint(&entries[0])
                     .map_err(|err| format!("invalid balance: {}", err))?;
 
-                let balance_height_big = Self::stack_value_to_bigint(&entries[1])
+                let balance_height_big = stack_value_to_bigint(&entries[1])
                     .map_err(|err| format!("invalid balance height: {}", err))?;
                 let balance_height = balance_height_big
                     .to_u32()
@@ -68,7 +99,7 @@ impl NeoAccountState {
                     )
                 };
 
-                let last_gas_per_vote = Self::stack_value_to_bigint(&entries[3])
+                let last_gas_per_vote = stack_value_to_bigint(&entries[3])
                     .map_err(|err| format!("invalid last gas per vote: {}", err))?;
 
                 Ok(Self {
@@ -78,24 +109,13 @@ impl NeoAccountState {
                     last_gas_per_vote,
                 })
             }
-            StackValue::Integer(balance) => Ok(Self {
-                balance: BigInt::from(balance),
-                balance_height: 0,
-                vote_to: None,
-                last_gas_per_vote: BigInt::zero(),
-            }),
-            StackValue::BigInteger(bytes) => Ok(Self {
-                balance: BigInt::from_signed_bytes_le(&bytes),
-                balance_height: 0,
-                vote_to: None,
-                last_gas_per_vote: BigInt::zero(),
-            }),
-            StackValue::ByteString(bytes) => Ok(Self {
-                balance: BigInt::from_signed_bytes_le(&bytes),
-                balance_height: 0,
-                vote_to: None,
-                last_gas_per_vote: BigInt::zero(),
-            }),
+            StackValue::Integer(balance) => Ok(Self::legacy_balance(BigInt::from(balance))),
+            StackValue::BigInteger(bytes) => {
+                Ok(Self::legacy_balance(BigInt::from_signed_bytes_le(&bytes)))
+            }
+            StackValue::ByteString(bytes) => {
+                Ok(Self::legacy_balance(BigInt::from_signed_bytes_le(&bytes)))
+            }
             other => Err(format!(
                 "expected NeoAccountState struct, found {:?}",
                 other.compact_type_tag()
@@ -139,40 +159,6 @@ pub(crate) struct CandidateState {
 }
 
 impl CandidateState {
-    fn stack_value_to_bool(value: &StackValue) -> Result<bool, String> {
-        match value {
-            StackValue::Null => Ok(false),
-            StackValue::Boolean(value) => Ok(*value),
-            StackValue::Integer(value) => Ok(*value != 0),
-            StackValue::BigInteger(bytes) => Ok(bytes.iter().any(|byte| *byte != 0)),
-            StackValue::ByteString(bytes) if bytes.len() <= 32 => {
-                Ok(bytes.iter().any(|byte| *byte != 0))
-            }
-            StackValue::ByteString(_) => {
-                Err("cannot convert oversized byte string to boolean".to_string())
-            }
-            StackValue::Buffer(_) => Ok(true),
-            StackValue::Array(_)
-            | StackValue::Struct(_)
-            | StackValue::Map(_)
-            | StackValue::Pointer(_)
-            | StackValue::Interop(_)
-            | StackValue::Iterator(_) => Ok(true),
-        }
-    }
-
-    fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
-        match value {
-            StackValue::Integer(value) => Ok(BigInt::from(*value)),
-            StackValue::Boolean(value) => Ok(BigInt::from(i32::from(*value))),
-            StackValue::BigInteger(bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
-                Ok(BigInt::from_signed_bytes_le(bytes))
-            }
-            _ => Err("cannot convert stack value to integer".to_string()),
-        }
-    }
-
     pub(super) fn from_storage_item(item: &StorageItem) -> Result<Self, String> {
         let value = item.value_bytes();
         let bytes = value.as_ref();
@@ -214,10 +200,10 @@ impl CandidateState {
             return Err("CandidateState struct missing fields".to_string());
         }
 
-        let registered = Self::stack_value_to_bool(&entries[0])
+        let registered = stack_value_to_bool(&entries[0])
             .map_err(|e| format!("invalid registered field: {e}"))?;
-        let votes = Self::stack_value_to_bigint(&entries[1])
-            .map_err(|e| format!("invalid votes field: {e}"))?;
+        let votes =
+            stack_value_to_bigint(&entries[1]).map_err(|e| format!("invalid votes field: {e}"))?;
 
         Ok(Self { registered, votes })
     }
