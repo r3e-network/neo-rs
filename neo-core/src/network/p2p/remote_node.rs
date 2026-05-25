@@ -47,7 +47,7 @@ pub use message_handlers::{
     register_message_received_handler, unregister_message_received_handler,
     MessageHandlerSubscription,
 };
-use outbound_queue::OutboundMessageQueue;
+use outbound_queue::{CommandBitSet, OutboundQueues};
 use pending_known_hashes::PendingKnownHashes;
 
 const READER_TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
@@ -78,9 +78,8 @@ pub struct RemoteNode {
     handshake_timeout: Option<Cancelable>,
     last_block_index: u32,
     _last_height_sent: u32,
-    message_queue_high: OutboundMessageQueue,
-    message_queue_low: OutboundMessageQueue,
-    sent_commands: [bool; 256],
+    message_queues: OutboundQueues,
+    sent_commands: CommandBitSet,
     verack_received: bool,
     ack_ready: bool,
     last_sent: Instant,
@@ -170,9 +169,8 @@ impl RemoteNode {
             handshake_timeout: None,
             last_block_index: 0,
             _last_height_sent: 0,
-            message_queue_high: OutboundMessageQueue::default(),
-            message_queue_low: OutboundMessageQueue::default(),
-            sent_commands: [false; 256],
+            message_queues: OutboundQueues::default(),
+            sent_commands: CommandBitSet::default(),
             verack_received: false,
             ack_ready: true,
             last_sent: Instant::now(),

@@ -4,27 +4,59 @@ use super::RemoteNode;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::MessageCommand;
 use crate::runtime::ActorResult;
-use bitvec::prelude::{BitVec, Lsb0};
 use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::warn;
 
-type QueuedCommandBits = BitVec<u8, Lsb0>;
 const MESSAGE_COMMAND_DOMAIN_BYTES: usize = 32;
+
+#[derive(Default)]
+pub(super) struct CommandBitSet([u8; MESSAGE_COMMAND_DOMAIN_BYTES]);
+
+impl CommandBitSet {
+    pub(super) fn contains(&self, command: MessageCommand) -> bool {
+        let (byte_index, mask) = Self::slot(command);
+        self.0[byte_index] & mask != 0
+    }
+
+    pub(super) fn insert(&mut self, command: MessageCommand) {
+        let (byte_index, mask) = Self::slot(command);
+        self.0[byte_index] |= mask;
+    }
+
+    pub(super) fn remove(&mut self, command: MessageCommand) {
+        let (byte_index, mask) = Self::slot(command);
+        self.0[byte_index] &= !mask;
+    }
+
+    pub(super) fn take(&mut self, command: MessageCommand) -> bool {
+        let was_present = self.contains(command);
+        self.remove(command);
+        was_present
+    }
+
+    fn slot(command: MessageCommand) -> (usize, u8) {
+        let index = command.to_byte() as usize;
+        (index / 8, 1u8 << (index % 8))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum QueuePushError {
+    Full,
+    Duplicate,
+}
 
 pub(super) struct OutboundMessageQueue {
     messages: VecDeque<NetworkMessage>,
-    queued_single_commands: QueuedCommandBits,
+    queued_single_commands: CommandBitSet,
 }
 
 impl Default for OutboundMessageQueue {
     fn default() -> Self {
         Self {
             messages: VecDeque::new(),
-            queued_single_commands: QueuedCommandBits::from_vec(vec![
-                0u8;
-                MESSAGE_COMMAND_DOMAIN_BYTES
-            ]),
+            queued_single_commands: CommandBitSet::default(),
         }
     }
 }
@@ -46,31 +78,63 @@ impl OutboundMessageQueue {
     }
 
     fn has_duplicate_single_command(&self, command: MessageCommand) -> bool {
-        command.is_single_queued()
-            && self
-                .queued_single_commands
-                .get(command.to_byte() as usize)
-                .map(|queued| *queued)
-                .unwrap_or(false)
+        command.is_single_queued() && self.queued_single_commands.contains(command)
     }
 
     fn record_queued_single_command(&mut self, command: MessageCommand) {
-        self.set_queued_single_command(command, true);
+        if command.is_single_queued() {
+            self.queued_single_commands.insert(command);
+        }
     }
 
     fn clear_queued_single_command(&mut self, command: MessageCommand) {
-        self.set_queued_single_command(command, false);
+        if command.is_single_queued() {
+            self.queued_single_commands.remove(command);
+        }
+    }
+}
+
+pub(super) struct OutboundQueues {
+    high: OutboundMessageQueue,
+    low: OutboundMessageQueue,
+}
+
+impl Default for OutboundQueues {
+    fn default() -> Self {
+        Self {
+            high: OutboundMessageQueue::default(),
+            low: OutboundMessageQueue::default(),
+        }
+    }
+}
+
+impl OutboundQueues {
+    fn push_back(
+        &mut self,
+        message: NetworkMessage,
+        max_queue_size: usize,
+    ) -> Result<(), QueuePushError> {
+        let command = message.command();
+        let queue = self.lane_mut(command);
+        if queue.len() >= max_queue_size {
+            return Err(QueuePushError::Full);
+        }
+        if queue.has_duplicate_single_command(command) {
+            return Err(QueuePushError::Duplicate);
+        }
+        queue.push_back(message);
+        Ok(())
     }
 
-    fn set_queued_single_command(&mut self, command: MessageCommand, value: bool) {
-        if !command.is_single_queued() {
-            return;
-        }
-        if let Some(mut queued) = self
-            .queued_single_commands
-            .get_mut(command.to_byte() as usize)
-        {
-            queued.set(value);
+    fn pop_front(&mut self) -> Option<NetworkMessage> {
+        self.high.pop_front().or_else(|| self.low.pop_front())
+    }
+
+    fn lane_mut(&mut self, command: MessageCommand) -> &mut OutboundMessageQueue {
+        if command.is_high_priority_queue() {
+            &mut self.high
+        } else {
+            &mut self.low
         }
     }
 }
@@ -86,7 +150,6 @@ impl RemoteNode {
 
     pub(super) async fn enqueue_message(&mut self, message: NetworkMessage) -> ActorResult {
         let command = message.command();
-        let is_high_priority = command.is_high_priority_queue();
 
         let message_size = Self::estimate_message_size(&message);
         if !self.check_memory_quota(message_size) {
@@ -102,38 +165,18 @@ impl RemoteNode {
             return Ok(());
         }
 
-        let (queue_full, has_duplicate) = if is_high_priority {
-            let full = self.message_queue_high.len() >= Self::MAX_QUEUE_SIZE;
-            let duplicate = self
-                .message_queue_high
-                .has_duplicate_single_command(command);
-            (full, duplicate)
-        } else {
-            let full = self.message_queue_low.len() >= Self::MAX_QUEUE_SIZE;
-            let duplicate = self.message_queue_low.has_duplicate_single_command(command);
-            (full, duplicate)
-        };
-
-        if queue_full {
-            warn!(
-                target: "neo",
-                endpoint = %self.endpoint,
-                command = ?command,
-                "message queue full, dropping message"
-            );
-            return Ok(());
-        }
-
-        if has_duplicate {
-            return Ok(());
-        }
-
-        self.add_memory_usage(message_size);
-
-        if is_high_priority {
-            self.message_queue_high.push_back(message);
-        } else {
-            self.message_queue_low.push_back(message);
+        match self.message_queues.push_back(message, Self::MAX_QUEUE_SIZE) {
+            Ok(()) => self.add_memory_usage(message_size),
+            Err(QueuePushError::Full) => {
+                warn!(
+                    target: "neo",
+                    endpoint = %self.endpoint,
+                    command = ?command,
+                    "message queue full, dropping message"
+                );
+                return Ok(());
+            }
+            Err(QueuePushError::Duplicate) => return Ok(()),
         }
 
         self.flush_queue().await
@@ -145,13 +188,7 @@ impl RemoteNode {
         }
 
         while self.verack_received && self.ack_ready {
-            let next_message = if let Some(message) = self.message_queue_high.pop_front() {
-                Some(message)
-            } else {
-                self.message_queue_low.pop_front()
-            };
-
-            let Some(message) = next_message else {
+            let Some(message) = self.message_queues.pop_front() else {
                 break;
             };
 
@@ -160,10 +197,7 @@ impl RemoteNode {
 
             self.ack_ready = false;
             self.last_sent = Instant::now();
-            let index = message.command().to_byte() as usize;
-            if index < self.sent_commands.len() {
-                self.sent_commands[index] = true;
-            }
+            self.sent_commands.insert(message.command());
             self.send_wire_message(&message).await?;
             self.ack_ready = true;
         }
@@ -249,6 +283,89 @@ mod tests {
             PingPayload::create_with_nonce(2, 42),
         )));
         assert!(queue.has_duplicate_single_command(MessageCommand::Ping));
+    }
+
+    #[test]
+    fn command_bit_set_tracks_unknown_command_bytes() {
+        let mut commands = CommandBitSet::default();
+        let command = MessageCommand::Unknown(0xff);
+
+        assert!(!commands.contains(command));
+        commands.insert(command);
+        assert!(commands.contains(command));
+        assert!(commands.take(command));
+        assert!(!commands.contains(command));
+        assert!(!commands.take(command));
+    }
+
+    #[test]
+    fn command_bit_sets_are_independent_boolean_trackers() {
+        let mut queued = CommandBitSet::default();
+        let mut sent = CommandBitSet::default();
+
+        queued.insert(MessageCommand::GetAddr);
+        sent.insert(MessageCommand::GetAddr);
+
+        assert!(queued.take(MessageCommand::GetAddr));
+        assert!(!queued.contains(MessageCommand::GetAddr));
+        assert!(sent.contains(MessageCommand::GetAddr));
+        assert!(sent.take(MessageCommand::GetAddr));
+        assert!(!sent.take(MessageCommand::GetAddr));
+    }
+
+    #[test]
+    fn outbound_queues_pop_high_priority_before_low_fifo_within_lane() {
+        let mut queues = OutboundQueues::default();
+
+        queues
+            .push_back(
+                NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(1, 42))),
+                1024,
+            )
+            .unwrap();
+        queues
+            .push_back(NetworkMessage::new(ProtocolMessage::FilterClear), 1024)
+            .unwrap();
+        queues
+            .push_back(NetworkMessage::new(ProtocolMessage::Mempool), 1024)
+            .unwrap();
+
+        assert_eq!(
+            queues.pop_front().expect("first").command(),
+            MessageCommand::FilterClear
+        );
+        assert_eq!(
+            queues.pop_front().expect("second").command(),
+            MessageCommand::Mempool
+        );
+        assert_eq!(
+            queues.pop_front().expect("third").command(),
+            MessageCommand::Ping
+        );
+        assert!(queues.pop_front().is_none());
+    }
+
+    #[test]
+    fn outbound_queues_capacity_is_per_lane() {
+        let mut queues = OutboundQueues::default();
+
+        for nonce in 0..2 {
+            queues
+                .push_back(NetworkMessage::new(ProtocolMessage::Reject(vec![nonce])), 2)
+                .unwrap();
+        }
+        queues
+            .push_back(NetworkMessage::new(ProtocolMessage::Reject(vec![99])), 2)
+            .expect_err("low lane should be full");
+
+        for _ in 0..2 {
+            queues
+                .push_back(NetworkMessage::new(ProtocolMessage::FilterClear), 2)
+                .unwrap();
+        }
+        queues
+            .push_back(NetworkMessage::new(ProtocolMessage::FilterClear), 2)
+            .expect_err("high lane should be full");
     }
 
     #[test]

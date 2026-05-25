@@ -105,14 +105,7 @@ impl RemoteNode {
     }
 
     fn consume_sent_command(&mut self, command: MessageCommand) -> bool {
-        let index = command.to_byte() as usize;
-        if let Some(flag) = self.sent_commands.get_mut(index) {
-            if *flag {
-                *flag = false;
-                return true;
-            }
-        }
-        false
+        self.sent_commands.take(command)
     }
 
     pub(super) fn normalize_request(count: i16, max: usize) -> usize {

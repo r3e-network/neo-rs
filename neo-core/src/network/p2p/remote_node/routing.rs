@@ -121,10 +121,7 @@ impl RemoteNode {
         }
 
         self.last_sent = std::time::Instant::now();
-        let index = message.command().to_byte() as usize;
-        if index < self.sent_commands.len() {
-            self.sent_commands[index] = true;
-        }
+        self.sent_commands.insert(message.command());
         Ok(())
     }
     pub(super) fn build_wire_message(
