@@ -36,6 +36,22 @@ impl KeyBuilder {
     /// Default maximum key size.
     pub const DEFAULT_MAX_LENGTH: usize = 64;
 
+    /// Creates a builder with the exact payload capacity.
+    ///
+    /// This accepts zero payload bytes and is intended for compatibility
+    /// adapters that must preserve legacy zero-capacity construction behavior.
+    #[must_use]
+    pub fn with_payload_capacity(id: i32, prefix: u8, payload_capacity: usize) -> Self {
+        let mut cache_data = vec![0u8; payload_capacity + Self::PREFIX_LENGTH];
+        cache_data[..4].copy_from_slice(&id.to_le_bytes());
+        cache_data[4] = prefix;
+
+        Self {
+            cache_data,
+            key_length: Self::PREFIX_LENGTH,
+        }
+    }
+
     /// Initializes a new instance.
     ///
     /// # Errors
@@ -46,14 +62,7 @@ impl KeyBuilder {
             return Err(KeyBuilderError::InvalidMaxLength);
         }
 
-        let mut cache_data = vec![0u8; max_length + Self::PREFIX_LENGTH];
-        cache_data[..4].copy_from_slice(&id.to_le_bytes());
-        cache_data[4] = prefix;
-
-        Ok(Self {
-            cache_data,
-            key_length: Self::PREFIX_LENGTH,
-        })
+        Ok(Self::with_payload_capacity(id, prefix, max_length))
     }
 
     /// Initializes a new instance (panics on invalid input).
@@ -141,11 +150,18 @@ impl KeyBuilder {
         StorageKey::from_bytes(&self.cache_data[..self.key_length])
     }
 
+    /// Gets the built key as a byte slice.
+    #[inline]
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.cache_data[..self.key_length]
+    }
+
     /// Gets the built key as bytes.
     #[inline]
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.cache_data[..self.key_length].to_vec()
+        self.as_bytes().to_vec()
     }
 
     /// Gets the current key length.

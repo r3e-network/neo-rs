@@ -1,10 +1,11 @@
-//! KeyBuilder - matches C# Neo.SmartContract.KeyBuilder exactly
+//! KeyBuilder - matches C# Neo.SmartContract.KeyBuilder exactly.
 //!
-//! This module provides a builder for constructing storage keys used by native contracts.
-//! The implementation mirrors the C# Neo.SmartContract.KeyBuilder class.
+//! Core keeps the public smart-contract path and core-specific helpers while
+//! delegating byte-buffer construction to `neo-storage`.
 
 use crate::cryptography::ECPoint;
 use crate::{CoreError, UInt160, UInt256};
+use neo_storage::{KeyBuilder as StorageKeyBuilder, KeyBuilderError as StorageKeyBuilderError};
 use num_bigint::BigInt;
 
 /// Error type for KeyBuilder operations.
@@ -31,26 +32,36 @@ impl From<KeyBuilderError> for CoreError {
     }
 }
 
-/// Used to build storage keys for native contracts (matches C# KeyBuilder)
+impl From<StorageKeyBuilderError> for KeyBuilderError {
+    fn from(err: StorageKeyBuilderError) -> Self {
+        match err {
+            StorageKeyBuilderError::InvalidMaxLength => Self::InvalidMaxLength,
+            StorageKeyBuilderError::DataTooLarge {
+                current,
+                adding,
+                max,
+            } => Self::DataTooLarge {
+                current,
+                adding,
+                max,
+            },
+        }
+    }
+}
+
+/// Used to build storage keys for native contracts (matches C# KeyBuilder).
 pub struct KeyBuilder {
-    cache_data: Vec<u8>,
-    key_length: usize,
+    inner: StorageKeyBuilder,
 }
 
 impl KeyBuilder {
-    /// The prefix length (id + prefix byte)
-    pub const PREFIX_LENGTH: usize = std::mem::size_of::<i32>() + std::mem::size_of::<u8>();
+    /// The prefix length (id + prefix byte).
+    pub const PREFIX_LENGTH: usize = StorageKeyBuilder::PREFIX_LENGTH;
 
     /// Initializes a new instance.
-    ///
     pub fn try_new(id: i32, prefix: u8, max_length: usize) -> Result<Self, KeyBuilderError> {
-        let mut cache_data = vec![0u8; max_length + Self::PREFIX_LENGTH];
-        cache_data[..4].copy_from_slice(&id.to_le_bytes());
-        cache_data[4] = prefix;
-
         Ok(Self {
-            cache_data,
-            key_length: 5, // sizeof(i32) + sizeof(u8)
+            inner: StorageKeyBuilder::with_payload_capacity(id, prefix, max_length),
         })
     }
 
@@ -58,27 +69,16 @@ impl KeyBuilder {
     ///
     /// Prefer `try_new` for fallible construction.
     #[inline]
+    #[must_use]
     pub fn new(id: i32, prefix: u8, max_length: usize) -> Self {
         Self::try_new(id, prefix, max_length).expect("KeyBuilder construction failed")
     }
 
-    /// Creates with default max length
+    /// Creates with default max length.
     #[inline]
+    #[must_use]
     pub fn new_with_default(id: i32, prefix: u8) -> Self {
-        // ApplicationEngine.MaxStorageKeySize is typically 64
-        Self::new(id, prefix, 64)
-    }
-
-    #[inline]
-    fn check_length(&self, length: usize) -> Result<(), KeyBuilderError> {
-        if self.key_length + length > self.cache_data.len() {
-            return Err(KeyBuilderError::DataTooLarge {
-                current: self.key_length,
-                adding: length,
-                max: self.cache_data.len(),
-            });
-        }
-        Ok(())
+        Self::new(id, prefix, StorageKeyBuilder::DEFAULT_MAX_LENGTH)
     }
 
     /// Adds a byte to the key.
@@ -87,9 +87,7 @@ impl KeyBuilder {
     ///
     /// Returns `KeyBuilderError::DataTooLarge` if the key would exceed max length.
     pub fn try_add_byte(&mut self, key: u8) -> Result<&mut Self, KeyBuilderError> {
-        self.check_length(1)?;
-        self.cache_data[self.key_length] = key;
-        self.key_length += 1;
+        self.inner.try_add_byte(key)?;
         Ok(self)
     }
 
@@ -105,9 +103,7 @@ impl KeyBuilder {
     ///
     /// Returns `KeyBuilderError::DataTooLarge` if the key would exceed max length.
     pub fn try_add(&mut self, key: &[u8]) -> Result<&mut Self, KeyBuilderError> {
-        self.check_length(key.len())?;
-        self.cache_data[self.key_length..self.key_length + key.len()].copy_from_slice(key);
-        self.key_length += key.len();
+        self.inner.try_add(key)?;
         Ok(self)
     }
 
@@ -120,13 +116,13 @@ impl KeyBuilder {
     /// Adds a UInt160 to the key.
     #[inline]
     pub fn add_uint160(&mut self, key: &UInt160) -> &mut Self {
-        self.add(&key.to_bytes())
+        self.add(&key.as_bytes())
     }
 
     /// Adds a UInt256 to the key.
     #[inline]
     pub fn add_uint256(&mut self, key: &UInt256) -> &mut Self {
-        self.add(&key.to_bytes())
+        self.add(&key.as_bytes())
     }
 
     /// Adds an ECPoint to the key.
@@ -155,35 +151,39 @@ impl KeyBuilder {
             .expect("Cannot add negative BigInteger to key")
     }
 
-    /// Converts to StorageKey
+    /// Converts to StorageKey.
     #[inline]
+    #[must_use]
     pub fn to_storage_key(&self) -> crate::smart_contract::StorageKey {
-        let key_data = &self.cache_data[..self.key_length];
-        crate::smart_contract::StorageKey::from_bytes(key_data)
+        self.inner.to_storage_key()
     }
 
     /// Gets the built key as a byte slice (zero-copy).
     #[inline]
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
-        &self.cache_data[..self.key_length]
+        self.inner.as_bytes()
     }
 
     /// Gets the built key as an owned byte vector.
     #[inline]
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.cache_data[..self.key_length].to_vec()
+        self.inner.to_bytes()
     }
 
-    /// Gets the current key length
+    /// Gets the current key length.
     #[inline]
+    #[must_use]
     pub fn length(&self) -> usize {
-        self.key_length
+        self.inner.len()
     }
 
-    /// Adds data with big-endian encoding
+    /// Adds data with big-endian encoding.
     #[inline]
     pub fn add_big_endian_bytes(&mut self, value: i32) -> &mut Self {
-        self.add(&value.to_be_bytes())
+        self.inner.add_i32_be(value);
+        self
     }
 }
 
