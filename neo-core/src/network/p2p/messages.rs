@@ -134,6 +134,28 @@ pub enum ProtocolMessage {
     },
 }
 
+macro_rules! serialize_protocol_message {
+    (
+        $message:expr;
+        payload { $($payload_variant:ident),+ $(,)? }
+        raw { $($raw_variant:ident),+ $(,)? }
+        empty { $($empty_variant:ident),+ $(,)? }
+    ) => {
+        match $message {
+            $(
+                ProtocolMessage::$payload_variant(payload) => serialize_payload(payload),
+            )+
+            $(
+                ProtocolMessage::$raw_variant(bytes) => Ok(bytes.clone()),
+            )+
+            $(
+                ProtocolMessage::$empty_variant => Ok(Vec::new()),
+            )+
+            ProtocolMessage::Unknown { bytes, .. } => Ok(bytes.clone()),
+        }
+    };
+}
+
 impl ProtocolMessage {
     /// Convenience constructor for pong replies.
     pub fn pong(nonce: u32) -> Self {
@@ -190,27 +212,30 @@ impl ProtocolMessage {
     }
 
     fn serialize(&self) -> NetworkResult<Vec<u8>> {
-        match self {
-            Self::Version(payload) => serialize_payload(payload),
-            Self::Verack | Self::GetAddr | Self::Mempool | Self::FilterClear => Ok(Vec::new()),
-            Self::Addr(payload) => serialize_payload(payload),
-            Self::Ping(payload) | Self::Pong(payload) => serialize_payload(payload),
-            Self::GetHeaders(payload) => serialize_payload(payload),
-            Self::GetBlockByIndex(payload) => serialize_payload(payload),
-            Self::Headers(payload) => serialize_payload(payload),
-            Self::GetBlocks(payload) => serialize_payload(payload),
-            Self::Inv(payload) | Self::GetData(payload) | Self::NotFound(payload) => {
-                serialize_payload(payload)
+        serialize_protocol_message!(
+            self;
+            payload {
+                Version,
+                Addr,
+                Ping,
+                Pong,
+                GetHeaders,
+                Headers,
+                GetBlocks,
+                Inv,
+                GetData,
+                GetBlockByIndex,
+                NotFound,
+                Transaction,
+                Block,
+                Extensible,
+                FilterLoad,
+                FilterAdd,
+                MerkleBlock,
             }
-            Self::Transaction(payload) => serialize_payload(payload),
-            Self::Block(payload) => serialize_payload(payload),
-            Self::Extensible(payload) => serialize_payload(payload),
-            Self::FilterLoad(payload) => serialize_payload(payload),
-            Self::FilterAdd(payload) => serialize_payload(payload),
-            Self::MerkleBlock(payload) => serialize_payload(payload),
-            Self::Alert(bytes) | Self::Reject(bytes) => Ok(bytes.clone()),
-            Self::Unknown { bytes, .. } => Ok(bytes.clone()),
-        }
+            raw { Alert, Reject }
+            empty { Verack, GetAddr, Mempool, FilterClear }
+        )
     }
 
     fn deserialize(command: MessageCommand, data: &[u8]) -> NetworkResult<Self> {
@@ -415,5 +440,29 @@ mod tests {
 
         assert_eq!(encoded[0], MessageFlags::NONE.to_byte());
         assert_eq!(encoded[1], MessageCommand::FilterAdd.to_byte());
+    }
+
+    #[test]
+    fn protocol_message_serializes_empty_and_raw_payload_families() {
+        for message in [
+            ProtocolMessage::Verack,
+            ProtocolMessage::GetAddr,
+            ProtocolMessage::Mempool,
+            ProtocolMessage::FilterClear,
+        ] {
+            assert!(message.to_bytes().unwrap().is_empty());
+        }
+
+        let alert = vec![0xA1, 0xA2];
+        assert_eq!(
+            ProtocolMessage::Alert(alert.clone()).to_bytes().unwrap(),
+            alert
+        );
+
+        let reject = vec![0xB1, 0xB2];
+        assert_eq!(
+            ProtocolMessage::Reject(reject.clone()).to_bytes().unwrap(),
+            reject
+        );
     }
 }
