@@ -20,7 +20,7 @@ impl RemoteNode {
             "starting protocol handshake"
         );
         self.ensure_timer(ctx);
-        self.spawn_handshake_timeout(ctx);
+        self.arm_handshake_timeout(ctx);
         self.spawn_reader(ctx);
 
         let mut connection = self.connection.lock().await;
@@ -134,12 +134,24 @@ impl RemoteNode {
         self.reader_spawned = true;
     }
 
-    pub(super) fn spawn_handshake_timeout(&self, ctx: &ActorContext) {
+    pub(super) fn arm_handshake_timeout(&mut self, ctx: &ActorContext) {
+        if self.handshake_timeout.is_some() {
+            return;
+        }
+
         let actor = ctx.self_ref();
-        let timeout = self.config.handshake_timeout;
-        tokio::spawn(async move {
-            tokio::time::sleep(timeout).await;
-            let _ = actor.tell(RemoteNodeCommand::HandshakeTimeout);
-        });
+        let handle = ctx.schedule_tell_once_cancelable(
+            self.config.handshake_timeout,
+            &actor,
+            RemoteNodeCommand::HandshakeTimeout,
+            None,
+        );
+        self.handshake_timeout = Some(handle);
+    }
+
+    pub(super) fn cancel_handshake_timeout(&mut self) {
+        if let Some(timeout) = self.handshake_timeout.take() {
+            timeout.cancel();
+        }
     }
 }

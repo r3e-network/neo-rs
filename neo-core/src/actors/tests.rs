@@ -346,6 +346,34 @@ async fn scheduler_repeated_messages_can_be_cancelled() -> AkkaResult<()> {
 }
 
 #[tokio::test]
+async fn scheduler_once_message_can_be_cancelled() -> AkkaResult<()> {
+    let system = ActorSystem::new("akka-scheduler-once-cancel")?;
+    let counter = Arc::new(AtomicUsize::new(0));
+    let actor_counter = counter.clone();
+    let ticker = system.actor_of(
+        Props::new(move || TickActor {
+            counter: actor_counter.clone(),
+        }),
+        "ticker",
+    )?;
+
+    let scheduler = system.scheduler();
+    let handle =
+        scheduler.schedule_tell_once(Duration::from_millis(30), ticker.clone(), Tick, None);
+    handle.cancel();
+
+    sleep(Duration::from_millis(60)).await;
+    assert_eq!(
+        0,
+        counter.load(Ordering::SeqCst),
+        "cancelled one-shot schedules should not deliver their message"
+    );
+
+    system.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn scheduler_repeated_messages_stop_when_handle_is_dropped() -> AkkaResult<()> {
     let system = ActorSystem::new("akka-scheduler-drop")?;
     let counter = Arc::new(AtomicUsize::new(0));

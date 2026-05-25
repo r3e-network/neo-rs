@@ -70,6 +70,7 @@ pub struct RemoteNode {
     pending_known_hashes: PendingKnownHashes,
     bloom_filter: BloomFilterState,
     timer: Option<Cancelable>,
+    handshake_timeout: Option<Cancelable>,
     last_block_index: u32,
     _last_height_sent: u32,
     message_queue_high: OutboundMessageQueue,
@@ -159,6 +160,7 @@ impl RemoteNode {
             pending_known_hashes: PendingKnownHashes::new(cache_capacity),
             bloom_filter: BloomFilterState::default(),
             timer: None,
+            handshake_timeout: None,
             last_block_index: 0,
             _last_height_sent: 0,
             message_queue_high: OutboundMessageQueue::default(),
@@ -365,6 +367,7 @@ impl RemoteNode {
     }
 
     async fn on_verack(&mut self, ctx: &mut ActorContext) -> ActorResult {
+        self.cancel_handshake_timeout();
         {
             let mut connection = self.connection.lock().await;
             connection.set_state(ConnectionState::Ready);
@@ -542,6 +545,7 @@ impl Actor for RemoteNode {
         self.pending_known_hashes.clear();
         self.bloom_filter.clear();
         self.cancel_timer();
+        self.cancel_handshake_timeout();
         if let Some(parent) = ctx.parent() {
             let self_ref = ctx.self_ref();
             if let Err(err) = parent.tell(PeerCommand::ConnectionTerminated { actor: self_ref }) {
