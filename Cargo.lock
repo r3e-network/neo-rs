@@ -2457,6 +2457,7 @@ dependencies = [
  "k256",
  "lru",
  "lz4_flex",
+ "memchr",
  "murmur3",
  "neo-config",
  "neo-crypto",

@@ -1,6 +1,7 @@
 use super::StdLib;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
+use memchr::memmem;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -80,33 +81,9 @@ impl StdLib {
         }
 
         let result = if backward {
-            // Backward search: search in mem[0..start] from end to beginning
-            if start_usize < value.len() {
-                -1
-            } else {
-                let search_range = &mem[0..start_usize];
-                match search_range
-                    .windows(value.len())
-                    .rposition(|window| window == value)
-                {
-                    Some(pos) => pos as i32,
-                    None => -1,
-                }
-            }
+            memmem::rfind(&mem[..start_usize], value).map_or(-1, |pos| pos as i32)
         } else {
-            // Forward search: search in mem[start..] from beginning to end
-            if start_usize + value.len() > mem.len() {
-                -1
-            } else {
-                let search_range = &mem[start_usize..];
-                match search_range
-                    .windows(value.len())
-                    .position(|window| window == value)
-                {
-                    Some(pos) => (start_usize + pos) as i32,
-                    None => -1,
-                }
-            }
+            memmem::find(&mem[start_usize..], value).map_or(-1, |pos| (start_usize + pos) as i32)
         };
 
         Ok(result.to_le_bytes().to_vec())

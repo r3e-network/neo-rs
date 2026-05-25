@@ -207,6 +207,7 @@ bitflags = "2.4"
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 dashmap = "5.5"
 governor = { version = "0.10.4", default-features = false, features = ["std"] }
+memchr = "2.8"
 
 # === Storage ===
 rocksdb = { version = "0.21", default-features = false, features = ["snappy", "lz4", "zlib"] }
