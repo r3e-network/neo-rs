@@ -19,8 +19,6 @@ pub mod hardfork_activable;
 pub mod hash_index_state;
 /// Helper functions for native contracts.
 pub mod helpers;
-/// Compatibility module for the old C#-style hardfork activation trait name.
-pub mod hardfork_activable_compat;
 /// Ledger native contract.
 pub mod ledger_contract;
 pub(crate) mod method_macros;
@@ -61,8 +59,8 @@ pub use crypto_lib::CryptoLib;
 pub use fungible_token::{DefaultTokenAccountState, FungibleToken, TokenAccountState};
 pub use gas_token::GasToken;
 pub use hardfork_activable::HardforkActivable;
+pub use hardfork_activable::HardforkActivable as IHardforkActivable;
 pub use helpers::NativeHelpers;
-pub use hardfork_activable_compat::IHardforkActivable;
 pub use ledger_contract::{LedgerContract, LedgerTransactionStates};
 pub use native_contract::{is_active_for, NativeContract, NativeContractsCache, NativeMethod};
 pub use neo_token::NeoToken;
