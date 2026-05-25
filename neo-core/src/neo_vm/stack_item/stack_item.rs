@@ -20,7 +20,7 @@ use num_bigint::BigInt;
 use std::fmt;
 use std::sync::Arc;
 
-use super::vm_integer::{VmInteger, vm_integer_stack_value};
+use super::vm_integer::{vm_integer_stack_value, VmInteger};
 
 /// A trait for interop interfaces that can be wrapped by a stack item.
 pub trait InteropInterface: fmt::Debug + Send + Sync {
@@ -887,32 +887,8 @@ impl Ord for StackItem {
             (Self::ByteString(a), Self::Buffer(b)) => b.with_data(|data| a.as_slice().cmp(data)),
             (Self::Buffer(a), Self::ByteString(b)) => a.with_data(|data| data.cmp(b.as_slice())),
             (Self::Pointer(a), Self::Pointer(b)) => a.cmp(b),
-            (Self::Array(a), Self::Array(b)) => {
-                let len_cmp = a.len().cmp(&b.len());
-                if len_cmp != std::cmp::Ordering::Equal {
-                    return len_cmp;
-                }
-                for (item_a, item_b) in a.iter().zip(b.iter()) {
-                    let item_cmp = item_a.cmp(&item_b);
-                    if item_cmp != std::cmp::Ordering::Equal {
-                        return item_cmp;
-                    }
-                }
-                std::cmp::Ordering::Equal
-            }
-            (Self::Struct(a), Self::Struct(b)) => {
-                let len_cmp = a.len().cmp(&b.len());
-                if len_cmp != std::cmp::Ordering::Equal {
-                    return len_cmp;
-                }
-                for (item_a, item_b) in a.iter().zip(b.iter()) {
-                    let item_cmp = item_a.cmp(&item_b);
-                    if item_cmp != std::cmp::Ordering::Equal {
-                        return item_cmp;
-                    }
-                }
-                std::cmp::Ordering::Equal
-            }
+            (Self::Array(a), Self::Array(b)) => cmp_stack_item_sequences(a.iter(), b.iter()),
+            (Self::Struct(a), Self::Struct(b)) => cmp_stack_item_sequences(a.iter(), b.iter()),
             (Self::Map(a), Self::Map(b)) => {
                 // Compare maps by size first, then by sorted key-value pairs
                 let len_cmp = a.len().cmp(&b.len());
@@ -957,6 +933,24 @@ impl Ord for StackItem {
             }
         }
     }
+}
+
+fn cmp_stack_item_sequences(
+    left: impl ExactSizeIterator<Item = StackItem>,
+    right: impl ExactSizeIterator<Item = StackItem>,
+) -> std::cmp::Ordering {
+    let len_cmp = left.len().cmp(&right.len());
+    if len_cmp != std::cmp::Ordering::Equal {
+        return len_cmp;
+    }
+
+    for (item_a, item_b) in left.zip(right) {
+        let item_cmp = item_a.cmp(&item_b);
+        if item_cmp != std::cmp::Ordering::Equal {
+            return item_cmp;
+        }
+    }
+    std::cmp::Ordering::Equal
 }
 
 const fn combine_hash(current: i32, value: i32) -> i32 {
@@ -1138,6 +1132,31 @@ mod tests {
 
         // The arrays should be equal despite the cycles
         assert!(array1.equals(&array2).unwrap_or(false));
+    }
+
+    #[test]
+    fn array_and_struct_ordering_compare_length_then_items() {
+        let short_array = StackItem::from_array(vec![StackItem::from_int(1)]);
+        let long_array =
+            StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(2)]);
+        assert_eq!(short_array.cmp(&long_array), std::cmp::Ordering::Less);
+
+        let lower_array =
+            StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(2)]);
+        let higher_array =
+            StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(3)]);
+        assert_eq!(lower_array.cmp(&higher_array), std::cmp::Ordering::Less);
+
+        let short_struct = StackItem::from_struct(vec![StackItem::from_int(1)]);
+        let long_struct =
+            StackItem::from_struct(vec![StackItem::from_int(1), StackItem::from_int(2)]);
+        assert_eq!(short_struct.cmp(&long_struct), std::cmp::Ordering::Less);
+
+        let lower_struct =
+            StackItem::from_struct(vec![StackItem::from_int(1), StackItem::from_int(2)]);
+        let higher_struct =
+            StackItem::from_struct(vec![StackItem::from_int(1), StackItem::from_int(3)]);
+        assert_eq!(lower_struct.cmp(&higher_struct), std::cmp::Ordering::Less);
     }
 }
 
