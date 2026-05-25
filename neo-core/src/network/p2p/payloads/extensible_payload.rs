@@ -142,8 +142,7 @@ impl ExtensiblePayload {
 
         writer.write_u32(self.valid_block_start)?;
         writer.write_u32(self.valid_block_end)?;
-        let sender = self.sender.as_bytes();
-        writer.write_bytes(&sender)?;
+        writer.write_serializable(&self.sender)?;
 
         self.data.validate_max_length(MAX_DATA_LENGTH, "Data")?;
         writer.write_var_bytes(&self.data)?;

@@ -26,16 +26,13 @@ impl Header {
     /// Serialize without witness.
     pub(super) fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         writer.write_u32(self.version)?;
-        let prev_hash = self.prev_hash.as_bytes();
-        writer.write_bytes(&prev_hash)?;
-        let merkle_root = self.merkle_root.as_bytes();
-        writer.write_bytes(&merkle_root)?;
+        writer.write_serializable(&self.prev_hash)?;
+        writer.write_serializable(&self.merkle_root)?;
         writer.write_u64(self.timestamp)?;
         writer.write_u64(self.nonce)?;
         writer.write_u32(self.index)?;
         writer.write_u8(self.primary_index)?;
-        let next_consensus = self.next_consensus.as_bytes();
-        writer.write_bytes(&next_consensus)?;
+        writer.write_serializable(&self.next_consensus)?;
         Ok(())
     }
 }
