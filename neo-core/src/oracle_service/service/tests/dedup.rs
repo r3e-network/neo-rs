@@ -42,7 +42,11 @@ fn dedup_cache_prunes_expired_urls_before_checking_recent_duplicates() {
     let service = oracle_service(true);
     let url = "https://oracle.example/expired";
     let expired = SystemTime::now() - DEDUP_CACHE_TTL - Duration::from_secs(1);
-    service.dedup_cache.lock().insert(url.to_string(), expired);
+    service
+        .dedup
+        .lock()
+        .completed
+        .insert(url.to_string(), expired);
 
     assert!(!service.is_duplicate_request(1, url));
     assert_eq!(service.dedup_cache_size(), 0);

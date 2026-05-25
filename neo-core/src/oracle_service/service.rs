@@ -97,6 +97,41 @@ struct OracleTask {
     timestamp: SystemTime,
 }
 
+#[derive(Default)]
+struct OracleDedupState {
+    completed: HashMap<String, SystemTime>,
+    in_flight: HashSet<String>,
+}
+
+impl OracleDedupState {
+    fn prune_expired_completed(&mut self, now: SystemTime) {
+        self.completed.retain(|_, timestamp| {
+            now.duration_since(*timestamp)
+                .map_or(true, |elapsed| elapsed < DEDUP_CACHE_TTL)
+        });
+    }
+
+    fn is_recent_completed(&self, url: &str, now: SystemTime) -> bool {
+        self.completed.get(url).is_some_and(|timestamp| {
+            now.duration_since(*timestamp)
+                .is_ok_and(|elapsed| elapsed < DEDUP_CACHE_TTL)
+        })
+    }
+
+    fn start(&mut self, url: &str) {
+        self.in_flight.insert(url.to_string());
+    }
+
+    fn complete(&mut self, url: &str, timestamp: SystemTime) {
+        self.in_flight.remove(url);
+        self.completed.insert(url.to_string(), timestamp);
+    }
+
+    fn cleanup_in_flight(&mut self, url: &str) {
+        self.in_flight.remove(url);
+    }
+}
+
 /// Oracle service runtime.
 pub struct OracleService {
     settings: OracleServiceSettings,
@@ -106,10 +141,8 @@ pub struct OracleService {
     wallet: RwLock<Option<Arc<dyn Wallet>>>,
     pending_queue: Mutex<HashMap<u64, OracleTask>>,
     finished_cache: Mutex<HashMap<u64, SystemTime>>,
-    /// Deduplication cache: URL -> completed timestamp.
-    dedup_cache: Mutex<HashMap<String, SystemTime>>,
-    /// In-flight requests to prevent concurrent duplicate processing
-    in_flight: Mutex<HashSet<String>>,
+    /// Deduplication state for completed and in-flight request URLs.
+    dedup: Mutex<OracleDedupState>,
     cancel: AtomicBool,
     request_task: Mutex<Option<JoinHandle<()>>>,
     timer_task: Mutex<Option<JoinHandle<()>>>,
@@ -129,21 +162,14 @@ impl OracleService {
             return false;
         }
 
-        let mut dedup_cache = self.dedup_cache.lock();
-        let mut in_flight = self.in_flight.lock();
         let now = SystemTime::now();
+        let mut dedup = self.dedup.lock();
 
         // Clean up expired entries
-        dedup_cache.retain(|_, timestamp| {
-            if let Ok(elapsed) = now.duration_since(*timestamp) {
-                elapsed < DEDUP_CACHE_TTL
-            } else {
-                true
-            }
-        });
+        dedup.prune_expired_completed(now);
 
         // Check if URL is currently being processed
-        if in_flight.contains(url) {
+        if dedup.in_flight.contains(url) {
             tracing::debug!(
                 target: "neo::oracle",
                 request_id,
@@ -154,33 +180,25 @@ impl OracleService {
         }
 
         // Check if we've seen this URL recently
-        if let Some(timestamp) = dedup_cache.get(url) {
-            if let Ok(elapsed) = now.duration_since(*timestamp) {
-                if elapsed < DEDUP_CACHE_TTL {
-                    tracing::debug!(
-                        target: "neo::oracle",
-                        request_id,
-                        url = %url,
-                        "Duplicate request detected (recent)"
-                    );
-                    return true;
-                }
-            }
+        if dedup.is_recent_completed(url, now) {
+            tracing::debug!(
+                target: "neo::oracle",
+                request_id,
+                url = %url,
+                "Duplicate request detected (recent)"
+            );
+            return true;
         }
 
         // Mark URL as in-flight
-        in_flight.insert(url.to_string());
+        dedup.start(url);
 
         false
     }
 
     /// Marks a request as completed and removes it from in-flight.
     pub fn mark_request_completed(&self, request_id: u64, url: &str) {
-        let mut dedup_cache = self.dedup_cache.lock();
-        let mut in_flight = self.in_flight.lock();
-
-        in_flight.remove(url);
-        dedup_cache.insert(url.to_string(), SystemTime::now());
+        self.dedup.lock().complete(url, SystemTime::now());
 
         tracing::debug!(
             target: "neo::oracle",
@@ -192,8 +210,7 @@ impl OracleService {
 
     /// Cleans up in-flight requests (call on error/timeout).
     pub fn cleanup_in_flight(&self, url: &str) {
-        let mut in_flight = self.in_flight.lock();
-        in_flight.remove(url);
+        self.dedup.lock().cleanup_in_flight(url);
     }
 
     /// Validates a URL against security policies.
@@ -222,11 +239,11 @@ impl OracleService {
 
     /// Gets the current deduplication cache size (for monitoring).
     pub fn dedup_cache_size(&self) -> usize {
-        self.dedup_cache.lock().len()
+        self.dedup.lock().completed.len()
     }
 
     /// Gets the current in-flight request count (for monitoring).
     pub fn in_flight_count(&self) -> usize {
-        self.in_flight.lock().len()
+        self.dedup.lock().in_flight.len()
     }
 }
