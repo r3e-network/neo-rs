@@ -9,6 +9,7 @@ use crate::neo_vm::stack_item::buffer::Buffer as BufferItem;
 use crate::neo_vm::stack_item::map::Map as MapItem;
 use crate::neo_vm::stack_item::struct_item::Struct as StructItem;
 use crate::neo_vm::StackItem;
+use neo_io_crate::var_int;
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::StackValue;
@@ -441,16 +442,16 @@ impl BinarySerializer {
                     } else {
                         integer.to_signed_bytes_le()
                     };
-                    Self::write_var_bytes(writer, &bytes)?;
+                    var_int::write_var_bytes(&bytes, writer);
                 }
                 StackItem::ByteString(bytes) => {
                     writer.push(StackItemType::ByteString.to_byte());
-                    Self::write_var_bytes(writer, bytes)?;
+                    var_int::write_var_bytes(bytes, writer);
                 }
                 StackItem::Buffer(buffer) => {
                     writer.push(StackItemType::Buffer.to_byte());
                     let data = buffer.data();
-                    Self::write_var_bytes(writer, &data)?;
+                    var_int::write_var_bytes(&data, writer);
                 }
                 StackItem::Array(array) => {
                     writer.push(StackItemType::Array.to_byte());
@@ -460,7 +461,7 @@ impl BinarySerializer {
                             "Circular reference detected while serializing array".to_string()
                         );
                     }
-                    Self::write_var_int(writer, array.len())?;
+                    var_int::write_var_int(array.len() as u64, writer);
                     for element in array.items().iter().rev() {
                         queue.push_back(element.clone());
                     }
@@ -473,7 +474,7 @@ impl BinarySerializer {
                             "Circular reference detected while serializing struct".to_string()
                         );
                     }
-                    Self::write_var_int(writer, struct_item.len())?;
+                    var_int::write_var_int(struct_item.len() as u64, writer);
                     for element in struct_item.items().iter().rev() {
                         queue.push_back(element.clone());
                     }
@@ -484,7 +485,7 @@ impl BinarySerializer {
                     if !processed.insert(identity) {
                         return Err("Circular reference detected while serializing map".to_string());
                     }
-                    Self::write_var_int(writer, map.len())?;
+                    var_int::write_var_int(map.len() as u64, writer);
                     for (key, value) in map.items().iter().rev() {
                         queue.push_back(value.clone());
                         queue.push_back(key.clone());
@@ -498,28 +499,6 @@ impl BinarySerializer {
             }
         }
 
-        Ok(())
-    }
-
-    fn write_var_int(writer: &mut Vec<u8>, value: usize) -> Result<(), String> {
-        if value < 0xfd {
-            writer.push(value as u8);
-        } else if value <= 0xffff {
-            writer.push(0xfd);
-            writer.extend_from_slice(&(value as u16).to_le_bytes());
-        } else if value <= 0xffff_ffff {
-            writer.push(0xfe);
-            writer.extend_from_slice(&(value as u32).to_le_bytes());
-        } else {
-            writer.push(0xff);
-            writer.extend_from_slice(&(value as u64).to_le_bytes());
-        }
-        Ok(())
-    }
-
-    fn write_var_bytes(writer: &mut Vec<u8>, bytes: &[u8]) -> Result<(), String> {
-        Self::write_var_int(writer, bytes.len())?;
-        writer.extend_from_slice(bytes);
         Ok(())
     }
 
