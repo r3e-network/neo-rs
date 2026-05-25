@@ -22,7 +22,7 @@ pub mod service;
 pub mod settings;
 pub mod trackers;
 
-pub use extensions::{bigint_var_size, bytes_var_size, find_prefix, find_range, to_base64};
+pub use extensions::{bigint_var_size, find_prefix, find_range, to_base64};
 pub use runtime::TokensTracker;
 pub use service::TokensTrackerService;
 pub use settings::TokensTrackerSettings;

@@ -2,7 +2,7 @@
 //!
 //! Utility functions for serialization size calculation and database queries.
 
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::persistence::{IStore, SeekDirection};
 use base64::Engine;
@@ -20,12 +20,7 @@ pub fn to_base64(data: &[u8]) -> String {
 /// Returns the Neo var-size contribution of a BigInt.
 pub fn bigint_var_size(value: &BigInt) -> usize {
     let bytes = value.to_signed_bytes_le();
-    get_var_size(bytes.len() as u64) + bytes.len()
-}
-
-/// Returns the Neo var-size contribution of a byte slice.
-pub fn bytes_var_size(len: usize) -> usize {
-    get_var_size(len as u64) + len
+    get_var_size_bytes(&bytes)
 }
 
 /// Finds entries whose keys start with the given prefix.

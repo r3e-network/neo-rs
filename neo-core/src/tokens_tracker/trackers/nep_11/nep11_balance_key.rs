@@ -2,8 +2,8 @@
 //!
 //! Storage key for NEP-11 (NFT) balances.
 
-use super::super::super::extensions::bytes_var_size;
 use super::token_id_integer;
+use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
 use num_bigint::BigInt;
@@ -58,7 +58,7 @@ impl Ord for Nep11BalanceKey {
 
 impl Serializable for Nep11BalanceKey {
     fn size(&self) -> usize {
-        20 + 20 + bytes_var_size(self.token.len())
+        20 + 20 + get_var_size_bytes(&self.token)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

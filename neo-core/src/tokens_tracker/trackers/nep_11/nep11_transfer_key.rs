@@ -2,10 +2,10 @@
 //!
 //! Storage key for NEP-11 (NFT) transfer records.
 
-use super::super::super::extensions::bytes_var_size;
 use super::super::token_transfer_key::TokenTransferKey;
 use super::super::tracker_base::TokenTransferKeyView;
 use super::token_id_integer;
+use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
 use num_bigint::BigInt;
@@ -64,7 +64,7 @@ impl Ord for Nep11TransferKey {
 
 impl Serializable for Nep11TransferKey {
     fn size(&self) -> usize {
-        self.base.size() + bytes_var_size(self.token.len())
+        self.base.size() + get_var_size_bytes(&self.token)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
