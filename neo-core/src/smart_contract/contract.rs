@@ -157,14 +157,23 @@ impl Contract {
 
     /// Gets the address of the contract
     pub fn get_address(&self) -> String {
-        let mut data = Vec::with_capacity(1 + crate::neo_config::ADDRESS_SIZE + 4);
-        // Default address version (0x35) matches ProtocolSettings::default
+        let mut data = Vec::with_capacity(1 + crate::neo_config::ADDRESS_SIZE);
         data.push(crate::protocol_settings::ProtocolSettings::default_settings().address_version);
         data.extend_from_slice(&self.script_hash().to_bytes());
 
-        let checksum = crate::cryptography::crypto_utils::Crypto::hash256(&data);
-        data.extend_from_slice(&checksum[..4]);
+        crate::cryptography::crypto_utils::Base58::encode_check(&data)
+    }
+}
 
-        crate::cryptography::crypto_utils::Base58::encode(&data)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_address_uses_default_protocol_base58_check_payload() {
+        let script_hash = UInt160::from_bytes(&[0x31; UInt160::LENGTH]).unwrap();
+        let contract = Contract::create_with_hash(script_hash, Vec::new());
+
+        assert_eq!(contract.get_address(), script_hash.to_address());
     }
 }

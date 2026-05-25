@@ -291,18 +291,7 @@ impl UInt160 {
         data.push(version_byte);
         data.extend_from_slice(&self.to_array());
 
-        let mut hasher = Sha256::new();
-        hasher.update(&data);
-        let first_hash = hasher.finalize();
-
-        let mut hasher = Sha256::new();
-        hasher.update(first_hash);
-        let second_hash = hasher.finalize();
-
-        let checksum = &second_hash[0..4];
-        data.extend_from_slice(checksum);
-
-        bs58::encode(data).into_string()
+        bs58::encode(data).with_check().into_string()
     }
 
     /// Parses a Neo address string to a `UInt160`.
@@ -312,14 +301,12 @@ impl UInt160 {
     /// Returns `PrimitiveError::InvalidFormat` if the address is not valid Base58,
     /// has an incorrect length, has an invalid version byte, or has an invalid checksum.
     pub fn from_address(address: &str) -> PrimitiveResult<Self> {
-        let decoded =
-            bs58::decode(address)
-                .into_vec()
-                .map_err(|_| PrimitiveError::InvalidFormat {
-                    message: "Invalid Base58 address".to_string(),
-                })?;
+        let decoded = bs58::decode(address)
+            .with_check(None)
+            .into_vec()
+            .map_err(map_base58_check_address_error)?;
 
-        if decoded.len() != 25 {
+        if decoded.len() != 1 + UINT160_SIZE {
             return Err(PrimitiveError::InvalidFormat {
                 message: "Invalid address length".to_string(),
             });
@@ -331,26 +318,19 @@ impl UInt160 {
             });
         }
 
-        let data = &decoded[0..21];
-        let checksum = &decoded[21..25];
-
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        let first_hash = hasher.finalize();
-
-        let mut hasher = Sha256::new();
-        hasher.update(first_hash);
-        let second_hash = hasher.finalize();
-
-        let computed_checksum = &second_hash[0..4];
-        if checksum != computed_checksum {
-            return Err(PrimitiveError::InvalidFormat {
-                message: "Invalid address checksum".to_string(),
-            });
-        }
-
-        let script_hash = &decoded[1..21];
+        let script_hash = &decoded[1..];
         Self::from_bytes(script_hash)
+    }
+}
+
+fn map_base58_check_address_error(error: bs58::decode::Error) -> PrimitiveError {
+    let message = match error {
+        bs58::decode::Error::InvalidChecksum { .. } => "Invalid address checksum",
+        bs58::decode::Error::NoChecksum => "Invalid address length",
+        _ => "Invalid Base58 address",
+    };
+    PrimitiveError::InvalidFormat {
+        message: message.to_string(),
     }
 }
 
@@ -536,6 +516,74 @@ mod tests {
         let script = b"Hello, Neo!";
         let uint = UInt160::from_script(script);
         assert!(!uint.is_zero());
+    }
+
+    #[test]
+    fn address_uses_base58_check_roundtrip() {
+        let script_hash = UInt160::from_bytes(&[0x42; UINT160_SIZE]).unwrap();
+        let address = script_hash.to_address();
+        let payload = bs58::decode(&address).with_check(None).into_vec().unwrap();
+
+        assert_eq!(payload.len(), 1 + UINT160_SIZE);
+        assert_eq!(payload[0], crate::constants::ADDRESS_VERSION);
+        assert_eq!(&payload[1..], script_hash.to_array());
+        assert_eq!(UInt160::from_address(&address).unwrap(), script_hash);
+    }
+
+    #[test]
+    fn address_matches_known_neo_vectors() {
+        let vectors = [
+            (
+                "0xb8a020fce295c9e36ab7ec3502c9ebbabf2d8878",
+                "NWuHQdxabXPdC6vVwJhxjYELDQPqc1d4TG",
+            ),
+            (
+                "0x3f699a30c273a1b39e1346dd63dfafa384977f94",
+                "NZTA3PJBp9zYyj32Cozheuxqo7S1yqC9Vj",
+            ),
+        ];
+
+        for (script_hash, address) in vectors {
+            let script_hash = UInt160::parse(script_hash).unwrap();
+
+            assert_eq!(script_hash.to_address(), address);
+            assert_eq!(
+                UInt160::from_address(address).unwrap().to_hex_string(),
+                script_hash.to_hex_string()
+            );
+        }
+    }
+
+    #[test]
+    fn from_address_rejects_wrong_version_before_checksum() {
+        let mut payload = Vec::with_capacity(1 + UINT160_SIZE);
+        payload.push(crate::constants::ADDRESS_VERSION.wrapping_add(1));
+        payload.extend_from_slice(&[0x11; UINT160_SIZE]);
+        let address = bs58::encode(payload).with_check().into_string();
+
+        let err = UInt160::from_address(&address).unwrap_err().to_string();
+
+        assert!(err.contains("Invalid address version"), "{err}");
+    }
+
+    #[test]
+    fn from_address_rejects_missing_base58_check_checksum() {
+        let err = UInt160::from_address("1").unwrap_err().to_string();
+
+        assert!(err.contains("Invalid address length"), "{err}");
+    }
+
+    #[test]
+    fn from_address_rejects_invalid_base58_check_checksum() {
+        let script_hash = UInt160::from_bytes(&[0x24; UINT160_SIZE]).unwrap();
+        let mut address = script_hash.to_address().into_bytes();
+        let last = address.last_mut().unwrap();
+        *last = if *last == b'1' { b'2' } else { b'1' };
+        let address = String::from_utf8(address).unwrap();
+
+        let err = UInt160::from_address(&address).unwrap_err().to_string();
+
+        assert!(err.contains("Invalid address checksum"), "{err}");
     }
 
     // Property-based tests using proptest
