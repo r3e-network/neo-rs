@@ -3,189 +3,138 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Standard JSON-RPC 2.0 error codes and Neo-specific error codes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(i32)]
-pub enum RpcErrorCode {
-    // === Standard JSON-RPC 2.0 error codes ===
-    /// Invalid JSON was received by the server.
-    ParseError = -32700,
-    /// The JSON sent is not a valid Request object.
-    InvalidRequest = -32600,
-    /// The method does not exist / is not available.
-    MethodNotFound = -32601,
-    /// Invalid method parameter(s).
-    InvalidParams = -32602,
-    /// Internal JSON-RPC error.
-    InternalError = -32603,
+macro_rules! rpc_error_codes {
+    (
+        $(
+            $(#[$meta:meta])*
+            $variant:ident = $code:expr => $message:expr, standard = $standard:expr;
+        )+
+    ) => {
+        /// Standard JSON-RPC 2.0 error codes and Neo-specific error codes.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[repr(i32)]
+        pub enum RpcErrorCode {
+            $(
+                $(#[$meta])*
+                $variant = $code,
+            )+
+        }
 
-    // === Neo-specific error codes ===
-    /// Unknown block.
-    UnknownBlock = -100,
-    /// Unknown contract.
-    UnknownContract = -101,
-    /// Unknown transaction.
-    UnknownTransaction = -102,
-    /// Unknown storage item.
-    UnknownStorageItem = -103,
-    /// Unknown script container.
-    UnknownScriptContainer = -104,
-    /// Unknown state root.
-    UnknownStateRoot = -105,
-    /// Unknown session.
-    UnknownSession = -106,
-    /// Unknown iterator.
-    UnknownIterator = -107,
-    /// Unknown height.
-    UnknownHeight = -108,
+        impl RpcErrorCode {
+            /// Returns the numeric error code.
+            #[must_use]
+            pub const fn code(self) -> i32 {
+                self as i32
+            }
 
-    /// Insufficient funds for transfer.
-    InsufficientFunds = -300,
-    /// Fee limit exceeded.
-    WalletFeeLimitExceeded = -301,
-    /// No opened wallet.
-    NoOpenedWallet = -302,
-    /// Invalid wallet password.
-    InvalidWalletPassword = -303,
+            /// Creates an error code from a numeric value.
+            #[must_use]
+            pub const fn from_code(code: i32) -> Option<Self> {
+                match code {
+                    $(
+                        $code => Some(Self::$variant),
+                    )+
+                    _ => None,
+                }
+            }
 
-    /// Inventory already exists.
-    AlreadyExists = -500,
-    /// Memory pool is full.
-    MempoolCapReached = -501,
-    /// Already in pool.
-    AlreadyInPool = -502,
-    /// Insufficient network fee.
-    InsufficientNetworkFee = -503,
-    /// Policy check failed.
-    PolicyFailed = -504,
-    /// Invalid script.
-    InvalidScript = -505,
-    /// Invalid attribute.
-    InvalidAttribute = -506,
-    /// Invalid signature.
-    InvalidSignature = -507,
-    /// Invalid size.
-    InvalidSize = -508,
-    /// Expired transaction.
-    ExpiredTransaction = -509,
-    /// Insufficient funds.
-    InsufficientFundsForFee = -510,
-    /// Invalid verification script.
-    InvalidVerificationScript = -511,
+            /// Returns the default message for this error code.
+            #[must_use]
+            pub const fn message(self) -> &'static str {
+                match self {
+                    $(
+                        Self::$variant => $message,
+                    )+
+                }
+            }
 
-    /// Access denied.
-    AccessDenied = -600,
-
-    /// Session not found.
-    SessionNotFound = -700,
-    /// Oracle not found.
-    OracleNotFound = -701,
-    /// Oracle request not found.
-    OracleRequestNotFound = -702,
+            /// Returns true if this is a standard JSON-RPC error code.
+            #[must_use]
+            pub const fn is_standard(self) -> bool {
+                match self {
+                    $(
+                        Self::$variant => $standard,
+                    )+
+                }
+            }
+        }
+    };
 }
 
-impl RpcErrorCode {
-    /// Returns the numeric error code.
-    #[must_use]
-    pub const fn code(self) -> i32 {
-        self as i32
-    }
+rpc_error_codes! {
+    /// Invalid JSON was received by the server.
+    ParseError = -32700 => "Parse error", standard = true;
+    /// The JSON sent is not a valid Request object.
+    InvalidRequest = -32600 => "Invalid request", standard = true;
+    /// The method does not exist / is not available.
+    MethodNotFound = -32601 => "Method not found", standard = true;
+    /// Invalid method parameter(s).
+    InvalidParams = -32602 => "Invalid params", standard = true;
+    /// Internal JSON-RPC error.
+    InternalError = -32603 => "Internal error", standard = true;
 
-    /// Creates an error code from a numeric value.
-    #[must_use]
-    pub const fn from_code(code: i32) -> Option<Self> {
-        match code {
-            -32700 => Some(Self::ParseError),
-            -32600 => Some(Self::InvalidRequest),
-            -32601 => Some(Self::MethodNotFound),
-            -32602 => Some(Self::InvalidParams),
-            -32603 => Some(Self::InternalError),
-            -100 => Some(Self::UnknownBlock),
-            -101 => Some(Self::UnknownContract),
-            -102 => Some(Self::UnknownTransaction),
-            -103 => Some(Self::UnknownStorageItem),
-            -104 => Some(Self::UnknownScriptContainer),
-            -105 => Some(Self::UnknownStateRoot),
-            -106 => Some(Self::UnknownSession),
-            -107 => Some(Self::UnknownIterator),
-            -108 => Some(Self::UnknownHeight),
-            -300 => Some(Self::InsufficientFunds),
-            -301 => Some(Self::WalletFeeLimitExceeded),
-            -302 => Some(Self::NoOpenedWallet),
-            -303 => Some(Self::InvalidWalletPassword),
-            -500 => Some(Self::AlreadyExists),
-            -501 => Some(Self::MempoolCapReached),
-            -502 => Some(Self::AlreadyInPool),
-            -503 => Some(Self::InsufficientNetworkFee),
-            -504 => Some(Self::PolicyFailed),
-            -505 => Some(Self::InvalidScript),
-            -506 => Some(Self::InvalidAttribute),
-            -507 => Some(Self::InvalidSignature),
-            -508 => Some(Self::InvalidSize),
-            -509 => Some(Self::ExpiredTransaction),
-            -510 => Some(Self::InsufficientFundsForFee),
-            -511 => Some(Self::InvalidVerificationScript),
-            -600 => Some(Self::AccessDenied),
-            -700 => Some(Self::SessionNotFound),
-            -701 => Some(Self::OracleNotFound),
-            -702 => Some(Self::OracleRequestNotFound),
-            _ => None,
-        }
-    }
+    /// Unknown block.
+    UnknownBlock = -100 => "Unknown block", standard = false;
+    /// Unknown contract.
+    UnknownContract = -101 => "Unknown contract", standard = false;
+    /// Unknown transaction.
+    UnknownTransaction = -102 => "Unknown transaction", standard = false;
+    /// Unknown storage item.
+    UnknownStorageItem = -103 => "Unknown storage item", standard = false;
+    /// Unknown script container.
+    UnknownScriptContainer = -104 => "Unknown script container", standard = false;
+    /// Unknown state root.
+    UnknownStateRoot = -105 => "Unknown state root", standard = false;
+    /// Unknown session.
+    UnknownSession = -106 => "Unknown session", standard = false;
+    /// Unknown iterator.
+    UnknownIterator = -107 => "Unknown iterator", standard = false;
+    /// Unknown height.
+    UnknownHeight = -108 => "Unknown height", standard = false;
 
-    /// Returns the default message for this error code.
-    #[must_use]
-    pub const fn message(self) -> &'static str {
-        match self {
-            Self::ParseError => "Parse error",
-            Self::InvalidRequest => "Invalid request",
-            Self::MethodNotFound => "Method not found",
-            Self::InvalidParams => "Invalid params",
-            Self::InternalError => "Internal error",
-            Self::UnknownBlock => "Unknown block",
-            Self::UnknownContract => "Unknown contract",
-            Self::UnknownTransaction => "Unknown transaction",
-            Self::UnknownStorageItem => "Unknown storage item",
-            Self::UnknownScriptContainer => "Unknown script container",
-            Self::UnknownStateRoot => "Unknown state root",
-            Self::UnknownSession => "Unknown session",
-            Self::UnknownIterator => "Unknown iterator",
-            Self::UnknownHeight => "Unknown height",
-            Self::InsufficientFunds => "Insufficient funds",
-            Self::WalletFeeLimitExceeded => "Wallet fee limit exceeded",
-            Self::NoOpenedWallet => "No opened wallet",
-            Self::InvalidWalletPassword => "Invalid wallet password",
-            Self::AlreadyExists => "Already exists",
-            Self::MempoolCapReached => "Memory pool capacity reached",
-            Self::AlreadyInPool => "Already in pool",
-            Self::InsufficientNetworkFee => "Insufficient network fee",
-            Self::PolicyFailed => "Policy check failed",
-            Self::InvalidScript => "Invalid script",
-            Self::InvalidAttribute => "Invalid attribute",
-            Self::InvalidSignature => "Invalid signature",
-            Self::InvalidSize => "Invalid size",
-            Self::ExpiredTransaction => "Expired transaction",
-            Self::InsufficientFundsForFee => "Insufficient funds for fee",
-            Self::InvalidVerificationScript => "Invalid verification script",
-            Self::AccessDenied => "Access denied",
-            Self::SessionNotFound => "Session not found",
-            Self::OracleNotFound => "Oracle not found",
-            Self::OracleRequestNotFound => "Oracle request not found",
-        }
-    }
+    /// Insufficient funds for transfer.
+    InsufficientFunds = -300 => "Insufficient funds", standard = false;
+    /// Fee limit exceeded.
+    WalletFeeLimitExceeded = -301 => "Wallet fee limit exceeded", standard = false;
+    /// No opened wallet.
+    NoOpenedWallet = -302 => "No opened wallet", standard = false;
+    /// Invalid wallet password.
+    InvalidWalletPassword = -303 => "Invalid wallet password", standard = false;
 
-    /// Returns true if this is a standard JSON-RPC error code.
-    #[must_use]
-    pub const fn is_standard(self) -> bool {
-        matches!(
-            self,
-            Self::ParseError
-                | Self::InvalidRequest
-                | Self::MethodNotFound
-                | Self::InvalidParams
-                | Self::InternalError
-        )
-    }
+    /// Inventory already exists.
+    AlreadyExists = -500 => "Already exists", standard = false;
+    /// Memory pool is full.
+    MempoolCapReached = -501 => "Memory pool capacity reached", standard = false;
+    /// Already in pool.
+    AlreadyInPool = -502 => "Already in pool", standard = false;
+    /// Insufficient network fee.
+    InsufficientNetworkFee = -503 => "Insufficient network fee", standard = false;
+    /// Policy check failed.
+    PolicyFailed = -504 => "Policy check failed", standard = false;
+    /// Invalid script.
+    InvalidScript = -505 => "Invalid script", standard = false;
+    /// Invalid attribute.
+    InvalidAttribute = -506 => "Invalid attribute", standard = false;
+    /// Invalid signature.
+    InvalidSignature = -507 => "Invalid signature", standard = false;
+    /// Invalid size.
+    InvalidSize = -508 => "Invalid size", standard = false;
+    /// Expired transaction.
+    ExpiredTransaction = -509 => "Expired transaction", standard = false;
+    /// Insufficient funds.
+    InsufficientFundsForFee = -510 => "Insufficient funds for fee", standard = false;
+    /// Invalid verification script.
+    InvalidVerificationScript = -511 => "Invalid verification script", standard = false;
+
+    /// Access denied.
+    AccessDenied = -600 => "Access denied", standard = false;
+
+    /// Session not found.
+    SessionNotFound = -700 => "Session not found", standard = false;
+    /// Oracle not found.
+    OracleNotFound = -701 => "Oracle not found", standard = false;
+    /// Oracle request not found.
+    OracleRequestNotFound = -702 => "Oracle request not found", standard = false;
 }
 
 impl fmt::Display for RpcErrorCode {
