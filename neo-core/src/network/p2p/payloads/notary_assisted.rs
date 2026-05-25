@@ -65,7 +65,7 @@ impl NotaryAssisted {
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u8(self.nkeys)
+        <Self as Serializable>::serialize(self, writer)
     }
 }
 

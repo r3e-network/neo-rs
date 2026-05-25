@@ -81,9 +81,7 @@ impl Serializable for NetworkAddressWithTime {
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let timestamp = reader.read_u32()?;
 
-        let addr_bytes = reader.read_bytes(16)?;
-        let addr_array = <[u8; 16]>::try_from(addr_bytes.as_slice())
-            .map_err(|_| IoError::invalid_data("Invalid IP address length"))?;
+        let addr_array = reader.read_array::<16>()?;
         let address = Self::unmap_from_ipv6(&addr_array);
 
         let capabilities = deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;

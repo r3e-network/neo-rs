@@ -89,12 +89,7 @@ impl OracleResponse {
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u64(self.id)?;
-        writer.write_u8(self.code as u8)?;
-        // Use ValidateLength trait to reduce boilerplate
-        self.result.validate_max_length(MAX_RESULT_SIZE, "Result")?;
-        writer.write_var_bytes(&self.result)?;
-        Ok(())
+        <Self as Serializable>::serialize(self, writer)
     }
 }
 

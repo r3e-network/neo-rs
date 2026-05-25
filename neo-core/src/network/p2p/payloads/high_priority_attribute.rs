@@ -41,8 +41,8 @@ impl HighPriorityAttribute {
     }
 
     /// Serialize without type byte.
-    pub fn serialize_without_type(&self, _writer: &mut BinaryWriter) -> IoResult<()> {
-        Ok(()) // No data to serialize
+    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        <Self as Serializable>::serialize(self, writer)
     }
 }
 

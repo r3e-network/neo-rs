@@ -58,7 +58,7 @@ impl Conflicts {
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        Serializable::serialize(&self.hash, writer)
+        <Self as Serializable>::serialize(self, writer)
     }
 }
 

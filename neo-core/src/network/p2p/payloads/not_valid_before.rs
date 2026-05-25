@@ -41,7 +41,7 @@ impl NotValidBefore {
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u32(self.height)
+        <Self as Serializable>::serialize(self, writer)
     }
 }
 
