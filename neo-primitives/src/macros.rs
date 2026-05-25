@@ -334,10 +334,91 @@ macro_rules! protocol_enum_with_unknown {
 /// - `from_byte = infallible` keeps `from_byte(u8) -> Self`.
 #[doc(hidden)]
 #[macro_export]
+macro_rules! __p2p_message_command_table {
+    ($callback:ident; $($args:tt)*) => {
+        $crate::$callback! {
+            $($args)*
+            ;
+            {
+                #[doc = "Version handshake message."]
+                Version = 0x00 => "version",
+                #[doc = "Version acknowledgment message."]
+                Verack = 0x01 => "verack",
+                #[doc = "Request for peer addresses."]
+                GetAddr = 0x10 => "getaddr",
+                #[doc = "Response with peer addresses."]
+                Addr = 0x11 => "addr",
+                #[doc = "Ping message for keepalive."]
+                Ping = 0x18 => "ping",
+                #[doc = "Pong response to ping."]
+                Pong = 0x19 => "pong",
+                #[doc = "Request for block headers."]
+                GetHeaders = 0x20 => "getheaders",
+                #[doc = "Response with block headers."]
+                Headers = 0x21 => "headers",
+                #[doc = "Request for block hashes."]
+                GetBlocks = 0x24 => "getblocks",
+                #[doc = "Request for mempool transactions."]
+                Mempool = 0x25 => "mempool",
+                #[doc = "Inventory announcement."]
+                Inv = 0x27 => "inv",
+                #[doc = "Request for specific data."]
+                GetData = 0x28 => "getdata",
+                #[doc = "Request block by index."]
+                GetBlockByIndex = 0x29 => "getblkbyidx",
+                #[doc = "Data not found response."]
+                NotFound = 0x2a => "notfound",
+                #[doc = "Transaction payload."]
+                Transaction = 0x2b => "tx",
+                #[doc = "Block payload."]
+                Block = 0x2c => "block",
+                #[doc = "Extensible message payload."]
+                Extensible = 0x2e => "extensible",
+                #[doc = "Rejection message."]
+                Reject = 0x2f => "reject",
+                #[doc = "Load bloom filter."]
+                FilterLoad = 0x30 => "filterload",
+                #[doc = "Add to bloom filter."]
+                FilterAdd = 0x31 => "filteradd",
+                #[doc = "Clear bloom filter."]
+                FilterClear = 0x32 => "filterclear",
+                #[doc = "Merkle block for SPV."]
+                MerkleBlock = 0x38 => "merkleblock",
+                #[doc = "Alert message."]
+                Alert = 0x40 => "alert",
+            }
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
 macro_rules! __p2p_message_command_enum {
     (
         $(#[$enum_meta:meta])*
         $vis:vis $name:ident
+    ) => {
+        $crate::__p2p_message_command_table! {
+            __p2p_message_command_enum_from_table;
+            $(#[$enum_meta])*
+            $vis $name
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __p2p_message_command_enum_from_table {
+    (
+        $(#[$enum_meta:meta])*
+        $vis:vis $name:ident
+        ;
+        {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident = $byte:expr => $display:expr
+            ),+ $(,)?
+        }
     ) => {
         $crate::protocol_enum_with_unknown! {
             $(#[$enum_meta])*
@@ -347,52 +428,10 @@ macro_rules! __p2p_message_command_enum {
                 /// Command value that is not recognised by this implementation.
                 Unknown(u8) => "unknown";
 
-                /// Version handshake message.
-                Version = 0x00 => "version",
-                /// Version acknowledgment message.
-                Verack = 0x01 => "verack",
-                /// Request for peer addresses.
-                GetAddr = 0x10 => "getaddr",
-                /// Response with peer addresses.
-                Addr = 0x11 => "addr",
-                /// Ping message for keepalive.
-                Ping = 0x18 => "ping",
-                /// Pong response to ping.
-                Pong = 0x19 => "pong",
-                /// Request for block headers.
-                GetHeaders = 0x20 => "getheaders",
-                /// Response with block headers.
-                Headers = 0x21 => "headers",
-                /// Request for block hashes.
-                GetBlocks = 0x24 => "getblocks",
-                /// Request for mempool transactions.
-                Mempool = 0x25 => "mempool",
-                /// Inventory announcement.
-                Inv = 0x27 => "inv",
-                /// Request for specific data.
-                GetData = 0x28 => "getdata",
-                /// Request block by index.
-                GetBlockByIndex = 0x29 => "getblkbyidx",
-                /// Data not found response.
-                NotFound = 0x2a => "notfound",
-                /// Transaction payload.
-                Transaction = 0x2b => "tx",
-                /// Block payload.
-                Block = 0x2c => "block",
-                /// Extensible message payload.
-                Extensible = 0x2e => "extensible",
-                /// Rejection message.
-                Reject = 0x2f => "reject",
-                /// Load bloom filter.
-                FilterLoad = 0x30 => "filterload",
-                /// Add to bloom filter.
-                FilterAdd = 0x31 => "filteradd",
-                /// Clear bloom filter.
-                FilterClear = 0x32 => "filterclear",
-                /// Merkle block for SPV.
-                MerkleBlock = 0x38 => "merkleblock",
-                /// Alert message.
-                Alert = 0x40 => "alert",
+                $(
+                    $(#[$variant_meta])*
+                    $variant = $byte => $display
+                ),+
             }
         }
     };
@@ -402,30 +441,30 @@ macro_rules! __p2p_message_command_enum {
 #[macro_export]
 macro_rules! __p2p_message_command_parse {
     ($name:ident, $source:expr, $parse_error:expr, $extended_aliases:expr) => {{
+        $crate::__p2p_message_command_table! {
+            __p2p_message_command_parse_from_table;
+            $name, $source, $parse_error, $extended_aliases
+        }
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __p2p_message_command_parse_from_table {
+    (
+        $name:ident, $source:expr, $parse_error:expr, $extended_aliases:expr
+        ;
+        {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident = $byte:expr => $display:expr
+            ),+ $(,)?
+        }
+    ) => {{
         match $source {
-            "version" => Ok($name::Version),
-            "verack" => Ok($name::Verack),
-            "getaddr" => Ok($name::GetAddr),
-            "addr" => Ok($name::Addr),
-            "ping" => Ok($name::Ping),
-            "pong" => Ok($name::Pong),
-            "getheaders" => Ok($name::GetHeaders),
-            "headers" => Ok($name::Headers),
-            "getblocks" => Ok($name::GetBlocks),
-            "mempool" => Ok($name::Mempool),
-            "inv" => Ok($name::Inv),
-            "getdata" => Ok($name::GetData),
-            "getblkbyidx" => Ok($name::GetBlockByIndex),
-            "notfound" => Ok($name::NotFound),
-            "tx" => Ok($name::Transaction),
-            "block" => Ok($name::Block),
-            "extensible" => Ok($name::Extensible),
-            "reject" => Ok($name::Reject),
-            "filterload" => Ok($name::FilterLoad),
-            "filteradd" => Ok($name::FilterAdd),
-            "filterclear" => Ok($name::FilterClear),
-            "merkleblock" => Ok($name::MerkleBlock),
-            "alert" => Ok($name::Alert),
+            $(
+                $display => Ok($name::$variant),
+            )+
             "unknown" => Ok($name::Unknown(0xff)),
             other if $extended_aliases => match other {
                 "versionwithpayload" => Ok($name::Unknown(0x55)),
