@@ -32,4 +32,4 @@ mod trackable;
 
 pub use cloned_cache::ClonedCache;
 pub use data_cache::{DataCache, DataCacheError, DataCacheResult};
-pub use trackable::Trackable;
+pub use trackable::{Trackable, TrackableEntry};

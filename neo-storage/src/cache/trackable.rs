@@ -3,48 +3,46 @@
 //! Wraps storage items with tracking state for change detection.
 
 use crate::types::{StorageItem, TrackState};
+use std::fmt;
 
 /// Represents an entry in the cache with tracking state.
 ///
 /// Used by [`DataCache`](super::DataCache) to track the state of each entry
 /// for efficient commit operations.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Trackable {
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct TrackableEntry<T> {
     /// The storage item data.
-    pub item: StorageItem,
+    pub item: T,
     /// The tracking state of this entry.
     pub state: TrackState,
 }
 
-impl Trackable {
+/// Storage-item trackable entry used by [`DataCache`](super::DataCache).
+pub type Trackable = TrackableEntry<StorageItem>;
+
+impl<T> TrackableEntry<T> {
     /// Creates a new trackable entry.
     #[must_use]
-    pub const fn new(item: StorageItem, state: TrackState) -> Self {
+    pub const fn new(item: T, state: TrackState) -> Self {
         Self { item, state }
     }
 
     /// Creates a trackable entry with `TrackState::None`.
     #[must_use]
-    pub fn unchanged(item: StorageItem) -> Self {
+    pub fn unchanged(item: T) -> Self {
         Self::new(item, TrackState::None)
     }
 
     /// Creates a trackable entry with `TrackState::Added`.
     #[must_use]
-    pub fn added(item: StorageItem) -> Self {
+    pub fn added(item: T) -> Self {
         Self::new(item, TrackState::Added)
     }
 
     /// Creates a trackable entry with `TrackState::Changed`.
     #[must_use]
-    pub fn changed(item: StorageItem) -> Self {
+    pub fn changed(item: T) -> Self {
         Self::new(item, TrackState::Changed)
-    }
-
-    /// Creates a trackable entry with `TrackState::Deleted`.
-    #[must_use]
-    pub fn deleted() -> Self {
-        Self::new(StorageItem::default(), TrackState::Deleted)
     }
 
     /// Returns whether this entry has been modified (added, changed, or deleted).
@@ -66,6 +64,23 @@ impl Trackable {
     #[must_use]
     pub const fn should_delete(&self) -> bool {
         matches!(self.state, TrackState::Deleted)
+    }
+}
+
+impl<T: Default> TrackableEntry<T> {
+    /// Creates a trackable entry with `TrackState::Deleted`.
+    #[must_use]
+    pub fn deleted() -> Self {
+        Self::new(T::default(), TrackState::Deleted)
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for TrackableEntry<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Trackable")
+            .field("item", &self.item)
+            .field("state", &self.state)
+            .finish()
     }
 }
 

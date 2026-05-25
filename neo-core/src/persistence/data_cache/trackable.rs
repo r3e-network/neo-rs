@@ -1,25 +1,10 @@
 use crate::persistence::read_cache::ReadCacheConfig;
-use crate::persistence::track_state::TrackState;
 use crate::smart_contract::{StorageItem, StorageKey};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 /// Represents an entry in the cache.
-#[derive(Debug, Clone)]
-pub struct Trackable {
-    /// The data of the entry.
-    pub item: StorageItem,
-
-    /// The state of the entry.
-    pub state: TrackState,
-}
-
-impl Trackable {
-    /// Creates a new Trackable.
-    pub fn new(item: StorageItem, state: TrackState) -> Self {
-        Self { item, state }
-    }
-}
+pub type Trackable = neo_storage::cache::TrackableEntry<StorageItem>;
 
 /// Internal state protected by RwLock for thread-safe Copy-on-Write
 pub(crate) struct InnerState {

@@ -46,7 +46,9 @@ pub mod hash_utils;
 pub mod key_builder;
 pub mod types;
 
-pub use cache::{ClonedCache, DataCache, DataCacheError, DataCacheResult, Trackable};
+pub use cache::{
+    ClonedCache, DataCache, DataCacheError, DataCacheResult, Trackable, TrackableEntry,
+};
 pub use error::{StorageError, StorageResult};
 pub use hash_utils::{
     default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32, DEFAULT_XX_HASH3_SEED,
