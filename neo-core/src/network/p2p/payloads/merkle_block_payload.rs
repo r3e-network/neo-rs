@@ -12,7 +12,7 @@
 use super::{block::Block, header::Header};
 use crate::cryptography::MerkleTree;
 use crate::neo_io::serializable::helper::{
-    get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
+    deserialize_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::CoreResult;
@@ -224,16 +224,7 @@ impl Serializable for MerkleBlockPayload {
         let tx_count = reader.read_var_int(u16::MAX as u64)?;
         let tx_count = tx_count as u32;
 
-        // Read hashes
-        let hash_count = reader.read_var_int(tx_count as u64)?;
-        if hash_count > tx_count as u64 {
-            return Err(IoError::invalid_data("Too many hashes"));
-        }
-
-        let mut hashes = Vec::with_capacity(hash_count as usize);
-        for _ in 0..hash_count {
-            hashes.push(<UInt256 as Serializable>::deserialize(reader)?);
-        }
+        let hashes = deserialize_array::<UInt256>(reader, tx_count as usize)?;
 
         // Read flags
         let max_flags = (tx_count.max(1) as usize).div_ceil(8);

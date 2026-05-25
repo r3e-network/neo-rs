@@ -54,6 +54,14 @@ fn assert_invalid_data_value<T>(result: Result<T, IoError>, expected: &str) {
     }
 }
 
+fn assert_format<T>(result: Result<T, IoError>) {
+    match result {
+        Err(IoError::Format) => {}
+        Err(error) => panic!("expected Format, got {error:?}"),
+        Ok(_) => panic!("expected Format, got Ok"),
+    }
+}
+
 #[test]
 fn csharp_ut_version_payload_size_and_roundtrip() {
     let empty = VersionPayload {
@@ -468,6 +476,24 @@ fn csharp_ut_merkle_block_payload_size_and_roundtrip() {
     assert_eq!(clone.tx_count, payload.tx_count);
     assert_eq!(clone.hashes, payload.hashes);
     assert_eq!(clone.flags, payload.flags);
+}
+
+#[test]
+fn csharp_ut_merkle_block_hash_count_over_tx_count_keeps_format_error() {
+    let header = Header::new();
+    let mut writer = BinaryWriter::new();
+    header.serialize(&mut writer).expect("serialize header");
+    let header_size = writer.len();
+    writer.write_var_uint(1).expect("tx_count");
+    writer.write_var_uint(2).expect("hash_count");
+
+    let bytes = writer.into_bytes();
+    let mut reader = MemoryReader::new(&bytes);
+
+    assert_format(<MerkleBlockPayload as Serializable>::deserialize(
+        &mut reader,
+    ));
+    assert_eq!(reader.position(), header_size + 2);
 }
 
 #[test]
