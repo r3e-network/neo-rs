@@ -3,6 +3,7 @@
 //
 
 use super::*;
+use dashmap::mapref::entry::Entry;
 
 /// Maximum blocks to persist in a single drain pass.
 /// After this many, the actor yields to process queued messages and
@@ -100,14 +101,12 @@ impl Blockchain {
             }
         }
 
-        // Use DashMap entry API to atomically check-and-insert per shard,
-        // preventing races where two threads insert the same block concurrently.
-        {
-            if self._block_cache.contains_key(&hash) {
-                return VerifyResult::AlreadyExists;
-            }
-            if self._block_cache.len() >= MAX_BLOCK_CACHE_SIZE && block_index != current_height + 1
-            {
+        let block_cache_full =
+            self._block_cache.len() >= MAX_BLOCK_CACHE_SIZE && block_index != current_height + 1;
+        match self._block_cache.entry(hash) {
+            Entry::Occupied(_) => return VerifyResult::AlreadyExists,
+            Entry::Vacant(entry) if block_cache_full => {
+                drop(entry);
                 // Cache is full but this isn't the next block to persist.
                 // Park it in the unverified cache so persist_block_sequence
                 // can pick it up later, and return OutOfMemory (not Invalid)
@@ -115,7 +114,9 @@ impl Blockchain {
                 self.add_unverified_block(Arc::clone(&block)).await;
                 return VerifyResult::OutOfMemory;
             }
-            self._block_cache.insert(hash, Arc::clone(&block));
+            Entry::Vacant(entry) => {
+                entry.insert(Arc::clone(&block));
+            }
         }
 
         if block_index == current_height + 1 {
