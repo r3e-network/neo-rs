@@ -29,11 +29,12 @@
 
 pub mod blockchain;
 pub mod constants;
-pub mod macros;
+pub mod contains_transaction_type;
 pub mod contract_parameter_type;
 pub mod error;
 pub mod hardfork;
 pub mod inventory_type;
+pub mod macros;
 pub mod oracle_response_code;
 pub mod storage;
 pub mod transaction_attribute_type;
@@ -56,6 +57,7 @@ pub use tests::*;
 
 // Re-exports
 pub use constants::*;
+pub use contains_transaction_type::ContainsTransactionType;
 pub use contract_parameter_type::ContractParameterType;
 pub use error::{PrimitiveError, PrimitiveResult};
 pub use hardfork::{Hardfork, HardforkParseError};
