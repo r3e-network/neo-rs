@@ -11,6 +11,7 @@
 //! - State consistency checks
 
 use crate::error::{CoreError, CoreResult};
+use crate::smart_contract::env_flags::env_flag_enabled;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 use std::cell::RefCell;
@@ -24,16 +25,8 @@ thread_local! {
 
 fn strict_security_enforced() -> bool {
     static ENFORCED: OnceLock<bool> = OnceLock::new();
-    *ENFORCED.get_or_init(|| {
-        std::env::var("NEO_NATIVE_STRICT_SECURITY")
-            .ok()
-            .map(|raw| {
-                let normalized = raw.trim().to_ascii_lowercase();
-                matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
-            })
-            // Keep historical strict behavior for unit tests only.
-            .unwrap_or(cfg!(test))
-    })
+    // Keep historical strict behavior for unit tests only.
+    *ENFORCED.get_or_init(|| env_flag_enabled("NEO_NATIVE_STRICT_SECURITY", cfg!(test)))
 }
 
 /// Types of operations that need reentrancy protection

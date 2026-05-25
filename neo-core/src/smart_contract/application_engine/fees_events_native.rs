@@ -1,4 +1,5 @@
 use super::*;
+use crate::smart_contract::env_flags::env_flag_enabled;
 use parking_lot::Mutex;
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashMap;
@@ -20,15 +21,7 @@ fn native_on_persist_perf_stats() -> &'static NativeOnPersistPerfStats {
 
 fn native_on_persist_perf_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("NEO_PERSIST_PROFILE")
-            .ok()
-            .map(|raw| {
-                let normalized = raw.trim().to_ascii_lowercase();
-                matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
-            })
-            .unwrap_or(false)
-    })
+    *ENABLED.get_or_init(|| env_flag_enabled("NEO_PERSIST_PROFILE", false))
 }
 
 fn duration_to_u64_ns(duration: std::time::Duration) -> u64 {

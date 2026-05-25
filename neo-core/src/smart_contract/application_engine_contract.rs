@@ -5,6 +5,7 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
+use crate::smart_contract::env_flags::env_flag_enabled;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::iterators::IteratorInterop;
 use crate::smart_contract::native::crypto_lib::Bls12381Interop;
@@ -28,14 +29,7 @@ pub struct NativeArgNullMask(pub u32);
 
 fn native_call_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("NEO_TRACE_CALL_NATIVE")
-            .map(|raw| {
-                let normalized = raw.trim().to_ascii_lowercase();
-                matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
-            })
-            .unwrap_or(false)
-    })
+    *ENABLED.get_or_init(|| env_flag_enabled("NEO_TRACE_CALL_NATIVE", false))
 }
 
 pub(crate) fn register_contract_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
