@@ -1,6 +1,5 @@
 use crate::error::{CryptoError, CryptoResult};
-use murmur3::murmur3_32;
-use std::io::Cursor;
+use crate::murmur::murmur32;
 
 const SEED_MULTIPLIER: u32 = 0xFBA4_C795;
 
@@ -58,9 +57,7 @@ impl BloomFilter {
     pub fn add(&mut self, element: &[u8]) {
         let seeds = self.seeds.clone();
         for seed in seeds {
-            let mut cursor = Cursor::new(element);
-            let hash = murmur3_32(&mut cursor, seed).expect("murmur3 hashing should not fail");
-            self.set_bit((hash as usize) % self.bit_size);
+            self.set_bit(bit_index(self.bit_size, element, seed));
         }
     }
 
@@ -68,9 +65,7 @@ impl BloomFilter {
     #[must_use]
     pub fn check(&self, element: &[u8]) -> bool {
         for seed in &self.seeds {
-            let mut cursor = Cursor::new(element);
-            let hash = murmur3_32(&mut cursor, *seed).expect("murmur3 hashing should not fail");
-            if !self.test_bit((hash as usize) % self.bit_size) {
+            if !self.test_bit(bit_index(self.bit_size, element, *seed)) {
                 return false;
             }
         }
@@ -117,4 +112,8 @@ impl BloomFilter {
             None => false,
         }
     }
+}
+
+fn bit_index(bit_size: usize, element: &[u8], seed: u32) -> usize {
+    (murmur32(element, seed) as usize) % bit_size
 }

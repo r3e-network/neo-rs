@@ -36,8 +36,8 @@
 //! let script_hash = witness.script_hash();
 //! ```
 
+use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreResult};
-use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::Serializable;
 use crate::smart_contract::helper::Helper;
 use crate::UInt160;
@@ -127,22 +127,9 @@ impl Witness {
     ///
     /// The script hash as UInt160
     pub fn script_hash(&self) -> UInt160 {
-        *self.script_hash.get_or_init(|| {
-            use ripemd::Ripemd160;
-            use sha2::{Digest, Sha256};
-
-            let mut sha256_hasher = Sha256::new();
-            sha256_hasher.update(&self.verification_script);
-            let sha256_result = sha256_hasher.finalize();
-
-            let mut ripemd_hasher = Ripemd160::new();
-            ripemd_hasher.update(sha256_result);
-            let ripemd_result = ripemd_hasher.finalize();
-
-            let mut hash_bytes = [0u8; ADDRESS_SIZE];
-            hash_bytes.copy_from_slice(&ripemd_result);
-            UInt160::from_bytes(&hash_bytes).unwrap_or_default()
-        })
+        *self
+            .script_hash
+            .get_or_init(|| UInt160::from(Crypto::hash160(&self.verification_script)))
     }
 
     /// Gets the size of the witness in bytes after serialization.

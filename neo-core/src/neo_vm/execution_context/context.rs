@@ -5,6 +5,7 @@
 //! This module provides the execution context implementation for the Neo VM.
 
 use super::shared_states::SharedStates;
+use crate::cryptography::Crypto;
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::evaluation_stack::EvaluationStack;
@@ -81,26 +82,7 @@ impl ExecutionContext {
     /// This mirrors the C# `Script.ToScriptHash()` behaviour (Hash160).
     #[must_use]
     pub fn script_hash(&self) -> [u8; 20] {
-        #[allow(unused_imports)]
-        use ripemd::{Digest as _, Ripemd160};
-        #[allow(unused_imports)]
-        use sha2::{Digest as _, Sha256};
-
-        let script_bytes = self.script().as_bytes();
-
-        // Calculate SHA-256 hash
-        let mut sha256_hasher = Sha256::new();
-        sha256_hasher.update(script_bytes);
-        let sha256_hash = sha256_hasher.finalize();
-
-        // Calculate RIPEMD-160 hash of the SHA-256 hash
-        let mut ripemd_hasher = Ripemd160::new();
-        ripemd_hasher.update(sha256_hash);
-        let ripemd_hash = ripemd_hasher.finalize();
-
-        let mut result = [0u8; 20];
-        result.copy_from_slice(&ripemd_hash);
-        result
+        Crypto::hash160(self.script().as_bytes())
     }
 
     /// Returns the current instruction pointer.
