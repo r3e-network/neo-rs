@@ -25,10 +25,6 @@ pub mod j_string;
 pub mod j_token;
 /// Insertion-order-preserving dictionary (matches C# `OrderedDictionary`).
 pub mod ordered_dictionary;
-/// Key collection view for `OrderedDictionary`.
-pub mod ordered_dictionary_key_collection;
-/// Value collection view for `OrderedDictionary`.
-pub mod ordered_dictionary_value_collection;
 /// JSON encoding/decoding utilities.
 pub mod utility;
 
@@ -44,6 +40,4 @@ pub use j_path_token_type::JPathTokenType;
 pub use j_string::JString;
 pub use j_token::JToken;
 pub use ordered_dictionary::OrderedDictionary;
-pub use ordered_dictionary_key_collection::KeyCollection;
-pub use ordered_dictionary_value_collection::ValueCollection;
 pub use utility::JsonUtility;
