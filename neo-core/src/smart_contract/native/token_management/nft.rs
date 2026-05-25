@@ -1,7 +1,6 @@
 use super::{
-    AccountState, NFTState, TokenManagement, TokenState, TokenType, ID, PREFIX_ACCOUNT_STATE,
-    PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX, PREFIX_NFT_STATE,
-    PREFIX_TOKEN_STATE,
+    AccountState, NFTState, TokenManagement, TokenState, TokenType, ID,
+    PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX,
 };
 use crate::error::{CoreError, CoreResult};
 use crate::persistence::seek_direction::SeekDirection;
@@ -58,12 +57,7 @@ impl TokenManagement {
             mintable_address,
         };
 
-        let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
-            .suffix()
-            .to_vec();
-        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
-            .map_err(CoreError::native_contract)?;
-        engine.put_storage_item(&context, &key, &bytes)?;
+        self.put_token_state(&context, engine, &asset_id, &token_state)?;
 
         self.emit_created_event(engine, &asset_id, &TokenType::NonFungible)?;
 
@@ -87,9 +81,7 @@ impl TokenManagement {
             .map_err(|_| CoreError::native_contract("Invalid account"))?;
 
         let context = engine.get_native_storage_context(&self.hash())?;
-        let token_key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
-            .suffix()
-            .to_vec();
+        let token_key = Self::token_state_key_suffix(&asset_id);
 
         let token_data = match engine.get_storage_item(&context, &token_key) {
             Some(data) => data,
@@ -130,29 +122,16 @@ impl TokenManagement {
         let mut updated_token_state = token_state.clone();
         updated_token_state.total_supply = new_supply;
 
-        let token_bytes =
-            Self::serialize_storage_stack_value(&updated_token_state.to_stack_value())
-                .map_err(CoreError::native_contract)?;
-        engine.put_storage_item(&context, &token_key, &token_bytes)?;
+        self.put_token_state(&context, engine, &asset_id, &updated_token_state)?;
 
         let nft_state = NFTState {
             asset_id,
             owner: account,
             properties: Vec::new(),
         };
-        let nft_bytes = Self::serialize_storage_stack_value(&nft_state.to_stack_value())
-            .map_err(CoreError::native_contract)?;
-        let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &unique_id)
-            .suffix()
-            .to_vec();
-        engine.put_storage_item(&context, &nft_key, &nft_bytes)?;
+        self.put_nft_state(&context, engine, &unique_id, &nft_state)?;
 
-        let account_key = [
-            vec![PREFIX_ACCOUNT_STATE],
-            account.to_bytes().to_vec(),
-            asset_id.to_bytes().to_vec(),
-        ]
-        .concat();
+        let account_key = Self::account_state_key_suffix(&account, &asset_id);
         let mut account_balance = BigInt::from(0);
         if let Some(account_data) = engine.get_storage_item(&context, &account_key) {
             if let Some(state) = Self::deserialize_account_state(&account_data) {
@@ -187,9 +166,7 @@ impl TokenManagement {
             .map_err(|_| CoreError::native_contract("Invalid NFT ID"))?;
 
         let context = engine.get_native_storage_context(&self.hash())?;
-        let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &nft_id)
-            .suffix()
-            .to_vec();
+        let nft_key = Self::nft_state_key_suffix(&nft_id);
 
         let nft_data = match engine.get_storage_item(&context, &nft_key) {
             Some(data) => data,
@@ -217,10 +194,7 @@ impl TokenManagement {
             ));
         }
 
-        let token_key =
-            StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &nft_state.asset_id)
-                .suffix()
-                .to_vec();
+        let token_key = Self::token_state_key_suffix(&nft_state.asset_id);
         let token_data = match engine.get_storage_item(&context, &token_key) {
             Some(data) => data,
             None => {
@@ -240,9 +214,7 @@ impl TokenManagement {
         };
 
         token_state.total_supply -= 1;
-        let token_bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
-            .map_err(CoreError::native_contract)?;
-        engine.put_storage_item(&context, &token_key, &token_bytes)?;
+        self.put_token_state(&context, engine, &nft_state.asset_id, &token_state)?;
 
         self.update_account_balance(&context, engine, &nft_state.owner, &nft_state.asset_id, -1)?;
 
@@ -286,9 +258,7 @@ impl TokenManagement {
         }
 
         let context = engine.get_native_storage_context(&self.hash())?;
-        let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &nft_id)
-            .suffix()
-            .to_vec();
+        let nft_key = Self::nft_state_key_suffix(&nft_id);
 
         let nft_data = match engine.get_storage_item(&context, &nft_key) {
             Some(data) => data,
@@ -317,9 +287,7 @@ impl TokenManagement {
         }
 
         nft_state.owner = to;
-        let nft_bytes = Self::serialize_storage_stack_value(&nft_state.to_stack_value())
-            .map_err(CoreError::native_contract)?;
-        engine.put_storage_item(&context, &nft_key, &nft_bytes)?;
+        self.put_nft_state(&context, engine, &nft_id, &nft_state)?;
 
         self.remove_nft_from_owner_index(&context, engine, &from, &nft_id)?;
         self.add_nft_to_owner_index(&context, engine, &to, &nft_id)?;
@@ -347,9 +315,7 @@ impl TokenManagement {
             .map_err(|_| CoreError::native_contract("Invalid NFT ID"))?;
 
         let context = engine.get_native_storage_context(&self.hash())?;
-        let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &nft_id)
-            .suffix()
-            .to_vec();
+        let nft_key = Self::nft_state_key_suffix(&nft_id);
 
         match engine.get_storage_item(&context, &nft_key) {
             Some(data) => Ok(data),

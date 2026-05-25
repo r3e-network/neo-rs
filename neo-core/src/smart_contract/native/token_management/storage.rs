@@ -1,6 +1,6 @@
 use super::{
     AccountState, NFTState, TokenManagement, TokenState, ID, PREFIX_ACCOUNT_STATE,
-    PREFIX_TOKEN_STATE,
+    PREFIX_NFT_STATE, PREFIX_TOKEN_STATE,
 };
 use crate::error::{CoreError, CoreResult};
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
@@ -28,13 +28,82 @@ impl TokenManagement {
         BinarySerializer::serialize_stack_value(value, &ExecutionEngineLimits::default())
     }
 
+    pub(super) fn token_state_key(asset_id: &UInt160) -> StorageKey {
+        StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, asset_id)
+    }
+
+    pub(super) fn token_state_key_suffix(asset_id: &UInt160) -> Vec<u8> {
+        Self::token_state_key(asset_id).suffix().to_vec()
+    }
+
+    pub(super) fn account_state_key_suffix(account: &UInt160, asset_id: &UInt160) -> Vec<u8> {
+        [
+            vec![PREFIX_ACCOUNT_STATE],
+            account.to_bytes().to_vec(),
+            asset_id.to_bytes().to_vec(),
+        ]
+        .concat()
+    }
+
+    pub(super) fn account_state_key(account: &UInt160, asset_id: &UInt160) -> StorageKey {
+        StorageKey::new(ID, Self::account_state_key_suffix(account, asset_id))
+    }
+
+    pub(super) fn nft_state_key_suffix(nft_id: &UInt160) -> Vec<u8> {
+        StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, nft_id)
+            .suffix()
+            .to_vec()
+    }
+
+    pub(super) fn put_token_state(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        asset_id: &UInt160,
+        state: &TokenState,
+    ) -> CoreResult<()> {
+        self.put_stack_value(
+            context,
+            engine,
+            &Self::token_state_key_suffix(asset_id),
+            &state.to_stack_value(),
+        )
+    }
+
+    pub(super) fn put_nft_state(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        nft_id: &UInt160,
+        state: &NFTState,
+    ) -> CoreResult<()> {
+        self.put_stack_value(
+            context,
+            engine,
+            &Self::nft_state_key_suffix(nft_id),
+            &state.to_stack_value(),
+        )
+    }
+
+    fn put_stack_value(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        key_suffix: &[u8],
+        value: &StackValue,
+    ) -> CoreResult<()> {
+        let bytes =
+            Self::serialize_storage_stack_value(value).map_err(CoreError::native_contract)?;
+        engine.put_storage_item(context, key_suffix, &bytes)
+    }
+
     pub(super) fn get_token_state(
         &self,
         engine: &ApplicationEngine,
         asset_id: &UInt160,
     ) -> CoreResult<Option<TokenState>> {
         let snapshot = engine.snapshot_cache();
-        let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, asset_id);
+        let key = Self::token_state_key(asset_id);
         let Some(item) = snapshot.as_ref().try_get(&key) else {
             return Ok(None);
         };
@@ -56,13 +125,7 @@ impl TokenManagement {
         account: &UInt160,
     ) -> CoreResult<Option<AccountState>> {
         let snapshot = engine.snapshot_cache();
-        let key = [
-            vec![PREFIX_ACCOUNT_STATE],
-            account.to_bytes().to_vec(),
-            asset_id.to_bytes().to_vec(),
-        ]
-        .concat();
-        let key = StorageKey::new(ID, key);
+        let key = Self::account_state_key(account, asset_id);
         let Some(item) = snapshot.as_ref().try_get(&key) else {
             return Ok(None);
         };
@@ -85,19 +148,11 @@ impl TokenManagement {
         asset_id: &UInt160,
         state: &AccountState,
     ) -> CoreResult<()> {
-        let key = [
-            vec![PREFIX_ACCOUNT_STATE],
-            account.to_bytes().to_vec(),
-            asset_id.to_bytes().to_vec(),
-        ]
-        .concat();
-        let key = StorageKey::new(ID, key);
+        let key = Self::account_state_key(account, asset_id);
         if state.balance.is_zero() {
             engine.delete_storage_item(context, key.suffix())?;
         } else {
-            let bytes = Self::serialize_storage_stack_value(&state.to_stack_value())
-                .map_err(CoreError::native_contract)?;
-            engine.put_storage_item(context, key.suffix(), &bytes)?;
+            self.put_stack_value(context, engine, key.suffix(), &state.to_stack_value())?;
         }
         Ok(())
     }
@@ -110,12 +165,7 @@ impl TokenManagement {
         asset_id: &UInt160,
         delta: i32,
     ) -> CoreResult<()> {
-        let account_key = [
-            vec![PREFIX_ACCOUNT_STATE],
-            account.to_bytes().to_vec(),
-            asset_id.to_bytes().to_vec(),
-        ]
-        .concat();
+        let account_key = Self::account_state_key_suffix(account, asset_id);
 
         let mut balance = BigInt::from(0);
         if let Some(account_data) = engine.get_storage_item(context, &account_key) {

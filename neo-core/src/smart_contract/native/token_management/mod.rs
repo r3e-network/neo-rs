@@ -265,12 +265,7 @@ impl TokenManagement {
             mintable_address,
         };
 
-        let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
-            .suffix()
-            .to_vec();
-        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
-            .map_err(CoreError::native_contract)?;
-        engine.put_storage_item(&context, &key, &bytes)?;
+        self.put_token_state(&context, engine, &asset_id, &token_state)?;
 
         self.emit_created_event(engine, &asset_id, &token_type)?;
 
@@ -337,12 +332,7 @@ impl TokenManagement {
 
         self.write_account_state(&context, engine, &account, &asset_id, &account_state)?;
 
-        let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
-            .suffix()
-            .to_vec();
-        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
-            .map_err(CoreError::native_contract)?;
-        engine.put_storage_item(&context, &key, &bytes)?;
+        self.put_token_state(&context, engine, &asset_id, &token_state)?;
 
         self.emit_transfer_event(engine, None, Some(&account), &amount)?;
 
@@ -400,23 +390,13 @@ impl TokenManagement {
         token_state.total_supply -= &amount;
 
         if account_state.balance.is_zero() {
-            let asset_key = [
-                vec![PREFIX_ACCOUNT_STATE],
-                account.to_bytes().to_vec(),
-                asset_id.to_bytes().to_vec(),
-            ]
-            .concat();
+            let asset_key = Self::account_state_key_suffix(&account, &asset_id);
             engine.delete_storage_item(&context, &asset_key)?;
         } else {
             self.write_account_state(&context, engine, &account, &asset_id, &account_state)?;
         }
 
-        let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
-            .suffix()
-            .to_vec();
-        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
-            .map_err(CoreError::native_contract)?;
-        engine.put_storage_item(&context, &key, &bytes)?;
+        self.put_token_state(&context, engine, &asset_id, &token_state)?;
 
         self.emit_transfer_event(engine, Some(&account), None, &amount)?;
 
@@ -478,12 +458,7 @@ impl TokenManagement {
         to_balance += &amount;
 
         if from_balance.is_zero() {
-            let from_key = [
-                vec![PREFIX_ACCOUNT_STATE],
-                from.to_bytes().to_vec(),
-                asset_id.to_bytes().to_vec(),
-            ]
-            .concat();
+            let from_key = Self::account_state_key_suffix(&from, &asset_id);
             engine.delete_storage_item(&context, &from_key)?;
         } else {
             let from_state = AccountState::with_balance(from_balance);
