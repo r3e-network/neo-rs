@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use crate::cryptography::bloom_filter::BloomFilter;
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
@@ -56,7 +56,7 @@ impl FilterLoadPayload {
 
 impl Serializable for FilterLoadPayload {
     fn size(&self) -> usize {
-        get_var_size(self.filter.len() as u64) + self.filter.len() +
+        get_var_size_bytes(&self.filter) +
         1 + // K
         4 // Tweak
     }

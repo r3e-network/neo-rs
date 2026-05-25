@@ -1,6 +1,6 @@
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_core::cryptography::bloom_filter::BloomFilter;
-use neo_core::cryptography::{ECCurve, ECPoint, Crypto};
+use neo_core::cryptography::{Crypto, ECCurve, ECPoint};
 use neo_core::ledger::create_genesis_block;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
 use neo_core::network::p2p::capabilities::{NodeCapability, NodeCapabilityType};
@@ -10,14 +10,14 @@ use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_core::network::p2p::payloads::{
     AddrPayload, Block, Conflicts, ExtensiblePayload, FilterAddPayload, FilterLoadPayload,
     GetBlockByIndexPayload, GetBlocksPayload, Header, HeadersPayload, InvPayload, InventoryType,
-    MerkleBlockPayload, NetworkAddressWithTime, NotValidBefore, NotaryAssisted, Signer,
-    Transaction, TransactionAttribute, TransactionAttributeType, VersionPayload, Witness,
-    WitnessCondition, WitnessScope,
+    MerkleBlockPayload, NetworkAddressWithTime, NotValidBefore, NotaryAssisted, OracleResponse,
+    OracleResponseCode, Signer, Transaction, TransactionAttribute, TransactionAttributeType,
+    VersionPayload, Witness, WitnessCondition, WitnessScope,
 };
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, PolicyContract};
-use neo_core::{Verifiable, UInt160, UInt256};
+use neo_core::{UInt160, UInt256, Verifiable};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use serde_json::json;
@@ -354,6 +354,60 @@ fn csharp_ut_filter_add_payload_size_and_roundtrip() {
     let mut reader = MemoryReader::new(&bytes);
     let clone = <FilterAddPayload as Serializable>::deserialize(&mut reader).expect("deserialize");
     assert_eq!(clone.data, payload.data);
+}
+
+#[test]
+fn csharp_ut_varbytes_payload_size_boundaries() {
+    for len in [252usize, 253] {
+        let bytes = vec![0xAB; len];
+
+        let filter_add = FilterAddPayload::new(bytes.clone());
+        let filter_add_bytes = filter_add.to_array().expect("filteradd serialize");
+        assert_eq!(filter_add.size(), filter_add_bytes.len());
+
+        let filter_load = FilterLoadPayload::new(bytes.clone(), 1, 2);
+        let filter_load_bytes = filter_load.to_array().expect("filterload serialize");
+        assert_eq!(filter_load.size(), filter_load_bytes.len());
+
+        let oracle = OracleResponse::new(42, OracleResponseCode::Success, bytes.clone());
+        let oracle_bytes = oracle.to_array().expect("oracle response serialize");
+        assert_eq!(oracle.size(), oracle_bytes.len());
+
+        let mut extensible = ExtensiblePayload::new();
+        extensible.category = "x".to_string();
+        extensible.valid_block_start = 0;
+        extensible.valid_block_end = 1;
+        extensible.sender = UInt160::from_bytes(&[0x11; 20]).expect("sender");
+        extensible.data = bytes.clone();
+        extensible.witness = Witness::empty();
+        let extensible_bytes = extensible.to_array().expect("extensible serialize");
+        assert_eq!(extensible.size(), extensible_bytes.len());
+
+        let version = VersionPayload {
+            network: 123,
+            version: neo_core::network::p2p::payloads::version_payload::PROTOCOL_VERSION,
+            timestamp: 456,
+            nonce: 789,
+            user_agent: "a".repeat(len),
+            capabilities: vec![],
+        };
+        let version_bytes = version.to_array().expect("version serialize");
+        assert_eq!(version.size(), version_bytes.len());
+
+        if len == 252 {
+            assert_eq!(filter_add_bytes[0], 0xFC);
+            assert_eq!(filter_load_bytes[0], 0xFC);
+            assert_eq!(oracle_bytes[9], 0xFC);
+            assert_eq!(extensible_bytes[30], 0xFC);
+            assert_eq!(version_bytes[16], 0xFC);
+        } else {
+            assert_eq!(&filter_add_bytes[0..3], &[0xFD, 0xFD, 0x00]);
+            assert_eq!(&filter_load_bytes[0..3], &[0xFD, 0xFD, 0x00]);
+            assert_eq!(&oracle_bytes[9..12], &[0xFD, 0xFD, 0x00]);
+            assert_eq!(&extensible_bytes[30..33], &[0xFD, 0xFD, 0x00]);
+            assert_eq!(&version_bytes[16..19], &[0xFD, 0xFD, 0x00]);
+        }
+    }
 }
 
 #[test]

@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use crate::macros::ValidateLength;
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +33,7 @@ impl FilterAddPayload {
 
 impl Serializable for FilterAddPayload {
     fn size(&self) -> usize {
-        get_var_size(self.data.len() as u64) + self.data.len()
+        get_var_size_bytes(&self.data)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

@@ -11,7 +11,7 @@
 
 use super::oracle_response_code::OracleResponseCode;
 use crate::macros::{OptionExt, ValidateLength};
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
@@ -102,7 +102,7 @@ impl Serializable for OracleResponse {
     fn size(&self) -> usize {
         8 + // Id (u64)
         1 + // Code (u8)
-        get_var_size(self.result.len() as u64) + self.result.len() // Result with var length prefix
+        get_var_size_bytes(&self.result) // Result with var length prefix
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

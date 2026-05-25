@@ -11,7 +11,7 @@
 
 use super::{inventory::Inventory, witness::Witness, InventoryType};
 use crate::macros::ValidateLength;
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::{get_var_size, get_var_size_bytes, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
@@ -220,13 +220,11 @@ impl crate::Verifiable for ExtensiblePayload {
 
 impl Serializable for ExtensiblePayload {
     fn size(&self) -> usize {
-        get_var_size(self.category.len() as u64)
-            + self.category.len()
+        get_var_size_str(&self.category)
             + 4
             + 4
             + UInt160::LENGTH
-            + get_var_size(self.data.len() as u64)
-            + self.data.len()
+            + get_var_size_bytes(&self.data)
             + get_var_size(1)
             + self.witness.size()
     }

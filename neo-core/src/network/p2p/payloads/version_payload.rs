@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::{get_var_size, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::capabilities::NodeCapability;
 use crate::protocol_settings::ProtocolSettings;
@@ -75,7 +75,7 @@ impl Serializable for VersionPayload {
         4 + // Version
         4 + // Timestamp
         4 + // Nonce
-        get_var_size(self.user_agent.len() as u64) + self.user_agent.len() + // UserAgent
+        get_var_size_str(&self.user_agent) + // UserAgent
         get_var_size(self.capabilities.len() as u64) + self.capabilities.iter().map(|c| c.size()).sum::<usize>()
         // Capabilities
     }
