@@ -31,7 +31,6 @@ use crate::{
 };
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
-use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -47,6 +46,7 @@ pub use message_handlers::{
     register_message_received_handler, unregister_message_received_handler,
     MessageHandlerSubscription,
 };
+use outbound_queue::OutboundMessageQueue;
 use pending_known_hashes::PendingKnownHashes;
 
 /// Remote node actor responsible for protocol negotiation and message relay.
@@ -72,8 +72,8 @@ pub struct RemoteNode {
     timer: Option<Cancelable>,
     last_block_index: u32,
     _last_height_sent: u32,
-    message_queue_high: VecDeque<NetworkMessage>,
-    message_queue_low: VecDeque<NetworkMessage>,
+    message_queue_high: OutboundMessageQueue,
+    message_queue_low: OutboundMessageQueue,
     sent_commands: [bool; 256],
     verack_received: bool,
     ack_ready: bool,
@@ -161,8 +161,8 @@ impl RemoteNode {
             timer: None,
             last_block_index: 0,
             _last_height_sent: 0,
-            message_queue_high: VecDeque::new(),
-            message_queue_low: VecDeque::new(),
+            message_queue_high: OutboundMessageQueue::default(),
+            message_queue_low: OutboundMessageQueue::default(),
             sent_commands: [false; 256],
             verack_received: false,
             ack_ready: true,

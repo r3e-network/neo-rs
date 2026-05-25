@@ -4,9 +4,76 @@ use super::RemoteNode;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::MessageCommand;
 use crate::runtime::ActorResult;
+use bitvec::prelude::{BitVec, Lsb0};
 use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::warn;
+
+type QueuedCommandBits = BitVec<u8, Lsb0>;
+const MESSAGE_COMMAND_DOMAIN_BYTES: usize = 32;
+
+pub(super) struct OutboundMessageQueue {
+    messages: VecDeque<NetworkMessage>,
+    queued_single_commands: QueuedCommandBits,
+}
+
+impl Default for OutboundMessageQueue {
+    fn default() -> Self {
+        Self {
+            messages: VecDeque::new(),
+            queued_single_commands: QueuedCommandBits::from_vec(vec![
+                0u8;
+                MESSAGE_COMMAND_DOMAIN_BYTES
+            ]),
+        }
+    }
+}
+
+impl OutboundMessageQueue {
+    fn len(&self) -> usize {
+        self.messages.len()
+    }
+
+    fn push_back(&mut self, message: NetworkMessage) {
+        self.record_queued_single_command(message.command());
+        self.messages.push_back(message);
+    }
+
+    fn pop_front(&mut self) -> Option<NetworkMessage> {
+        let message = self.messages.pop_front()?;
+        self.clear_queued_single_command(message.command());
+        Some(message)
+    }
+
+    fn has_duplicate_single_command(&self, command: MessageCommand) -> bool {
+        RemoteNode::is_single_command(command)
+            && self
+                .queued_single_commands
+                .get(command.to_byte() as usize)
+                .map(|queued| *queued)
+                .unwrap_or(false)
+    }
+
+    fn record_queued_single_command(&mut self, command: MessageCommand) {
+        self.set_queued_single_command(command, true);
+    }
+
+    fn clear_queued_single_command(&mut self, command: MessageCommand) {
+        self.set_queued_single_command(command, false);
+    }
+
+    fn set_queued_single_command(&mut self, command: MessageCommand, value: bool) {
+        if !RemoteNode::is_single_command(command) {
+            return;
+        }
+        if let Some(mut queued) = self
+            .queued_single_commands
+            .get_mut(command.to_byte() as usize)
+        {
+            queued.set(value);
+        }
+    }
+}
 
 impl RemoteNode {
     /// Maximum number of messages allowed in each queue to prevent memory exhaustion.
@@ -37,11 +104,13 @@ impl RemoteNode {
 
         let (queue_full, has_duplicate) = if is_high_priority {
             let full = self.message_queue_high.len() >= Self::MAX_QUEUE_SIZE;
-            let duplicate = Self::has_duplicate_single_command(&self.message_queue_high, command);
+            let duplicate = self
+                .message_queue_high
+                .has_duplicate_single_command(command);
             (full, duplicate)
         } else {
             let full = self.message_queue_low.len() >= Self::MAX_QUEUE_SIZE;
-            let duplicate = Self::has_duplicate_single_command(&self.message_queue_low, command);
+            let duplicate = self.message_queue_low.has_duplicate_single_command(command);
             (full, duplicate)
         };
 
@@ -130,13 +199,6 @@ impl RemoteNode {
 
         BASE_OVERHEAD + payload_size
     }
-
-    fn has_duplicate_single_command(
-        queue: &VecDeque<NetworkMessage>,
-        command: MessageCommand,
-    ) -> bool {
-        Self::is_single_command(command) && queue.iter().any(|queued| queued.command() == command)
-    }
 }
 
 #[cfg(test)]
@@ -149,15 +211,12 @@ mod tests {
 
     #[test]
     fn duplicate_single_command_is_detected() {
-        let mut queue = VecDeque::new();
+        let mut queue = OutboundMessageQueue::default();
         queue.push_back(NetworkMessage::new(ProtocolMessage::Ping(
             PingPayload::create_with_nonce(1, 42),
         )));
 
-        assert!(RemoteNode::has_duplicate_single_command(
-            &queue,
-            MessageCommand::Ping
-        ));
+        assert!(queue.has_duplicate_single_command(MessageCommand::Ping));
     }
 
     #[test]
@@ -168,10 +227,28 @@ mod tests {
             &[hash],
         )));
         let command = message.command();
-        let mut queue = VecDeque::new();
+        let mut queue = OutboundMessageQueue::default();
         queue.push_back(message);
 
-        assert!(!RemoteNode::has_duplicate_single_command(&queue, command));
+        assert!(!queue.has_duplicate_single_command(command));
+    }
+
+    #[test]
+    fn popped_single_command_can_be_queued_again() {
+        let mut queue = OutboundMessageQueue::default();
+        queue.push_back(NetworkMessage::new(ProtocolMessage::Ping(
+            PingPayload::create_with_nonce(1, 42),
+        )));
+        assert!(queue.has_duplicate_single_command(MessageCommand::Ping));
+
+        let popped = queue.pop_front().expect("queued ping");
+        assert_eq!(popped.command(), MessageCommand::Ping);
+        assert!(!queue.has_duplicate_single_command(MessageCommand::Ping));
+
+        queue.push_back(NetworkMessage::new(ProtocolMessage::Ping(
+            PingPayload::create_with_nonce(2, 42),
+        )));
+        assert!(queue.has_duplicate_single_command(MessageCommand::Ping));
     }
 
     #[test]
