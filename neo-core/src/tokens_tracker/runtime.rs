@@ -75,23 +75,40 @@ impl TokensTracker {
 
     fn handle_panic(&self, tracker: &str, action: &str, payload: Box<dyn Any + Send>) -> bool {
         let message = panic_message(&payload);
-        use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+        self.handle_failure(tracker, action, "panicked", message)
+    }
+
+    fn handle_error(&self, tracker: &str, action: &str, error_message: String) -> bool {
+        self.handle_failure(tracker, action, "failed", error_message)
+    }
+
+    fn handle_failure(
+        &self,
+        tracker: &str,
+        action: &str,
+        outcome: &'static str,
+        error_message: String,
+    ) -> bool {
         match self.settings.exception_policy {
-            UnhandledExceptionPolicy::Ignore => return true,
+            crate::unhandled_exception_policy::UnhandledExceptionPolicy::Ignore => return true,
             _ => {
                 error!(
                     target: "neo::tokens_tracker",
                     track = tracker,
-                    action = action,
-                    error = message,
-                    "tokens tracker panicked"
+                    action,
+                    error = error_message,
+                    "tokens tracker {outcome}"
                 );
             }
         }
 
+        self.apply_exception_policy()
+    }
+
+    fn apply_exception_policy(&self) -> bool {
+        use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
         match self.settings.exception_policy {
-            UnhandledExceptionPolicy::Ignore => true,
-            UnhandledExceptionPolicy::Continue => true,
+            UnhandledExceptionPolicy::Ignore | UnhandledExceptionPolicy::Continue => true,
             UnhandledExceptionPolicy::StopPlugin => {
                 self.disabled.store(true, Ordering::Relaxed);
                 false
@@ -107,6 +124,17 @@ impl TokensTracker {
     {
         match panic::catch_unwind(AssertUnwindSafe(f)) {
             Ok(()) => true,
+            Err(payload) => self.handle_panic(tracker, action, payload),
+        }
+    }
+
+    fn run_tracker_result_action<F>(&self, tracker: &str, action: &str, f: F) -> bool
+    where
+        F: FnOnce() -> Result<(), String>,
+    {
+        match panic::catch_unwind(AssertUnwindSafe(f)) {
+            Ok(Ok(())) => true,
+            Ok(Err(err)) => self.handle_error(tracker, action, err),
             Err(payload) => self.handle_panic(tracker, action, payload),
         }
     }
@@ -168,10 +196,51 @@ impl CommittedHandler for TokensTracker {
                 break;
             }
             let track_name = tracker.track_name().to_string();
-            if !self.run_tracker_action(&track_name, "commit", || tracker.commit()) {
+            if !self.run_tracker_result_action(&track_name, "commit", || tracker.commit()) {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+
+    fn tracker_with_policy(exception_policy: UnhandledExceptionPolicy) -> TokensTracker {
+        TokensTracker {
+            settings: TokensTrackerSettings {
+                exception_policy,
+                ..TokensTrackerSettings::default()
+            },
+            trackers: RwLock::new(Vec::new()),
+            disabled: AtomicBool::new(false),
+        }
+    }
+
+    #[test]
+    fn result_action_disables_tracker_when_commit_error_stops_plugin() {
+        let tracker = tracker_with_policy(UnhandledExceptionPolicy::StopPlugin);
+
+        let should_continue = tracker.run_tracker_result_action("test", "commit", || {
+            Err("injected commit failure".to_string())
+        });
+
+        assert!(!should_continue);
+        assert!(tracker.disabled.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn result_action_keeps_tracker_enabled_when_commit_error_continues() {
+        let tracker = tracker_with_policy(UnhandledExceptionPolicy::Continue);
+
+        let should_continue = tracker.run_tracker_result_action("test", "commit", || {
+            Err("injected commit failure".to_string())
+        });
+
+        assert!(should_continue);
+        assert!(!tracker.disabled.load(Ordering::Relaxed));
     }
 }
 

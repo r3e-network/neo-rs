@@ -6,7 +6,7 @@
 use crate::extensions::log_level::LogLevel;
 use crate::neo_io::{MemoryReader, Serializable, SerializableExt};
 use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::persistence::{DataCache, IStore, StoreSnapshot, SeekDirection};
+use crate::persistence::{DataCache, IStore, SeekDirection, StoreSnapshot};
 use crate::vm_runtime::StackItem;
 use crate::{NeoSystem, UInt160};
 use num_bigint::BigInt;
@@ -59,7 +59,7 @@ pub trait Tracker: Send + Sync {
     fn reset_batch(&mut self);
 
     /// Commits the current batch to the database.
-    fn commit(&mut self);
+    fn commit(&mut self) -> Result<(), String>;
 }
 
 /// Base tracker state shared by NEP-11 and NEP-17 trackers.
@@ -99,12 +99,17 @@ impl TrackerBase {
     }
 
     /// Commits the current snapshot to the database.
-    pub fn commit(&mut self) {
+    pub fn commit(&mut self) -> Result<(), String> {
         if let Some(snapshot_arc) = self.snapshot.as_mut() {
             if let Some(snapshot) = Arc::get_mut(snapshot_arc) {
-                snapshot.commit();
+                snapshot
+                    .try_commit()
+                    .map_err(|e| format!("snapshot commit failed: {}", e))?;
+            } else {
+                return Err("snapshot commit failed: snapshot is still shared".to_string());
             }
         }
+        Ok(())
     }
 
     fn key<K: Serializable>(prefix: u8, key: &K) -> Result<Vec<u8>, String> {
@@ -304,5 +309,129 @@ impl TrackerBase {
                 error!(target: "neo::tokens_tracker", track, message)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::{
+        read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
+        storage::StorageError,
+        store::OnNewSnapshotDelegate,
+        write_store::WriteStore,
+    };
+    use crate::protocol_settings::ProtocolSettings;
+    use crate::smart_contract::{StorageItem, StorageKey};
+    use std::any::Any;
+
+    #[derive(Clone)]
+    struct FailingStore;
+
+    impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingStore {
+        fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&Vec<u8>>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingStore {
+        fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&StorageKey>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl ReadOnlyStore for FailingStore {}
+
+    impl WriteStore<Vec<u8>, Vec<u8>> for FailingStore {
+        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    impl IStore for FailingStore {
+        fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
+            Arc::new(FailingSnapshot {
+                store: Arc::new(self.clone()),
+            })
+        }
+
+        fn on_new_snapshot(&self, _handler: OnNewSnapshotDelegate) {}
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    struct FailingSnapshot {
+        store: Arc<dyn IStore>,
+    }
+
+    impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
+        fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&Vec<u8>>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshot {
+        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    impl StoreSnapshot for FailingSnapshot {
+        fn store(&self) -> Arc<dyn IStore> {
+            Arc::clone(&self.store)
+        }
+
+        fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
+            Err(StorageError::CommitFailed(
+                "injected tracker commit failure".to_string(),
+            ))
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn tracker_base_commit_propagates_snapshot_try_commit_failure() {
+        let system = NeoSystem::new(ProtocolSettings::mainnet(), None, None).expect("neo system");
+        let mut tracker = TrackerBase::new(Arc::new(FailingStore), 100, true, system);
+        tracker.reset_batch();
+
+        let err = tracker
+            .commit()
+            .expect_err("tracker commit should propagate snapshot commit failure");
+
+        assert!(err.contains("injected tracker commit failure"));
     }
 }

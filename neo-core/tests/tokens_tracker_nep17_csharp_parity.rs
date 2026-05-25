@@ -109,7 +109,7 @@ async fn nep17_tracker_matches_csharp_history_indexing() {
     let snapshot = store_cache.data_cache().clone();
     tracker.reset_batch();
     tracker.on_persist(system.as_ref(), &block, &snapshot, &executed);
-    tracker.commit();
+    tracker.commit().expect("commit tracker batch");
 
     let (_, sent_prefix, received_prefix) = Nep17Tracker::rpc_prefixes();
     let sent_key = [vec![sent_prefix], source.to_bytes().to_vec()].concat();

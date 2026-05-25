@@ -346,7 +346,7 @@ impl Tracker for Nep11Tracker {
         self.base.reset_batch();
     }
 
-    fn commit(&mut self) {
-        self.base.commit();
+    fn commit(&mut self) -> Result<(), String> {
+        self.base.commit()
     }
 }
