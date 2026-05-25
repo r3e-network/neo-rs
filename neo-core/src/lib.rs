@@ -220,11 +220,6 @@ pub mod persistence;
 /// Matches C# `Neo.Wallets` namespace.
 pub mod wallets;
 
-/// Transaction signing and signature handling.
-///
-/// Matches C# `Neo.Sign` namespace.
-pub(crate) mod sign;
-
 /// Event handler interfaces (consolidated in events::handlers).
 ///
 /// Matches C# `Neo.IEventHandlers` namespace.
