@@ -3,9 +3,10 @@
 //! Provides LRU caching for recent state roots to reduce disk I/O
 //! during block validation and state synchronization.
 
-use crate::persistence::cache::LruCache;
 use crate::state_service::state_root::StateRoot;
 use crate::UInt256;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -105,6 +106,7 @@ pub struct StateRootCache {
 impl StateRootCache {
     /// Creates a new state root cache with the specified capacity.
     pub fn new(capacity: usize) -> Self {
+        let capacity = non_zero_capacity(capacity);
         Self {
             cache: LruCache::new(capacity),
             hash_index: LruCache::new(capacity),
@@ -119,7 +121,7 @@ impl StateRootCache {
 
     /// Gets a state root by block index.
     pub fn get(&mut self, index: u32) -> Option<StateRootCacheEntry> {
-        match self.cache.get(&index) {
+        match self.cache.get(&index).cloned() {
             Some(entry) => {
                 self.stats.record_hit();
                 Some(entry)
@@ -133,20 +135,20 @@ impl StateRootCache {
 
     /// Gets a state root by its hash.
     pub fn get_by_hash(&mut self, hash: &UInt256) -> Option<StateRootCacheEntry> {
-        let index = self.hash_index.get(hash)?;
+        let index = *self.hash_index.get(hash)?;
         self.get(index)
     }
 
     /// Gets the index for a root hash.
     pub fn get_index_for_hash(&mut self, hash: &UInt256) -> Option<u32> {
-        self.hash_index.get(hash)
+        self.hash_index.get(hash).copied()
     }
 
     /// Inserts a state root into the cache.
     pub fn insert(&mut self, entry: StateRootCacheEntry) {
         let index = entry.index();
         let hash = entry.root_hash();
-        let was_full = self.cache.len() >= self.cache.capacity();
+        let was_full = self.cache.len() >= self.cache.cap().get();
 
         self.cache.put(index, entry);
         self.hash_index.put(hash, index);
@@ -166,8 +168,8 @@ impl StateRootCache {
 
     /// Removes a state root from the cache.
     pub fn remove(&mut self, index: u32) -> Option<StateRootCacheEntry> {
-        if let Some(entry) = self.cache.remove(&index) {
-            self.hash_index.remove(&entry.root_hash());
+        if let Some(entry) = self.cache.pop(&index) {
+            self.hash_index.pop(&entry.root_hash());
             Some(entry)
         } else {
             None
@@ -207,12 +209,12 @@ impl StateRootCache {
 
     /// Gets the cache capacity.
     pub fn capacity(&self) -> usize {
-        self.cache.capacity()
+        self.cache.cap().get()
     }
 
     /// Marks a state root as validated.
     pub fn mark_validated(&mut self, index: u32) -> bool {
-        if let Some(mut entry) = self.cache.remove(&index) {
+        if let Some(mut entry) = self.cache.pop(&index) {
             entry.is_validated = true;
             let hash = entry.root_hash();
             self.cache.put(index, entry);
@@ -242,6 +244,10 @@ impl Default for StateRootCache {
     fn default() -> Self {
         Self::with_default_capacity()
     }
+}
+
+fn non_zero_capacity(capacity: usize) -> NonZeroUsize {
+    NonZeroUsize::new(capacity).unwrap_or_else(|| NonZeroUsize::new(1).expect("1 is non-zero"))
 }
 
 #[cfg(test)]

@@ -29,7 +29,6 @@
 //!
 //! This module provides persistence functionality matching the C# Neo.Persistence namespace.
 
-pub mod cache;
 pub mod compression;
 pub mod data_cache;
 pub mod read_only_store;
