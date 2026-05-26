@@ -2,10 +2,8 @@ use crate::cryptography::Secp256r1Crypto;
 use crate::neo_io::BinaryWriter;
 use crate::wallets::KeyPair;
 use base64::Engine as _;
-use p256::ecdsa::signature::Signer as P256Signer;
-use p256::ecdsa::{Signature as P256Signature, SigningKey as P256SigningKey};
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 
 pub(crate) fn sign_neofs_bearer(
     token: &str,
@@ -33,14 +31,13 @@ pub(crate) fn sign_neofs_sha512(data: &[u8], key: &KeyPair) -> Result<Vec<u8>, S
 }
 
 fn sign_neofs_wallet_connect(data: &[u8], key: &KeyPair) -> Result<Vec<u8>, String> {
-    let signing_key = P256SigningKey::from_bytes(key.private_key().into())
-        .map_err(|err| format!("invalid neofs key: {err}"))?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(data);
     let mut salt = [0u8; 16];
     OsRng.fill_bytes(&mut salt);
     let message = salt_message_wallet_connect(b64.as_bytes(), &salt);
-    let signature: P256Signature = signing_key.sign(message.as_slice());
-    let mut output = signature.to_bytes().to_vec();
+    let signature = Secp256r1Crypto::sign(&message, key.private_key())
+        .map_err(|err| format!("invalid neofs key: {err}"))?;
+    let mut output = signature.to_vec();
     output.extend_from_slice(&salt);
     Ok(output)
 }
@@ -59,4 +56,28 @@ pub(crate) fn salt_message_wallet_connect(data: &[u8], salt: &[u8; 16]) -> Vec<u
     writer.write_bytes(data).expect("write data");
     writer.write_bytes(&[0x00, 0x00]).expect("write suffix");
     writer.into_bytes()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wallet_connect_signature_uses_shared_p256_signer() {
+        let key = KeyPair::from_private_key(&[7u8; 32]).expect("test key");
+        let data = b"wallet-connect payload";
+
+        let output = sign_neofs_wallet_connect(data, &key).expect("wallet connect signature");
+
+        assert_eq!(output.len(), 80);
+        let signature: [u8; 64] = output[..64].try_into().expect("signature length");
+        let salt: [u8; 16] = output[64..].try_into().expect("salt length");
+        let b64 = base64::engine::general_purpose::STANDARD.encode(data);
+        let message = salt_message_wallet_connect(b64.as_bytes(), &salt);
+
+        assert!(
+            Secp256r1Crypto::verify(&message, &signature, &key.compressed_public_key())
+                .expect("wallet connect signature verification")
+        );
+    }
 }

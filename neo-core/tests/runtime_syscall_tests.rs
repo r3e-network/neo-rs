@@ -1,7 +1,7 @@
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_core::cryptography::Secp256r1Crypto;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
@@ -1445,6 +1445,36 @@ fn crypto_checksig_accepts_valid_signature() {
         .as_bool()
         .expect("bool");
     assert!(result);
+}
+
+#[test]
+fn crypto_checksig_returns_false_on_invalid_signature() {
+    let (mut engine, _sign_data) = make_engine_with_sign_data();
+
+    let private_key = [0x01u8; 32];
+    let public_key = Secp256r1Crypto::derive_public_key(&private_key).expect("pubkey");
+    let invalid_signature = vec![0u8; 64];
+
+    let mut script = ScriptBuilder::new();
+    script.emit_push_byte_array(&invalid_signature);
+    script.emit_push_byte_array(&public_key);
+    script
+        .emit_syscall("System.Crypto.CheckSig")
+        .expect("checksig syscall");
+    script.emit_opcode(OpCode::RET);
+
+    engine
+        .load_script(script.to_array(), CallFlags::NONE, None)
+        .expect("load script");
+    engine.execute().expect("execute");
+
+    let result = engine
+        .result_stack()
+        .peek(0)
+        .expect("result item")
+        .as_bool()
+        .expect("bool");
+    assert!(!result);
 }
 
 #[test]

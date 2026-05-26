@@ -1,10 +1,11 @@
 //! ApplicationEngine.Crypto - matches C# Neo.SmartContract.ApplicationEngine.Crypto.cs
 
-use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::VmResult;
-use crate::smart_contract::call_flags::CallFlags;
-use crate::smart_contract::ApplicationEngine;
 use crate::Crypto;
+use crate::cryptography::{CryptoError, Secp256r1Crypto};
+use crate::neo_vm::VmResult;
+use crate::neo_vm::execution_engine::ExecutionEngine;
+use crate::smart_contract::ApplicationEngine;
+use crate::smart_contract::call_flags::CallFlags;
 
 /// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040)
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
@@ -146,25 +147,25 @@ impl ApplicationEngine {
         public_key: &[u8],
         signature: &[u8],
     ) -> Result<bool, String> {
-        use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
-
         if signature.len() != 64 {
             return Ok(false);
         }
+        let signature: &[u8; 64] = signature
+            .try_into()
+            .expect("signature length checked before conversion");
 
         if public_key.len() != 33 && public_key.len() != 65 {
             return Err("Invalid public key length".to_string());
         }
 
-        let verifying_key = VerifyingKey::from_sec1_bytes(public_key)
-            .map_err(|_| "Invalid public key".to_string())?;
-
-        let sig = match Signature::from_slice(signature) {
-            Ok(sig) => sig,
-            Err(_) => return Ok(false),
-        };
-
-        Ok(verifying_key.verify(message, &sig).is_ok())
+        match Secp256r1Crypto::verify(message, signature, public_key) {
+            Ok(verified) => Ok(verified),
+            Err(CryptoError::InvalidSignature { .. }) => Ok(false),
+            Err(CryptoError::InvalidKey { .. } | CryptoError::InvalidPoint { .. }) => {
+                Err("Invalid public key".to_string())
+            }
+            Err(err) => Err(err.to_string()),
+        }
     }
 }
 
