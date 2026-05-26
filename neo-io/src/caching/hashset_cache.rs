@@ -2,9 +2,8 @@
 
 use super::cache_entries::check_copy_range;
 use crate::IoResult;
-use lru::LruCache;
+use indexmap::{set, IndexSet};
 use std::hash::Hash;
-use std::num::NonZeroUsize;
 
 /// A cache that uses a hash set to store items (matches C# `HashSetCache<T>`).
 pub struct HashSetCache<T>
@@ -12,7 +11,7 @@ where
     T: Eq + Hash,
 {
     capacity: usize,
-    items: LruCache<T, ()>,
+    items: IndexSet<T>,
 }
 
 impl<T> HashSetCache<T>
@@ -48,9 +47,7 @@ where
 
         Self {
             capacity: effective_capacity,
-            items: LruCache::new(
-                NonZeroUsize::new(effective_capacity).expect("effective capacity is non-zero"),
-            ),
+            items: IndexSet::with_capacity(effective_capacity),
         }
     }
 
@@ -65,7 +62,7 @@ where
 
         Ok(Self {
             capacity,
-            items: LruCache::new(NonZeroUsize::new(capacity).expect("capacity is non-zero")),
+            items: IndexSet::with_capacity(capacity),
         })
     }
 
@@ -81,20 +78,27 @@ where
         let inserted = !self.items.contains(&item);
 
         self.trim_to_capacity();
-        if inserted && self.capacity > 0 {
-            self.items.put(item, ());
-            self.trim_to_capacity();
+        if !inserted || self.capacity == 0 {
+            return inserted;
         }
+
+        if self.items.len() == self.capacity {
+            self.items.shift_remove_index(0);
+        }
+        self.items.insert(item);
+
         inserted
     }
 
     fn trim_to_capacity(&mut self) {
-        let Some(capacity) = NonZeroUsize::new(self.capacity) else {
+        if self.capacity == 0 {
             self.items.clear();
             return;
-        };
+        }
 
-        self.items.resize(capacity);
+        while self.items.len() > self.capacity {
+            self.items.shift_remove_index(0);
+        }
     }
 
     /// Updates the maximum capacity. Existing overflow is trimmed on the next insertion attempt.
@@ -133,7 +137,7 @@ where
     /// Removes an item from the cache (C# `Remove`).
     #[inline]
     pub fn remove(&mut self, item: &T) -> bool {
-        self.items.pop(item).is_some()
+        self.items.shift_remove(item)
     }
 
     /// Copies the elements into the destination slice starting at `start_index` (C# `CopyTo`).
@@ -151,7 +155,7 @@ where
     /// Returns an iterator over the cached values (C# `GetEnumerator`).
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.items.iter().rev().map(|(item, ())| item)
+        self.items.iter()
     }
 }
 
@@ -160,13 +164,9 @@ where
     T: Eq + Hash,
 {
     type Item = T;
-    type IntoIter = std::vec::IntoIter<T>;
+    type IntoIter = set::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.items
-            .into_iter()
-            .map(|(item, ())| item)
-            .collect::<Vec<_>>()
-            .into_iter()
+        self.items.into_iter()
     }
 }
