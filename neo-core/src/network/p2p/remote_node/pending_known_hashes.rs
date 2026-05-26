@@ -1,57 +1,54 @@
 //! Tracks recently announced hashes to avoid duplicate inventory processing.
-use lru::LruCache;
-use std::num::NonZeroUsize;
+use indexmap::IndexMap;
 use std::time::{Duration, Instant};
 
 use crate::UInt256;
 
 /// Tracks hashes announced by peers to avoid re-requesting/duplicating inventories.
 pub(crate) struct PendingKnownHashes {
-    inner: LruCache<UInt256, Instant>,
+    inner: IndexMap<UInt256, Instant>,
     capacity: usize,
 }
 
 /// Maximum TTL for pending hashes (60 seconds).
 /// Entries older than this will be pruned on next try_add operation.
-const MAX_PENDING_TTL: Duration = Duration::from_secs(60);
+pub(super) const PENDING_KNOWN_HASH_TTL: Duration = Duration::from_secs(60);
 
 impl PendingKnownHashes {
     pub(crate) fn new(capacity: usize) -> Self {
-        let effective_capacity =
-            NonZeroUsize::new(capacity.max(1)).expect("capacity.max(1) is non-zero");
         Self {
-            inner: LruCache::new(effective_capacity),
+            inner: IndexMap::with_capacity(capacity.max(1)),
             capacity,
         }
     }
 
     pub(crate) fn contains(&self, hash: &UInt256) -> bool {
-        self.inner.contains(hash)
+        self.inner.contains_key(hash)
     }
 
     /// Attempts to add a hash to the pending set.
     /// Automatically prunes stale entries and enforces capacity limits.
     pub(crate) fn try_add(&mut self, hash: UInt256, timestamp: Instant) -> bool {
         // Auto-prune entries older than MAX_PENDING_TTL
-        if let Some(cutoff) = timestamp.checked_sub(MAX_PENDING_TTL) {
+        if let Some(cutoff) = timestamp.checked_sub(PENDING_KNOWN_HASH_TTL) {
             self.prune_older_than(cutoff);
         }
 
         // If at capacity after pruning, remove oldest entry to make room
         if self.inner.len() >= self.capacity && !self.inner.is_empty() {
-            self.inner.pop_lru();
+            self.inner.shift_remove_index(0);
         }
 
-        if self.inner.contains(&hash) {
+        if self.inner.contains_key(&hash) {
             return false;
         }
 
-        self.inner.put(hash, timestamp);
+        self.inner.insert(hash, timestamp);
         true
     }
 
     pub(crate) fn remove(&mut self, hash: &UInt256) -> bool {
-        self.inner.pop(hash).is_some()
+        self.inner.shift_remove(hash).is_some()
     }
 
     pub(crate) fn clear(&mut self) {
@@ -60,11 +57,11 @@ impl PendingKnownHashes {
 
     pub(crate) fn prune_older_than(&mut self, cutoff: Instant) -> usize {
         let mut removed = 0;
-        while let Some((_, timestamp)) = self.inner.peek_lru() {
+        while let Some((_, timestamp)) = self.inner.get_index(0) {
             if *timestamp >= cutoff {
                 break;
             }
-            if self.inner.pop_lru().is_none() {
+            if self.inner.shift_remove_index(0).is_none() {
                 break;
             }
             removed += 1;
@@ -122,7 +119,7 @@ mod tests {
         assert!(cache.try_add(hash, now));
         assert!(!cache.try_add(hash, now + Duration::from_secs(1)));
 
-        assert_eq!(*cache.inner.peek(&hash).unwrap(), now);
+        assert_eq!(*cache.inner.get(&hash).unwrap(), now);
     }
 
     #[test]

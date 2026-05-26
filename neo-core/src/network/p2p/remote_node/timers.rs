@@ -1,4 +1,5 @@
 //! Timer scheduling and periodic upkeep for `RemoteNode` (pings and cache pruning).
+use super::pending_known_hashes::PENDING_KNOWN_HASH_TTL;
 use super::RemoteNode;
 use crate::network::p2p::messages::NetworkMessage;
 use crate::network::p2p::payloads::ping_payload::PingPayload;
@@ -7,7 +8,6 @@ use std::time::{Duration, Instant};
 use tracing::trace;
 
 const TIMER_INTERVAL: Duration = Duration::from_secs(30);
-const PENDING_HASH_TTL: Duration = Duration::from_secs(60);
 const PING_INTERVAL: Duration = Duration::from_secs(60);
 
 impl RemoteNode {
@@ -37,7 +37,7 @@ impl RemoteNode {
         ctx: &mut crate::runtime::ActorContext,
     ) -> crate::runtime::ActorResult {
         let cutoff = Instant::now()
-            .checked_sub(PENDING_HASH_TTL)
+            .checked_sub(PENDING_KNOWN_HASH_TTL)
             .unwrap_or_else(Instant::now);
         let removed = self.pending_known_hashes.prune_older_than(cutoff);
         if removed > 0 {
