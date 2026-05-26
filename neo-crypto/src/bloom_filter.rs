@@ -10,7 +10,7 @@ type BloomBits = BitVec<u8, Lsb0>;
 /// Uses Murmur3 hashing with configurable hash function count and tweak value.
 #[derive(Clone, Debug)]
 pub struct BloomFilter {
-    seeds: Vec<u32>,
+    hash_functions: usize,
     bits: BloomBits,
     bit_size: usize,
     tweak: u32,
@@ -30,12 +30,9 @@ impl BloomFilter {
             ));
         }
 
-        let seeds = (0..hash_functions)
-            .map(|i| (i as u32).wrapping_mul(SEED_MULTIPLIER).wrapping_add(tweak))
-            .collect();
         let byte_len = bit_size.div_ceil(8);
         Ok(Self {
-            seeds,
+            hash_functions,
             bits: BloomBits::from_vec(vec![0u8; byte_len]),
             bit_size,
             tweak,
@@ -59,8 +56,8 @@ impl BloomFilter {
 
     /// Inserts an element into the bloom filter.
     pub fn add(&mut self, element: &[u8]) {
-        let seeds = self.seeds.clone();
-        for seed in seeds {
+        for hash_index in 0..self.hash_functions {
+            let seed = bloom_seed(hash_index, self.tweak);
             self.set_bit(bit_index(self.bit_size, element, seed));
         }
     }
@@ -68,8 +65,9 @@ impl BloomFilter {
     /// Tests whether an element is possibly in the filter. May return false positives.
     #[must_use]
     pub fn check(&self, element: &[u8]) -> bool {
-        for seed in &self.seeds {
-            if !self.test_bit(bit_index(self.bit_size, element, *seed)) {
+        for hash_index in 0..self.hash_functions {
+            let seed = bloom_seed(hash_index, self.tweak);
+            if !self.test_bit(bit_index(self.bit_size, element, seed)) {
                 return false;
             }
         }
@@ -85,7 +83,7 @@ impl BloomFilter {
     /// Returns the number of hash functions used by this filter.
     #[must_use]
     pub fn hash_functions(&self) -> usize {
-        self.seeds.len()
+        self.hash_functions
     }
 
     /// Returns the tweak value used for seed generation.
@@ -111,4 +109,10 @@ impl BloomFilter {
 
 fn bit_index(bit_size: usize, element: &[u8], seed: u32) -> usize {
     (murmur32(element, seed) as usize) % bit_size
+}
+
+fn bloom_seed(hash_index: usize, tweak: u32) -> u32 {
+    (hash_index as u32)
+        .wrapping_mul(SEED_MULTIPLIER)
+        .wrapping_add(tweak)
 }
