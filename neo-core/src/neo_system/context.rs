@@ -18,22 +18,23 @@ use tracing::{trace, warn};
 use super::actors::TransactionRouterHandle;
 use super::converters::{convert_ledger_block, convert_ledger_header};
 use super::registry::ServiceRegistry;
-use super::relay::{RelayExtensibleCache, RelayExtensibleEntry, LEDGER_HYDRATION_WINDOW};
+use super::relay::{LEDGER_HYDRATION_WINDOW, RelayExtensibleCache, RelayExtensibleEntry};
 use super::system::{ReadinessStatus, STATE_STORE_SERVICE};
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::error::{CoreError, CoreResult};
-use crate::events::{broadcast_plugin_event, PluginEvent};
+use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::extensions::log_level::LogLevel;
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
+use crate::ledger::blockchain::BlockchainHandle;
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
+    LocalNode,
     payloads::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
         transaction::Transaction,
     },
-    LocalNode,
 };
-use crate::persistence::{store::IStore, store_provider::StoreProvider, StoreCache};
+use crate::persistence::{StoreCache, store::IStore, store_provider::StoreProvider};
 use crate::protocol_settings::ProtocolSettings;
 use crate::services::SystemContext;
 use crate::services::{
@@ -54,7 +55,7 @@ pub struct NeoSystemContext {
     /// Handle to the actor runtime for scheduling and event stream access.
     pub actor_system: ActorSystemHandle,
     /// Reference to the blockchain actor hierarchy root.
-    pub blockchain: ActorRef,
+    pub blockchain: BlockchainHandle,
     /// Reference to the local node actor (peer supervisor).
     pub local_node: ActorRef,
     /// Reference to the task manager actor coordinating inventory download.

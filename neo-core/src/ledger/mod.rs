@@ -47,8 +47,8 @@ pub use block::Block;
 pub use block_header::BlockHeader;
 #[cfg(feature = "runtime")]
 pub use blockchain::{
-    Blockchain, BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted,
-    PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
+    Blockchain, BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import,
+    ImportCompleted, PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
 };
 pub use blockchain_application_executed::ApplicationExecuted;
 pub use genesis::create_genesis_block;

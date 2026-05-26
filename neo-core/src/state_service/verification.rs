@@ -9,11 +9,11 @@ use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
 use crate::runtime::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::contract_parameters_context::ContractParametersContext;
-use crate::smart_contract::native::role_management::RoleManagement;
 use crate::smart_contract::native::Role;
+use crate::smart_contract::native::role_management::RoleManagement;
 use crate::state_service::{MessageType, StateRoot, StateStore, ValidatedRootPersisted, Vote};
 use crate::wallets::Wallet;
-use crate::{cryptography::Crypto, neo_system::NeoSystem, UInt160};
+use crate::{UInt160, cryptography::Crypto, neo_system::NeoSystem};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
@@ -417,7 +417,7 @@ impl StateVerificationActor {
     fn relay_payload(&self, payload: ExtensiblePayload) {
         if let Err(error) =
             self.system
-                .blockchain_actor()
+                .blockchain_handle()
                 .tell(BlockchainCommand::InventoryExtensible {
                     payload,
                     relay: true,

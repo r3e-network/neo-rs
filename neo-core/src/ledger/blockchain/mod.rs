@@ -56,19 +56,19 @@ use crate::ledger::LedgerContext;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::{
+    LocalNodeCommand,
     local_node::RelayInventory,
     payloads::{
-        block::Block, extensible_payload::ExtensiblePayload, header::Header, InventoryType,
-        Transaction,
+        InventoryType, Transaction, block::Block, extensible_payload::ExtensiblePayload,
+        header::Header,
     },
-    LocalNodeCommand,
 };
 use crate::persistence::DataCache;
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::runtime::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
 use crate::smart_contract::native::LedgerContract;
-use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
+use crate::state_service::{STATE_SERVICE_CATEGORY, StateRoot};
 use crate::{CoreResult, UInt160, UInt256};
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -82,7 +82,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use super::VerifyResult;
-use types::{classify_import_block, ImportDisposition, UnverifiedBlocksList};
+use types::{ImportDisposition, UnverifiedBlocksList, classify_import_block};
 
 #[cfg(test)]
 use types::should_schedule_reverify_idle;
@@ -222,10 +222,12 @@ impl Blockchain {
 
 mod actor;
 mod block_processing;
+mod handle;
 mod handlers;
 mod transaction;
 mod types;
 
+pub use handle::BlockchainHandle;
 pub use types::{
     BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted, InventoryPayload,
     PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,

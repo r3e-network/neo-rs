@@ -62,27 +62,27 @@ use super::context::NeoSystemContext;
 use super::helpers::{initialise_plugins, to_core_error};
 use super::mempool::attach_mempool_callbacks;
 use super::registry::ServiceRegistry;
-use super::relay::{RelayExtensibleCache, RELAY_CACHE_CAPACITY};
+use super::relay::{RELAY_CACHE_CAPACITY, RelayExtensibleCache};
 use super::system::STATE_STORE_SERVICE;
 
 use crate::runtime::{ActorRef, ActorSystem, EventStreamHandle};
 
 use crate::error::{CoreError, CoreResult};
-use crate::events::{broadcast_plugin_event, PluginEvent};
+use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::extensions::log_level::LogLevel;
 use crate::extensions::utility::ExtensionsUtility;
 use crate::hardfork::Hardfork;
-use crate::ledger::blockchain::{Blockchain, BlockchainCommand};
+use crate::ledger::blockchain::{Blockchain, BlockchainCommand, BlockchainHandle};
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
-    payloads::block::Block, timeouts, LocalNode, TaskManager, TaskManagerCommand,
+    LocalNode, TaskManager, TaskManagerCommand, payloads::block::Block, timeouts,
 };
-use crate::persistence::{store::IStore, store_provider::StoreProvider, StoreCache, StoreFactory};
+use crate::persistence::{StoreCache, StoreFactory, store::IStore, store_provider::StoreProvider};
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
+use crate::smart_contract::native::PolicyContract;
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
-use crate::smart_contract::native::PolicyContract;
 use crate::state_service::StateStore;
 use neo_primitives::UInt256;
 #[cfg(test)]
@@ -124,7 +124,7 @@ static TEST_SYSTEM_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 pub struct NeoSystem {
     settings: ProtocolSettings,
     actor_system: ActorSystem,
-    blockchain: ActorRef,
+    blockchain: BlockchainHandle,
     pub(crate) local_node: ActorRef,
     task_manager: ActorRef,
     tx_router: TransactionRouterHandle,
@@ -433,6 +433,11 @@ impl NeoSystem {
 
     /// Reference to the blockchain actor.
     pub fn blockchain_actor(&self) -> ActorRef {
+        self.blockchain.raw_ref().clone()
+    }
+
+    /// Typed command handle for the blockchain actor.
+    pub fn blockchain_handle(&self) -> BlockchainHandle {
         self.blockchain.clone()
     }
 
@@ -532,10 +537,16 @@ fn spawn_core_actors(
     ledger: Arc<LedgerContext>,
     local_node_state: Arc<LocalNode>,
     settings: Arc<ProtocolSettings>,
-) -> CoreResult<(ActorRef, ActorRef, ActorRef, TransactionRouterHandle)> {
+) -> CoreResult<(
+    BlockchainHandle,
+    ActorRef,
+    ActorRef,
+    TransactionRouterHandle,
+)> {
     let blockchain = actor_system
         .actor_of(Blockchain::props(ledger), "blockchain")
         .map_err(to_core_error)?;
+    let blockchain = BlockchainHandle::new(blockchain);
     let local_node = actor_system
         .actor_of(LocalNode::props(local_node_state), "local_node")
         .map_err(to_core_error)?;
@@ -547,7 +558,7 @@ fn spawn_core_actors(
 }
 
 fn attach_system_to_actors(
-    blockchain: &ActorRef,
+    blockchain: &BlockchainHandle,
     local_node_state: &Arc<LocalNode>,
     task_manager: &ActorRef,
     context: Arc<NeoSystemContext>,

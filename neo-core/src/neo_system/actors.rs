@@ -14,7 +14,7 @@ use crate::runtime::{ActorRef, ActorRuntimeError, ActorRuntimeResult};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::warn;
 
-use crate::ledger::blockchain::BlockchainCommand;
+use crate::ledger::blockchain::{BlockchainCommand, BlockchainHandle};
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::protocol_settings::ProtocolSettings;
 
@@ -38,11 +38,16 @@ pub struct TransactionRouterHandle {
 
 impl TransactionRouterHandle {
     /// Spawns a typed transaction-router worker.
-    pub(crate) fn spawn(settings: Arc<ProtocolSettings>, blockchain: ActorRef) -> Self {
+    pub(crate) fn spawn(
+        settings: Arc<ProtocolSettings>,
+        blockchain: impl Into<BlockchainHandle>,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(TX_ROUTER_MAILBOX_CAPACITY);
         let router = TransactionRouter::new((*settings).clone());
         let task = Arc::new(tokio::spawn(run_transaction_router(
-            router, blockchain, receiver,
+            router,
+            blockchain.into(),
+            receiver,
         )));
 
         Self { sender, task }
@@ -98,7 +103,7 @@ impl TransactionRouterHandle {
 
 async fn run_transaction_router(
     router: TransactionRouter,
-    blockchain: ActorRef,
+    blockchain: BlockchainHandle,
     mut receiver: mpsc::Receiver<TransactionRouterEnvelope>,
 ) {
     while let Some(envelope) = receiver.recv().await {
@@ -119,8 +124,8 @@ async fn run_transaction_router(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ledger::blockchain::PreverifyCompleted;
     use crate::ledger::VerifyResult;
+    use crate::ledger::blockchain::PreverifyCompleted;
     use crate::runtime::{Actor, ActorContext, ActorResult, ActorSystem, Props};
     use async_trait::async_trait;
     use parking_lot::Mutex;

@@ -10,16 +10,17 @@ use crate::runtime::ActorRef;
 use tracing::debug;
 
 use super::context::NeoSystemContext;
+use crate::ledger::blockchain::BlockchainHandle;
+use crate::network::p2p::LocalNodeCommand;
 use crate::network::p2p::local_node::RelayInventory;
 use crate::network::p2p::payloads::transaction::Transaction;
-use crate::network::p2p::LocalNodeCommand;
 
 /// Attaches callbacks to the mempool to surface events and relay transactions.
 pub(crate) fn attach_mempool_callbacks(
     context: &Arc<NeoSystemContext>,
     memory_pool: &Arc<Mutex<crate::ledger::MemoryPool>>,
     local_node: ActorRef,
-    blockchain: ActorRef,
+    blockchain: BlockchainHandle,
 ) {
     let mut pool = memory_pool.lock();
     let context_added = context.clone();
@@ -45,7 +46,7 @@ pub(crate) fn attach_mempool_callbacks(
     }));
 
     let local_node_ref = local_node.clone();
-    let blockchain_ref = blockchain.clone();
+    let blockchain_ref = blockchain.raw_ref().clone();
     pool.transaction_relay = Some(Box::new(move |tx: &Transaction| {
         if let Err(error) = local_node_ref.tell_from(
             LocalNodeCommand::RelayDirectly {
