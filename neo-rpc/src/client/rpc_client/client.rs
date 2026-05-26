@@ -33,7 +33,8 @@ use std::time::{Duration, Instant};
 
 use super::builder::RpcClientBuilder;
 use super::helpers::{
-    parse_object_array_result, parse_plugins, token_as_number, token_as_object, token_as_string,
+    parse_i64_object_field, parse_object_array_result, parse_plugins, parse_uint256_object_field,
+    token_as_number, token_as_object, token_as_string,
 };
 use super::hooks::RpcRequestOutcome;
 use super::{MAX_JSON_NESTING, RPC_NAME_REGEX, RpcClient, RpcClientHooks};
@@ -747,18 +748,14 @@ impl RpcClient {
         let result = self
             .rpc_send_async("calculatenetworkfee", vec![JToken::String(base64)])
             .await?;
-        let obj = token_as_object(result, "calculatenetworkfee")?;
-        let fee_token = obj.get("networkfee").ok_or_else(|| {
-            ClientRpcError::new(-32603, "Missing networkfee in calculatenetworkfee result")
-        })?;
-        let fee = match fee_token {
-            JToken::Number(value) => Ok(*value as i64),
-            JToken::String(value) => value.parse::<i64>().map_err(|_| {
-                ClientRpcError::new(-32603, format!("Invalid networkfee value: {value}"))
-            }),
-            _ => Err(ClientRpcError::new(-32603, "Invalid networkfee token type")),
-        }?;
-        Ok(fee)
+        parse_i64_object_field(
+            result,
+            "calculatenetworkfee",
+            "networkfee",
+            "Missing networkfee in calculatenetworkfee result",
+            "networkfee",
+            "Invalid networkfee token type",
+        )
     }
 
     /// Broadcasts a raw transaction.
@@ -768,13 +765,13 @@ impl RpcClient {
         let result = self
             .rpc_send_async("sendrawtransaction", vec![JToken::String(base64)])
             .await?;
-        let obj = token_as_object(result, "sendrawtransaction")?;
-        let hash = obj
-            .get("hash")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or_else(|| ClientRpcError::new(-32603, "Missing hash in sendrawtransaction"))?;
-        UInt256::parse(&hash)
-            .map_err(|err| ClientRpcError::new(-32603, format!("Invalid tx hash: {err}")))
+        parse_uint256_object_field(
+            result,
+            "sendrawtransaction",
+            "hash",
+            "Missing hash in sendrawtransaction",
+            "Invalid tx hash",
+        )
     }
 
     /// Broadcasts a block.
@@ -784,12 +781,12 @@ impl RpcClient {
         let result = self
             .rpc_send_async("submitblock", vec![JToken::String(base64)])
             .await?;
-        let obj = token_as_object(result, "submitblock")?;
-        let hash = obj
-            .get("hash")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or_else(|| ClientRpcError::new(-32603, "Missing hash in submitblock"))?;
-        UInt256::parse(&hash)
-            .map_err(|err| ClientRpcError::new(-32603, format!("Invalid block hash: {err}")))
+        parse_uint256_object_field(
+            result,
+            "submitblock",
+            "hash",
+            "Missing hash in submitblock",
+            "Invalid block hash",
+        )
     }
 }

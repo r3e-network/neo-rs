@@ -12,6 +12,7 @@
 use super::super::ClientRpcError;
 use super::super::models::RpcPlugin;
 use neo_json::{JObject, JToken};
+use neo_primitives::UInt256;
 
 pub(super) fn token_as_string(token: JToken, context: &str) -> Result<String, ClientRpcError> {
     match token {
@@ -53,6 +54,20 @@ pub(super) fn token_as_object(token: JToken, context: &str) -> Result<JObject, C
     }
 }
 
+pub(super) fn parse_object_field<T>(
+    token: JToken,
+    context: &str,
+    field: &str,
+    missing_error: &str,
+    parse_field: impl FnOnce(&JToken) -> Result<T, ClientRpcError>,
+) -> Result<T, ClientRpcError> {
+    let obj = token_as_object(token, context)?;
+    let field_token = obj
+        .get(field)
+        .ok_or_else(|| ClientRpcError::new(-32603, missing_error))?;
+    parse_field(field_token)
+}
+
 pub(super) fn token_as_boolean(token: JToken, context: &str) -> Result<bool, ClientRpcError> {
     match token {
         JToken::Boolean(value) => Ok(value),
@@ -64,6 +79,63 @@ pub(super) fn token_as_boolean(token: JToken, context: &str) -> Result<bool, Cli
             format!("{context}: expected boolean token"),
         )),
     }
+}
+
+pub(super) fn parse_i64_number_or_string_token(
+    token: &JToken,
+    value_name: &str,
+    invalid_type_error: &str,
+) -> Result<i64, ClientRpcError> {
+    match token {
+        JToken::Number(value) => Ok(*value as i64),
+        JToken::String(value) => value.parse::<i64>().map_err(|_| {
+            ClientRpcError::new(-32603, format!("Invalid {value_name} value: {value}"))
+        }),
+        _ => Err(ClientRpcError::new(-32603, invalid_type_error)),
+    }
+}
+
+pub(super) fn parse_i64_object_field(
+    token: JToken,
+    context: &str,
+    field: &str,
+    missing_error: &str,
+    value_name: &str,
+    invalid_type_error: &str,
+) -> Result<i64, ClientRpcError> {
+    parse_object_field(token, context, field, missing_error, |field_token| {
+        parse_i64_number_or_string_token(field_token, value_name, invalid_type_error)
+    })
+}
+
+pub(super) fn parse_uint256_string_token(
+    token: &JToken,
+    missing_or_type_error: &str,
+    invalid_hash_prefix: &str,
+) -> Result<UInt256, ClientRpcError> {
+    let hash = token
+        .as_string()
+        .ok_or_else(|| ClientRpcError::new(-32603, missing_or_type_error))?;
+    UInt256::parse(&hash)
+        .map_err(|err| ClientRpcError::new(-32603, format!("{invalid_hash_prefix}: {err}")))
+}
+
+pub(super) fn parse_uint256_object_field(
+    token: JToken,
+    context: &str,
+    field: &str,
+    missing_or_type_error: &str,
+    invalid_hash_prefix: &str,
+) -> Result<UInt256, ClientRpcError> {
+    parse_object_field(
+        token,
+        context,
+        field,
+        missing_or_type_error,
+        |field_token| {
+            parse_uint256_string_token(field_token, missing_or_type_error, invalid_hash_prefix)
+        },
+    )
 }
 
 pub(super) fn parse_object_array_result<T>(
@@ -134,6 +206,59 @@ mod tests {
         assert!(!token_as_boolean(JToken::Number(0.0), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Array(JArray::new()), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Object(JObject::new()), "ctx").unwrap());
+    }
+
+    #[test]
+    fn object_field_helpers_preserve_field_errors() {
+        let err = parse_object_field(JToken::Null, "ctx", "field", "missing field", |_| Ok(()))
+            .expect_err("non-object should fail");
+        assert_eq!(err.message(), "ctx: expected object token");
+
+        let err = parse_object_field(
+            JToken::Object(JObject::new()),
+            "ctx",
+            "field",
+            "missing field",
+            |_| Ok(()),
+        )
+        .expect_err("missing field should fail");
+        assert_eq!(err.message(), "missing field");
+    }
+
+    #[test]
+    fn scalar_field_parsers_preserve_rpc_errors() {
+        let fee = parse_i64_number_or_string_token(
+            &JToken::String("42".into()),
+            "networkfee",
+            "Invalid networkfee token type",
+        )
+        .expect("string fee");
+        assert_eq!(fee, 42);
+
+        let err = parse_i64_number_or_string_token(
+            &JToken::Boolean(true),
+            "networkfee",
+            "Invalid networkfee token type",
+        )
+        .expect_err("boolean fee should fail");
+        assert_eq!(err.message(), "Invalid networkfee token type");
+
+        let hash = UInt256::zero().to_string();
+        let parsed = parse_uint256_string_token(
+            &JToken::String(hash),
+            "Missing hash in submitblock",
+            "Invalid block hash",
+        )
+        .expect("hash");
+        assert_eq!(parsed, UInt256::zero());
+
+        let err = parse_uint256_string_token(
+            &JToken::Number(1.0),
+            "Missing hash in submitblock",
+            "Invalid block hash",
+        )
+        .expect_err("non-string hash should fail");
+        assert_eq!(err.message(), "Missing hash in submitblock");
     }
 
     #[test]
