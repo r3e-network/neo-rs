@@ -4,29 +4,30 @@ use super::RemoteNode;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::MessageCommand;
 use crate::runtime::ActorResult;
+use bitvec::{array::BitArray, order::Lsb0};
 use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::warn;
 
-const MESSAGE_COMMAND_DOMAIN_BYTES: usize = 32;
+const MESSAGE_COMMAND_DOMAIN_BITS: usize = 256;
 
 #[derive(Default)]
-pub(super) struct CommandBitSet([u8; MESSAGE_COMMAND_DOMAIN_BYTES]);
+pub(super) struct CommandBitSet(BitArray<[u8; 32], Lsb0>);
 
 impl CommandBitSet {
     pub(super) fn contains(&self, command: MessageCommand) -> bool {
-        let (byte_index, mask) = Self::slot(command);
-        self.0[byte_index] & mask != 0
+        self.0
+            .get(Self::slot(command))
+            .map(|bit| *bit)
+            .unwrap_or(false)
     }
 
     pub(super) fn insert(&mut self, command: MessageCommand) {
-        let (byte_index, mask) = Self::slot(command);
-        self.0[byte_index] |= mask;
+        self.0.set(Self::slot(command), true);
     }
 
     pub(super) fn remove(&mut self, command: MessageCommand) {
-        let (byte_index, mask) = Self::slot(command);
-        self.0[byte_index] &= !mask;
+        self.0.set(Self::slot(command), false);
     }
 
     pub(super) fn take(&mut self, command: MessageCommand) -> bool {
@@ -35,9 +36,10 @@ impl CommandBitSet {
         was_present
     }
 
-    fn slot(command: MessageCommand) -> (usize, u8) {
+    fn slot(command: MessageCommand) -> usize {
         let index = command.to_byte() as usize;
-        (index / 8, 1u8 << (index % 8))
+        debug_assert!(index < MESSAGE_COMMAND_DOMAIN_BITS);
+        index
     }
 }
 
