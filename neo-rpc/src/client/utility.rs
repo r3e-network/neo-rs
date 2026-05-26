@@ -21,8 +21,8 @@ pub use attributes::attribute_from_json;
 pub use parsing::optional_string;
 #[allow(unused_imports)]
 pub use parsing::{
-    jtoken_to_serde, object_array, optional_script_hash_or_address_lossy, parse_base64_token,
-    parse_i64_token, parse_nonce_token, parse_object_array_lossy,
+    empty_array, jtoken_to_serde, object_array, optional_script_hash_or_address_lossy,
+    parse_base64_token, parse_i64_token, parse_nonce_token, parse_object_array_lossy,
     parse_optional_present_token_array_strict, parse_optional_string_array_strict,
     parse_optional_token_array_strict, parse_oracle_response_code, parse_script_hash_or_address,
     parse_string_array_lossy, parse_u32_token, parse_u64_token, parse_uint256_array_lossy,
@@ -30,7 +30,7 @@ pub use parsing::{
     required_string, required_u16_number, required_u32_number, required_u64_number,
     required_uint256, token_array,
 };
-pub use stack::stack_items_from_json_field;
+pub use stack::{stack_items_from_json_field, stack_items_to_json};
 #[allow(unused_imports)]
 pub use witness::{
     payload_witness_from_json, payload_witness_to_json, scripts_to_witness_json, witness_to_json,
@@ -860,6 +860,28 @@ mod tests {
             panic!("expected map");
         };
         assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn stack_item_to_json_emits_array_and_map_shapes() {
+        let array = StackValue::Array(vec![StackValue::Integer(5)]);
+        assert_eq!(
+            RpcUtility::stack_item_to_json(&array).unwrap().to_string(),
+            r#"{"type":"Array","value":[{"type":"Integer","value":"5"}]}"#
+        );
+
+        let map = StackValue::Map(vec![(
+            StackValue::ByteString(b"k".to_vec()),
+            StackValue::Boolean(true),
+        )]);
+        let expected_map = concat!(
+            r#"{"type":"Map","value":[{"key":{"type":"ByteString","value":"aw=="},"#,
+            r#""value":{"type":"Boolean","value":true}}]}"#,
+        );
+        assert_eq!(
+            RpcUtility::stack_item_to_json(&map).unwrap().to_string(),
+            expected_map
+        );
     }
 
     #[test]

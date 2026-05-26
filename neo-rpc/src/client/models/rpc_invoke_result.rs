@@ -9,9 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::{optional_string, required_string, stack_items_from_json_field};
+use super::super::utility::{
+    optional_string, required_string, stack_items_from_json_field, stack_items_to_json,
+};
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 use neo_vm_rs::StackValue;
 use neo_vm_rs::VmState;
 
@@ -94,15 +96,7 @@ impl RpcInvokeResult {
             }
         }
 
-        let stack_json = self
-            .stack
-            .iter()
-            .map(super::super::utility::stack_item_to_json)
-            .collect::<Result<Vec<_>, _>>()
-            .map(|items| {
-                let values: Vec<JToken> = items.into_iter().map(JToken::Object).collect();
-                JToken::Array(JArray::from(values))
-            })
+        let stack_json = stack_items_to_json(&self.stack)
             .unwrap_or_else(|_| JToken::String("error: recursive reference".to_string()));
         json.insert("stack".to_string(), stack_json);
 

@@ -10,15 +10,15 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    object_array, parse_object_array_lossy, required_string, stack_item_from_json,
-    stack_item_to_json, stack_items_from_json_field,
+    empty_array, object_array, parse_object_array_lossy, required_string, stack_item_from_json,
+    stack_item_to_json, stack_items_from_json_field, stack_items_to_json,
 };
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use std::str::FromStr;
 
 use neo_config::ProtocolSettings;
 use neo_core::smart_contract::TriggerType;
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use neo_vm_rs::StackValue;
 use neo_vm_rs::VmState;
@@ -161,16 +161,10 @@ impl Execution {
                 .as_ref()
                 .map_or(JToken::Null, |value| JToken::String(value.clone())),
         );
-        let stack = self
-            .stack
-            .iter()
-            .map(stack_item_to_json)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap_or_default()
-            .into_iter()
-            .map(JToken::Object)
-            .collect::<Vec<_>>();
-        json.insert("stack".to_string(), JToken::Array(JArray::from(stack)));
+        json.insert(
+            "stack".to_string(),
+            stack_items_to_json(&self.stack).unwrap_or_else(|_| empty_array()),
+        );
         json.insert(
             "notifications".to_string(),
             object_array(&self.notifications, RpcNotifyEventArgs::to_json),

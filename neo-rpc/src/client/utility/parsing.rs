@@ -117,9 +117,26 @@ pub fn object_array<T>(items: &[T], mut to_object: impl FnMut(&T) -> JObject) ->
     JToken::Array(JArray::from(objects))
 }
 
+/// Builds an ordered JSON object array token from a fallible object mapper.
+pub fn fallible_object_array<T, E>(
+    items: &[T],
+    mut to_object: impl FnMut(&T) -> Result<JObject, E>,
+) -> Result<JToken, E> {
+    let objects = items
+        .iter()
+        .map(|item| to_object(item).map(JToken::Object))
+        .collect::<Result<Vec<_>, E>>()?;
+    Ok(JToken::Array(JArray::from(objects)))
+}
+
 /// Builds an ordered JSON array token.
 pub fn token_array<T>(items: &[T], to_token: impl FnMut(&T) -> JToken) -> JToken {
     JToken::Array(JArray::from(items.iter().map(to_token).collect::<Vec<_>>()))
+}
+
+/// Builds an empty JSON array token.
+pub fn empty_array() -> JToken {
+    JToken::Array(JArray::new())
 }
 
 /// Parses a string array while preserving the RPC client's historical lossy behavior.
@@ -458,11 +475,49 @@ mod tests {
     }
 
     #[test]
+    fn fallible_object_array_preserves_item_order() {
+        let values = ["first", "second"];
+        let token = fallible_object_array(&values, |value| {
+            let mut object = JObject::new();
+            object.insert("value".to_string(), JToken::String((*value).to_string()));
+            Ok::<_, String>(object)
+        })
+        .expect("fallible object array");
+
+        assert_eq!(
+            token.to_string(),
+            r#"[{"value":"first"},{"value":"second"}]"#
+        );
+    }
+
+    #[test]
+    fn fallible_object_array_propagates_errors() {
+        let values = ["ok", "bad"];
+
+        let err = fallible_object_array(&values, |value| {
+            if *value == "bad" {
+                return Err("bad value".to_string());
+            }
+            let mut object = JObject::new();
+            object.insert("value".to_string(), JToken::String((*value).to_string()));
+            Ok(object)
+        })
+        .expect_err("fallible object array should propagate mapper errors");
+
+        assert_eq!(err, "bad value");
+    }
+
+    #[test]
     fn token_array_preserves_item_order() {
         let values = ["first", "second"];
         let token = token_array(&values, |value| JToken::String((*value).to_string()));
 
         assert_eq!(token.to_string(), r#"["first","second"]"#);
+    }
+
+    #[test]
+    fn empty_array_builds_array_token() {
+        assert_eq!(empty_array().to_string(), "[]");
     }
 
     #[test]

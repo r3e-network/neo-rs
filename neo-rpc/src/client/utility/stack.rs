@@ -1,10 +1,12 @@
 use base64::{engine::general_purpose, Engine as _};
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
-use super::parsing::{parse_base64_token, parse_object_array_lossy, parse_u32_token};
+use super::parsing::{
+    fallible_object_array, parse_base64_token, parse_object_array_lossy, parse_u32_token,
+};
 
 /// Converts a `neo-json` representation of an RPC stack item into `neo-vm-rs`.
 pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
@@ -107,33 +109,30 @@ pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
             json.insert("value".to_string(), JToken::Number(*index as f64));
         }
         StackValue::Array(items) | StackValue::Struct(items) => {
-            let values = items
-                .iter()
-                .map(stack_item_to_json)
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .map(JToken::Object)
-                .collect::<Vec<_>>();
-            json.insert("value".to_string(), JToken::Array(JArray::from(values)));
+            json.insert("value".to_string(), stack_items_to_json(items)?);
         }
         StackValue::Map(entries) => {
-            let values = entries
-                .iter()
-                .map(|(key, value)| {
+            json.insert(
+                "value".to_string(),
+                fallible_object_array(entries, |entry| {
+                    let (key, value) = entry;
                     let mut entry = JObject::new();
                     entry.insert("key".to_string(), JToken::Object(stack_item_to_json(key)?));
                     entry.insert(
                         "value".to_string(),
                         JToken::Object(stack_item_to_json(value)?),
                     );
-                    Ok(JToken::Object(entry))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            json.insert("value".to_string(), JToken::Array(JArray::from(values)));
+                    Ok::<_, String>(entry)
+                })?,
+            );
         }
     }
 
     Ok(json)
+}
+
+pub fn stack_items_to_json(items: &[StackValue]) -> Result<JToken, String> {
+    fallible_object_array(items, stack_item_to_json)
 }
 
 pub fn stack_items_from_json_field(json: &JObject, field: &str) -> Vec<StackValue> {
