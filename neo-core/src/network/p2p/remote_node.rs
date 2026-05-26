@@ -226,8 +226,8 @@ impl RemoteNode {
             command,
         ) {
             HandshakeGateDecision::AcceptVersion => {
-                if let ProtocolMessage::Version(payload) = &message.payload {
-                    self.on_version(payload.clone(), ctx).await
+                if let ProtocolMessage::Version(payload) = message.payload {
+                    self.on_version(payload, ctx).await
                 } else {
                     let error = NetworkError::ProtocolViolation {
                         peer: self.endpoint,

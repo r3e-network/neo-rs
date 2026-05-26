@@ -15,40 +15,38 @@ impl RemoteNode {
             trace!(target: "neo", command = ?message.command(), "dropping protocol message prior to handshake");
             return Ok(());
         }
-        match &message.payload {
-            ProtocolMessage::Ping(payload) => self.on_ping(payload, ctx).await,
+        match message.payload {
+            ProtocolMessage::Ping(payload) => self.on_ping(&payload, ctx).await,
             ProtocolMessage::Pong(payload) => {
-                self.on_pong(payload);
+                self.on_pong(&payload);
                 Ok(())
             }
             ProtocolMessage::Inv(payload) => {
-                self.on_inv(payload, ctx);
+                self.on_inv(&payload, ctx);
                 Ok(())
             }
-            ProtocolMessage::Transaction(tx) => self.on_transaction(tx.clone(), ctx).await,
-            ProtocolMessage::Block(block) => self.on_block(block.clone(), ctx).await,
-            ProtocolMessage::Extensible(payload) => self.on_extensible(payload.clone(), ctx).await,
-            ProtocolMessage::GetBlocks(payload) => self.on_get_blocks(payload.clone()).await,
-            ProtocolMessage::GetBlockByIndex(payload) => {
-                self.on_get_block_by_index(payload.clone()).await
-            }
-            ProtocolMessage::GetHeaders(payload) => self.on_get_headers(payload.clone()).await,
+            ProtocolMessage::Transaction(tx) => self.on_transaction(tx, ctx).await,
+            ProtocolMessage::Block(block) => self.on_block(block, ctx).await,
+            ProtocolMessage::Extensible(payload) => self.on_extensible(payload, ctx).await,
+            ProtocolMessage::GetBlocks(payload) => self.on_get_blocks(payload).await,
+            ProtocolMessage::GetBlockByIndex(payload) => self.on_get_block_by_index(payload).await,
+            ProtocolMessage::GetHeaders(payload) => self.on_get_headers(payload).await,
             ProtocolMessage::Headers(payload) => {
-                self.on_headers(payload.clone(), ctx).await;
+                self.on_headers(payload, ctx).await;
                 Ok(())
             }
             ProtocolMessage::Addr(payload) => {
-                self.on_addr(payload.clone(), ctx);
+                self.on_addr(payload, ctx);
                 Ok(())
             }
             ProtocolMessage::Mempool => self.on_mempool().await,
-            ProtocolMessage::GetData(payload) => self.on_get_data(payload).await,
+            ProtocolMessage::GetData(payload) => self.on_get_data(&payload).await,
             ProtocolMessage::FilterLoad(payload) => {
-                self.on_filter_load(payload);
+                self.on_filter_load(&payload);
                 Ok(())
             }
             ProtocolMessage::FilterAdd(payload) => {
-                self.on_filter_add(payload);
+                self.on_filter_add(&payload);
                 Ok(())
             }
             ProtocolMessage::FilterClear => {
@@ -56,15 +54,15 @@ impl RemoteNode {
                 Ok(())
             }
             ProtocolMessage::NotFound(payload) => {
-                self.on_not_found(payload.clone(), ctx);
+                self.on_not_found(payload, ctx);
                 Ok(())
             }
             ProtocolMessage::Reject(data) => {
-                self.on_reject(data);
+                self.on_reject(&data);
                 Ok(())
             }
             ProtocolMessage::Alert(data) => {
-                self.on_alert(data);
+                self.on_alert(&data);
                 Ok(())
             }
             ProtocolMessage::GetAddr => {

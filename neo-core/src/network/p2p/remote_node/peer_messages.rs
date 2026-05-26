@@ -82,12 +82,11 @@ impl RemoteNode {
         // The peer height comes from Version/Ping. Updating it from headers
         // would cap the session at the header frontier.
         if !payload.headers.is_empty() {
-            let headers = payload.headers.clone();
             if let Err(err) = self
                 .system
                 .blockchain
                 .tell_from_async(
-                    BlockchainCommand::Headers(headers.clone()),
+                    BlockchainCommand::Headers(payload.headers),
                     Some(ctx.self_ref()),
                 )
                 .await
@@ -95,10 +94,11 @@ impl RemoteNode {
                 warn!(target: "neo", error = %err, "failed to forward headers to blockchain");
             }
 
-            if let Err(err) = self.system.task_manager.tell_from(
-                TaskManagerCommand::Headers { headers },
-                Some(ctx.self_ref()),
-            ) {
+            if let Err(err) = self
+                .system
+                .task_manager
+                .tell_from(TaskManagerCommand::Headers, Some(ctx.self_ref()))
+            {
                 warn!(target: "neo", error = %err, "failed to notify task manager about headers");
             }
         }

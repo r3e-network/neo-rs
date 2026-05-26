@@ -24,7 +24,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::payloads::{block::Block, header::Header, inv_payload::InvPayload, VersionPayload};
+use super::payloads::{block::Block, inv_payload::InvPayload, VersionPayload};
 use super::task_session::TaskSession;
 use crate::ledger::{PersistCompleted, RelayResult};
 use crate::neo_system::NeoSystemContext;
@@ -216,7 +216,7 @@ impl Actor for TaskManagerActor {
                                 .complete_inventory(&sender, hash, *block, block_index);
                         }
                     }
-                    TaskManagerCommand::Headers { .. } => {
+                    TaskManagerCommand::Headers => {
                         if let Some(sender) = ctx.sender() {
                             self.state.on_headers(&sender);
                         }
@@ -289,9 +289,7 @@ pub enum TaskManagerCommand {
         block: Box<Option<Block>>,
         block_index: Option<u32>,
     },
-    Headers {
-        headers: Vec<Header>,
-    },
+    Headers,
     TimerTick,
 }
 
