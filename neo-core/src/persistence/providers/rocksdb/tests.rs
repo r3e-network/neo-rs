@@ -1,10 +1,11 @@
 use super::*;
-use crate::persistence::store::IStore;
 use crate::persistence::StoreCache;
-use crate::persistence::storage::StorageConfig;
 use crate::persistence::seek_direction::SeekDirection;
+use crate::persistence::storage::StorageConfig;
+use crate::persistence::store_provider::StoreProvider;
 use crate::smart_contract::{StorageItem, StorageKey};
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 #[test]

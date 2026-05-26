@@ -8,7 +8,7 @@ fn main() {
 
     if env::var("PROTOC").is_err() {
         if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
-            env::set_var("PROTOC", path);
+            set_env_var("PROTOC", path);
         }
     }
 
@@ -26,4 +26,13 @@ fn main() {
     println!("cargo:rerun-if-changed=proto/neofs/session/types.proto");
     println!("cargo:rerun-if-changed=proto/neofs/acl/types.proto");
     println!("cargo:rerun-if-changed=proto/neofs/status/types.proto");
+}
+
+fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, value: V) {
+    // SAFETY: Build scripts run as short-lived single-purpose processes. This
+    // mutation happens before invoking prost/tonic code that reads PROTOC.
+    #[allow(unused_unsafe)]
+    unsafe {
+        env::set_var(key, value);
+    }
 }

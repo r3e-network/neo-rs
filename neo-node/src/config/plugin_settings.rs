@@ -1,8 +1,8 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use neo_core::{
-    application_logs::ApplicationLogsSettings, constants::MAX_BLOCK_SIZE,
+    UnhandledExceptionPolicy, application_logs::ApplicationLogsSettings, constants::MAX_BLOCK_SIZE,
     oracle_service::OracleServiceSettings, state_service::state_store::StateServiceSettings,
-    tokens_tracker::TokensTrackerSettings, UnhandledExceptionPolicy,
+    tokens_tracker::TokensTrackerSettings,
 };
 use serde::Deserialize;
 use std::{env, fs, path::PathBuf, time::Duration};
@@ -167,7 +167,7 @@ struct DbftPluginSection {
 }
 
 macro_rules! load_plugin_section {
-    ($path:expr, $section_ty:ty, $name:literal) => {{
+    ($path:expr_2021, $section_ty:ty, $name:literal) => {{
         let path = $path;
         if !path.exists() {
             Ok::<Option<_>, anyhow::Error>(None)

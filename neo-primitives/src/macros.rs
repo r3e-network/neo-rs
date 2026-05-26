@@ -4,7 +4,7 @@ macro_rules! __protocol_enum_display {
     ($variant:ident) => {
         stringify!($variant)
     };
-    ($variant:ident, $display:expr) => {
+    ($variant:ident, $display:expr_2021) => {
         $display
     };
 }
@@ -63,7 +63,7 @@ macro_rules! protocol_enum {
         $vis:vis $name:ident {
             $(
                 $(#[$variant_meta:meta])*
-                $variant:ident = $byte:expr $(=> $display:expr)?
+                $variant:ident = $byte:expr_2021 $(=> $display:expr_2021)?
             ),+ $(,)?
         }
     ) => {
@@ -147,7 +147,7 @@ macro_rules! protocol_enum {
 macro_rules! impl_protocol_enum_from_str {
     (
         $name:ident {
-            error = $error:expr;
+            error = $error:expr_2021;
             aliases = [$($alias:literal => $alias_variant:ident),* $(,)?];
             $($variant:ident),+ $(,)?
         }
@@ -173,7 +173,7 @@ macro_rules! impl_protocol_enum_from_str {
 
     (
         $name:ident {
-            error = $error:expr;
+            error = $error:expr_2021;
             $($variant:ident),+ $(,)?
         }
     ) => {
@@ -205,7 +205,7 @@ macro_rules! protocol_enum_repr {
         $vis:vis $name:ident {
             $(
                 $(#[$variant_meta:meta])*
-                $variant:ident = $byte:expr $(=> $display:expr)?
+                $variant:ident = $byte:expr_2021 $(=> $display:expr_2021)?
             ),+ $(,)?
         }
     ) => {
@@ -247,7 +247,7 @@ macro_rules! protocol_enum_repr {
         $vis:vis $name:ident {
             $(
                 $(#[$variant_meta:meta])*
-                $variant:ident = $byte:expr $(=> $display:expr)?
+                $variant:ident = $byte:expr_2021 $(=> $display:expr_2021)?
             ),+ $(,)?
         }
     ) => {
@@ -337,11 +337,11 @@ macro_rules! protocol_enum_with_unknown {
             from_byte = $from_byte:ident;
             unknown
             $(#[$unknown_meta:meta])*
-            $unknown:ident(u8) => $unknown_display:expr;
+            $unknown:ident(u8) => $unknown_display:expr_2021;
 
             $(
                 $(#[$variant_meta:meta])*
-                $variant:ident = $byte:expr $(=> $display:expr)?
+                $variant:ident = $byte:expr_2021 $(=> $display:expr_2021)?
             ),+ $(,)?
         }
     ) => {
@@ -409,11 +409,11 @@ macro_rules! protocol_enum_with_unknown {
         $vis:vis $name:ident {
             unknown
             $(#[$unknown_meta:meta])*
-            $unknown:ident(u8) => $unknown_display:expr;
+            $unknown:ident(u8) => $unknown_display:expr_2021;
 
             $(
                 $(#[$variant_meta:meta])*
-                $variant:ident = $byte:expr $(=> $display:expr)?
+                $variant:ident = $byte:expr_2021 $(=> $display:expr_2021)?
             ),+ $(,)?
         }
     ) => {
@@ -524,7 +524,7 @@ macro_rules! __p2p_message_command_enum_from_table {
         {
             $(
                 $(#[$variant_meta:meta])*
-                $variant:ident = $byte:expr => $display:expr
+                $variant:ident = $byte:expr_2021 => $display:expr_2021
             ),+ $(,)?
         }
     ) => {
@@ -548,7 +548,7 @@ macro_rules! __p2p_message_command_enum_from_table {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __p2p_message_command_parse {
-    ($name:ident, $source:expr, $parse_error:expr, $extended_aliases:expr) => {{
+    ($name:ident, $source:expr_2021, $parse_error:expr_2021, $extended_aliases:expr_2021) => {{
         $crate::__p2p_message_command_table! {
             __p2p_message_command_parse_from_table;
             $name, $source, $parse_error, $extended_aliases
@@ -560,12 +560,12 @@ macro_rules! __p2p_message_command_parse {
 #[macro_export]
 macro_rules! __p2p_message_command_parse_from_table {
     (
-        $name:ident, $source:expr, $parse_error:expr, $extended_aliases:expr
+        $name:ident, $source:expr_2021, $parse_error:expr_2021, $extended_aliases:expr_2021
         ;
         {
             $(
                 $(#[$variant_meta:meta])*
-                $variant:ident = $byte:expr => $display:expr
+                $variant:ident = $byte:expr_2021 => $display:expr_2021
             ),+ $(,)?
         }
     ) => {{
@@ -649,7 +649,7 @@ macro_rules! p2p_message_command {
         $(#[$enum_meta:meta])*
         $vis:vis $name:ident {
             error = $error_ty:ty;
-            parse_error = $parse_error:expr;
+            parse_error = $parse_error:expr_2021;
             from_byte = result;
             extended_aliases = true;
         }
@@ -688,7 +688,7 @@ macro_rules! p2p_message_command {
         $(#[$enum_meta:meta])*
         $vis:vis $name:ident {
             error = $error_ty:ty;
-            parse_error = $parse_error:expr;
+            parse_error = $parse_error:expr_2021;
             from_byte = infallible;
             extended_aliases = false;
         }

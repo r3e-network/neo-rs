@@ -1,7 +1,28 @@
 use super::*;
 use neo_core::protocol_settings::ProtocolSettings;
+use std::sync::Mutex;
 use std::{env, fs};
 use tempfile::TempDir;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, value: V) {
+    // SAFETY: Tests serialize access around this process-global variable and
+    // restore it before releasing the lock.
+    #[allow(unused_unsafe)]
+    unsafe {
+        env::set_var(key, value);
+    }
+}
+
+fn remove_env_var<K: AsRef<std::ffi::OsStr>>(key: K) {
+    // SAFETY: Tests serialize access around this process-global variable and
+    // restore it before releasing the lock.
+    #[allow(unused_unsafe)]
+    unsafe {
+        env::remove_var(key);
+    }
+}
 
 #[test]
 fn rejects_unknown_fields_in_known_table() {
@@ -69,8 +90,9 @@ fn mempool_max_transactions_override_applies_to_protocol_settings() {
 
 #[test]
 fn writes_rpc_config_with_restricted_permissions() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
     let tmp = TempDir::new().expect("temp dir");
-    env::set_var("NEO_PLUGINS_DIR", tmp.path());
+    set_env_var("NEO_PLUGINS_DIR", tmp.path());
 
     let mut config = NodeConfig::default();
     config.rpc.enabled = true;
@@ -100,7 +122,7 @@ fn writes_rpc_config_with_restricted_permissions() {
         "config should contain Servers array"
     );
 
-    env::remove_var("NEO_PLUGINS_DIR");
+    remove_env_var("NEO_PLUGINS_DIR");
 }
 
 #[test]

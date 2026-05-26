@@ -5,15 +5,13 @@
 //! - Crypto integration
 //! - Concurrent state access
 
-use neo_core::state::{
-    StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
-};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
+use neo_tests::state::{StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use neo_core::state::MemoryWorldState;
+use neo_tests::state::MemoryWorldState;
 
 // ============================================================================
 // State Root Calculation Tests

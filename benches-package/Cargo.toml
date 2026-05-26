@@ -1,11 +1,12 @@
 [package]
 name = "neo-benches"
 version = "0.7.2"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 neo-core = { path = "../neo-core" }
+neo-crypto = { path = "../neo-crypto" }
 neo-io = { path = "../neo-io" }
 neo-primitives = { path = "../neo-primitives" }
 neo-vm-rs = { workspace = true }

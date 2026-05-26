@@ -22,7 +22,7 @@ use neo_vm_rs::OpCode;
 pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;
 
 macro_rules! register_jump_handlers {
-    ($jump_table:expr; $($opcode:expr => $handler:expr),+ $(,)?) => {
+    ($jump_table:expr_2021; $($opcode:expr_2021 => $handler:expr_2021),+ $(,)?) => {
         $(
             $jump_table.register($opcode, $handler);
         )+

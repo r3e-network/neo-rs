@@ -6,10 +6,10 @@
 //! - Block/transaction serialization
 //! - Chain state operations
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use neo_core::state::{StateChanges, StateTrieManager, StorageItem, StorageKey};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
+use neo_tests::state::{StateChanges, StateTrieManager, StorageItem, StorageKey};
 
 // ============================================================================
 // Cryptographic Benchmarks

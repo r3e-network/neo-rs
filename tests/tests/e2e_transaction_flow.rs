@@ -2,11 +2,11 @@
 
 use neo_core::network::p2p::payloads::{Signer, Transaction, TransactionAttribute, WitnessScope};
 
-use neo_core::mempool::{Mempool, MempoolConfig};
-use neo_core::state::{
+use neo_core::UInt160;
+use neo_tests::mempool::{Mempool, MempoolConfig};
+use neo_tests::state::{
     AccountState, MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState,
 };
-use neo_core::{UInt160, UInt256};
 use neo_vm_rs::OpCode;
 
 // Creates a test account with NEO and GAS balances
@@ -181,8 +181,8 @@ fn test_contract_storage_updates() {
     assert_eq!(stored.as_bytes(), &[0x01, 0x02, 0x03, 0x04]);
 }
 
-#[test]
-fn test_concurrent_transaction_processing() {
+#[tokio::test]
+async fn test_concurrent_transaction_processing() {
     use std::sync::Arc;
     use tokio::sync::Mutex;
 

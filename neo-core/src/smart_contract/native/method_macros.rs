@@ -4,13 +4,13 @@ macro_rules! neo_native_methods {
     (
         $(
             $kind:tt $name:literal,
-            fee = $fee:expr,
+            fee = $fee:expr_2021,
             flags = [$($flag:ident),* $(,)?],
             params = [$($param:ident),* $(,)?],
             returns = $return_type:ident
             $(, active = $active:ident)?
             $(, deprecated = $deprecated:ident)?
-            $(, storage_fee = $storage_fee:expr)?
+            $(, storage_fee = $storage_fee:expr_2021)?
             $(, names = [$($param_name:literal),* $(,)?])?
         );+ $(;)?
     ) => {
@@ -51,13 +51,13 @@ macro_rules! neo_native_method_metadata {
         {
             $(
                 $kind:tt $name:literal,
-                fee = $fee:expr,
+                fee = $fee:expr_2021,
                 flags = [$($flag:ident),* $(,)?],
                 params = [$($param:ident),* $(,)?],
                 returns = $return_type:ident
                 $(, active = $active:ident)?
                 $(, deprecated = $deprecated:ident)?
-                $(, storage_fee = $storage_fee:expr)?
+                $(, storage_fee = $storage_fee:expr_2021)?
                 $(, names = [$($param_name:literal),* $(,)?])?
                 => $handler_kind:ident $handler:ident
             );+ $(;)?
@@ -80,36 +80,36 @@ macro_rules! neo_native_method_metadata {
 }
 
 macro_rules! neo_native_method_dispatch {
-    (@call $contract:expr, $engine:expr, $args:expr, engine, $handler:ident) => {
+    (@call $contract:expr_2021, $engine:expr_2021, $args:expr_2021, engine, $handler:ident) => {
         $contract.$handler($engine, $args)
     };
 
-    (@call $contract:expr, $engine:expr, $args:expr, engine_only, $handler:ident) => {
+    (@call $contract:expr_2021, $engine:expr_2021, $args:expr_2021, engine_only, $handler:ident) => {
         $contract.$handler($engine)
     };
 
-    (@call $contract:expr, $engine:expr, $args:expr, args, $handler:ident) => {
+    (@call $contract:expr_2021, $engine:expr_2021, $args:expr_2021, args, $handler:ident) => {
         $contract.$handler($args)
     };
 
     (
-        $contract:expr,
-        $engine:expr,
-        $method:expr,
-        $args:expr,
+        $contract:expr_2021,
+        $engine:expr_2021,
+        $method:expr_2021,
+        $args:expr_2021,
         aliases = [$($alias:literal => $alias_kind:ident $alias_handler:ident),* $(,)?],
-        unknown = $unknown:expr
+        unknown = $unknown:expr_2021
         ;
         {
             $(
                 $kind:tt $name:literal,
-                fee = $fee:expr,
+                fee = $fee:expr_2021,
                 flags = [$($flag:ident),* $(,)?],
                 params = [$($param:ident),* $(,)?],
                 returns = $return_type:ident
                 $(, active = $active:ident)?
                 $(, deprecated = $deprecated:ident)?
-                $(, storage_fee = $storage_fee:expr)?
+                $(, storage_fee = $storage_fee:expr_2021)?
                 $(, names = [$($param_name:literal),* $(,)?])?
                 => $handler_kind:ident $handler:ident
             );+ $(;)?
@@ -166,7 +166,7 @@ macro_rules! neo_native_contract_methods {
         $contract:ty,
         table = $table:ident,
         aliases = [$($alias:literal => $alias_kind:ident $alias_handler:ident),* $(,)?],
-        unknown = $unknown:expr
+        unknown = $unknown:expr_2021
         $(,)?
     ) => {
         impl $contract {

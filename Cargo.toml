@@ -91,8 +91,8 @@ exclude = [
 
 [workspace.package]
 version = "0.7.2"
-edition = "2021"
-rust-version = "1.75"
+edition = "2024"
+rust-version = "1.85"
 authors = [
     "R3E Network <jimmy@r3e.network>"
 ]
@@ -106,7 +106,7 @@ readme = "README.md"
 
 [workspace.metadata]
 # Minimum supported Rust version policy
-msrv = "1.75"
+msrv = "1.85"
 
 [workspace.dependencies]
 # === Internal crates ===
@@ -179,8 +179,7 @@ sha2 = "0.10"
 sha3 = "0.10"
 ripemd = "0.1"
 blake2 = "0.10"
-# 1.0.4 depends on constant_time_eq 0.4.2, whose manifest uses edition2024.
-blake2b_simd = "=1.0.3"
+blake2b_simd = "1.0"
 
 # Random number generation
 rand = "0.8"

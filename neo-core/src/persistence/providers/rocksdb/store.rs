@@ -159,7 +159,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         let result = self.db.get(raw).ok().flatten().map(StorageItem::from_bytes);
 
         // Cache the result if found
-        if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
+        if let (Some(cache), Some(item)) = (&self.read_cache, &result) {
             let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), item.clone(), size);
         }
@@ -541,7 +541,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         let raw = key.to_array();
         if let Some(change) = self.pending_change(raw.as_slice()) {
             let result = change.map(StorageItem::from_bytes);
-            if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
+            if let (Some(cache), Some(item)) = (&self.read_cache, &result) {
                 let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                 cache.put(key.clone(), item.clone(), size);
             }
@@ -563,7 +563,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
             .map(StorageItem::from_bytes);
 
         // Cache the result if found and cache is configured
-        if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
+        if let (Some(cache), Some(item)) = (&self.read_cache, &result) {
             let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), item.clone(), size);
         }

@@ -9,7 +9,7 @@ macro_rules! event_descriptor {
     };
 
     (
-        $name:expr,
+        $name:expr_2021,
         expect = $expect_name:literal,
         [$($param_name:literal => $param_type:ident),* $(,)?]
     ) => {
@@ -17,7 +17,7 @@ macro_rules! event_descriptor {
     };
 
     (
-        @build $name:expr,
+        @build $name:expr_2021,
         $expect_name:literal,
         [$($param_name:literal => $param_type:ident),* $(,)?]
     ) => {

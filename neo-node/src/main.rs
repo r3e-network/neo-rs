@@ -86,12 +86,21 @@ fn maybe_enable_import_batch_profile(cli: &NodeCli) {
         return;
     }
 
-    std::env::set_var("NEO_ROCKSDB_BATCH_PROFILE", "high_throughput");
+    set_env_var("NEO_ROCKSDB_BATCH_PROFILE", "high_throughput");
     info!(
         target: "neo",
         profile = "high_throughput",
         "auto-selected RocksDB high-throughput batch profile for --import-acc (set NEO_ROCKSDB_BATCH_PROFILE to override)"
     );
+}
+
+fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, value: V) {
+    // SAFETY: This runs during process startup before the Tokio runtime and
+    // worker threads are created, and only sets neo-node's own default profile.
+    #[allow(unused_unsafe)]
+    unsafe {
+        std::env::set_var(key, value);
+    }
 }
 
 #[cfg(test)]

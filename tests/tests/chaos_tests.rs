@@ -8,14 +8,14 @@
 //! - Concurrent access stress tests
 
 use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
-use neo_core::state::{
-    MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
-};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
+use neo_tests::state::{
+    MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
+};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 // ============================================================================
 // Test Helpers
@@ -40,13 +40,7 @@ async fn test_consensus_timeout_triggers_view_change() {
     let (tx, mut rx) = mpsc::channel(100);
     let validators = create_test_validators(7);
 
-    let mut service = ConsensusService::new(
-        0x4E454F,
-        validators,
-        Some(1),
-        vec![0u8; 32],
-        tx,
-    );
+    let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![0u8; 32], tx);
 
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 

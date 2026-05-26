@@ -258,7 +258,7 @@ impl RpcServerBlockchain {
         }
 
         let mut json = tx.to_json(system.settings());
-        if let (Value::Object(ref mut obj), Some(state)) = (&mut json, state) {
+        if let (Value::Object(obj), Some(state)) = (&mut json, state) {
             let block_index = state.block_index();
             let current_index = ledger.current_index(&store).map_err(internal_error)?;
             let confirmations = current_index.saturating_sub(block_index).saturating_add(1);

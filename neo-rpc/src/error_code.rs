@@ -7,7 +7,7 @@ macro_rules! rpc_error_codes {
     (
         $(
             $(#[$meta:meta])*
-            $variant:ident = $code:expr => $message:expr, standard = $standard:expr;
+            $variant:ident = $code:expr_2021 => $message:expr_2021, standard = $standard:expr_2021;
         )+
     ) => {
         /// Standard JSON-RPC 2.0 error codes and Neo-specific error codes.

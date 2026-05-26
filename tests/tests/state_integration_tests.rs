@@ -6,12 +6,12 @@
 //! - Mempool operations
 //! - State persistence and rollback
 
-use neo_core::mempool::{MempoolConfig};
-use neo_core::mempool::Mempool;
-use neo_core::state::{
+use neo_primitives::{UInt160, UInt256};
+use neo_tests::mempool::Mempool;
+use neo_tests::mempool::MempoolConfig;
+use neo_tests::state::{
     MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
 };
-use neo_primitives::{UInt160, UInt256};
 
 // ============================================================================
 // WorldState Tests

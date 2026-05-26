@@ -136,7 +136,7 @@ pub enum ProtocolMessage {
 
 macro_rules! serialize_protocol_message {
     (
-        $message:expr;
+        $message:expr_2021;
         payload { $($payload_variant:ident),+ $(,)? }
         raw { $($raw_variant:ident),+ $(,)? }
         empty { $($empty_variant:ident),+ $(,)? }

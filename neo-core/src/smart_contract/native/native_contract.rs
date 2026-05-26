@@ -1,5 +1,6 @@
 //! Base native contract trait and types.
 
+use crate::UInt160;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
@@ -11,7 +12,6 @@ use crate::smart_contract::manifest::{
 };
 use crate::smart_contract::native::HardforkActivable;
 use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
-use crate::UInt160;
 use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -372,7 +372,7 @@ impl BaseNativeContract {
 #[macro_export]
 macro_rules! impl_native_contract {
     // Arm 1: hash is a struct field (ident) — generates `self.$hash_field`
-    ($hash_field:ident, $name:expr, $methods_field:ident) => {
+    ($hash_field:ident, $name:expr_2021, $methods_field:ident) => {
         fn hash(&self) -> $crate::UInt160 {
             self.$hash_field
         }
@@ -399,7 +399,7 @@ macro_rules! impl_native_contract {
         }
     };
     // Arm 2: hash is an arbitrary expression
-    ($hash:expr, $name:expr, $methods_field:ident) => {
+    ($hash:expr_2021, $name:expr_2021, $methods_field:ident) => {
         fn hash(&self) -> $crate::UInt160 {
             $hash
         }

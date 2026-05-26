@@ -79,7 +79,7 @@ impl TransactionManagerFactory {
 
         // Generate random nonce
         let mut rng = rand::thread_rng();
-        let nonce = rng.gen::<u32>();
+        let nonce = rng.r#gen::<u32>();
 
         // Create transaction
         let mut tx = Transaction::new();
