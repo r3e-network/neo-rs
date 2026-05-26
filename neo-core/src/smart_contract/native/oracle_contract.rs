@@ -107,8 +107,10 @@ mod tests {
     use super::*;
     use crate::persistence::DataCache;
     use crate::protocol_settings::ProtocolSettings;
+    use crate::smart_contract::call_flags::CallFlags;
     use crate::smart_contract::native::NativeContract;
     use crate::smart_contract::trigger_type::TriggerType;
+    use crate::smart_contract::ContractParameterType;
     use std::sync::Arc;
 
     fn application_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
@@ -122,6 +124,78 @@ mod tests {
             None,
         )
         .expect("application engine")
+    }
+
+    #[test]
+    fn native_methods_match_oracle_protocol_metadata() {
+        let oracle = OracleContract::new();
+        let methods = oracle.methods();
+
+        assert_eq!(methods.len(), 5);
+
+        let request = &methods[0];
+        assert_eq!(request.name, "request");
+        assert_eq!(request.cpu_fee, 0);
+        assert_eq!(request.storage_fee, 0);
+        assert!(!request.safe);
+        assert_eq!(
+            request.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+        );
+        assert_eq!(
+            request.parameters,
+            vec![
+                ContractParameterType::String,
+                ContractParameterType::String,
+                ContractParameterType::String,
+                ContractParameterType::Any,
+                ContractParameterType::Integer,
+            ]
+        );
+        assert_eq!(
+            request.parameter_names,
+            vec!["url", "filter", "callback", "userData", "gasForResponse"]
+        );
+        assert_eq!(request.return_type, ContractParameterType::Void);
+
+        let get_price = &methods[1];
+        assert_eq!(get_price.name, "getPrice");
+        assert_eq!(get_price.cpu_fee, 1 << 15);
+        assert!(get_price.safe);
+        assert_eq!(get_price.required_call_flags, CallFlags::READ_STATES.bits());
+        assert!(get_price.parameters.is_empty());
+        assert_eq!(get_price.return_type, ContractParameterType::Integer);
+
+        let set_price = &methods[2];
+        assert_eq!(set_price.name, "setPrice");
+        assert_eq!(set_price.cpu_fee, 1 << 15);
+        assert!(!set_price.safe);
+        assert_eq!(set_price.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(set_price.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(set_price.parameter_names, vec!["price"]);
+        assert_eq!(set_price.return_type, ContractParameterType::Void);
+
+        let finish = &methods[3];
+        assert_eq!(finish.name, "finish");
+        assert_eq!(finish.cpu_fee, 0);
+        assert!(!finish.safe);
+        assert_eq!(
+            finish.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY).bits()
+        );
+        assert!(finish.parameters.is_empty());
+        assert_eq!(finish.return_type, ContractParameterType::Void);
+
+        let verify = &methods[4];
+        assert_eq!(verify.name, "verify");
+        assert_eq!(verify.cpu_fee, 1 << 15);
+        assert!(verify.safe);
+        assert_eq!(verify.required_call_flags, 0);
+        assert!(verify.parameters.is_empty());
+        assert_eq!(verify.return_type, ContractParameterType::Boolean);
+
+        assert!(methods.iter().all(|method| method.active_in.is_none()));
+        assert!(methods.iter().all(|method| method.deprecated_in.is_none()));
     }
 
     #[test]

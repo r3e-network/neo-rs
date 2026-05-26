@@ -137,6 +137,64 @@ macro_rules! neo_native_method_dispatch {
     }};
 }
 
+macro_rules! neo_native_contract_methods {
+    ($contract:ty, table = $table:ident $(,)?) => {
+        $crate::smart_contract::native::method_macros::neo_native_contract_methods!(
+            $contract,
+            table = $table,
+            aliases = []
+        );
+    };
+
+    (
+        $contract:ty,
+        table = $table:ident,
+        aliases = [$($alias:literal => $alias_kind:ident $alias_handler:ident),* $(,)?]
+        $(,)?
+    ) => {
+        $crate::smart_contract::native::method_macros::neo_native_contract_methods!(
+            $contract,
+            table = $table,
+            aliases = [$($alias => $alias_kind $alias_handler),*],
+            unknown = |method| $crate::error::CoreError::native_contract(
+                ::std::format!("Unknown method: {}", method)
+            )
+        );
+    };
+
+    (
+        $contract:ty,
+        table = $table:ident,
+        aliases = [$($alias:literal => $alias_kind:ident $alias_handler:ident),* $(,)?],
+        unknown = $unknown:expr
+        $(,)?
+    ) => {
+        impl $contract {
+            pub(super) fn native_methods() -> ::std::vec::Vec<$crate::smart_contract::native::NativeMethod> {
+                $table!([$crate::smart_contract::native::method_macros::neo_native_method_metadata];)
+            }
+
+            pub(super) fn dispatch_method(
+                &self,
+                engine: &mut $crate::smart_contract::ApplicationEngine,
+                method: &str,
+                args: &[::std::vec::Vec<u8>],
+            ) -> $crate::error::CoreResult<::std::vec::Vec<u8>> {
+                $table!(
+                    [$crate::smart_contract::native::method_macros::neo_native_method_dispatch];
+                    self,
+                    engine,
+                    method,
+                    args,
+                    aliases = [$($alias => $alias_kind $alias_handler),*],
+                    unknown = $unknown
+                )
+            }
+        }
+    };
+}
+
+pub(crate) use neo_native_contract_methods;
 pub(crate) use neo_native_method_dispatch;
 pub(crate) use neo_native_method_metadata;
 pub(crate) use neo_native_methods;
