@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 protocol_enum_repr! {
+    all;
+
     /// Represents a hardfork in the Neo blockchain (matches C# Hardfork enum exactly).
     ///
     /// Hardforks are named after mythological creatures in alphabetical order.
@@ -30,26 +32,6 @@ protocol_enum_repr! {
 }
 
 impl Hardfork {
-    /// Returns all known hardforks in declaration order.
-    #[must_use]
-    pub const fn all() -> [Self; 7] {
-        [
-            Self::HfAspidochelone,
-            Self::HfBasilisk,
-            Self::HfCockatrice,
-            Self::HfDomovoi,
-            Self::HfEchidna,
-            Self::HfFaun,
-            Self::HfGorgon,
-        ]
-    }
-
-    /// Returns the number of known hardforks.
-    #[must_use]
-    pub const fn count() -> usize {
-        7
-    }
-
     /// Returns the hardfork name as a string.
     #[must_use]
     pub const fn name(&self) -> &'static str {
@@ -108,6 +90,8 @@ mod tests {
     fn test_hardfork_all() {
         let all = Hardfork::all();
         assert_eq!(all.len(), 7);
+        assert_eq!(Hardfork::COUNT, 7);
+        assert_eq!(Hardfork::ALL, all);
         assert_eq!(all[0], Hardfork::HfAspidochelone);
         assert_eq!(all[6], Hardfork::HfGorgon);
     }

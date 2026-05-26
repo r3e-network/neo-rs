@@ -9,6 +9,17 @@ macro_rules! __protocol_enum_display {
     };
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __protocol_enum_count {
+    ($($variant:ident),+ $(,)?) => {
+        <[()]>::len(&[$($crate::__protocol_enum_count!(@unit $variant)),+])
+    };
+    (@unit $variant:ident) => {
+        ()
+    };
+}
+
 /// Generates a `#[repr(u8)]` protocol enum with standard boilerplate.
 ///
 /// Each variant is specified as `Name = BYTE_VALUE`, optionally preceded by
@@ -188,6 +199,49 @@ macro_rules! impl_protocol_enum_from_str {
 /// serde's derived enum-name shape while still needing protocol byte helpers.
 #[macro_export]
 macro_rules! protocol_enum_repr {
+    (
+        all;
+        $(#[$enum_meta:meta])*
+        $vis:vis $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident = $byte:expr $(=> $display:expr)?
+            ),+ $(,)?
+        }
+    ) => {
+        $crate::protocol_enum_repr! {
+            $(#[$enum_meta])*
+            $vis $name {
+                $(
+                    $(#[$variant_meta])*
+                    $variant = $byte $(=> $display)?
+                ),+
+            }
+        }
+
+        impl $name {
+            /// All known values in declaration order.
+            pub const ALL: [Self; $crate::__protocol_enum_count!($($variant),+)] = [
+                $(Self::$variant),+
+            ];
+
+            /// Number of known values.
+            pub const COUNT: usize = Self::ALL.len();
+
+            /// Returns all known values in declaration order.
+            #[must_use]
+            pub const fn all() -> [Self; $crate::__protocol_enum_count!($($variant),+)] {
+                Self::ALL
+            }
+
+            /// Returns the number of known values.
+            #[must_use]
+            pub const fn count() -> usize {
+                Self::COUNT
+            }
+        }
+    };
+
     (
         $(#[$enum_meta:meta])*
         $vis:vis $name:ident {
