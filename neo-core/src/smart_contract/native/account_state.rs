@@ -1,6 +1,7 @@
 //! AccountState - matches C# Neo.SmartContract.Native.AccountState exactly
 
 use crate::error::CoreError;
+use crate::smart_contract::native::stack_value_numeric::stack_value_to_bigint;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 
@@ -45,18 +46,6 @@ impl AccountState {
         Ok(())
     }
 
-    fn stack_value_to_bigint(value: &StackValue) -> Option<BigInt> {
-        match value {
-            StackValue::Integer(value) => Some(BigInt::from(*value)),
-            StackValue::Boolean(value) => Some(BigInt::from(i32::from(*value))),
-            StackValue::BigInteger(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
-                Some(BigInt::from_signed_bytes_le(bytes))
-            }
-            _ => None,
-        }
-    }
-
     /// Converts to a neo-vm-rs stack value.
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(vec![StackValue::BigInteger(
@@ -68,7 +57,7 @@ impl AccountState {
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         if let StackValue::Struct(items) = stack_value {
             if let Some(first) = items.first() {
-                if let Some(balance) = Self::stack_value_to_bigint(first) {
+                if let Some(balance) = stack_value_to_bigint(first) {
                     self.balance = balance;
                 }
             }

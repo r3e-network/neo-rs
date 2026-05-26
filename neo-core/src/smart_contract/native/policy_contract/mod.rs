@@ -12,6 +12,9 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::manifest::ContractEventDescriptor;
+use crate::smart_contract::native::stack_value_numeric::{
+    stack_value_to_bigint, stack_value_to_u32,
+};
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
@@ -47,18 +50,6 @@ impl Default for WhitelistedContract {
 }
 
 impl WhitelistedContract {
-    fn stack_value_to_bigint(value: &StackValue) -> Option<BigInt> {
-        match value {
-            StackValue::Integer(value) => Some(BigInt::from(*value)),
-            StackValue::Boolean(value) => Some(BigInt::from(i32::from(*value))),
-            StackValue::BigInteger(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
-                Some(BigInt::from_signed_bytes_le(bytes))
-            }
-            _ => None,
-        }
-    }
-
     /// Converts to a neo-vm-rs stack value.
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(vec![
@@ -96,12 +87,11 @@ impl WhitelistedContract {
             }
         }
 
-        if let Some(count) = Self::stack_value_to_bigint(&items[2]).and_then(|value| value.to_u32())
-        {
+        if let Some(count) = stack_value_to_u32(&items[2]) {
             self.arg_count = count;
         }
 
-        if let Some(fee) = Self::stack_value_to_bigint(&items[3]).and_then(|value| value.to_i64()) {
+        if let Some(fee) = stack_value_to_bigint(&items[3]).and_then(|value| value.to_i64()) {
             self.fixed_fee = fee;
         }
 

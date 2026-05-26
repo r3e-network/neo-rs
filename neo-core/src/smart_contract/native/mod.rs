@@ -42,6 +42,7 @@ pub mod role;
 pub mod role_management;
 /// Security fixes for native contracts.
 pub mod security_fixes;
+mod stack_value_numeric;
 /// Standard library native contract.
 pub mod std_lib;
 /// Token management (NFT) native contract.

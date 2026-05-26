@@ -1,7 +1,9 @@
 use crate::error::{CoreError, CoreError as Error, CoreResult as Result};
+use crate::smart_contract::native::stack_value_numeric::{
+    stack_value_to_bigint, stack_value_to_u32,
+};
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
 
 /// Notary deposit state (matches C# Deposit in Notary).
 #[derive(Clone, Debug, Default)]
@@ -16,30 +18,6 @@ impl Deposit {
     /// Creates a new deposit state.
     pub fn new(amount: BigInt, till: u32) -> Self {
         Self { amount, till }
-    }
-
-    fn stack_value_to_bigint(value: &StackValue) -> Option<BigInt> {
-        match value {
-            StackValue::Integer(value) => Some(BigInt::from(*value)),
-            StackValue::Boolean(value) => Some(BigInt::from(i32::from(*value))),
-            StackValue::BigInteger(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
-                Some(BigInt::from_signed_bytes_le(bytes))
-            }
-            _ => None,
-        }
-    }
-
-    fn stack_value_to_u32(value: &StackValue) -> Option<u32> {
-        match value {
-            StackValue::Integer(value) => u32::try_from(*value).ok(),
-            StackValue::Boolean(value) => Some(u32::from(*value)),
-            StackValue::BigInteger(bytes) => BigInt::from_signed_bytes_le(bytes).to_u32(),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
-                BigInt::from_signed_bytes_le(bytes).to_u32()
-            }
-            _ => None,
-        }
     }
 
     /// Converts to a neo-vm-rs stack value.
@@ -60,11 +38,11 @@ impl Deposit {
                 return Ok(());
             }
 
-            if let Some(amount) = Self::stack_value_to_bigint(&items[0]) {
+            if let Some(amount) = stack_value_to_bigint(&items[0]) {
                 self.amount = amount;
             }
 
-            if let Some(till) = Self::stack_value_to_u32(&items[1]) {
+            if let Some(till) = stack_value_to_u32(&items[1]) {
                 self.till = till;
             }
         }

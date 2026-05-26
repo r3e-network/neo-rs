@@ -1,24 +1,13 @@
 use crate::error::CoreError;
+use crate::smart_contract::native::stack_value_numeric::{
+    stack_value_to_bigint_result, MAX_VM_INTEGER_BYTES,
+};
 use crate::vm_runtime::StackItem;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 
-const MAX_VM_INTEGER_BYTES: usize = 32;
-
 pub(super) fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, CoreError> {
-    match value {
-        StackValue::Integer(value) => Ok(BigInt::from(*value)),
-        StackValue::Boolean(value) => Ok(BigInt::from(i32::from(*value))),
-        StackValue::BigInteger(bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
-        StackValue::ByteString(bytes) | StackValue::Buffer(bytes)
-            if bytes.len() <= MAX_VM_INTEGER_BYTES =>
-        {
-            Ok(BigInt::from_signed_bytes_le(bytes))
-        }
-        _ => Err(CoreError::native_contract(
-            "cannot convert stack value to integer",
-        )),
-    }
+    stack_value_to_bigint_result(value)
 }
 
 pub(super) fn stack_value_to_bytes(value: &StackValue) -> Result<Vec<u8>, CoreError> {
