@@ -14,7 +14,7 @@ use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::Interoperable;
 use neo_core::wallets::KeyPair;
 use neo_core::witness::Witness;
-use neo_core::{Verifiable, UInt160, WitnessScope};
+use neo_core::{UInt160, Verifiable, WitnessScope};
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
@@ -41,6 +41,71 @@ fn gas_token_hash_matches_reference() {
     );
     assert_eq!(gas.symbol(), "GAS");
     assert_eq!(gas.decimals(), 8);
+}
+
+#[test]
+fn nep17_native_read_methods_share_protocol_outputs() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let signer = sample_account(0xA1);
+    let account = sample_account(0xB2).to_bytes().to_vec();
+
+    let gas = GasToken::new();
+    let mut gas_engine = make_engine(Arc::clone(&snapshot), signer);
+    let gas_total_supply = gas.total_supply_snapshot(gas_engine.snapshot_cache().as_ref());
+    assert_nep17_read_methods(
+        &gas,
+        &mut gas_engine,
+        b"GAS",
+        8,
+        amount_bytes(gas_total_supply),
+        &account,
+    );
+
+    let neo = NeoToken::new();
+    let mut neo_engine = make_engine(snapshot, signer);
+    assert_nep17_read_methods(
+        &neo,
+        &mut neo_engine,
+        b"NEO",
+        0,
+        amount_bytes(neo.total_supply()),
+        &account,
+    );
+}
+
+#[test]
+fn nep17_native_balance_of_errors_are_shared() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let signer = sample_account(0xC3);
+    let mut gas_engine = make_engine(Arc::clone(&snapshot), signer);
+    let mut neo_engine = make_engine(snapshot, signer);
+    let gas = GasToken::new();
+    let neo = NeoToken::new();
+
+    for (contract, engine) in [
+        (&gas as &dyn NativeContract, &mut gas_engine),
+        (&neo as &dyn NativeContract, &mut neo_engine),
+    ] {
+        let missing = contract
+            .invoke(engine, "balanceOf", &[])
+            .expect_err("missing account must fail");
+        assert!(
+            missing
+                .to_string()
+                .contains("balanceOf expects exactly one argument"),
+            "{missing}"
+        );
+
+        let short = contract
+            .invoke(engine, "balanceOf", &[vec![1, 2, 3]])
+            .expect_err("short account must fail");
+        assert!(
+            short
+                .to_string()
+                .contains("Account argument must be 20 bytes"),
+            "{short}"
+        );
+    }
 }
 
 #[test]
@@ -108,6 +173,48 @@ fn make_engine(snapshot: Arc<DataCache>, signer: UInt160) -> ApplicationEngine {
         None,
     )
     .expect("engine")
+}
+
+fn assert_nep17_read_methods(
+    contract: &dyn NativeContract,
+    engine: &mut ApplicationEngine,
+    symbol: &[u8],
+    decimals: u8,
+    total_supply: Vec<u8>,
+    account: &[u8],
+) {
+    assert_eq!(
+        contract
+            .invoke(engine, "symbol", &[])
+            .expect("symbol invoke"),
+        symbol
+    );
+    assert_eq!(
+        contract
+            .invoke(engine, "decimals", &[])
+            .expect("decimals invoke"),
+        vec![decimals]
+    );
+    assert_eq!(
+        contract
+            .invoke(engine, "totalSupply", &[])
+            .expect("totalSupply invoke"),
+        total_supply
+    );
+    assert_eq!(
+        contract
+            .invoke(engine, "balanceOf", &[account.to_vec()])
+            .expect("balanceOf invoke"),
+        amount_bytes(BigInt::zero())
+    );
+}
+
+fn amount_bytes(amount: BigInt) -> Vec<u8> {
+    let mut bytes = amount.to_signed_bytes_le();
+    if bytes.is_empty() {
+        bytes.push(0);
+    }
+    bytes
 }
 
 fn sample_account(tag: u8) -> UInt160 {

@@ -64,39 +64,17 @@ impl GasToken {
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
+        if let Some(result) = self.ft_invoke_standard_read(engine, method, args) {
+            return result;
+        }
+
         match method {
-            "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
-            "decimals" => Ok(vec![Self::DECIMALS]),
-            "totalSupply" => {
-                let snapshot = engine.snapshot_cache();
-                let total = self.total_supply_snapshot(snapshot.as_ref());
-                Ok(Self::encode_amount(&total))
-            }
-            "balanceOf" => self.balance_of(engine, args),
             "transfer" => self.transfer(engine, args),
             _ => Err(CoreError::native_contract(format!(
                 "Unknown method: {}",
                 method
             ))),
         }
-    }
-
-    fn balance_of(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        if args.len() != 1 {
-            return Err(CoreError::native_contract(
-                "balanceOf expects exactly one argument".to_string(),
-            ));
-        }
-        if args[0].len() != 20 {
-            return Err(CoreError::native_contract(
-                "Account argument must be 20 bytes".to_string(),
-            ));
-        }
-        let account = UInt160::from_bytes(&args[0])
-            .map_err(|err| CoreError::native_contract(err.to_string()))?;
-        let snapshot = engine.snapshot_cache();
-        let balance = self.balance_of_snapshot(snapshot.as_ref(), &account);
-        Ok(Self::encode_amount(&balance))
     }
 
     fn transfer(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {

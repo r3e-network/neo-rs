@@ -11,26 +11,18 @@ impl NeoToken {
         }
     }
 
-    pub(super) fn total_supply_bytes() -> Vec<u8> {
-        let mut bytes = BigInt::from(Self::TOTAL_SUPPLY).to_signed_bytes_le();
-        if bytes.is_empty() {
-            bytes.push(0);
-        }
-        bytes
-    }
-
     pub(super) fn invoke_method(
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
+        if let Some(result) = self.ft_invoke_standard_read(engine, method, args) {
+            return result;
+        }
+
         match method {
             // NEP-17 standard methods
-            "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
-            "decimals" => Ok(vec![Self::DECIMALS]),
-            "totalSupply" => Ok(Self::total_supply_bytes()),
-            "balanceOf" => self.balance_of(engine, args),
             "transfer" => self.transfer(engine, args),
             // Governance query methods
             "unclaimedGas" => self.unclaimed_gas_invoke(engine, args),

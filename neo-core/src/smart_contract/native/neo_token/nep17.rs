@@ -43,23 +43,6 @@ impl NeoToken {
         ECPoint::from_bytes(data).map_err(|err| CoreError::native_contract(err.to_string()))
     }
 
-    /// balanceOf implementation - returns NEO balance of an account
-    pub(super) fn balance_of(
-        &self,
-        engine: &mut ApplicationEngine,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        if args.len() != 1 {
-            return Err(CoreError::native_contract(
-                "balanceOf expects exactly one argument".to_string(),
-            ));
-        }
-        let account = self.read_account(&args[0])?;
-        let snapshot = engine.snapshot_cache();
-        let balance = self.balance_of_snapshot(snapshot.as_ref(), &account)?;
-        Ok(Self::encode_amount(&balance))
-    }
-
     /// transfer implementation - transfers NEO between accounts
     pub(super) fn transfer(
         &self,

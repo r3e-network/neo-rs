@@ -105,6 +105,45 @@ pub trait FungibleToken: NativeContract {
         vec![PREFIX_TOTAL_SUPPLY]
     }
 
+    /// Invokes the shared read-only NEP-17 methods implemented by every
+    /// fungible native token.
+    fn ft_invoke_standard_read(
+        &self,
+        engine: &ApplicationEngine,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> Option<Result<Vec<u8>>>
+    where
+        Self: Sized,
+    {
+        match method {
+            "symbol" => Some(Ok(self.ft_symbol().as_bytes().to_vec())),
+            "decimals" => Some(Ok(vec![self.ft_decimals()])),
+            "totalSupply" => Some(
+                self.ft_total_supply(engine)
+                    .map(|amount| Self::ft_encode_amount(&amount)),
+            ),
+            "balanceOf" => Some(self.ft_invoke_balance_of(engine, args)),
+            _ => None,
+        }
+    }
+
+    /// Invokes the shared NEP-17 `balanceOf` implementation.
+    fn ft_invoke_balance_of(&self, engine: &ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>>
+    where
+        Self: Sized,
+    {
+        if args.len() != 1 {
+            return Err(Error::native_contract(
+                "balanceOf expects exactly one argument".to_string(),
+            ));
+        }
+
+        let account = Self::ft_read_account(&args[0])?;
+        self.ft_balance_of(engine, &account)
+            .map(|balance| Self::ft_encode_amount(&balance))
+    }
+
     /// Emits a NEP-17 `Transfer` event.
     ///
     /// This is the canonical implementation matching C#
