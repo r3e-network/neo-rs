@@ -2,6 +2,7 @@
 //!
 //! This module provides data compression and decompression capabilities.
 
+use crate::compression::{compress_lz4, decompress_lz4, CompressionError as Lz4CompressionError};
 use crate::error::CoreError;
 use crate::persistence::storage::CompressionAlgorithm;
 use std::io::Cursor;
@@ -9,13 +10,18 @@ use std::io::Cursor;
 // Compression is always compiled in; the previous feature gate is removed to keep
 // behaviour deterministic across builds.
 
+const MAX_PERSISTENCE_LZ4_OUTPUT_SIZE: usize = u32::MAX as usize;
+
+fn map_lz4_error(operation: &str, error: Lz4CompressionError) -> CoreError {
+    CoreError::io(format!("LZ4 {operation} failed: {error}"))
+}
+
 /// Compresses data using the specified algorithm (production-ready implementation)
 pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<Vec<u8>> {
     match algorithm {
         CompressionAlgorithm::None => Ok(Vec::from(data)),
         CompressionAlgorithm::Lz4 => {
-            use lz4_flex::compress_prepend_size;
-            Ok(compress_prepend_size(data))
+            compress_lz4(data).map_err(|err| map_lz4_error("compression", err))
         }
         CompressionAlgorithm::Zstd => zstd::stream::encode_all(Cursor::new(data), 0)
             .map_err(|e| CoreError::io(format!("ZSTD compression failed: {e}"))),
@@ -30,9 +36,8 @@ pub fn decompress(
     match algorithm {
         CompressionAlgorithm::None => Ok(Vec::from(compressed_data)),
         CompressionAlgorithm::Lz4 => {
-            use lz4_flex::decompress_size_prepended;
-            decompress_size_prepended(compressed_data)
-                .map_err(|e| CoreError::io(format!("LZ4 decompression failed: {}", e)))
+            decompress_lz4(compressed_data, MAX_PERSISTENCE_LZ4_OUTPUT_SIZE)
+                .map_err(|err| map_lz4_error("decompression", err))
         }
         CompressionAlgorithm::Zstd => zstd::stream::decode_all(Cursor::new(compressed_data))
             .map_err(|e| CoreError::io(format!("ZSTD decompression failed: {e}"))),
@@ -57,7 +62,7 @@ pub fn estimate_compressed_size(data: &[u8], algorithm: CompressionAlgorithm) ->
             let base_ratio = 0.5; // Conservative 2:1 ratio
             let blockchain_adjustment = 0.1; // Blockchain data compresses slightly better
             let estimated_ratio = base_ratio - blockchain_adjustment;
-            (data.len() as f64 * estimated_ratio) as usize + 3 // +3 for our prefix
+            (data.len() as f64 * estimated_ratio) as usize + 4 // +4 for LZ4 length prefix
         }
         CompressionAlgorithm::Zstd => {
             // Based on empirical data from Neo blockchain compression analysis
@@ -114,6 +119,14 @@ mod tests {
         let compressed = compress(&data, CompressionAlgorithm::Lz4).unwrap();
         let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4).unwrap();
         assert_eq!(decompressed, data);
+    }
+
+    #[test]
+    fn decompress_lz4_missing_length_prefix_fails() {
+        let err = decompress(&[1, 2, 3], CompressionAlgorithm::Lz4).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("compressed data missing length prefix"));
     }
 
     #[test]
@@ -185,6 +198,6 @@ mod tests {
         let estimated_none = estimate_compressed_size(&data, CompressionAlgorithm::None);
         let estimated_lz4 = estimate_compressed_size(&data, CompressionAlgorithm::Lz4);
         assert_eq!(estimated_none, 0);
-        assert_eq!(estimated_lz4, 3); // +3 for prefix
+        assert_eq!(estimated_lz4, 4); // +4 for LZ4 length prefix
     }
 }
