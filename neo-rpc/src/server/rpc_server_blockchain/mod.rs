@@ -5,16 +5,16 @@ use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashO
 use crate::server::model::contract_name_or_hash_or_id::ContractNameOrHashOrId;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::internal_error;
+use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
 use neo_core::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
 };
-use neo_core::neo_io::{BinaryWriter, Serializable};
+use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::{
-    block::Block, header::Header, transaction::Transaction, witness::Witness as PayloadWitness,
+    block::Block, header::Header, witness::Witness as PayloadWitness,
 };
 use neo_core::persistence::seek_direction::SeekDirection;
 use neo_core::persistence::ReadOnlyStoreGeneric;
@@ -126,8 +126,7 @@ impl RpcServerBlockchain {
             ));
         }
 
-        let bytes = Self::serialize_block(&block)?;
-        Ok(Value::String(BASE64_STANDARD.encode(bytes)))
+        Ok(Value::String(serialize_to_base64(&block)?))
     }
 
     fn get_block_header(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -150,8 +149,7 @@ impl RpcServerBlockchain {
             ));
         }
 
-        let bytes = Self::serialize_header(header)?;
-        Ok(Value::String(BASE64_STANDARD.encode(bytes)))
+        Ok(Value::String(serialize_to_base64(header)?))
     }
 
     fn get_block_sys_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -239,8 +237,7 @@ impl RpcServerBlockchain {
 
         if !verbose {
             if let Some(tx) = tx_from_pool {
-                let bytes = Self::serialize_transaction(&tx)?;
-                return Ok(Value::String(BASE64_STANDARD.encode(bytes)));
+                return Ok(Value::String(serialize_to_base64(tx.as_ref())?));
             }
         }
 
@@ -257,8 +254,7 @@ impl RpcServerBlockchain {
         let tx = transaction.ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;
 
         if !verbose {
-            let bytes = Self::serialize_transaction(&tx)?;
-            return Ok(Value::String(BASE64_STANDARD.encode(bytes)));
+            return Ok(Value::String(serialize_to_base64(&tx)?));
         }
 
         let mut json = tx.to_json(system.settings());
@@ -663,24 +659,6 @@ impl RpcServerBlockchain {
             json.insert("nextblockhash".to_string(), Value::String(hash.to_string()));
         }
         json
-    }
-
-    fn serialize_block(block: &Block) -> Result<Vec<u8>, RpcException> {
-        let mut writer = BinaryWriter::new();
-        block.serialize(&mut writer).map_err(internal_error)?;
-        Ok(writer.into_bytes())
-    }
-
-    fn serialize_header(header: &Header) -> Result<Vec<u8>, RpcException> {
-        let mut writer = BinaryWriter::new();
-        header.serialize(&mut writer).map_err(internal_error)?;
-        Ok(writer.into_bytes())
-    }
-
-    fn serialize_transaction(tx: &Transaction) -> Result<Vec<u8>, RpcException> {
-        let mut writer = BinaryWriter::new();
-        tx.serialize(&mut writer).map_err(internal_error)?;
-        Ok(writer.into_bytes())
     }
 
     fn convert_ledger_block(block: &LedgerBlock) -> Block {

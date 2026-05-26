@@ -15,12 +15,13 @@ use super::super::models::{
     RpcResponse, RpcTransaction, RpcValidator, RpcVersion,
 };
 use super::super::ClientRpcError;
+use crate::serialization;
 use crate::RpcError;
 use base64::{engine::general_purpose, Engine as _};
 use neo_config::ProtocolSettings;
 use neo_core::network::p2p::payloads::block::Block;
 use neo_core::{Signer, Transaction};
-use neo_io::{BinaryWriter, Serializable};
+use neo_io::Serializable;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
 use num_bigint::BigInt;
@@ -36,11 +37,8 @@ use super::hooks::RpcRequestOutcome;
 use super::{RpcClient, RpcClientHooks, MAX_JSON_NESTING, RPC_NAME_REGEX};
 
 fn serialize_to_base64<T: Serializable>(value: &T) -> Result<String, ClientRpcError> {
-    let mut writer = BinaryWriter::new();
-    value
-        .serialize(&mut writer)
-        .map_err(|err| ClientRpcError::new(-32603, format!("serialization failed: {err}")))?;
-    Ok(general_purpose::STANDARD.encode(writer.into_bytes()))
+    serialization::serializable_to_base64(value)
+        .map_err(|err| ClientRpcError::new(-32603, format!("serialization failed: {err}")))
 }
 
 impl RpcClient {

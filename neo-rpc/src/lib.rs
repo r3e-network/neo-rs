@@ -208,6 +208,9 @@ pub mod error;
 /// JSON-RPC error codes.
 pub mod error_code;
 
+#[cfg(any(feature = "client", feature = "server"))]
+mod serialization;
+
 /// RPC server implementation (requires `server` feature).
 #[cfg(feature = "server")]
 pub mod server;

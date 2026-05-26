@@ -4,6 +4,7 @@
 //! to eliminate code duplication.
 
 use neo_core::{UInt160, UInt256};
+use neo_io::Serializable;
 use serde_json::Value;
 use std::str::FromStr;
 
@@ -21,6 +22,15 @@ pub fn invalid_params(message: impl Into<String>) -> RpcException {
 #[inline]
 pub fn internal_error(message: impl ToString) -> RpcException {
     RpcException::from(RpcError::internal_server_error().with_data(message.to_string()))
+}
+
+/// Serializes a Neo wire-compatible payload and encodes it with standard Base64.
+#[inline]
+pub fn serialize_to_base64<T>(value: &T) -> Result<String, RpcException>
+where
+    T: Serializable + ?Sized,
+{
+    crate::serialization::serializable_to_base64(value).map_err(internal_error)
 }
 
 /// Extracts a string parameter from JSON-RPC params.
