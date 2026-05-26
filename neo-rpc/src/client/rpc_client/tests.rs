@@ -3,17 +3,16 @@ use crate::client::models::{
     RpcAccount, RpcContractState, RpcPlugin, RpcRawMemPool, RpcRequest, RpcTransferOut,
     RpcValidator,
 };
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Response, Server as HyperServer};
-use mockito::Matcher;
-use mockito::Server;
-use neo_core::big_decimal::BigDecimal;
+use mockito::{Matcher, Mock, Server, ServerGuard};
 use neo_config::ProtocolSettings;
+use neo_core::Transaction;
+use neo_core::big_decimal::BigDecimal;
 use neo_core::extensions::SerializableExtensions;
 use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::block::Block;
-use neo_core::Transaction;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
 use num_bigint::BigInt;
@@ -23,8 +22,8 @@ use std::fs;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::oneshot;
 
 fn localhost_binding_permitted() -> bool {
@@ -78,6 +77,47 @@ fn load_rpc_cases(name: &str) -> Option<Vec<JObject>> {
 enum ContractStateRequest {
     Hash(String),
     Id(i32),
+}
+
+struct RpcFixture {
+    client: RpcClient,
+    response: JObject,
+    _mock: Mock,
+    _server: ServerGuard,
+}
+
+async fn mock_no_param_fixture(case_name: &str, method: &str) -> Option<RpcFixture> {
+    if !localhost_binding_permitted() {
+        return None;
+    }
+
+    let case = load_rpc_case(case_name)?;
+    let response = case
+        .get("Response")
+        .and_then(|value| value.as_object())
+        .expect("case response")
+        .clone();
+
+    let mut server = Server::new_async().await;
+    let method = escape(method);
+    let body_re = format!(r#""method"\s*:\s*"{method}".*"params"\s*:\s*\[\s*\]"#);
+    let response_body = JToken::Object(response.clone()).to_string();
+    let mock = server
+        .mock("POST", "/")
+        .match_body(Matcher::Regex(body_re))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(response_body)
+        .create();
+
+    let url = Url::parse(&server.url()).unwrap();
+    let client = RpcClient::builder(url).build().unwrap();
+    Some(RpcFixture {
+        client,
+        response,
+        _mock: mock,
+        _server: server,
+    })
 }
 
 async fn start_slow_server(
@@ -663,36 +703,16 @@ async fn invoke_script_uses_base64_and_parses_result() {
 
 #[tokio::test]
 async fn get_block_count_matches_fixture() {
-    if !localhost_binding_permitted() {
-        return;
-    }
-
-    let Some(case) = load_rpc_case("getblockcountasync") else {
+    let Some(fixture) = mock_no_param_fixture("getblockcountasync", "getblockcount").await else {
         return;
     };
-    let response = case
-        .get("Response")
-        .and_then(|value| value.as_object())
-        .expect("case response");
-    let expected = response
+    let expected = fixture
+        .response
         .get("result")
         .and_then(|value| value.as_number())
         .expect("result") as u32;
 
-    let mut server = Server::new_async().await;
-    let body_re = r#""method"\s*:\s*"getblockcount".*"params"\s*:\s*\[\s*\]"#;
-    let response_body = JToken::Object(response.clone()).to_string();
-    let _m = server
-        .mock("POST", "/")
-        .match_body(Matcher::Regex(body_re.into()))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(response_body)
-        .create();
-
-    let url = Url::parse(&server.url()).unwrap();
-    let client = RpcClient::builder(url).build().unwrap();
-    let actual = client.get_block_count().await.expect("block count");
+    let actual = fixture.client.get_block_count().await.expect("block count");
     assert_eq!(actual, expected);
 }
 
@@ -745,36 +765,19 @@ async fn get_block_hash_matches_fixture() {
 
 #[tokio::test]
 async fn get_block_header_count_matches_fixture() {
-    if !localhost_binding_permitted() {
-        return;
-    }
-
-    let Some(case) = load_rpc_case("getblockheadercountasync") else {
+    let Some(fixture) =
+        mock_no_param_fixture("getblockheadercountasync", "getblockheadercount").await
+    else {
         return;
     };
-    let response = case
-        .get("Response")
-        .and_then(|value| value.as_object())
-        .expect("case response");
-    let expected = response
+    let expected = fixture
+        .response
         .get("result")
         .and_then(|value| value.as_number())
         .expect("result") as u32;
 
-    let mut server = Server::new_async().await;
-    let body_re = r#""method"\s*:\s*"getblockheadercount".*"params"\s*:\s*\[\s*\]"#;
-    let response_body = JToken::Object(response.clone()).to_string();
-    let _m = server
-        .mock("POST", "/")
-        .match_body(Matcher::Regex(body_re.into()))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(response_body)
-        .create();
-
-    let url = Url::parse(&server.url()).unwrap();
-    let client = RpcClient::builder(url).build().unwrap();
-    let actual = client
+    let actual = fixture
+        .client
         .get_block_header_count()
         .await
         .expect("block header count");
@@ -1228,36 +1231,19 @@ async fn get_storage_matches_fixture() {
 
 #[tokio::test]
 async fn get_connection_count_matches_fixture() {
-    if !localhost_binding_permitted() {
-        return;
-    }
-
-    let Some(case) = load_rpc_case("getconnectioncountasync") else {
+    let Some(fixture) =
+        mock_no_param_fixture("getconnectioncountasync", "getconnectioncount").await
+    else {
         return;
     };
-    let response = case
-        .get("Response")
-        .and_then(|value| value.as_object())
-        .expect("case response");
-    let expected = response
+    let expected = fixture
+        .response
         .get("result")
         .and_then(|value| value.as_number())
         .expect("result") as u32;
 
-    let mut server = Server::new_async().await;
-    let body_re = r#""method"\s*:\s*"getconnectioncount".*"params"\s*:\s*\[\s*\]"#;
-    let response_body = JToken::Object(response.clone()).to_string();
-    let _m = server
-        .mock("POST", "/")
-        .match_body(Matcher::Regex(body_re.into()))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(response_body)
-        .create();
-
-    let url = Url::parse(&server.url()).unwrap();
-    let client = RpcClient::builder(url).build().unwrap();
-    let actual = client
+    let actual = fixture
+        .client
         .get_connection_count()
         .await
         .expect("connection count");
