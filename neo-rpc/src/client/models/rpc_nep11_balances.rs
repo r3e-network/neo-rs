@@ -9,13 +9,15 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::{
+    parse_object_array_lossy, required_bigint_string, required_string, required_u32_number,
+};
 use neo_config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
 /// NEP11 balances for an address matching C# `RpcNep11Balances`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,22 +57,8 @@ impl RpcNep11Balances {
 
     /// Creates from JSON.
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let balances = json
-            .get("balance")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNep11Balance::from_json(obj).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-
-        let address = json
-            .get("address")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'address' field")?;
+        let balances = parse_object_array_lossy(json, "balance", RpcNep11Balance::from_json);
+        let address = required_string(json, "address")?;
 
         let user_script_hash = if address.starts_with("0x") {
             UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
@@ -128,10 +116,7 @@ impl RpcNep11Balance {
     }
 
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let asset_hash_str = json
-            .get("assethash")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'assethash' field")?;
+        let asset_hash_str = required_string(json, "assethash")?;
         let asset_hash = UInt160::parse(&asset_hash_str)
             .map_err(|_| format!("Invalid asset hash: {asset_hash_str}"))?;
 
@@ -152,17 +137,7 @@ impl RpcNep11Balance {
                 .map_or(0, |n| n as u8),
         };
 
-        let tokens = json
-            .get("tokens")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNep11TokenBalance::from_json(obj).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let tokens = parse_object_array_lossy(json, "tokens", RpcNep11TokenBalance::from_json);
 
         Ok(Self {
             asset_hash,
@@ -205,24 +180,12 @@ impl RpcNep11TokenBalance {
     }
 
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let token_id_str = json
-            .get("tokenid")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'tokenid' field")?;
+        let token_id_str = required_string(json, "tokenid")?;
         let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
             .map_err(|_| format!("Invalid tokenid: {token_id_str}"))?;
 
-        let amount_str = json
-            .get("amount")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'amount' field")?;
-        let amount =
-            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {amount_str}"))?;
-
-        let last_updated_block =
-            json.get("lastupdatedblock")
-                .and_then(neo_json::JToken::as_number)
-                .ok_or("Missing or invalid 'lastupdatedblock' field")? as u32;
+        let amount = required_bigint_string(json, "amount", "amount")?;
+        let last_updated_block = required_u32_number(json, "lastupdatedblock")?;
 
         Ok(Self {
             token_id,
@@ -275,5 +238,63 @@ mod tests {
         assert_eq!(parsed.balances.len(), 1);
         assert_eq!(parsed.balances[0].asset_hash, balance.asset_hash);
         assert_eq!(parsed.balances[0].tokens[0].amount, entry.amount);
+    }
+
+    #[test]
+    fn balances_and_tokens_arrays_keep_lossy_parse_behavior() {
+        let settings = ProtocolSettings::default_settings();
+
+        let valid_token = RpcNep11TokenBalance {
+            token_id: vec![0x01],
+            amount: BigInt::from(5),
+            last_updated_block: 3,
+        }
+        .to_json();
+
+        let mut malformed_token = JObject::new();
+        malformed_token.insert("tokenid".to_string(), JToken::String("01".to_string()));
+
+        let mut tokens = JArray::new();
+        tokens.add(Some(JToken::Object(valid_token)));
+        tokens.add(None);
+        tokens.add(Some(JToken::String("not an object".to_string())));
+        tokens.add(Some(JToken::Object(malformed_token)));
+
+        let mut valid_balance = RpcNep11Balance {
+            asset_hash: UInt160::zero(),
+            name: "Test".to_string(),
+            symbol: "T".to_string(),
+            decimals: 0,
+            tokens: Vec::new(),
+        }
+        .to_json();
+        valid_balance.insert("tokens".to_string(), JToken::Array(tokens));
+
+        let mut malformed_balance = JObject::new();
+        malformed_balance.insert(
+            "name".to_string(),
+            JToken::String("missing hash".to_string()),
+        );
+
+        let mut balances = JArray::new();
+        balances.add(Some(JToken::Object(valid_balance)));
+        balances.add(None);
+        balances.add(Some(JToken::String("not an object".to_string())));
+        balances.add(Some(JToken::Object(malformed_balance)));
+
+        let mut root = JObject::new();
+        root.insert("balance".to_string(), JToken::Array(balances));
+        root.insert(
+            "address".to_string(),
+            JToken::String(WalletHelper::to_address(
+                &UInt160::zero(),
+                settings.address_version,
+            )),
+        );
+
+        let parsed = RpcNep11Balances::from_json(&root, &settings).unwrap();
+        assert_eq!(parsed.balances.len(), 1);
+        assert_eq!(parsed.balances[0].tokens.len(), 1);
+        assert_eq!(parsed.balances[0].tokens[0].amount, BigInt::from(5));
     }
 }

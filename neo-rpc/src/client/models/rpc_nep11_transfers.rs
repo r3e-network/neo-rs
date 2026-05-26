@@ -9,13 +9,17 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::{
+    optional_script_hash_or_address_lossy, parse_object_array_lossy, required_bigint_string,
+    required_script_hash_or_address, required_string, required_u16_number, required_u32_number,
+    required_u64_number, required_uint256,
+};
 use neo_config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
 /// NEP11 transfers for an address matching C# `RpcNep11Transfers`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,36 +68,15 @@ impl RpcNep11Transfers {
 
     /// Creates from JSON.
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let sent = json
-            .get("sent")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.children()
-                    .iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNep11Transfer::from_json(obj, protocol_settings).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let sent = parse_object_array_lossy(json, "sent", |obj| {
+            RpcNep11Transfer::from_json(obj, protocol_settings)
+        });
 
-        let received = json
-            .get("received")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.children()
-                    .iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNep11Transfer::from_json(obj, protocol_settings).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let received = parse_object_array_lossy(json, "received", |obj| {
+            RpcNep11Transfer::from_json(obj, protocol_settings)
+        });
 
-        let address = json
-            .get("address")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'address' field")?;
+        let address = required_string(json, "address")?;
 
         let user_script_hash = if address.starts_with("0x") {
             UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
@@ -189,55 +172,15 @@ impl RpcNep11Transfer {
         let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
             .map_err(|_| format!("Invalid tokenid: {token_id_str}"))?;
 
-        let timestamp_ms = json
-            .get("timestamp")
-            .and_then(neo_json::JToken::as_number)
-            .ok_or("Missing or invalid 'timestamp' field")? as u64;
-
-        let asset_hash_str = json
-            .get("assethash")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'assethash' field")?;
-
-        let asset_hash = UInt160::parse(&asset_hash_str)
-            .or_else(|_| {
-                WalletHelper::to_script_hash(&asset_hash_str, protocol_settings.address_version)
-            })
-            .map_err(|_| format!("Invalid asset hash: {asset_hash_str}"))?;
-
-        let user_script_hash = json
-            .get("transferaddress")
-            .and_then(neo_json::JToken::as_string)
-            .and_then(|addr| {
-                if addr.starts_with("0x") {
-                    UInt160::parse(&addr).ok()
-                } else {
-                    WalletHelper::to_script_hash(&addr, protocol_settings.address_version).ok()
-                }
-            });
-
-        let amount_str = json
-            .get("amount")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'amount' field")?;
-        let amount =
-            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {amount_str}"))?;
-
-        let block_index = json
-            .get("blockindex")
-            .and_then(neo_json::JToken::as_number)
-            .ok_or("Missing or invalid 'blockindex' field")? as u32;
-
-        let transfer_notify_index =
-            json.get("transfernotifyindex")
-                .and_then(neo_json::JToken::as_number)
-                .ok_or("Missing or invalid 'transfernotifyindex' field")? as u16;
-
-        let tx_hash = json
-            .get("txhash")
-            .and_then(neo_json::JToken::as_string)
-            .and_then(|s| UInt256::parse(&s).ok())
-            .ok_or("Missing or invalid 'txhash' field")?;
+        let timestamp_ms = required_u64_number(json, "timestamp")?;
+        let asset_hash =
+            required_script_hash_or_address(json, "assethash", protocol_settings, "asset hash")?;
+        let user_script_hash =
+            optional_script_hash_or_address_lossy(json, "transferaddress", protocol_settings);
+        let amount = required_bigint_string(json, "amount", "amount")?;
+        let block_index = required_u32_number(json, "blockindex")?;
+        let transfer_notify_index = required_u16_number(json, "transfernotifyindex")?;
+        let tx_hash = required_uint256(json, "txhash")?;
 
         Ok(Self {
             token_id,

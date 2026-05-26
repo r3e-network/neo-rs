@@ -9,14 +9,16 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::{parse_object_array_lossy, required_string};
+use super::super::utility::{
+    parse_object_array_lossy, required_bigint_string, required_script_hash_or_address,
+    required_string, required_u32_number,
+};
 use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
 /// NEP17 balances for an address matching C# `RpcNep17Balances`
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,23 +124,10 @@ impl RpcNep17Balance {
         json: &JObject,
         _protocol_settings: &ProtocolSettings,
     ) -> Result<Self, String> {
-        let asset_hash_str = required_string(json, "assethash")?;
-
-        let asset_hash = if asset_hash_str.starts_with("0x") {
-            UInt160::parse(&asset_hash_str)
-        } else {
-            UInt160::from_address(&asset_hash_str)
-        }
-        .map_err(|_| format!("Invalid asset hash: {asset_hash_str}"))?;
-
-        let amount_str = required_string(json, "amount")?;
-        let amount =
-            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {amount_str}"))?;
-
-        let last_updated_block =
-            json.get("lastupdatedblock")
-                .and_then(neo_json::JToken::as_number)
-                .ok_or("Missing or invalid 'lastupdatedblock' field")? as u32;
+        let asset_hash =
+            required_script_hash_or_address(json, "assethash", _protocol_settings, "asset hash")?;
+        let amount = required_bigint_string(json, "amount", "amount")?;
+        let last_updated_block = required_u32_number(json, "lastupdatedblock")?;
 
         Ok(Self {
             asset_hash,

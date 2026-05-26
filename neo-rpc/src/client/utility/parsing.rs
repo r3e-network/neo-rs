@@ -1,7 +1,12 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
+use neo_config::ProtocolSettings;
 use neo_core::network::payloads::oracle_response_code::OracleResponseCode;
+use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JObject, JToken};
+use neo_primitives::{UInt160, UInt256};
+use num_bigint::BigInt;
 use serde_json::Value as JsonValue;
+use std::str::FromStr;
 
 /// Reads a required string field from a JSON object.
 pub fn required_string(json: &JObject, field: &str) -> Result<String, String> {
@@ -13,6 +18,79 @@ pub fn required_string(json: &JObject, field: &str) -> Result<String, String> {
 /// Reads an optional string field from a JSON object.
 pub fn optional_string(json: &JObject, field: &str) -> Option<String> {
     json.get(field).and_then(JToken::as_string)
+}
+
+/// Reads a required numeric field as a `u64`.
+pub fn required_u64_number(json: &JObject, field: &str) -> Result<u64, String> {
+    json.get(field)
+        .and_then(JToken::as_number)
+        .map(|value| value as u64)
+        .ok_or_else(|| format!("Missing or invalid '{field}' field"))
+}
+
+/// Reads a required numeric field as a `u32`.
+pub fn required_u32_number(json: &JObject, field: &str) -> Result<u32, String> {
+    json.get(field)
+        .and_then(JToken::as_number)
+        .map(|value| value as u32)
+        .ok_or_else(|| format!("Missing or invalid '{field}' field"))
+}
+
+/// Reads a required numeric field as a `u16`.
+pub fn required_u16_number(json: &JObject, field: &str) -> Result<u16, String> {
+    json.get(field)
+        .and_then(JToken::as_number)
+        .map(|value| value as u16)
+        .ok_or_else(|| format!("Missing or invalid '{field}' field"))
+}
+
+/// Reads a required decimal integer string field as a `BigInt`.
+pub fn required_bigint_string(
+    json: &JObject,
+    field: &str,
+    value_name: &str,
+) -> Result<BigInt, String> {
+    let value = required_string(json, field)?;
+    BigInt::from_str(&value).map_err(|_| format!("Invalid {value_name}: {value}"))
+}
+
+/// Reads a required `UInt256` string field.
+pub fn required_uint256(json: &JObject, field: &str) -> Result<UInt256, String> {
+    let value = required_string(json, field)?;
+    UInt256::parse(&value).map_err(|_| format!("Missing or invalid '{field}' field"))
+}
+
+/// Parses either a hex script hash or an address using the supplied protocol settings.
+pub fn parse_script_hash_or_address(
+    value: &str,
+    protocol_settings: &ProtocolSettings,
+) -> Result<UInt160, String> {
+    UInt160::parse(value)
+        .map_err(|err| err.to_string())
+        .or_else(|_| WalletHelper::to_script_hash(value, protocol_settings.address_version))
+}
+
+/// Reads a required script-hash-or-address field.
+pub fn required_script_hash_or_address(
+    json: &JObject,
+    field: &str,
+    protocol_settings: &ProtocolSettings,
+    value_name: &str,
+) -> Result<UInt160, String> {
+    let value = required_string(json, field)?;
+    parse_script_hash_or_address(&value, protocol_settings)
+        .map_err(|_| format!("Invalid {value_name}: {value}"))
+}
+
+/// Reads an optional script-hash-or-address field, preserving lossy legacy parsing.
+pub fn optional_script_hash_or_address_lossy(
+    json: &JObject,
+    field: &str,
+    protocol_settings: &ProtocolSettings,
+) -> Option<UInt160> {
+    optional_string(json, field)
+        .as_deref()
+        .and_then(|value| parse_script_hash_or_address(value, protocol_settings).ok())
 }
 
 /// Parses a JSON object array while preserving the RPC client's historical lossy behavior.
@@ -150,7 +228,10 @@ pub fn jtoken_to_serde(token: &JToken) -> Result<JsonValue, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_config::ProtocolSettings;
+    use neo_core::wallets::helper::Helper as WalletHelper;
     use neo_json::{JArray, JObject};
+    use neo_primitives::UInt160;
 
     #[test]
     fn object_array_lossy_keeps_only_successful_objects() {
@@ -181,5 +262,36 @@ mod tests {
         assert_eq!(parsed, vec!["ok".to_string()]);
         let missing = parse_object_array_lossy(&root, "missing", |_| Ok::<_, String>("unused"));
         assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn script_hash_or_address_parsing_accepts_hex_and_address() {
+        let settings = ProtocolSettings::default_settings();
+        let hash = UInt160::zero();
+        let address = WalletHelper::to_address(&hash, settings.address_version);
+
+        assert_eq!(
+            parse_script_hash_or_address(&hash.to_string(), &settings).unwrap(),
+            hash
+        );
+        assert_eq!(
+            parse_script_hash_or_address(&address, &settings).unwrap(),
+            hash
+        );
+    }
+
+    #[test]
+    fn optional_script_hash_or_address_is_lossy() {
+        let settings = ProtocolSettings::default_settings();
+        let mut json = JObject::new();
+        json.insert(
+            "transferaddress".to_string(),
+            JToken::String("not a valid address".to_string()),
+        );
+
+        assert_eq!(
+            optional_script_hash_or_address_lossy(&json, "transferaddress", &settings),
+            None
+        );
     }
 }
