@@ -727,6 +727,24 @@ mod tests {
     }
 
     #[test]
+    fn handler_iteration_allows_unregister_during_callback() {
+        message_handlers::reset();
+
+        let handler = Arc::new(TestHandler::default());
+        let mut subscription = Some(register_message_received_handler(handler));
+
+        let seen = message_handlers::with_handlers(|handlers| {
+            let seen = handlers.len();
+            subscription.take().expect("subscription").unregister();
+            seen
+        });
+
+        assert_eq!(seen, 1);
+        let count = message_handlers::with_handlers(|handlers| handlers.len());
+        assert_eq!(count, 0);
+    }
+
+    #[test]
     fn build_wire_message_reconstructs_flagged_compressed_message_for_handlers() {
         let mut message =
             NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(7, 77)));

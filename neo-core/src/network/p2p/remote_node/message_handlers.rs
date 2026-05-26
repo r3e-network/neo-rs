@@ -6,6 +6,7 @@ use std::sync::{
     Arc, OnceLock,
 };
 
+#[derive(Clone)]
 pub(crate) struct MessageHandlerEntry {
     pub(crate) id: usize,
     pub(crate) handler: Arc<dyn MessageReceivedHandler + Send + Sync>,
@@ -62,7 +63,8 @@ pub fn unregister_message_received_handler(subscription: MessageHandlerSubscript
 }
 
 pub(crate) fn with_handlers<T>(mut f: impl FnMut(&[MessageHandlerEntry]) -> T) -> T {
-    f(&handler_registry().read())
+    let handlers = handler_registry().read().clone();
+    f(&handlers)
 }
 
 #[cfg(test)]
