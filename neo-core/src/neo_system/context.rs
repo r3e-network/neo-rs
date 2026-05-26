@@ -51,7 +51,7 @@ use super::core::NeoSystem;
 
 /// Lightweight handle exposing shared system facilities to actors outside the core module.
 pub struct NeoSystemContext {
-    /// Handle to the underlying Akka system for scheduling and event stream access.
+    /// Handle to the actor runtime for scheduling and event stream access.
     pub actor_system: ActorSystemHandle,
     /// Reference to the blockchain actor hierarchy root.
     pub blockchain: ActorRef,

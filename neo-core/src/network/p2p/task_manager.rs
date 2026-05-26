@@ -133,7 +133,7 @@ impl Default for TaskManager {
     }
 }
 
-/// Akka actor wrapper around [`TaskManager`].
+/// Actor-runtime wrapper around [`TaskManager`].
 pub struct TaskManagerActor {
     state: TaskManager,
     timer: Option<Cancelable>,

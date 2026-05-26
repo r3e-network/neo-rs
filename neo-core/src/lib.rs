@@ -83,8 +83,8 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // Self-reference for macro exports
-extern crate self as neo_core;
 pub extern crate neo_config as neo_config_crate;
+extern crate self as neo_core;
 
 // ============================================================================
 // Declarative Macros (must be declared before other modules)
@@ -225,8 +225,7 @@ pub mod wallets;
 /// Matches C# `Neo.IEventHandlers` namespace.
 pub mod i_event_handlers {
     pub use crate::events::handlers::{
-        CommittedHandler, CommittingHandler,
-        MessageReceivedHandler, WalletChangedHandler,
+        CommittedHandler, CommittingHandler, MessageReceivedHandler, WalletChangedHandler,
     };
 }
 
@@ -279,7 +278,9 @@ pub mod actors;
 #[cfg(feature = "runtime")]
 pub use actors as runtime;
 
-/// Compatibility actor facade for older C#-ported call sites (requires `runtime` feature).
+/// Legacy compatibility actor facade for older C#-ported call sites.
+///
+/// New code should import `neo_core::runtime`.
 #[cfg(feature = "runtime")]
 pub use actors as akka;
 

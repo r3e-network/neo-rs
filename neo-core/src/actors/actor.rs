@@ -1,12 +1,12 @@
 use super::{
     context::ActorContext,
-    error::{AkkaError, AkkaResult},
+    error::{ActorRuntimeError, ActorRuntimeResult},
 };
 use async_trait::async_trait;
 use std::any::Any;
 
 /// Result type alias used by actor lifecycle callbacks.
-pub type ActorResult = AkkaResult<()>;
+pub type ActorResult = ActorRuntimeResult<()>;
 
 /// Directives returned by supervision strategies when an actor fails.
 #[derive(Debug, Clone)]
@@ -44,7 +44,7 @@ pub trait Actor: Send + 'static {
     async fn on_failure(
         &mut self,
         _ctx: &mut ActorContext,
-        error: &AkkaError,
+        error: &ActorRuntimeError,
     ) -> SupervisorDirective {
         SupervisorDirective::Stop(error.to_string())
     }

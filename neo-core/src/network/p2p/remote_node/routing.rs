@@ -100,7 +100,7 @@ impl RemoteNode {
                 error = %err,
                 "failed to send message to peer"
             );
-            return Err(crate::runtime::AkkaError::system(err.to_string()));
+            return Err(crate::runtime::ActorRuntimeError::system(err.to_string()));
         }
 
         // Flush every outbound message so protocol-critical requests (headers/getdata/etc.)
@@ -115,7 +115,7 @@ impl RemoteNode {
                 error = %err,
                 "failed to flush outbound message"
             );
-            return Err(crate::runtime::AkkaError::system(err.to_string()));
+            return Err(crate::runtime::ActorRuntimeError::system(err.to_string()));
         }
 
         self.last_sent = std::time::Instant::now();

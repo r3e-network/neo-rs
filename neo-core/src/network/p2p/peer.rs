@@ -5,7 +5,7 @@
 //! tracking connected nodes, coordinating outbound connection attempts and
 //! handling timer driven maintenance.  The Rust port below follows the same
 //! design so higher level actors (such as `LocalNodeActor`) can delegate all
-//! bookkeeping to this component while preserving Akka semantics.
+//! bookkeeping to this component while preserving actor-runtime semantics.
 
 use super::{
     channels_config::ChannelsConfig, local_node::RemoteNodeSnapshot, payloads::VersionPayload,

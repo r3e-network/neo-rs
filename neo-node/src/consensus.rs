@@ -5,7 +5,6 @@ use neo_consensus::{
     BlockData, ChangeViewReason, ConsensusContext, ConsensusEvent, ConsensusMessageType,
     ConsensusPayload, ConsensusService, ConsensusSigner, ValidatorInfo,
 };
-use neo_core::akka::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
 use neo_core::cryptography::MerkleTree;
 use neo_core::i_event_handlers::MessageReceivedHandler;
 use neo_core::ledger::{
@@ -23,6 +22,7 @@ use neo_core::network::p2p::{
 };
 use neo_core::persistence::IStore;
 use neo_core::prelude::Serializable;
+use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
 use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;

@@ -2,7 +2,7 @@ use super::{
     actor::{Actor, SupervisorDirective},
     actor_ref::ActorRef,
     context::ActorContext,
-    error::{AkkaError, AkkaResult},
+    error::{ActorRuntimeError, ActorRuntimeResult},
     event_stream::{EventStream, EventStreamHandle},
     mailbox::DefaultMailbox,
     message::{MailboxMessage, SystemMessage, Terminated},
@@ -83,9 +83,9 @@ pub(crate) struct ActorSystemInner {
 }
 
 impl ActorSystemInner {
-    fn new(name: String) -> AkkaResult<Arc<Self>> {
+    fn new(name: String) -> ActorRuntimeResult<Arc<Self>> {
         let runtime = tokio::runtime::Handle::try_current()
-            .map_err(|_| AkkaError::system("Akka actor system requires a Tokio runtime"))?;
+            .map_err(|_| ActorRuntimeError::system("actor runtime requires a Tokio runtime"))?;
 
         Ok(Arc::new(Self {
             name,
@@ -112,7 +112,7 @@ impl ActorSystemInner {
         self: &Arc<Self>,
         props: Props,
         name: impl Into<String>,
-    ) -> AkkaResult<ActorRef> {
+    ) -> ActorRuntimeResult<ActorRef> {
         let path = ActorPath::root(self.name.clone(), name.into());
         self.spawn_actor(None, props, path)
     }
@@ -122,7 +122,7 @@ impl ActorSystemInner {
         parent: ActorRef,
         props: Props,
         name: Option<String>,
-    ) -> AkkaResult<ActorRef> {
+    ) -> ActorRuntimeResult<ActorRef> {
         let child_name = name.unwrap_or_else(ActorRef::unique_child_name);
         let path = parent.path().child(child_name);
         self.spawn_actor(Some(parent), props, path)
@@ -134,13 +134,16 @@ impl ActorSystemInner {
         parent: Option<ActorRef>,
         props: Props,
         path: ActorPath,
-    ) -> AkkaResult<ActorRef> {
+    ) -> ActorRuntimeResult<ActorRef> {
         let (tx, rx) = mpsc::channel(MAILBOX_CAPACITY);
         let key = path.to_string();
 
         match self.registry.entry(key) {
             Entry::Occupied(_) => {
-                return Err(AkkaError::system(format!("Actor {} already exists", path)));
+                return Err(ActorRuntimeError::system(format!(
+                    "Actor {} already exists",
+                    path
+                )));
             }
             Entry::Vacant(entry) => {
                 entry.insert(tx.clone());
@@ -163,12 +166,12 @@ impl ActorSystemInner {
         Ok(actor_ref)
     }
 
-    async fn shutdown(&self) -> AkkaResult<()> {
+    async fn shutdown(&self) -> ActorRuntimeResult<()> {
         self.request_actor_stops();
         self.actor_tasks.close();
         tokio::time::timeout(ACTOR_SYSTEM_SHUTDOWN_TIMEOUT, self.actor_tasks.wait())
             .await
-            .map_err(|_| AkkaError::system("actor system shutdown timed out"))?;
+            .map_err(|_| ActorRuntimeError::system("actor system shutdown timed out"))?;
         Ok(())
     }
 
@@ -206,7 +209,7 @@ pub struct ActorSystem {
 }
 
 impl ActorSystem {
-    pub fn new(name: impl Into<String>) -> AkkaResult<Self> {
+    pub fn new(name: impl Into<String>) -> ActorRuntimeResult<Self> {
         let name = name.into();
         let inner = ActorSystemInner::new(name.clone())?;
         let guardian_props = Props::new(|| Guardian);
@@ -222,7 +225,7 @@ impl ActorSystem {
         self.inner.name()
     }
 
-    pub fn actor_of(&self, props: Props, name: impl Into<String>) -> AkkaResult<ActorRef> {
+    pub fn actor_of(&self, props: Props, name: impl Into<String>) -> ActorRuntimeResult<ActorRef> {
         self.inner
             .clone()
             .spawn_child(self.user_guardian.clone(), props, Some(name.into()))
@@ -236,7 +239,7 @@ impl ActorSystem {
         self.inner.clone().resolve(&parsed)
     }
 
-    pub fn stop(&self, actor: &ActorRef) -> AkkaResult<()> {
+    pub fn stop(&self, actor: &ActorRef) -> ActorRuntimeResult<()> {
         actor.stop()
     }
 
@@ -252,7 +255,7 @@ impl ActorSystem {
         ActorSystemHandle::new(self.inner.clone())
     }
 
-    pub async fn shutdown(&self) -> AkkaResult<()> {
+    pub async fn shutdown(&self) -> ActorRuntimeResult<()> {
         self.inner.shutdown().await
     }
 
@@ -379,7 +382,7 @@ impl ActorCell {
         }
     }
 
-    async fn handle_failure(&mut self, error: AkkaError, ctx: &mut ActorContext) -> bool {
+    async fn handle_failure(&mut self, error: ActorRuntimeError, ctx: &mut ActorContext) -> bool {
         let directive = self.actor.on_failure(ctx, &error).await;
         match directive {
             SupervisorDirective::Stop(_) | SupervisorDirective::Escalate => false,

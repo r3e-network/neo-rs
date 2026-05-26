@@ -1,6 +1,6 @@
 use super::{
     actor_system::{ActorPath, ActorSystemInner, MailboxCommand},
-    error::{AkkaError, AkkaResult},
+    error::{ActorRuntimeError, ActorRuntimeResult},
     message::{Envelope, MailboxMessage, SystemMessage},
 };
 use std::{any::Any, fmt, sync::Weak};
@@ -30,7 +30,7 @@ impl ActorRef {
     }
 
     /// Sends a message to the actor without specifying a sender.
-    pub fn tell<M>(&self, message: M) -> AkkaResult<()>
+    pub fn tell<M>(&self, message: M) -> ActorRuntimeResult<()>
     where
         M: Any + Send + 'static,
     {
@@ -39,7 +39,7 @@ impl ActorRef {
 
     /// Sends a message to the actor without specifying a sender, awaiting
     /// mailbox capacity when necessary.
-    pub async fn tell_async<M>(&self, message: M) -> AkkaResult<()>
+    pub async fn tell_async<M>(&self, message: M) -> ActorRuntimeResult<()>
     where
         M: Any + Send + 'static,
     {
@@ -48,54 +48,58 @@ impl ActorRef {
 
     /// Sends a message to the actor specifying the sender.
     /// Uses try_send to avoid blocking when the mailbox is full.
-    pub fn tell_from<M>(&self, message: M, sender: Option<ActorRef>) -> AkkaResult<()>
+    pub fn tell_from<M>(&self, message: M, sender: Option<ActorRef>) -> ActorRuntimeResult<()>
     where
         M: Any + Send + 'static,
     {
         let envelope = Envelope::new(message, sender);
         self.mailbox
             .try_send(MailboxCommand::Message(MailboxMessage::User(envelope)))
-            .map_err(|e| AkkaError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
     }
 
     /// Sends a message to the actor specifying the sender.
     /// Uses a backpressured send so callers can avoid dropping critical messages
     /// under load.
-    pub async fn tell_from_async<M>(&self, message: M, sender: Option<ActorRef>) -> AkkaResult<()>
+    pub async fn tell_from_async<M>(
+        &self,
+        message: M,
+        sender: Option<ActorRef>,
+    ) -> ActorRuntimeResult<()>
     where
         M: Any + Send + 'static,
     {
         self.mailbox
-            .send(MailboxCommand::Message(MailboxMessage::User(Envelope::new(
-                message, sender,
-            ))))
+            .send(MailboxCommand::Message(MailboxMessage::User(
+                Envelope::new(message, sender),
+            )))
             .await
-            .map_err(|e| AkkaError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
     }
 
     /// Registers `watcher` to receive a [`Terminated`](super::Terminated) message when this actor stops.
-    pub fn watch(&self, watcher: ActorRef) -> AkkaResult<()> {
+    pub fn watch(&self, watcher: ActorRef) -> ActorRuntimeResult<()> {
         self.mailbox
             .try_send(MailboxCommand::Message(MailboxMessage::System(
                 SystemMessage::Watch(watcher),
             )))
-            .map_err(|e| AkkaError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
     }
 
     /// Removes `watcher` from the current actor's watch list.
-    pub fn unwatch(&self, watcher: ActorRef) -> AkkaResult<()> {
+    pub fn unwatch(&self, watcher: ActorRef) -> ActorRuntimeResult<()> {
         self.mailbox
             .try_send(MailboxCommand::Message(MailboxMessage::System(
                 SystemMessage::Unwatch(watcher),
             )))
-            .map_err(|e| AkkaError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
     }
 
     /// Sends a message that expects a response.
     /// The `builder` closure is responsible for embedding the reply channel
     /// into a message type understood by the receiving actor.
     #[cfg(test)]
-    pub async fn ask<R, F>(&self, builder: F, timeout: std::time::Duration) -> AkkaResult<R>
+    pub async fn ask<R, F>(&self, builder: F, timeout: std::time::Duration) -> ActorRuntimeResult<R>
     where
         R: Send + 'static,
         F: FnOnce(tokio::sync::oneshot::Sender<R>) -> Box<dyn Any + Send>,
@@ -108,22 +112,22 @@ impl ActorRef {
                 message,
                 sender: None,
             })))
-            .map_err(|e| AkkaError::send(format!("{}", e)))?;
+            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))?;
 
         match tokio::time::timeout(timeout, reply_rx).await {
             Ok(Ok(value)) => Ok(value),
-            Ok(Err(_)) => Err(AkkaError::AskTimeout),
-            Err(_) => Err(AkkaError::AskTimeout),
+            Ok(Err(_)) => Err(ActorRuntimeError::AskTimeout),
+            Err(_) => Err(ActorRuntimeError::AskTimeout),
         }
     }
 
     /// Commands the actor to stop. This is asynchronous and returns immediately.
-    pub fn stop(&self) -> AkkaResult<()> {
+    pub fn stop(&self) -> ActorRuntimeResult<()> {
         self.mailbox
             .try_send(MailboxCommand::Message(MailboxMessage::System(
                 SystemMessage::Stop,
             )))
-            .map_err(|e| AkkaError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
     }
 
     pub fn path(&self) -> ActorPath {

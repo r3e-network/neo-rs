@@ -116,7 +116,7 @@ const MAX_BLOCK_CACHE_SIZE: usize = 20000;
 /// persistence front when multiple sessions deliver overlapping ranges.
 const MAX_UNVERIFIED_CACHE_SIZE: usize = 20000;
 
-/// Rust analogue of `Neo.Ledger.Blockchain` (actor based on Akka).
+/// Rust analogue of `Neo.Ledger.Blockchain` using the async actor runtime.
 pub struct Blockchain {
     ledger: Arc<LedgerContext>,
     system_context: Option<Arc<NeoSystemContext>>,

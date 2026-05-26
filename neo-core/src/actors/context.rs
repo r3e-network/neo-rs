@@ -7,7 +7,7 @@
 use super::{
     actor_ref::ActorRef,
     actor_system::{ActorSystemHandle, ActorSystemInner},
-    error::AkkaResult,
+    error::ActorRuntimeResult,
     mailbox::Cancelable,
     props::Props,
     scheduler::Scheduler,
@@ -89,7 +89,11 @@ impl ActorContext {
     /// # Errors
     ///
     /// Returns an error if the actor could not be created (e.g., duplicate name).
-    pub fn actor_of(&mut self, props: Props, name: impl Into<String>) -> AkkaResult<ActorRef> {
+    pub fn actor_of(
+        &mut self,
+        props: Props,
+        name: impl Into<String>,
+    ) -> ActorRuntimeResult<ActorRef> {
         let name = name.into();
         let actor = self
             .system
@@ -103,12 +107,12 @@ impl ActorContext {
     /// # Arguments
     ///
     /// * `actor` - The actor to stop
-    pub fn stop(&self, actor: &ActorRef) -> AkkaResult<()> {
+    pub fn stop(&self, actor: &ActorRef) -> ActorRuntimeResult<()> {
         actor.stop()
     }
 
     /// Stops this actor.
-    pub fn stop_self(&self) -> AkkaResult<()> {
+    pub fn stop_self(&self) -> ActorRuntimeResult<()> {
         self.self_ref.stop()
     }
 
@@ -120,7 +124,7 @@ impl ActorContext {
     /// # Arguments
     ///
     /// * `actor` - The actor to watch
-    pub fn watch(&self, actor: &ActorRef) -> AkkaResult<()> {
+    pub fn watch(&self, actor: &ActorRef) -> ActorRuntimeResult<()> {
         actor.watch(self.self_ref.clone())
     }
 
@@ -129,7 +133,7 @@ impl ActorContext {
     /// # Arguments
     ///
     /// * `actor` - The actor to stop watching
-    pub fn unwatch(&self, actor: &ActorRef) -> AkkaResult<()> {
+    pub fn unwatch(&self, actor: &ActorRef) -> ActorRuntimeResult<()> {
         actor.unwatch(self.self_ref.clone())
     }
 

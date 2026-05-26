@@ -3,7 +3,7 @@
 //! This module provides utility functions used internally by the NeoSystem:
 //!
 //! - `initialise_plugins` - Bootstrap event logging (plugin system removed)
-//! - `to_core_error` - Convert Akka errors to CoreError
+//! - `to_core_error` - Convert actor runtime errors to CoreError
 
 use std::sync::Arc;
 
@@ -27,8 +27,8 @@ pub(crate) fn initialise_plugins(system: &Arc<NeoSystem>) -> CoreResult<()> {
     Ok(())
 }
 
-/// Converts an Akka actor system error into a CoreError.
-pub(crate) fn to_core_error(err: crate::runtime::AkkaError) -> CoreError {
+/// Converts an actor runtime error into a CoreError.
+pub(crate) fn to_core_error(err: crate::runtime::ActorRuntimeError) -> CoreError {
     CoreError::system(err.to_string())
 }
 
@@ -38,8 +38,8 @@ mod tests {
 
     #[test]
     fn to_core_error_preserves_message() {
-        let akka_err = crate::runtime::AkkaError::actor("test_actor not found");
-        let core_err = to_core_error(akka_err);
+        let runtime_err = crate::runtime::ActorRuntimeError::actor("test_actor not found");
+        let core_err = to_core_error(runtime_err);
         let msg = format!("{}", core_err);
         assert!(msg.contains("test_actor"));
     }

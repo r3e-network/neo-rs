@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use crate::ledger::transaction_router::TransactionRouter;
-use crate::runtime::{ActorRef, AkkaError, AkkaResult};
+use crate::runtime::{ActorRef, ActorRuntimeError, ActorRuntimeResult};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::warn;
 
@@ -54,7 +54,11 @@ impl TransactionRouterHandle {
     }
 
     /// Enqueues transaction pre-verification without waiting for mailbox capacity.
-    pub fn try_enqueue_preverify(&self, transaction: Transaction, relay: bool) -> AkkaResult<()> {
+    pub fn try_enqueue_preverify(
+        &self,
+        transaction: Transaction,
+        relay: bool,
+    ) -> ActorRuntimeResult<()> {
         self.try_enqueue_preverify_from(transaction, relay, None)
     }
 
@@ -64,14 +68,14 @@ impl TransactionRouterHandle {
         transaction: Transaction,
         relay: bool,
         sender: Option<ActorRef>,
-    ) -> AkkaResult<()> {
+    ) -> ActorRuntimeResult<()> {
         self.sender
             .try_send(TransactionRouterEnvelope {
                 transaction,
                 relay,
                 sender,
             })
-            .map_err(|error| AkkaError::send(error.to_string()))
+            .map_err(|error| ActorRuntimeError::send(error.to_string()))
     }
 
     /// Enqueues transaction pre-verification with backpressure and an optional actor sender.
@@ -80,7 +84,7 @@ impl TransactionRouterHandle {
         transaction: Transaction,
         relay: bool,
         sender: Option<ActorRef>,
-    ) -> AkkaResult<()> {
+    ) -> ActorRuntimeResult<()> {
         self.sender
             .send(TransactionRouterEnvelope {
                 transaction,
@@ -88,7 +92,7 @@ impl TransactionRouterHandle {
                 sender,
             })
             .await
-            .map_err(|error| AkkaError::send(error.to_string()))
+            .map_err(|error| ActorRuntimeError::send(error.to_string()))
     }
 }
 

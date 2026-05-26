@@ -4,7 +4,7 @@ use crate::network::p2p::{
     },
     NetworkMessage, ProtocolMessage, RemoteNodeCommand,
 };
-use crate::runtime::{ActorRef, AkkaResult};
+use crate::runtime::{ActorRef, ActorRuntimeResult};
 use crate::UInt256;
 use tracing::warn;
 
@@ -29,7 +29,7 @@ pub(super) fn send_get_data_groups<I>(
     }
 }
 
-pub(super) fn send_get_headers(actor: &ActorRef, start_index: u32) -> AkkaResult<()> {
+pub(super) fn send_get_headers(actor: &ActorRef, start_index: u32) -> ActorRuntimeResult<()> {
     let payload = GetBlockByIndexPayload::create(start_index, -1);
     send_protocol_message(actor, ProtocolMessage::GetHeaders(payload))
 }
@@ -38,19 +38,19 @@ pub(super) fn send_get_blocks_by_index(
     actor: &ActorRef,
     start_index: u32,
     count: i16,
-) -> AkkaResult<()> {
+) -> ActorRuntimeResult<()> {
     let payload = GetBlockByIndexPayload::create(start_index, count);
     send_protocol_message(actor, ProtocolMessage::GetBlockByIndex(payload))
 }
 
-pub(super) fn send_mempool(actor: &ActorRef) -> AkkaResult<()> {
+pub(super) fn send_mempool(actor: &ActorRef) -> ActorRuntimeResult<()> {
     send_protocol_message(actor, ProtocolMessage::Mempool)
 }
 
-pub(super) fn disconnect(actor: &ActorRef, reason: String) -> AkkaResult<()> {
+pub(super) fn disconnect(actor: &ActorRef, reason: String) -> ActorRuntimeResult<()> {
     actor.tell(RemoteNodeCommand::Disconnect { reason })
 }
 
-fn send_protocol_message(actor: &ActorRef, message: ProtocolMessage) -> AkkaResult<()> {
+fn send_protocol_message(actor: &ActorRef, message: ProtocolMessage) -> ActorRuntimeResult<()> {
     actor.tell(RemoteNodeCommand::Send(NetworkMessage::new(message)))
 }

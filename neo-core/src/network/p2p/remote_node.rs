@@ -1,4 +1,4 @@
-//! Actor-based remote node implementation mirroring the Akka.NET design.
+//! Actor-based remote node implementation for the Neo P2P protocol.
 //! Submodules: handshake.rs, timers.rs, inventory.rs, outbound_queue.rs,
 //! routing.rs, message_handlers.rs, pending_known_hashes.rs.
 

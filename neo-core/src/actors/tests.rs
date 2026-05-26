@@ -36,30 +36,30 @@ impl Actor for CounterActor {
                     let _ = sender.send(self.count);
                     Ok(())
                 }
-                CounterMsg::Fail => Err(AkkaError::actor("boom")),
+                CounterMsg::Fail => Err(ActorRuntimeError::actor("boom")),
             },
-            Err(_) => Err(AkkaError::actor("unexpected message")),
+            Err(_) => Err(ActorRuntimeError::actor("unexpected message")),
         }
     }
 
     async fn on_failure(
         &mut self,
         _ctx: &mut ActorContext,
-        _error: &AkkaError,
+        _error: &ActorRuntimeError,
     ) -> SupervisorDirective {
         SupervisorDirective::Restart
     }
 }
 
-async fn counter_setup(system_name: &str) -> AkkaResult<(ActorSystem, ActorRef)> {
+async fn counter_setup(system_name: &str) -> ActorRuntimeResult<(ActorSystem, ActorRef)> {
     let system = ActorSystem::new(system_name.to_string())?;
     let counter = system.actor_of(Props::new(CounterActor::default), "counter")?;
     Ok((system, counter))
 }
 
 #[tokio::test]
-async fn counter_tell_and_ask() -> AkkaResult<()> {
-    let (system, counter) = counter_setup("akka-counter").await?;
+async fn counter_tell_and_ask() -> ActorRuntimeResult<()> {
+    let (system, counter) = counter_setup("actor-runtime-counter").await?;
 
     counter.tell(CounterMsg::Add(5))?;
     sleep(Duration::from_millis(10)).await;
@@ -78,8 +78,8 @@ async fn counter_tell_and_ask() -> AkkaResult<()> {
 }
 
 #[tokio::test]
-async fn counter_restart_on_failure() -> AkkaResult<()> {
-    let (system, counter) = counter_setup("akka-restart").await?;
+async fn counter_restart_on_failure() -> ActorRuntimeResult<()> {
+    let (system, counter) = counter_setup("actor-runtime-restart").await?;
 
     counter.tell(CounterMsg::Add(10))?;
     sleep(Duration::from_millis(10)).await;
@@ -104,8 +104,8 @@ async fn counter_restart_on_failure() -> AkkaResult<()> {
 }
 
 #[tokio::test]
-async fn actor_selection_returns_ref() -> AkkaResult<()> {
-    let (system, counter) = counter_setup("akka-selection").await?;
+async fn actor_selection_returns_ref() -> ActorRuntimeResult<()> {
+    let (system, counter) = counter_setup("actor-runtime-selection").await?;
 
     let selection_path = format!("/{}/user/counter", system.name());
     let selected = system
@@ -119,8 +119,8 @@ async fn actor_selection_returns_ref() -> AkkaResult<()> {
 }
 
 #[tokio::test]
-async fn actor_of_rejects_duplicate_name() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-duplicate-name")?;
+async fn actor_of_rejects_duplicate_name() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-duplicate-name")?;
 
     let first = system.actor_of(Props::new(CounterActor::default), "counter")?;
     let err = system
@@ -128,7 +128,7 @@ async fn actor_of_rejects_duplicate_name() -> AkkaResult<()> {
         .expect_err("duplicate actor name should fail");
 
     assert!(
-        matches!(err, AkkaError::System(message) if message.contains(&first.path().to_string()))
+        matches!(err, ActorRuntimeError::System(message) if message.contains(&first.path().to_string()))
     );
 
     system.shutdown().await?;
@@ -167,15 +167,15 @@ impl Actor for WatcherActor {
                     }
                     Ok(())
                 }
-                Err(_) => Err(AkkaError::actor("unexpected message")),
+                Err(_) => Err(ActorRuntimeError::actor("unexpected message")),
             },
         }
     }
 }
 
 #[tokio::test]
-async fn watch_sends_terminated() -> AkkaResult<()> {
-    let (system, counter) = counter_setup("akka-watch").await?;
+async fn watch_sends_terminated() -> ActorRuntimeResult<()> {
+    let (system, counter) = counter_setup("actor-runtime-watch").await?;
 
     let (notify_tx, notify_rx) = oneshot::channel();
     let watcher = system.actor_of(Props::new(WatcherActor::default), "watcher")?;
@@ -189,8 +189,8 @@ async fn watch_sends_terminated() -> AkkaResult<()> {
 
     let terminated = timeout(Duration::from_millis(500), notify_rx)
         .await
-        .map_err(|_| AkkaError::AskTimeout)?
-        .map_err(|_| AkkaError::AskTimeout)?;
+        .map_err(|_| ActorRuntimeError::AskTimeout)?
+        .map_err(|_| ActorRuntimeError::AskTimeout)?;
 
     assert_eq!(terminated.path(), counter.path());
     system.shutdown().await?;
@@ -219,14 +219,14 @@ impl Actor for EventProbe {
             }
             Ok(())
         } else {
-            Err(AkkaError::actor("unexpected message"))
+            Err(ActorRuntimeError::actor("unexpected message"))
         }
     }
 }
 
 #[tokio::test]
-async fn event_stream_publish_delivers_messages() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-event-stream")?;
+async fn event_stream_publish_delivers_messages() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-event-stream")?;
     let (tx, rx) = oneshot::channel();
     let holder = Arc::new(Mutex::new(Some(tx)));
     let holder_clone = holder.clone();
@@ -245,8 +245,8 @@ async fn event_stream_publish_delivers_messages() -> AkkaResult<()> {
 
     let value = timeout(Duration::from_millis(200), rx)
         .await
-        .map_err(|_| AkkaError::AskTimeout)?
-        .map_err(|_| AkkaError::AskTimeout)?;
+        .map_err(|_| ActorRuntimeError::AskTimeout)?
+        .map_err(|_| ActorRuntimeError::AskTimeout)?;
 
     assert_eq!(value, 42);
 
@@ -279,8 +279,8 @@ impl Actor for StopProbe {
 }
 
 #[tokio::test]
-async fn shutdown_stops_and_waits_for_user_actors() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-shutdown-waits")?;
+async fn shutdown_stops_and_waits_for_user_actors() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-shutdown-waits")?;
     let (stopped_tx, stopped_rx) = oneshot::channel();
     let stopped_holder = Arc::new(Mutex::new(Some(stopped_tx)));
     let actor_holder = stopped_holder.clone();
@@ -296,8 +296,8 @@ async fn shutdown_stops_and_waits_for_user_actors() -> AkkaResult<()> {
     system.shutdown().await?;
     timeout(Duration::from_millis(500), stopped_rx)
         .await
-        .map_err(|_| AkkaError::AskTimeout)?
-        .map_err(|_| AkkaError::AskTimeout)?;
+        .map_err(|_| ActorRuntimeError::AskTimeout)?
+        .map_err(|_| ActorRuntimeError::AskTimeout)?;
 
     assert!(system.actor_selection(&actor_path).is_none());
     Ok(())
@@ -321,14 +321,14 @@ impl Actor for TickActor {
             self.counter.fetch_add(1, Ordering::SeqCst);
             Ok(())
         } else {
-            Err(AkkaError::actor("unexpected message"))
+            Err(ActorRuntimeError::actor("unexpected message"))
         }
     }
 }
 
 #[tokio::test]
-async fn scheduler_repeated_messages_can_be_cancelled() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-scheduler")?;
+async fn scheduler_repeated_messages_can_be_cancelled() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-scheduler")?;
     let counter = Arc::new(AtomicUsize::new(0));
     let actor_counter = counter.clone();
     let ticker = system.actor_of(
@@ -363,8 +363,8 @@ async fn scheduler_repeated_messages_can_be_cancelled() -> AkkaResult<()> {
 }
 
 #[tokio::test]
-async fn scheduler_once_message_can_be_cancelled() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-scheduler-once-cancel")?;
+async fn scheduler_once_message_can_be_cancelled() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-scheduler-once-cancel")?;
     let counter = Arc::new(AtomicUsize::new(0));
     let actor_counter = counter.clone();
     let ticker = system.actor_of(
@@ -391,8 +391,8 @@ async fn scheduler_once_message_can_be_cancelled() -> AkkaResult<()> {
 }
 
 #[tokio::test]
-async fn scheduler_repeated_messages_stop_when_handle_is_dropped() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-scheduler-drop")?;
+async fn scheduler_repeated_messages_stop_when_handle_is_dropped() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-scheduler-drop")?;
     let counter = Arc::new(AtomicUsize::new(0));
     let actor_counter = counter.clone();
     let ticker = system.actor_of(
@@ -424,8 +424,8 @@ async fn scheduler_repeated_messages_stop_when_handle_is_dropped() -> AkkaResult
 }
 
 #[tokio::test]
-async fn dropping_cloned_schedule_handle_cancels_repeated_messages() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-scheduler-drop-clone")?;
+async fn dropping_cloned_schedule_handle_cancels_repeated_messages() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-scheduler-drop-clone")?;
     let counter = Arc::new(AtomicUsize::new(0));
     let actor_counter = counter.clone();
     let ticker = system.actor_of(
@@ -482,4 +482,14 @@ fn default_mailbox_prioritizes_system_messages() {
         Some(&"second")
     );
     assert!(mailbox.is_empty());
+}
+
+#[test]
+fn legacy_akka_error_alias_remains_compatible() {
+    let legacy: AkkaResult<()> = Err(AkkaError::actor("legacy compatibility"));
+
+    assert!(matches!(
+        legacy,
+        Err(AkkaError::Actor(message)) if message.contains("legacy")
+    ));
 }
