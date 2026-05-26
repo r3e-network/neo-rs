@@ -162,12 +162,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "ansi"] }
 tracing-appender = "0.2"
 # CLI
-clap = { version = "4.4", features = ["derive", "env", "unicode"] }
+clap = { version = "=4.5.53", features = ["derive", "env", "unicode"] }
 
 # === Cryptography ===
 # Elliptic curve cryptography
 secp256k1 = { version = "0.28", features = ["recovery", "global-context"] }
-ed25519-dalek = { version = "2.0", features = ["rand_core"] }
+ed25519-dalek = { version = "=2.1.1", features = ["rand_core"] }
 k256 = { version = "0.13", features = ["ecdsa", "sha256"] }
 p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
 
@@ -179,7 +179,8 @@ sha2 = "0.10"
 sha3 = "0.10"
 ripemd = "0.1"
 blake2 = "0.10"
-blake2b_simd = "1.0.4"
+# 1.0.4 depends on constant_time_eq 0.4.2, whose manifest uses edition2024.
+blake2b_simd = "=1.0.3"
 
 # Random number generation
 rand = "0.8"
@@ -200,7 +201,7 @@ num-traits = "0.2"
 smallvec = { version = "1.13", features = ["const_new", "union"] }
 bytes = "1.5"
 hashbrown = { version = "0.14", features = ["serde"] }
-indexmap = { version = "2.1", features = ["serde"] }
+indexmap = { version = "=2.8.0", features = ["serde"] }
 lru = "0.12"
 fastbloom = { version = "0.17", default-features = false }
 bitflags = "2.4"
@@ -220,28 +221,28 @@ reqwest = { version = "0.12", features = ["json", "blocking", "stream", "gzip"] 
 socket2 = "0.5"
 
 # === Utilities ===
-uuid = { version = "1.6", features = ["v4", "serde"] }
+uuid = { version = "=1.18.1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-url = { version = "2.4", features = ["serde"] }
+url = { version = "=2.5.4", features = ["serde"] }
 parking_lot = "0.12"
 # === Development and testing ===
-tempfile = "3.8"
+tempfile = "=3.23.0"
 criterion = { version = "0.5", features = ["html_reports"] }
-proptest = "1.4"
+proptest = "=1.7.0"
 mockall = "0.12"
 
 # === Profiling ===
 pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
 
 # Compression and metrics (always enabled)
-lz4_flex = "0.11"
+lz4_flex = "=0.10.0"
 prometheus = "0.14"
 sysinfo = "0.29"
 
 # Additional shared deps not previously centralized
 num_cpus = "1.16"
 murmur3 = "0.5"
-rayon = "1.10"
+rayon = "=1.10.0"
 subtle = "2.5"
 byteorder = "1.5"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
