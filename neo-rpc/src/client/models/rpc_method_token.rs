@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::parse_number_or_string_token;
 use neo_core::smart_contract::{method_token::MethodToken, CallFlags};
 use neo_json::JObject;
 use neo_primitives::UInt160;
@@ -173,14 +174,9 @@ fn parse_u16_field(json: &JObject, field: &str) -> Result<u16, String> {
     let token = json
         .get(field)
         .ok_or_else(|| format!("Missing '{field}' field"))?;
-    if let Some(number) = token.as_number() {
-        Ok(number as u16)
-    } else if let Some(text) = token.as_string() {
-        text.parse::<u16>()
-            .map_err(|_| format!("Invalid {field} value: {text}"))
-    } else {
-        Err(format!("Invalid '{field}' field"))
-    }
+    parse_number_or_string_token(token, field, &format!("Invalid '{field}' field"), |value| {
+        value as u16
+    })
 }
 
 #[cfg(test)]

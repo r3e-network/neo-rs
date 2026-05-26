@@ -9,7 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::{object_array, parse_optional_present_token_array_strict};
+use super::super::utility::{
+    object_array, parse_number_or_string_token, parse_optional_present_token_array_strict,
+};
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -93,14 +95,12 @@ impl RpcPeer {
             .ok_or("Missing or invalid 'address' field")?;
 
         let port_token = json.get("port").ok_or("Missing or invalid 'port' field")?;
-        let port = if let Some(number) = port_token.as_number() {
-            number as i32
-        } else if let Some(text) = port_token.as_string() {
-            text.parse::<i32>()
-                .map_err(|_| format!("Invalid port value: {text}"))?
-        } else {
-            return Err("Invalid 'port' field type".to_string());
-        };
+        let port = parse_number_or_string_token(
+            port_token,
+            "port",
+            "Invalid 'port' field type",
+            |value| value as i32,
+        )?;
 
         Ok(Self { address, port })
     }

@@ -44,6 +44,26 @@ pub fn required_u16_number(json: &JObject, field: &str) -> Result<u16, String> {
         .ok_or_else(|| format!("Missing or invalid '{field}' field"))
 }
 
+/// Parses a token that may be encoded as either a JSON number or decimal string.
+pub fn parse_number_or_string_token<T>(
+    token: &JToken,
+    value_name: &str,
+    invalid_type_error: &str,
+    from_number: impl FnOnce(f64) -> T,
+) -> Result<T, String>
+where
+    T: FromStr,
+{
+    if let Some(number) = token.as_number() {
+        Ok(from_number(number))
+    } else if let Some(text) = token.as_string() {
+        text.parse::<T>()
+            .map_err(|_| format!("Invalid {value_name} value: {text}"))
+    } else {
+        Err(invalid_type_error.to_string())
+    }
+}
+
 /// Reads a required decimal integer string field as a `BigInt`.
 pub fn required_bigint_string(
     json: &JObject,

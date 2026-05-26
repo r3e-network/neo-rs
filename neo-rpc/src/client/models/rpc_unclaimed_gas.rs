@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::parse_number_or_string_token;
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -42,14 +43,12 @@ impl RpcUnclaimedGas {
         let unclaimed_token = json
             .get("unclaimed")
             .ok_or("Missing or invalid 'unclaimed' field")?;
-        let unclaimed = if let Some(text) = unclaimed_token.as_string() {
-            text.parse::<i64>()
-                .map_err(|_| format!("Invalid unclaimed value: {text}"))?
-        } else if let Some(num) = unclaimed_token.as_number() {
-            num as i64
-        } else {
-            return Err("Invalid 'unclaimed' field".to_string());
-        };
+        let unclaimed = parse_number_or_string_token(
+            unclaimed_token,
+            "unclaimed",
+            "Invalid 'unclaimed' field",
+            |value| value as i64,
+        )?;
 
         let address = json
             .get("address")
