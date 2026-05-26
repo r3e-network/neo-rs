@@ -197,7 +197,7 @@ impl TaskManager {
             self.request_tasks_for_path(&path);
         }
 
-        self.global_index_tasks.retain(|&idx, _| idx > index);
+        self.global_index_tasks.retain_tracked(|idx| *idx > index);
 
         let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
         for path in session_paths {

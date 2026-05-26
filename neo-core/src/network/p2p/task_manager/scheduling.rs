@@ -1,23 +1,67 @@
 use super::{BLOCK_INDEX_WINDOW_MULTIPLIER, MAX_BLOCK_INDEX_BATCH, MAX_CONCURRENT_TASKS};
 use crate::UInt256;
 use std::collections::HashMap;
+use std::hash::Hash;
 
-pub(super) fn increment_task<K: Eq + std::hash::Hash>(tasks: &mut HashMap<K, u32>, key: K) -> bool {
-    let entry = tasks.entry(key).or_insert(0);
-    if *entry >= MAX_CONCURRENT_TASKS {
-        return false;
-    }
-    *entry += 1;
-    true
+#[derive(Debug)]
+pub(super) struct TaskCounter<K> {
+    counts: HashMap<K, u32>,
 }
 
-pub(super) fn decrement_task<K: Eq + std::hash::Hash>(tasks: &mut HashMap<K, u32>, key: &K) {
-    if let Some(entry) = tasks.get_mut(key) {
-        if *entry > 1 {
-            *entry -= 1;
-        } else {
-            tasks.remove(key);
+impl<K> TaskCounter<K>
+where
+    K: Eq + Hash,
+{
+    pub(super) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            counts: HashMap::with_capacity(capacity),
         }
+    }
+
+    pub(super) fn try_increment(&mut self, key: K) -> bool {
+        let entry = self.counts.entry(key).or_insert(0);
+        if *entry >= MAX_CONCURRENT_TASKS {
+            return false;
+        }
+        *entry += 1;
+        true
+    }
+
+    pub(super) fn decrement(&mut self, key: &K) {
+        if let Some(entry) = self.counts.get_mut(key) {
+            if *entry > 1 {
+                *entry -= 1;
+            } else {
+                self.counts.remove(key);
+            }
+        }
+    }
+
+    pub(super) fn count(&self, key: &K) -> u32 {
+        self.counts.get(key).copied().unwrap_or(0)
+    }
+
+    pub(super) fn is_tracked(&self, key: &K) -> bool {
+        self.count(key) > 0
+    }
+
+    pub(super) fn has_capacity_for(&self, key: &K) -> bool {
+        self.count(key) < MAX_CONCURRENT_TASKS
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.counts.is_empty()
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.counts.len()
+    }
+
+    pub(super) fn retain_tracked<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&K) -> bool,
+    {
+        self.counts.retain(|key, _| keep(key));
     }
 }
 
@@ -46,14 +90,14 @@ pub(super) fn block_index_window_limit(current_height: u32) -> u32 {
 pub(super) fn plan_block_index_request(
     current_height: u32,
     peer_height: u32,
-    global_index_tasks: &HashMap<u32, u32>,
+    global_index_tasks: &TaskCounter<u32>,
 ) -> Option<BlockIndexRequestPlan> {
     if current_height >= peer_height {
         return None;
     }
 
     let mut start_height = current_height.saturating_add(1);
-    while global_index_tasks.contains_key(&start_height) {
+    while global_index_tasks.is_tracked(&start_height) {
         start_height = start_height.saturating_add(1);
         if start_height > peer_height {
             break;
@@ -68,7 +112,7 @@ pub(super) fn plan_block_index_request(
     let mut end_height = start_height;
     while end_height < peer_height
         && end_height + 1 < limit_height
-        && !global_index_tasks.contains_key(&(end_height + 1))
+        && !global_index_tasks.is_tracked(&(end_height + 1))
     {
         end_height += 1;
     }
@@ -107,7 +151,7 @@ pub(super) fn plan_header_request(
 pub(super) fn plan_available_inventory_tasks<I, F>(
     available_tasks: I,
     mut is_stale: F,
-    global_inv_tasks: &HashMap<UInt256, u32>,
+    global_inv_tasks: &TaskCounter<UInt256>,
 ) -> AvailableInventoryPlan
 where
     I: IntoIterator<Item = UInt256>,
@@ -122,7 +166,7 @@ where
             continue;
         }
 
-        if global_inv_tasks.get(&hash).copied().unwrap_or(0) < MAX_CONCURRENT_TASKS {
+        if global_inv_tasks.has_capacity_for(&hash) {
             scheduled.push(hash);
         }
     }
@@ -137,35 +181,35 @@ mod tests {
 
     #[test]
     fn task_counter_limits_and_removes_zero_entries() {
-        let mut tasks = HashMap::new();
+        let mut tasks = TaskCounter::with_capacity(4);
         let key = 42u32;
 
-        assert!(increment_task(&mut tasks, key));
-        assert!(increment_task(&mut tasks, key));
-        assert!(increment_task(&mut tasks, key));
-        assert_eq!(tasks.get(&key), Some(&MAX_CONCURRENT_TASKS));
-        assert!(!increment_task(&mut tasks, key));
+        assert!(tasks.try_increment(key));
+        assert!(tasks.try_increment(key));
+        assert!(tasks.try_increment(key));
+        assert_eq!(tasks.count(&key), MAX_CONCURRENT_TASKS);
+        assert!(!tasks.try_increment(key));
 
-        decrement_task(&mut tasks, &key);
-        assert_eq!(tasks.get(&key), Some(&(MAX_CONCURRENT_TASKS - 1)));
-        assert!(increment_task(&mut tasks, key));
-        assert_eq!(tasks.get(&key), Some(&MAX_CONCURRENT_TASKS));
+        tasks.decrement(&key);
+        assert_eq!(tasks.count(&key), MAX_CONCURRENT_TASKS - 1);
+        assert!(tasks.try_increment(key));
+        assert_eq!(tasks.count(&key), MAX_CONCURRENT_TASKS);
 
-        decrement_task(&mut tasks, &key);
-        decrement_task(&mut tasks, &key);
-        decrement_task(&mut tasks, &key);
-        assert!(!tasks.contains_key(&key));
+        tasks.decrement(&key);
+        tasks.decrement(&key);
+        tasks.decrement(&key);
+        assert!(!tasks.is_tracked(&key));
 
-        decrement_task(&mut tasks, &key);
+        tasks.decrement(&key);
         assert!(tasks.is_empty());
     }
 
     #[test]
     fn block_index_plan_skips_in_flight_heights_and_stops_before_next_gap() {
-        let mut in_flight = HashMap::new();
-        in_flight.insert(6, 1);
-        in_flight.insert(7, 1);
-        in_flight.insert(10, 1);
+        let mut in_flight = TaskCounter::with_capacity(4);
+        assert!(in_flight.try_increment(6));
+        assert!(in_flight.try_increment(7));
+        assert!(in_flight.try_increment(10));
 
         let plan = plan_block_index_request(5, 12, &in_flight).expect("block request plan");
 
@@ -175,7 +219,7 @@ mod tests {
 
     #[test]
     fn block_index_plan_respects_batch_limit() {
-        let in_flight = HashMap::new();
+        let in_flight = TaskCounter::with_capacity(0);
 
         let plan = plan_block_index_request(0, 20_000, &in_flight).expect("block request plan");
 
@@ -185,9 +229,9 @@ mod tests {
 
     #[test]
     fn block_index_plan_returns_none_when_window_is_already_full() {
-        let mut in_flight = HashMap::new();
+        let mut in_flight = TaskCounter::with_capacity(10_000);
         for index in 1..10_000 {
-            in_flight.insert(index, 1);
+            assert!(in_flight.try_increment(index));
         }
 
         assert!(plan_block_index_request(0, 20_000, &in_flight).is_none());
@@ -221,9 +265,13 @@ mod tests {
         let stale = UInt256::from([2u8; 32]);
         let saturated = UInt256::from([3u8; 32]);
         let shared = UInt256::from([4u8; 32]);
-        let mut global_inv_tasks = HashMap::new();
-        global_inv_tasks.insert(saturated, MAX_CONCURRENT_TASKS);
-        global_inv_tasks.insert(shared, MAX_CONCURRENT_TASKS - 1);
+        let mut global_inv_tasks = TaskCounter::with_capacity(4);
+        for _ in 0..MAX_CONCURRENT_TASKS {
+            assert!(global_inv_tasks.try_increment(saturated));
+        }
+        for _ in 0..MAX_CONCURRENT_TASKS - 1 {
+            assert!(global_inv_tasks.try_increment(shared));
+        }
 
         let plan = plan_available_inventory_tasks(
             [a, stale, saturated, shared],

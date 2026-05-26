@@ -58,7 +58,7 @@ impl TaskManager {
 
         for hash in hashes.iter() {
             self.forget_hash(hash);
-            while self.global_inv_tasks.contains_key(hash) {
+            while self.global_inv_tasks.is_tracked(hash) {
                 self.decrement_inv_task(hash);
             }
         }

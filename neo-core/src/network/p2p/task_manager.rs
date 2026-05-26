@@ -34,6 +34,7 @@ use crate::runtime::{
 use crate::UInt256;
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
+use scheduling::TaskCounter;
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -100,8 +101,8 @@ pub struct TaskManager {
     known_hashes: HashSetCache<UInt256>,
     event_stream: Option<EventStreamHandle>,
     last_seen_persisted_index: u32,
-    global_inv_tasks: HashMap<UInt256, u32>,
-    global_index_tasks: HashMap<u32, u32>,
+    global_inv_tasks: TaskCounter<UInt256>,
+    global_index_tasks: TaskCounter<u32>,
     timer_interval: Duration,
     task_timeout: Duration,
 }
@@ -114,8 +115,8 @@ impl TaskManager {
             known_hashes: HashSetCache::new(1024),
             event_stream: None,
             last_seen_persisted_index: 0,
-            global_inv_tasks: HashMap::with_capacity(256),
-            global_index_tasks: HashMap::with_capacity(256),
+            global_inv_tasks: TaskCounter::with_capacity(256),
+            global_index_tasks: TaskCounter::with_capacity(256),
             timer_interval: TIMER_INTERVAL,
             task_timeout: TASK_TIMEOUT,
         }

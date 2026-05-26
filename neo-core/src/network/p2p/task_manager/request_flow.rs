@@ -114,11 +114,7 @@ impl TaskManager {
             ledger.highest_header_index(),
         );
         let header_request_start = header_height.saturating_add(1);
-        let header_task_count = self
-            .global_inv_tasks
-            .get(&HEADER_TASK_HASH)
-            .copied()
-            .unwrap_or(0);
+        let header_task_count = self.global_inv_tasks.count(&HEADER_TASK_HASH);
         let header_request = plan_header_request(
             header_height,
             session.last_block_index,
@@ -277,13 +273,12 @@ impl TaskManager {
                     continue;
                 }
 
-                if inventory_type == InventoryType::Block
-                    && this.global_inv_tasks.contains_key(&hash)
+                if inventory_type == InventoryType::Block && this.global_inv_tasks.is_tracked(&hash)
                 {
                     entry.session.available_tasks.insert(hash);
                 }
 
-                if this.global_inv_tasks.contains_key(&hash) {
+                if this.global_inv_tasks.is_tracked(&hash) {
                     continue;
                 }
 

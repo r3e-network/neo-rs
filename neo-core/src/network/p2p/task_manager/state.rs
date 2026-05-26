@@ -1,4 +1,3 @@
-use super::scheduling::{decrement_task, increment_task};
 use super::TaskManager;
 use crate::ledger::{PersistCompleted, RelayResult};
 use crate::neo_system::NeoSystemContext;
@@ -20,19 +19,19 @@ impl TaskManager {
     }
 
     pub(super) fn increment_inv_task(&mut self, hash: UInt256) -> bool {
-        increment_task(&mut self.global_inv_tasks, hash)
+        self.global_inv_tasks.try_increment(hash)
     }
 
     pub(super) fn decrement_inv_task(&mut self, hash: &UInt256) {
-        decrement_task(&mut self.global_inv_tasks, hash);
+        self.global_inv_tasks.decrement(hash);
     }
 
     pub(super) fn increment_index_task(&mut self, index: u32) -> bool {
-        increment_task(&mut self.global_index_tasks, index)
+        self.global_index_tasks.try_increment(index)
     }
 
     pub(super) fn decrement_index_task(&mut self, index: u32) {
-        decrement_task(&mut self.global_index_tasks, &index);
+        self.global_index_tasks.decrement(&index);
     }
 
     pub(super) fn forget_hash(&mut self, hash: &UInt256) {
