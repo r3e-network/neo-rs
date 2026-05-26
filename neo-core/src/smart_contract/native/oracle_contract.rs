@@ -73,27 +73,83 @@ impl OracleContract {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        match method {
-            "request" => self.request(engine, args),
-            "getPrice" => {
-                if !args.is_empty() {
-                    return Err(Error::invalid_operation(
-                        "getPrice does not accept arguments".to_string(),
-                    ));
-                }
-                let snapshot = engine.snapshot_cache();
-                Ok(self
-                    .get_price_value(snapshot.as_ref())
-                    .to_le_bytes()
-                    .to_vec())
-            }
-            "setPrice" => self.set_price(engine, args),
-            "finish" => self.finish(engine),
-            "verify" => self.verify(engine),
-            _ => Err(Error::native_contract(format!(
-                "Unknown method: {}",
-                method
-            ))),
+        self.dispatch_method(engine, method, args)
+    }
+
+    fn invoke_get_price(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
+        if !args.is_empty() {
+            return Err(Error::invalid_operation(
+                "getPrice does not accept arguments".to_string(),
+            ));
         }
+        let snapshot = engine.snapshot_cache();
+        Ok(self
+            .get_price_value(snapshot.as_ref())
+            .to_le_bytes()
+            .to_vec())
+    }
+
+    fn invoke_finish(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        self.finish(engine)
+    }
+
+    fn invoke_verify(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        self.verify(engine)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::DataCache;
+    use crate::protocol_settings::ProtocolSettings;
+    use crate::smart_contract::native::NativeContract;
+    use crate::smart_contract::trigger_type::TriggerType;
+    use std::sync::Arc;
+
+    fn application_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
+        ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            ProtocolSettings::default_settings(),
+            400_000_000,
+            None,
+        )
+        .expect("application engine")
+    }
+
+    #[test]
+    fn dispatch_method_covers_declared_metadata_names() {
+        let oracle = OracleContract::new();
+        let mut engine = application_engine(Arc::new(DataCache::new(false)));
+        let mut names = std::collections::BTreeSet::new();
+
+        for method in oracle.methods() {
+            if !names.insert(method.name.clone()) {
+                continue;
+            }
+
+            if let Err(err) = oracle.dispatch_method(&mut engine, &method.name, &[]) {
+                assert!(
+                    !err.to_string().contains("Unknown method:"),
+                    "declared method {} did not dispatch: {err}",
+                    method.name
+                );
+            }
+        }
+
+        let err = oracle
+            .dispatch_method(&mut engine, "__missing__", &[])
+            .expect_err("unknown method");
+        assert!(
+            err.to_string().contains("Unknown method: __missing__"),
+            "unexpected error: {err}"
+        );
     }
 }
