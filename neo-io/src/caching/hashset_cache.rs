@@ -2,21 +2,22 @@
 
 use super::ordered_cache::check_copy_range;
 use crate::IoResult;
-use indexmap::IndexSet;
+use lru::LruCache;
 use std::hash::Hash;
+use std::num::NonZeroUsize;
 
 /// A cache that uses a hash set to store items (matches C# `HashSetCache<T>`).
 pub struct HashSetCache<T>
 where
-    T: Eq + Hash + Clone,
+    T: Eq + Hash,
 {
     capacity: usize,
-    items: IndexSet<T>,
+    items: LruCache<T, ()>,
 }
 
 impl<T> HashSetCache<T>
 where
-    T: Eq + Hash + Clone,
+    T: Eq + Hash,
 {
     const DEFAULT_CAPACITY: usize = 1024;
 
@@ -47,7 +48,9 @@ where
 
         Self {
             capacity: effective_capacity,
-            items: IndexSet::with_capacity(effective_capacity),
+            items: LruCache::new(
+                NonZeroUsize::new(effective_capacity).expect("effective capacity is non-zero"),
+            ),
         }
     }
 
@@ -62,7 +65,7 @@ where
 
         Ok(Self {
             capacity,
-            items: IndexSet::with_capacity(capacity),
+            items: LruCache::new(NonZeroUsize::new(capacity).expect("capacity is non-zero")),
         })
     }
 
@@ -79,21 +82,19 @@ where
 
         self.trim_to_capacity();
         if inserted && self.capacity > 0 {
-            self.items.insert(item);
+            self.items.put(item, ());
             self.trim_to_capacity();
         }
         inserted
     }
 
     fn trim_to_capacity(&mut self) {
-        if self.capacity == 0 {
+        let Some(capacity) = NonZeroUsize::new(self.capacity) else {
             self.items.clear();
             return;
-        }
+        };
 
-        while self.items.len() > self.capacity {
-            let _ = self.items.shift_remove_index(0);
-        }
+        self.items.resize(capacity);
     }
 
     /// Updates the maximum capacity. Existing overflow is trimmed on the next insertion attempt.
@@ -132,13 +133,16 @@ where
     /// Removes an item from the cache (C# `Remove`).
     #[inline]
     pub fn remove(&mut self, item: &T) -> bool {
-        self.items.shift_remove(item)
+        self.items.pop(item).is_some()
     }
 
     /// Copies the elements into the destination slice starting at `start_index` (C# `CopyTo`).
-    pub fn copy_to(&self, destination: &mut [T], start_index: usize) -> IoResult<()> {
+    pub fn copy_to(&self, destination: &mut [T], start_index: usize) -> IoResult<()>
+    where
+        T: Clone,
+    {
         check_copy_range("copy_to", start_index, self.items.len(), destination.len())?;
-        for (offset, item) in self.items.iter().cloned().enumerate() {
+        for (offset, item) in self.iter().cloned().enumerate() {
             destination[start_index + offset] = item;
         }
         Ok(())
@@ -147,18 +151,22 @@ where
     /// Returns an iterator over the cached values (C# `GetEnumerator`).
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.items.iter()
+        self.items.iter().rev().map(|(item, ())| item)
     }
 }
 
 impl<T> IntoIterator for HashSetCache<T>
 where
-    T: Eq + Hash + Clone,
+    T: Eq + Hash,
 {
     type Item = T;
     type IntoIter = std::vec::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter().collect::<Vec<_>>().into_iter()
+        self.items
+            .into_iter()
+            .map(|(item, ())| item)
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
