@@ -9,12 +9,12 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::{witness_to_json, RpcUtility};
+use super::super::utility::{RpcUtility, object_array, witness_to_json};
 use neo_config::ProtocolSettings;
-use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::BlockHeader;
+use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_io::Serializable;
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
@@ -163,14 +163,9 @@ impl RpcBlockHeader {
                 protocol_settings.address_version,
             )),
         );
-        let witnesses = header
-            .witnesses
-            .iter()
-            .map(|witness| JToken::Object(witness_to_json(witness)))
-            .collect::<Vec<_>>();
         json.insert(
             "witnesses".to_string(),
-            JToken::Array(JArray::from(witnesses)),
+            object_array(&header.witnesses, witness_to_json),
         );
         json.insert(
             "confirmations".to_string(),
@@ -189,7 +184,7 @@ impl RpcBlockHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use neo_json::{JArray, JToken};
     use std::fs;
     use std::path::PathBuf;

@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    parse_object_array_lossy, required_string, stack_item_from_json, stack_item_to_json,
-    stack_items_from_json_field,
+    object_array, parse_object_array_lossy, required_string, stack_item_from_json,
+    stack_item_to_json, stack_items_from_json_field,
 };
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use std::str::FromStr;
@@ -74,14 +74,9 @@ impl RpcApplicationLog {
                 JToken::String(block_hash.to_string()),
             );
         }
-        let executions = self
-            .executions
-            .iter()
-            .map(|exec| JToken::Object(exec.to_json()))
-            .collect::<Vec<_>>();
         json.insert(
             "executions".to_string(),
-            JToken::Array(JArray::from(executions)),
+            object_array(&self.executions, Execution::to_json),
         );
         json
     }
@@ -176,14 +171,9 @@ impl Execution {
             .map(JToken::Object)
             .collect::<Vec<_>>();
         json.insert("stack".to_string(), JToken::Array(JArray::from(stack)));
-        let notifications = self
-            .notifications
-            .iter()
-            .map(|notice| JToken::Object(notice.to_json()))
-            .collect::<Vec<_>>();
         json.insert(
             "notifications".to_string(),
-            JToken::Array(JArray::from(notifications)),
+            object_array(&self.notifications, RpcNotifyEventArgs::to_json),
         );
         json
     }
