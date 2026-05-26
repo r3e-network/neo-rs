@@ -13,7 +13,10 @@ use super::super::utility::{
     empty_array, insert_optional_string, object_array, parse_object_array_lossy, required_string,
     stack_item_from_json, stack_item_to_json, stack_items_from_json_field, stack_items_to_json,
 };
-use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
+use super::vm_state_utils::{
+    insert_gas_consumed_field, insert_vm_state_field, parse_gas_consumed_field,
+    parse_vm_state_field,
+};
 use std::str::FromStr;
 
 use neo_config::ProtocolSettings;
@@ -112,14 +115,8 @@ impl Execution {
         let trigger = TriggerType::from_str(&trigger_str)
             .map_err(|_| format!("Invalid trigger type: {trigger_str}"))?;
 
-        let vm_state_str = required_string(json, "vmstate")?;
-        let vm_state = vm_state_from_str(&vm_state_str)
-            .ok_or_else(|| format!("Invalid VM state: {vm_state_str}"))?;
-
-        let gas_consumed_str = required_string(json, "gasconsumed")?;
-        let gas_consumed = gas_consumed_str
-            .parse::<i64>()
-            .map_err(|_| format!("Invalid gas consumed value: {gas_consumed_str}"))?;
+        let vm_state = parse_vm_state_field(json, "vmstate")?;
+        let gas_consumed = parse_gas_consumed_field(json)?;
 
         let exception_message = json.get("exception").and_then(neo_json::JToken::as_string);
 
@@ -147,14 +144,8 @@ impl Execution {
             "trigger".to_string(),
             JToken::String(trigger_type_to_string(self.trigger)),
         );
-        json.insert(
-            "vmstate".to_string(),
-            JToken::String(vm_state_to_string(self.vm_state)),
-        );
-        json.insert(
-            "gasconsumed".to_string(),
-            JToken::String(self.gas_consumed.to_string()),
-        );
+        insert_vm_state_field(&mut json, "vmstate", self.vm_state);
+        insert_gas_consumed_field(&mut json, self.gas_consumed);
         insert_optional_string(&mut json, "exception", self.exception_message.as_deref());
         json.insert(
             "stack".to_string(),

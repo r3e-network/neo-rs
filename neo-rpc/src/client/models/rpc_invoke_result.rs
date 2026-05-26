@@ -12,7 +12,10 @@
 use super::super::utility::{
     optional_string, required_string, stack_items_from_json_field, stack_items_to_json,
 };
-use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
+use super::vm_state_utils::{
+    insert_gas_consumed_field, insert_vm_state_field, parse_gas_consumed_field,
+    parse_vm_state_field,
+};
 use neo_json::{JObject, JToken};
 use neo_vm_rs::StackValue;
 use neo_vm_rs::VmState;
@@ -48,14 +51,8 @@ impl RpcInvokeResult {
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let script = required_string(json, "script")?;
 
-        let state_str = required_string(json, "state")?;
-        let state = vm_state_from_str(&state_str)
-            .ok_or_else(|| format!("Invalid VM state: {state_str}"))?;
-
-        let gas_consumed_str = required_string(json, "gasconsumed")?;
-        let gas_consumed = gas_consumed_str
-            .parse::<i64>()
-            .map_err(|_| format!("Invalid gas consumed value: {gas_consumed_str}"))?;
+        let state = parse_vm_state_field(json, "state")?;
+        let gas_consumed = parse_gas_consumed_field(json)?;
 
         let exception = optional_string(json, "exception");
 
@@ -81,14 +78,8 @@ impl RpcInvokeResult {
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("script".to_string(), JToken::String(self.script.clone()));
-        json.insert(
-            "state".to_string(),
-            JToken::String(vm_state_to_string(self.state)),
-        );
-        json.insert(
-            "gasconsumed".to_string(),
-            JToken::String(self.gas_consumed.to_string()),
-        );
+        insert_vm_state_field(&mut json, "state", self.state);
+        insert_gas_consumed_field(&mut json, self.gas_consumed);
 
         if let Some(exception) = &self.exception {
             if !exception.is_empty() {

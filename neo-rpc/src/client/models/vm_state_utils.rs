@@ -1,3 +1,5 @@
+use super::super::utility::required_string;
+use neo_json::{JObject, JToken};
 use neo_vm_rs::VmState;
 
 pub fn vm_state_to_string(state: VmState) -> String {
@@ -14,6 +16,29 @@ pub fn vm_state_from_str(value: &str) -> Option<VmState> {
         "FAULT" => Some(VmState::Fault),
         _ => None,
     }
+}
+
+pub(super) fn parse_vm_state_field(json: &JObject, field: &str) -> Result<VmState, String> {
+    let value = required_string(json, field)?;
+    vm_state_from_str(&value).ok_or_else(|| format!("Invalid VM state: {value}"))
+}
+
+pub(super) fn insert_vm_state_field(json: &mut JObject, field: &str, state: VmState) {
+    json.insert(field.to_string(), JToken::String(vm_state_to_string(state)));
+}
+
+pub(super) fn parse_gas_consumed_field(json: &JObject) -> Result<i64, String> {
+    let value = required_string(json, "gasconsumed")?;
+    value
+        .parse::<i64>()
+        .map_err(|_| format!("Invalid gas consumed value: {value}"))
+}
+
+pub(super) fn insert_gas_consumed_field(json: &mut JObject, gas_consumed: i64) {
+    json.insert(
+        "gasconsumed".to_string(),
+        JToken::String(gas_consumed.to_string()),
+    );
 }
 
 #[cfg(test)]
@@ -35,5 +60,62 @@ mod tests {
             let text = vm_state_to_string(state);
             assert_eq!(vm_state_from_str(&text), Some(state));
         }
+    }
+
+    #[test]
+    fn vm_state_field_helpers_preserve_rpc_errors_and_output() {
+        let mut json = JObject::new();
+        json.insert("state".to_string(), JToken::String("halt".to_string()));
+
+        assert_eq!(parse_vm_state_field(&json, "state"), Ok(VmState::Halt));
+
+        let mut output = JObject::new();
+        insert_vm_state_field(&mut output, "vmstate", VmState::Fault);
+        assert_eq!(
+            output.get("vmstate").and_then(JToken::as_string).as_deref(),
+            Some("FAULT")
+        );
+
+        json.insert("state".to_string(), JToken::String("running".to_string()));
+        assert_eq!(
+            parse_vm_state_field(&json, "state").expect_err("invalid VM state"),
+            "Invalid VM state: running"
+        );
+
+        let missing = JObject::new();
+        assert_eq!(
+            parse_vm_state_field(&missing, "state").expect_err("missing VM state"),
+            "Missing or invalid 'state' field"
+        );
+    }
+
+    #[test]
+    fn gas_consumed_field_helpers_preserve_rpc_errors_and_output() {
+        let mut json = JObject::new();
+        json.insert("gasconsumed".to_string(), JToken::String("-7".to_string()));
+
+        assert_eq!(parse_gas_consumed_field(&json), Ok(-7));
+
+        let mut output = JObject::new();
+        insert_gas_consumed_field(&mut output, 42);
+        assert_eq!(
+            output
+                .get("gasconsumed")
+                .and_then(JToken::as_string)
+                .as_deref(),
+            Some("42")
+        );
+
+        json.insert("gasconsumed".to_string(), JToken::String("bad".to_string()));
+        assert_eq!(
+            parse_gas_consumed_field(&json).expect_err("invalid gas consumed"),
+            "Invalid gas consumed value: bad"
+        );
+
+        let missing = JObject::new();
+        assert_eq!(
+            parse_gas_consumed_field(&missing).expect_err("missing gas consumed"),
+            "Missing or invalid 'gasconsumed' field"
+        );
     }
 }
