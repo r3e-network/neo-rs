@@ -184,6 +184,31 @@ pub fn parse_optional_present_token_array_strict<T>(
         .unwrap_or_else(|| Ok(Vec::new()))
 }
 
+/// Parses an optional JSON array where every slot must contain a token.
+///
+/// Missing and non-array fields become an empty vector. Internal `None` slots
+/// abort with `entry_error`, and any present token that fails `parse` aborts the
+/// result.
+pub fn parse_optional_token_array_strict<T>(
+    json: &JObject,
+    field: &str,
+    entry_error: &str,
+    mut parse: impl FnMut(&JToken) -> Result<T, String>,
+) -> Result<Vec<T>, String> {
+    json.get(field)
+        .and_then(JToken::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| {
+                    let token = entry.as_ref().ok_or_else(|| entry_error.to_string())?;
+                    parse(token)
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| Ok(Vec::new()))
+}
+
 /// Parses an optional string array where every slot must contain a string token.
 pub fn parse_optional_string_array_strict(
     json: &JObject,
@@ -521,6 +546,80 @@ mod tests {
             })
             .expect_err("present invalid token errors"),
             "entry must be a number"
+        );
+    }
+
+    #[test]
+    fn optional_token_array_strict_errors_on_empty_or_invalid_slots() {
+        let mut entries = JArray::new();
+        entries.add(Some(JToken::Number(1.0)));
+        entries.add(Some(JToken::Number(2.0)));
+
+        let mut root = JObject::new();
+        root.insert("items".to_string(), JToken::Array(entries));
+
+        let parsed =
+            parse_optional_token_array_strict(&root, "items", "entry must be a number", |token| {
+                token
+                    .as_number()
+                    .map(|value| value as u8)
+                    .ok_or_else(|| "entry must be a number".to_string())
+            })
+            .expect("strict tokens");
+        assert_eq!(parsed, vec![1, 2]);
+        assert!(
+            parse_optional_token_array_strict(&root, "missing", "entry must be a number", |_| {
+                Ok::<_, String>(0)
+            })
+            .expect("missing defaults")
+            .is_empty()
+        );
+        let mut non_array = JObject::new();
+        non_array.insert("items".to_string(), JToken::Boolean(true));
+        assert!(
+            parse_optional_token_array_strict(
+                &non_array,
+                "items",
+                "entry must be a number",
+                |_| { Ok::<_, String>(0) }
+            )
+            .expect("non-array defaults")
+            .is_empty()
+        );
+
+        let mut missing_slot = JArray::new();
+        missing_slot.add(None);
+        let mut invalid = JObject::new();
+        invalid.insert("items".to_string(), JToken::Array(missing_slot));
+        assert_eq!(
+            parse_optional_token_array_strict(
+                &invalid,
+                "items",
+                "entry must be a number",
+                |_| Ok::<_, String>(0)
+            )
+            .expect_err("empty slot errors"),
+            "entry must be a number"
+        );
+
+        invalid.insert(
+            "items".to_string(),
+            JToken::Array(JArray::from(vec![JToken::String("bad".to_string())])),
+        );
+        assert_eq!(
+            parse_optional_token_array_strict(
+                &invalid,
+                "items",
+                "entry must be a number",
+                |token| {
+                    token
+                        .as_number()
+                        .map(|value| value as u8)
+                        .ok_or_else(|| "entry parse failed".to_string())
+                },
+            )
+            .expect_err("present invalid token errors"),
+            "entry parse failed"
         );
     }
 

@@ -24,10 +24,11 @@ pub use parsing::{
     jtoken_to_serde, object_array, optional_script_hash_or_address_lossy, parse_base64_token,
     parse_i64_token, parse_nonce_token, parse_object_array_lossy,
     parse_optional_present_token_array_strict, parse_optional_string_array_strict,
-    parse_oracle_response_code, parse_script_hash_or_address, parse_string_array_lossy,
-    parse_u32_token, parse_u64_token, parse_uint256_array_lossy, required_address_script_hash,
-    required_bigint_string, required_script_hash_or_address, required_string, required_u16_number,
-    required_u32_number, required_u64_number, required_uint256, token_array,
+    parse_optional_token_array_strict, parse_oracle_response_code, parse_script_hash_or_address,
+    parse_string_array_lossy, parse_u32_token, parse_u64_token, parse_uint256_array_lossy,
+    required_address_script_hash, required_bigint_string, required_script_hash_or_address,
+    required_string, required_u16_number, required_u32_number, required_u64_number,
+    required_uint256, token_array,
 };
 pub use stack::stack_items_from_json_field;
 #[allow(unused_imports)]
@@ -206,23 +207,17 @@ impl RpcUtility {
         let next_consensus = Self::get_script_hash(&next_consensus_text, protocol_settings)
             .map_err(|err| format!("Invalid 'nextconsensus' field in block header: {err}"))?;
 
-        let witnesses = json
-            .get("witnesses")
-            .and_then(|token| token.as_array())
-            .map(|entries| {
-                entries
-                    .children()
-                    .iter()
-                    .map(|entry| {
-                        let obj = entry
-                            .as_ref()
-                            .and_then(|token| token.as_object())
-                            .ok_or_else(|| "Witness entry must be an object".to_string())?;
-                        Self::witness_from_json(obj)
-                    })
-                    .collect()
-            })
-            .unwrap_or_else(|| Ok(Vec::new()))?;
+        let witnesses = parse_optional_token_array_strict(
+            json,
+            "witnesses",
+            "Witness entry must be an object",
+            |token| {
+                let obj = token
+                    .as_object()
+                    .ok_or_else(|| "Witness entry must be an object".to_string())?;
+                Self::witness_from_json(obj)
+            },
+        )?;
 
         Ok(BlockHeader::new(
             version,
@@ -576,6 +571,27 @@ mod tests {
     }
 
     #[test]
+    fn transaction_from_json_rejects_empty_optional_array_entries() {
+        for (field, expected) in [
+            ("signers", "Signer entry must be an object"),
+            ("attributes", "Transaction attribute must be an object"),
+            ("witnesses", "Witness entry must be an object"),
+        ] {
+            let mut entries = JArray::new();
+            entries.add(None);
+            let mut json = JObject::new();
+            json.insert(field.to_string(), JToken::Array(entries));
+
+            let err = RpcUtility::transaction_from_json(
+                &json,
+                &ProtocolSettings::default_settings(),
+            )
+            .expect_err("empty array slot should fail");
+            assert_eq!(err, expected);
+        }
+    }
+
+    #[test]
     fn block_roundtrip_json() {
         let witness = Witness::new_with_scripts(vec![0xAA, 0xBB], vec![0xCC, 0xDD]);
         let header = BlockHeader::new(
@@ -607,6 +623,36 @@ mod tests {
             parsed.header.witnesses[0].invocation_script(),
             witness.invocation_script()
         );
+    }
+
+    #[test]
+    fn header_from_json_rejects_empty_witness_entry() {
+        let mut witnesses = JArray::new();
+        witnesses.add(None);
+
+        let mut json = JObject::new();
+        json.insert("version".to_string(), JToken::Number(0.0));
+        json.insert(
+            "previousblockhash".to_string(),
+            JToken::String(UInt256::zero().to_string()),
+        );
+        json.insert(
+            "merkleroot".to_string(),
+            JToken::String(UInt256::zero().to_string()),
+        );
+        json.insert("time".to_string(), JToken::Number(123.0));
+        json.insert("nonce".to_string(), JToken::String(format!("{:016X}", 42u64)));
+        json.insert("index".to_string(), JToken::Number(5.0));
+        json.insert("primary".to_string(), JToken::Number(0.0));
+        json.insert(
+            "nextconsensus".to_string(),
+            JToken::String(UInt160::zero().to_string()),
+        );
+        json.insert("witnesses".to_string(), JToken::Array(witnesses));
+
+        let err = RpcUtility::header_from_json(&json, &ProtocolSettings::default_settings())
+            .expect_err("empty witness slot should fail");
+        assert_eq!(err, "Witness entry must be an object");
     }
 
     #[test]

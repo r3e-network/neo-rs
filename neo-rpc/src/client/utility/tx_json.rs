@@ -1,13 +1,16 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Signer, Transaction};
-use neo_io::serializable::helper::get_var_size;
 use neo_io::serializable::Serializable;
+use neo_io::serializable::helper::get_var_size;
 use neo_json::{JArray, JObject, JToken};
 
 use super::attributes::attribute_from_json;
-use super::parsing::{oracle_response_code_to_str, parse_i64_token, parse_u32_token};
+use super::parsing::{
+    jtoken_to_serde, oracle_response_code_to_str, parse_i64_token,
+    parse_optional_token_array_strict, parse_u32_token,
+};
 use super::witness::{payload_witness_from_json, payload_witness_to_json, witness_to_json};
 
 /// Converts a block to JSON representation.
@@ -86,23 +89,17 @@ pub fn block_from_json(
 ) -> Result<Block, String> {
     let header = header_parser(json, protocol_settings)?;
 
-    let transactions = json
-        .get("tx")
-        .and_then(|token| token.as_array())
-        .map(|entries| {
-            entries
-                .children()
-                .iter()
-                .map(|entry| {
-                    let obj = entry
-                        .as_ref()
-                        .and_then(|token| token.as_object())
-                        .ok_or_else(|| "Transaction entry must be an object".to_string())?;
-                    transaction_from_json(obj, protocol_settings)
-                })
-                .collect()
-        })
-        .unwrap_or_else(|| Ok(Vec::new()))?;
+    let transactions = parse_optional_token_array_strict(
+        json,
+        "tx",
+        "Transaction entry must be an object",
+        |token| {
+            let obj = token
+                .as_object()
+                .ok_or_else(|| "Transaction entry must be an object".to_string())?;
+            transaction_from_json(obj, protocol_settings)
+        },
+    )?;
 
     Ok(Block::new(header, transactions))
 }
@@ -222,30 +219,31 @@ pub fn transaction_from_json(
         tx.set_valid_until_block(height);
     }
 
-    if let Some(signers_token) = json.get("signers").and_then(|t| t.as_array()) {
-        let mut parsed_signers = Vec::with_capacity(signers_token.len());
-        for entry in signers_token.children() {
-            let signer_token = entry
-                .as_ref()
-                .ok_or_else(|| "Signer entry must be an object".to_string())?;
-            let signer_json = super::parsing::jtoken_to_serde(signer_token)?;
-            parsed_signers.push(
-                Signer::from_json(&signer_json)
-                    .map_err(|err| format!("Invalid signer entry: {err}"))?,
-            );
-        }
+    let parsed_signers = parse_optional_token_array_strict(
+        json,
+        "signers",
+        "Signer entry must be an object",
+        |token| {
+            let signer_json = jtoken_to_serde(token)?;
+            Signer::from_json(&signer_json).map_err(|err| format!("Invalid signer entry: {err}"))
+        },
+    )?;
+    if !parsed_signers.is_empty() {
         tx.set_signers(parsed_signers);
     }
 
-    if let Some(attributes_token) = json.get("attributes").and_then(|t| t.as_array()) {
-        let mut attributes = Vec::with_capacity(attributes_token.len());
-        for entry in attributes_token.children() {
-            let attr_obj = entry
-                .as_ref()
-                .and_then(|token| token.as_object())
+    let attributes = parse_optional_token_array_strict(
+        json,
+        "attributes",
+        "Transaction attribute must be an object",
+        |token| {
+            let attr_obj = token
+                .as_object()
                 .ok_or_else(|| "Transaction attribute must be an object".to_string())?;
-            attributes.push(attribute_from_json(attr_obj)?);
-        }
+            attribute_from_json(attr_obj)
+        },
+    )?;
+    if !attributes.is_empty() {
         tx.set_attributes(attributes);
     }
 
@@ -259,15 +257,18 @@ pub fn transaction_from_json(
         tx.set_script(script_bytes);
     }
 
-    if let Some(witnesses_token) = json.get("witnesses").and_then(|t| t.as_array()) {
-        let mut witnesses = Vec::with_capacity(witnesses_token.len());
-        for entry in witnesses_token.children() {
-            let witness_obj = entry
-                .as_ref()
-                .and_then(|token| token.as_object())
+    let witnesses = parse_optional_token_array_strict(
+        json,
+        "witnesses",
+        "Witness entry must be an object",
+        |token| {
+            let witness_obj = token
+                .as_object()
                 .ok_or_else(|| "Witness entry must be an object".to_string())?;
-            witnesses.push(payload_witness_from_json(witness_obj)?);
-        }
+            payload_witness_from_json(witness_obj)
+        },
+    )?;
+    if !witnesses.is_empty() {
         tx.set_witnesses(witnesses);
     }
 
