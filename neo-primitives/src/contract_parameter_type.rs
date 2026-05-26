@@ -1,8 +1,7 @@
 //! `ContractParameterType` - matches C# Neo.SmartContract.ContractParameterType exactly
 
-use crate::protocol_enum_repr;
+use crate::{impl_protocol_enum_from_str, protocol_enum_repr};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::str::FromStr;
 
 protocol_enum_repr! {
     /// Represents the type of `ContractParameter` (matches C# `ContractParameterType`)
@@ -45,22 +44,7 @@ impl ContractParameterType {
     ///
     /// Returns `String` error if the input string does not match any known parameter type.
     pub fn from_string(s: &str) -> Result<Self, String> {
-        match s.to_lowercase().as_str() {
-            "any" => Ok(Self::Any),
-            "boolean" | "bool" => Ok(Self::Boolean),
-            "integer" | "int" => Ok(Self::Integer),
-            "bytearray" | "bytes" => Ok(Self::ByteArray),
-            "string" => Ok(Self::String),
-            "hash160" => Ok(Self::Hash160),
-            "hash256" => Ok(Self::Hash256),
-            "publickey" => Ok(Self::PublicKey),
-            "signature" => Ok(Self::Signature),
-            "array" => Ok(Self::Array),
-            "map" => Ok(Self::Map),
-            "interopinterface" => Ok(Self::InteropInterface),
-            "void" => Ok(Self::Void),
-            _ => Err(format!("unknown contract parameter type: {s}")),
-        }
+        s.parse()
     }
 
     /// Compatibility alias for callers that still use the older helper name.
@@ -70,11 +54,27 @@ impl ContractParameterType {
     }
 }
 
-impl FromStr for ContractParameterType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_string(s)
+impl_protocol_enum_from_str! {
+    ContractParameterType {
+        error = |value: &str| format!("unknown contract parameter type: {value}");
+        aliases = [
+            "bool" => Boolean,
+            "int" => Integer,
+            "bytes" => ByteArray,
+        ];
+        Any,
+        Boolean,
+        Integer,
+        ByteArray,
+        String,
+        Hash160,
+        Hash256,
+        PublicKey,
+        Signature,
+        Array,
+        Map,
+        InteropInterface,
+        Void,
     }
 }
 
@@ -135,6 +135,14 @@ mod tests {
             ContractParameterType::from_string("bool").unwrap(),
             ContractParameterType::Boolean
         );
+        assert_eq!(
+            ContractParameterType::from_string("INT").unwrap(),
+            ContractParameterType::Integer
+        );
+        assert_eq!(
+            ContractParameterType::from_string("bytes").unwrap(),
+            ContractParameterType::ByteArray
+        );
         assert!(ContractParameterType::from_string("Invalid").is_err());
     }
 
@@ -155,6 +163,9 @@ mod tests {
 
         let parsed: ContractParameterType = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, ContractParameterType::Hash160);
+
+        let alias: ContractParameterType = serde_json::from_str("\"int\"").unwrap();
+        assert_eq!(alias, ContractParameterType::Integer);
     }
 
     #[test]

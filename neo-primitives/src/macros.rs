@@ -137,6 +137,32 @@ macro_rules! impl_protocol_enum_from_str {
     (
         $name:ident {
             error = $error:expr;
+            aliases = [$($alias:literal => $alias_variant:ident),* $(,)?];
+            $($variant:ident),+ $(,)?
+        }
+    ) => {
+        impl ::std::str::FromStr for $name {
+            type Err = ::std::string::String;
+
+            fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
+                $(
+                    if value.eq_ignore_ascii_case(Self::$variant.as_str()) {
+                        return Ok(Self::$variant);
+                    }
+                )+
+                $(
+                    if value.eq_ignore_ascii_case($alias) {
+                        return Ok(Self::$alias_variant);
+                    }
+                )*
+                Err(($error)(value))
+            }
+        }
+    };
+
+    (
+        $name:ident {
+            error = $error:expr;
             $($variant:ident),+ $(,)?
         }
     ) => {
