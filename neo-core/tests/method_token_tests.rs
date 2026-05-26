@@ -35,6 +35,42 @@ fn method_token_roundtrip_matches_csharp() {
 }
 
 #[test]
+fn method_token_legacy_vec_api_matches_serializable_wire_bytes() {
+    let token = MethodToken {
+        call_flags: CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
+        hash: UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap(),
+        method: "balanceOf".to_string(),
+        parameters_count: 2,
+        has_return_value: true,
+    };
+
+    let serializable_bytes = serialize_token(&token);
+    let mut legacy_bytes = Vec::new();
+    token.serialize(&mut legacy_bytes);
+
+    assert_eq!(legacy_bytes, serializable_bytes);
+    assert_eq!(token.size(), <MethodToken as Serializable>::size(&token));
+}
+
+#[test]
+fn method_token_legacy_vec_deserialize_accepts_serializable_wire_bytes() {
+    let token = MethodToken {
+        call_flags: CallFlags::ALL,
+        hash: UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap(),
+        method: "transfer".to_string(),
+        parameters_count: 4,
+        has_return_value: false,
+    };
+
+    let bytes = serialize_token(&token);
+    let mut reader = bytes.as_slice();
+    let decoded = MethodToken::deserialize(&mut reader).expect("legacy deserialize");
+
+    assert_eq!(decoded, token);
+    assert!(reader.is_empty());
+}
+
+#[test]
 fn method_token_deserialize_rejects_invalid_call_flags() {
     let hash = UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap();
     let mut writer = BinaryWriter::new();
@@ -43,6 +79,21 @@ fn method_token_deserialize_rejects_invalid_call_flags() {
     writer.write_u16(123).expect("params");
     writer.write_bool(true).expect("return");
     writer.write_u8(0xFF).expect("flags");
+
+    let bytes = writer.into_bytes();
+    let mut reader = MemoryReader::new(&bytes);
+    assert!(<MethodToken as Serializable>::deserialize(&mut reader).is_err());
+}
+
+#[test]
+fn method_token_deserialize_rejects_invalid_boolean_byte() {
+    let hash = UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap();
+    let mut writer = BinaryWriter::new();
+    writer.write_bytes(&hash.as_bytes()).expect("hash");
+    writer.write_var_string("myLongMethod").expect("method");
+    writer.write_u16(123).expect("params");
+    writer.write_u8(0x02).expect("invalid bool");
+    writer.write_u8(CallFlags::ALL.bits()).expect("flags");
 
     let bytes = writer.into_bytes();
     let mut reader = MemoryReader::new(&bytes);

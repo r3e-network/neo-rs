@@ -1,6 +1,8 @@
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::smart_contract::contract_state::NefFile;
 use neo_core::smart_contract::method_token::MethodToken;
+use neo_core::smart_contract::CallFlags;
+use neo_primitives::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;
 
 const NEF_MAGIC: u32 = 0x3346_454E;
@@ -56,6 +58,26 @@ fn nef_roundtrip_matches_csharp() {
     assert_eq!(parsed.compiler, file.compiler);
     assert_eq!(parsed.checksum, file.checksum);
     assert_eq!(parsed.script, file.script);
+}
+
+#[test]
+fn nef_roundtrip_preserves_method_tokens() {
+    let mut file = sample_nef();
+    file.tokens = vec![MethodToken {
+        hash: UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap(),
+        method: "balanceOf".to_string(),
+        parameters_count: 1,
+        has_return_value: true,
+        call_flags: CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
+    }];
+    file.update_checksum();
+
+    let bytes = serialize_nef(&file);
+    let parsed = NefFile::parse(&bytes).expect("parse nef");
+
+    assert_eq!(parsed.tokens, file.tokens);
+    assert_eq!(parsed.checksum, file.checksum);
+    assert_eq!(bytes.len(), file.size());
 }
 
 #[test]

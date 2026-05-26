@@ -5,14 +5,13 @@
 
 use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreResult};
-use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::{
     helper::Helper, interoperable::Interoperable, manifest::ContractManifest,
-    method_token::MethodToken, CallFlags,
+    method_token::MethodToken,
 };
 use crate::vm_runtime::StackItem;
 use crate::UInt160;
@@ -506,59 +505,6 @@ impl Serializable for NefFile {
         }
 
         Ok(nef)
-    }
-}
-
-impl Serializable for MethodToken {
-    fn size(&self) -> usize {
-        UInt160::LENGTH
-            + get_var_size_str(&self.method)
-            + 2  // ParametersCount (u16)
-            + 1  // HasReturnValue (bool)
-            + 1 // CallFlags (u8)
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        if self.method.starts_with('_') {
-            return Err(IoError::invalid_data(
-                "Method name cannot start with '_'".to_string(),
-            ));
-        }
-        if self.method.len() > 32 {
-            return Err(IoError::invalid_data("Method name too long"));
-        }
-
-        writer.write_bytes(&self.hash.as_bytes())?;
-        writer.write_var_string(&self.method)?;
-        writer.write_u16(self.parameters_count)?;
-        writer.write_bool(self.has_return_value)?;
-        writer.write_u8(self.call_flags.bits())?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let hash_bytes = reader.read_bytes(ADDRESS_SIZE)?;
-        let hash =
-            UInt160::from_bytes(&hash_bytes).map_err(|e| IoError::invalid_data(e.to_string()))?;
-        let method = reader.read_var_string(32)?; // Max 32 chars for method name
-        if method.starts_with('_') {
-            return Err(IoError::invalid_data(
-                "Method name cannot start with '_'".to_string(),
-            ));
-        }
-        let parameters_count = reader.read_uint16()?;
-        let has_return_value = reader.read_boolean()?;
-        let call_flags_bits = reader.read_byte()?;
-        let call_flags = CallFlags::from_bits(call_flags_bits)
-            .ok_or_else(|| IoError::invalid_data("CallFlags is not valid"))?;
-
-        Ok(MethodToken {
-            hash,
-            method,
-            parameters_count,
-            has_return_value,
-            call_flags,
-        })
     }
 }
 
