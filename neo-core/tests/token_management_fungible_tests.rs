@@ -100,64 +100,94 @@ fn emit_contract_call(
         .expect("System.Contract.Call syscall");
 }
 
+struct FungibleFixture {
+    token_mgmt: TokenManagement,
+    owner: UInt160,
+    engine: ApplicationEngine,
+}
+
+impl FungibleFixture {
+    fn new() -> Self {
+        let settings = protocol_settings_with_faun();
+        let snapshot = make_snapshot_with_genesis(&settings);
+        let token_mgmt = TokenManagement::new();
+        let owner = sample_account(0x01);
+        let block = make_block(1);
+        let engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::clone(&snapshot),
+            Some(block),
+            settings,
+            TEST_GAS_LIMIT,
+            None,
+        )
+        .expect("engine");
+
+        Self {
+            token_mgmt,
+            owner,
+            engine,
+        }
+    }
+
+    fn token_hash(&self) -> UInt160 {
+        self.token_mgmt.hash()
+    }
+
+    fn call(&mut self, method: &str, args: &[Vec<u8>]) -> Vec<u8> {
+        let token_hash = self.token_hash();
+        self.engine
+            .call_native_contract(token_hash, method, args)
+            .unwrap_or_else(|err| panic!("{method} call: {err}"))
+    }
+
+    fn create(&mut self, name: &[u8], symbol: &[u8]) -> UInt160 {
+        let create_args = vec![
+            vec![0],
+            self.owner.to_bytes(),
+            name.to_vec(),
+            symbol.to_vec(),
+            vec![0],
+            Vec::new(),
+            vec![1],
+        ];
+        let asset_result = self.call("create", &create_args);
+        UInt160::from_bytes(&asset_result).expect("asset id")
+    }
+}
+
 #[test]
 fn get_assets_of_owner_vm_call_returns_iterator_interface() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
+    let mut fixture = FungibleFixture::new();
+    let owner = fixture.owner;
     let holder = sample_account(0x04);
 
-    let block = make_block(1);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let asset_id = fixture.create(b"IterableToken", b"ITR");
 
-    let create_args = vec![
-        vec![0],
-        owner.to_bytes(),
-        b"IterableToken".to_vec(),
-        b"ITR".to_vec(),
-        vec![0],
-        Vec::new(),
-        vec![1],
-    ];
-    let asset_result = engine
-        .call_native_contract(token_mgmt.hash(), "create", &create_args)
-        .expect("create call");
-    let asset_id = UInt160::from_bytes(&asset_result).expect("asset id");
-
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
-    let mint_result = engine
-        .call_native_contract(token_mgmt.hash(), "mint", &mint_args)
-        .expect("mint call");
+    let mint_result = fixture.call("mint", &mint_args);
     assert_eq!(mint_result, vec![1]);
 
     let mut sb = ScriptBuilder::new();
     emit_contract_call(
         &mut sb,
-        token_mgmt.hash(),
+        fixture.token_hash(),
         "getAssetsOfOwner",
         vec![StackItem::from_byte_string(holder.to_bytes())],
     );
     sb.emit_opcode(OpCode::RET);
 
-    engine
+    fixture
+        .engine
         .load_script(sb.to_array(), CallFlags::ALL, None)
         .expect("load script");
-    engine.execute().expect("execute getAssetsOfOwner");
+    fixture.engine.execute().expect("execute getAssetsOfOwner");
 
-    match engine.result_stack().peek(0).unwrap() {
+    match fixture.engine.result_stack().peek(0).unwrap() {
         StackItem::InteropInterface(_) => {}
         item => panic!(
             "expected iterator interop result, got {:?}",
@@ -168,53 +198,26 @@ fn get_assets_of_owner_vm_call_returns_iterator_interface() {
 
 #[test]
 fn direct_invoke_transfer_requires_data_argument() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
+    let mut fixture = FungibleFixture::new();
+    let owner = fixture.owner;
     let holder = sample_account(0x05);
     let recipient = sample_account(0x06);
 
-    let block = make_block(1);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let asset_id = fixture.create(b"StrictTransferToken", b"STT");
 
-    let create_args = vec![
-        vec![0],
-        owner.to_bytes(),
-        b"StrictTransferToken".to_vec(),
-        b"STT".to_vec(),
-        vec![0],
-        Vec::new(),
-        vec![1],
-    ];
-    let asset_result = engine
-        .call_native_contract(token_mgmt.hash(), "create", &create_args)
-        .expect("create call");
-    let asset_id = UInt160::from_bytes(&asset_result).expect("asset id");
-
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
-    let mint_result = engine
-        .call_native_contract(token_mgmt.hash(), "mint", &mint_args)
-        .expect("mint call");
+    let mint_result = fixture.call("mint", &mint_args);
     assert_eq!(mint_result, vec![1]);
 
-    engine.set_calling_script_hash(Some(holder));
+    fixture.engine.set_calling_script_hash(Some(holder));
 
-    let err = token_mgmt
+    let err = fixture
+        .token_mgmt
         .invoke(
-            &mut engine,
+            &mut fixture.engine,
             "transfer",
             &[
                 asset_id.to_bytes(),
@@ -230,68 +233,37 @@ fn direct_invoke_transfer_requires_data_argument() {
 }
 
 #[test]
-
 fn get_assets_of_owner_excludes_fully_burned_asset_in_same_overlay() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
+    let mut fixture = FungibleFixture::new();
+    let owner = fixture.owner;
     let holder = sample_account(0x05);
 
-    let block = make_block(1);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let asset_id = fixture.create(b"BurnableToken", b"BRN");
 
-    let create_args = vec![
-        vec![0],
-        owner.to_bytes(),
-        b"BurnableToken".to_vec(),
-        b"BRN".to_vec(),
-        vec![0],
-        Vec::new(),
-        vec![1],
-    ];
-    let asset_result = engine
-        .call_native_contract(token_mgmt.hash(), "create", &create_args)
-        .expect("create call");
-    let asset_id = UInt160::from_bytes(&asset_result).expect("asset id");
-
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
-    let mint_result = engine
-        .call_native_contract(token_mgmt.hash(), "mint", &mint_args)
-        .expect("mint call");
+    let mint_result = fixture.call("mint", &mint_args);
     assert_eq!(mint_result, vec![1]);
 
-    engine
+    fixture
+        .engine
         .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load overlay script");
-    engine.set_calling_script_hash(Some(holder));
+    fixture.engine.set_calling_script_hash(Some(holder));
 
     let burn_args = vec![asset_id.to_bytes(), holder.to_bytes()];
-    let burn_result = engine
-        .call_native_contract(token_mgmt.hash(), "burn", &burn_args)
-        .expect("burn call");
+    let burn_result = fixture.call("burn", &burn_args);
     assert_eq!(burn_result, vec![1]);
 
     let get_assets_args = vec![holder.to_bytes()];
-    let iterator_bytes = engine
-        .call_native_contract(token_mgmt.hash(), "getAssetsOfOwner", &get_assets_args)
-        .expect("getAssetsOfOwner call");
+    let iterator_bytes = fixture.call("getAssetsOfOwner", &get_assets_args);
     let iterator_id = u32::from_le_bytes(iterator_bytes.try_into().expect("iterator id length"));
 
     assert!(
-        !engine
+        !fixture
+            .engine
             .iterator_next_internal(iterator_id)
             .expect("iterator next"),
         "getAssetsOfOwner should be empty after full burn in the overlay snapshot"
@@ -300,73 +272,31 @@ fn get_assets_of_owner_excludes_fully_burned_asset_in_same_overlay() {
 
 #[test]
 fn mint_and_burn_support_explicit_amount_argument() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
+    let mut fixture = FungibleFixture::new();
+    let owner = fixture.owner;
     let holder = sample_account(0x06);
 
-    let block = make_block(1);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let asset_id = fixture.create(b"AmountToken", b"AMT");
 
-    let create_args = vec![
-        vec![0],
-        owner.to_bytes(),
-        b"AmountToken".to_vec(),
-        b"AMT".to_vec(),
-        vec![0],
-        Vec::new(),
-        vec![1],
-    ];
-    let asset_result = engine
-        .call_native_contract(token_mgmt.hash(), "create", &create_args)
-        .expect("create call");
-    let asset_id = UInt160::from_bytes(&asset_result).expect("asset id");
-
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes(), vec![5]];
-    let mint_result = engine
-        .call_native_contract(token_mgmt.hash(), "mint", &mint_args)
-        .expect("mint with explicit amount");
+    let mint_result = fixture.call("mint", &mint_args);
     assert_eq!(mint_result, vec![1]);
 
-    let balance_result = engine
-        .call_native_contract(
-            token_mgmt.hash(),
-            "balanceOf",
-            &[asset_id.to_bytes(), holder.to_bytes()],
-        )
-        .expect("balanceOf after mint");
+    let balance_result = fixture.call("balanceOf", &[asset_id.to_bytes(), holder.to_bytes()]);
     assert_eq!(
         BigInt::from_signed_bytes_le(&balance_result),
         BigInt::from(5)
     );
 
-    engine.set_calling_script_hash(Some(holder));
+    fixture.engine.set_calling_script_hash(Some(holder));
     let burn_args = vec![asset_id.to_bytes(), holder.to_bytes(), vec![3]];
-    let burn_result = engine
-        .call_native_contract(token_mgmt.hash(), "burn", &burn_args)
-        .expect("burn with explicit amount");
+    let burn_result = fixture.call("burn", &burn_args);
     assert_eq!(burn_result, vec![1]);
 
-    let balance_after_burn = engine
-        .call_native_contract(
-            token_mgmt.hash(),
-            "balanceOf",
-            &[asset_id.to_bytes(), holder.to_bytes()],
-        )
-        .expect("balanceOf after burn");
+    let balance_after_burn = fixture.call("balanceOf", &[asset_id.to_bytes(), holder.to_bytes()]);
     assert_eq!(
         BigInt::from_signed_bytes_le(&balance_after_burn),
         BigInt::from(2)
