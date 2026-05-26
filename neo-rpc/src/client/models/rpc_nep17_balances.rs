@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::{parse_object_array_lossy, required_string};
 use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
@@ -61,22 +62,11 @@ impl RpcNep17Balances {
         json: &JObject,
         _protocol_settings: &ProtocolSettings,
     ) -> Result<Self, String> {
-        let balances = json
-            .get("balance")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNep17Balance::from_json(obj, _protocol_settings).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let balances = parse_object_array_lossy(json, "balance", |obj| {
+            RpcNep17Balance::from_json(obj, _protocol_settings)
+        });
 
-        let address = json
-            .get("address")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'address' field")?;
+        let address = required_string(json, "address")?;
 
         let user_script_hash = if address.starts_with("0x") {
             UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
@@ -132,10 +122,7 @@ impl RpcNep17Balance {
         json: &JObject,
         _protocol_settings: &ProtocolSettings,
     ) -> Result<Self, String> {
-        let asset_hash_str = json
-            .get("assethash")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'assethash' field")?;
+        let asset_hash_str = required_string(json, "assethash")?;
 
         let asset_hash = if asset_hash_str.starts_with("0x") {
             UInt160::parse(&asset_hash_str)
@@ -144,10 +131,7 @@ impl RpcNep17Balance {
         }
         .map_err(|_| format!("Invalid asset hash: {asset_hash_str}"))?;
 
-        let amount_str = json
-            .get("amount")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'amount' field")?;
+        let amount_str = required_string(json, "amount")?;
         let amount =
             BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {amount_str}"))?;
 
@@ -167,8 +151,8 @@ impl RpcNep17Balance {
 #[cfg(test)]
 mod tests {
     use super::*;
-use neo_config::ProtocolSettings;
-    use neo_json::JToken;
+    use neo_config::ProtocolSettings;
+    use neo_json::{JArray, JToken};
     use std::fs;
     use std::path::PathBuf;
 
@@ -205,6 +189,43 @@ use neo_config::ProtocolSettings;
         assert_eq!(parsed.user_script_hash, balances.user_script_hash);
         assert_eq!(parsed.balances.len(), 1);
         assert_eq!(parsed.balances[0].amount, entry.amount);
+    }
+
+    #[test]
+    fn balances_array_keeps_lossy_parse_behavior() {
+        let settings = ProtocolSettings::default_settings();
+        let valid = RpcNep17Balance {
+            asset_hash: UInt160::zero(),
+            amount: BigInt::from(5),
+            last_updated_block: 3,
+        }
+        .to_json();
+
+        let mut malformed = JObject::new();
+        malformed.insert(
+            "assethash".to_string(),
+            JToken::String(UInt160::zero().to_string()),
+        );
+
+        let mut balances = JArray::new();
+        balances.add(Some(JToken::Object(valid)));
+        balances.add(None);
+        balances.add(Some(JToken::String("not an object".to_string())));
+        balances.add(Some(JToken::Object(malformed)));
+
+        let mut root = JObject::new();
+        root.insert("balance".to_string(), JToken::Array(balances));
+        root.insert(
+            "address".to_string(),
+            JToken::String(WalletHelper::to_address(
+                &UInt160::zero(),
+                settings.address_version,
+            )),
+        );
+
+        let parsed = RpcNep17Balances::from_json(&root, &settings).unwrap();
+        assert_eq!(parsed.balances.len(), 1);
+        assert_eq!(parsed.balances[0].amount, BigInt::from(5));
     }
 
     fn load_rpc_case_result(name: &str) -> Option<JObject> {

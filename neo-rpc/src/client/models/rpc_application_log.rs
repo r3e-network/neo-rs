@@ -9,6 +9,10 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::{
+    parse_object_array_lossy, required_string, stack_item_from_json, stack_item_to_json,
+    stack_items_from_json_field,
+};
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use std::str::FromStr;
 
@@ -45,17 +49,9 @@ impl RpcApplicationLog {
             .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok());
 
-        let executions = json
-            .get("executions")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| Execution::from_json(obj, protocol_settings).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let executions = parse_object_array_lossy(json, "executions", |obj| {
+            Execution::from_json(obj, protocol_settings)
+        });
 
         Ok(Self {
             tx_id,
@@ -117,53 +113,26 @@ impl Execution {
     /// Creates from JSON
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let trigger_str = json
-            .get("trigger")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'trigger' field")?;
+        let trigger_str = required_string(json, "trigger")?;
         let trigger = TriggerType::from_str(&trigger_str)
             .map_err(|_| format!("Invalid trigger type: {trigger_str}"))?;
 
-        let vm_state_str = json
-            .get("vmstate")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'vmstate' field")?;
+        let vm_state_str = required_string(json, "vmstate")?;
         let vm_state = vm_state_from_str(&vm_state_str)
             .ok_or_else(|| format!("Invalid VM state: {vm_state_str}"))?;
 
-        let gas_consumed_str = json
-            .get("gasconsumed")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'gasconsumed' field")?;
+        let gas_consumed_str = required_string(json, "gasconsumed")?;
         let gas_consumed = gas_consumed_str
             .parse::<i64>()
             .map_err(|_| format!("Invalid gas consumed value: {gas_consumed_str}"))?;
 
         let exception_message = json.get("exception").and_then(neo_json::JToken::as_string);
 
-        let stack = json
-            .get("stack")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| super::super::utility::stack_item_from_json(obj).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let stack = stack_items_from_json_field(json, "stack");
 
-        let notifications = json
-            .get("notifications")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNotifyEventArgs::from_json(obj, protocol_settings).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let notifications = parse_object_array_lossy(json, "notifications", |obj| {
+            RpcNotifyEventArgs::from_json(obj, protocol_settings)
+        });
 
         Ok(Self {
             trigger,
@@ -200,7 +169,7 @@ impl Execution {
         let stack = self
             .stack
             .iter()
-            .map(super::super::utility::stack_item_to_json)
+            .map(stack_item_to_json)
             .collect::<Result<Vec<_>, _>>()
             .unwrap_or_default()
             .into_iter()
@@ -246,16 +215,13 @@ impl RpcNotifyEventArgs {
             .and_then(|s| UInt160::parse(&s).ok())
             .ok_or("Missing or invalid 'contract' field")?;
 
-        let event_name = json
-            .get("eventname")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'eventname' field")?;
+        let event_name = required_string(json, "eventname")?;
 
         let state_json = json
             .get("state")
             .and_then(|v| v.as_object())
             .ok_or("Missing or invalid 'state' field")?;
-        let state = super::super::utility::stack_item_from_json(state_json)?;
+        let state = stack_item_from_json(state_json)?;
 
         Ok(Self {
             contract,
@@ -279,10 +245,7 @@ impl RpcNotifyEventArgs {
         );
         json.insert(
             "state".to_string(),
-            JToken::Object(
-                super::super::utility::stack_item_to_json(&self.state)
-                    .unwrap_or_else(|_| JObject::new()),
-            ),
+            JToken::Object(stack_item_to_json(&self.state).unwrap_or_else(|_| JObject::new())),
         );
         json
     }

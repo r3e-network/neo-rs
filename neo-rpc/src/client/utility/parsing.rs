@@ -1,7 +1,38 @@
 use base64::{engine::general_purpose, Engine as _};
 use neo_core::network::payloads::oracle_response_code::OracleResponseCode;
-use neo_json::JToken;
+use neo_json::{JObject, JToken};
 use serde_json::Value as JsonValue;
+
+/// Reads a required string field from a JSON object.
+pub fn required_string(json: &JObject, field: &str) -> Result<String, String> {
+    json.get(field)
+        .and_then(JToken::as_string)
+        .ok_or_else(|| format!("Missing or invalid '{field}' field"))
+}
+
+/// Reads an optional string field from a JSON object.
+pub fn optional_string(json: &JObject, field: &str) -> Option<String> {
+    json.get(field).and_then(JToken::as_string)
+}
+
+/// Parses a JSON object array while preserving the RPC client's historical lossy behavior.
+pub fn parse_object_array_lossy<T>(
+    json: &JObject,
+    field: &str,
+    mut parse: impl FnMut(&JObject) -> Result<T, String>,
+) -> Vec<T> {
+    json.get(field)
+        .and_then(JToken::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.as_ref())
+                .filter_map(JToken::as_object)
+                .filter_map(|obj| parse(obj).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 /// Parses a base64-encoded string token.
 pub fn parse_base64_token(token: &JToken, field: &str) -> Result<Vec<u8>, String> {
@@ -114,4 +145,41 @@ pub const fn oracle_response_code_to_str(code: OracleResponseCode) -> &'static s
 
 pub fn jtoken_to_serde(token: &JToken) -> Result<JsonValue, String> {
     serde_json::from_str(&token.to_string()).map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_json::{JArray, JObject};
+
+    #[test]
+    fn object_array_lossy_keeps_only_successful_objects() {
+        let mut valid = JObject::new();
+        valid.insert("value".to_string(), JToken::String("ok".to_string()));
+
+        let mut invalid = JObject::new();
+        invalid.insert("value".to_string(), JToken::String("skip".to_string()));
+
+        let mut entries = JArray::new();
+        entries.add(Some(JToken::Object(valid)));
+        entries.add(None);
+        entries.add(Some(JToken::String("not an object".to_string())));
+        entries.add(Some(JToken::Object(invalid)));
+
+        let mut root = JObject::new();
+        root.insert("items".to_string(), JToken::Array(entries));
+
+        let parsed = parse_object_array_lossy(&root, "items", |obj| {
+            let value = obj.get("value").and_then(JToken::as_string).unwrap();
+            if value == "ok" {
+                Ok(value)
+            } else {
+                Err("skip".to_string())
+            }
+        });
+
+        assert_eq!(parsed, vec!["ok".to_string()]);
+        let missing = parse_object_array_lossy(&root, "missing", |_| Ok::<_, String>("unused"));
+        assert!(missing.is_empty());
+    }
 }

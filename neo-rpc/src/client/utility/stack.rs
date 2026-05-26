@@ -4,7 +4,7 @@ use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
-use super::parsing::{parse_base64_token, parse_u32_token};
+use super::parsing::{parse_base64_token, parse_object_array_lossy, parse_u32_token};
 
 /// Converts a `neo-json` representation of an RPC stack item into `neo-vm-rs`.
 pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
@@ -134,6 +134,10 @@ pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
     }
 
     Ok(json)
+}
+
+pub fn stack_items_from_json_field(json: &JObject, field: &str) -> Vec<StackValue> {
+    parse_object_array_lossy(json, field, stack_item_from_json)
 }
 
 fn fallback_text_or_null(json: &JObject) -> StackValue {

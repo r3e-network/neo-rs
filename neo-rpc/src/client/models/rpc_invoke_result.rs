@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::{optional_string, required_string, stack_items_from_json_field};
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use neo_json::{JArray, JObject, JToken};
 use neo_vm_rs::StackValue;
@@ -43,44 +44,24 @@ impl RpcInvokeResult {
     /// Creates from JSON
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let script = json
-            .get("script")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'script' field")?;
+        let script = required_string(json, "script")?;
 
-        let state_str = json
-            .get("state")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'state' field")?;
+        let state_str = required_string(json, "state")?;
         let state = vm_state_from_str(&state_str)
             .ok_or_else(|| format!("Invalid VM state: {state_str}"))?;
 
-        let gas_consumed_str = json
-            .get("gasconsumed")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'gasconsumed' field")?;
+        let gas_consumed_str = required_string(json, "gasconsumed")?;
         let gas_consumed = gas_consumed_str
             .parse::<i64>()
             .map_err(|_| format!("Invalid gas consumed value: {gas_consumed_str}"))?;
 
-        let exception = json.get("exception").and_then(neo_json::JToken::as_string);
+        let exception = optional_string(json, "exception");
 
-        let session = json.get("session").and_then(neo_json::JToken::as_string);
+        let session = optional_string(json, "session");
 
-        let tx = json.get("tx").and_then(neo_json::JToken::as_string);
+        let tx = optional_string(json, "tx");
 
-        // Try to parse stack items
-        let stack = json
-            .get("stack")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| super::super::utility::stack_item_from_json(obj).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let stack = stack_items_from_json_field(json, "stack");
 
         Ok(Self {
             script,
@@ -219,6 +200,35 @@ mod tests {
         let parsed = RpcInvokeResult::from_json(&json).unwrap();
         assert_eq!(parsed.stack.len(), 1);
         assert_eq!(stack_value_as_bytes(&parsed.stack[0]).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn invoke_result_stack_array_keeps_lossy_parse_behavior() {
+        let mut valid_stack_item = JObject::new();
+        valid_stack_item.insert("type".to_string(), JToken::String("Boolean".to_string()));
+        valid_stack_item.insert("value".to_string(), JToken::Boolean(true));
+
+        let mut malformed_stack_item = JObject::new();
+        malformed_stack_item.insert("type".to_string(), JToken::String("ByteString".to_string()));
+        malformed_stack_item.insert(
+            "value".to_string(),
+            JToken::String("not base64".to_string()),
+        );
+
+        let mut stack_array = JArray::new();
+        stack_array.add(Some(JToken::Object(valid_stack_item)));
+        stack_array.add(None);
+        stack_array.add(Some(JToken::String("not an object".to_string())));
+        stack_array.add(Some(JToken::Object(malformed_stack_item)));
+
+        let mut json = JObject::new();
+        json.insert("script".to_string(), JToken::String("00".to_string()));
+        json.insert("state".to_string(), JToken::String("HALT".to_string()));
+        json.insert("gasconsumed".to_string(), JToken::String("1".to_string()));
+        json.insert("stack".to_string(), JToken::Array(stack_array));
+
+        let parsed = RpcInvokeResult::from_json(&json).unwrap();
+        assert_eq!(parsed.stack, vec![StackValue::Boolean(true)]);
     }
 
     #[test]

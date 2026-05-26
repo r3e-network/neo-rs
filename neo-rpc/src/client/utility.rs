@@ -18,11 +18,14 @@ mod witness_rule;
 
 #[allow(unused_imports)]
 pub use attributes::attribute_from_json;
+pub use parsing::optional_string;
 #[allow(unused_imports)]
 pub use parsing::{
     jtoken_to_serde, parse_base64_token, parse_i64_token, parse_nonce_token,
-    parse_oracle_response_code, parse_u32_token, parse_u64_token,
+    parse_object_array_lossy, parse_oracle_response_code, parse_u32_token, parse_u64_token,
+    required_string,
 };
+pub use stack::stack_items_from_json_field;
 #[allow(unused_imports)]
 pub use witness::{
     payload_witness_from_json, payload_witness_to_json, scripts_to_witness_json, witness_to_json,

@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::{parse_object_array_lossy, required_string};
 use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
@@ -68,36 +69,15 @@ impl RpcNep17Transfers {
     /// Creates from JSON
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let sent = json
-            .get("sent")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.children()
-                    .iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNep17Transfer::from_json(obj, protocol_settings).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let sent = parse_object_array_lossy(json, "sent", |obj| {
+            RpcNep17Transfer::from_json(obj, protocol_settings)
+        });
 
-        let received = json
-            .get("received")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.children()
-                    .iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNep17Transfer::from_json(obj, protocol_settings).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let received = parse_object_array_lossy(json, "received", |obj| {
+            RpcNep17Transfer::from_json(obj, protocol_settings)
+        });
 
-        let address = json
-            .get("address")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'address' field")?;
+        let address = required_string(json, "address")?;
 
         let user_script_hash = if address.starts_with("0x") {
             UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
@@ -196,10 +176,7 @@ impl RpcNep17Transfer {
             .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'timestamp' field")? as u64;
 
-        let asset_hash_str = json
-            .get("assethash")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'assethash' field")?;
+        let asset_hash_str = required_string(json, "assethash")?;
 
         let asset_hash = if asset_hash_str.starts_with("0x") {
             UInt160::parse(&asset_hash_str)
@@ -219,10 +196,7 @@ impl RpcNep17Transfer {
                 }
             });
 
-        let amount_str = json
-            .get("amount")
-            .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'amount' field")?;
+        let amount_str = required_string(json, "amount")?;
         let amount =
             BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {amount_str}"))?;
 
@@ -257,7 +231,7 @@ impl RpcNep17Transfer {
 #[cfg(test)]
 mod tests {
     use super::*;
-use neo_config::ProtocolSettings;
+    use neo_config::ProtocolSettings;
     use neo_json::JToken;
     use std::fs;
     use std::path::PathBuf;
