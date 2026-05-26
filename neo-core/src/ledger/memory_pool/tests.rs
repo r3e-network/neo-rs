@@ -48,10 +48,7 @@ fn try_add_rejects_unhashable_transaction() {
     let mut tx = Transaction::new();
     tx.set_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
 
-    assert_eq!(
-        pool.try_add(tx, &snapshot, &settings),
-        VerifyResult::Invalid
-    );
+    assert_add_result(&mut pool, tx, &snapshot, &settings, VerifyResult::Invalid);
 }
 
 fn build_signed_transaction(
@@ -87,6 +84,33 @@ fn build_signed_transaction(
     tx
 }
 
+fn signed_tx(settings: &ProtocolSettings, key_byte: u8, network_fee: i64) -> Transaction {
+    build_signed_transaction(settings, [key_byte; 32], network_fee, 0, Vec::new())
+}
+
+fn conflict_attribute(tx: &Transaction) -> TransactionAttribute {
+    TransactionAttribute::Conflicts(Conflicts::new(tx.hash()))
+}
+
+fn assert_add_result(
+    pool: &mut MemoryPool,
+    tx: Transaction,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    expected: VerifyResult,
+) {
+    assert_eq!(pool.try_add(tx, snapshot, settings), expected);
+}
+
+fn add_succeed(
+    pool: &mut MemoryPool,
+    tx: Transaction,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+) {
+    assert_add_result(pool, tx, snapshot, settings, VerifyResult::Succeed);
+}
+
 #[test]
 fn new_transaction_event_can_cancel() {
     let settings = ProtocolSettings::default();
@@ -101,9 +125,12 @@ fn new_transaction_event_can_cancel() {
     }));
 
     let tx = Transaction::new();
-    assert_eq!(
-        pool.try_add(tx, &snapshot, &settings),
-        VerifyResult::PolicyFail
+    assert_add_result(
+        &mut pool,
+        tx,
+        &snapshot,
+        &settings,
+        VerifyResult::PolicyFail,
     );
 
     assert!(called.load(AtomicOrdering::SeqCst));
@@ -127,12 +154,9 @@ fn transaction_added_event_is_emitted() {
         *captured_ref.lock().unwrap() = Some(tx.hash());
     }));
 
-    let tx = build_signed_transaction(&settings, [1u8; 32], 1_0000_0000, 0, Vec::new());
+    let tx = signed_tx(&settings, 1, 1_0000_0000);
     let tx_hash = tx.hash();
-    assert_eq!(
-        pool.try_add(tx, &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx, &snapshot, &settings);
 
     assert!(called.load(AtomicOrdering::SeqCst));
     assert_eq!(captured.lock().unwrap().unwrap(), tx_hash);
@@ -160,17 +184,11 @@ fn capacity_exceeded_emits_removed_event() {
         removed_ref.lock().unwrap().push((args.reason, hashes));
     }));
 
-    let low_fee = build_signed_transaction(&settings, [2u8; 32], 1_0000_0000, 0, Vec::new());
-    let high_fee = build_signed_transaction(&settings, [3u8; 32], 3_0000_0000, 0, Vec::new());
+    let low_fee = signed_tx(&settings, 2, 1_0000_0000);
+    let high_fee = signed_tx(&settings, 3, 3_0000_0000);
 
-    assert_eq!(
-        pool.try_add(low_fee.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(high_fee.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, low_fee.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, high_fee.clone(), &snapshot, &settings);
 
     assert!(!pool.contains_key(&low_fee.hash()));
     assert!(pool.contains_key(&high_fee.hash()));
@@ -187,11 +205,8 @@ fn try_get_returns_unverified_transactions() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx = build_signed_transaction(&settings, [4u8; 32], 1_0000_0000, 0, Vec::new());
-    assert_eq!(
-        pool.try_add(tx.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    let tx = signed_tx(&settings, 4, 1_0000_0000);
+    add_succeed(&mut pool, tx.clone(), &snapshot, &settings);
 
     pool.invalidate_verified_transactions();
     assert_eq!(pool.verified_count(), 0);
@@ -208,22 +223,22 @@ fn conflict_with_different_sender_is_rejected() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let base = build_signed_transaction(&settings, [5u8; 32], 1_0000_0000, 0, Vec::new());
-    assert_eq!(
-        pool.try_add(base.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    let base = signed_tx(&settings, 5, 1_0000_0000);
+    add_succeed(&mut pool, base.clone(), &snapshot, &settings);
 
     let conflict = build_signed_transaction(
         &settings,
         [6u8; 32],
         2_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(base.hash()))],
+        vec![conflict_attribute(&base)],
     );
-    assert_eq!(
-        pool.try_add(conflict, &snapshot, &settings),
-        VerifyResult::HasConflicts
+    assert_add_result(
+        &mut pool,
+        conflict,
+        &snapshot,
+        &settings,
+        VerifyResult::HasConflicts,
     );
     assert!(pool.contains_key(&base.hash()));
     assert_eq!(pool.verified_count(), 1);
@@ -239,17 +254,17 @@ fn max_transactions_per_sender_limit_is_enforced() {
     pool.set_max_transactions_per_sender(Some(1));
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [101u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx2 = build_signed_transaction(&settings, [101u8; 32], 2_0000_0000, 0, Vec::new());
+    let tx1 = signed_tx(&settings, 101, 1_0000_0000);
+    let tx2 = signed_tx(&settings, 101, 2_0000_0000);
     let sender = tx1.sender().expect("sender");
 
-    assert_eq!(
-        pool.try_add(tx1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx2, &snapshot, &settings),
-        VerifyResult::PolicyFail
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
+    assert_add_result(
+        &mut pool,
+        tx2,
+        &snapshot,
+        &settings,
+        VerifyResult::PolicyFail,
     );
     assert_eq!(pool.sender_transaction_count(&sender), 1);
     assert_eq!(pool.max_transactions_per_sender(), Some(1));
@@ -265,24 +280,18 @@ fn max_transactions_per_sender_allows_conflict_replacement() {
     pool.set_max_transactions_per_sender(Some(1));
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [102u8; 32], 1_0000_0000, 0, Vec::new());
+    let tx1 = signed_tx(&settings, 102, 1_0000_0000);
     let tx2 = build_signed_transaction(
         &settings,
         [102u8; 32],
         2_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(tx1.hash()))],
+        vec![conflict_attribute(&tx1)],
     );
     let sender = tx1.sender().expect("sender");
 
-    assert_eq!(
-        pool.try_add(tx1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
 
     assert!(!pool.contains_key(&tx1.hash()));
     assert!(pool.contains_key(&tx2.hash()));
@@ -295,31 +304,19 @@ fn higher_fee_conflict_replaces_multiple_transactions() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [7u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx2 = build_signed_transaction(&settings, [7u8; 32], 1_0000_0000, 0, Vec::new());
-    assert_eq!(
-        pool.try_add(tx1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    let tx1 = signed_tx(&settings, 7, 1_0000_0000);
+    let tx2 = signed_tx(&settings, 7, 1_0000_0000);
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
 
     let replacement = build_signed_transaction(
         &settings,
         [7u8; 32],
         2_0000_0000 + 1,
         0,
-        vec![
-            TransactionAttribute::Conflicts(Conflicts::new(tx1.hash())),
-            TransactionAttribute::Conflicts(Conflicts::new(tx2.hash())),
-        ],
+        vec![conflict_attribute(&tx1), conflict_attribute(&tx2)],
     );
-    assert_eq!(
-        pool.try_add(replacement.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, replacement.clone(), &snapshot, &settings);
 
     assert!(pool.contains_key(&replacement.hash()));
     assert!(!pool.contains_key(&tx1.hash()));
@@ -333,20 +330,15 @@ fn update_pool_for_block_persisted_keeps_conflict_without_shared_signer() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let pool_tx = build_signed_transaction(&settings, [8u8; 32], 1_0000_0000, 0, Vec::new());
-    assert_eq!(
-        pool.try_add(pool_tx.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    let pool_tx = signed_tx(&settings, 8, 1_0000_0000);
+    add_succeed(&mut pool, pool_tx.clone(), &snapshot, &settings);
 
     let block_tx = build_signed_transaction(
         &settings,
         [9u8; 32],
         2_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(
-            pool_tx.hash(),
-        ))],
+        vec![conflict_attribute(&pool_tx)],
     );
 
     let mut block = Block::new();
@@ -369,22 +361,13 @@ fn capacity_enforces_high_fee_eviction() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx_low = build_signed_transaction(&settings, [20u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx_mid = build_signed_transaction(&settings, [21u8; 32], 2_0000_0000, 0, Vec::new());
-    let tx_high = build_signed_transaction(&settings, [22u8; 32], 3_0000_0000, 0, Vec::new());
+    let tx_low = signed_tx(&settings, 20, 1_0000_0000);
+    let tx_mid = signed_tx(&settings, 21, 2_0000_0000);
+    let tx_high = signed_tx(&settings, 22, 3_0000_0000);
 
-    assert_eq!(
-        pool.try_add(tx_low.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_mid.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_high.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx_low.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_mid.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_high.clone(), &snapshot, &settings);
 
     assert_eq!(pool.count(), 2);
     assert!(!pool.contains_key(&tx_low.hash()));
@@ -398,22 +381,13 @@ fn sorted_verified_transactions_respects_limit_and_order() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx_low = build_signed_transaction(&settings, [10u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx_mid = build_signed_transaction(&settings, [11u8; 32], 2_0000_0000, 0, Vec::new());
-    let tx_high = build_signed_transaction(&settings, [12u8; 32], 3_0000_0000, 0, Vec::new());
+    let tx_low = signed_tx(&settings, 10, 1_0000_0000);
+    let tx_mid = signed_tx(&settings, 11, 2_0000_0000);
+    let tx_high = signed_tx(&settings, 12, 3_0000_0000);
 
-    assert_eq!(
-        pool.try_add(tx_low.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_mid.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_high.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx_low, &snapshot, &settings);
+    add_succeed(&mut pool, tx_mid.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_high.clone(), &snapshot, &settings);
 
     let top_two = pool.sorted_verified_transactions(2);
     assert_eq!(top_two.len(), 2);
@@ -427,27 +401,15 @@ fn sorted_verified_transactions_subset_is_consistent() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx_low = build_signed_transaction(&settings, [40u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx_mid = build_signed_transaction(&settings, [41u8; 32], 2_0000_0000, 0, Vec::new());
-    let tx_high = build_signed_transaction(&settings, [42u8; 32], 3_0000_0000, 0, Vec::new());
-    let tx_top = build_signed_transaction(&settings, [43u8; 32], 4_0000_0000, 0, Vec::new());
+    let tx_low = signed_tx(&settings, 40, 1_0000_0000);
+    let tx_mid = signed_tx(&settings, 41, 2_0000_0000);
+    let tx_high = signed_tx(&settings, 42, 3_0000_0000);
+    let tx_top = signed_tx(&settings, 43, 4_0000_0000);
 
-    assert_eq!(
-        pool.try_add(tx_low.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_mid.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_high.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_top.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx_low.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_mid.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_high.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_top.clone(), &snapshot, &settings);
 
     let top_two = pool.sorted_verified_transactions(2);
     let top_four = pool.sorted_verified_transactions(4);
@@ -470,27 +432,18 @@ fn can_transaction_fit_in_pool_checks_lowest_fee() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let low = build_signed_transaction(&settings, [30u8; 32], 1_0000_0000, 0, Vec::new());
-    let mid = build_signed_transaction(&settings, [31u8; 32], 2_0000_0000, 0, Vec::new());
-    let high = build_signed_transaction(&settings, [32u8; 32], 3_0000_0000, 0, Vec::new());
+    let low = signed_tx(&settings, 30, 1_0000_0000);
+    let mid = signed_tx(&settings, 31, 2_0000_0000);
+    let high = signed_tx(&settings, 32, 3_0000_0000);
 
-    assert_eq!(
-        pool.try_add(low, &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(mid, &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(high, &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, low, &snapshot, &settings);
+    add_succeed(&mut pool, mid, &snapshot, &settings);
+    add_succeed(&mut pool, high, &snapshot, &settings);
 
-    let lower = build_signed_transaction(&settings, [33u8; 32], 1_0000_0000 - 1, 0, Vec::new());
+    let lower = signed_tx(&settings, 33, 1_0000_0000 - 1);
     assert!(!pool.can_transaction_fit_in_pool(&lower));
 
-    let higher = build_signed_transaction(&settings, [34u8; 32], 1_0000_0000 + 1, 0, Vec::new());
+    let higher = signed_tx(&settings, 34, 1_0000_0000 + 1);
     assert!(pool.can_transaction_fit_in_pool(&higher));
 }
 
@@ -500,22 +453,13 @@ fn reverify_promotes_highest_fee_first() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx_low = build_signed_transaction(&settings, [13u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx_mid = build_signed_transaction(&settings, [14u8; 32], 2_0000_0000, 0, Vec::new());
-    let tx_high = build_signed_transaction(&settings, [15u8; 32], 3_0000_0000, 0, Vec::new());
+    let tx_low = signed_tx(&settings, 13, 1_0000_0000);
+    let tx_mid = signed_tx(&settings, 14, 2_0000_0000);
+    let tx_high = signed_tx(&settings, 15, 3_0000_0000);
 
-    assert_eq!(
-        pool.try_add(tx_low.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_mid.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_high.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx_low.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_mid.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_high.clone(), &snapshot, &settings);
 
     pool.invalidate_verified_transactions();
     assert_eq!(pool.verified_count(), 0);
@@ -544,11 +488,8 @@ fn reverify_batches_progress_without_exhausting_pool() {
     for i in 0..100u8 {
         let fee = 1_0000_0000 + (i as i64) * 10_000;
         let key = 40u8.wrapping_add(i);
-        let tx = build_signed_transaction(&settings, [key; 32], fee, 0, Vec::new());
-        assert_eq!(
-            pool.try_add(tx.clone(), &snapshot, &settings),
-            VerifyResult::Succeed
-        );
+        let tx = signed_tx(&settings, key, fee);
+        add_succeed(&mut pool, tx, &snapshot, &settings);
     }
 
     pool.invalidate_verified_transactions();
@@ -581,22 +522,13 @@ fn update_pool_with_header_backlog_moves_to_unverified() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [30u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx2 = build_signed_transaction(&settings, [31u8; 32], 1_1000_0000, 0, Vec::new());
-    let tx3 = build_signed_transaction(&settings, [32u8; 32], 1_2000_0000, 0, Vec::new());
+    let tx1 = signed_tx(&settings, 30, 1_0000_0000);
+    let tx2 = signed_tx(&settings, 31, 1_1000_0000);
+    let tx3 = signed_tx(&settings, 32, 1_2000_0000);
 
-    assert_eq!(
-        pool.try_add(tx1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx3.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx3.clone(), &snapshot, &settings);
 
     let mut block = Block::new();
     block.header.set_index(1);
@@ -617,17 +549,11 @@ fn invalidate_all_clears_pool() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [40u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx2 = build_signed_transaction(&settings, [41u8; 32], 1_1000_0000, 0, Vec::new());
+    let tx1 = signed_tx(&settings, 40, 1_0000_0000);
+    let tx2 = signed_tx(&settings, 41, 1_1000_0000);
 
-    assert_eq!(
-        pool.try_add(tx1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
 
     pool.invalidate_all_transactions();
     assert_eq!(pool.count(), 0);
@@ -641,11 +567,8 @@ fn contains_key_tracks_verified_and_unverified() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx = build_signed_transaction(&settings, [50u8; 32], 1_0000_0000, 0, Vec::new());
-    assert_eq!(
-        pool.try_add(tx.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    let tx = signed_tx(&settings, 50, 1_0000_0000);
+    add_succeed(&mut pool, tx.clone(), &snapshot, &settings);
     assert!(pool.contains_key(&tx.hash()));
 
     pool.invalidate_verified_transactions();
@@ -660,27 +583,18 @@ fn iterator_returns_verified_and_unverified_transactions() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [10u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx2 = build_signed_transaction(&settings, [11u8; 32], 2_0000_0000, 0, Vec::new());
-    let tx3 = build_signed_transaction(&settings, [12u8; 32], 3_0000_0000, 0, Vec::new());
+    let tx1 = signed_tx(&settings, 10, 1_0000_0000);
+    let tx2 = signed_tx(&settings, 11, 2_0000_0000);
+    let tx3 = signed_tx(&settings, 12, 3_0000_0000);
 
-    assert_eq!(
-        pool.try_add(tx1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
 
     pool.invalidate_verified_transactions();
     pool.verification_context =
         TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(50_0000_0000i64));
 
-    assert_eq!(
-        pool.try_add(tx3.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx3.clone(), &snapshot, &settings);
 
     let all = pool.all_transactions_vec();
     assert_eq!(all.len(), 3);
@@ -702,22 +616,13 @@ fn verified_and_unverified_transactions_are_sorted_descending() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx_low = build_signed_transaction(&settings, [20u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx_mid = build_signed_transaction(&settings, [21u8; 32], 2_0000_0000, 0, Vec::new());
-    let tx_high = build_signed_transaction(&settings, [22u8; 32], 3_0000_0000, 0, Vec::new());
+    let tx_low = signed_tx(&settings, 20, 1_0000_0000);
+    let tx_mid = signed_tx(&settings, 21, 2_0000_0000);
+    let tx_high = signed_tx(&settings, 22, 3_0000_0000);
 
-    assert_eq!(
-        pool.try_add(tx_low.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_mid.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx_high.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx_low.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_mid.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_high.clone(), &snapshot, &settings);
 
     let (verified, unverified) = pool.verified_and_unverified_transactions();
     assert_eq!(verified.len(), 3);
@@ -741,14 +646,14 @@ fn try_add_rejects_duplicate_transactions() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx = build_signed_transaction(&settings, [60u8; 32], 1_0000_0000, 0, Vec::new());
-    assert_eq!(
-        pool.try_add(tx.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx, &snapshot, &settings),
-        VerifyResult::AlreadyInPool
+    let tx = signed_tx(&settings, 60, 1_0000_0000);
+    add_succeed(&mut pool, tx.clone(), &snapshot, &settings);
+    assert_add_result(
+        &mut pool,
+        tx,
+        &snapshot,
+        &settings,
+        VerifyResult::AlreadyInPool,
     );
 }
 
@@ -758,34 +663,31 @@ fn conflict_chain_rejects_lower_fee_replacement() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [70u8; 32], 1_0000_0000, 0, Vec::new());
-    assert_eq!(
-        pool.try_add(tx1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    let tx1 = signed_tx(&settings, 70, 1_0000_0000);
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
 
     let tx2 = build_signed_transaction(
         &settings,
         [70u8; 32],
         2_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(tx1.hash()))],
+        vec![conflict_attribute(&tx1)],
     );
-    assert_eq!(
-        pool.try_add(tx2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
 
     let tx3 = build_signed_transaction(
         &settings,
         [70u8; 32],
         1_5000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(tx2.hash()))],
+        vec![conflict_attribute(&tx2)],
     );
-    assert_eq!(
-        pool.try_add(tx3, &snapshot, &settings),
-        VerifyResult::HasConflicts
+    assert_add_result(
+        &mut pool,
+        tx3,
+        &snapshot,
+        &settings,
+        VerifyResult::HasConflicts,
     );
 
     assert_eq!(pool.count(), 1);
@@ -799,45 +701,39 @@ fn conflict_chain_allows_nonexistent_conflict_replacement() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [80u8; 32], 1_0000_0000, 0, Vec::new());
+    let tx1 = signed_tx(&settings, 80, 1_0000_0000);
     let tx2 = build_signed_transaction(
         &settings,
         [80u8; 32],
         2_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(tx1.hash()))],
+        vec![conflict_attribute(&tx1)],
     );
     let tx3 = build_signed_transaction(
         &settings,
         [80u8; 32],
         1_5000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(tx2.hash()))],
+        vec![conflict_attribute(&tx2)],
     );
     let tx4 = build_signed_transaction(
         &settings,
         [80u8; 32],
         3_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(tx3.hash()))],
+        vec![conflict_attribute(&tx3)],
     );
 
-    assert_eq!(
-        pool.try_add(tx1, &snapshot, &settings),
-        VerifyResult::Succeed
+    add_succeed(&mut pool, tx1, &snapshot, &settings);
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
+    assert_add_result(
+        &mut pool,
+        tx3,
+        &snapshot,
+        &settings,
+        VerifyResult::HasConflicts,
     );
-    assert_eq!(
-        pool.try_add(tx2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(tx3, &snapshot, &settings),
-        VerifyResult::HasConflicts
-    );
-    assert_eq!(
-        pool.try_add(tx4.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx4.clone(), &snapshot, &settings);
 
     assert_eq!(pool.count(), 2);
     assert!(pool.contains_key(&tx2.hash()));
@@ -852,15 +748,12 @@ fn block_persist_moves_to_unverified_and_reverify() {
 
     let mut txs = Vec::new();
     for i in 0..70u8 {
-        let private_key = [i.saturating_add(1); 32];
-        let tx = build_signed_transaction(&settings, private_key, 1_0000_0000, 0, Vec::new());
+        let key = i.saturating_add(1);
+        let tx = signed_tx(&settings, key, 1_0000_0000);
         if let Some(sender) = tx.sender() {
             set_gas_balance(&snapshot, sender, 1_0000_0000);
         }
-        assert_eq!(
-            pool.try_add(tx.clone(), &snapshot, &settings),
-            VerifyResult::Succeed
-        );
+        add_succeed(&mut pool, tx.clone(), &snapshot, &settings);
         txs.push(tx);
     }
 
@@ -890,15 +783,12 @@ fn block_persist_reverify_drops_transactions_after_balance_change() {
 
     let mut txs = Vec::new();
     for i in 0..70u8 {
-        let private_key = [i.saturating_add(1); 32];
-        let tx = build_signed_transaction(&settings, private_key, 1_0000_0000, 0, Vec::new());
+        let key = i.saturating_add(1);
+        let tx = signed_tx(&settings, key, 1_0000_0000);
         if let Some(sender) = tx.sender() {
             set_gas_balance(&snapshot, sender, 1_0000_0000);
         }
-        assert_eq!(
-            pool.try_add(tx.clone(), &snapshot, &settings),
-            VerifyResult::Succeed
-        );
+        add_succeed(&mut pool, tx.clone(), &snapshot, &settings);
         txs.push(tx);
     }
 
@@ -929,33 +819,21 @@ fn unverified_high_priority_transactions_prevent_low_fee_admission() {
     let snapshot = DataCache::new(false);
 
     for i in 0..99u8 {
-        let tx = build_signed_transaction(&settings, [50u8 + i; 32], 5_0000_0000, 0, Vec::new());
-        assert_eq!(
-            pool.try_add(tx, &snapshot, &settings),
-            VerifyResult::Succeed
-        );
+        let tx = signed_tx(&settings, 50u8 + i, 5_0000_0000);
+        add_succeed(&mut pool, tx, &snapshot, &settings);
     }
 
     pool.invalidate_verified_transactions();
     assert_eq!(pool.unverified_count(), 99);
     pool.verification_context =
         TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(50_0000_0000i64));
-    assert!(pool.can_transaction_fit_in_pool(&build_signed_transaction(
-        &settings,
-        [10u8; 32],
-        5_0000_0000,
-        0,
-        Vec::new()
-    )));
+    assert!(pool.can_transaction_fit_in_pool(&signed_tx(&settings, 10, 5_0000_0000)));
 
-    let tx = build_signed_transaction(&settings, [20u8; 32], 5_0000_0000, 0, Vec::new());
-    assert_eq!(
-        pool.try_add(tx, &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    let tx = signed_tx(&settings, 20, 5_0000_0000);
+    add_succeed(&mut pool, tx, &snapshot, &settings);
     assert_eq!(pool.count(), 100);
 
-    let low = build_signed_transaction(&settings, [21u8; 32], 1_0000_0000, 0, Vec::new());
+    let low = signed_tx(&settings, 21, 1_0000_0000);
     assert!(!pool.can_transaction_fit_in_pool(&low));
 }
 
@@ -965,20 +843,14 @@ fn verified_transactions_vec_returns_only_verified() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx1 = build_signed_transaction(&settings, [60u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx2 = build_signed_transaction(&settings, [61u8; 32], 2_0000_0000, 0, Vec::new());
+    let tx1 = signed_tx(&settings, 60, 1_0000_0000);
+    let tx2 = signed_tx(&settings, 61, 2_0000_0000);
 
-    assert_eq!(
-        pool.try_add(tx1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
     pool.invalidate_verified_transactions();
     pool.verification_context =
         TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(50_0000_0000i64));
-    assert_eq!(
-        pool.try_add(tx2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
 
     let verified = pool.verified_transactions_vec();
     assert_eq!(verified.len(), 1);
@@ -996,15 +868,12 @@ fn reverify_limits_when_verified_exceeds_max_per_block() {
     let snapshot = DataCache::new(false);
 
     for i in 0..3u8 {
-        let tx = build_signed_transaction(&settings, [70u8 + i; 32], 1_0000_0000, 0, Vec::new());
-        assert_eq!(
-            pool.try_add(tx, &snapshot, &settings),
-            VerifyResult::Succeed
-        );
+        let tx = signed_tx(&settings, 70u8 + i, 1_0000_0000);
+        add_succeed(&mut pool, tx, &snapshot, &settings);
     }
 
-    let unverified_1 = build_signed_transaction(&settings, [80u8; 32], 2_0000_0000, 0, Vec::new());
-    let unverified_2 = build_signed_transaction(&settings, [81u8; 32], 1_0000_0000, 0, Vec::new());
+    let unverified_1 = signed_tx(&settings, 80, 2_0000_0000);
+    let unverified_2 = signed_tx(&settings, 81, 1_0000_0000);
     pool.insert_unverified_for_test(unverified_1);
     pool.insert_unverified_for_test(unverified_2);
 
@@ -1032,39 +901,33 @@ fn try_add_handles_multi_conflict_scenarios() {
         sender_key,
         1_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp1.hash()))],
+        vec![conflict_attribute(&mp1)],
     );
     let mp2_2 = build_signed_transaction(
         &settings,
         sender_key,
         1_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp1.hash()))],
+        vec![conflict_attribute(&mp1)],
     );
-    assert_eq!(
-        pool.try_add(mp2_1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(mp2_2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, mp2_1.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, mp2_2.clone(), &snapshot, &settings);
 
     let mp3 = build_signed_transaction(
         &settings,
         sender_key,
         2_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp1.hash()))],
+        vec![conflict_attribute(&mp1)],
     );
-    assert_eq!(
-        pool.try_add(mp3.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, mp3.clone(), &snapshot, &settings);
 
-    assert_eq!(
-        pool.try_add(mp1.clone(), &snapshot, &settings),
-        VerifyResult::HasConflicts
+    assert_add_result(
+        &mut pool,
+        mp1.clone(),
+        &snapshot,
+        &settings,
+        VerifyResult::HasConflicts,
     );
     assert!(pool.contains_key(&mp3.hash()));
 
@@ -1073,11 +936,14 @@ fn try_add_handles_multi_conflict_scenarios() {
         malicious_key,
         3_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp3.hash()))],
+        vec![conflict_attribute(&mp3)],
     );
-    assert_eq!(
-        pool.try_add(malicious, &snapshot, &settings),
-        VerifyResult::HasConflicts
+    assert_add_result(
+        &mut pool,
+        malicious,
+        &snapshot,
+        &settings,
+        VerifyResult::HasConflicts,
     );
     assert!(pool.contains_key(&mp3.hash()));
 
@@ -1086,12 +952,9 @@ fn try_add_handles_multi_conflict_scenarios() {
         sender_key,
         3_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp3.hash()))],
+        vec![conflict_attribute(&mp3)],
     );
-    assert_eq!(
-        pool.try_add(mp4.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, mp4.clone(), &snapshot, &settings);
     assert!(pool.contains_key(&mp4.hash()));
     assert!(!pool.contains_key(&mp3.hash()));
 
@@ -1100,15 +963,9 @@ fn try_add_handles_multi_conflict_scenarios() {
         sender_key,
         mp2_1.network_fee() + mp2_2.network_fee() + 1,
         0,
-        vec![
-            TransactionAttribute::Conflicts(Conflicts::new(mp2_1.hash())),
-            TransactionAttribute::Conflicts(Conflicts::new(mp2_2.hash())),
-        ],
+        vec![conflict_attribute(&mp2_1), conflict_attribute(&mp2_2)],
     );
-    assert_eq!(
-        pool.try_add(mp6.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, mp6.clone(), &snapshot, &settings);
     assert!(pool.contains_key(&mp6.hash()));
     assert!(!pool.contains_key(&mp2_1.hash()));
     assert!(!pool.contains_key(&mp2_2.hash()));
@@ -1119,39 +976,27 @@ fn try_add_handles_multi_conflict_scenarios() {
         sender_key,
         1_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp7.hash()))],
+        vec![conflict_attribute(&mp7)],
     );
     let mp9 = build_signed_transaction(
         &settings,
         sender_key,
         1_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp7.hash()))],
+        vec![conflict_attribute(&mp7)],
     );
     let mp10 = build_signed_transaction(
         &settings,
         malicious_key,
         1_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp7.hash()))],
+        vec![conflict_attribute(&mp7)],
     );
 
-    assert_eq!(
-        pool.try_add(mp8.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(mp9.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(mp10.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
-    assert_eq!(
-        pool.try_add(mp7.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, mp8.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, mp9.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, mp10.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, mp7.clone(), &snapshot, &settings);
 
     assert!(pool.contains_key(&mp7.hash()));
     assert!(!pool.contains_key(&mp8.hash()));
@@ -1172,27 +1017,21 @@ fn reverify_restores_higher_fee_conflict() {
         sender_key,
         2_0000_0000,
         0,
-        vec![TransactionAttribute::Conflicts(Conflicts::new(mp1.hash()))],
+        vec![conflict_attribute(&mp1)],
     );
 
     if let Some(sender) = mp1.sender() {
         set_gas_balance(&snapshot, sender, 1_0000_0000);
     }
 
-    assert_eq!(
-        pool.try_add(mp1.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, mp1.clone(), &snapshot, &settings);
 
     pool.invalidate_verified_transactions();
     pool.verification_context =
         TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(50_0000_0000i64));
 
     // Adding a higher fee conflict during reverify should succeed
-    assert_eq!(
-        pool.try_add(mp2.clone(), &snapshot, &settings),
-        VerifyResult::Succeed
-    );
+    add_succeed(&mut pool, mp2.clone(), &snapshot, &settings);
 
     // Reverify should handle the conflicts correctly
     pool.reverify_top_unverified_transactions(10, &snapshot, &settings, false);
@@ -1206,11 +1045,11 @@ fn iter_verified_returns_transactions_in_priority_order() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx_low = build_signed_transaction(&settings, [10u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx_high = build_signed_transaction(&settings, [11u8; 32], 3_0000_0000, 0, Vec::new());
+    let tx_low = signed_tx(&settings, 10, 1_0000_0000);
+    let tx_high = signed_tx(&settings, 11, 3_0000_0000);
 
-    pool.try_add(tx_low.clone(), &snapshot, &settings);
-    pool.try_add(tx_high.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_low.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_high.clone(), &snapshot, &settings);
 
     let collected: Vec<_> = pool.iter_verified().collect();
     assert_eq!(collected.len(), 2);
@@ -1224,11 +1063,11 @@ fn iter_unverified_returns_transactions_in_priority_order() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx_low = build_signed_transaction(&settings, [10u8; 32], 1_0000_0000, 0, Vec::new());
-    let tx_high = build_signed_transaction(&settings, [11u8; 32], 3_0000_0000, 0, Vec::new());
+    let tx_low = signed_tx(&settings, 10, 1_0000_0000);
+    let tx_high = signed_tx(&settings, 11, 3_0000_0000);
 
-    pool.try_add(tx_low.clone(), &snapshot, &settings);
-    pool.try_add(tx_high.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_low.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx_high.clone(), &snapshot, &settings);
     pool.invalidate_verified_transactions();
 
     let collected: Vec<_> = pool.iter_unverified().collect();
@@ -1243,11 +1082,11 @@ fn arc_transaction_returns_correct_data() {
     let mut pool = test_balance_pool(&settings);
     let snapshot = DataCache::new(false);
 
-    let tx = build_signed_transaction(&settings, [1u8; 32], 1_0000_0000, 0, Vec::new());
+    let tx = signed_tx(&settings, 1, 1_0000_0000);
     let tx_hash = tx.hash();
     let tx_network_fee = tx.network_fee();
 
-    pool.try_add(tx, &snapshot, &settings);
+    add_succeed(&mut pool, tx, &snapshot, &settings);
 
     let arc_tx = pool.try_get(&tx_hash).expect("transaction should exist");
     assert_eq!(arc_tx.hash(), tx_hash);
