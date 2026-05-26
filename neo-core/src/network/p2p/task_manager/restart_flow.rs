@@ -33,28 +33,35 @@ impl TaskManager {
         });
     }
 
-    pub(super) fn on_restart_tasks(&mut self, actor: Option<ActorRef>, payload: InvPayload) {
+    pub(super) fn on_restart_tasks(
+        &mut self,
+        actor: &ActorRef,
+        payload: InvPayload,
+    ) {
         let inventory_type = payload.inventory_type;
         let hashes: Vec<UInt256> = payload.hashes.clone();
+        let path = actor.path().to_string();
 
-        if let Some(actor_ref) = actor {
-            let path = actor_ref.path().to_string();
-            if self.sessions.contains_key(&path) {
-                for hash in hashes.iter() {
-                    self.forget_hash(hash);
-                    self.decrement_inv_task(hash);
-                }
-                self.restart_tasks_for_session(&path, inventory_type, &hashes);
-                self.request_tasks_for_path(&path);
-                return;
-            }
-
+        if !self.sessions.contains_key(&path) {
             trace!(
                 target: "neo",
                 actor = %path,
-                "broadcasting RestartTasks from unknown session"
+                "ignoring RestartTasks from unknown session"
             );
+            return;
         }
+
+        for hash in hashes.iter() {
+            self.forget_hash(hash);
+            self.decrement_inv_task(hash);
+        }
+        self.restart_tasks_for_session(&path, inventory_type, &hashes);
+        self.request_tasks_for_path(&path);
+    }
+
+    pub(super) fn broadcast_restart_tasks(&mut self, payload: InvPayload) {
+        let inventory_type = payload.inventory_type;
+        let hashes: Vec<UInt256> = payload.hashes.clone();
 
         for hash in hashes.iter() {
             self.forget_hash(hash);

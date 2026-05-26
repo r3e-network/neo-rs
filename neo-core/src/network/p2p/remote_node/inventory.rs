@@ -103,13 +103,10 @@ impl RemoteNode {
         }
 
         let command = TaskManagerCommand::NewTasks {
+            peer: ctx.self_ref(),
             payload: InvPayload::new(payload.inventory_type, hashes),
         };
-        if let Err(err) = self
-            .system
-            .task_manager
-            .tell_from(command, Some(ctx.self_ref()))
-        {
+        if let Err(err) = self.system.task_manager.tell(command) {
             warn!(
                 target: "neo",
                 error = %err,
@@ -125,13 +122,13 @@ impl RemoteNode {
         block_index: Option<u32>,
         ctx: &crate::runtime::ActorContext,
     ) {
-        if let Err(err) = self.system.task_manager.tell_from(
+        if let Err(err) = self.system.task_manager.tell(
             TaskManagerCommand::InventoryCompleted {
+                peer: ctx.self_ref(),
                 hash,
                 block: Box::new(block),
                 block_index,
             },
-            Some(ctx.self_ref()),
         ) {
             warn!(
                 target: "neo",
@@ -511,9 +508,11 @@ impl RemoteNode {
             self.pending_known_hashes.remove(hash);
         }
 
-        if let Err(err) = self.system.task_manager.tell_from(
-            TaskManagerCommand::RestartTasks { payload },
-            Some(ctx.self_ref()),
+        if let Err(err) = self.system.task_manager.tell(
+            TaskManagerCommand::RestartTasks {
+                peer: ctx.self_ref(),
+                payload,
+            },
         ) {
             warn!(
                 target: "neo",

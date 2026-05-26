@@ -187,40 +187,35 @@ impl Actor for TaskManagerActor {
                         self.state.attach_system(context, ctx);
                         self.schedule_timer(ctx);
                     }
-                    TaskManagerCommand::Register { version } => {
-                        if let Some(sender) = ctx.sender() {
-                            self.state.register_session(sender, version, ctx);
-                        } else {
-                            warn!(target: "neo", "register command without sender");
-                        }
+                    TaskManagerCommand::Register { peer, version } => {
+                        self.state.register_session(peer, version, ctx);
                     }
-                    TaskManagerCommand::Update { last_block_index } => {
-                        if let Some(sender) = ctx.sender() {
-                            self.state.update_session(&sender, last_block_index);
-                        }
+                    TaskManagerCommand::Update {
+                        peer,
+                        last_block_index,
+                    } => {
+                        self.state.update_session(&peer, last_block_index);
                     }
-                    TaskManagerCommand::NewTasks { payload } => {
-                        if let Some(sender) = ctx.sender() {
-                            self.state.on_new_tasks(&sender, payload);
-                        }
+                    TaskManagerCommand::NewTasks { peer, payload } => {
+                        self.state.on_new_tasks(&peer, payload);
                     }
-                    TaskManagerCommand::RestartTasks { payload } => {
-                        self.state.on_restart_tasks(ctx.sender(), payload);
+                    TaskManagerCommand::RestartTasks { peer, payload } => {
+                        self.state.on_restart_tasks(&peer, payload);
+                    }
+                    TaskManagerCommand::BroadcastRestartTasks { payload } => {
+                        self.state.broadcast_restart_tasks(payload);
                     }
                     TaskManagerCommand::InventoryCompleted {
+                        peer,
                         hash,
                         block,
                         block_index,
                     } => {
-                        if let Some(sender) = ctx.sender() {
-                            self.state
-                                .complete_inventory(&sender, hash, *block, block_index);
-                        }
+                        self.state
+                            .complete_inventory(&peer, hash, *block, block_index);
                     }
-                    TaskManagerCommand::Headers => {
-                        if let Some(sender) = ctx.sender() {
-                            self.state.on_headers(&sender);
-                        }
+                    TaskManagerCommand::Headers { peer } => {
+                        self.state.on_headers(&peer);
                     }
                     TaskManagerCommand::TimerTick => {
                         self.state.prune_timeouts();
@@ -274,23 +269,33 @@ pub enum TaskManagerCommand {
         context: Arc<NeoSystemContext>,
     },
     Register {
+        peer: ActorRef,
         version: VersionPayload,
     },
     Update {
+        peer: ActorRef,
         last_block_index: u32,
     },
     NewTasks {
+        peer: ActorRef,
         payload: InvPayload,
     },
     RestartTasks {
+        peer: ActorRef,
+        payload: InvPayload,
+    },
+    BroadcastRestartTasks {
         payload: InvPayload,
     },
     InventoryCompleted {
+        peer: ActorRef,
         hash: UInt256,
         block: Box<Option<Block>>,
         block_index: Option<u32>,
     },
-    Headers,
+    Headers {
+        peer: ActorRef,
+    },
     TimerTick,
 }
 

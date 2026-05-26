@@ -878,7 +878,7 @@ impl ConsensusActor {
                 if let Err(err) = self
                     .system
                     .task_manager_actor()
-                    .tell(TaskManagerCommand::RestartTasks { payload: inv })
+                    .tell(TaskManagerCommand::BroadcastRestartTasks { payload: inv })
                 {
                     debug!(target: "neo", %err, "failed to request missing transactions");
                 }
@@ -938,7 +938,7 @@ impl ConsensusActor {
             if let Err(err) = self
                 .system
                 .task_manager_actor()
-                .tell(TaskManagerCommand::RestartTasks { payload: inv })
+                .tell(TaskManagerCommand::BroadcastRestartTasks { payload: inv })
             {
                 debug!(target: "neo", %err, "failed to request block transactions");
             }

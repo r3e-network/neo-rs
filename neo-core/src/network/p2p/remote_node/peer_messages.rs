@@ -25,11 +25,11 @@ impl RemoteNode {
         ctx: &mut ActorContext,
     ) -> ActorResult {
         self.last_block_index = payload.last_block_index;
-        if let Err(err) = self.system.task_manager.tell_from(
+        if let Err(err) = self.system.task_manager.tell(
             TaskManagerCommand::Update {
+                peer: ctx.self_ref(),
                 last_block_index: payload.last_block_index,
             },
-            Some(ctx.self_ref()),
         ) {
             warn!(target: "neo", error = %err, "failed to forward peer height update to task manager");
         }
@@ -97,7 +97,9 @@ impl RemoteNode {
             if let Err(err) = self
                 .system
                 .task_manager
-                .tell_from(TaskManagerCommand::Headers, Some(ctx.self_ref()))
+                .tell(TaskManagerCommand::Headers {
+                    peer: ctx.self_ref(),
+                })
             {
                 warn!(target: "neo", error = %err, "failed to notify task manager about headers");
             }

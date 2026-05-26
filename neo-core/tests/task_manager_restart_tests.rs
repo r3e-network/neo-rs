@@ -77,7 +77,7 @@ where
 }
 
 #[tokio::test]
-async fn restart_tasks_from_non_session_sender_broadcasts_getdata() {
+async fn restart_tasks_from_unknown_peer_does_not_broadcast_getdata() {
     let system = ActorSystem::new("task-manager-restart-runtime").expect("actor system");
     let task_manager = system
         .actor_of(Props::new(TaskManagerActor::default), "task-manager")
@@ -108,47 +108,43 @@ async fn restart_tasks_from_non_session_sender_broadcasts_getdata() {
 
     let version = VersionPayload::default();
     task_manager
-        .tell_from(
+        .tell(
             TaskManagerCommand::Register {
+                peer: actor_a.clone(),
                 version: version.clone(),
             },
-            Some(actor_a.clone()),
         )
         .expect("register a");
     task_manager
-        .tell_from(
-            TaskManagerCommand::Register { version },
-            Some(actor_b.clone()),
-        )
+        .tell(TaskManagerCommand::Register {
+            peer: actor_b.clone(),
+            version,
+        })
         .expect("register b");
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    while rx_a.try_recv().is_ok() {}
+    while rx_b.try_recv().is_ok() {}
 
     let hash = UInt256::from([9u8; 32]);
     task_manager
-        .tell_from(
+        .tell(
             TaskManagerCommand::RestartTasks {
+                peer: unknown_sender,
                 payload: InvPayload::create(InventoryType::Transaction, &[hash]),
             },
-            Some(unknown_sender),
         )
         .expect("restart tasks");
 
-    let cmd_a = timeout(Duration::from_secs(2), rx_a.recv())
-        .await
-        .expect("timeout waiting for peer a")
-        .expect("peer a command");
-    let cmd_b = timeout(Duration::from_secs(2), rx_b.recv())
-        .await
-        .expect("timeout waiting for peer b")
-        .expect("peer b command");
-
-    assert_eq!(cmd_a, MessageCommand::GetData);
-    assert_eq!(cmd_b, MessageCommand::GetData);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(rx_a.try_recv().is_err(), "unknown peer restarted peer a");
+    assert!(rx_b.try_recv().is_err(), "unknown peer restarted peer b");
 
     system.shutdown().await.expect("shutdown");
 }
 
 #[tokio::test]
-async fn restart_tasks_without_sender_still_broadcasts_getdata() {
+async fn broadcast_restart_tasks_broadcasts_getdata() {
     let system = ActorSystem::new("task-manager-restart-no-sender").expect("actor system");
     let task_manager = system
         .actor_of(Props::new(TaskManagerActor::default), "task-manager")
@@ -164,17 +160,17 @@ async fn restart_tasks_without_sender_still_broadcasts_getdata() {
 
     let version = VersionPayload::default();
     task_manager
-        .tell_from(
+        .tell(
             TaskManagerCommand::Register {
-                version: version.clone(),
+                peer: actor_a.clone(),
+                version,
             },
-            Some(actor_a.clone()),
         )
         .expect("register a");
 
     let hash = UInt256::from([10u8; 32]);
     task_manager
-        .tell(TaskManagerCommand::RestartTasks {
+        .tell(TaskManagerCommand::BroadcastRestartTasks {
             payload: InvPayload::create(InventoryType::Transaction, &[hash]),
         })
         .expect("restart tasks");
@@ -215,19 +211,19 @@ async fn new_extensible_tasks_from_registered_peer_request_getdata() {
         vec![],
     );
     task_manager
-        .tell_from(
-            TaskManagerCommand::Register { version },
-            Some(actor.clone()),
-        )
+        .tell(TaskManagerCommand::Register {
+            peer: actor.clone(),
+            version,
+        })
         .expect("register peer");
 
     let hash = UInt256::from([0x2e_u8; 32]);
     task_manager
-        .tell_from(
+        .tell(
             TaskManagerCommand::NewTasks {
+                peer: actor,
                 payload: InvPayload::create(InventoryType::Extensible, &[hash]),
             },
-            Some(actor),
         )
         .expect("new tasks");
 
@@ -275,7 +271,10 @@ async fn register_peer_requests_headers_with_default_count_sentinel() {
         vec![neo_core::network::p2p::capabilities::NodeCapability::FullNode { start_height: 5 }],
     );
     task_manager
-        .tell_from(TaskManagerCommand::Register { version }, Some(actor))
+        .tell(TaskManagerCommand::Register {
+            peer: actor,
+            version,
+        })
         .expect("register peer");
 
     let message = timeout(Duration::from_secs(2), async {
@@ -344,11 +343,11 @@ async fn register_closed_peer_does_not_emit_task_manager_warnings() {
     .expect("dead peer should stop");
 
     task_manager
-        .tell_from(
+        .tell(
             TaskManagerCommand::Register {
+                peer: dead_actor,
                 version: VersionPayload::default(),
             },
-            Some(dead_actor),
         )
         .expect("register dead peer");
 

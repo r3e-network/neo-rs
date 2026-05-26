@@ -388,12 +388,11 @@ impl RemoteNode {
         );
 
         if let Some(version) = self.remote_version.clone() {
-            let register = TaskManagerCommand::Register { version };
-            if let Err(err) = self
-                .system
-                .task_manager
-                .tell_from(register, Some(ctx.self_ref()))
-            {
+            let register = TaskManagerCommand::Register {
+                peer: ctx.self_ref(),
+                version,
+            };
+            if let Err(err) = self.system.task_manager.tell(register) {
                 warn!(target: "neo", error = %err, "failed to notify task manager about session registration");
             }
         }
