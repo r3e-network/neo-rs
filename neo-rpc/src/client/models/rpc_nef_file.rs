@@ -9,10 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::{object_array, parse_object_array_lossy};
 use super::RpcMethodToken;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_core::smart_contract::NefFile;
-use neo_json::JObject;
+use neo_json::{JObject, JToken};
 
 /// RPC NEF file helper matching C# `RpcNefFile`
 pub struct RpcNefFile {
@@ -40,17 +41,7 @@ impl RpcNefFile {
             .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'source' field")?;
 
-        let tokens = json
-            .get("tokens")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcMethodToken::from_json(obj).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let tokens = parse_object_array_lossy(json, "tokens", RpcMethodToken::from_json);
 
         let script = json
             .get("script")
@@ -81,38 +72,32 @@ impl RpcNefFile {
         let mut json = JObject::new();
         json.insert(
             "magic".to_string(),
-            neo_json::JToken::Number(f64::from(NefFile::MAGIC)),
+            JToken::Number(f64::from(NefFile::MAGIC)),
         );
         json.insert(
             "compiler".to_string(),
-            neo_json::JToken::String(self.nef_file.compiler.clone()),
+            JToken::String(self.nef_file.compiler.clone()),
         );
         json.insert(
             "source".to_string(),
-            neo_json::JToken::String(self.nef_file.source.clone()),
+            JToken::String(self.nef_file.source.clone()),
         );
-        let tokens: Vec<neo_json::JToken> = self
-            .nef_file
-            .tokens
-            .iter()
-            .map(|t| {
-                let rpc_token = RpcMethodToken {
-                    method_token: t.clone(),
-                };
-                neo_json::JToken::Object(rpc_token.to_json())
-            })
-            .collect();
         json.insert(
             "tokens".to_string(),
-            neo_json::JToken::Array(neo_json::JArray::from(tokens)),
+            object_array(&self.nef_file.tokens, |t| {
+                RpcMethodToken {
+                    method_token: t.clone(),
+                }
+                .to_json()
+            }),
         );
         json.insert(
             "script".to_string(),
-            neo_json::JToken::String(general_purpose::STANDARD.encode(&self.nef_file.script)),
+            JToken::String(general_purpose::STANDARD.encode(&self.nef_file.script)),
         );
         json.insert(
             "checksum".to_string(),
-            neo_json::JToken::Number(f64::from(self.nef_file.checksum)),
+            JToken::Number(f64::from(self.nef_file.checksum)),
         );
         json
     }
@@ -122,7 +107,6 @@ impl RpcNefFile {
 mod tests {
     use super::*;
     use neo_core::smart_contract::method_token::MethodToken;
-    use neo_json::JToken;
     use std::fs;
     use std::path::PathBuf;
 
