@@ -11,19 +11,6 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 
-pub const JSONRPSEE_READ_ONLY_METHODS: &[&str] = &[
-    "getbestblockhash",
-    "getblockcount",
-    "getblockheadercount",
-    "getnativecontracts",
-    "getnextblockvalidators",
-    "getcandidates",
-    "getconnectioncount",
-    "getrawmempool",
-    "getversion",
-    "listplugins",
-];
-
 /// Shared context used by the optional jsonrpsee RPC module.
 #[derive(Clone)]
 pub struct JsonRpseeContext {
@@ -48,17 +35,38 @@ pub fn build_jsonrpsee_module_with_disabled(
     server: Weak<RwLock<RpcServer>>,
     disabled: Arc<HashSet<String>>,
 ) -> Result<RpcModule<JsonRpseeContext>, RegisterMethodError> {
+    let methods = registered_public_methods(&server);
     let mut module = RpcModule::new(JsonRpseeContext::new(server, disabled));
-    for method in JSONRPSEE_READ_ONLY_METHODS {
+    for method in methods {
         register_neo_method(&mut module, method)?;
     }
     Ok(module)
 }
 
+fn registered_public_methods(server: &Weak<RwLock<RpcServer>>) -> Vec<String> {
+    let Some(server) = server.upgrade() else {
+        return Vec::new();
+    };
+
+    let server = server.read();
+    let handlers = server.handlers_guard();
+    let mut methods = handlers
+        .values()
+        .filter(|handler| !handler.descriptor().requires_auth())
+        .map(|handler| handler.descriptor().name.clone())
+        .collect::<Vec<_>>();
+    methods.sort_unstable();
+    methods.dedup();
+    methods
+}
+
 fn register_neo_method(
     module: &mut RpcModule<JsonRpseeContext>,
-    method: &'static str,
+    method: String,
 ) -> Result<(), RegisterMethodError> {
+    // jsonrpsee stores method names as &'static str; this keeps dynamic RpcHandler names
+    // compatible without restoring a separate static method whitelist.
+    let method: &'static str = Box::leak(method.into_boxed_str());
     module
         .register_blocking_method::<Result<Value, ErrorObjectOwned>, _>(
             method,
