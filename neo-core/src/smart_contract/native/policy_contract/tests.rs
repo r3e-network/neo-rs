@@ -218,6 +218,118 @@ fn committee_address(settings: &ProtocolSettings, snapshot: &DataCache) -> UInt1
     NativeHelpers::committee_address(settings, Some(snapshot))
 }
 
+struct PolicyTestHarness {
+    settings: ProtocolSettings,
+    snapshot: Arc<DataCache>,
+    block: Block,
+    policy: PolicyContract,
+}
+
+impl PolicyTestHarness {
+    fn new() -> Self {
+        let settings = settings_all_active();
+        let snapshot = make_snapshot_with_genesis(&settings);
+        let block = make_block(1000, 1_000);
+        let policy = PolicyContract::new();
+        Self {
+            settings,
+            snapshot,
+            block,
+            policy,
+        }
+    }
+
+    fn unsigned_engine(&self) -> ApplicationEngine {
+        make_engine(
+            Arc::clone(&self.snapshot),
+            self.settings.clone(),
+            Vec::new(),
+            Some(self.block.clone()),
+        )
+    }
+
+    fn committee_engine(&self) -> ApplicationEngine {
+        make_engine(
+            Arc::clone(&self.snapshot),
+            self.settings.clone(),
+            vec![Signer::new(
+                committee_address(&self.settings, self.snapshot.as_ref()),
+                WitnessScope::GLOBAL,
+            )],
+            Some(self.block.clone()),
+        )
+    }
+
+    fn committee_engine_without_block(&self) -> ApplicationEngine {
+        self.signer_engine_without_block(committee_address(&self.settings, self.snapshot.as_ref()))
+    }
+
+    fn signer_engine_without_block(&self, signer: UInt160) -> ApplicationEngine {
+        make_engine(
+            Arc::clone(&self.snapshot),
+            self.settings.clone(),
+            vec![Signer::new(signer, WitnessScope::GLOBAL)],
+            None,
+        )
+    }
+
+    fn call_policy(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> crate::error::CoreResult<Vec<u8>> {
+        engine.call_native_contract(self.policy.hash(), method, args)
+    }
+
+    fn get_i64(&self, engine: &mut ApplicationEngine, method: &str, args: &[Vec<u8>]) -> i64 {
+        let ret = self.call_policy(engine, method, args).expect(method);
+        bytes_to_i64(&ret)
+    }
+}
+
+macro_rules! policy_scalar_setter_test {
+    (
+        fn $name:ident;
+        setter: $setter:literal,
+        valid: [$($valid_arg:expr),* $(,)?],
+        getter: $getter:literal,
+        getter_args: [$($getter_arg:expr),* $(,)?],
+        default: $default:expr,
+        expected: $expected:expr
+        $(, invalid: [$( [$($invalid_arg:expr),* $(,)?] ),* $(,)?])?
+        $(,)?
+    ) => {
+        #[test]
+        fn $name() {
+            let harness = PolicyTestHarness::new();
+            let valid_args = vec![$($valid_arg),*];
+            let getter_args = vec![$($getter_arg),*];
+
+            let mut engine = harness.unsigned_engine();
+            let result = harness.call_policy(&mut engine, $setter, &valid_args);
+            assert!(result.is_err());
+            assert_eq!(harness.get_i64(&mut engine, $getter, &getter_args), $default);
+
+            let mut engine = harness.committee_engine();
+            $(
+                $(
+                    let invalid_args = vec![$($invalid_arg),*];
+                    let result = harness.call_policy(&mut engine, $setter, &invalid_args);
+                    assert!(result.is_err());
+                    assert_eq!(harness.get_i64(&mut engine, $getter, &getter_args), $default);
+                )*
+            )?
+
+            let ret = harness
+                .call_policy(&mut engine, $setter, &valid_args)
+                .expect($setter);
+            assert!(ret.is_empty());
+            assert_eq!(harness.get_i64(&mut engine, $getter, &getter_args), $expected);
+        }
+    };
+}
+
 fn almost_full_committee_address(settings: &ProtocolSettings, snapshot: &DataCache) -> UInt160 {
     let committee = NeoToken::new()
         .committee_from_snapshot(snapshot)
@@ -392,184 +504,79 @@ fn check_default() {
 
 #[test]
 fn check_set_attribute_fee() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let block = make_block(1000, 1_000);
-    let policy = PolicyContract::new();
+    let harness = PolicyTestHarness::new();
     let attr = TransactionAttributeType::Conflicts as u8;
 
-    // Without signature.
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        Vec::new(),
-        Some(block.clone()),
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
+    let mut engine = harness.unsigned_engine();
+    let result = harness.call_policy(
+        &mut engine,
         "setAttributeFee",
         &[int_arg_u8(attr), int_arg_u32(100_500)],
     );
     assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getAttributeFee", &[int_arg_u8(attr)])
-        .expect("getAttributeFee");
-    assert_eq!(bytes_to_i64(&ret), 0);
-
-    // With signature, wrong value.
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        Some(block.clone()),
+    assert_eq!(
+        harness.get_i64(&mut engine, "getAttributeFee", &[int_arg_u8(attr)]),
+        0
     );
-    let result = engine.call_native_contract(
-        policy.hash(),
+
+    let mut engine = harness.committee_engine();
+    let result = harness.call_policy(
+        &mut engine,
         "setAttributeFee",
         &[int_arg_u8(attr), int_arg_u32(1_100_000_000)],
     );
     assert!(result.is_err());
+    assert_eq!(
+        harness.get_i64(&mut engine, "getAttributeFee", &[int_arg_u8(attr)]),
+        0
+    );
 
-    let ret = engine
-        .call_native_contract(policy.hash(), "getAttributeFee", &[int_arg_u8(attr)])
-        .expect("getAttributeFee");
-    assert_eq!(bytes_to_i64(&ret), 0);
-
-    // Proper set.
-    let ret = engine
-        .call_native_contract(
-            policy.hash(),
+    let ret = harness
+        .call_policy(
+            &mut engine,
             "setAttributeFee",
             &[int_arg_u8(attr), int_arg_u32(300_300)],
         )
         .expect("setAttributeFee");
     assert!(ret.is_empty());
+    assert_eq!(
+        harness.get_i64(&mut engine, "getAttributeFee", &[int_arg_u8(attr)]),
+        300_300
+    );
 
-    let ret = engine
-        .call_native_contract(policy.hash(), "getAttributeFee", &[int_arg_u8(attr)])
-        .expect("getAttributeFee");
-    assert_eq!(bytes_to_i64(&ret), 300_300);
-
-    // Set to zero.
-    let ret = engine
-        .call_native_contract(
-            policy.hash(),
+    let ret = harness
+        .call_policy(
+            &mut engine,
             "setAttributeFee",
             &[int_arg_u8(attr), int_arg_u32(0)],
         )
         .expect("setAttributeFee");
     assert!(ret.is_empty());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getAttributeFee", &[int_arg_u8(attr)])
-        .expect("getAttributeFee");
-    assert_eq!(bytes_to_i64(&ret), 0);
+    assert_eq!(
+        harness.get_i64(&mut engine, "getAttributeFee", &[int_arg_u8(attr)]),
+        0
+    );
 }
 
-#[test]
-fn check_set_fee_per_byte() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let block = make_block(1000, 1_000);
-    let policy = PolicyContract::new();
-
-    // Without signature.
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        Vec::new(),
-        Some(block.clone()),
-    );
-    let result = engine.call_native_contract(policy.hash(), "setFeePerByte", &[int_arg_i64(1)]);
-    assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getFeePerByte", &[])
-        .expect("getFeePerByte");
-    assert_eq!(
-        bytes_to_i64(&ret),
-        PolicyContract::DEFAULT_FEE_PER_BYTE as i64
-    );
-
-    // With signature.
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        Some(block.clone()),
-    );
-    let ret = engine
-        .call_native_contract(policy.hash(), "setFeePerByte", &[int_arg_i64(1)])
-        .expect("setFeePerByte");
-    assert!(ret.is_empty());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getFeePerByte", &[])
-        .expect("getFeePerByte");
-    assert_eq!(bytes_to_i64(&ret), 1);
+policy_scalar_setter_test! {
+    fn check_set_fee_per_byte;
+    setter: "setFeePerByte",
+    valid: [int_arg_i64(1)],
+    getter: "getFeePerByte",
+    getter_args: [],
+    default: PolicyContract::DEFAULT_FEE_PER_BYTE as i64,
+    expected: 1,
 }
 
-#[test]
-fn check_set_base_exec_fee() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let block = make_block(1000, 1_000);
-    let policy = PolicyContract::new();
-
-    // Without signature.
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        Vec::new(),
-        Some(block.clone()),
-    );
-    let result = engine.call_native_contract(policy.hash(), "setExecFeeFactor", &[int_arg_u32(50)]);
-    assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getExecFeeFactor", &[])
-        .expect("getExecFeeFactor");
-    assert_eq!(
-        bytes_to_i64(&ret),
-        PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64
-    );
-
-    // With signature, wrong value.
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        Some(block.clone()),
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
-        "setExecFeeFactor",
-        &[int_arg_u32(1_005_000_000)],
-    );
-    assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getExecFeeFactor", &[])
-        .expect("getExecFeeFactor");
-    assert_eq!(
-        bytes_to_i64(&ret),
-        PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64
-    );
-
-    // Proper set (scaled by fee factor).
-    let ret = engine
-        .call_native_contract(policy.hash(), "setExecFeeFactor", &[int_arg_u32(500_000)])
-        .expect("setExecFeeFactor");
-    assert!(ret.is_empty());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getExecFeeFactor", &[])
-        .expect("getExecFeeFactor");
-    assert_eq!(bytes_to_i64(&ret), 50);
+policy_scalar_setter_test! {
+    fn check_set_base_exec_fee;
+    setter: "setExecFeeFactor",
+    valid: [int_arg_u32(500_000)],
+    getter: "getExecFeeFactor",
+    getter_args: [],
+    default: PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64,
+    expected: 50,
+    invalid: [[int_arg_u32(1_005_000_000)]],
 }
 
 #[test]
@@ -708,208 +715,82 @@ fn check_recover_funds_complete_flow() {
     assert!(treasury_balance >= gas_balance);
 }
 
-#[test]
-fn check_set_storage_price() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let block = make_block(1000, 1_000);
-    let policy = PolicyContract::new();
-
-    // Without signature.
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        Vec::new(),
-        Some(block.clone()),
-    );
-    let result =
-        engine.call_native_contract(policy.hash(), "setStoragePrice", &[int_arg_u32(100_500)]);
-    assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getStoragePrice", &[])
-        .expect("getStoragePrice");
-    assert_eq!(
-        bytes_to_i64(&ret),
-        PolicyContract::DEFAULT_STORAGE_PRICE as i64
-    );
-
-    // With signature, wrong value.
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        Some(block.clone()),
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
-        "setStoragePrice",
-        &[int_arg_u32(100_000_000)],
-    );
-    assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getStoragePrice", &[])
-        .expect("getStoragePrice");
-    assert_eq!(
-        bytes_to_i64(&ret),
-        PolicyContract::DEFAULT_STORAGE_PRICE as i64
-    );
-
-    // Proper set.
-    let ret = engine
-        .call_native_contract(policy.hash(), "setStoragePrice", &[int_arg_u32(300_300)])
-        .expect("setStoragePrice");
-    assert!(ret.is_empty());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getStoragePrice", &[])
-        .expect("getStoragePrice");
-    assert_eq!(bytes_to_i64(&ret), 300_300);
+policy_scalar_setter_test! {
+    fn check_set_storage_price;
+    setter: "setStoragePrice",
+    valid: [int_arg_u32(300_300)],
+    getter: "getStoragePrice",
+    getter_args: [],
+    default: PolicyContract::DEFAULT_STORAGE_PRICE as i64,
+    expected: 300_300,
+    invalid: [[int_arg_u32(100_000_000)]],
 }
 
 #[test]
 fn check_set_max_valid_until_block_increment() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let block = make_block(1000, 1_000);
-    let policy = PolicyContract::new();
+    let harness = PolicyTestHarness::new();
 
-    // Without signature.
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        Vec::new(),
-        Some(block.clone()),
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
+    let mut engine = harness.unsigned_engine();
+    let result = harness.call_policy(
+        &mut engine,
         "setMaxValidUntilBlockIncrement",
         &[int_arg_u32(123)],
     );
     assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getMaxValidUntilBlockIncrement", &[])
-        .expect("getMaxValidUntilBlockIncrement");
-    assert_eq!(bytes_to_i64(&ret), 5760);
-
-    // With signature, wrong value.
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        Some(block.clone()),
+    assert_eq!(
+        harness.get_i64(&mut engine, "getMaxValidUntilBlockIncrement", &[]),
+        5760
     );
-    let result = engine.call_native_contract(
-        policy.hash(),
+
+    let mut engine = harness.committee_engine();
+    let result = harness.call_policy(
+        &mut engine,
         "setMaxValidUntilBlockIncrement",
         &[int_arg_u32(100_000_000)],
     );
     assert!(result.is_err());
+    assert_eq!(
+        harness.get_i64(&mut engine, "getMaxValidUntilBlockIncrement", &[]),
+        5760
+    );
 
-    let ret = engine
-        .call_native_contract(policy.hash(), "getMaxValidUntilBlockIncrement", &[])
-        .expect("getMaxValidUntilBlockIncrement");
-    assert_eq!(bytes_to_i64(&ret), 5760);
-
-    // Proper set.
-    let ret = engine
-        .call_native_contract(
-            policy.hash(),
+    let ret = harness
+        .call_policy(
+            &mut engine,
             "setMaxValidUntilBlockIncrement",
             &[int_arg_u32(123)],
         )
         .expect("setMaxValidUntilBlockIncrement");
     assert!(ret.is_empty());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getMaxValidUntilBlockIncrement", &[])
-        .expect("getMaxValidUntilBlockIncrement");
-    assert_eq!(bytes_to_i64(&ret), 123);
+    assert_eq!(
+        harness.get_i64(&mut engine, "getMaxValidUntilBlockIncrement", &[]),
+        123
+    );
 
     // Update MaxTraceableBlocks for further test.
-    let ret = engine
-        .call_native_contract(policy.hash(), "setMaxTraceableBlocks", &[int_arg_u32(6000)])
+    let ret = harness
+        .call_policy(&mut engine, "setMaxTraceableBlocks", &[int_arg_u32(6000)])
         .expect("setMaxTraceableBlocks");
     assert!(ret.is_empty());
 
     // Set MaxValidUntilBlockIncrement >= MaxTraceableBlocks should fail.
-    let result = engine.call_native_contract(
-        policy.hash(),
+    let result = harness.call_policy(
+        &mut engine,
         "setMaxValidUntilBlockIncrement",
         &[int_arg_u32(6000)],
     );
     assert!(result.is_err());
 }
 
-#[test]
-fn check_set_milliseconds_per_block() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let block = make_block(1000, 1_000);
-    let policy = PolicyContract::new();
-
-    // Without signature.
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        Vec::new(),
-        Some(block.clone()),
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
-        "setMillisecondsPerBlock",
-        &[int_arg_u32(123)],
-    );
-    assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getMillisecondsPerBlock", &[])
-        .expect("getMillisecondsPerBlock");
-    assert_eq!(bytes_to_i64(&ret), 15_000);
-
-    // With signature, too big value.
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        Some(block.clone()),
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
-        "setMillisecondsPerBlock",
-        &[int_arg_u32(30_001)],
-    );
-    assert!(result.is_err());
-
-    // With signature, too small value.
-    let result =
-        engine.call_native_contract(policy.hash(), "setMillisecondsPerBlock", &[int_arg_u32(0)]);
-    assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getMillisecondsPerBlock", &[])
-        .expect("getMillisecondsPerBlock");
-    assert_eq!(bytes_to_i64(&ret), 15_000);
-
-    // Proper set.
-    let ret = engine
-        .call_native_contract(
-            policy.hash(),
-            "setMillisecondsPerBlock",
-            &[int_arg_u32(3_000)],
-        )
-        .expect("setMillisecondsPerBlock");
-    assert!(ret.is_empty());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getMillisecondsPerBlock", &[])
-        .expect("getMillisecondsPerBlock");
-    assert_eq!(bytes_to_i64(&ret), 3_000);
+policy_scalar_setter_test! {
+    fn check_set_milliseconds_per_block;
+    setter: "setMillisecondsPerBlock",
+    valid: [int_arg_u32(3_000)],
+    getter: "getMillisecondsPerBlock",
+    getter_args: [],
+    default: 15_000,
+    expected: 3_000,
+    invalid: [[int_arg_u32(30_001)], [int_arg_u32(0)]],
 }
 
 #[test]
@@ -1046,48 +927,28 @@ fn check_block_unblock_account() {
 
 #[test]
 fn check_set_max_traceable_blocks() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let block = make_block(1000, 1_000);
-    let policy = PolicyContract::new();
+    let harness = PolicyTestHarness::new();
 
-    // Without signature.
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        Vec::new(),
-        Some(block.clone()),
-    );
-    let result =
-        engine.call_native_contract(policy.hash(), "setMaxTraceableBlocks", &[int_arg_u32(123)]);
+    let mut engine = harness.unsigned_engine();
+    let result = harness.call_policy(&mut engine, "setMaxTraceableBlocks", &[int_arg_u32(123)]);
     assert!(result.is_err());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getMaxTraceableBlocks", &[])
-        .expect("getMaxTraceableBlocks");
-    assert_eq!(bytes_to_i64(&ret), 2_102_400);
-
-    // Proper set.
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        Some(block.clone()),
+    assert_eq!(
+        harness.get_i64(&mut engine, "getMaxTraceableBlocks", &[]),
+        2_102_400
     );
-    let ret = engine
-        .call_native_contract(policy.hash(), "setMaxTraceableBlocks", &[int_arg_u32(5761)])
+
+    let mut engine = harness.committee_engine();
+    let ret = harness
+        .call_policy(&mut engine, "setMaxTraceableBlocks", &[int_arg_u32(5761)])
         .expect("setMaxTraceableBlocks");
     assert!(ret.is_empty());
-
-    let ret = engine
-        .call_native_contract(policy.hash(), "getMaxTraceableBlocks", &[])
-        .expect("getMaxTraceableBlocks");
-    assert_eq!(bytes_to_i64(&ret), 5761);
+    assert_eq!(
+        harness.get_i64(&mut engine, "getMaxTraceableBlocks", &[]),
+        5761
+    );
 
     // Larger value should be prohibited.
-    let result =
-        engine.call_native_contract(policy.hash(), "setMaxTraceableBlocks", &[int_arg_u32(5762)]);
+    let result = harness.call_policy(&mut engine, "setMaxTraceableBlocks", &[int_arg_u32(5762)]);
     assert!(result.is_err());
 }
 
@@ -1255,19 +1116,10 @@ fn test_white_list_fee() {
 
 #[test]
 fn test_set_whitelist_fee_contract_negative_fixed_fee() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let policy = PolicyContract::new();
-
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        None,
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
+    let harness = PolicyTestHarness::new();
+    let mut engine = harness.committee_engine_without_block();
+    let result = harness.call_policy(
+        &mut engine,
         "setWhitelistFeeContract",
         &[
             NeoToken::new().hash().to_bytes(),
@@ -1281,19 +1133,11 @@ fn test_set_whitelist_fee_contract_negative_fixed_fee() {
 
 #[test]
 fn test_set_whitelist_fee_contract_when_contract_not_found() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let policy = PolicyContract::new();
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        None,
-    );
+    let harness = PolicyTestHarness::new();
+    let mut engine = harness.committee_engine_without_block();
     let random_hash = UInt160::from_bytes(&[1u8; 20]).expect("hash");
-    let result = engine.call_native_contract(
-        policy.hash(),
+    let result = harness.call_policy(
+        &mut engine,
         "setWhitelistFeeContract",
         &[
             random_hash.to_bytes(),
@@ -1307,18 +1151,10 @@ fn test_set_whitelist_fee_contract_when_contract_not_found() {
 
 #[test]
 fn test_set_whitelist_fee_contract_when_contract_not_in_abi() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let policy = PolicyContract::new();
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        None,
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
+    let harness = PolicyTestHarness::new();
+    let mut engine = harness.committee_engine_without_block();
+    let result = harness.call_policy(
+        &mut engine,
         "setWhitelistFeeContract",
         &[
             NeoToken::new().hash().to_bytes(),
@@ -1332,18 +1168,10 @@ fn test_set_whitelist_fee_contract_when_contract_not_in_abi() {
 
 #[test]
 fn test_set_whitelist_fee_contract_when_arg_count_mismatch() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let policy = PolicyContract::new();
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        None,
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
+    let harness = PolicyTestHarness::new();
+    let mut engine = harness.committee_engine_without_block();
+    let result = harness.call_policy(
+        &mut engine,
         "setWhitelistFeeContract",
         &[
             NeoToken::new().hash().to_bytes(),
@@ -1357,17 +1185,10 @@ fn test_set_whitelist_fee_contract_when_arg_count_mismatch() {
 
 #[test]
 fn test_set_whitelist_fee_contract_when_not_committee() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let policy = PolicyContract::new();
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)],
-        None,
-    );
-    let result = engine.call_native_contract(
-        policy.hash(),
+    let harness = PolicyTestHarness::new();
+    let mut engine = harness.signer_engine_without_block(UInt160::zero());
+    let result = harness.call_policy(
+        &mut engine,
         "setWhitelistFeeContract",
         &[
             NeoToken::new().hash().to_bytes(),
@@ -1381,20 +1202,12 @@ fn test_set_whitelist_fee_contract_when_not_committee() {
 
 #[test]
 fn test_set_whitelist_fee_contract_set_contract() {
-    let settings = settings_all_active();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let policy = PolicyContract::new();
-    let committee = committee_address(&settings, snapshot.as_ref());
-    let mut engine = make_engine(
-        Arc::clone(&snapshot),
-        settings.clone(),
-        vec![Signer::new(committee, WitnessScope::GLOBAL)],
-        None,
-    );
+    let harness = PolicyTestHarness::new();
+    let mut engine = harness.committee_engine_without_block();
 
-    engine
-        .call_native_contract(
-            policy.hash(),
+    harness
+        .call_policy(
+            &mut engine,
             "setWhitelistFeeContract",
             &[
                 NeoToken::new().hash().to_bytes(),
@@ -1405,8 +1218,14 @@ fn test_set_whitelist_fee_contract_set_contract() {
         )
         .expect("setWhitelistFeeContract");
 
-    let fixed_fee = policy
-        .get_whitelisted_fee(snapshot.as_ref(), &NeoToken::new().hash(), "balanceOf", 1)
+    let fixed_fee = harness
+        .policy
+        .get_whitelisted_fee(
+            harness.snapshot.as_ref(),
+            &NeoToken::new().hash(),
+            "balanceOf",
+            1,
+        )
         .expect("get whitelisted fee");
     assert_eq!(fixed_fee, Some(123_456));
 }
