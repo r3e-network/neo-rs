@@ -3,14 +3,11 @@ use crate::hardfork::Hardfork;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::metadata_macros::event_descriptor;
-use crate::smart_contract::native::method_macros::{
-    neo_native_method_dispatch, neo_native_method_metadata,
-};
-use crate::smart_contract::native::NativeMethod;
+use crate::smart_contract::native::method_macros::neo_native_contract_methods;
 
 macro_rules! role_management_method_table {
-    ($callback:ident; $($args:tt)*) => {
-        $callback! {
+    ([$($callback:tt)+]; $($args:tt)*) => {
+        $($callback)+! {
             $($args)*
             ;
             {
@@ -19,30 +16,15 @@ macro_rules! role_management_method_table {
             }
         }
     };
+
+    ($callback:ident; $($args:tt)*) => {
+        role_management_method_table!([$callback]; $($args)*)
+    };
 }
 
+neo_native_contract_methods!(RoleManagement, table = role_management_method_table);
+
 impl RoleManagement {
-    pub(super) fn native_methods() -> Vec<NativeMethod> {
-        role_management_method_table!(neo_native_method_metadata;)
-    }
-
-    pub(super) fn dispatch_method(
-        &self,
-        engine: &mut crate::smart_contract::ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> crate::error::CoreResult<Vec<u8>> {
-        role_management_method_table!(
-            neo_native_method_dispatch;
-            self,
-            engine,
-            method,
-            args,
-            aliases = [],
-            unknown = |method| crate::error::CoreError::native_contract(format!("Unknown method: {}", method))
-        )
-    }
-
     pub(super) fn event_descriptors(
         settings: &ProtocolSettings,
         block_height: u32,
