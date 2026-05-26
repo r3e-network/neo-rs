@@ -142,6 +142,31 @@ pub struct TaskManagerActor {
     timer: Option<Cancelable>,
 }
 
+enum TaskManagerMessage {
+    Command(TaskManagerCommand),
+    PersistCompleted(PersistCompleted),
+    RelayResult(RelayResult),
+    Terminated(Terminated),
+}
+
+impl TaskManagerMessage {
+    fn from_envelope(envelope: Box<dyn Any + Send>) -> Result<Self, Box<dyn Any + Send>> {
+        match envelope.downcast::<TaskManagerCommand>() {
+            Ok(command) => Ok(Self::Command(*command)),
+            Err(envelope) => match envelope.downcast::<PersistCompleted>() {
+                Ok(persist) => Ok(Self::PersistCompleted(*persist)),
+                Err(envelope) => match envelope.downcast::<RelayResult>() {
+                    Ok(result) => Ok(Self::RelayResult(*result)),
+                    Err(envelope) => match envelope.downcast::<Terminated>() {
+                        Ok(terminated) => Ok(Self::Terminated(*terminated)),
+                        Err(envelope) => Err(envelope),
+                    },
+                },
+            },
+        }
+    }
+}
+
 impl TaskManagerActor {
     pub fn new(state: TaskManager) -> Self {
         Self { state, timer: None }
@@ -166,6 +191,59 @@ impl TaskManagerActor {
             timer.cancel();
         }
     }
+
+    fn handle_message(&mut self, message: TaskManagerMessage, ctx: &mut ActorContext) {
+        match message {
+            TaskManagerMessage::Command(command) => match command {
+                TaskManagerCommand::AttachSystem { context } => {
+                    self.state.attach_system(context, ctx);
+                    self.schedule_timer(ctx);
+                }
+                TaskManagerCommand::Register { peer, version } => {
+                    self.state.register_session(peer, version, ctx);
+                }
+                TaskManagerCommand::Update {
+                    peer,
+                    last_block_index,
+                } => {
+                    self.state.update_session(&peer, last_block_index);
+                }
+                TaskManagerCommand::NewTasks { peer, payload } => {
+                    self.state.on_new_tasks(&peer, payload);
+                }
+                TaskManagerCommand::RestartTasks { peer, payload } => {
+                    self.state.on_restart_tasks(&peer, payload);
+                }
+                TaskManagerCommand::BroadcastRestartTasks { payload } => {
+                    self.state.broadcast_restart_tasks(payload);
+                }
+                TaskManagerCommand::InventoryCompleted {
+                    peer,
+                    hash,
+                    block,
+                    block_index,
+                } => {
+                    self.state
+                        .complete_inventory(&peer, hash, *block, block_index);
+                }
+                TaskManagerCommand::Headers { peer } => {
+                    self.state.on_headers(&peer);
+                }
+                TaskManagerCommand::TimerTick => {
+                    self.state.prune_timeouts();
+                }
+            },
+            TaskManagerMessage::PersistCompleted(persist) => {
+                self.state.on_persist_completed(&persist.block);
+            }
+            TaskManagerMessage::RelayResult(result) => {
+                self.state.on_relay_result(&result);
+            }
+            TaskManagerMessage::Terminated(terminated) => {
+                self.state.remove_session_by_ref(&terminated.actor);
+            }
+        }
+    }
 }
 
 impl Default for TaskManagerActor {
@@ -183,77 +261,18 @@ impl Actor for TaskManagerActor {
     ) -> ActorResult {
         let message_type_id = envelope.as_ref().type_id();
 
-        match envelope.downcast::<TaskManagerCommand>() {
-            Ok(command) => {
-                match *command {
-                    TaskManagerCommand::AttachSystem { context } => {
-                        self.state.attach_system(context, ctx);
-                        self.schedule_timer(ctx);
-                    }
-                    TaskManagerCommand::Register { peer, version } => {
-                        self.state.register_session(peer, version, ctx);
-                    }
-                    TaskManagerCommand::Update {
-                        peer,
-                        last_block_index,
-                    } => {
-                        self.state.update_session(&peer, last_block_index);
-                    }
-                    TaskManagerCommand::NewTasks { peer, payload } => {
-                        self.state.on_new_tasks(&peer, payload);
-                    }
-                    TaskManagerCommand::RestartTasks { peer, payload } => {
-                        self.state.on_restart_tasks(&peer, payload);
-                    }
-                    TaskManagerCommand::BroadcastRestartTasks { payload } => {
-                        self.state.broadcast_restart_tasks(payload);
-                    }
-                    TaskManagerCommand::InventoryCompleted {
-                        peer,
-                        hash,
-                        block,
-                        block_index,
-                    } => {
-                        self.state
-                            .complete_inventory(&peer, hash, *block, block_index);
-                    }
-                    TaskManagerCommand::Headers { peer } => {
-                        self.state.on_headers(&peer);
-                    }
-                    TaskManagerCommand::TimerTick => {
-                        self.state.prune_timeouts();
-                    }
-                }
-                Ok(())
+        match TaskManagerMessage::from_envelope(envelope) {
+            Ok(message) => self.handle_message(message, ctx),
+            Err(other) => {
+                warn!(
+                    target: "neo",
+                    message_type_id = ?message_type_id,
+                    "unknown message routed to task manager actor"
+                );
+                drop(other);
             }
-            Err(envelope) => match envelope.downcast::<PersistCompleted>() {
-                Ok(persist) => {
-                    self.state.on_persist_completed(&persist.block);
-                    Ok(())
-                }
-                Err(envelope) => match envelope.downcast::<RelayResult>() {
-                    Ok(result) => {
-                        self.state.on_relay_result(&result);
-                        Ok(())
-                    }
-                    Err(envelope) => match envelope.downcast::<Terminated>() {
-                        Ok(terminated) => {
-                            self.state.remove_session_by_ref(&terminated.actor);
-                            Ok(())
-                        }
-                        Err(other) => {
-                            warn!(
-                                target: "neo",
-                                message_type_id = ?message_type_id,
-                                "unknown message routed to task manager actor"
-                            );
-                            drop(other);
-                            Ok(())
-                        }
-                    },
-                },
-            },
         }
+        Ok(())
     }
 
     async fn post_stop(&mut self, ctx: &mut ActorContext) -> ActorResult {
