@@ -3,20 +3,20 @@
 //! This module provides the TokenManagement native contract which manages
 //! token metadata and operations on the Neo blockchain.
 
+use crate::UInt160;
 use crate::error::CoreError;
 use crate::error::CoreResult;
 use crate::hardfork::Hardfork;
 use crate::impl_native_contract;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::StorageItem;
+use crate::smart_contract::StorageKey;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::StorageIterator;
 use crate::smart_contract::native::NativeContract;
 use crate::smart_contract::native::NativeMethod;
-use crate::smart_contract::StorageItem;
-use crate::smart_contract::StorageKey;
-use crate::UInt160;
 use num_bigint::BigInt;
 use num_traits::Signed;
 use num_traits::ToPrimitive;
@@ -51,7 +51,7 @@ pub struct TokenManagement {
 impl TokenManagement {
     pub fn new() -> Self {
         Self {
-            methods: methods::token_management_methods(),
+            methods: Self::native_methods(),
         }
     }
 }
@@ -96,26 +96,7 @@ impl TokenManagement {
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        match method {
-            "getTokenInfo" => self.invoke_get_token_info(engine, args),
-            "balanceOf" => self.invoke_balance_of(engine, args),
-            "getAssetsOfOwner" => self.invoke_get_assets_of_owner(engine, args),
-            "create" => self.invoke_create(engine, args),
-            "createNonFungible" => self.invoke_create_non_fungible(engine, args),
-            "mint" => self.invoke_mint(engine, args),
-            "burn" => self.invoke_burn(engine, args),
-            "transfer" => self.invoke_transfer(engine, args),
-            "mintNFT" => self.invoke_mint_nft(engine, args),
-            "burnNFT" => self.invoke_burn_nft(engine, args),
-            "transferNFT" => self.invoke_transfer_nft(engine, args),
-            "getNFTInfo" => self.invoke_get_nft_info(engine, args),
-            "getNFTs" => self.invoke_get_nfts(engine, args),
-            "getNFTsOfOwner" => self.invoke_get_nfts_of_owner(engine, args),
-            _ => Err(CoreError::native_contract(format!(
-                "TokenManagement: unknown method '{}'",
-                method
-            ))),
-        }
+        self.dispatch_method(engine, method, args)
     }
 
     fn invoke_get_token_info(

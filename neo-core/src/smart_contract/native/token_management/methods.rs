@@ -1,26 +1,46 @@
-use crate::smart_contract::native::method_macros::neo_native_methods;
-use crate::smart_contract::native::NativeMethod;
+use super::TokenManagement;
+use crate::smart_contract::native::method_macros::neo_native_contract_methods;
 
-pub(super) fn token_management_methods() -> Vec<NativeMethod> {
-    neo_native_methods![
-        safe "getTokenInfo", fee = 1 << 15, flags = [READ_STATES], params = [Hash160], returns = Array, active = HfFaun, names = ["assetId"];
-        safe "balanceOf", fee = 1 << 15, flags = [READ_STATES], params = [Hash160, Hash160], returns = Integer, active = HfFaun, names = ["assetId", "account"];
-        safe "getAssetsOfOwner", fee = 1 << 15, flags = [READ_STATES], params = [Hash160], returns = InteropInterface, active = HfFaun, names = ["owner"];
-        unsafe "create", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Integer, Hash160, String, String, Integer, Integer, Boolean], returns = Hash160, active = HfFaun, names = ["type", "owner", "name", "symbol", "decimals", "maxSupply", "mintable"];
-        unsafe "createNonFungible", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, String, String, Boolean], returns = Hash160, active = HfFaun, names = ["owner", "name", "symbol", "mintable"];
-        unsafe "mint", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160], returns = Boolean, active = HfFaun, names = ["assetId", "account"];
-        unsafe "mint", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160, Integer], returns = Boolean, active = HfFaun, names = ["assetId", "account", "amount"];
-        unsafe "burn", fee = 1 << 15, flags = [WRITE_STATES], params = [Hash160, Hash160], returns = Boolean, active = HfFaun, names = ["assetId", "account"];
-        unsafe "burn", fee = 1 << 15, flags = [WRITE_STATES], params = [Hash160, Hash160, Integer], returns = Boolean, active = HfFaun, names = ["assetId", "account", "amount"];
-        unsafe "transfer", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160, Hash160, Integer, Any], returns = Boolean, active = HfFaun, names = ["assetId", "from", "to", "amountOrNftId", "data"];
-        unsafe "mintNFT", fee = 1 << 17, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160], returns = Hash160, active = HfFaun, names = ["assetId", "account"];
-        unsafe "burnNFT", fee = 1 << 17, flags = [WRITE_STATES], params = [Hash160], returns = Boolean, active = HfFaun, names = ["nftId"];
-        unsafe "transferNFT", fee = 1 << 17, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160, Hash160, Any], returns = Boolean, active = HfFaun, names = ["nftId", "from", "to", "data"];
-        safe "getNFTInfo", fee = 1 << 15, flags = [READ_STATES], params = [Hash160], returns = Array, active = HfFaun, names = ["nftId"];
-        safe "getNFTs", fee = 1 << 22, flags = [READ_STATES], params = [Hash160], returns = InteropInterface, active = HfFaun, names = ["assetId"];
-        safe "getNFTsOfOwner", fee = 1 << 22, flags = [READ_STATES], params = [Hash160], returns = InteropInterface, active = HfFaun, names = ["account"];
-    ]
+macro_rules! token_management_method_table {
+    ([$($callback:tt)+]; $($args:tt)*) => {
+        $($callback)+! {
+            $($args)*
+            ;
+            {
+                safe "getTokenInfo", fee = 1 << 15, flags = [READ_STATES], params = [Hash160], returns = Array, active = HfFaun, names = ["assetId"] => engine invoke_get_token_info;
+                safe "balanceOf", fee = 1 << 15, flags = [READ_STATES], params = [Hash160, Hash160], returns = Integer, active = HfFaun, names = ["assetId", "account"] => engine invoke_balance_of;
+                safe "getAssetsOfOwner", fee = 1 << 15, flags = [READ_STATES], params = [Hash160], returns = InteropInterface, active = HfFaun, names = ["owner"] => engine invoke_get_assets_of_owner;
+                unsafe "create", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Integer, Hash160, String, String, Integer, Integer, Boolean], returns = Hash160, active = HfFaun, names = ["type", "owner", "name", "symbol", "decimals", "maxSupply", "mintable"] => engine invoke_create;
+                unsafe "createNonFungible", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, String, String, Boolean], returns = Hash160, active = HfFaun, names = ["owner", "name", "symbol", "mintable"] => engine invoke_create_non_fungible;
+                unsafe "mint", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160], returns = Boolean, active = HfFaun, names = ["assetId", "account"] => engine invoke_mint;
+                unsafe "mint", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160, Integer], returns = Boolean, active = HfFaun, names = ["assetId", "account", "amount"] => engine invoke_mint;
+                unsafe "burn", fee = 1 << 15, flags = [WRITE_STATES], params = [Hash160, Hash160], returns = Boolean, active = HfFaun, names = ["assetId", "account"] => engine invoke_burn;
+                unsafe "burn", fee = 1 << 15, flags = [WRITE_STATES], params = [Hash160, Hash160, Integer], returns = Boolean, active = HfFaun, names = ["assetId", "account", "amount"] => engine invoke_burn;
+                unsafe "transfer", fee = 1 << 15, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160, Hash160, Integer, Any], returns = Boolean, active = HfFaun, names = ["assetId", "from", "to", "amountOrNftId", "data"] => engine invoke_transfer;
+                unsafe "mintNFT", fee = 1 << 17, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160], returns = Hash160, active = HfFaun, names = ["assetId", "account"] => engine invoke_mint_nft;
+                unsafe "burnNFT", fee = 1 << 17, flags = [WRITE_STATES], params = [Hash160], returns = Boolean, active = HfFaun, names = ["nftId"] => engine invoke_burn_nft;
+                unsafe "transferNFT", fee = 1 << 17, flags = [WRITE_STATES, ALLOW_CALL], params = [Hash160, Hash160, Hash160, Any], returns = Boolean, active = HfFaun, names = ["nftId", "from", "to", "data"] => engine invoke_transfer_nft;
+                safe "getNFTInfo", fee = 1 << 15, flags = [READ_STATES], params = [Hash160], returns = Array, active = HfFaun, names = ["nftId"] => engine invoke_get_nft_info;
+                safe "getNFTs", fee = 1 << 22, flags = [READ_STATES], params = [Hash160], returns = InteropInterface, active = HfFaun, names = ["assetId"] => engine invoke_get_nfts;
+                safe "getNFTsOfOwner", fee = 1 << 22, flags = [READ_STATES], params = [Hash160], returns = InteropInterface, active = HfFaun, names = ["account"] => engine invoke_get_nfts_of_owner;
+            }
+        }
+    };
+
+    ($callback:ident; $($args:tt)*) => {
+        token_management_method_table!([$callback]; $($args)*)
+    };
 }
+
+neo_native_contract_methods!(
+    TokenManagement,
+    table = token_management_method_table,
+    aliases = [],
+    unknown = |method| crate::error::CoreError::native_contract(format!(
+        "TokenManagement: unknown method '{}'",
+        method
+    ))
+);
 
 #[cfg(test)]
 mod tests {
@@ -28,7 +48,7 @@ mod tests {
 
     #[test]
     fn token_management_method_metadata_snapshot() {
-        let snapshot = token_management_methods()
+        let snapshot = TokenManagement::native_methods()
             .iter()
             .map(|method| {
                 format!(
