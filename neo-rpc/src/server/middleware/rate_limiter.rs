@@ -1,11 +1,11 @@
 //! Per-IP and per-method rate limiting using `governor`.
 //!
-//! Concurrent implementation using `DashMap` for per-IP state and
-//! `governor`'s GCRA limiter for each method-cost tier.
+//! Concurrent implementation using `governor`'s keyed GCRA limiter for each
+//! method-cost tier.
 //! Supports different rate limits for different RPC methods based on computational cost.
 
 use dashmap::DashMap;
-use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
+use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 use std::{
     collections::HashMap,
     net::IpAddr,
@@ -105,6 +105,13 @@ impl RateLimitTier {
     }
 }
 
+const RATE_LIMIT_TIERS: [RateLimitTier; 4] = [
+    RateLimitTier::Cheap,
+    RateLimitTier::Standard,
+    RateLimitTier::Expensive,
+    RateLimitTier::Write,
+];
+
 /// Configuration for rate limiting
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
@@ -123,37 +130,8 @@ impl Default for RateLimitConfig {
     }
 }
 
-/// Per-IP limiter state for a specific tier.
-struct RateLimitBucket {
-    /// Direct limiter for this IP/tier bucket.
-    limiter: DefaultDirectRateLimiter,
-}
-
-/// Per-IP rate limit state across all tiers
-struct IpRateLimitState {
-    /// Buckets for each rate limit tier
-    buckets: HashMap<RateLimitTier, RateLimitBucket>,
-    /// Last access time for cleanup
-    last_access: Instant,
-}
-
-impl IpRateLimitState {
-    fn new() -> Self {
-        Self {
-            buckets: HashMap::new(),
-            last_access: Instant::now(),
-        }
-    }
-
-    fn get_or_create_bucket(
-        &mut self,
-        tier: RateLimitTier,
-        config: &RateLimitConfig,
-    ) -> &mut RateLimitBucket {
-        self.buckets.entry(tier).or_insert_with(|| RateLimitBucket {
-            limiter: RateLimiter::direct(quota_from_config(config)),
-        })
-    }
+struct TierLimiter {
+    limiter: DefaultKeyedRateLimiter<IpAddr>,
 }
 
 fn quota_from_config(config: &RateLimitConfig) -> Quota {
@@ -164,14 +142,61 @@ fn quota_from_config(config: &RateLimitConfig) -> Quota {
     Quota::per_second(max_rps).allow_burst(burst)
 }
 
-/// Lock-free per-IP rate limiter using `DashMap`
+fn build_tier_limiters(
+    default_config: &RateLimitConfig,
+    tier_configs: &HashMap<RateLimitTier, RateLimitConfig>,
+) -> HashMap<RateLimitTier, TierLimiter> {
+    RATE_LIMIT_TIERS
+        .into_iter()
+        .filter_map(|tier| {
+            let config = resolved_tier_config(default_config, tier_configs, tier);
+            if config.max_rps == 0 || config.burst == 0 {
+                return None;
+            }
+
+            Some((
+                tier,
+                TierLimiter {
+                    limiter: RateLimiter::keyed(quota_from_config(&config)),
+                },
+            ))
+        })
+        .collect()
+}
+
+fn resolved_tier_config(
+    default_config: &RateLimitConfig,
+    tier_configs: &HashMap<RateLimitTier, RateLimitConfig>,
+    tier: RateLimitTier,
+) -> RateLimitConfig {
+    tier_configs
+        .get(&tier)
+        .cloned()
+        .unwrap_or_else(|| match tier {
+            RateLimitTier::Cheap => RateLimitConfig {
+                max_rps: default_config.max_rps * 2,
+                burst: default_config.burst * 2,
+            },
+            RateLimitTier::Standard => default_config.clone(),
+            RateLimitTier::Expensive => RateLimitConfig {
+                max_rps: default_config.max_rps / 5,
+                burst: default_config.burst / 5,
+            },
+            RateLimitTier::Write => RateLimitConfig {
+                max_rps: default_config.max_rps / 10,
+                burst: default_config.burst / 10,
+            },
+        })
+}
+
+/// Concurrent per-IP rate limiter using keyed `governor` limiters.
 ///
 /// Uses `governor`'s GCRA rate limiter with automatic cleanup of stale entries.
 /// Supports per-method rate limiting with different tiers.
 pub struct GovernorRateLimiter {
-    default_config: RateLimitConfig,
     tier_configs: HashMap<RateLimitTier, RateLimitConfig>,
-    states: DashMap<IpAddr, IpRateLimitState>,
+    tier_limiters: HashMap<RateLimitTier, TierLimiter>,
+    last_access: DashMap<IpAddr, Instant>,
     /// Whether rate limiting is enabled
     enabled: bool,
 }
@@ -190,12 +215,7 @@ impl GovernorRateLimiter {
             1.0
         };
 
-        for tier in [
-            RateLimitTier::Cheap,
-            RateLimitTier::Standard,
-            RateLimitTier::Expensive,
-            RateLimitTier::Write,
-        ] {
+        for tier in RATE_LIMIT_TIERS {
             let default_tier_config = tier.default_config();
             let tier_config = RateLimitConfig {
                 max_rps: ((default_tier_config.max_rps as f64) * scale_factor) as u32,
@@ -204,10 +224,11 @@ impl GovernorRateLimiter {
             tier_configs.insert(tier, tier_config);
         }
 
+        let tier_limiters = build_tier_limiters(&config, &tier_configs);
         Self {
-            default_config: config,
             tier_configs,
-            states: DashMap::new(),
+            tier_limiters,
+            last_access: DashMap::new(),
             enabled,
         }
     }
@@ -218,11 +239,13 @@ impl GovernorRateLimiter {
         default_config: RateLimitConfig,
         tier_configs: HashMap<RateLimitTier, RateLimitConfig>,
     ) -> Self {
+        let tier_limiters = build_tier_limiters(&default_config, &tier_configs);
+        let enabled = default_config.max_rps > 0;
         Self {
-            default_config: default_config.clone(),
             tier_configs,
-            states: DashMap::new(),
-            enabled: default_config.max_rps > 0,
+            tier_limiters,
+            last_access: DashMap::new(),
+            enabled,
         }
     }
 
@@ -259,38 +282,12 @@ impl GovernorRateLimiter {
         // Cleanup stale entries periodically
         self.cleanup_stale_entries();
 
-        let config = self.tier_configs.get(&tier).cloned().unwrap_or_else(|| {
-            // Fallback to default config scaled appropriately
-            match tier {
-                RateLimitTier::Cheap => RateLimitConfig {
-                    max_rps: self.default_config.max_rps * 2,
-                    burst: self.default_config.burst * 2,
-                },
-                RateLimitTier::Standard => self.default_config.clone(),
-                RateLimitTier::Expensive => RateLimitConfig {
-                    max_rps: self.default_config.max_rps / 5,
-                    burst: self.default_config.burst / 5,
-                },
-                RateLimitTier::Write => RateLimitConfig {
-                    max_rps: self.default_config.max_rps / 10,
-                    burst: self.default_config.burst / 10,
-                },
-            }
-        });
-
-        if config.max_rps == 0 || config.burst == 0 {
+        let Some(tier_limiter) = self.tier_limiters.get(&tier) else {
             return RateLimitCheckResult::Blocked;
-        }
+        };
 
-        // Get or create state for this IP
-        let mut entry = self.states.entry(ip).or_insert_with(IpRateLimitState::new);
-
-        // Update last access time
-        entry.last_access = Instant::now();
-
-        // Get or create bucket for this tier
-        let bucket = entry.get_or_create_bucket(tier, &config);
-        if bucket.limiter.check().is_ok() {
+        self.last_access.insert(ip, Instant::now());
+        if tier_limiter.limiter.check_key(&ip).is_ok() {
             RateLimitCheckResult::Allowed
         } else {
             RateLimitCheckResult::Blocked
@@ -313,19 +310,23 @@ impl GovernorRateLimiter {
         const STALE_AFTER: Duration = Duration::from_secs(10 * 60);
         const MAX_ENTRIES: usize = 4096;
 
-        if self.states.len() <= MAX_ENTRIES {
+        if self.last_access.len() <= MAX_ENTRIES {
             return;
         }
 
         let now = Instant::now();
-        self.states
-            .retain(|_, state| now.duration_since(state.last_access) < STALE_AFTER);
+        self.last_access
+            .retain(|_, last_access| now.duration_since(*last_access) < STALE_AFTER);
+        for tier_limiter in self.tier_limiters.values() {
+            tier_limiter.limiter.retain_recent();
+            tier_limiter.limiter.shrink_to_fit();
+        }
     }
 
     /// Get current number of tracked IPs
     #[must_use]
     pub fn tracked_ips(&self) -> usize {
-        self.states.len()
+        self.last_access.len()
     }
 
     /// Get the configuration for a specific tier
@@ -442,6 +443,18 @@ mod tests {
     }
 
     #[test]
+    fn test_disabled_limiter_does_not_track_ips() {
+        let limiter = GovernorRateLimiter::new(RateLimitConfig {
+            max_rps: 0,
+            burst: 0,
+        });
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+
+        assert_eq!(limiter.check(ip), RateLimitCheckResult::Disabled);
+        assert_eq!(limiter.tracked_ips(), 0);
+    }
+
+    #[test]
     fn test_rate_limiter_tracks_different_ips() {
         let config = RateLimitConfig {
             max_rps: 5,
@@ -460,6 +473,29 @@ mod tests {
         for _ in 0..5 {
             assert!(limiter.check(ip2).is_allowed());
         }
+    }
+
+    #[test]
+    fn test_cleanup_removes_stale_tracked_ips_after_entry_limit() {
+        let limiter = GovernorRateLimiter::new(RateLimitConfig {
+            max_rps: 10,
+            burst: 10,
+        });
+        let stale_at = Instant::now() - Duration::from_secs(11 * 60);
+        for index in 0..=4096u32 {
+            let ip = IpAddr::from([
+                10,
+                ((index >> 16) & 0xff) as u8,
+                ((index >> 8) & 0xff) as u8,
+                (index & 0xff) as u8,
+            ]);
+            limiter.last_access.insert(ip, stale_at);
+        }
+
+        let active_ip = IpAddr::from([192, 0, 2, 1]);
+        assert_eq!(limiter.check(active_ip), RateLimitCheckResult::Allowed);
+
+        assert_eq!(limiter.tracked_ips(), 1);
     }
 
     #[test]

@@ -205,8 +205,8 @@ lru = "0.12"
 fastbloom = { version = "0.17", default-features = false }
 bitflags = "2.4"
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
-dashmap = "5.5"
-governor = { version = "0.10.4", default-features = false, features = ["std"] }
+dashmap = "6.2.1"
+governor = { version = "0.10.4", default-features = false, features = ["std", "dashmap"] }
 memchr = "2.8"
 
 # === Storage ===
