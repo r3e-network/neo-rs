@@ -480,6 +480,13 @@ impl LocalNode {
             peers.insert(snapshot.remote_address, snapshot.clone());
         }
 
+        let remote_ip = Self::normalize_ip(snapshot.remote_address);
+        self.peers_by_ip
+            .write()
+            .entry(remote_ip)
+            .or_default()
+            .insert(snapshot.remote_address);
+
         self.clear_pending(&snapshot.remote_address);
 
         let mut nodes = self.write_remote_nodes();
@@ -502,8 +509,7 @@ impl LocalNode {
         };
 
         if let Some(entry) = entry {
-            let mut peers = self.write_peers();
-            peers.remove(&entry.snapshot.remote_address);
+            self.remove_peer(&entry.snapshot.remote_address);
             self.clear_pending(&entry.snapshot.remote_address);
             Some(entry.snapshot)
         } else {

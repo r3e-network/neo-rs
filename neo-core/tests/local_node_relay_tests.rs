@@ -212,6 +212,74 @@ async fn address_book_ignores_peers_without_tcp_server_capability() {
 }
 
 #[tokio::test]
+async fn register_remote_node_updates_and_clears_per_ip_connection_index() {
+    let settings = Arc::new(ProtocolSettings::default());
+    let node = Arc::new(LocalNode::new(
+        settings.clone(),
+        10333,
+        "/agent".to_string(),
+    ));
+    node.apply_channels_config(&ChannelsConfig {
+        max_connections: 10,
+        max_connections_per_address: 1,
+        ..Default::default()
+    });
+
+    let system = ActorSystem::new("local-node-per-ip-index").expect("actor system");
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let probe = system
+        .actor_of(
+            Props::new(move || CaptureActor { tx: tx.clone() }),
+            "remote-probe-per-ip-index",
+        )
+        .expect("probe actor");
+
+    let version_a = VersionPayload::create(
+        &settings,
+        node.nonce.wrapping_add(1),
+        "/peer-a".to_string(),
+        Vec::new(),
+    );
+    let registered = RemoteNodeSnapshot {
+        remote_address: "10.0.0.11:40001".parse().expect("registered address"),
+        remote_port: 40001,
+        listen_tcp_port: 20333,
+        last_block_index: 0,
+        version: version_a.version,
+        services: 0,
+        timestamp: 1,
+    };
+    node.register_remote_node(probe.clone(), registered.clone(), version_a);
+
+    let version_b = VersionPayload::create(
+        &settings,
+        node.nonce.wrapping_add(2),
+        "/peer-b".to_string(),
+        Vec::new(),
+    );
+    let incoming = RemoteNodeSnapshot {
+        remote_address: "10.0.0.11:40002".parse().expect("incoming address"),
+        remote_port: 40002,
+        listen_tcp_port: 30333,
+        last_block_index: 0,
+        version: version_b.version,
+        services: 0,
+        timestamp: 1,
+    };
+
+    assert!(!node.allow_new_connection(&incoming, &version_b));
+    assert_eq!(
+        node.unregister_remote_node(&probe)
+            .expect("registered remote node")
+            .remote_address,
+        registered.remote_address
+    );
+    assert!(node.allow_new_connection(&incoming, &version_b));
+
+    system.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
 async fn timer_elapsed_with_connected_peers_uses_getaddr_without_seeding() {
     let settings = Arc::new(ProtocolSettings::default());
     let node = Arc::new(LocalNode::new(
