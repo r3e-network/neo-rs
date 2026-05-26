@@ -9,7 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_json::{JArray, JObject, JToken};
+use super::super::utility::token_array;
+use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
 /// Plugin information matching C# `RpcPlugin`
@@ -38,14 +39,9 @@ impl RpcPlugin {
         json.insert("name".to_string(), JToken::String(self.name.clone()));
         json.insert("version".to_string(), JToken::String(self.version.clone()));
 
-        let interfaces_array: Vec<JToken> = self
-            .interfaces
-            .iter()
-            .map(|s| JToken::String(s.clone()))
-            .collect();
         json.insert(
             "interfaces".to_string(),
-            JToken::Array(JArray::from(interfaces_array)),
+            token_array(&self.interfaces, |name| JToken::String(name.clone())),
         );
         if let Some(category) = &self.category {
             json.insert("category".to_string(), JToken::String(category.clone()));

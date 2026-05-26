@@ -9,7 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_json::{JArray, JObject, JToken};
+use super::super::utility::object_array;
+use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
 /// Peers information matching C# `RpcPeers`
@@ -32,31 +33,16 @@ impl RpcPeers {
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
 
-        let unconnected_array: Vec<JToken> = self
-            .unconnected
-            .iter()
-            .map(|p| JToken::Object(p.to_json()))
-            .collect();
         json.insert(
             "unconnected".to_string(),
-            JToken::Array(JArray::from(unconnected_array)),
+            object_array(&self.unconnected, RpcPeer::to_json),
         );
 
-        let bad_array: Vec<JToken> = self
-            .bad
-            .iter()
-            .map(|p| JToken::Object(p.to_json()))
-            .collect();
-        json.insert("bad".to_string(), JToken::Array(JArray::from(bad_array)));
+        json.insert("bad".to_string(), object_array(&self.bad, RpcPeer::to_json));
 
-        let connected_array: Vec<JToken> = self
-            .connected
-            .iter()
-            .map(|p| JToken::Object(p.to_json()))
-            .collect();
         json.insert(
             "connected".to_string(),
-            JToken::Array(JArray::from(connected_array)),
+            object_array(&self.connected, RpcPeer::to_json),
         );
 
         json
@@ -143,7 +129,7 @@ fn parse_peer_list(json: &JObject, field: &str) -> Result<Vec<RpcPeer>, String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_json::JToken;
+    use neo_json::{JArray, JToken};
     use std::fs;
     use std::path::PathBuf;
 
