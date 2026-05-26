@@ -1,15 +1,9 @@
 use super::StdLib;
-use crate::error::CoreError as Error;
-use crate::error::CoreResult as Result;
-use crate::smart_contract::native::method_macros::{
-    neo_native_method_dispatch, neo_native_method_metadata,
-};
-use crate::smart_contract::native::NativeMethod;
-use crate::smart_contract::ApplicationEngine;
+use crate::smart_contract::native::method_macros::neo_native_contract_methods;
 
 macro_rules! stdlib_method_table {
-    ($callback:ident; $($args:tt)*) => {
-        $callback! {
+    ([$($callback:tt)+]; $($args:tt)*) => {
+        $($callback)+! {
             $($args)*
             ;
             {
@@ -41,27 +35,14 @@ macro_rules! stdlib_method_table {
             }
         }
     };
+
+    ($callback:ident; $($args:tt)*) => {
+        stdlib_method_table!([$callback]; $($args)*)
+    };
 }
 
-impl StdLib {
-    pub(super) fn methods() -> Vec<NativeMethod> {
-        stdlib_method_table!(neo_native_method_metadata;)
-    }
-
-    pub(super) fn dispatch_method(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
-        stdlib_method_table!(
-            neo_native_method_dispatch;
-            self,
-            engine,
-            method,
-            args,
-            aliases = ["stringLen" => args str_len],
-            unknown = |method| Error::native_contract(format!("Unknown method: {}", method))
-        )
-    }
-}
+neo_native_contract_methods!(
+    StdLib,
+    table = stdlib_method_table,
+    aliases = ["stringLen" => args str_len]
+);

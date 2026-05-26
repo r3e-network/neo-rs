@@ -1,15 +1,9 @@
 use super::CryptoLib;
-use crate::error::CoreError as Error;
-use crate::error::CoreResult as Result;
-use crate::smart_contract::native::method_macros::{
-    neo_native_method_dispatch, neo_native_method_metadata,
-};
-use crate::smart_contract::native::NativeMethod;
-use crate::smart_contract::ApplicationEngine;
+use crate::smart_contract::native::method_macros::neo_native_contract_methods;
 
 macro_rules! crypto_method_table {
-    ($callback:ident; $($args:tt)*) => {
-        $callback! {
+    ([$($callback:tt)+]; $($args:tt)*) => {
+        $($callback)+! {
             $($args)*
             ;
             {
@@ -30,27 +24,18 @@ macro_rules! crypto_method_table {
             }
         }
     };
+
+    ($callback:ident; $($args:tt)*) => {
+        crypto_method_table!([$callback]; $($args)*)
+    };
 }
 
-impl CryptoLib {
-    pub(super) fn native_methods() -> Vec<NativeMethod> {
-        crypto_method_table!(neo_native_method_metadata;)
-    }
-
-    pub(super) fn dispatch_method(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
-        crypto_method_table!(
-            neo_native_method_dispatch;
-            self,
-            engine,
-            method,
-            args,
-            aliases = [],
-            unknown = |method| Error::native_contract(format!("Unknown CryptoLib method: {}", method))
-        )
-    }
-}
+neo_native_contract_methods!(
+    CryptoLib,
+    table = crypto_method_table,
+    aliases = [],
+    unknown = |method| crate::error::CoreError::native_contract(format!(
+        "Unknown CryptoLib method: {}",
+        method
+    ))
+);

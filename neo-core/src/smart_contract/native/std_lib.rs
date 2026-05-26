@@ -3,11 +3,11 @@
 //! The StdLib contract provides standard utility functions for smart contracts,
 //! including string manipulation, JSON operations, and mathematical functions.
 
+use crate::UInt160;
 use crate::error::CoreResult as Result;
 use crate::impl_native_contract;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
-use crate::UInt160;
 
 mod encoding;
 mod helpers;
@@ -37,7 +37,7 @@ impl StdLib {
         Self {
             id: Self::ID,
             hash,
-            methods: Self::methods(),
+            methods: Self::native_methods(),
         }
     }
 
