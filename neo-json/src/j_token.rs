@@ -1,9 +1,8 @@
+use crate::JsonError;
 use crate::j_array::JArray;
 use crate::j_object::JObject;
 use crate::j_path_token::JPathToken;
 use crate::ordered_dictionary::OrderedDictionary;
-use crate::utility::JsonUtility;
-use crate::JsonError;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 use serde_json::{self, ser::PrettyFormatter};
@@ -273,7 +272,7 @@ impl JToken {
     /// Serializes this token to a JSON string, optionally with indentation.
     pub fn to_string_formatted(&self, indented: bool) -> Result<String, JsonError> {
         let bytes = self.to_byte_array(indented)?;
-        JsonUtility::strict_utf8_decode(&bytes).map_err(JsonError::from)
+        String::from_utf8(bytes).map_err(JsonError::from)
     }
 
     /// Writes this token as JSON to the given writer, optionally with indentation.

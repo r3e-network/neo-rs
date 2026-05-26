@@ -25,8 +25,6 @@ pub mod j_string;
 pub mod j_token;
 /// Insertion-order-preserving dictionary (matches C# `OrderedDictionary`).
 pub mod ordered_dictionary;
-/// JSON encoding/decoding utilities.
-pub mod utility;
 
 // Re-exports for convenience (matching C# namespace exports)
 pub use error::JsonError;
@@ -40,4 +38,3 @@ pub use j_path_token_type::JPathTokenType;
 pub use j_string::JString;
 pub use j_token::JToken;
 pub use ordered_dictionary::OrderedDictionary;
-pub use utility::JsonUtility;
