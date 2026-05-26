@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::RpcInvokeResult;
 use crate::{RpcClient, RpcError};
 use neo_core::script_builder::ScriptBuilder;
@@ -18,7 +19,6 @@ use neo_core::{
     WitnessScope,
 };
 use neo_primitives::UInt160;
-use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 /// Contract related operations through RPC API
@@ -45,8 +45,7 @@ impl ContractClient {
         args: Vec<serde_json::Value>,
     ) -> Result<RpcInvokeResult, RpcError> {
         // Create script using script builder
-        let script =
-            Self::build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)?;
+        let script = build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)?;
 
         // Call RPC invoke script method
         self.rpc_client
@@ -75,34 +74,14 @@ impl ContractClient {
         manager.sign().await
     }
 
+    #[cfg(test)]
     fn build_dynamic_call_script(
         script_hash: &UInt160,
         method: &str,
         args: &[serde_json::Value],
         call_flags: CallFlags,
     ) -> Result<Vec<u8>, RpcError> {
-        let mut sb = ScriptBuilder::new();
-
-        // C# parity: ScriptBuilderExtensions.EmitDynamicCall(scriptHash, method, CallFlags.All, args)
-        if args.is_empty() {
-            sb.emit_opcode(OpCode::NEWARRAY0);
-        } else {
-            // CreateArray(args): push elements in reverse order, push count, PACK
-            for arg in args.iter().rev() {
-                Self::emit_argument(&mut sb, arg)?;
-            }
-            sb.emit_push_int(args.len() as i64);
-            sb.emit_pack();
-        }
-
-        // EmitPush(flags), EmitPush(method), EmitPush(scriptHash), SYSCALL System.Contract.Call
-        sb.emit_push_int(i64::from(call_flags.bits()));
-        sb.emit_push(method.as_bytes());
-        sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")
-            .map_err(|err| RpcError::invalid_params(err.to_string()))?;
-
-        Ok(sb.to_array())
+        build_dynamic_call_script(script_hash, method, args, call_flags)
     }
 
     fn build_deploy_contract_script(
@@ -114,61 +93,18 @@ impl ContractClient {
 
         let mut sb = ScriptBuilder::new();
         // C# parity: ScriptBuilderExtensions.EmitDynamicCall(ContractManagement.Hash, "deploy", nef, manifestJson)
-        // CreateArray(args)
         sb.emit_push(manifest_json.as_bytes());
         sb.emit_push(nef_file);
         sb.emit_push_int(2);
         sb.emit_pack();
-        // EmitPush(flags)
-        sb.emit_push_int(i64::from(call_flags.bits()));
-        // EmitPush(method)
-        sb.emit_push(b"deploy");
-        // EmitPush(scriptHash)
-        sb.emit_push(&ContractManagement::contract_hash().to_array());
-        // Syscall
-        sb.emit_syscall("System.Contract.Call")
-            .map_err(|err| RpcError::invalid_params(err.to_string()))?;
+        emit_contract_call(
+            &mut sb,
+            &ContractManagement::contract_hash(),
+            "deploy",
+            call_flags,
+        )?;
 
         Ok(sb.to_array())
-    }
-
-    /// Helper to emit argument based on type
-    fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), RpcError> {
-        match arg {
-            serde_json::Value::Null => {
-                sb.emit_opcode(OpCode::PUSHNULL);
-                Ok(())
-            }
-            serde_json::Value::Bool(b) => {
-                sb.emit_push_bool(*b);
-                Ok(())
-            }
-            serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    sb.emit_push_int(i);
-                    Ok(())
-                } else if let Some(u) = n.as_u64() {
-                    sb.emit_push_int(u as i64);
-                    Ok(())
-                } else {
-                    Err("Invalid number format".into())
-                }
-            }
-            serde_json::Value::String(s) => {
-                sb.emit_push(s.as_bytes());
-                Ok(())
-            }
-            serde_json::Value::Array(arr) => {
-                // C# CreateArray pushes in reverse order.
-                for item in arr.iter().rev() {
-                    Self::emit_argument(sb, item)?;
-                }
-                sb.emit_push_int(arr.len() as i64);
-                sb.emit_pack();
-                Ok(())
-            }
-            _ => Err("Unsupported argument type".into()),
-        }
     }
 }
 

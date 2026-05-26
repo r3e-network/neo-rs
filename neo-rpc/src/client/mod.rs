@@ -15,6 +15,7 @@
 //! It matches the C# RpcClient implementation exactly.
 
 mod contract_client;
+mod contract_script;
 mod error;
 pub mod models;
 mod nep17_api;

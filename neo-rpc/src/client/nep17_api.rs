@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
 use crate::{ContractClient, RpcClient, RpcError, RpcUtility, TransactionManagerFactory};
 use neo_core::script_builder::ScriptBuilder;
@@ -371,11 +372,7 @@ impl Nep17Api {
         sb.emit_push(&to.to_array());
         sb.emit_push(&from.to_array());
         sb.emit_push_int(4);
-        sb.emit_push_int(i64::from(CallFlags::ALL.bits()));
-        sb.emit_push(b"transfer");
-        sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")
-            .map_err(|err| RpcError::invalid_params(err.to_string()))?;
+        emit_contract_call(&mut sb, script_hash, "transfer", CallFlags::ALL)?;
         if add_assert {
             sb.emit_opcode(OpCode::ASSERT);
         }
@@ -425,25 +422,7 @@ impl Nep17Api {
         operation: &str,
         args: Vec<serde_json::Value>,
     ) -> Result<Vec<u8>, RpcError> {
-        let mut sb = ScriptBuilder::new();
-
-        if args.is_empty() {
-            sb.emit_opcode(OpCode::NEWARRAY0);
-        } else {
-            for arg in args.iter().rev() {
-                self.emit_argument(&mut sb, arg)?;
-            }
-            sb.emit_push_int(args.len() as i64);
-            sb.emit_pack();
-        }
-
-        sb.emit_push_int(i64::from(CallFlags::ALL.bits()));
-        sb.emit_push(operation.as_bytes());
-        sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")
-            .map_err(|err| RpcError::invalid_params(err.to_string()))?;
-
-        Ok(sb.to_array())
+        build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)
     }
 
     fn emit_argument(
