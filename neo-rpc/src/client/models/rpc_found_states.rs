@@ -9,8 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::object_array;
 use base64::{engine::general_purpose, Engine as _};
-use neo_json::JObject;
+use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
 /// Found states result matching C# `RpcFoundStates`
@@ -83,42 +84,34 @@ impl RpcFoundStates {
     #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert(
-            "truncated".to_string(),
-            neo_json::JToken::Boolean(self.truncated),
-        );
+        json.insert("truncated".to_string(), JToken::Boolean(self.truncated));
 
-        let results: Vec<neo_json::JToken> = self
-            .results
-            .iter()
-            .map(|(k, v)| {
+        json.insert(
+            "results".to_string(),
+            object_array(&self.results, |(key, value)| {
                 let mut entry = JObject::new();
                 entry.insert(
                     "key".to_string(),
-                    neo_json::JToken::String(general_purpose::STANDARD.encode(k)),
+                    JToken::String(general_purpose::STANDARD.encode(key)),
                 );
                 entry.insert(
                     "value".to_string(),
-                    neo_json::JToken::String(general_purpose::STANDARD.encode(v)),
+                    JToken::String(general_purpose::STANDARD.encode(value)),
                 );
-                neo_json::JToken::Object(entry)
-            })
-            .collect();
-        json.insert(
-            "results".to_string(),
-            neo_json::JToken::Array(neo_json::JArray::from(results)),
+                entry
+            }),
         );
 
         if let Some(first) = &self.first_proof {
             json.insert(
                 "firstProof".to_string(),
-                neo_json::JToken::String(general_purpose::STANDARD.encode(first)),
+                JToken::String(general_purpose::STANDARD.encode(first)),
             );
         }
         if let Some(last) = &self.last_proof {
             json.insert(
                 "lastProof".to_string(),
-                neo_json::JToken::String(general_purpose::STANDARD.encode(last)),
+                JToken::String(general_purpose::STANDARD.encode(last)),
             );
         }
 

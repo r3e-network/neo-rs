@@ -21,14 +21,14 @@ pub use attributes::attribute_from_json;
 pub use parsing::optional_string;
 #[allow(unused_imports)]
 pub use parsing::{
-    empty_array, jtoken_to_serde, object_array, optional_script_hash_or_address_lossy,
-    parse_base64_token, parse_i64_token, parse_nonce_token, parse_object_array_lossy,
-    parse_optional_present_token_array_strict, parse_optional_string_array_strict,
-    parse_optional_token_array_strict, parse_oracle_response_code, parse_script_hash_or_address,
-    parse_string_array_lossy, parse_u32_token, parse_u64_token, parse_uint256_array_lossy,
-    required_address_script_hash, required_bigint_string, required_script_hash_or_address,
-    required_string, required_u16_number, required_u32_number, required_u64_number,
-    required_uint256, token_array,
+    empty_array, jtoken_to_serde, object_array, object_array_from_iter,
+    optional_script_hash_or_address_lossy, parse_base64_token, parse_i64_token, parse_nonce_token,
+    parse_object_array_lossy, parse_optional_present_token_array_strict,
+    parse_optional_string_array_strict, parse_optional_token_array_strict,
+    parse_oracle_response_code, parse_script_hash_or_address, parse_string_array_lossy,
+    parse_u32_token, parse_u64_token, parse_uint256_array_lossy, required_address_script_hash,
+    required_bigint_string, required_script_hash_or_address, required_string, required_u16_number,
+    required_u32_number, required_u64_number, required_uint256, token_array,
 };
 pub use stack::{stack_items_from_json_field, stack_items_to_json};
 #[allow(unused_imports)]

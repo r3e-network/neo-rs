@@ -110,11 +110,14 @@ pub fn required_address_script_hash(
 
 /// Builds an ordered JSON object array token.
 pub fn object_array<T>(items: &[T], mut to_object: impl FnMut(&T) -> JObject) -> JToken {
-    let objects = items
-        .iter()
-        .map(|item| JToken::Object(to_object(item)))
-        .collect::<Vec<_>>();
-    JToken::Array(JArray::from(objects))
+    object_array_from_iter(items.iter().map(|item| to_object(item)))
+}
+
+/// Builds an ordered JSON object array token from an object iterator.
+pub fn object_array_from_iter(objects: impl IntoIterator<Item = JObject>) -> JToken {
+    JToken::Array(JArray::from(
+        objects.into_iter().map(JToken::Object).collect::<Vec<_>>(),
+    ))
 }
 
 /// Builds an ordered JSON object array token from a fallible object mapper.
@@ -124,9 +127,9 @@ pub fn fallible_object_array<T, E>(
 ) -> Result<JToken, E> {
     let objects = items
         .iter()
-        .map(|item| to_object(item).map(JToken::Object))
+        .map(|item| to_object(item))
         .collect::<Result<Vec<_>, E>>()?;
-    Ok(JToken::Array(JArray::from(objects)))
+    Ok(object_array_from_iter(objects))
 }
 
 /// Builds an ordered JSON array token.
@@ -467,6 +470,21 @@ mod tests {
             object.insert("value".to_string(), JToken::String((*value).to_string()));
             object
         });
+
+        assert_eq!(
+            token.to_string(),
+            r#"[{"value":"first"},{"value":"second"}]"#
+        );
+    }
+
+    #[test]
+    fn object_array_from_iter_preserves_item_order() {
+        let values = ["first", "second"];
+        let token = object_array_from_iter(values.into_iter().map(|value| {
+            let mut object = JObject::new();
+            object.insert("value".to_string(), JToken::String(value.to_string()));
+            object
+        }));
 
         assert_eq!(
             token.to_string(),

@@ -9,8 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::{parse_string_array_lossy, token_array};
-use neo_json::{JArray, JObject, JToken};
+use super::super::utility::{object_array_from_iter, parse_string_array_lossy, token_array};
+use neo_json::{JObject, JToken};
 use std::collections::BTreeMap;
 
 /// RPC version information matching C# `RpcVersion`
@@ -171,26 +171,19 @@ impl RpcProtocol {
             JToken::Number(self.initial_gas_distribution as f64),
         );
 
-        // Hardforks array
-        let hardforks_array: Vec<JToken> = self
-            .hardforks
-            .iter()
-            .map(|(name, height)| {
+        json.insert(
+            "hardforks".to_string(),
+            object_array_from_iter(self.hardforks.iter().map(|(name, height)| {
                 let mut obj = JObject::new();
                 obj.insert("name".to_string(), JToken::String(name.clone()));
                 obj.insert(
                     "blockheight".to_string(),
                     JToken::Number(f64::from(*height)),
                 );
-                JToken::Object(obj)
-            })
-            .collect();
-        json.insert(
-            "hardforks".to_string(),
-            JToken::Array(JArray::from(hardforks_array)),
+                obj
+            })),
         );
 
-        // Standby committee array
         json.insert(
             "standbycommittee".to_string(),
             token_array(&self.standby_committee, |member| {
@@ -198,7 +191,6 @@ impl RpcProtocol {
             }),
         );
 
-        // Seed list array
         json.insert(
             "seedlist".to_string(),
             token_array(&self.seed_list, |seed| JToken::String(seed.clone())),
