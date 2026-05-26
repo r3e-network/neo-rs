@@ -91,9 +91,8 @@ impl RpcTransferOut {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::test_fixtures::rpc_case_params;
     use neo_json::JArray;
-    use std::fs;
-    use std::path::PathBuf;
 
     #[test]
     fn rpc_transfer_out_roundtrip() {
@@ -161,53 +160,10 @@ mod tests {
         assert_eq!(parsed.script_hash, script_hash);
     }
 
-    fn load_rpc_case_params(name: &str) -> Option<JArray> {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("..");
-        path.push("neo_csharp");
-        path.push("node");
-        path.push("tests");
-        path.push("Neo.Network.RPC.Tests");
-        path.push("RpcTestCases.json");
-        if !path.exists() {
-            eprintln!(
-                "SKIP: neo_csharp submodule not initialized ({})",
-                path.display()
-            );
-            return None;
-        }
-        let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
-        let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token
-            .as_array()
-            .expect("RpcTestCases.json should be an array");
-        for entry in cases.children() {
-            let token = entry.as_ref().expect("array entry");
-            let obj = token.as_object().expect("case object");
-            let case_name = obj
-                .get("Name")
-                .and_then(|value| value.as_string())
-                .unwrap_or_default();
-            if case_name.eq_ignore_ascii_case(name) {
-                let request = obj
-                    .get("Request")
-                    .and_then(|value| value.as_object())
-                    .expect("case request");
-                let params = request
-                    .get("params")
-                    .and_then(|value| value.as_array())
-                    .expect("case params");
-                return Some(params.clone());
-            }
-        }
-        eprintln!("SKIP: RpcTestCases.json missing case: {name}");
-        None
-    }
-
     #[test]
     fn transfer_out_to_json_matches_rpc_test_case() {
         let settings = ProtocolSettings::default_settings();
-        let Some(params) = load_rpc_case_params("sendmanyasync") else {
+        let Some(params) = rpc_case_params("sendmanyasync") else {
             return;
         };
         let transfers = params

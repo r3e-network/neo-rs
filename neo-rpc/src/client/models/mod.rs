@@ -27,6 +27,9 @@
 
 mod vm_state_utils;
 
+#[cfg(test)]
+pub(crate) mod test_fixtures;
+
 // Core RPC types
 pub mod rpc_request;
 pub mod rpc_response;

@@ -83,9 +83,8 @@ impl RpcPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::test_fixtures::rpc_case_result_array;
     use neo_json::{JArray, JToken};
-    use std::fs;
-    use std::path::PathBuf;
 
     #[test]
     fn rpc_plugin_roundtrip() {
@@ -139,52 +138,9 @@ mod tests {
         assert_eq!(err, "Interface entry must be a string");
     }
 
-    fn load_rpc_case_result_array(name: &str) -> Option<JArray> {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("..");
-        path.push("neo_csharp");
-        path.push("node");
-        path.push("tests");
-        path.push("Neo.Network.RPC.Tests");
-        path.push("RpcTestCases.json");
-        if !path.exists() {
-            eprintln!(
-                "SKIP: neo_csharp submodule not initialized ({})",
-                path.display()
-            );
-            return None;
-        }
-        let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
-        let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token
-            .as_array()
-            .expect("RpcTestCases.json should be an array");
-        for entry in cases.children() {
-            let token = entry.as_ref().expect("array entry");
-            let obj = token.as_object().expect("case object");
-            let case_name = obj
-                .get("Name")
-                .and_then(|value| value.as_string())
-                .unwrap_or_default();
-            if case_name.eq_ignore_ascii_case(name) {
-                let response = obj
-                    .get("Response")
-                    .and_then(|value| value.as_object())
-                    .expect("case response");
-                let result = response
-                    .get("result")
-                    .and_then(|value| value.as_array())
-                    .expect("case result");
-                return Some(result.clone());
-            }
-        }
-        eprintln!("SKIP: RpcTestCases.json missing case: {name}");
-        None
-    }
-
     #[test]
     fn plugins_to_json_matches_rpc_test_case() {
-        let Some(expected) = load_rpc_case_result_array("listpluginsasync") else {
+        let Some(expected) = rpc_case_result_array("listpluginsasync") else {
             return;
         };
         let parsed = expected

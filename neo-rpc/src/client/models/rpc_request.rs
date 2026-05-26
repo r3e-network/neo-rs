@@ -91,9 +91,8 @@ impl RpcRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::test_fixtures::rpc_case_request;
     use neo_json::JArray;
-    use std::fs;
-    use std::path::PathBuf;
 
     #[test]
     fn rpc_request_roundtrip() {
@@ -124,45 +123,6 @@ mod tests {
         let parsed = RpcRequest::from_json(&json).unwrap();
         assert_eq!(parsed.id.as_string().unwrap(), "abc");
         assert!(parsed.params.is_empty());
-    }
-
-    fn load_rpc_case_request(name: &str) -> Option<JObject> {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("..");
-        path.push("neo_csharp");
-        path.push("node");
-        path.push("tests");
-        path.push("Neo.Network.RPC.Tests");
-        path.push("RpcTestCases.json");
-        if !path.exists() {
-            eprintln!(
-                "SKIP: neo_csharp submodule not initialized ({})",
-                path.display()
-            );
-            return None;
-        }
-        let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
-        let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token
-            .as_array()
-            .expect("RpcTestCases.json should be an array");
-        for entry in cases.children() {
-            let token = entry.as_ref().expect("array entry");
-            let obj = token.as_object().expect("case object");
-            let case_name = obj
-                .get("Name")
-                .and_then(|value| value.as_string())
-                .unwrap_or_default();
-            if case_name.eq_ignore_ascii_case(name) {
-                let request = obj
-                    .get("Request")
-                    .and_then(|value| value.as_object())
-                    .expect("case request");
-                return Some(request.clone());
-            }
-        }
-        eprintln!("SKIP: RpcTestCases.json missing case: {name}");
-        None
     }
 
     fn build_expected_request(request: &JObject) -> JObject {
@@ -197,7 +157,7 @@ mod tests {
 
     #[test]
     fn request_to_json_matches_rpc_test_case_with_params() {
-        let Some(request) = load_rpc_case_request("sendrawtransactionasyncerror") else {
+        let Some(request) = rpc_case_request("sendrawtransactionasyncerror") else {
             return;
         };
         let expected = build_expected_request(&request);
@@ -208,7 +168,7 @@ mod tests {
 
     #[test]
     fn request_to_json_matches_rpc_test_case_without_params() {
-        let Some(request) = load_rpc_case_request("getbestblockhashasync") else {
+        let Some(request) = rpc_case_request("getbestblockhashasync") else {
             return;
         };
         let expected = build_expected_request(&request);
