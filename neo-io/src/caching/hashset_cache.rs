@@ -1,7 +1,8 @@
 //! `HashSetCache` - faithful port of Neo.IO.Caching.HashSetCache
 
-use super::ordered_cache::OrderedCache;
+use super::ordered_cache::check_copy_range;
 use crate::IoResult;
+use indexmap::IndexSet;
 use std::hash::Hash;
 
 /// A cache that uses a hash set to store items (matches C# `HashSetCache<T>`).
@@ -10,7 +11,7 @@ where
     T: Eq + Hash + Clone,
 {
     capacity: usize,
-    items: OrderedCache<T, ()>,
+    items: IndexSet<T>,
 }
 
 impl<T> HashSetCache<T>
@@ -46,7 +47,7 @@ where
 
         Self {
             capacity: effective_capacity,
-            items: OrderedCache::new(effective_capacity),
+            items: IndexSet::with_capacity(effective_capacity),
         }
     }
 
@@ -61,7 +62,7 @@ where
 
         Ok(Self {
             capacity,
-            items: OrderedCache::new(capacity),
+            items: IndexSet::with_capacity(capacity),
         })
     }
 
@@ -76,11 +77,23 @@ where
     pub fn try_add(&mut self, item: T) -> bool {
         let inserted = !self.items.contains(&item);
 
-        self.items.resize(self.capacity);
-        if inserted {
-            self.items.insert_if_absent(item, ());
+        self.trim_to_capacity();
+        if inserted && self.capacity > 0 {
+            self.items.insert(item);
+            self.trim_to_capacity();
         }
         inserted
+    }
+
+    fn trim_to_capacity(&mut self) {
+        if self.capacity == 0 {
+            self.items.clear();
+            return;
+        }
+
+        while self.items.len() > self.capacity {
+            let _ = self.items.shift_remove_index(0);
+        }
     }
 
     /// Updates the maximum capacity. Existing overflow is trimmed on the next insertion attempt.
@@ -119,18 +132,22 @@ where
     /// Removes an item from the cache (C# `Remove`).
     #[inline]
     pub fn remove(&mut self, item: &T) -> bool {
-        self.items.remove(item)
+        self.items.shift_remove(item)
     }
 
     /// Copies the elements into the destination slice starting at `start_index` (C# `CopyTo`).
     pub fn copy_to(&self, destination: &mut [T], start_index: usize) -> IoResult<()> {
-        self.items.copy_keys_to(destination, start_index)
+        check_copy_range("copy_to", start_index, self.items.len(), destination.len())?;
+        for (offset, item) in self.items.iter().cloned().enumerate() {
+            destination[start_index + offset] = item;
+        }
+        Ok(())
     }
 
     /// Returns an iterator over the cached values (C# `GetEnumerator`).
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.items.keys()
+        self.items.iter()
     }
 }
 
@@ -142,6 +159,6 @@ where
     type IntoIter = std::vec::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.items.keys().cloned().collect::<Vec<_>>().into_iter()
+        self.items.into_iter().collect::<Vec<_>>().into_iter()
     }
 }

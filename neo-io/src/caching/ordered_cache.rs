@@ -10,7 +10,7 @@ where
     entries: Option<LruCache<TKey, TValue>>,
 }
 
-fn check_copy_range(
+pub(crate) fn check_copy_range(
     context: &'static str,
     start_index: usize,
     count: usize,
@@ -52,18 +52,6 @@ where
     pub(crate) fn new(max_capacity: usize) -> Self {
         Self {
             entries: NonZeroUsize::new(max_capacity).map(LruCache::new),
-        }
-    }
-
-    pub(crate) fn resize(&mut self, max_capacity: usize) {
-        let Some(capacity) = NonZeroUsize::new(max_capacity) else {
-            self.entries = None;
-            return;
-        };
-
-        match self.entries.as_mut() {
-            Some(entries) => entries.resize(capacity),
-            None => self.entries = Some(LruCache::new(capacity)),
         }
     }
 
@@ -137,28 +125,6 @@ where
         }
 
         Ok(())
-    }
-
-    pub(crate) fn copy_keys_to(&self, destination: &mut [TKey], start_index: usize) -> IoResult<()>
-    where
-        TKey: Clone,
-    {
-        check_copy_range("copy_to", start_index, self.len(), destination.len())?;
-
-        if let Some(entries) = self.entries.as_ref() {
-            for (offset, key) in entries.iter().rev().map(|(key, _)| key.clone()).enumerate() {
-                destination[start_index + offset] = key;
-            }
-        }
-
-        Ok(())
-    }
-
-    pub(crate) fn keys(&self) -> impl Iterator<Item = &TKey> {
-        self.entries
-            .as_ref()
-            .into_iter()
-            .flat_map(|entries| entries.iter().rev().map(|(key, _)| key))
     }
 
     pub(crate) fn peek_cloned(&self, key: &TKey) -> Option<TValue>

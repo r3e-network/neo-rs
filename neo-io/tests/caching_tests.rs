@@ -152,6 +152,20 @@ fn hash_set_cache_iter_and_into_iter_preserve_fifo_order() {
 }
 
 #[test]
+fn hash_set_cache_remove_preserves_fifo_order() {
+    let mut cache = HashSetCache::new(4);
+    cache.add(1);
+    cache.add(2);
+    cache.add(3);
+    cache.add(4);
+
+    assert!(cache.remove(&2));
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![1, 3, 4]);
+    assert!(cache.try_add(5));
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![1, 3, 4, 5]);
+}
+
+#[test]
 fn hash_set_cache_clear_preserves_configured_capacity() {
     let mut cache = HashSetCache::new(2);
     cache.add(1);
