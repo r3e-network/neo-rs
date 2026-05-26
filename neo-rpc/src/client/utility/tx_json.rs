@@ -4,12 +4,12 @@ use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Signer, Transaction};
 use neo_io::serializable::Serializable;
 use neo_io::serializable::helper::get_var_size;
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 
 use super::attributes::attribute_from_json;
 use super::parsing::{
-    jtoken_to_serde, oracle_response_code_to_str, parse_i64_token,
-    parse_optional_token_array_strict, parse_u32_token,
+    jtoken_to_serde, object_array, oracle_response_code_to_str, parse_i64_token,
+    parse_optional_token_array_strict, parse_u32_token, token_array,
 };
 use super::witness::{payload_witness_from_json, payload_witness_to_json, witness_to_json};
 
@@ -58,23 +58,13 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     );
     json.insert(
         "witnesses".to_string(),
-        JToken::Array(
-            header
-                .witnesses
-                .iter()
-                .map(|w| JToken::Object(witness_to_json(w)))
-                .collect(),
-        ),
+        object_array(&header.witnesses, witness_to_json),
     );
     json.insert(
         "tx".to_string(),
-        JToken::Array(
-            block
-                .transactions
-                .iter()
-                .map(|tx| JToken::Object(transaction_to_json(tx, protocol_settings)))
-                .collect(),
-        ),
+        object_array(&block.transactions, |tx| {
+            transaction_to_json(tx, protocol_settings)
+        }),
     );
 
     json
@@ -141,23 +131,15 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
     // Add signers
     json.insert(
         "signers".to_string(),
-        JToken::Array(
-            tx.signers()
-                .iter()
-                .map(|s| JToken::Object(signer_to_json(s, protocol_settings)))
-                .collect(),
-        ),
+        object_array(tx.signers(), |signer| {
+            signer_to_json(signer, protocol_settings)
+        }),
     );
 
     // Add attributes
     json.insert(
         "attributes".to_string(),
-        JToken::Array(
-            tx.attributes()
-                .iter()
-                .map(|a| JToken::Object(attribute_to_json(a)))
-                .collect(),
-        ),
+        object_array(tx.attributes(), attribute_to_json),
     );
 
     // Add script
@@ -169,12 +151,7 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
     // Add witnesses
     json.insert(
         "witnesses".to_string(),
-        JToken::Array(
-            tx.witnesses()
-                .iter()
-                .map(|w| JToken::Object(payload_witness_to_json(w)))
-                .collect(),
-        ),
+        object_array(tx.witnesses(), payload_witness_to_json),
     );
 
     json
@@ -289,39 +266,25 @@ fn signer_to_json(signer: &neo_core::Signer, _protocol_settings: &ProtocolSettin
     if !signer.allowed_contracts.is_empty() {
         json.insert(
             "allowedcontracts".to_string(),
-            JToken::Array(
-                signer
-                    .allowed_contracts
-                    .iter()
-                    .map(|c| JToken::String(c.to_string()))
-                    .collect(),
-            ),
+            token_array(&signer.allowed_contracts, |contract| {
+                JToken::String(contract.to_string())
+            }),
         );
     }
 
     if !signer.allowed_groups.is_empty() {
         json.insert(
             "allowedgroups".to_string(),
-            JToken::Array(
-                signer
-                    .allowed_groups
-                    .iter()
-                    .map(|g| JToken::String(hex::encode(g.to_bytes())))
-                    .collect(),
-            ),
+            token_array(&signer.allowed_groups, |group| {
+                JToken::String(hex::encode(group.to_bytes()))
+            }),
         );
     }
 
     if !signer.rules.is_empty() {
         json.insert(
             "rules".to_string(),
-            JToken::Array(
-                signer
-                    .rules
-                    .iter()
-                    .map(|r| JToken::Object(rule_to_json(r)))
-                    .collect(),
-            ),
+            object_array(&signer.rules, rule_to_json),
         );
     }
 
@@ -401,13 +364,9 @@ fn condition_to_json(condition: &neo_core::WitnessCondition) -> JObject {
             );
         }
         WC::And { conditions } | WC::Or { conditions } => {
-            let expressions = conditions
-                .iter()
-                .map(|c| JToken::Object(condition_to_json(c)))
-                .collect::<Vec<_>>();
             json.insert(
                 "expressions".to_string(),
-                JToken::Array(JArray::from(expressions)),
+                object_array(conditions, |condition| condition_to_json(condition)),
             );
         }
         WC::ScriptHash { hash } | WC::CalledByContract { hash } => {
