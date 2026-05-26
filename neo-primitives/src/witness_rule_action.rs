@@ -1,7 +1,6 @@
 //! WitnessRuleAction — matches C# Neo.Network.P2P.Payloads.WitnessRuleAction exactly.
 
-use crate::protocol_enum;
-use std::str::FromStr;
+use crate::{impl_protocol_enum_from_str, protocol_enum};
 
 protocol_enum! {
     /// The action to be taken if the current context meets with the rule.
@@ -15,15 +14,14 @@ protocol_enum! {
     }
 }
 
-impl FromStr for WitnessRuleAction {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "deny" => Ok(Self::Deny),
-            "allow" => Ok(Self::Allow),
-            other => Err(format!("Invalid witness rule action: {other}")),
-        }
+impl_protocol_enum_from_str! {
+    WitnessRuleAction {
+        error = |value: &str| format!(
+            "Invalid witness rule action: {}",
+            value.to_ascii_lowercase()
+        );
+        Deny,
+        Allow,
     }
 }
 
@@ -61,18 +59,18 @@ mod tests {
     #[test]
     fn test_witness_rule_action_from_str() {
         assert_eq!(
-            WitnessRuleAction::from_str("Deny").unwrap(),
+            "Deny".parse::<WitnessRuleAction>().unwrap(),
             WitnessRuleAction::Deny
         );
         assert_eq!(
-            WitnessRuleAction::from_str("Allow").unwrap(),
+            "Allow".parse::<WitnessRuleAction>().unwrap(),
             WitnessRuleAction::Allow
         );
         assert_eq!(
-            WitnessRuleAction::from_str("allow").unwrap(),
+            "allow".parse::<WitnessRuleAction>().unwrap(),
             WitnessRuleAction::Allow
         );
-        assert!(WitnessRuleAction::from_str("Invalid").is_err());
+        assert!("Invalid".parse::<WitnessRuleAction>().is_err());
     }
 
     #[test]

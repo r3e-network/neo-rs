@@ -3681,7 +3681,7 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     )
     .unwrap();
     let block_verification =
-        fs::read_to_string(workspace.join("neo-core/src/network/p2p/payloads/block.rs")).unwrap();
+        read_source(workspace.join("neo-core/src/network/p2p/payloads/block/verification.rs"));
 
     assert!(
         root_manifest.contains("neo-vm-rs = { path = \"../neo-vm-rs\" }"),
