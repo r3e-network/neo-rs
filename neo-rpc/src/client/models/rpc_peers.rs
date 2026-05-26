@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::object_array;
+use super::super::utility::{object_array, parse_optional_present_token_array_strict};
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -107,23 +107,12 @@ impl RpcPeer {
 }
 
 fn parse_peer_list(json: &JObject, field: &str) -> Result<Vec<RpcPeer>, String> {
-    let peers = json
-        .get(field)
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|item| item.as_ref())
-                .map(|token| {
-                    token
-                        .as_object()
-                        .ok_or_else(|| format!("{field} entry must be an object"))
-                        .and_then(RpcPeer::from_json)
-                })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .unwrap_or_else(|| Ok(Vec::new()))?;
-
-    Ok(peers)
+    parse_optional_present_token_array_strict(json, field, |token| {
+        token
+            .as_object()
+            .ok_or_else(|| format!("{field} entry must be an object"))
+            .and_then(RpcPeer::from_json)
+    })
 }
 
 #[cfg(test)]
@@ -198,6 +187,42 @@ mod tests {
         );
         let parsed = RpcPeers::from_json(&invalid);
         assert!(parsed.is_err());
+
+        let mut incomplete_peer = JObject::new();
+        incomplete_peer.insert(
+            "address".to_string(),
+            JToken::String("127.0.0.1".to_string()),
+        );
+        invalid.insert(
+            "connected".to_string(),
+            JToken::Array(JArray::from(vec![JToken::Object(incomplete_peer)])),
+        );
+        let parsed = RpcPeers::from_json(&invalid);
+        assert_eq!(
+            parsed.expect_err("peer parse error propagates"),
+            "Missing or invalid 'port' field"
+        );
+    }
+
+    #[test]
+    fn parse_peer_list_skips_empty_array_slots() {
+        let mut peer = JObject::new();
+        peer.insert(
+            "address".to_string(),
+            JToken::String("127.0.0.1".to_string()),
+        );
+        peer.insert("port".to_string(), JToken::Number(20333.0));
+
+        let mut connected = JArray::new();
+        connected.add(None);
+        connected.add(Some(JToken::Object(peer)));
+
+        let mut json = JObject::new();
+        json.insert("connected".to_string(), JToken::Array(connected));
+
+        let parsed = RpcPeers::from_json(&json).expect("peers");
+        assert_eq!(parsed.connected.len(), 1);
+        assert_eq!(parsed.connected[0].address, "127.0.0.1");
     }
 
     fn load_rpc_case_result(name: &str) -> Option<JObject> {
