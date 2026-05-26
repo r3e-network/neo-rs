@@ -29,7 +29,7 @@
 //!
 //! - `hash160()`: RIPEMD160(SHA256(data)) - used for script hashes
 //! - `hash256()`: SHA256(SHA256(data)) - used for transaction hashes
-//! - `base58_check_encode/decode()`: Neo address encoding
+//! - `base58_check_encode/decode()`: generic Base58Check payload encoding
 //!
 //! # Security Notes
 //!
@@ -41,7 +41,7 @@ pub use crate::bls12381::Bls12381Crypto;
 pub use crate::encoding::{Base58, Hex};
 pub use crate::hash::Crypto;
 pub use crate::murmur;
-pub use crate::signature::{ECDsa, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto, ECC};
+pub use crate::signature::{ECC, ECDsa, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto};
 
 /// Convenience functions for Base58 encoding and decoding.
 pub mod base58 {

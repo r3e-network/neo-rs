@@ -1,10 +1,11 @@
 //! Contract - matches C# Neo.SmartContract.Contract exactly
 
+use crate::UInt160;
 use crate::cryptography::{Crypto, ECPoint};
 use crate::error::CoreError;
 use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::ContractParameterType;
-use crate::UInt160;
+use neo_primitives::base58_check;
 use std::sync::OnceLock;
 
 /// Error type for multi-signature contract creation.
@@ -157,11 +158,10 @@ impl Contract {
 
     /// Gets the address of the contract
     pub fn get_address(&self) -> String {
-        let mut data = Vec::with_capacity(1 + crate::neo_config::ADDRESS_SIZE);
-        data.push(crate::protocol_settings::ProtocolSettings::default_settings().address_version);
-        data.extend_from_slice(&self.script_hash().to_bytes());
-
-        crate::cryptography::crypto_utils::Base58::encode_check(&data)
+        base58_check::encode_address_payload(
+            crate::protocol_settings::ProtocolSettings::default_settings().address_version,
+            &self.script_hash().to_array(),
+        )
     }
 }
 
