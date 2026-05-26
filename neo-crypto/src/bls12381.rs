@@ -5,7 +5,9 @@
 //! utilities.
 
 use crate::error::{CryptoError, CryptoResult};
-use rand::{rngs::OsRng, RngCore};
+use blst::BLST_ERROR;
+use blst::min_sig::{AggregatePublicKey, AggregateSignature, PublicKey, SecretKey, Signature};
+use rand::{RngCore, rngs::OsRng};
 use zeroize::Zeroizing;
 
 /// BLS12-381 operations using the `blst` crate.
@@ -22,28 +24,45 @@ pub struct Bls12381Crypto;
 const NEO_BLS_DST: &[u8] = b"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_";
 
 impl Bls12381Crypto {
-    fn validate_private_key(private_key: &[u8; 32]) -> CryptoResult<blst::blst_scalar> {
-        use blst::blst_scalar;
-
+    fn secret_key_from_neo_bytes(private_key: &[u8; 32]) -> CryptoResult<SecretKey> {
         if private_key.iter().all(|b| *b == 0) {
             return Err(CryptoError::invalid_key(
                 "Invalid private key: scalar cannot be zero",
             ));
         }
 
-        let mut sk_scalar = blst_scalar::default();
-        // SAFETY: `blst_scalar_from_lendian` reads exactly 32 bytes from `private_key`,
-        // which is guaranteed to be a valid 32-byte slice. `blst_scalar_fr_check` only
-        // reads the initialized `sk_scalar`. Both are pure FFI calls with no aliasing.
-        unsafe {
-            blst::blst_scalar_from_lendian(&mut sk_scalar, private_key.as_ptr());
-            if !blst::blst_scalar_fr_check(&sk_scalar) {
-                return Err(CryptoError::invalid_key(
-                    "Invalid private key: scalar not in Fr field",
-                ));
-            }
-        }
-        Ok(sk_scalar)
+        // Preserve the previous Neo helper behavior: the 32-byte scalar is
+        // interpreted as little-endian, while `blst::min_sig` expects big-endian.
+        let mut big_endian = *private_key;
+        big_endian.reverse();
+        SecretKey::from_bytes(&big_endian)
+            .map_err(|_| CryptoError::invalid_key("Invalid private key: scalar not in Fr field"))
+    }
+
+    fn parse_signature(
+        signature: &[u8; 48],
+        encoding_message: &'static str,
+        subgroup_message: &'static str,
+    ) -> CryptoResult<Signature> {
+        let signature = Signature::from_bytes(signature)
+            .map_err(|_| CryptoError::invalid_signature(encoding_message))?;
+        signature
+            .validate(true)
+            .map_err(|_| CryptoError::invalid_signature(subgroup_message))?;
+        Ok(signature)
+    }
+
+    fn parse_public_key(
+        public_key: &[u8; 96],
+        encoding_message: &'static str,
+        subgroup_message: &'static str,
+    ) -> CryptoResult<PublicKey> {
+        let public_key = PublicKey::from_bytes(public_key)
+            .map_err(|_| CryptoError::invalid_key(encoding_message))?;
+        public_key
+            .validate()
+            .map_err(|_| CryptoError::invalid_key(subgroup_message))?;
+        Ok(public_key)
     }
 
     /// Generates a new random private key using cryptographically secure RNG.
@@ -58,56 +77,18 @@ impl Bls12381Crypto {
     ///
     /// Returns a 96-byte compressed G2 point.
     pub fn derive_public_key(private_key: &[u8; 32]) -> CryptoResult<[u8; 96]> {
-        use blst::blst_p2;
-
-        let sk_scalar = Self::validate_private_key(private_key)?;
-
-        // SAFETY: `sk_scalar` was validated by `validate_private_key`. All blst FFI
-        // calls operate on stack-allocated, default-initialized structs with no aliasing.
-        // `blst_p2_compress` writes exactly 96 bytes into `pk_bytes`.
-        unsafe {
-            let mut pk = blst_p2::default();
-            blst::blst_sk_to_pk_in_g2(&mut pk, &sk_scalar);
-
-            let mut pk_bytes = [0u8; 96];
-            blst::blst_p2_compress(pk_bytes.as_mut_ptr(), &pk);
-
-            Ok(pk_bytes)
-        }
+        Ok(Self::secret_key_from_neo_bytes(private_key)?
+            .sk_to_pk()
+            .to_bytes())
     }
 
     /// Signs a message with BLS12-381.
     ///
     /// Returns a 48-byte compressed G1 signature.
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> CryptoResult<[u8; 48]> {
-        use blst::blst_p1;
-
-        let sk_scalar = Self::validate_private_key(private_key)?;
-
-        // SAFETY: `sk_scalar` validated above. `message` and `NEO_BLS_DST` are valid
-        // slices with correct lengths passed via `as_ptr()`/`len()`. All blst FFI calls
-        // operate on stack-allocated, default-initialized structs. `blst_p1_compress`
-        // writes exactly 48 bytes into `sig_bytes`.
-        unsafe {
-            let mut msg_point = blst_p1::default();
-            blst::blst_hash_to_g1(
-                &mut msg_point,
-                message.as_ptr(),
-                message.len(),
-                NEO_BLS_DST.as_ptr(),
-                NEO_BLS_DST.len(),
-                std::ptr::null(),
-                0,
-            );
-
-            let mut signature = blst_p1::default();
-            blst::blst_p1_mult(&mut signature, &msg_point, sk_scalar.b.as_ptr(), 255);
-
-            let mut sig_bytes = [0u8; 48];
-            blst::blst_p1_compress(sig_bytes.as_mut_ptr(), &signature);
-
-            Ok(sig_bytes)
-        }
+        Ok(Self::secret_key_from_neo_bytes(private_key)?
+            .sign(message, NEO_BLS_DST, &[])
+            .to_bytes())
     }
 
     /// Verifies a BLS12-381 signature.
@@ -119,57 +100,27 @@ impl Bls12381Crypto {
         signature: &[u8; 48],
         public_key: &[u8; 96],
     ) -> CryptoResult<bool> {
-        use blst::{blst_p1_affine, blst_p2_affine, BLST_ERROR};
+        let signature = Self::parse_signature(
+            signature,
+            "Invalid signature encoding",
+            "Signature not in G1 subgroup",
+        )?;
+        let public_key = Self::parse_public_key(
+            public_key,
+            "Invalid public key encoding",
+            "Public key not in G2 subgroup",
+        )?;
 
-        // SAFETY: All inputs are fixed-size arrays with correct lengths for blst FFI.
-        // Each deserialized point is validated (subgroup check, infinity check) before
-        // use. Stack-allocated structs are default-initialized before FFI writes.
-        unsafe {
-            let mut sig_affine = blst_p1_affine::default();
-            let result = blst::blst_p1_uncompress(&mut sig_affine, signature.as_ptr());
-            if result != BLST_ERROR::BLST_SUCCESS {
-                return Err(CryptoError::invalid_signature("Invalid signature encoding"));
-            }
-
-            if blst::blst_p1_affine_is_inf(&sig_affine) || !blst::blst_p1_affine_in_g1(&sig_affine)
-            {
-                return Err(CryptoError::invalid_signature(
-                    "Signature not in G1 subgroup",
-                ));
-            }
-
-            let mut pk_affine = blst_p2_affine::default();
-            let result = blst::blst_p2_uncompress(&mut pk_affine, public_key.as_ptr());
-            if result != BLST_ERROR::BLST_SUCCESS {
-                return Err(CryptoError::invalid_key("Invalid public key encoding"));
-            }
-
-            if blst::blst_p2_affine_is_inf(&pk_affine) || !blst::blst_p2_affine_in_g2(&pk_affine) {
-                return Err(CryptoError::invalid_key("Public key not in G2 subgroup"));
-            }
-
-            let result = blst::blst_core_verify_pk_in_g2(
-                &pk_affine,
-                &sig_affine,
-                true,
-                message.as_ptr(),
-                message.len(),
-                NEO_BLS_DST.as_ptr(),
-                NEO_BLS_DST.len(),
-                std::ptr::null(),
-                0,
-            );
-
-            Ok(result == BLST_ERROR::BLST_SUCCESS)
-        }
+        Ok(
+            signature.verify(true, message, NEO_BLS_DST, &[], &public_key, true)
+                == BLST_ERROR::BLST_SUCCESS,
+        )
     }
 
     /// Aggregates multiple BLS signatures into one.
     ///
     /// Used for dBFT consensus where multiple validators sign.
     pub fn aggregate_signatures(signatures: &[[u8; 48]]) -> CryptoResult<[u8; 48]> {
-        use blst::{blst_p1, blst_p1_affine};
-
         if signatures.is_empty() {
             return Err(CryptoError::invalid_argument("No signatures to aggregate"));
         }
@@ -178,48 +129,30 @@ impl Bls12381Crypto {
             return Ok(signatures[0]);
         }
 
-        // SAFETY: Each signature is a fixed 48-byte array. Every deserialized point
-        // is validated (subgroup + infinity check) before aggregation. Stack-allocated
-        // structs are default-initialized. Loop bounds match `signatures.len()`.
-        unsafe {
-            let mut agg = blst_p1::default();
-            let mut first_affine = blst_p1_affine::default();
-            let result = blst::blst_p1_uncompress(&mut first_affine, signatures[0].as_ptr());
-            if result != blst::BLST_ERROR::BLST_SUCCESS {
-                return Err(CryptoError::invalid_signature("Invalid first signature"));
-            }
-            if blst::blst_p1_affine_is_inf(&first_affine)
-                || !blst::blst_p1_affine_in_g1(&first_affine)
-            {
-                return Err(CryptoError::invalid_signature(
-                    "First signature not in G1 subgroup",
-                ));
-            }
-            blst::blst_p1_from_affine(&mut agg, &first_affine);
-
-            for sig in &signatures[1..] {
-                let mut sig_affine = blst_p1_affine::default();
-                let result = blst::blst_p1_uncompress(&mut sig_affine, sig.as_ptr());
-                if result != blst::BLST_ERROR::BLST_SUCCESS {
-                    return Err(CryptoError::invalid_signature(
+        let signatures = signatures
+            .iter()
+            .enumerate()
+            .map(|(index, signature)| {
+                if index == 0 {
+                    Self::parse_signature(
+                        signature,
+                        "Invalid first signature",
+                        "First signature not in G1 subgroup",
+                    )
+                } else {
+                    Self::parse_signature(
+                        signature,
                         "Invalid signature in aggregation",
-                    ));
-                }
-                if blst::blst_p1_affine_is_inf(&sig_affine)
-                    || !blst::blst_p1_affine_in_g1(&sig_affine)
-                {
-                    return Err(CryptoError::invalid_signature(
                         "Signature not in G1 subgroup",
-                    ));
+                    )
                 }
-                blst::blst_p1_add_or_double_affine(&mut agg, &agg, &sig_affine);
-            }
+            })
+            .collect::<CryptoResult<Vec<_>>>()?;
+        let signature_refs: Vec<&Signature> = signatures.iter().collect();
+        let aggregate = AggregateSignature::aggregate(&signature_refs, false)
+            .map_err(|_| CryptoError::invalid_signature("Invalid signature in aggregation"))?;
 
-            let mut out = [0u8; 48];
-            blst::blst_p1_compress(out.as_mut_ptr(), &agg);
-
-            Ok(out)
-        }
+        Ok(aggregate.to_signature().to_bytes())
     }
 
     /// Verifies an aggregated signature against multiple public keys.
@@ -228,51 +161,95 @@ impl Bls12381Crypto {
         aggregated_signature: &[u8; 48],
         public_keys: &[[u8; 96]],
     ) -> CryptoResult<bool> {
-        use blst::{blst_p2, blst_p2_affine};
-
         if public_keys.is_empty() {
             return Err(CryptoError::invalid_argument("No public keys provided"));
         }
 
-        // SAFETY: Each public key is a fixed 96-byte array. Every deserialized G2 point
-        // is validated (subgroup + infinity check) before aggregation. The aggregated
-        // key is then used for pairing verification via the already-audited `verify`.
-        unsafe {
-            let mut agg_pk = blst_p2::default();
-            let mut first_affine = blst_p2_affine::default();
-            let result = blst::blst_p2_uncompress(&mut first_affine, public_keys[0].as_ptr());
-            if result != blst::BLST_ERROR::BLST_SUCCESS {
-                return Err(CryptoError::invalid_key("Invalid first public key"));
-            }
-            if blst::blst_p2_affine_is_inf(&first_affine)
-                || !blst::blst_p2_affine_in_g2(&first_affine)
-            {
-                return Err(CryptoError::invalid_key(
-                    "First public key not in G2 subgroup",
-                ));
-            }
-            blst::blst_p2_from_affine(&mut agg_pk, &first_affine);
-
-            for pk in &public_keys[1..] {
-                let mut pk_affine = blst_p2_affine::default();
-                let result = blst::blst_p2_uncompress(&mut pk_affine, pk.as_ptr());
-                if result != blst::BLST_ERROR::BLST_SUCCESS {
-                    return Err(CryptoError::invalid_key(
+        let public_keys = public_keys
+            .iter()
+            .enumerate()
+            .map(|(index, public_key)| {
+                if index == 0 {
+                    Self::parse_public_key(
+                        public_key,
+                        "Invalid first public key",
+                        "First public key not in G2 subgroup",
+                    )
+                } else {
+                    Self::parse_public_key(
+                        public_key,
                         "Invalid public key in aggregation",
-                    ));
+                        "Public key not in G2 subgroup",
+                    )
                 }
-                if blst::blst_p2_affine_is_inf(&pk_affine)
-                    || !blst::blst_p2_affine_in_g2(&pk_affine)
-                {
-                    return Err(CryptoError::invalid_key("Public key not in G2 subgroup"));
-                }
-                blst::blst_p2_add_or_double_affine(&mut agg_pk, &agg_pk, &pk_affine);
-            }
+            })
+            .collect::<CryptoResult<Vec<_>>>()?;
+        let public_key_refs: Vec<&PublicKey> = public_keys.iter().collect();
+        let aggregate = AggregatePublicKey::aggregate(&public_key_refs, false)
+            .map_err(|_| CryptoError::invalid_key("Invalid public key in aggregation"))?;
+        let aggregate = aggregate.to_public_key().to_bytes();
 
-            let mut agg_pk_bytes = [0u8; 96];
-            blst::blst_p2_compress(agg_pk_bytes.as_mut_ptr(), &agg_pk);
+        Self::verify(message, aggregated_signature, &aggregate)
+    }
+}
 
-            Self::verify(message, aggregated_signature, &agg_pk_bytes)
-        }
+#[cfg(test)]
+mod tests {
+    use super::Bls12381Crypto;
+
+    const PRIVATE_KEY: [u8; 32] = [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        26, 27, 28, 29, 30, 31, 32,
+    ];
+    const SECOND_PRIVATE_KEY: [u8; 32] = [
+        33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+        56, 57, 58, 59, 60, 61, 62, 63, 64,
+    ];
+    const MESSAGE: &[u8] = b"neo-rs bls compatibility";
+
+    fn decode_array<const N: usize>(hex: &str) -> [u8; N] {
+        hex::decode(hex).unwrap().try_into().unwrap()
+    }
+
+    #[test]
+    fn bls12381_compatibility_vector() {
+        let public_key = Bls12381Crypto::derive_public_key(&PRIVATE_KEY).unwrap();
+        let signature = Bls12381Crypto::sign(MESSAGE, &PRIVATE_KEY).unwrap();
+        let second_public_key = Bls12381Crypto::derive_public_key(&SECOND_PRIVATE_KEY).unwrap();
+        let second_signature = Bls12381Crypto::sign(MESSAGE, &SECOND_PRIVATE_KEY).unwrap();
+        let aggregated =
+            Bls12381Crypto::aggregate_signatures(&[signature, second_signature]).unwrap();
+
+        assert_eq!(
+            public_key,
+            decode_array(
+                "954087aafacc1046c0f0ad35d5b60163cb4771573f995afdd6f26cbeec117caaef1a94eed091f06cfbb04cd44819a4b419629b06ca5701c0c4a53b370db40a5adf174a8627ff0fe765eddfb0e4bb5debddcb7a268afec33c833f7f9466fded0c"
+            )
+        );
+        assert_eq!(
+            signature,
+            decode_array(
+                "8a0843ce5187848624a00a86ce657782def22e8ed59046a1723e0db715a018314d4a5982ac9abb5b8cbbd270f448ba0b"
+            )
+        );
+        assert_eq!(
+            aggregated,
+            decode_array(
+                "abf312ecc4e8c7d1c5acc41147a028cfb4d225abdb09ab0fe5d8bf98f1290328633824cb50768bbaebd1e064c9ad8c66"
+            )
+        );
+        assert_eq!(
+            Bls12381Crypto::aggregate_signatures(&[signature]).unwrap(),
+            signature
+        );
+        assert!(Bls12381Crypto::verify(MESSAGE, &signature, &public_key).unwrap());
+        assert!(
+            Bls12381Crypto::verify_aggregated(
+                MESSAGE,
+                &aggregated,
+                &[public_key, second_public_key],
+            )
+            .unwrap()
+        );
     }
 }
