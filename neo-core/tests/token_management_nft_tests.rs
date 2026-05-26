@@ -92,33 +92,65 @@ fn collect_iterator_keys(engine: &mut ApplicationEngine, iterator_result: &[u8])
     keys
 }
 
+struct NftFixture {
+    snapshot: Arc<DataCache>,
+    token_mgmt: TokenManagement,
+    owner: UInt160,
+    engine: ApplicationEngine,
+}
+
+impl NftFixture {
+    fn new() -> Self {
+        let settings = protocol_settings_with_faun();
+        let snapshot = make_snapshot_with_genesis(&settings);
+        let token_mgmt = TokenManagement::new();
+        let owner = sample_account(0x01);
+        let block = make_block(1);
+        let engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::clone(&snapshot),
+            Some(block),
+            settings,
+            TEST_GAS_LIMIT,
+            None,
+        )
+        .expect("engine");
+
+        Self {
+            snapshot,
+            token_mgmt,
+            owner,
+            engine,
+        }
+    }
+
+    fn token_hash(&self) -> UInt160 {
+        self.token_mgmt.hash()
+    }
+
+    fn call(&mut self, method: &str, args: &[Vec<u8>]) -> Vec<u8> {
+        let token_hash = self.token_hash();
+        self.engine
+            .call_native_contract(token_hash, method, args)
+            .unwrap_or_else(|err| panic!("{method} call: {err}"))
+    }
+
+    fn commit(&self) {
+        self.snapshot.commit();
+    }
+}
+
 #[test]
 fn nft_create_and_mint() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"TestNFT";
     let symbol = b"TST";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     assert_eq!(result.len(), 20);
 
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
@@ -126,9 +158,7 @@ fn nft_create_and_mint() {
     let account = sample_account(0x02);
     let mint_args = vec![asset_id.to_bytes(), account.to_bytes()];
 
-    let mint_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let mint_result = fixture.call("mintNFT", &mint_args);
     assert_eq!(mint_result.len(), 20);
 
     let nft_id = UInt160::from_bytes(&mint_result).expect("nft id");
@@ -136,116 +166,72 @@ fn nft_create_and_mint() {
 
     let get_info_args = vec![nft_id.to_bytes()];
 
-    let info_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTInfo", &get_info_args)
-        .expect("getNFTInfo call");
+    let info_result = fixture.call("getNFTInfo", &get_info_args);
     assert!(!info_result.is_empty());
 }
 
 #[test]
 fn nft_burn() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"BurnableNFT";
     let symbol = b"BRN";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let account = sample_account(0x02);
     let mint_args = vec![asset_id.to_bytes(), account.to_bytes()];
 
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    engine.set_calling_script_hash(Some(account));
+    fixture.engine.set_calling_script_hash(Some(account));
 
-    snapshot.commit();
+    fixture.commit();
 
     let burn_args = vec![nft_id.to_bytes()];
 
-    let burn_result = engine
-        .call_native_contract(token_mgmt.hash(), "burnNFT", &burn_args)
-        .expect("burnNFT call");
+    let burn_result = fixture.call("burnNFT", &burn_args);
     assert_eq!(burn_result, vec![1]);
 
     let get_info_args = vec![nft_id.to_bytes()];
 
-    let info_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTInfo", &get_info_args)
-        .expect("getNFTInfo call");
+    let info_result = fixture.call("getNFTInfo", &get_info_args);
     assert!(info_result.is_empty());
 }
 
 #[test]
 fn nft_transfer() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"TransferableNFT";
     let symbol = b"TRN";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let from_account = sample_account(0x02);
     let to_account = sample_account(0x03);
 
     let mint_args = vec![asset_id.to_bytes(), from_account.to_bytes()];
 
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    engine.set_calling_script_hash(Some(from_account));
+    fixture.engine.set_calling_script_hash(Some(from_account));
 
-    snapshot.commit();
+    fixture.commit();
 
     let transfer_args = vec![
         nft_id.to_bytes(),
@@ -254,37 +240,19 @@ fn nft_transfer() {
         Vec::new(),
     ];
 
-    let transfer_result = engine
-        .call_native_contract(token_mgmt.hash(), "transferNFT", &transfer_args)
-        .expect("transferNFT call");
+    let transfer_result = fixture.call("transferNFT", &transfer_args);
     assert_eq!(transfer_result, vec![1]);
 
     let get_nfts_args = vec![asset_id.to_bytes()];
 
-    let nfts_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTs", &get_nfts_args)
-        .expect("getNFTs call");
+    let nfts_result = fixture.call("getNFTs", &get_nfts_args);
     assert!(!nfts_result.is_empty());
 }
 
 #[test]
 fn direct_invoke_transfer_nft_rejects_extra_arguments() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let create_args = vec![
         owner.to_bytes(),
@@ -292,25 +260,22 @@ fn direct_invoke_transfer_nft_rejects_extra_arguments() {
         b"EAN".to_vec(),
         vec![1],
     ];
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let holder = sample_account(0x02);
     let recipient = sample_account(0x03);
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    let err = token_mgmt
+    let err = fixture
+        .token_mgmt
         .invoke(
-            &mut engine,
+            &mut fixture.engine,
             "transferNFT",
             &[
                 nft_id.to_bytes(),
@@ -328,51 +293,30 @@ fn direct_invoke_transfer_nft_rejects_extra_arguments() {
 
 #[test]
 fn nft_get_nfts_of_owner() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"MultiNFT";
     let symbol = b"MFT";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let holder = sample_account(0x05);
 
     for _ in 0..3 {
         let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
 
-        let _ = engine
-            .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-            .expect("mintNFT call");
+        let _ = fixture.call("mintNFT", &mint_args);
     }
 
     let get_owner_nfts_args = vec![holder.to_bytes()];
 
-    let owner_nfts_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTsOfOwner", &get_owner_nfts_args)
-        .expect("getNFTsOfOwner call");
+    let owner_nfts_result = fixture.call("getNFTsOfOwner", &get_owner_nfts_args);
     assert!(
         !owner_nfts_result.is_empty(),
         "getNFTsOfOwner should return NFTs for owner"
@@ -381,35 +325,18 @@ fn nft_get_nfts_of_owner() {
 
 #[test]
 fn nft_multiple_mints_same_block() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"UniqueNFT";
     let symbol = b"UNQ";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let account = sample_account(0x06);
 
@@ -417,17 +344,13 @@ fn nft_multiple_mints_same_block() {
     for i in 0..5 {
         let mint_args = vec![asset_id.to_bytes(), account.to_bytes()];
 
-        let nft_result = engine
-            .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-            .expect("mintNFT call");
+        let nft_result = fixture.call("mintNFT", &mint_args);
         let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
         nft_ids.push(nft_id);
 
         let get_info_args = vec![nft_id.to_bytes()];
 
-        let info_result = engine
-            .call_native_contract(token_mgmt.hash(), "getNFTInfo", &get_info_args)
-            .expect("getNFTInfo call");
+        let info_result = fixture.call("getNFTInfo", &get_info_args);
         assert!(!info_result.is_empty(), "NFT {} should exist", i);
     }
 
@@ -437,97 +360,57 @@ fn nft_multiple_mints_same_block() {
 
 #[test]
 fn nft_owner_verification() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"OwnerTestNFT";
     let symbol = b"OWN";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let holder = sample_account(0x10);
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
 
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
     let get_info_args = vec![nft_id.to_bytes()];
 
-    let info_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTInfo", &get_info_args)
-        .expect("getNFTInfo call");
+    let info_result = fixture.call("getNFTInfo", &get_info_args);
     assert!(!info_result.is_empty());
 }
 
 #[test]
 fn nft_transfer_verification() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"TransferVerifyNFT";
     let symbol = b"TVN";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let from_account = sample_account(0x11);
     let to_account = sample_account(0x12);
 
     let mint_args = vec![asset_id.to_bytes(), from_account.to_bytes()];
 
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    engine.set_calling_script_hash(Some(from_account));
+    fixture.engine.set_calling_script_hash(Some(from_account));
 
-    snapshot.commit();
+    fixture.commit();
 
     let transfer_args = vec![
         nft_id.to_bytes(),
@@ -536,127 +419,79 @@ fn nft_transfer_verification() {
         Vec::new(),
     ];
 
-    let transfer_result = engine
-        .call_native_contract(token_mgmt.hash(), "transferNFT", &transfer_args)
-        .expect("transferNFT call");
+    let transfer_result = fixture.call("transferNFT", &transfer_args);
     assert_eq!(transfer_result, vec![1]);
 
-    engine.set_calling_script_hash(Some(to_account));
+    fixture.engine.set_calling_script_hash(Some(to_account));
 
     let get_info_args = vec![nft_id.to_bytes()];
 
-    let info_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTInfo", &get_info_args)
-        .expect("getNFTInfo call");
+    let info_result = fixture.call("getNFTInfo", &get_info_args);
     assert!(!info_result.is_empty());
 }
 
 #[test]
 fn nft_burn_verification() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"BurnVerifyNFT";
     let symbol = b"BVN";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let holder = sample_account(0x13);
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
 
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    engine.set_calling_script_hash(Some(holder));
+    fixture.engine.set_calling_script_hash(Some(holder));
 
-    snapshot.commit();
+    fixture.commit();
 
     let burn_args = vec![nft_id.to_bytes()];
 
-    let burn_result = engine
-        .call_native_contract(token_mgmt.hash(), "burnNFT", &burn_args)
-        .expect("burnNFT call");
+    let burn_result = fixture.call("burnNFT", &burn_args);
     assert_eq!(burn_result, vec![1]);
 
     let get_info_args = vec![nft_id.to_bytes()];
 
-    let info_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTInfo", &get_info_args)
-        .expect("getNFTInfo call");
+    let info_result = fixture.call("getNFTInfo", &get_info_args);
     assert!(info_result.is_empty(), "NFT should not exist after burn");
 }
 
 #[test]
 fn nft_balance_of() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"BalanceNFT";
     let symbol = b"BAL";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let holder = sample_account(0x20);
 
     for _ in 0..3 {
         let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
 
-        let _ = engine
-            .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-            .expect("mintNFT call");
+        let _ = fixture.call("mintNFT", &mint_args);
     }
 
     let balance_args = vec![asset_id.to_bytes(), holder.to_bytes()];
 
-    let balance_result = engine
-        .call_native_contract(token_mgmt.hash(), "balanceOf", &balance_args)
-        .expect("balanceOf call");
+    let balance_result = fixture.call("balanceOf", &balance_args);
 
     let balance = BigInt::from_signed_bytes_le(&balance_result);
     assert_eq!(balance, BigInt::from(3), "Holder should have 3 NFTs");
@@ -664,35 +499,18 @@ fn nft_balance_of() {
 
 #[test]
 fn nft_get_nfts_returns_all_for_asset() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"GetNFTsTestNFT";
     let symbol = b"GNT";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let holder = sample_account(0x30);
 
@@ -700,9 +518,7 @@ fn nft_get_nfts_returns_all_for_asset() {
     for i in 0..5 {
         let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
 
-        let nft_result = engine
-            .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-            .expect("mintNFT call");
+        let nft_result = fixture.call("mintNFT", &mint_args);
         let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
         minted_ids.push(nft_id);
         assert!(!nft_id.is_zero(), "NFT {} should have valid ID", i);
@@ -710,55 +526,34 @@ fn nft_get_nfts_returns_all_for_asset() {
 
     let get_nfts_args = vec![asset_id.to_bytes()];
 
-    let nfts_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTs", &get_nfts_args)
-        .expect("getNFTs call");
+    let nfts_result = fixture.call("getNFTs", &get_nfts_args);
     assert!(!nfts_result.is_empty(), "getNFTs should return iterator");
 }
 
 #[test]
 fn nft_get_nfts_of_owner_after_transfer() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"TransferOwnerNFT";
     let symbol = b"TOW";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let holder1 = sample_account(0x40);
     let holder2 = sample_account(0x41);
 
     let mint_args = vec![asset_id.to_bytes(), holder1.to_bytes()];
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    engine.set_calling_script_hash(Some(holder1));
-    snapshot.commit();
+    fixture.engine.set_calling_script_hash(Some(holder1));
+    fixture.commit();
 
     let transfer_args = vec![
         nft_id.to_bytes(),
@@ -767,16 +562,12 @@ fn nft_get_nfts_of_owner_after_transfer() {
         Vec::new(),
     ];
 
-    let transfer_result = engine
-        .call_native_contract(token_mgmt.hash(), "transferNFT", &transfer_args)
-        .expect("transferNFT call");
+    let transfer_result = fixture.call("transferNFT", &transfer_args);
     assert_eq!(transfer_result, vec![1]);
 
     let get_owner_nfts_args = vec![holder2.to_bytes()];
 
-    let owner_nfts_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTsOfOwner", &get_owner_nfts_args)
-        .expect("getNFTsOfOwner call");
+    let owner_nfts_result = fixture.call("getNFTsOfOwner", &get_owner_nfts_args);
     assert!(
         !owner_nfts_result.is_empty(),
         "getNFTsOfOwner should return NFT for new owner"
@@ -784,75 +575,48 @@ fn nft_get_nfts_of_owner_after_transfer() {
 }
 
 fn nft_index_updates_after_burn() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
-
-    let block = make_block(1);
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
 
     let name = b"BurnIndexNFT";
     let symbol = b"BNI";
     let create_args = vec![owner.to_bytes(), name.to_vec(), symbol.to_vec(), vec![1]];
 
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let holder = sample_account(0x50);
 
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    engine.set_calling_script_hash(Some(holder));
-    snapshot.commit();
+    fixture.engine.set_calling_script_hash(Some(holder));
+    fixture.commit();
 
     let burn_args = vec![nft_id.to_bytes()];
 
-    let burn_result = engine
-        .call_native_contract(token_mgmt.hash(), "burnNFT", &burn_args)
-        .expect("burnNFT call");
+    let burn_result = fixture.call("burnNFT", &burn_args);
     assert_eq!(burn_result, vec![1]);
 
     let get_info_args = vec![nft_id.to_bytes()];
-    let info_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTInfo", &get_info_args)
-        .expect("getNFTInfo call");
+    let info_result = fixture.call("getNFTInfo", &get_info_args);
     assert!(info_result.is_empty(), "Burned NFT should not exist");
 
     let get_nfts_args = vec![asset_id.to_bytes()];
-    let asset_nfts_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTs", &get_nfts_args)
-        .expect("getNFTs call");
-    let asset_nft_keys = collect_iterator_keys(&mut engine, &asset_nfts_result);
+    let asset_nfts_result = fixture.call("getNFTs", &get_nfts_args);
+    let asset_nft_keys = collect_iterator_keys(&mut fixture.engine, &asset_nfts_result);
     assert!(
         asset_nft_keys.is_empty(),
         "getNFTs should be empty after burn"
     );
 
     let get_owner_nfts_args = vec![holder.to_bytes()];
-    let owner_nfts_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTsOfOwner", &get_owner_nfts_args)
-        .expect("getNFTsOfOwner call");
-    let owner_nft_keys = collect_iterator_keys(&mut engine, &owner_nfts_result);
+    let owner_nfts_result = fixture.call("getNFTsOfOwner", &get_owner_nfts_args);
+    let owner_nft_keys = collect_iterator_keys(&mut fixture.engine, &owner_nfts_result);
     assert!(
         owner_nft_keys.is_empty(),
         "getNFTsOfOwner should be empty after burn"
@@ -861,23 +625,9 @@ fn nft_index_updates_after_burn() {
 
 #[test]
 fn get_nfts_excludes_burned_nft_in_same_overlay() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
     let holder = sample_account(0x50);
-
-    let block = make_block(1);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
 
     let create_args = vec![
         owner.to_bytes(),
@@ -885,36 +635,29 @@ fn get_nfts_excludes_burned_nft_in_same_overlay() {
         b"OBN".to_vec(),
         vec![1],
     ];
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    engine
+    fixture
+        .engine
         .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load overlay script");
-    engine.set_calling_script_hash(Some(holder));
+    fixture.engine.set_calling_script_hash(Some(holder));
 
     let burn_args = vec![nft_id.to_bytes()];
-    let burn_result = engine
-        .call_native_contract(token_mgmt.hash(), "burnNFT", &burn_args)
-        .expect("burnNFT call");
+    let burn_result = fixture.call("burnNFT", &burn_args);
     assert_eq!(burn_result, vec![1]);
 
     let get_nfts_args = vec![asset_id.to_bytes()];
-    let asset_nfts_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTs", &get_nfts_args)
-        .expect("getNFTs call");
-    let asset_nft_keys = collect_iterator_keys(&mut engine, &asset_nfts_result);
+    let asset_nfts_result = fixture.call("getNFTs", &get_nfts_args);
+    let asset_nft_keys = collect_iterator_keys(&mut fixture.engine, &asset_nfts_result);
     assert!(
         asset_nft_keys.is_empty(),
         "getNFTs should be empty after overlay burn"
@@ -923,23 +666,9 @@ fn get_nfts_excludes_burned_nft_in_same_overlay() {
 
 #[test]
 fn get_nfts_of_owner_excludes_burned_nft_in_same_overlay() {
-    let settings = protocol_settings_with_faun();
-    let snapshot = make_snapshot_with_genesis(&settings);
-    let token_mgmt = TokenManagement::new();
-    let owner = sample_account(0x01);
+    let mut fixture = NftFixture::new();
+    let owner = fixture.owner;
     let holder = sample_account(0x51);
-
-    let block = make_block(1);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        Some(block),
-        settings.clone(),
-        TEST_GAS_LIMIT,
-        None,
-    )
-    .expect("engine");
 
     let create_args = vec![
         owner.to_bytes(),
@@ -947,36 +676,29 @@ fn get_nfts_of_owner_excludes_burned_nft_in_same_overlay() {
         b"OWN".to_vec(),
         vec![1],
     ];
-    let result = engine
-        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
-        .expect("createNonFungible call");
+    let result = fixture.call("createNonFungible", &create_args);
     let asset_id = UInt160::from_bytes(&result).expect("asset id");
 
-    engine.set_current_script_hash(Some(owner));
-    engine.set_calling_script_hash(Some(owner));
+    fixture.engine.set_current_script_hash(Some(owner));
+    fixture.engine.set_calling_script_hash(Some(owner));
 
     let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
-    let nft_result = engine
-        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
-        .expect("mintNFT call");
+    let nft_result = fixture.call("mintNFT", &mint_args);
     let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
 
-    engine
+    fixture
+        .engine
         .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load overlay script");
-    engine.set_calling_script_hash(Some(holder));
+    fixture.engine.set_calling_script_hash(Some(holder));
 
     let burn_args = vec![nft_id.to_bytes()];
-    let burn_result = engine
-        .call_native_contract(token_mgmt.hash(), "burnNFT", &burn_args)
-        .expect("burnNFT call");
+    let burn_result = fixture.call("burnNFT", &burn_args);
     assert_eq!(burn_result, vec![1]);
 
     let get_owner_nfts_args = vec![holder.to_bytes()];
-    let owner_nfts_result = engine
-        .call_native_contract(token_mgmt.hash(), "getNFTsOfOwner", &get_owner_nfts_args)
-        .expect("getNFTsOfOwner call");
-    let owner_nft_keys = collect_iterator_keys(&mut engine, &owner_nfts_result);
+    let owner_nfts_result = fixture.call("getNFTsOfOwner", &get_owner_nfts_args);
+    let owner_nft_keys = collect_iterator_keys(&mut fixture.engine, &owner_nfts_result);
     assert!(
         owner_nft_keys.is_empty(),
         "getNFTsOfOwner should be empty after overlay burn"
