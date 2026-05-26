@@ -1,6 +1,6 @@
 //! `HashSetCache` - faithful port of Neo.IO.Caching.HashSetCache
 
-use super::ordered_cache::check_copy_range;
+use super::cache_entries::check_copy_range;
 use crate::IoResult;
 use lru::LruCache;
 use std::hash::Hash;

@@ -1,6 +1,6 @@
 //! `LRUCache` - matches C# Neo.IO.Caching.LRUCache exactly
 
-use super::ordered_cache::OrderedCache;
+use super::cache_entries::LruEntries;
 use parking_lot::Mutex;
 use std::{hash::Hash, sync::Arc};
 
@@ -12,7 +12,7 @@ where
 {
     max_capacity: usize,
     key_selector: Arc<dyn Fn(&TValue) -> TKey + Send + Sync>,
-    entries: Mutex<OrderedCache<TKey, TValue>>,
+    entries: Mutex<LruEntries<TKey, TValue>>,
 }
 
 impl<TKey, TValue> LRUCache<TKey, TValue>
@@ -28,7 +28,7 @@ where
         Self {
             max_capacity,
             key_selector: Arc::new(key_selector),
-            entries: Mutex::new(OrderedCache::new(max_capacity)),
+            entries: Mutex::new(LruEntries::new(max_capacity)),
         }
     }
 
@@ -48,7 +48,7 @@ where
         self.entries.lock().get_cloned(key)
     }
 
-    impl_ordered_cache_facade!();
+    impl_cache_facade!();
 }
 
 #[cfg(test)]

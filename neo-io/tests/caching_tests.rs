@@ -451,6 +451,25 @@ struct VersionedValue {
 }
 
 #[test]
+fn io_cache_duplicate_add_preserves_original_value() {
+    let cache = IoCache::new(2, |value: &VersionedValue| value.key);
+    let original = VersionedValue {
+        key: 1,
+        payload: "original",
+    };
+    let replacement = VersionedValue {
+        key: 1,
+        payload: "replacement",
+    };
+
+    cache.add(original.clone());
+    cache.add(replacement);
+
+    assert_eq!(cache.get(&1), Some(original.clone()));
+    assert_eq!(cache.values(), vec![original]);
+}
+
+#[test]
 fn lru_cache_duplicate_add_refreshes_without_overwriting_value() {
     let cache = LRUCache::new(2, |value: &VersionedValue| value.key);
     let original = VersionedValue {

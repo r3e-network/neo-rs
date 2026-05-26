@@ -1,13 +1,15 @@
 use crate::IoResult;
+use indexmap::IndexMap;
 use lru::LruCache;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 
-pub(crate) struct OrderedCache<TKey, TValue>
+pub(crate) struct FifoEntries<TKey, TValue>
 where
     TKey: Eq + Hash,
 {
-    entries: Option<LruCache<TKey, TValue>>,
+    max_capacity: usize,
+    entries: IndexMap<TKey, TValue>,
 }
 
 pub(crate) fn check_copy_range(
@@ -45,7 +47,81 @@ pub(crate) fn check_copy_range(
     Ok(())
 }
 
-impl<TKey, TValue> OrderedCache<TKey, TValue>
+impl<TKey, TValue> FifoEntries<TKey, TValue>
+where
+    TKey: Eq + Hash,
+{
+    pub(crate) fn new(max_capacity: usize) -> Self {
+        Self {
+            max_capacity,
+            entries: IndexMap::with_capacity(max_capacity),
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    pub(crate) fn contains(&self, key: &TKey) -> bool {
+        self.entries.contains_key(key)
+    }
+
+    pub(crate) fn insert_if_absent(&mut self, key: TKey, value: TValue) {
+        if self.max_capacity == 0 || self.entries.contains_key(&key) {
+            return;
+        }
+
+        if self.entries.len() == self.max_capacity {
+            self.entries.shift_remove_index(0);
+        }
+
+        self.entries.insert(key, value);
+    }
+
+    pub(crate) fn remove(&mut self, key: &TKey) -> bool {
+        self.entries.shift_remove(key).is_some()
+    }
+
+    pub(crate) fn copy_to(&self, destination: &mut [TValue], start_index: usize) -> IoResult<()>
+    where
+        TValue: Clone,
+    {
+        check_copy_range("copy_to", start_index, self.len(), destination.len())?;
+
+        for (offset, value) in self.entries.values().cloned().enumerate() {
+            destination[start_index + offset] = value;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn peek_cloned(&self, key: &TKey) -> Option<TValue>
+    where
+        TValue: Clone,
+    {
+        self.entries.get(key).cloned()
+    }
+
+    pub(crate) fn values(&self) -> Vec<TValue>
+    where
+        TValue: Clone,
+    {
+        self.entries.values().cloned().collect()
+    }
+}
+
+pub(crate) struct LruEntries<TKey, TValue>
+where
+    TKey: Eq + Hash,
+{
+    entries: Option<LruCache<TKey, TValue>>,
+}
+
+impl<TKey, TValue> LruEntries<TKey, TValue>
 where
     TKey: Eq + Hash,
 {
@@ -65,28 +141,10 @@ where
         }
     }
 
-    pub(crate) fn contains(&self, key: &TKey) -> bool {
-        self.entries
-            .as_ref()
-            .is_some_and(|entries| entries.contains(key))
-    }
-
     pub(crate) fn touch(&mut self, key: &TKey) -> bool {
         self.entries
             .as_mut()
             .is_some_and(|entries| entries.get(key).is_some())
-    }
-
-    pub(crate) fn insert_if_absent(&mut self, key: TKey, value: TValue) {
-        let Some(entries) = self.entries.as_mut() else {
-            return;
-        };
-
-        if entries.contains(&key) {
-            return;
-        }
-
-        entries.put(key, value);
     }
 
     pub(crate) fn insert_or_touch(&mut self, key: TKey, value: TValue) {
@@ -125,15 +183,6 @@ where
         }
 
         Ok(())
-    }
-
-    pub(crate) fn peek_cloned(&self, key: &TKey) -> Option<TValue>
-    where
-        TValue: Clone,
-    {
-        self.entries
-            .as_ref()
-            .and_then(|entries| entries.peek(key).cloned())
     }
 
     pub(crate) fn get_cloned(&mut self, key: &TKey) -> Option<TValue>

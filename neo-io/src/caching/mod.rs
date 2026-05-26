@@ -28,7 +28,7 @@ macro_rules! impl_cache_wrapper_deref {
     };
 }
 
-macro_rules! impl_ordered_cache_facade {
+macro_rules! impl_cache_facade {
     () => {
         /// Gets the number of cached entries (C# Count property).
         #[inline]
@@ -119,10 +119,10 @@ macro_rules! impl_ordered_cache_facade {
 }
 
 pub mod cache;
+pub(crate) mod cache_entries;
 pub mod ec_point_cache;
 pub mod ecdsa_cache;
 pub mod fifo_cache;
 pub mod hashset_cache;
 pub mod lru_cache;
-pub(crate) mod ordered_cache;
 pub mod relay_cache;
