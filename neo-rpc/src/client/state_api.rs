@@ -10,8 +10,9 @@
 // modifications are permitted.
 
 use super::models::{RpcFoundStates, RpcStateRoot};
+use super::utility::base64_string_token;
 use crate::{RpcClient, RpcError};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_json::JToken;
 use neo_primitives::{UInt160, UInt256};
 use std::sync::Arc;
@@ -21,6 +22,13 @@ use std::sync::Arc;
 pub struct StateApi {
     /// The RPC client instance
     rpc_client: Arc<RpcClient>,
+}
+
+fn decode_base64_rpc_result(result: &JToken) -> Result<Vec<u8>, RpcError> {
+    let value = result.as_string().ok_or("Invalid response format")?;
+    general_purpose::STANDARD
+        .decode(value)
+        .map_err(std::convert::Into::into)
 }
 
 impl StateApi {
@@ -59,16 +67,12 @@ impl StateApi {
                 vec![
                     JToken::String(root_hash.to_string()),
                     JToken::String(script_hash.to_string()),
-                    JToken::String(general_purpose::STANDARD.encode(key)),
+                    base64_string_token(key),
                 ],
             )
             .await?;
 
-        let proof_str = result.as_string().ok_or("Invalid response format")?;
-
-        general_purpose::STANDARD
-            .decode(proof_str)
-            .map_err(std::convert::Into::into)
+        decode_base64_rpc_result(&result)
     }
 
     /// Verify a proof
@@ -84,16 +88,12 @@ impl StateApi {
                 "verifyproof",
                 vec![
                     JToken::String(root_hash.to_string()),
-                    JToken::String(general_purpose::STANDARD.encode(proof_bytes)),
+                    base64_string_token(proof_bytes),
                 ],
             )
             .await?;
 
-        let value_str = result.as_string().ok_or("Invalid response format")?;
-
-        general_purpose::STANDARD
-            .decode(value_str)
-            .map_err(std::convert::Into::into)
+        decode_base64_rpc_result(&result)
     }
 
     /// Get state height information
@@ -132,8 +132,8 @@ impl StateApi {
         let mut params = vec![
             JToken::String(root_hash.to_string()),
             JToken::String(script_hash.to_string()),
-            JToken::String(general_purpose::STANDARD.encode(prefix)),
-            JToken::String(general_purpose::STANDARD.encode(from.unwrap_or(&[]))),
+            base64_string_token(prefix),
+            base64_string_token(from.unwrap_or(&[])),
         ];
 
         if let Some(c) = count {
@@ -177,16 +177,12 @@ impl StateApi {
                 vec![
                     JToken::String(root_hash.to_string()),
                     JToken::String(script_hash.to_string()),
-                    JToken::String(general_purpose::STANDARD.encode(key)),
+                    base64_string_token(key),
                 ],
             )
             .await?;
 
-        let value_str = result.as_string().ok_or("Invalid response format")?;
-
-        general_purpose::STANDARD
-            .decode(value_str)
-            .map_err(std::convert::Into::into)
+        decode_base64_rpc_result(&result)
     }
 }
 
