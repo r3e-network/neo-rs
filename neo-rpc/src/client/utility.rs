@@ -24,6 +24,7 @@ pub(crate) use nep::{
     insert_nep_transfer_fields, parse_balance_list, parse_nep_balance_fields,
     parse_nep_transfer_fields, parse_transfer_lists, transfer_lists_to_json,
 };
+pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 pub use parsing::optional_string;
 #[allow(unused_imports)]
 pub use parsing::{

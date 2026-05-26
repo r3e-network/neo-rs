@@ -9,8 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::object_array;
-use base64::{engine::general_purpose, Engine as _};
+use super::super::utility::{base64_string_token, object_array, optional_base64_field_lossy};
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -47,29 +46,16 @@ impl RpcFoundStates {
                     .filter_map(|item| item.as_ref())
                     .filter_map(|token| token.as_object())
                     .filter_map(|obj| {
-                        let key = obj
-                            .get("key")
-                            .and_then(neo_json::JToken::as_string)
-                            .and_then(|s| general_purpose::STANDARD.decode(s).ok())?;
-                        let value = obj
-                            .get("value")
-                            .and_then(neo_json::JToken::as_string)
-                            .and_then(|s| general_purpose::STANDARD.decode(s).ok())?;
+                        let key = optional_base64_field_lossy(obj, "key")?;
+                        let value = optional_base64_field_lossy(obj, "value")?;
                         Some((key, value))
                     })
                     .collect()
             })
             .unwrap_or_default();
 
-        let first_proof = json
-            .get("firstProof")
-            .and_then(neo_json::JToken::as_string)
-            .and_then(|s| general_purpose::STANDARD.decode(s).ok());
-
-        let last_proof = json
-            .get("lastProof")
-            .and_then(neo_json::JToken::as_string)
-            .and_then(|s| general_purpose::STANDARD.decode(s).ok());
+        let first_proof = optional_base64_field_lossy(json, "firstProof");
+        let last_proof = optional_base64_field_lossy(json, "lastProof");
 
         Ok(Self {
             truncated,
@@ -90,29 +76,17 @@ impl RpcFoundStates {
             "results".to_string(),
             object_array(&self.results, |(key, value)| {
                 let mut entry = JObject::new();
-                entry.insert(
-                    "key".to_string(),
-                    JToken::String(general_purpose::STANDARD.encode(key)),
-                );
-                entry.insert(
-                    "value".to_string(),
-                    JToken::String(general_purpose::STANDARD.encode(value)),
-                );
+                entry.insert("key".to_string(), base64_string_token(key));
+                entry.insert("value".to_string(), base64_string_token(value));
                 entry
             }),
         );
 
         if let Some(first) = &self.first_proof {
-            json.insert(
-                "firstProof".to_string(),
-                JToken::String(general_purpose::STANDARD.encode(first)),
-            );
+            json.insert("firstProof".to_string(), base64_string_token(first));
         }
         if let Some(last) = &self.last_proof {
-            json.insert(
-                "lastProof".to_string(),
-                JToken::String(general_purpose::STANDARD.encode(last)),
-            );
+            json.insert("lastProof".to_string(), base64_string_token(last));
         }
 
         json
@@ -122,6 +96,7 @@ impl RpcFoundStates {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{Engine as _, engine::general_purpose};
     use neo_json::{JArray, JToken};
 
     #[test]
@@ -182,6 +157,76 @@ mod tests {
         assert_eq!(
             obj.get("key").and_then(|v| v.as_string()).unwrap(),
             general_purpose::STANDARD.encode(b"a")
+        );
+    }
+
+    #[test]
+    fn rpc_found_states_keeps_lossy_base64_parse_behavior() {
+        let mut valid = JObject::new();
+        valid.insert(
+            "key".to_string(),
+            JToken::String(general_purpose::STANDARD.encode(b"k")),
+        );
+        valid.insert(
+            "value".to_string(),
+            JToken::String(general_purpose::STANDARD.encode(b"v")),
+        );
+
+        let mut invalid_key = JObject::new();
+        invalid_key.insert("key".to_string(), JToken::String("not base64".to_string()));
+        invalid_key.insert(
+            "value".to_string(),
+            JToken::String(general_purpose::STANDARD.encode(b"v")),
+        );
+
+        let mut invalid_value = JObject::new();
+        invalid_value.insert(
+            "key".to_string(),
+            JToken::String(general_purpose::STANDARD.encode(b"k")),
+        );
+        invalid_value.insert(
+            "value".to_string(),
+            JToken::String("not base64".to_string()),
+        );
+
+        let mut results = JArray::new();
+        results.add(Some(JToken::Object(valid)));
+        results.add(Some(JToken::Object(invalid_key)));
+        results.add(Some(JToken::Object(invalid_value)));
+        results.add(Some(JToken::String("not an object".to_string())));
+        results.add(None);
+
+        let mut json = JObject::new();
+        json.insert("truncated".to_string(), JToken::Boolean(false));
+        json.insert("results".to_string(), JToken::Array(results));
+        json.insert(
+            "firstProof".to_string(),
+            JToken::String("not base64".to_string()),
+        );
+        json.insert("lastProof".to_string(), JToken::Number(1.0));
+
+        let parsed = RpcFoundStates::from_json(&json).expect("lossy found states");
+        assert_eq!(parsed.results, vec![(b"k".to_vec(), b"v".to_vec())]);
+        assert_eq!(parsed.first_proof, None);
+        assert_eq!(parsed.last_proof, None);
+    }
+
+    #[test]
+    fn rpc_found_states_keeps_truncated_truthy_coercion() {
+        let mut truthy = JObject::new();
+        truthy.insert("truncated".to_string(), JToken::String("yes".to_string()));
+        assert!(
+            RpcFoundStates::from_json(&truthy)
+                .expect("truthy truncated")
+                .truncated
+        );
+
+        let mut falsy = JObject::new();
+        falsy.insert("truncated".to_string(), JToken::Number(0.0));
+        assert!(
+            !RpcFoundStates::from_json(&falsy)
+                .expect("falsy truncated")
+                .truncated
         );
     }
 }

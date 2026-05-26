@@ -296,6 +296,18 @@ pub fn parse_base64_token(token: &JToken, field: &str) -> Result<Vec<u8>, String
         .map_err(|err| format!("Invalid base64 data in '{field}': {err}"))
 }
 
+/// Builds a base64 string token.
+pub(crate) fn base64_string_token(data: impl AsRef<[u8]>) -> JToken {
+    JToken::String(general_purpose::STANDARD.encode(data.as_ref()))
+}
+
+/// Reads a base64 field while preserving lossy RPC model parsing.
+pub(crate) fn optional_base64_field_lossy(json: &JObject, field: &str) -> Option<Vec<u8>> {
+    json.get(field)
+        .and_then(JToken::as_string)
+        .and_then(|text| general_purpose::STANDARD.decode(text).ok())
+}
+
 /// Parses a u32 token that may be encoded as number or string.
 pub fn parse_u32_token(token: &JToken, field: &str) -> Result<u32, String> {
     parse_integer_token(token, field, "unsigned", |number| number as u32)
