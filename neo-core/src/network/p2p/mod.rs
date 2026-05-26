@@ -73,7 +73,8 @@ pub use framed::FrameConfig;
 pub use helper::{get_sign_data, get_sign_data_vec};
 #[cfg(feature = "runtime")]
 pub use local_node::{
-    BroadcastEvent, LocalNode, LocalNodeActor, LocalNodeCommand, RelayInventory, RemoteNodeSnapshot,
+    BroadcastEvent, LocalNode, LocalNodeActor, LocalNodeCommand, LocalNodeHandle, RelayInventory,
+    RemoteNodeSnapshot,
 };
 pub use message::Message;
 pub use message_command::MessageCommand;

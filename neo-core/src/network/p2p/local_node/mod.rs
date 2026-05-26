@@ -103,11 +103,13 @@ const BACKGROUND_TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 
 mod actor;
 mod actor_impl;
+mod handle;
 mod state;
 mod types;
 
 // Re-exports
 pub use actor::LocalNodeActor;
+pub use handle::LocalNodeHandle;
 pub use state::LocalNode;
 pub use types::{BroadcastEvent, LocalNodeCommand, RelayInventory, RemoteNodeSnapshot};
 

@@ -56,7 +56,6 @@ use crate::ledger::LedgerContext;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::{
-    LocalNodeCommand,
     local_node::RelayInventory,
     payloads::{
         InventoryType, Transaction, block::Block, extensible_payload::ExtensiblePayload,

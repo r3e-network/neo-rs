@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
 
-use crate::runtime::{ActorRef, ActorSystemHandle, EventStreamHandle};
+use crate::runtime::{ActorSystemHandle, EventStreamHandle};
 use tracing::{trace, warn};
 
 use super::actors::TransactionRouterHandle;
@@ -28,7 +28,7 @@ use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChanged
 use crate::ledger::blockchain::BlockchainHandle;
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
-    LocalNode,
+    LocalNode, LocalNodeHandle,
     payloads::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
         transaction::Transaction,
@@ -58,7 +58,7 @@ pub struct NeoSystemContext {
     /// Reference to the blockchain actor hierarchy root.
     pub blockchain: BlockchainHandle,
     /// Reference to the local node actor (peer supervisor).
-    pub local_node: ActorRef,
+    pub local_node: LocalNodeHandle,
     /// Reference to the task manager actor coordinating inventory download.
     pub task_manager: TaskManagerHandle,
     /// Handle to the transaction router worker.

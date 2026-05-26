@@ -584,10 +584,7 @@ impl Blockchain {
     ) {
         if relay && result == VerifyResult::Succeed {
             if let Some(inv) = inventory {
-                if let Err(error) = context.local_node.tell(LocalNodeCommand::RelayDirectly {
-                    inventory: inv,
-                    block_index,
-                }) {
+                if let Err(error) = context.local_node.relay_directly(inv, block_index) {
                     tracing::debug!(
                         target: "neo",
                         %error,

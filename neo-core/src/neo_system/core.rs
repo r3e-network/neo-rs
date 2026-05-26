@@ -75,7 +75,7 @@ use crate::hardfork::Hardfork;
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand, BlockchainHandle};
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
-    LocalNode, TaskManager, TaskManagerHandle, payloads::block::Block, timeouts,
+    LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, payloads::block::Block, timeouts,
 };
 use crate::persistence::{StoreCache, StoreFactory, store::IStore, store_provider::StoreProvider};
 pub use crate::protocol_settings::ProtocolSettings;
@@ -125,7 +125,7 @@ pub struct NeoSystem {
     settings: ProtocolSettings,
     actor_system: ActorSystem,
     blockchain: BlockchainHandle,
-    pub(crate) local_node: ActorRef,
+    pub(crate) local_node: LocalNodeHandle,
     task_manager: TaskManagerHandle,
     tx_router: TransactionRouterHandle,
     store_provider: Arc<dyn StoreProvider>,
@@ -443,6 +443,11 @@ impl NeoSystem {
 
     /// Reference to the local node actor.
     pub fn local_node_actor(&self) -> ActorRef {
+        self.local_node.raw_ref().clone()
+    }
+
+    /// Typed command handle for the local node actor.
+    pub fn local_node_handle(&self) -> LocalNodeHandle {
         self.local_node.clone()
     }
 
@@ -544,7 +549,7 @@ fn spawn_core_actors(
     settings: Arc<ProtocolSettings>,
 ) -> CoreResult<(
     BlockchainHandle,
-    ActorRef,
+    LocalNodeHandle,
     TaskManagerHandle,
     TransactionRouterHandle,
 )> {
@@ -555,6 +560,7 @@ fn spawn_core_actors(
     let local_node = actor_system
         .actor_of(LocalNode::props(local_node_state), "local_node")
         .map_err(to_core_error)?;
+    let local_node = LocalNodeHandle::new(local_node);
     let task_manager = actor_system
         .actor_of(TaskManager::props(), "task_manager")
         .map_err(to_core_error)?;

@@ -6,20 +6,19 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::runtime::ActorRef;
 use tracing::debug;
 
 use super::context::NeoSystemContext;
 use crate::ledger::blockchain::BlockchainHandle;
-use crate::network::p2p::LocalNodeCommand;
 use crate::network::p2p::local_node::RelayInventory;
+use crate::network::p2p::LocalNodeHandle;
 use crate::network::p2p::payloads::transaction::Transaction;
 
 /// Attaches callbacks to the mempool to surface events and relay transactions.
 pub(crate) fn attach_mempool_callbacks(
     context: &Arc<NeoSystemContext>,
     memory_pool: &Arc<Mutex<crate::ledger::MemoryPool>>,
-    local_node: ActorRef,
+    local_node: LocalNodeHandle,
     blockchain: BlockchainHandle,
 ) {
     let mut pool = memory_pool.lock();
@@ -48,11 +47,9 @@ pub(crate) fn attach_mempool_callbacks(
     let local_node_ref = local_node.clone();
     let blockchain_ref = blockchain.raw_ref().clone();
     pool.transaction_relay = Some(Box::new(move |tx: &Transaction| {
-        if let Err(error) = local_node_ref.tell_from(
-            LocalNodeCommand::RelayDirectly {
-                inventory: RelayInventory::Transaction(tx.clone()),
-                block_index: None,
-            },
+        if let Err(error) = local_node_ref.relay_directly_from(
+            RelayInventory::Transaction(tx.clone()),
+            None,
             Some(blockchain_ref.clone()),
         ) {
             debug!(

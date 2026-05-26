@@ -17,8 +17,7 @@ use neo_core::network::p2p::payloads::{
     Witness,
 };
 use neo_core::network::p2p::{
-    LocalNodeCommand, Message, MessageCommand, MessageHandlerSubscription,
-    register_message_received_handler,
+    Message, MessageCommand, MessageHandlerSubscription, register_message_received_handler,
 };
 use neo_core::persistence::IStore;
 use neo_core::prelude::Serializable;
@@ -592,11 +591,8 @@ impl ConsensusActor {
 
         if let Err(err) = self
             .system
-            .local_node_actor()
-            .tell(LocalNodeCommand::SendDirectly {
-                inventory: RelayInventory::Extensible(extensible),
-                block_index: None,
-            })
+            .local_node_handle()
+            .send_directly(RelayInventory::Extensible(extensible), None)
         {
             warn!(target: "neo", %err, "failed to broadcast consensus payload");
         }
