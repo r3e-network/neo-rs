@@ -25,6 +25,13 @@ macro_rules! ws_event_types {
         }
 
         impl $name {
+            /// All event types in stable JSON-RPC/WebSocket wire order.
+            pub const ALL: &'static [Self] = &[
+                $(
+                    Self::$variant,
+                )+
+            ];
+
             /// Returns the JSON-RPC/WebSocket wire name for this event type.
             #[must_use]
             pub const fn as_str(self) -> &'static str {

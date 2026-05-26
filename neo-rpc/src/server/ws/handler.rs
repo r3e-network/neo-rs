@@ -1,7 +1,7 @@
 //! WebSocket connection handler
 
 use super::events::{WsEvent, WsEventType, WsNotification};
-use super::subscription::{SubscriptionId, SubscriptionManager};
+use super::subscription::{ConnectionSubscription, SubscriptionManager};
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -16,7 +16,7 @@ struct WsRequest {
     id: Option<serde_json::Value>,
     method: String,
     #[serde(default)]
-    params: Option<Vec<String>>,
+    params: Option<Vec<serde_json::Value>>,
 }
 
 /// JSON-RPC 2.0 WebSocket response
@@ -76,7 +76,7 @@ pub async fn ws_handler(
     subscription_mgr: Arc<SubscriptionManager>,
 ) {
     let (mut tx, mut rx) = ws.split();
-    let mut subscription_id: Option<SubscriptionId> = None;
+    let mut subscription: Option<ConnectionSubscription> = None;
 
     info!("WebSocket client connected");
 
@@ -93,7 +93,7 @@ pub async fn ws_handler(
 
                         match serde_json::from_str::<WsRequest>(text) {
                             Ok(req) => {
-                                let response = handle_request(&req, &subscription_mgr, &mut subscription_id);
+                                let response = handle_request(&req, &subscription_mgr, &mut subscription);
                                 if let Err(e) = tx.send(Message::text(response.to_json())).await {
                                     warn!("Failed to send WebSocket response: {}", e);
                                     break;
@@ -134,8 +134,8 @@ pub async fn ws_handler(
             event = event_rx.recv() => {
                 match event {
                     Ok(ws_event) => {
-                        if let Some(id) = subscription_id {
-                            if subscription_mgr.is_subscribed(id, ws_event.event_type()) {
+                        if let Some(subscription) = &subscription {
+                            if subscription.is_subscribed(ws_event.event_type()) {
                                 let notification = WsNotification::from_event(&ws_event);
                                 if let Err(e) = tx.send(Message::text(notification.to_json())).await {
                                     warn!("Failed to send event notification: {}", e);
@@ -157,10 +157,8 @@ pub async fn ws_handler(
         }
     }
 
-    // Cleanup subscription on disconnect
-    if let Some(id) = subscription_id {
-        subscription_mgr.unsubscribe(id);
-        debug!("Cleaned up subscription {} on disconnect", id);
+    if let Some(subscription) = subscription {
+        debug!("Dropped subscription {} on disconnect", subscription.id());
     }
 
     info!("WebSocket client disconnected");
@@ -170,7 +168,7 @@ pub async fn ws_handler(
 fn handle_request(
     req: &WsRequest,
     subscription_mgr: &SubscriptionManager,
-    current_subscription: &mut Option<SubscriptionId>,
+    current_subscription: &mut Option<ConnectionSubscription>,
 ) -> WsResponse {
     if req.jsonrpc != "2.0" {
         return WsResponse::error(req.id.clone(), -32600, "Invalid JSON-RPC version");
@@ -178,7 +176,7 @@ fn handle_request(
 
     match req.method.as_str() {
         "subscribe" => handle_subscribe(req, subscription_mgr, current_subscription),
-        "unsubscribe" => handle_unsubscribe(req, subscription_mgr, current_subscription),
+        "unsubscribe" => handle_unsubscribe(req, current_subscription),
         _ => WsResponse::error(
             req.id.clone(),
             -32601,
@@ -187,20 +185,35 @@ fn handle_request(
     }
 }
 
+fn event_type_names(event_types: impl IntoIterator<Item = WsEventType>) -> Vec<String> {
+    event_types
+        .into_iter()
+        .map(|event_type| event_type.as_str().to_string())
+        .collect()
+}
+
+fn parse_event_types(params: &[serde_json::Value]) -> Vec<WsEventType> {
+    params
+        .iter()
+        .filter_map(|param| param.as_str()?.parse::<WsEventType>().ok())
+        .collect()
+}
+
+fn parse_subscription_id(param: &serde_json::Value) -> Option<u64> {
+    param
+        .as_u64()
+        .or_else(|| param.as_str()?.parse::<u64>().ok())
+}
+
 fn handle_subscribe(
     req: &WsRequest,
     subscription_mgr: &SubscriptionManager,
-    current_subscription: &mut Option<SubscriptionId>,
+    current_subscription: &mut Option<ConnectionSubscription>,
 ) -> WsResponse {
-    let event_types: Vec<WsEventType> = req
+    let event_types = req
         .params
-        .as_ref()
-        .map(|params| {
-            params
-                .iter()
-                .filter_map(|s| s.parse::<WsEventType>().ok())
-                .collect()
-        })
+        .as_deref()
+        .map(parse_event_types)
         .unwrap_or_default();
 
     if event_types.is_empty() {
@@ -212,31 +225,23 @@ fn handle_subscribe(
     }
 
     // If already subscribed, add to existing subscription
-    if let Some(id) = *current_subscription {
-        subscription_mgr.add_events(id, event_types);
-        let subscribed: Vec<String> = subscription_mgr
-            .get_subscribed_events(id)
-            .unwrap_or_default()
-            .iter()
-            .map(|e| format!("{e:?}").to_lowercase())
-            .collect();
+    if let Some(subscription) = current_subscription.as_mut() {
+        subscription.add_events(event_types);
+        let subscribed = event_type_names(subscription.subscribed_events());
         return WsResponse::success(
             req.id.clone(),
             serde_json::json!({
-                "subscription_id": id,
+                "subscription_id": subscription.id(),
                 "subscribed": subscribed,
             }),
         );
     }
 
     // Create new subscription
-    let id = subscription_mgr.subscribe(event_types.clone());
-    *current_subscription = Some(id);
-
-    let subscribed: Vec<String> = event_types
-        .iter()
-        .map(|e| format!("{e:?}").to_lowercase())
-        .collect();
+    let subscribed = event_type_names(event_types.iter().copied());
+    let subscription = subscription_mgr.subscribe(event_types);
+    let id = subscription.id();
+    *current_subscription = Some(subscription);
 
     WsResponse::success(
         req.id.clone(),
@@ -249,28 +254,40 @@ fn handle_subscribe(
 
 fn handle_unsubscribe(
     req: &WsRequest,
-    subscription_mgr: &SubscriptionManager,
-    current_subscription: &mut Option<SubscriptionId>,
+    current_subscription: &mut Option<ConnectionSubscription>,
 ) -> WsResponse {
-    let Some(id) = *current_subscription else {
+    let Some(subscription) = current_subscription.as_mut() else {
         return WsResponse::error(req.id.clone(), -32602, "No active subscription");
     };
 
     // Check if specific event types to unsubscribe from
-    if let Some(params) = &req.params {
+    if let Some(params) = req.params.as_deref() {
         if !params.is_empty() {
-            let event_types: Vec<WsEventType> = params
-                .iter()
-                .filter_map(|s| s.parse::<WsEventType>().ok())
-                .collect();
+            if params.len() == 1 {
+                if let Some(id) = parse_subscription_id(&params[0]) {
+                    if id == subscription.id() {
+                        *current_subscription = None;
+                        return WsResponse::success(
+                            req.id.clone(),
+                            serde_json::json!({ "unsubscribed": true }),
+                        );
+                    }
+
+                    return WsResponse::error(
+                        req.id.clone(),
+                        -32602,
+                        "Invalid params: subscription id does not match active subscription",
+                    );
+                }
+            }
+
+            let event_types = parse_event_types(params);
 
             if !event_types.is_empty() {
-                subscription_mgr.remove_events(id, &event_types);
+                subscription.remove_events(&event_types);
 
                 // Check if any events remain
-                let remaining = subscription_mgr.get_subscribed_events(id);
-                if remaining.as_ref().map_or(true, std::vec::Vec::is_empty) {
-                    subscription_mgr.unsubscribe(id);
+                if subscription.is_empty() {
                     *current_subscription = None;
                     return WsResponse::success(
                         req.id.clone(),
@@ -278,24 +295,25 @@ fn handle_unsubscribe(
                     );
                 }
 
-                let remaining_names: Vec<String> = remaining
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|e| format!("{e:?}").to_lowercase())
-                    .collect();
+                let remaining_names = event_type_names(subscription.subscribed_events());
                 return WsResponse::success(
                     req.id.clone(),
                     serde_json::json!({
-                        "unsubscribed": event_types.iter().map(|e| format!("{e:?}").to_lowercase()).collect::<Vec<_>>(),
+                        "unsubscribed": event_type_names(event_types),
                         "remaining": remaining_names,
                     }),
                 );
             }
+
+            return WsResponse::error(
+                req.id.clone(),
+                -32602,
+                "Invalid params: no valid event types or subscription id provided",
+            );
         }
     }
 
     // Unsubscribe from everything
-    subscription_mgr.unsubscribe(id);
     *current_subscription = None;
 
     WsResponse::success(req.id.clone(), serde_json::json!({ "unsubscribed": true }))
@@ -314,7 +332,7 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(1)),
             method: "subscribe".to_string(),
-            params: Some(vec!["block_added".to_string()]),
+            params: Some(vec![serde_json::json!("block_added")]),
         };
 
         let response = handle_request(&req, &mgr, &mut sub_id);
@@ -336,5 +354,159 @@ mod tests {
 
         let response = handle_request(&req, &mgr, &mut sub_id);
         assert!(response.error.is_some());
+    }
+
+    #[test]
+    fn repeated_subscribe_keeps_id_and_merges_events() {
+        let mgr = SubscriptionManager::new();
+        let mut subscription = None;
+
+        let block_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(1)),
+            method: "subscribe".to_string(),
+            params: Some(vec![serde_json::json!("block_added")]),
+        };
+        let block_response = handle_request(&block_req, &mgr, &mut subscription);
+        let block_result = block_response.result.expect("subscribe result");
+        let subscription_id = block_result["subscription_id"]
+            .as_u64()
+            .expect("subscription id");
+        assert_eq!(subscription_id, 1);
+        assert_eq!(
+            block_result["subscribed"],
+            serde_json::json!(["block_added"])
+        );
+
+        let tx_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(2)),
+            method: "subscribe".to_string(),
+            params: Some(vec![serde_json::json!("transaction_added")]),
+        };
+        let tx_response = handle_request(&tx_req, &mgr, &mut subscription);
+        let tx_result = tx_response.result.expect("merged subscribe result");
+
+        assert_eq!(tx_result["subscription_id"].as_u64(), Some(subscription_id));
+        let subscribed = tx_result["subscribed"].as_array().expect("subscribed list");
+        assert!(subscribed.contains(&serde_json::json!("block_added")));
+        assert!(subscribed.contains(&serde_json::json!("transaction_added")));
+
+        let subscription = subscription.as_ref().expect("active subscription");
+        assert!(subscription.is_subscribed(WsEventType::BlockAdded));
+        assert!(subscription.is_subscribed(WsEventType::TransactionAdded));
+    }
+
+    #[test]
+    fn partial_unsubscribe_keeps_remaining_events() {
+        let mgr = SubscriptionManager::new();
+        let mut subscription = None;
+
+        let subscribe_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(1)),
+            method: "subscribe".to_string(),
+            params: Some(vec![
+                serde_json::json!("block_added"),
+                serde_json::json!("transaction_added"),
+            ]),
+        };
+        handle_request(&subscribe_req, &mgr, &mut subscription);
+
+        let remove_block_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(2)),
+            method: "unsubscribe".to_string(),
+            params: Some(vec![serde_json::json!("block_added")]),
+        };
+        let remove_block_response = handle_request(&remove_block_req, &mgr, &mut subscription);
+        let remove_block_result = remove_block_response.result.expect("partial unsubscribe");
+
+        assert_eq!(
+            remove_block_result["unsubscribed"],
+            serde_json::json!(["block_added"])
+        );
+        assert_eq!(
+            remove_block_result["remaining"],
+            serde_json::json!(["transaction_added"])
+        );
+        let remaining = subscription.as_ref().expect("remaining subscription");
+        assert!(!remaining.is_subscribed(WsEventType::BlockAdded));
+        assert!(remaining.is_subscribed(WsEventType::TransactionAdded));
+
+        let remove_tx_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(3)),
+            method: "unsubscribe".to_string(),
+            params: Some(vec![serde_json::json!("transaction_added")]),
+        };
+        let remove_tx_response = handle_request(&remove_tx_req, &mgr, &mut subscription);
+        assert_eq!(
+            remove_tx_response.result,
+            Some(serde_json::json!({ "unsubscribed": true }))
+        );
+        assert!(subscription.is_none());
+    }
+
+    #[test]
+    fn unsubscribe_accepts_subscription_id() {
+        let mgr = SubscriptionManager::new();
+        let mut subscription = None;
+
+        let subscribe_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(1)),
+            method: "subscribe".to_string(),
+            params: Some(vec![serde_json::json!("block_added")]),
+        };
+        let subscribe_response = handle_request(&subscribe_req, &mgr, &mut subscription);
+        let subscription_id =
+            subscribe_response.result.expect("subscribe result")["subscription_id"]
+                .as_u64()
+                .expect("subscription id");
+
+        let unsubscribe_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(2)),
+            method: "unsubscribe".to_string(),
+            params: Some(vec![serde_json::json!(subscription_id)]),
+        };
+        let unsubscribe_response = handle_request(&unsubscribe_req, &mgr, &mut subscription);
+
+        assert_eq!(
+            unsubscribe_response.result,
+            Some(serde_json::json!({ "unsubscribed": true }))
+        );
+        assert!(subscription.is_none());
+    }
+
+    #[test]
+    fn invalid_unsubscribe_params_do_not_clear_subscription() {
+        let mgr = SubscriptionManager::new();
+        let mut subscription = None;
+
+        let subscribe_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(1)),
+            method: "subscribe".to_string(),
+            params: Some(vec![serde_json::json!("block_added")]),
+        };
+        handle_request(&subscribe_req, &mgr, &mut subscription);
+
+        let unsubscribe_req = WsRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::json!(2)),
+            method: "unsubscribe".to_string(),
+            params: Some(vec![serde_json::json!("block_aded")]),
+        };
+        let unsubscribe_response = handle_request(&unsubscribe_req, &mgr, &mut subscription);
+
+        assert!(unsubscribe_response.error.is_some());
+        assert!(
+            subscription
+                .as_ref()
+                .expect("subscription remains active")
+                .is_subscribed(WsEventType::BlockAdded)
+        );
     }
 }

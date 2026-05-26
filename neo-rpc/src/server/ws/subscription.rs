@@ -1,93 +1,90 @@
 //! WebSocket subscription management
 
 use super::events::WsEventType;
-use dashmap::DashMap;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 /// Unique identifier for a subscription
 pub type SubscriptionId = u64;
 
-/// Manages WebSocket subscriptions across all connections
+/// Allocates WebSocket subscription identifiers.
 pub struct SubscriptionManager {
     /// Next subscription ID to assign
     next_id: AtomicU64,
-    /// Map of subscription ID to subscribed event types
-    subscriptions: DashMap<SubscriptionId, HashSet<WsEventType>>,
 }
 
 impl SubscriptionManager {
-    /// Create a new subscription manager
+    /// Create a new subscription ID allocator.
     #[must_use]
     pub fn new() -> Self {
         Self {
             next_id: AtomicU64::new(1),
-            subscriptions: DashMap::new(),
         }
     }
 
-    /// Subscribe to the given event types
-    ///
-    /// Returns the subscription ID
-    pub fn subscribe(&self, event_types: Vec<WsEventType>) -> SubscriptionId {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        self.subscriptions
-            .insert(id, event_types.into_iter().collect());
-        id
-    }
-
-    /// Add event types to an existing subscription
-    pub fn add_events(&self, id: SubscriptionId, event_types: Vec<WsEventType>) -> bool {
-        if let Some(mut entry) = self.subscriptions.get_mut(&id) {
-            for event_type in event_types {
-                entry.insert(event_type);
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Remove event types from an existing subscription
-    pub fn remove_events(&self, id: SubscriptionId, event_types: &[WsEventType]) -> bool {
-        if let Some(mut entry) = self.subscriptions.get_mut(&id) {
-            for event_type in event_types {
-                entry.remove(event_type);
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Unsubscribe and remove the subscription entirely
-    pub fn unsubscribe(&self, id: SubscriptionId) -> bool {
-        self.subscriptions.remove(&id).is_some()
-    }
-
-    /// Check if a subscription is interested in the given event type
-    pub fn is_subscribed(&self, id: SubscriptionId, event_type: WsEventType) -> bool {
-        self.subscriptions
-            .get(&id)
-            .is_some_and(|types| types.contains(&event_type))
-    }
-
-    /// Get all event types for a subscription
-    pub fn get_subscribed_events(&self, id: SubscriptionId) -> Option<Vec<WsEventType>> {
-        self.subscriptions
-            .get(&id)
-            .map(|types| types.iter().copied().collect())
-    }
-
-    /// Get total number of active subscriptions
-    pub fn subscription_count(&self) -> usize {
-        self.subscriptions.len()
+    /// Create connection-local subscription state for the given event types.
+    pub(super) fn subscribe(&self, event_types: Vec<WsEventType>) -> ConnectionSubscription {
+        let id = self.next_id.fetch_add(1, Relaxed);
+        ConnectionSubscription::new(id, event_types)
     }
 }
 
 impl Default for SubscriptionManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Event subscriptions owned by one WebSocket connection.
+pub(super) struct ConnectionSubscription {
+    id: SubscriptionId,
+    event_types: HashSet<WsEventType>,
+}
+
+impl ConnectionSubscription {
+    fn new(id: SubscriptionId, event_types: Vec<WsEventType>) -> Self {
+        Self {
+            id,
+            event_types: event_types.into_iter().collect(),
+        }
+    }
+
+    /// Return the connection-local subscription identifier.
+    #[must_use]
+    pub(super) const fn id(&self) -> SubscriptionId {
+        self.id
+    }
+
+    /// Add event types to this subscription.
+    pub(super) fn add_events(&mut self, event_types: Vec<WsEventType>) {
+        for event_type in event_types {
+            self.event_types.insert(event_type);
+        }
+    }
+
+    /// Remove event types from this subscription.
+    pub(super) fn remove_events(&mut self, event_types: &[WsEventType]) {
+        for event_type in event_types {
+            self.event_types.remove(event_type);
+        }
+    }
+
+    /// Check if this subscription is interested in the given event type.
+    pub(super) fn is_subscribed(&self, event_type: WsEventType) -> bool {
+        self.event_types.contains(&event_type)
+    }
+
+    /// Get all event types for this subscription in wire-format order.
+    pub(super) fn subscribed_events(&self) -> impl Iterator<Item = WsEventType> + '_ {
+        WsEventType::ALL
+            .iter()
+            .copied()
+            .filter(|event_type| self.event_types.contains(event_type))
+    }
+
+    /// Return whether this subscription has no event types left.
+    pub(super) fn is_empty(&self) -> bool {
+        self.event_types.is_empty()
     }
 }
 
@@ -99,41 +96,42 @@ mod tests {
     fn test_subscribe_unsubscribe() {
         let manager = SubscriptionManager::new();
 
-        let id = manager.subscribe(vec![WsEventType::BlockAdded]);
-        assert!(manager.is_subscribed(id, WsEventType::BlockAdded));
-        assert!(!manager.is_subscribed(id, WsEventType::TransactionAdded));
+        let mut subscription = manager.subscribe(vec![WsEventType::BlockAdded]);
+        assert!(subscription.is_subscribed(WsEventType::BlockAdded));
+        assert!(!subscription.is_subscribed(WsEventType::TransactionAdded));
 
-        assert!(manager.unsubscribe(id));
-        assert!(!manager.is_subscribed(id, WsEventType::BlockAdded));
+        subscription.remove_events(&[WsEventType::BlockAdded]);
+        assert!(!subscription.is_subscribed(WsEventType::BlockAdded));
+        assert!(subscription.is_empty());
     }
 
     #[test]
     fn test_add_remove_events() {
         let manager = SubscriptionManager::new();
 
-        let id = manager.subscribe(vec![WsEventType::BlockAdded]);
+        let mut subscription = manager.subscribe(vec![WsEventType::BlockAdded]);
 
         // Add event
-        manager.add_events(id, vec![WsEventType::TransactionAdded]);
-        assert!(manager.is_subscribed(id, WsEventType::TransactionAdded));
+        subscription.add_events(vec![WsEventType::TransactionAdded]);
+        assert!(subscription.is_subscribed(WsEventType::TransactionAdded));
 
         // Remove event
-        manager.remove_events(id, &[WsEventType::BlockAdded]);
-        assert!(!manager.is_subscribed(id, WsEventType::BlockAdded));
-        assert!(manager.is_subscribed(id, WsEventType::TransactionAdded));
+        subscription.remove_events(&[WsEventType::BlockAdded]);
+        assert!(!subscription.is_subscribed(WsEventType::BlockAdded));
+        assert!(subscription.is_subscribed(WsEventType::TransactionAdded));
     }
 
     #[test]
     fn test_multiple_subscriptions() {
         let manager = SubscriptionManager::new();
 
-        let id1 = manager.subscribe(vec![WsEventType::BlockAdded]);
-        let id2 = manager.subscribe(vec![WsEventType::TransactionAdded]);
+        let subscription1 = manager.subscribe(vec![WsEventType::BlockAdded]);
+        let subscription2 = manager.subscribe(vec![WsEventType::TransactionAdded]);
 
-        assert_ne!(id1, id2);
-        assert!(manager.is_subscribed(id1, WsEventType::BlockAdded));
-        assert!(!manager.is_subscribed(id1, WsEventType::TransactionAdded));
-        assert!(manager.is_subscribed(id2, WsEventType::TransactionAdded));
-        assert!(!manager.is_subscribed(id2, WsEventType::BlockAdded));
+        assert_ne!(subscription1.id(), subscription2.id());
+        assert!(subscription1.is_subscribed(WsEventType::BlockAdded));
+        assert!(!subscription1.is_subscribed(WsEventType::TransactionAdded));
+        assert!(subscription2.is_subscribed(WsEventType::TransactionAdded));
+        assert!(!subscription2.is_subscribed(WsEventType::BlockAdded));
     }
 }
