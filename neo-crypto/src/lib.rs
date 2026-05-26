@@ -35,11 +35,15 @@
 //! let script_hash = Crypto::hash160(b"contract script");
 //! ```
 
+/// BIP-32 helper primitives.
+pub mod bip32;
 /// Bloom filter implementation for probabilistic set membership testing.
 pub mod bloom_filter;
 /// BLS12-381 signature helpers for Neo.
 pub mod bls12381;
+/// Compatibility re-exports for cryptographic utility types.
 pub mod crypto_utils;
+/// Elliptic curve point and curve helpers.
 pub mod ecc;
 /// Encoding helpers used by Neo cryptographic APIs.
 pub mod encoding;
@@ -53,20 +57,21 @@ pub mod named_curve_hash;
 pub mod signature;
 
 // Re-exports
+pub use bip32::Bip32Crypto;
 pub use bloom_filter::BloomFilter;
 pub use bls12381::Bls12381Crypto;
 pub use ecc::{ECCurve, ECPoint};
 pub use encoding::{Base58, Base64, Hex};
 pub use error::{CryptoError, CryptoResult};
-pub use hash::{ct_hash_eq, ct_hash_slice_eq, Crypto, HashAlgorithm};
+pub use hash::{Crypto, HashAlgorithm, ct_hash_eq, ct_hash_slice_eq};
 pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };
-pub use murmur::{murmur128, murmur32};
+pub use murmur::{murmur32, murmur128};
 pub use named_curve_hash::NamedCurveHash;
 pub use signature::{
-    ECDsa, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto, ECC, NEOFS_ECDSA_SHA512_PREFIX,
-    NEOFS_ECDSA_SHA512_SIGNATURE_LEN,
+    ECC, ECDsa, Ed25519Crypto, NEOFS_ECDSA_SHA512_PREFIX, NEOFS_ECDSA_SHA512_SIGNATURE_LEN,
+    Secp256k1Crypto, Secp256r1Crypto,
 };
 
 #[cfg(test)]

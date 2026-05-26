@@ -4,23 +4,8 @@
 #![allow(unused_assignments)]
 
 use super::key_path::KeyPath;
-use crate::cryptography::{ECCurve, ECPoint, ECC};
-use hmac::{Hmac, Mac};
-use num_bigint::BigUint;
-use num_traits::Zero;
-use once_cell::sync::Lazy;
-use p256::elliptic_curve::bigint::ArrayEncoding;
-use p256::elliptic_curve::Curve;
-use sha2::Sha512;
+use crate::cryptography::{Bip32Crypto, CryptoError, ECC, ECCurve, ECPoint};
 use zeroize::Zeroize;
-
-type HmacSha512 = Hmac<Sha512>;
-
-static SECP256R1_ORDER: Lazy<BigUint> =
-    Lazy::new(|| BigUint::from_bytes_be(&p256::NistP256::ORDER.to_be_byte_array()));
-
-static SECP256K1_ORDER: Lazy<BigUint> =
-    Lazy::new(|| BigUint::from_bytes_be(&k256::Secp256k1::ORDER.to_be_byte_array()));
 
 #[derive(Clone, Zeroize)]
 #[zeroize(drop)]
@@ -65,7 +50,7 @@ impl ExtendedKey {
         if matches!(curve, ECCurve::Ed25519) {
             return Err("Ed25519 is not supported for BIP32".to_string());
         }
-        let i = hmac_sha512(b"Bitcoin seed", seed)?;
+        let i = Bip32Crypto::hmac_sha512(b"Bitcoin seed", seed).map_err(bip32_error_message)?;
         let mut private_key = [0u8; 32];
         let mut chain_code = [0u8; 32];
         private_key.copy_from_slice(&i[..32]);
@@ -111,13 +96,16 @@ impl ExtendedKey {
         }
         data[33..].copy_from_slice(&index.to_be_bytes());
 
-        let i = hmac_sha512(&self.chain_code, &data)?;
-        let il = &i[..32];
+        let i = Bip32Crypto::hmac_sha512(&self.chain_code, &data).map_err(bip32_error_message)?;
+        let il: &[u8; 32] = i[..32]
+            .try_into()
+            .expect("HMAC-SHA512 left half is 32 bytes");
         let mut chain_code = [0u8; 32];
         chain_code.copy_from_slice(&i[32..]);
 
-        let order = curve_order(self.public_key.curve())?;
-        let private_key = add_mod_n(il, &self.private_key, &order)?;
+        let private_key =
+            Bip32Crypto::add_private_keys_mod_order(il, &self.private_key, self.public_key.curve())
+                .map_err(bip32_error_message)?;
         let public_key = ECC::generate_public_key(&private_key, self.public_key.curve())
             .map_err(|e| e.to_string())?;
 
@@ -129,38 +117,9 @@ impl ExtendedKey {
     }
 }
 
-fn hmac_sha512(key: &[u8], data: &[u8]) -> Result<[u8; 64], String> {
-    let mut mac =
-        HmacSha512::new_from_slice(key).map_err(|_| "Invalid HMAC key length".to_string())?;
-    mac.update(data);
-    let result = mac.finalize().into_bytes();
-    let mut out = [0u8; 64];
-    out.copy_from_slice(&result);
-    Ok(out)
-}
-
-fn curve_order(curve: ECCurve) -> Result<BigUint, String> {
-    match curve {
-        ECCurve::Secp256r1 => Ok(SECP256R1_ORDER.clone()),
-        ECCurve::Secp256k1 => Ok(SECP256K1_ORDER.clone()),
-        ECCurve::Ed25519 => Err("Ed25519 is not supported for BIP32".to_string()),
+fn bip32_error_message(error: CryptoError) -> String {
+    match error {
+        CryptoError::InvalidArgument { message } => message,
+        error => error.to_string(),
     }
-}
-
-fn add_mod_n(a: &[u8], b: &[u8; 32], n: &BigUint) -> Result<[u8; 32], String> {
-    let a_int = BigUint::from_bytes_be(a);
-    if a_int >= *n {
-        return Err("Derived child private key is invalid.".to_string());
-    }
-
-    let b_int = BigUint::from_bytes_be(b);
-    let r = (a_int + b_int) % n;
-    if r.is_zero() {
-        return Err("Derived child private key is invalid.".to_string());
-    }
-
-    let mut result = [0u8; 32];
-    let r_bytes = r.to_bytes_be();
-    result[32 - r_bytes.len()..].copy_from_slice(&r_bytes);
-    Ok(result)
 }
