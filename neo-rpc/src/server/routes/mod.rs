@@ -25,7 +25,7 @@ pub use cors::BasicAuth;
 use cors::{apply_cors, CorsConfig};
 use handlers::handle_post_request;
 #[cfg(feature = "jsonrpsee-server")]
-pub(in crate::server) use handlers::{invoke_rpc_handler, lookup_rpc_handler};
+pub(in crate::server) use handlers::{invoke_rpc_handler, resolve_rpc_handler};
 
 const MAX_PARAMS_DEPTH: usize = 32;
 

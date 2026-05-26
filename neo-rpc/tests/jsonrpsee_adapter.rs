@@ -232,6 +232,29 @@ async fn disabled_method_uses_neo_access_denied() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn unregistered_method_is_rejected_by_jsonrpsee_before_neo_dispatch() {
+    let server = build_server_with_handlers();
+    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let response = raw_response(
+        &module,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "missingmethod",
+            "params": [],
+            "id": 13
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        response["error"]["code"],
+        ServerRpcError::method_not_found().code()
+    );
+    assert_eq!(response["error"]["message"], "Method not found");
+    assert!(response["error"].get("data").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn handler_error_preserves_neo_message_and_data() {
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let mut server = RpcServer::new(system, RpcServerConfig::default());

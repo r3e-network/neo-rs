@@ -10,10 +10,11 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use bytes::Bytes;
 use parking_lot::RwLock;
 use serde_json::{Map, Value};
+use std::collections::HashSet;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use tracing::error;
 use warp::http::header::HeaderValue;
 use warp::reply::Response as HttpResponse;
@@ -245,24 +246,14 @@ fn process_object(
         return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
     };
 
-    let method_key = method.to_ascii_lowercase();
-    if filters.disabled.contains(&method_key) {
-        RPC_ERR_TOTAL.inc();
-        return RequestOutcome::error(error_response(id, RpcError::access_denied()), false);
-    }
-
-    let Some(server_arc) = filters.server.upgrade() else {
-        RPC_ERR_TOTAL.inc();
-        return RequestOutcome::error(error_response(id, RpcError::internal_server_error()), false);
-    };
-
-    let Some(handler) = lookup_rpc_handler(&server_arc, &method_key) else {
-        RPC_ERR_TOTAL.inc();
-        return RequestOutcome::error(
-            error_response(id, RpcError::method_not_found().with_data(method)),
-            false,
-        );
-    };
+    let (server_arc, handler) =
+        match resolve_rpc_handler(&filters.server, filters.disabled.as_ref(), &method) {
+            Ok(resolved) => resolved,
+            Err(err) => {
+                RPC_ERR_TOTAL.inc();
+                return RequestOutcome::error(error_response(id, err), false);
+            }
+        };
 
     if let Some(auth) = filters.auth.as_ref() {
         let header = auth_header.unwrap_or("").trim();
@@ -283,6 +274,27 @@ fn process_object(
             RequestOutcome::error(error_response(id, err), false)
         }
     }
+}
+
+pub(in crate::server) fn resolve_rpc_handler(
+    server: &Weak<RwLock<RpcServer>>,
+    disabled: &HashSet<String>,
+    method: &str,
+) -> Result<(Arc<RwLock<RpcServer>>, Arc<RpcHandler>), RpcError> {
+    let method_key = method.to_ascii_lowercase();
+    if disabled.contains(&method_key) {
+        return Err(RpcError::access_denied());
+    }
+
+    let Some(server_arc) = server.upgrade() else {
+        return Err(RpcError::internal_server_error());
+    };
+
+    let Some(handler) = lookup_rpc_handler(&server_arc, &method_key) else {
+        return Err(RpcError::method_not_found().with_data(method));
+    };
+
+    Ok((server_arc, handler))
 }
 
 pub(in crate::server) fn lookup_rpc_handler(

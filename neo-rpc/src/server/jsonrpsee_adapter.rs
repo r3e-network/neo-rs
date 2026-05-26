@@ -1,6 +1,6 @@
 //! Optional jsonrpsee adapter for Neo JSON-RPC handlers.
 
-use super::routes::{invoke_rpc_handler, lookup_rpc_handler};
+use super::routes::{invoke_rpc_handler, resolve_rpc_handler};
 use super::rpc_error::RpcError;
 use super::rpc_server::RpcServer;
 use jsonrpsee::core::RegisterMethodError;
@@ -83,17 +83,8 @@ fn dispatch(
     method: &str,
     params: &[Value],
 ) -> Result<Value, ErrorObjectOwned> {
-    let method_key = method.to_ascii_lowercase();
-    if context.disabled.contains(&method_key) {
-        return Err(error_object(RpcError::access_denied()));
-    }
-
-    let server = context
-        .server
-        .upgrade()
-        .ok_or_else(|| error_object(RpcError::internal_server_error()))?;
-    let handler = lookup_rpc_handler(&server, &method_key)
-        .ok_or_else(|| error_object(RpcError::method_not_found().with_data(method)))?;
+    let (server, handler) = resolve_rpc_handler(&context.server, context.disabled.as_ref(), method)
+        .map_err(error_object)?;
 
     invoke_rpc_handler(&server, handler, method, params).map_err(error_object)
 }
