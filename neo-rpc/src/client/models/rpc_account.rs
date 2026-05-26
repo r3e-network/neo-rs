@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::insert_optional_string;
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -36,16 +37,7 @@ impl RpcAccount {
         let mut json = JObject::new();
         json.insert("address".to_string(), JToken::String(self.address.clone()));
         json.insert("haskey".to_string(), JToken::Boolean(self.has_key));
-
-        match &self.label {
-            Some(label) => {
-                json.insert("label".to_string(), JToken::String(label.clone()));
-            }
-            None => {
-                json.insert("label".to_string(), JToken::Null);
-            }
-        }
-
+        insert_optional_string(&mut json, "label", self.label.as_deref());
         json.insert("watchonly".to_string(), JToken::Boolean(self.watch_only));
         json
     }

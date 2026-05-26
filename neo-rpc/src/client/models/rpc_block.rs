@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::insert_optional_string;
 use neo_config::ProtocolSettings;
 use neo_core::Block;
 use neo_json::JObject;
@@ -39,15 +40,11 @@ impl RpcBlock {
             neo_json::JToken::Number(f64::from(self.confirmations)),
         );
 
-        if let Some(hash) = self.next_block_hash {
-            json.insert(
-                "nextblockhash".to_string(),
-                neo_json::JToken::String(hash.to_string()),
-            );
-        } else {
-            json.insert("nextblockhash".to_string(), neo_json::JToken::Null);
-        }
-
+        insert_optional_string(
+            &mut json,
+            "nextblockhash",
+            self.next_block_hash.as_ref().map(ToString::to_string),
+        );
         json
     }
 

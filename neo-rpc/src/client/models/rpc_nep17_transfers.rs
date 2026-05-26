@@ -10,9 +10,9 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    optional_script_hash_or_address_lossy, parse_transfer_lists, required_bigint_string,
-    required_script_hash_or_address, required_u16_number, required_u32_number, required_u64_number,
-    required_uint256, transfer_lists_to_json,
+    insert_optional_string, optional_script_hash_or_address_lossy, parse_transfer_lists,
+    required_bigint_string, required_script_hash_or_address, required_u16_number,
+    required_u32_number, required_u64_number, required_uint256, transfer_lists_to_json,
 };
 use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
@@ -102,17 +102,13 @@ impl RpcNep17Transfer {
             JToken::String(self.asset_hash.to_string()),
         );
 
-        if let Some(ref user_script_hash) = self.user_script_hash {
-            json.insert(
-                "transferaddress".to_string(),
-                JToken::String(WalletHelper::to_address(
-                    user_script_hash,
-                    _protocol_settings.address_version,
-                )),
-            );
-        } else {
-            json.insert("transferaddress".to_string(), JToken::Null);
-        }
+        insert_optional_string(
+            &mut json,
+            "transferaddress",
+            self.user_script_hash.as_ref().map(|hash| {
+                WalletHelper::to_address(hash, _protocol_settings.address_version)
+            }),
+        );
 
         json.insert(
             "amount".to_string(),

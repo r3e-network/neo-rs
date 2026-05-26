@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    empty_array, object_array, parse_object_array_lossy, required_string, stack_item_from_json,
-    stack_item_to_json, stack_items_from_json_field, stack_items_to_json,
+    empty_array, insert_optional_string, object_array, parse_object_array_lossy, required_string,
+    stack_item_from_json, stack_item_to_json, stack_items_from_json_field, stack_items_to_json,
 };
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use std::str::FromStr;
@@ -155,12 +155,7 @@ impl Execution {
             "gasconsumed".to_string(),
             JToken::String(self.gas_consumed.to_string()),
         );
-        json.insert(
-            "exception".to_string(),
-            self.exception_message
-                .as_ref()
-                .map_or(JToken::Null, |value| JToken::String(value.clone())),
-        );
+        insert_optional_string(&mut json, "exception", self.exception_message.as_deref());
         json.insert(
             "stack".to_string(),
             stack_items_to_json(&self.stack).unwrap_or_else(|_| empty_array()),

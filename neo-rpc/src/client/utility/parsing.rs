@@ -20,6 +20,20 @@ pub fn optional_string(json: &JObject, field: &str) -> Option<String> {
     json.get(field).and_then(JToken::as_string)
 }
 
+/// Builds a string token for `Some` values and `Null` for missing values.
+pub fn optional_string_or_null(value: Option<impl Into<String>>) -> JToken {
+    value.map_or(JToken::Null, |value| JToken::String(value.into()))
+}
+
+/// Inserts a string token for `Some` values and `Null` for missing values.
+pub fn insert_optional_string(
+    json: &mut JObject,
+    field: &str,
+    value: Option<impl Into<String>>,
+) {
+    json.insert(field.to_string(), optional_string_or_null(value));
+}
+
 /// Reads a required numeric field as a `u64`.
 pub fn required_u64_number(json: &JObject, field: &str) -> Result<u64, String> {
     json.get(field)
@@ -435,6 +449,21 @@ mod tests {
     use neo_core::wallets::helper::Helper as WalletHelper;
     use neo_json::{JArray, JObject};
     use neo_primitives::UInt160;
+
+    #[test]
+    fn optional_string_or_null_preserves_present_and_absent_values() {
+        assert_eq!(
+            optional_string_or_null(Some("value")).to_string(),
+            r#""value""#
+        );
+        assert_eq!(optional_string_or_null(None::<&str>), JToken::Null);
+
+        let mut json = JObject::new();
+        insert_optional_string(&mut json, "label", Some("main"));
+        insert_optional_string(&mut json, "missing", None::<&str>);
+        assert_eq!(json.get("label").and_then(JToken::as_string).unwrap(), "main");
+        assert_eq!(json.get("missing"), Some(&JToken::Null));
+    }
 
     #[test]
     fn object_array_lossy_keeps_only_successful_objects() {
