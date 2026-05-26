@@ -1,12 +1,9 @@
 use super::LedgerContract;
-use crate::smart_contract::native::method_macros::{
-    neo_native_method_dispatch, neo_native_method_metadata,
-};
-use crate::smart_contract::native::NativeMethod;
+use crate::smart_contract::native::method_macros::neo_native_contract_methods;
 
 macro_rules! ledger_method_table {
-    ($callback:ident; $($args:tt)*) => {
-        $callback! {
+    ([$($callback:tt)+]; $($args:tt)*) => {
+        $($callback)+! {
             $($args)*
             ;
             {
@@ -21,27 +18,16 @@ macro_rules! ledger_method_table {
             }
         }
     };
+
+    ($callback:ident; $($args:tt)*) => {
+        ledger_method_table!([$callback]; $($args)*)
+    };
 }
 
-impl LedgerContract {
-    pub(super) fn native_methods() -> Vec<NativeMethod> {
-        ledger_method_table!(neo_native_method_metadata;)
-    }
-
-    pub(super) fn dispatch_method(
-        &self,
-        engine: &mut crate::smart_contract::ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> crate::error::CoreResult<Vec<u8>> {
-        ledger_method_table!(
-            neo_native_method_dispatch;
-            self,
-            engine,
-            method,
-            args,
-            aliases = [],
-            unknown = |method| crate::error::CoreError::native_contract(format!("Method {} not found", method))
-        )
-    }
-}
+neo_native_contract_methods!(
+    LedgerContract,
+    table = ledger_method_table,
+    aliases = [],
+    unknown =
+        |method| crate::error::CoreError::native_contract(format!("Method {} not found", method))
+);
