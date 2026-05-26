@@ -195,6 +195,73 @@ fn find_overlays_changes_and_hides_deleted_store_entries() {
 }
 
 #[test]
+fn find_overlays_changes_in_backward_order() {
+    let key_a = make_key(11, b"a");
+    let key_b = make_key(11, b"b");
+    let key_c = make_key(11, b"c");
+    let key_d = make_key(11, b"d");
+
+    let mut backing_map = hashbrown::HashMap::new();
+    backing_map.insert(key_a.clone(), StorageItem::from_bytes(vec![1]));
+    backing_map.insert(key_b.clone(), StorageItem::from_bytes(vec![2]));
+    backing_map.insert(key_d.clone(), StorageItem::from_bytes(vec![4]));
+    let backing_map = Arc::new(backing_map);
+
+    let getter = {
+        let map = Arc::clone(&backing_map);
+        Arc::new(move |key: &StorageKey| map.get(key).cloned())
+    };
+    let finder = {
+        let map = Arc::clone(&backing_map);
+        Arc::new(
+            move |prefix: Option<&StorageKey>,
+                  direction: SeekDirection|
+                  -> Vec<(StorageKey, StorageItem)> {
+                let prefix_bytes = prefix.map(|p| p.to_array());
+                let mut items: Vec<_> = map
+                    .iter()
+                    .filter(|(key, _)| match &prefix_bytes {
+                        Some(bytes) => key.to_array().starts_with(bytes),
+                        None => true,
+                    })
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
+
+                match direction {
+                    SeekDirection::Forward => items.sort_by(|a, b| a.0.cmp(&b.0)),
+                    SeekDirection::Backward => items.sort_by(|a, b| b.0.cmp(&a.0)),
+                }
+
+                items
+            },
+        )
+    };
+
+    let cache = DataCache::new_with_store(false, Some(getter), Some(finder));
+    cache.update(key_a.clone(), StorageItem::from_bytes(vec![9]));
+    cache.delete(&key_b);
+    cache.add(key_c.clone(), StorageItem::from_bytes(vec![3]));
+
+    let prefix = make_key(11, b"");
+    let entries: Vec<_> = cache.find(Some(&prefix), SeekDirection::Backward).collect();
+
+    assert_eq!(
+        entries
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>(),
+        vec![key_d, key_c, key_a]
+    );
+    assert_eq!(
+        entries
+            .into_iter()
+            .map(|(_, item)| item.get_value())
+            .collect::<Vec<_>>(),
+        vec![vec![4], vec![3], vec![9]]
+    );
+}
+
+#[test]
 fn find_enforces_prefix_when_backing_iterator_is_range_scan() {
     let key_a = make_key(-1, &[0x08, 0x01]);
     let key_b = make_key(-1, &[0x0c, 0x01]);

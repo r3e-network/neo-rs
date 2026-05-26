@@ -7,12 +7,10 @@ use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 use crate::persistence::seek_direction::SeekDirection;
 use crate::smart_contract::{StorageItem, StorageKey};
 use parking_lot::RwLock;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
-
-type FindOverlayMap = HashMap<StorageKey, Option<StorageItem>>;
 
 /// Delegate for storage entries
 pub type OnEntryDelegate = Arc<dyn Fn(&DataCache, &StorageKey, &StorageItem) + Send + Sync>;
@@ -78,13 +76,6 @@ fn overlay_item(trackable: &Trackable) -> Option<Option<StorageItem>> {
         crate::persistence::track_state::TrackState::Deleted
         | crate::persistence::track_state::TrackState::NotFound => Some(None),
         crate::persistence::track_state::TrackState::None => None,
-    }
-}
-
-fn sort_find_items(items: &mut [(StorageKey, StorageItem)], direction: SeekDirection) {
-    match direction {
-        SeekDirection::Forward => items.sort_by(|a, b| a.0.cmp(&b.0)),
-        SeekDirection::Backward => items.sort_by(|a, b| b.0.cmp(&a.0)),
     }
 }
 
@@ -749,12 +740,8 @@ impl DataCache {
         let prefix_bytes = key_prefix.map(|k| k.as_bytes().into_owned());
 
         if let Some(store_find) = &self.store_find {
-            // Overlay only pending changes from the change-set onto backing-store
-            // results. This avoids scanning the full dictionary (which may contain
-            // many read-tracked keys) and correctly applies deletes.
             let state = self.state.read();
-            let mut overlays: FindOverlayMap = HashMap::with_capacity(state.change_set.len());
-
+            let mut overlays = BTreeMap::new();
             for key in &state.change_set {
                 if !key_matches_prefix(key, prefix_bytes.as_deref()) {
                     continue;
@@ -782,29 +769,32 @@ impl DataCache {
                 );
             }
 
-            let mut merged = Vec::new();
+            let mut merged = BTreeMap::new();
             for (key, item) in store_find(key_prefix, direction) {
-                if !key_matches_prefix(&key, prefix_bytes.as_deref()) {
-                    continue;
-                }
-                match overlays.remove(&key) {
-                    Some(Some(overlay_item)) => merged.push((key, overlay_item)),
-                    Some(None) => {}
-                    None => merged.push((key, item)),
+                if key_matches_prefix(&key, prefix_bytes.as_deref()) {
+                    merged.insert(key, item);
                 }
             }
 
-            merged.extend(
-                overlays
-                    .into_iter()
-                    .filter_map(|(key, item)| item.map(|value| (key, value))),
-            );
-            sort_find_items(&mut merged, direction);
-            return Box::new(merged.into_iter());
+            for (key, item) in overlays {
+                match item {
+                    Some(item) => {
+                        merged.insert(key, item);
+                    }
+                    None => {
+                        merged.remove(&key);
+                    }
+                }
+            }
+
+            return match direction {
+                SeekDirection::Forward => Box::new(merged.into_iter()),
+                SeekDirection::Backward => Box::new(merged.into_iter().rev()),
+            };
         }
 
         let state = self.state.read();
-        let mut base_items: Vec<(StorageKey, StorageItem)> = state
+        let base_items: BTreeMap<StorageKey, StorageItem> = state
             .dictionary
             .iter()
             .filter(|(key, _)| key_matches_prefix(key, prefix_bytes.as_deref()))
@@ -813,9 +803,10 @@ impl DataCache {
             })
             .collect();
 
-        sort_find_items(&mut base_items, direction);
-
-        Box::new(base_items.into_iter())
+        match direction {
+            SeekDirection::Forward => Box::new(base_items.into_iter()),
+            SeekDirection::Backward => Box::new(base_items.into_iter().rev()),
+        }
     }
 
     /// Returns the number of pending changes.
