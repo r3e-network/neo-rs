@@ -221,6 +221,36 @@ fn io_cache_get_and_duplicate_add_do_not_refresh_fifo_order() {
     assert!(!cache.contains_key(&1));
 }
 
+#[test]
+fn io_cache_contains_and_try_get_do_not_refresh_fifo_order() {
+    let cache = IoCache::new(2, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+
+    assert!(cache.contains_key(&1));
+    assert_eq!(cache.try_get(&1), Some(1));
+    cache.add(3);
+
+    assert_eq!(cache.values(), vec![2, 3]);
+    assert!(!cache.contains_key(&1));
+}
+
+#[test]
+fn fifo_cache_access_paths_do_not_refresh_fifo_order() {
+    let cache = FIFOCache::new(2, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+
+    assert_eq!(cache.get(&1), Some(1));
+    assert!(cache.contains_key(&1));
+    assert!(cache.contains(&1));
+    cache.add(1);
+    cache.add(3);
+
+    assert_eq!(cache.values(), vec![2, 3]);
+    assert!(!cache.contains_key(&1));
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct MockPoint(Vec<u8>);
 
@@ -342,4 +372,108 @@ fn lru_cache_eviction_matches_csharp() {
     assert_eq!(cache.count(), 3);
     assert!(cache.contains_key(&5));
     assert!(cache.contains_key(&6));
+}
+
+#[test]
+fn lru_cache_access_paths_refresh_order() {
+    let cache = LRUCache::new(2, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+
+    assert!(cache.contains_key(&1));
+    cache.add(3);
+
+    assert_eq!(cache.values(), vec![1, 3]);
+    assert!(cache.contains_key(&1));
+    assert!(!cache.contains_key(&2));
+}
+
+#[test]
+fn lru_cache_duplicate_add_refreshes_order() {
+    let cache = LRUCache::new(2, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+
+    cache.add(1);
+    cache.add(3);
+
+    assert_eq!(cache.values(), vec![1, 3]);
+    assert!(cache.contains_key(&1));
+    assert!(!cache.contains_key(&2));
+}
+
+#[test]
+fn lru_cache_try_get_refreshes_order() {
+    let cache = LRUCache::new(2, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+
+    assert_eq!(cache.try_get(&1), Some(1));
+    cache.add(3);
+
+    assert_eq!(cache.values(), vec![1, 3]);
+    assert!(cache.contains_key(&1));
+    assert!(!cache.contains_key(&2));
+}
+
+#[test]
+fn lru_cache_contains_value_refreshes_order() {
+    let cache = LRUCache::new(2, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+
+    assert!(cache.contains(&1));
+    cache.add(3);
+
+    assert_eq!(cache.values(), vec![1, 3]);
+    assert!(cache.contains_key(&1));
+    assert!(!cache.contains_key(&2));
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct VersionedValue {
+    key: i32,
+    payload: &'static str,
+}
+
+#[test]
+fn lru_cache_duplicate_add_refreshes_without_overwriting_value() {
+    let cache = LRUCache::new(2, |value: &VersionedValue| value.key);
+    let original = VersionedValue {
+        key: 1,
+        payload: "original",
+    };
+    let replacement = VersionedValue {
+        key: 1,
+        payload: "replacement",
+    };
+
+    cache.add(original.clone());
+    cache.add(VersionedValue {
+        key: 2,
+        payload: "second",
+    });
+    cache.add(replacement);
+    cache.add(VersionedValue {
+        key: 3,
+        payload: "third",
+    });
+
+    assert_eq!(cache.get(&1), Some(original));
+    assert!(!cache.contains_key(&2));
+    assert!(cache.contains_key(&3));
+}
+
+#[test]
+fn lru_cache_copy_to_uses_lru_order_after_refresh() {
+    let cache = LRUCache::new(3, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+    cache.add(3);
+
+    assert_eq!(cache.get(&2), Some(2));
+    let mut values = [0; 5];
+    cache.copy_to(&mut values, 1).unwrap();
+
+    assert_eq!(values, [0, 1, 3, 2, 0]);
 }
