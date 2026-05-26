@@ -53,15 +53,7 @@ static INSTANCE: Lazy<RwLock<HardforkManager>> = Lazy::new(|| RwLock::new(Hardfo
 impl HardforkManager {
     /// Returns every known hardfork in declaration order.
     pub const fn all() -> [Hardfork; 7] {
-        [
-            Hardfork::HfAspidochelone,
-            Hardfork::HfBasilisk,
-            Hardfork::HfCockatrice,
-            Hardfork::HfDomovoi,
-            Hardfork::HfEchidna,
-            Hardfork::HfFaun,
-            Hardfork::HfGorgon,
-        ]
+        Hardfork::all()
     }
 
     /// Creates a new HardforkManager with default hardfork heights (matches C# ProtocolSettings.Default exactly).
