@@ -2,6 +2,7 @@
 
 use crate::error::{CryptoError, CryptoResult};
 use base64::{engine::general_purpose, Engine as _};
+use neo_primitives::base58_check::{self, Base58CheckDecodeError};
 
 /// Base58 encoding/decoding utilities.
 pub struct Base58;
@@ -23,27 +24,26 @@ impl Base58 {
     /// Encodes data to `Base58Check` with a 4-byte Neo/Bitcoin-style checksum.
     #[must_use]
     pub fn encode_check(data: &[u8]) -> String {
-        bs58::encode(data).with_check().into_string()
+        base58_check::encode_check(data)
     }
 
     /// Decodes `Base58Check` bytes and verifies the 4-byte checksum.
     pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
-        bs58::decode(s)
-            .with_check(None)
-            .into_vec()
-            .map_err(map_base58_check_decode_error)
+        base58_check::decode_check(s).map_err(map_base58_check_decode_error)
     }
 }
 
-fn map_base58_check_decode_error(error: bs58::decode::Error) -> CryptoError {
+fn map_base58_check_decode_error(error: Base58CheckDecodeError) -> CryptoError {
     match error {
-        bs58::decode::Error::NoChecksum => {
+        Base58CheckDecodeError::MissingChecksum => {
             CryptoError::encoding_error("Invalid Base58Check payload: too short")
         }
-        bs58::decode::Error::InvalidChecksum { .. } => {
+        Base58CheckDecodeError::InvalidChecksum => {
             CryptoError::encoding_error("Invalid Base58Check checksum")
         }
-        error => CryptoError::encoding_error(format!("Base58 decode error: {error}")),
+        Base58CheckDecodeError::InvalidBase58 { message } => {
+            CryptoError::encoding_error(format!("Base58 decode error: {message}"))
+        }
     }
 }
 

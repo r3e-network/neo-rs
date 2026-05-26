@@ -17,7 +17,6 @@ use crate::network::p2p::payloads::transaction::HEADER_SIZE;
 use crate::script_builder::ScriptBuilder;
 use crate::Verifiable as CoreIVerifiable;
 use crate::{
-    cryptography::{crypto_utils::Base58, CryptoError},
     network::p2p,
     persistence::DataCache,
     protocol_settings::ProtocolSettings,
@@ -36,6 +35,7 @@ use crate::{
     wallets::{transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError, KeyPair},
     Transaction, UInt160,
 };
+use neo_primitives::base58_check::{self, AddressDecodeError, Base58CheckDecodeError};
 use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
 use neo_vm_rs::OpCode;
@@ -66,23 +66,15 @@ impl Helper {
     /// Converts the specified script hash to an address.
     /// Matches C# ToAddress method
     pub fn to_address(script_hash: &UInt160, version: u8) -> String {
-        let mut data = Vec::with_capacity(21);
-        data.push(version);
-        data.extend_from_slice(&script_hash.to_array());
-        base58::base58_check_encode(&data)
+        base58_check::encode_address_payload(version, &script_hash.to_array())
     }
 
     /// Converts the specified address to a script hash.
     /// Matches C# ToScriptHash method
     pub fn to_script_hash(address: &str, version: u8) -> Result<UInt160, String> {
-        let data = address.base58_check_decode()?;
-        if data.len() != 21 {
-            return Err(format!("Invalid address format: expected 21 bytes after Base58Check decoding, but got {} bytes. The address may be corrupted or in an invalid format.", data.len()));
-        }
-        if data[0] != version {
-            return Err(format!("Invalid address version: expected version {}, but got {}. The address may be for a different network.", version, data[0]));
-        }
-        UInt160::from_bytes(&data[1..]).map_err(|e| e.to_string())
+        let script_hash =
+            base58_check::decode_address_payload(address, version).map_err(map_address_error)?;
+        UInt160::from_bytes(&script_hash).map_err(|e| e.to_string())
     }
 
     /// XOR operation on byte arrays.
@@ -827,11 +819,11 @@ fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, usize)> {
 
 /// Base58 utilities
 pub mod base58 {
-    use crate::cryptography::crypto_utils::Base58;
+    use neo_primitives::base58_check;
 
     /// Encodes data with a 4-byte double-SHA256 checksum using Base58Check.
     pub fn base58_check_encode(data: &[u8]) -> String {
-        Base58::encode_check(data)
+        base58_check::encode_check(data)
     }
 }
 
@@ -842,26 +834,34 @@ pub trait Base58CheckDecode {
 
 impl Base58CheckDecode for str {
     fn base58_check_decode(&self) -> Result<Vec<u8>, String> {
-        Base58::decode_check(self).map_err(map_base58_check_decode_error)
+        base58_check::decode_check(self).map_err(map_base58_check_decode_error)
     }
 }
 
-fn map_base58_check_decode_error(err: CryptoError) -> String {
+fn map_base58_check_decode_error(err: Base58CheckDecodeError) -> String {
     match err {
-        CryptoError::EncodingError { message } if message.starts_with("Base58 decode error: ") => {
-            format!(
-                "Invalid Base58 string: {}",
-                message.trim_start_matches("Base58 decode error: ")
-            )
+        Base58CheckDecodeError::InvalidBase58 { message } => {
+            format!("Invalid Base58 string: {message}")
         }
-        CryptoError::EncodingError { message } if message.contains("too short") => {
+        Base58CheckDecodeError::MissingChecksum => {
             "Invalid Base58Check format: decoded data length is too short (requires at least 4 checksum bytes).".to_string()
         }
-        CryptoError::EncodingError { message } if message.contains("checksum") => {
+        Base58CheckDecodeError::InvalidChecksum => {
             "Invalid Base58Check checksum: provided checksum does not match calculated checksum."
                 .to_string()
         }
-        err => err.to_string(),
+    }
+}
+
+fn map_address_error(err: AddressDecodeError) -> String {
+    match err {
+        AddressDecodeError::Base58(err) => map_base58_check_decode_error(err),
+        AddressDecodeError::InvalidLength { actual, .. } => {
+            format!("Invalid address format: expected 21 bytes after Base58Check decoding, but got {actual} bytes. The address may be corrupted or in an invalid format.")
+        }
+        AddressDecodeError::InvalidVersion { expected, actual } => {
+            format!("Invalid address version: expected version {expected}, but got {actual}. The address may be for a different network.")
+        }
     }
 }
 pub type AccountScriptResolver<'a> = dyn Fn(&UInt160) -> Option<Vec<u8>> + 'a;

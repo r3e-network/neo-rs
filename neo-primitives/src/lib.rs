@@ -30,6 +30,7 @@
 #[doc(hidden)]
 pub use bitflags;
 
+pub mod base58_check;
 pub mod blockchain;
 pub mod constants;
 pub mod contains_transaction_type;

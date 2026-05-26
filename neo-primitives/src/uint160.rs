@@ -3,6 +3,7 @@
 use crate::constants::ADDRESS_SIZE;
 use crate::error::{PrimitiveError, PrimitiveResult};
 use crate::uint_hex::{format_reversed_hex, parse_reversed_hex};
+use crate::{base58_check, base58_check::AddressDecodeError};
 use ripemd::Ripemd160;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -266,12 +267,7 @@ impl UInt160 {
     /// Converts this `UInt160` to a Neo address string.
     #[must_use]
     pub fn to_address(&self) -> String {
-        let version_byte = crate::constants::ADDRESS_VERSION;
-        let mut data = Vec::with_capacity(21);
-        data.push(version_byte);
-        data.extend_from_slice(&self.to_array());
-
-        bs58::encode(data).with_check().into_string()
+        base58_check::encode_address_payload(crate::constants::ADDRESS_VERSION, &self.to_array())
     }
 
     /// Parses a Neo address string to a `UInt160`.
@@ -281,33 +277,24 @@ impl UInt160 {
     /// Returns `PrimitiveError::InvalidFormat` if the address is not valid Base58,
     /// has an incorrect length, has an invalid version byte, or has an invalid checksum.
     pub fn from_address(address: &str) -> PrimitiveResult<Self> {
-        let decoded = bs58::decode(address)
-            .with_check(None)
-            .into_vec()
-            .map_err(map_base58_check_address_error)?;
-
-        if decoded.len() != 1 + UINT160_SIZE {
-            return Err(PrimitiveError::InvalidFormat {
-                message: "Invalid address length".to_string(),
-            });
-        }
-
-        if decoded[0] != crate::constants::ADDRESS_VERSION {
-            return Err(PrimitiveError::InvalidFormat {
-                message: "Invalid address version".to_string(),
-            });
-        }
-
-        let script_hash = &decoded[1..];
-        Self::from_bytes(script_hash)
+        let script_hash =
+            base58_check::decode_address_payload(address, crate::constants::ADDRESS_VERSION)
+                .map_err(map_base58_check_address_error)?;
+        Self::from_bytes(&script_hash)
     }
 }
 
-fn map_base58_check_address_error(error: bs58::decode::Error) -> PrimitiveError {
+fn map_base58_check_address_error(error: AddressDecodeError) -> PrimitiveError {
     let message = match error {
-        bs58::decode::Error::InvalidChecksum { .. } => "Invalid address checksum",
-        bs58::decode::Error::NoChecksum => "Invalid address length",
-        _ => "Invalid Base58 address",
+        AddressDecodeError::Base58(base58_check::Base58CheckDecodeError::InvalidChecksum) => {
+            "Invalid address checksum"
+        }
+        AddressDecodeError::Base58(base58_check::Base58CheckDecodeError::MissingChecksum)
+        | AddressDecodeError::InvalidLength { .. } => "Invalid address length",
+        AddressDecodeError::Base58(base58_check::Base58CheckDecodeError::InvalidBase58 {
+            ..
+        }) => "Invalid Base58 address",
+        AddressDecodeError::InvalidVersion { .. } => "Invalid address version",
     };
     PrimitiveError::InvalidFormat {
         message: message.to_string(),
