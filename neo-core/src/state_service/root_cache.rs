@@ -144,18 +144,56 @@ impl StateRootCache {
         self.hash_index.get(hash).copied()
     }
 
+    fn put_entry(
+        &mut self,
+        index: u32,
+        entry: StateRootCacheEntry,
+    ) -> Option<(u32, StateRootCacheEntry)> {
+        let hash = entry.root_hash();
+        let removed = self.cache.push(index, entry);
+        if let Some((removed_index, removed_entry)) = &removed {
+            self.remove_hash_index_entry(removed_entry.root_hash(), *removed_index);
+        }
+        self.hash_index.put(hash, index);
+        removed
+    }
+
+    fn remove_hash_index_entry(&mut self, hash: UInt256, index: u32) {
+        if self.hash_index.peek(&hash).copied() != Some(index) {
+            return;
+        }
+        self.hash_index.pop(&hash);
+        if let Some(replacement_index) = self.index_for_cached_hash(hash) {
+            self.hash_index.put(hash, replacement_index);
+        }
+    }
+
+    fn index_for_cached_hash(&self, hash: UInt256) -> Option<u32> {
+        self.cache.iter().find_map(|(index, entry)| {
+            if entry.root_hash() == hash {
+                Some(*index)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn remove_entry(&mut self, index: u32) -> Option<StateRootCacheEntry> {
+        if let Some(entry) = self.cache.pop(&index) {
+            self.remove_hash_index_entry(entry.root_hash(), index);
+            Some(entry)
+        } else {
+            None
+        }
+    }
+
     /// Inserts a state root into the cache.
     pub fn insert(&mut self, entry: StateRootCacheEntry) {
         let index = entry.index();
-        let hash = entry.root_hash();
-        let was_full = self.cache.len() >= self.cache.cap().get();
-
-        self.cache.put(index, entry);
-        self.hash_index.put(hash, index);
+        let removed = self.put_entry(index, entry);
 
         self.stats.record_insertion();
-        // Record eviction if cache was already at capacity
-        if was_full {
+        if matches!(removed, Some((removed_index, _)) if removed_index != index) {
             self.stats.record_eviction();
         }
     }
@@ -168,12 +206,7 @@ impl StateRootCache {
 
     /// Removes a state root from the cache.
     pub fn remove(&mut self, index: u32) -> Option<StateRootCacheEntry> {
-        if let Some(entry) = self.cache.pop(&index) {
-            self.hash_index.pop(&entry.root_hash());
-            Some(entry)
-        } else {
-            None
-        }
+        self.remove_entry(index)
     }
 
     /// Checks if the cache contains a state root for the given index.
@@ -214,11 +247,9 @@ impl StateRootCache {
 
     /// Marks a state root as validated.
     pub fn mark_validated(&mut self, index: u32) -> bool {
-        if let Some(mut entry) = self.cache.pop(&index) {
+        if let Some(mut entry) = self.remove_entry(index) {
             entry.is_validated = true;
-            let hash = entry.root_hash();
-            self.cache.put(index, entry);
-            self.hash_index.put(hash, index);
+            self.put_entry(index, entry);
             true
         } else {
             false
@@ -320,6 +351,97 @@ mod tests {
     }
 
     #[test]
+    fn cache_eviction_removes_hash_index() {
+        let mut cache = StateRootCache::new(2);
+        let first = create_test_state_root(1, 0x01);
+        let first_hash = first.root_hash;
+        let second = create_test_state_root(2, 0x02);
+        let third = create_test_state_root(3, 0x03);
+        let third_hash = third.root_hash;
+
+        cache.insert_state_root(first, false, 0);
+        cache.insert_state_root(second, false, 0);
+        assert!(cache.contains_hash(&first_hash));
+        cache.insert_state_root(third, false, 0);
+
+        assert!(!cache.contains_hash(&first_hash));
+        assert!(cache.get_by_hash(&first_hash).is_none());
+        assert!(cache.contains_hash(&third_hash));
+        assert_eq!(cache.get_by_hash(&third_hash).unwrap().index(), 3);
+    }
+
+    #[test]
+    fn cache_replacing_index_removes_old_hash_index() {
+        let mut cache = StateRootCache::new(2);
+        let old_root = create_test_state_root(1, 0x01);
+        let old_hash = old_root.root_hash;
+        let new_root = create_test_state_root(1, 0x02);
+        let new_hash = new_root.root_hash;
+
+        cache.insert_state_root(old_root, false, 0);
+        cache.insert_state_root(new_root, false, 0);
+
+        assert!(!cache.contains_hash(&old_hash));
+        assert!(cache.get_by_hash(&old_hash).is_none());
+        assert!(cache.contains_hash(&new_hash));
+        assert_eq!(cache.get_by_hash(&new_hash).unwrap().index(), 1);
+    }
+
+    #[test]
+    fn cache_eviction_preserves_shared_hash_index() {
+        let mut cache = StateRootCache::new(3);
+        let shared_hash = UInt256::from_bytes(&[0xAA; 32]).unwrap();
+        let first = StateRoot::new_current(1, shared_hash);
+        let second = StateRoot::new_current(2, shared_hash);
+
+        cache.insert_state_root(first, false, 0);
+        cache.insert_state_root(second, false, 0);
+        cache.insert_state_root(create_test_state_root(3, 0x03), false, 0);
+        cache.insert_state_root(create_test_state_root(4, 0x04), false, 0);
+
+        assert!(cache.get(1).is_none());
+        assert_eq!(cache.get_by_hash(&shared_hash).unwrap().index(), 2);
+    }
+
+    #[test]
+    fn cache_remove_preserves_shared_hash_index() {
+        let mut cache = StateRootCache::new(3);
+        let shared_hash = UInt256::from_bytes(&[0xBB; 32]).unwrap();
+        let first = StateRoot::new_current(1, shared_hash);
+        let second = StateRoot::new_current(2, shared_hash);
+
+        cache.insert_state_root(first, false, 0);
+        cache.insert_state_root(second, false, 0);
+        cache.remove(1);
+
+        assert_eq!(cache.get_by_hash(&shared_hash).unwrap().index(), 2);
+    }
+
+    #[test]
+    fn cache_remove_remaps_current_shared_hash_index() {
+        let mut cache = StateRootCache::new(3);
+        let shared_hash = UInt256::from_bytes(&[0xCC; 32]).unwrap();
+        let first = StateRoot::new_current(1, shared_hash);
+        let second = StateRoot::new_current(2, shared_hash);
+
+        cache.insert_state_root(first, false, 0);
+        cache.insert_state_root(second, false, 0);
+        cache.remove(2);
+
+        assert_eq!(cache.get_by_hash(&shared_hash).unwrap().index(), 1);
+    }
+
+    #[test]
+    fn cache_replacing_index_does_not_record_eviction() {
+        let mut cache = StateRootCache::new(1);
+
+        cache.insert_state_root(create_test_state_root(1, 0x01), false, 0);
+        cache.insert_state_root(create_test_state_root(1, 0x02), false, 0);
+
+        assert_eq!(cache.stats().evictions.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
     fn cache_remove() {
         let mut cache = StateRootCache::new(100);
         let state_root = create_test_state_root(5, 0x05);
@@ -339,12 +461,14 @@ mod tests {
     fn cache_mark_validated() {
         let mut cache = StateRootCache::new(100);
         let state_root = create_test_state_root(6, 0x06);
+        let hash = state_root.root_hash;
 
         cache.insert_state_root(state_root, false, 0);
         assert!(!cache.get(6).unwrap().is_validated);
 
         cache.mark_validated(6);
         assert!(cache.get(6).unwrap().is_validated);
+        assert!(cache.get_by_hash(&hash).unwrap().is_validated);
     }
 
     #[test]
