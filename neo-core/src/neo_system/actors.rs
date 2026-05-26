@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use crate::ledger::transaction_router::{Preverify, TransactionRouter};
+use crate::ledger::transaction_router::TransactionRouter;
 use crate::runtime::{ActorRef, AkkaError, AkkaResult};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::warn;
@@ -21,7 +21,8 @@ use crate::protocol_settings::ProtocolSettings;
 const TX_ROUTER_MAILBOX_CAPACITY: usize = 65_536;
 
 struct TransactionRouterEnvelope {
-    message: TransactionRouterMessage,
+    transaction: Transaction,
+    relay: bool,
     sender: Option<ActorRef>,
 }
 
@@ -52,35 +53,40 @@ impl TransactionRouterHandle {
         self.task.abort();
     }
 
-    /// Sends a message without specifying a sender.
-    pub fn tell(&self, message: TransactionRouterMessage) -> AkkaResult<()> {
-        self.tell_from(message, None)
+    /// Enqueues transaction pre-verification without waiting for mailbox capacity.
+    pub fn try_enqueue_preverify(&self, transaction: Transaction, relay: bool) -> AkkaResult<()> {
+        self.try_enqueue_preverify_from(transaction, relay, None)
     }
 
-    /// Sends a message without specifying a sender, awaiting mailbox capacity.
-    pub async fn tell_async(&self, message: TransactionRouterMessage) -> AkkaResult<()> {
-        self.tell_from_async(message, None).await
-    }
-
-    /// Sends a message with an optional actor sender for relay responses.
-    pub fn tell_from(
+    /// Enqueues transaction pre-verification with an optional actor sender for relay responses.
+    pub fn try_enqueue_preverify_from(
         &self,
-        message: TransactionRouterMessage,
+        transaction: Transaction,
+        relay: bool,
         sender: Option<ActorRef>,
     ) -> AkkaResult<()> {
         self.sender
-            .try_send(TransactionRouterEnvelope { message, sender })
+            .try_send(TransactionRouterEnvelope {
+                transaction,
+                relay,
+                sender,
+            })
             .map_err(|error| AkkaError::send(error.to_string()))
     }
 
-    /// Sends a message with backpressure and an optional actor sender.
-    pub async fn tell_from_async(
+    /// Enqueues transaction pre-verification with backpressure and an optional actor sender.
+    pub async fn enqueue_preverify_from(
         &self,
-        message: TransactionRouterMessage,
+        transaction: Transaction,
+        relay: bool,
         sender: Option<ActorRef>,
     ) -> AkkaResult<()> {
         self.sender
-            .send(TransactionRouterEnvelope { message, sender })
+            .send(TransactionRouterEnvelope {
+                transaction,
+                relay,
+                sender,
+            })
             .await
             .map_err(|error| AkkaError::send(error.to_string()))
     }
@@ -92,34 +98,18 @@ async fn run_transaction_router(
     mut receiver: mpsc::Receiver<TransactionRouterEnvelope>,
 ) {
     while let Some(envelope) = receiver.recv().await {
-        match envelope.message {
-            TransactionRouterMessage::Preverify { transaction, relay } => {
-                let completed = router.on_receive(&Preverify { transaction, relay });
-                if let Err(error) = blockchain.tell_from(
-                    BlockchainCommand::PreverifyCompleted(completed),
-                    envelope.sender,
-                ) {
-                    warn!(
-                        target: "neo",
-                        %error,
-                        "failed to deliver preverify result to blockchain actor"
-                    );
-                }
-            }
+        let completed = router.preverify(envelope.transaction, envelope.relay);
+        if let Err(error) = blockchain.tell_from(
+            BlockchainCommand::PreverifyCompleted(completed),
+            envelope.sender,
+        ) {
+            warn!(
+                target: "neo",
+                %error,
+                "failed to deliver preverify result to blockchain actor"
+            );
         }
     }
-}
-
-/// Messages handled by the transaction router worker.
-#[derive(Debug)]
-pub enum TransactionRouterMessage {
-    /// Request to pre-verify a transaction before full validation.
-    Preverify {
-        /// The transaction to verify.
-        transaction: Transaction,
-        /// Whether to relay the transaction after verification.
-        relay: bool,
-    },
 }
 
 #[cfg(test)]
@@ -218,10 +208,7 @@ mod tests {
         let expected = transaction.verify_state_independent(&settings);
 
         handle
-            .tell(TransactionRouterMessage::Preverify {
-                transaction: transaction.clone(),
-                relay: true,
-            })
+            .try_enqueue_preverify(transaction.clone(), true)
             .expect("send preverify");
 
         let completed = timeout(Duration::from_secs(2), receiver)
@@ -260,13 +247,7 @@ mod tests {
             TransactionRouterHandle::spawn(Arc::new(ProtocolSettings::default()), blockchain);
 
         handle
-            .tell_from(
-                TransactionRouterMessage::Preverify {
-                    transaction: Transaction::new(),
-                    relay: true,
-                },
-                Some(sender_ref),
-            )
+            .try_enqueue_preverify_from(Transaction::new(), true, Some(sender_ref))
             .expect("send preverify");
 
         let sender_matches = timeout(Duration::from_secs(2), receiver)

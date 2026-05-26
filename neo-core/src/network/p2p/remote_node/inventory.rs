@@ -200,13 +200,7 @@ impl RemoteNode {
         if let Err(err) = self
             .system
             .tx_router
-            .tell_from_async(
-                crate::neo_system::TransactionRouterMessage::Preverify {
-                    transaction: transaction.clone(),
-                    relay: true,
-                },
-                Some(ctx.self_ref()),
-            )
+            .enqueue_preverify_from(transaction, true, Some(ctx.self_ref()))
             .await
         {
             warn!(

@@ -12,7 +12,6 @@ use hex;
 use neo_core::hardfork::Hardfork;
 use neo_core::ledger::BlockchainCommand;
 use neo_core::neo_io::{MemoryReader, Serializable};
-use neo_core::neo_system::TransactionRouterMessage;
 use neo_core::network::p2p::local_node::LocalNode;
 use neo_core::network::p2p::payloads::{block::Block, transaction::Transaction};
 use serde_json::{json, Map, Value};
@@ -185,17 +184,11 @@ impl RpcServerNode {
         )?;
         let transaction = Transaction::from_bytes(&raw)
             .map_err(|err| invalid_params(format!("Invalid transaction: {err}")))?;
-        let relay_result = rpc_relay::with_relay_responder(server, |sender| {
+        let relay_result = rpc_relay::with_relay_responder(server, move |sender| {
             server
                 .system()
                 .tx_router_actor()
-                .tell_from(
-                    TransactionRouterMessage::Preverify {
-                        transaction: transaction.clone(),
-                        relay: true,
-                    },
-                    Some(sender),
-                )
+                .try_enqueue_preverify_from(transaction, true, Some(sender))
                 .map_err(|err| internal_error(err.to_string()))
         })?;
         rpc_relay::map_relay_result(relay_result)

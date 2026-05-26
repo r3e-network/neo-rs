@@ -1,7 +1,6 @@
 use super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::{OracleService, OracleServiceError, OracleTask};
 use crate::cryptography::ECPoint;
-use crate::neo_system::TransactionRouterMessage;
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::Transaction;
 use crate::persistence::DataCache;
@@ -192,13 +191,10 @@ impl OracleService {
         }
         tx_mut.set_witnesses(witnesses);
 
-        if let Err(error) =
-            self.system
-                .tx_router_actor()
-                .tell(TransactionRouterMessage::Preverify {
-                    transaction: tx_mut,
-                    relay: true,
-                })
+        if let Err(error) = self
+            .system
+            .tx_router_actor()
+            .try_enqueue_preverify(tx_mut, true)
         {
             warn!(target: "neo::oracle", %error, "failed to relay oracle response tx");
             return false;

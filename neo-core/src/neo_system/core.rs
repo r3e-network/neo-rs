@@ -566,4 +566,4 @@ fn attach_system_to_actors(
 }
 
 // to_core_error has been extracted to super::helpers module
-// TransactionRouterHandle and TransactionRouterMessage have been extracted to super::actors module
+// TransactionRouterHandle has been extracted to super::actors module

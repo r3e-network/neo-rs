@@ -7,14 +7,6 @@ use crate::network::p2p::payloads::Transaction;
 use crate::protocol_settings::ProtocolSettings;
 use serde::{Deserialize, Serialize};
 
-/// namespace Neo.Ledger -> internal class TransactionRouter(NeoSystem system) : UntypedActor
-/// public record Preverify(Transaction Transaction, bool Relay);
-#[derive(Debug, Clone)]
-pub struct Preverify {
-    pub transaction: Transaction,
-    pub relay: bool,
-}
-
 /// public record PreverifyCompleted(Transaction Transaction, bool Relay, VerifyResult Result);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreverifyCompleted {
@@ -34,15 +26,13 @@ impl TransactionRouter {
         Self { settings }
     }
 
-    /// protected override void OnReceive(object message)
-    pub fn on_receive(&self, message: &Preverify) -> PreverifyCompleted {
-        // var send = new PreverifyCompleted(preverify.Transaction, preverify.Relay,
-        //         preverify.Transaction.VerifyStateIndependent(_system.Settings));
-        let result = message.transaction.verify_state_independent(&self.settings);
+    /// Runs state-independent transaction verification before blockchain validation.
+    pub fn preverify(&self, transaction: Transaction, relay: bool) -> PreverifyCompleted {
+        let result = transaction.verify_state_independent(&self.settings);
 
         PreverifyCompleted {
-            transaction: message.transaction.clone(),
-            relay: message.relay,
+            transaction,
+            relay,
             result,
         }
     }

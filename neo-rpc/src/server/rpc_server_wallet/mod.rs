@@ -4,7 +4,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::cryptography::{ECCurve, ECPoint};
-use neo_core::neo_system::TransactionRouterMessage;
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
@@ -913,13 +912,7 @@ impl RpcServerWallet {
             server
                 .system()
                 .tx_router_actor()
-                .tell_from(
-                    TransactionRouterMessage::Preverify {
-                        transaction: tx.clone(),
-                        relay: true,
-                    },
-                    Some(sender),
-                )
+                .try_enqueue_preverify_from(tx.clone(), true, Some(sender))
                 .map_err(|err| internal_error(err.to_string()))
         }) {
             Ok(relay_result) => {

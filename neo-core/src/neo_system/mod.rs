@@ -46,7 +46,7 @@ pub use context::NeoSystemContext;
 pub use core::*;
 
 // Re-export from extracted modules (these override legacy exports)
-pub use actors::{TransactionRouterHandle, TransactionRouterMessage};
+pub use actors::TransactionRouterHandle;
 pub use builder::NeoSystemBuilder;
 pub use registry::ServiceRegistry;
 pub use system::{ReadinessStatus, STATE_STORE_SERVICE};
