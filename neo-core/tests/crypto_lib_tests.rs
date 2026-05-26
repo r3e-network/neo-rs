@@ -23,8 +23,6 @@ use neo_core::smart_contract::ContractParameterType;
 use neo_core::UInt160;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
-use p256::ecdsa::SigningKey as P256SigningKey;
-use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature as P256Signature};
 use secp256k1::{Message, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -989,11 +987,9 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_keccak() {
     let pub_r1 = Secp256r1Crypto::derive_public_key(&priv_r1)
         .expect("r1 pubkey")
         .to_vec();
-    let signing_key = P256SigningKey::from_bytes(&priv_r1.into()).expect("r1 signing key");
     let digest = Crypto::keccak256(message);
-    let sig_r1: P256Signature = signing_key
-        .sign_prehash(&digest)
-        .expect("r1 keccak signature");
+    let sig_r1 =
+        Secp256r1Crypto::sign_prehash(&digest, &priv_r1).expect("r1 keccak signature");
     let result = engine
         .call_native_contract(
             crypto.hash(),
@@ -1001,7 +997,7 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_keccak() {
             &[
                 message.to_vec(),
                 pub_r1,
-                sig_r1.to_bytes().to_vec(),
+                sig_r1.to_vec(),
                 curve_hash_bytes(NamedCurveHash::Secp256r1Keccak256),
             ],
         )

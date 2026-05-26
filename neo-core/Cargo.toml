@@ -104,8 +104,6 @@ tempfile = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # For cryptography tests that need direct secp256k1 access
 secp256k1 = { workspace = true }
-# For cryptography tests that need direct P-256 prehash signing
-p256 = { workspace = true }
 
 [[bench]]
 name = "serialization"

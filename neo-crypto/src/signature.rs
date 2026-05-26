@@ -178,6 +178,19 @@ impl Secp256r1Crypto {
         Ok(bytes)
     }
 
+    /// Signs a 32-byte message prehash with secp256r1.
+    pub fn sign_prehash(
+        message_digest: &[u8; 32],
+        private_key: &[u8; 32],
+    ) -> CryptoResult<[u8; 64]> {
+        let signing_key = SigningKey::try_from(private_key.as_slice())
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
+        let signature: Signature = signing_key
+            .sign_prehash(message_digest)
+            .map_err(|e| CryptoError::invalid_signature(format!("Failed to sign: {e}")))?;
+        Ok(signature.to_bytes().into())
+    }
+
     /// Verifies a secp256r1 signature.
     pub fn verify(message: &[u8], signature: &[u8; 64], public_key: &[u8]) -> CryptoResult<bool> {
         let public_key = P256PublicKey::from_sec1_bytes(public_key)
@@ -505,6 +518,7 @@ impl Crypto {
 #[cfg(test)]
 mod tests {
     use super::{Secp256k1Crypto, Secp256r1Crypto, NEOFS_ECDSA_SHA512_PREFIX};
+    use crate::{Crypto, ECCurve, HashAlgorithm};
 
     #[test]
     fn test_secp256k1_operations() {
@@ -516,6 +530,27 @@ mod tests {
         let is_valid = Secp256k1Crypto::verify(message, &signature, &public_key).unwrap();
 
         assert!(is_valid);
+    }
+
+    #[test]
+    fn secp256r1_prehash_signs_keccak_digest() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let message = b"prehash payload";
+        let digest = Crypto::keccak256(message);
+
+        let signature = Secp256r1Crypto::sign_prehash(&digest, &private_key).unwrap();
+
+        assert!(
+            super::verify_ecdsa_raw64_with_hash(
+                message,
+                &signature,
+                &public_key,
+                ECCurve::Secp256r1,
+                HashAlgorithm::Keccak256,
+            )
+            .unwrap()
+        );
     }
 
     #[test]
