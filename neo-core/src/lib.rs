@@ -359,28 +359,12 @@ pub use network::{NetworkError, NetworkResult};
 
 /// I/O utilities with extension traits.
 pub mod neo_io {
+    pub use crate::extensions::io::serializable::SerializableExtensions as SerializableExt;
     pub use ::neo_io_crate::{
         serializable::{self, helper},
         BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
     };
     pub use Serializable as ISerializable;
-
-    /// Extension helpers for working with `Serializable` values.
-    pub trait SerializableExt {
-        /// Serializes the value into a freshly allocated byte vector.
-        fn to_array(&self) -> IoResult<Vec<u8>>;
-    }
-
-    impl<T> SerializableExt for T
-    where
-        T: Serializable,
-    {
-        fn to_array(&self) -> IoResult<Vec<u8>> {
-            let mut writer = BinaryWriter::new();
-            self.serialize(&mut writer)?;
-            Ok(writer.into_bytes())
-        }
-    }
 }
 
 // ============================================================================
