@@ -3,9 +3,8 @@
 //! Storage key for NEP-17 transfer records.
 
 use super::super::token_transfer_key::TokenTransferKey;
-use super::super::tracker_base::TokenTransferKeyView;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -58,20 +57,4 @@ impl Serializable for Nep17TransferKey {
     }
 }
 
-impl TokenTransferKeyView for Nep17TransferKey {
-    fn user_script_hash(&self) -> &UInt160 {
-        &self.0.user_script_hash
-    }
-
-    fn timestamp_ms(&self) -> u64 {
-        self.0.timestamp_ms
-    }
-
-    fn asset_script_hash(&self) -> &UInt160 {
-        &self.0.asset_script_hash
-    }
-
-    fn block_xfer_notification_index(&self) -> u32 {
-        self.0.block_xfer_notification_index
-    }
-}
+super::super::impl_token_transfer_key_as_ref!(Nep17TransferKey, 0);

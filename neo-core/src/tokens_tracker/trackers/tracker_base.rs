@@ -3,6 +3,7 @@
 //! Provides common functionality for NEP-11 and NEP-17 trackers including
 //! database operations and transfer record extraction.
 
+use super::token_transfer_key::TokenTransferKey;
 use crate::extensions::log_level::LogLevel;
 use crate::neo_io::{MemoryReader, Serializable, SerializableExt};
 use crate::neo_ledger::{ApplicationExecuted, Block};
@@ -10,7 +11,7 @@ use crate::persistence::{DataCache, IStore, SeekDirection, StoreSnapshot};
 use crate::vm_runtime::StackItem;
 use crate::{NeoSystem, UInt160};
 use num_bigint::BigInt;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -39,6 +40,27 @@ pub trait TokenTransferKeyView {
     fn asset_script_hash(&self) -> &UInt160;
     /// Returns the notification index within the block.
     fn block_xfer_notification_index(&self) -> u32;
+}
+
+impl<T> TokenTransferKeyView for T
+where
+    T: AsRef<TokenTransferKey>,
+{
+    fn user_script_hash(&self) -> &UInt160 {
+        &self.as_ref().user_script_hash
+    }
+
+    fn timestamp_ms(&self) -> u64 {
+        self.as_ref().timestamp_ms
+    }
+
+    fn asset_script_hash(&self) -> &UInt160 {
+        &self.as_ref().asset_script_hash
+    }
+
+    fn block_xfer_notification_index(&self) -> u32 {
+        self.as_ref().block_xfer_notification_index
+    }
 }
 
 /// Trait implemented by NEP-11/NEP-17 trackers.

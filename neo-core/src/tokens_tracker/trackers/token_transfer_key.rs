@@ -2,9 +2,8 @@
 //!
 //! Common transfer key structure used by both NEP-11 and NEP-17.
 
-use super::tracker_base::TokenTransferKeyView;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Key for transfer history records.
@@ -72,20 +71,8 @@ impl Serializable for TokenTransferKey {
     }
 }
 
-impl TokenTransferKeyView for TokenTransferKey {
-    fn user_script_hash(&self) -> &UInt160 {
-        &self.user_script_hash
-    }
-
-    fn timestamp_ms(&self) -> u64 {
-        self.timestamp_ms
-    }
-
-    fn asset_script_hash(&self) -> &UInt160 {
-        &self.asset_script_hash
-    }
-
-    fn block_xfer_notification_index(&self) -> u32 {
-        self.block_xfer_notification_index
+impl AsRef<TokenTransferKey> for TokenTransferKey {
+    fn as_ref(&self) -> &TokenTransferKey {
+        self
     }
 }

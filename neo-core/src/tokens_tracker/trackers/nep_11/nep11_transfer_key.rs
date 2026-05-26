@@ -3,11 +3,10 @@
 //! Storage key for NEP-11 (NFT) transfer records.
 
 use super::super::token_transfer_key::TokenTransferKey;
-use super::super::tracker_base::TokenTransferKeyView;
 use super::token_id_integer;
+use crate::UInt160;
 use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
-use crate::UInt160;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -80,20 +79,4 @@ impl Serializable for Nep11TransferKey {
     }
 }
 
-impl TokenTransferKeyView for Nep11TransferKey {
-    fn user_script_hash(&self) -> &UInt160 {
-        &self.base.user_script_hash
-    }
-
-    fn timestamp_ms(&self) -> u64 {
-        self.base.timestamp_ms
-    }
-
-    fn asset_script_hash(&self) -> &UInt160 {
-        &self.base.asset_script_hash
-    }
-
-    fn block_xfer_notification_index(&self) -> u32 {
-        self.base.block_xfer_notification_index
-    }
-}
+super::super::impl_token_transfer_key_as_ref!(Nep11TransferKey, base);
