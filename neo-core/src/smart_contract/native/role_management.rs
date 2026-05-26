@@ -48,14 +48,7 @@ impl RoleManagement {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        match method {
-            "getDesignatedByRole" => self.get_designated_by_role(engine, args),
-            "designateAsRole" => self.designate_as_role(engine, args),
-            _ => Err(Error::native_contract(format!(
-                "Unknown method: {}",
-                method
-            ))),
-        }
+        self.dispatch_method(engine, method, args)
     }
 
     fn get_designated_by_role(
@@ -271,7 +264,7 @@ mod tests {
     use crate::smart_contract::{native::NativeHelpers, StorageItem};
     use crate::vm_runtime::StackItem;
     use crate::witness::Witness;
-    use crate::{ECCurve, ECPoint, Verifiable, UInt256, WitnessScope};
+    use crate::{ECCurve, ECPoint, UInt256, Verifiable, WitnessScope};
     use neo_vm_rs::OpCode;
     use neo_vm_rs::StackValue;
     use std::sync::Arc;
@@ -380,6 +373,35 @@ mod tests {
         sb.emit_push_byte_array(&contract_hash.to_bytes());
         sb.emit_syscall("System.Contract.Call")
             .expect("System.Contract.Call syscall");
+    }
+
+    #[test]
+    fn dispatch_method_covers_declared_metadata_names() {
+        let contract = RoleManagement::new();
+        let mut engine = make_engine(Arc::new(DataCache::new(false)));
+        let mut names = std::collections::BTreeSet::new();
+
+        for method in contract.methods() {
+            if !names.insert(method.name.clone()) {
+                continue;
+            }
+
+            if let Err(err) = contract.dispatch_method(&mut engine, &method.name, &[]) {
+                assert!(
+                    !err.to_string().contains("Unknown method:"),
+                    "declared method {} did not dispatch: {err}",
+                    method.name
+                );
+            }
+        }
+
+        let err = contract
+            .dispatch_method(&mut engine, "__missing__", &[])
+            .expect_err("unknown method");
+        assert!(
+            err.to_string().contains("Unknown method: __missing__"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
