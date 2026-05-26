@@ -81,21 +81,19 @@ pub use transaction_state::TransactionState;
 pub use treasury::TreasuryContract;
 
 use crate::UInt160;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::sync::Arc;
 
 /// Registry for native contracts.
 pub struct NativeRegistry {
-    contracts: HashMap<UInt160, Arc<dyn NativeContract>>,
-    contract_order: Vec<UInt160>,
+    contracts: IndexMap<UInt160, Arc<dyn NativeContract>>,
 }
 
 impl NativeRegistry {
     /// Creates a new native contract registry.
     pub fn new() -> Self {
         let mut registry = Self {
-            contracts: HashMap::new(),
-            contract_order: Vec::new(),
+            contracts: IndexMap::new(),
         };
 
         // Register standard native contracts
@@ -107,9 +105,6 @@ impl NativeRegistry {
     /// Registers a native contract.
     pub fn register(&mut self, contract: Arc<dyn NativeContract>) {
         let hash = contract.hash();
-        if !self.contracts.contains_key(&hash) {
-            self.contract_order.push(hash);
-        }
         self.contracts.insert(hash, contract);
     }
 
@@ -135,8 +130,7 @@ impl NativeRegistry {
 
     pub fn take_contract_by_name(&mut self, name: &str) -> Option<Arc<dyn NativeContract>> {
         let hash = self.find_hash_by_name(name)?;
-        self.contract_order.retain(|item| item != &hash);
-        self.contracts.remove(&hash)
+        self.contracts.shift_remove(&hash)
     }
 
     /// Checks if a contract hash is a native contract.
@@ -154,9 +148,7 @@ impl NativeRegistry {
     /// Persistence order is consensus-critical. This follows the same declaration order
     /// as neo-project/neo `NativeContract.Contracts`.
     pub fn contracts(&self) -> impl Iterator<Item = Arc<dyn NativeContract>> + '_ {
-        self.contract_order
-            .iter()
-            .filter_map(|hash| self.contracts.get(hash).cloned())
+        self.contracts.values().cloned()
     }
 
     /// Registers standard Neo native contracts.
@@ -259,6 +251,43 @@ mod tests {
         ];
 
         assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn test_native_registry_hashes_follow_iteration_order() {
+        let registry = NativeRegistry::new();
+        let hashes = registry.all_hashes();
+        let contract_hashes: Vec<UInt160> = registry
+            .contracts()
+            .map(|contract| contract.hash())
+            .collect();
+
+        assert_eq!(hashes, contract_hashes);
+    }
+
+    #[test]
+    fn test_native_registry_take_preserves_remaining_order() {
+        let mut registry = NativeRegistry::new();
+        let before: Vec<String> = registry
+            .contracts()
+            .map(|contract| contract.name().to_string())
+            .collect();
+
+        let removed = registry
+            .take_contract_by_name("GasToken")
+            .expect("GasToken should be registered");
+        assert_eq!(removed.name(), "GasToken");
+
+        let after: Vec<String> = registry
+            .contracts()
+            .map(|contract| contract.name().to_string())
+            .collect();
+        let expected: Vec<String> = before
+            .into_iter()
+            .filter(|name| name != "GasToken")
+            .collect();
+
+        assert_eq!(after, expected);
     }
 
     #[test]
