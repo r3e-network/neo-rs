@@ -9,8 +9,8 @@
 use super::{
     channels_config::ChannelsConfig,
     framed::{
-        flush_write_buffer, new_read_buffer, write_frame, write_frame_vectored, FrameConfig,
-        FramedSocket, WriteBuffer,
+        FrameConfig, WriteBuffer, flush_write_buffer, new_read_buffer, read_frame_from_stream,
+        write_frame, write_frame_vectored,
     },
 };
 use crate::network::{
@@ -325,7 +325,7 @@ impl PeerConnection {
             ));
         }
 
-        let message_bytes = FramedSocket::read_frame_from_stream(
+        let message_bytes = read_frame_from_stream(
             &mut self.stream,
             &mut self.read_buffer,
             &self.frame_config,
@@ -451,19 +451,15 @@ impl ConnectionInfo {
 
     /// Gets the connection direction as string
     pub fn direction(&self) -> &'static str {
-        if self.inbound {
-            "Inbound"
-        } else {
-            "Outbound"
-        }
+        if self.inbound { "Inbound" } else { "Outbound" }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::p2p::payloads::ping_payload::PingPayload;
     use crate::network::p2p::ProtocolMessage;
+    use crate::network::p2p::payloads::ping_payload::PingPayload;
     use std::time::Duration;
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;

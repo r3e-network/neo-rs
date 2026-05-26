@@ -5,7 +5,7 @@ use bytes::BytesMut;
 use std::io::IoSlice;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tokio_util::codec::Decoder;
 
 pub use super::framed_codec::NeoMessageCodec;
@@ -100,13 +100,6 @@ where
     .map_err(|_| NetworkError::Timeout)?
 }
 
-/// Minimal framed reader/writer that wraps Neo P2P length-prefixing with timeouts,
-/// size guards, and vectored I/O support.
-pub struct FramedSocket<'a> {
-    stream: &'a mut TcpStream,
-    read_buffer: BytesMut,
-}
-
 /// Runtime framing configuration to keep read behaviour consistent across the stack.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FrameConfig {
@@ -196,16 +189,6 @@ impl WriteBuffer {
     /// Takes the buffered data, leaving the buffer empty.
     pub fn take(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.buffer)
-    }
-
-    /// Clears the buffer.
-    pub fn clear(&mut self) {
-        self.buffer.clear();
-    }
-
-    /// Returns a reference to the buffered data.
-    pub fn as_slice(&self) -> &[u8] {
-        &self.buffer
     }
 }
 
@@ -319,16 +302,24 @@ mod tests {
         }
     }
 
+    async fn read_frame(
+        stream: &mut TcpStream,
+        cfg: &FrameConfig,
+        handshake_complete: bool,
+    ) -> NetworkResult<Vec<u8>> {
+        let mut read_buffer = new_read_buffer();
+        read_frame_from_stream(stream, &mut read_buffer, cfg, handshake_complete).await
+    }
+
     #[tokio::test]
     async fn read_frame_times_out_when_peer_silent() {
         let Some((mut client_stream, _server_stream)) = silent_pair().await else {
             return;
         };
 
-        let mut framed = FramedSocket::new(&mut client_stream);
         let cfg = test_frame_config(Duration::from_millis(10), Duration::from_millis(10));
 
-        let result = framed.read_frame(&cfg, false).await;
+        let result = read_frame(&mut client_stream, &cfg, false).await;
         assert!(
             matches!(result, Err(NetworkError::Timeout)),
             "expected timeout error, got: {:?}",
@@ -341,10 +332,9 @@ mod tests {
         let Some((mut client_stream, _server_stream)) = silent_pair().await else {
             return;
         };
-        let mut framed = FramedSocket::new(&mut client_stream);
         let cfg = test_frame_config(Duration::from_secs(5), Duration::from_millis(10));
 
-        let result = framed.read_frame(&cfg, true).await;
+        let result = read_frame(&mut client_stream, &cfg, true).await;
         assert!(
             matches!(result, Err(NetworkError::Timeout)),
             "expected active timeout error, got: {:?}",
@@ -357,7 +347,6 @@ mod tests {
         let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
             return;
         };
-        let mut framed = FramedSocket::new(&mut client_stream);
         let cfg = test_frame_config(Duration::from_millis(10), Duration::from_millis(10));
 
         server_stream
@@ -365,7 +354,7 @@ mod tests {
             .await
             .expect("server writes partial frame");
 
-        let result = framed.read_frame(&cfg, false).await;
+        let result = read_frame(&mut client_stream, &cfg, false).await;
         assert!(
             matches!(result, Err(NetworkError::Timeout)),
             "expected partial-frame timeout, got: {:?}",
@@ -378,7 +367,6 @@ mod tests {
         let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
             return;
         };
-        let mut framed = FramedSocket::new(&mut client_stream);
         let cfg = test_frame_config(Duration::from_secs(1), Duration::from_secs(1));
 
         server_stream
@@ -387,7 +375,7 @@ mod tests {
             .expect("server writes partial frame");
         drop(server_stream);
 
-        let result = framed.read_frame(&cfg, false).await;
+        let result = read_frame(&mut client_stream, &cfg, false).await;
         assert!(
             matches!(
                 result,
@@ -438,7 +426,6 @@ mod tests {
         let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
             return;
         };
-        let mut framed = FramedSocket::new(&mut client_stream);
         let cfg = test_frame_config(Duration::from_secs(1), Duration::from_secs(1));
 
         server_stream
@@ -446,7 +433,9 @@ mod tests {
             .await
             .expect("server writes frame");
 
-        let frame = framed.read_frame(&cfg, false).await.expect("frame reads");
+        let frame = read_frame(&mut client_stream, &cfg, false)
+            .await
+            .expect("frame reads");
 
         assert_eq!(frame, vec![0x00, 0x01, 0x03, 0xAA, 0xBB, 0xCC]);
     }
@@ -456,7 +445,7 @@ mod tests {
         let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
             return;
         };
-        let mut framed = FramedSocket::new(&mut client_stream);
+        let mut read_buffer = new_read_buffer();
         let cfg = test_frame_config(Duration::from_secs(1), Duration::from_secs(1));
 
         server_stream
@@ -464,8 +453,12 @@ mod tests {
             .await
             .expect("server writes frames");
 
-        let first = framed.read_frame(&cfg, false).await.expect("first frame");
-        let second = framed.read_frame(&cfg, false).await.expect("second frame");
+        let first = read_frame_from_stream(&mut client_stream, &mut read_buffer, &cfg, false)
+            .await
+            .expect("first frame");
+        let second = read_frame_from_stream(&mut client_stream, &mut read_buffer, &cfg, false)
+            .await
+            .expect("second frame");
 
         assert_eq!(first, vec![0x00, 0x01, 0x01, 0xAA]);
         assert_eq!(second, vec![0x00, 0x02, 0x01, 0xBB]);
@@ -476,7 +469,6 @@ mod tests {
         let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
             return;
         };
-        let mut framed = FramedSocket::new(&mut client_stream);
         let cfg = test_frame_config(Duration::from_millis(200), Duration::from_millis(200));
 
         let writer = tokio::spawn(async move {
@@ -491,8 +483,7 @@ mod tests {
             }
         });
 
-        let frame = framed
-            .read_frame(&cfg, false)
+        let frame = read_frame(&mut client_stream, &cfg, false)
             .await
             .expect("progressing frame reads");
         writer.await.expect("writer task completes");
@@ -627,59 +618,35 @@ where
     Ok(())
 }
 
-impl<'a> FramedSocket<'a> {
-    pub fn new(stream: &'a mut TcpStream) -> Self {
-        Self {
-            stream,
-            read_buffer: new_read_buffer(),
+/// Reads a full P2P message frame (flags + command + var-bytes payload) with a timeout applied to
+/// each underlying read.
+pub(crate) async fn read_frame_from_stream(
+    stream: &mut TcpStream,
+    read_buffer: &mut BytesMut,
+    cfg: &FrameConfig,
+    handshake_complete: bool,
+) -> NetworkResult<Vec<u8>> {
+    let timeout_duration = if handshake_complete {
+        cfg.read_timeout_active
+    } else {
+        cfg.read_timeout_handshake
+    };
+
+    let mut codec = NeoMessageCodec::default();
+    loop {
+        if let Some(frame) = codec.decode(read_buffer)? {
+            return Ok(frame);
         }
-    }
 
-    /// Reads a full P2P message frame (flags + command + var-bytes payload) with a timeout applied to
-    /// each underlying read.
-    ///
-    /// Optimizations:
-    /// - Uses a single buffer with pre-calculated capacity to minimize allocations
-    /// - Avoids intermediate Vec appends by reading directly into the target buffer
-    pub async fn read_frame(
-        &mut self,
-        cfg: &FrameConfig,
-        handshake_complete: bool,
-    ) -> NetworkResult<Vec<u8>> {
-        Self::read_frame_from_stream(self.stream, &mut self.read_buffer, cfg, handshake_complete)
+        let bytes_read = timeout(timeout_duration, stream.read_buf(read_buffer))
             .await
-    }
+            .map_err(|_| NetworkError::Timeout)?
+            .map_err(|err| NetworkError::ConnectionError(format!("Failed to read frame: {err}")))?;
 
-    pub(crate) async fn read_frame_from_stream(
-        stream: &mut TcpStream,
-        read_buffer: &mut BytesMut,
-        cfg: &FrameConfig,
-        handshake_complete: bool,
-    ) -> NetworkResult<Vec<u8>> {
-        let timeout_duration = if handshake_complete {
-            cfg.read_timeout_active
-        } else {
-            cfg.read_timeout_handshake
-        };
-
-        let mut codec = NeoMessageCodec::default();
-        loop {
-            if let Some(frame) = codec.decode(read_buffer)? {
-                return Ok(frame);
-            }
-
-            let bytes_read = timeout(timeout_duration, stream.read_buf(read_buffer))
-                .await
-                .map_err(|_| NetworkError::Timeout)?
-                .map_err(|err| {
-                    NetworkError::ConnectionError(format!("Failed to read frame: {err}"))
-                })?;
-
-            if bytes_read == 0 {
-                return Err(NetworkError::ConnectionError(
-                    "Connection closed while reading frame".to_string(),
-                ));
-            }
+        if bytes_read == 0 {
+            return Err(NetworkError::ConnectionError(
+                "Connection closed while reading frame".to_string(),
+            ));
         }
     }
 }
