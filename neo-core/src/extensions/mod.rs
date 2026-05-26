@@ -6,7 +6,6 @@
 //! implementation.
 
 pub mod byte;
-pub mod byte_extensions;
 pub mod error;
 pub mod log_level;
 pub mod memory;
@@ -16,7 +15,6 @@ pub mod utility;
 pub mod io;
 
 pub use byte::ByteLz4Extensions;
-pub use byte_extensions::ByteExtensions;
 pub use error::{ExtensionError, ExtensionResult};
 pub use log_level::LogLevel;
 pub use memory::ReadOnlyMemoryExtensions;

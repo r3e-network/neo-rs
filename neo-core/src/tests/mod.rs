@@ -8,7 +8,3 @@ pub mod persistence {
 pub mod wallets {
     pub mod wallet_tests;
 }
-
-pub mod extensions {
-    pub mod byte_extensions_tests;
-}
