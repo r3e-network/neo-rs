@@ -1,8 +1,10 @@
 use super::super::models::{RpcAccount, RpcTransferOut, RpcUnclaimedGas, RpcValidateAddressResult};
 use super::super::{ClientRpcError, Nep17Api, RpcUtility};
-use crate::client::utility::object_array;
-use super::helpers::{token_as_boolean, token_as_object, token_as_string};
 use super::RpcClient;
+use super::helpers::{
+    parse_object_array_result, token_as_boolean, token_as_object, token_as_string,
+};
+use crate::client::utility::object_array;
 use neo_core::big_decimal::BigDecimal;
 use neo_json::{JObject, JToken};
 use num_bigint::BigInt;
@@ -111,21 +113,13 @@ impl RpcClient {
     /// Matches C# `ListAddressAsync`
     pub async fn list_address(&self) -> Result<Vec<RpcAccount>, ClientRpcError> {
         let result = self.rpc_send_async("listaddress", vec![]).await?;
-        let array = result
-            .as_array()
-            .ok_or_else(|| ClientRpcError::new(-32603, "listaddress returned non-array"))?;
-        let mut accounts = Vec::with_capacity(array.len());
-        for item in array.iter() {
-            let token = item
-                .as_ref()
-                .ok_or_else(|| ClientRpcError::new(-32603, "listaddress returned null entry"))?;
-            let obj = token
-                .as_object()
-                .ok_or_else(|| ClientRpcError::new(-32603, "listaddress returned non-object"))?;
-            accounts
-                .push(RpcAccount::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?);
-        }
-        Ok(accounts)
+        parse_object_array_result(
+            &result,
+            "listaddress returned non-array",
+            "listaddress returned null entry",
+            "listaddress returned non-object",
+            RpcAccount::from_json,
+        )
     }
 
     /// Open wallet file in the provider's machine.

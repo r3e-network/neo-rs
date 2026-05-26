@@ -9,15 +9,15 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::ClientRpcError;
 use super::super::models::{
     RpcApplicationLog, RpcContractState, RpcInvokeResult, RpcNep11Balances, RpcNep11Transfers,
     RpcNep17Balances, RpcNep17Transfers, RpcPeers, RpcPlugin, RpcRawMemPool, RpcRequest,
     RpcResponse, RpcTransaction, RpcValidator, RpcVersion,
 };
-use super::super::ClientRpcError;
-use crate::serialization;
 use crate::RpcError;
-use base64::{engine::general_purpose, Engine as _};
+use crate::serialization;
+use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_core::network::p2p::payloads::block::Block;
 use neo_core::{Signer, Transaction};
@@ -32,9 +32,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::builder::RpcClientBuilder;
-use super::helpers::{parse_plugins, token_as_number, token_as_object, token_as_string};
+use super::helpers::{
+    parse_object_array_result, parse_plugins, token_as_number, token_as_object, token_as_string,
+};
 use super::hooks::RpcRequestOutcome;
-use super::{RpcClient, RpcClientHooks, MAX_JSON_NESTING, RPC_NAME_REGEX};
+use super::{MAX_JSON_NESTING, RPC_NAME_REGEX, RpcClient, RpcClientHooks};
 use crate::client::utility::cloned_token_array;
 
 fn serialize_to_base64<T: Serializable>(value: &T) -> Result<String, ClientRpcError> {
@@ -120,7 +122,7 @@ impl RpcClient {
                 return Err(ClientRpcError::new(
                     -32700,
                     "Invalid response format".to_string(),
-                ))
+                ));
             }
         };
 
@@ -490,22 +492,13 @@ impl RpcClient {
         let result = self
             .rpc_send_async("getnextblockvalidators", vec![])
             .await?;
-        let array = result.as_array().ok_or_else(|| {
-            ClientRpcError::new(-32603, "getnextblockvalidators returned non-array")
-        })?;
-        let mut validators = Vec::with_capacity(array.len());
-        for item in array.iter() {
-            let token = item.as_ref().ok_or_else(|| {
-                ClientRpcError::new(-32603, "getnextblockvalidators returned null entry")
-            })?;
-            let obj = token.as_object().ok_or_else(|| {
-                ClientRpcError::new(-32603, "getnextblockvalidators returned non-object")
-            })?;
-            validators.push(
-                RpcValidator::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?,
-            );
-        }
-        Ok(validators)
+        parse_object_array_result(
+            &result,
+            "getnextblockvalidators returned non-array",
+            "getnextblockvalidators returned null entry",
+            "getnextblockvalidators returned non-object",
+            RpcValidator::from_json,
+        )
     }
 
     /// Gets a storage item by contract hash and key.
@@ -550,22 +543,13 @@ impl RpcClient {
     /// Matches C# `GetNativeContractsAsync`
     pub async fn get_native_contracts(&self) -> Result<Vec<RpcContractState>, ClientRpcError> {
         let result = self.rpc_send_async("getnativecontracts", vec![]).await?;
-        let array = result
-            .as_array()
-            .ok_or_else(|| ClientRpcError::new(-32603, "getnativecontracts returned non-array"))?;
-        let mut contracts = Vec::with_capacity(array.len());
-        for item in array.iter() {
-            let token = item.as_ref().ok_or_else(|| {
-                ClientRpcError::new(-32603, "getnativecontracts returned null entry")
-            })?;
-            let obj = token.as_object().ok_or_else(|| {
-                ClientRpcError::new(-32603, "getnativecontracts returned non-object")
-            })?;
-            contracts.push(
-                RpcContractState::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?,
-            );
-        }
-        Ok(contracts)
+        parse_object_array_result(
+            &result,
+            "getnativecontracts returned non-array",
+            "getnativecontracts returned null entry",
+            "getnativecontracts returned non-object",
+            RpcContractState::from_json,
+        )
     }
 
     /// Obtains the list of unconfirmed transactions in memory.

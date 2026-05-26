@@ -9,8 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::models::RpcPlugin;
 use super::super::ClientRpcError;
+use super::super::models::RpcPlugin;
 use neo_json::{JObject, JToken};
 
 pub(super) fn token_as_string(token: JToken, context: &str) -> Result<String, ClientRpcError> {
@@ -66,24 +66,39 @@ pub(super) fn token_as_boolean(token: JToken, context: &str) -> Result<bool, Cli
     }
 }
 
-pub(super) fn parse_plugins(result: &JToken) -> Result<Vec<RpcPlugin>, ClientRpcError> {
+pub(super) fn parse_object_array_result<T>(
+    result: &JToken,
+    non_array_error: &str,
+    null_entry_error: &str,
+    non_object_error: &str,
+    mut parse_object: impl FnMut(&JObject) -> Result<T, String>,
+) -> Result<Vec<T>, ClientRpcError> {
     let array = result
         .as_array()
-        .ok_or_else(|| ClientRpcError::new(-32603, "listplugins returned non-array"))?;
+        .ok_or_else(|| ClientRpcError::new(-32603, non_array_error))?;
 
     array
         .iter()
         .map(|item| {
             let token = item
                 .as_ref()
-                .ok_or_else(|| ClientRpcError::new(-32603, "plugin entry was null"))?;
+                .ok_or_else(|| ClientRpcError::new(-32603, null_entry_error))?;
             let obj = token
                 .as_object()
-                .ok_or_else(|| ClientRpcError::new(-32603, "plugin entry was not an object"))?;
-            RpcPlugin::from_json(obj)
-                .map_err(|err| ClientRpcError::new(-32603, format!("invalid plugin entry: {err}")))
+                .ok_or_else(|| ClientRpcError::new(-32603, non_object_error))?;
+            parse_object(obj).map_err(|err| ClientRpcError::new(-32603, err))
         })
         .collect()
+}
+
+pub(super) fn parse_plugins(result: &JToken) -> Result<Vec<RpcPlugin>, ClientRpcError> {
+    parse_object_array_result(
+        result,
+        "listplugins returned non-array",
+        "plugin entry was null",
+        "plugin entry was not an object",
+        |obj| RpcPlugin::from_json(obj).map_err(|err| format!("invalid plugin entry: {err}")),
+    )
 }
 
 #[cfg(test)]
@@ -119,5 +134,38 @@ mod tests {
         assert!(!token_as_boolean(JToken::Number(0.0), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Array(JArray::new()), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Object(JObject::new()), "ctx").unwrap());
+    }
+
+    #[test]
+    fn object_array_result_preserves_supplied_error_messages() {
+        let err = parse_object_array_result(
+            &JToken::Null,
+            "not array",
+            "null entry",
+            "not object",
+            |_| Ok(()),
+        )
+        .expect_err("non-array should fail");
+        assert_eq!(err.message(), "not array");
+
+        let err = parse_object_array_result(
+            &JToken::Array(JArray::from(vec![None])),
+            "not array",
+            "null entry",
+            "not object",
+            |_| Ok(()),
+        )
+        .expect_err("null entry should fail");
+        assert_eq!(err.message(), "null entry");
+
+        let err = parse_object_array_result(
+            &JToken::Array(JArray::from(vec![JToken::String("x".into())])),
+            "not array",
+            "null entry",
+            "not object",
+            |_| Ok(()),
+        )
+        .expect_err("non-object entry should fail");
+        assert_eq!(err.message(), "not object");
     }
 }
