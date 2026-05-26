@@ -10,9 +10,9 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    object_array, optional_script_hash_or_address_lossy, parse_object_array_lossy,
-    required_address_script_hash, required_bigint_string, required_script_hash_or_address,
-    required_u16_number, required_u32_number, required_u64_number, required_uint256,
+    optional_script_hash_or_address_lossy, parse_transfer_lists, required_bigint_string,
+    required_script_hash_or_address, required_u16_number, required_u32_number, required_u64_number,
+    required_uint256, transfer_lists_to_json,
 };
 use neo_config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
@@ -36,41 +36,19 @@ impl RpcNep11Transfers {
     /// Converts to JSON.
     #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
-        let mut json = JObject::new();
-
-        json.insert(
-            "sent".to_string(),
-            object_array(&self.sent, |transfer| transfer.to_json(protocol_settings)),
-        );
-        json.insert(
-            "received".to_string(),
-            object_array(&self.received, |transfer| {
-                transfer.to_json(protocol_settings)
-            }),
-        );
-
-        json.insert(
-            "address".to_string(),
-            JToken::String(WalletHelper::to_address(
-                &self.user_script_hash,
-                protocol_settings.address_version,
-            )),
-        );
-
-        json
+        transfer_lists_to_json(
+            &self.sent,
+            &self.received,
+            &self.user_script_hash,
+            protocol_settings,
+            RpcNep11Transfer::to_json,
+        )
     }
 
     /// Creates from JSON.
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let sent = parse_object_array_lossy(json, "sent", |obj| {
-            RpcNep11Transfer::from_json(obj, protocol_settings)
-        });
-
-        let received = parse_object_array_lossy(json, "received", |obj| {
-            RpcNep11Transfer::from_json(obj, protocol_settings)
-        });
-
-        let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
+        let (sent, received, user_script_hash) =
+            parse_transfer_lists(json, protocol_settings, RpcNep11Transfer::from_json)?;
 
         Ok(Self {
             user_script_hash,

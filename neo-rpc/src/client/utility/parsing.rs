@@ -208,6 +208,45 @@ pub fn parse_object_array_lossy<T>(
         .unwrap_or_default()
 }
 
+/// Builds the shared NEP transfer container shape.
+pub fn transfer_lists_to_json<T>(
+    sent: &[T],
+    received: &[T],
+    user_script_hash: &UInt160,
+    protocol_settings: &ProtocolSettings,
+    mut to_json: impl FnMut(&T, &ProtocolSettings) -> JObject,
+) -> JObject {
+    let mut json = JObject::new();
+    json.insert(
+        "sent".to_string(),
+        object_array(sent, |transfer| to_json(transfer, protocol_settings)),
+    );
+    json.insert(
+        "received".to_string(),
+        object_array(received, |transfer| to_json(transfer, protocol_settings)),
+    );
+    json.insert(
+        "address".to_string(),
+        JToken::String(WalletHelper::to_address(
+            user_script_hash,
+            protocol_settings.address_version,
+        )),
+    );
+    json
+}
+
+/// Parses the shared NEP transfer container shape.
+pub fn parse_transfer_lists<T>(
+    json: &JObject,
+    protocol_settings: &ProtocolSettings,
+    mut parse: impl FnMut(&JObject, &ProtocolSettings) -> Result<T, String>,
+) -> Result<(Vec<T>, Vec<T>, UInt160), String> {
+    let sent = parse_object_array_lossy(json, "sent", |obj| parse(obj, protocol_settings));
+    let received = parse_object_array_lossy(json, "received", |obj| parse(obj, protocol_settings));
+    let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
+    Ok((sent, received, user_script_hash))
+}
+
 /// Parses present entries from an optional JSON array.
 ///
 /// Missing and non-array fields become an empty vector. Internal `None` slots
