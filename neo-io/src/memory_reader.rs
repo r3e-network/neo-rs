@@ -3,6 +3,7 @@
 use std::io;
 use std::str;
 
+use bytes::Buf;
 use thiserror::Error;
 
 use crate::var_int::read_var_int_prefix;
@@ -111,6 +112,21 @@ impl<'a> MemoryReader<'a> {
         Ok(&self.buffer[start..end])
     }
 
+    #[inline]
+    fn read_with_buf<T>(
+        &mut self,
+        length: usize,
+        read: impl FnOnce(&mut &[u8]) -> T,
+    ) -> IoResult<T> {
+        self.ensure_available(length)?;
+        let start = self.position;
+        let end = start + length;
+        let mut bytes = &self.buffer[start..end];
+        let value = read(&mut bytes);
+        self.position = end;
+        Ok(value)
+    }
+
     /// Reads a sequence of bytes and returns them as a borrowed slice (zero-copy).
     ///
     /// This is more efficient than `read_bytes` when you don't need an owned vector.
@@ -157,7 +173,7 @@ impl<'a> MemoryReader<'a> {
     /// Reads an unsigned byte (C# `ReadByte`)
     #[inline]
     pub fn read_byte(&mut self) -> IoResult<u8> {
-        Ok(self.read_array::<1>()?[0])
+        self.read_with_buf(1, |bytes| bytes.get_u8())
     }
 
     /// Alias for `read_byte` (C# `ReadByte` vs `ReadUInt8` naming differences).
@@ -169,7 +185,7 @@ impl<'a> MemoryReader<'a> {
     /// Reads a 16-bit signed integer in little-endian (C# `ReadInt16`)
     #[inline]
     pub fn read_int16(&mut self) -> IoResult<i16> {
-        Ok(i16::from_le_bytes(self.read_array::<2>()?))
+        self.read_with_buf(2, |bytes| bytes.get_i16_le())
     }
 
     /// Alias for `read_int16`.
@@ -181,13 +197,13 @@ impl<'a> MemoryReader<'a> {
     /// Reads a 16-bit signed integer in big-endian (C# `ReadInt16BigEndian`)
     #[inline]
     pub fn read_int16_big_endian(&mut self) -> IoResult<i16> {
-        Ok(i16::from_be_bytes(self.read_array::<2>()?))
+        self.read_with_buf(2, |bytes| bytes.get_i16())
     }
 
     /// Reads a 16-bit unsigned integer in little-endian (C# `ReadUInt16`)
     #[inline]
     pub fn read_uint16(&mut self) -> IoResult<u16> {
-        Ok(u16::from_le_bytes(self.read_array::<2>()?))
+        self.read_with_buf(2, |bytes| bytes.get_u16_le())
     }
 
     /// Alias for `read_uint16` to mirror the C# API more closely.
@@ -199,13 +215,13 @@ impl<'a> MemoryReader<'a> {
     /// Reads a 16-bit unsigned integer in big-endian (C# `ReadUInt16BigEndian`)
     #[inline]
     pub fn read_uint16_big_endian(&mut self) -> IoResult<u16> {
-        Ok(u16::from_be_bytes(self.read_array::<2>()?))
+        self.read_with_buf(2, |bytes| bytes.get_u16())
     }
 
     /// Reads a 32-bit signed integer in little-endian (C# `ReadInt32`)
     #[inline]
     pub fn read_int32(&mut self) -> IoResult<i32> {
-        Ok(i32::from_le_bytes(self.read_array::<4>()?))
+        self.read_with_buf(4, |bytes| bytes.get_i32_le())
     }
 
     /// Alias for `read_int32`.
@@ -217,13 +233,13 @@ impl<'a> MemoryReader<'a> {
     /// Reads a 32-bit signed integer in big-endian (C# `ReadInt32BigEndian`)
     #[inline]
     pub fn read_int32_big_endian(&mut self) -> IoResult<i32> {
-        Ok(i32::from_be_bytes(self.read_array::<4>()?))
+        self.read_with_buf(4, |bytes| bytes.get_i32())
     }
 
     /// Reads a 32-bit unsigned integer in little-endian (C# `ReadUInt32`)
     #[inline]
     pub fn read_uint32(&mut self) -> IoResult<u32> {
-        Ok(u32::from_le_bytes(self.read_array::<4>()?))
+        self.read_with_buf(4, |bytes| bytes.get_u32_le())
     }
 
     /// Alias for `read_uint32` to mirror the C# API more closely.
@@ -235,13 +251,13 @@ impl<'a> MemoryReader<'a> {
     /// Reads a 32-bit unsigned integer in big-endian (C# `ReadUInt32BigEndian`)
     #[inline]
     pub fn read_uint32_big_endian(&mut self) -> IoResult<u32> {
-        Ok(u32::from_be_bytes(self.read_array::<4>()?))
+        self.read_with_buf(4, |bytes| bytes.get_u32())
     }
 
     /// Reads a 64-bit signed integer in little-endian (C# `ReadInt64`)
     #[inline]
     pub fn read_int64(&mut self) -> IoResult<i64> {
-        Ok(i64::from_le_bytes(self.read_array::<8>()?))
+        self.read_with_buf(8, |bytes| bytes.get_i64_le())
     }
 
     /// Alias for `read_int64`.
@@ -253,13 +269,13 @@ impl<'a> MemoryReader<'a> {
     /// Reads a 64-bit signed integer in big-endian (C# `ReadInt64BigEndian`)
     #[inline]
     pub fn read_int64_big_endian(&mut self) -> IoResult<i64> {
-        Ok(i64::from_be_bytes(self.read_array::<8>()?))
+        self.read_with_buf(8, |bytes| bytes.get_i64())
     }
 
     /// Reads a 64-bit unsigned integer in little-endian (C# `ReadUInt64`)
     #[inline]
     pub fn read_uint64(&mut self) -> IoResult<u64> {
-        Ok(u64::from_le_bytes(self.read_array::<8>()?))
+        self.read_with_buf(8, |bytes| bytes.get_u64_le())
     }
 
     /// Alias for `read_uint64` to mirror the C# API more closely.
@@ -271,7 +287,7 @@ impl<'a> MemoryReader<'a> {
     /// Reads a 64-bit unsigned integer in big-endian (C# `ReadUInt64BigEndian`)
     #[inline]
     pub fn read_uint64_big_endian(&mut self) -> IoResult<u64> {
-        Ok(u64::from_be_bytes(self.read_array::<8>()?))
+        self.read_with_buf(8, |bytes| bytes.get_u64())
     }
 
     /// Reads a variable-length integer (C# `ReadVarInt`)

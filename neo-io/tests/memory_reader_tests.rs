@@ -257,6 +257,23 @@ fn test_ensure_position_error() {
     assert!(reader.read_byte().is_err()); // Should fail
 }
 
+#[test]
+fn test_fixed_width_error_preserves_position() {
+    let data = [0x01];
+
+    let mut reader = MemoryReader::new(&data);
+    assert!(reader.read_uint16().is_err());
+    assert_eq!(0, reader.position());
+
+    let mut reader = MemoryReader::new(&data);
+    assert!(reader.read_uint32().is_err());
+    assert_eq!(0, reader.position());
+
+    let mut reader = MemoryReader::new(&data);
+    assert!(reader.read_uint64().is_err());
+    assert_eq!(0, reader.position());
+}
+
 /// Test ReadBoolean functionality (matches C# behavior)
 #[test]
 fn test_read_boolean() {
@@ -265,6 +282,17 @@ fn test_read_boolean() {
     assert!(!reader.read_boolean().unwrap());
     assert!(reader.read_boolean().unwrap());
     assert!(reader.read_boolean().is_err()); // Invalid boolean value
+    assert_eq!(3, reader.position());
+}
+
+#[test]
+fn test_invalid_boolean_consumes_byte() {
+    let data = [0x02, 0x01];
+    let mut reader = MemoryReader::new(&data);
+
+    assert!(reader.read_boolean().is_err());
+    assert_eq!(1, reader.position());
+    assert!(reader.read_boolean().unwrap());
 }
 
 /// Test ReadByte functionality (matches C# behavior)
