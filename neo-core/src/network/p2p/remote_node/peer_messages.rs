@@ -2,6 +2,7 @@
 
 use super::RemoteNode;
 use crate::ledger::blockchain::BlockchainCommand;
+use crate::network::MessageCommand;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::{
     addr_payload::AddrPayload,
@@ -11,8 +12,6 @@ use crate::network::p2p::payloads::{
     ping_payload::PingPayload,
 };
 use crate::network::p2p::peer::PeerCommand;
-use crate::network::p2p::task_manager::TaskManagerCommand;
-use crate::network::MessageCommand;
 use crate::runtime::{ActorContext, ActorResult};
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -25,12 +24,11 @@ impl RemoteNode {
         ctx: &mut ActorContext,
     ) -> ActorResult {
         self.last_block_index = payload.last_block_index;
-        if let Err(err) = self.system.task_manager.tell(
-            TaskManagerCommand::Update {
-                peer: ctx.self_ref(),
-                last_block_index: payload.last_block_index,
-            },
-        ) {
+        if let Err(err) = self
+            .system
+            .task_manager
+            .update_peer(ctx.self_ref(), payload.last_block_index)
+        {
             warn!(target: "neo", error = %err, "failed to forward peer height update to task manager");
         }
         let local_index = self.current_local_block_index();
@@ -94,13 +92,7 @@ impl RemoteNode {
                 warn!(target: "neo", error = %err, "failed to forward headers to blockchain");
             }
 
-            if let Err(err) = self
-                .system
-                .task_manager
-                .tell(TaskManagerCommand::Headers {
-                    peer: ctx.self_ref(),
-                })
-            {
+            if let Err(err) = self.system.task_manager.headers(ctx.self_ref()) {
                 warn!(target: "neo", error = %err, "failed to notify task manager about headers");
             }
         }

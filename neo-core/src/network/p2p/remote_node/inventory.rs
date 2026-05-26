@@ -1,20 +1,19 @@
 //! Inventory handling (inv announcements, getdata, mempool, blocks) for `RemoteNode`.
 use super::RemoteNode;
+use crate::UInt160;
+use crate::UInt256;
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::neo_io::Serializable;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
+use crate::network::p2p::payloads::InventoryType;
 use crate::network::p2p::payloads::get_block_by_index_payload::GetBlockByIndexPayload;
 use crate::network::p2p::payloads::get_blocks_payload::GetBlocksPayload;
 use crate::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT};
 use crate::network::p2p::payloads::merkle_block_payload::MerkleBlockPayload;
-use crate::network::p2p::payloads::transaction::{Transaction, MAX_TRANSACTION_SIZE};
-use crate::network::p2p::payloads::InventoryType;
+use crate::network::p2p::payloads::transaction::{MAX_TRANSACTION_SIZE, Transaction};
 use crate::network::p2p::payloads::{block::Block, extensible_payload::ExtensiblePayload};
-use crate::network::p2p::task_manager::TaskManagerCommand;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
-use crate::UInt160;
-use crate::UInt256;
 use std::sync::Arc;
 use tracing::{trace, warn};
 
@@ -102,11 +101,10 @@ impl RemoteNode {
             self.pending_known_hashes.try_add(*hash, now);
         }
 
-        let command = TaskManagerCommand::NewTasks {
-            peer: ctx.self_ref(),
-            payload: InvPayload::new(payload.inventory_type, hashes),
-        };
-        if let Err(err) = self.system.task_manager.tell(command) {
+        if let Err(err) = self.system.task_manager.new_tasks(
+            ctx.self_ref(),
+            InvPayload::new(payload.inventory_type, hashes),
+        ) {
             warn!(
                 target: "neo",
                 error = %err,
@@ -122,14 +120,11 @@ impl RemoteNode {
         block_index: Option<u32>,
         ctx: &crate::runtime::ActorContext,
     ) {
-        if let Err(err) = self.system.task_manager.tell(
-            TaskManagerCommand::InventoryCompleted {
-                peer: ctx.self_ref(),
-                hash,
-                block: Box::new(block),
-                block_index,
-            },
-        ) {
+        if let Err(err) =
+            self.system
+                .task_manager
+                .inventory_completed(ctx.self_ref(), hash, block, block_index)
+        {
             warn!(
                 target: "neo",
                 error = %err,
@@ -508,12 +503,11 @@ impl RemoteNode {
             self.pending_known_hashes.remove(hash);
         }
 
-        if let Err(err) = self.system.task_manager.tell(
-            TaskManagerCommand::RestartTasks {
-                peer: ctx.self_ref(),
-                payload,
-            },
-        ) {
+        if let Err(err) = self
+            .system
+            .task_manager
+            .restart_tasks(ctx.self_ref(), payload)
+        {
             warn!(
                 target: "neo",
                 error = %err,

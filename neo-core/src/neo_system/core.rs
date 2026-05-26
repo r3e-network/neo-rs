@@ -75,7 +75,7 @@ use crate::hardfork::Hardfork;
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand, BlockchainHandle};
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
-    LocalNode, TaskManager, TaskManagerCommand, payloads::block::Block, timeouts,
+    LocalNode, TaskManager, TaskManagerHandle, payloads::block::Block, timeouts,
 };
 use crate::persistence::{StoreCache, StoreFactory, store::IStore, store_provider::StoreProvider};
 pub use crate::protocol_settings::ProtocolSettings;
@@ -126,7 +126,7 @@ pub struct NeoSystem {
     actor_system: ActorSystem,
     blockchain: BlockchainHandle,
     pub(crate) local_node: ActorRef,
-    task_manager: ActorRef,
+    task_manager: TaskManagerHandle,
     tx_router: TransactionRouterHandle,
     store_provider: Arc<dyn StoreProvider>,
     store: Arc<dyn IStore>,
@@ -448,6 +448,11 @@ impl NeoSystem {
 
     /// Reference to the task manager actor.
     pub fn task_manager_actor(&self) -> ActorRef {
+        self.task_manager.raw_ref().clone()
+    }
+
+    /// Typed command handle for the task manager actor.
+    pub fn task_manager_handle(&self) -> TaskManagerHandle {
         self.task_manager.clone()
     }
 
@@ -540,7 +545,7 @@ fn spawn_core_actors(
 ) -> CoreResult<(
     BlockchainHandle,
     ActorRef,
-    ActorRef,
+    TaskManagerHandle,
     TransactionRouterHandle,
 )> {
     let blockchain = actor_system
@@ -553,6 +558,7 @@ fn spawn_core_actors(
     let task_manager = actor_system
         .actor_of(TaskManager::props(), "task_manager")
         .map_err(to_core_error)?;
+    let task_manager = TaskManagerHandle::new(task_manager);
     let tx_router = TransactionRouterHandle::spawn(settings, blockchain.clone());
     Ok((blockchain, local_node, task_manager, tx_router))
 }
@@ -560,16 +566,14 @@ fn spawn_core_actors(
 fn attach_system_to_actors(
     blockchain: &BlockchainHandle,
     local_node_state: &Arc<LocalNode>,
-    task_manager: &ActorRef,
+    task_manager: &TaskManagerHandle,
     context: Arc<NeoSystemContext>,
 ) -> CoreResult<()> {
     blockchain
         .tell(BlockchainCommand::AttachSystem(context.clone()))
         .map_err(to_core_error)?;
     local_node_state.set_system_context(context.clone());
-    task_manager
-        .tell(TaskManagerCommand::AttachSystem { context })
-        .map_err(to_core_error)?;
+    task_manager.attach_system(context).map_err(to_core_error)?;
     blockchain
         .tell(BlockchainCommand::Initialize)
         .map_err(to_core_error)?;

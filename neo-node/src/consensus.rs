@@ -17,17 +17,17 @@ use neo_core::network::p2p::payloads::{
     Witness,
 };
 use neo_core::network::p2p::{
-    register_message_received_handler, LocalNodeCommand, Message, MessageCommand,
-    MessageHandlerSubscription, TaskManagerCommand,
+    LocalNodeCommand, Message, MessageCommand, MessageHandlerSubscription,
+    register_message_received_handler,
 };
 use neo_core::persistence::IStore;
 use neo_core::prelude::Serializable;
 use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
 use neo_core::script_builder::ScriptBuilder;
+use neo_core::smart_contract::ContractParametersContext;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
-use neo_core::smart_contract::native::{helpers::NativeHelpers, LedgerContract, NeoToken};
-use neo_core::smart_contract::ContractParametersContext;
+use neo_core::smart_contract::native::{LedgerContract, NeoToken, helpers::NativeHelpers};
 use neo_core::time_provider::TimeProvider;
 use neo_core::wallets::Wallet;
 use neo_core::{ContainsTransactionType, UInt160, UInt256};
@@ -877,8 +877,8 @@ impl ConsensusActor {
                 let inv = InvPayload::create(InventoryType::Transaction, &hashes);
                 if let Err(err) = self
                     .system
-                    .task_manager_actor()
-                    .tell(TaskManagerCommand::BroadcastRestartTasks { payload: inv })
+                    .task_manager_handle()
+                    .broadcast_restart_tasks(inv)
                 {
                     debug!(target: "neo", %err, "failed to request missing transactions");
                 }
@@ -937,8 +937,8 @@ impl ConsensusActor {
             let inv = InvPayload::create(InventoryType::Transaction, &missing);
             if let Err(err) = self
                 .system
-                .task_manager_actor()
-                .tell(TaskManagerCommand::BroadcastRestartTasks { payload: inv })
+                .task_manager_handle()
+                .broadcast_restart_tasks(inv)
             {
                 debug!(target: "neo", %err, "failed to request block transactions");
             }

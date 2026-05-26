@@ -33,6 +33,7 @@ use crate::network::p2p::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
         transaction::Transaction,
     },
+    TaskManagerHandle,
 };
 use crate::persistence::{StoreCache, store::IStore, store_provider::StoreProvider};
 use crate::protocol_settings::ProtocolSettings;
@@ -59,7 +60,7 @@ pub struct NeoSystemContext {
     /// Reference to the local node actor (peer supervisor).
     pub local_node: ActorRef,
     /// Reference to the task manager actor coordinating inventory download.
-    pub task_manager: ActorRef,
+    pub task_manager: TaskManagerHandle,
     /// Handle to the transaction router worker.
     pub tx_router: TransactionRouterHandle,
     /// Global service registry mirrored from the C# implementation.

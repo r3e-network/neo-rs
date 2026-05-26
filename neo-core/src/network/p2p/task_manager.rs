@@ -24,14 +24,14 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::payloads::{block::Block, inv_payload::InvPayload, VersionPayload};
+use super::payloads::{VersionPayload, block::Block, inv_payload::InvPayload};
 use super::task_session::TaskSession;
+use crate::UInt256;
 use crate::ledger::{PersistCompleted, RelayResult};
 use crate::neo_system::NeoSystemContext;
 use crate::runtime::{
     Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
 };
-use crate::UInt256;
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
 use scheduling::TaskCounter;
@@ -43,6 +43,7 @@ use tracing::warn;
 
 mod block_validation;
 mod completion_flow;
+mod handle;
 mod peer_commands;
 mod request_flow;
 mod restart_flow;
@@ -51,6 +52,8 @@ mod session_lifecycle;
 mod state;
 mod timeout_pruning;
 use peer_commands::send_mempool;
+
+pub use handle::TaskManagerHandle;
 
 /// Interval for task manager housekeeping.
 const TIMER_INTERVAL: Duration = Duration::from_secs(30);

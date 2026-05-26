@@ -20,32 +20,31 @@ use super::{
     local_node::{LocalNode, RemoteNodeSnapshot},
     payloads::VersionPayload,
     peer::PeerCommand,
-    task_manager::TaskManagerCommand,
 };
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::inv_payload::InvPayload;
 use crate::runtime::{Actor, ActorContext, ActorResult, Cancelable, Props};
 use crate::{
-    neo_system::NeoSystemContext, protocol_settings::ProtocolSettings, CoreResult, UInt256,
+    CoreResult, UInt256, neo_system::NeoSystemContext, protocol_settings::ProtocolSettings,
 };
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
 use std::net::SocketAddr;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::{debug, error, info, trace, warn};
 
 use bloom_filter::BloomFilterState;
 use lifecycle::HandshakeGateDecision;
 pub use message_handlers::{
-    register_message_received_handler, unregister_message_received_handler,
-    MessageHandlerSubscription,
+    MessageHandlerSubscription, register_message_received_handler,
+    unregister_message_received_handler,
 };
 use outbound_queue::{CommandBitSet, OutboundQueues};
 use pending_known_hashes::PendingKnownHashes;
@@ -388,11 +387,11 @@ impl RemoteNode {
         );
 
         if let Some(version) = self.remote_version.clone() {
-            let register = TaskManagerCommand::Register {
-                peer: ctx.self_ref(),
-                version,
-            };
-            if let Err(err) = self.system.task_manager.tell(register) {
+            if let Err(err) = self
+                .system
+                .task_manager
+                .register_peer(ctx.self_ref(), version)
+            {
                 warn!(target: "neo", error = %err, "failed to notify task manager about session registration");
             }
         }

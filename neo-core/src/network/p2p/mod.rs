@@ -87,7 +87,7 @@ pub use remote_node::{
     MessageHandlerSubscription, RemoteNode, RemoteNodeCommand,
 };
 #[cfg(feature = "runtime")]
-pub use task_manager::{TaskManager, TaskManagerActor, TaskManagerCommand};
+pub use task_manager::{TaskManager, TaskManagerActor, TaskManagerCommand, TaskManagerHandle};
 pub use task_session::TaskSession;
 
 // Security hardening: Rate limiting and peer reputation constants
