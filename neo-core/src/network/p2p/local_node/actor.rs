@@ -12,7 +12,7 @@ use tokio::time::timeout;
 pub struct LocalNodeActor {
     pub(super) state: Arc<LocalNode>,
     pub(super) peer: PeerState,
-    pub(super) listener: Option<JoinHandle<()>>,
+    pub(super) listener_cancellation: Option<CancellationToken>,
     /// Tracked background tasks (connection attempts, reputation updates).
     pub(super) spawned_tasks: TaskTracker,
     /// Cancellation signal for tracked tasks during actor shutdown.
@@ -28,7 +28,7 @@ impl LocalNodeActor {
         Self {
             state,
             peer,
-            listener: None,
+            listener_cancellation: None,
             spawned_tasks: TaskTracker::new(),
             task_cancellation: CancellationToken::new(),
             deferred_connects: Vec::new(),
@@ -682,8 +682,8 @@ impl LocalNodeActor {
     }
 
     fn start_listener(&mut self, ctx: &ActorContext) {
-        if let Some(handle) = self.listener.take() {
-            handle.abort();
+        if let Some(cancel) = self.listener_cancellation.take() {
+            cancel.cancel();
         }
 
         let Some(endpoint) = self.peer.config().tcp else {
@@ -716,29 +716,39 @@ impl LocalNodeActor {
             }
         };
         let actor_ref = ctx.self_ref();
-        self.listener = Some(tokio::spawn(async move {
+        let listener_cancellation = self.task_cancellation.child_token();
+        self.listener_cancellation = Some(listener_cancellation.clone());
+        self.spawn_background(async move {
             loop {
-                match listener.accept().await {
-                    Ok((stream, remote)) => {
-                        let local = stream.local_addr().unwrap_or(endpoint);
-                        if let Err(err) = stream.set_nodelay(true) {
-                            warn!(target: "neo", endpoint = %remote, error = %err, "failed to enable TCP_NODELAY for inbound connection");
+                tokio::select! {
+                    _ = listener_cancellation.cancelled() => break,
+                    accepted = listener.accept() => {
+                        match accepted {
+                            Ok((stream, remote)) => {
+                                let local = stream.local_addr().unwrap_or(endpoint);
+                                if let Err(err) = stream.set_nodelay(true) {
+                                    warn!(target: "neo", endpoint = %remote, error = %err, "failed to enable TCP_NODELAY for inbound connection");
+                                }
+                                if let Err(err) = actor_ref.tell(LocalNodeCommand::InboundTcpAccepted {
+                                    stream,
+                                    remote,
+                                    local,
+                                }) {
+                                    warn!(target: "neo", error = %err, "failed to enqueue inbound connection");
+                                }
+                            }
+                            Err(error) => {
+                                warn!(target: "neo", error = %error, "failed to accept inbound connection");
+                                tokio::select! {
+                                    _ = listener_cancellation.cancelled() => break,
+                                    _ = tokio::time::sleep(Duration::from_millis(200)) => {}
+                                }
+                            }
                         }
-                        if let Err(err) = actor_ref.tell(LocalNodeCommand::InboundTcpAccepted {
-                            stream,
-                            remote,
-                            local,
-                        }) {
-                            warn!(target: "neo", error = %err, "failed to enqueue inbound connection");
-                        }
-                    }
-                    Err(error) => {
-                        warn!(target: "neo", error = %error, "failed to accept inbound connection");
-                        tokio::time::sleep(Duration::from_millis(200)).await;
                     }
                 }
             }
-        }));
+        });
     }
 }
 

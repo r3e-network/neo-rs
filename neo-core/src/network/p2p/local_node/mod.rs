@@ -60,14 +60,14 @@
 use super::{
     capabilities::NodeCapability,
     channels_config::ChannelsConfig,
-    peer::{PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST},
+    peer::{MAX_COUNT_FROM_SEED_LIST, PeerCommand, PeerState, PeerTimer},
     remote_node::{RemoteNode, RemoteNodeCommand},
 };
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::payloads::{
-    addr_payload::MAX_COUNT_TO_SEND, block::Block, extensible_payload::ExtensiblePayload,
-    network_address_with_time::NetworkAddressWithTime, transaction::Transaction, InventoryType,
-    VersionPayload,
+    InventoryType, VersionPayload, addr_payload::MAX_COUNT_TO_SEND, block::Block,
+    extensible_payload::ExtensiblePayload, network_address_with_time::NetworkAddressWithTime,
+    transaction::Transaction,
 };
 use crate::network::p2p::{NetworkMessage, ProtocolMessage};
 use crate::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
@@ -75,17 +75,16 @@ use crate::services::PeerManagerService;
 use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings};
 use async_trait::async_trait;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use rand::{rngs::OsRng, seq::IteratorRandom, thread_rng, RngCore};
+use rand::{RngCore, rngs::OsRng, seq::IteratorRandom, thread_rng};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr, TcpListener as StdTcpListener};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::JoinHandle;
 use tokio::{
-    net::{lookup_host, TcpListener, TcpStream},
-    sync::{oneshot, Mutex},
+    net::{TcpListener, TcpStream, lookup_host},
+    sync::{Mutex, oneshot},
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::{debug, error, trace, warn};

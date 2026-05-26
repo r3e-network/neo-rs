@@ -36,8 +36,8 @@ impl Actor for LocalNodeActor {
 
     async fn post_stop(&mut self, _ctx: &mut ActorContext) -> ActorResult {
         self.peer.cancel_timer();
-        if let Some(handle) = self.listener.take() {
-            handle.abort();
+        if let Some(cancel) = self.listener_cancellation.take() {
+            cancel.cancel();
         }
         self.stop_background_tasks().await;
         Ok(())
