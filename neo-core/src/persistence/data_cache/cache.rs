@@ -12,6 +12,8 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
+type FindOverlayMap = HashMap<StorageKey, Option<StorageItem>>;
+
 /// Delegate for storage entries
 pub type OnEntryDelegate = Arc<dyn Fn(&DataCache, &StorageKey, &StorageItem) + Send + Sync>;
 
@@ -50,6 +52,40 @@ pub struct DataCache {
     /// Optional commit sink used by cloned overlays to propagate tracked
     /// changes into their parent cache (mirrors Neo C# ClonedCache semantics).
     commit_apply: Option<Arc<CommitApplyFn>>,
+}
+
+fn key_matches_prefix(key: &StorageKey, prefix: Option<&[u8]>) -> bool {
+    match prefix {
+        Some(prefix) => key.as_bytes().starts_with(prefix),
+        None => true,
+    }
+}
+
+fn visible_trackable_item(trackable: &Trackable) -> Option<StorageItem> {
+    match trackable.state {
+        crate::persistence::track_state::TrackState::Deleted
+        | crate::persistence::track_state::TrackState::NotFound => None,
+        _ => Some(trackable.item.clone()),
+    }
+}
+
+fn overlay_item(trackable: &Trackable) -> Option<Option<StorageItem>> {
+    match trackable.state {
+        crate::persistence::track_state::TrackState::Added
+        | crate::persistence::track_state::TrackState::Changed => {
+            Some(Some(trackable.item.clone()))
+        }
+        crate::persistence::track_state::TrackState::Deleted
+        | crate::persistence::track_state::TrackState::NotFound => Some(None),
+        crate::persistence::track_state::TrackState::None => None,
+    }
+}
+
+fn sort_find_items(items: &mut [(StorageKey, StorageItem)], direction: SeekDirection) {
+    match direction {
+        SeekDirection::Forward => items.sort_by(|a, b| a.0.cmp(&b.0)),
+        SeekDirection::Backward => items.sort_by(|a, b| b.0.cmp(&a.0)),
+    }
 }
 
 impl Clone for DataCache {
@@ -717,29 +753,18 @@ impl DataCache {
             // results. This avoids scanning the full dictionary (which may contain
             // many read-tracked keys) and correctly applies deletes.
             let state = self.state.read();
-            let mut overlays: HashMap<StorageKey, Option<StorageItem>> =
-                HashMap::with_capacity(state.change_set.len());
+            let mut overlays: FindOverlayMap = HashMap::with_capacity(state.change_set.len());
 
             for key in &state.change_set {
-                if let Some(prefix) = &prefix_bytes {
-                    if !key.as_bytes().starts_with(prefix) {
-                        continue;
-                    }
+                if !key_matches_prefix(key, prefix_bytes.as_deref()) {
+                    continue;
                 }
 
                 let Some(trackable) = state.dictionary.get(key) else {
                     continue;
                 };
-                match trackable.state {
-                    crate::persistence::track_state::TrackState::Added
-                    | crate::persistence::track_state::TrackState::Changed => {
-                        overlays.insert(key.clone(), Some(trackable.item.clone()));
-                    }
-                    crate::persistence::track_state::TrackState::Deleted
-                    | crate::persistence::track_state::TrackState::NotFound => {
-                        overlays.insert(key.clone(), None);
-                    }
-                    crate::persistence::track_state::TrackState::None => {}
+                if let Some(item) = overlay_item(trackable) {
+                    overlays.insert(key.clone(), item);
                 }
             }
             drop(state);
@@ -750,23 +775,17 @@ impl DataCache {
             // enforce prefix boundaries by themselves.
             if overlays.is_empty() {
                 let prefix_bytes = prefix_bytes.clone();
-                return Box::new(store_find(key_prefix, direction).into_iter().filter(
-                    move |(key, _)| {
-                        if let Some(prefix) = &prefix_bytes {
-                            key.as_bytes().starts_with(prefix)
-                        } else {
-                            true
-                        }
-                    },
-                ));
+                return Box::new(
+                    store_find(key_prefix, direction)
+                        .into_iter()
+                        .filter(move |(key, _)| key_matches_prefix(key, prefix_bytes.as_deref())),
+                );
             }
 
             let mut merged = Vec::new();
             for (key, item) in store_find(key_prefix, direction) {
-                if let Some(prefix) = &prefix_bytes {
-                    if !key.as_bytes().starts_with(prefix) {
-                        continue;
-                    }
+                if !key_matches_prefix(&key, prefix_bytes.as_deref()) {
+                    continue;
                 }
                 match overlays.remove(&key) {
                     Some(Some(overlay_item)) => merged.push((key, overlay_item)),
@@ -780,10 +799,7 @@ impl DataCache {
                     .into_iter()
                     .filter_map(|(key, item)| item.map(|value| (key, value))),
             );
-            match direction {
-                SeekDirection::Forward => merged.sort_by(|a, b| a.0.cmp(&b.0)),
-                SeekDirection::Backward => merged.sort_by(|a, b| b.0.cmp(&a.0)),
-            }
+            sort_find_items(&mut merged, direction);
             return Box::new(merged.into_iter());
         }
 
@@ -791,24 +807,13 @@ impl DataCache {
         let mut base_items: Vec<(StorageKey, StorageItem)> = state
             .dictionary
             .iter()
-            .filter(|(_, t)| {
-                t.state != crate::persistence::track_state::TrackState::Deleted
-                    && t.state != crate::persistence::track_state::TrackState::NotFound
+            .filter(|(key, _)| key_matches_prefix(key, prefix_bytes.as_deref()))
+            .filter_map(|(key, trackable)| {
+                visible_trackable_item(trackable).map(|item| (key.clone(), item))
             })
-            .filter(|(k, _)| {
-                if let Some(prefix) = &prefix_bytes {
-                    k.as_bytes().starts_with(prefix)
-                } else {
-                    true
-                }
-            })
-            .map(|(k, t)| (k.clone(), t.item.clone()))
             .collect();
 
-        match direction {
-            SeekDirection::Forward => base_items.sort_by(|a, b| a.0.cmp(&b.0)),
-            SeekDirection::Backward => base_items.sort_by(|a, b| b.0.cmp(&a.0)),
-        }
+        sort_find_items(&mut base_items, direction);
 
         Box::new(base_items.into_iter())
     }
