@@ -17,8 +17,10 @@ use uuid::Uuid;
 use crate::server::diagnostic::{Diagnostic, DiagnosticInvocation};
 use crate::server::model::signers_and_witnesses::SignersAndWitnesses;
 use crate::server::parameter_converter::{ConversionContext, ParameterConverter};
-use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
+pub(super) use crate::server::rpc_helpers::{
+    expect_string_param, expect_u32_param, internal_error, invalid_params,
+};
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
 
@@ -240,65 +242,12 @@ pub(super) fn diagnostic_storage_changes(engine: &ApplicationEngine) -> Value {
     Value::Array(entries)
 }
 
-pub(super) fn expect_string_param(
-    params: &[Value],
-    index: usize,
-    method: &str,
-) -> Result<String, RpcException> {
-    params
-        .get(index)
-        .and_then(|value| value.as_str())
-        .map(std::string::ToString::to_string)
-        .ok_or_else(|| {
-            RpcException::from(RpcError::invalid_params().with_data(format!(
-                "{} expects string parameter {}",
-                method,
-                index + 1
-            )))
-        })
-}
-
-pub(super) fn expect_u32_param(
-    params: &[Value],
-    index: usize,
-    method: &str,
-) -> Result<u32, RpcException> {
-    let value = params.get(index).ok_or_else(|| {
-        RpcException::from(RpcError::invalid_params().with_data(format!(
-            "{} expects integer parameter {}",
-            method,
-            index + 1
-        )))
-    })?;
-    if let Some(number) = value.as_u64() {
-        if u32::try_from(number).is_ok() {
-            return Ok(number as u32);
-        }
-    }
-    Err(RpcException::from(RpcError::invalid_params().with_data(
-        format!("{} expects integer parameter {}", method, index + 1),
-    )))
-}
-
 pub(super) fn expect_uuid_param(
     params: &[Value],
     index: usize,
     method: &str,
 ) -> Result<Uuid, RpcException> {
     let text = expect_string_param(params, index, method)?;
-    Uuid::parse_str(text.trim()).map_err(|_| {
-        RpcException::from(RpcError::invalid_params().with_data(format!(
-            "{} expects GUID parameter {}",
-            method,
-            index + 1
-        )))
-    })
-}
-
-pub(super) fn invalid_params(message: impl Into<String>) -> RpcException {
-    RpcException::from(RpcError::invalid_params().with_data(message.into()))
-}
-
-pub(super) fn internal_error(message: impl Into<String>) -> RpcException {
-    RpcException::from(RpcError::internal_server_error().with_data(message.into()))
+    Uuid::parse_str(text.trim())
+        .map_err(|_| invalid_params(format!("{} expects GUID parameter {}", method, index + 1)))
 }

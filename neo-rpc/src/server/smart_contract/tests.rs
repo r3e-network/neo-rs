@@ -44,6 +44,12 @@ fn make_server(config: RpcServerConfig) -> crate::server::rpc_server::RpcServer 
     crate::server::rpc_server::RpcServer::new(system, config)
 }
 
+fn assert_invalid_params_data(err: &crate::server::rpc_exception::RpcException, data: &str) {
+    assert_eq!(err.code(), -32602);
+    assert_eq!(err.message(), "Invalid params");
+    assert_eq!(err.data(), Some(data));
+}
+
 struct TestWallet {
     name: String,
     account: Arc<dyn WalletAccount>,
@@ -639,6 +645,23 @@ async fn invokefunction_rejects_invalid_script_hash() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn invokefunction_rejects_invalid_string_params_with_stable_messages() {
+    let server = make_server(RpcServerConfig::default());
+    let handlers = RpcServerSmartContract::register_handlers();
+    let invokefunction = find_handler(&handlers, "invokefunction");
+
+    let err = (invokefunction.callback())(&server, &[]).expect_err("missing script hash");
+    assert_invalid_params_data(&err, "invokefunction expects string parameter 1");
+
+    let params = [
+        Value::String(UInt160::zero().to_string()),
+        Value::Number(serde_json::Number::from(1)),
+    ];
+    let err = (invokefunction.callback())(&server, &params).expect_err("operation type");
+    assert_invalid_params_data(&err, "invokefunction expects string parameter 2");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn invokefunction_rejects_invalid_signer_scope() {
     let server = make_server(RpcServerConfig::default());
     let handlers = RpcServerSmartContract::register_handlers();
@@ -877,6 +900,29 @@ async fn traverse_iterator_rejects_count_limit_exceeded() {
     ];
     let err = (traverse.callback())(&server, &params).expect_err("count limit");
     assert_eq!(err.code(), -32602);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn traverse_iterator_rejects_invalid_count_params_with_stable_messages() {
+    let config = RpcServerConfig {
+        session_enabled: true,
+        ..Default::default()
+    };
+    let server = make_server(config);
+    let handlers = RpcServerSmartContract::register_handlers();
+    let traverse = find_handler(&handlers, "traverseiterator");
+    let session_id = Value::String(uuid::Uuid::new_v4().to_string());
+    let iterator_id = Value::String(uuid::Uuid::new_v4().to_string());
+
+    for count in [
+        Value::String("1".to_string()),
+        Value::Number(serde_json::Number::from(-1)),
+        Value::Number(serde_json::Number::from(u64::from(u32::MAX) + 1)),
+    ] {
+        let params = [session_id.clone(), iterator_id.clone(), count];
+        let err = (traverse.callback())(&server, &params).expect_err("invalid count");
+        assert_invalid_params_data(&err, "traverseiterator expects integer parameter 3");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
