@@ -117,10 +117,9 @@ fn parse_peer_list(json: &JObject, field: &str) -> Result<Vec<RpcPeer>, String> 
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_fixtures::rpc_case_result;
     use super::*;
     use neo_json::{JArray, JToken};
-    use std::fs;
-    use std::path::PathBuf;
 
     #[test]
     fn rpc_peer_roundtrip_accepts_numeric_port() {
@@ -225,52 +224,9 @@ mod tests {
         assert_eq!(parsed.connected[0].address, "127.0.0.1");
     }
 
-    fn load_rpc_case_result(name: &str) -> Option<JObject> {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("..");
-        path.push("neo_csharp");
-        path.push("node");
-        path.push("tests");
-        path.push("Neo.Network.RPC.Tests");
-        path.push("RpcTestCases.json");
-        if !path.exists() {
-            eprintln!(
-                "SKIP: neo_csharp submodule not initialized ({})",
-                path.display()
-            );
-            return None;
-        }
-        let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
-        let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token
-            .as_array()
-            .expect("RpcTestCases.json should be an array");
-        for entry in cases.children() {
-            let token = entry.as_ref().expect("array entry");
-            let obj = token.as_object().expect("case object");
-            let case_name = obj
-                .get("Name")
-                .and_then(|value| value.as_string())
-                .unwrap_or_default();
-            if case_name.eq_ignore_ascii_case(name) {
-                let response = obj
-                    .get("Response")
-                    .and_then(|value| value.as_object())
-                    .expect("case response");
-                let result = response
-                    .get("result")
-                    .and_then(|value| value.as_object())
-                    .expect("case result");
-                return Some(result.clone());
-            }
-        }
-        eprintln!("SKIP: RpcTestCases.json missing case: {name}");
-        None
-    }
-
     #[test]
     fn peers_to_json_matches_rpc_test_case() {
-        let Some(expected) = load_rpc_case_result("getpeersasync") else {
+        let Some(expected) = rpc_case_result("getpeersasync") else {
             return;
         };
         let parsed = RpcPeers::from_json(&expected).expect("parse");

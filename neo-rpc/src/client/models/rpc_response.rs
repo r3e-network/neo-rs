@@ -137,10 +137,9 @@ impl RpcResponseError {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_fixtures::rpc_case_response;
     use super::*;
     use neo_json::JToken;
-    use std::fs;
-    use std::path::PathBuf;
 
     #[test]
     fn rpc_response_roundtrip_success() {
@@ -200,45 +199,6 @@ mod tests {
         assert_eq!(parsed.result.unwrap().as_string().unwrap(), "ignored");
     }
 
-    fn load_rpc_case_response(name: &str) -> Option<JObject> {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("..");
-        path.push("neo_csharp");
-        path.push("node");
-        path.push("tests");
-        path.push("Neo.Network.RPC.Tests");
-        path.push("RpcTestCases.json");
-        if !path.exists() {
-            eprintln!(
-                "SKIP: neo_csharp submodule not initialized ({})",
-                path.display()
-            );
-            return None;
-        }
-        let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
-        let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token
-            .as_array()
-            .expect("RpcTestCases.json should be an array");
-        for entry in cases.children() {
-            let token = entry.as_ref().expect("array entry");
-            let obj = token.as_object().expect("case object");
-            let case_name = obj
-                .get("Name")
-                .and_then(|value| value.as_string())
-                .unwrap_or_default();
-            if case_name.eq_ignore_ascii_case(name) {
-                let response = obj
-                    .get("Response")
-                    .and_then(|value| value.as_object())
-                    .expect("case response");
-                return Some(response.clone());
-            }
-        }
-        eprintln!("SKIP: RpcTestCases.json missing case: {name}");
-        None
-    }
-
     fn build_expected_response(response: &JObject) -> JObject {
         let mut expected = JObject::new();
         expected.insert(
@@ -265,7 +225,7 @@ mod tests {
 
     #[test]
     fn response_to_json_matches_rpc_test_case_success() {
-        let Some(response) = load_rpc_case_response("getbestblockhashasync") else {
+        let Some(response) = rpc_case_response("getbestblockhashasync") else {
             return;
         };
         let expected = build_expected_response(&response);
@@ -276,7 +236,7 @@ mod tests {
 
     #[test]
     fn response_to_json_matches_rpc_test_case_error() {
-        let Some(response) = load_rpc_case_response("sendrawtransactionasyncerror") else {
+        let Some(response) = rpc_case_response("sendrawtransactionasyncerror") else {
             return;
         };
         let expected = build_expected_response(&response);
