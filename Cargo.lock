@@ -2309,7 +2309,6 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "reqwest",
- "ripemd",
  "rocksdb",
  "scrypt",
  "secp256k1",
