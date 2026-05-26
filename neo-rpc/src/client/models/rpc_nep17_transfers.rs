@@ -10,13 +10,13 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    optional_script_hash_or_address_lossy, parse_object_array_lossy, required_bigint_string,
-    required_script_hash_or_address, required_string, required_u16_number, required_u32_number,
-    required_u64_number, required_uint256,
+    object_array, optional_script_hash_or_address_lossy, parse_object_array_lossy,
+    required_address_script_hash, required_bigint_string, required_script_hash_or_address,
+    required_u16_number, required_u32_number, required_u64_number, required_uint256,
 };
 use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
@@ -41,21 +41,15 @@ impl RpcNep17Transfers {
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
-        let sent_array: Vec<JToken> = self
-            .sent
-            .iter()
-            .map(|t| JToken::Object(t.to_json(protocol_settings)))
-            .collect();
-        json.insert("sent".to_string(), JToken::Array(JArray::from(sent_array)));
-
-        let received_array: Vec<JToken> = self
-            .received
-            .iter()
-            .map(|t| JToken::Object(t.to_json(protocol_settings)))
-            .collect();
+        json.insert(
+            "sent".to_string(),
+            object_array(&self.sent, |transfer| transfer.to_json(protocol_settings)),
+        );
         json.insert(
             "received".to_string(),
-            JToken::Array(JArray::from(received_array)),
+            object_array(&self.received, |transfer| {
+                transfer.to_json(protocol_settings)
+            }),
         );
 
         json.insert(
@@ -80,14 +74,7 @@ impl RpcNep17Transfers {
             RpcNep17Transfer::from_json(obj, protocol_settings)
         });
 
-        let address = required_string(json, "address")?;
-
-        let user_script_hash = if address.starts_with("0x") {
-            UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
-        } else {
-            WalletHelper::to_script_hash(&address, protocol_settings.address_version)
-                .map_err(|err| format!("Invalid address: {err}"))?
-        };
+        let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
 
         Ok(Self {
             user_script_hash,

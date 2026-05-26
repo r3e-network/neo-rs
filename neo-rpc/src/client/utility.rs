@@ -21,11 +21,11 @@ pub use attributes::attribute_from_json;
 pub use parsing::optional_string;
 #[allow(unused_imports)]
 pub use parsing::{
-    jtoken_to_serde, optional_script_hash_or_address_lossy, parse_base64_token, parse_i64_token,
-    parse_nonce_token, parse_object_array_lossy, parse_oracle_response_code,
-    parse_script_hash_or_address, parse_u32_token, parse_u64_token, required_bigint_string,
-    required_script_hash_or_address, required_string, required_u16_number, required_u32_number,
-    required_u64_number, required_uint256,
+    jtoken_to_serde, object_array, optional_script_hash_or_address_lossy, parse_base64_token,
+    parse_i64_token, parse_nonce_token, parse_object_array_lossy, parse_oracle_response_code,
+    parse_script_hash_or_address, parse_u32_token, parse_u64_token, required_address_script_hash,
+    required_bigint_string, required_script_hash_or_address, required_string, required_u16_number,
+    required_u32_number, required_u64_number, required_uint256,
 };
 pub use stack::stack_items_from_json_field;
 #[allow(unused_imports)]

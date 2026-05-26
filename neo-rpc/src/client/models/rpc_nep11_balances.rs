@@ -10,11 +10,12 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    parse_object_array_lossy, required_bigint_string, required_string, required_u32_number,
+    object_array, parse_object_array_lossy, required_address_script_hash, required_bigint_string,
+    required_string, required_u32_number,
 };
 use neo_config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
@@ -34,14 +35,9 @@ impl RpcNep11Balances {
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
-        let balances_array: Vec<JToken> = self
-            .balances
-            .iter()
-            .map(|b| JToken::Object(b.to_json()))
-            .collect();
         json.insert(
             "balance".to_string(),
-            JToken::Array(JArray::from(balances_array)),
+            object_array(&self.balances, RpcNep11Balance::to_json),
         );
 
         json.insert(
@@ -58,14 +54,7 @@ impl RpcNep11Balances {
     /// Creates from JSON.
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let balances = parse_object_array_lossy(json, "balance", RpcNep11Balance::from_json);
-        let address = required_string(json, "address")?;
-
-        let user_script_hash = if address.starts_with("0x") {
-            UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
-        } else {
-            WalletHelper::to_script_hash(&address, protocol_settings.address_version)
-                .map_err(|err| format!("Invalid address: {err}"))?
-        };
+        let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
 
         Ok(Self {
             user_script_hash,
@@ -103,14 +92,9 @@ impl RpcNep11Balance {
             "decimals".to_string(),
             JToken::String(self.decimals.to_string()),
         );
-        let tokens_array: Vec<JToken> = self
-            .tokens
-            .iter()
-            .map(|t| JToken::Object(t.to_json()))
-            .collect();
         json.insert(
             "tokens".to_string(),
-            JToken::Array(JArray::from(tokens_array)),
+            object_array(&self.tokens, RpcNep11TokenBalance::to_json),
         );
         json
     }
@@ -198,6 +182,7 @@ impl RpcNep11TokenBalance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_json::JArray;
 
     #[test]
     fn token_balance_roundtrip() {

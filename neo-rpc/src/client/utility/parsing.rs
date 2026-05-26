@@ -2,7 +2,7 @@ use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_core::network::payloads::oracle_response_code::OracleResponseCode;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_json::{JObject, JToken};
+use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
 use serde_json::Value as JsonValue;
@@ -91,6 +91,30 @@ pub fn optional_script_hash_or_address_lossy(
     optional_string(json, field)
         .as_deref()
         .and_then(|value| parse_script_hash_or_address(value, protocol_settings).ok())
+}
+
+/// Reads a required parent address field, preserving the RPC model's legacy address parsing.
+pub fn required_address_script_hash(
+    json: &JObject,
+    field: &str,
+    protocol_settings: &ProtocolSettings,
+) -> Result<UInt160, String> {
+    let address = required_string(json, field)?;
+    if address.starts_with("0x") {
+        UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))
+    } else {
+        WalletHelper::to_script_hash(&address, protocol_settings.address_version)
+            .map_err(|err| format!("Invalid address: {err}"))
+    }
+}
+
+/// Builds an ordered JSON object array token.
+pub fn object_array<T>(items: &[T], mut to_object: impl FnMut(&T) -> JObject) -> JToken {
+    let objects = items
+        .iter()
+        .map(|item| JToken::Object(to_object(item)))
+        .collect::<Vec<_>>();
+    JToken::Array(JArray::from(objects))
 }
 
 /// Parses a JSON object array while preserving the RPC client's historical lossy behavior.
@@ -292,6 +316,49 @@ mod tests {
         assert_eq!(
             optional_script_hash_or_address_lossy(&json, "transferaddress", &settings),
             None
+        );
+    }
+
+    #[test]
+    fn required_address_script_hash_preserves_parent_address_semantics() {
+        let settings = ProtocolSettings::default_settings();
+        let hash = UInt160::zero();
+        let address = WalletHelper::to_address(&hash, settings.address_version);
+
+        let mut base58 = JObject::new();
+        base58.insert("address".to_string(), JToken::String(address));
+        assert_eq!(
+            required_address_script_hash(&base58, "address", &settings).unwrap(),
+            hash
+        );
+
+        let mut prefixed_hex = JObject::new();
+        prefixed_hex.insert("address".to_string(), JToken::String(hash.to_string()));
+        assert_eq!(
+            required_address_script_hash(&prefixed_hex, "address", &settings).unwrap(),
+            hash
+        );
+
+        let mut bare_hex = JObject::new();
+        bare_hex.insert(
+            "address".to_string(),
+            JToken::String(hash.to_string().trim_start_matches("0x").to_string()),
+        );
+        assert!(required_address_script_hash(&bare_hex, "address", &settings).is_err());
+    }
+
+    #[test]
+    fn object_array_preserves_item_order() {
+        let values = ["first", "second"];
+        let token = object_array(&values, |value| {
+            let mut object = JObject::new();
+            object.insert("value".to_string(), JToken::String((*value).to_string()));
+            object
+        });
+
+        assert_eq!(
+            token.to_string(),
+            r#"[{"value":"first"},{"value":"second"}]"#
         );
     }
 }
