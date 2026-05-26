@@ -14,7 +14,9 @@ use crate::neo_system::NeoSystem;
 use crate::network::p2p::payloads::Transaction;
 use crate::wallets::Wallet;
 use parking_lot::{Mutex, RwLock};
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::Hash;
 #[cfg(feature = "oracle")]
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, AtomicU8};
@@ -23,11 +25,11 @@ use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tokio::task::JoinHandle;
 
+pub(super) use super::OracleServiceSettings;
 #[cfg(feature = "oracle")]
 pub(super) use super::https::OracleHttpsProtocol;
 #[cfg(feature = "oracle")]
 pub(super) use super::neofs::OracleNeoFsProtocol;
-pub(super) use super::OracleServiceSettings;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(3 * 60);
 const FINISHED_CACHE_TTL: Duration = Duration::from_secs(3 * 24 * 60 * 60);
@@ -97,25 +99,94 @@ struct OracleTask {
     timestamp: SystemTime,
 }
 
-#[derive(Default)]
+struct ExpiringSet<T> {
+    entries: HashMap<T, SystemTime>,
+    ttl: Duration,
+}
+
+impl<T> ExpiringSet<T>
+where
+    T: Eq + Hash,
+{
+    fn new(ttl: Duration) -> Self {
+        Self {
+            entries: HashMap::new(),
+            ttl,
+        }
+    }
+
+    fn insert_at(&mut self, key: T, timestamp: SystemTime) {
+        self.entries.insert(key, timestamp);
+    }
+
+    fn contains<Q>(&self, key: &Q) -> bool
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.entries.contains_key(key)
+    }
+
+    fn contains_fresh<Q>(&self, key: &Q, now: SystemTime) -> bool
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.entries.get(key).is_some_and(|timestamp| {
+            now.duration_since(*timestamp)
+                .is_ok_and(|elapsed| elapsed < self.ttl)
+        })
+    }
+
+    fn prune_expired(&mut self, now: SystemTime, boundary: ExpiryBoundary) {
+        let ttl = self.ttl;
+        self.entries.retain(|_, timestamp| {
+            now.duration_since(*timestamp)
+                .map_or(true, |elapsed| boundary.retains(elapsed, ttl))
+        });
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ExpiryBoundary {
+    Exclusive,
+    Inclusive,
+}
+
+impl ExpiryBoundary {
+    fn retains(self, elapsed: Duration, ttl: Duration) -> bool {
+        match self {
+            Self::Exclusive => elapsed < ttl,
+            Self::Inclusive => elapsed <= ttl,
+        }
+    }
+}
+
 struct OracleDedupState {
-    completed: HashMap<String, SystemTime>,
+    completed: ExpiringSet<String>,
     in_flight: HashSet<String>,
+}
+
+impl Default for OracleDedupState {
+    fn default() -> Self {
+        Self {
+            completed: ExpiringSet::new(DEDUP_CACHE_TTL),
+            in_flight: HashSet::new(),
+        }
+    }
 }
 
 impl OracleDedupState {
     fn prune_expired_completed(&mut self, now: SystemTime) {
-        self.completed.retain(|_, timestamp| {
-            now.duration_since(*timestamp)
-                .map_or(true, |elapsed| elapsed < DEDUP_CACHE_TTL)
-        });
+        self.completed.prune_expired(now, ExpiryBoundary::Exclusive);
     }
 
     fn is_recent_completed(&self, url: &str, now: SystemTime) -> bool {
-        self.completed.get(url).is_some_and(|timestamp| {
-            now.duration_since(*timestamp)
-                .is_ok_and(|elapsed| elapsed < DEDUP_CACHE_TTL)
-        })
+        self.completed.contains_fresh(url, now)
     }
 
     fn start(&mut self, url: &str) {
@@ -124,7 +195,7 @@ impl OracleDedupState {
 
     fn complete(&mut self, url: &str, timestamp: SystemTime) {
         self.in_flight.remove(url);
-        self.completed.insert(url.to_string(), timestamp);
+        self.completed.insert_at(url.to_string(), timestamp);
     }
 
     fn cleanup_in_flight(&mut self, url: &str) {
@@ -140,7 +211,7 @@ pub struct OracleService {
     self_ref: RwLock<Weak<OracleService>>,
     wallet: RwLock<Option<Arc<dyn Wallet>>>,
     pending_queue: Mutex<HashMap<u64, OracleTask>>,
-    finished_cache: Mutex<HashMap<u64, SystemTime>>,
+    finished_cache: Mutex<ExpiringSet<u64>>,
     /// Deduplication state for completed and in-flight request URLs.
     dedup: Mutex<OracleDedupState>,
     cancel: AtomicBool,

@@ -1,12 +1,12 @@
 use super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::{OracleService, OracleServiceError, OracleTask};
+use crate::Verifiable;
 use crate::cryptography::ECPoint;
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::Transaction;
 use crate::persistence::DataCache;
-use crate::smart_contract::native::{LedgerContract, OracleContract, Role, RoleManagement};
 use crate::smart_contract::Contract;
-use crate::Verifiable;
+use crate::smart_contract::native::{LedgerContract, OracleContract, Role, RoleManagement};
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 use tracing::{debug, warn};
@@ -132,7 +132,7 @@ impl OracleService {
             // Match C# plugin behavior: finished cache entries are cleared on the next timer sweep.
             self.finished_cache
                 .lock()
-                .insert(request_id, SystemTime::UNIX_EPOCH);
+                .insert_at(request_id, SystemTime::UNIX_EPOCH);
             queue.remove(&request_id);
         }
 

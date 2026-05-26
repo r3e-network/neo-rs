@@ -1,5 +1,6 @@
 use super::super::{
-    OracleDedupState, OracleService, OracleServiceError, OracleServiceSettings, OracleStatus,
+    ExpiringSet, FINISHED_CACHE_TTL, OracleDedupState, OracleService, OracleServiceError,
+    OracleServiceSettings, OracleStatus,
 };
 #[cfg(feature = "oracle")]
 use super::super::{OracleHttpsProtocol, OracleNeoFsProtocol};
@@ -25,7 +26,7 @@ impl OracleService {
             self_ref: RwLock::new(Weak::new()),
             wallet: RwLock::new(None),
             pending_queue: Mutex::new(HashMap::new()),
-            finished_cache: Mutex::new(HashMap::new()),
+            finished_cache: Mutex::new(ExpiringSet::new(FINISHED_CACHE_TTL)),
             dedup: Mutex::new(OracleDedupState::default()),
             cancel: AtomicBool::new(false),
             request_task: Mutex::new(None),

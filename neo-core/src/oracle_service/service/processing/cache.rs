@@ -1,4 +1,4 @@
-use super::super::{OracleService, FINISHED_CACHE_TTL};
+use super::super::{ExpiryBoundary, OracleService};
 use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::native::OracleContract;
 use std::collections::HashSet;
@@ -18,18 +18,13 @@ impl OracleService {
     }
 
     pub(in super::super) fn is_request_finished(&self, request_id: u64) -> bool {
-        self.finished_cache.lock().contains_key(&request_id)
+        self.finished_cache.lock().contains(&request_id)
     }
 
     pub(in super::super) fn cleanup_finished_cache(&self, now: SystemTime) {
-        let mut cache = self.finished_cache.lock();
-        cache.retain(|_, timestamp| {
-            if let Ok(span) = now.duration_since(*timestamp) {
-                span <= FINISHED_CACHE_TTL
-            } else {
-                true
-            }
-        });
+        self.finished_cache
+            .lock()
+            .prune_expired(now, ExpiryBoundary::Inclusive);
     }
 
     pub(in super::super) fn snapshot_cache(&self) -> DataCache {

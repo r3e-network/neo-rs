@@ -15,7 +15,7 @@ impl OracleService {
             return Err(OracleServiceError::Disabled);
         }
 
-        if self.finished_cache.lock().contains_key(&request_id) {
+        if self.finished_cache.lock().contains(&request_id) {
             return Err(OracleServiceError::RequestFinished);
         }
 
