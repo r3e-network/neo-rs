@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 mod attributes;
+mod nep;
 mod parsing;
 mod stack;
 mod tx_json;
@@ -18,10 +19,12 @@ mod witness_rule;
 
 #[allow(unused_imports)]
 pub use attributes::attribute_from_json;
-pub use parsing::optional_string;
-pub(crate) use parsing::{
-    NepTransferFieldRefs, insert_nep_transfer_fields, parse_nep_transfer_fields,
+pub(crate) use nep::{
+    NepBalanceFieldRefs, NepTransferFieldRefs, balance_list_to_json, insert_nep_balance_fields,
+    insert_nep_transfer_fields, parse_balance_list, parse_nep_balance_fields,
+    parse_nep_transfer_fields, parse_transfer_lists, transfer_lists_to_json,
 };
+pub use parsing::optional_string;
 #[allow(unused_imports)]
 pub use parsing::{
     cloned_token_array, empty_array, insert_optional_string, jtoken_to_serde, object_array,
@@ -30,10 +33,9 @@ pub use parsing::{
     parse_object_array_lossy, parse_optional_present_token_array_strict,
     parse_optional_string_array_strict, parse_optional_token_array_strict,
     parse_oracle_response_code, parse_script_hash_or_address, parse_string_array_lossy,
-    parse_transfer_lists, parse_u32_token, parse_u64_token, parse_uint256_array_lossy,
-    required_address_script_hash, required_bigint_string, required_script_hash_or_address,
-    required_string, required_u16_number, required_u32_number, required_u64_number,
-    required_uint256, token_array, transfer_lists_to_json,
+    parse_u32_token, parse_u64_token, parse_uint256_array_lossy, required_address_script_hash,
+    required_bigint_string, required_script_hash_or_address, required_string, required_u16_number,
+    required_u32_number, required_u64_number, required_uint256, token_array,
 };
 pub use stack::{stack_items_from_json_field, stack_items_to_json};
 #[allow(unused_imports)]

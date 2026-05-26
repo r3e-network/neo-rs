@@ -10,11 +10,10 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    object_array, parse_object_array_lossy, required_address_script_hash, required_bigint_string,
-    required_string, required_u32_number,
+    NepBalanceFieldRefs, balance_list_to_json, insert_nep_balance_fields, object_array,
+    parse_balance_list, parse_nep_balance_fields, parse_object_array_lossy, required_string,
 };
 use neo_config::ProtocolSettings;
-use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
@@ -33,28 +32,18 @@ impl RpcNep11Balances {
     /// Converts to JSON.
     #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
-        let mut json = JObject::new();
-
-        json.insert(
-            "balance".to_string(),
-            object_array(&self.balances, RpcNep11Balance::to_json),
-        );
-
-        json.insert(
-            "address".to_string(),
-            JToken::String(WalletHelper::to_address(
-                &self.user_script_hash,
-                protocol_settings.address_version,
-            )),
-        );
-
-        json
+        balance_list_to_json(
+            &self.balances,
+            &self.user_script_hash,
+            protocol_settings,
+            RpcNep11Balance::to_json,
+        )
     }
 
     /// Creates from JSON.
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let balances = parse_object_array_lossy(json, "balance", RpcNep11Balance::from_json);
-        let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
+        let (balances, user_script_hash) =
+            parse_balance_list(json, protocol_settings, RpcNep11Balance::from_json)?;
 
         Ok(Self {
             user_script_hash,
@@ -152,13 +141,12 @@ impl RpcNep11TokenBalance {
             "tokenid".to_string(),
             JToken::String(hex::encode(&self.token_id)),
         );
-        json.insert(
-            "amount".to_string(),
-            JToken::String(self.amount.to_string()),
-        );
-        json.insert(
-            "lastupdatedblock".to_string(),
-            JToken::Number(f64::from(self.last_updated_block)),
+        insert_nep_balance_fields(
+            &mut json,
+            NepBalanceFieldRefs {
+                amount: &self.amount,
+                last_updated_block: self.last_updated_block,
+            },
         );
         json
     }
@@ -168,13 +156,12 @@ impl RpcNep11TokenBalance {
         let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
             .map_err(|_| format!("Invalid tokenid: {token_id_str}"))?;
 
-        let amount = required_bigint_string(json, "amount", "amount")?;
-        let last_updated_block = required_u32_number(json, "lastupdatedblock")?;
+        let fields = parse_nep_balance_fields(json)?;
 
         Ok(Self {
             token_id,
-            amount,
-            last_updated_block,
+            amount: fields.amount,
+            last_updated_block: fields.last_updated_block,
         })
     }
 }
@@ -182,6 +169,7 @@ impl RpcNep11TokenBalance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_core::wallets::helper::Helper as WalletHelper;
     use neo_json::JArray;
 
     #[test]
@@ -196,6 +184,20 @@ mod tests {
         assert_eq!(parsed.token_id, entry.token_id);
         assert_eq!(parsed.amount, entry.amount);
         assert_eq!(parsed.last_updated_block, entry.last_updated_block);
+    }
+
+    #[test]
+    fn token_balance_to_json_keeps_tokenid_before_shared_fields() {
+        let entry = RpcNep11TokenBalance {
+            token_id: vec![0x01, 0x02],
+            amount: BigInt::from(42),
+            last_updated_block: 7,
+        };
+
+        assert_eq!(
+            entry.to_json().to_string(),
+            r#"{"tokenid":"0102","amount":"42","lastupdatedblock":7}"#
+        );
     }
 
     #[test]

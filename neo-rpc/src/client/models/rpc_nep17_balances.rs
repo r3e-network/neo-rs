@@ -10,11 +10,10 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    object_array, parse_object_array_lossy, required_address_script_hash, required_bigint_string,
-    required_script_hash_or_address, required_u32_number,
+    NepBalanceFieldRefs, balance_list_to_json, insert_nep_balance_fields, parse_balance_list,
+    parse_nep_balance_fields, required_script_hash_or_address,
 };
 use neo_core::config::ProtocolSettings;
-use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
@@ -34,36 +33,21 @@ impl RpcNep17Balances {
     /// Converts to JSON
     /// Matches C# `ToJson`
     #[must_use]
-    pub fn to_json(&self, _protocol_settings: &ProtocolSettings) -> JObject {
-        let mut json = JObject::new();
-
-        json.insert(
-            "balance".to_string(),
-            object_array(&self.balances, RpcNep17Balance::to_json),
-        );
-
-        json.insert(
-            "address".to_string(),
-            JToken::String(WalletHelper::to_address(
-                &self.user_script_hash,
-                _protocol_settings.address_version,
-            )),
-        );
-
-        json
+    pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
+        balance_list_to_json(
+            &self.balances,
+            &self.user_script_hash,
+            protocol_settings,
+            RpcNep17Balance::to_json,
+        )
     }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(
-        json: &JObject,
-        _protocol_settings: &ProtocolSettings,
-    ) -> Result<Self, String> {
-        let balances = parse_object_array_lossy(json, "balance", |obj| {
-            RpcNep17Balance::from_json(obj, _protocol_settings)
-        });
-
-        let user_script_hash = required_address_script_hash(json, "address", _protocol_settings)?;
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+        let (balances, user_script_hash) = parse_balance_list(json, protocol_settings, |obj| {
+            RpcNep17Balance::from_json(obj, protocol_settings)
+        })?;
 
         Ok(Self {
             user_script_hash,
@@ -95,13 +79,12 @@ impl RpcNep17Balance {
             "assethash".to_string(),
             JToken::String(self.asset_hash.to_string()),
         );
-        json.insert(
-            "amount".to_string(),
-            JToken::String(self.amount.to_string()),
-        );
-        json.insert(
-            "lastupdatedblock".to_string(),
-            JToken::Number(f64::from(self.last_updated_block)),
+        insert_nep_balance_fields(
+            &mut json,
+            NepBalanceFieldRefs {
+                amount: &self.amount,
+                last_updated_block: self.last_updated_block,
+            },
         );
         json
     }
@@ -114,13 +97,12 @@ impl RpcNep17Balance {
     ) -> Result<Self, String> {
         let asset_hash =
             required_script_hash_or_address(json, "assethash", _protocol_settings, "asset hash")?;
-        let amount = required_bigint_string(json, "amount", "amount")?;
-        let last_updated_block = required_u32_number(json, "lastupdatedblock")?;
+        let fields = parse_nep_balance_fields(json)?;
 
         Ok(Self {
             asset_hash,
-            amount,
-            last_updated_block,
+            amount: fields.amount,
+            last_updated_block: fields.last_updated_block,
         })
     }
 }
@@ -130,6 +112,7 @@ mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
     use neo_config::ProtocolSettings;
+    use neo_core::wallets::helper::Helper as WalletHelper;
     use neo_json::{JArray, JToken};
 
     #[test]
