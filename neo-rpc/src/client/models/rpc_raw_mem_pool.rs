@@ -9,7 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_json::{JArray, JObject, JToken};
+use super::super::utility::{parse_uint256_array_lossy, token_array};
+use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
@@ -34,24 +35,14 @@ impl RpcRawMemPool {
         let mut json = JObject::new();
         json.insert("height".to_string(), JToken::Number(f64::from(self.height)));
 
-        let verified_array: Vec<JToken> = self
-            .verified
-            .iter()
-            .map(|h| JToken::String(h.to_string()))
-            .collect();
         json.insert(
             "verified".to_string(),
-            JToken::Array(JArray::from(verified_array)),
+            token_array(&self.verified, |hash| JToken::String(hash.to_string())),
         );
 
-        let unverified_array: Vec<JToken> = self
-            .unverified
-            .iter()
-            .map(|h| JToken::String(h.to_string()))
-            .collect();
         json.insert(
             "unverified".to_string(),
-            JToken::Array(JArray::from(unverified_array)),
+            token_array(&self.unverified, |hash| JToken::String(hash.to_string())),
         );
 
         json
@@ -69,29 +60,8 @@ impl RpcRawMemPool {
                 .ok_or("Missing or invalid 'height' field")? as u32
         };
 
-        let verified = json
-            .get("verified")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(neo_json::JToken::as_string)
-                    .filter_map(|s| UInt256::parse(&s).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let unverified = json
-            .get("unverified")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(neo_json::JToken::as_string)
-                    .filter_map(|s| UInt256::parse(&s).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let verified = parse_uint256_array_lossy(json, "verified");
+        let unverified = parse_uint256_array_lossy(json, "unverified");
 
         Ok(Self {
             height,
@@ -104,6 +74,7 @@ impl RpcRawMemPool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_json::JArray;
     use neo_json::JToken;
     use std::fs;
     use std::path::PathBuf;

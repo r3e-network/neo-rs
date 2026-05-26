@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::{parse_string_array_lossy, token_array};
 use neo_json::{JArray, JObject, JToken};
 use std::collections::BTreeMap;
 
@@ -190,25 +191,17 @@ impl RpcProtocol {
         );
 
         // Standby committee array
-        let committee_array: Vec<JToken> = self
-            .standby_committee
-            .iter()
-            .map(|member| JToken::String(member.clone()))
-            .collect();
         json.insert(
             "standbycommittee".to_string(),
-            JToken::Array(JArray::from(committee_array)),
+            token_array(&self.standby_committee, |member| {
+                JToken::String(member.clone())
+            }),
         );
 
         // Seed list array
-        let seed_array: Vec<JToken> = self
-            .seed_list
-            .iter()
-            .map(|s| JToken::String(s.clone()))
-            .collect();
         json.insert(
             "seedlist".to_string(),
-            JToken::Array(JArray::from(seed_array)),
+            token_array(&self.seed_list, |seed| JToken::String(seed.clone())),
         );
 
         json
@@ -281,28 +274,10 @@ impl RpcProtocol {
             .unwrap_or_default();
 
         // Parse seed list
-        let seed_list = json
-            .get("seedlist")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(neo_json::JToken::as_string)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let seed_list = parse_string_array_lossy(json, "seedlist");
 
         // Parse standby committee
-        let standby_committee = json
-            .get("standbycommittee")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(neo_json::JToken::as_string)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let standby_committee = parse_string_array_lossy(json, "standbycommittee");
 
         Ok(Self {
             network,

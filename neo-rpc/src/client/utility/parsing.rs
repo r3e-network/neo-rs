@@ -117,6 +117,33 @@ pub fn object_array<T>(items: &[T], mut to_object: impl FnMut(&T) -> JObject) ->
     JToken::Array(JArray::from(objects))
 }
 
+/// Builds an ordered JSON array token.
+pub fn token_array<T>(items: &[T], to_token: impl FnMut(&T) -> JToken) -> JToken {
+    JToken::Array(JArray::from(items.iter().map(to_token).collect::<Vec<_>>()))
+}
+
+/// Parses a string array while preserving the RPC client's historical lossy behavior.
+pub fn parse_string_array_lossy(json: &JObject, field: &str) -> Vec<String> {
+    json.get(field)
+        .and_then(JToken::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.as_ref())
+                .filter_map(JToken::as_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Parses a `UInt256` string array while preserving the RPC client's historical lossy behavior.
+pub fn parse_uint256_array_lossy(json: &JObject, field: &str) -> Vec<UInt256> {
+    parse_string_array_lossy(json, field)
+        .into_iter()
+        .filter_map(|value| UInt256::parse(&value).ok())
+        .collect()
+}
+
 /// Parses a JSON object array while preserving the RPC client's historical lossy behavior.
 pub fn parse_object_array_lossy<T>(
     json: &JObject,
@@ -359,6 +386,48 @@ mod tests {
         assert_eq!(
             token.to_string(),
             r#"[{"value":"first"},{"value":"second"}]"#
+        );
+    }
+
+    #[test]
+    fn token_array_preserves_item_order() {
+        let values = ["first", "second"];
+        let token = token_array(&values, |value| JToken::String((*value).to_string()));
+
+        assert_eq!(token.to_string(), r#"["first","second"]"#);
+    }
+
+    #[test]
+    fn string_array_lossy_keeps_only_strings() {
+        let mut entries = JArray::new();
+        entries.add(Some(JToken::String("first".to_string())));
+        entries.add(None);
+        entries.add(Some(JToken::Number(1.0)));
+        entries.add(Some(JToken::String("second".to_string())));
+
+        let mut root = JObject::new();
+        root.insert("items".to_string(), JToken::Array(entries));
+
+        assert_eq!(
+            parse_string_array_lossy(&root, "items"),
+            vec!["first".to_string(), "second".to_string()]
+        );
+        assert!(parse_string_array_lossy(&root, "missing").is_empty());
+    }
+
+    #[test]
+    fn uint256_array_lossy_keeps_only_valid_hash_strings() {
+        let mut entries = JArray::new();
+        entries.add(Some(JToken::String(UInt256::zero().to_string())));
+        entries.add(Some(JToken::String("not a hash".to_string())));
+        entries.add(None);
+
+        let mut root = JObject::new();
+        root.insert("hashes".to_string(), JToken::Array(entries));
+
+        assert_eq!(
+            parse_uint256_array_lossy(&root, "hashes"),
+            vec![UInt256::zero()]
         );
     }
 }
