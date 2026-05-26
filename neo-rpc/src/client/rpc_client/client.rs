@@ -22,7 +22,7 @@ use neo_config::ProtocolSettings;
 use neo_core::network::p2p::payloads::block::Block;
 use neo_core::{Signer, Transaction};
 use neo_io::Serializable;
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
 use num_bigint::BigInt;
 use regex::Regex;
@@ -35,6 +35,7 @@ use super::builder::RpcClientBuilder;
 use super::helpers::{parse_plugins, token_as_number, token_as_object, token_as_string};
 use super::hooks::RpcRequestOutcome;
 use super::{RpcClient, RpcClientHooks, MAX_JSON_NESTING, RPC_NAME_REGEX};
+use crate::client::utility::cloned_token_array;
 
 fn serialize_to_base64<T: Serializable>(value: &T) -> Result<String, ClientRpcError> {
     serialization::serializable_to_base64(value)
@@ -302,7 +303,7 @@ impl RpcClient {
                 })?;
                 signer_tokens.push(token);
             }
-            parameters.push(JToken::Array(JArray::from(signer_tokens)));
+            parameters.push(cloned_token_array(&signer_tokens));
         }
 
         let result = self.rpc_send_async("invokescript", parameters).await?;
@@ -323,7 +324,7 @@ impl RpcClient {
                 vec![
                     JToken::String(contract_hash.to_string()),
                     JToken::String(operation.to_string()),
-                    JToken::Array(JArray::from(params.to_vec())),
+                    cloned_token_array(params),
                 ],
             )
             .await?;

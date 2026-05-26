@@ -137,6 +137,11 @@ pub fn token_array<T>(items: &[T], to_token: impl FnMut(&T) -> JToken) -> JToken
     JToken::Array(JArray::from(items.iter().map(to_token).collect::<Vec<_>>()))
 }
 
+/// Builds an ordered JSON array token by cloning existing tokens.
+pub fn cloned_token_array(items: &[JToken]) -> JToken {
+    token_array(items, Clone::clone)
+}
+
 /// Builds an empty JSON array token.
 pub fn empty_array() -> JToken {
     JToken::Array(JArray::new())
@@ -529,6 +534,17 @@ mod tests {
     fn token_array_preserves_item_order() {
         let values = ["first", "second"];
         let token = token_array(&values, |value| JToken::String((*value).to_string()));
+
+        assert_eq!(token.to_string(), r#"["first","second"]"#);
+    }
+
+    #[test]
+    fn cloned_token_array_preserves_item_order() {
+        let values = [
+            JToken::String("first".to_string()),
+            JToken::String("second".to_string()),
+        ];
+        let token = cloned_token_array(&values);
 
         assert_eq!(token.to_string(), r#"["first","second"]"#);
     }

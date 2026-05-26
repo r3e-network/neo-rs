@@ -9,7 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_json::{JArray, JObject, JToken};
+use super::super::utility::cloned_token_array;
+use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
 /// RPC request structure matching C# `RpcRequest`
@@ -82,10 +83,7 @@ impl RpcRequest {
         json.insert("id".to_string(), self.id.clone());
         json.insert("jsonrpc".to_string(), JToken::String(self.json_rpc.clone()));
         json.insert("method".to_string(), JToken::String(self.method.clone()));
-        json.insert(
-            "params".to_string(),
-            JToken::Array(JArray::from(self.params.clone())),
-        );
+        json.insert("params".to_string(), cloned_token_array(&self.params));
         json
     }
 }

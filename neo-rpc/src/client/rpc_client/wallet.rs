@@ -1,9 +1,10 @@
 use super::super::models::{RpcAccount, RpcTransferOut, RpcUnclaimedGas, RpcValidateAddressResult};
 use super::super::{ClientRpcError, Nep17Api, RpcUtility};
+use crate::client::utility::object_array;
 use super::helpers::{token_as_boolean, token_as_object, token_as_string};
 use super::RpcClient;
 use neo_core::big_decimal::BigDecimal;
-use neo_json::{JArray, JObject, JToken};
+use neo_json::{JObject, JToken};
 use num_bigint::BigInt;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -172,11 +173,9 @@ impl RpcClient {
         if !from_address.is_empty() {
             params.push(JToken::String(RpcUtility::as_script_hash(from_address)));
         }
-        let outputs_json = outputs
-            .iter()
-            .map(|out| JToken::Object(out.to_json(&self.protocol_settings)))
-            .collect::<Vec<_>>();
-        params.push(JToken::Array(JArray::from(outputs_json)));
+        params.push(object_array(outputs, |out| {
+            out.to_json(&self.protocol_settings)
+        }));
         let result = self.rpc_send_async("sendmany", params).await?;
         token_as_object(result, "sendmany")
     }
