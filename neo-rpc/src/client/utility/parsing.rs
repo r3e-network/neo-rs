@@ -6,7 +6,7 @@ use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
 use serde_json::Value as JsonValue;
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
 /// Reads a required string field from a JSON object.
 pub fn required_string(json: &JObject, field: &str) -> Result<String, String> {
@@ -26,11 +26,7 @@ pub fn optional_string_or_null(value: Option<impl Into<String>>) -> JToken {
 }
 
 /// Inserts a string token for `Some` values and `Null` for missing values.
-pub fn insert_optional_string(
-    json: &mut JObject,
-    field: &str,
-    value: Option<impl Into<String>>,
-) {
+pub fn insert_optional_string(json: &mut JObject, field: &str, value: Option<impl Into<String>>) {
     json.insert(field.to_string(), optional_string_or_null(value));
 }
 
@@ -341,35 +337,34 @@ pub fn parse_base64_token(token: &JToken, field: &str) -> Result<Vec<u8>, String
 
 /// Parses a u32 token that may be encoded as number or string.
 pub fn parse_u32_token(token: &JToken, field: &str) -> Result<u32, String> {
-    if let Some(number) = token.as_number() {
-        Ok(number as u32)
-    } else if let Some(text) = token.as_string() {
-        text.parse::<u32>()
-            .map_err(|err| format!("Invalid unsigned integer for '{field}': {err}"))
-    } else {
-        Err(format!("Field '{field}' must be a number"))
-    }
+    parse_integer_token(token, field, "unsigned", |number| number as u32)
 }
 
 /// Parses a u64 token that may be encoded as number or string.
 pub fn parse_u64_token(token: &JToken, field: &str) -> Result<u64, String> {
-    if let Some(number) = token.as_number() {
-        Ok(number as u64)
-    } else if let Some(text) = token.as_string() {
-        text.parse::<u64>()
-            .map_err(|err| format!("Invalid unsigned integer for '{field}': {err}"))
-    } else {
-        Err(format!("Field '{field}' must be a number"))
-    }
+    parse_integer_token(token, field, "unsigned", |number| number as u64)
 }
 
 /// Parses an i64 token that may be encoded as number or string.
 pub fn parse_i64_token(token: &JToken, field: &str) -> Result<i64, String> {
+    parse_integer_token(token, field, "signed", |number| number as i64)
+}
+
+fn parse_integer_token<T>(
+    token: &JToken,
+    field: &str,
+    integer_kind: &str,
+    from_number: impl FnOnce(f64) -> T,
+) -> Result<T, String>
+where
+    T: FromStr,
+    T::Err: Display,
+{
     if let Some(number) = token.as_number() {
-        Ok(number as i64)
+        Ok(from_number(number))
     } else if let Some(text) = token.as_string() {
-        text.parse::<i64>()
-            .map_err(|err| format!("Invalid signed integer for '{field}': {err}"))
+        text.parse::<T>()
+            .map_err(|err| format!("Invalid {integer_kind} integer for '{field}': {err}"))
     } else {
         Err(format!("Field '{field}' must be a number"))
     }
@@ -461,8 +456,42 @@ mod tests {
         let mut json = JObject::new();
         insert_optional_string(&mut json, "label", Some("main"));
         insert_optional_string(&mut json, "missing", None::<&str>);
-        assert_eq!(json.get("label").and_then(JToken::as_string).unwrap(), "main");
+        assert_eq!(
+            json.get("label").and_then(JToken::as_string).unwrap(),
+            "main"
+        );
         assert_eq!(json.get("missing"), Some(&JToken::Null));
+    }
+
+    #[test]
+    fn integer_token_parsers_accept_numbers_and_strings() {
+        assert_eq!(parse_u32_token(&JToken::Number(10.0), "height"), Ok(10));
+        assert_eq!(
+            parse_u64_token(&JToken::String("42".to_string()), "id"),
+            Ok(42)
+        );
+        assert_eq!(
+            parse_i64_token(&JToken::String("-7".to_string()), "sysfee"),
+            Ok(-7)
+        );
+    }
+
+    #[test]
+    fn integer_token_parsers_preserve_legacy_errors() {
+        assert_eq!(
+            parse_u32_token(&JToken::String("bad".to_string()), "height")
+                .expect_err("invalid unsigned integer"),
+            "Invalid unsigned integer for 'height': invalid digit found in string"
+        );
+        assert_eq!(
+            parse_i64_token(&JToken::String("bad".to_string()), "sysfee")
+                .expect_err("invalid signed integer"),
+            "Invalid signed integer for 'sysfee': invalid digit found in string"
+        );
+        assert_eq!(
+            parse_u64_token(&JToken::Null, "id").expect_err("non-number token"),
+            "Field 'id' must be a number"
+        );
     }
 
     #[test]
