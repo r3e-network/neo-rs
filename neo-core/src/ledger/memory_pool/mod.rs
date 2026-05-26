@@ -15,22 +15,25 @@
 // using System.Threading;
 
 use super::{
+    PoolItem, TransactionRemovedEventArgs, TransactionVerificationContext,
     new_transaction_event_args::NewTransactionEventArgs,
-    transaction_removal_reason::TransactionRemovalReason, verify_result::VerifyResult, PoolItem,
-    TransactionRemovedEventArgs, TransactionVerificationContext,
+    transaction_removal_reason::TransactionRemovalReason, verify_result::VerifyResult,
 };
 use crate::hardfork::Hardfork;
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
-use crate::network::p2p::payloads::{conflicts::Conflicts, Transaction};
+use crate::network::p2p::payloads::{Transaction, conflicts::Conflicts};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{LedgerContract, PolicyContract};
 use crate::{UInt160, UInt256};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
+mod index;
 mod views;
+
+use index::PoolIndex;
 
 /// namespace Neo.Ledger -> public class MemoryPool : IReadOnlyCollection<`Transaction`>
 /// Allow a reverified transaction to be rebroadcast if it has been this many block times since last broadcast.
@@ -69,10 +72,8 @@ pub struct MemoryPool {
     _max_milliseconds_to_reverify_tx: f64,
     _max_milliseconds_to_reverify_tx_per_idle: f64,
 
-    verified_transactions: HashMap<UInt256, PoolItem>,
-    verified_sorted: BTreeSet<PoolItem>,
-    unverified_transactions: HashMap<UInt256, PoolItem>,
-    unverified_sorted: BTreeSet<PoolItem>,
+    verified: PoolIndex,
+    unverified: PoolIndex,
     conflicts: HashMap<UInt256, HashSet<UInt256>>,
 
     verification_context: TransactionVerificationContext,
@@ -99,10 +100,8 @@ impl MemoryPool {
             transaction_relay: None,
             _max_milliseconds_to_reverify_tx: time_per_block_ms / 3.0,
             _max_milliseconds_to_reverify_tx_per_idle: time_per_block_ms / 15.0,
-            verified_transactions: HashMap::with_capacity(capacity),
-            verified_sorted: BTreeSet::new(),
-            unverified_transactions: HashMap::with_capacity(capacity / 4),
-            unverified_sorted: BTreeSet::new(),
+            verified: PoolIndex::with_capacity(capacity),
+            unverified: PoolIndex::with_capacity(capacity / 4),
             conflicts: HashMap::with_capacity(capacity / 2),
             verification_context: TransactionVerificationContext::new(),
             capacity,
@@ -126,19 +125,14 @@ impl MemoryPool {
     /// Pre-allocates capacity for expected number of verified transactions.
     /// Call this during initial sync to reduce memory reallocations.
     pub fn reserve_verified(&mut self, additional: usize) {
-        let new_capacity = self.verified_transactions.len().saturating_add(additional);
-        self.verified_transactions
-            .reserve(new_capacity.min(self.capacity));
+        let new_capacity = self.verified.len().saturating_add(additional);
+        self.verified.reserve(new_capacity.min(self.capacity));
     }
 
     /// Pre-allocates capacity for expected number of unverified transactions.
     pub fn reserve_unverified(&mut self, additional: usize) {
-        let new_capacity = self
-            .unverified_transactions
-            .len()
-            .saturating_add(additional);
-        self.unverified_transactions
-            .reserve(new_capacity.min(self.capacity / 4));
+        let new_capacity = self.unverified.len().saturating_add(additional);
+        self.unverified.reserve(new_capacity.min(self.capacity / 4));
     }
 
     /// private int RebroadcastMultiplierThreshold => Capacity / 10;
@@ -167,7 +161,7 @@ impl MemoryPool {
 
         if let Some(conflicting_hashes) = self.conflicts.get(&tx.hash()) {
             for hash in conflicting_hashes {
-                if let Some(conflict_item) = self.verified_transactions.get(hash) {
+                if let Some(conflict_item) = self.verified.get(hash) {
                     if conflict_item
                         .transaction
                         .signers()
@@ -183,7 +177,7 @@ impl MemoryPool {
 
         for attr in tx.attributes() {
             if let TransactionAttribute::Conflicts(Conflicts { hash }) = attr {
-                if let Some(conflict_item) = self.verified_transactions.get(hash) {
+                if let Some(conflict_item) = self.verified.get(hash) {
                     let share_sender = tx.signers().iter().any(|signer| {
                         conflict_item
                             .transaction
@@ -265,9 +259,7 @@ impl MemoryPool {
             }
         }
 
-        if self.verified_transactions.contains_key(&hash)
-            || self.unverified_transactions.contains_key(&hash)
-        {
+        if self.contains_key(&hash) {
             return VerifyResult::AlreadyInPool;
         }
 
@@ -325,8 +317,7 @@ impl MemoryPool {
 
         let item = PoolItem::new(tx.clone());
         self.verification_context.add_transaction(&tx);
-        self.verified_transactions.insert(hash, item.clone());
-        self.verified_sorted.insert(item.clone());
+        self.verified.insert(hash, item.clone());
         self.register_conflicts(hash, &tx);
 
         if !conflicts_to_remove.is_empty() {
@@ -367,7 +358,7 @@ impl MemoryPool {
                     );
                 }
             }
-            if !self.verified_transactions.contains_key(&hash) {
+            if !self.verified.contains_key(&hash) {
                 return VerifyResult::OutOfMemory;
             }
         }
@@ -414,10 +405,10 @@ impl MemoryPool {
         }
 
         let mut conflicting_items = Vec::new();
-        if !self.verified_sorted.is_empty() && (!conflicts.is_empty() || !persisted.is_empty()) {
+        if !self.verified.is_empty() && (!conflicts.is_empty() || !persisted.is_empty()) {
             let stale: Vec<UInt256> = self
-                .verified_sorted
-                .iter()
+                .verified
+                .by_priority_ascending()
                 .filter_map(|item| {
                     let item_hash = item.transaction.hash();
                     let matches_conflict = conflicts.get(&item_hash).is_some_and(|signers| {
@@ -483,10 +474,8 @@ impl MemoryPool {
 
     /// Clears both verified and unverified sets entirely.
     pub fn invalidate_all_transactions(&mut self) {
-        self.verified_transactions.clear();
-        self.verified_sorted.clear();
-        self.unverified_transactions.clear();
-        self.unverified_sorted.clear();
+        self.verified.clear();
+        self.unverified.clear();
         self.conflicts.clear();
         self.verification_context = TransactionVerificationContext::new();
     }
@@ -496,8 +485,7 @@ impl MemoryPool {
     pub(crate) fn insert_unverified_for_test(&mut self, tx: Transaction) {
         let hash = tx.hash();
         let item = PoolItem::new(tx);
-        self.unverified_transactions.insert(hash, item.clone());
-        self.unverified_sorted.insert(item);
+        self.unverified.insert(hash, item);
     }
 
     /// Re-verifies a limited number of unverified transactions, promoting valid ones back into the
@@ -509,8 +497,8 @@ impl MemoryPool {
         settings: &ProtocolSettings,
         header_backlog_present: bool,
     ) -> bool {
-        if header_backlog_present || max_to_verify == 0 || self.unverified_sorted.is_empty() {
-            return !self.unverified_transactions.is_empty();
+        if header_backlog_present || max_to_verify == 0 || self.unverified.is_empty() {
+            return !self.unverified.is_empty();
         }
 
         let time_budget = if self._max_milliseconds_to_reverify_tx_per_idle <= 0.0 {
@@ -531,28 +519,26 @@ impl MemoryPool {
         settings: &ProtocolSettings,
         time_budget: Option<Duration>,
     ) -> bool {
-        if max_to_verify == 0 || self.unverified_sorted.is_empty() {
-            return !self.unverified_transactions.is_empty();
+        if max_to_verify == 0 || self.unverified.is_empty() {
+            return !self.unverified.is_empty();
         }
 
-        let verify_count =
-            if self.verified_transactions.len() > settings.max_transactions_per_block as usize {
-                1usize
-            } else {
-                max_to_verify
-            };
+        let verify_count = if self.verified.len() > settings.max_transactions_per_block as usize {
+            1usize
+        } else {
+            max_to_verify
+        };
 
-        let verify_count = verify_count.min(self.unverified_sorted.len());
+        let verify_count = verify_count.min(self.unverified.sorted_len());
         if verify_count == 0 {
-            return !self.unverified_transactions.is_empty();
+            return !self.unverified.is_empty();
         }
 
         let start_instant = Instant::now();
 
         let candidates: Vec<PoolItem> = self
-            .unverified_sorted
-            .iter()
-            .rev()
+            .unverified
+            .by_priority_descending()
             .take(verify_count)
             .cloned()
             .collect();
@@ -568,15 +554,14 @@ impl MemoryPool {
             }
 
             let hash = item.transaction.hash();
-            if !self.unverified_transactions.contains_key(&hash) {
+            if !self.unverified.contains_key(&hash) {
                 continue;
             }
 
             let conflicts = match self.check_conflicts(&item.transaction) {
                 Ok(list) => list,
                 Err(_) => {
-                    self.unverified_transactions.remove(&hash);
-                    self.unverified_sorted.take(&item);
+                    self.unverified.remove(&hash);
                     invalidated.push(
                         Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()),
                     );
@@ -601,10 +586,8 @@ impl MemoryPool {
             );
 
             if verify_result == VerifyResult::Succeed {
-                self.unverified_transactions.remove(&hash);
-                self.unverified_sorted.take(&item);
-                self.verified_transactions.insert(hash, item.clone());
-                self.verified_sorted.insert(item.clone());
+                self.unverified.remove(&hash);
+                self.verified.insert(hash, item.clone());
                 self.register_conflicts(hash, &item.transaction);
                 self.verification_context.add_transaction(&item.transaction);
 
@@ -621,8 +604,7 @@ impl MemoryPool {
 
                 reverified.push(item);
             } else {
-                self.unverified_transactions.remove(&hash);
-                self.unverified_sorted.take(&item);
+                self.unverified.remove(&hash);
                 invalidated
                     .push(Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()));
             }
@@ -648,7 +630,7 @@ impl MemoryPool {
         if !reverified.is_empty() {
             for item in &reverified {
                 let hash = item.transaction.hash();
-                if let Some(stored) = self.verified_transactions.get_mut(&hash) {
+                if let Some(stored) = self.verified.get_mut(&hash) {
                     if stored.last_broadcast_timestamp < rebroadcast_cutoff {
                         if let Some(relay) = &self.transaction_relay {
                             relay(&stored.transaction);
@@ -671,12 +653,11 @@ impl MemoryPool {
             }
         }
 
-        !self.unverified_transactions.is_empty()
+        !self.unverified.is_empty()
     }
 
     fn try_remove_verified(&mut self, hash: UInt256) -> Option<PoolItem> {
-        let item = self.verified_transactions.remove(&hash)?;
-        self.verified_sorted.take(&item);
+        let item = self.verified.remove(&hash)?;
         self.verification_context
             .remove_transaction(&item.transaction);
         self.unregister_conflicts(&hash, &item.transaction);
@@ -684,8 +665,7 @@ impl MemoryPool {
     }
 
     fn try_remove_unverified(&mut self, hash: UInt256) -> Option<PoolItem> {
-        let item = self.unverified_transactions.remove(&hash)?;
-        self.unverified_sorted.take(&item);
+        let item = self.unverified.remove(&hash)?;
         self.unregister_conflicts(&hash, &item.transaction);
         Some(item)
     }
@@ -696,20 +676,13 @@ impl MemoryPool {
     }
 
     fn invalidate_verified_transactions(&mut self) {
-        if self.verified_sorted.is_empty() {
+        if self.verified.is_empty() {
             return;
         }
 
-        #[allow(clippy::mutable_key_type)]
-        let sorted = std::mem::take(&mut self.verified_sorted);
-        let mut txs = std::mem::take(&mut self.verified_transactions);
-
-        for item in sorted {
+        for item in self.verified.drain_by_priority() {
             let hash = item.transaction.hash();
-            // Prefer the HashMap entry (same PoolItem) to avoid keeping both.
-            let item = txs.remove(&hash).unwrap_or(item);
-            self.unverified_transactions.insert(hash, item.clone());
-            self.unverified_sorted.insert(item);
+            self.unverified.insert(hash, item);
         }
 
         self.conflicts.clear();
@@ -720,8 +693,8 @@ impl MemoryPool {
         let mut removed = Vec::with_capacity(self.count().saturating_sub(self.capacity));
 
         while self.count() > self.capacity {
-            let candidate_verified = self.verified_sorted.iter().next().cloned();
-            let candidate_unverified = self.unverified_sorted.iter().next().cloned();
+            let candidate_verified = self.verified.lowest().cloned();
+            let candidate_unverified = self.unverified.lowest().cloned();
 
             let choice = match (candidate_verified, candidate_unverified) {
                 (Some(v), Some(u)) => {

@@ -13,11 +13,10 @@ impl MemoryPool {
             return Vec::new();
         }
 
-        let mut result = Vec::with_capacity(limit.min(self.verified_sorted.len()));
+        let mut result = Vec::with_capacity(limit.min(self.verified.sorted_len()));
         result.extend(
-            self.verified_sorted
-                .iter()
-                .rev()
+            self.verified
+                .by_priority_descending()
                 .take(limit)
                 .map(|item| Arc::clone(&item.transaction)),
         );
@@ -27,44 +26,43 @@ impl MemoryPool {
     /// internal int SortedTxCount => _sortedTransactions.Count;
     #[cfg(test)]
     pub(crate) fn sorted_tx_count(&self) -> usize {
-        self.verified_sorted.len()
+        self.verified.sorted_len()
     }
 
     /// internal int UnverifiedSortedTxCount => _unverifiedSortedTransactions.Count;
     #[cfg(test)]
     pub(crate) fn unverified_sorted_tx_count(&self) -> usize {
-        self.unverified_sorted.len()
+        self.unverified.sorted_len()
     }
 
     /// public int Count
     pub fn count(&self) -> usize {
-        self.verified_transactions.len() + self.unverified_transactions.len()
+        self.verified.len() + self.unverified.len()
     }
 
     /// public int VerifiedCount => _unsortedTransactions.Count;
     pub fn verified_count(&self) -> usize {
-        self.verified_transactions.len()
+        self.verified.len()
     }
 
     /// public int UnVerifiedCount => _unverifiedTransactions.Count;
     pub fn unverified_count(&self) -> usize {
-        self.unverified_transactions.len()
+        self.unverified.len()
     }
 
     /// public bool ContainsKey(UInt256 hash)
     pub fn contains_key(&self, hash: &UInt256) -> bool {
-        self.verified_transactions.contains_key(hash)
-            || self.unverified_transactions.contains_key(hash)
+        self.verified.contains_key(hash) || self.unverified.contains_key(hash)
     }
 
     /// Returns the total number of transactions in the pool attributed to `sender`.
     pub fn sender_transaction_count(&self, sender: &UInt160) -> usize {
-        self.verified_transactions
+        self.verified
             .values()
             .filter(|item| item.transaction.sender() == Some(*sender))
             .count()
             + self
-                .unverified_transactions
+                .unverified
                 .values()
                 .filter(|item| item.transaction.sender() == Some(*sender))
                 .count()
@@ -72,8 +70,8 @@ impl MemoryPool {
 
     #[cfg(test)]
     fn lowest_fee_item(&self) -> Option<&PoolItem> {
-        let verified = self.verified_sorted.iter().next();
-        let unverified = self.unverified_sorted.iter().next();
+        let verified = self.verified.lowest();
+        let unverified = self.unverified.lowest();
 
         match (verified, unverified) {
             (None, None) => None,
@@ -105,10 +103,10 @@ impl MemoryPool {
     /// Attempts to fetch a transaction from either the verified or unverified sets.
     /// Returns `Arc<Transaction>` to avoid expensive cloning.
     pub fn try_get(&self, hash: &UInt256) -> Option<Arc<Transaction>> {
-        if let Some(item) = self.verified_transactions.get(hash) {
+        if let Some(item) = self.verified.get(hash) {
             return Some(Arc::clone(&item.transaction));
         }
-        self.unverified_transactions
+        self.unverified
             .get(hash)
             .map(|item| Arc::clone(&item.transaction))
     }
@@ -120,11 +118,10 @@ impl MemoryPool {
             return Vec::new();
         }
 
-        let mut result = Vec::with_capacity(limit.min(self.verified_sorted.len()));
+        let mut result = Vec::with_capacity(limit.min(self.verified.sorted_len()));
         result.extend(
-            self.verified_sorted
-                .iter()
-                .rev()
+            self.verified
+                .by_priority_descending()
                 .take(limit)
                 .map(|item| Arc::clone(&item.transaction)),
         );
@@ -134,9 +131,9 @@ impl MemoryPool {
     /// Returns all verified transactions without any ordering guarantees.
     /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn verified_transactions_vec(&self) -> Vec<Arc<Transaction>> {
-        let mut result = Vec::with_capacity(self.verified_transactions.len());
+        let mut result = Vec::with_capacity(self.verified.len());
         result.extend(
-            self.verified_transactions
+            self.verified
                 .values()
                 .map(|item| Arc::clone(&item.transaction)),
         );
@@ -146,9 +143,9 @@ impl MemoryPool {
     /// Returns all unverified transactions currently tracked by the mempool.
     /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn unverified_transactions_vec(&self) -> Vec<Arc<Transaction>> {
-        let mut result = Vec::with_capacity(self.unverified_transactions.len());
+        let mut result = Vec::with_capacity(self.unverified.len());
         result.extend(
-            self.unverified_transactions
+            self.unverified
                 .values()
                 .map(|item| Arc::clone(&item.transaction)),
         );
@@ -158,15 +155,15 @@ impl MemoryPool {
     /// Returns all transactions (verified followed by unverified) currently tracked by the mempool.
     /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn all_transactions_vec(&self) -> Vec<Arc<Transaction>> {
-        let total_len = self.verified_transactions.len() + self.unverified_transactions.len();
+        let total_len = self.verified.len() + self.unverified.len();
         let mut transactions = Vec::with_capacity(total_len);
         transactions.extend(
-            self.verified_transactions
+            self.verified
                 .values()
                 .map(|item| Arc::clone(&item.transaction)),
         );
         transactions.extend(
-            self.unverified_transactions
+            self.unverified
                 .values()
                 .map(|item| Arc::clone(&item.transaction)),
         );
@@ -179,22 +176,20 @@ impl MemoryPool {
     pub fn verified_and_unverified_transactions(
         &self,
     ) -> (Vec<Arc<Transaction>>, Vec<Arc<Transaction>>) {
-        let verified_capacity = self.verified_sorted.len();
-        let unverified_capacity = self.unverified_sorted.len();
+        let verified_capacity = self.verified.sorted_len();
+        let unverified_capacity = self.unverified.sorted_len();
 
         let mut verified = Vec::with_capacity(verified_capacity);
         let mut unverified = Vec::with_capacity(unverified_capacity);
 
         verified.extend(
-            self.verified_sorted
-                .iter()
-                .rev()
+            self.verified
+                .by_priority_descending()
                 .map(|item| Arc::clone(&item.transaction)),
         );
         unverified.extend(
-            self.unverified_sorted
-                .iter()
-                .rev()
+            self.unverified
+                .by_priority_descending()
                 .map(|item| Arc::clone(&item.transaction)),
         );
         (verified, unverified)
@@ -203,18 +198,16 @@ impl MemoryPool {
     /// Returns an iterator over verified transactions in descending priority order.
     /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn iter_verified(&self) -> impl Iterator<Item = Arc<Transaction>> + '_ {
-        self.verified_sorted
-            .iter()
-            .rev()
+        self.verified
+            .by_priority_descending()
             .map(|item| Arc::clone(&item.transaction))
     }
 
     /// Returns an iterator over unverified transactions in descending priority order.
     /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn iter_unverified(&self) -> impl Iterator<Item = Arc<Transaction>> + '_ {
-        self.unverified_sorted
-            .iter()
-            .rev()
+        self.unverified
+            .by_priority_descending()
             .map(|item| Arc::clone(&item.transaction))
     }
 }
@@ -226,23 +219,13 @@ impl IntoIterator for MemoryPool {
 
     fn into_iter(self) -> Self::IntoIter {
         let MemoryPool {
-            verified_transactions,
-            unverified_transactions,
+            verified,
+            unverified,
             ..
         } = self;
 
-        let mut transactions =
-            Vec::with_capacity(verified_transactions.len() + unverified_transactions.len());
-        transactions.extend(
-            verified_transactions
-                .into_values()
-                .map(|item| Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone())),
-        );
-        transactions.extend(
-            unverified_transactions
-                .into_values()
-                .map(|item| Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone())),
-        );
+        let mut transactions = verified.into_transactions();
+        transactions.extend(unverified.into_transactions());
         transactions.into_iter()
     }
 }
@@ -253,15 +236,15 @@ impl IntoIterator for &MemoryPool {
 
     fn into_iter(self) -> Self::IntoIter {
         // Collect all transactions - this requires cloning since we're borrowing self
-        let total_len = self.verified_transactions.len() + self.unverified_transactions.len();
+        let total_len = self.verified.len() + self.unverified.len();
         let mut transactions = Vec::with_capacity(total_len);
         transactions.extend(
-            self.verified_transactions
+            self.verified
                 .values()
                 .map(|item| item.transaction.as_ref().clone()),
         );
         transactions.extend(
-            self.unverified_transactions
+            self.unverified
                 .values()
                 .map(|item| item.transaction.as_ref().clone()),
         );
