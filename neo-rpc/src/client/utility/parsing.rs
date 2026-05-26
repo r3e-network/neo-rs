@@ -257,6 +257,111 @@ pub fn parse_transfer_lists<T>(
     Ok((sent, received, user_script_hash))
 }
 
+/// Shared NEP transfer entry fields used by NEP-11 and NEP-17 RPC payloads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NepTransferFields {
+    /// Timestamp in milliseconds.
+    pub timestamp_ms: u64,
+    /// Asset hash.
+    pub asset_hash: UInt160,
+    /// Optional transfer address script hash.
+    pub user_script_hash: Option<UInt160>,
+    /// Transfer amount.
+    pub amount: BigInt,
+    /// Block index.
+    pub block_index: u32,
+    /// Transfer notify index.
+    pub transfer_notify_index: u16,
+    /// Transaction hash.
+    pub tx_hash: UInt256,
+}
+
+/// Borrowed NEP transfer entry fields used when building RPC JSON.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NepTransferFieldRefs<'a> {
+    /// Timestamp in milliseconds.
+    pub timestamp_ms: u64,
+    /// Asset hash.
+    pub asset_hash: UInt160,
+    /// Optional transfer address script hash.
+    pub user_script_hash: Option<UInt160>,
+    /// Transfer amount.
+    pub amount: &'a BigInt,
+    /// Block index.
+    pub block_index: u32,
+    /// Transfer notify index.
+    pub transfer_notify_index: u16,
+    /// Transaction hash.
+    pub tx_hash: UInt256,
+}
+
+/// Appends the shared NEP transfer entry fields in RPC wire order.
+pub(crate) fn insert_nep_transfer_fields(
+    json: &mut JObject,
+    fields: NepTransferFieldRefs<'_>,
+    protocol_settings: &ProtocolSettings,
+) {
+    json.insert(
+        "timestamp".to_string(),
+        JToken::Number(fields.timestamp_ms as f64),
+    );
+    json.insert(
+        "assethash".to_string(),
+        JToken::String(fields.asset_hash.to_string()),
+    );
+
+    insert_optional_string(
+        json,
+        "transferaddress",
+        fields
+            .user_script_hash
+            .as_ref()
+            .map(|hash| WalletHelper::to_address(hash, protocol_settings.address_version)),
+    );
+
+    json.insert(
+        "amount".to_string(),
+        JToken::String(fields.amount.to_string()),
+    );
+    json.insert(
+        "blockindex".to_string(),
+        JToken::Number(f64::from(fields.block_index)),
+    );
+    json.insert(
+        "transfernotifyindex".to_string(),
+        JToken::Number(f64::from(fields.transfer_notify_index)),
+    );
+    json.insert(
+        "txhash".to_string(),
+        JToken::String(fields.tx_hash.to_string()),
+    );
+}
+
+/// Parses the shared NEP transfer entry fields while preserving legacy field semantics.
+pub(crate) fn parse_nep_transfer_fields(
+    json: &JObject,
+    protocol_settings: &ProtocolSettings,
+) -> Result<NepTransferFields, String> {
+    Ok(NepTransferFields {
+        timestamp_ms: required_u64_number(json, "timestamp")?,
+        asset_hash: required_script_hash_or_address(
+            json,
+            "assethash",
+            protocol_settings,
+            "asset hash",
+        )?,
+        user_script_hash: optional_script_hash_or_address_lossy(
+            json,
+            "transferaddress",
+            protocol_settings,
+        ),
+        amount: required_bigint_string(json, "amount", "amount")?,
+        block_index: required_u32_number(json, "blockindex")?,
+        transfer_notify_index: required_u16_number(json, "transfernotifyindex")?,
+        tx_hash: required_uint256(json, "txhash")?,
+    })
+}
+
 /// Parses present entries from an optional JSON array.
 ///
 /// Missing and non-array fields become an empty vector. Internal `None` slots

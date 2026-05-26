@@ -10,12 +10,10 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    insert_optional_string, optional_script_hash_or_address_lossy, parse_transfer_lists,
-    required_bigint_string, required_script_hash_or_address, required_u16_number,
-    required_u32_number, required_u64_number, required_uint256, transfer_lists_to_json,
+    NepTransferFieldRefs, insert_nep_transfer_fields, parse_nep_transfer_fields,
+    parse_transfer_lists, transfer_lists_to_json,
 };
 use neo_config::ProtocolSettings;
-use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
@@ -88,38 +86,18 @@ impl RpcNep11Transfer {
             "tokenid".to_string(),
             JToken::String(hex::encode(&self.token_id)),
         );
-        json.insert(
-            "timestamp".to_string(),
-            JToken::Number(self.timestamp_ms as f64),
-        );
-        json.insert(
-            "assethash".to_string(),
-            JToken::String(self.asset_hash.to_string()),
-        );
-
-        insert_optional_string(
+        insert_nep_transfer_fields(
             &mut json,
-            "transferaddress",
-            self.user_script_hash
-                .as_ref()
-                .map(|hash| WalletHelper::to_address(hash, protocol_settings.address_version)),
-        );
-
-        json.insert(
-            "amount".to_string(),
-            JToken::String(self.amount.to_string()),
-        );
-        json.insert(
-            "blockindex".to_string(),
-            JToken::Number(f64::from(self.block_index)),
-        );
-        json.insert(
-            "transfernotifyindex".to_string(),
-            JToken::Number(f64::from(self.transfer_notify_index)),
-        );
-        json.insert(
-            "txhash".to_string(),
-            JToken::String(self.tx_hash.to_string()),
+            NepTransferFieldRefs {
+                timestamp_ms: self.timestamp_ms,
+                asset_hash: self.asset_hash,
+                user_script_hash: self.user_script_hash,
+                amount: &self.amount,
+                block_index: self.block_index,
+                transfer_notify_index: self.transfer_notify_index,
+                tx_hash: self.tx_hash,
+            },
+            protocol_settings,
         );
         json
     }
@@ -133,25 +111,17 @@ impl RpcNep11Transfer {
         let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
             .map_err(|_| format!("Invalid tokenid: {token_id_str}"))?;
 
-        let timestamp_ms = required_u64_number(json, "timestamp")?;
-        let asset_hash =
-            required_script_hash_or_address(json, "assethash", protocol_settings, "asset hash")?;
-        let user_script_hash =
-            optional_script_hash_or_address_lossy(json, "transferaddress", protocol_settings);
-        let amount = required_bigint_string(json, "amount", "amount")?;
-        let block_index = required_u32_number(json, "blockindex")?;
-        let transfer_notify_index = required_u16_number(json, "transfernotifyindex")?;
-        let tx_hash = required_uint256(json, "txhash")?;
+        let fields = parse_nep_transfer_fields(json, protocol_settings)?;
 
         Ok(Self {
             token_id,
-            timestamp_ms,
-            asset_hash,
-            user_script_hash,
-            amount,
-            block_index,
-            transfer_notify_index,
-            tx_hash,
+            timestamp_ms: fields.timestamp_ms,
+            asset_hash: fields.asset_hash,
+            user_script_hash: fields.user_script_hash,
+            amount: fields.amount,
+            block_index: fields.block_index,
+            transfer_notify_index: fields.transfer_notify_index,
+            tx_hash: fields.tx_hash,
         })
     }
 }
@@ -210,5 +180,30 @@ mod tests {
         assert_eq!(parsed.received.len(), 1);
         assert_eq!(parsed.sent[0].token_id, entry.token_id);
         assert_eq!(parsed.received[0].user_script_hash, entry.user_script_hash);
+    }
+
+    #[test]
+    fn transfer_to_json_keeps_token_id_before_shared_fields() {
+        let entry = RpcNep11Transfer {
+            token_id: vec![1, 2, 3],
+            timestamp_ms: 1234,
+            asset_hash: UInt160::zero(),
+            user_script_hash: None,
+            amount: BigInt::from(7),
+            block_index: 9,
+            transfer_notify_index: 1,
+            tx_hash: UInt256::zero(),
+        };
+
+        assert_eq!(
+            entry
+                .to_json(&ProtocolSettings::default_settings())
+                .to_string(),
+            format!(
+                r#"{{"tokenid":"010203","timestamp":1234,"assethash":"{}","transferaddress":null,"amount":"7","blockindex":9,"transfernotifyindex":1,"txhash":"{}"}}"#,
+                UInt160::zero(),
+                UInt256::zero()
+            )
+        );
     }
 }

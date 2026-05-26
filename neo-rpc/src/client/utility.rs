@@ -19,6 +19,9 @@ mod witness_rule;
 #[allow(unused_imports)]
 pub use attributes::attribute_from_json;
 pub use parsing::optional_string;
+pub(crate) use parsing::{
+    NepTransferFieldRefs, insert_nep_transfer_fields, parse_nep_transfer_fields,
+};
 #[allow(unused_imports)]
 pub use parsing::{
     cloned_token_array, empty_array, insert_optional_string, jtoken_to_serde, object_array,

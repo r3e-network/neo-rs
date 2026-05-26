@@ -10,13 +10,11 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    insert_optional_string, optional_script_hash_or_address_lossy, parse_transfer_lists,
-    required_bigint_string, required_script_hash_or_address, required_u16_number,
-    required_u32_number, required_u64_number, required_uint256, transfer_lists_to_json,
+    NepTransferFieldRefs, insert_nep_transfer_fields, parse_nep_transfer_fields,
+    parse_transfer_lists, transfer_lists_to_json,
 };
 use neo_core::config::ProtocolSettings;
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_json::{JObject, JToken};
+use neo_json::JObject;
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
@@ -91,68 +89,37 @@ impl RpcNep17Transfer {
     /// Converts to JSON
     /// Matches C# `ToJson`
     #[must_use]
-    pub fn to_json(&self, _protocol_settings: &ProtocolSettings) -> JObject {
+    pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
-        json.insert(
-            "timestamp".to_string(),
-            JToken::Number(self.timestamp_ms as f64),
-        );
-        json.insert(
-            "assethash".to_string(),
-            JToken::String(self.asset_hash.to_string()),
-        );
-
-        insert_optional_string(
+        insert_nep_transfer_fields(
             &mut json,
-            "transferaddress",
-            self.user_script_hash.as_ref().map(|hash| {
-                WalletHelper::to_address(hash, _protocol_settings.address_version)
-            }),
-        );
-
-        json.insert(
-            "amount".to_string(),
-            JToken::String(self.amount.to_string()),
-        );
-        json.insert(
-            "blockindex".to_string(),
-            JToken::Number(f64::from(self.block_index)),
-        );
-        json.insert(
-            "transfernotifyindex".to_string(),
-            JToken::Number(f64::from(self.transfer_notify_index)),
-        );
-        json.insert(
-            "txhash".to_string(),
-            JToken::String(self.tx_hash.to_string()),
+            NepTransferFieldRefs {
+                timestamp_ms: self.timestamp_ms,
+                asset_hash: self.asset_hash,
+                user_script_hash: self.user_script_hash,
+                amount: &self.amount,
+                block_index: self.block_index,
+                transfer_notify_index: self.transfer_notify_index,
+                tx_hash: self.tx_hash,
+            },
+            protocol_settings,
         );
         json
     }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(
-        json: &JObject,
-        _protocol_settings: &ProtocolSettings,
-    ) -> Result<Self, String> {
-        let timestamp_ms = required_u64_number(json, "timestamp")?;
-        let asset_hash =
-            required_script_hash_or_address(json, "assethash", _protocol_settings, "asset hash")?;
-        let user_script_hash =
-            optional_script_hash_or_address_lossy(json, "transferaddress", _protocol_settings);
-        let amount = required_bigint_string(json, "amount", "amount")?;
-        let block_index = required_u32_number(json, "blockindex")?;
-        let transfer_notify_index = required_u16_number(json, "transfernotifyindex")?;
-        let tx_hash = required_uint256(json, "txhash")?;
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+        let fields = parse_nep_transfer_fields(json, protocol_settings)?;
 
         Ok(Self {
-            timestamp_ms,
-            asset_hash,
-            user_script_hash,
-            amount,
-            block_index,
-            transfer_notify_index,
-            tx_hash,
+            timestamp_ms: fields.timestamp_ms,
+            asset_hash: fields.asset_hash,
+            user_script_hash: fields.user_script_hash,
+            amount: fields.amount,
+            block_index: fields.block_index,
+            transfer_notify_index: fields.transfer_notify_index,
+            tx_hash: fields.tx_hash,
         })
     }
 }
