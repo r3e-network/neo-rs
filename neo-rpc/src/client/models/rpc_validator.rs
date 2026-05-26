@@ -9,10 +9,10 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::utility::parse_number_or_string_token;
 use neo_json::{JObject, JToken};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
 /// Validator information matching C# `RpcValidator`
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,13 +49,10 @@ impl RpcValidator {
         let votes_token = json
             .get("votes")
             .ok_or("Missing or invalid 'votes' field")?;
-        let votes = if let Some(text) = votes_token.as_string() {
-            BigInt::from_str(&text).map_err(|_| format!("Invalid votes value: {text}"))?
-        } else if let Some(number) = votes_token.as_number() {
-            BigInt::from(number as i64)
-        } else {
-            return Err("Invalid 'votes' field".to_string());
-        };
+        let votes =
+            parse_number_or_string_token(votes_token, "votes", "Invalid 'votes' field", |value| {
+                BigInt::from(value as i64)
+            })?;
 
         Ok(Self { public_key, votes })
     }
