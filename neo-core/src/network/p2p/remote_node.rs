@@ -85,9 +85,6 @@ pub struct RemoteNode {
     last_sent: Instant,
     /// Indicates if the remote peer advertised FullNode capability.
     is_full_node: bool,
-    /// SECURITY: Track memory usage per peer to prevent memory exhaustion attacks.
-    /// This includes message queues, bloom filters, and pending data.
-    memory_usage_bytes: usize,
 }
 
 impl RemoteNode {
@@ -175,7 +172,6 @@ impl RemoteNode {
             ack_ready: true,
             last_sent: Instant::now(),
             is_full_node: false,
-            memory_usage_bytes: 0,
         }
     }
 
