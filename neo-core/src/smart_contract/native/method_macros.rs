@@ -84,6 +84,10 @@ macro_rules! neo_native_method_dispatch {
         $contract.$handler($engine, $args)
     };
 
+    (@call $contract:expr, $engine:expr, $args:expr, engine_only, $handler:ident) => {
+        $contract.$handler($engine)
+    };
+
     (@call $contract:expr, $engine:expr, $args:expr, args, $handler:ident) => {
         $contract.$handler($args)
     };

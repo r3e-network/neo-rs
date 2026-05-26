@@ -18,7 +18,7 @@ use crate::smart_contract::native::{
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::vm_runtime::StackItem;
-use crate::{Verifiable, UInt160, UInt256};
+use crate::{UInt160, UInt256, Verifiable};
 use neo_primitives::TransactionAttributeType;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
 use num_bigint::BigInt;
@@ -278,6 +278,40 @@ fn emit_dynamic_call(
     builder
         .emit_syscall("System.Contract.Call")
         .expect("System.Contract.Call syscall");
+}
+
+#[test]
+fn policy_dispatch_method_covers_declared_metadata_names() {
+    let policy = PolicyContract::new();
+    let mut engine = make_engine(
+        Arc::new(DataCache::new(false)),
+        settings_all_active(),
+        Vec::new(),
+        None,
+    );
+    let mut names = std::collections::BTreeSet::new();
+
+    for method in policy.methods() {
+        if !names.insert(method.name.clone()) {
+            continue;
+        }
+
+        if let Err(err) = policy.dispatch_method(&mut engine, &method.name, &[]) {
+            assert!(
+                !err.to_string().contains("Unknown method:"),
+                "declared method {} did not dispatch: {err}",
+                method.name
+            );
+        }
+    }
+
+    let err = policy
+        .dispatch_method(&mut engine, "__missing__", &[])
+        .expect_err("unknown method");
+    assert!(
+        err.to_string().contains("Unknown method: __missing__"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

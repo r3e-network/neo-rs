@@ -319,33 +319,6 @@ impl PolicyContract {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        match method {
-            "getFeePerByte" => self.get_fee_per_byte(engine),
-            "getExecFeeFactor" => self.get_exec_fee_factor(engine),
-            "getExecPicoFeeFactor" => self.get_exec_pico_fee_factor(engine),
-            "getStoragePrice" => self.get_storage_price(engine),
-            "getMillisecondsPerBlock" => self.get_milliseconds_per_block(engine),
-            "getMaxValidUntilBlockIncrement" => self.get_max_valid_until_block_increment(engine),
-            "getMaxTraceableBlocks" => self.get_max_traceable_blocks(engine),
-            "getAttributeFee" => self.get_attribute_fee(engine, args),
-            "setFeePerByte" => self.set_fee_per_byte(engine, args),
-            "setExecFeeFactor" => self.set_exec_fee_factor(engine, args),
-            "setStoragePrice" => self.set_storage_price(engine, args),
-            "setMillisecondsPerBlock" => self.set_milliseconds_per_block(engine, args),
-            "setMaxValidUntilBlockIncrement" => {
-                self.set_max_valid_until_block_increment(engine, args)
-            }
-            "setMaxTraceableBlocks" => self.set_max_traceable_blocks(engine, args),
-            "setAttributeFee" => self.set_attribute_fee(engine, args),
-            "isBlocked" => self.is_blocked(engine, args),
-            "blockAccount" => self.block_account(engine, args),
-            "unblockAccount" => self.unblock_account(engine, args),
-            "getBlockedAccounts" => self.get_blocked_accounts(engine),
-            "setWhitelistFeeContract" => self.set_whitelist_fee_contract(engine, args),
-            "removeWhitelistFeeContract" => self.remove_whitelist_fee_contract(engine, args),
-            "getWhitelistFeeContracts" => self.get_whitelist_fee_contracts(engine),
-            "recoverFund" => self.recover_fund(engine, args),
-            _ => Err(Error::native_contract(format!("Unknown method: {method}"))),
-        }
+        self.dispatch_method(engine, method, args)
     }
 }
