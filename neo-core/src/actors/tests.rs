@@ -118,6 +118,23 @@ async fn actor_selection_returns_ref() -> AkkaResult<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn actor_of_rejects_duplicate_name() -> AkkaResult<()> {
+    let system = ActorSystem::new("akka-duplicate-name")?;
+
+    let first = system.actor_of(Props::new(CounterActor::default), "counter")?;
+    let err = system
+        .actor_of(Props::new(CounterActor::default), "counter")
+        .expect_err("duplicate actor name should fail");
+
+    assert!(
+        matches!(err, AkkaError::System(message) if message.contains(&first.path().to_string()))
+    );
+
+    system.shutdown().await?;
+    Ok(())
+}
+
 #[derive(Default)]
 struct WatcherActor {
     notify: Option<oneshot::Sender<ActorRef>>,

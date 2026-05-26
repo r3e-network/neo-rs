@@ -10,8 +10,8 @@ use super::{
     scheduler::Scheduler,
 };
 use async_trait::async_trait;
-use parking_lot::RwLock;
-use std::{any::Any, collections::HashMap, fmt, sync::Arc, time::Duration};
+use dashmap::{mapref::entry::Entry, DashMap};
+use std::{any::Any, fmt, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::task::TaskTracker;
 
@@ -76,7 +76,7 @@ const ACTOR_SYSTEM_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(crate) struct ActorSystemInner {
     pub name: String,
-    registry: RwLock<HashMap<String, mpsc::Sender<MailboxCommand>>>,
+    registry: DashMap<String, mpsc::Sender<MailboxCommand>>,
     runtime: tokio::runtime::Handle,
     actor_tasks: TaskTracker,
     event_stream: Arc<EventStream>,
@@ -89,7 +89,7 @@ impl ActorSystemInner {
 
         Ok(Arc::new(Self {
             name,
-            registry: RwLock::new(HashMap::new()),
+            registry: DashMap::new(),
             runtime,
             actor_tasks: TaskTracker::new(),
             event_stream: EventStream::new(),
@@ -136,14 +136,15 @@ impl ActorSystemInner {
         path: ActorPath,
     ) -> AkkaResult<ActorRef> {
         let (tx, rx) = mpsc::channel(MAILBOX_CAPACITY);
+        let key = path.to_string();
 
-        {
-            let mut registry = self.registry.write();
-            let key = path.to_string();
-            if registry.contains_key(&key) {
+        match self.registry.entry(key) {
+            Entry::Occupied(_) => {
                 return Err(AkkaError::system(format!("Actor {} already exists", path)));
             }
-            registry.insert(key, tx.clone());
+            Entry::Vacant(entry) => {
+                entry.insert(tx.clone());
+            }
         }
 
         let system = Arc::clone(self);
@@ -172,7 +173,11 @@ impl ActorSystemInner {
     }
 
     fn request_actor_stops(&self) {
-        let mailboxes: Vec<_> = self.registry.read().values().cloned().collect();
+        let mailboxes: Vec<_> = self
+            .registry
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
         for mailbox in mailboxes {
             let _ = mailbox.try_send(MailboxCommand::Message(MailboxMessage::System(
                 SystemMessage::Stop,
@@ -181,16 +186,14 @@ impl ActorSystemInner {
     }
 
     pub(crate) fn unregister(&self, path: &ActorPath) {
-        let mut registry = self.registry.write();
-        registry.remove(&path.to_string());
+        self.registry.remove(&path.to_string());
     }
 
     pub fn resolve(self: &Arc<Self>, path: &ActorPath) -> Option<ActorRef> {
-        let registry = self.registry.read();
-        let mailbox = registry.get(&path.to_string())?;
+        let mailbox = self.registry.get(&path.to_string())?;
         Some(ActorRef::new(
             path.clone(),
-            mailbox.clone(),
+            mailbox.value().clone(),
             Arc::downgrade(self),
         ))
     }
