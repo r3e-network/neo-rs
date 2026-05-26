@@ -142,11 +142,15 @@ pub struct TaskManagerActor {
     timer: Option<Cancelable>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TaskManagerTick;
+
 enum TaskManagerMessage {
     Command(TaskManagerCommand),
     PersistCompleted(PersistCompleted),
     RelayResult(RelayResult),
     Terminated(Terminated),
+    TimerTick,
 }
 
 impl TaskManagerMessage {
@@ -159,7 +163,10 @@ impl TaskManagerMessage {
                     Ok(result) => Ok(Self::RelayResult(*result)),
                     Err(envelope) => match envelope.downcast::<Terminated>() {
                         Ok(terminated) => Ok(Self::Terminated(*terminated)),
-                        Err(envelope) => Err(envelope),
+                        Err(envelope) => match envelope.downcast::<TaskManagerTick>() {
+                            Ok(_) => Ok(Self::TimerTick),
+                            Err(envelope) => Err(envelope),
+                        },
                     },
                 },
             },
@@ -180,7 +187,7 @@ impl TaskManagerActor {
             self.state.timer_interval,
             self.state.timer_interval,
             &ctx.self_ref(),
-            TaskManagerCommand::TimerTick,
+            TaskManagerTick,
             None,
         );
         self.timer = Some(cancelable);
@@ -230,7 +237,7 @@ impl TaskManagerActor {
                     self.state.on_headers(&peer);
                 }
                 TaskManagerCommand::TimerTick => {
-                    self.state.prune_timeouts();
+                    self.handle_timer_tick();
                 }
             },
             TaskManagerMessage::PersistCompleted(persist) => {
@@ -242,7 +249,14 @@ impl TaskManagerActor {
             TaskManagerMessage::Terminated(terminated) => {
                 self.state.remove_session_by_ref(&terminated.actor);
             }
+            TaskManagerMessage::TimerTick => {
+                self.handle_timer_tick();
+            }
         }
+    }
+
+    fn handle_timer_tick(&mut self) {
+        self.state.prune_timeouts();
     }
 }
 
