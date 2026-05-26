@@ -63,7 +63,7 @@ pub use bls12381::Bls12381Crypto;
 pub use ecc::{ECCurve, ECPoint};
 pub use encoding::{Base58, Base64, Hex};
 pub use error::{CryptoError, CryptoResult};
-pub use hash::{Crypto, HashAlgorithm, ct_hash_eq, ct_hash_slice_eq};
+pub use hash::{Crypto, HashAlgorithm, Sha256Hasher, ct_hash_eq, ct_hash_slice_eq};
 pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };

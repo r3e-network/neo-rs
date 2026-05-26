@@ -7,7 +7,7 @@
 //!   when comparing hash values in security-sensitive contexts.
 
 use crate::error::{CryptoError, CryptoResult};
-use blake2::{digest::consts::U32, Blake2b, Blake2b512, Blake2s256};
+use blake2::{Blake2b, Blake2b512, Blake2s256, digest::consts::U32};
 use ripemd::Ripemd160;
 use sha2::{Digest, Sha256, Sha512};
 use sha3::{Keccak256, Sha3_256, Sha3_512};
@@ -34,6 +34,41 @@ pub enum HashAlgorithm {
 ///
 /// This struct provides static methods for all hash functions used in Neo.
 pub struct Crypto;
+
+/// Incremental SHA-256 hasher for streaming inputs.
+///
+/// This wrapper keeps direct `sha2` usage inside `neo-crypto` while allowing higher-level crates to
+/// hash async or chunked data without buffering it first.
+pub struct Sha256Hasher {
+    inner: Sha256,
+}
+
+impl Sha256Hasher {
+    /// Creates a new empty SHA-256 hasher.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: Sha256::new(),
+        }
+    }
+
+    /// Adds bytes to the current hash state.
+    pub fn update(&mut self, data: &[u8]) {
+        Digest::update(&mut self.inner, data);
+    }
+
+    /// Finalizes the hash and returns the 32-byte digest.
+    #[must_use]
+    pub fn finalize(self) -> [u8; 32] {
+        self.inner.finalize().into()
+    }
+}
+
+impl Default for Sha256Hasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 fn blake2b_with_salt(data: &[u8], salt: &[u8], output_size: usize) -> CryptoResult<Vec<u8>> {
     if output_size == 0 || output_size > 64 {
@@ -384,6 +419,15 @@ mod tests {
             hex::decode("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
                 .unwrap();
         assert_eq!(hash.to_vec(), expected);
+    }
+
+    #[test]
+    fn test_sha256_hasher_matches_one_shot_hash() {
+        let mut hasher = Sha256Hasher::new();
+        hasher.update(b"he");
+        hasher.update(b"llo");
+
+        assert_eq!(hasher.finalize(), Crypto::sha256(b"hello"));
     }
 
     #[test]

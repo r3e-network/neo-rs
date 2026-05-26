@@ -410,14 +410,13 @@ fn test_compress_public_key_helper() {
 }
 
 mod helper {
-    use super::Secp256k1Crypto;
+    use super::{Crypto, Secp256k1Crypto};
+    use neo_core::UInt160;
     use neo_core::cryptography::ECPoint;
     use neo_core::smart_contract::contract::Contract;
-    use neo_core::UInt160;
     use secp256k1::{
-        ecdsa::RecoverableSignature, ecdsa::RecoveryId, Message, Secp256k1, SecretKey,
+        Message, Secp256k1, SecretKey, ecdsa::RecoverableSignature, ecdsa::RecoveryId,
     };
-    use sha2::{Digest, Sha256};
     use std::convert::TryInto;
 
     pub fn generate_private_key() -> [u8; 32] {
@@ -447,7 +446,7 @@ mod helper {
         let secret =
             SecretKey::from_slice(private_key).map_err(|e| format!("invalid private key: {e}"))?;
 
-        let message_hash = Sha256::digest(message);
+        let message_hash = Crypto::sha256(message);
         let msg = Message::from_digest_slice(&message_hash)
             .map_err(|e| format!("invalid message: {e}"))?;
 
@@ -473,7 +472,7 @@ mod helper {
         let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id)
             .map_err(|e| format!("invalid signature: {e}"))?;
 
-        let message_hash = Sha256::digest(message);
+        let message_hash = Crypto::sha256(message);
         let msg = Message::from_digest_slice(&message_hash)
             .map_err(|e| format!("invalid message: {e}"))?;
 

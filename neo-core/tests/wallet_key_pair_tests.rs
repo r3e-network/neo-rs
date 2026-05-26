@@ -1,3 +1,4 @@
+use neo_core::cryptography::Crypto;
 use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::{Signer, Witness};
 use neo_core::persistence::DataCache;
@@ -6,7 +7,6 @@ use neo_core::smart_contract;
 use neo_core::smart_contract::native::PolicyContract;
 use neo_core::wallets::{helper::Helper, key_pair::KeyPair};
 use neo_core::{Transaction, UInt160, WitnessScope};
-use sha2::{Digest, Sha256};
 
 const SAMPLE_PRIVATE_KEY: [u8; 32] = [1u8; 32];
 const SAMPLE_WIF: &str = "KwFfNUhSDaASSAwtG7ssQM1uVX8RgX5GHWnnLfhfiQDigjioWXHH";
@@ -67,9 +67,7 @@ fn verification_script_matches_contract_helper() {
     // Script should begin with PUSHDATA1 (0x0c) and end with CheckSig syscall hash
     assert_eq!(script[0], 0x0c);
     assert_eq!(script[1] as usize, key.compressed_public_key().len());
-    let mut hasher = Sha256::new();
-    hasher.update(b"System.Crypto.CheckSig");
-    let digest = hasher.finalize();
+    let digest = Crypto::sha256(b"System.Crypto.CheckSig");
     assert_eq!(
         &script[script.len() - 5..],
         [&[0x41], &digest[..4]].concat().as_slice()

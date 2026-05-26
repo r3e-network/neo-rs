@@ -8,8 +8,8 @@
 pub use neo_crypto::{
     Base58, Base64, Bip32Crypto, BloomFilter, Bls12381Crypto, Crypto, CryptoError, CryptoResult,
     ECC, ECCurve, ECDsa, ECPoint, Ed25519Crypto, HashAlgorithm, Hex, NEOFS_ECDSA_SHA512_PREFIX,
-    NEOFS_ECDSA_SHA512_SIGNATURE_LEN, NamedCurveHash, Secp256k1Crypto, Secp256r1Crypto, murmur32,
-    murmur128,
+    NEOFS_ECDSA_SHA512_SIGNATURE_LEN, NamedCurveHash, Secp256k1Crypto, Secp256r1Crypto,
+    Sha256Hasher, murmur32, murmur128,
 };
 
 /// Merkle tree implementation (moved from neo_cryptography module)

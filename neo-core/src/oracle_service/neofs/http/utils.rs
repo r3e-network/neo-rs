@@ -1,8 +1,8 @@
-use crate::network::p2p::payloads::OracleResponseCode;
 use crate::UInt256;
+use crate::cryptography::Sha256Hasher;
+use crate::network::p2p::payloads::OracleResponseCode;
 use futures::StreamExt;
 use reqwest::StatusCode;
-use sha2::{Digest, Sha256};
 
 pub(crate) fn normalize_neofs_endpoint(endpoint: &str) -> Result<String, String> {
     let trimmed = endpoint.trim();
@@ -58,7 +58,7 @@ pub(super) async fn read_limited_body(
 pub(super) async fn hash_response_body(
     response: reqwest::Response,
 ) -> Result<UInt256, OracleResponseCode> {
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha256Hasher::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| OracleResponseCode::Error)?;

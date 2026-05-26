@@ -31,8 +31,7 @@ tokio = { workspace = true, features = ["sync", "time", "fs", "io-util", "rt"] }
 tokio-util = { workspace = true, features = ["codec", "rt"] }
 async-trait = { workspace = true }
 rand = { workspace = true }
-sha2 = { workspace = true }
-# sha3, blake2, ripemd removed - use neo-crypto instead
+# sha2, sha3, blake2, ripemd removed - use neo-crypto instead
 bs58 = { workspace = true }
 bip39 = { workspace = true }
 # secp256k1, ed25519-dalek removed - use neo-crypto instead

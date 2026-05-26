@@ -2311,7 +2311,6 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
- "sha2",
  "subtle",
  "sysinfo",
  "tempfile",

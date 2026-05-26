@@ -3,9 +3,9 @@
 //! This module provides production-ready backup and restore capabilities
 //! that match the C# Neo backup functionality exactly.
 
+use crate::cryptography::Sha256Hasher;
 use crate::{Error, Result, Storage};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::time::SystemTime;
 use tokio::fs;
@@ -467,7 +467,7 @@ impl BackupManager {
     /// Calculates backup checksum
     async fn calculate_backup_checksum(&self, backup_path: &PathBuf) -> Result<String> {
         let mut file = fs::File::open(backup_path).await?;
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha256Hasher::new();
         let mut buffer = vec![0u8; 8192];
 
         loop {
@@ -478,7 +478,7 @@ impl BackupManager {
             hasher.update(&buffer[..bytes_read]);
         }
 
-        Ok(format!("{:x}", hasher.finalize()))
+        Ok(hex::encode(hasher.finalize()))
     }
 
     /// Saves backup metadata
