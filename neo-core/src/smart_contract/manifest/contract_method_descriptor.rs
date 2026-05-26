@@ -163,7 +163,7 @@ impl ContractMethodDescriptor {
 
         if let Some(integer) = items[2].to_i128() {
             if let Ok(byte_val) = u8::try_from(integer) {
-                self.return_type = ContractParameterType::try_from_u8(byte_val)
+                self.return_type = ContractParameterType::from_byte(byte_val)
                     .unwrap_or(ContractParameterType::Void);
             }
         }

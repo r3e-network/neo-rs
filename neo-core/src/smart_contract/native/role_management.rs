@@ -201,7 +201,7 @@ impl RoleManagement {
         let role_value = BigInt::from_signed_bytes_le(&args[0])
             .to_u8()
             .ok_or_else(|| Error::native_contract("Invalid role argument"))?;
-        let role = Role::from_u8(role_value).ok_or_else(|| {
+        let role = Role::from_byte(role_value).ok_or_else(|| {
             Error::native_contract(format!("Invalid role identifier: {}", role_value))
         })?;
 

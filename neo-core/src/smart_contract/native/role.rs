@@ -31,7 +31,7 @@ impl Role {
         &Self::VALUES
     }
 
-    /// Creates a role from the provided numeric value.
+    /// Compatibility alias for callers that still use the older helper name.
     pub const fn from_u8(value: u8) -> Option<Self> {
         Self::from_byte(value)
     }

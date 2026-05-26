@@ -224,6 +224,7 @@ mod tests {
     use std::task::{Context, Poll};
     use tokio::io::{AsyncWrite, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
+    use tokio::time::sleep;
 
     struct ShortVectoredWriter {
         written: Vec<u8>,
@@ -304,6 +305,20 @@ mod tests {
         Some((client_stream, server_stream))
     }
 
+    fn test_frame_config(
+        read_timeout_handshake: Duration,
+        read_timeout_active: Duration,
+    ) -> FrameConfig {
+        FrameConfig {
+            read_timeout_handshake,
+            read_timeout_active,
+            write_timeout: Duration::from_secs(1),
+            shutdown_timeout: Duration::from_secs(1),
+            use_vectored_io: true,
+            buffer_small_writes: true,
+        }
+    }
+
     #[tokio::test]
     async fn read_frame_times_out_when_peer_silent() {
         let Some((mut client_stream, _server_stream)) = silent_pair().await else {
@@ -311,14 +326,7 @@ mod tests {
         };
 
         let mut framed = FramedSocket::new(&mut client_stream);
-        let cfg = FrameConfig {
-            read_timeout_handshake: Duration::from_millis(10),
-            read_timeout_active: Duration::from_millis(10),
-            write_timeout: Duration::from_secs(1),
-            shutdown_timeout: Duration::from_secs(1),
-            use_vectored_io: true,
-            buffer_small_writes: true,
-        };
+        let cfg = test_frame_config(Duration::from_millis(10), Duration::from_millis(10));
 
         let result = framed.read_frame(&cfg, false).await;
         assert!(
@@ -334,19 +342,58 @@ mod tests {
             return;
         };
         let mut framed = FramedSocket::new(&mut client_stream);
-        let cfg = FrameConfig {
-            read_timeout_handshake: Duration::from_secs(5),
-            read_timeout_active: Duration::from_millis(10),
-            write_timeout: Duration::from_secs(1),
-            shutdown_timeout: Duration::from_secs(1),
-            use_vectored_io: true,
-            buffer_small_writes: true,
-        };
+        let cfg = test_frame_config(Duration::from_secs(5), Duration::from_millis(10));
 
         let result = framed.read_frame(&cfg, true).await;
         assert!(
             matches!(result, Err(NetworkError::Timeout)),
             "expected active timeout error, got: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn read_frame_times_out_when_partial_frame_stalls() {
+        let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
+            return;
+        };
+        let mut framed = FramedSocket::new(&mut client_stream);
+        let cfg = test_frame_config(Duration::from_millis(10), Duration::from_millis(10));
+
+        server_stream
+            .write_all(&[0x00, 0x01, 0x03, 0xAA])
+            .await
+            .expect("server writes partial frame");
+
+        let result = framed.read_frame(&cfg, false).await;
+        assert!(
+            matches!(result, Err(NetworkError::Timeout)),
+            "expected partial-frame timeout, got: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn read_frame_rejects_partial_frame_eof() {
+        let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
+            return;
+        };
+        let mut framed = FramedSocket::new(&mut client_stream);
+        let cfg = test_frame_config(Duration::from_secs(1), Duration::from_secs(1));
+
+        server_stream
+            .write_all(&[0x00, 0x01, 0x03, 0xAA])
+            .await
+            .expect("server writes partial frame");
+        drop(server_stream);
+
+        let result = framed.read_frame(&cfg, false).await;
+        assert!(
+            matches!(
+                result,
+                Err(NetworkError::ConnectionError(_)) | Err(NetworkError::InvalidMessage(_))
+            ),
+            "expected partial-frame EOF to fail closed, got: {:?}",
             result
         );
     }
@@ -392,14 +439,7 @@ mod tests {
             return;
         };
         let mut framed = FramedSocket::new(&mut client_stream);
-        let cfg = FrameConfig {
-            read_timeout_handshake: Duration::from_secs(1),
-            read_timeout_active: Duration::from_secs(1),
-            write_timeout: Duration::from_secs(1),
-            shutdown_timeout: Duration::from_secs(1),
-            use_vectored_io: true,
-            buffer_small_writes: true,
-        };
+        let cfg = test_frame_config(Duration::from_secs(1), Duration::from_secs(1));
 
         server_stream
             .write_all(&[0x00, 0x01, 0x03, 0xAA, 0xBB, 0xCC])
@@ -417,14 +457,7 @@ mod tests {
             return;
         };
         let mut framed = FramedSocket::new(&mut client_stream);
-        let cfg = FrameConfig {
-            read_timeout_handshake: Duration::from_secs(1),
-            read_timeout_active: Duration::from_secs(1),
-            write_timeout: Duration::from_secs(1),
-            shutdown_timeout: Duration::from_secs(1),
-            use_vectored_io: true,
-            buffer_small_writes: true,
-        };
+        let cfg = test_frame_config(Duration::from_secs(1), Duration::from_secs(1));
 
         server_stream
             .write_all(&[0x00, 0x01, 0x01, 0xAA, 0x00, 0x02, 0x01, 0xBB])
@@ -436,6 +469,35 @@ mod tests {
 
         assert_eq!(first, vec![0x00, 0x01, 0x01, 0xAA]);
         assert_eq!(second, vec![0x00, 0x02, 0x01, 0xBB]);
+    }
+
+    #[tokio::test]
+    async fn read_frame_allows_progressing_frame_across_total_timeout_budget() {
+        let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
+            return;
+        };
+        let mut framed = FramedSocket::new(&mut client_stream);
+        let cfg = test_frame_config(Duration::from_millis(200), Duration::from_millis(200));
+
+        let writer = tokio::spawn(async move {
+            for chunk in [
+                &[0x00, 0x01, 0x04, 0xAA][..],
+                &[0xBB][..],
+                &[0xCC][..],
+                &[0xDD][..],
+            ] {
+                server_stream.write_all(chunk).await.expect("write chunk");
+                sleep(Duration::from_millis(75)).await;
+            }
+        });
+
+        let frame = framed
+            .read_frame(&cfg, false)
+            .await
+            .expect("progressing frame reads");
+        writer.await.expect("writer task completes");
+
+        assert_eq!(frame, vec![0x00, 0x01, 0x04, 0xAA, 0xBB, 0xCC, 0xDD]);
     }
 
     #[test]

@@ -97,7 +97,7 @@ impl ContractParameterDefinition {
         if let Some(integer) = items[1].to_i128() {
             if let Ok(value) = u8::try_from(integer) {
                 self.param_type =
-                    ContractParameterType::try_from_u8(value).unwrap_or(ContractParameterType::Any);
+                    ContractParameterType::from_byte(value).unwrap_or(ContractParameterType::Any);
             }
         }
 

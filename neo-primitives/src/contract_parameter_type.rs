@@ -63,7 +63,7 @@ impl ContractParameterType {
         }
     }
 
-    /// Try to convert from u8 value
+    /// Compatibility alias for callers that still use the older helper name.
     #[must_use]
     pub const fn try_from_u8(value: u8) -> Option<Self> {
         Self::from_byte(value)
