@@ -17,7 +17,7 @@ use tracing::{debug, trace};
 mod bloom_filter;
 mod prefetch;
 pub use bloom_filter::{BloomFilter, BloomFilterKey, NegativeLookupBloom};
-pub use prefetch::{PrefetchHint, PrefetchingIterator};
+pub use prefetch::PrefetchHint;
 
 /// Cache entry with metadata.
 #[derive(Debug, Clone)]
