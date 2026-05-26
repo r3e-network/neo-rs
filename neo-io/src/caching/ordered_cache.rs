@@ -10,6 +10,41 @@ where
     entries: Option<LruCache<TKey, TValue>>,
 }
 
+fn check_copy_range(
+    context: &'static str,
+    start_index: usize,
+    count: usize,
+    destination_len: usize,
+) -> IoResult<()> {
+    if start_index > destination_len {
+        return Err(crate::IoError::InvalidData {
+            context: context.to_string(),
+            value: format!(
+                "start_index ({}) exceeds destination length ({})",
+                start_index, destination_len
+            ),
+        });
+    }
+
+    let end_index = start_index
+        .checked_add(count)
+        .ok_or_else(|| crate::IoError::InvalidData {
+            context: context.to_string(),
+            value: format!("start_index ({start_index}) + count ({count}) overflows"),
+        })?;
+    if end_index > destination_len {
+        return Err(crate::IoError::InvalidData {
+            context: context.to_string(),
+            value: format!(
+                "start_index ({}) + count ({}) > destination length ({})",
+                start_index, count, destination_len
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 impl<TKey, TValue> OrderedCache<TKey, TValue>
 where
     TKey: Eq + Hash,
@@ -17,6 +52,18 @@ where
     pub(crate) fn new(max_capacity: usize) -> Self {
         Self {
             entries: NonZeroUsize::new(max_capacity).map(LruCache::new),
+        }
+    }
+
+    pub(crate) fn resize(&mut self, max_capacity: usize) {
+        let Some(capacity) = NonZeroUsize::new(max_capacity) else {
+            self.entries = None;
+            return;
+        };
+
+        match self.entries.as_mut() {
+            Some(entries) => entries.resize(capacity),
+            None => self.entries = Some(LruCache::new(capacity)),
         }
     }
 
@@ -76,36 +123,7 @@ where
     where
         TValue: Clone,
     {
-        if start_index > destination.len() {
-            return Err(crate::IoError::InvalidData {
-                context: "copy_to".to_string(),
-                value: format!(
-                    "start_index ({}) exceeds destination length ({})",
-                    start_index,
-                    destination.len()
-                ),
-            });
-        }
-
-        let count = self.len();
-        let end_index =
-            start_index
-                .checked_add(count)
-                .ok_or_else(|| crate::IoError::InvalidData {
-                    context: "copy_to".to_string(),
-                    value: format!("start_index ({start_index}) + count ({count}) overflows"),
-                })?;
-        if end_index > destination.len() {
-            return Err(crate::IoError::InvalidData {
-                context: "copy_to".to_string(),
-                value: format!(
-                    "start_index ({}) + count ({}) > destination length ({})",
-                    start_index,
-                    count,
-                    destination.len()
-                ),
-            });
-        }
+        check_copy_range("copy_to", start_index, self.len(), destination.len())?;
 
         if let Some(entries) = self.entries.as_ref() {
             for (offset, value) in entries
@@ -119,6 +137,28 @@ where
         }
 
         Ok(())
+    }
+
+    pub(crate) fn copy_keys_to(&self, destination: &mut [TKey], start_index: usize) -> IoResult<()>
+    where
+        TKey: Clone,
+    {
+        check_copy_range("copy_to", start_index, self.len(), destination.len())?;
+
+        if let Some(entries) = self.entries.as_ref() {
+            for (offset, key) in entries.iter().rev().map(|(key, _)| key.clone()).enumerate() {
+                destination[start_index + offset] = key;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &TKey> {
+        self.entries
+            .as_ref()
+            .into_iter()
+            .flat_map(|entries| entries.iter().rev().map(|(key, _)| key))
     }
 
     pub(crate) fn peek_cloned(&self, key: &TKey) -> Option<TValue>
