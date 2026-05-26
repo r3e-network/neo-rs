@@ -68,9 +68,14 @@ impl Bls12381Crypto {
     /// Generates a new random private key using cryptographically secure RNG.
     #[must_use]
     pub fn generate_private_key() -> Zeroizing<[u8; 32]> {
-        let mut bytes = Zeroizing::new([0u8; 32]);
-        OsRng.fill_bytes(bytes.as_mut());
-        bytes
+        let mut ikm = Zeroizing::new([0u8; 32]);
+        OsRng.fill_bytes(ikm.as_mut());
+
+        let secret_key = SecretKey::key_gen(ikm.as_ref(), &[])
+            .expect("32-byte random IKM should generate a valid BLS secret key");
+        let mut private_key = Zeroizing::new(secret_key.to_bytes());
+        private_key.as_mut().reverse();
+        private_key
     }
 
     /// Derives a public key from a private key.
@@ -251,5 +256,28 @@ mod tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn generated_private_keys_are_valid_for_signing() {
+        for index in 0..128 {
+            let private_key = *Bls12381Crypto::generate_private_key();
+            let public_key = Bls12381Crypto::derive_public_key(&private_key)
+                .unwrap_or_else(|error| panic!("generated key {index} should derive: {error}"));
+            let signature = Bls12381Crypto::sign(MESSAGE, &private_key)
+                .unwrap_or_else(|error| panic!("generated key {index} should sign: {error}"));
+
+            assert!(
+                Bls12381Crypto::verify(MESSAGE, &signature, &public_key)
+                    .unwrap_or_else(|error| panic!("generated key {index} should verify: {error}")),
+                "generated key {index} signature should verify"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_private_key_scalars_are_rejected() {
+        assert!(Bls12381Crypto::derive_public_key(&[0u8; 32]).is_err());
+        assert!(Bls12381Crypto::derive_public_key(&[0xffu8; 32]).is_err());
     }
 }
