@@ -1,7 +1,9 @@
 use super::StdLib;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::smart_contract::native::method_macros::neo_native_methods;
+use crate::smart_contract::native::method_macros::{
+    neo_native_method_dispatch, neo_native_method_metadata,
+};
 use crate::smart_contract::native::NativeMethod;
 use crate::smart_contract::ApplicationEngine;
 
@@ -41,86 +43,9 @@ macro_rules! stdlib_method_table {
     };
 }
 
-macro_rules! stdlib_method_metadata {
-    (
-        ;
-        {
-            $(
-                $kind:tt $name:literal,
-                fee = $fee:expr,
-                flags = [$($flag:ident),* $(,)?],
-                params = [$($param:ident),* $(,)?],
-                returns = $return_type:ident
-                $(, active = $active:ident)?
-                $(, deprecated = $deprecated:ident)?
-                $(, storage_fee = $storage_fee:expr)?
-                $(, names = [$($param_name:literal),* $(,)?])?
-                => $handler_kind:ident $handler:ident
-            );+ $(;)?
-        }
-    ) => {
-        neo_native_methods![
-            $(
-                $kind $name,
-                fee = $fee,
-                flags = [$($flag),*],
-                params = [$($param),*],
-                returns = $return_type
-                $(, active = $active)?
-                $(, deprecated = $deprecated)?
-                $(, storage_fee = $storage_fee)?
-                $(, names = [$($param_name),*])?
-            );+
-        ]
-    };
-}
-
-macro_rules! stdlib_method_dispatch {
-    (@call $contract:expr, $engine:expr, $args:expr, engine, $handler:ident) => {
-        $contract.$handler($engine, $args)
-    };
-
-    (@call $contract:expr, $engine:expr, $args:expr, args, $handler:ident) => {
-        $contract.$handler($args)
-    };
-
-    (
-        $contract:expr, $engine:expr, $method:expr, $args:expr
-        ;
-        {
-            $(
-                $kind:tt $name:literal,
-                fee = $fee:expr,
-                flags = [$($flag:ident),* $(,)?],
-                params = [$($param:ident),* $(,)?],
-                returns = $return_type:ident
-                $(, active = $active:ident)?
-                $(, deprecated = $deprecated:ident)?
-                $(, storage_fee = $storage_fee:expr)?
-                $(, names = [$($param_name:literal),* $(,)?])?
-                => $handler_kind:ident $handler:ident
-            );+ $(;)?
-        }
-    ) => {{
-        $(
-            if $method == $name {
-                return stdlib_method_dispatch!(
-                    @call $contract, $engine, $args, $handler_kind, $handler
-                );
-            }
-        )+
-
-        if $method == "stringLen" {
-            return $contract.str_len($args);
-        }
-
-        Err(Error::native_contract(format!("Unknown method: {}", $method)))
-    }};
-}
-
 impl StdLib {
     pub(super) fn methods() -> Vec<NativeMethod> {
-        stdlib_method_table!(stdlib_method_metadata;)
+        stdlib_method_table!(neo_native_method_metadata;)
     }
 
     pub(super) fn dispatch_method(
@@ -129,6 +54,14 @@ impl StdLib {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        stdlib_method_table!(stdlib_method_dispatch; self, engine, method, args)
+        stdlib_method_table!(
+            neo_native_method_dispatch;
+            self,
+            engine,
+            method,
+            args,
+            aliases = ["stringLen" => args str_len],
+            unknown = |method| Error::native_contract(format!("Unknown method: {}", method))
+        )
     }
 }

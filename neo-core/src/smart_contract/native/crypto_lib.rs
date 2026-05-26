@@ -217,25 +217,7 @@ impl NativeContract for CryptoLib {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        match method {
-            "recoverSecp256K1" => self.recover_secp256k1(args),
-            "sha256" => self.sha256(args),
-            "ripemd160" => self.ripemd160(args),
-            "murmur32" => self.murmur32(args),
-            "keccak256" => self.keccak256(args),
-            "verifyWithECDsa" => self.verify_with_ecdsa(engine, args),
-            "verifyWithEd25519" => self.verify_with_ed25519(args),
-            "bls12381Add" => self.bls12381_add(args),
-            "bls12381Equal" => self.bls12381_equal(args),
-            "bls12381Mul" => self.bls12381_mul(args),
-            "bls12381Pairing" => self.bls12381_pairing(args),
-            "bls12381Serialize" => self.bls12381_serialize(args),
-            "bls12381Deserialize" => self.bls12381_deserialize(args),
-            _ => Err(Error::native_contract(format!(
-                "Unknown CryptoLib method: {}",
-                method
-            ))),
-        }
+        self.dispatch_method(engine, method, args)
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -252,6 +234,24 @@ impl Default for CryptoLib {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::DataCache;
+    use crate::protocol_settings::ProtocolSettings;
+    use crate::smart_contract::trigger_type::TriggerType;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    fn test_engine() -> ApplicationEngine {
+        ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            400_000_000,
+            None,
+        )
+        .expect("engine")
+    }
 
     #[test]
     fn test_sha256() {
@@ -267,5 +267,48 @@ mod tests {
         let data = b"hello world".to_vec();
         let result = lib.ripemd160(&[data]).unwrap();
         assert_eq!(result.len(), 20);
+    }
+
+    #[test]
+    fn dispatch_method_routes_crypto_methods_and_unknowns() {
+        let lib = CryptoLib::new();
+        let mut engine = test_engine();
+        let data = b"hello world".to_vec();
+
+        assert_eq!(
+            lib.dispatch_method(&mut engine, "sha256", std::slice::from_ref(&data))
+                .expect("dispatch sha256"),
+            lib.sha256(&[data]).expect("direct sha256")
+        );
+
+        let err = lib
+            .dispatch_method(&mut engine, "missing", &[])
+            .expect_err("unknown method");
+        assert!(
+            err.to_string()
+                .contains("Unknown CryptoLib method: missing"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn dispatch_method_covers_declared_metadata_names() {
+        let lib = CryptoLib::new();
+        let mut engine = test_engine();
+        let mut names = BTreeSet::new();
+
+        for method in lib.methods() {
+            if !names.insert(method.name.clone()) {
+                continue;
+            }
+
+            if let Err(err) = lib.dispatch_method(&mut engine, &method.name, &[]) {
+                assert!(
+                    !err.to_string().contains("Unknown CryptoLib method"),
+                    "declared method {} did not dispatch: {err}",
+                    method.name
+                );
+            }
+        }
     }
 }
