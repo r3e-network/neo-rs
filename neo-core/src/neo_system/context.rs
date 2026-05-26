@@ -15,6 +15,7 @@ use std::thread;
 use crate::runtime::{ActorRef, ActorSystemHandle, EventStreamHandle};
 use tracing::{trace, warn};
 
+use super::actors::TransactionRouterHandle;
 use super::converters::{convert_ledger_block, convert_ledger_header};
 use super::registry::ServiceRegistry;
 use super::relay::{RelayExtensibleCache, RelayExtensibleEntry, LEDGER_HYDRATION_WINDOW};
@@ -23,9 +24,7 @@ use crate::contains_transaction_type::ContainsTransactionType;
 use crate::error::{CoreError, CoreResult};
 use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::extensions::log_level::LogLevel;
-use crate::i_event_handlers::{
-    CommittedHandler, CommittingHandler, WalletChangedHandler,
-};
+use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
     payloads::{
@@ -45,7 +44,7 @@ use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::state_service::StateStore;
-use crate::wallets::{WalletProvider, Wallet};
+use crate::wallets::{Wallet, WalletProvider};
 use neo_primitives::{UInt160, UInt256};
 
 use super::core::NeoSystem;
@@ -60,8 +59,8 @@ pub struct NeoSystemContext {
     pub local_node: ActorRef,
     /// Reference to the task manager actor coordinating inventory download.
     pub task_manager: ActorRef,
-    /// Reference to the transaction router actor.
-    pub tx_router: ActorRef,
+    /// Handle to the transaction router worker.
+    pub tx_router: TransactionRouterHandle,
     /// Global service registry mirrored from the C# implementation.
     pub(crate) service_registry: Arc<ServiceRegistry>,
     /// Registered callbacks for wallet changes.

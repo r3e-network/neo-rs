@@ -57,7 +57,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 // Use extracted modules
-use super::actors::TransactionRouterActor;
+use super::actors::TransactionRouterHandle;
 use super::context::NeoSystemContext;
 use super::helpers::{initialise_plugins, to_core_error};
 use super::mempool::attach_mempool_callbacks;
@@ -77,9 +77,7 @@ use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
     payloads::block::Block, timeouts, LocalNode, TaskManager, TaskManagerCommand,
 };
-use crate::persistence::{
-    store::IStore, store_provider::StoreProvider, StoreCache, StoreFactory,
-};
+use crate::persistence::{store::IStore, store_provider::StoreProvider, StoreCache, StoreFactory};
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
 use crate::smart_contract::native::helpers::NativeHelpers;
@@ -129,7 +127,7 @@ pub struct NeoSystem {
     blockchain: ActorRef,
     pub(crate) local_node: ActorRef,
     task_manager: ActorRef,
-    tx_router: ActorRef,
+    tx_router: TransactionRouterHandle,
     store_provider: Arc<dyn StoreProvider>,
     store: Arc<dyn IStore>,
     ledger: Arc<LedgerContext>,
@@ -448,8 +446,8 @@ impl NeoSystem {
         self.task_manager.clone()
     }
 
-    /// Reference to the transaction router actor.
-    pub fn tx_router_actor(&self) -> ActorRef {
+    /// Handle to the transaction router worker.
+    pub fn tx_router_actor(&self) -> TransactionRouterHandle {
         self.tx_router.clone()
     }
 
@@ -489,6 +487,7 @@ impl NeoSystem {
         // Drop the global logging hook to avoid leaking callbacks across system lifetimes.
         ExtensionsUtility::set_logging(None);
         timeouts::log_stats();
+        self.tx_router.abort();
         self.actor_system.shutdown().await.map_err(to_core_error)
     }
 }
@@ -533,7 +532,7 @@ fn spawn_core_actors(
     ledger: Arc<LedgerContext>,
     local_node_state: Arc<LocalNode>,
     settings: Arc<ProtocolSettings>,
-) -> CoreResult<(ActorRef, ActorRef, ActorRef, ActorRef)> {
+) -> CoreResult<(ActorRef, ActorRef, ActorRef, TransactionRouterHandle)> {
     let blockchain = actor_system
         .actor_of(Blockchain::props(ledger), "blockchain")
         .map_err(to_core_error)?;
@@ -543,12 +542,7 @@ fn spawn_core_actors(
     let task_manager = actor_system
         .actor_of(TaskManager::props(), "task_manager")
         .map_err(to_core_error)?;
-    let tx_router = actor_system
-        .actor_of(
-            TransactionRouterActor::props(settings, blockchain.clone()),
-            "tx_router",
-        )
-        .map_err(to_core_error)?;
+    let tx_router = TransactionRouterHandle::spawn(settings, blockchain.clone());
     Ok((blockchain, local_node, task_manager, tx_router))
 }
 
@@ -572,4 +566,4 @@ fn attach_system_to_actors(
 }
 
 // to_core_error has been extracted to super::helpers module
-// TransactionRouterActor and TransactionRouterMessage have been extracted to super::actors module
+// TransactionRouterHandle and TransactionRouterMessage have been extracted to super::actors module
