@@ -97,34 +97,10 @@ impl Scheduler {
 
         ScheduleHandle::new(token)
     }
-
-    pub fn schedule_tell_once_cancelable<M>(
-        &self,
-        delay: Duration,
-        target: ActorRef,
-        message: M,
-        sender: Option<ActorRef>,
-    ) -> ScheduleHandle
-    where
-        M: Any + Send + 'static,
-    {
-        self.schedule_tell_once(delay, target, message, sender)
-    }
-
-    pub fn schedule_tell_repeatedly_cancelable<M>(
-        &self,
-        initial_delay: Duration,
-        interval: Duration,
-        target: ActorRef,
-        message: M,
-        sender: Option<ActorRef>,
-    ) -> ScheduleHandle
-    where
-        M: Clone + Any + Send + 'static,
-    {
-        self.schedule_tell_repeatedly(initial_delay, interval, target, message, sender)
-    }
 }
+
+/// Compatibility alias for scheduled message handles.
+pub type Cancelable = ScheduleHandle;
 
 #[must_use = "scheduled messages are cancelled when the handle is dropped"]
 pub struct ScheduleHandle {

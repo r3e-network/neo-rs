@@ -1,4 +1,5 @@
 #![cfg(feature = "runtime")]
+#![allow(deprecated)]
 
 use async_trait::async_trait;
 use neo_core::akka::{

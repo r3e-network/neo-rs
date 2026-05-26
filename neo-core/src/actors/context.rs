@@ -8,9 +8,8 @@ use super::{
     actor_ref::ActorRef,
     actor_system::{ActorSystemHandle, ActorSystemInner},
     error::ActorRuntimeResult,
-    mailbox::Cancelable,
     props::Props,
-    scheduler::Scheduler,
+    scheduler::{Cancelable, Scheduler},
 };
 use std::{sync::Arc, time::Duration};
 

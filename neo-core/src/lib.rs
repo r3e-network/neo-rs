@@ -282,6 +282,7 @@ pub use actors as runtime;
 ///
 /// New code should import `neo_core::runtime`.
 #[cfg(feature = "runtime")]
+#[deprecated(note = "use neo_core::runtime instead")]
 pub use actors as akka;
 
 /// System management and orchestration (requires `runtime` feature).

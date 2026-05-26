@@ -1,7 +1,6 @@
 #![cfg(feature = "runtime")]
 
 use async_trait::async_trait;
-use neo_core::actors::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
 use neo_core::network::p2p::capabilities::NodeCapability;
 use neo_core::network::p2p::payloads::{ExtensiblePayload, VersionPayload};
 use neo_core::network::p2p::{
@@ -10,6 +9,7 @@ use neo_core::network::p2p::{
 };
 use neo_core::network::MessageCommand;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
 use std::any::Any;
 use std::sync::Arc;
 use tokio::sync::mpsc;

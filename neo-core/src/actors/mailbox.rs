@@ -24,6 +24,3 @@ impl DefaultMailbox {
         self.queue.is_empty()
     }
 }
-
-/// Convenience alias for working with cancellable schedule handles.
-pub type Cancelable = super::scheduler::ScheduleHandle;

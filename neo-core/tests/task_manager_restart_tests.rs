@@ -2,13 +2,13 @@
 
 use async_trait::async_trait;
 use neo_core::UInt256;
-use neo_core::actors::{Actor, ActorContext, ActorResult, ActorSystem, Props};
 use neo_core::neo_system::NeoSystem;
 use neo_core::network::p2p::messages::ProtocolMessage;
 use neo_core::network::p2p::payloads::{InvPayload, InventoryType, VersionPayload};
 use neo_core::network::p2p::{
     MessageCommand, NetworkMessage, RemoteNodeCommand, TaskManagerActor, TaskManagerHandle,
 };
+use neo_core::runtime::{Actor, ActorContext, ActorResult, ActorSystem, Props};
 use std::any::Any;
 use std::sync::{
     Arc,

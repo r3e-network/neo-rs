@@ -20,10 +20,9 @@ pub use actor_system::{ActorPath, ActorSystem, ActorSystemHandle};
 pub use context::ActorContext;
 pub use error::{ActorRuntimeError, ActorRuntimeResult, AkkaError, AkkaResult};
 pub use event_stream::EventStreamHandle;
-pub use mailbox::Cancelable;
 pub use message::{Envelope, MailboxMessage, SystemMessage, Terminated};
 pub use props::Props;
-pub use scheduler::{ScheduleHandle, Scheduler};
+pub use scheduler::{Cancelable, ScheduleHandle, Scheduler};
 
 #[cfg(test)]
 mod tests;
