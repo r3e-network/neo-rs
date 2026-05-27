@@ -6,22 +6,24 @@ use crate::network::p2p::payloads::{
     block::Block, filter_add_payload::FilterAddPayload, filter_load_payload::FilterLoadPayload,
     transaction::Transaction,
 };
+use governor::{
+    DefaultDirectRateLimiter, Quota, RateLimiter, middleware::StateInformationMiddleware,
+};
 use std::net::SocketAddr;
-use std::time::Instant;
+use std::num::NonZeroU32;
 use tracing::{debug, warn};
 
 pub(super) struct BloomFilterState {
     filter: Option<BloomFilter>,
-    filter_ops_count: u32,
-    filter_ops_reset_time: Instant,
+    filter_limiter: DefaultDirectRateLimiter<StateInformationMiddleware>,
 }
 
 impl Default for BloomFilterState {
     fn default() -> Self {
         Self {
             filter: None,
-            filter_ops_count: 0,
-            filter_ops_reset_time: Instant::now(),
+            filter_limiter: RateLimiter::direct(Self::filter_quota())
+                .with_middleware::<StateInformationMiddleware>(),
         }
     }
 }
@@ -33,12 +35,16 @@ impl BloomFilterState {
     const MAX_BLOOM_K: u8 = 50;
     /// Maximum bloom filter operations per minute to prevent DoS attacks.
     const MAX_FILTER_OPS_PER_MINUTE: u32 = 100;
-    /// Duration for filter rate limit window (60 seconds).
-    const FILTER_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 
     #[cfg(test)]
     fn filter(&self) -> Option<&BloomFilter> {
         self.filter.as_ref()
+    }
+
+    fn filter_quota() -> Quota {
+        let max_ops = NonZeroU32::new(Self::MAX_FILTER_OPS_PER_MINUTE)
+            .expect("filter operation quota is non-zero");
+        Quota::per_minute(max_ops).allow_burst(max_ops)
     }
 
     pub(super) fn clear(&mut self) {
@@ -100,24 +106,17 @@ impl BloomFilterState {
     }
 
     fn check_filter_rate_limit(&mut self, endpoint: SocketAddr) -> bool {
-        let now = Instant::now();
-        if now.duration_since(self.filter_ops_reset_time) >= Self::FILTER_RATE_LIMIT_WINDOW {
-            self.filter_ops_count = 0;
-            self.filter_ops_reset_time = now;
+        match self.filter_limiter.check() {
+            Ok(_) => true,
+            Err(_) => {
+                warn!(
+                    target: "neo",
+                    endpoint = %endpoint,
+                    "bloom filter rate limit exceeded, rejecting operation"
+                );
+                false
+            }
         }
-
-        if self.filter_ops_count >= Self::MAX_FILTER_OPS_PER_MINUTE {
-            warn!(
-                target: "neo",
-                endpoint = %endpoint,
-                ops_count = self.filter_ops_count,
-                "bloom filter rate limit exceeded, rejecting operation"
-            );
-            return false;
-        }
-
-        self.filter_ops_count += 1;
-        true
     }
 
     fn flags(&self, block: &Block) -> Option<Vec<bool>> {
@@ -184,7 +183,6 @@ mod tests {
     use crate::{UInt160, WitnessScope};
     use neo_vm_rs::OpCode;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use std::time::{Duration, Instant};
 
     fn endpoint() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20333)
@@ -287,18 +285,13 @@ mod tests {
     }
 
     #[test]
-    fn filter_rate_limit_resets_after_window() {
+    fn filter_rate_limit_allows_initial_burst_then_rejects() {
         let mut state = BloomFilterState::default();
 
         for _ in 0..BloomFilterState::MAX_FILTER_OPS_PER_MINUTE {
             assert!(state.check_filter_rate_limit(endpoint()));
         }
         assert!(!state.check_filter_rate_limit(endpoint()));
-
-        state.filter_ops_reset_time =
-            Instant::now() - BloomFilterState::FILTER_RATE_LIMIT_WINDOW - Duration::from_secs(1);
-
-        assert!(state.check_filter_rate_limit(endpoint()));
     }
 
     #[test]
