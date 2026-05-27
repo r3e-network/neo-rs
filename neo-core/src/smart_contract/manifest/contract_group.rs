@@ -6,7 +6,7 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::smart_contract::interoperable::Interoperable;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::{ECCurve, ECPoint};
 use base64::{engine::general_purpose, Engine as _};
 use std::convert::TryFrom;

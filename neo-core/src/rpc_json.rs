@@ -1,6 +1,6 @@
 //! JSON-RPC envelope rendering for host VM stack items.
 
-use super::StackItem;
+use crate::neo_vm::StackItem;
 use crate::error::CoreError;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_vm_rs::StackItemType;
@@ -200,7 +200,7 @@ mod tests {
         stack_item_rpc_json, stack_item_rpc_json_deferred_size_check,
         stack_items_rpc_json_per_item,
     };
-    use crate::vm_runtime::{InteropInterface, Script, StackItem};
+    use crate::neo_vm::{stack_item::InteropInterface, Script, StackItem};
     use neo_vm_rs::VmOrderedDictionary;
     use serde_json::json;
     use std::any::Any;

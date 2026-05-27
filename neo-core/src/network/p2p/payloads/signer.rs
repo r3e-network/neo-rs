@@ -17,7 +17,7 @@ use crate::neo_io::serializable::helper::{
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::Interoperable;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use crate::{
     cryptography::{ECCurve, ECPoint},

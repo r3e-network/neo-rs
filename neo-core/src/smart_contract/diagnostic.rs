@@ -1,6 +1,6 @@
 //! Diagnostic trait for ApplicationEngine.
 
-use crate::vm_runtime::ExecutionContext;
+use crate::neo_vm::ExecutionContext;
 use neo_vm_rs::Instruction;
 
 /// Diagnostic interface for ApplicationEngine.

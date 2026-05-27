@@ -2,7 +2,7 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::interoperable::Interoperable;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::{Verifiable, UInt160};
 use std::fmt;
 use std::sync::Arc;

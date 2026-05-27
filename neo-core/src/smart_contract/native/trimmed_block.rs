@@ -6,7 +6,7 @@ use crate::neo_io::{
     Serializable,
 };
 use crate::smart_contract::interoperable::Interoperable;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::{CoreResult, UInt256};
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;

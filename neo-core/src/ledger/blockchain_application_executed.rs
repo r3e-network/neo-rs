@@ -1,6 +1,6 @@
 use crate::network::p2p::payloads::Transaction;
 use crate::smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs, TriggerType};
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use neo_vm_rs::VmState as VMState;
 
 #[derive(Clone)]

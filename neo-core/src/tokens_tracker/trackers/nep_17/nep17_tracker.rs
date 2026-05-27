@@ -14,7 +14,7 @@ use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::native::contract_management::ContractManagement;
 use crate::smart_contract::ApplicationEngine;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::{NeoSystem, UInt160};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;

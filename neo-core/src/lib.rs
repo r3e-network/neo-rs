@@ -117,7 +117,7 @@ pub mod script_builder;
 pub mod script_validation;
 
 /// Host-specific VM runtime adapters.
-pub mod vm_runtime;
+pub mod rpc_json;
 
 /// System-wide protocol constants.
 ///

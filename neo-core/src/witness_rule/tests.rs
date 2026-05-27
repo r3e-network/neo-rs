@@ -1,7 +1,7 @@
 use super::helpers::{encode_hex, parse_group_bytes};
 use super::*;
 use crate::neo_config::ADDRESS_SIZE;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::UInt160;
 
 #[test]

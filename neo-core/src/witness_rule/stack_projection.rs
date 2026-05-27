@@ -1,5 +1,5 @@
 use super::{WitnessCondition, WitnessRule};
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 
 impl WitnessCondition {

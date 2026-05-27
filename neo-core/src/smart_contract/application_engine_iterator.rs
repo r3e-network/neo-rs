@@ -2,7 +2,7 @@
 
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::call_flags::CallFlags;
-use crate::vm_runtime::{ExecutionEngine, VmError, VmResult};
+use crate::neo_vm::{ExecutionEngine, VmError, VmResult};
 
 fn map_iterator_error(service: &str, error: String) -> VmError {
     VmError::InteropService {

@@ -18,7 +18,7 @@ use crate::smart_contract::native::stack_value_numeric::{
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::UInt160;
 use neo_primitives::TransactionAttributeType;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};

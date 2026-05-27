@@ -14,7 +14,7 @@ use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractGroup, ContractPermission, ContractPermissionDescriptor, WildCardContainer,
 };
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::UInt160;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};

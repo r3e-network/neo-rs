@@ -4051,13 +4051,8 @@ fn protocol_data_modules_use_vm_runtime_stack_items() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("crate::vm_runtime::StackItem"),
-            "{relative} should import host StackItem through vm_runtime"
-        );
-        assert!(
-            !source.contains("crate::neo_vm::StackItem")
-                && !source.contains("crate::neo_vm::stack_item::StackItem"),
-            "{relative} should not import host StackItem through the neo_vm implementation tree"
+            source.contains("crate::neo_vm::StackItem"),
+            "{relative} should import StackItem through neo_vm"
         );
     }
 }
@@ -4078,13 +4073,8 @@ fn manifest_modules_use_vm_runtime_stack_items() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("crate::vm_runtime::StackItem"),
-            "{relative} should import host StackItem through vm_runtime"
-        );
-        assert!(
-            !source.contains("crate::neo_vm::StackItem")
-                && !source.contains("crate::neo_vm::stack_item::StackItem"),
-            "{relative} should not import host StackItem through the neo_vm implementation tree"
+            source.contains("crate::neo_vm::StackItem"),
+            "{relative} should import StackItem through neo_vm"
         );
     }
 }
@@ -4103,13 +4093,8 @@ fn native_event_and_data_modules_use_vm_runtime_stack_items() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("crate::vm_runtime::StackItem"),
-            "{relative} should import host StackItem through vm_runtime"
-        );
-        assert!(
-            !source.contains("crate::neo_vm::StackItem")
-                && !source.contains("crate::neo_vm::stack_item::StackItem"),
-            "{relative} should not import host StackItem through the neo_vm implementation tree"
+            source.contains("crate::neo_vm::StackItem"),
+            "{relative} should import StackItem through neo_vm"
         );
     }
 }
@@ -4124,13 +4109,8 @@ fn host_adapter_modules_use_vm_runtime_stack_items() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("crate::vm_runtime::StackItem"),
-            "{relative} should import host StackItem through vm_runtime"
-        );
-        assert!(
-            !source.contains("crate::neo_vm::StackItem")
-                && !source.contains("crate::neo_vm::stack_item::StackItem"),
-            "{relative} should not import host StackItem through the neo_vm implementation tree"
+            source.contains("crate::neo_vm::StackItem"),
+            "{relative} should import StackItem through neo_vm"
         );
     }
 }
@@ -4157,13 +4137,8 @@ fn native_contract_modules_use_vm_runtime_stack_items() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("crate::vm_runtime::StackItem"),
-            "{relative} should import host StackItem through vm_runtime"
-        );
-        assert!(
-            !source.contains("crate::neo_vm::StackItem")
-                && !source.contains("crate::neo_vm::stack_item::StackItem"),
-            "{relative} should not import host StackItem through the neo_vm implementation tree"
+            source.contains("crate::neo_vm::StackItem"),
+            "{relative} should import StackItem through neo_vm"
         );
     }
 }

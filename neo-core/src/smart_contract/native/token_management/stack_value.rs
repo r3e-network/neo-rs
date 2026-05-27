@@ -2,7 +2,7 @@ use crate::error::CoreError;
 use crate::smart_contract::native::stack_value_numeric::{
     stack_value_to_bigint_result, MAX_VM_INTEGER_BYTES,
 };
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 

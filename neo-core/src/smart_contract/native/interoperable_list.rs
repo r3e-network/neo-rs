@@ -1,7 +1,7 @@
 //! InteroperableList - matches C# Neo.SmartContract.Native.InteroperableList exactly
 
 use crate::smart_contract::interoperable::Interoperable;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use std::ops::{Deref, DerefMut};
 
 /// A list that can be converted to/from StackItem (matches C# InteroperableList\<T>)

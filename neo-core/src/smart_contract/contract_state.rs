@@ -13,7 +13,7 @@ use crate::smart_contract::{
     helper::Helper, interoperable::Interoperable, manifest::ContractManifest,
     method_token::MethodToken,
 };
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::UInt160;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;

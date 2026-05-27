@@ -33,7 +33,7 @@ use crate::smart_contract::native::ledger_contract::{
 };
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{StorageItem, StorageKey};
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::UInt256;
 use neo_vm_rs::VmState as VMState;
 use tracing::{debug, info, warn};

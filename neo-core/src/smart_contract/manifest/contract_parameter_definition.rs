@@ -3,7 +3,7 @@
 use crate::error::CoreError;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::ContractParameterType;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 

@@ -29,7 +29,7 @@ use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::{ContractManagement, LedgerContract, PolicyContract};
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType, Interoperable};
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::wallets::helper::Helper as WalletHelper;
 use crate::{ledger::VerifyResult, CoreResult, UInt160, UInt256, Verifiable};
 use base64::{engine::general_purpose, Engine as _};

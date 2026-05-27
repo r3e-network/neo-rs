@@ -6,7 +6,7 @@ use crate::smart_contract::manifest::stack_value_helpers::{
     decode_stack_value_objects, required_struct_fields,
 };
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

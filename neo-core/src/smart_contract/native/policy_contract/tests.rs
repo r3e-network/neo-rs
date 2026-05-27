@@ -17,7 +17,7 @@ use crate::smart_contract::native::{
 };
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::{UInt160, UInt256, Verifiable};
 use neo_primitives::TransactionAttributeType;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};

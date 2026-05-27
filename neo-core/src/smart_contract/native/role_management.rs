@@ -9,7 +9,7 @@ use crate::impl_native_contract;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod, Role};
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::UInt160;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -258,7 +258,7 @@ mod tests {
     use crate::smart_contract::storage_key::StorageKey;
     use crate::smart_contract::trigger_type::TriggerType;
     use crate::smart_contract::{native::NativeHelpers, StorageItem};
-    use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
     use crate::witness::Witness;
     use crate::{ECCurve, ECPoint, UInt256, Verifiable, WitnessScope};
     use neo_vm_rs::OpCode;

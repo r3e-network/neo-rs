@@ -15,7 +15,7 @@ use crate::smart_contract::manifest::{
 };
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::wallets::KeyPair;
 use crate::witness::Witness;
 use crate::{Verifiable, UInt160, WitnessScope};

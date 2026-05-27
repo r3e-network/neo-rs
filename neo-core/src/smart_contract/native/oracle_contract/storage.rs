@@ -9,7 +9,7 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::oracle_request::OracleRequest;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
-use crate::vm_runtime::StackItem;
+use crate::neo_vm::StackItem;
 use crate::{UInt160, UInt256};
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
