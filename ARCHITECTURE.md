@@ -429,7 +429,7 @@ let transaction = TransactionBuilder::new()
     .nonce(12345)
     .sender(sender_hash)
     .script(invocation_script)
-    .witness_scope(WitnessScope::CalledByEntry)
+    .witness_scope(WitnessScope::CALLED_BY_ENTRY)
     .build()?;
 ```
 
