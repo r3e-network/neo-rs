@@ -6,14 +6,16 @@
 /// Base node capability trait.
 pub mod node_capability;
 /// Node capability type enumeration.
-pub mod node_capability_type;
+pub mod node_capability_type {
+    pub use neo_primitives::NodeCapabilityType;
+}
 
 use crate::neo_io::IoResult;
 
+pub use node_capability::{MAX_UNKNOWN_CAPABILITY_DATA, NodeCapability};
 pub(crate) use node_capability::{
     deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
 };
-pub use node_capability::{NodeCapability, MAX_UNKNOWN_CAPABILITY_DATA};
 pub use node_capability_type::NodeCapabilityType;
 
 /// Creates an archival node capability descriptor.

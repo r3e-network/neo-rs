@@ -36,12 +36,14 @@ pub mod header;
 pub mod headers_payload;
 /// High priority transaction attribute.
 pub mod high_priority_attribute;
-/// Inventory interface trait.
-pub mod inventory;
 /// Inventory payload for announcements.
 pub mod inv_payload;
+/// Inventory interface trait.
+pub mod inventory;
 /// Inventory type enumeration.
-pub mod inventory_type;
+pub mod inventory_type {
+    pub use neo_primitives::InventoryType;
+}
 /// Merkle block payload for SPV.
 pub mod merkle_block_payload;
 /// Network address with timestamp.
@@ -53,7 +55,9 @@ pub mod notary_assisted;
 /// Oracle response transaction attribute.
 pub mod oracle_response;
 /// Oracle response code enumeration.
-pub mod oracle_response_code;
+pub mod oracle_response_code {
+    pub use neo_primitives::OracleResponseCode;
+}
 /// Ping/pong payload for keepalive.
 pub mod ping_payload;
 /// Transaction signer structure.
@@ -65,15 +69,19 @@ pub mod transaction_attribute;
 /// Version payload for handshake.
 pub mod version_payload;
 /// Witness structure for verification.
-pub mod witness;
+pub mod witness {
+    pub use crate::witness::Witness;
+}
 /// Witness scope flags.
-pub mod witness_scope;
+pub mod witness_scope {
+    pub use neo_primitives::{InvalidWitnessScopeError, WitnessScope};
+}
 
 // Re-export commonly used types
 pub use crate::ledger::VerifyResult;
 // Re-export witness_rule types from root module (avoid duplicate files)
-pub use crate::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
 pub use crate::Verifiable;
+pub use crate::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
 pub use addr_payload::AddrPayload;
 pub use block::Block;
 pub use conflicts::Conflicts;
@@ -85,8 +93,8 @@ pub use get_blocks_payload::GetBlocksPayload;
 pub use header::Header;
 pub use headers_payload::HeadersPayload;
 pub use high_priority_attribute::HighPriorityAttribute;
-pub use inventory::Inventory;
 pub use inv_payload::InvPayload;
+pub use inventory::Inventory;
 pub use inventory_type::InventoryType;
 pub use merkle_block_payload::MerkleBlockPayload;
 pub use neo_primitives::TransactionAttributeType;
@@ -97,7 +105,7 @@ pub use oracle_response::OracleResponse;
 pub use oracle_response_code::OracleResponseCode;
 pub use ping_payload::PingPayload;
 pub use signer::Signer;
-pub use transaction::{Transaction, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE};
+pub use transaction::{HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE, Transaction};
 pub use transaction_attribute::TransactionAttribute;
 pub use version_payload::VersionPayload;
 pub use witness::Witness;
