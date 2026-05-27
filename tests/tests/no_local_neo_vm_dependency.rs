@@ -3462,10 +3462,8 @@ fn istype_reuses_neo_vm_rs_type_semantics_with_shallow_adapter() {
 #[test]
 fn convert_byte_sequence_targets_reuse_neo_vm_rs_conversion_semantics() {
     let workspace = workspace_root();
-    let types =
-        fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/types.rs")).unwrap();
-    let stack_item =
-        fs::read_to_string(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs")).unwrap();
+    let types = read_source(workspace.join("neo-core/src/neo_vm/jump_table/types.rs"));
+    let stack_item = read_source(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs"));
 
     assert!(
         stack_item.contains("neo_vm_rs::semantics::conversion::convert_value"),
@@ -3497,8 +3495,7 @@ fn convert_byte_sequence_targets_reuse_neo_vm_rs_conversion_semantics() {
 #[test]
 fn convert_opcode_primitive_targets_reuse_stack_item_conversion_boundary() {
     let workspace = workspace_root();
-    let types =
-        fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/types.rs")).unwrap();
+    let types = read_source(workspace.join("neo-core/src/neo_vm/jump_table/types.rs"));
 
     assert!(
         types.contains(
