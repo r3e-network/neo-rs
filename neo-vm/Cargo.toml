@@ -1,0 +1,26 @@
+[package]
+name = "neo-vm"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Neo Virtual Machine (NeoVM) runtime for neo-rs"
+
+[dependencies]
+neo-primitives = { path = "../neo-primitives" }
+neo_io_crate = { path = "../neo-io", package = "neo-io" }
+neo-crypto = { path = "../neo-crypto" }
+neo-vm-rs = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+bitflags = { workspace = true }

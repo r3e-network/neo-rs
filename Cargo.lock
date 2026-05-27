@@ -2293,6 +2293,7 @@ dependencies = [
  "neo-json",
  "neo-primitives",
  "neo-storage",
+ "neo-vm",
  "neo-vm-rs",
  "num-bigint",
  "num-integer",
@@ -2623,6 +2624,22 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "neo-vm"
+version = "0.7.2"
+dependencies = [
+ "bitflags 2.11.0",
+ "neo-crypto",
+ "neo-io",
+ "neo-primitives",
+ "neo-vm-rs",
+ "num-bigint",
+ "num-traits",
+ "parking_lot",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

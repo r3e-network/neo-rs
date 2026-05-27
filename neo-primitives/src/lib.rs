@@ -31,6 +31,7 @@
 pub use bitflags;
 
 pub mod base58_check;
+pub mod call_flags;
 pub mod blockchain;
 pub mod constants;
 pub mod contains_transaction_type;
@@ -54,6 +55,7 @@ pub mod witness_condition_type;
 pub mod witness_rule_action;
 pub mod witness_scope;
 
+pub use call_flags::CallFlags;
 pub use witness_rule_action::WitnessRuleAction;
 
 #[cfg(test)]

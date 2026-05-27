@@ -21,6 +21,9 @@ members = [
     "neo-json",
 
     # === Core Layer ===
+    # VM (extracted from neo-core)
+    "neo-vm",
+
     # Core (matches C# Neo.csproj)
     "neo-core",
 
@@ -70,6 +73,7 @@ default-members = [
     "neo-storage",
     "neo-io",
     "neo-json",
+    "neo-vm",
     "neo-core",
     "neo-p2p",
     "neo-rpc",
@@ -115,6 +119,7 @@ neo-io = { path = "neo-io", version = "0.7.2" }
 neo-json = { path = "neo-json", version = "0.7.2" }
 
 # Core layer
+neo-vm = { path = "neo-vm", version = "0.7.2" }
 neo-core = { path = "neo-core", version = "0.7.2" }
 neo-vm-rs = { path = "../neo-vm-rs" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }
