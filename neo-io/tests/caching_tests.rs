@@ -250,6 +250,37 @@ fn io_cache_contains_and_try_get_do_not_refresh_fifo_order() {
 }
 
 #[test]
+fn io_cache_copy_to_after_eviction_preserves_fifo_order() {
+    let cache = IoCache::new(3, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+    cache.add(3);
+    cache.add(4);
+
+    let mut values = [0; 5];
+    cache.copy_to(&mut values, 1).unwrap();
+
+    assert_eq!(values, [0, 2, 3, 4, 0]);
+}
+
+#[test]
+fn io_cache_remove_preserves_fifo_order_and_next_eviction() {
+    let cache = IoCache::new(3, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+    cache.add(3);
+
+    assert!(cache.remove_key(&2));
+    assert_eq!(cache.values(), vec![1, 3]);
+
+    cache.add(4);
+    cache.add(5);
+
+    assert_eq!(cache.values(), vec![3, 4, 5]);
+    assert!(!cache.contains_key(&1));
+}
+
+#[test]
 fn fifo_cache_access_paths_do_not_refresh_fifo_order() {
     let cache = FIFOCache::new(2, |value: &i32| *value);
     cache.add(1);
