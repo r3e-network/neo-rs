@@ -188,17 +188,10 @@ pub enum CoreError {
         to: String,
     },
 
-    /// Native contract execution error
-    #[error("Native contract error: {message}")]
-    NativeContractError {
-        /// Detailed description of the native contract failure
-        message: String,
-    },
-
-    /// Runtime error
-    #[error("Runtime error: {message}")]
-    RuntimeError {
-        /// Description of the runtime failure
+    /// Execution error (native contract or runtime)
+    #[error("Execution error: {message}")]
+    Execution {
+        /// Description of the execution failure
         message: String,
     },
 }
@@ -323,9 +316,16 @@ impl CoreError {
         }
     }
 
-    /// Create a new validation failed error
+    /// Create a new execution error (native contract or runtime)
     pub fn native_contract<S: Into<String>>(message: S) -> Self {
-        Self::NativeContractError {
+        Self::Execution {
+            message: message.into(),
+        }
+    }
+
+    /// Create a new execution error
+    pub fn runtime_error<S: Into<String>>(message: S) -> Self {
+        Self::Execution {
             message: message.into(),
         }
     }
@@ -406,8 +406,7 @@ impl CoreError {
             CoreError::NotFound { .. } | CoreError::AlreadyExists { .. } => "resource",
             CoreError::ValidationFailed { .. } => "validation",
             CoreError::TypeConversion { .. } => "conversion",
-            CoreError::NativeContractError { .. } => "native_contract",
-            CoreError::RuntimeError { .. } => "runtime",
+            CoreError::Execution { .. } => "execution",
         }
     }
 }
