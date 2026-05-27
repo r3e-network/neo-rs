@@ -6,7 +6,7 @@ use crate::ledger::{BlockchainCommand, PersistCompleted, RelayResult, VerifyResu
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
-use crate::runtime::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
+use crate::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::contract_parameters_context::ContractParametersContext;
 use crate::smart_contract::native::Role;
@@ -41,7 +41,7 @@ struct VerificationContext {
     state_root: Option<StateRoot>,
     vote_payload: Option<ExtensiblePayload>,
     state_root_payload: Option<ExtensiblePayload>,
-    timer: Option<Cancelable>,
+    timer: Option<ScheduleHandle>,
 }
 
 impl VerificationContext {

@@ -30,7 +30,8 @@ use crate::UInt256;
 use crate::ledger::{PersistCompleted, RelayResult};
 use crate::neo_system::NeoSystemContext;
 use crate::runtime::{
-    Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
+    Actor, ActorContext, ActorRef, ActorResult, EventStreamHandle, Props, ScheduleHandle,
+    Terminated,
 };
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
@@ -139,7 +140,7 @@ impl Default for TaskManager {
 /// Actor-runtime wrapper around [`TaskManager`].
 pub struct TaskManagerActor {
     state: TaskManager,
-    timer: Option<Cancelable>,
+    timer: Option<ScheduleHandle>,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -24,7 +24,7 @@ use super::{
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::inv_payload::InvPayload;
-use crate::runtime::{Actor, ActorContext, ActorResult, Cancelable, Props};
+use crate::runtime::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
 use crate::{
     CoreResult, UInt256, neo_system::NeoSystemContext, protocol_settings::ProtocolSettings,
 };
@@ -73,8 +73,8 @@ pub struct RemoteNode {
     sent_hashes: HashSetCache<UInt256>,
     pending_known_hashes: PendingKnownHashes,
     bloom_filter: BloomFilterState,
-    timer: Option<Cancelable>,
-    handshake_timeout: Option<Cancelable>,
+    timer: Option<ScheduleHandle>,
+    handshake_timeout: Option<ScheduleHandle>,
     last_block_index: u32,
     _last_height_sent: u32,
     message_queues: OutboundQueues,

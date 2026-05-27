@@ -9,7 +9,7 @@ use super::{
     actor_system::{ActorSystemHandle, ActorSystemInner},
     error::ActorRuntimeResult,
     props::Props,
-    scheduler::{Cancelable, Scheduler},
+    scheduler::{ScheduleHandle, Scheduler},
 };
 use std::{sync::Arc, time::Duration};
 
@@ -158,8 +158,8 @@ impl ActorContext {
     ///
     /// # Returns
     ///
-    /// A `Cancelable` that can be used to cancel the scheduled message.
-    pub fn schedule_once<M>(&self, delay: Duration, target: &ActorRef, message: M) -> Cancelable
+    /// A `ScheduleHandle` that can be used to cancel the scheduled message.
+    pub fn schedule_once<M>(&self, delay: Duration, target: &ActorRef, message: M) -> ScheduleHandle
     where
         M: Send + 'static + std::any::Any,
     {
@@ -178,14 +178,14 @@ impl ActorContext {
     ///
     /// # Returns
     ///
-    /// A `Cancelable` that can be used to cancel the scheduled messages.
+    /// A `ScheduleHandle` that can be used to cancel the scheduled messages.
     pub fn schedule_repeatedly<M>(
         &self,
         initial_delay: Duration,
         interval: Duration,
         target: &ActorRef,
         message: M,
-    ) -> Cancelable
+    ) -> ScheduleHandle
     where
         M: Clone + Send + 'static + std::any::Any,
     {
@@ -209,14 +209,14 @@ impl ActorContext {
     ///
     /// # Returns
     ///
-    /// A `Cancelable` that can be used to cancel the scheduled message.
+    /// A `ScheduleHandle` that can be used to cancel the scheduled message.
     pub fn schedule_tell_once_cancelable<M>(
         &self,
         delay: Duration,
         target: &ActorRef,
         message: M,
         sender: Option<ActorRef>,
-    ) -> Cancelable
+    ) -> ScheduleHandle
     where
         M: Send + 'static + std::any::Any,
     {
@@ -236,7 +236,7 @@ impl ActorContext {
     ///
     /// # Returns
     ///
-    /// A `Cancelable` that can be used to cancel the scheduled messages.
+    /// A `ScheduleHandle` that can be used to cancel the scheduled messages.
     pub fn schedule_tell_repeatedly_cancelable<M>(
         &self,
         initial_delay: Duration,
@@ -244,7 +244,7 @@ impl ActorContext {
         target: &ActorRef,
         message: M,
         sender: Option<ActorRef>,
-    ) -> Cancelable
+    ) -> ScheduleHandle
     where
         M: Clone + Send + 'static + std::any::Any,
     {

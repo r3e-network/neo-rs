@@ -21,7 +21,7 @@ use neo_core::network::p2p::{
 };
 use neo_core::persistence::IStore;
 use neo_core::prelude::Serializable;
-use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
+use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
 use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::smart_contract::contract::Contract;
@@ -207,7 +207,7 @@ struct ConsensusActor {
     wallet: Arc<dyn Wallet>,
     service: Option<ConsensusService>,
     event_task: Option<JoinHandle<()>>,
-    timer: Option<Cancelable>,
+    timer: Option<ScheduleHandle>,
     proposal_transactions: HashMap<UInt256, Transaction>,
     pending_block: Option<BlockData>,
     missing_transactions: Option<HashSet<UInt256>>,
