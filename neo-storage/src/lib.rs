@@ -7,7 +7,7 @@
 //! This crate provides the **single source of truth** for all storage-related
 //! functionality in the Neo ecosystem. It includes:
 //!
-//! - **Storage traits**: `ReadOnlyStore`, `WriteStore`, `Store`, `ISnapshot`
+//! - **Storage traits**: `ReadOnlyStore`, `WriteStore`, `Store`, `StoreSnapshot`
 //! - **Storage types**: `StorageKey`, `StorageItem`, `SeekDirection`, `TrackState`
 //! - **Cache**: `DataCache`, `Trackable` for in-memory caching with tracking
 //! - **Hash utilities**: C#-compatible xxhash3 implementation for storage keys
@@ -18,7 +18,7 @@
 //! - [`ReadOnlyStore`]: Read-only storage operations (`try_get`, contains)
 //! - [`WriteStore`]: Write operations (put, delete)
 //! - [`Store`]: Combined read/write interface
-//! - [`ISnapshot`]: Point-in-time snapshot with seek/find operations
+//! - [`StoreSnapshot`]: Point-in-time snapshot with seek/find operations
 //! - [`StorageKey`]: Storage key with contract ID and key suffix (C# parity)
 //! - [`StorageItem`]: Storage value with constant flag support
 //! - [`DataCache`]: In-memory cache with change tracking
