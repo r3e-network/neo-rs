@@ -9,8 +9,66 @@ use crate::network::p2p::payloads::{
     TransactionAttribute, Witness, WitnessCondition, WitnessRule, WitnessRuleAction,
 };
 use crate::script_builder::ScriptBuilder;
-use crate::{cryptography::ECPoint, UInt160, UInt256, WitnessScope};
+use crate::{UInt160, UInt256, WitnessScope, cryptography::ECPoint};
 use neo_vm_rs::OpCode;
+
+macro_rules! impl_witness_condition_builder_methods {
+    () => {
+        /// Adds an AND condition.
+        pub fn and<F>(&mut self, config: F) -> &mut Self
+        where
+            F: FnOnce(&mut AndConditionBuilder),
+        {
+            let mut builder = AndConditionBuilder::new();
+            config(&mut builder);
+            self.store_condition(builder.build())
+        }
+
+        /// Adds an OR condition.
+        pub fn or<F>(&mut self, config: F) -> &mut Self
+        where
+            F: FnOnce(&mut OrConditionBuilder),
+        {
+            let mut builder = OrConditionBuilder::new();
+            config(&mut builder);
+            self.store_condition(builder.build())
+        }
+
+        /// Adds a boolean condition.
+        pub fn boolean(&mut self, value: bool) -> &mut Self {
+            self.store_condition(WitnessCondition::Boolean { value })
+        }
+
+        /// Adds a CalledByContract condition.
+        pub fn called_by_contract(&mut self, hash: UInt160) -> &mut Self {
+            self.store_condition(WitnessCondition::CalledByContract { hash })
+        }
+
+        /// Adds a CalledByEntry condition.
+        pub fn called_by_entry(&mut self) -> &mut Self {
+            self.store_condition(WitnessCondition::CalledByEntry)
+        }
+
+        /// Adds a CalledByGroup condition.
+        pub fn called_by_group(&mut self, group: ECPoint) -> &mut Self {
+            self.store_condition(WitnessCondition::CalledByGroup {
+                group: group.as_bytes().to_vec(),
+            })
+        }
+
+        /// Adds a Group condition.
+        pub fn group(&mut self, group: ECPoint) -> &mut Self {
+            self.store_condition(WitnessCondition::Group {
+                group: group.as_bytes().to_vec(),
+            })
+        }
+
+        /// Adds a ScriptHash condition.
+        pub fn script_hash(&mut self, hash: UInt160) -> &mut Self {
+            self.store_condition(WitnessCondition::ScriptHash { hash })
+        }
+    };
+}
 
 /// Convenience builder for constructing transactions in tests.
 #[derive(Default)]
@@ -333,61 +391,12 @@ impl WitnessConditionBuilder {
         Self { condition: None }
     }
 
-    /// Adds an AND condition.
-    pub fn and<F>(&mut self, config: F) -> &mut Self
-    where
-        F: FnOnce(&mut AndConditionBuilder),
-    {
-        let mut builder = AndConditionBuilder::new();
-        config(&mut builder);
-        self.condition = Some(builder.build());
+    fn store_condition(&mut self, condition: WitnessCondition) -> &mut Self {
+        self.condition = Some(condition);
         self
     }
 
-    /// Adds an OR condition.
-    pub fn or<F>(&mut self, config: F) -> &mut Self
-    where
-        F: FnOnce(&mut OrConditionBuilder),
-    {
-        let mut builder = OrConditionBuilder::new();
-        config(&mut builder);
-        self.condition = Some(builder.build());
-        self
-    }
-
-    /// Sets a boolean condition.
-    pub fn boolean(&mut self, value: bool) -> &mut Self {
-        self.condition = Some(WitnessCondition::Boolean { value });
-        self
-    }
-
-    /// Sets a CalledByContract condition.
-    pub fn called_by_contract(&mut self, hash: UInt160) -> &mut Self {
-        self.condition = Some(WitnessCondition::CalledByContract { hash });
-        self
-    }
-
-    /// Sets a CalledByEntry condition.
-    pub fn called_by_entry(&mut self) -> &mut Self {
-        self.condition = Some(WitnessCondition::CalledByEntry);
-        self
-    }
-
-    /// Sets a CalledByGroup condition.
-    pub fn called_by_group(&mut self, group: ECPoint) -> &mut Self {
-        self.condition = Some(WitnessCondition::CalledByGroup {
-            group: group.as_bytes().to_vec(),
-        });
-        self
-    }
-
-    /// Sets a Group condition.
-    pub fn group(&mut self, group: ECPoint) -> &mut Self {
-        self.condition = Some(WitnessCondition::Group {
-            group: group.as_bytes().to_vec(),
-        });
-        self
-    }
+    impl_witness_condition_builder_methods!();
 
     /// Adds a NOT condition wrapper.
     pub fn not<F>(&mut self, config: F) -> &mut Self
@@ -399,12 +408,6 @@ impl WitnessConditionBuilder {
         self.condition = Some(WitnessCondition::Not {
             condition: Box::new(builder.build()),
         });
-        self
-    }
-
-    /// Sets a ScriptHash condition.
-    pub fn script_hash(&mut self, hash: UInt160) -> &mut Self {
-        self.condition = Some(WitnessCondition::ScriptHash { hash });
         self
     }
 
@@ -474,68 +477,12 @@ impl AndConditionBuilder {
         }
     }
 
-    /// Adds a nested AND condition.
-    pub fn and<F>(&mut self, config: F) -> &mut Self
-    where
-        F: FnOnce(&mut AndConditionBuilder),
-    {
-        let mut builder = AndConditionBuilder::new();
-        config(&mut builder);
-        self.conditions.push(builder.build());
+    fn store_condition(&mut self, condition: WitnessCondition) -> &mut Self {
+        self.conditions.push(condition);
         self
     }
 
-    /// Adds a nested OR condition.
-    pub fn or<F>(&mut self, config: F) -> &mut Self
-    where
-        F: FnOnce(&mut OrConditionBuilder),
-    {
-        let mut builder = OrConditionBuilder::new();
-        config(&mut builder);
-        self.conditions.push(builder.build());
-        self
-    }
-
-    /// Adds a boolean condition.
-    pub fn boolean(&mut self, value: bool) -> &mut Self {
-        self.conditions.push(WitnessCondition::Boolean { value });
-        self
-    }
-
-    /// Adds a CalledByContract condition.
-    pub fn called_by_contract(&mut self, hash: UInt160) -> &mut Self {
-        self.conditions
-            .push(WitnessCondition::CalledByContract { hash });
-        self
-    }
-
-    /// Adds a CalledByEntry condition.
-    pub fn called_by_entry(&mut self) -> &mut Self {
-        self.conditions.push(WitnessCondition::CalledByEntry);
-        self
-    }
-
-    /// Adds a CalledByGroup condition.
-    pub fn called_by_group(&mut self, group: ECPoint) -> &mut Self {
-        self.conditions.push(WitnessCondition::CalledByGroup {
-            group: group.as_bytes().to_vec(),
-        });
-        self
-    }
-
-    /// Adds a Group condition.
-    pub fn group(&mut self, group: ECPoint) -> &mut Self {
-        self.conditions.push(WitnessCondition::Group {
-            group: group.as_bytes().to_vec(),
-        });
-        self
-    }
-
-    /// Adds a ScriptHash condition.
-    pub fn script_hash(&mut self, hash: UInt160) -> &mut Self {
-        self.conditions.push(WitnessCondition::ScriptHash { hash });
-        self
-    }
+    impl_witness_condition_builder_methods!();
 
     /// Builds and returns the AND condition.
     pub fn build(self) -> WitnessCondition {
@@ -565,68 +512,12 @@ impl OrConditionBuilder {
         }
     }
 
-    /// Adds a nested AND condition.
-    pub fn and<F>(&mut self, config: F) -> &mut Self
-    where
-        F: FnOnce(&mut AndConditionBuilder),
-    {
-        let mut builder = AndConditionBuilder::new();
-        config(&mut builder);
-        self.conditions.push(builder.build());
+    fn store_condition(&mut self, condition: WitnessCondition) -> &mut Self {
+        self.conditions.push(condition);
         self
     }
 
-    /// Adds a nested OR condition.
-    pub fn or<F>(&mut self, config: F) -> &mut Self
-    where
-        F: FnOnce(&mut OrConditionBuilder),
-    {
-        let mut builder = OrConditionBuilder::new();
-        config(&mut builder);
-        self.conditions.push(builder.build());
-        self
-    }
-
-    /// Adds a boolean condition.
-    pub fn boolean(&mut self, value: bool) -> &mut Self {
-        self.conditions.push(WitnessCondition::Boolean { value });
-        self
-    }
-
-    /// Adds a CalledByContract condition.
-    pub fn called_by_contract(&mut self, hash: UInt160) -> &mut Self {
-        self.conditions
-            .push(WitnessCondition::CalledByContract { hash });
-        self
-    }
-
-    /// Adds a CalledByEntry condition.
-    pub fn called_by_entry(&mut self) -> &mut Self {
-        self.conditions.push(WitnessCondition::CalledByEntry);
-        self
-    }
-
-    /// Adds a CalledByGroup condition.
-    pub fn called_by_group(&mut self, group: ECPoint) -> &mut Self {
-        self.conditions.push(WitnessCondition::CalledByGroup {
-            group: group.as_bytes().to_vec(),
-        });
-        self
-    }
-
-    /// Adds a Group condition.
-    pub fn group(&mut self, group: ECPoint) -> &mut Self {
-        self.conditions.push(WitnessCondition::Group {
-            group: group.as_bytes().to_vec(),
-        });
-        self
-    }
-
-    /// Adds a ScriptHash condition.
-    pub fn script_hash(&mut self, hash: UInt160) -> &mut Self {
-        self.conditions.push(WitnessCondition::ScriptHash { hash });
-        self
-    }
+    impl_witness_condition_builder_methods!();
 
     pub fn build(self) -> WitnessCondition {
         WitnessCondition::Or {
