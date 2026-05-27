@@ -56,8 +56,64 @@ macro_rules! __protocol_enum_count {
 ///     }
 /// }
 /// ```
+///
+/// Add the `all;` prefix when callers need a generated declaration-order table:
+///
+/// ```rust,ignore
+/// protocol_enum! {
+///     all;
+///     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///     pub MessageType {
+///         Vote = 0,
+///         StateRoot = 1,
+///     }
+/// }
+/// ```
 #[macro_export]
 macro_rules! protocol_enum {
+    (
+        all;
+        $(#[$enum_meta:meta])*
+        $vis:vis $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident = $byte:expr_2021 $(=> $display:expr_2021)?
+            ),+ $(,)?
+        }
+    ) => {
+        $crate::protocol_enum! {
+            $(#[$enum_meta])*
+            $vis $name {
+                $(
+                    $(#[$variant_meta])*
+                    $variant = $byte $(=> $display)?
+                ),+
+            }
+        }
+
+        impl $name {
+            /// All known values in declaration order.
+            pub const ALL: [Self; $crate::__protocol_enum_count!($($variant),+)] = [
+                $(Self::$variant),+
+            ];
+
+            /// Number of known values.
+            pub const COUNT: usize = Self::ALL.len();
+
+            /// Returns all known values in declaration order.
+            #[must_use]
+            pub const fn all() -> [Self; $crate::__protocol_enum_count!($($variant),+)] {
+                Self::ALL
+            }
+
+            /// Returns the number of known values.
+            #[must_use]
+            pub const fn count() -> usize {
+                Self::COUNT
+            }
+        }
+    };
+
     (
         $(#[$enum_meta:meta])*
         $vis:vis $name:ident {
@@ -145,6 +201,50 @@ macro_rules! protocol_enum {
 /// do not need to maintain a second string-to-variant match.
 #[macro_export]
 macro_rules! impl_protocol_enum_from_str {
+    (
+        $name:ident {
+            error = $error:expr_2021;
+            aliases = [$($alias:literal => $alias_variant:ident),* $(,)?];
+        }
+    ) => {
+        impl ::std::str::FromStr for $name {
+            type Err = ::std::string::String;
+
+            fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
+                for candidate in Self::ALL {
+                    if value.eq_ignore_ascii_case(candidate.as_str()) {
+                        return Ok(candidate);
+                    }
+                }
+                $(
+                    if value.eq_ignore_ascii_case($alias) {
+                        return Ok(Self::$alias_variant);
+                    }
+                )*
+                Err(($error)(value))
+            }
+        }
+    };
+
+    (
+        $name:ident {
+            error = $error:expr_2021;
+        }
+    ) => {
+        impl ::std::str::FromStr for $name {
+            type Err = ::std::string::String;
+
+            fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
+                for candidate in Self::ALL {
+                    if value.eq_ignore_ascii_case(candidate.as_str()) {
+                        return Ok(candidate);
+                    }
+                }
+                Err(($error)(value))
+            }
+        }
+    };
+
     (
         $name:ident {
             error = $error:expr_2021;

@@ -38,6 +38,7 @@ pub mod contract_parameter_type;
 pub mod error;
 pub mod hardfork;
 pub mod inventory_type;
+/// Macro helpers for compact protocol enum declarations.
 pub mod macros;
 pub mod node_capability_type;
 pub mod oracle_response_code;

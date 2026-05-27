@@ -3,6 +3,7 @@
 use crate::{impl_protocol_enum_from_str, protocol_enum};
 
 protocol_enum! {
+    all;
     /// The action to be taken if the current context meets with the rule.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
     pub WitnessRuleAction {
@@ -20,8 +21,6 @@ impl_protocol_enum_from_str! {
             "Invalid witness rule action: {}",
             value.to_ascii_lowercase()
         );
-        Deny,
-        Allow,
     }
 }
 
@@ -46,6 +45,16 @@ mod tests {
             Some(WitnessRuleAction::Allow)
         );
         assert_eq!(WitnessRuleAction::from_byte(2), None);
+    }
+
+    #[test]
+    fn test_witness_rule_action_all_values() {
+        assert_eq!(WitnessRuleAction::COUNT, 2);
+        assert_eq!(
+            WitnessRuleAction::all(),
+            [WitnessRuleAction::Deny, WitnessRuleAction::Allow]
+        );
+        assert_eq!(WitnessRuleAction::ALL, WitnessRuleAction::all());
     }
 
     #[test]

@@ -127,6 +127,7 @@ impl Message {
 
     /// Reconstructs a message from uncompressed payload bytes while preserving
     /// an explicit flag state supplied by a higher protocol layer.
+    #[cfg(any(feature = "runtime", test))]
     pub(crate) fn from_payload_with_flags(
         flags: MessageFlags,
         command: MessageCommand,

@@ -27,15 +27,18 @@
 //! }
 //! ```
 
-
 pub use errors::*;
-pub use peer::*;
 pub use marker_traits::*;
+pub use peer::*;
 pub use service_traits::*;
 
+/// Blockchain and relay error types.
 pub mod errors;
+/// Peer identity and endpoint metadata.
 pub mod peer;
+/// Minimal marker traits used to decouple higher-level crates.
 pub mod marker_traits;
+/// Service traits for blockchain and peer registry access.
 pub mod service_traits;
 
 #[cfg(test)]

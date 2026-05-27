@@ -4,6 +4,7 @@ use crate::{impl_protocol_enum_from_str, protocol_enum_repr};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 protocol_enum_repr! {
+    all;
     /// Represents the type of `ContractParameter` (matches C# `ContractParameterType`)
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
     pub ContractParameterType {
@@ -62,19 +63,6 @@ impl_protocol_enum_from_str! {
             "int" => Integer,
             "bytes" => ByteArray,
         ];
-        Any,
-        Boolean,
-        Integer,
-        ByteArray,
-        String,
-        Hash160,
-        Hash256,
-        PublicKey,
-        Signature,
-        Array,
-        Map,
-        InteropInterface,
-        Void,
     }
 }
 
@@ -123,6 +111,17 @@ mod tests {
         assert_eq!(ContractParameterType::Any.as_str(), "Any");
         assert_eq!(ContractParameterType::Boolean.as_str(), "Boolean");
         assert_eq!(ContractParameterType::Hash160.as_str(), "Hash160");
+    }
+
+    #[test]
+    fn test_contract_parameter_type_all_values() {
+        assert_eq!(ContractParameterType::COUNT, 13);
+        assert_eq!(ContractParameterType::all()[0], ContractParameterType::Any);
+        assert_eq!(
+            ContractParameterType::all()[12],
+            ContractParameterType::Void
+        );
+        assert_eq!(ContractParameterType::ALL, ContractParameterType::all());
     }
 
     #[test]

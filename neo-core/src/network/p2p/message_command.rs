@@ -20,6 +20,7 @@ neo_primitives::p2p_message_command! {
 neo_primitives::__p2p_message_command_compression_impl!(pub(crate) MessageCommand);
 
 impl MessageCommand {
+    #[cfg(any(feature = "runtime", test))]
     pub(crate) const SINGLE_QUEUED_COMMANDS: [Self; 7] = [
         Self::Addr,
         Self::GetAddr,
@@ -30,6 +31,7 @@ impl MessageCommand {
         Self::Pong,
     ];
 
+    #[cfg(any(feature = "runtime", test))]
     pub(crate) const HIGH_PRIORITY_COMMANDS: [Self; 7] = [
         Self::Alert,
         Self::Extensible,
@@ -40,10 +42,12 @@ impl MessageCommand {
         Self::Mempool,
     ];
 
+    #[cfg(any(feature = "runtime", test))]
     pub(crate) fn is_single_queued(self) -> bool {
         Self::SINGLE_QUEUED_COMMANDS.contains(&self)
     }
 
+    #[cfg(any(feature = "runtime", test))]
     pub(crate) fn is_high_priority_queue(self) -> bool {
         Self::HIGH_PRIORITY_COMMANDS.contains(&self)
     }

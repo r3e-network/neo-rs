@@ -6,10 +6,15 @@ protocol_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     /// Represents the type of a `TransactionAttribute`.
     pub TransactionAttributeType {
+        /// Marks a transaction as high priority.
         HighPriority = 0x01,
+        /// Oracle response attribute.
         OracleResponse = 0x11,
+        /// Not-valid-before block index attribute.
         NotValidBefore = 0x20,
+        /// Transaction conflict declaration attribute.
         Conflicts = 0x21,
+        /// Notary-assisted transaction attribute.
         NotaryAssisted = 0x22,
     }
 }
