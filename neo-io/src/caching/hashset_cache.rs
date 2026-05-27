@@ -2,8 +2,8 @@
 
 use super::cache_entries::check_copy_range;
 use crate::IoResult;
-use indexmap::{set, IndexSet};
-use std::hash::Hash;
+use lru::{IntoIter as LruIntoIter, LruCache};
+use std::{hash::Hash, num::NonZeroUsize};
 
 /// A cache that uses a hash set to store items (matches C# `HashSetCache<T>`).
 pub struct HashSetCache<T>
@@ -11,7 +11,7 @@ where
     T: Eq + Hash,
 {
     capacity: usize,
-    items: IndexSet<T>,
+    items: Option<LruCache<T, ()>>,
 }
 
 impl<T> HashSetCache<T>
@@ -47,7 +47,7 @@ where
 
         Self {
             capacity: effective_capacity,
-            items: IndexSet::with_capacity(effective_capacity),
+            items: Self::new_items(effective_capacity),
         }
     }
 
@@ -62,42 +62,61 @@ where
 
         Ok(Self {
             capacity,
-            items: IndexSet::with_capacity(capacity),
+            items: Self::new_items(capacity),
         })
+    }
+
+    fn new_items(capacity: usize) -> Option<LruCache<T, ()>> {
+        NonZeroUsize::new(capacity).map(LruCache::new)
+    }
+
+    fn ensure_backing_capacity(&mut self) -> Option<&mut LruCache<T, ()>> {
+        let capacity = NonZeroUsize::new(self.capacity)?;
+        let items = self.items.get_or_insert_with(|| LruCache::new(capacity));
+        if items.cap() < capacity {
+            items.resize(capacity);
+        }
+        Some(items)
     }
 
     /// Number of items currently in the cache (C# `Count`).
     #[inline]
     #[must_use]
     pub fn count(&self) -> usize {
-        self.items.len()
+        self.items.as_ref().map_or(0, LruCache::len)
     }
 
     /// Attempts to add an item; evicts the oldest when the capacity is exceeded (C# `TryAdd`).
     pub fn try_add(&mut self, item: T) -> bool {
-        let inserted = !self.items.contains(&item);
+        let inserted = !self.contains(&item);
 
         self.trim_to_capacity();
         if !inserted || self.capacity == 0 {
             return inserted;
         }
 
-        if self.items.len() == self.capacity {
-            self.items.shift_remove_index(0);
+        let capacity = self.capacity;
+        if let Some(items) = self.ensure_backing_capacity() {
+            if items.len() == capacity {
+                items.pop_lru();
+            }
+            items.put(item, ());
         }
-        self.items.insert(item);
 
         inserted
     }
 
     fn trim_to_capacity(&mut self) {
         if self.capacity == 0 {
-            self.items.clear();
+            self.items = None;
             return;
         }
 
-        while self.items.len() > self.capacity {
-            self.items.shift_remove_index(0);
+        let capacity = self.capacity;
+        if let Some(items) = self.ensure_backing_capacity() {
+            while items.len() > capacity {
+                items.pop_lru();
+            }
         }
     }
 
@@ -109,13 +128,17 @@ where
     /// Checks whether the cache already contains the item (C# `Contains`).
     #[inline]
     pub fn contains(&self, item: &T) -> bool {
-        self.items.contains(item)
+        self.items
+            .as_ref()
+            .is_some_and(|items| items.contains(item))
     }
 
     /// Clears all items (C# `Clear`).
     #[inline]
     pub fn clear(&mut self) {
-        self.items.clear();
+        if let Some(items) = self.items.as_mut() {
+            items.clear();
+        }
     }
 
     /// Removes a collection of items from the cache (C# `ExceptWith`).
@@ -137,7 +160,9 @@ where
     /// Removes an item from the cache (C# `Remove`).
     #[inline]
     pub fn remove(&mut self, item: &T) -> bool {
-        self.items.shift_remove(item)
+        self.items
+            .as_mut()
+            .is_some_and(|items| items.pop(item).is_some())
     }
 
     /// Copies the elements into the destination slice starting at `start_index` (C# `CopyTo`).
@@ -145,7 +170,7 @@ where
     where
         T: Clone,
     {
-        check_copy_range("copy_to", start_index, self.items.len(), destination.len())?;
+        check_copy_range("copy_to", start_index, self.count(), destination.len())?;
         for (offset, item) in self.iter().cloned().enumerate() {
             destination[start_index + offset] = item;
         }
@@ -155,18 +180,52 @@ where
     /// Returns an iterator over the cached values (C# `GetEnumerator`).
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.items.iter()
+        self.items
+            .iter()
+            .flat_map(|items| items.iter().rev().map(|(item, ())| item))
     }
 }
+
+/// Consuming iterator over `HashSetCache` values in FIFO order.
+pub struct HashSetCacheIntoIter<T>
+where
+    T: Eq + Hash,
+{
+    inner: Option<LruIntoIter<T, ()>>,
+}
+
+impl<T> Iterator for HashSetCacheIntoIter<T>
+where
+    T: Eq + Hash,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner
+            .as_mut()
+            .and_then(Iterator::next)
+            .map(|(item, ())| item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner
+            .as_ref()
+            .map_or((0, Some(0)), Iterator::size_hint)
+    }
+}
+
+impl<T> ExactSizeIterator for HashSetCacheIntoIter<T> where T: Eq + Hash {}
 
 impl<T> IntoIterator for HashSetCache<T>
 where
     T: Eq + Hash,
 {
     type Item = T;
-    type IntoIter = set::IntoIter<T>;
+    type IntoIter = HashSetCacheIntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter()
+        HashSetCacheIntoIter {
+            inner: self.items.map(IntoIterator::into_iter),
+        }
     }
 }

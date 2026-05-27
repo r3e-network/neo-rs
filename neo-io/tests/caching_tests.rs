@@ -2,6 +2,7 @@ use neo_io::{
     Cache, ECDsaCache, ECDsaCacheItem, ECPointCache, EncodablePoint, FIFOCache, HashSetCache,
     InventoryHash, IoCache, LRUCache, RelayCache,
 };
+use std::hash::{Hash, Hasher};
 
 #[test]
 fn hash_set_cache_respects_capacity() {
@@ -78,6 +79,128 @@ fn hash_set_cache_duplicate_insert_after_capacity_reduction_still_trims() {
 
     assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![2, 3]);
     assert!(!cache.contains(&1));
+}
+
+#[test]
+fn hash_set_cache_set_capacity_zero_defers_trim_until_try_add() {
+    let mut cache = HashSetCache::new(3);
+
+    cache.add(1);
+    cache.add(2);
+    cache.add(3);
+    cache.set_capacity(0);
+
+    assert_eq!(cache.count(), 3);
+    assert!(cache.contains(&1));
+    assert!(cache.contains(&2));
+    assert!(cache.contains(&3));
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+
+    let mut values = [0; 5];
+    cache.copy_to(&mut values, 1).unwrap();
+    assert_eq!(values, [0, 1, 2, 3, 0]);
+
+    assert!(cache.try_add(4));
+    assert_eq!(cache.count(), 0);
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), Vec::<i32>::new());
+}
+
+#[test]
+fn hash_set_cache_zero_capacity_duplicate_clears_without_reinserting() {
+    let mut cache = HashSetCache::new(2);
+
+    cache.add(1);
+    cache.add(2);
+    cache.set_capacity(0);
+
+    assert!(!cache.try_add(1));
+    assert_eq!(cache.count(), 0);
+    assert!(!cache.contains(&1));
+    assert!(!cache.contains(&2));
+}
+
+#[test]
+fn hash_set_cache_contains_does_not_refresh_fifo_order() {
+    let mut cache = HashSetCache::new(2);
+
+    cache.add(1);
+    cache.add(2);
+    assert!(cache.contains(&1));
+    assert!(cache.try_add(3));
+
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![2, 3]);
+}
+
+#[test]
+fn hash_set_cache_except_with_preserves_remaining_fifo_order() {
+    let mut cache = HashSetCache::new(5);
+
+    for value in 1..=5 {
+        cache.add(value);
+    }
+    cache.except_with([2, 4]);
+
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![1, 3, 5]);
+    cache.add(6);
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![1, 3, 5, 6]);
+}
+
+#[test]
+fn hash_set_cache_into_iter_preserves_fifo_after_mutations() {
+    let mut cache = HashSetCache::new(4);
+
+    cache.add(1);
+    cache.add(2);
+    cache.add(3);
+    cache.add(1);
+    assert!(cache.remove(&2));
+    cache.add(4);
+    cache.except_with([3]);
+    cache.add(5);
+
+    assert_eq!(cache.into_iter().collect::<Vec<_>>(), vec![1, 4, 5]);
+}
+
+#[derive(Debug)]
+struct CacheKey {
+    id: u8,
+    payload: &'static str,
+}
+
+impl PartialEq for CacheKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for CacheKey {}
+
+impl Hash for CacheKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+#[test]
+fn hash_set_cache_duplicate_equal_value_does_not_replace_stored_item() {
+    let mut cache = HashSetCache::new(2);
+
+    assert!(cache.try_add(CacheKey {
+        id: 7,
+        payload: "original",
+    }));
+    assert!(!cache.try_add(CacheKey {
+        id: 7,
+        payload: "replacement",
+    }));
+
+    assert_eq!(
+        cache
+            .iter()
+            .map(|item| (item.id, item.payload))
+            .collect::<Vec<_>>(),
+        vec![(7, "original")]
+    );
 }
 
 #[test]
