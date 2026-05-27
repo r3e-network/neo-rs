@@ -92,36 +92,6 @@ pub enum CoreError {
         message: String,
     },
 
-    /// Invalid Wallet Import Format string
-    #[error("Invalid WIF format")]
-    InvalidWif,
-
-    /// Invalid private key bytes
-    #[error("Invalid private key")]
-    InvalidPrivateKey,
-
-    /// Scrypt key derivation failed
-    #[error("Scrypt error: {message}")]
-    Scrypt {
-        /// Error message describing the scrypt failure
-        message: String,
-    },
-
-    /// AES encryption/decryption failed
-    #[error("AES error: {message}")]
-    Aes {
-        /// Error message describing the AES failure
-        message: String,
-    },
-
-    /// Invalid NEP-2 payload
-    #[error("Invalid NEP-2 key")]
-    InvalidNep2Key,
-
-    /// Invalid password supplied for NEP-2 decryption
-    #[error("Invalid password")]
-    InvalidPassword,
-
     /// Buffer overflow or underflow
     #[error(
         "Buffer overflow: attempted to read {requested} bytes, but only {available} available"
@@ -372,10 +342,7 @@ impl CoreError {
                 | CoreError::TypeConversion { .. }
                 | CoreError::InsufficientGas { .. }
                 | CoreError::Base58Decode { .. }
-                | CoreError::InvalidWif
-                | CoreError::InvalidPrivateKey
-                | CoreError::InvalidNep2Key
-                | CoreError::InvalidPassword
+                | CoreError::Cryptographic { .. }
         )
     }
 
@@ -395,11 +362,7 @@ impl CoreError {
             CoreError::InsufficientGas { .. } => "resource",
             CoreError::Cryptographic { .. } => "cryptography",
             CoreError::Base58Decode { .. } => "serialization",
-            CoreError::InvalidWif
-            | CoreError::InvalidPrivateKey
-            | CoreError::InvalidNep2Key
-            | CoreError::InvalidPassword => "validation",
-            CoreError::Scrypt { .. } | CoreError::Aes { .. } => "cryptography",
+            CoreError::Cryptographic { .. } => "cryptography",
             CoreError::BufferOverflow { .. } | CoreError::EndOfStream => "buffer",
             CoreError::Configuration { .. } => "configuration",
             CoreError::Timeout { .. } => "timeout",
