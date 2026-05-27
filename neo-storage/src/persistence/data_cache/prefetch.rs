@@ -1,4 +1,4 @@
-use crate::smart_contract::StorageKey;
+use crate::types::StorageKey;
 
 /// Prefetch pattern detection for sequential access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

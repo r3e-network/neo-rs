@@ -33,6 +33,16 @@ parking_lot = { workspace = true }
 xxhash-rust = { workspace = true }
 rand = { workspace = true }
 
+# Collections
+hashbrown = { workspace = true }
+
+# Caching
+lru = { workspace = true }
+fastbloom = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
 [dev-dependencies]
 serde_json = { workspace = true }
 

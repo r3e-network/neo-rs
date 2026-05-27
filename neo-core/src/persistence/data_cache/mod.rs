@@ -1,22 +1,11 @@
-//! Shared in-memory cache for persistence providers.
-//!
-//! This module implements a Copy-on-Write (CoW) DataCache pattern for optimal
-//! performance during block synchronization with optional LRU read caching
-//! and intelligent prefetching for common access patterns.
+pub use neo_storage::persistence::data_cache::cache::*;
+pub use neo_storage::persistence::data_cache::trackable::*;
+pub use neo_storage::persistence::data_cache::PrefetchPattern;
 
-pub mod cache;
-pub mod trackable;
-mod prefetch;
+#[cfg(feature = "runtime")]
 mod storage_watch;
-
-pub use cache::{DataCache, OnEntryDelegate};
-pub use prefetch::PrefetchPattern;
-pub use trackable::{DataCacheConfig, DataCacheError, DataCacheResult, Trackable};
 
 #[cfg(feature = "runtime")]
 pub(crate) use storage_watch::{
     clear_storage_watch_context, set_storage_watch_context, StorageWatchPhase,
 };
-
-#[cfg(test)]
-mod tests;

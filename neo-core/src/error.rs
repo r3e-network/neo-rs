@@ -439,6 +439,14 @@ impl From<PrimitiveError> for CoreError {
     }
 }
 
+impl From<neo_storage::StorageError> for CoreError {
+    fn from(err: neo_storage::StorageError) -> Self {
+        CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
+    }
+}
+
 // Type conversion errors (require custom handling)
 impl From<std::num::ParseIntError> for CoreError {
     fn from(_error: std::num::ParseIntError) -> Self {

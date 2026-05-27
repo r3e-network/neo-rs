@@ -44,6 +44,7 @@ pub mod cache;
 pub mod error;
 pub mod hash_utils;
 pub mod key_builder;
+pub mod persistence;
 pub mod types;
 
 pub use cache::{

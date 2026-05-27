@@ -5,7 +5,7 @@ use super::trackable::{DataCacheConfig, DataCacheError, DataCacheResult, InnerSt
 use crate::persistence::read_cache::{ReadCache, ReadCacheStatsSnapshot};
 use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 use crate::persistence::seek_direction::SeekDirection;
-use crate::smart_contract::{StorageItem, StorageKey};
+use crate::types::{StorageItem, StorageKey, TrackState};
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -61,21 +61,16 @@ fn key_matches_prefix(key: &StorageKey, prefix: Option<&[u8]>) -> bool {
 
 fn visible_trackable_item(trackable: &Trackable) -> Option<StorageItem> {
     match trackable.state {
-        crate::persistence::track_state::TrackState::Deleted
-        | crate::persistence::track_state::TrackState::NotFound => None,
+        TrackState::Deleted | TrackState::NotFound => None,
         _ => Some(trackable.item.clone()),
     }
 }
 
 fn overlay_item(trackable: &Trackable) -> Option<Option<StorageItem>> {
     match trackable.state {
-        crate::persistence::track_state::TrackState::Added
-        | crate::persistence::track_state::TrackState::Changed => {
-            Some(Some(trackable.item.clone()))
-        }
-        crate::persistence::track_state::TrackState::Deleted
-        | crate::persistence::track_state::TrackState::NotFound => Some(None),
-        crate::persistence::track_state::TrackState::None => None,
+        TrackState::Added | TrackState::Changed => Some(Some(trackable.item.clone())),
+        TrackState::Deleted | TrackState::NotFound => Some(None),
+        TrackState::None => None,
     }
 }
 
@@ -201,11 +196,6 @@ impl DataCache {
     }
 
     /// Creates a cloned overlay cache that uses this cache as the backing store.
-    ///
-    /// This matches Neo C# `DataCache.CloneCache()` semantics:
-    /// - reads fall through to the parent cache,
-    /// - writes are tracked locally,
-    /// - `commit()` applies tracked changes into the parent cache.
     pub fn clone_cache(&self) -> Self {
         let parent = Arc::new(self.clone());
         let store_get_parent = Arc::clone(&parent);
@@ -237,24 +227,15 @@ impl DataCache {
                 Some(&trackable.item),
             );
             match trackable.state {
-                crate::persistence::track_state::TrackState::Added => {
-                    self.add(key.clone(), trackable.item.clone())
-                }
-                crate::persistence::track_state::TrackState::Changed => {
-                    self.update(key.clone(), trackable.item.clone())
-                }
-                crate::persistence::track_state::TrackState::Deleted => self.delete(key),
-                crate::persistence::track_state::TrackState::None
-                | crate::persistence::track_state::TrackState::NotFound => {}
+                TrackState::Added => self.add(key.clone(), trackable.item.clone()),
+                TrackState::Changed => self.update(key.clone(), trackable.item.clone()),
+                TrackState::Deleted => self.delete(key),
+                TrackState::None | TrackState::NotFound => {}
             }
         }
     }
 
-    /// Creates an isolated writable fork backed by the same underlying store
-    /// callbacks, with an independent in-memory tracked state.
-    ///
-    /// This is intended for per-transaction execution where writes must not
-    /// leak back unless explicitly merged.
+    /// Creates an isolated writable fork backed by the same underlying store.
     pub fn fork_isolated(&self) -> Self {
         let state = self.state.read();
         let cloned_state = InnerState {
@@ -283,7 +264,6 @@ impl DataCache {
     /// Gets an item from the cache.
     #[inline]
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
-        // Access-pattern tracking is only useful when prefetching via read cache.
         let should_track_pattern = self.config.enable_prefetching && self.read_cache.is_some();
         let pattern = if should_track_pattern {
             self.record_access_pattern(key)
@@ -291,12 +271,12 @@ impl DataCache {
             PrefetchPattern::None
         };
 
-        // First check write cache (for uncommitted changes) - minimal lock hold
+        // First check write cache
         {
             let state = self.state.read();
             if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != crate::persistence::track_state::TrackState::Deleted
-                    && trackable.state != crate::persistence::track_state::TrackState::NotFound
+                if trackable.state != TrackState::Deleted
+                    && trackable.state != TrackState::NotFound
                 {
                     log_watched_storage_event(
                         "get",
@@ -320,15 +300,13 @@ impl DataCache {
             }
         }
 
-        // Check read cache for frequently accessed keys (bloom filter checked inside)
+        // Check read cache
         if let Some(ref cache) = self.read_cache {
             if let Some(item) = cache.get(key) {
-                // Check if this was a prefetch hit
                 if self.is_recently_prefetched(key) {
                     cache.record_prefetch_hit();
                 }
 
-                // Trigger prefetching for sequential patterns
                 if pattern != PrefetchPattern::None {
                     self.trigger_prefetch_if_needed(key, pattern);
                 }
@@ -341,13 +319,11 @@ impl DataCache {
         // Fall back to store getter
         if let Some(getter) = &self.store_get {
             if let Some(item) = getter(key) {
-                // Cache in read cache for future access
                 if let Some(ref cache) = self.read_cache {
                     let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                     cache.put(key.clone(), item.clone(), size);
                 }
 
-                // Also track in write cache for consistency (but don't block on it)
                 self.track_in_write_cache(key, &item);
 
                 for handler in self.on_read.read().iter() {
@@ -363,19 +339,14 @@ impl DataCache {
         None
     }
 
-    /// Track an item in the write cache without blocking the caller.
     fn track_in_write_cache(&self, key: &StorageKey, item: &StorageItem) {
         if !self.config.track_reads_in_write_cache {
             return;
         }
         let mut state = self.state.write();
-        // Check if we're approaching the max entries limit
         if state.dictionary.len() < self.config.max_entries {
             state.dictionary.entry(key.clone()).or_insert_with(|| {
-                Trackable::new(
-                    item.clone(),
-                    crate::persistence::track_state::TrackState::None,
-                )
+                Trackable::new(item.clone(), TrackState::None)
             });
         }
     }
@@ -386,8 +357,8 @@ impl DataCache {
         {
             let state = self.state.read();
             if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != crate::persistence::track_state::TrackState::Deleted
-                    && trackable.state != crate::persistence::track_state::TrackState::NotFound
+                if trackable.state != TrackState::Deleted
+                    && trackable.state != TrackState::NotFound
                 {
                     return Some(trackable.item.clone());
                 }
@@ -404,7 +375,6 @@ impl DataCache {
     }
 
     fn add_writable(&self, key: StorageKey, value: StorageItem) {
-        // Invalidate read cache for this key
         if let Some(ref cache) = self.read_cache {
             cache.remove(&key);
         }
@@ -415,25 +385,24 @@ impl DataCache {
         }
     }
 
-    /// Applies an add operation to the internal storage.
     fn apply_add(&self, key: &StorageKey, value: StorageItem) {
         let mut state = self.state.write();
         let prev_state = state
             .dictionary
             .get(key)
             .map(|t| t.state)
-            .unwrap_or(crate::persistence::track_state::TrackState::NotFound);
+            .unwrap_or(TrackState::NotFound);
         log_watched_storage_event(
             "add",
             "apply_add",
             key,
             Some(prev_state),
-            Some(crate::persistence::track_state::TrackState::Added),
+            Some(TrackState::Added),
             Some(&value),
         );
         state.dictionary.insert(
             key.clone(),
-            Trackable::new(value, crate::persistence::track_state::TrackState::Added),
+            Trackable::new(value, TrackState::Added),
         );
         state.change_set.insert(key.clone());
     }
@@ -446,7 +415,6 @@ impl DataCache {
     }
 
     fn update_writable(&self, key: StorageKey, value: StorageItem) {
-        // Update read cache with new value
         if let Some(ref cache) = self.read_cache {
             let size = value.value_bytes().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), value.clone(), size);
@@ -458,28 +426,18 @@ impl DataCache {
         }
     }
 
-    /// Applies an update operation.
     fn apply_update(&self, key: &StorageKey, value: StorageItem) {
         let mut state = self.state.write();
         let prev_state = state
             .dictionary
             .get(key)
             .map(|t| t.state)
-            .unwrap_or(crate::persistence::track_state::TrackState::NotFound);
+            .unwrap_or(TrackState::NotFound);
         let new_state = match prev_state {
-            crate::persistence::track_state::TrackState::Added => {
-                crate::persistence::track_state::TrackState::Added
-            }
-            crate::persistence::track_state::TrackState::Changed
-            | crate::persistence::track_state::TrackState::None => {
-                crate::persistence::track_state::TrackState::Changed
-            }
-            crate::persistence::track_state::TrackState::Deleted => {
-                crate::persistence::track_state::TrackState::Added
-            }
-            crate::persistence::track_state::TrackState::NotFound => {
-                crate::persistence::track_state::TrackState::Changed
-            }
+            TrackState::Added => TrackState::Added,
+            TrackState::Changed | TrackState::None => TrackState::Changed,
+            TrackState::Deleted => TrackState::Added,
+            TrackState::NotFound => TrackState::Changed,
         };
         log_watched_storage_event(
             "update",
@@ -503,7 +461,6 @@ impl DataCache {
     }
 
     fn delete_writable(&self, key: &StorageKey) {
-        // Invalidate read cache for this key
         if let Some(ref cache) = self.read_cache {
             cache.remove(key);
         }
@@ -511,21 +468,18 @@ impl DataCache {
         self.apply_delete(key);
     }
 
-    /// Applies a delete operation.
     fn apply_delete(&self, key: &StorageKey) {
         let (prev_state, previous_item) = {
             let state = self.state.read();
             let previous = state.dictionary.get(key);
             (
-                previous
-                    .map(|t| t.state)
-                    .unwrap_or(crate::persistence::track_state::TrackState::NotFound),
+                previous.map(|t| t.state).unwrap_or(TrackState::NotFound),
                 previous.map(|t| t.item.clone()),
             )
         };
 
         match prev_state {
-            crate::persistence::track_state::TrackState::Added => {
+            TrackState::Added => {
                 let mut state = self.state.write();
                 state.dictionary.remove(key);
                 state.change_set.remove(key);
@@ -534,18 +488,17 @@ impl DataCache {
                     "apply_delete_added",
                     key,
                     Some(prev_state),
-                    Some(crate::persistence::track_state::TrackState::NotFound),
+                    Some(TrackState::NotFound),
                     previous_item.as_ref(),
                 );
             }
-            crate::persistence::track_state::TrackState::Changed
-            | crate::persistence::track_state::TrackState::None => {
+            TrackState::Changed | TrackState::None => {
                 let mut state = self.state.write();
                 state.dictionary.insert(
                     key.clone(),
                     Trackable::new(
                         StorageItem::default(),
-                        crate::persistence::track_state::TrackState::Deleted,
+                        TrackState::Deleted,
                     ),
                 );
                 state.change_set.insert(key.clone());
@@ -554,23 +507,21 @@ impl DataCache {
                     "apply_delete_tracked",
                     key,
                     Some(prev_state),
-                    Some(crate::persistence::track_state::TrackState::Deleted),
+                    Some(TrackState::Deleted),
                     previous_item.as_ref(),
                 );
             }
-            crate::persistence::track_state::TrackState::Deleted => {
+            TrackState::Deleted => {
                 log_watched_storage_event(
                     "delete",
                     "apply_delete_already_deleted",
                     key,
                     Some(prev_state),
-                    Some(crate::persistence::track_state::TrackState::Deleted),
+                    Some(TrackState::Deleted),
                     previous_item.as_ref(),
                 );
             }
-            crate::persistence::track_state::TrackState::NotFound => {
-                // For overlays that do not track reads, only emit a delete when the
-                // key actually exists in the backing store.
+            TrackState::NotFound => {
                 let store_item = self.store_get.as_ref().and_then(|getter| getter(key));
                 if store_item.is_none() {
                     log_watched_storage_event(
@@ -589,9 +540,9 @@ impl DataCache {
                     .dictionary
                     .get(key)
                     .map(|t| t.state)
-                    .unwrap_or(crate::persistence::track_state::TrackState::NotFound);
+                    .unwrap_or(TrackState::NotFound);
                 match current_state {
-                    crate::persistence::track_state::TrackState::Added => {
+                    TrackState::Added => {
                         state.dictionary.remove(key);
                         state.change_set.remove(key);
                         log_watched_storage_event(
@@ -599,18 +550,16 @@ impl DataCache {
                             "apply_delete_not_found_added",
                             key,
                             Some(prev_state),
-                            Some(crate::persistence::track_state::TrackState::NotFound),
+                            Some(TrackState::NotFound),
                             store_item.as_ref(),
                         );
                     }
-                    crate::persistence::track_state::TrackState::Changed
-                    | crate::persistence::track_state::TrackState::None
-                    | crate::persistence::track_state::TrackState::NotFound => {
+                    TrackState::Changed | TrackState::None | TrackState::NotFound => {
                         state.dictionary.insert(
                             key.clone(),
                             Trackable::new(
                                 StorageItem::default(),
-                                crate::persistence::track_state::TrackState::Deleted,
+                                TrackState::Deleted,
                             ),
                         );
                         state.change_set.insert(key.clone());
@@ -619,17 +568,17 @@ impl DataCache {
                             "apply_delete_not_found_emit",
                             key,
                             Some(prev_state),
-                            Some(crate::persistence::track_state::TrackState::Deleted),
+                            Some(TrackState::Deleted),
                             store_item.as_ref(),
                         );
                     }
-                    crate::persistence::track_state::TrackState::Deleted => {
+                    TrackState::Deleted => {
                         log_watched_storage_event(
                             "delete",
                             "apply_delete_not_found_already_deleted",
                             key,
                             Some(prev_state),
-                            Some(crate::persistence::track_state::TrackState::Deleted),
+                            Some(TrackState::Deleted),
                             store_item.as_ref(),
                         );
                     }
@@ -654,32 +603,25 @@ impl DataCache {
             }
         }
 
-        // Match C# DataCache.Commit() state transitions:
-        // - Added/Changed become None (still cached),
-        // - Deleted entries are removed from dictionary.
         let mut state = self.state.write();
         let keys: Vec<StorageKey> = state.change_set.iter().cloned().collect();
         for key in keys {
             if let Some(trackable) = state.dictionary.get_mut(&key) {
                 match trackable.state {
-                    crate::persistence::track_state::TrackState::Added
-                    | crate::persistence::track_state::TrackState::Changed => {
-                        trackable.state = crate::persistence::track_state::TrackState::None;
+                    TrackState::Added | TrackState::Changed => {
+                        trackable.state = TrackState::None;
                     }
-                    crate::persistence::track_state::TrackState::Deleted => {
+                    TrackState::Deleted => {
                         state.dictionary.remove(&key);
                     }
-                    crate::persistence::track_state::TrackState::None
-                    | crate::persistence::track_state::TrackState::NotFound => {}
+                    TrackState::None | TrackState::NotFound => {}
                 }
             }
         }
         state.change_set.clear();
     }
 
-    /// Resets the cache for reuse, clearing all tracked entries while retaining
-    /// allocated capacity. Much cheaper than drop + new for repeated use within
-    /// a block's transaction loop.
+    /// Resets the cache for reuse.
     pub fn reset(&self) {
         let mut state = self.state.write();
         state.dictionary.clear();
@@ -756,10 +698,6 @@ impl DataCache {
             }
             drop(state);
 
-            // Fast path: no pending overlays for this prefix, so return the
-            // backing iterator with explicit prefix filtering. Some backing
-            // iterators are range scans starting at `key_prefix` and do not
-            // enforce prefix boundaries by themselves.
             if overlays.is_empty() {
                 let prefix_bytes = prefix_bytes.clone();
                 return Box::new(
@@ -830,15 +768,11 @@ impl DataCache {
                     .dictionary
                     .get(key)
                     .and_then(|trackable| match trackable.state {
-                        crate::persistence::track_state::TrackState::Added
-                        | crate::persistence::track_state::TrackState::Changed => {
+                        TrackState::Added | TrackState::Changed => {
                             Some((key.to_array(), Some(trackable.item.to_value())))
                         }
-                        crate::persistence::track_state::TrackState::Deleted => {
-                            Some((key.to_array(), None))
-                        }
-                        crate::persistence::track_state::TrackState::None
-                        | crate::persistence::track_state::TrackState::NotFound => None,
+                        TrackState::Deleted => Some((key.to_array(), None)),
+                        TrackState::None | TrackState::NotFound => None,
                     })
             })
             .collect()
@@ -855,7 +789,7 @@ impl DataCache {
         self.pattern_tracker.read().current_pattern(30)
     }
 
-    /// Checks if a key is in the prefetch window (recently prefetched).
+    /// Checks if a key is in the prefetch window.
     pub fn is_recently_prefetched(&self, key: &StorageKey) -> bool {
         self.prefetch_window.read().contains(key)
     }
@@ -882,7 +816,6 @@ impl DataCache {
         }
     }
 
-    /// Prefetch next sequential keys.
     fn prefetch_next_keys(&self, key: &StorageKey, count: usize) {
         if let Some(ref store_find) = self.store_find {
             let items: Vec<(StorageKey, StorageItem)> =
@@ -909,7 +842,6 @@ impl DataCache {
         }
     }
 
-    /// Prefetch previous sequential keys.
     fn prefetch_prev_keys(&self, key: &StorageKey, count: usize) {
         if let Some(ref store_find) = self.store_find {
             let items: Vec<(StorageKey, StorageItem)> =

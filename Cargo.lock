@@ -2547,6 +2547,9 @@ dependencies = [
 name = "neo-storage"
 version = "0.7.2"
 dependencies = [
+ "fastbloom",
+ "hashbrown 0.14.5",
+ "lru",
  "neo-primitives",
  "num-bigint",
  "parking_lot",
@@ -2554,6 +2557,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tracing",
  "xxhash-rust",
 ]
 

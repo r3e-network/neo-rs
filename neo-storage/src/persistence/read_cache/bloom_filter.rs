@@ -1,4 +1,4 @@
-use crate::smart_contract::StorageKey;
+use crate::types::StorageKey;
 use fastbloom::AtomicBloomFilter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

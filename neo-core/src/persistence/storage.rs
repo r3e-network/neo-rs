@@ -1,6 +1,6 @@
 //! Storage configuration helpers and shared enums.
 
-use crate::error::{CoreError, CoreResult};
+use crate::error::CoreResult;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -82,26 +82,8 @@ impl Default for StorageConfig {
 /// Convenience alias for storage-related results.
 pub type StorageResult<T> = CoreResult<T>;
 
-/// Error type used by cache operations.
-#[derive(Debug, thiserror::Error)]
-pub enum StorageError {
-    #[error("key not found")]
-    NotFound,
-    #[error("cache is read only")]
-    ReadOnly,
-    #[error("commit failed: {0}")]
-    CommitFailed(String),
-    #[error("{0}")]
-    Other(String),
-}
-
-impl From<StorageError> for CoreError {
-    fn from(err: StorageError) -> Self {
-        CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
+// Re-export StorageError from neo-storage as the canonical definition.
+pub use neo_storage::StorageError;
 
 #[cfg(test)]
 mod tests {

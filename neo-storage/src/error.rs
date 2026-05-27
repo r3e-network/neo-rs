@@ -36,6 +36,17 @@ pub enum StorageError {
         /// Error message.
         message: String,
     },
+
+    /// Commit failed.
+    #[error("commit failed: {0}")]
+    CommitFailed(String),
+
+    /// Generic I/O error.
+    #[error("I/O error: {message}")]
+    Io {
+        /// Error message.
+        message: String,
+    },
 }
 
 impl StorageError {
@@ -61,6 +72,18 @@ impl StorageError {
     /// Create an invalid operation error.
     pub fn invalid_operation<S: Into<String>>(message: S) -> Self {
         Self::InvalidOperation {
+            message: message.into(),
+        }
+    }
+
+    /// Create a commit failed error.
+    pub fn commit_failed<S: Into<String>>(message: S) -> Self {
+        Self::CommitFailed(message.into())
+    }
+
+    /// Create an I/O error.
+    pub fn io<S: Into<String>>(message: S) -> Self {
+        Self::Io {
             message: message.into(),
         }
     }

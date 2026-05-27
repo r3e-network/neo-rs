@@ -1,5 +1,3 @@
-//! In-memory snapshot implementation for persistence providers.
-
 use super::memory_store::MemoryStore;
 use crate::persistence::{
     read_only_store::ReadOnlyStoreGeneric, store::Store, store_snapshot::StoreSnapshot,
@@ -86,12 +84,12 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
 }
 
 impl WriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
-    fn delete(&mut self, key: Vec<u8>) -> crate::error::CoreResult<()> {
+    fn delete(&mut self, key: Vec<u8>) -> crate::error::StorageResult<()> {
         self.write_batch.write().insert(key, None);
         Ok(())
     }
 
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> crate::error::CoreResult<()> {
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> crate::error::StorageResult<()> {
         self.write_batch.write().insert(key, Some(value));
         Ok(())
     }

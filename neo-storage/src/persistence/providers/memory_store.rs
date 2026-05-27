@@ -1,14 +1,3 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// memory_store.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
@@ -17,7 +6,8 @@ use crate::persistence::{
     write_store::WriteStore,
     seek_direction::SeekDirection,
 };
-use crate::smart_contract::{storage_key::StorageKey, StorageItem};
+use crate::types::{storage_key::StorageKey, StorageItem};
+use crate::impl_default_via_new;
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -43,7 +33,7 @@ impl MemoryStore {
     }
 }
 
-crate::impl_default_via_new!(MemoryStore);
+impl_default_via_new!(MemoryStore);
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
@@ -120,12 +110,12 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
 }
 
 impl WriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
-    fn delete(&mut self, key: Vec<u8>) -> crate::error::CoreResult<()> {
+    fn delete(&mut self, key: Vec<u8>) -> crate::error::StorageResult<()> {
         self.inner_data.write().remove(&key);
         Ok(())
     }
 
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> crate::error::CoreResult<()> {
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> crate::error::StorageResult<()> {
         self.inner_data.write().insert(key, value);
         Ok(())
     }

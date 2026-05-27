@@ -1,10 +1,10 @@
 use crate::persistence::read_cache::ReadCacheConfig;
-use crate::smart_contract::{StorageItem, StorageKey};
+use crate::types::{StorageItem, StorageKey};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 /// Represents an entry in the cache.
-pub type Trackable = neo_storage::cache::TrackableEntry<StorageItem>;
+pub type Trackable = crate::cache::TrackableEntry<StorageItem>;
 
 /// Internal state protected by RwLock for thread-safe Copy-on-Write
 pub(crate) struct InnerState {
