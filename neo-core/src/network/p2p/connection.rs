@@ -9,15 +9,14 @@
 use super::{
     channels_config::ChannelsConfig,
     framed::{
-        FrameConfig, WriteBuffer, flush_write_buffer, new_read_buffer, read_frame_from_stream,
-        write_frame, write_frame_vectored,
+        FrameConfig, FrameReader, WriteBuffer, flush_write_buffer, write_frame,
+        write_frame_vectored,
     },
 };
 use crate::network::{
     error::{NetworkError, NetworkResult},
     p2p::messages::NetworkMessage,
 };
-use bytes::BytesMut;
 use std::net::SocketAddr;
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
@@ -124,9 +123,8 @@ pub struct PeerConnection {
     /// Write buffer for batching small writes.
     write_buffer: WriteBuffer,
 
-    /// Persistent read buffer so frames already read from TCP remain available
-    /// across consecutive receive calls.
-    read_buffer: BytesMut,
+    /// Persistent frame reader so buffered TCP bytes remain available across receive calls.
+    frame_reader: FrameReader,
 
     /// Statistics for monitoring I/O performance.
     stats: ConnectionStats,
@@ -170,7 +168,7 @@ impl PeerConnection {
             last_activity: now,
             connected_at: now,
             write_buffer: WriteBuffer::default(),
-            read_buffer: new_read_buffer(),
+            frame_reader: FrameReader::new(),
             stats: ConnectionStats::default(),
         }
     }
@@ -325,13 +323,10 @@ impl PeerConnection {
             ));
         }
 
-        let message_bytes = read_frame_from_stream(
-            &mut self.stream,
-            &mut self.read_buffer,
-            &self.frame_config,
-            handshake_complete,
-        )
-        .await?;
+        let message_bytes = self
+            .frame_reader
+            .read_from_stream(&mut self.stream, &self.frame_config, handshake_complete)
+            .await?;
 
         let message = NetworkMessage::from_bytes(&message_bytes)?;
 

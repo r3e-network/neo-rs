@@ -16,10 +16,6 @@ const INITIAL_READ_CAPACITY: usize = 256;
 /// Buffer size for vectored writes.
 const WRITE_BUFFER_SIZE: usize = 4096;
 
-pub(crate) fn new_read_buffer() -> BytesMut {
-    BytesMut::with_capacity(INITIAL_READ_CAPACITY)
-}
-
 async fn write_all_with_timeout<W>(
     writer: &mut W,
     timeout_duration: Duration,
@@ -198,6 +194,62 @@ impl Default for WriteBuffer {
     }
 }
 
+/// Persistent read-side frame decoder state.
+#[derive(Debug)]
+pub(crate) struct FrameReader {
+    buffer: BytesMut,
+    codec: NeoMessageCodec,
+}
+
+impl FrameReader {
+    pub(crate) fn new() -> Self {
+        Self {
+            buffer: BytesMut::with_capacity(INITIAL_READ_CAPACITY),
+            codec: NeoMessageCodec::default(),
+        }
+    }
+
+    /// Reads a full P2P message frame (flags + command + var-bytes payload) with a timeout applied
+    /// to each underlying read.
+    pub(crate) async fn read_from_stream(
+        &mut self,
+        stream: &mut TcpStream,
+        cfg: &FrameConfig,
+        handshake_complete: bool,
+    ) -> NetworkResult<Vec<u8>> {
+        let timeout_duration = if handshake_complete {
+            cfg.read_timeout_active
+        } else {
+            cfg.read_timeout_handshake
+        };
+
+        loop {
+            if let Some(frame) = self.codec.decode(&mut self.buffer)? {
+                return Ok(frame);
+            }
+
+            let bytes_read = timeout(timeout_duration, stream.read_buf(&mut self.buffer))
+                .await
+                .map_err(|_| NetworkError::Timeout)?
+                .map_err(|err| {
+                    NetworkError::ConnectionError(format!("Failed to read frame: {err}"))
+                })?;
+
+            if bytes_read == 0 {
+                return Err(NetworkError::ConnectionError(
+                    "Connection closed while reading frame".to_string(),
+                ));
+            }
+        }
+    }
+}
+
+impl Default for FrameReader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
@@ -307,8 +359,10 @@ mod tests {
         cfg: &FrameConfig,
         handshake_complete: bool,
     ) -> NetworkResult<Vec<u8>> {
-        let mut read_buffer = new_read_buffer();
-        read_frame_from_stream(stream, &mut read_buffer, cfg, handshake_complete).await
+        let mut reader = FrameReader::new();
+        reader
+            .read_from_stream(stream, cfg, handshake_complete)
+            .await
     }
 
     #[tokio::test]
@@ -445,7 +499,7 @@ mod tests {
         let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
             return;
         };
-        let mut read_buffer = new_read_buffer();
+        let mut reader = FrameReader::new();
         let cfg = test_frame_config(Duration::from_secs(1), Duration::from_secs(1));
 
         server_stream
@@ -453,10 +507,12 @@ mod tests {
             .await
             .expect("server writes frames");
 
-        let first = read_frame_from_stream(&mut client_stream, &mut read_buffer, &cfg, false)
+        let first = reader
+            .read_from_stream(&mut client_stream, &cfg, false)
             .await
             .expect("first frame");
-        let second = read_frame_from_stream(&mut client_stream, &mut read_buffer, &cfg, false)
+        let second = reader
+            .read_from_stream(&mut client_stream, &cfg, false)
             .await
             .expect("second frame");
 
@@ -616,37 +672,4 @@ where
             .map_err(|e| NetworkError::ConnectionError(format!("Failed to flush buffer: {e}")))?;
     }
     Ok(())
-}
-
-/// Reads a full P2P message frame (flags + command + var-bytes payload) with a timeout applied to
-/// each underlying read.
-pub(crate) async fn read_frame_from_stream(
-    stream: &mut TcpStream,
-    read_buffer: &mut BytesMut,
-    cfg: &FrameConfig,
-    handshake_complete: bool,
-) -> NetworkResult<Vec<u8>> {
-    let timeout_duration = if handshake_complete {
-        cfg.read_timeout_active
-    } else {
-        cfg.read_timeout_handshake
-    };
-
-    let mut codec = NeoMessageCodec::default();
-    loop {
-        if let Some(frame) = codec.decode(read_buffer)? {
-            return Ok(frame);
-        }
-
-        let bytes_read = timeout(timeout_duration, stream.read_buf(read_buffer))
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|err| NetworkError::ConnectionError(format!("Failed to read frame: {err}")))?;
-
-        if bytes_read == 0 {
-            return Err(NetworkError::ConnectionError(
-                "Connection closed while reading frame".to_string(),
-            ));
-        }
-    }
 }
