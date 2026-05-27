@@ -18,7 +18,7 @@ pub use actor::{Actor, ActorResult, SupervisorDirective};
 pub use actor_ref::ActorRef;
 pub use actor_system::{ActorPath, ActorSystem, ActorSystemHandle};
 pub use context::ActorContext;
-pub use error::{ActorRuntimeError, ActorRuntimeResult, AkkaError, AkkaResult};
+pub use error::{ActorRuntimeError, ActorRuntimeResult};
 pub use event_stream::EventStreamHandle;
 pub use message::{Envelope, MailboxMessage, SystemMessage, Terminated};
 pub use props::Props;

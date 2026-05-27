@@ -483,13 +483,3 @@ fn default_mailbox_prioritizes_system_messages() {
     );
     assert!(mailbox.is_empty());
 }
-
-#[test]
-fn legacy_akka_error_alias_remains_compatible() {
-    let legacy: AkkaResult<()> = Err(AkkaError::actor("legacy compatibility"));
-
-    assert!(matches!(
-        legacy,
-        Err(AkkaError::Actor(message)) if message.contains("legacy")
-    ));
-}

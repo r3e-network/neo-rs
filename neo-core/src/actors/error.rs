@@ -29,9 +29,3 @@ impl ActorRuntimeError {
         Self::System(err.to_string())
     }
 }
-
-/// Compatibility alias for older C#-ported call sites.
-pub type AkkaError = ActorRuntimeError;
-
-/// Compatibility alias for older C#-ported call sites.
-pub type AkkaResult<T> = ActorRuntimeResult<T>;

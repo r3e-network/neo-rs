@@ -35,10 +35,6 @@ members = [
 
     # Extensions (matches C# Neo.Extensions)
 
-    # === Infrastructure Layer ===
-    # Actor runtime merged into neo-core/src/akka/
-    # "neo-akka",
-
     # NOTE: C# Neo's plugin set has been inlined:
     #   ApplicationLogs → neo-core/src/application_logs
     #   DBFTPlugin      → neo-consensus
@@ -126,8 +122,6 @@ neo-rpc = { path = "neo-rpc", version = "0.7.2" }
 neo-consensus = { path = "neo-consensus", version = "0.7.2" }
 
 # Infrastructure layer
-# neo-akka merged into neo-core/src/akka/
-# neo-akka = { path = "neo-akka", version = "0.7.2" }
 neo-tee = { path = "neo-tee", version = "0.7.2" }
 neo-hsm = { path = "neo-hsm", version = "0.7.2" }
 

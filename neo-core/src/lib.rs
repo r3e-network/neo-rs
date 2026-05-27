@@ -278,13 +278,6 @@ pub mod actors;
 #[cfg(feature = "runtime")]
 pub use actors as runtime;
 
-/// Legacy compatibility actor facade for older C#-ported call sites.
-///
-/// New code should import `neo_core::runtime`.
-#[cfg(feature = "runtime")]
-#[deprecated(note = "use neo_core::runtime instead")]
-pub use actors as akka;
-
 /// System management and orchestration (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub mod neo_system;
