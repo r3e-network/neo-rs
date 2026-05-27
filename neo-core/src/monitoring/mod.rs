@@ -4,6 +4,7 @@
 //! and performance primitives so the `monitoring` feature can be enabled
 //! without pulling in the full observability stack.
 
+use crate::error::CoreError;
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::json;
@@ -11,26 +12,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 
-/// Errors produced by the monitoring subsystem.
-#[derive(Error, Debug)]
-pub enum MonitoringError {
-    /// The requested export format is not supported.
-    #[error("Unsupported export format: {0}")]
-    UnsupportedFormat(String),
-    /// The requested metric was not found.
-    #[error("Metric not found: {0}")]
-    MetricNotFound(String),
-    /// An error occurred in the exporter.
-    #[error("Exporter error: {0}")]
-    Exporter(String),
-}
-
 /// Result type for monitoring operations.
-pub type MonitoringResult<T> = Result<T, MonitoringError>;
+pub type MonitoringResult<T> = Result<T, CoreError>;
 
 type AlertCallback = dyn Fn(Alert) + Send + Sync;
 type AlertCallbacks = Arc<RwLock<Vec<Arc<AlertCallback>>>>;
@@ -116,7 +102,7 @@ impl MonitoringSystem {
                     "performance": perf,
                 });
                 serde_json::to_string(&payload)
-                    .map_err(|e| MonitoringError::Exporter(e.to_string()))
+                    .map_err(|e| CoreError::invalid_operation(e.to_string()))
             }
             "json-pretty" => {
                 let payload = serde_json::json!({
@@ -124,7 +110,7 @@ impl MonitoringSystem {
                     "performance": perf,
                 });
                 serde_json::to_string_pretty(&payload)
-                    .map_err(|e| MonitoringError::Exporter(e.to_string()))
+                    .map_err(|e| CoreError::invalid_operation(e.to_string()))
             }
             "csv" => {
                 let mut out = String::from("timestamp,component,status\n");
@@ -145,7 +131,7 @@ impl MonitoringSystem {
                 );
                 exporter.build_payload(&self.version, &health, &perf)
             }
-            other => Err(MonitoringError::UnsupportedFormat(other.to_string())),
+            other => Err(CoreError::invalid_operation(format!("Unsupported export format: {}", other))),
         }
     }
 
@@ -442,7 +428,7 @@ impl PerformanceMonitor {
         metrics
             .get(metric)
             .cloned()
-            .ok_or_else(|| MonitoringError::MetricNotFound(metric.to_string()))
+            .ok_or_else(|| CoreError::not_found(format!("Metric: {}", metric)))
     }
 
     pub async fn get_all_stats(&self) -> HashMap<String, PerformanceStats> {
@@ -635,24 +621,24 @@ impl OtlpExporter {
             }]
         });
 
-        serde_json::to_string(&payload).map_err(|e| MonitoringError::Exporter(e.to_string()))
+        serde_json::to_string(&payload).map_err(|e| CoreError::invalid_operation(e.to_string()))
     }
 
     pub async fn send(&self, payload: String) -> MonitoringResult<()> {
         let client = Client::builder()
             .no_proxy()
             .build()
-            .map_err(|e| MonitoringError::Exporter(e.to_string()))?;
+            .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
         let response = client
             .post(&self.endpoint)
             .header("Content-Type", self.content_type())
             .body(payload)
             .send()
             .await
-            .map_err(|e| MonitoringError::Exporter(e.to_string()))?;
+            .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
 
         if !response.status().is_success() {
-            return Err(MonitoringError::Exporter(format!(
+            return Err(CoreError::invalid_operation(format!(
                 "OTLP push failed with status {}",
                 response.status()
             )));
@@ -697,7 +683,7 @@ fn current_unix_nanos() -> MonitoringResult<u64> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos() as u64)
-        .map_err(|e| MonitoringError::Exporter(e.to_string()))
+        .map_err(|e| CoreError::invalid_operation(e.to_string()))
 }
 
 fn health_status_value(status: HealthStatus) -> f64 {

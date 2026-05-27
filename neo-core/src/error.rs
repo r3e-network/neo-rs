@@ -164,6 +164,13 @@ pub enum CoreError {
         /// Description of the execution failure
         message: String,
     },
+
+    /// Compression/decompression error
+    #[error("Compression error: {message}")]
+    Compression {
+        /// Error message describing the compression issue
+        message: String,
+    },
 }
 
 impl CoreError {
@@ -356,6 +363,13 @@ impl CoreError {
         }
     }
 
+    /// Create a new compression error
+    pub fn compression<S: Into<String>>(message: S) -> Self {
+        Self::Compression {
+            message: message.into(),
+        }
+    }
+
     /// Check if this error is retryable
     pub fn is_retryable(&self) -> bool {
         matches!(
@@ -404,6 +418,7 @@ impl CoreError {
             CoreError::ValidationFailed { .. } => "validation",
             CoreError::TypeConversion { .. } => "conversion",
             CoreError::Execution { .. } => "execution",
+            CoreError::Compression { .. } => "compression",
         }
     }
 }

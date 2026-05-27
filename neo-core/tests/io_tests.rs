@@ -1,7 +1,7 @@
 //! Comprehensive IO tests converted from C# Neo unit tests.
 //! These tests ensure 100% compatibility with the C# Neo IO implementation.
 
-use neo_core::compression::CompressionError;
+use neo_core::CoreError;
 use neo_core::extensions::{
     BinaryReaderExtensions, BinaryWriterExtensions, ByteLz4Extensions, MemoryReaderExtensions,
     SerializableCollectionExtensions, SerializableExtensions,
@@ -668,14 +668,14 @@ fn test_byte_extensions_compression_errors() {
     let compressed = data.compress_lz4().unwrap();
 
     let too_small = compressed.decompress_lz4(data.len() - 1);
-    assert!(matches!(too_small, Err(CompressionError::TooLarge { .. })));
+    assert!(matches!(too_small, Err(CoreError::Compression { .. })));
 
     let mut corrupted = compressed.clone();
     corrupted[0] = corrupted[0].wrapping_add(1);
     let corrupted_result = corrupted.decompress_lz4(usize::MAX);
     assert!(matches!(
         corrupted_result,
-        Err(CompressionError::Decompression(_))
+        Err(CoreError::Compression { .. })
     ));
 }
 

@@ -15,7 +15,7 @@ pub mod utility;
 pub mod io;
 
 pub use byte::ByteLz4Extensions;
-pub use error::{ExtensionError, ExtensionResult};
+pub use error::ExtensionResult;
 pub use log_level::LogLevel;
 pub use memory::ReadOnlyMemoryExtensions;
 pub use span::SpanExtensions;

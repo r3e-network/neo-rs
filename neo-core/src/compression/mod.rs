@@ -1,31 +1,14 @@
 //! LZ4 compression helpers matching the C# Neo implementation.
 
-use thiserror::Error;
+use crate::error::CoreError;
 
 /// Minimum size in bytes for data to be considered for compression.
 pub const COMPRESSION_MIN_SIZE: usize = 128;
 /// Threshold in bytes below which compression is skipped.
 pub const COMPRESSION_THRESHOLD: usize = 64;
 
-/// Errors that can occur during compression or decompression operations.
-#[derive(Debug, Error)]
-pub enum CompressionError {
-    /// Compression operation failed.
-    #[error("Compression failed: {0}")]
-    Compression(String),
-    /// Decompression operation failed.
-    #[error("Decompression failed: {0}")]
-    Decompression(String),
-    /// Decompressed data exceeds the maximum allowed size.
-    #[error("Decompressed payload exceeds maximum size ({max} bytes)")]
-    TooLarge {
-        /// Maximum allowed size in bytes.
-        max: usize,
-    },
-}
-
 /// Result type for compression operations.
-pub type CompressionResult<T> = Result<T, CompressionError>;
+pub type CompressionResult<T> = Result<T, CoreError>;
 
 /// Compresses data using LZ4 with the original length prepended.
 pub fn compress_lz4(data: &[u8]) -> CompressionResult<Vec<u8>> {
@@ -35,8 +18,8 @@ pub fn compress_lz4(data: &[u8]) -> CompressionResult<Vec<u8>> {
 /// Decompresses LZ4 data (with prepended length) enforcing a maximum size.
 pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>> {
     if data.len() < 4 {
-        return Err(CompressionError::Decompression(
-            "compressed data missing length prefix".to_string(),
+        return Err(CoreError::compression(
+            "compressed data missing length prefix",
         ));
     }
 
@@ -45,14 +28,17 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>
     // IMPORTANT: check the declared output size before attempting decompression to avoid
     // allocating attacker-controlled buffers (compression bomb / OOM).
     if declared_size > max_size {
-        return Err(CompressionError::TooLarge { max: max_size });
+        return Err(CoreError::compression(format!(
+            "decompressed payload exceeds maximum size ({max} bytes)",
+            max = max_size
+        )));
     }
 
     let decompressed = lz4_flex::block::decompress_size_prepended(data)
-        .map_err(|e| CompressionError::Decompression(e.to_string()))?;
+        .map_err(|e| CoreError::compression(e.to_string()))?;
 
     if decompressed.len() != declared_size {
-        return Err(CompressionError::Decompression(format!(
+        return Err(CoreError::compression(format!(
             "declared size {} does not match decompressed size {}",
             declared_size,
             decompressed.len()
@@ -60,7 +46,10 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>
     }
 
     if decompressed.len() > max_size {
-        return Err(CompressionError::TooLarge { max: max_size });
+        return Err(CoreError::compression(format!(
+            "decompressed payload exceeds maximum size ({max} bytes)",
+            max = max_size
+        )));
     }
     Ok(decompressed)
 }
@@ -78,8 +67,8 @@ mod tests {
         compressed.extend_from_slice(&[0u8; 8]);
 
         match decompress_lz4(&compressed, 16) {
-            Err(CompressionError::TooLarge { max }) => assert_eq!(max, 16),
-            other => panic!("expected TooLarge error, got {other:?}"),
+            Err(e) => assert!(e.to_string().contains("exceeds maximum size")),
+            other => panic!("expected compression error, got {other:?}"),
         }
     }
 }

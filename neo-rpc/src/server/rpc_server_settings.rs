@@ -4,7 +4,7 @@
 // RpcServersSettings. Provides JSON configuration deserialisation for the RPC
 // server plugin.
 
-use neo_core::extensions::error::ExtensionResult;
+use neo_core::CoreResult;
 use std::sync::LazyLock;
 use parking_lot::RwLock;
 use serde::de::{self, Deserializer};
@@ -348,7 +348,7 @@ impl Default for RpcServerConfig {
 }
 
 impl RpcServerSettings {
-    pub fn load(config: Option<&Value>) -> ExtensionResult<()> {
+    pub fn load(config: Option<&Value>) -> CoreResult<()> {
         let settings = if let Some(value) = config {
             let plugin_configuration = value.get("PluginConfiguration").unwrap_or(value);
             let servers_section = plugin_configuration
@@ -380,7 +380,7 @@ impl RpcServerSettings {
         Ok(())
     }
 
-    fn validate(&self) -> ExtensionResult<()> {
+    fn validate(&self) -> CoreResult<()> {
         for server in &self.servers {
             let _has_auth = !server.rpc_user.trim().is_empty();
 

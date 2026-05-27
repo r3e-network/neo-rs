@@ -8,29 +8,6 @@ use crate::smart_contract::ContractParameterType;
 use neo_primitives::base58_check;
 use std::sync::OnceLock;
 
-/// Error type for multi-signature contract creation.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum MultiSigError {
-    /// The m parameter is not in valid range (1..=n).
-    #[error("Invalid multi-sig parameters: m={m}, n={n}")]
-    InvalidM { m: usize, n: usize },
-    /// No public keys provided.
-    #[error("No public keys provided for multi-sig contract")]
-    EmptyPublicKeys,
-    /// Too many public keys (max 1024).
-    #[error("Too many public keys: {n} (max 1024)")]
-    TooManyPublicKeys { n: usize },
-    /// Failed to build the syscall portion of the script.
-    #[error("Failed to build contract script: {0}")]
-    ScriptBuilder(String),
-}
-
-impl From<MultiSigError> for CoreError {
-    fn from(err: MultiSigError) -> Self {
-        CoreError::invalid_operation(err.to_string())
-    }
-}
-
 /// Represents a contract that can be invoked (matches C# Contract)
 #[derive(Clone, Debug)]
 pub struct Contract {
@@ -88,23 +65,23 @@ impl Contract {
     ///
     /// # Errors
     ///
-    /// Returns `MultiSigError` if:
+    /// Returns `CoreError` if:
     /// - `public_keys` is empty
     /// - `public_keys.len()` exceeds 1024
     /// - `m` is not in range `1..=n`
     pub fn try_create_multi_sig_redeem_script(
         m: usize,
         public_keys: &[ECPoint],
-    ) -> Result<Vec<u8>, MultiSigError> {
+    ) -> Result<Vec<u8>, CoreError> {
         let n = public_keys.len();
         if n == 0 {
-            return Err(MultiSigError::EmptyPublicKeys);
+            return Err(CoreError::invalid_operation("No public keys provided for multi-sig contract"));
         }
         if n > 1024 {
-            return Err(MultiSigError::TooManyPublicKeys { n });
+            return Err(CoreError::invalid_operation(format!("Too many public keys: {} (max 1024)", n)));
         }
         if !(1..=n).contains(&m) {
-            return Err(MultiSigError::InvalidM { m, n });
+            return Err(CoreError::invalid_operation(format!("Invalid multi-sig parameters: m={}, n={}", m, n)));
         }
 
         let mut builder = ScriptBuilder::new();
@@ -120,7 +97,7 @@ impl Contract {
         builder.emit_push_int(n as i64);
         builder
             .emit_syscall("System.Crypto.CheckMultisig")
-            .map_err(|err| MultiSigError::ScriptBuilder(err.to_string()))?;
+            .map_err(|err| CoreError::invalid_operation(format!("Failed to build contract script: {}", err)))?;
 
         Ok(builder.to_array())
     }

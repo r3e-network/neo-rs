@@ -2,7 +2,7 @@
 //!
 //! This module provides data compression and decompression capabilities.
 
-use crate::compression::{compress_lz4, decompress_lz4, CompressionError as Lz4CompressionError};
+use crate::compression::{compress_lz4, decompress_lz4};
 use crate::error::CoreError;
 use crate::persistence::storage::CompressionAlgorithm;
 use std::io::Cursor;
@@ -12,17 +12,11 @@ use std::io::Cursor;
 
 const MAX_PERSISTENCE_LZ4_OUTPUT_SIZE: usize = u32::MAX as usize;
 
-fn map_lz4_error(operation: &str, error: Lz4CompressionError) -> CoreError {
-    CoreError::io(format!("LZ4 {operation} failed: {error}"))
-}
-
 /// Compresses data using the specified algorithm (production-ready implementation)
 pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<Vec<u8>> {
     match algorithm {
         CompressionAlgorithm::None => Ok(Vec::from(data)),
-        CompressionAlgorithm::Lz4 => {
-            compress_lz4(data).map_err(|err| map_lz4_error("compression", err))
-        }
+        CompressionAlgorithm::Lz4 => compress_lz4(data),
         CompressionAlgorithm::Zstd => zstd::stream::encode_all(Cursor::new(data), 0)
             .map_err(|e| CoreError::io(format!("ZSTD compression failed: {e}"))),
     }
@@ -35,10 +29,7 @@ pub fn decompress(
 ) -> crate::Result<Vec<u8>> {
     match algorithm {
         CompressionAlgorithm::None => Ok(Vec::from(compressed_data)),
-        CompressionAlgorithm::Lz4 => {
-            decompress_lz4(compressed_data, MAX_PERSISTENCE_LZ4_OUTPUT_SIZE)
-                .map_err(|err| map_lz4_error("decompression", err))
-        }
+        CompressionAlgorithm::Lz4 => decompress_lz4(compressed_data, MAX_PERSISTENCE_LZ4_OUTPUT_SIZE),
         CompressionAlgorithm::Zstd => zstd::stream::decode_all(Cursor::new(compressed_data))
             .map_err(|e| CoreError::io(format!("ZSTD decompression failed: {e}"))),
     }

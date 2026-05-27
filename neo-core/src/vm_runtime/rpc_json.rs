@@ -1,21 +1,11 @@
 //! JSON-RPC envelope rendering for host VM stack items.
 
 use super::StackItem;
+use crate::error::CoreError;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_vm_rs::StackItemType;
 use serde_json::{Map, Number as JsonNumber, Value};
 use std::collections::HashSet;
-
-/// Error returned while rendering a stack item as an RPC/application-log value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum StackItemRpcJsonError {
-    /// The stack item graph contains a circular compound reference.
-    #[error("Circular reference.")]
-    CircularReference,
-    /// Rendering would exceed the caller-provided size budget.
-    #[error("Max size reached.")]
-    MaxSizeReached,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SizeCheck {
@@ -32,7 +22,7 @@ struct RenderBudget {
 pub fn stack_item_rpc_json(
     item: &StackItem,
     max_size: Option<usize>,
-) -> Result<Value, StackItemRpcJsonError> {
+) -> Result<Value, CoreError> {
     render_stack_item_with_size_check(item, max_size, SizeCheck::Immediate)
 }
 
@@ -44,7 +34,7 @@ pub fn stack_item_rpc_json(
 pub fn stack_item_rpc_json_deferred_size_check(
     item: &StackItem,
     max_size: Option<usize>,
-) -> Result<Value, StackItemRpcJsonError> {
+) -> Result<Value, CoreError> {
     render_stack_item_with_size_check(item, max_size, SizeCheck::Deferred)
 }
 
@@ -52,7 +42,7 @@ pub fn stack_item_rpc_json_deferred_size_check(
 pub fn stack_items_rpc_json_per_item(
     items: &[StackItem],
     max_size: usize,
-) -> Result<Vec<Value>, StackItemRpcJsonError> {
+) -> Result<Vec<Value>, CoreError> {
     items
         .iter()
         .map(|item| stack_item_rpc_json(item, Some(max_size)))
@@ -63,7 +53,7 @@ fn render_stack_item_with_size_check(
     item: &StackItem,
     max_size: Option<usize>,
     size_check: SizeCheck,
-) -> Result<Value, StackItemRpcJsonError> {
+) -> Result<Value, CoreError> {
     let mut context = HashSet::new();
     let mut budget = RenderBudget {
         remaining: max_size
@@ -78,7 +68,7 @@ fn render_stack_item(
     item: &StackItem,
     context: &mut HashSet<(usize, StackItemType)>,
     budget: &mut RenderBudget,
-) -> Result<Value, StackItemRpcJsonError> {
+) -> Result<Value, CoreError> {
     let type_name = stack_item_type_name(item);
     let mut obj = Map::new();
     obj.insert("type".to_string(), Value::String(type_name.to_string()));
@@ -114,7 +104,7 @@ fn render_stack_item(
         StackItem::Array(array) => {
             let identity = (array.id(), StackItemType::Array);
             if !context.insert(identity) {
-                return Err(StackItemRpcJsonError::CircularReference);
+                return Err(CoreError::invalid_operation("Circular reference in stack item"));
             }
             let items = array.items();
             budget.subtract(2 + items.len().saturating_sub(1) as isize)?;
@@ -128,7 +118,7 @@ fn render_stack_item(
         StackItem::Struct(structure) => {
             let identity = (structure.id(), StackItemType::Struct);
             if !context.insert(identity) {
-                return Err(StackItemRpcJsonError::CircularReference);
+                return Err(CoreError::invalid_operation("Circular reference in stack item"));
             }
             let items = structure.items();
             budget.subtract(2 + items.len().saturating_sub(1) as isize)?;
@@ -142,7 +132,7 @@ fn render_stack_item(
         StackItem::Map(map) => {
             let identity = (map.id(), StackItemType::Map);
             if !context.insert(identity) {
-                return Err(StackItemRpcJsonError::CircularReference);
+                return Err(CoreError::invalid_operation("Circular reference in stack item"));
             }
             let items = map.items();
             budget.subtract(2 + items.len().saturating_sub(1) as isize)?;
@@ -157,7 +147,7 @@ fn render_stack_item(
                     entry.insert("value".to_string(), value);
                     Ok(Value::Object(entry))
                 })
-                .collect::<Result<Vec<_>, StackItemRpcJsonError>>()?;
+                .collect::<Result<Vec<_>, CoreError>>()?;
             context.remove(&identity);
             value = Some(Value::Array(values));
         }
@@ -188,7 +178,7 @@ const fn stack_item_type_name(item: &StackItem) -> &'static str {
 }
 
 impl RenderBudget {
-    fn subtract(&mut self, amount: isize) -> Result<(), StackItemRpcJsonError> {
+    fn subtract(&mut self, amount: isize) -> Result<(), CoreError> {
         self.remaining = self.remaining.checked_sub(amount).unwrap_or(-1);
         if self.size_check == SizeCheck::Immediate {
             self.check()?;
@@ -196,9 +186,9 @@ impl RenderBudget {
         Ok(())
     }
 
-    fn check(&self) -> Result<(), StackItemRpcJsonError> {
+    fn check(&self) -> Result<(), CoreError> {
         if self.remaining < 0 {
-            return Err(StackItemRpcJsonError::MaxSizeReached);
+            return Err(CoreError::invalid_operation("Max size reached"));
         }
         Ok(())
     }
@@ -208,7 +198,7 @@ impl RenderBudget {
 mod tests {
     use super::{
         stack_item_rpc_json, stack_item_rpc_json_deferred_size_check,
-        stack_items_rpc_json_per_item, StackItemRpcJsonError,
+        stack_items_rpc_json_per_item,
     };
     use crate::vm_runtime::{InteropInterface, Script, StackItem};
     use neo_vm_rs::VmOrderedDictionary;
@@ -302,8 +292,7 @@ mod tests {
     fn reports_max_size_reached() {
         let err = stack_item_rpc_json(&StackItem::Null, Some(13)).unwrap_err();
 
-        assert_eq!(err, StackItemRpcJsonError::MaxSizeReached);
-        assert_eq!(err.to_string(), "Max size reached.");
+        assert!(err.to_string().contains("Max size reached"));
     }
 
     #[test]
@@ -316,8 +305,7 @@ mod tests {
 
         let err = stack_item_rpc_json(&item, None).unwrap_err();
 
-        assert_eq!(err, StackItemRpcJsonError::CircularReference);
-        assert_eq!(err.to_string(), "Circular reference.");
+        assert!(err.to_string().contains("Circular reference"));
     }
 
     #[test]
@@ -330,13 +318,13 @@ mod tests {
 
         let err = stack_item_rpc_json_deferred_size_check(&item, Some(1)).unwrap_err();
 
-        assert_eq!(err, StackItemRpcJsonError::CircularReference);
+        assert!(err.to_string().contains("Circular reference"));
     }
 
     #[test]
     fn deferred_size_check_still_reports_max_size() {
         let err = stack_item_rpc_json_deferred_size_check(&StackItem::Null, Some(13)).unwrap_err();
 
-        assert_eq!(err, StackItemRpcJsonError::MaxSizeReached);
+        assert!(err.to_string().contains("Max size reached"));
     }
 }

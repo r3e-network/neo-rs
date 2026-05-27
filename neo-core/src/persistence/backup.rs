@@ -4,7 +4,8 @@
 //! that match the C# Neo backup functionality exactly.
 
 use crate::cryptography::Sha256Hasher;
-use crate::{Error, Result, Storage};
+use crate::error::CoreError;
+use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -170,7 +171,7 @@ impl BackupManager {
     ) -> Result<()> {
         // 1. Verify backup file exists and is valid
         if !backup_path.exists() {
-            return Err(crate::Error::BackupError(format!(
+            return Err(CoreError::invalid_operation(format!(
                 "Backup file not found: {:?}",
                 backup_path
             )));
@@ -183,7 +184,7 @@ impl BackupManager {
         if let Some(expected_checksum) = &metadata.checksum {
             let actual_checksum = self.calculate_backup_checksum(backup_path).await?;
             if actual_checksum != *expected_checksum {
-                return Err(crate::Error::BackupError(
+                return Err(CoreError::invalid_operation(
                     "Backup integrity check failed".to_string(),
                 ));
             }
@@ -233,7 +234,7 @@ impl BackupManager {
         let backup = backups
             .iter()
             .find(|b| b.id == backup_id)
-            .ok_or_else(|| crate::Error::BackupError(format!("Backup not found: {}", backup_id)))?;
+            .ok_or_else(|| CoreError::invalid_operation(format!("Backup not found: {}", backup_id)))?;
 
         // 2. Delete backup file
         if backup.file_path.exists() {
@@ -280,7 +281,7 @@ impl BackupManager {
     async fn generate_backup_id(&self, backup_type: BackupType) -> Result<String> {
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .map_err(|e| Error::BackupError(format!("Failed to get timestamp: {}", e)))?
+            .map_err(|e| CoreError::invalid_operation(format!("Failed to get timestamp: {}", e)))?
             .as_secs();
 
         let type_prefix = match backup_type {
@@ -400,7 +401,7 @@ impl BackupManager {
         header.extend_from_slice(
             &SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .map_err(|e| Error::BackupError(format!("Failed to get timestamp: {}", e)))?
+                .map_err(|e| CoreError::invalid_operation(format!("Failed to get timestamp: {}", e)))?
                 .as_secs()
                 .to_le_bytes(),
         );
@@ -417,25 +418,25 @@ impl BackupManager {
     /// Verifies backup header
     fn verify_backup_header(&self, header: &[u8], expected_type: BackupType) -> Result<()> {
         if header.len() < 18 {
-            return Err(crate::Error::BackupError(
+            return Err(CoreError::invalid_operation(
                 "Invalid backup header".to_string(),
             ));
         }
 
         if &header[0..9] != b"NEOBACKUP" {
-            return Err(crate::Error::BackupError(
+            return Err(CoreError::invalid_operation(
                 "Invalid backup magic bytes".to_string(),
             ));
         }
 
         if header[9] != 1 {
-            return Err(crate::Error::BackupError(
+            return Err(CoreError::invalid_operation(
                 "Unsupported backup version".to_string(),
             ));
         }
 
         if header[10] != expected_type as u8 {
-            return Err(crate::Error::BackupError(
+            return Err(CoreError::invalid_operation(
                 "Backup type mismatch".to_string(),
             ));
         }
@@ -457,7 +458,7 @@ impl BackupManager {
     fn decompress_data(&self, data: &[u8]) -> Result<Vec<u8>> {
         if self.enable_compression && !data.is_empty() {
             let decompressed = lz4_flex::decompress_size_prepended(data)
-                .map_err(|e| crate::Error::CompressionError(e.to_string()))?;
+                .map_err(|e| CoreError::compression(e.to_string()))?;
             Ok(decompressed)
         } else {
             Ok(data.to_vec())
@@ -512,7 +513,7 @@ impl BackupManager {
 
         // Data integrity verification against backup metadata
         if stats.current_height < metadata.block_height {
-            return Err(crate::Error::BackupError(
+            return Err(CoreError::invalid_operation(
                 "Restored data appears incomplete".to_string(),
             ));
         }
@@ -545,13 +546,10 @@ impl BackupManager {
                     .map(|(id, e)| format!("{}: {}", id, e))
                     .collect::<Vec<_>>()
                     .join(", ");
-                return Err(crate::Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!(
-                        "Failed to delete {} old backups: {}",
-                        deletion_errors.len(),
-                        error_summary
-                    ),
+                return Err(CoreError::io(format!(
+                    "Failed to delete {} old backups: {}",
+                    deletion_errors.len(),
+                    error_summary
                 )));
             }
         }
