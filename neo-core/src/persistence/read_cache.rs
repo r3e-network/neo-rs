@@ -9,8 +9,9 @@ use hashbrown::HashMap;
 use lru::LruCache;
 use parking_lot::RwLock;
 use std::hash::Hash;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
 
@@ -163,6 +164,13 @@ impl ReadCacheStats {
                 .fetch_add(new_entries, Ordering::Relaxed);
         }
         self.replace_current_bytes(old_bytes, new_bytes);
+    }
+
+    #[inline]
+    fn record_prefetch_events(&self, count: usize, enable_stats: bool) {
+        if enable_stats {
+            self.prefetches.fetch_add(count as u64, Ordering::Relaxed);
+        }
     }
 
     #[inline]
@@ -352,7 +360,10 @@ where
 
         Self {
             config,
-            data: RwLock::new(LruCache::unbounded()),
+            data: RwLock::new(LruCache::new(
+                NonZeroUsize::new(config.max_entries.max(1))
+                    .expect("read cache capacity is clamped to at least one entry"),
+            )),
             stats: Arc::new(ReadCacheStats::new()),
             bloom_filter,
         }
@@ -451,17 +462,8 @@ where
     /// Puts a value into the cache.
     pub fn put(&self, key: K, value: V, size_bytes: usize) {
         let mut data = self.data.write();
-        let existed = data.peek(&key).is_some();
-
-        if existed {
+        if data.peek(&key).is_some() {
             let _ = data.get_mut(&key);
-        }
-
-        // Check if we need to evict for a new entry. Updates do not increase entry count.
-        while data.len() + usize::from(!existed) > self.config.max_entries {
-            if !self.evict_lru(&mut data) {
-                break; // Could not evict, stop trying
-            }
         }
 
         // Check if adding this would exceed byte limit
@@ -476,8 +478,7 @@ where
         // Insert new entry
         let entry = CacheEntry::new(value, size_bytes);
         let key_for_bloom = key.clone();
-        let old_size = data.put(key, entry).map(|entry| entry.size_bytes);
-        let is_new = old_size.is_none();
+        let is_new = self.push_cache_entry(&mut data, key, entry);
 
         // Update bloom filter for new entries
         if is_new {
@@ -485,9 +486,6 @@ where
                 bloom.insert_hash(key_for_bloom.hash_for_bloom());
             }
         }
-
-        self.stats
-            .record_cache_write(old_size, size_bytes, self.config.enable_stats);
 
         trace!(target: "neo", size_bytes, "cache insert");
     }
@@ -512,13 +510,6 @@ where
             }
         }
 
-        // Make room for new entries
-        while self.projected_len_after_batch(&data, &final_sizes) > self.config.max_entries {
-            if !self.evict_lru(&mut data) {
-                break;
-            }
-        }
-
         while self.projected_bytes_after_batch(&data, &final_sizes) > self.config.max_bytes
             && !data.is_empty()
         {
@@ -529,20 +520,13 @@ where
 
         let count = items.len();
         let mut keys_for_bloom = Vec::with_capacity(count);
-        let mut new_entries = 0;
-        let mut old_bytes = 0;
-        let mut new_bytes = 0;
 
         for (key, value, size_bytes) in items {
             let entry = CacheEntry::new(value, size_bytes);
             let key_for_bloom = key.clone();
-            if let Some(old_entry) = data.put(key, entry) {
-                old_bytes += old_entry.size_bytes;
-            } else {
-                new_entries += 1;
+            if self.push_cache_entry(&mut data, key, entry) {
                 keys_for_bloom.push(key_for_bloom);
             }
-            new_bytes += size_bytes;
         }
 
         // Update bloom filter
@@ -552,13 +536,8 @@ where
             }
         }
 
-        self.stats.record_prefetch_batch(
-            count,
-            new_entries,
-            old_bytes,
-            new_bytes,
-            self.config.enable_stats,
-        );
+        self.stats
+            .record_prefetch_events(count, self.config.enable_stats);
 
         debug!(target: "neo", count, total_bytes, "cache batch insert (prefetch)");
     }
@@ -642,18 +621,6 @@ where
         }
     }
 
-    fn projected_len_after_batch(
-        &self,
-        data: &LruCache<K, CacheEntry<V>>,
-        final_sizes: &HashMap<K, usize>,
-    ) -> usize {
-        let new_entries = final_sizes
-            .keys()
-            .filter(|key| data.peek(*key).is_none())
-            .count();
-        data.len() + new_entries
-    }
-
     fn projected_bytes_after_put(
         &self,
         data: &LruCache<K, CacheEntry<V>>,
@@ -694,6 +661,40 @@ where
             true
         } else {
             false
+        }
+    }
+
+    fn push_cache_entry(
+        &self,
+        data: &mut LruCache<K, CacheEntry<V>>,
+        key: K,
+        entry: CacheEntry<V>,
+    ) -> bool {
+        let existed = data.peek(&key).is_some();
+        let new_size_bytes = entry.size_bytes;
+
+        match data.push(key, entry) {
+            Some((_key, old_entry)) if existed => {
+                self.stats.record_cache_write(
+                    Some(old_entry.size_bytes),
+                    new_size_bytes,
+                    self.config.enable_stats,
+                );
+                false
+            }
+            Some((_key, evicted_entry)) => {
+                self.stats
+                    .record_cache_eviction(evicted_entry.size_bytes, self.config.enable_stats);
+                self.stats
+                    .record_cache_write(None, new_size_bytes, self.config.enable_stats);
+                trace!(target: "neo", "cache eviction");
+                true
+            }
+            None => {
+                self.stats
+                    .record_cache_write(None, new_size_bytes, self.config.enable_stats);
+                true
+            }
         }
     }
 }

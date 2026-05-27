@@ -328,6 +328,38 @@ fn read_cache_put_batch_duplicate_key_accounts_final_value_once() {
 }
 
 #[test]
+fn read_cache_put_batch_obeys_entry_capacity_and_keeps_bloom_positive() {
+    let config = ReadCacheConfig {
+        max_entries: 2,
+        max_bytes: 1000,
+        enable_bloom_filter: true,
+        ..ReadCacheConfig::no_prefetch()
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+    let evicted_key = "key1".to_string();
+
+    cache.put_batch(vec![
+        (evicted_key.clone(), "value1".to_string(), 10),
+        ("key2".to_string(), "value2".to_string(), 10),
+        ("key3".to_string(), "value3".to_string(), 10),
+    ]);
+
+    assert_eq!(cache.len(), 2);
+    assert!(cache.fast_bloom_check(&evicted_key));
+    assert_eq!(cache.get(&evicted_key), None);
+    assert_eq!(cache.get(&"key2".to_string()), Some("value2".to_string()));
+    assert_eq!(cache.get(&"key3".to_string()), Some("value3".to_string()));
+
+    let stats = cache.stats();
+    assert_eq!(stats.evictions, 1);
+    assert_eq!(stats.prefetches, 3);
+    assert_eq!(stats.inserts, 3);
+    assert_eq!(stats.current_entries, 2);
+    assert_eq!(stats.current_bytes, 20);
+}
+
+#[test]
 fn read_cache_byte_limit_eviction() {
     let config = ReadCacheConfig {
         max_entries: 100,
