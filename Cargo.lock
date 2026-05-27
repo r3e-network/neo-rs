@@ -2229,7 +2229,7 @@ version = "0.7.2"
 dependencies = [
  "dirs",
  "serde",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "toml",
  "uuid",
 ]
@@ -2248,7 +2248,7 @@ dependencies = [
  "neo-vm-rs",
  "rand 0.8.5",
  "serde",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "zeroize",
@@ -2314,7 +2314,7 @@ dependencies = [
  "subtle",
  "sysinfo",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "toml",
@@ -2361,7 +2361,7 @@ dependencies = [
  "sha2",
  "sha3",
  "subtle",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tracing",
  "zeroize",
 ]
@@ -2383,7 +2383,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "zeroize",
@@ -2404,7 +2404,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -2417,7 +2417,7 @@ dependencies = [
  "indexmap 2.8.0",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
 ]
 
@@ -2450,7 +2450,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "toml",
@@ -2472,7 +2472,7 @@ dependencies = [
  "neo-primitives",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -2491,7 +2491,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -2533,7 +2533,7 @@ dependencies = [
  "sha1",
  "socket2 0.5.10",
  "subtle",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-rustls 0.24.1",
  "tracing",
@@ -2551,7 +2551,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "xxhash-rust",
 ]
 
@@ -2574,7 +2574,7 @@ dependencies = [
  "sgx-isa",
  "sha2",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "zeroize",
@@ -2592,7 +2592,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-appender",
