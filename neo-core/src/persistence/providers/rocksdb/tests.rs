@@ -1,8 +1,12 @@
 use super::*;
 use crate::persistence::StoreCache;
+use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::storage::StorageConfig;
+use crate::persistence::store::IStore;
 use crate::persistence::store_provider::StoreProvider;
+use crate::persistence::write_batch_buffer::WriteBatchConfig;
+use crate::persistence::write_store::WriteStore;
 use crate::smart_contract::{StorageItem, StorageKey};
 use std::fs;
 use std::sync::Arc;
@@ -177,6 +181,42 @@ fn backward_prefix_find_returns_expected_rows_in_store_and_snapshot_views() {
         .data_cache()
         .find(Some(&prefix), SeekDirection::Backward)
         .map(|(k, _)| k.to_array())
+        .collect();
+    assert_eq!(snapshot_keys, expected);
+}
+
+#[test]
+fn backward_raw_prefix_find_uses_rocksdb_prefix_bounds() {
+    let tmp = TempDir::new().expect("tempdir");
+    let cfg = StorageConfig {
+        path: tmp.path().join("rocksdb-raw-prefix-bounds"),
+        ..Default::default()
+    };
+
+    let mut store = RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), &None, true, true)
+        .expect("rocksdb store");
+
+    for (key, value) in [
+        (b"a\x00".to_vec(), vec![0x01]),
+        (b"a\xff".to_vec(), vec![0x02]),
+        (b"b".to_vec(), vec![0x03]),
+    ] {
+        store.put(key, value).expect("put raw row");
+    }
+
+    let prefix = b"a".to_vec();
+    let expected = vec![b"a\xff".to_vec(), b"a\x00".to_vec()];
+
+    let store_keys: Vec<_> = store
+        .find(Some(&prefix), SeekDirection::Backward)
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(store_keys, expected);
+
+    let snapshot = store.get_snapshot();
+    let snapshot_keys: Vec<_> = snapshot
+        .find(Some(&prefix), SeekDirection::Backward)
+        .map(|(key, _)| key)
         .collect();
     assert_eq!(snapshot_keys, expected);
 }

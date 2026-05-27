@@ -1,23 +1,22 @@
 use crate::{
     error::{CoreError, CoreResult},
     persistence::{
-        read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
-        store::{IStore, OnNewSnapshotDelegate},
-        store_snapshot::StoreSnapshot,
-        write_store::WriteStore,
         read_cache::{ReadCacheConfig, StorageReadCache},
+        read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         seek_direction::SeekDirection,
         storage::StorageConfig,
+        store::{IStore, OnNewSnapshotDelegate},
+        store_snapshot::StoreSnapshot,
         write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot},
+        write_store::WriteStore,
     },
     smart_contract::{StorageItem, StorageKey},
 };
 use parking_lot::{Mutex, RwLock};
 use rocksdb::{
-    DBIteratorWithThreadMode, Direction, IteratorMode, ReadOptions, Snapshot as DbSnapshot,
-    WriteBatch, WriteOptions, DB,
+    DB, DBIteratorWithThreadMode, ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions,
 };
-use std::{collections::BTreeMap, fs, mem, path::PathBuf, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, fs, mem, sync::Arc, time::Instant};
 use tracing::{debug, error, warn};
 
 use super::provider::{self, BatchCommitter, ReadAheadConfig};
@@ -115,28 +114,19 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
         if direction == SeekDirection::Backward {
             if let Some(prefix) = key_prefix {
-                // RocksDB reverse iterators start at the provided key (inclusive).
-                // For prefix scans this skips all keys that are lexicographically
-                // greater than the raw prefix (for example prefix + suffix bytes).
-                // Scan forward from the prefix and reverse in-memory to preserve
-                // correct backward semantics for prefixed scans.
-                let mut items = Vec::new();
-                for res in self.iterator_from(prefix.as_slice(), SeekDirection::Forward) {
-                    let (key, value) = match res {
-                        Ok(entry) => entry,
-                        Err(err) => {
-                            warn!(target: "neo", error = %err, "rocksdb iterator error");
-                            continue;
-                        }
-                    };
-                    let key_vec = key.to_vec();
-                    if !key_vec.starts_with(prefix) {
-                        break;
+                let iterator = provider::reverse_prefix_iterator(
+                    self.db.as_ref(),
+                    None,
+                    prefix.as_slice(),
+                    &self.read_ahead_config,
+                );
+                return Box::new(iterator.filter_map(|res| match res {
+                    Ok((key, value)) => Some((key.to_vec(), value.to_vec())),
+                    Err(err) => {
+                        warn!(target: "neo", error = %err, "rocksdb iterator error");
+                        None
                     }
-                    items.push((key_vec, value.to_vec()));
-                }
-                items.reverse();
-                return Box::new(items.into_iter());
+                }));
             }
         }
 
@@ -176,30 +166,31 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
 
         if direction == SeekDirection::Backward {
             if let Some(prefix) = prefix_bytes.as_ref() {
-                let mut items = Vec::new();
-                for res in self.iterator_from(prefix.as_slice(), SeekDirection::Forward) {
+                let iter = provider::reverse_prefix_iterator(
+                    self.db.as_ref(),
+                    None,
+                    prefix.as_slice(),
+                    &self.read_ahead_config,
+                );
+                let read_cache = self.read_cache.clone();
+                return Box::new(iter.filter_map(move |res| {
                     let (key, value) = match res {
                         Ok(entry) => entry,
                         Err(err) => {
                             warn!(target: "neo", error = %err, "rocksdb iterator error");
-                            continue;
+                            return None;
                         }
                     };
                     let key_vec: Vec<u8> = key.into();
-                    if !key_vec.starts_with(prefix) {
-                        break;
-                    }
                     let storage_key = StorageKey::from_bytes(&key_vec);
                     let storage_item = StorageItem::from_bytes(value.into());
-                    if let Some(ref cache) = self.read_cache {
+                    if let Some(ref cache) = read_cache {
                         let size =
                             storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                         cache.put(storage_key.clone(), storage_item.clone(), size);
                     }
-                    items.push((storage_key, storage_item));
-                }
-                items.reverse();
-                return Box::new(items.into_iter());
+                    Some((storage_key, storage_item))
+                }));
             }
         }
 
@@ -497,30 +488,19 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
 
         if direction == SeekDirection::Backward {
             if let Some(prefix) = key_prefix {
-                let mut items = Vec::new();
-                let iterator = provider::iterator_from(
+                let iterator = provider::reverse_prefix_iterator(
                     self.db.as_ref(),
                     Some(self.read_options()),
                     prefix.as_slice(),
-                    SeekDirection::Forward,
                     &self.read_ahead_config,
                 );
-                for res in iterator {
-                    let (key, value) = match res {
-                        Ok(entry) => entry,
-                        Err(err) => {
-                            warn!(target: "neo", error = %err, "rocksdb iterator error");
-                            continue;
-                        }
-                    };
-                    let key_vec = key.to_vec();
-                    if !key_vec.starts_with(prefix) {
-                        break;
+                return Box::new(iterator.filter_map(|res| match res {
+                    Ok((key, value)) => Some((key.to_vec(), value.to_vec())),
+                    Err(err) => {
+                        warn!(target: "neo", error = %err, "rocksdb iterator error");
+                        None
                     }
-                    items.push((key_vec, value.to_vec()));
-                }
-                items.reverse();
-                return Box::new(items.into_iter());
+                }));
             }
         }
 
@@ -593,31 +573,31 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
 
         if direction == SeekDirection::Backward {
             if let Some(prefix) = prefix_bytes.as_ref() {
-                let mut items = Vec::new();
-                let iter = self.iterator_from(prefix.as_slice(), SeekDirection::Forward);
-                for res in iter {
+                let iter = provider::reverse_prefix_iterator(
+                    self.db.as_ref(),
+                    Some(self.read_options()),
+                    prefix.as_slice(),
+                    &self.read_ahead_config,
+                );
+                let read_cache = self.read_cache.clone();
+                return Box::new(iter.filter_map(move |res| {
                     let (key, value) = match res {
                         Ok(entry) => entry,
                         Err(err) => {
                             warn!(target: "neo", error = %err, "rocksdb iterator error");
-                            continue;
+                            return None;
                         }
                     };
                     let key_vec: Vec<u8> = key.into();
-                    if !key_vec.starts_with(prefix) {
-                        break;
-                    }
                     let storage_key = StorageKey::from_bytes(&key_vec);
                     let storage_item = StorageItem::from_bytes(value.into());
-                    if let Some(ref cache) = self.read_cache {
+                    if let Some(ref cache) = read_cache {
                         let size =
                             storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                         cache.put(storage_key.clone(), storage_item.clone(), size);
                     }
-                    items.push((storage_key, storage_item));
-                }
-                items.reverse();
-                return Box::new(items.into_iter());
+                    Some((storage_key, storage_item))
+                }));
             }
         }
 

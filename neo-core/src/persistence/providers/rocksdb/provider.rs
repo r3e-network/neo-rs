@@ -1,21 +1,18 @@
 use crate::{
     error::{CoreError, CoreResult},
     persistence::{
-        store::IStore,
-        store_provider::StoreProvider,
-        store_snapshot::StoreSnapshot,
-        write_store::WriteStore,
         read_cache::ReadCacheConfig,
         storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
-        write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig, WriteBatchStatsSnapshot},
+        store::IStore,
+        store_provider::StoreProvider,
+        write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig},
     },
 };
 use rocksdb::{
-    BlockBasedOptions, Cache, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
-    ReadOptions, Snapshot as DbSnapshot, DB,
+    BlockBasedOptions, Cache, DB, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
+    PrefixRange, ReadOptions, Snapshot as DbSnapshot,
 };
-use std::{fs, path::PathBuf, sync::Arc};
-use tracing::{debug, warn};
+use std::{path::PathBuf, sync::Arc};
 
 use super::store::RocksDbStore;
 
@@ -204,6 +201,17 @@ pub(crate) fn iterator_from<'a>(
     db.iterator_opt(mode, opts)
 }
 
+pub(crate) fn reverse_prefix_iterator<'a>(
+    db: &'a DB,
+    read_options: Option<ReadOptions>,
+    prefix: &[u8],
+    read_ahead_config: &ReadAheadConfig,
+) -> DBIteratorWithThreadMode<'a, DB> {
+    let mut opts = read_options.unwrap_or_else(|| build_read_options(None, read_ahead_config));
+    opts.set_iterate_range(PrefixRange(prefix));
+    db.iterator_opt(IteratorMode::End, opts)
+}
+
 pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Options {
     let mut options = Options::default();
     options.create_if_missing(true);
@@ -239,8 +247,8 @@ pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: boo
         options.set_max_background_jobs(16);
     }
     options.set_bytes_per_sync(1048576); // 1MB — smooth I/O instead of bursty
-                                         // Enable optimize_filters_for_hits when bloom filters are enabled
-                                         // This reduces filter block size at the cost of slightly more disk seeks on negative lookups
+    // Enable optimize_filters_for_hits when bloom filters are enabled
+    // This reduces filter block size at the cost of slightly more disk seeks on negative lookups
     options.set_optimize_filters_for_hits(enable_bloom_filters);
 
     if let Some(write_buffer) = config.write_buffer_size {
@@ -256,7 +264,7 @@ pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: boo
     options.set_allow_mmap_writes(false);
     options.set_enable_pipelined_write(true);
     options.set_memtable_prefix_bloom_ratio(0.1); // better hit rate on memtable lookups
-                                                   // Delay write stalls during heavy initial sync
+    // Delay write stalls during heavy initial sync
     options.set_level_zero_slowdown_writes_trigger(30);
     options.set_level_zero_stop_writes_trigger(48);
     options.set_max_total_wal_size(512 * 1024 * 1024); // 512MB WAL cap
