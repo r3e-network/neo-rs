@@ -302,7 +302,7 @@ pub use builders::{
 };
 pub use contains_transaction_type::ContainsTransactionType;
 pub use cryptography::{ECCurve, ECPoint};
-pub use error::{CoreError, CoreResult, Result, UnifiedError, UnifiedResult};
+pub use error::{CoreError, CoreResult, Result};
 pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
 pub use ledger::{Block, BlockHeader};
