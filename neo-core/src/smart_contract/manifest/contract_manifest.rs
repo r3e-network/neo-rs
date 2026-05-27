@@ -28,6 +28,19 @@ fn map_json_error(err: serde_json::Error) -> IoError {
     IoError::invalid_data(err.to_string())
 }
 
+fn write_json_item<T: serde::Serialize>(item: &T, writer: &mut BinaryWriter) -> IoResult<()> {
+    let json = serde_json::to_string(item).map_err(map_json_error)?;
+    writer.write_var_string(&json)
+}
+
+fn read_json_item<T: for<'de> serde::Deserialize<'de>>(
+    reader: &mut MemoryReader,
+    max_len: usize,
+) -> IoResult<T> {
+    let json = reader.read_var_string(max_len)?;
+    serde_json::from_str(&json).map_err(map_json_error)
+}
+
 /// Represents the manifest of a smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractManifest {
@@ -404,55 +417,36 @@ impl ContractManifest {
         })
     }
 
-    /// Custom serialization for ContractGroup (matches C# ContractGroup.ToStackItem exactly)
     fn serialize_contract_group(
         &self,
         group: &ContractGroup,
         writer: &mut BinaryWriter,
     ) -> IoResult<()> {
-        let group_json = serde_json::to_string(group).map_err(map_json_error)?;
-        writer.write_var_string(&group_json)?;
-
-        Ok(())
+        write_json_item(group, writer)
     }
 
-    /// Custom deserialization for ContractGroup
     fn deserialize_contract_group(reader: &mut MemoryReader) -> IoResult<ContractGroup> {
-        let group_json = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max 1KB per group
-        let group = serde_json::from_str(&group_json).map_err(map_json_error)?;
-        Ok(group)
+        read_json_item(reader, MAX_SCRIPT_SIZE)
     }
 
-    /// Custom serialization for ContractAbi (matches C# ContractAbi.ToStackItem exactly)
     fn serialize_contract_abi(&self, abi: &ContractAbi, writer: &mut BinaryWriter) -> IoResult<()> {
-        let abi_json = serde_json::to_string(abi).map_err(map_json_error)?;
-        writer.write_var_string(&abi_json)?;
-        Ok(())
+        write_json_item(abi, writer)
     }
 
-    /// Custom deserialization for ContractAbi
     fn deserialize_contract_abi(reader: &mut MemoryReader) -> IoResult<ContractAbi> {
-        let abi_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?; // Max 64KB for ABI
-        let abi = serde_json::from_str(&abi_json).map_err(map_json_error)?;
-        Ok(abi)
+        read_json_item(reader, MAX_SCRIPT_LENGTH)
     }
 
-    /// Custom serialization for ContractPermission (matches C# ContractPermission.ToStackItem exactly)
     fn serialize_contract_permission(
         &self,
         permission: &ContractPermission,
         writer: &mut BinaryWriter,
     ) -> IoResult<()> {
-        let permission_json = serde_json::to_string(permission).map_err(map_json_error)?;
-        writer.write_var_string(&permission_json)?;
-        Ok(())
+        write_json_item(permission, writer)
     }
 
-    /// Custom deserialization for ContractPermission
     fn deserialize_contract_permission(reader: &mut MemoryReader) -> IoResult<ContractPermission> {
-        let permission_json = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max 1KB per permission
-        let permission = serde_json::from_str(&permission_json).map_err(map_json_error)?;
-        Ok(permission)
+        read_json_item(reader, MAX_SCRIPT_SIZE)
     }
 }
 

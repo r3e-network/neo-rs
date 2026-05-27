@@ -55,7 +55,7 @@ impl ActorRef {
         let envelope = Envelope::new(message, sender);
         self.mailbox
             .try_send(MailboxCommand::Message(MailboxMessage::User(envelope)))
-            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(e.to_string()))
     }
 
     /// Sends a message to the actor specifying the sender.
@@ -74,7 +74,7 @@ impl ActorRef {
                 Envelope::new(message, sender),
             )))
             .await
-            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(e.to_string()))
     }
 
     /// Registers `watcher` to receive a [`Terminated`](super::Terminated) message when this actor stops.
@@ -83,7 +83,7 @@ impl ActorRef {
             .try_send(MailboxCommand::Message(MailboxMessage::System(
                 SystemMessage::Watch(watcher),
             )))
-            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(e.to_string()))
     }
 
     /// Removes `watcher` from the current actor's watch list.
@@ -92,7 +92,7 @@ impl ActorRef {
             .try_send(MailboxCommand::Message(MailboxMessage::System(
                 SystemMessage::Unwatch(watcher),
             )))
-            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(e.to_string()))
     }
 
     /// Sends a message that expects a response.
@@ -112,7 +112,7 @@ impl ActorRef {
                 message,
                 sender: None,
             })))
-            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))?;
+            .map_err(|e| ActorRuntimeError::send(e.to_string()))?;
 
         match tokio::time::timeout(timeout, reply_rx).await {
             Ok(Ok(value)) => Ok(value),
@@ -127,7 +127,7 @@ impl ActorRef {
             .try_send(MailboxCommand::Message(MailboxMessage::System(
                 SystemMessage::Stop,
             )))
-            .map_err(|e| ActorRuntimeError::send(format!("{}", e)))
+            .map_err(|e| ActorRuntimeError::send(e.to_string()))
     }
 
     pub fn path(&self) -> ActorPath {

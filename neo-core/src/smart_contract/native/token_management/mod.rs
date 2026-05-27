@@ -17,6 +17,7 @@ use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::StorageIterator;
 use crate::smart_contract::native::NativeContract;
 use crate::smart_contract::native::NativeMethod;
+use crate::smart_contract::native::helpers::parse_uint160_arg;
 use num_bigint::BigInt;
 use num_traits::Signed;
 use num_traits::ToPrimitive;
@@ -106,8 +107,7 @@ impl TokenManagement {
             ));
         }
 
-        let asset_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
+        let asset_id = parse_uint160_arg(&args[0], "asset ID")?;
 
         let Some(token_state) = self.get_token_state(engine, &asset_id)? else {
             return Err(CoreError::native_contract(
@@ -131,10 +131,8 @@ impl TokenManagement {
             ));
         }
 
-        let asset_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
-        let account = UInt160::from_bytes(&args[1])
-            .map_err(|_| CoreError::native_contract("Invalid account"))?;
+        let asset_id = parse_uint160_arg(&args[0], "asset ID")?;
+        let account = parse_uint160_arg(&args[1], "account")?;
 
         let Some(account_state) = self.get_account_state(engine, &asset_id, &account)? else {
             return Ok(vec![0]);
@@ -155,8 +153,7 @@ impl TokenManagement {
             ));
         }
 
-        let account = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid account"))?;
+        let account = parse_uint160_arg(&args[0], "account")?;
 
         let prefix = StorageKey::create(ID, PREFIX_ACCOUNT_STATE);
         let entries: Vec<(StorageKey, StorageItem)> = engine
@@ -202,8 +199,7 @@ impl TokenManagement {
             TokenType::NonFungible
         };
 
-        let owner = UInt160::from_bytes(&args[1])
-            .map_err(|_| CoreError::native_contract("Invalid owner"))?;
+        let owner = parse_uint160_arg(&args[1], "owner")?;
 
         let name = String::from_utf8_lossy(&args[2]).to_string();
         let symbol = String::from_utf8_lossy(&args[3]).to_string();
@@ -256,10 +252,8 @@ impl TokenManagement {
             ));
         }
 
-        let asset_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
-        let account = UInt160::from_bytes(&args[1])
-            .map_err(|_| CoreError::native_contract("Invalid account"))?;
+        let asset_id = parse_uint160_arg(&args[0], "asset ID")?;
+        let account = parse_uint160_arg(&args[1], "account")?;
 
         let amount = if args.len() > 2 {
             BigInt::from_signed_bytes_le(&args[2])
@@ -323,10 +317,8 @@ impl TokenManagement {
             ));
         }
 
-        let asset_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
-        let account = UInt160::from_bytes(&args[1])
-            .map_err(|_| CoreError::native_contract("Invalid account"))?;
+        let asset_id = parse_uint160_arg(&args[0], "asset ID")?;
+        let account = parse_uint160_arg(&args[1], "account")?;
 
         let amount = if args.len() > 2 {
             BigInt::from_signed_bytes_le(&args[2])
@@ -391,12 +383,9 @@ impl TokenManagement {
             ));
         }
 
-        let asset_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
-        let from = UInt160::from_bytes(&args[1])
-            .map_err(|_| CoreError::native_contract("Invalid from address"))?;
-        let to = UInt160::from_bytes(&args[2])
-            .map_err(|_| CoreError::native_contract("Invalid to address"))?;
+        let asset_id = parse_uint160_arg(&args[0], "asset ID")?;
+        let from = parse_uint160_arg(&args[1], "from address")?;
+        let to = parse_uint160_arg(&args[2], "to address")?;
 
         let amount = BigInt::from_signed_bytes_le(&args[3]);
 

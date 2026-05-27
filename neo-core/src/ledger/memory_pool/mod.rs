@@ -35,6 +35,10 @@ mod views;
 
 use index::PoolIndex;
 
+fn unwrap_or_clone_arc<T: Clone>(arc: Arc<T>) -> T {
+    Arc::try_unwrap(arc).unwrap_or_else(|arc| (*arc).clone())
+}
+
 /// namespace Neo.Ledger -> public class MemoryPool : IReadOnlyCollection<`Transaction`>
 /// Allow a reverified transaction to be rebroadcast if it has been this many block times since last broadcast.
 const _BLOCKS_TILL_REBROADCAST: i32 = 10;
@@ -326,9 +330,7 @@ impl MemoryPool {
                 let removed_hash = removed_item.transaction.hash();
                 if let Some(item) = self.try_remove_verified(removed_hash) {
                     // Extract Arc<Transaction> directly without cloning
-                    removed_conflicts.push(
-                        Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()),
-                    );
+                    removed_conflicts.push(unwrap_or_clone_arc(item.transaction));
                 }
             }
 
@@ -562,9 +564,7 @@ impl MemoryPool {
                 Ok(list) => list,
                 Err(_) => {
                     self.unverified.remove(&hash);
-                    invalidated.push(
-                        Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()),
-                    );
+                    invalidated.push(unwrap_or_clone_arc(item.transaction));
                     continue;
                 }
             };
@@ -594,19 +594,14 @@ impl MemoryPool {
                 for conflict in conflicts {
                     let conflict_hash = conflict.transaction.hash();
                     if let Some(removed) = self.try_remove_verified(conflict_hash) {
-                        // Extract Transaction for the event handler
-                        invalidated.push(
-                            Arc::try_unwrap(removed.transaction)
-                                .unwrap_or_else(|arc| (*arc).clone()),
-                        );
+                        invalidated.push(unwrap_or_clone_arc(removed.transaction));
                     }
                 }
 
                 reverified.push(item);
             } else {
                 self.unverified.remove(&hash);
-                invalidated
-                    .push(Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()));
+                invalidated.push(unwrap_or_clone_arc(item.transaction));
             }
         }
 
@@ -714,17 +709,10 @@ impl MemoryPool {
 
             if from_verified {
                 if let Some(removed_item) = self.try_remove_verified(hash) {
-                    // Note: verification_context.remove_transaction is already
-                    // called inside try_remove_verified — do NOT call it again.
-                    removed.push(
-                        Arc::try_unwrap(removed_item.transaction)
-                            .unwrap_or_else(|arc| (*arc).clone()),
-                    );
+                    removed.push(unwrap_or_clone_arc(removed_item.transaction));
                 }
             } else if let Some(removed_item) = self.try_remove_unverified(hash) {
-                removed.push(
-                    Arc::try_unwrap(removed_item.transaction).unwrap_or_else(|arc| (*arc).clone()),
-                );
+                removed.push(unwrap_or_clone_arc(removed_item.transaction));
             }
         }
 

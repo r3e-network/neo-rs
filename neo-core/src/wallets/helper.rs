@@ -817,16 +817,6 @@ fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, usize)> {
     Some((m, n))
 }
 
-/// Base58 utilities
-pub mod base58 {
-    use neo_primitives::base58_check;
-
-    /// Encodes data with a 4-byte double-SHA256 checksum using Base58Check.
-    pub fn base58_check_encode(data: &[u8]) -> String {
-        base58_check::encode_check(data)
-    }
-}
-
 /// Base58Check decode extension
 pub trait Base58CheckDecode {
     fn base58_check_decode(&self) -> Result<Vec<u8>, String>;

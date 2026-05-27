@@ -14,6 +14,12 @@ use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
+/// Parses a `UInt160` from a raw byte argument, returning a descriptive
+/// native-contract error when the bytes are invalid.
+pub(crate) fn parse_uint160_arg(arg: &[u8], label: &str) -> crate::CoreResult<UInt160> {
+    UInt160::from_bytes(arg).map_err(|_| crate::CoreError::native_contract(format!("Invalid {label}")))
+}
+
 // System context is now stored as a trait object to decouple from concrete runtime
 static SYSTEM_CONTEXT: LazyLock<RwLock<Option<Arc<dyn SystemContext>>>> =
     LazyLock::new(|| RwLock::new(None));

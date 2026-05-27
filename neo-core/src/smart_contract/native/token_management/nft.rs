@@ -9,6 +9,7 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::StorageIterator;
 use crate::smart_contract::native::NativeContract;
+use crate::smart_contract::native::helpers::parse_uint160_arg;
 use crate::smart_contract::{StorageItem, StorageKey};
 use num_bigint::BigInt;
 use num_traits::Zero;
@@ -28,8 +29,7 @@ impl TokenManagement {
             ));
         }
 
-        let owner = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid owner"))?;
+        let owner = parse_uint160_arg(&args[0], "owner")?;
 
         let name = String::from_utf8_lossy(&args[1]).to_string();
         let symbol = String::from_utf8_lossy(&args[2]).to_string();
@@ -77,10 +77,8 @@ impl TokenManagement {
             ));
         }
 
-        let asset_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
-        let account = UInt160::from_bytes(&args[1])
-            .map_err(|_| CoreError::native_contract("Invalid account"))?;
+        let asset_id = parse_uint160_arg(&args[0], "asset ID")?;
+        let account = parse_uint160_arg(&args[1], "account")?;
 
         let context = engine.get_native_storage_context(&self.hash())?;
         let token_key = Self::token_state_key_suffix(&asset_id);
@@ -164,8 +162,7 @@ impl TokenManagement {
             ));
         }
 
-        let nft_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid NFT ID"))?;
+        let nft_id = parse_uint160_arg(&args[0], "NFT ID")?;
 
         let context = engine.get_native_storage_context(&self.hash())?;
         let nft_key = Self::nft_state_key_suffix(&nft_id);
@@ -241,12 +238,9 @@ impl TokenManagement {
             ));
         }
 
-        let nft_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid NFT ID"))?;
-        let from = UInt160::from_bytes(&args[1])
-            .map_err(|_| CoreError::native_contract("Invalid from"))?;
-        let to =
-            UInt160::from_bytes(&args[2]).map_err(|_| CoreError::native_contract("Invalid to"))?;
+        let nft_id = parse_uint160_arg(&args[0], "NFT ID")?;
+        let from = parse_uint160_arg(&args[1], "from")?;
+        let to = parse_uint160_arg(&args[2], "to")?;
 
         if from == to {
             return Err(CoreError::native_contract(
@@ -313,8 +307,7 @@ impl TokenManagement {
             ));
         }
 
-        let nft_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid NFT ID"))?;
+        let nft_id = parse_uint160_arg(&args[0], "NFT ID")?;
 
         let context = engine.get_native_storage_context(&self.hash())?;
         let nft_key = Self::nft_state_key_suffix(&nft_id);
@@ -336,8 +329,7 @@ impl TokenManagement {
             ));
         }
 
-        let asset_id = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
+        let asset_id = parse_uint160_arg(&args[0], "asset ID")?;
 
         self.open_nft_index_iterator(engine, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX, &asset_id)
     }
@@ -353,8 +345,7 @@ impl TokenManagement {
             ));
         }
 
-        let account = UInt160::from_bytes(&args[0])
-            .map_err(|_| CoreError::native_contract("Invalid account"))?;
+        let account = parse_uint160_arg(&args[0], "account")?;
 
         self.open_nft_index_iterator(engine, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX, &account)
     }
