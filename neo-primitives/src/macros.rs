@@ -12,7 +12,7 @@ macro_rules! uint_type {
             size_const = $size_const:ident;
             $(#[$zero_meta:meta])*
             $zero_name:ident;
-            as_ref = $as_ref:literal;
+            as_ref = $as_ref:tt;
             fields: [$($field:ident : $fty:ty),+ $(,)?];
         }
     ) => {
@@ -185,14 +185,14 @@ macro_rules! uint_type {
             fn try_from(s: String) -> Result<Self, Self::Error> { Self::parse(&s) }
         }
 
-        $crate::__uint_type_as_ref!($as_ref, $name, $size, $($field),+);
+        $crate::__uint_type_as_ref!($as_ref; $name, $size, $($field),+);
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __uint_type_as_ref {
-    (true, $name:ident, $size:expr_2021, $($field:ident),+) => {
+    (true; $name:ident, $size:expr_2021, $($field:ident),+) => {
         impl AsRef<[u8; $size]> for $name {
             #[inline]
             fn as_ref(&self) -> &[u8; $size] {
@@ -204,7 +204,7 @@ macro_rules! __uint_type_as_ref {
             }
         }
     };
-    (false, $name:ident, $size:expr_2021, $($field:ident),+) => {};
+    (false; $name:ident, $size:expr_2021, $($field:ident),+) => {};
 }
 
 #[doc(hidden)]

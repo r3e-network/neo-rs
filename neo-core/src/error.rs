@@ -216,13 +216,6 @@ impl CoreError {
         }
     }
 
-    /// Create a new runtime error
-    pub fn runtime_error<S: Into<String>>(message: S) -> Self {
-        Self::RuntimeError {
-            message: message.into(),
-        }
-    }
-
     /// Create a new system error
     pub fn system<S: Into<String>>(message: S) -> Self {
         Self::System {
@@ -242,6 +235,48 @@ impl CoreError {
     pub fn cryptographic<S: Into<String>>(message: S) -> Self {
         Self::Cryptographic {
             message: message.into(),
+        }
+    }
+
+    /// Create a new invalid private key error
+    pub fn invalid_private_key<S: Into<String>>(msg: S) -> Self {
+        Self::Cryptographic {
+            message: msg.into(),
+        }
+    }
+
+    /// Create a new invalid NEP-2 key error
+    pub fn invalid_nep2_key<S: Into<String>>(msg: S) -> Self {
+        Self::Cryptographic {
+            message: msg.into(),
+        }
+    }
+
+    /// Create a new invalid WIF error
+    pub fn invalid_wif<S: Into<String>>(msg: S) -> Self {
+        Self::Cryptographic {
+            message: msg.into(),
+        }
+    }
+
+    /// Create a new scrypt error
+    pub fn scrypt<S: Into<String>>(msg: S) -> Self {
+        Self::Cryptographic {
+            message: msg.into(),
+        }
+    }
+
+    /// Create a new AES encryption error
+    pub fn aes<S: Into<String>>(msg: S) -> Self {
+        Self::Cryptographic {
+            message: msg.into(),
+        }
+    }
+
+    /// Create a new invalid password error
+    pub fn invalid_password<S: Into<String>>(msg: S) -> Self {
+        Self::Cryptographic {
+            message: msg.into(),
         }
     }
 
@@ -362,7 +397,6 @@ impl CoreError {
             CoreError::InsufficientGas { .. } => "resource",
             CoreError::Cryptographic { .. } => "cryptography",
             CoreError::Base58Decode { .. } => "serialization",
-            CoreError::Cryptographic { .. } => "cryptography",
             CoreError::BufferOverflow { .. } | CoreError::EndOfStream => "buffer",
             CoreError::Configuration { .. } => "configuration",
             CoreError::Timeout { .. } => "timeout",

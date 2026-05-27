@@ -65,7 +65,7 @@ impl KeyPair {
     /// Creates a key pair from a private key.
     pub fn from_private_key(private_key: &[u8]) -> Result<Self> {
         if private_key.len() != HASH_SIZE {
-            return Err(Error::InvalidPrivateKey);
+            return Err(Error::invalid_private_key("private key must be 32 bytes"));
         }
 
         let mut key_bytes = [0u8; HASH_SIZE];
@@ -103,7 +103,7 @@ impl KeyPair {
         // First try to decode as base64
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(encrypted_key)
-            .map_err(|_| Error::InvalidNep2Key)?;
+            .map_err(|_| Error::invalid_nep2_key("invalid NEP-2 encrypted key"))?;
 
         let private_key = Self::decrypt_nep2(&decoded, password, address_version)?;
         Self::from_private_key(&private_key)
@@ -190,17 +190,17 @@ impl KeyPair {
         let data = Base58::decode_check(wif).map_err(map_wif_decode_error)?;
 
         if data.len() != 34 {
-            return Err(Error::InvalidWif);
+            return Err(Error::invalid_wif("invalid WIF length"));
         }
 
         // Check version byte
         if data[0] != 0x80 {
-            return Err(Error::InvalidWif);
+            return Err(Error::invalid_wif("invalid WIF version byte"));
         }
 
         // Check compressed flag
         if data[33] != 0x01 {
-            return Err(Error::InvalidWif);
+            return Err(Error::invalid_wif("invalid WIF compressed flag"));
         }
 
         let mut private_key = [0u8; HASH_SIZE];
@@ -240,9 +240,7 @@ impl KeyPair {
         // Derive key using scrypt
         let n: u32 = n;
         let params =
-            Params::new(n.trailing_zeros() as u8, r, p, 64).map_err(|e| Error::Scrypt {
-                message: e.to_string(),
-            })?;
+            Params::new(n.trailing_zeros() as u8, r, p, 64).map_err(|e| Error::scrypt(e.to_string()))?;
 
         // Use Zeroizing wrapper to ensure sensitive data is cleared on drop
         let mut derived_key = Zeroizing::new([0u8; 64]);
@@ -252,9 +250,7 @@ impl KeyPair {
             &params,
             derived_key.as_mut(),
         )
-        .map_err(|e| Error::Scrypt {
-            message: e.to_string(),
-        })?;
+        .map_err(|e| Error::scrypt(e.to_string()))?;
 
         // Split derived key
         let derived_half1 = &derived_key[0..HASH_SIZE];
@@ -267,11 +263,8 @@ impl KeyPair {
         }
 
         let cipher =
-            Encryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16]).map_err(|e| {
-                Error::Aes {
-                    message: e.to_string(),
-                }
-            })?;
+            Encryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16])
+                .map_err(|e| Error::aes(e.to_string()))?;
         let mut buffer = Zeroizing::new(xor_key.to_vec());
         buffer.resize(HASH_SIZE, 0); // Ensure exactly HASH_SIZE bytes
         let encrypted = cipher
@@ -279,9 +272,7 @@ impl KeyPair {
                 buffer.as_mut_slice(),
                 HASH_SIZE,
             )
-            .map_err(|e| Error::Aes {
-                message: e.to_string(),
-            })?;
+            .map_err(|e| Error::aes(e.to_string()))?;
         let encrypted = encrypted.to_vec();
 
         let mut result = Vec::with_capacity(39);
@@ -300,11 +291,11 @@ impl KeyPair {
         address_version: u8,
     ) -> Result<[u8; HASH_SIZE]> {
         if encrypted_key.len() != 39 {
-            return Err(Error::InvalidNep2Key);
+            return Err(Error::invalid_nep2_key("invalid NEP-2 key length"));
         }
 
         if &encrypted_key[0..2] != b"\x01\x42" {
-            return Err(Error::InvalidNep2Key);
+            return Err(Error::invalid_nep2_key("invalid NEP-2 key prefix"));
         }
 
         let _flags = encrypted_key[2];
@@ -319,9 +310,7 @@ impl KeyPair {
         // Derive key using scrypt (use Zeroizing for sensitive data)
         let n: u32 = n;
         let params =
-            Params::new(n.trailing_zeros() as u8, r, p, 64).map_err(|e| Error::Scrypt {
-                message: e.to_string(),
-            })?;
+            Params::new(n.trailing_zeros() as u8, r, p, 64).map_err(|e| Error::scrypt(e.to_string()))?;
 
         let mut derived_key = Zeroizing::new([0u8; 64]);
         scrypt::scrypt(
@@ -330,25 +319,18 @@ impl KeyPair {
             &params,
             derived_key.as_mut(),
         )
-        .map_err(|e| Error::Scrypt {
-            message: e.to_string(),
-        })?;
+        .map_err(|e| Error::scrypt(e.to_string()))?;
 
         let derived_half1 = &derived_key[0..HASH_SIZE];
         let derived_half2 = &derived_key[32..64];
 
         let cipher =
-            Decryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16]).map_err(|e| {
-                Error::Aes {
-                    message: e.to_string(),
-                }
-            })?;
+            Decryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16])
+                .map_err(|e| Error::aes(e.to_string()))?;
         let mut buffer = Zeroizing::new(encrypted_data.to_vec());
         let decrypted = cipher
             .decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(buffer.as_mut_slice())
-            .map_err(|e| Error::Aes {
-                message: e.to_string(),
-            })?;
+            .map_err(|e| Error::aes(e.to_string()))?;
 
         // XOR with derived_half1 to get private key
         let mut private_key = [0u8; HASH_SIZE];
@@ -367,7 +349,7 @@ impl KeyPair {
         if !bool::from(computed_hash.ct_eq(address_hash)) {
             // Zeroize private key before returning error
             private_key.zeroize();
-            return Err(Error::InvalidPassword);
+            return Err(Error::invalid_password("invalid password for NEP-2 key"));
         }
 
         Ok(private_key)
@@ -406,7 +388,7 @@ fn map_wif_decode_error(error: CryptoError) -> Error {
                     .to_string(),
             }
         }
-        _ => Error::InvalidWif,
+        _ => Error::invalid_wif("invalid WIF format"),
     }
 }
 

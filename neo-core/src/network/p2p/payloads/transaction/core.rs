@@ -258,7 +258,7 @@ impl Transaction {
     ) -> Option<&TransactionAttribute> {
         self.attributes
             .iter()
-            .find(|attr| attr.type_id() == attr_type)
+            .find(|attr| TransactionAttribute::type_id(attr) == attr_type)
     }
 
     /// Gets all attributes of the specified type.
@@ -268,7 +268,7 @@ impl Transaction {
     ) -> Vec<&TransactionAttribute> {
         self.attributes
             .iter()
-            .filter(|attr| attr.type_id() == attr_type)
+            .filter(|attr| TransactionAttribute::type_id(attr) == attr_type)
             .collect()
     }
 }

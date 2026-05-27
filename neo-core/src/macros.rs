@@ -74,66 +74,6 @@ macro_rules! impl_from_bytes {
     };
 }
 
-/// Implements `From<T>` for enum variants that wrap a single value.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// enum_from! {
-///     ConsensusMessagePayload,
-///     ChangeView,
-///     PrepareRequest,
-///     PrepareResponse,
-///     Commit,
-/// }
-/// ```
-///
-/// Expands to:
-/// ```rust,ignore
-/// impl From<ChangeView> for ConsensusMessagePayload {
-///     fn from(value: ChangeView) -> Self {
-///         ConsensusMessagePayload::ChangeView(value)
-///     }
-/// }
-/// // ... for each variant
-/// ```
-#[macro_export]
-macro_rules! enum_from {
-    ($enum_type:ty, $($variant:ident),+ $(,)?) => {
-        $(
-            impl From<$variant> for $enum_type {
-                fn from(value: $variant) -> Self {
-                    <$enum_type>::$variant(value)
-                }
-            }
-        )+
-    };
-}
-
-/// Implements `From<T>` for enum variants with custom variant names.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// enum_from_named! {
-///     MyEnum,
-///     TypeA => VariantA,
-///     TypeB => VariantB,
-/// }
-/// ```
-#[macro_export]
-macro_rules! enum_from_named {
-    ($enum_type:ty, $($source:ty => $variant:ident),+ $(,)?) => {
-        $(
-            impl From<$source> for $enum_type {
-                fn from(value: $source) -> Self {
-                    <$enum_type>::$variant(value)
-                }
-            }
-        )+
-    };
-}
-
 /// Implements ordering traits (`PartialOrd`, `Ord`) based on field comparison order.
 ///
 /// # Example
@@ -164,47 +104,6 @@ macro_rules! impl_ord_by_fields {
     };
 }
 
-/// Creates a newtype wrapper with common trait implementations.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// newtype! {
-///     /// Documentation for the type
-///     pub struct MyId(u64);
-/// }
-/// ```
-///
-/// Generates: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Hash`, `From`, `Into`
-#[macro_export]
-macro_rules! newtype {
-    ($(#[$meta:meta])* $vis:vis struct $name:ident($inner_vis:vis $inner:ty);) => {
-        $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        $vis struct $name($inner_vis $inner);
-
-        impl From<$inner> for $name {
-            fn from(value: $inner) -> Self {
-                Self(value)
-            }
-        }
-
-        impl From<$name> for $inner {
-            fn from(value: $name) -> Self {
-                value.0
-            }
-        }
-
-        impl $name {
-            /// Returns the inner value.
-            #[inline]
-            pub const fn inner(&self) -> $inner {
-                self.0
-            }
-        }
-    };
-}
-
 /// Implements `Default` for a struct by calling `Self::new()`.
 ///
 /// # Example
@@ -220,142 +119,6 @@ macro_rules! impl_default_via_new {
                 Self::new()
             }
         }
-    };
-}
-
-/// Implements `Display` for an enum by matching variants to string representations.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// impl_display_enum! {
-///     MyEnum,
-///     Variant1 => "variant_1",
-///     Variant2 => "variant_2",
-/// }
-/// ```
-#[macro_export]
-macro_rules! impl_display_enum {
-    ($enum_type:ty, $($variant:ident => $display:expr_2021),+ $(,)?) => {
-        impl std::fmt::Display for $enum_type {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    $(
-                        Self::$variant => write!(f, $display),
-                    )+
-                }
-            }
-        }
-    };
-}
-
-/// Implements `TryFrom<u8>` for an enum with explicit discriminants.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// impl_try_from_u8! {
-///     MyEnum,
-///     0 => Variant1,
-///     1 => Variant2,
-///     2 => Variant3,
-/// }
-/// ```
-#[macro_export]
-macro_rules! impl_try_from_u8 {
-    ($enum_type:ty, $($value:expr_2021 => $variant:ident),+ $(,)?) => {
-        impl TryFrom<u8> for $enum_type {
-            type Error = $crate::CoreError;
-
-            fn try_from(value: u8) -> Result<Self, Self::Error> {
-                match value {
-                    $(
-                        $value => Ok(Self::$variant),
-                    )+
-                    _ => Err($crate::CoreError::invalid_data(
-                        format!("invalid {} value: {}", stringify!($enum_type), value)
-                    )),
-                }
-            }
-        }
-    };
-}
-
-/// Implements serialization helpers for types with `to_bytes()` and `from_bytes()`.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// impl_serializable_bytes!(UInt160, 20);
-/// impl_serializable_bytes!(UInt256, 32);
-/// ```
-#[macro_export]
-macro_rules! impl_serializable_bytes {
-    ($type:ty, $size:expr_2021) => {
-        impl $crate::neo_io::Serializable for $type {
-            fn serialize(
-                &self,
-                writer: &mut $crate::neo_io::BinaryWriter,
-            ) -> $crate::neo_io::IoResult<()> {
-                writer.write_bytes(&self.to_bytes())
-            }
-
-            fn deserialize(
-                reader: &mut $crate::neo_io::MemoryReader<'_>,
-            ) -> $crate::neo_io::IoResult<Self> {
-                let bytes = reader.read_bytes($size)?;
-                Ok(Self::from_bytes(&bytes))
-            }
-        }
-    };
-}
-
-/// Generates getter methods for struct fields.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// impl MyStruct {
-///     getters! {
-///         name: String,
-///         age: u32,
-///         active: bool,
-///     }
-/// }
-/// ```
-#[macro_export]
-macro_rules! getters {
-    ($($field:ident: $type:ty),+ $(,)?) => {
-        $(
-            #[inline]
-            pub fn $field(&self) -> &$type {
-                &self.$field
-            }
-        )+
-    };
-}
-
-/// Generates getter methods that return copies for `Copy` types.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// impl MyStruct {
-///     copy_getters! {
-///         id: u64,
-///         count: usize,
-///     }
-/// }
-/// ```
-#[macro_export]
-macro_rules! copy_getters {
-    ($($field:ident: $type:ty),+ $(,)?) => {
-        $(
-            #[inline]
-            pub fn $field(&self) -> $type {
-                self.$field
-            }
-        )+
     };
 }
 
@@ -464,56 +227,8 @@ impl ValidateLength for String {
     }
 }
 
-/// Macro to validate and write variable-length bytes with a maximum size check.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// validate_and_write_var_bytes!(writer, self.data, MAX_DATA_SIZE, "data");
-/// ```
-#[macro_export]
-macro_rules! validate_and_write_var_bytes {
-    ($writer:expr_2021, $data:expr_2021, $max:expr_2021, $name:expr_2021) => {{
-        use $crate::macros::ValidateLength;
-        $data.validate_max_length($max, $name)?;
-        $writer.write_var_bytes(&$data)?;
-    }};
-}
-
-/// Macro to implement multiple `impl Default` via `new()` at once.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// impl_default_via_new_batch!(Header, Block, Transaction);
-/// ```
-#[macro_export]
-macro_rules! impl_default_via_new_batch {
-    ($($type:ty),+ $(,)?) => {
-        $(
-            impl Default for $type {
-                fn default() -> Self {
-                    Self::new()
-                }
-            }
-        )+
-    };
-}
-
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_newtype_macro() {
-        newtype! {
-            /// Test ID type
-            pub struct TestId(pub u64);
-        }
-
-        let id = TestId::from(42u64);
-        assert_eq!(id.inner(), 42);
-        assert_eq!(u64::from(id), 42);
-    }
-
     #[test]
     fn test_impl_ord_by_fields() {
         #[derive(Debug, Clone, PartialEq, Eq)]
@@ -531,31 +246,5 @@ mod tests {
         assert!(p1 < p2);
         assert!(p2 < p3);
         assert!(p1 < p3);
-    }
-
-    #[test]
-    fn test_enum_from_macro() {
-        #[derive(Debug, PartialEq)]
-        struct TypeA(u32);
-
-        #[derive(Debug, PartialEq)]
-        struct TypeB(String);
-
-        #[derive(Debug, PartialEq)]
-        enum MyEnum {
-            TypeA(TypeA),
-            TypeB(TypeB),
-        }
-
-        enum_from!(MyEnum, TypeA, TypeB);
-
-        let a = TypeA(42);
-        let b = TypeB("hello".to_string());
-
-        let enum_a: MyEnum = a.into();
-        let enum_b: MyEnum = b.into();
-
-        assert!(matches!(enum_a, MyEnum::TypeA(TypeA(42))));
-        assert!(matches!(enum_b, MyEnum::TypeB(_)));
     }
 }
