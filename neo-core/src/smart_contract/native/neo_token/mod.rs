@@ -13,12 +13,12 @@ use super::{
     contract_management::ContractManagement,
     fungible_token::{FungibleToken, PREFIX_ACCOUNT},
     gas_token::GasToken,
-    helpers::NativeHelpers,
+    helpers::{NativeHelpers, serialize_stack_value_native},
     native_contract::{NativeContract, NativeMethod},
     policy_contract::PolicyContract,
 };
 use crate::cryptography::ECPoint;
-use crate::error::{CoreError, CoreResult};
+use crate::error::{CoreError, CoreResult, ToNativeError};
 use crate::hardfork::Hardfork;
 use crate::persistence::{read_only_store::ReadOnlyStoreGeneric, seek_direction::SeekDirection};
 use crate::protocol_settings::ProtocolSettings;

@@ -5,6 +5,7 @@
 use super::*;
 use crate::impl_native_contract;
 use crate::smart_contract::native::security_fixes::{SafeArithmetic, StateValidator};
+use crate::error::ToNativeError;
 
 impl NativeContract for NeoToken {
     impl_native_contract!(*NEO_HASH, Self::NAME, methods);
@@ -81,11 +82,7 @@ impl NativeContract for NeoToken {
                 vote_to: None,
                 last_gas_per_vote: BigInt::zero(),
             };
-            let bytes = BinarySerializer::serialize_stack_value(
-                &state.to_stack_value(),
-                &ExecutionEngineLimits::default(),
-            )
-            .map_err(CoreError::native_contract)?;
+            let bytes = serialize_stack_value_native(&state.to_stack_value())?;
             engine.set_storage(account_key, StorageItem::from_bytes(bytes))?;
 
             // Write total supply (matches C# FungibleToken.Mint which updates TotalSupply)
@@ -149,7 +146,7 @@ impl NativeContract for NeoToken {
                         "CommitteeChanged".to_string(),
                         vec![old_array, new_array],
                     )
-                    .map_err(CoreError::native_contract)?;
+                    .native_err()?;
             }
         }
 

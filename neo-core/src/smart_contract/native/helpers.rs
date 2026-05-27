@@ -4,12 +4,15 @@
 // for dBFT consensus wiring, providing a consistent facade for the Rust port.
 
 use crate::cryptography::ECPoint;
+use crate::error::CoreResult;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::services::SystemContext;
+use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::NeoToken;
 use crate::smart_contract::Contract;
 use crate::{UInt160, UInt256};
+use neo_vm_rs::StackValue;
 use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -18,6 +21,20 @@ use std::sync::Arc;
 /// native-contract error when the bytes are invalid.
 pub(crate) fn parse_uint160_arg(arg: &[u8], label: &str) -> crate::CoreResult<UInt160> {
     UInt160::from_bytes(arg).map_err(|_| crate::CoreError::native_contract(format!("Invalid {label}")))
+}
+
+/// Serializes a [`StackValue`] to bytes using default engine limits,
+/// mapping errors to [`CoreError::native_contract`].
+///
+/// This consolidates the repeated pattern:
+/// ```ignore
+/// BinarySerializer::serialize_stack_value(&val, &ExecutionEngineLimits::default())
+///     .map_err(CoreError::native_contract)?
+/// ```
+pub(crate) fn serialize_stack_value_native(value: &StackValue) -> CoreResult<Vec<u8>> {
+    use neo_vm_rs::ExecutionEngineLimits;
+    BinarySerializer::serialize_stack_value(value, &ExecutionEngineLimits::default())
+        .map_err(crate::CoreError::native_contract)
 }
 
 // System context is now stored as a trait object to decouple from concrete runtime

@@ -155,8 +155,7 @@ impl NeoToken {
                 })
                 .collect(),
         );
-        BinarySerializer::serialize_stack_value(&value, &ExecutionEngineLimits::default())
-            .map_err(CoreError::native_contract)
+        serialize_stack_value_native(&value)
     }
 
     pub(super) fn compute_committee_members<S>(
@@ -274,7 +273,7 @@ impl NeoToken {
             };
 
             let state =
-                CandidateState::from_storage_item(&item).map_err(CoreError::native_contract)?;
+                CandidateState::from_storage_item(&item).native_err()?;
             if !state.registered {
                 continue;
             }

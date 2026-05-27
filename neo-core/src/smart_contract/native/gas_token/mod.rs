@@ -6,12 +6,13 @@ use super::security_fixes::{
     PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator,
 };
 use super::AccountState;
-use crate::error::{CoreError, CoreResult};
+use crate::error::{CoreError, CoreResult, ToNativeError};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
+use crate::smart_contract::native::helpers::serialize_stack_value_native;
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
@@ -147,7 +148,7 @@ impl GasToken {
             self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
             let snapshot = engine.snapshot_cache();
             if ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), &to)
-                .map_err(|e| CoreError::native_contract(e.to_string()))?
+                .native_err()?
                 .is_some()
             {
                 engine.queue_contract_call_from_native(
@@ -195,7 +196,7 @@ impl GasToken {
         if from == to {
             self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
             if ContractManagement::get_contract_from_snapshot(snapshot_ref, &to)
-                .map_err(|e| CoreError::native_contract(e.to_string()))?
+                .native_err()?
                 .is_some()
             {
                 engine.queue_contract_call_from_native(
@@ -224,7 +225,7 @@ impl GasToken {
         StateValidator::validate_account_state(&final_to_balance, 0, u32::MAX)?;
 
         if ContractManagement::get_contract_from_snapshot(snapshot_ref, &to)
-            .map_err(|e| CoreError::native_contract(e.to_string()))?
+            .native_err()?
             .is_some()
         {
             engine.queue_contract_call_from_native(
@@ -408,11 +409,7 @@ impl GasToken {
             }
         } else {
             let state = AccountState::with_balance(balance.clone());
-            let bytes = BinarySerializer::serialize_stack_value(
-                &state.to_stack_value(),
-                &ExecutionEngineLimits::default(),
-            )
-            .map_err(CoreError::native_contract)?;
+            let bytes = serialize_stack_value_native(&state.to_stack_value())?;
             engine.put_storage_item(context, &key, &bytes)?;
             if watched {
                 tracing::info!(
@@ -480,7 +477,7 @@ impl GasToken {
                 "Transfer".to_string(),
                 vec![from_item, to_item, amount_item],
             )
-            .map_err(CoreError::native_contract)
+            .native_err()
     }
 
     /// Mints new GAS to the specified account.
@@ -531,7 +528,7 @@ impl GasToken {
         if call_on_payment {
             let snapshot = engine.snapshot_cache();
             if ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), account)
-                .map_err(|e| CoreError::native_contract(e.to_string()))?
+                .native_err()?
                 .is_some()
             {
                 engine.queue_contract_call_from_native(

@@ -6,6 +6,7 @@
 use crate::UInt160;
 use crate::error::CoreError;
 use crate::error::CoreResult;
+use crate::error::ToNativeError;
 use crate::hardfork::Hardfork;
 use crate::impl_native_contract;
 use crate::persistence::seek_direction::SeekDirection;
@@ -116,7 +117,7 @@ impl TokenManagement {
         };
 
         let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
-            .map_err(CoreError::native_contract)?;
+            .native_err()?;
         Ok(bytes)
     }
 
@@ -177,7 +178,7 @@ impl TokenManagement {
         let iterator = StorageIterator::new(filtered, 1, options);
         let iterator_id = engine
             .store_storage_iterator(iterator)
-            .map_err(CoreError::native_contract)?;
+            .native_err()?;
 
         Ok(iterator_id.to_le_bytes().to_vec())
     }

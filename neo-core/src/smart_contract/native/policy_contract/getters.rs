@@ -122,11 +122,11 @@ impl PolicyContract {
 
         let iterator = engine
             .find_storage_entries(&context, &[Self::PREFIX_WHITELISTED_FEE_CONTRACTS], options)
-            .map_err(Error::native_contract)?;
+            .native_err()?;
 
         let iterator_id = engine
             .store_storage_iterator(iterator)
-            .map_err(Error::native_contract)?;
+            .native_err()?;
         Ok(iterator_id.to_le_bytes().to_vec())
     }
 }

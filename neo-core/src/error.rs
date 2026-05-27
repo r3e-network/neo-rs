@@ -429,6 +429,21 @@ pub type CoreResult<T> = std::result::Result<T, CoreError>;
 /// Generic result alias mirroring `std::result::Result` but defaulting to `CoreError`.
 pub type Result<T, E = CoreError> = std::result::Result<T, E>;
 
+/// Extension trait to convert any `Result<T, E: ToString>` into a
+/// `CoreResult<T>` via [`CoreError::native_contract`].
+///
+/// This eliminates the repetitive `.map_err(CoreError::native_contract)?`
+/// pattern found throughout native contract implementations.
+pub trait ToNativeError<T> {
+    fn native_err(self) -> CoreResult<T>;
+}
+
+impl<T, E: ToString> ToNativeError<T> for Result<T, E> {
+    fn native_err(self) -> CoreResult<T> {
+        self.map_err(|e| CoreError::native_contract(e.to_string()))
+    }
+}
+
 // Standard library error conversions using macro to reduce boilerplate
 crate::impl_error_from! {
     CoreError,

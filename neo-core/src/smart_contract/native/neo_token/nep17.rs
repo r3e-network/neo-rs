@@ -243,11 +243,7 @@ impl NeoToken {
         if state.balance.is_zero() {
             engine.delete_storage_item(context, &key)?;
         } else {
-            let bytes = BinarySerializer::serialize_stack_value(
-                &state.to_stack_value(),
-                &ExecutionEngineLimits::default(),
-            )
-            .map_err(CoreError::native_contract)?;
+            let bytes = serialize_stack_value_native(&state.to_stack_value())?;
             engine.put_storage_item(context, &key, &bytes)?;
         }
         Ok(())
@@ -327,7 +323,7 @@ impl NeoToken {
         Ok(distribution)
     }
 
-    /// Emits Transfer event
+    /// Emits Transfer event (delegates to FungibleToken trait).
     pub(super) fn emit_transfer_event(
         &self,
         engine: &mut ApplicationEngine,
@@ -335,19 +331,6 @@ impl NeoToken {
         to: Option<&UInt160>,
         amount: &BigInt,
     ) -> CoreResult<()> {
-        let from_item = from
-            .map(|addr| StackItem::from_byte_string(addr.to_bytes()))
-            .unwrap_or_else(StackItem::null);
-        let to_item = to
-            .map(|addr| StackItem::from_byte_string(addr.to_bytes()))
-            .unwrap_or_else(StackItem::null);
-        let amount_item = StackItem::from_int(amount.clone());
-        engine
-            .send_notification(
-                self.hash(),
-                "Transfer".to_string(),
-                vec![from_item, to_item, amount_item],
-            )
-            .map_err(CoreError::native_contract)
+        self.ft_emit_transfer(engine, from, to, amount)
     }
 }

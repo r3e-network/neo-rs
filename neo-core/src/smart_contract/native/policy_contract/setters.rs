@@ -150,7 +150,7 @@ impl PolicyContract {
                     StackItem::from_int(value as i64),
                 ],
             )
-            .map_err(Error::native_contract)?;
+            .native_err()?;
 
         Ok(Vec::new())
     }
@@ -351,7 +351,7 @@ impl PolicyContract {
                     StackItem::from_int(fixed_fee),
                 ],
             )
-            .map_err(Error::native_contract)?;
+            .native_err()?;
 
         Ok(Vec::new())
     }
@@ -412,7 +412,7 @@ impl PolicyContract {
                     StackItem::Null,
                 ],
             )
-            .map_err(Error::native_contract)?;
+            .native_err()?;
 
         Ok(Vec::new())
     }
@@ -451,7 +451,7 @@ impl PolicyContract {
                         StackItem::Null,
                     ],
                 )
-                .map_err(Error::native_contract)?;
+                .native_err()?;
         }
 
         Ok(count)

@@ -156,7 +156,7 @@ impl ContractManagement {
         let iterator = StorageIterator::new(filtered, 1, FindOptions::RemovePrefix);
         let iterator_id = engine
             .store_storage_iterator(iterator)
-            .map_err(Error::native_contract)?;
+            .native_err()?;
         Ok(iterator_id)
     }
 

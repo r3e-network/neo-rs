@@ -39,7 +39,7 @@ impl NeoToken {
         };
         NeoAccountState::from_storage_item(&item)
             .map(Some)
-            .map_err(CoreError::native_contract)
+            .native_err()
     }
 
     pub(super) fn calculate_bonus<S>(

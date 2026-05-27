@@ -3,7 +3,7 @@ use super::{
     PREFIX_NFT_OWNER_UNIQUE_ID_INDEX, TokenManagement, TokenState, TokenType,
 };
 use crate::UInt160;
-use crate::error::{CoreError, CoreResult};
+use crate::error::{CoreError, CoreResult, ToNativeError};
 use crate::persistence::seek_direction::SeekDirection;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::find_options::FindOptions;
@@ -361,7 +361,7 @@ impl TokenManagement {
         let iterator = StorageIterator::new(filtered, NFT_INDEX_LOOKUP_PREFIX_LEN, options);
         let iterator_id = engine
             .store_storage_iterator(iterator)
-            .map_err(CoreError::native_contract)?;
+            .native_err()?;
 
         Ok(iterator_id.to_le_bytes().to_vec())
     }

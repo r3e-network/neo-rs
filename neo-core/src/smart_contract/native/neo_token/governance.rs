@@ -63,11 +63,7 @@ impl NeoToken {
         let snapshot = engine.snapshot_cache();
         match self.get_account_state(snapshot.as_ref(), &account)? {
             Some(state) => {
-                let bytes = BinarySerializer::serialize_stack_value(
-                    &state.to_stack_value(),
-                    &ExecutionEngineLimits::default(),
-                )
-                .map_err(CoreError::native_contract)?;
+                let bytes = serialize_stack_value_native(&state.to_stack_value())?;
                 Ok(bytes)
             }
             None => Ok(vec![]), // Null for non-existent account
@@ -90,9 +86,7 @@ impl NeoToken {
             })
             .collect();
         let array = StackValue::Array(items);
-        let bytes =
-            BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+        let bytes = serialize_stack_value_native(&array)?;
         Ok(bytes)
     }
 
@@ -118,7 +112,7 @@ impl NeoToken {
             };
 
             let state =
-                CandidateState::from_storage_item(&item).map_err(CoreError::native_contract)?;
+                CandidateState::from_storage_item(&item).native_err()?;
             if !state.registered {
                 continue;
             }
@@ -139,7 +133,7 @@ impl NeoToken {
         let iterator = StorageIterator::new(entries, 1, options);
         let iterator_id = engine
             .store_storage_iterator(iterator)
-            .map_err(CoreError::native_contract)?;
+            .native_err()?;
 
         Ok(iterator_id.to_le_bytes().to_vec())
     }
@@ -203,7 +197,7 @@ impl NeoToken {
         };
         CandidateState::from_storage_item(&item)
             .map(Some)
-            .map_err(CoreError::native_contract)
+            .native_err()
     }
 
     pub(super) fn write_candidate_state(
@@ -230,11 +224,9 @@ impl NeoToken {
             return Ok(());
         }
 
-        let bytes = BinarySerializer::serialize_stack_value(
+        let bytes = serialize_stack_value_native(
             &state.to_stack_value(),
-            &ExecutionEngineLimits::default(),
-        )
-        .map_err(CoreError::native_contract)?;
+        )?;
         engine.put_storage_item(context, &candidate_suffix, &bytes)?;
         Ok(())
     }
@@ -267,7 +259,7 @@ impl NeoToken {
             };
 
             let state =
-                CandidateState::from_storage_item(&item).map_err(CoreError::native_contract)?;
+                CandidateState::from_storage_item(&item).native_err()?;
             if !state.registered {
                 continue;
             }
@@ -303,9 +295,7 @@ impl NeoToken {
             .map(|pk| StackValue::ByteString(pk.as_bytes().to_vec()))
             .collect();
         let array = StackValue::Array(items);
-        let bytes =
-            BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+        let bytes = serialize_stack_value_native(&array)?;
         Ok(bytes)
     }
 
@@ -342,9 +332,7 @@ impl NeoToken {
             .map(|pk| StackValue::ByteString(pk.as_bytes().to_vec()))
             .collect();
         let array = StackValue::Array(items);
-        let bytes =
-            BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+        let bytes = serialize_stack_value_native(&array)?;
         Ok(bytes)
     }
 
@@ -506,7 +494,7 @@ impl NeoToken {
                     StackItem::from_int(state.votes.clone()),
                 ],
             )
-            .map_err(CoreError::native_contract)?;
+            .native_err()?;
 
         Ok(true)
     }
@@ -551,7 +539,7 @@ impl NeoToken {
                     StackItem::from_int(state.votes.clone()),
                 ],
             )
-            .map_err(CoreError::native_contract)?;
+            .native_err()?;
 
         Ok(vec![1])
     }
@@ -724,7 +712,7 @@ impl NeoToken {
                     StackItem::from_int(state_account.balance.clone()),
                 ],
             )
-            .map_err(CoreError::native_contract)?;
+            .native_err()?;
 
         if let Some(reward) = gas_distribution {
             GasToken::new().mint(engine, account, &reward, true)?;

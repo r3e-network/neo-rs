@@ -93,11 +93,11 @@ impl PolicyContract {
                 &[Self::PREFIX_BLOCKED_ACCOUNT],
                 FindOptions::RemovePrefix | FindOptions::KeysOnly,
             )
-            .map_err(Error::native_contract)?;
+            .native_err()?;
 
         let iterator_id = engine
             .store_storage_iterator(iterator)
-            .map_err(Error::native_contract)?;
+            .native_err()?;
         Ok(iterator_id.to_le_bytes().to_vec())
     }
 
@@ -241,7 +241,7 @@ impl PolicyContract {
             .map(|stack| stack.len())
             .unwrap_or(0);
         let balance_item = if stack_len > 0 {
-            engine.pop().map_err(Error::native_contract)?
+            engine.pop().native_err()?
         } else {
             StackItem::from_int(0)
         };
@@ -283,7 +283,7 @@ impl PolicyContract {
                 .map(|stack| stack.len())
                 .unwrap_or(0);
             let transfer_item = if stack_len > 0 {
-                engine.pop().map_err(Error::native_contract)?
+                engine.pop().native_err()?
             } else {
                 StackItem::from_bool(false)
             };
@@ -305,7 +305,7 @@ impl PolicyContract {
                     "RecoveredFund".to_string(),
                     vec![StackItem::ByteString(account.to_bytes().to_vec())],
                 )
-                .map_err(Error::native_contract)?;
+                .native_err()?;
 
             return Ok(vec![1]);
         }

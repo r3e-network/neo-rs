@@ -1,5 +1,5 @@
 use super::{TokenManagement, TokenType};
-use crate::error::{CoreError, CoreResult};
+use crate::error::{CoreResult, ToNativeError};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::NativeContract;
 use crate::neo_vm::StackItem;
@@ -27,7 +27,7 @@ impl TokenManagement {
                 "Transfer".to_string(),
                 vec![from_item, to_item, amount_item],
             )
-            .map_err(CoreError::native_contract)
+            .native_err()
     }
 
     pub(super) fn emit_created_event(
@@ -48,6 +48,6 @@ impl TokenManagement {
                 "Created".to_string(),
                 vec![asset_item, type_item],
             )
-            .map_err(CoreError::native_contract)
+            .native_err()
     }
 }

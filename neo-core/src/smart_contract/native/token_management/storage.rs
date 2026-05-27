@@ -2,10 +2,11 @@ use super::{
     AccountState, NFTState, TokenManagement, TokenState, ID, PREFIX_ACCOUNT_STATE,
     PREFIX_NFT_STATE, PREFIX_TOKEN_STATE,
 };
-use crate::error::{CoreError, CoreResult};
+use crate::error::{CoreError, CoreResult, ToNativeError};
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
+use crate::smart_contract::native::helpers::serialize_stack_value_native;
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
@@ -92,8 +93,7 @@ impl TokenManagement {
         key_suffix: &[u8],
         value: &StackValue,
     ) -> CoreResult<()> {
-        let bytes =
-            Self::serialize_storage_stack_value(value).map_err(CoreError::native_contract)?;
+        let bytes = serialize_stack_value_native(value)?;
         engine.put_storage_item(context, key_suffix, &bytes)
     }
 
@@ -112,7 +112,7 @@ impl TokenManagement {
             return Ok(None);
         }
         let stack_value =
-            Self::deserialize_storage_stack_value(&bytes).map_err(CoreError::native_contract)?;
+            Self::deserialize_storage_stack_value(&bytes).native_err()?;
         let mut token_state = TokenState::default();
         token_state.from_stack_value(stack_value)?;
         Ok(Some(token_state))
@@ -134,7 +134,7 @@ impl TokenManagement {
             return Ok(None);
         }
         let stack_value =
-            Self::deserialize_storage_stack_value(&bytes).map_err(CoreError::native_contract)?;
+            Self::deserialize_storage_stack_value(&bytes).native_err()?;
         let mut account_state = AccountState::default();
         account_state.from_stack_value(stack_value)?;
         Ok(Some(account_state))

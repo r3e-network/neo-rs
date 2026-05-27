@@ -3,7 +3,7 @@
 //! Mirrors the behaviour of `Neo.SmartContract.Native.RoleManagement` by
 //! persisting designated nodes per role and enforcing committee authorization.
 
-use crate::error::{CoreError as Error, CoreResult as Result};
+use crate::error::{CoreError as Error, CoreResult as Result, ToNativeError};
 use crate::hardfork::Hardfork;
 use crate::impl_native_contract;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -176,7 +176,7 @@ impl RoleManagement {
                         new_nodes,
                     ],
                 )
-                .map_err(Error::native_contract)?;
+                .native_err()?;
         } else {
             engine
                 .send_notification(
@@ -187,7 +187,7 @@ impl RoleManagement {
                         StackItem::from_int(persisting_index as i64),
                     ],
                 )
-                .map_err(Error::native_contract)?;
+                .native_err()?;
         }
 
         Ok(Vec::new())

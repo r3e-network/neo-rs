@@ -3,7 +3,7 @@
 //! Mirrors the behaviour of `Neo.SmartContract.Native.PolicyContract` from the
 //! Neo N3 C# reference node.
 
-use crate::error::{CoreError as Error, CoreResult as Result};
+use crate::error::{CoreError as Error, CoreResult as Result, ToNativeError};
 use crate::hardfork::Hardfork;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;

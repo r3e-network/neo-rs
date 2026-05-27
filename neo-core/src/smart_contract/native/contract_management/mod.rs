@@ -5,6 +5,7 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
+use crate::error::ToNativeError;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::application_engine::ApplicationEngine;
