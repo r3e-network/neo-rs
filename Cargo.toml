@@ -21,7 +21,7 @@ members = [
     "neo-json",
 
     # === Core Layer ===
-    # VM (extracted from neo-core)
+    # NeoVM runtime (execution engine, stack items, jump tables)
     "neo-vm",
 
     # Core (matches C# Neo.csproj)

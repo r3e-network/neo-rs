@@ -3,8 +3,7 @@
 //! Storage key for NEP-11 (NFT) balances.
 
 use super::token_id_integer;
-use crate::neo_io::serializable::helper::get_var_size_bytes;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::neo_io::impl_serializable;
 use crate::UInt160;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
@@ -56,26 +55,10 @@ impl Ord for Nep11BalanceKey {
     }
 }
 
-impl Serializable for Nep11BalanceKey {
-    fn size(&self) -> usize {
-        20 + 20 + get_var_size_bytes(&self.token)
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_serializable(&self.user_script_hash)?;
-        writer.write_serializable(&self.asset_script_hash)?;
-        writer.write_var_bytes(&self.token)?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let user_script_hash = <UInt160 as Serializable>::deserialize(reader)?;
-        let asset_script_hash = <UInt160 as Serializable>::deserialize(reader)?;
-        let token = reader.read_var_bytes(usize::MAX)?;
-        Ok(Self {
-            user_script_hash,
-            asset_script_hash,
-            token,
-        })
+impl_serializable! {
+    struct Nep11BalanceKey {
+        user_script_hash: UInt160,
+        asset_script_hash: UInt160,
+        token: var_bytes { max: usize::MAX },
     }
 }

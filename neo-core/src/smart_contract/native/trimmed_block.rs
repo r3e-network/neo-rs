@@ -1,10 +1,6 @@
 use crate::error::CoreError;
-use crate::extensions::io::memory_reader::MemoryReaderExtensions;
 use crate::ledger::{block_header::BlockHeader, Block};
-use crate::neo_io::{
-    serializable::helper::get_var_size_serializable_slice, BinaryWriter, IoResult, MemoryReader,
-    Serializable,
-};
+use crate::neo_io::impl_serializable;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::neo_vm::StackItem;
 use crate::{CoreResult, UInt256};
@@ -91,20 +87,10 @@ impl TrimmedBlock {
     }
 }
 
-impl Serializable for TrimmedBlock {
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        Serializable::serialize(&self.header, writer)?;
-        writer.write_serializable_vec(&self.hashes)
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let header = BlockHeader::deserialize(reader)?;
-        let hashes = reader.read_serializable_array::<UInt256>(u16::MAX as usize)?;
-        Ok(Self { header, hashes })
-    }
-
-    fn size(&self) -> usize {
-        self.header.size() + get_var_size_serializable_slice(&self.hashes)
+impl_serializable! {
+    struct TrimmedBlock {
+        header: BlockHeader,
+        hashes: var_array<UInt256> { max: u16::MAX as usize },
     }
 }
 

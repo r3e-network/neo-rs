@@ -4,9 +4,8 @@
 
 use super::super::token_transfer_key::TokenTransferKey;
 use super::token_id_integer;
+use crate::neo_io::impl_serializable;
 use crate::UInt160;
-use crate::neo_io::serializable::helper::get_var_size_bytes;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -61,21 +60,10 @@ impl Ord for Nep11TransferKey {
     }
 }
 
-impl Serializable for Nep11TransferKey {
-    fn size(&self) -> usize {
-        self.base.size() + get_var_size_bytes(&self.token)
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        Serializable::serialize(&self.base, writer)?;
-        writer.write_var_bytes(&self.token)?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let base = <TokenTransferKey as Serializable>::deserialize(reader)?;
-        let token = reader.read_var_bytes(usize::MAX)?;
-        Ok(Self { base, token })
+impl_serializable! {
+    struct Nep11TransferKey {
+        base: TokenTransferKey,
+        token: var_bytes { max: usize::MAX },
     }
 }
 
