@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::convert::Infallible;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Weak};
 use tracing::error;
@@ -28,7 +28,7 @@ pub(super) async fn handle_post_request(
 ) -> Result<HttpResponse, Infallible> {
     let client_ip = remote
         .map(|addr| addr.ip())
-        .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
+        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
     if let Some(limiter) = filters.rate_limiter.as_ref() {
         let check_result = limiter.check(client_ip);
@@ -66,7 +66,7 @@ pub(super) async fn handle_get_request(
 ) -> Result<HttpResponse, Infallible> {
     let client_ip = remote
         .map(|addr| addr.ip())
-        .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
+        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
     if let Some(limiter) = filters.rate_limiter.as_ref() {
         let check_result = limiter.check(client_ip);

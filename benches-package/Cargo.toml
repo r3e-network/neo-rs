@@ -4,13 +4,13 @@ version = "0.7.2"
 edition = "2024"
 
 [dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-neo-core = { path = "../neo-core" }
-neo-crypto = { path = "../neo-crypto" }
-neo-io = { path = "../neo-io" }
-neo-primitives = { path = "../neo-primitives" }
+criterion = { workspace = true, features = ["html_reports"] }
+neo-core = { workspace = true }
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
+neo-primitives = { workspace = true }
 neo-vm-rs = { workspace = true }
-hex = "0.4"
+hex = { workspace = true }
 
 [[bench]]
 name = "block_processing"

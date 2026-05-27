@@ -1,6 +1,6 @@
 [package]
 name = "neo-tests"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2024"
 publish = false
 description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"
@@ -10,35 +10,35 @@ description = "Integration tests for neo-rs workspace layer boundaries and end-t
 
 [dependencies]
 # Layer 0 - Foundation
-neo-primitives = { path = "../neo-primitives" }
-neo-io = { path = "../neo-io" }
-neo-json = { path = "../neo-json" }
-neo-storage = { path = "../neo-storage" }
+neo-primitives = { workspace = true }
+neo-io = { workspace = true }
+neo-json = { workspace = true }
+neo-storage = { workspace = true }
 
 # Layer 1 - Crypto
-neo-crypto = { path = "../neo-crypto" }
+neo-crypto = { workspace = true }
 
 # Layer 2 - Protocol
-neo-consensus = { path = "../neo-consensus" }
-neo-core = { path = "../neo-core" }
-neo-p2p = { path = "../neo-p2p" }
+neo-consensus = { workspace = true }
+neo-core = { workspace = true }
+neo-p2p = { workspace = true }
 
 # Layer 4 - Services
-neo-rpc = { path = "../neo-rpc" }
-neo-telemetry = { path = "../neo-telemetry" }
+neo-rpc = { workspace = true }
+neo-telemetry = { workspace = true }
 neo-vm-rs = { workspace = true }
 
 # Utilities
-num-bigint = "0.4"
-hex = "0.4"
-tokio = { version = "1", features = ["full", "test-util"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-serde_json = "1.0"
-tempfile = "3"
+num-bigint = { workspace = true }
+hex = { workspace = true }
+tokio = { workspace = true, features = ["full", "test-util"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { workspace = true, features = ["html_reports"] }
 
 [[test]]
 name = "layer_boundary_tests"
