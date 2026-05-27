@@ -1,7 +1,8 @@
 use super::{
-    AccountState, NFTState, TokenManagement, TokenState, TokenType, ID,
-    PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX,
+    AccountState, ID, NFTState, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX,
+    PREFIX_NFT_OWNER_UNIQUE_ID_INDEX, TokenManagement, TokenState, TokenType,
 };
+use crate::UInt160;
 use crate::error::{CoreError, CoreResult};
 use crate::persistence::seek_direction::SeekDirection;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -9,10 +10,11 @@ use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::StorageIterator;
 use crate::smart_contract::native::NativeContract;
 use crate::smart_contract::{StorageItem, StorageKey};
-use crate::UInt160;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::collections::{BTreeMap, HashSet};
+
+const NFT_INDEX_LOOKUP_PREFIX_LEN: usize = 1 + 20;
 
 impl TokenManagement {
     pub(super) fn invoke_create_non_fungible(
@@ -337,62 +339,7 @@ impl TokenManagement {
         let asset_id = UInt160::from_bytes(&args[0])
             .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
 
-        let snapshot = engine.snapshot_cache();
-        let prefix = StorageKey::create(ID, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX);
-
-        let mut entries_map = BTreeMap::new();
-        let mut snapshot_keys: HashSet<Vec<u8>> = HashSet::new();
-
-        for (key, value) in snapshot
-            .as_ref()
-            .find(Some(&prefix), SeekDirection::Forward)
-        {
-            entries_map.insert(key.clone(), value);
-            snapshot_keys.insert(key.suffix().to_vec());
-        }
-
-        for (key, _trackable) in snapshot.tracked_items() {
-            if key.id != ID {
-                continue;
-            }
-            let suffix = key.suffix();
-            if suffix.is_empty() || suffix[0] != PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX {
-                continue;
-            }
-            snapshot_keys.insert(suffix.to_vec());
-        }
-
-        for (key, value) in engine
-            .original_snapshot_cache()
-            .find(Some(&prefix), SeekDirection::Forward)
-        {
-            if !snapshot_keys.contains(key.suffix()) {
-                entries_map.entry(key).or_insert(value);
-            }
-        }
-
-        let mut entries: Vec<(StorageKey, StorageItem)> = entries_map.into_iter().collect();
-        entries.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
-
-        let filtered: Vec<(StorageKey, StorageItem)> = entries
-            .into_iter()
-            .filter(|(key, _)| {
-                let suffix = key.suffix();
-                if suffix.len() < 1 + 20 {
-                    return false;
-                }
-                let key_asset_id = UInt160::from_bytes(&suffix[1..21]).ok();
-                key_asset_id == Some(asset_id)
-            })
-            .collect();
-
-        let options = FindOptions::KeysOnly | FindOptions::RemovePrefix;
-        let iterator = StorageIterator::new(filtered, 21, options);
-        let iterator_id = engine
-            .store_storage_iterator(iterator)
-            .map_err(CoreError::native_contract)?;
-
-        Ok(iterator_id.to_le_bytes().to_vec())
+        self.open_nft_index_iterator(engine, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX, &asset_id)
     }
 
     pub(super) fn invoke_get_nfts_of_owner(
@@ -409,8 +356,32 @@ impl TokenManagement {
         let account = UInt160::from_bytes(&args[0])
             .map_err(|_| CoreError::native_contract("Invalid account"))?;
 
+        self.open_nft_index_iterator(engine, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX, &account)
+    }
+
+    fn open_nft_index_iterator(
+        &self,
+        engine: &mut ApplicationEngine,
+        index_prefix: u8,
+        target: &UInt160,
+    ) -> CoreResult<Vec<u8>> {
+        let filtered = Self::collect_nft_index_entries(engine, index_prefix, target);
+        let options = FindOptions::KeysOnly | FindOptions::RemovePrefix;
+        let iterator = StorageIterator::new(filtered, NFT_INDEX_LOOKUP_PREFIX_LEN, options);
+        let iterator_id = engine
+            .store_storage_iterator(iterator)
+            .map_err(CoreError::native_contract)?;
+
+        Ok(iterator_id.to_le_bytes().to_vec())
+    }
+
+    fn collect_nft_index_entries(
+        engine: &ApplicationEngine,
+        index_prefix: u8,
+        target: &UInt160,
+    ) -> Vec<(StorageKey, StorageItem)> {
         let snapshot = engine.snapshot_cache();
-        let prefix = StorageKey::create(ID, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX);
+        let prefix = StorageKey::create(ID, index_prefix);
 
         let mut entries_map = BTreeMap::new();
         let mut snapshot_keys: HashSet<Vec<u8>> = HashSet::new();
@@ -428,7 +399,7 @@ impl TokenManagement {
                 continue;
             }
             let suffix = key.suffix();
-            if suffix.is_empty() || suffix[0] != PREFIX_NFT_OWNER_UNIQUE_ID_INDEX {
+            if suffix.is_empty() || suffix[0] != index_prefix {
                 continue;
             }
             snapshot_keys.insert(suffix.to_vec());
@@ -446,24 +417,17 @@ impl TokenManagement {
         let mut entries: Vec<(StorageKey, StorageItem)> = entries_map.into_iter().collect();
         entries.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
 
-        let filtered: Vec<(StorageKey, StorageItem)> = entries
+        entries
             .into_iter()
             .filter(|(key, _)| {
                 let suffix = key.suffix();
-                if suffix.len() < 1 + 20 {
+                if suffix.len() < NFT_INDEX_LOOKUP_PREFIX_LEN {
                     return false;
                 }
-                let key_account = UInt160::from_bytes(&suffix[1..21]).ok();
-                key_account == Some(account)
+                let indexed_hash =
+                    UInt160::from_bytes(&suffix[1..NFT_INDEX_LOOKUP_PREFIX_LEN]).ok();
+                indexed_hash.as_ref() == Some(target)
             })
-            .collect();
-
-        let options = FindOptions::KeysOnly | FindOptions::RemovePrefix;
-        let iterator = StorageIterator::new(filtered, 21, options);
-        let iterator_id = engine
-            .store_storage_iterator(iterator)
-            .map_err(CoreError::native_contract)?;
-
-        Ok(iterator_id.to_le_bytes().to_vec())
+            .collect()
     }
 }

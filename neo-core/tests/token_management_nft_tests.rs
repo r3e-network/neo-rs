@@ -1,6 +1,6 @@
 use neo_core::hardfork::Hardfork;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::ledger::block_header::BlockHeader;
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -286,9 +286,10 @@ fn direct_invoke_transfer_nft_rejects_extra_arguments() {
             ],
         )
         .expect_err("direct invoke with extra args should fail arity validation");
-    assert!(err
-        .to_string()
-        .contains("TokenManagement.transferNFT: invalid arguments"));
+    assert!(
+        err.to_string()
+            .contains("TokenManagement.transferNFT: invalid arguments")
+    );
 }
 
 #[test]
@@ -528,6 +529,10 @@ fn nft_get_nfts_returns_all_for_asset() {
 
     let nfts_result = fixture.call("getNFTs", &get_nfts_args);
     assert!(!nfts_result.is_empty(), "getNFTs should return iterator");
+    let nft_keys = collect_iterator_keys(&mut fixture.engine, &nfts_result);
+    let mut expected_keys = minted_ids.iter().map(UInt160::to_bytes).collect::<Vec<_>>();
+    expected_keys.sort();
+    assert_eq!(nft_keys, expected_keys);
 }
 
 #[test]
@@ -572,6 +577,8 @@ fn nft_get_nfts_of_owner_after_transfer() {
         !owner_nfts_result.is_empty(),
         "getNFTsOfOwner should return NFT for new owner"
     );
+    let owner_nft_keys = collect_iterator_keys(&mut fixture.engine, &owner_nfts_result);
+    assert_eq!(owner_nft_keys, vec![nft_id.to_bytes()]);
 }
 
 fn nft_index_updates_after_burn() {
