@@ -176,6 +176,7 @@ mod tests {
     fn test_hardfork_serde() {
         let hf = Hardfork::HfEchidna;
         let json = serde_json::to_string(&hf).unwrap();
+        assert_eq!(json, "\"HfEchidna\"");
         let parsed: Hardfork = serde_json::from_str(&json).unwrap();
         assert_eq!(hf, parsed);
     }
