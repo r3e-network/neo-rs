@@ -86,11 +86,7 @@ pub struct Histogram {
     buckets: RwLock<Vec<(f64, u64)>>, // (upper_bound, count)
 }
 
-impl Default for Histogram {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(Histogram);
 
 impl Histogram {
     /// Creates a new histogram with default buckets.

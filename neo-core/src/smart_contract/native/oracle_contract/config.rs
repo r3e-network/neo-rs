@@ -138,8 +138,4 @@ impl OracleConfigBuilder {
     }
 }
 
-impl Default for OracleConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(OracleConfigBuilder);

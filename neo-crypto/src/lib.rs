@@ -74,6 +74,18 @@ pub use signature::{
     Secp256k1Crypto, Secp256r1Crypto,
 };
 
+/// Implements `Default` for a struct by calling `Self::new()`.
+#[macro_export]
+macro_rules! impl_default_via_new {
+    ($type:ty) => {
+        impl Default for $type {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     // Tests are inline within source files

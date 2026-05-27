@@ -495,11 +495,7 @@ impl fmt::Debug for ECPoint {
     }
 }
 
-impl fmt::Display for ECPoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(&self.data))
-    }
-}
+neo_primitives::impl_display_hex!(ECPoint, data);
 
 impl PartialOrd for ECPoint {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {

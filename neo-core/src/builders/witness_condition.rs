@@ -65,11 +65,7 @@ pub struct WitnessConditionBuilder {
     condition: Option<WitnessCondition>,
 }
 
-impl Default for WitnessConditionBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(WitnessConditionBuilder);
 
 impl WitnessConditionBuilder {
     /// Creates a new empty witness condition builder.
@@ -149,11 +145,7 @@ pub struct AndConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
 
-impl Default for AndConditionBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(AndConditionBuilder);
 
 impl AndConditionBuilder {
     /// Creates a new empty AND condition builder.
@@ -184,11 +176,7 @@ pub struct OrConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
 
-impl Default for OrConditionBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(OrConditionBuilder);
 
 impl OrConditionBuilder {
     /// Creates a new empty OR condition builder.

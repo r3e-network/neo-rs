@@ -136,11 +136,7 @@ impl HardforkManager {
     }
 }
 
-impl Default for HardforkManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(HardforkManager);
 
 /// Checks if a hardfork is active at the specified block height (matches C# ProtocolSettings.IsHardforkEnabled exactly).
 ///

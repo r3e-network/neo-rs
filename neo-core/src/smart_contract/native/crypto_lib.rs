@@ -225,11 +225,7 @@ impl NativeContract for CryptoLib {
     }
 }
 
-impl Default for CryptoLib {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(CryptoLib);
 
 #[cfg(test)]
 mod tests {

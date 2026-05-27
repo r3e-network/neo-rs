@@ -253,8 +253,4 @@ impl WalletManager {
     }
 }
 
-impl Default for WalletManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(WalletManager);

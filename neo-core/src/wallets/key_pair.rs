@@ -392,11 +392,7 @@ fn map_wif_decode_error(error: CryptoError) -> Error {
     }
 }
 
-impl fmt::Display for KeyPair {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(&self.compressed_public_key))
-    }
-}
+neo_primitives::impl_display_hex!(KeyPair, compressed_public_key);
 
 impl ConstantTimeEq for KeyPair {
     fn ct_eq(&self, other: &Self) -> subtle::Choice {

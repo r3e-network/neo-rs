@@ -365,8 +365,4 @@ impl NativeContract for ContractManagement {
     }
 }
 
-impl Default for ContractManagement {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(ContractManagement);

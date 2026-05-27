@@ -131,11 +131,7 @@ impl TaskManager {
     }
 }
 
-impl Default for TaskManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(TaskManager);
 
 /// Actor-runtime wrapper around [`TaskManager`].
 pub struct TaskManagerActor {

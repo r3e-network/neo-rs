@@ -155,8 +155,4 @@ impl NativeContract for PolicyContract {
 
 }
 
-impl Default for PolicyContract {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(PolicyContract);

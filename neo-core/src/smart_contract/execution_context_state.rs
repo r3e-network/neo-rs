@@ -76,8 +76,4 @@ impl ExecutionContextState {
     }
 }
 
-impl Default for ExecutionContextState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(ExecutionContextState);

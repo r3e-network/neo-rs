@@ -38,11 +38,7 @@ impl TreasuryContract {
     }
 }
 
-impl Default for TreasuryContract {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(TreasuryContract);
 
 impl NativeContract for TreasuryContract {
     fn id(&self) -> i32 {

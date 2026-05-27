@@ -43,11 +43,7 @@ impl MemoryStore {
     }
 }
 
-impl Default for MemoryStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(MemoryStore);
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {

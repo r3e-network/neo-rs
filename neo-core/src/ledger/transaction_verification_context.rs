@@ -132,11 +132,7 @@ impl TransactionVerificationContext {
     }
 }
 
-impl Default for TransactionVerificationContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(TransactionVerificationContext);
 
 fn default_balance_provider() -> impl Fn(&DataCache, &UInt160) -> BigInt + Send + Sync + 'static {
     let gas = GasToken::new();

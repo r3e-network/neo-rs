@@ -55,3 +55,15 @@ pub use hash_utils::{
 };
 pub use key_builder::{KeyBuilder, KeyBuilderError};
 pub use types::{SeekDirection, StorageItem, StorageKey, TrackState};
+
+/// Implements `Default` for a struct by calling `Self::new()`.
+#[macro_export]
+macro_rules! impl_default_via_new {
+    ($type:ty) => {
+        impl Default for $type {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+}

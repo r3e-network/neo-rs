@@ -169,11 +169,7 @@ mod tests {
     }
 }
 
-impl Default for LedgerContract {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(LedgerContract);
 
 impl LedgerContract {
     pub(super) fn invoke_current_hash(

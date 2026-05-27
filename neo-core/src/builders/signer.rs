@@ -15,11 +15,7 @@ pub struct SignerBuilder {
     rules: Vec<WitnessRule>,
 }
 
-impl Default for SignerBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(SignerBuilder);
 
 impl SignerBuilder {
     /// Creates a builder with default signer settings (zero account,

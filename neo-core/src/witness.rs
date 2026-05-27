@@ -351,11 +351,7 @@ impl Witness {
     }
 }
 
-impl Default for Witness {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(Witness);
 
 impl Serializable for Witness {
     fn size(&self) -> usize {

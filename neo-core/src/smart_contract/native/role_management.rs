@@ -241,11 +241,7 @@ impl NativeContract for RoleManagement {
     }
 }
 
-impl Default for RoleManagement {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(RoleManagement);
 
 #[cfg(test)]
 mod tests {

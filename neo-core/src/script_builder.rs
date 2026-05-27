@@ -352,11 +352,7 @@ impl ScriptBuilder {
     }
 }
 
-impl Default for ScriptBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(ScriptBuilder);
 
 fn pad_signed(bytes: &[u8], target_len: usize, negative: bool) -> Vec<u8> {
     let mut padded = Vec::with_capacity(target_len);

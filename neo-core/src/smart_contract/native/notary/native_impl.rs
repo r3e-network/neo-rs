@@ -14,11 +14,7 @@ use num_bigint::BigInt;
 use num_traits::Zero;
 use std::any::Any;
 
-impl Default for Notary {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(Notary);
 
 impl NativeContract for Notary {
     fn id(&self) -> i32 {

@@ -322,12 +322,7 @@ impl ReferenceCounter {
     }
 }
 
-impl Default for ReferenceCounter {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(ReferenceCounter);
 
 /// Identifies a tracked parent compound item.
 #[derive(Clone, Copy, Debug)]

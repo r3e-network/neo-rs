@@ -59,8 +59,4 @@ impl NativeContract for OracleContract {
     }
 }
 
-impl Default for OracleContract {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(OracleContract);

@@ -191,11 +191,7 @@ impl NativeRegistry {
     }
 }
 
-impl Default for NativeRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(NativeRegistry);
 
 #[cfg(test)]
 #[allow(dead_code)]

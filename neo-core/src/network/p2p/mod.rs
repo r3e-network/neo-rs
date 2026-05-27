@@ -270,11 +270,7 @@ impl PeerReputation {
     }
 }
 
-impl Default for PeerReputation {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(PeerReputation);
 
 /// Ban list entry for a misbehaving peer.
 #[derive(Debug, Clone)]

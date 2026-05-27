@@ -9,11 +9,7 @@ pub struct TransactionAttributesBuilder {
     attributes: Vec<TransactionAttribute>,
 }
 
-impl Default for TransactionAttributesBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(TransactionAttributesBuilder);
 
 impl TransactionAttributesBuilder {
     pub fn new() -> Self {

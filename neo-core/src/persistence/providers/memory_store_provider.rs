@@ -24,11 +24,7 @@ impl MemoryStoreProvider {
     }
 }
 
-impl Default for MemoryStoreProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(MemoryStoreProvider);
 
 impl StoreProvider for MemoryStoreProvider {
     fn name(&self) -> &str {

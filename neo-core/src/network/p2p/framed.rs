@@ -244,11 +244,7 @@ impl FrameReader {
     }
 }
 
-impl Default for FrameReader {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(FrameReader);
 
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]

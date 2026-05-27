@@ -33,11 +33,7 @@ pub struct GasToken {
     methods: Vec<NativeMethod>,
 }
 
-impl Default for GasToken {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(GasToken);
 
 impl GasToken {
     const ID: i32 = -6;

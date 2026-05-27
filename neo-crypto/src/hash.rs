@@ -64,11 +64,7 @@ impl Sha256Hasher {
     }
 }
 
-impl Default for Sha256Hasher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(Sha256Hasher);
 
 fn blake2b_with_salt(data: &[u8], salt: &[u8], output_size: usize) -> CryptoResult<Vec<u8>> {
     if output_size == 0 || output_size > 64 {

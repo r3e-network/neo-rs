@@ -60,11 +60,7 @@ impl NativeContract for StdLib {
     }
 }
 
-impl Default for StdLib {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(StdLib);
 
 #[cfg(test)]
 mod tests;

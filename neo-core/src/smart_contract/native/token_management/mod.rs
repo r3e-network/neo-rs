@@ -56,11 +56,7 @@ impl TokenManagement {
     }
 }
 
-impl Default for TokenManagement {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_default_via_new!(TokenManagement);
 
 impl NativeContract for TokenManagement {
     impl_native_contract!(
