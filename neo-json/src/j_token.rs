@@ -3,6 +3,12 @@ use crate::j_array::JArray;
 use crate::j_object::JObject;
 use crate::j_path_token::JPathToken;
 use crate::ordered_dictionary::OrderedDictionary;
+
+/// Largest safe integer in JSON (2^53 - 1).
+pub const MAX_SAFE_INTEGER: i64 = (1i64 << 53) - 1;
+
+/// Smallest safe integer in JSON (-(2^53 - 1)).
+pub const MIN_SAFE_INTEGER: i64 = -MAX_SAFE_INTEGER;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 use serde_json::{self, ser::PrettyFormatter};
