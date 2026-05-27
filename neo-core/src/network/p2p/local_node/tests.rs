@@ -10,7 +10,9 @@ use super::*;
 mod tests {
     use super::*;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
+    use std::net::SocketAddr;
     use std::sync::Arc;
+    use std::time::Duration;
 
     #[test]
     fn tcp_server_capability_tracks_channels_config() {
@@ -119,6 +121,41 @@ mod tests {
         };
 
         assert!(!node.allow_new_connection(&incoming, &version));
+    }
+
+    #[test]
+    fn ban_peer_rejects_inbound_until_unbanned() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = LocalNode::new(settings, 10333, "/agent".to_string());
+        let remote: SocketAddr = "198.51.100.10:20333".parse().unwrap();
+        let ip = remote.ip();
+
+        assert!(node.validate_inbound_connection(&remote).is_ok());
+
+        node.ban_peer(ip, Duration::from_secs(60), "test ban");
+
+        assert_eq!(
+            node.validate_inbound_connection(&remote),
+            Err("peer is banned")
+        );
+        assert!(node.unban_peer(&ip));
+        assert!(node.validate_inbound_connection(&remote).is_ok());
+    }
+
+    #[test]
+    fn expired_ban_is_not_active_and_cleanup_removes_it() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = LocalNode::new(settings, 10333, "/agent".to_string());
+        let remote: SocketAddr = "198.51.100.11:20333".parse().unwrap();
+        let ip = remote.ip();
+
+        node.ban_peer(ip, Duration::ZERO, "expired test ban");
+
+        assert!(!node.is_ip_banned(&ip));
+        assert_eq!(node.active_ban_count(), 0);
+        assert_eq!(node.cleanup_expired_bans(), 1);
+        assert_eq!(node.cleanup_expired_bans(), 0);
+        assert!(node.validate_inbound_connection(&remote).is_ok());
     }
 
     #[test]

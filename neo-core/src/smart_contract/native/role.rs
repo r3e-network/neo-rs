@@ -4,6 +4,7 @@ use neo_primitives::protocol_enum_repr;
 use serde::{Deserialize, Serialize};
 
 protocol_enum_repr! {
+    all;
     /// Represents roles in the Neo network (matches C# Role enum)
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
     pub Role {
@@ -19,18 +20,6 @@ protocol_enum_repr! {
 }
 
 impl Role {
-    const VALUES: [Role; 4] = [
-        Role::StateValidator,
-        Role::Oracle,
-        Role::NeoFSAlphabetNode,
-        Role::P2PNotary,
-    ];
-
-    /// Returns the static list of all roles.
-    pub fn all() -> &'static [Role] {
-        &Self::VALUES
-    }
-
     /// Compatibility alias for callers that still use the older helper name.
     pub const fn from_u8(value: u8) -> Option<Self> {
         Self::from_byte(value)
@@ -62,6 +51,21 @@ mod tests {
         assert_eq!(Role::Oracle.to_byte(), 8);
         assert_eq!(Role::NeoFSAlphabetNode.to_byte(), 16);
         assert_eq!(Role::P2PNotary.to_byte(), 32);
+    }
+
+    #[test]
+    fn role_all_values_match_declaration_order() {
+        assert_eq!(Role::COUNT, 4);
+        assert_eq!(
+            Role::all(),
+            [
+                Role::StateValidator,
+                Role::Oracle,
+                Role::NeoFSAlphabetNode,
+                Role::P2PNotary,
+            ]
+        );
+        assert_eq!(Role::ALL, Role::all());
     }
 
     #[test]

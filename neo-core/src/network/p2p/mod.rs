@@ -366,6 +366,84 @@ impl BanList {
     }
 }
 
+#[cfg(test)]
+mod ban_list_tests {
+    use super::{BanEntry, BanList};
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::time::{Duration, Instant};
+
+    fn test_ip(octet: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(192, 0, 2, octet))
+    }
+
+    fn expired_entry(ip: IpAddr) -> BanEntry {
+        BanEntry {
+            ip,
+            banned_at: Instant::now() - Duration::from_secs(2),
+            duration: Duration::from_secs(1),
+            reason: "expired".to_string(),
+        }
+    }
+
+    #[test]
+    fn ban_list_reports_active_ban_and_metadata() {
+        let mut bans = BanList::new();
+        let ip = test_ip(1);
+
+        bans.ban(ip, Duration::from_secs(60), "invalid message");
+
+        let entry = bans.get_ban(&ip).expect("active ban entry");
+        assert_eq!(entry.ip, ip);
+        assert_eq!(entry.reason, "invalid message");
+        assert!(entry.remaining() <= Duration::from_secs(60));
+        assert!(bans.is_banned(&ip));
+        assert_eq!(bans.active_ban_count(), 1);
+    }
+
+    #[test]
+    fn ban_list_unban_removes_active_ban() {
+        let mut bans = BanList::new();
+        let ip = test_ip(2);
+
+        bans.ban(ip, Duration::from_secs(60), "manual");
+
+        assert!(bans.unban(&ip));
+        assert!(!bans.unban(&ip));
+        assert!(!bans.is_banned(&ip));
+        assert_eq!(bans.active_ban_count(), 0);
+    }
+
+    #[test]
+    fn ban_list_cleanup_expired_returns_removed_count() {
+        let mut bans = BanList::new();
+        let active = test_ip(3);
+        let expired = test_ip(4);
+
+        bans.ban(active, Duration::from_secs(60), "active");
+        bans.bans.insert(expired, expired_entry(expired));
+
+        assert!(!bans.is_banned(&expired));
+        assert_eq!(bans.cleanup_expired(), 1);
+        assert_eq!(bans.active_ban_count(), 1);
+        assert!(bans.is_banned(&active));
+    }
+
+    #[test]
+    fn ban_list_active_bans_exclude_expired_entries() {
+        let mut bans = BanList::new();
+        let active = test_ip(5);
+        let expired = test_ip(6);
+
+        bans.ban(active, Duration::from_secs(60), "active");
+        bans.bans.insert(expired, expired_entry(expired));
+
+        let active_bans = bans.active_bans();
+        assert_eq!(active_bans.len(), 1);
+        assert_eq!(active_bans[0].ip, active);
+        assert_eq!(active_bans[0].reason, "active");
+    }
+}
+
 /// Validates a peer endpoint before connection.
 pub fn validate_peer_endpoint(endpoint: &std::net::SocketAddr) -> Result<(), &'static str> {
     let ip = endpoint.ip();
