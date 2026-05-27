@@ -154,16 +154,16 @@ impl Inventory for Block {
 }
 
 impl crate::Verifiable for Block {
-    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
-        self.header.get_script_hashes_for_verifying(snapshot)
+    fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
+        self.header.script_hashes_for_verifying(snapshot)
     }
 
-    fn get_witnesses(&self) -> Vec<&Witness> {
-        self.header.get_witnesses()
+    fn witnesses(&self) -> Vec<&Witness> {
+        self.header.witnesses()
     }
 
-    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
-        self.header.get_witnesses_mut()
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
+        self.header.witnesses_mut()
     }
 
     /// Performs basic structural validation of the block.
@@ -206,8 +206,8 @@ impl crate::Verifiable for Block {
         clone.try_hash()
     }
 
-    fn get_hash_data(&self) -> Vec<u8> {
-        self.header.get_hash_data()
+    fn hash_data(&self) -> Vec<u8> {
+        self.header.hash_data()
     }
 
     fn as_any(&self) -> &dyn Any {

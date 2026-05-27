@@ -53,7 +53,7 @@ where
     key_bytes.extend_from_slice(&key.to_array().expect("serialize key"));
     let value_bytes = value.to_array().expect("serialize value");
 
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
     let snapshot = Arc::get_mut(&mut snapshot).expect("unique snapshot");
     snapshot
         .put(key_bytes, value_bytes)

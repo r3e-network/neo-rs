@@ -847,7 +847,7 @@ impl RpcServerWallet {
             return Ok(context.to_json());
         }
 
-        if let Some(witnesses) = context.get_witnesses() {
+        if let Some(witnesses) = context.witnesses() {
             tx.set_witnesses(witnesses);
         }
 

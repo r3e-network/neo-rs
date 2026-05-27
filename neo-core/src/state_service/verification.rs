@@ -184,7 +184,7 @@ impl VerificationContext {
             if !context.completed() {
                 return false;
             }
-            let Some(witnesses) = context.get_witnesses() else {
+            let Some(witnesses) = context.witnesses() else {
                 return false;
             };
             state_root.witness = Some(witnesses[0].clone());

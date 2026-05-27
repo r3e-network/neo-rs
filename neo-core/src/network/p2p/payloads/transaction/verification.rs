@@ -63,7 +63,7 @@ impl Transaction {
             return VerifyResult::Expired;
         }
 
-        let hashes = self.get_script_hashes_for_verifying(snapshot);
+        let hashes = self.script_hashes_for_verifying(snapshot);
         if hashes.len() != self.witnesses.len() {
             return VerifyResult::Invalid;
         }
@@ -164,7 +164,7 @@ impl Transaction {
             return VerifyResult::InvalidScript;
         }
 
-        let hashes = self.get_script_hashes_for_verifying(&DataCache::new(true));
+        let hashes = self.script_hashes_for_verifying(&DataCache::new(true));
         if hashes.len() != self.witnesses.len() {
             return VerifyResult::Invalid;
         }

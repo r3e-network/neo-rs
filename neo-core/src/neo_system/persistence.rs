@@ -214,7 +214,7 @@ impl NeoSystem {
             ..Default::default()
         };
         let mut tx = StoreTransaction::from_snapshot_with_config(
-            self.store().get_snapshot(),
+            self.store().snapshot(),
             base_cache_config,
         );
         let base_snapshot = Arc::new(tx.cache().data_cache().clone());

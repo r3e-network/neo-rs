@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let provider = RocksDBStoreProvider::new(config);
     let store = provider.get_store("")?;
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let cache = StoreCache::new_from_snapshot(snapshot);
 
     let next_id_key = StorageKey::new(-1, vec![15]);
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("min_deploy_fee", min_fee_key),
     ] {
         if let Some(item) = cache.get(&key) {
-            let bytes = item.get_value();
+            let bytes = item.to_value();
             let value = BigInt::from_signed_bytes_le(&bytes);
             println!(
                 "meta {label}: bytes=0x{} value={}",
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .data_cache()
         .find(Some(&prefix), SeekDirection::Forward)
     {
-        let bytes = item.get_value();
+        let bytes = item.to_value();
         match ContractManagement::deserialize_contract_state(&bytes) {
             Ok(contract) => {
                 if contract.id >= 0 {
@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("hash={hash} status=missing");
             continue;
         };
-        let bytes = item.get_value();
+        let bytes = item.to_value();
         println!(
             "hash={hash} raw_len={} raw_prefix=0x{}",
             bytes.len(),

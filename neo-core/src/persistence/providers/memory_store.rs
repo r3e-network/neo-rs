@@ -138,7 +138,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
 impl ReadOnlyStore for MemoryStore {}
 
 impl Store for MemoryStore {
-    fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
+    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
         let snapshot = Arc::new(MemorySnapshot::new(
             Arc::new(self.clone()),
             self.inner_data.clone(),

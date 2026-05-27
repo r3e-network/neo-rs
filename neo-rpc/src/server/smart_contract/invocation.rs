@@ -326,7 +326,7 @@ fn build_pending_context(
     context.insert("hash".to_string(), Value::String(tx.hash().to_string()));
     context.insert(
         "data".to_string(),
-        Value::String(BASE64_STANDARD.encode(tx.get_hash_data())),
+        Value::String(BASE64_STANDARD.encode(tx.hash_data())),
     );
 
     let mut items = Map::new();

@@ -116,7 +116,7 @@ impl ExtensiblePayload {
     }
 
     /// Returns the unsigned serialization used for hashing.
-    pub fn get_hash_data(&self) -> Vec<u8> {
+    pub fn hash_data(&self) -> Vec<u8> {
         match self.try_get_hash_data() {
             Ok(data) => data,
             Err(err) => {
@@ -187,15 +187,15 @@ impl Inventory for ExtensiblePayload {
 }
 
 impl crate::Verifiable for ExtensiblePayload {
-    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         vec![self.sender]
     }
 
-    fn get_witnesses(&self) -> Vec<&Witness> {
+    fn witnesses(&self) -> Vec<&Witness> {
         vec![&self.witness]
     }
 
-    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         vec![&mut self.witness]
     }
 
@@ -208,8 +208,8 @@ impl crate::Verifiable for ExtensiblePayload {
         clone.try_hash()
     }
 
-    fn get_hash_data(&self) -> Vec<u8> {
-        ExtensiblePayload::get_hash_data(self)
+    fn hash_data(&self) -> Vec<u8> {
+        ExtensiblePayload::hash_data(self)
     }
 
     fn as_any(&self) -> &dyn Any {

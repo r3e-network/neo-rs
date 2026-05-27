@@ -61,7 +61,7 @@ fn test_multisig_invocation_ordering() {
         .add_signature(contract.clone(), pub1, sig1)
         .expect("add signature"));
 
-    let witnesses = context.get_witnesses().expect("witnesses ready");
+    let witnesses = context.witnesses().expect("witnesses ready");
     tx.set_witnesses(witnesses);
 
     assert_eq!(

@@ -72,7 +72,7 @@ fn hydrate_ledger_from_empty_store_is_noop() {
 #[test]
 fn hydrate_ledger_restores_height_and_headers() {
     let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
     let snapshot = Arc::get_mut(&mut snapshot).expect("mutable snapshot");
 
     // Persist two blocks (genesis index 0 and block index 1).
@@ -133,7 +133,7 @@ fn hydrate_ledger_restores_height_and_headers() {
 #[test]
 fn hydrate_ledger_respects_bounded_window() {
     let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
     let snapshot = Arc::get_mut(&mut snapshot).expect("mutable snapshot");
 
     // Persist a chain longer than the hydration window.

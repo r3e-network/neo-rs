@@ -153,7 +153,7 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
             return value;
         }
 
-        let snapshot = self.store.get_snapshot();
+        let snapshot = self.store.snapshot();
         snapshot.try_get(&key.to_vec())
     }
 
@@ -171,7 +171,7 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
             return Ok(());
         }
 
-        let mut snapshot = self.store.get_snapshot();
+        let mut snapshot = self.store.snapshot();
         let Some(snapshot_mut) = Arc::get_mut(&mut snapshot) else {
             return Err("state service commit aborted: snapshot has additional references".into());
         };

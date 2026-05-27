@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let provider = RocksDBStoreProvider::new(config);
     let store = provider.get_store("")?;
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let cache = StoreCache::new_from_snapshot(snapshot);
 
     // GasToken native contract: id=-6, account-prefix=20.
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("gas_balance=<missing> (account never received GAS in this state)");
         return Ok(());
     };
-    let raw = item.get_value();
+    let raw = item.to_value();
     println!("raw_hex=0x{}", hex::encode(&raw));
     let bal = item.to_bigint();
     println!("balance_datoshi={}", bal);

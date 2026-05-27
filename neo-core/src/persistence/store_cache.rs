@@ -118,9 +118,9 @@ impl StoreCache {
         }
 
         let mut writer_snapshot = if let Some(snapshot_arc) = self.snapshot.as_ref() {
-            snapshot_arc.store().get_snapshot()
+            snapshot_arc.store().snapshot()
         } else if let Some(store_arc) = self.store.as_ref() {
-            store_arc.get_snapshot()
+            store_arc.snapshot()
         } else {
             let msg = "no backing store available for commit";
             warn!(target: "neo", "{msg}");
@@ -244,7 +244,7 @@ mod tests {
     impl ReadOnlyStore for FailingStore {}
 
     impl Store for FailingStore {
-        fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
+        fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
             Arc::new(FailingSnapshot {
                 store: Arc::new(self.clone()),
             })
@@ -365,7 +365,7 @@ mod tests {
         cache.add(key.clone(), cached_value.clone());
 
         // Persist a different key into the underlying store.
-        let mut snapshot = store.get_snapshot();
+        let mut snapshot = store.snapshot();
         if let Some(snap) = Arc::get_mut(&mut snapshot) {
             snap.put(StorageKey::new(1, b"other".to_vec()).to_array(), vec![2])
                 .unwrap();
@@ -374,12 +374,12 @@ mod tests {
 
         let mut entries: Vec<_> = cache
             .find(None, SeekDirection::Forward)
-            .map(|(k, v)| (k.to_array(), v.get_value()))
+            .map(|(k, v)| (k.to_array(), v.to_value()))
             .collect();
         entries.sort();
         entries.dedup();
 
-        let expected_a = (key.to_array(), cached_value.get_value());
+        let expected_a = (key.to_array(), cached_value.to_value());
         let expected_b = (StorageKey::new(1, b"other".to_vec()).to_array(), vec![2]);
         assert!(
             entries.contains(&expected_a) && entries.contains(&expected_b),
@@ -394,9 +394,9 @@ mod tests {
         let key = StorageKey::new(5, b"deleted-get".to_vec());
         let value = StorageItem::from_bytes(vec![7, 7, 7]);
 
-        let mut snapshot = store.get_snapshot();
+        let mut snapshot = store.snapshot();
         if let Some(snap) = Arc::get_mut(&mut snapshot) {
-            snap.put(key.to_array(), value.get_value()).unwrap();
+            snap.put(key.to_array(), value.to_value()).unwrap();
             snap.commit();
         }
 
@@ -411,13 +411,13 @@ mod tests {
         let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let key = StorageKey::new(6, b"deleted-find".to_vec());
 
-        let mut seeded = store.get_snapshot();
+        let mut seeded = store.snapshot();
         if let Some(snap) = Arc::get_mut(&mut seeded) {
             snap.put(key.to_array(), vec![9]).unwrap();
             snap.commit();
         }
 
-        let snapshot = store.get_snapshot();
+        let snapshot = store.snapshot();
         let mut cache = StoreCache::new_from_snapshot(snapshot);
         cache.delete(key.clone());
 
@@ -439,13 +439,13 @@ mod tests {
         cache.commit();
 
         let persisted = store.try_get(&key).expect("persisted value");
-        assert_eq!(persisted.get_value(), value.get_value());
+        assert_eq!(persisted.to_value(), value.to_value());
     }
 
     #[test]
     fn snapshot_commit_persists_to_underlying_store() {
         let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-        let snapshot = store.get_snapshot();
+        let snapshot = store.snapshot();
         let mut cache = StoreCache::new_from_snapshot(snapshot);
 
         let key = StorageKey::new(4, b"snap".to_vec());
@@ -455,7 +455,7 @@ mod tests {
         cache.commit();
 
         let persisted = store.try_get(&key).expect("persisted via snapshot commit");
-        assert_eq!(persisted.get_value(), value.get_value());
+        assert_eq!(persisted.to_value(), value.to_value());
     }
 }
 
@@ -469,7 +469,7 @@ where
     for (key, trackable) in tracked {
         match trackable.state {
             TrackState::Added | TrackState::Changed => {
-                writer.put(key.to_array(), trackable.item.get_value())?;
+                writer.put(key.to_array(), trackable.item.to_value())?;
             }
             TrackState::Deleted => writer.delete(key.to_array())?,
             TrackState::None | TrackState::NotFound => {}

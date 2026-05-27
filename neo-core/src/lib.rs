@@ -449,19 +449,19 @@ pub trait Verifiable: std::any::Any + Send + Sync {
     /// # Returns
     ///
     /// A vector of bytes representing the hashable data.
-    fn get_hash_data(&self) -> Vec<u8>;
+    fn hash_data(&self) -> Vec<u8>;
 
     /// Gets the script hashes that should be verified for this container.
-    fn get_script_hashes_for_verifying(
+    fn script_hashes_for_verifying(
         &self,
         snapshot: &crate::persistence::DataCache,
     ) -> Vec<UInt160>;
 
     /// Gets the witnesses associated with this container.
-    fn get_witnesses(&self) -> Vec<&Witness>;
+    fn witnesses(&self) -> Vec<&Witness>;
 
     /// Gets mutable access to the witnesses associated with this container.
-    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness>;
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness>;
 
     /// Verifies the witnesses with the supplied gas limit.
     fn verify_witnesses(

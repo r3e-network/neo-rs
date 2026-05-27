@@ -274,7 +274,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
 }
 
 impl Store for RocksDbStore {
-    fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
+    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
         let store_arc = Arc::new(self.clone());
         let snapshot = Arc::new(RocksDbSnapshot::new(
             self.db.clone(),

@@ -459,7 +459,7 @@ fn calculate_network_fee_impl(
     account_script: Option<&AccountScriptResolver<'_>>,
     max_execution_cost: i64,
 ) -> Result<i64, String> {
-    let hashes = tx.get_script_hashes_for_verifying(snapshot);
+    let hashes = tx.script_hashes_for_verifying(snapshot);
 
     let ledger = LedgerContract::new();
     let height = ledger

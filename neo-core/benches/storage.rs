@@ -122,11 +122,11 @@ fn bench_storage_item_operations(c: &mut Criterion) {
         });
     }
 
-    group.bench_function("get_value", |b| {
+    group.bench_function("to_value", |b| {
         let data = random_bytes(256);
         let item = StorageItem::from_bytes(data);
         b.iter(|| {
-            let result = item.get_value();
+            let result = item.to_value();
             black_box(result)
         });
     });

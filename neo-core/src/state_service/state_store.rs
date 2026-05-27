@@ -215,7 +215,7 @@ impl StateStore {
     }
 
     /// Gets a new snapshot.
-    pub fn get_snapshot(&self) -> StateSnapshot {
+    pub fn snapshot(&self) -> StateSnapshot {
         StateSnapshot::new(Arc::clone(&self.store), self.settings.clone())
     }
 
@@ -247,7 +247,7 @@ impl StateStore {
         // The current-block key is: contract_id (4 LE bytes) + prefix byte 12.
         // The value is: block_hash (32 bytes) + index (4 LE bytes).
         let current_height = {
-            let bc_snapshot = blockchain_store.get_snapshot();
+            let bc_snapshot = blockchain_store.snapshot();
             let mut cb_key = LedgerContract::ID.to_le_bytes().to_vec();
             cb_key.push(12u8); // PREFIX_CURRENT_BLOCK
             bc_snapshot
@@ -274,14 +274,14 @@ impl StateStore {
 
         info!(target: "neo", "initializing state trie from current blockchain storage at height {}", current_height);
 
-        let snapshot = blockchain_store.get_snapshot();
-        let mut state_snap = self.get_snapshot();
+        let snapshot = blockchain_store.snapshot();
+        let mut state_snap = self.snapshot();
         let mut count: u64 = 0;
 
         // Iterate over ALL storage entries and insert into the trie,
         // excluding LedgerContract storage (matching C# behavior).
         // The raw find returns (Vec<u8>, Vec<u8>) where values are stored
-        // as get_value() output (raw bytes without is_constant prefix).
+        // as to_value() output (raw bytes without is_constant prefix).
         let entries: Vec<_> = snapshot.find(None, SeekDirection::Forward).collect();
         for (key_bytes, value_bytes) in entries {
             let key = StorageKey::from_bytes(&key_bytes);
@@ -305,7 +305,7 @@ impl StateStore {
 
         // Record the state root metadata BEFORE committing so the backend's
         // pending buffer includes both trie nodes and root metadata.  Without
-        // this, get_snapshot() after restart cannot locate the root and creates
+        // this, snapshot() after restart cannot locate the root and creates
         // an empty trie.
         let state_root = StateRoot::new_current(current_height, root_hash);
         if let Err(e) = state_snap.add_local_state_root(&state_root) {
@@ -316,7 +316,7 @@ impl StateStore {
         state_snap.commit().expect("commit initial trie");
 
         // Update current snapshot to reflect the initialized state.
-        *self.current_snapshot.write() = Some(self.get_snapshot());
+        *self.current_snapshot.write() = Some(self.snapshot());
     }
 
     /// Gets the current local root hash.
@@ -405,7 +405,7 @@ impl StateStore {
         }
 
         // Verify and store
-        let snapshot = self.get_snapshot();
+        let snapshot = self.snapshot();
         let local_root = match snapshot.get_state_root(state_root.index) {
             None => {
                 tracing::debug!(
@@ -512,7 +512,7 @@ impl StateStore {
             }
         }
 
-        let mut snapshot = self.get_snapshot();
+        let mut snapshot = self.snapshot();
         let mut put_count: u32 = 0;
         let mut del_count: u32 = 0;
         let mut _skip_count: u32 = 0;
@@ -631,13 +631,13 @@ impl StateStore {
 
     /// Updates the current snapshot reference.
     fn update_current_snapshot(&self) {
-        let new_snapshot = self.get_snapshot();
+        let new_snapshot = self.snapshot();
         *self.current_snapshot.write() = Some(new_snapshot);
     }
 
     /// Gets a state root by index.
     pub fn get_state_root(&self, index: u32) -> Option<StateRoot> {
-        self.get_snapshot().get_state_root(index)
+        self.snapshot().get_state_root(index)
     }
 }
 

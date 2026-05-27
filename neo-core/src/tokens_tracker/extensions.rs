@@ -35,7 +35,7 @@ where
     let prefix_vec = prefix.to_vec();
     let mut results = Vec::new();
 
-    let snapshot = db.get_snapshot();
+    let snapshot = db.snapshot();
     for (key_bytes, value_bytes) in snapshot.find(Some(&prefix_vec), SeekDirection::Forward) {
         if !key_bytes.starts_with(prefix) {
             break;
@@ -66,7 +66,7 @@ where
     let start_vec = start_key.to_vec();
     let mut results = Vec::new();
 
-    let snapshot = db.get_snapshot();
+    let snapshot = db.snapshot();
     for (key_bytes, value_bytes) in snapshot.find(Some(&start_vec), SeekDirection::Forward) {
         if key_bytes.as_slice() > end_key {
             break;

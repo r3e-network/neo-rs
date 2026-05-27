@@ -12,7 +12,7 @@ fn test_byte_array(length: usize, first_byte: u8) -> Vec<u8> {
 #[test]
 fn value_defaults_to_empty() {
     let uut = StorageItem::new();
-    assert!(uut.get_value().is_empty());
+    assert!(uut.to_value().is_empty());
 }
 
 #[test]
@@ -21,7 +21,7 @@ fn value_set_stores_bytes() {
     let value = vec![0x42, 0x32];
     uut.set_value(value.clone());
 
-    let stored = uut.get_value();
+    let stored = uut.to_value();
     assert_eq!(stored.len(), 2);
     assert_eq!(stored[0], value[0]);
     assert_eq!(stored[1], value[1]);
@@ -47,7 +47,7 @@ fn clone_preserves_value() {
     uut.set_value(test_byte_array(10, 0x42));
 
     let cloned = uut.clone();
-    let value = cloned.get_value();
+    let value = cloned.to_value();
     assert_eq!(value.len(), 10);
     assert_eq!(value[0], 0x42);
     for &byte in &value[1..] {
@@ -62,7 +62,7 @@ fn deserialize_reads_all_bytes() {
     let mut reader = MemoryReader::new(&data);
     uut.deserialize(&mut reader).expect("deserialize");
 
-    let value = uut.get_value();
+    let value = uut.to_value();
     assert_eq!(value, data);
 }
 
@@ -84,5 +84,5 @@ fn from_replica_copies_value() {
     let mut dest = StorageItem::new();
     dest.from_replica(&uut);
 
-    assert_eq!(uut.get_value(), dest.get_value());
+    assert_eq!(uut.to_value(), dest.to_value());
 }

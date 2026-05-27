@@ -87,7 +87,7 @@ fn seed_state_root(
     index: u32,
     entries: Vec<(StorageKey, Vec<u8>)>,
 ) -> UInt256 {
-    let mut snapshot = state_store.get_snapshot();
+    let mut snapshot = state_store.snapshot();
     for (key, value) in entries {
         snapshot
             .trie
@@ -186,7 +186,7 @@ async fn proof_handlers_round_trip_value() {
     let user_key = vec![0x01u8];
     let storage_key = StorageKey::new(1, user_key.clone());
     let value = vec![0xBA, 0xAD, 0xF0, 0x0D];
-    let mut snapshot = state_store.get_snapshot();
+    let mut snapshot = state_store.snapshot();
     snapshot
         .trie
         .put(&storage_key.as_bytes(), &value)

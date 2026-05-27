@@ -28,7 +28,7 @@ fn opens_store_and_creates_directory() {
     assert!(db_path.exists(), "db path should be created");
 
     // basic snapshot call to ensure the store is usable
-    let _snapshot = store.get_snapshot();
+    let _snapshot = store.snapshot();
 }
 
 #[test]
@@ -84,8 +84,8 @@ fn snapshot_commit_invalidates_read_cache_for_updated_keys() {
         reader
             .get(&key)
             .expect("value must exist after first write")
-            .get_value(),
-        value1.get_value()
+            .to_value(),
+        value1.to_value()
     );
 
     let mut writer2 = StoreCache::new_from_store(store.clone(), false);
@@ -97,8 +97,8 @@ fn snapshot_commit_invalidates_read_cache_for_updated_keys() {
         reader2
             .get(&key)
             .expect("updated value must be visible")
-            .get_value(),
-        value2.get_value()
+            .to_value(),
+        value2.to_value()
     );
 }
 
@@ -126,7 +126,7 @@ fn snapshot_reads_overlay_pending_writes_and_deletes() {
     );
     writer.commit();
 
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
     let snapshot_mut = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
     snapshot_mut.delete(existing_key.clone()).unwrap();
     snapshot_mut.put(added_key.clone(), vec![0xBB]).unwrap();
@@ -176,7 +176,7 @@ fn backward_prefix_find_returns_expected_rows_in_store_and_snapshot_views() {
         .collect();
     assert_eq!(store_keys, expected);
 
-    let snapshot_cache = StoreCache::new_from_snapshot(store.get_snapshot());
+    let snapshot_cache = StoreCache::new_from_snapshot(store.snapshot());
     let snapshot_keys: Vec<Vec<u8>> = snapshot_cache
         .data_cache()
         .find(Some(&prefix), SeekDirection::Backward)
@@ -213,7 +213,7 @@ fn backward_raw_prefix_find_uses_rocksdb_prefix_bounds() {
         .collect();
     assert_eq!(store_keys, expected);
 
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let snapshot_keys: Vec<_> = snapshot
         .find(Some(&prefix), SeekDirection::Backward)
         .map(|(key, _)| key)

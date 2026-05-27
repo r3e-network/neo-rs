@@ -70,7 +70,7 @@ impl StorageItem {
     }
 
     /// Gets the byte-array value.
-    pub fn get_value(&self) -> Vec<u8> {
+    pub fn to_value(&self) -> Vec<u8> {
         if !self.value.is_empty() || self.cache.is_none() {
             return self.value.clone();
         }
@@ -103,7 +103,7 @@ impl StorageItem {
         if !self.value.is_empty() || self.cache.is_none() {
             Cow::Borrowed(&self.value)
         } else {
-            Cow::Owned(self.get_value())
+            Cow::Owned(self.to_value())
         }
     }
 
@@ -116,7 +116,7 @@ impl StorageItem {
     /// Ensures the value is serializable and cached.
     pub fn seal(&mut self) {
         if self.value.is_empty() {
-            self.value = self.get_value();
+            self.value = self.to_value();
         }
     }
 
@@ -169,7 +169,7 @@ impl StorageItem {
 
     /// Serialize the value to a byte vector.
     pub fn serialize(&self) -> Vec<u8> {
-        self.get_value()
+        self.to_value()
     }
 }
 
@@ -196,7 +196,7 @@ crate::impl_from_bytes!(StorageItem, owned: from_bytes);
 
 impl fmt::Display for StorageItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let value_array = self.get_value();
+        let value_array = self.to_value();
         write!(
             f,
             "Value = {{ {} }}",

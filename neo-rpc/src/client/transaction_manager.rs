@@ -178,7 +178,7 @@ impl TransactionManager {
     pub async fn sign(&mut self) -> Result<Transaction, RpcError> {
         let script_hashes = self
             .tx
-            .get_script_hashes_for_verifying(&DataCache::new(true));
+            .script_hashes_for_verifying(&DataCache::new(true));
         let mut witnesses = Vec::with_capacity(script_hashes.len());
         for hash in &script_hashes {
             let verification_script = self.get_verification_script(hash);
@@ -227,7 +227,7 @@ impl TransactionManager {
 
         let final_witnesses = self
             .context
-            .get_witnesses()
+            .witnesses()
             .ok_or_else(|| "No witnesses available; context incomplete".to_string())?;
         self.tx.set_witnesses(final_witnesses);
 
@@ -240,7 +240,7 @@ impl TransactionManager {
         let hash = contract.script_hash();
         let script_hashes = self
             .tx
-            .get_script_hashes_for_verifying(&DataCache::new(true));
+            .script_hashes_for_verifying(&DataCache::new(true));
         if !script_hashes.contains(&hash) {
             return Err(format!("Add SignItem error: Mismatch ScriptHash ({hash})").into());
         }

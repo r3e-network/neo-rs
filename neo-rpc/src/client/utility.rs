@@ -105,7 +105,7 @@ impl RpcUtility {
 
     /// Parse WIF or private key hex string to `KeyPair`
     /// Matches C# `GetKeyPair`
-    pub fn get_key_pair(key: &str) -> Result<KeyPair, String> {
+    pub fn key_pair(key: &str) -> Result<KeyPair, String> {
         if key.is_empty() {
             return Err("Key cannot be empty".to_string());
         }
@@ -387,24 +387,24 @@ mod tests {
         let wif = "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p";
         let expected = KeyPair::from_wif(wif).expect("keypair");
 
-        let parsed = RpcUtility::get_key_pair(wif).expect("wif parse");
+        let parsed = RpcUtility::key_pair(wif).expect("wif parse");
         assert_eq!(parsed, expected);
 
         let hex_key = hex::encode(expected.private_key());
-        let parsed = RpcUtility::get_key_pair(&hex_key).expect("hex parse");
+        let parsed = RpcUtility::key_pair(&hex_key).expect("hex parse");
         assert_eq!(parsed, expected);
 
         let hex_prefixed = format!("0x{hex_key}");
-        let parsed = RpcUtility::get_key_pair(&hex_prefixed).expect("hex parse");
+        let parsed = RpcUtility::key_pair(&hex_prefixed).expect("hex parse");
         assert_eq!(parsed, expected);
     }
 
     #[test]
     fn get_key_pair_rejects_invalid_input() {
-        let err = RpcUtility::get_key_pair("").expect_err("empty");
+        let err = RpcUtility::key_pair("").expect_err("empty");
         assert_eq!(err, "Key cannot be empty");
 
-        let err = RpcUtility::get_key_pair("00").expect_err("invalid");
+        let err = RpcUtility::key_pair("00").expect_err("invalid");
         assert_eq!(err, "Invalid key format");
     }
 

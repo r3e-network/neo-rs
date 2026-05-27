@@ -377,7 +377,7 @@ fn test_event_manager() {
 //         .expect("state store lookup")
 //         .expect("state store registered");
 //
-//     let mut snapshot = state_store.get_snapshot();
+//     let mut snapshot = state_store.snapshot();
 //     let root_hash = UInt256::from_bytes(&[7u8; 32]).unwrap();
 //     let state_root = StateRoot::new_current(1, root_hash);
 //     snapshot.add_local_state_root(&state_root).unwrap();

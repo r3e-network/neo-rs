@@ -266,7 +266,7 @@ impl Serializable for StateRoot {
 }
 
 impl Verifiable for StateRoot {
-    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         let validators = RoleManagement::new()
             .get_designated_by_role_at(snapshot, Role::StateValidator, self.index)
             .unwrap_or_default();
@@ -276,11 +276,11 @@ impl Verifiable for StateRoot {
         vec![NativeHelpers::get_bft_address(&validators)]
     }
 
-    fn get_witnesses(&self) -> Vec<&Witness> {
+    fn witnesses(&self) -> Vec<&Witness> {
         self.witness.as_ref().map(|w| vec![w]).unwrap_or_default()
     }
 
-    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         self.witness.as_mut().map(|w| vec![w]).unwrap_or_default()
     }
 
@@ -293,7 +293,7 @@ impl Verifiable for StateRoot {
         Ok(StateRoot::hash(&mut clone))
     }
 
-    fn get_hash_data(&self) -> Vec<u8> {
+    fn hash_data(&self) -> Vec<u8> {
         self.get_unsigned_data()
     }
 

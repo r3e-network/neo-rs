@@ -152,7 +152,7 @@ impl ContractParametersContext {
         network: u32,
         verifiable_type: Option<String>,
     ) -> Self {
-        let script_hashes = verifiable.get_script_hashes_for_verifying(snapshot_cache.as_ref());
+        let script_hashes = verifiable.script_hashes_for_verifying(snapshot_cache.as_ref());
         let verifiable_type =
             verifiable_type.unwrap_or_else(|| "Neo.Network.P2P.Payloads.Verifiable".to_string());
         let mut writer = BinaryWriter::new();
@@ -313,7 +313,7 @@ impl ContractParametersContext {
     }
 
     /// Gets the witnesses
-    pub fn get_witnesses(&self) -> Option<Vec<Witness>> {
+    pub fn witnesses(&self) -> Option<Vec<Witness>> {
         if !self.completed() {
             return None;
         }
@@ -405,7 +405,7 @@ impl ContractParametersContext {
             serde_json::Value::String(self.verifiable_type.clone()),
         );
 
-        let data_bytes = self.get_hash_data();
+        let data_bytes = self.hash_data();
         let hash_bytes = Crypto::hash256(&data_bytes);
         let hash = UInt256::from_bytes(&hash_bytes).unwrap_or_else(|_| UInt256::default());
         obj.insert(
@@ -492,7 +492,7 @@ impl ContractParametersContext {
         Self::from_transaction_json(&value, snapshot)
     }
 
-    fn get_hash_data(&self) -> Vec<u8> {
+    fn hash_data(&self) -> Vec<u8> {
         self.verifiable_bytes.clone()
     }
 

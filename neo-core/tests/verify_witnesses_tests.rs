@@ -114,19 +114,19 @@ impl Verifiable for ManualWitness {
         Ok(self.hash)
     }
 
-    fn get_hash_data(&self) -> Vec<u8> {
+    fn hash_data(&self) -> Vec<u8> {
         self.hash_data.clone()
     }
 
-    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         self.hashes.clone()
     }
 
-    fn get_witnesses(&self) -> Vec<&Witness> {
+    fn witnesses(&self) -> Vec<&Witness> {
         self.witnesses.iter().collect()
     }
 
-    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         self.witnesses.iter_mut().collect()
     }
 

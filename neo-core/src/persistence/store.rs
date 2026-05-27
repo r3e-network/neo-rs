@@ -22,7 +22,7 @@ pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn Store, Arc<dyn StoreSnapshot>) 
 /// Developers should implement this interface to provide new storage engines for NEO.
 pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + Any {
     /// Creates a snapshot of the database.
-    fn get_snapshot(&self) -> Arc<dyn StoreSnapshot>;
+    fn snapshot(&self) -> Arc<dyn StoreSnapshot>;
 
     /// Event raised when a new snapshot is created
     fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate);

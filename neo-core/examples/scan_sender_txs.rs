@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = RocksDBStoreProvider::new(config);
     let store = provider.get_store("")?;
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let cache = StoreCache::new_from_snapshot(snapshot);
     let ledger = LedgerContract::new();
 

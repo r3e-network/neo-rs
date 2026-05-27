@@ -173,7 +173,7 @@ impl Header {
 crate::impl_default_via_new!(Header);
 
 impl crate::Verifiable for Header {
-    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         if self.prev_hash == UInt256::default() {
             return vec![self.witness.script_hash()];
         }
@@ -201,11 +201,11 @@ impl crate::Verifiable for Header {
         vec![prev.header.next_consensus]
     }
 
-    fn get_witnesses(&self) -> Vec<&Witness> {
+    fn witnesses(&self) -> Vec<&Witness> {
         vec![&self.witness]
     }
 
-    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         vec![&mut self.witness]
     }
 
@@ -218,8 +218,8 @@ impl crate::Verifiable for Header {
         clone.try_hash()
     }
 
-    fn get_hash_data(&self) -> Vec<u8> {
-        Header::get_hash_data(self)
+    fn hash_data(&self) -> Vec<u8> {
+        Header::hash_data(self)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

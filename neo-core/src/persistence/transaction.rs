@@ -102,6 +102,6 @@ mod tests {
         tx.commit().expect("commit should succeed");
 
         let persisted = store.try_get(&key).expect("value should be persisted");
-        assert_eq!(persisted.get_value(), value.get_value());
+        assert_eq!(persisted.to_value(), value.to_value());
     }
 }

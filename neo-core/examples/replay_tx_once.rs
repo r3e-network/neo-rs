@@ -148,7 +148,7 @@ fn open_cache(path: &str) -> Result<StoreCache, Box<dyn std::error::Error>> {
     };
     let provider = RocksDBStoreProvider::new(config);
     let store = provider.get_store("")?;
-    Ok(StoreCache::new_from_snapshot(store.get_snapshot()))
+    Ok(StoreCache::new_from_snapshot(store.snapshot()))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -384,7 +384,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tracked = tx_engine.snapshot_cache().tracked_items();
         println!("tracked_item_count={}", tracked.len());
         for (key, tracked) in tracked.iter().take(64) {
-            let bytes = tracked.item.get_value();
+            let bytes = tracked.item.to_value();
             let preview_len = bytes.len().min(24);
             println!(
                 "tracked key=0x{} state={:?} value_preview=0x{}",

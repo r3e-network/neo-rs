@@ -177,7 +177,7 @@ impl OracleService {
         }
         let invocation_script = builder.to_array();
 
-        let hashes = tx.get_script_hashes_for_verifying(snapshot);
+        let hashes = tx.script_hashes_for_verifying(snapshot);
         let idx = if hashes.first() == Some(&contract.script_hash()) {
             0
         } else {

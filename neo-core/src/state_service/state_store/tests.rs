@@ -64,7 +64,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshotStore {
 impl ReadOnlyStore for FailingSnapshotStore {}
 
 impl Store for FailingSnapshotStore {
-    fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
+    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
         Arc::new(FailingCoreSnapshot {
             store: Arc::new(self.clone()),
         })
@@ -147,7 +147,7 @@ fn test_state_store_creation() {
 #[test]
 fn test_state_root_storage() {
     let store = StateStore::new_in_memory();
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
 
     let root_hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
     let state_root = StateRoot::new_current(100, root_hash);
@@ -250,7 +250,7 @@ fn validated_root_hash_prefers_validated_index() {
     let store = StateStore::new_in_memory();
 
     // Seed a local root at height 1
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
     let local_hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
     let local_root = StateRoot::new_current(1, local_hash);
     snapshot.add_local_state_root(&local_root).unwrap();
@@ -259,7 +259,7 @@ fn validated_root_hash_prefers_validated_index() {
     // Persist a validated root at a different height to ensure we read from CURRENT_VALIDATED_ROOT_INDEX
     let mut validated_root = StateRoot::new_current(2, UInt256::from_bytes(&[2u8; 32]).unwrap());
     validated_root.witness = Some(Witness::new_with_scripts(vec![0x01], vec![0x02]));
-    let mut validated_snapshot = store.get_snapshot();
+    let mut validated_snapshot = store.snapshot();
     validated_snapshot
         .add_validated_state_root(&validated_root)
         .unwrap();
@@ -276,7 +276,7 @@ fn rejects_state_root_without_verifier() {
     let store = StateStore::new_in_memory();
 
     // Seed a local root at height 10
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
     let root_hash = UInt256::from_bytes(&[3u8; 32]).unwrap();
     let local_root = StateRoot::new_current(10, root_hash);
     snapshot.add_local_state_root(&local_root).unwrap();
@@ -437,7 +437,7 @@ fn rejects_state_root_with_invalid_signature() {
         StateStore::new_with_verifier(backend, StateServiceSettings::default(), Some(verifier));
 
     // Seed local root
-    let mut local_snapshot = store.get_snapshot();
+    let mut local_snapshot = store.snapshot();
     let root_hash = UInt256::from_bytes(&[8u8; 32]).unwrap();
     let local_root = StateRoot::new_current(7, root_hash);
     local_snapshot
@@ -478,7 +478,7 @@ fn open_with_provider_uses_snapshot_backend() {
     )
     .expect("state store opens");
 
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
     let root_hash = UInt256::from_bytes(&[4u8; 32]).unwrap();
     let state_root = StateRoot::new_current(1, root_hash);
     snapshot.add_local_state_root(&state_root).unwrap();
@@ -501,10 +501,10 @@ fn produces_and_verifies_storage_proof() {
     item.set_value(vec![0xAA, 0xBB]);
 
     // Build a snapshot manually to keep the test focused on proof behaviour.
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
     snapshot
         .trie
-        .put(&key.to_array(), &item.get_value())
+        .put(&key.to_array(), &item.to_value())
         .expect("put value in trie");
     let proof = snapshot
         .trie
@@ -516,7 +516,7 @@ fn produces_and_verifies_storage_proof() {
     let root_hash = snapshot.trie.root_hash().expect("root hash");
     let value =
         StateStore::verify_proof(root_hash, &key.to_array(), &proof).expect("proof verifies");
-    assert_eq!(value, item.get_value());
+    assert_eq!(value, item.to_value());
 }
 
 #[test]
@@ -535,7 +535,7 @@ fn verifies_state_root_witness_against_designated_state_validators() {
         StateStore::new_with_verifier(backend, StateServiceSettings::default(), Some(verifier));
 
     // Seed local root without witness
-    let mut local_snapshot = store.get_snapshot();
+    let mut local_snapshot = store.snapshot();
     let root_hash = UInt256::from_bytes(&[9u8; 32]).unwrap();
     let local_root = StateRoot::new_current(5, root_hash);
     local_snapshot
@@ -570,7 +570,7 @@ fn verifies_state_root_witness_against_designated_state_validators() {
 #[test]
 fn verify_state_root_returns_valid_for_matching_root() {
     let store = StateStore::new_in_memory();
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
 
     // Create and store a state root
     let root_hash = UInt256::from_bytes(&[0xAA; 32]).unwrap();
@@ -589,7 +589,7 @@ fn verify_state_root_returns_valid_for_matching_root() {
 #[test]
 fn verify_state_root_returns_mismatch_for_different_root() {
     let store = StateStore::new_in_memory();
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
 
     // Create and store a state root
     let root_hash = UInt256::from_bytes(&[0xAA; 32]).unwrap();
@@ -692,7 +692,7 @@ fn verify_state_root_with_witness_no_verifier() {
 #[test]
 fn validate_state_root_exists_checks_presence() {
     let store = StateStore::new_in_memory();
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
 
     // Create and store a state root
     let root_hash = UInt256::from_bytes(&[0x22; 32]).unwrap();
@@ -709,7 +709,7 @@ fn validate_state_root_exists_checks_presence() {
 #[test]
 fn compare_with_network_root_matches() {
     let store = StateStore::new_in_memory();
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
 
     // Create and store a state root
     let root_hash = UInt256::from_bytes(&[0x33; 32]).unwrap();
@@ -781,7 +781,7 @@ fn clear_root_cache_removes_all() {
 #[test]
 fn verify_state_root_on_persist_succeeds() {
     let store = StateStore::new_in_memory();
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
 
     // Create and store a state root
     let root_hash = UInt256::from_bytes(&[0x77; 32]).unwrap();
@@ -800,7 +800,7 @@ fn verify_state_root_on_persist_succeeds() {
 #[test]
 fn verify_state_root_on_persist_fails_for_mismatch() {
     let store = StateStore::new_in_memory();
-    let mut snapshot = store.get_snapshot();
+    let mut snapshot = store.snapshot();
 
     // Create and store a state root
     let root_hash = UInt256::from_bytes(&[0x88; 32]).unwrap();
@@ -851,7 +851,7 @@ fn preload_recent_roots_populates_cache() {
 
     // Create multiple state roots
     for i in 1..=10 {
-        let mut snapshot = store.get_snapshot();
+        let mut snapshot = store.snapshot();
         let root_hash = UInt256::from_bytes(&[i as u8; 32]).unwrap();
         let state_root = StateRoot::new_current(i, root_hash);
         snapshot.add_local_state_root(&state_root).unwrap();

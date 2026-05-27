@@ -433,7 +433,7 @@ mod tests {
         tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_witnesses(Vec::new());
 
-        let hashes = tx.get_script_hashes_for_verifying(&snapshot);
+        let hashes = tx.script_hashes_for_verifying(&snapshot);
         assert_eq!(hashes.len(), 1);
         assert_ne!(
             tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]),

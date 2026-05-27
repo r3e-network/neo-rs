@@ -557,7 +557,7 @@ async fn send_raw_transaction_reports_invalid_signature() {
     store.commit();
 
     let mut tx = build_signed_transaction(&settings, &keypair, 4, 0);
-    if let Some(witness) = tx.get_witnesses_mut().get_mut(0) {
+    if let Some(witness) = tx.witnesses_mut().get_mut(0) {
         if let Some(last) = witness.invocation_script.last_mut() {
             *last ^= 0x01;
         }

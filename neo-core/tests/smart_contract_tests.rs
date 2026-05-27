@@ -172,16 +172,16 @@ fn test_signature_verification_data() {
     let mut tx = Transaction::new();
     tx.set_script(vec![0x01, 0x02, 0x03]);
 
-    let hash_data = tx.get_hash_data();
+    let hash_data = tx.hash_data();
     assert!(!hash_data.is_empty(), "Hash data should not be empty");
 
     // Hash data should be deterministic
-    let hash_data2 = tx.get_hash_data();
+    let hash_data2 = tx.hash_data();
     assert_eq!(hash_data, hash_data2, "Hash data should be deterministic");
 
     // Different transaction should produce different hash data
     tx.set_script(vec![0x04, 0x05, 0x06]);
-    let hash_data3 = tx.get_hash_data();
+    let hash_data3 = tx.hash_data();
     assert_ne!(
         hash_data, hash_data3,
         "Different transaction should produce different hash data"

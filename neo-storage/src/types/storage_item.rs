@@ -39,7 +39,7 @@ impl StorageItem {
 
     /// Returns a clone of the stored value.
     #[must_use]
-    pub fn get_value(&self) -> Vec<u8> {
+    pub fn to_value(&self) -> Vec<u8> {
         self.value.clone()
     }
 
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn test_storage_item_get_value() {
         let item = StorageItem::new(vec![0x01, 0x02, 0x03]);
-        assert_eq!(item.get_value(), vec![0x01, 0x02, 0x03]);
+        assert_eq!(item.to_value(), vec![0x01, 0x02, 0x03]);
     }
 
     #[test]

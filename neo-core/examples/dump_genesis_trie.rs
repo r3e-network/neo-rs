@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Read state root at target index: key = [0x01, index as BE u32]
     let mut root_key = vec![0x01];
     root_key.extend_from_slice(&target_index.to_be_bytes());
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let root_data = snapshot
         .try_get(&root_key)
         .ok_or_else(|| format!("no state root at index {target_index}"))?;

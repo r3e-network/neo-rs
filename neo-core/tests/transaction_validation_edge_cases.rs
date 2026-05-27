@@ -911,7 +911,7 @@ mod tests {
             .expect("add signature"));
         assert!(context.completed());
 
-        let witnesses = context.get_witnesses().expect("witnesses");
+        let witnesses = context.witnesses().expect("witnesses");
         tx.set_witnesses(witnesses);
 
         assert!(ContractHelper::verify_witnesses(
@@ -1026,7 +1026,7 @@ mod tests {
             .expect("add signature b"));
         assert!(context.completed());
 
-        let witnesses = context.get_witnesses().expect("witnesses");
+        let witnesses = context.witnesses().expect("witnesses");
         tx.set_witnesses(witnesses);
 
         assert!(ContractHelper::verify_witnesses(

@@ -1041,10 +1041,10 @@ fn csharp_ut_extensible_payload_size_and_roundtrip() {
     assert_eq!(clone.data, vec![1, 2, 3]);
 
     {
-        let witnesses = clone.get_witnesses();
+        let witnesses = clone.witnesses();
         assert_eq!(witnesses.len(), 1);
     }
-    let mut witnesses = clone.get_witnesses_mut();
+    let mut witnesses = clone.witnesses_mut();
     assert_eq!(witnesses.len(), 1);
     witnesses[0].invocation_script = vec![0x01];
     assert_eq!(clone.witness.invocation_script, vec![0x01]);

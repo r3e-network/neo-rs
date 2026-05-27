@@ -70,7 +70,7 @@ fn read_local_view_height(system: &Arc<NeoSystem>) -> Option<u32> {
     current_block_key.push(12u8);
     system
         .store()
-        .get_snapshot()
+        .snapshot()
         .as_ref()
         .try_get(&current_block_key)
         .and_then(|bytes| {
@@ -105,7 +105,7 @@ fn read_disk_view_height_and_hash(
     current_block_key.extend_from_slice(&(-4i32).to_le_bytes());
     current_block_key.push(12u8);
     let persisted_height = store
-        .get_snapshot()
+        .snapshot()
         .as_ref()
         .try_get(&current_block_key)
         .and_then(|bytes| {
@@ -117,7 +117,7 @@ fn read_disk_view_height_and_hash(
         })
         .unwrap_or(0);
 
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let cache = StoreCache::new_from_snapshot(snapshot);
     let current_hash_written = LedgerContract::new()
         .get_block_hash_by_index(&cache, expected_height)
@@ -145,7 +145,7 @@ fn flush_and_verify_checkpoint(
         {
             ("disk", disk_height, disk_hash_written)
         } else {
-            let snapshot = system.store().get_snapshot();
+            let snapshot = system.store().snapshot();
             let cache = StoreCache::new_from_snapshot(snapshot);
             let hash_written = LedgerContract::new()
                 .get_block_hash_by_index(&cache, expected_height)

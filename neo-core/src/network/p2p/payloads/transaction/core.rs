@@ -166,7 +166,7 @@ impl Transaction {
     }
 
     /// Returns the unsigned serialization used for hashing.
-    pub fn get_hash_data(&self) -> Vec<u8> {
+    pub fn hash_data(&self) -> Vec<u8> {
         match self.try_get_hash_data() {
             Ok(data) => data,
             Err(e) => {

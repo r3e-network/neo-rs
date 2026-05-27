@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = RocksDBStoreProvider::new(config);
     let store = provider.get_store("")?;
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
 
     let mut count = 0usize;
     let iter = <dyn neo_core::persistence::StoreSnapshot as ReadOnlyStoreGeneric<

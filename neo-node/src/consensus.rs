@@ -977,7 +977,7 @@ impl ConsensusActor {
             }
         }
 
-        let Some(witnesses) = context.get_witnesses() else {
+        let Some(witnesses) = context.witnesses() else {
             warn!(target: "neo", "failed to build block witness from commits");
             return;
         };
@@ -1108,7 +1108,7 @@ impl ConsensusActor {
         my_index: Option<u8>,
     ) -> Option<ConsensusContext> {
         let store = self.recovery_store.as_ref()?;
-        let snapshot = store.get_snapshot();
+        let snapshot = store.snapshot();
         let key = CONSENSUS_STATE_KEY.to_vec();
         let data = snapshot.try_get(&key)?;
         match ConsensusContext::from_bytes(&data, validator_infos, my_index) {
@@ -1130,7 +1130,7 @@ impl ConsensusActor {
             return false;
         };
 
-        let mut snapshot = store.get_snapshot();
+        let mut snapshot = store.snapshot();
         let Some(snap) = Arc::get_mut(&mut snapshot) else {
             return false;
         };

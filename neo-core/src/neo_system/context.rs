@@ -125,7 +125,7 @@ impl NeoSystemContext {
     }
 
     pub fn store_snapshot_cache(&self) -> StoreCache {
-        let snapshot = self.store.get_snapshot();
+        let snapshot = self.store.snapshot();
         StoreCache::new_from_snapshot(snapshot)
     }
 

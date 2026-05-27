@@ -302,10 +302,10 @@ impl Helper {
         let max_gas = max_gas.min(Self::MAX_VERIFICATION_GAS);
 
         // Get script hashes to verify
-        let hashes = verifiable.get_script_hashes_for_verifying(snapshot);
+        let hashes = verifiable.script_hashes_for_verifying(snapshot);
 
         // Get witnesses
-        let witnesses = verifiable.get_witnesses();
+        let witnesses = verifiable.witnesses();
 
         // Verify counts match
         if hashes.len() != witnesses.len() {
@@ -373,7 +373,7 @@ impl Helper {
         } else {
             Arc::new(VerifiableHashContainer {
                 hash: container_hash,
-                hash_data: verifiable.get_hash_data(),
+                hash_data: verifiable.hash_data(),
             })
         };
         let mut engine = ApplicationEngine::new(
@@ -520,19 +520,19 @@ impl Verifiable for VerifiableHashContainer {
         Ok(self.hash)
     }
 
-    fn get_hash_data(&self) -> Vec<u8> {
+    fn hash_data(&self) -> Vec<u8> {
         self.hash_data.clone()
     }
 
-    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         Vec::new()
     }
 
-    fn get_witnesses(&self) -> Vec<&Witness> {
+    fn witnesses(&self) -> Vec<&Witness> {
         Vec::new()
     }
 
-    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         Vec::new()
     }
 

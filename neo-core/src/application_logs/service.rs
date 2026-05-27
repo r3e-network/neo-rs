@@ -60,7 +60,7 @@ impl ApplicationLogsService {
 
     fn start_batch(&self) {
         let mut guard = self.snapshot.lock();
-        *guard = Some(self.store.get_snapshot());
+        *guard = Some(self.store.snapshot());
     }
 
     fn commit_batch(&self) -> Result<(), String> {
@@ -123,7 +123,7 @@ impl ApplicationLogsService {
         let mut key = Vec::with_capacity(1 + 32);
         key.push(prefix);
         key.extend_from_slice(&hash.to_bytes());
-        let snapshot = self.store.get_snapshot();
+        let snapshot = self.store.snapshot();
         let raw = snapshot.try_get(&key)?;
         serde_json::from_slice(&raw).ok()
     }
@@ -391,7 +391,7 @@ mod tests {
     }
 
     impl Store for FailingStore {
-        fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
+        fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
             Arc::new(FailingSnapshot {
                 store: Arc::new(self.clone()),
             })

@@ -59,7 +59,7 @@ impl ApplicationEngine {
         }
 
         Ok(container
-            .get_script_hashes_for_verifying(self.snapshot_cache.as_ref())
+            .script_hashes_for_verifying(self.snapshot_cache.as_ref())
             .contains(hash))
     }
 

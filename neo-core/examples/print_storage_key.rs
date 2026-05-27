@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = RocksDBStoreProvider::new(config);
     let store = provider.get_store("")?;
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let cache = StoreCache::new_from_snapshot(snapshot);
 
     let key = StorageKey::new(id, key_suffix);
@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("key_hex=0x{}", hex::encode(&key_array));
     match cache.get(&key) {
         Some(item) => {
-            let raw = item.get_value();
+            let raw = item.to_value();
             println!("value_hex=0x{}", hex::encode(&raw));
             println!("value_bigint={}", item.to_bigint());
             if let Ok(stack_value) = BinarySerializer::deserialize_stack_value(&raw) {

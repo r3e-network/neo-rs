@@ -68,19 +68,19 @@ impl crate::Verifiable for Transaction {
         Transaction::try_hash(self)
     }
 
-    fn get_hash_data(&self) -> Vec<u8> {
-        Transaction::get_hash_data(self)
+    fn hash_data(&self) -> Vec<u8> {
+        Transaction::hash_data(self)
     }
 
-    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         self.signers.iter().map(|s| s.account).collect()
     }
 
-    fn get_witnesses(&self) -> Vec<&Witness> {
+    fn witnesses(&self) -> Vec<&Witness> {
         self.witnesses.iter().collect()
     }
 
-    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         self.witnesses.iter_mut().collect()
     }
 

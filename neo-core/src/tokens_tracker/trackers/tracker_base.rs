@@ -117,7 +117,7 @@ impl TrackerBase {
 
     /// Resets the batch by creating a new snapshot.
     pub fn reset_batch(&mut self) {
-        self.snapshot = Some(self.db.get_snapshot());
+        self.snapshot = Some(self.db.snapshot());
     }
 
     /// Commits the current snapshot to the database.
@@ -198,7 +198,7 @@ impl TrackerBase {
         let start_vec = start_key.clone();
         let mut results = Vec::new();
 
-        let snapshot = self.db.get_snapshot();
+        let snapshot = self.db.snapshot();
         for (key_bytes, value_bytes) in snapshot.find(Some(&start_vec), SeekDirection::Forward) {
             if key_bytes.as_slice() > end_key.as_slice() {
                 break;
@@ -391,7 +391,7 @@ mod tests {
     }
 
     impl Store for FailingStore {
-        fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
+        fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
             Arc::new(FailingSnapshot {
                 store: Arc::new(self.clone()),
             })

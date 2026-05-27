@@ -17,7 +17,7 @@ fn clone_cache_reads_parent_but_starts_with_empty_change_set() {
     let cloned = cache.clone_cache();
 
     assert_eq!(
-        cloned.get(&key).unwrap().get_value(),
+        cloned.get(&key).unwrap().to_value(),
         vec![42],
         "cloned cache should contain original entry"
     );
@@ -42,12 +42,12 @@ fn merge_tracked_items_applies_changes() {
     base.merge_tracked_items(&tracked);
 
     assert_eq!(
-        base.get(&key_added).unwrap().get_value(),
+        base.get(&key_added).unwrap().to_value(),
         vec![7],
         "merge should add new items"
     );
     assert_eq!(
-        base.get(&key_updated).unwrap().get_value(),
+        base.get(&key_updated).unwrap().to_value(),
         vec![9],
         "merge should update existing items"
     );
@@ -98,7 +98,7 @@ fn clone_cache_isolated_until_commit() {
 
     // Clone should be able to read parent data.
     let cloned = cache.clone_cache();
-    assert_eq!(cloned.get(&key).unwrap().get_value(), vec![1]);
+    assert_eq!(cloned.get(&key).unwrap().to_value(), vec![1]);
 
     // Child writes stay isolated before commit.
     cloned.add(new_key.clone(), StorageItem::from_bytes(vec![2]));
@@ -106,7 +106,7 @@ fn clone_cache_isolated_until_commit() {
 
     // Commit propagates child changes into the parent cache.
     cloned.commit();
-    assert_eq!(cache.get(&new_key).unwrap().get_value(), vec![2]);
+    assert_eq!(cache.get(&new_key).unwrap().to_value(), vec![2]);
 }
 
 #[test]
@@ -189,9 +189,9 @@ fn find_overlays_changes_and_hides_deleted_store_entries() {
 
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].0, key_a);
-    assert_eq!(entries[0].1.get_value(), vec![9]);
+    assert_eq!(entries[0].1.to_value(), vec![9]);
     assert_eq!(entries[1].0, key_c);
-    assert_eq!(entries[1].1.get_value(), vec![3]);
+    assert_eq!(entries[1].1.to_value(), vec![3]);
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn find_overlays_changes_in_backward_order() {
     assert_eq!(
         entries
             .into_iter()
-            .map(|(_, item)| item.get_value())
+            .map(|(_, item)| item.to_value())
             .collect::<Vec<_>>(),
         vec![vec![4], vec![3], vec![9]]
     );
@@ -319,5 +319,5 @@ fn find_enforces_prefix_when_backing_iterator_is_range_scan() {
         "only matching prefix entries should be returned"
     );
     assert_eq!(entries[0].0, key_a);
-    assert_eq!(entries[0].1.get_value(), vec![1]);
+    assert_eq!(entries[0].1.to_value(), vec![1]);
 }

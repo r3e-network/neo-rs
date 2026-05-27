@@ -832,7 +832,7 @@ impl DataCache {
                     .and_then(|trackable| match trackable.state {
                         crate::persistence::track_state::TrackState::Added
                         | crate::persistence::track_state::TrackState::Changed => {
-                            Some((key.to_array(), Some(trackable.item.get_value())))
+                            Some((key.to_array(), Some(trackable.item.to_value())))
                         }
                         crate::persistence::track_state::TrackState::Deleted => {
                             Some((key.to_array(), None))

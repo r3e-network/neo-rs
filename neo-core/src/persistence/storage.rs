@@ -254,13 +254,13 @@ mod tests {
     #[test]
     fn storage_item_new_creates_item() {
         let item = StorageItem::from_bytes(vec![1, 2, 3]);
-        assert_eq!(item.get_value(), vec![1, 2, 3]);
+        assert_eq!(item.to_value(), vec![1, 2, 3]);
     }
 
     #[test]
     fn storage_item_default_is_empty() {
         let item = StorageItem::new();
-        assert!(item.get_value().is_empty());
+        assert!(item.to_value().is_empty());
     }
 
     // ============================================================================

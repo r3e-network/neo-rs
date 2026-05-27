@@ -78,7 +78,7 @@ impl OracleService {
         .into_iter()
         .collect();
 
-        let hashes = tx.get_script_hashes_for_verifying(snapshot);
+        let hashes = tx.script_hashes_for_verifying(snapshot);
         let mut witnesses = Vec::with_capacity(hashes.len());
         for hash in hashes.iter() {
             let witness = witness_map

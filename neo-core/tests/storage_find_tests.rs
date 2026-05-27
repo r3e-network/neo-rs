@@ -41,7 +41,7 @@ fn storage_find_values_only_returns_payload() {
     let StackItem::ByteString(value) = iterator.value() else {
         panic!("expected byte string");
     };
-    assert_eq!(value, storage_item.get_value());
+    assert_eq!(value, storage_item.to_value());
 }
 
 #[test]

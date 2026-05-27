@@ -129,7 +129,7 @@ impl WalletApi {
         key: &str,
         add_assert: bool,
     ) -> Result<Transaction, RpcError> {
-        let key_pair = RpcUtility::get_key_pair(key).map_err(|e| RpcError::Other(e.to_string()))?;
+        let key_pair = RpcUtility::key_pair(key).map_err(|e| RpcError::Other(e.to_string()))?;
         self.claim_gas_with_assert(&key_pair, add_assert).await
     }
 
@@ -252,7 +252,7 @@ impl WalletApi {
         add_assert: bool,
     ) -> Result<(Transaction, String), RpcError> {
         let key_pair =
-            RpcUtility::get_key_pair(from_key).map_err(|e| RpcError::Other(e.to_string()))?;
+            RpcUtility::key_pair(from_key).map_err(|e| RpcError::Other(e.to_string()))?;
         self.transfer_decimal_with_assert(
             token_hash, &key_pair, to_address, amount, data, add_assert,
         )

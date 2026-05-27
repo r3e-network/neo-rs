@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let provider = RocksDBStoreProvider::new(config);
     let store = provider.get_store("")?;
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let cache = StoreCache::new_from_snapshot(snapshot);
 
     let key = StorageKey::create_with_uint160(-5, 20, &account);
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("account_state=<missing>");
         return Ok(());
     };
-    let raw = item.get_value();
+    let raw = item.to_value();
     println!("raw_hex=0x{}", hex::encode(&raw));
     println!("raw_bigint={}", item.to_bigint());
 

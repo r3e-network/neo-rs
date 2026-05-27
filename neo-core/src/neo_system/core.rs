@@ -329,7 +329,7 @@ impl NeoSystem {
         // Ensure genesis block is persisted if not present
         {
             let store = system.store();
-            let snapshot = store.get_snapshot();
+            let snapshot = store.snapshot();
             let store_cache = StoreCache::new_from_snapshot(snapshot);
             let ledger_contract = LedgerContract::new();
             if !ledger_contract.contains_block(&store_cache, &genesis_hash) {
@@ -384,7 +384,7 @@ impl NeoSystem {
     /// Convenience wrapper returning `Duration` between blocks.
     pub fn time_per_block(&self) -> Duration {
         let settings = &self.settings;
-        let store_cache = StoreCache::new_from_snapshot(self.store().get_snapshot());
+        let store_cache = StoreCache::new_from_snapshot(self.store().snapshot());
         let index = LedgerContract::new()
             .current_index(&store_cache)
             .unwrap_or(0);
@@ -401,7 +401,7 @@ impl NeoSystem {
     /// Returns the max valid-until-block increment with Policy overrides after HF_Echidna.
     pub fn max_valid_until_block_increment(&self) -> u32 {
         let settings = &self.settings;
-        let store_cache = StoreCache::new_from_snapshot(self.store().get_snapshot());
+        let store_cache = StoreCache::new_from_snapshot(self.store().snapshot());
         let index = LedgerContract::new()
             .current_index(&store_cache)
             .unwrap_or(0);
@@ -418,7 +418,7 @@ impl NeoSystem {
     /// Returns the max traceable blocks with Policy overrides after HF_Echidna.
     pub fn max_traceable_blocks(&self) -> u32 {
         let settings = &self.settings;
-        let store_cache = StoreCache::new_from_snapshot(self.store().get_snapshot());
+        let store_cache = StoreCache::new_from_snapshot(self.store().snapshot());
         let index = LedgerContract::new()
             .current_index(&store_cache)
             .unwrap_or(0);

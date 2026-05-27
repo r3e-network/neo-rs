@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = RocksDBStoreProvider::new(config);
     let store = provider.get_store("")?;
-    let snapshot = store.get_snapshot();
+    let snapshot = store.snapshot();
     let cache = StoreCache::new_from_snapshot(snapshot);
 
     let prefix_key = StorageKey::new(id, prefix);
@@ -62,8 +62,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "key=0x{} value_len={} value_hex=0x{}",
             key_hex,
-            item.get_value().len(),
-            hex::encode(item.get_value())
+            item.to_value().len(),
+            hex::encode(item.to_value())
         );
         count += 1;
     }

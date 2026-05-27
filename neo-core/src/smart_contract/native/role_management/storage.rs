@@ -21,7 +21,7 @@ impl RoleManagement {
         for (key, item) in iter {
             if let Some(designation_index) = Self::parse_designation_index(&key, role) {
                 if designation_index <= index {
-                    return Ok(Some(item.get_value()));
+                    return Ok(Some(item.to_value()));
                 }
             }
         }

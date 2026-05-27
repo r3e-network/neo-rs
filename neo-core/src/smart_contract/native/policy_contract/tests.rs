@@ -452,7 +452,7 @@ fn on_persist_engine_defers_policy_initialize_until_native_on_persist() {
     let value = snapshot
         .as_ref()
         .try_get(&key)
-        .map(|item| BigInt::from_signed_bytes_le(&item.get_value()))
+        .map(|item| BigInt::from_signed_bytes_le(&item.to_value()))
         .and_then(|value| value.to_u32())
         .expect("scaled exec fee factor");
 
