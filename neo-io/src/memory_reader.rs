@@ -311,12 +311,6 @@ impl<'a> MemoryReader<'a> {
         Ok(self.read_var_memory(max)?.to_vec())
     }
 
-    /// Alias for `read_var_bytes` with explicit naming used in some ports.
-    #[inline]
-    pub fn read_var_bytes_max(&mut self, max: usize) -> IoResult<Vec<u8>> {
-        self.read_var_bytes(max)
-    }
-
     /// Reads to end (C# `ReadToEnd`)
     #[inline]
     pub fn read_to_end(&mut self) -> IoResult<&'a [u8]> {

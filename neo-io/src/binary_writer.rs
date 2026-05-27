@@ -152,12 +152,6 @@ impl BinaryWriter {
         self.buffer
     }
 
-    /// Writes a raw byte slice (alias for [`write_bytes`](Self::write_bytes)).
-    pub fn write_all(&mut self, data: &[u8]) -> IoResult<()> {
-        self.buffer.extend_from_slice(data);
-        Ok(())
-    }
-
     /// Serializes a single [`Serializable`] value into the buffer.
     pub fn write_serializable<T: Serializable>(&mut self, value: &T) -> IoResult<()> {
         value.serialize(self)
