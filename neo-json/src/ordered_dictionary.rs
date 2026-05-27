@@ -1,14 +1,15 @@
 //! `OrderedDictionary` - matches C# Neo.Json.OrderedDictionary exactly
 
 use indexmap::IndexMap;
+use std::{borrow::Borrow, hash::Hash};
 
 /// Ordered dictionary that maintains insertion order (matches C# `OrderedDictionary`<`TKey`, `TValue`>)
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OrderedDictionary<K: Clone + Eq + std::hash::Hash, V> {
+pub struct OrderedDictionary<K: Eq + Hash, V> {
     pub(crate) items: IndexMap<K, V>,
 }
 
-impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
+impl<K: Eq + Hash, V> OrderedDictionary<K, V> {
     /// Creates a new ordered dictionary
     #[must_use]
     pub fn new() -> Self {
@@ -17,46 +18,25 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
         }
     }
 
-    /// Gets count
+    /// Returns the number of entries.
     #[must_use]
-    pub fn count(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.items.len()
     }
 
-    /// Gets keys as an iterator.
-    ///
-    /// Returns `impl Iterator` to avoid unnecessary Vec allocation.
-    /// Caller can call `.collect()` if they need a Vec.
-    pub fn keys(&self) -> impl Iterator<Item = &K> + '_ {
-        self.items.keys()
-    }
-
-    /// Gets values as an iterator.
-    ///
-    /// Returns `impl Iterator` to avoid unnecessary Vec allocation.
-    /// Caller can call `.collect()` if they need a Vec.
-    pub fn values(&self) -> impl Iterator<Item = &V> + '_ {
-        self.items.values()
+    /// Returns true when there are no entries.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
     }
 
     /// Gets value by key
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
-        K: std::borrow::Borrow<Q>,
-        Q: ?Sized + Eq + std::hash::Hash,
+        K: Borrow<Q>,
+        Q: ?Sized + Eq + Hash,
     {
         self.items.get(key)
-    }
-
-    /// Gets mutable value by key
-    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        self.items.get_mut(key)
-    }
-
-    /// Gets value by index
-    #[must_use]
-    pub fn get_at(&self, index: usize) -> Option<&V> {
-        self.items.get_index(index).map(|(_, v)| v)
     }
 
     /// Inserts or updates a key-value pair
@@ -64,13 +44,13 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
         self.items.insert(key, value);
     }
 
-    /// Adds a key-value pair
-    pub fn add(&mut self, key: K, value: V) -> bool {
+    /// Inserts a key-value pair, rejecting duplicate keys.
+    pub fn try_insert(&mut self, key: K, value: V) -> Result<(), (K, V)> {
         if self.items.contains_key(&key) {
-            false
+            Err((key, value))
         } else {
             self.items.insert(key, value);
-            true
+            Ok(())
         }
     }
 
@@ -82,8 +62,8 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     /// Checks if contains key
     pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
-        K: std::borrow::Borrow<Q>,
-        Q: ?Sized + Eq + std::hash::Hash,
+        K: Borrow<Q>,
+        Q: ?Sized + Eq + Hash,
     {
         self.items.contains_key(key)
     }
@@ -97,14 +77,9 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
         self.items.iter()
     }
-
-    /// Try get value
-    pub fn try_get_value(&self, key: &K) -> Option<&V> {
-        self.get(key)
-    }
 }
 
-impl<K: Clone + Eq + std::hash::Hash, V> Default for OrderedDictionary<K, V> {
+impl<K: Eq + Hash, V> Default for OrderedDictionary<K, V> {
     fn default() -> Self {
         Self::new()
     }
@@ -122,19 +97,28 @@ mod tests {
         dict.insert("b", 2);
         dict.insert("a", 3);
 
-        assert_eq!(dict.keys().copied().collect::<Vec<_>>(), vec!["a", "b"]);
-        assert_eq!(dict.values().copied().collect::<Vec<_>>(), vec![3, 2]);
+        assert_eq!(
+            dict.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+        assert_eq!(
+            dict.iter().map(|(_, value)| *value).collect::<Vec<_>>(),
+            vec![3, 2]
+        );
     }
 
     #[test]
-    fn add_rejects_duplicates_without_moving_existing_key() {
+    fn try_insert_rejects_duplicates_without_moving_existing_key() {
         let mut dict = OrderedDictionary::new();
 
-        assert!(dict.add("a", 1));
-        assert!(dict.add("b", 2));
-        assert!(!dict.add("a", 3));
+        assert!(dict.try_insert("a", 1).is_ok());
+        assert!(dict.try_insert("b", 2).is_ok());
+        assert_eq!(dict.try_insert("a", 3), Err(("a", 3)));
 
-        assert_eq!(dict.keys().copied().collect::<Vec<_>>(), vec!["a", "b"]);
+        assert_eq!(
+            dict.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
         assert_eq!(dict.get(&"a"), Some(&1));
     }
 
@@ -147,9 +131,13 @@ mod tests {
         dict.insert("c", 3);
 
         assert!(dict.remove(&"b"));
-        assert_eq!(dict.keys().copied().collect::<Vec<_>>(), vec!["a", "c"]);
-        assert_eq!(dict.get_at(0), Some(&1));
-        assert_eq!(dict.get_at(1), Some(&3));
-        assert_eq!(dict.get_at(2), None);
+        assert_eq!(
+            dict.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
+            vec!["a", "c"]
+        );
+        assert_eq!(
+            dict.iter().map(|(_, value)| *value).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
     }
 }

@@ -6,7 +6,6 @@ use crate::ordered_dictionary::OrderedDictionary;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 use serde_json::{self, ser::PrettyFormatter};
-use std::collections::HashSet;
 use std::fmt;
 use std::io::Write;
 
@@ -498,17 +497,12 @@ impl<'de> Visitor<'de> for TokenVisitor {
         }
 
         let mut properties = OrderedDictionary::new();
-        let mut seen = HashSet::new();
-
         while let Some(key) = map.next_key::<String>()? {
-            if !seen.insert(key.clone()) {
-                return Err(de::Error::custom(format!("Duplicate property name: {key}")));
-            }
             let value = map.next_value_seed(TokenSeed {
                 remaining_depth: self.remaining_depth - 1,
                 max_depth: self.max_depth,
             })?;
-            if !properties.add(key.clone(), value) {
+            if let Err((key, _)) = properties.try_insert(key, value) {
                 return Err(de::Error::custom(format!("Duplicate property name: {key}")));
             }
         }

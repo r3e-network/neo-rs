@@ -55,19 +55,19 @@ impl JObject {
     /// Number of stored properties.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.properties.count()
+        self.properties.len()
     }
 
     /// Returns `true` when the object has no properties.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.properties.count() == 0
+        self.properties.is_empty()
     }
 
     /// Returns the values in insertion order.
     #[must_use]
     pub fn children(&self) -> Vec<&Option<JToken>> {
-        self.properties.values().collect()
+        self.properties.iter().map(|(_, value)| value).collect()
     }
 
     /// Returns an iterator over the `(key, value)` pairs.
