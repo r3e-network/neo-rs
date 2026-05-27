@@ -359,7 +359,6 @@ pub mod neo_io {
         serializable::{self, helper},
         BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
     };
-    pub use Serializable as ISerializable;
 }
 
 // ============================================================================

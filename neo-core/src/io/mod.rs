@@ -7,7 +7,3 @@ pub use neo_io_crate::{
     serializable::{self, helper},
     BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
 };
-
-// Compatibility alias matching historical naming.
-#[allow(unused_imports)]
-pub use Serializable as ISerializable;
