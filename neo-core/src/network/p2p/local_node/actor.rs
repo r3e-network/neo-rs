@@ -172,7 +172,6 @@ impl LocalNodeActor {
                 Ok(())
             }
             PeerCommand::ConnectionTerminated { actor } => self.handle_terminated(actor, ctx).await,
-            PeerCommand::TimerElapsed => self.handle_peer_timer(ctx).await,
             PeerCommand::QueryConnectingPeers { reply } => {
                 let _ = reply.send(self.peer.connecting_endpoints());
                 Ok(())
@@ -243,20 +242,6 @@ impl LocalNodeActor {
             } => {
                 self.state.record_send(&inventory);
                 self.send_inventory_to_peers(&inventory, block_index, false);
-            }
-            LocalNodeCommand::RegisterRemoteNode {
-                actor,
-                snapshot,
-                version,
-            } => {
-                self.state.register_remote_node(actor, snapshot, version);
-            }
-            LocalNodeCommand::UnregisterRemoteNode { actor } => {
-                self.state.unregister_remote_node(&actor);
-            }
-            LocalNodeCommand::GetRemoteActors { reply } => {
-                let actors = self.state.remote_actor_refs();
-                let _ = reply.send(actors);
             }
             LocalNodeCommand::UnconnectedCount { reply } => {
                 let count = self.peer.unconnected_count();

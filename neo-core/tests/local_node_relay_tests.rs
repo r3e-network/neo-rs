@@ -1,20 +1,20 @@
 #![cfg(feature = "runtime")]
 
 use async_trait::async_trait;
+use neo_core::network::MessageCommand;
 use neo_core::network::p2p::capabilities::NodeCapability;
 use neo_core::network::p2p::payloads::{ExtensiblePayload, VersionPayload};
 use neo_core::network::p2p::{
-    ChannelsConfig, LocalNode, LocalNodeCommand, PeerCommand, RelayInventory, RemoteNodeCommand,
-    RemoteNodeSnapshot,
+    ChannelsConfig, LocalNode, LocalNodeCommand, PeerCommand, PeerTimer, RelayInventory,
+    RemoteNodeCommand, RemoteNodeSnapshot,
 };
-use neo_core::network::MessageCommand;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
 use std::any::Any;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 struct CaptureActor {
     tx: mpsc::UnboundedSender<RemoteNodeCommand>,
@@ -325,9 +325,7 @@ async fn timer_elapsed_with_connected_peers_uses_getaddr_without_seeding() {
         .expect("register connected peer");
     assert!(reply_rx.await.expect("reply"));
 
-    local_actor
-        .tell(PeerCommand::TimerElapsed)
-        .expect("trigger timer");
+    local_actor.tell(PeerTimer).expect("trigger timer");
 
     let command = timeout(Duration::from_secs(2), rx.recv())
         .await
@@ -400,9 +398,7 @@ async fn timer_elapsed_does_not_request_more_peers_when_unconnected_pool_is_non_
 
     while rx.try_recv().is_ok() {}
 
-    local_actor
-        .tell(PeerCommand::TimerElapsed)
-        .expect("trigger timer");
+    local_actor.tell(PeerTimer).expect("trigger timer");
 
     let result = timeout(Duration::from_millis(300), rx.recv()).await;
     assert!(
@@ -442,9 +438,7 @@ async fn timer_elapsed_drops_endpoint_when_connect_attempt_is_rejected() {
         })
         .expect("add unconnected peer");
 
-    local_actor
-        .tell(PeerCommand::TimerElapsed)
-        .expect("trigger timer");
+    local_actor.tell(PeerTimer).expect("trigger timer");
 
     assert_eq!(
         unconnected_count(&local_actor).await,

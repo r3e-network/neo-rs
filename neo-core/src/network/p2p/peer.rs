@@ -481,8 +481,6 @@ pub enum PeerCommand {
     ConnectionFailed { endpoint: SocketAddr },
     /// Handles termination of a remote actor.
     ConnectionTerminated { actor: ActorRef },
-    /// Triggered by the periodic maintenance timer.
-    TimerElapsed,
     /// Returns the endpoints currently queued for connection.
     QueryConnectingPeers {
         reply: oneshot::Sender<Vec<SocketAddr>>,

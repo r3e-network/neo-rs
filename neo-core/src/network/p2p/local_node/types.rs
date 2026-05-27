@@ -141,25 +141,6 @@ pub enum LocalNodeCommand {
         /// Optional block index context.
         block_index: Option<u32>,
     },
-    /// Register a new remote node actor.
-    RegisterRemoteNode {
-        /// Actor reference for the remote node.
-        actor: ActorRef,
-        /// Snapshot of the remote node state.
-        snapshot: RemoteNodeSnapshot,
-        /// Version payload from handshake.
-        version: VersionPayload,
-    },
-    /// Unregister a remote node actor.
-    UnregisterRemoteNode {
-        /// Actor reference to unregister.
-        actor: ActorRef,
-    },
-    /// Get all remote node actor references.
-    GetRemoteActors {
-        /// Reply channel for actor references.
-        reply: oneshot::Sender<Vec<ActorRef>>,
-    },
     /// Get count of unconnected peers.
     UnconnectedCount {
         /// Reply channel for count.

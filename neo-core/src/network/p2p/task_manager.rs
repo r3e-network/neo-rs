@@ -236,9 +236,6 @@ impl TaskManagerActor {
                 TaskManagerCommand::Headers { peer } => {
                     self.state.on_headers(&peer);
                 }
-                TaskManagerCommand::TimerTick => {
-                    self.handle_timer_tick();
-                }
             },
             TaskManagerMessage::PersistCompleted(persist) => {
                 self.state.on_persist_completed(&persist.block);
@@ -332,7 +329,6 @@ pub enum TaskManagerCommand {
     Headers {
         peer: ActorRef,
     },
-    TimerTick,
 }
 
 #[cfg(test)]
