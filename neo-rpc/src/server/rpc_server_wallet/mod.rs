@@ -25,7 +25,7 @@ use neo_core::wallets::{
     AssetDescriptor, Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet,
     WalletAccount, WalletError, WalletResult,
 };
-use neo_core::{UInt160, UInt256, WitnessScope};
+use neo_core::{UInt160, WitnessScope};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
@@ -43,7 +43,8 @@ use zeroize::Zeroizing;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{
-    expect_base64_param_with_decode_message, internal_error, invalid_params,
+    expect_base64_param_with_decode_message, expect_string_param, internal_error, invalid_params,
+    parse_uint160, parse_uint256,
 };
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
@@ -84,7 +85,7 @@ impl RpcServerWallet {
     }
 
     fn dump_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let address = Self::expect_string_param(params, 0, "dumpprivkey")?;
+        let address = expect_string_param(params, 0, "dumpprivkey")?;
         let script_hash = Self::parse_script_hash(server, &address)?;
         let wallet = Self::require_wallet(server)?;
         let account = wallet.get_account(&script_hash).ok_or_else(|| {
@@ -116,7 +117,7 @@ impl RpcServerWallet {
     }
 
     fn get_wallet_balance(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let asset = Self::parse_uint160(params, 0, "getwalletbalance")?;
+        let asset = parse_uint160(params, 0, "getwalletbalance")?;
         let wallet = Self::require_wallet(server)?;
         if asset == NeoToken::new().hash() {
             let token = NeoToken::new();
@@ -184,7 +185,7 @@ impl RpcServerWallet {
     }
 
     fn import_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let privkey = Self::expect_string_param(params, 0, "importprivkey")?;
+        let privkey = expect_string_param(params, 0, "importprivkey")?;
         KeyPair::from_wif(&privkey).map_err(|err| invalid_params(format!("invalid WIF: {err}")))?;
         let wallet = Self::require_wallet(server)?;
         let wallet_clone = Arc::clone(&wallet);
@@ -206,8 +207,8 @@ impl RpcServerWallet {
     }
 
     fn open_wallet(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let path = Self::expect_string_param(params, 0, "openwallet")?;
-        let password = Self::expect_string_param(params, 1, "openwallet")?;
+        let path = expect_string_param(params, 0, "openwallet")?;
+        let password = expect_string_param(params, 1, "openwallet")?;
         if !Path::new(&path).exists() {
             return Err(RpcException::from(RpcError::wallet_not_found()));
         }
@@ -267,12 +268,12 @@ impl RpcServerWallet {
 
     fn send_from(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let _ = Self::require_wallet(server)?;
-        let asset = Self::parse_uint160(params, 0, "sendfrom")?;
+        let asset = parse_uint160(params, 0, "sendfrom")?;
         let from_hash =
-            Self::parse_script_hash(server, &Self::expect_string_param(params, 1, "sendfrom")?)?;
+            Self::parse_script_hash(server, &expect_string_param(params, 1, "sendfrom")?)?;
         let to_hash =
-            Self::parse_script_hash(server, &Self::expect_string_param(params, 2, "sendfrom")?)?;
-        let amount_text = Self::expect_string_param(params, 3, "sendfrom")?;
+            Self::parse_script_hash(server, &expect_string_param(params, 2, "sendfrom")?)?;
+        let amount_text = expect_string_param(params, 3, "sendfrom")?;
         let signers = Self::parse_optional_signers(server, params, 4)?;
         Self::process_transfer(
             server,
@@ -287,12 +288,10 @@ impl RpcServerWallet {
 
     fn send_to_address(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let _ = Self::require_wallet(server)?;
-        let asset = Self::parse_uint160(params, 0, "sendtoaddress")?;
-        let to_hash = Self::parse_script_hash(
-            server,
-            &Self::expect_string_param(params, 1, "sendtoaddress")?,
-        )?;
-        let amount_text = Self::expect_string_param(params, 2, "sendtoaddress")?;
+        let asset = parse_uint160(params, 0, "sendtoaddress")?;
+        let to_hash =
+            Self::parse_script_hash(server, &expect_string_param(params, 1, "sendtoaddress")?)?;
+        let amount_text = expect_string_param(params, 2, "sendtoaddress")?;
         let signers = Self::parse_optional_signers(server, params, 3)?;
         Self::process_transfer(
             server,
@@ -315,7 +314,7 @@ impl RpcServerWallet {
         if params[0].is_string() {
             from = Some(Self::parse_script_hash(
                 server,
-                &Self::expect_string_param(params, 0, "sendmany")?,
+                &expect_string_param(params, 0, "sendmany")?,
             )?);
             index = 1;
         }
@@ -346,7 +345,7 @@ impl RpcServerWallet {
     }
 
     fn cancel_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let txid = Self::parse_uint256(params, 0, "canceltransaction")?;
+        let txid = parse_uint256(params, 0, "canceltransaction")?;
         let signers_value = params
             .get(1)
             .ok_or_else(|| invalid_params("canceltransaction requires signers"))?;
@@ -523,50 +522,6 @@ impl RpcServerWallet {
         } else {
             RpcException::from(rpc_error)
         }
-    }
-
-    fn parse_uint160(
-        params: &[Value],
-        index: usize,
-        method: &str,
-    ) -> Result<UInt160, RpcException> {
-        let text = Self::expect_string_param(params, index, method)?;
-        UInt160::from_str(&text).map_err(|err| {
-            RpcException::from(
-                RpcError::invalid_params().with_data(format!("invalid UInt160 '{text}': {err}")),
-            )
-        })
-    }
-
-    fn parse_uint256(
-        params: &[Value],
-        index: usize,
-        method: &str,
-    ) -> Result<UInt256, RpcException> {
-        let text = Self::expect_string_param(params, index, method)?;
-        UInt256::from_str(&text).map_err(|err| {
-            RpcException::from(
-                RpcError::invalid_params().with_data(format!("invalid UInt256 '{text}': {err}")),
-            )
-        })
-    }
-
-    fn expect_string_param(
-        params: &[Value],
-        index: usize,
-        method: &str,
-    ) -> Result<String, RpcException> {
-        params
-            .get(index)
-            .and_then(|value| value.as_str())
-            .map(std::string::ToString::to_string)
-            .ok_or_else(|| {
-                RpcException::from(RpcError::invalid_params().with_data(format!(
-                    "{} expects string parameter {}",
-                    method,
-                    index + 1
-                )))
-            })
     }
 
     fn await_wallet_future<T: Send + 'static>(
