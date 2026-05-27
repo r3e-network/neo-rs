@@ -1,7 +1,7 @@
 //! RPC wallet endpoints mirroring RpcServer.Wallet.cs.
 
 #[cfg(test)]
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
@@ -30,7 +30,7 @@ use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::future::Future;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -219,18 +219,18 @@ impl RpcServerWallet {
             Err(WalletError::InvalidPassword) => {
                 return Err(RpcException::from(
                     RpcError::wallet_not_supported().with_data("Invalid password."),
-                ))
+                ));
             }
             Err(WalletError::WalletFileNotFound(_)) => {
-                return Err(RpcException::from(RpcError::wallet_not_found()))
+                return Err(RpcException::from(RpcError::wallet_not_found()));
             }
             Err(WalletError::Io(ref err)) if err.kind() == ErrorKind::NotFound => {
-                return Err(RpcException::from(RpcError::wallet_not_found()))
+                return Err(RpcException::from(RpcError::wallet_not_found()));
             }
             Err(err) => {
                 return Err(RpcException::from(
                     RpcError::wallet_not_supported().with_data(err.to_string()),
-                ))
+                ));
             }
         };
         let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
@@ -273,30 +273,16 @@ impl RpcServerWallet {
         let to_hash =
             Self::parse_script_hash(server, &Self::expect_string_param(params, 2, "sendfrom")?)?;
         let amount_text = Self::expect_string_param(params, 3, "sendfrom")?;
-        let signers = if params.len() > 4 {
-            Some(Self::parse_signers(server, &params[4])?)
-        } else {
-            None
-        };
-        match Self::process_transfer(
+        let signers = Self::parse_optional_signers(server, params, 4)?;
+        Self::process_transfer(
             server,
             asset,
             Some(from_hash),
             to_hash,
             amount_text,
             signers.as_deref(),
-        ) {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                let rpc_error: RpcError = err.into();
-                if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
-                    return Err(RpcException::from(
-                        RpcError::invalid_request().with_data("Can not process this request."),
-                    ));
-                }
-                Err(RpcException::from(rpc_error))
-            }
-        }
+        )
+        .map_err(Self::send_from_transfer_error)
     }
 
     fn send_to_address(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -307,31 +293,16 @@ impl RpcServerWallet {
             &Self::expect_string_param(params, 1, "sendtoaddress")?,
         )?;
         let amount_text = Self::expect_string_param(params, 2, "sendtoaddress")?;
-        let signers = if params.len() > 3 {
-            Some(Self::parse_signers(server, &params[3])?)
-        } else {
-            None
-        };
-        match Self::process_transfer(
+        let signers = Self::parse_optional_signers(server, params, 3)?;
+        Self::process_transfer(
             server,
             asset,
             None,
             to_hash,
             amount_text,
             signers.as_deref(),
-        ) {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                let rpc_error: RpcError = err.into();
-                if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
-                    return Err(RpcException::new(
-                        INVALID_OPERATION_HRESULT,
-                        rpc_error.error_message(),
-                    ));
-                }
-                Err(RpcException::from(rpc_error))
-            }
-        }
+        )
+        .map_err(Self::invalid_operation_transfer_error)
     }
 
     fn send_many(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -357,70 +328,21 @@ impl RpcServerWallet {
             return Err(invalid_params("Argument 'to' can't be empty."));
         }
 
-        let signers = if params.len() > index + 1 {
-            Some(Self::parse_signers(server, &params[index + 1])?)
-        } else {
-            None
-        };
+        let signers = Self::parse_optional_signers(server, params, index + 1)?;
 
         let store = server.system().store_cache();
         let descriptor_cache = |asset: &UInt160| {
             AssetDescriptor::new(store.data_cache(), server.system().settings(), *asset)
         };
 
-        let mut transfers = Vec::new();
-        for (i, entry) in outputs_array.iter().enumerate() {
-            let obj = entry
-                .as_object()
-                .ok_or_else(|| invalid_params(format!("Invalid 'to' parameter at {i}.")))?;
-            let asset_str = obj
-                .get("asset")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| invalid_params(format!("no 'asset' parameter at 'to[{i}]'.")))?;
-            let asset = UInt160::from_str(asset_str)
-                .map_err(|e| invalid_params(format!("invalid asset {asset_str}: {e}")))?;
-            let descriptor = descriptor_cache(&asset).map_err(invalid_params)?;
-            let value_str = obj
-                .get("value")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| invalid_params(format!("no 'value' parameter at 'to[{i}]'.")))?;
-            let (ok, value) = BigDecimal::try_parse(value_str, descriptor.decimals);
-            if !ok {
-                return Err(invalid_params(format!("Invalid 'to' parameter at {i}.")));
-            }
-            if value.sign() <= 0 {
-                return Err(invalid_params(format!(
-                    "Amount of '{asset}' can't be negative."
-                )));
-            }
-            let address_str = obj
-                .get("address")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| invalid_params(format!("no 'address' parameter at 'to[{i}]'.")))?;
-            let to_hash = Self::parse_script_hash(server, address_str)?;
-            transfers.push(TransferOutput {
-                asset_id: asset,
-                value,
-                script_hash: to_hash,
-                data: None,
-            });
-        }
+        let transfers = outputs_array
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| Self::parse_send_many_output(server, &descriptor_cache, i, entry))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let tx_json =
-            match Self::build_and_relay(server, &wallet, &transfers, from, signers.as_deref()) {
-                Ok(value) => value,
-                Err(err) => {
-                    let rpc_error: RpcError = err.into();
-                    if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
-                        return Err(RpcException::new(
-                            INVALID_OPERATION_HRESULT,
-                            rpc_error.error_message(),
-                        ));
-                    }
-                    return Err(RpcException::from(rpc_error));
-                }
-            };
-        Ok(tx_json)
+        Self::build_and_relay(server, &wallet, &transfers, from, signers.as_deref())
+            .map_err(Self::invalid_operation_transfer_error)
     }
 
     fn cancel_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -520,6 +442,87 @@ impl RpcServerWallet {
             signers.push(Signer::new(hash, WitnessScope::CALLED_BY_ENTRY));
         }
         Ok(signers)
+    }
+
+    fn parse_optional_signers(
+        server: &RpcServer,
+        params: &[Value],
+        index: usize,
+    ) -> Result<Option<Vec<Signer>>, RpcException> {
+        params
+            .get(index)
+            .map(|value| Self::parse_signers(server, value))
+            .transpose()
+    }
+
+    fn parse_send_many_output(
+        server: &RpcServer,
+        descriptor_cache: &impl Fn(&UInt160) -> Result<AssetDescriptor, String>,
+        index: usize,
+        entry: &Value,
+    ) -> Result<TransferOutput, RpcException> {
+        let obj = entry
+            .as_object()
+            .ok_or_else(|| invalid_params(format!("Invalid 'to' parameter at {index}.")))?;
+        let asset_str = obj
+            .get("asset")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| invalid_params(format!("no 'asset' parameter at 'to[{index}]'.")))?;
+        let asset = UInt160::from_str(asset_str)
+            .map_err(|err| invalid_params(format!("invalid asset {asset_str}: {err}")))?;
+        let descriptor = descriptor_cache(&asset).map_err(invalid_params)?;
+        let value_str = obj
+            .get("value")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| invalid_params(format!("no 'value' parameter at 'to[{index}]'.")))?;
+        let (ok, value) = BigDecimal::try_parse(value_str, descriptor.decimals);
+        if !ok {
+            return Err(invalid_params(format!(
+                "Invalid 'to' parameter at {index}."
+            )));
+        }
+        if value.sign() <= 0 {
+            return Err(invalid_params(format!(
+                "Amount of '{asset}' can't be negative."
+            )));
+        }
+        let address_str = obj
+            .get("address")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| invalid_params(format!("no 'address' parameter at 'to[{index}]'.")))?;
+        let to_hash = Self::parse_script_hash(server, address_str)?;
+        Ok(TransferOutput {
+            asset_id: asset,
+            value,
+            script_hash: to_hash,
+            data: None,
+        })
+    }
+
+    fn send_from_transfer_error(err: RpcException) -> RpcException {
+        Self::map_insufficient_funds(err, |_| {
+            RpcException::from(
+                RpcError::invalid_request().with_data("Can not process this request."),
+            )
+        })
+    }
+
+    fn invalid_operation_transfer_error(err: RpcException) -> RpcException {
+        Self::map_insufficient_funds(err, |rpc_error| {
+            RpcException::new(INVALID_OPERATION_HRESULT, rpc_error.error_message())
+        })
+    }
+
+    fn map_insufficient_funds(
+        err: RpcException,
+        map_insufficient: impl FnOnce(RpcError) -> RpcException,
+    ) -> RpcException {
+        let rpc_error: RpcError = err.into();
+        if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
+            map_insufficient(rpc_error)
+        } else {
+            RpcException::from(rpc_error)
+        }
     }
 
     fn parse_uint160(
