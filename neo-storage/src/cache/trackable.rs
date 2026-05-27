@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn test_trackable_new() {
-        let item = StorageItem::new(vec![0xAA]);
+        let item = StorageItem::from_bytes(vec![0xAA]);
         let trackable = Trackable::new(item.clone(), TrackState::Added);
         assert_eq!(trackable.item, item);
         assert_eq!(trackable.state, TrackState::Added);
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_trackable_unchanged() {
-        let item = StorageItem::new(vec![0x01]);
+        let item = StorageItem::from_bytes(vec![0x01]);
         let trackable = Trackable::unchanged(item.clone());
         assert_eq!(trackable.state, TrackState::None);
         assert!(!trackable.is_modified());
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_trackable_added() {
-        let item = StorageItem::new(vec![0x02]);
+        let item = StorageItem::from_bytes(vec![0x02]);
         let trackable = Trackable::added(item);
         assert_eq!(trackable.state, TrackState::Added);
         assert!(trackable.is_modified());
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_trackable_changed() {
-        let item = StorageItem::new(vec![0x03]);
+        let item = StorageItem::from_bytes(vec![0x03]);
         let trackable = Trackable::changed(item);
         assert_eq!(trackable.state, TrackState::Changed);
         assert!(trackable.is_modified());
@@ -163,17 +163,17 @@ mod tests {
 
     #[test]
     fn test_trackable_clone() {
-        let original = Trackable::added(StorageItem::new(vec![0x01, 0x02]));
+        let original = Trackable::added(StorageItem::from_bytes(vec![0x01, 0x02]));
         let cloned = original.clone();
         assert_eq!(original, cloned);
     }
 
     #[test]
     fn test_trackable_equality() {
-        let t1 = Trackable::added(StorageItem::new(vec![0x01]));
-        let t2 = Trackable::added(StorageItem::new(vec![0x01]));
-        let t3 = Trackable::changed(StorageItem::new(vec![0x01]));
-        let t4 = Trackable::added(StorageItem::new(vec![0x02]));
+        let t1 = Trackable::added(StorageItem::from_bytes(vec![0x01]));
+        let t2 = Trackable::added(StorageItem::from_bytes(vec![0x01]));
+        let t3 = Trackable::changed(StorageItem::from_bytes(vec![0x01]));
+        let t4 = Trackable::added(StorageItem::from_bytes(vec![0x02]));
 
         assert_eq!(t1, t2);
         assert_ne!(t1, t3); // Different state
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_trackable_debug() {
-        let trackable = Trackable::added(StorageItem::new(vec![0x01]));
+        let trackable = Trackable::added(StorageItem::from_bytes(vec![0x01]));
         let debug = format!("{:?}", trackable);
         assert!(debug.contains("Trackable"));
         assert!(debug.contains("Added"));

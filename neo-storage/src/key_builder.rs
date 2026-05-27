@@ -4,6 +4,7 @@
 
 use crate::types::StorageKey;
 use neo_primitives::{UInt160, UInt256};
+use num_bigint::BigInt;
 
 /// Error type for `KeyBuilder` operations.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -21,6 +22,9 @@ pub enum KeyBuilderError {
         /// Maximum allowed length.
         max: usize,
     },
+    /// Attempted to add a negative `BigInteger`.
+    #[error("Cannot add negative BigInteger to key")]
+    NegativeBigInteger,
 }
 
 /// Used to build storage keys for native contracts (matches C# `KeyBuilder`).
@@ -141,6 +145,26 @@ impl KeyBuilder {
     #[inline]
     pub fn add_u32_be(&mut self, value: u32) -> &mut Self {
         self.add(&value.to_be_bytes())
+    }
+
+    /// Adds a `BigInteger` to the key.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KeyBuilderError::NegativeBigInteger` if the value is negative.
+    pub fn try_add_big_endian(&mut self, key: &BigInt) -> Result<&mut Self, KeyBuilderError> {
+        let (sign, bytes) = key.to_bytes_be();
+        if sign == num_bigint::Sign::Minus {
+            return Err(KeyBuilderError::NegativeBigInteger);
+        }
+        self.try_add(&bytes)
+    }
+
+    /// Adds a `BigInteger` to the key (panics on error).
+    #[inline]
+    pub fn add_big_endian(&mut self, key: &BigInt) -> &mut Self {
+        self.try_add_big_endian(key)
+            .expect("Cannot add negative BigInteger to key")
     }
 
     /// Converts to `StorageKey`.

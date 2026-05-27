@@ -78,6 +78,7 @@ pub use nef_file::NefFile;
 pub use notify_event_args::NotifyEventArgs;
 pub use storage_context::StorageContext;
 pub use storage_item::StorageItem;
+pub use storage_item::StorageItemExt;
 pub use storage_key::StorageKey;
 pub use trigger_type::TriggerType;
 pub use validator_attribute::ValidatorAttribute;

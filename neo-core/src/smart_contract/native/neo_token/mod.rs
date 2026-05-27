@@ -31,6 +31,7 @@ use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::Contract;
 use crate::smart_contract::StorageItem;
+use crate::smart_contract::StorageItemExt;
 use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;

@@ -20,6 +20,9 @@ neo-primitives = { workspace = true }
 # Serialization
 serde = { workspace = true }
 
+# Math
+num-bigint = { workspace = true }
+
 # Error handling
 thiserror = { workspace = true }
 

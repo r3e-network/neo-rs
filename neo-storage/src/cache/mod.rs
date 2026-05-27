@@ -20,7 +20,7 @@
 //!
 //! let cache = DataCache::new(false); // writable
 //! let key = StorageKey::new(-1, vec![0x01]);
-//! let value = StorageItem::new(vec![0xAA]);
+//! let value = StorageItem::from_bytes(vec![0xAA]);
 //!
 //! cache.add(key.clone(), value);
 //! assert!(cache.contains(&key));

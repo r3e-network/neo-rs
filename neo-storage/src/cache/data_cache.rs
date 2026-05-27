@@ -52,7 +52,7 @@ pub type StoreFindFn =
 ///
 /// let cache = DataCache::new(false);
 /// let key = StorageKey::new(-1, vec![0x01]);
-/// cache.add(key.clone(), StorageItem::new(vec![0xAA]));
+/// cache.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
 /// assert!(cache.contains(&key));
 /// ```
 pub struct DataCache {
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_new_with_store() {
-        let store_get: Arc<StoreGetFn> = Arc::new(|_| Some(StorageItem::new(vec![0xAA])));
+        let store_get: Arc<StoreGetFn> = Arc::new(|_| Some(StorageItem::from_bytes(vec![0xAA])));
         let cache = DataCache::new_with_store(false, Some(store_get), None);
         assert!(!cache.is_read_only());
     }
@@ -421,7 +421,7 @@ mod tests {
     fn test_add_and_get() {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        let value = StorageItem::new(vec![0xAA, 0xBB]);
+        let value = StorageItem::from_bytes(vec![0xAA, 0xBB]);
 
         cache.add(key.clone(), value.clone());
 
@@ -451,7 +451,7 @@ mod tests {
         let key = StorageKey::new(-1, vec![0x01]);
 
         assert!(!cache.contains(&key));
-        cache.add(key.clone(), StorageItem::new(vec![0xAA]));
+        cache.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
         assert!(cache.contains(&key));
     }
 
@@ -459,8 +459,8 @@ mod tests {
     fn test_update() {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        let value1 = StorageItem::new(vec![0xAA]);
-        let value2 = StorageItem::new(vec![0xBB]);
+        let value1 = StorageItem::from_bytes(vec![0xAA]);
+        let value2 = StorageItem::from_bytes(vec![0xBB]);
 
         cache.add(key.clone(), value1);
         cache.update(key.clone(), value2.clone());
@@ -472,7 +472,7 @@ mod tests {
     fn test_delete() {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        let value = StorageItem::new(vec![0xAA]);
+        let value = StorageItem::from_bytes(vec![0xAA]);
 
         cache.add(key.clone(), value);
         assert!(cache.contains(&key));
@@ -487,7 +487,7 @@ mod tests {
     fn test_try_add_read_only() {
         let cache = DataCache::new(true);
         let key = StorageKey::new(-1, vec![0x01]);
-        let result = cache.try_add(key, StorageItem::new(vec![0xAA]));
+        let result = cache.try_add(key, StorageItem::from_bytes(vec![0xAA]));
         assert!(matches!(result, Err(DataCacheError::ReadOnly)));
     }
 
@@ -495,7 +495,7 @@ mod tests {
     fn test_try_update_read_only() {
         let cache = DataCache::new(true);
         let key = StorageKey::new(-1, vec![0x01]);
-        let result = cache.try_update(key, StorageItem::new(vec![0xAA]));
+        let result = cache.try_update(key, StorageItem::from_bytes(vec![0xAA]));
         assert!(matches!(result, Err(DataCacheError::ReadOnly)));
     }
 
@@ -515,8 +515,8 @@ mod tests {
         let key1 = StorageKey::new(-1, vec![0x01]);
         let key2 = StorageKey::new(-1, vec![0x02]);
 
-        cache.add(key1.clone(), StorageItem::new(vec![0xAA]));
-        cache.add(key2.clone(), StorageItem::new(vec![0xBB]));
+        cache.add(key1.clone(), StorageItem::from_bytes(vec![0xAA]));
+        cache.add(key2.clone(), StorageItem::from_bytes(vec![0xBB]));
 
         let tracked = cache.tracked_items();
         assert_eq!(tracked.len(), 2);
@@ -528,7 +528,7 @@ mod tests {
         let key = StorageKey::new(-1, vec![0x01]);
 
         assert_eq!(cache.modified_count(), 0);
-        cache.add(key.clone(), StorageItem::new(vec![0xAA]));
+        cache.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
         assert_eq!(cache.modified_count(), 1);
     }
 
@@ -537,7 +537,7 @@ mod tests {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
 
-        cache.add(key.clone(), StorageItem::new(vec![0xAA]));
+        cache.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
         assert_eq!(cache.modified_count(), 1);
 
         cache.commit();
@@ -550,7 +550,7 @@ mod tests {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
 
-        cache.add(key.clone(), StorageItem::new(vec![0xAA]));
+        cache.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
         cache.commit(); // Now state is None
         cache.delete(&key);
         cache.commit(); // Should remove the entry
@@ -565,7 +565,7 @@ mod tests {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
 
-        cache.add(key.clone(), StorageItem::new(vec![0xAA]));
+        cache.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
         cache.delete(&key);
 
         // Item should be completely removed (not marked deleted)
@@ -578,7 +578,7 @@ mod tests {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
 
-        cache.add(key.clone(), StorageItem::new(vec![0xAA]));
+        cache.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
         cache.commit();
         cache.delete(&key);
 
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_try_get_from_store() {
-        let expected_value = StorageItem::new(vec![0xCC, 0xDD]);
+        let expected_value = StorageItem::from_bytes(vec![0xCC, 0xDD]);
         let expected_value_clone = expected_value.clone();
 
         let store_get: Arc<StoreGetFn> = Arc::new(move |_key| Some(expected_value_clone.clone()));
@@ -606,8 +606,8 @@ mod tests {
 
     #[test]
     fn test_cache_overrides_store() {
-        let store_value = StorageItem::new(vec![0xAA]);
-        let cache_value = StorageItem::new(vec![0xBB]);
+        let store_value = StorageItem::from_bytes(vec![0xAA]);
+        let cache_value = StorageItem::from_bytes(vec![0xBB]);
         let store_value_clone = store_value.clone();
 
         let store_get: Arc<StoreGetFn> = Arc::new(move |_key| Some(store_value_clone.clone()));
@@ -635,7 +635,7 @@ mod tests {
 
         cache.add(
             StorageKey::new(-1, vec![0x01]),
-            StorageItem::new(vec![0xAA]),
+            StorageItem::from_bytes(vec![0xAA]),
         );
         assert!(!cache.is_empty());
         assert_eq!(cache.len(), 1);
@@ -646,11 +646,11 @@ mod tests {
         let cache = DataCache::new(false);
         cache.add(
             StorageKey::new(-1, vec![0x01]),
-            StorageItem::new(vec![0xAA]),
+            StorageItem::from_bytes(vec![0xAA]),
         );
         cache.add(
             StorageKey::new(-1, vec![0x02]),
-            StorageItem::new(vec![0xBB]),
+            StorageItem::from_bytes(vec![0xBB]),
         );
 
         cache.clear();
@@ -661,7 +661,7 @@ mod tests {
     fn test_clone() {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        cache.add(key.clone(), StorageItem::new(vec![0xAA]));
+        cache.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
 
         let cloned = cache.clone();
         assert!(cloned.contains(&key));
@@ -677,7 +677,7 @@ mod tests {
         let cache = DataCache::new(false);
         cache.add(
             StorageKey::new(-1, vec![0x01]),
-            StorageItem::new(vec![0xAA]),
+            StorageItem::from_bytes(vec![0xAA]),
         );
 
         let debug = format!("{:?}", cache);
@@ -692,15 +692,15 @@ mod tests {
         let cache = DataCache::new(false);
         cache.add(
             StorageKey::new(-1, vec![0x01, 0xAA]),
-            StorageItem::new(vec![0x11]),
+            StorageItem::from_bytes(vec![0x11]),
         );
         cache.add(
             StorageKey::new(-1, vec![0x01, 0xBB]),
-            StorageItem::new(vec![0x22]),
+            StorageItem::from_bytes(vec![0x22]),
         );
         cache.add(
             StorageKey::new(-1, vec![0x02, 0xAA]),
-            StorageItem::new(vec![0x33]),
+            StorageItem::from_bytes(vec![0x33]),
         );
 
         let results = cache.find(None, SeekDirection::Forward);
@@ -713,8 +713,8 @@ mod tests {
         let key1 = StorageKey::new(-1, vec![0x01]);
         let key2 = StorageKey::new(-1, vec![0x02]);
 
-        cache.add(key1.clone(), StorageItem::new(vec![0xAA]));
-        cache.add(key2.clone(), StorageItem::new(vec![0xBB]));
+        cache.add(key1.clone(), StorageItem::from_bytes(vec![0xAA]));
+        cache.add(key2.clone(), StorageItem::from_bytes(vec![0xBB]));
         cache.commit();
         cache.delete(&key1);
 

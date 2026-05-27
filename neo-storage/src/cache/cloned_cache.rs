@@ -23,7 +23,7 @@ use super::data_cache::DataCache;
 /// use neo_storage::types::{StorageKey, StorageItem};
 ///
 /// let original = DataCache::new(false);
-/// original.add(StorageKey::new(-1, vec![0x01]), StorageItem::new(vec![0xAA]));
+/// original.add(StorageKey::new(-1, vec![0x01]), StorageItem::from_bytes(vec![0xAA]));
 ///
 /// // Create isolated clone
 /// let mut cloned = ClonedCache::new(&original);
@@ -92,7 +92,7 @@ mod tests {
     fn test_cloned_cache_new() {
         let original = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        original.add(key.clone(), StorageItem::new(vec![0xAA]));
+        original.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
 
         let cloned = ClonedCache::new(&original);
         assert!(cloned.cache_ref().contains(&key));
@@ -102,7 +102,7 @@ mod tests {
     fn test_cloned_cache_isolation() {
         let original = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        original.add(key.clone(), StorageItem::new(vec![0xAA]));
+        original.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
 
         let mut cloned = ClonedCache::new(&original);
         cloned.cache().delete(&key);
@@ -118,12 +118,12 @@ mod tests {
         let original = DataCache::new(false);
         let key1 = StorageKey::new(-1, vec![0x01]);
         let key2 = StorageKey::new(-1, vec![0x02]);
-        original.add(key1.clone(), StorageItem::new(vec![0xAA]));
+        original.add(key1.clone(), StorageItem::from_bytes(vec![0xAA]));
 
         let mut cloned = ClonedCache::new(&original);
         cloned
             .cache()
-            .add(key2.clone(), StorageItem::new(vec![0xBB]));
+            .add(key2.clone(), StorageItem::from_bytes(vec![0xBB]));
 
         // Original has only key1
         assert!(original.contains(&key1));
@@ -138,12 +138,12 @@ mod tests {
     fn test_cloned_cache_update_in_clone() {
         let original = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        original.add(key.clone(), StorageItem::new(vec![0xAA]));
+        original.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
 
         let mut cloned = ClonedCache::new(&original);
         cloned
             .cache()
-            .update(key.clone(), StorageItem::new(vec![0xBB]));
+            .update(key.clone(), StorageItem::from_bytes(vec![0xBB]));
 
         // Original has original value
         assert_eq!(original.try_get(&key).unwrap().value(), &[0xAA]);
@@ -156,12 +156,12 @@ mod tests {
     fn test_cloned_cache_into_inner() {
         let original = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        original.add(key.clone(), StorageItem::new(vec![0xAA]));
+        original.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
 
         let mut cloned = ClonedCache::new(&original);
         cloned.cache().add(
             StorageKey::new(-1, vec![0x02]),
-            StorageItem::new(vec![0xBB]),
+            StorageItem::from_bytes(vec![0xBB]),
         );
 
         let inner = cloned.into_inner();
@@ -179,7 +179,7 @@ mod tests {
         let mut cloned = ClonedCache::new(&original);
         cloned.cache().add(
             StorageKey::new(-1, vec![0x01]),
-            StorageItem::new(vec![0xAA]),
+            StorageItem::from_bytes(vec![0xAA]),
         );
 
         assert!(!cloned.is_empty());
@@ -190,7 +190,7 @@ mod tests {
     fn test_cloned_cache_clone() {
         let original = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
-        original.add(key.clone(), StorageItem::new(vec![0xAA]));
+        original.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
 
         let cloned1 = ClonedCache::new(&original);
         let cloned2 = cloned1.clone();
@@ -215,8 +215,8 @@ mod tests {
         let key2 = StorageKey::new(-1, vec![0x02]);
         let key3 = StorageKey::new(-1, vec![0x03]);
 
-        original.add(key1.clone(), StorageItem::new(vec![0x11]));
-        original.add(key2.clone(), StorageItem::new(vec![0x22]));
+        original.add(key1.clone(), StorageItem::from_bytes(vec![0x11]));
+        original.add(key2.clone(), StorageItem::from_bytes(vec![0x22]));
 
         let mut cloned = ClonedCache::new(&original);
 
@@ -225,11 +225,11 @@ mod tests {
         // Update one
         cloned
             .cache()
-            .update(key2.clone(), StorageItem::new(vec![0xBB]));
+            .update(key2.clone(), StorageItem::from_bytes(vec![0xBB]));
         // Add one
         cloned
             .cache()
-            .add(key3.clone(), StorageItem::new(vec![0x33]));
+            .add(key3.clone(), StorageItem::from_bytes(vec![0x33]));
 
         // Verify clone state
         assert!(!cloned.cache_ref().contains(&key1));

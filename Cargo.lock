@@ -2547,6 +2547,7 @@ name = "neo-storage"
 version = "0.7.2"
 dependencies = [
  "neo-primitives",
+ "num-bigint",
  "parking_lot",
  "rand 0.8.5",
  "serde",
