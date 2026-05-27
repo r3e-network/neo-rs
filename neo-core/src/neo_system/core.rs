@@ -77,7 +77,7 @@ use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
     LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, payloads::block::Block, timeouts,
 };
-use crate::persistence::{StoreCache, StoreFactory, store::IStore, store_provider::StoreProvider};
+use crate::persistence::{StoreCache, StoreFactory, store::Store, store_provider::StoreProvider};
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
 use crate::smart_contract::native::PolicyContract;
@@ -129,7 +129,7 @@ pub struct NeoSystem {
     task_manager: TaskManagerHandle,
     tx_router: TransactionRouterHandle,
     store_provider: Arc<dyn StoreProvider>,
-    store: Arc<dyn IStore>,
+    store: Arc<dyn Store>,
     ledger: Arc<LedgerContext>,
     genesis_block: Arc<Block>,
     context: Arc<NeoSystemContext>,
@@ -487,7 +487,7 @@ impl NeoSystem {
     }
 
     /// Returns the primary store instance.
-    pub fn store(&self) -> Arc<dyn IStore> {
+    pub fn store(&self) -> Arc<dyn Store> {
         self.store.clone()
     }
 

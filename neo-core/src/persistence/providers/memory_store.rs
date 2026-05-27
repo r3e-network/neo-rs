@@ -12,7 +12,7 @@
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
-    store::{IStore, OnNewSnapshotDelegate},
+    store::{Store, OnNewSnapshotDelegate},
     store_snapshot::StoreSnapshot,
     write_store::WriteStore,
     seek_direction::SeekDirection,
@@ -22,7 +22,7 @@ use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-/// An in-memory IStore implementation that uses BTreeMap as the underlying storage.
+/// An in-memory Store implementation that uses BTreeMap as the underlying storage.
 pub struct MemoryStore {
     inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
     on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
@@ -137,7 +137,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
 
 impl ReadOnlyStore for MemoryStore {}
 
-impl IStore for MemoryStore {
+impl Store for MemoryStore {
     fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
         let snapshot = Arc::new(MemorySnapshot::new(
             Arc::new(self.clone()),

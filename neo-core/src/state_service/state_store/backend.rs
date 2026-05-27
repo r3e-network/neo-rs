@@ -1,5 +1,5 @@
 use crate::cryptography::mpt_trie::{MptResult, MptStoreSnapshot};
-use crate::persistence::store::IStore;
+use crate::persistence::store::Store;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -131,14 +131,14 @@ impl StateStoreBackend for MemoryStateStoreBackend {
     }
 }
 
-/// Snapshot-backed backend that persists through the core `IStore`.
+/// Snapshot-backed backend that persists through the core `Store`.
 pub struct SnapshotBackedStateStoreBackend {
-    store: Arc<dyn IStore>,
+    store: Arc<dyn Store>,
     pending: Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>,
 }
 
 impl SnapshotBackedStateStoreBackend {
-    pub fn new(store: Arc<dyn IStore>) -> Self {
+    pub fn new(store: Arc<dyn Store>) -> Self {
         Self {
             store,
             pending: Mutex::new(HashMap::new()),

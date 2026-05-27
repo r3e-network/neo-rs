@@ -3,7 +3,7 @@ use crate::neo_io::BinaryWriter;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::persistence::providers::memory_store::MemoryStore;
-use crate::persistence::{DataCache, IStore, SeekDirection, StorageItem, StoreCache};
+use crate::persistence::{DataCache, Store, SeekDirection, StorageItem, StoreCache};
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_state::NefFile;
@@ -285,7 +285,7 @@ fn deploy_reads_next_contract_id_from_variable_length_storage_integer() {
 
 #[test]
 fn deploy_increments_contract_id_after_store_roundtrip() {
-    let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let mut cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(cache.data_cache().clone());
     let cm_hash = ContractManagement::new().hash();

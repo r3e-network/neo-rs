@@ -3,7 +3,7 @@ use crate::network::p2p::payloads::Witness;
 use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 use crate::persistence::storage::StorageError;
-use crate::persistence::store::{IStore, OnNewSnapshotDelegate};
+use crate::persistence::store::{Store, OnNewSnapshotDelegate};
 use crate::persistence::store_snapshot::StoreSnapshot;
 use crate::persistence::write_store::WriteStore;
 use crate::persistence::DataCache;
@@ -63,7 +63,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshotStore {
 
 impl ReadOnlyStore for FailingSnapshotStore {}
 
-impl IStore for FailingSnapshotStore {
+impl Store for FailingSnapshotStore {
     fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
         Arc::new(FailingCoreSnapshot {
             store: Arc::new(self.clone()),
@@ -78,7 +78,7 @@ impl IStore for FailingSnapshotStore {
 }
 
 struct FailingCoreSnapshot {
-    store: Arc<dyn IStore>,
+    store: Arc<dyn Store>,
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
@@ -106,7 +106,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
 }
 
 impl StoreSnapshot for FailingCoreSnapshot {
-    fn store(&self) -> Arc<dyn IStore> {
+    fn store(&self) -> Arc<dyn Store> {
         Arc::clone(&self.store)
     }
 
@@ -399,7 +399,7 @@ fn load_reference_roots_parses_jsonl_with_uint256_parse() {
 
 #[test]
 fn snapshot_backed_backend_commit_propagates_snapshot_try_commit_failure() {
-    let store: Arc<dyn IStore> = Arc::new(FailingSnapshotStore);
+    let store: Arc<dyn Store> = Arc::new(FailingSnapshotStore);
     let backend = SnapshotBackedStateStoreBackend::new(store);
     backend.put(b"key".to_vec(), b"value".to_vec());
 
@@ -410,7 +410,7 @@ fn snapshot_backed_backend_commit_propagates_snapshot_try_commit_failure() {
 
 #[test]
 fn snapshot_backed_backend_keeps_pending_on_commit_failure() {
-    let store: Arc<dyn IStore> = Arc::new(FailingSnapshotStore);
+    let store: Arc<dyn Store> = Arc::new(FailingSnapshotStore);
     let backend = SnapshotBackedStateStoreBackend::new(store);
     let key = b"retry-key".to_vec();
     let value = b"retry-value".to_vec();

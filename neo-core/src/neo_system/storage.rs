@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::ledger::{HeaderCache, LedgerContext};
-use crate::persistence::{store::IStore, StoreCache};
+use crate::persistence::{store::Store, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::state_service::{
     state_store::{SnapshotBackedStateStoreBackend, StateRootVerifier, StateServiceSettings},
@@ -16,7 +16,7 @@ pub(crate) fn init_store(
     storage_path: Option<String>,
     settings: Arc<ProtocolSettings>,
     state_service_settings: Option<StateServiceSettings>,
-) -> crate::error::CoreResult<(Arc<dyn IStore>, StoreCache, Arc<StateStore>)> {
+) -> crate::error::CoreResult<(Arc<dyn Store>, StoreCache, Arc<StateStore>)> {
     let store = store_provider.get_store(storage_path.as_deref().unwrap_or(""))?;
     let store_cache_for_hydration = StoreCache::new_from_store(store.clone(), true);
 

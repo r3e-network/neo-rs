@@ -2,7 +2,7 @@
 
 use super::memory_store::MemoryStore;
 use crate::persistence::{
-    read_only_store::ReadOnlyStoreGeneric, store::IStore, store_snapshot::StoreSnapshot,
+    read_only_store::ReadOnlyStoreGeneric, store::Store, store_snapshot::StoreSnapshot,
     write_store::WriteStore, seek_direction::SeekDirection,
 };
 use parking_lot::RwLock;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
 
 pub struct MemorySnapshot {
-    store: Arc<dyn IStore>,
+    store: Arc<dyn Store>,
     immutable_data: BTreeMap<Vec<u8>, Vec<u8>>,
     write_batch: WriteBatch,
 }
@@ -21,7 +21,7 @@ pub struct MemorySnapshot {
 impl MemorySnapshot {
     /// Creates a new MemorySnapshot.
     pub fn new(
-        store: Arc<dyn IStore>,
+        store: Arc<dyn Store>,
         inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
     ) -> Self {
         let immutable_data = inner_data.read().clone();
@@ -98,7 +98,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
 }
 
 impl StoreSnapshot for MemorySnapshot {
-    fn store(&self) -> Arc<dyn IStore> {
+    fn store(&self) -> Arc<dyn Store> {
         self.store.clone()
     }
 

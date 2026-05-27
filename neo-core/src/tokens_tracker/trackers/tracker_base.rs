@@ -7,7 +7,7 @@ use super::token_transfer_key::TokenTransferKey;
 use crate::extensions::log_level::LogLevel;
 use crate::neo_io::{MemoryReader, Serializable, SerializableExt};
 use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::persistence::{DataCache, IStore, SeekDirection, StoreSnapshot};
+use crate::persistence::{DataCache, Store, SeekDirection, StoreSnapshot};
 use crate::vm_runtime::StackItem;
 use crate::{NeoSystem, UInt160};
 use num_bigint::BigInt;
@@ -91,7 +91,7 @@ pub struct TrackerBase {
     /// Maximum results for queries.
     pub max_results: u32,
     /// Database store.
-    pub db: Arc<dyn IStore>,
+    pub db: Arc<dyn Store>,
     /// Current snapshot for batch operations.
     snapshot: Option<Arc<dyn StoreSnapshot>>,
     /// Reference to the Neo system.
@@ -101,7 +101,7 @@ pub struct TrackerBase {
 impl TrackerBase {
     /// Creates a new TrackerBase.
     pub fn new(
-        db: Arc<dyn IStore>,
+        db: Arc<dyn Store>,
         max_results: u32,
         should_track_history: bool,
         neo_system: Arc<NeoSystem>,
@@ -390,7 +390,7 @@ mod tests {
         }
     }
 
-    impl IStore for FailingStore {
+    impl Store for FailingStore {
         fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
             Arc::new(FailingSnapshot {
                 store: Arc::new(self.clone()),
@@ -405,7 +405,7 @@ mod tests {
     }
 
     struct FailingSnapshot {
-        store: Arc<dyn IStore>,
+        store: Arc<dyn Store>,
     }
 
     impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
@@ -433,7 +433,7 @@ mod tests {
     }
 
     impl StoreSnapshot for FailingSnapshot {
-        fn store(&self) -> Arc<dyn IStore> {
+        fn store(&self) -> Arc<dyn Store> {
             Arc::clone(&self.store)
         }
 

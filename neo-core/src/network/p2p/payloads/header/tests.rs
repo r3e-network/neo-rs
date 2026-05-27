@@ -3,7 +3,7 @@ use super::*;
 use crate::ledger::block_header::BlockHeader as LedgerBlockHeader;
 use crate::ledger::HeaderCache;
 use crate::neo_io::{BinaryWriter, Serializable};
-use crate::persistence::store::IStore;
+use crate::persistence::store::Store;
 use crate::persistence::providers::memory_store::MemoryStore;
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
@@ -139,7 +139,7 @@ fn verify_with_cache_succeeds_for_sequential_header() {
     header.witness = deterministic_witness;
 
     let settings = sample_settings();
-    let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(store, false);
 
     assert!(header.verify_with_cache(&settings, &store_cache, &cache));
@@ -175,7 +175,7 @@ fn verify_with_cache_rejects_when_timestamp_not_increasing() {
     header.witness = sample_witness();
 
     let settings = sample_settings();
-    let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(store, true);
 
     assert!(!header.verify_with_cache(&settings, &store_cache, &cache));
@@ -208,7 +208,7 @@ fn verify_uses_persisted_state_when_cache_empty() {
     header.witness = sample_witness();
 
     let settings = sample_settings();
-    let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let mut store_cache = StoreCache::new_from_store(store, false);
     insert_trimmed_block(&mut store_cache, &prev_header, prev_hash);
 

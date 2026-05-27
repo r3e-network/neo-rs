@@ -82,7 +82,7 @@ pub(super) fn parse_token_id_param(
 }
 
 pub(super) fn collect_transfers(
-    store: &dyn neo_core::persistence::IStore,
+    store: &dyn neo_core::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -138,7 +138,7 @@ pub(super) fn collect_transfers(
 }
 
 pub(super) fn collect_nep11_transfers(
-    store: &dyn neo_core::persistence::IStore,
+    store: &dyn neo_core::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,

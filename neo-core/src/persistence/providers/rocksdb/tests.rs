@@ -3,7 +3,7 @@ use crate::persistence::StoreCache;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::storage::StorageConfig;
-use crate::persistence::store::IStore;
+use crate::persistence::store::Store;
 use crate::persistence::store_provider::StoreProvider;
 use crate::persistence::write_batch_buffer::WriteBatchConfig;
 use crate::persistence::write_store::WriteStore;

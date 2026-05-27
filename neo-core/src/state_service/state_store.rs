@@ -56,7 +56,7 @@ use super::state_root::StateRoot;
 use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::{
-    seek_direction::SeekDirection, store::IStore, store_provider::StoreProvider, TrackState,
+    seek_direction::SeekDirection, store::Store, store_provider::StoreProvider, TrackState,
 };
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
@@ -192,7 +192,7 @@ impl StateStore {
     /// Creates a state store backed by the provided blockchain store and protocol settings,
     /// wiring a verifier that reads designated validators from the same store.
     pub fn new_from_store(
-        store: Arc<dyn IStore>,
+        store: Arc<dyn Store>,
         settings: StateServiceSettings,
         protocol_settings: Arc<ProtocolSettings>,
     ) -> Self {
@@ -232,7 +232,7 @@ impl StateStore {
     ///
     /// If the trie already has a stored root (i.e. state roots were previously computed),
     /// this is a no-op.
-    pub fn initialize_trie_from_store(&self, blockchain_store: &Arc<dyn IStore>) {
+    pub fn initialize_trie_from_store(&self, blockchain_store: &Arc<dyn Store>) {
         // Check if we already have a stored root — if so, no initialization needed.
         if self.local_root_index().is_some() {
             info!(target: "neo", "state trie already initialized, skipping population");

@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    store::IStore, store_provider::StoreProvider,
+    store::Store, store_provider::StoreProvider,
     providers::memory_store_provider::MemoryStoreProvider,
 };
 use crate::error::{CoreError, CoreResult};
@@ -50,11 +50,11 @@ impl StoreFactory {
     /// Get store from name.
     ///
     /// # Arguments
-    /// * `storage_provider` - The storage engine used to create the IStore objects.
+    /// * `storage_provider` - The storage engine used to create the Store objects.
     ///   If this parameter is empty, a default in-memory storage engine will be used.
     /// * `path` - The path of the storage.
     ///   If storage_provider is the default in-memory storage engine, this parameter is ignored.
-    pub fn get_store(storage_provider: &str, path: &str) -> CoreResult<Arc<dyn IStore>> {
+    pub fn get_store(storage_provider: &str, path: &str) -> CoreResult<Arc<dyn Store>> {
         let providers = PROVIDERS.read();
         let provider = providers
             .get(storage_provider)

@@ -35,7 +35,7 @@ use crate::network::p2p::{
     },
     TaskManagerHandle,
 };
-use crate::persistence::{StoreCache, store::IStore, store_provider::StoreProvider};
+use crate::persistence::{StoreCache, store::Store, store_provider::StoreProvider};
 use crate::protocol_settings::ProtocolSettings;
 use crate::services::SystemContext;
 use crate::services::{
@@ -72,7 +72,7 @@ pub struct NeoSystemContext {
     /// Store provider used to instantiate persistence backends.
     pub store_provider: Arc<dyn StoreProvider>,
     /// Active persistence store.
-    pub store: Arc<dyn IStore>,
+    pub store: Arc<dyn Store>,
     /// Cached genesis block shared with the blockchain actor.
     pub(crate) genesis_block: Arc<Block>,
     pub(crate) ledger: Arc<LedgerContext>,

@@ -3,7 +3,7 @@ use crate::{
     persistence::{
         read_cache::ReadCacheConfig,
         storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
-        store::IStore,
+        store::Store,
         store_provider::StoreProvider,
         write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig},
     },
@@ -33,7 +33,7 @@ impl BatchCommitter {
     }
 }
 
-/// RocksDB-backed store provider compatible with Neo's `IStore`.
+/// RocksDB-backed store provider compatible with Neo's `Store`.
 #[derive(Debug, Clone)]
 pub struct RocksDBStoreProvider {
     base_config: StorageConfig,
@@ -102,7 +102,7 @@ impl StoreProvider for RocksDBStoreProvider {
         "RocksDBStore"
     }
 
-    fn get_store(&self, path: &str) -> CoreResult<Arc<dyn IStore>> {
+    fn get_store(&self, path: &str) -> CoreResult<Arc<dyn Store>> {
         let resolved = self.resolved_path(path);
         let config = StorageConfig {
             path: resolved,

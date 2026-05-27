@@ -42,7 +42,7 @@ pub struct Nep17Tracker {
 impl Nep17Tracker {
     /// Creates a new NEP-17 tracker.
     pub fn new(
-        db: Arc<dyn crate::persistence::IStore>,
+        db: Arc<dyn crate::persistence::Store>,
         max_results: u32,
         should_track_history: bool,
         neo_system: Arc<NeoSystem>,

@@ -4,7 +4,7 @@
 
 use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{MemoryReader, Serializable};
-use crate::persistence::{IStore, SeekDirection};
+use crate::persistence::{Store, SeekDirection};
 use base64::Engine;
 use num_bigint::BigInt;
 
@@ -25,7 +25,7 @@ pub fn bigint_var_size(value: &BigInt) -> usize {
 
 /// Finds entries whose keys start with the given prefix.
 pub fn find_prefix<TKey, TValue>(
-    db: &dyn IStore,
+    db: &dyn Store,
     prefix: &[u8],
 ) -> Result<Vec<(TKey, TValue)>, String>
 where
@@ -55,7 +55,7 @@ where
 
 /// Finds entries in the inclusive range [start_key, end_key].
 pub fn find_range<TKey, TValue>(
-    db: &dyn IStore,
+    db: &dyn Store,
     start_key: &[u8],
     end_key: &[u8],
 ) -> Result<Vec<(TKey, TValue)>, String>

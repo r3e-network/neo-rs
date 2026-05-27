@@ -4,7 +4,7 @@ use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_core::neo_io::{Serializable, SerializableExt};
 use neo_core::neo_system::NeoSystem;
 use neo_core::persistence::providers::MemoryStoreProvider;
-use neo_core::persistence::IStore;
+use neo_core::persistence::Store;
 use neo_core::persistence::StoreProvider;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::manifest::{
@@ -36,14 +36,14 @@ fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         .unwrap_or_else(|| panic!("handler {} not found", name))
 }
 
-fn create_tracker_store() -> Arc<dyn IStore> {
+fn create_tracker_store() -> Arc<dyn Store> {
     let provider = MemoryStoreProvider::new();
     provider
         .get_store("tokens")
         .expect("memory store available")
 }
 
-fn write_tracker_entry<K, V>(store: &Arc<dyn IStore>, prefix: u8, key: &K, value: &V)
+fn write_tracker_entry<K, V>(store: &Arc<dyn Store>, prefix: u8, key: &K, value: &V)
 where
     K: Serializable,
     V: Serializable,
@@ -63,7 +63,7 @@ where
 
 fn attach_tokens_tracker(
     system: &Arc<NeoSystem>,
-    store: Arc<dyn IStore>,
+    store: Arc<dyn Store>,
     enabled_trackers: Vec<String>,
     track_history: bool,
 ) {

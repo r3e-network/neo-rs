@@ -4,7 +4,7 @@ use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::neo_system::NeoSystem;
-use crate::persistence::{DataCache, IStore, StoreSnapshot};
+use crate::persistence::{DataCache, Store, StoreSnapshot};
 use crate::smart_contract::{NotifyEventArgs, TriggerType};
 use crate::unhandled_exception_policy::panic_message;
 use crate::vm_runtime::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
@@ -24,7 +24,7 @@ use super::ApplicationLogsSettings;
 /// ApplicationLogs storage and commit handler.
 pub struct ApplicationLogsService {
     settings: ApplicationLogsSettings,
-    store: Arc<dyn IStore>,
+    store: Arc<dyn Store>,
     snapshot: Mutex<Option<Arc<dyn StoreSnapshot>>>,
     disabled: AtomicBool,
 }
@@ -34,7 +34,7 @@ impl ApplicationLogsService {
     const PREFIX_TX: u8 = 0x41;
 
     /// Creates a new ApplicationLogs service.
-    pub fn new(settings: ApplicationLogsSettings, store: Arc<dyn IStore>) -> Self {
+    pub fn new(settings: ApplicationLogsSettings, store: Arc<dyn Store>) -> Self {
         Self {
             settings,
             store,
@@ -390,7 +390,7 @@ mod tests {
         }
     }
 
-    impl IStore for FailingStore {
+    impl Store for FailingStore {
         fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
             Arc::new(FailingSnapshot {
                 store: Arc::new(self.clone()),
@@ -405,7 +405,7 @@ mod tests {
     }
 
     struct FailingSnapshot {
-        store: Arc<dyn IStore>,
+        store: Arc<dyn Store>,
     }
 
     impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
@@ -435,7 +435,7 @@ mod tests {
     }
 
     impl StoreSnapshot for FailingSnapshot {
-        fn store(&self) -> Arc<dyn IStore> {
+        fn store(&self) -> Arc<dyn Store> {
             Arc::clone(&self.store)
         }
 

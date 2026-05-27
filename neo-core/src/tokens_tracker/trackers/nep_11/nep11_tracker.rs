@@ -38,7 +38,7 @@ pub struct Nep11Tracker {
 impl Nep11Tracker {
     /// Creates a new NEP-11 tracker.
     pub fn new(
-        db: Arc<dyn crate::persistence::IStore>,
+        db: Arc<dyn crate::persistence::Store>,
         max_results: u32,
         should_track_history: bool,
         neo_system: Arc<NeoSystem>,

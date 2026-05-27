@@ -9,7 +9,7 @@ use super::trackers::nep_17::Nep17Tracker;
 use super::trackers::tracker_base::Tracker;
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::persistence::{DataCache, IStore};
+use crate::persistence::{DataCache, Store};
 use crate::unhandled_exception_policy::panic_message;
 use crate::NeoSystem;
 use parking_lot::RwLock;
@@ -39,7 +39,7 @@ impl TokensTracker {
     /// * `neo_system` - Reference to the Neo system
     pub fn new(
         settings: TokensTrackerSettings,
-        db: Arc<dyn IStore>,
+        db: Arc<dyn Store>,
         neo_system: Arc<NeoSystem>,
     ) -> Self {
         let mut trackers: Vec<Box<dyn Tracker>> = Vec::new();

@@ -1,6 +1,6 @@
 //! Tokens tracker service handle for RPC queries.
 
-use crate::persistence::store::IStore;
+use crate::persistence::store::Store;
 use std::sync::Arc;
 
 use super::TokensTrackerSettings;
@@ -9,11 +9,11 @@ use super::TokensTrackerSettings;
 #[derive(Clone)]
 pub struct TokensTrackerService {
     settings: TokensTrackerSettings,
-    store: Arc<dyn IStore>,
+    store: Arc<dyn Store>,
 }
 
 impl TokensTrackerService {
-    pub fn new(settings: TokensTrackerSettings, store: Arc<dyn IStore>) -> Self {
+    pub fn new(settings: TokensTrackerSettings, store: Arc<dyn Store>) -> Self {
         Self { settings, store }
     }
 
@@ -21,7 +21,7 @@ impl TokensTrackerService {
         &self.settings
     }
 
-    pub fn store(&self) -> Arc<dyn IStore> {
+    pub fn store(&self) -> Arc<dyn Store> {
         Arc::clone(&self.store)
     }
 }

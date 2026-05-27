@@ -12,7 +12,7 @@ use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
 use crate::network::p2p::payloads::Transaction;
 use crate::network::p2p::ChannelsConfig;
-use crate::persistence::store::IStore;
+use crate::persistence::store::Store;
 use crate::persistence::providers::memory_store::MemoryStore;
 use crate::persistence::StoreCache;
 use crate::smart_contract::contract::Contract;
@@ -58,7 +58,7 @@ fn typed_service_registry_registers_and_fetches_by_type() {
 
 #[test]
 fn hydrate_ledger_from_empty_store_is_noop() {
-    let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(store, true);
     let ledger = Arc::new(LedgerContext::default());
     let header_cache = HeaderCache::new();
@@ -71,7 +71,7 @@ fn hydrate_ledger_from_empty_store_is_noop() {
 
 #[test]
 fn hydrate_ledger_restores_height_and_headers() {
-    let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let mut snapshot = store.get_snapshot();
     let snapshot = Arc::get_mut(&mut snapshot).expect("mutable snapshot");
 
@@ -132,7 +132,7 @@ fn hydrate_ledger_restores_height_and_headers() {
 
 #[test]
 fn hydrate_ledger_respects_bounded_window() {
-    let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let mut snapshot = store.get_snapshot();
     let snapshot = Arc::get_mut(&mut snapshot).expect("mutable snapshot");
 

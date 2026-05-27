@@ -19,7 +19,7 @@ use neo_core::network::p2p::payloads::{
 use neo_core::network::p2p::{
     Message, MessageCommand, MessageHandlerSubscription, register_message_received_handler,
 };
-use neo_core::persistence::IStore;
+use neo_core::persistence::Store;
 use neo_core::prelude::Serializable;
 use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
 use neo_core::script_builder::ScriptBuilder;
@@ -218,7 +218,7 @@ struct ConsensusActor {
     validator_infos: Vec<ValidatorInfo>,
     my_index: Option<u8>,
     recovery_path: PathBuf,
-    recovery_store: Option<Arc<dyn IStore>>,
+    recovery_store: Option<Arc<dyn Store>>,
     recovery_requested: bool,
 }
 
@@ -1216,7 +1216,7 @@ fn resolve_recovery_path(value: &str) -> PathBuf {
 fn open_recovery_store(
     system: &neo_core::neo_system::NeoSystem,
     settings: &DbftSettings,
-) -> Option<Arc<dyn IStore>> {
+) -> Option<Arc<dyn Store>> {
     if settings.ignore_recovery_logs {
         return None;
     }

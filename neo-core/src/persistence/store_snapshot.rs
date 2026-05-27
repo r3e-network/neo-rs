@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    read_only_store::ReadOnlyStoreGeneric, store::IStore, write_store::WriteStore,
+    read_only_store::ReadOnlyStoreGeneric, store::Store, write_store::WriteStore,
     storage::StorageError,
 };
 use std::sync::Arc;
@@ -23,7 +23,7 @@ pub trait StoreSnapshot:
     ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync
 {
     /// Get the underlying store
-    fn store(&self) -> Arc<dyn IStore>;
+    fn store(&self) -> Arc<dyn Store>;
 
     /// Commits all changes in the snapshot to the database.
     ///

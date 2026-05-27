@@ -16,11 +16,11 @@ use std::any::Any;
 use std::sync::Arc;
 
 /// Delegate for OnNewSnapshot event
-pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn IStore, Arc<dyn StoreSnapshot>) + Send + Sync>;
+pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn Store, Arc<dyn StoreSnapshot>) + Send + Sync>;
 
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.
-pub trait IStore: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + Any {
+pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + Any {
     /// Creates a snapshot of the database.
     fn get_snapshot(&self) -> Arc<dyn StoreSnapshot>;
 

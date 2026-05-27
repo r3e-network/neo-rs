@@ -5,7 +5,7 @@ use crate::{
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         seek_direction::SeekDirection,
         storage::StorageConfig,
-        store::{IStore, OnNewSnapshotDelegate},
+        store::{Store, OnNewSnapshotDelegate},
         store_snapshot::StoreSnapshot,
         write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot},
         write_store::WriteStore,
@@ -273,7 +273,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
     }
 }
 
-impl IStore for RocksDbStore {
+impl Store for RocksDbStore {
     fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
         let store_arc = Arc::new(self.clone());
         let snapshot = Arc::new(RocksDbSnapshot::new(
@@ -660,8 +660,8 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
 }
 
 impl StoreSnapshot for RocksDbSnapshot {
-    fn store(&self) -> Arc<dyn IStore> {
-        self.store.clone() as Arc<dyn IStore>
+    fn store(&self) -> Arc<dyn Store> {
+        self.store.clone() as Arc<dyn Store>
     }
 
     fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {

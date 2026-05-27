@@ -1,4 +1,4 @@
-use crate::persistence::{data_cache::DataCache, store::IStore, store_cache::StoreCache};
+use crate::persistence::{data_cache::DataCache, store::Store, store_cache::StoreCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::state_service::StateRoot;
 use std::sync::Arc;
@@ -27,7 +27,7 @@ impl StateRootVerifier {
     }
 
     /// Builds a verifier that reads state from the provided store using a read-only cache.
-    pub fn from_store(store: Arc<dyn IStore>, settings: Arc<ProtocolSettings>) -> Self {
+    pub fn from_store(store: Arc<dyn Store>, settings: Arc<ProtocolSettings>) -> Self {
         Self::new(
             settings,
             Arc::new(move || {

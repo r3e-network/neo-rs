@@ -1,9 +1,9 @@
-//! Cache facade that fronts an `IStore` or snapshot for smart-contract storage.
+//! Cache facade that fronts an `Store` or snapshot for smart-contract storage.
 
 use super::{
     data_cache::{DataCache, DataCacheConfig, DataCacheError, DataCacheResult},
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
-    store::IStore,
+    store::Store,
     store_snapshot::StoreSnapshot,
     seek_direction::SeekDirection,
     track_state::TrackState,
@@ -19,19 +19,19 @@ type StoreFindFn =
 
 pub struct StoreCache {
     data_cache: DataCache,
-    store: Option<Arc<dyn IStore>>,
+    store: Option<Arc<dyn Store>>,
     snapshot: Option<Arc<dyn StoreSnapshot>>,
 }
 
 impl StoreCache {
     /// Initializes a new instance of the StoreCache class with a store.
-    pub fn new_from_store(store: Arc<dyn IStore>, read_only: bool) -> Self {
+    pub fn new_from_store(store: Arc<dyn Store>, read_only: bool) -> Self {
         Self::new_from_store_with_config(store, read_only, DataCacheConfig::default())
     }
 
     /// Initializes a new instance with a store and custom configuration.
     pub fn new_from_store_with_config(
-        store: Arc<dyn IStore>,
+        store: Arc<dyn Store>,
         read_only: bool,
         config: DataCacheConfig,
     ) -> Self {
@@ -194,7 +194,7 @@ mod tests {
     use super::*;
     use crate::persistence::providers::memory_store::MemoryStore;
     use crate::persistence::{
-        store::{IStore, OnNewSnapshotDelegate},
+        store::{Store, OnNewSnapshotDelegate},
         write_store::WriteStore,
         storage::StorageError,
     };
@@ -243,7 +243,7 @@ mod tests {
 
     impl ReadOnlyStore for FailingStore {}
 
-    impl IStore for FailingStore {
+    impl Store for FailingStore {
         fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
             Arc::new(FailingSnapshot {
                 store: Arc::new(self.clone()),
@@ -258,7 +258,7 @@ mod tests {
     }
 
     struct FailingSnapshot {
-        store: Arc<dyn IStore>,
+        store: Arc<dyn Store>,
     }
 
     impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
@@ -286,7 +286,7 @@ mod tests {
     }
 
     impl StoreSnapshot for FailingSnapshot {
-        fn store(&self) -> Arc<dyn IStore> {
+        fn store(&self) -> Arc<dyn Store> {
             Arc::clone(&self.store)
         }
 
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn read_only_store_cache_rejects_commit() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let mut cache = StoreCache::new_from_store(store, true);
         cache.add(
             StorageKey::new(1, b"a".to_vec()),
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn try_commit_propagates_snapshot_commit_failure() {
-        let store: Arc<dyn IStore> = Arc::new(FailingStore);
+        let store: Arc<dyn Store> = Arc::new(FailingStore);
         let mut cache = StoreCache::new_from_store(store, false);
         let key = StorageKey::new(11, b"commit-fail".to_vec());
         cache.add(key, StorageItem::from_bytes(vec![4, 2]));
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn read_only_store_cache_rejects_mutations() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let mut cache = StoreCache::new_from_store(store, true);
         let key = StorageKey::new(2, b"ro".to_vec());
         let item = StorageItem::from_bytes(vec![9]);
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn find_merges_snapshot_and_cache_entries() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let mut cache = StoreCache::new_from_store(store.clone(), false);
         let key = StorageKey::new(1, b"suffix".to_vec());
         let cached_value = StorageItem::from_bytes(vec![1]);
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn deleted_entry_masks_backing_store_get() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let key = StorageKey::new(5, b"deleted-get".to_vec());
         let value = StorageItem::from_bytes(vec![7, 7, 7]);
 
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn deleted_entry_masks_snapshot_find() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let key = StorageKey::new(6, b"deleted-find".to_vec());
 
         let mut seeded = store.get_snapshot();
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn commit_applies_tracked_items_to_store() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let mut cache = StoreCache::new_from_store(store.clone(), false);
         let key = StorageKey::new(3, b"commit".to_vec());
         let value = StorageItem::from_bytes(vec![7, 7]);
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn snapshot_commit_persists_to_underlying_store() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let snapshot = store.get_snapshot();
         let mut cache = StoreCache::new_from_snapshot(snapshot);
 

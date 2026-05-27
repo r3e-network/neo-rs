@@ -2,7 +2,7 @@
 
 use super::{data_cache::DataCacheResult, StoreCache, TrackState, Trackable};
 use crate::persistence::data_cache::DataCacheConfig;
-use crate::persistence::{store::IStore, store_snapshot::StoreSnapshot};
+use crate::persistence::{store::Store, store_snapshot::StoreSnapshot};
 use crate::smart_contract::StorageKey;
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ pub struct StoreTransaction {
 
 impl StoreTransaction {
     /// Creates a transaction bound to the provided store.
-    pub fn from_store(store: Arc<dyn IStore>, read_only: bool) -> Self {
+    pub fn from_store(store: Arc<dyn Store>, read_only: bool) -> Self {
         Self {
             cache: StoreCache::new_from_store(store, read_only),
         }
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn commit_read_only_transaction_fails() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let tx = StoreTransaction::from_store(store, true);
         assert!(
             tx.commit().is_err(),
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn apply_tracked_items_persists_changes() {
-        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
         let mut tx = StoreTransaction::from_store(store.clone(), false);
 
         let key = StorageKey::new(1, b"tracked".to_vec());

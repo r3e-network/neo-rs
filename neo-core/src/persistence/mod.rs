@@ -52,7 +52,7 @@ pub mod write_batch_buffer;
 
 pub use data_cache::{DataCache, Trackable};
 pub use read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
-pub use store::IStore;
+pub use store::Store;
 pub use store_provider::StoreProvider;
 pub use store_snapshot::StoreSnapshot;
 pub use write_store::WriteStore;
