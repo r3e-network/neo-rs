@@ -1,18 +1,15 @@
 use futures::stream;
 use hyper::server::accept::from_stream;
-use hyper::service::{make_service_fn, service_fn, Service};
+use hyper::service::{Service, make_service_fn, service_fn};
 use neo_core::{neo_system::NeoSystem, services::RpcService, wallets::Wallet};
 use once_cell::sync::Lazy;
-use p12::PFX;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
-use rustls::server::AllowAnyAuthenticatedClient;
-use rustls::{Certificate, PrivateKey, RootCertStore, ServerConfig};
+use rustls::ServerConfig;
 use serde_json::Value;
 use tokio::{
-    io::{AsyncRead, AsyncWrite, ReadBuf},
-    net::{TcpListener, TcpStream},
-    sync::{oneshot, OwnedSemaphorePermit, Semaphore},
+    net::TcpListener,
+    sync::{Semaphore, oneshot},
     task::JoinHandle,
     time::sleep,
 };
@@ -24,20 +21,19 @@ use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::io;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::{Arc, Weak};
-use std::task::{Context, Poll};
 use std::time::Duration;
 
-use super::routes::{build_rpc_routes, build_ws_route, BasicAuth};
+use super::routes::{BasicAuth, build_rpc_routes, build_ws_route};
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
-use sha1::{Digest, Sha1};
-use socket2::{SockRef, TcpKeepalive};
-use warp::filters::compression;
+use crate::server::rpc_transport::{
+    PlainConnection, TlsConnection, apply_tcp_keepalive, log_join_error,
+};
 use warp::Filter;
+use warp::filters::compression;
 
 pub type RpcCallback =
     dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
@@ -314,11 +310,8 @@ impl RpcServer {
                                 };
                                 match tls_acceptor.accept(stream).await {
                                     Ok(tls_stream) => {
-                                        let conn = TlsConnection {
-                                            stream: tls_stream,
-                                            remote_addr,
-                                            _permit: permit,
-                                        };
+                                        let conn =
+                                            TlsConnection::new(tls_stream, remote_addr, permit);
                                         return Some((
                                             Ok::<TlsConnection, io::Error>(conn),
                                             listener,
@@ -420,11 +413,7 @@ impl RpcServer {
                                     );
                                     continue;
                                 };
-                                let conn = PlainConnection {
-                                    stream,
-                                    remote_addr,
-                                    _permit: permit,
-                                };
+                                let conn = PlainConnection::new(stream, remote_addr, permit);
                                 return Some((Ok::<PlainConnection, io::Error>(conn), listener));
                             }
                             Err(err) => {
@@ -624,245 +613,4 @@ impl RpcService for RpcServer {
     fn is_started(&self) -> bool {
         self.started
     }
-}
-
-struct TlsConnection {
-    stream: tokio_rustls::server::TlsStream<TcpStream>,
-    remote_addr: SocketAddr,
-    _permit: OwnedSemaphorePermit,
-}
-
-impl TlsConnection {
-    const fn remote_addr(&self) -> SocketAddr {
-        self.remote_addr
-    }
-}
-
-impl AsyncRead for TlsConnection {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
-    }
-}
-
-impl AsyncWrite for TlsConnection {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        data: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().stream).poll_write(cx, data)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
-    }
-}
-
-struct PlainConnection {
-    stream: TcpStream,
-    remote_addr: SocketAddr,
-    _permit: OwnedSemaphorePermit,
-}
-
-impl PlainConnection {
-    const fn remote_addr(&self) -> SocketAddr {
-        self.remote_addr
-    }
-}
-
-impl AsyncRead for PlainConnection {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
-    }
-}
-
-impl AsyncWrite for PlainConnection {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        data: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().stream).poll_write(cx, data)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
-    }
-}
-
-/// Builds TLS configuration from RPC server settings asynchronously.
-pub async fn build_tls_config_from_settings(
-    settings: &RpcServerConfig,
-) -> Result<Option<Arc<ServerConfig>>, String> {
-    build_tls_config(settings).await
-}
-
-async fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfig>>, String> {
-    let cert_path = settings.ssl_cert.trim();
-    if cert_path.is_empty() {
-        if !settings.ssl_cert_password.is_empty() || !settings.trusted_authorities.is_empty() {
-            warn!(
-                "RPC TLS settings provided without SslCert; TLS remains disabled (network {}).",
-                settings.network
-            );
-        }
-        return Ok(None);
-    }
-
-    let cert_bytes = tokio::fs::read(cert_path)
-        .await
-        .map_err(|err| format!("failed to read TLS certificate {cert_path}: {err}"))?;
-    let pfx =
-        PFX::parse(&cert_bytes).map_err(|err| format!("invalid PKCS#12 {cert_path}: {err:?}"))?;
-    if !pfx.verify_mac(settings.ssl_cert_password.as_str()) {
-        return Err(format!("invalid TLS certificate password for {cert_path}"));
-    }
-
-    let certs_der = pfx
-        .cert_x509_bags(settings.ssl_cert_password.as_str())
-        .map_err(|err| format!("failed to read TLS certificate chain from {cert_path}: {err:?}"))?;
-    if certs_der.is_empty() {
-        return Err(format!("no TLS certificates found in {cert_path}"));
-    }
-    let certs = certs_der.into_iter().map(Certificate).collect::<Vec<_>>();
-
-    let mut keys = pfx
-        .key_bags(settings.ssl_cert_password.as_str())
-        .map_err(|err| format!("failed to read TLS private key from {cert_path}: {err:?}"))?;
-    let key_der = keys
-        .pop()
-        .ok_or_else(|| format!("no TLS private key found in {cert_path}"))?;
-    let key = PrivateKey(key_der);
-
-    let builder = ServerConfig::builder().with_safe_defaults();
-    let builder = if settings.trusted_authorities.is_empty() {
-        builder.with_no_client_auth()
-    } else {
-        let roots = load_trusted_authorities(&settings.trusted_authorities)?;
-        builder.with_client_cert_verifier(Arc::new(AllowAnyAuthenticatedClient::new(roots)))
-    };
-    let config = builder
-        .with_single_cert(certs, key)
-        .map_err(|err| format!("failed to configure TLS for {cert_path}: {err}"))?;
-
-    Ok(Some(Arc::new(config)))
-}
-
-fn load_trusted_authorities(thumbprints: &[String]) -> Result<RootCertStore, String> {
-    let allowed: HashSet<String> = thumbprints
-        .iter()
-        .map(|value| normalize_thumbprint(value))
-        .filter(|value| !value.is_empty())
-        .collect();
-    let native_certs = rustls_native_certs::load_native_certs()
-        .map_err(|err| format!("failed to load native TLS roots: {err:?}"))?;
-
-    let mut roots = RootCertStore::empty();
-    let mut matched = 0usize;
-    for cert in native_certs {
-        let cert_der = cert.0;
-        let thumbprint = thumbprint_hex(&cert_der);
-        if allowed.contains(&thumbprint) {
-            let rustls_cert = Certificate(cert_der);
-            roots
-                .add(&rustls_cert)
-                .map_err(|err| format!("failed to add trusted authority {thumbprint}: {err}"))?;
-            matched += 1;
-        }
-    }
-
-    if matched == 0 {
-        warn!("RPC TLS configured with TrustedAuthorities, but no matching roots were found.");
-    }
-
-    Ok(roots)
-}
-
-fn thumbprint_hex(cert_der: &[u8]) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(cert_der);
-    let digest = hasher.finalize();
-    hex::encode_upper(digest)
-}
-
-fn normalize_thumbprint(value: &str) -> String {
-    value
-        .trim()
-        .trim_matches('"')
-        .replace(':', "")
-        .to_ascii_uppercase()
-}
-
-fn apply_tcp_keepalive(stream: &TcpStream, keepalive: Option<Duration>) {
-    let Some(keepalive) = keepalive else {
-        return;
-    };
-    let sock_ref = SockRef::from(stream);
-    let config = TcpKeepalive::new().with_time(keepalive);
-    if let Err(err) = sock_ref.set_tcp_keepalive(&config) {
-        warn!("error setting TCP keepalive: {}", err);
-    }
-}
-
-fn log_join_error(error: tokio::task::JoinError) {
-    if error.is_cancelled() {
-        warn!(target: "neo", "rpc server task cancelled before completion");
-    } else {
-        match error.try_into_panic() {
-            Ok(payload) => {
-                if let Some(message) = payload.downcast_ref::<&str>() {
-                    error!(target: "neo", message = %message, "rpc server panicked");
-                } else if let Some(message) = payload.downcast_ref::<String>() {
-                    error!(target: "neo", message = %message, "rpc server panicked");
-                } else {
-                    error!(target: "neo", "rpc server panicked");
-                }
-            }
-            Err(join_err) => {
-                error!(target: "neo", error = %join_err, "rpc server task failed");
-            }
-        }
-    }
-}
-
-pub static SERVERS: Lazy<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
-
-pub fn remove_server(network: u32) {
-    if SERVERS.write().remove(&network).is_some() {
-        info!("Removed RPC server for network {}", network);
-    }
-}
-
-pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {
-    let mut guard = SERVERS.write();
-    if let Some(previous) = guard.insert(network, Arc::clone(&server)) {
-        warn!(
-            "Replacing existing RPC server instance for network {}",
-            network
-        );
-        if let Some(mut previous_guard) = previous.try_write() {
-            previous_guard.dispose();
-        }
-    }
-}
-
-pub fn get_server(network: u32) -> Option<Arc<RwLock<RpcServer>>> {
-    SERVERS.read().get(&network).cloned()
 }
