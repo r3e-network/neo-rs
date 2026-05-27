@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::neo_io::impl_serializable;
 use serde::{Deserialize, Serialize};
 
 /// Sent to detect whether the connection has been disconnected.
@@ -47,29 +47,10 @@ impl PingPayload {
     }
 }
 
-impl Serializable for PingPayload {
-    fn size(&self) -> usize {
-        4 + // LastBlockIndex
-        4 + // Timestamp
-        4 // Nonce
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u32(self.last_block_index)?;
-        writer.write_u32(self.timestamp)?;
-        writer.write_u32(self.nonce)?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let last_block_index = reader.read_u32()?;
-        let timestamp = reader.read_u32()?;
-        let nonce = reader.read_u32()?;
-
-        Ok(Self {
-            last_block_index,
-            timestamp,
-            nonce,
-        })
+impl_serializable! {
+    struct PingPayload {
+        last_block_index: u32,
+        timestamp: u32,
+        nonce: u32,
     }
 }

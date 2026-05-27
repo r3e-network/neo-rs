@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{impl_serializable, IoError};
 use crate::UInt256;
 use serde::{Deserialize, Serialize};
 
@@ -31,25 +31,14 @@ impl GetBlocksPayload {
     }
 }
 
-impl Serializable for GetBlocksPayload {
-    fn size(&self) -> usize {
-        32 + 2 // UInt256 + i16
+impl_serializable! {
+    struct GetBlocksPayload {
+        hash_start: UInt256,
+        count: i16,
     }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        Serializable::serialize(&self.hash_start, writer)?;
-        writer.write_i16(self.count)?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let hash_start = <UInt256 as Serializable>::deserialize(reader)?;
-        let count = reader.read_i16()?;
-
-        if count < -1 || count == 0 {
+    validate(self_ref) {
+        if self_ref.count < -1 || self_ref.count == 0 {
             return Err(IoError::invalid_data("Invalid count"));
         }
-
-        Ok(Self { hash_start, count })
     }
 }

@@ -9,9 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::macros::ValidateLength;
-use crate::neo_io::serializable::helper::get_var_size_bytes;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::neo_io::impl_serializable;
 use serde::{Deserialize, Serialize};
 
 /// Maximum data size (520 bytes)
@@ -31,21 +29,8 @@ impl FilterAddPayload {
     }
 }
 
-impl Serializable for FilterAddPayload {
-    fn size(&self) -> usize {
-        get_var_size_bytes(&self.data)
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        // Use ValidateLength trait to reduce boilerplate
-        self.data.validate_max_length(MAX_DATA_SIZE, "Data")?;
-        writer.write_var_bytes(&self.data)?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let data = reader.read_var_bytes(MAX_DATA_SIZE)?;
-
-        Ok(Self { data })
+impl_serializable! {
+    struct FilterAddPayload {
+        data: var_bytes { max: MAX_DATA_SIZE },
     }
 }

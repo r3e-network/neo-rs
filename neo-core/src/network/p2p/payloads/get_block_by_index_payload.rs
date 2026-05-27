@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{impl_serializable, IoError};
 use serde::{Deserialize, Serialize};
 
 // Maximum headers count from HeadersPayload
@@ -33,25 +33,14 @@ impl GetBlockByIndexPayload {
     }
 }
 
-impl Serializable for GetBlockByIndexPayload {
-    fn size(&self) -> usize {
-        4 + 2 // u32 + i16
+impl_serializable! {
+    struct GetBlockByIndexPayload {
+        index_start: u32,
+        count: i16,
     }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u32(self.index_start)?;
-        writer.write_i16(self.count)?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let index_start = reader.read_u32()?;
-        let count = reader.read_i16()?;
-
-        if count < -1 || count == 0 || count > MAX_HEADERS_COUNT {
+    validate(self_ref) {
+        if self_ref.count < -1 || self_ref.count == 0 || self_ref.count > MAX_HEADERS_COUNT {
             return Err(IoError::invalid_data("Invalid block count"));
         }
-
-        Ok(Self { index_start, count })
     }
 }

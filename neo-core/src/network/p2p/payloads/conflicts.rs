@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{impl_serializable, BinaryWriter, IoResult, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
@@ -62,17 +62,8 @@ impl Conflicts {
     }
 }
 
-impl Serializable for Conflicts {
-    fn size(&self) -> usize {
-        32 // UInt256
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        Serializable::serialize(&self.hash, writer)
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let hash = <UInt256 as Serializable>::deserialize(reader)?;
-        Ok(Self { hash })
+impl_serializable! {
+    struct Conflicts {
+        hash: UInt256,
     }
 }

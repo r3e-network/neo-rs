@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{impl_serializable, BinaryWriter, IoResult, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
@@ -45,17 +45,8 @@ impl NotValidBefore {
     }
 }
 
-impl Serializable for NotValidBefore {
-    fn size(&self) -> usize {
-        4 // u32
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u32(self.height)
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let height = reader.read_u32()?;
-        Ok(Self { height })
+impl_serializable! {
+    struct NotValidBefore {
+        height: u32,
     }
 }

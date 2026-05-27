@@ -10,10 +10,7 @@
 // modifications are permitted.
 
 use super::header::Header;
-use crate::neo_io::serializable::helper::{
-    deserialize_array, get_var_size_serializable_slice, serialize_array,
-};
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{impl_serializable, IoError};
 use serde::{Deserialize, Serialize};
 
 /// Indicates the maximum number of headers sent each time.
@@ -33,25 +30,13 @@ impl HeadersPayload {
     }
 }
 
-impl Serializable for HeadersPayload {
-    fn size(&self) -> usize {
-        get_var_size_serializable_slice(&self.headers)
+impl_serializable! {
+    struct HeadersPayload {
+        headers: var_array<Header> { max: MAX_HEADERS_COUNT },
     }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        if self.headers.len() > MAX_HEADERS_COUNT {
-            return Err(IoError::invalid_data("Too many headers"));
-        }
-
-        serialize_array(&self.headers, writer)
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let headers = deserialize_array(reader, MAX_HEADERS_COUNT)?;
-        if headers.is_empty() {
+    validate(self_ref) {
+        if self_ref.headers.is_empty() {
             return Err(IoError::invalid_data("Empty headers list"));
         }
-
-        Ok(Self { headers })
     }
 }

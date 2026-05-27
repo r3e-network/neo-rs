@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{impl_serializable, BinaryWriter, IoResult, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::Helper;
@@ -69,17 +69,8 @@ impl NotaryAssisted {
     }
 }
 
-impl Serializable for NotaryAssisted {
-    fn size(&self) -> usize {
-        1 // u8
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u8(self.nkeys)
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let nkeys = reader.read_u8()?;
-        Ok(Self { nkeys })
+impl_serializable! {
+    struct NotaryAssisted {
+        nkeys: u8,
     }
 }

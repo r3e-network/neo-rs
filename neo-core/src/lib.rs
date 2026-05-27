@@ -356,6 +356,7 @@ pub use network::{NetworkError, NetworkResult};
 pub mod neo_io {
     pub use crate::extensions::io::serializable::SerializableExtensions as SerializableExt;
     pub use ::neo_io_crate::{
+        impl_serializable,
         serializable::{self, helper},
         BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
     };
