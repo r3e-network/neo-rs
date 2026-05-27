@@ -86,11 +86,11 @@ use crate::smart_contract::native::ledger_contract::LedgerContract;
 use crate::state_service::StateStore;
 use neo_primitives::UInt256;
 #[cfg(test)]
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 // initialise_plugins and to_core_error have been extracted to super::helpers module
 #[cfg(test)]
-static TEST_SYSTEM_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static TEST_SYSTEM_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 // RelayExtensibleEntry, RelayExtensibleCache, and constants have been extracted to super::relay module
 

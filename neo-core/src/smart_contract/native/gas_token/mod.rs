@@ -21,11 +21,11 @@ use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::sync::OnceLock;
 
-static GAS_HASH: Lazy<UInt160> =
-    Lazy::new(|| Helper::get_contract_hash(&UInt160::zero(), 0, "GasToken"));
+static GAS_HASH: LazyLock<UInt160> =
+    LazyLock::new(|| Helper::get_contract_hash(&UInt160::zero(), 0, "GasToken"));
 
 /// GAS native token with NEP-17 compliant behaviour.
 pub struct GasToken {

@@ -5,14 +5,14 @@
 
 use neo_core::network::p2p::timeouts::TimeoutStats;
 use neo_core::telemetry::Telemetry;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use sysinfo::{DiskExt, System, SystemExt};
 
 /// Global telemetry instance for the node.
-pub static TELEMETRY: Lazy<Arc<Telemetry>> =
-    Lazy::new(|| Arc::new(Telemetry::new("neo-node", env!("CARGO_PKG_VERSION"))));
+pub static TELEMETRY: LazyLock<Arc<Telemetry>> =
+    LazyLock::new(|| Arc::new(Telemetry::new("neo-node", env!("CARGO_PKG_VERSION"))));
 
 static STATE_ROOT_INGEST_ACCEPTED_LAST: AtomicU64 = AtomicU64::new(0);
 static STATE_ROOT_INGEST_REJECTED_LAST: AtomicU64 = AtomicU64::new(0);

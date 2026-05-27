@@ -2,7 +2,7 @@ use futures::stream;
 use hyper::server::accept::from_stream;
 use hyper::service::{Service, make_service_fn, service_fn};
 use neo_core::{neo_system::NeoSystem, services::RpcService, wallets::Wallet};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
 use rustls::ServerConfig;
@@ -79,7 +79,7 @@ pub(crate) fn protected_rpc_handler(
     RpcHandler::new(RpcMethodDescriptor::new_protected(name), Arc::new(func))
 }
 
-pub static RPC_REQ_TOTAL: Lazy<Counter> = Lazy::new(|| {
+pub static RPC_REQ_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     let counter =
         Counter::new("neo_rpc_requests_total", "Total RPC requests").unwrap_or_else(|_| {
             Counter::new("neo_rpc_requests_total_invalid", "Invalid")
@@ -90,7 +90,7 @@ pub static RPC_REQ_TOTAL: Lazy<Counter> = Lazy::new(|| {
     }
     counter
 });
-pub static RPC_ERR_TOTAL: Lazy<Counter> = Lazy::new(|| {
+pub static RPC_ERR_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     let counter = Counter::new("neo_rpc_errors_total", "Total RPC errors").unwrap_or_else(|_| {
         Counter::new("neo_rpc_errors_total_invalid", "Invalid")
             .expect("fallback counter creation should never fail")

@@ -1,12 +1,12 @@
 use super::rpc_server::RpcServer;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-pub static SERVERS: Lazy<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+pub static SERVERS: LazyLock<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 pub fn remove_server(network: u32) {
     if SERVERS.write().remove(&network).is_some() {

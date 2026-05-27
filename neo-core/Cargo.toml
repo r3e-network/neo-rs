@@ -36,7 +36,6 @@ bs58 = { workspace = true }
 bip39 = { workspace = true }
 # secp256k1, ed25519-dalek removed - use neo-crypto instead
 blst = { workspace = true }
-once_cell = { workspace = true }
 tracing = { workspace = true }
 prometheus = { workspace = true, optional = true }
 sysinfo = { workspace = true, optional = true }

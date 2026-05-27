@@ -10,15 +10,15 @@
 // modifications are permitted.
 
 use super::log_level::LogLevel;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use parking_lot::Mutex;
 
 /// Log event handler delegate
 /// Matches C# LogEventHandler delegate
 pub type LogEventHandler = Box<dyn Fn(String, LogLevel, String) + Send + Sync + 'static>;
 
-static LOG_LEVEL: Lazy<Mutex<LogLevel>> = Lazy::new(|| Mutex::new(LogLevel::Info));
-static LOGGING: Lazy<Mutex<Option<LogEventHandler>>> = Lazy::new(|| Mutex::new(None));
+static LOG_LEVEL: LazyLock<Mutex<LogLevel>> = LazyLock::new(|| Mutex::new(LogLevel::Info));
+static LOGGING: LazyLock<Mutex<Option<LogEventHandler>>> = LazyLock::new(|| Mutex::new(None));
 
 /// A utility class that provides common functions.
 /// Matches C# Utility class

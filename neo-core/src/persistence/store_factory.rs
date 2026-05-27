@@ -15,12 +15,12 @@ use super::{
 };
 use crate::error::{CoreError, CoreResult};
 use hashbrown::HashMap;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Global registry of store providers.
-static PROVIDERS: Lazy<RwLock<HashMap<String, Arc<dyn StoreProvider>>>> = Lazy::new(|| {
+static PROVIDERS: LazyLock<RwLock<HashMap<String, Arc<dyn StoreProvider>>>> = LazyLock::new(|| {
     let mut providers = HashMap::new();
 
     // Register default memory provider

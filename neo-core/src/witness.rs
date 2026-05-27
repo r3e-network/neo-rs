@@ -43,7 +43,7 @@ use crate::smart_contract::helper::Helper;
 use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
 use neo_vm_rs::OpCode;
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt};
 
@@ -70,7 +70,7 @@ pub struct Witness {
 
     /// Cached script hash
     #[serde(skip)]
-    script_hash: OnceCell<UInt160>,
+    script_hash: OnceLock<UInt160>,
 }
 
 impl Witness {
@@ -79,7 +79,7 @@ impl Witness {
         Self {
             invocation_script: Vec::new(),
             verification_script: Vec::new(),
-            script_hash: OnceCell::new(),
+            script_hash: OnceLock::new(),
         }
     }
 
@@ -97,7 +97,7 @@ impl Witness {
         Self {
             invocation_script,
             verification_script,
-            script_hash: OnceCell::new(),
+            script_hash: OnceLock::new(),
         }
     }
 
@@ -159,7 +159,7 @@ impl Witness {
             invocation_script: self.invocation_script.clone(),
             verification_script: self.verification_script.clone(),
             script_hash: {
-                let clone_cell = OnceCell::new();
+                let clone_cell = OnceLock::new();
                 if let Some(hash) = self.script_hash.get() {
                     let _ = clone_cell.set(*hash);
                 }
@@ -380,7 +380,7 @@ impl Serializable for Witness {
         Ok(Self {
             invocation_script,
             verification_script,
-            script_hash: OnceCell::new(),
+            script_hash: OnceLock::new(),
         })
     }
 }

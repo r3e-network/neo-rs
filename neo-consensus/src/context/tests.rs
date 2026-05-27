@@ -10,6 +10,12 @@ fn create_test_validators(count: usize) -> Vec<ValidatorInfo> {
         .collect()
 }
 
+fn message_hash(index: u32) -> UInt256 {
+    let mut hash_bytes = [0u8; 32];
+    hash_bytes[0..4].copy_from_slice(&index.to_le_bytes());
+    UInt256::from_bytes(&hash_bytes).unwrap()
+}
+
 #[test]
 fn test_consensus_context_new() {
     let validators = create_test_validators(7);
@@ -169,8 +175,8 @@ fn test_save_and_load_roundtrip() {
     ctx.save(&temp_path).expect("Failed to save context");
 
     // Load it back
-    let loaded_ctx = ConsensusContext::load(&temp_path, validators, Some(0))
-        .expect("Failed to load context");
+    let loaded_ctx =
+        ConsensusContext::load(&temp_path, validators, Some(0)).expect("Failed to load context");
 
     // Verify all persisted fields match
     assert_eq!(loaded_ctx.block_index, 100);
@@ -275,8 +281,8 @@ fn test_save_empty_state() {
     ctx.save(&temp_path).expect("Failed to save empty context");
 
     // Load it back
-    let loaded_ctx = ConsensusContext::load(&temp_path, validators, None)
-        .expect("Failed to load empty context");
+    let loaded_ctx =
+        ConsensusContext::load(&temp_path, validators, None).expect("Failed to load empty context");
 
     // Verify basic fields
     assert_eq!(loaded_ctx.block_index, 0);
@@ -397,7 +403,7 @@ fn test_count_failed_with_old_messages() {
     ctx.last_seen_messages.insert(1, 99); // Previous block - not failed
     ctx.last_seen_messages.insert(2, 98); // Old block (< 99) - FAILED
     ctx.last_seen_messages.insert(3, 95); // Very old block - FAILED
-                                          // Validators 4, 5, 6 have no messages - FAILED
+    // Validators 4, 5, 6 have no messages - FAILED
 
     // Failed: validators 2, 3, 4, 5, 6 = 5 validators
     assert_eq!(ctx.count_failed(), 5);
@@ -415,7 +421,7 @@ fn test_count_failed_threshold() {
     ctx.last_seen_messages.insert(0, 10); // OK
     ctx.last_seen_messages.insert(1, 9); // OK (exactly at threshold)
     ctx.last_seen_messages.insert(2, 8); // FAILED (< threshold)
-                                         // Validator 3 has no message - FAILED
+    // Validator 3 has no message - FAILED
 
     assert_eq!(ctx.count_failed(), 2); // Validators 2 and 3
 }
@@ -617,18 +623,43 @@ fn test_message_cache_lru_limit() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
-    // Fill the cache to just below the limit
-    for i in 0..100 {
-        let mut hash_bytes = [0u8; 32];
-        hash_bytes[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-        let hash = UInt256::from_bytes(&hash_bytes).unwrap();
-        ctx.mark_message_seen(&hash);
+    for i in 0..MAX_MESSAGE_CACHE_SIZE {
+        ctx.mark_message_seen(&message_hash(i as u32));
     }
 
-    // Verify messages are cached
-    let first_hash = UInt256::from_bytes(&[0u8; 32]).unwrap();
+    let first_hash = message_hash(0);
+    let second_hash = message_hash(1);
     assert!(ctx.has_seen_message(&first_hash));
+    assert!(ctx.has_seen_message(&second_hash));
+    assert_eq!(ctx.seen_message_hashes.len(), MAX_MESSAGE_CACHE_SIZE);
 
-    // The cache should not be cleared yet (under limit)
-    assert!(ctx.seen_message_hashes.len() <= MAX_MESSAGE_CACHE_SIZE);
+    let overflow_hash = message_hash(MAX_MESSAGE_CACHE_SIZE as u32);
+    ctx.mark_message_seen(&overflow_hash);
+
+    assert!(!ctx.has_seen_message(&first_hash));
+    assert!(ctx.has_seen_message(&second_hash));
+    assert!(ctx.has_seen_message(&overflow_hash));
+    assert_eq!(ctx.seen_message_hashes.len(), MAX_MESSAGE_CACHE_SIZE);
+}
+
+#[test]
+fn test_message_cache_duplicate_and_contains_do_not_refresh_lru_order() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+
+    for i in 0..MAX_MESSAGE_CACHE_SIZE {
+        ctx.mark_message_seen(&message_hash(i as u32));
+    }
+
+    let first_hash = message_hash(0);
+    let second_hash = message_hash(1);
+    assert!(ctx.has_seen_message(&first_hash));
+    ctx.mark_message_seen(&first_hash);
+
+    let overflow_hash = message_hash(MAX_MESSAGE_CACHE_SIZE as u32);
+    ctx.mark_message_seen(&overflow_hash);
+
+    assert!(!ctx.has_seen_message(&first_hash));
+    assert!(ctx.has_seen_message(&second_hash));
+    assert!(ctx.has_seen_message(&overflow_hash));
 }

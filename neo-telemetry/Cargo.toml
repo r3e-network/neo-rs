@@ -42,9 +42,6 @@ hyper = { workspace = true }
 # Time
 chrono = { workspace = true }
 
-# Utilities
-once_cell = { workspace = true }
-
 [dev-dependencies]
 tempfile = { workspace = true }
 

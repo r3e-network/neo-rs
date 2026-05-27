@@ -10,13 +10,13 @@ use crate::services::SystemContext;
 use crate::smart_contract::native::NeoToken;
 use crate::smart_contract::Contract;
 use crate::{UInt160, UInt256};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
 // System context is now stored as a trait object to decouple from concrete runtime
-static SYSTEM_CONTEXT: Lazy<RwLock<Option<Arc<dyn SystemContext>>>> =
-    Lazy::new(|| RwLock::new(None));
+static SYSTEM_CONTEXT: LazyLock<RwLock<Option<Arc<dyn SystemContext>>>> =
+    LazyLock::new(|| RwLock::new(None));
 
 /// Facade exposing helper methods with the same names/semantics used by the C# port
 /// where possible. These route to protocol settings or native contracts when available.

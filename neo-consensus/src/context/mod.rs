@@ -1,11 +1,13 @@
 //! Consensus context - tracks the current consensus state.
 
 use crate::{ChangeViewReason, ConsensusError, ConsensusResult};
+use lru::LruCache;
 use neo_crypto::ECPoint;
 use neo_primitives::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 /// Default block time in milliseconds (15 seconds for Neo N3).
@@ -161,7 +163,7 @@ pub struct ConsensusContext {
 
     // Message deduplication (replay attack prevention)
     /// Cache of seen message hashes to prevent duplicate processing
-    seen_message_hashes: HashSet<UInt256>,
+    seen_message_hashes: LruCache<UInt256, ()>,
 }
 
 impl ConsensusContext {
@@ -206,8 +208,15 @@ impl ConsensusContext {
             commit_invocations: HashMap::new(),
             last_change_view_timestamps: HashMap::new(),
             last_seen_messages: HashMap::new(),
-            seen_message_hashes: HashSet::new(),
+            seen_message_hashes: Self::new_seen_message_cache(),
         }
+    }
+
+    fn new_seen_message_cache() -> LruCache<UInt256, ()> {
+        LruCache::new(
+            NonZeroUsize::new(MAX_MESSAGE_CACHE_SIZE)
+                .expect("message cache capacity must be non-zero"),
+        )
     }
 
     /// Returns the number of validators
@@ -466,22 +475,16 @@ impl ConsensusContext {
     /// This method adds the message hash to the cache to prevent duplicate processing.
     /// The cache is automatically cleared when starting a new block via `reset_for_new_block()`.
     ///
-    /// Security: Implements LRU-style cache limit (`MAX_MESSAGE_CACHE_SIZE`) to prevent
-    /// memory exhaustion attacks. When the cache is full, it is cleared to make room
-    /// for new messages. This matches C# `DBFTPlugin`'s memory protection behavior.
+    /// Security: uses a bounded LRU cache (`MAX_MESSAGE_CACHE_SIZE`) to prevent memory
+    /// exhaustion attacks while avoiding a clear-all window for recently seen messages.
     ///
     /// # Arguments
     /// * `hash` - The message hash to mark as seen
     pub fn mark_message_seen(&mut self, hash: &UInt256) {
-        // LRU-style cache limit: clear when full to prevent memory exhaustion
-        if self.seen_message_hashes.len() >= MAX_MESSAGE_CACHE_SIZE {
-            tracing::warn!(
-                "Message cache reached limit ({}), clearing to prevent memory exhaustion",
-                MAX_MESSAGE_CACHE_SIZE
-            );
-            self.seen_message_hashes.clear();
+        if self.seen_message_hashes.contains(hash) {
+            return;
         }
-        self.seen_message_hashes.insert(*hash);
+        self.seen_message_hashes.put(*hash, ());
     }
 
     /// Returns the number of validators that have committed (sent Commit messages)
@@ -708,8 +711,8 @@ impl ConsensusContext {
             change_view_invocations: state.change_view_invocations,
             commit_invocations: state.commit_invocations,
             last_change_view_timestamps: state.change_view_timestamps,
-            last_seen_messages: HashMap::new(),  // Not persisted
-            seen_message_hashes: HashSet::new(), // Not persisted (cleared on restart)
+            last_seen_messages: HashMap::new(), // Not persisted
+            seen_message_hashes: Self::new_seen_message_cache(), // Not persisted
         })
     }
 

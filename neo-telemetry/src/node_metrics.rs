@@ -7,44 +7,44 @@
 //! - State root metrics
 //! - Storage metrics (disk usage)
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use prometheus::{Counter, Encoder, Gauge, TextEncoder};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Current block height
-pub static BLOCK_HEIGHT: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_block_height", "Current block height"));
+pub static BLOCK_HEIGHT: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_block_height", "Current block height"));
 
 /// Current header height
-pub static HEADER_HEIGHT: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_header_height", "Highest header seen"));
+pub static HEADER_HEIGHT: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_header_height", "Highest header seen"));
 
 /// Header lag (difference between header and block height)
-pub static HEADER_LAG: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_header_lag", "Header lag in blocks"));
+pub static HEADER_LAG: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_header_lag", "Header lag in blocks"));
 
 /// Mempool transaction count
-pub static MEMPOOL_SIZE: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_mempool_size", "Mempool size (transactions)"));
+pub static MEMPOOL_SIZE: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_mempool_size", "Mempool size (transactions)"));
 
 /// Connected peer count
-pub static PEER_COUNT: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_peer_count", "Number of connected peers"));
+pub static PEER_COUNT: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_peer_count", "Number of connected peers"));
 
 /// Handshake timeouts
-pub static TIMEOUT_HANDSHAKE: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_p2p_timeouts_handshake", "Handshake timeouts"));
+pub static TIMEOUT_HANDSHAKE: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_p2p_timeouts_handshake", "Handshake timeouts"));
 
 /// Read timeouts
-pub static TIMEOUT_READ: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_p2p_timeouts_read", "Read timeouts"));
+pub static TIMEOUT_READ: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_p2p_timeouts_read", "Read timeouts"));
 
 /// Write timeouts
-pub static TIMEOUT_WRITE: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_p2p_timeouts_write", "Write timeouts"));
+pub static TIMEOUT_WRITE: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_p2p_timeouts_write", "Write timeouts"));
 
 /// Local state root index
-pub static STATE_LOCAL_ROOT_INDEX: Lazy<Gauge> = Lazy::new(|| {
+pub static STATE_LOCAL_ROOT_INDEX: LazyLock<Gauge> = LazyLock::new(|| {
     register_gauge(
         "neo_state_local_root_index",
         "Current local state root index (block height) if known, otherwise -1",
@@ -52,7 +52,7 @@ pub static STATE_LOCAL_ROOT_INDEX: Lazy<Gauge> = Lazy::new(|| {
 });
 
 /// Validated state root index
-pub static STATE_VALIDATED_ROOT_INDEX: Lazy<Gauge> = Lazy::new(|| {
+pub static STATE_VALIDATED_ROOT_INDEX: LazyLock<Gauge> = LazyLock::new(|| {
     register_gauge(
         "neo_state_validated_root_index",
         "Current validated state root index if known, otherwise -1",
@@ -60,7 +60,7 @@ pub static STATE_VALIDATED_ROOT_INDEX: Lazy<Gauge> = Lazy::new(|| {
 });
 
 /// State root validation lag
-pub static STATE_VALIDATED_LAG: Lazy<Gauge> = Lazy::new(|| {
+pub static STATE_VALIDATED_LAG: LazyLock<Gauge> = LazyLock::new(|| {
     register_gauge(
         "neo_state_validated_lag",
         "Difference between local and validated state roots; -1 when unknown",
@@ -68,7 +68,7 @@ pub static STATE_VALIDATED_LAG: Lazy<Gauge> = Lazy::new(|| {
 });
 
 /// Total accepted state roots
-pub static STATE_ROOT_INGEST_ACCEPTED: Lazy<Gauge> = Lazy::new(|| {
+pub static STATE_ROOT_INGEST_ACCEPTED: LazyLock<Gauge> = LazyLock::new(|| {
     register_gauge(
         "neo_state_roots_accepted_total",
         "Total accepted state roots since process start",
@@ -76,7 +76,7 @@ pub static STATE_ROOT_INGEST_ACCEPTED: Lazy<Gauge> = Lazy::new(|| {
 });
 
 /// Total rejected state roots
-pub static STATE_ROOT_INGEST_REJECTED: Lazy<Gauge> = Lazy::new(|| {
+pub static STATE_ROOT_INGEST_REJECTED: LazyLock<Gauge> = LazyLock::new(|| {
     register_gauge(
         "neo_state_roots_rejected_total",
         "Total rejected state roots since process start",
@@ -84,7 +84,7 @@ pub static STATE_ROOT_INGEST_REJECTED: Lazy<Gauge> = Lazy::new(|| {
 });
 
 /// Counter for accepted state roots
-pub static STATE_ROOT_INGEST_ACCEPTED_COUNTER: Lazy<Counter> = Lazy::new(|| {
+pub static STATE_ROOT_INGEST_ACCEPTED_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
     register_counter(
         "neo_state_roots_accepted",
         "Counter of accepted state roots since process start",
@@ -92,7 +92,7 @@ pub static STATE_ROOT_INGEST_ACCEPTED_COUNTER: Lazy<Counter> = Lazy::new(|| {
 });
 
 /// Counter for rejected state roots
-pub static STATE_ROOT_INGEST_REJECTED_COUNTER: Lazy<Counter> = Lazy::new(|| {
+pub static STATE_ROOT_INGEST_REJECTED_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
     register_counter(
         "neo_state_roots_rejected",
         "Counter of rejected state roots since process start",
@@ -100,11 +100,11 @@ pub static STATE_ROOT_INGEST_REJECTED_COUNTER: Lazy<Counter> = Lazy::new(|| {
 });
 
 /// Free disk space
-pub static DISK_FREE_BYTES: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_storage_free_bytes", "Free bytes on storage path disk"));
+pub static DISK_FREE_BYTES: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_storage_free_bytes", "Free bytes on storage path disk"));
 
 /// Total disk space
-pub static DISK_TOTAL_BYTES: Lazy<Gauge> = Lazy::new(|| {
+pub static DISK_TOTAL_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     register_gauge(
         "neo_storage_total_bytes",
         "Total bytes on storage path disk",

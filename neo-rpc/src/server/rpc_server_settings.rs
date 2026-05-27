@@ -5,7 +5,7 @@
 // server plugin.
 
 use neo_core::extensions::error::ExtensionResult;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use parking_lot::RwLock;
 use serde::de::{self, Deserializer};
 use serde::Deserialize;
@@ -308,7 +308,7 @@ pub struct RpcServerSettings {
     exception_policy: UnhandledExceptionPolicy,
 }
 
-static CURRENT_SETTINGS: Lazy<RwLock<RpcServerSettings>> = Lazy::new(|| {
+static CURRENT_SETTINGS: LazyLock<RwLock<RpcServerSettings>> = LazyLock::new(|| {
     RwLock::new(RpcServerSettings {
         servers: vec![RpcServerConfig::default()],
         exception_policy: UnhandledExceptionPolicy::Ignore,
