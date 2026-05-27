@@ -20,7 +20,7 @@ impl MockMessage {
     }
 }
 
-impl IMessage for MockMessage {
+impl NetworkMessage for MockMessage {
     fn command(&self) -> &str {
         &self.command
     }
@@ -40,7 +40,7 @@ struct MockTransaction {
     valid_until: u32,
 }
 
-impl ITransaction for MockTransaction {
+impl TransactionLike for MockTransaction {
     fn hash(&self) -> UInt256 {
         self.hash
     }
@@ -84,7 +84,7 @@ impl MockBlock {
     }
 }
 
-impl IBlock for MockBlock {
+impl BlockLike for MockBlock {
     type Transaction = MockTransaction;
 
     fn hash(&self) -> UInt256 {
@@ -117,7 +117,7 @@ struct MockHeader {
     merkle_root: UInt256,
 }
 
-impl IHeader for MockHeader {
+impl HeaderLike for MockHeader {
     fn hash(&self) -> UInt256 {
         self.hash
     }
@@ -233,17 +233,17 @@ impl PeerRegistry for MockPeerRegistry {
         self.peers.lock().unwrap().len()
     }
 
-    fn broadcast(&self, _message: &dyn IMessage) {
+    fn broadcast(&self, _message: &dyn NetworkMessage) {
         self.broadcast_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
-    fn broadcast_except(&self, _message: &dyn IMessage, _except: &[PeerId]) {
+    fn broadcast_except(&self, _message: &dyn NetworkMessage, _except: &[PeerId]) {
         self.broadcast_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
-    fn send_to(&self, peer_id: PeerId, _message: &dyn IMessage) -> SendResult<()> {
+    fn send_to(&self, peer_id: PeerId, _message: &dyn NetworkMessage) -> SendResult<()> {
         if self.get_peer(peer_id).is_some() {
             Ok(())
         } else {
@@ -388,7 +388,7 @@ fn test_peer_info_creation() {
     assert_eq!(info.user_agent, "Neo-CLI:3.0");
 }
 
-// ============ IMessage Tests ============
+// ============ NetworkMessage Tests ============
 
 #[test]
 fn test_mock_message() {
@@ -397,7 +397,7 @@ fn test_mock_message() {
     assert_eq!(msg.serialize(), vec![0x01, 0x02]);
 }
 
-// ============ IBlock Tests ============
+// ============ BlockLike Tests ============
 
 #[test]
 fn test_mock_block() {
@@ -519,7 +519,7 @@ fn test_mock_peer_registry_disconnect() {
 
 #[test]
 fn test_message_as_trait_object() {
-    fn accept_message(m: &dyn IMessage) -> &str {
+    fn accept_message(m: &dyn NetworkMessage) -> &str {
         m.command()
     }
 

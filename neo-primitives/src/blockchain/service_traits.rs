@@ -23,11 +23,11 @@ use crate::UInt256;
 /// to allow different implementations to use their own payload types.
 pub trait BlockchainProvider: Send + Sync + 'static {
     /// Block type.
-    type Block: IBlock;
+    type Block: BlockLike;
     /// Header type.
-    type Header: IHeader;
+    type Header: HeaderLike;
     /// Transaction type.
-    type Transaction: ITransaction;
+    type Transaction: TransactionLike;
 
     /// Gets the current blockchain height.
     fn height(&self) -> u32;
@@ -91,17 +91,17 @@ pub trait PeerRegistry: Send + Sync + 'static {
     fn connected_count(&self) -> usize;
 
     /// Broadcasts a message to all connected peers.
-    fn broadcast(&self, message: &dyn IMessage);
+    fn broadcast(&self, message: &dyn NetworkMessage);
 
     /// Broadcasts a message to all peers except the specified ones.
-    fn broadcast_except(&self, message: &dyn IMessage, except: &[PeerId]);
+    fn broadcast_except(&self, message: &dyn NetworkMessage, except: &[PeerId]);
 
     /// Sends a message to a specific peer.
     ///
     /// # Errors
     ///
     /// Returns `SendError` if the peer is not found, disconnected, or the send queue is full.
-    fn send_to(&self, peer_id: PeerId, message: &dyn IMessage) -> SendResult<()>;
+    fn send_to(&self, peer_id: PeerId, message: &dyn NetworkMessage) -> SendResult<()>;
 
     /// Gets information about all connected peers.
     fn get_peers(&self) -> Vec<PeerInfo>;

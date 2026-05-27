@@ -12,7 +12,7 @@ use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::helper::Helper;
-use neo_core::smart_contract::diagnostic::IDiagnostic;
+use neo_core::smart_contract::diagnostic::Diagnostic;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
@@ -28,7 +28,7 @@ struct OpcodeDiagnostic {
     context_loaded_count: Arc<AtomicUsize>,
 }
 
-impl IDiagnostic for OpcodeDiagnostic {
+impl Diagnostic for OpcodeDiagnostic {
     fn initialized(&mut self, _engine: &mut ApplicationEngine) {}
 
     fn disposed(&mut self) {}

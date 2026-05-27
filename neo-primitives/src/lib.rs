@@ -81,10 +81,10 @@ pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // New trait re-exports for crate refactoring (Phase 1)
 pub use blockchain::{
-    BlockchainProvider, IBlock, IHeader, IMessage, ITransaction, PeerId, PeerInfo, PeerRegistry,
+    BlockchainProvider, BlockLike, HeaderLike, NetworkMessage, TransactionLike, PeerId, PeerInfo, PeerRegistry,
     RelayError, RelayResult, SendError, SendResult,
 };
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use verification::{
-    BlockchainSnapshot, IVerificationContext, IWitness, VerificationError, VerificationResult,
+    BlockchainSnapshot, VerificationContext, Witness, VerificationError, VerificationResult,
 };

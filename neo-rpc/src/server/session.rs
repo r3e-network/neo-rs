@@ -126,7 +126,7 @@ impl Session {
         });
 
         let diagnostic_box = diagnostic.clone().map(|diag| {
-            Box::new(diag) as Box<dyn neo_core::smart_contract::diagnostic::IDiagnostic>
+            Box::new(diag) as Box<dyn neo_core::smart_contract::diagnostic::Diagnostic>
         });
 
         let mut engine = ApplicationEngine::new(

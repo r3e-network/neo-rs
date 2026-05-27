@@ -8,7 +8,7 @@ impl ApplicationEngine {
         persisting_block: Option<Block>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
-        diagnostic: Option<Box<dyn IDiagnostic>>,
+        diagnostic: Option<Box<dyn Diagnostic>>,
     ) -> Result<Self> {
         Self::new_with_shared_block(
             trigger,
@@ -28,7 +28,7 @@ impl ApplicationEngine {
         persisting_block: Option<Arc<Block>>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
-        diagnostic: Option<Box<dyn IDiagnostic>>,
+        diagnostic: Option<Box<dyn Diagnostic>>,
     ) -> Result<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
@@ -98,7 +98,7 @@ impl ApplicationEngine {
         gas_limit: i64,
         contracts: HashMap<UInt160, ContractState>,
         native_contract_cache: Arc<Mutex<NativeContractsCache>>,
-        diagnostic: Option<Box<dyn IDiagnostic>>,
+        diagnostic: Option<Box<dyn Diagnostic>>,
     ) -> Result<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());

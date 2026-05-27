@@ -6,19 +6,19 @@
 //!
 //! # Design
 //!
-//! - `IVerificationContext`: Abstracts witness verification without VM dependency
-//! - `IWitness`: Represents witness data (invocation + verification scripts)
+//! - `VerificationContext`: Abstracts witness verification without VM dependency
+//! - `Witness`: Represents witness data (invocation + verification scripts)
 //! - `BlockchainSnapshot`: Read-only blockchain state for verification
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! use neo_primitives::{IVerificationContext, IWitness, VerificationError};
+//! use neo_primitives::{VerificationContext, Witness, VerificationError};
 //!
 //! struct MockVerifier { max_gas: i64, consumed: i64 }
 //!
-//! impl IVerificationContext for MockVerifier {
-//!     fn verify_witness(&self, hash: &UInt160, witness: &dyn IWitness) -> Result<bool, VerificationError> {
+//! impl VerificationContext for MockVerifier {
+//!     fn verify_witness(&self, hash: &UInt160, witness: &dyn Witness) -> Result<bool, VerificationError> {
 //!         // Mock implementation - real one uses VM
 //!         Ok(true)
 //!     }
@@ -115,7 +115,7 @@ pub type VerificationResult<T> = Result<T, VerificationError>;
 ///
 /// A witness contains the invocation and verification scripts needed
 /// to authorize a transaction or operation.
-pub trait IWitness: Send + Sync {
+pub trait Witness: Send + Sync {
     /// Returns the invocation script (contains signatures/parameters).
     fn invocation_script(&self) -> &[u8];
 
@@ -143,7 +143,7 @@ pub trait IWitness: Send + Sync {
 ///
 /// Trait dispatch adds ~2ns overhead per call. For verification operations
 /// that take milliseconds (VM execution), this is negligible (<0.001%).
-pub trait IVerificationContext: Send + Sync {
+pub trait VerificationContext: Send + Sync {
     /// Verifies a witness script for the given script hash.
     ///
     /// # Arguments
@@ -161,7 +161,7 @@ pub trait IVerificationContext: Send + Sync {
     ///
     /// Returns `VerificationError` if gas limit is exceeded, the script is invalid,
     /// the signature is invalid, or the witness is missing.
-    fn verify_witness(&self, hash: &UInt160, witness: &dyn IWitness) -> VerificationResult<bool>;
+    fn verify_witness(&self, hash: &UInt160, witness: &dyn Witness) -> VerificationResult<bool>;
 
     /// Returns the total gas consumed during verification so far.
     fn get_gas_consumed(&self) -> i64;
@@ -269,7 +269,7 @@ mod tests {
         }
     }
 
-    impl IWitness for MockWitness {
+    impl Witness for MockWitness {
         fn invocation_script(&self) -> &[u8] {
             &self.invocation
         }
@@ -301,11 +301,11 @@ mod tests {
         }
     }
 
-    impl IVerificationContext for MockVerifier {
+    impl VerificationContext for MockVerifier {
         fn verify_witness(
             &self,
             _hash: &UInt160,
-            _witness: &dyn IWitness,
+            _witness: &dyn Witness,
         ) -> VerificationResult<bool> {
             if self.should_pass {
                 Ok(true)
@@ -426,7 +426,7 @@ mod tests {
         assert_eq!(err1, err2);
     }
 
-    // ============ IWitness Tests ============
+    // ============ Witness Tests ============
 
     #[test]
     fn test_mock_witness_scripts() {
@@ -442,7 +442,7 @@ mod tests {
         assert!(witness.verification_script().is_empty());
     }
 
-    // ============ IVerificationContext Tests ============
+    // ============ VerificationContext Tests ============
 
     #[test]
     fn test_mock_verifier_passes() {
@@ -547,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_witness_as_trait_object() {
-        fn accept_witness(w: &dyn IWitness) -> usize {
+        fn accept_witness(w: &dyn Witness) -> usize {
             w.invocation_script().len() + w.verification_script().len()
         }
 
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_verifier_as_trait_object() {
-        fn accept_verifier(v: &dyn IVerificationContext) -> i64 {
+        fn accept_verifier(v: &dyn VerificationContext) -> i64 {
             v.get_remaining_gas()
         }
 
@@ -658,11 +658,11 @@ mod tests {
     fn test_mock_verifier_error_result() {
         // Test verification that returns an error
         struct FailingVerifier;
-        impl IVerificationContext for FailingVerifier {
+        impl VerificationContext for FailingVerifier {
             fn verify_witness(
                 &self,
                 _hash: &UInt160,
-                _witness: &dyn IWitness,
+                _witness: &dyn Witness,
             ) -> VerificationResult<bool> {
                 Err(VerificationError::gas_limit_exceeded(500, 100))
             }

@@ -8,7 +8,7 @@
 //!
 //! - `BlockchainProvider`: Query and relay operations for blockchain
 //! - `PeerRegistry`: Peer management and message broadcasting
-//! - `IMessage`, `IBlock`, `IHeader`: Marker traits for associated types
+//! - `NetworkMessage`, `BlockLike`, `HeaderLike`: Marker traits for associated types
 //!
 //! # Example
 //!

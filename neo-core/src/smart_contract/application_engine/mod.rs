@@ -96,7 +96,7 @@ use crate::smart_contract::contract_state::ContractState;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::helper::Helper;
-use crate::smart_contract::diagnostic::IDiagnostic;
+use crate::smart_contract::diagnostic::Diagnostic;
 use crate::smart_contract::iterators::iterator::StorageIterator as _;
 use crate::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use crate::smart_contract::log_event_args::LogEventArgs;
@@ -252,7 +252,7 @@ pub struct ApplicationEngine {
     pending_native_calls: Vec<PendingNativeCall>,
     nonce_data: [u8; 16],
     random_times: u32,
-    diagnostic: Option<Box<dyn IDiagnostic>>,
+    diagnostic: Option<Box<dyn Diagnostic>>,
     fault_exception: Option<String>,
     states: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
     runtime_context: Option<Arc<dyn SystemContext>>,

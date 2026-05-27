@@ -6,7 +6,7 @@ use crate::UInt256;
 /// Trait for network messages.
 ///
 /// Implementations should provide serialization for network transmission.
-pub trait IMessage: Send + Sync {
+pub trait NetworkMessage: Send + Sync {
     /// Returns the command name for this message type.
     fn command(&self) -> &str;
 
@@ -17,7 +17,7 @@ pub trait IMessage: Send + Sync {
 /// Trait for block data.
 ///
 /// Provides common operations on blocks without exposing internal structure.
-pub trait IBlock: Send + Sync {
+pub trait BlockLike: Send + Sync {
     /// Associated type for transactions in this block.
     type Transaction;
 
@@ -43,7 +43,7 @@ pub trait IBlock: Send + Sync {
 /// Trait for block header data.
 ///
 /// Headers are blocks without transaction data.
-pub trait IHeader: Send + Sync {
+pub trait HeaderLike: Send + Sync {
     /// Returns the header hash.
     fn hash(&self) -> UInt256;
 
@@ -63,7 +63,7 @@ pub trait IHeader: Send + Sync {
 /// Trait for transaction data.
 ///
 /// Provides common operations on transactions.
-pub trait ITransaction: Send + Sync {
+pub trait TransactionLike: Send + Sync {
     /// Returns the transaction hash.
     fn hash(&self) -> UInt256;
 

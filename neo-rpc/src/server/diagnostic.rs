@@ -1,4 +1,4 @@
-use neo_core::smart_contract::diagnostic::IDiagnostic;
+use neo_core::smart_contract::diagnostic::Diagnostic;
 use neo_core::smart_contract::execution_context_state::ExecutionContextState;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::vm_runtime::ExecutionContext;
@@ -91,7 +91,7 @@ impl fmt::Debug for Diagnostic {
     }
 }
 
-impl IDiagnostic for Diagnostic {
+impl Diagnostic for Diagnostic {
     fn initialized(&mut self, _engine: &mut ApplicationEngine) {}
 
     fn disposed(&mut self) {}

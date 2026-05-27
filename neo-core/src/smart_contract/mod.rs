@@ -57,7 +57,7 @@ pub use contract_parameters_context::ContractParametersContext;
 pub use contract_state::ContractState;
 pub use contract_task::ContractTask;
 pub use deployed_contract::DeployedContract;
-pub use diagnostic::IDiagnostic;
+pub use diagnostic::Diagnostic;
 pub use execution_context_state::ExecutionContextState;
 pub use find_options::FindOptions;
 pub use helper::Helper;

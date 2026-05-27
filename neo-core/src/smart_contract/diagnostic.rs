@@ -1,10 +1,10 @@
-//! IDiagnostic - matches C# Neo.SmartContract.IDiagnostic exactly
+//! Diagnostic trait for ApplicationEngine.
 
 use crate::vm_runtime::ExecutionContext;
 use neo_vm_rs::Instruction;
 
-/// Diagnostic interface for ApplicationEngine (matches C# IDiagnostic)
-pub trait IDiagnostic: std::fmt::Debug + Send {
+/// Diagnostic interface for ApplicationEngine.
+pub trait Diagnostic: std::fmt::Debug + Send {
     /// Called when ApplicationEngine is initialized
     fn initialized(&mut self, engine: &mut crate::smart_contract::ApplicationEngine);
 
