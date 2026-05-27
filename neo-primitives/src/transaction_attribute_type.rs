@@ -18,7 +18,7 @@ impl TransactionAttributeType {
     /// Returns true if this attribute type allows multiple instances per transaction.
     #[must_use]
     pub const fn allows_multiple(self) -> bool {
-        matches!(self, Self::Conflicts | Self::NotaryAssisted)
+        matches!(self, Self::Conflicts)
     }
 }
 
@@ -102,7 +102,7 @@ mod tests {
         assert!(!TransactionAttributeType::OracleResponse.allows_multiple());
         assert!(!TransactionAttributeType::NotValidBefore.allows_multiple());
         assert!(TransactionAttributeType::Conflicts.allows_multiple());
-        assert!(TransactionAttributeType::NotaryAssisted.allows_multiple());
+        assert!(!TransactionAttributeType::NotaryAssisted.allows_multiple());
     }
 
     #[test]

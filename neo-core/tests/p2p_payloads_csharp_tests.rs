@@ -1089,6 +1089,41 @@ fn csharp_ut_high_priority_attribute_parity() {
 }
 
 #[test]
+fn csharp_ut_oracle_response_attribute_wrapper_parity() {
+    let attr = TransactionAttribute::OracleResponse(OracleResponse::new(
+        42,
+        OracleResponseCode::Success,
+        vec![1, 2, 3],
+    ));
+
+    assert_eq!(attr.size(), 14);
+    assert_eq!(
+        attr.to_json(),
+        json!({
+            "type": "OracleResponse",
+            "id": 42,
+            "code": 0,
+            "result": "AQID"
+        })
+    );
+
+    let bytes = attr.to_array().expect("serialize");
+    assert_eq!(bytes[0], TransactionAttributeType::OracleResponse.to_byte());
+
+    let mut reader = MemoryReader::new(&bytes);
+    let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
+    match clone {
+        TransactionAttribute::OracleResponse(response) => {
+            assert_eq!(response.id, 42);
+            assert_eq!(response.code, OracleResponseCode::Success);
+            assert_eq!(response.result, vec![1, 2, 3]);
+        }
+        other => panic!("expected oracle response, got {other:?}"),
+    }
+    assert_eq!(reader.remaining(), 0);
+}
+
+#[test]
 fn csharp_ut_not_valid_before_attribute_parity() {
     let settings = ProtocolSettings::default_settings();
     let snapshot = DataCache::new(false);

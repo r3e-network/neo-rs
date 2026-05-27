@@ -10,16 +10,16 @@
 // modifications are permitted.
 
 use super::{
-    conflicts::Conflicts, high_priority_attribute::HighPriorityAttribute,
+    TransactionAttributeType, conflicts::Conflicts, high_priority_attribute::HighPriorityAttribute,
     not_valid_before::NotValidBefore, notary_assisted::NotaryAssisted,
     oracle_response::OracleResponse, oracle_response_code::OracleResponseCode,
-    transaction::Transaction, TransactionAttributeType,
+    transaction::Transaction,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::PolicyContract;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 
 /// Represents an attribute of a transaction.
@@ -36,6 +36,87 @@ pub enum TransactionAttribute {
     Conflicts(Conflicts),
     /// Notary assisted attribute
     NotaryAssisted(NotaryAssisted),
+}
+
+macro_rules! impl_transaction_attribute_wire {
+    (
+        unit { $unit_variant:ident => $unit_type:ident; }
+        typed { $($variant:ident($payload:ty) => $attr_type:ident;)+ }
+    ) => {
+        impl TransactionAttribute {
+            /// Gets the type of the attribute.
+            /// Matches C# Type property.
+            pub fn get_type(&self) -> TransactionAttributeType {
+                match self {
+                    Self::$unit_variant => TransactionAttributeType::$unit_type,
+                    $(
+                        Self::$variant(_) => TransactionAttributeType::$attr_type,
+                    )+
+                }
+            }
+
+            fn body_size(&self) -> usize {
+                match self {
+                    Self::$unit_variant => 0,
+                    $(
+                        Self::$variant(attr) => attr.size(),
+                    )+
+                }
+            }
+
+            fn serialize_body(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+                match self {
+                    Self::$unit_variant => Ok(()),
+                    $(
+                        Self::$variant(attr) => attr.serialize_without_type(writer),
+                    )+
+                }
+            }
+
+            /// Deserializes a TransactionAttribute from a reader.
+            /// Matches C# DeserializeFrom static method.
+            pub fn deserialize_from(reader: &mut MemoryReader) -> IoResult<Self> {
+                let type_byte = reader.read_u8()?;
+                let attr_type = TransactionAttributeType::from_byte(type_byte).ok_or_else(|| {
+                    IoError::invalid_data(format!("Invalid attribute type: {type_byte}"))
+                })?;
+
+                match attr_type {
+                    TransactionAttributeType::$unit_type => Ok(Self::$unit_variant),
+                    $(
+                        TransactionAttributeType::$attr_type => {
+                            Ok(Self::$variant(<$payload as Serializable>::deserialize(reader)?))
+                        }
+                    )+
+                }
+            }
+        }
+
+        impl Serializable for TransactionAttribute {
+            fn size(&self) -> usize {
+                1 + self.body_size()
+            }
+
+            fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+                writer.write_u8(self.get_type().to_byte())?;
+                self.serialize_body(writer)
+            }
+
+            fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+                Self::deserialize_from(reader)
+            }
+        }
+    };
+}
+
+impl_transaction_attribute_wire! {
+    unit { HighPriority => HighPriority; }
+    typed {
+        OracleResponse(OracleResponse) => OracleResponse;
+        NotValidBefore(NotValidBefore) => NotValidBefore;
+        Conflicts(Conflicts) => Conflicts;
+        NotaryAssisted(NotaryAssisted) => NotaryAssisted;
+    }
 }
 
 impl TransactionAttribute {
@@ -58,18 +139,6 @@ impl TransactionAttribute {
         Self::NotValidBefore(NotValidBefore::new(height))
     }
 
-    /// Gets the type of the attribute.
-    /// Matches C# Type property.
-    pub fn get_type(&self) -> TransactionAttributeType {
-        match self {
-            Self::HighPriority => TransactionAttributeType::HighPriority,
-            Self::OracleResponse(_) => TransactionAttributeType::OracleResponse,
-            Self::NotValidBefore(_) => TransactionAttributeType::NotValidBefore,
-            Self::Conflicts(_) => TransactionAttributeType::Conflicts,
-            Self::NotaryAssisted(_) => TransactionAttributeType::NotaryAssisted,
-        }
-    }
-
     /// Alias for get_type() to match C# naming.
     pub fn attribute_type(&self) -> TransactionAttributeType {
         self.get_type()
@@ -78,7 +147,7 @@ impl TransactionAttribute {
     /// Indicates whether multiple instances of this attribute are allowed.
     /// Matches C# AllowMultiple property.
     pub fn allow_multiple(&self) -> bool {
-        matches!(self, Self::Conflicts(_))
+        self.get_type().allows_multiple()
     }
 
     /// Verify the attribute.
@@ -153,56 +222,55 @@ impl TransactionAttribute {
     }
 }
 
-impl Serializable for TransactionAttribute {
-    fn size(&self) -> usize {
-        1 + match self {
-            Self::HighPriority => 0,
-            Self::OracleResponse(attr) => attr.size(),
-            Self::NotValidBefore(attr) => attr.size(),
-            Self::Conflicts(attr) => attr.size(),
-            Self::NotaryAssisted(attr) => attr.size(),
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::UInt256;
+
+    fn sample_attributes() -> Vec<TransactionAttribute> {
+        vec![
+            TransactionAttribute::HighPriority,
+            TransactionAttribute::OracleResponse(OracleResponse::new(
+                7,
+                OracleResponseCode::Success,
+                vec![1, 2, 3],
+            )),
+            TransactionAttribute::NotValidBefore(NotValidBefore::new(42)),
+            TransactionAttribute::Conflicts(Conflicts::new(UInt256::from([0xAA; 32]))),
+            TransactionAttribute::NotaryAssisted(NotaryAssisted::new(2)),
+        ]
+    }
+
+    #[test]
+    fn wire_mapping_preserves_attribute_type_bytes() {
+        for attribute in sample_attributes() {
+            let expected_type = attribute.get_type();
+            let mut writer = BinaryWriter::new();
+
+            Serializable::serialize(&attribute, &mut writer).unwrap();
+            let bytes = writer.into_bytes();
+
+            assert_eq!(bytes[0], expected_type.to_byte(), "{attribute:?}");
+
+            let mut reader = MemoryReader::new(&bytes);
+            let decoded = TransactionAttribute::deserialize_from(&mut reader).unwrap();
+
+            assert_eq!(decoded.get_type(), expected_type);
+            assert_eq!(reader.remaining(), 0);
         }
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u8(self.get_type() as u8)?;
-        match self {
-            Self::HighPriority => Ok(()),
-            Self::OracleResponse(attr) => attr.serialize_without_type(writer),
-            Self::NotValidBefore(attr) => attr.serialize_without_type(writer),
-            Self::Conflicts(attr) => attr.serialize_without_type(writer),
-            Self::NotaryAssisted(attr) => attr.serialize_without_type(writer),
+    #[test]
+    fn multiplicity_matches_attribute_type_table() {
+        for attribute in sample_attributes() {
+            assert_eq!(
+                attribute.allow_multiple(),
+                attribute.get_type().allows_multiple(),
+                "{attribute:?}"
+            );
         }
-    }
 
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        Self::deserialize_from(reader)
-    }
-}
-
-impl TransactionAttribute {
-    /// Deserializes a TransactionAttribute from a reader.
-    /// Matches C# DeserializeFrom static method.
-    pub fn deserialize_from(reader: &mut MemoryReader) -> IoResult<Self> {
-        let type_byte = reader.read_u8()?;
-        let attr_type = TransactionAttributeType::from_byte(type_byte).ok_or_else(|| {
-            IoError::invalid_data(format!("Invalid attribute type: {}", type_byte))
-        })?;
-
-        match attr_type {
-            TransactionAttributeType::HighPriority => Ok(Self::HighPriority),
-            TransactionAttributeType::OracleResponse => Ok(Self::OracleResponse(
-                <OracleResponse as Serializable>::deserialize(reader)?,
-            )),
-            TransactionAttributeType::NotValidBefore => Ok(Self::NotValidBefore(
-                <NotValidBefore as Serializable>::deserialize(reader)?,
-            )),
-            TransactionAttributeType::Conflicts => Ok(Self::Conflicts(
-                <Conflicts as Serializable>::deserialize(reader)?,
-            )),
-            TransactionAttributeType::NotaryAssisted => Ok(Self::NotaryAssisted(
-                <NotaryAssisted as Serializable>::deserialize(reader)?,
-            )),
-        }
+        assert!(TransactionAttribute::Conflicts(Conflicts::new(UInt256::zero())).allow_multiple());
+        assert!(!TransactionAttribute::NotaryAssisted(NotaryAssisted::new(1)).allow_multiple());
     }
 }
