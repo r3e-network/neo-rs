@@ -134,26 +134,102 @@ pub enum ProtocolMessage {
     },
 }
 
-macro_rules! serialize_protocol_message {
+macro_rules! impl_protocol_message_codecs {
     (
-        $message:expr_2021;
-        payload { $($payload_variant:ident),+ $(,)? }
-        raw { $($raw_variant:ident),+ $(,)? }
-        empty { $($empty_variant:ident),+ $(,)? }
+        typed { $($typed_variant:ident($typed_payload:ty) => $typed_command:ident;)+ }
+        empty { $($empty_variant:ident => $empty_command:ident;)+ }
+        raw { $($raw_variant:ident => $raw_command:ident;)+ }
     ) => {
-        match $message {
-            $(
-                ProtocolMessage::$payload_variant(payload) => serialize_payload(payload),
-            )+
-            $(
-                ProtocolMessage::$raw_variant(bytes) => Ok(bytes.clone()),
-            )+
-            $(
-                ProtocolMessage::$empty_variant => Ok(Vec::new()),
-            )+
-            ProtocolMessage::Unknown { bytes, .. } => Ok(bytes.clone()),
+        impl ProtocolMessage {
+            /// Returns the underlying command associated with this payload.
+            pub fn command(&self) -> MessageCommand {
+                match self {
+                    $(
+                        Self::$typed_variant(_) => MessageCommand::$typed_command,
+                    )+
+                    $(
+                        Self::$empty_variant => MessageCommand::$empty_command,
+                    )+
+                    $(
+                        Self::$raw_variant(_) => MessageCommand::$raw_command,
+                    )+
+                    Self::Unknown { command, .. } => *command,
+                }
+            }
+
+            fn serialize(&self) -> NetworkResult<Vec<u8>> {
+                match self {
+                    $(
+                        Self::$typed_variant(payload) => serialize_payload(payload),
+                    )+
+                    $(
+                        Self::$empty_variant => Ok(Vec::new()),
+                    )+
+                    $(
+                        Self::$raw_variant(bytes) => Ok(bytes.clone()),
+                    )+
+                    Self::Unknown { bytes, .. } => Ok(bytes.clone()),
+                }
+            }
+
+            fn deserialize(command: MessageCommand, data: &[u8]) -> NetworkResult<Self> {
+                let message = match command {
+                    $(
+                        MessageCommand::$typed_command => {
+                            let payload = deserialize_payload::<$typed_payload>(data)?;
+                            Self::$typed_variant(payload)
+                        }
+                    )+
+                    $(
+                        MessageCommand::$empty_command => {
+                            ensure_empty(command, data).map(|_| Self::$empty_variant)?
+                        }
+                    )+
+                    $(
+                        MessageCommand::$raw_command => Self::$raw_variant(data.to_vec()),
+                    )+
+                    MessageCommand::Unknown(value) => Self::Unknown {
+                        command: MessageCommand::Unknown(value),
+                        bytes: data.to_vec(),
+                    },
+                };
+
+                Ok(message)
+            }
         }
     };
+}
+
+impl_protocol_message_codecs! {
+    typed {
+        Version(VersionPayload) => Version;
+        Addr(AddrPayload) => Addr;
+        Ping(PingPayload) => Ping;
+        Pong(PingPayload) => Pong;
+        GetHeaders(GetBlockByIndexPayload) => GetHeaders;
+        Headers(HeadersPayload) => Headers;
+        GetBlocks(GetBlocksPayload) => GetBlocks;
+        Inv(InvPayload) => Inv;
+        GetData(InvPayload) => GetData;
+        GetBlockByIndex(GetBlockByIndexPayload) => GetBlockByIndex;
+        NotFound(InvPayload) => NotFound;
+        Transaction(Transaction) => Transaction;
+        Block(Block) => Block;
+        Extensible(ExtensiblePayload) => Extensible;
+        FilterLoad(FilterLoadPayload) => FilterLoad;
+        FilterAdd(FilterAddPayload) => FilterAdd;
+        MerkleBlock(MerkleBlockPayload) => MerkleBlock;
+    }
+    empty {
+        Verack => Verack;
+        GetAddr => GetAddr;
+        Mempool => Mempool;
+        FilterClear => FilterClear;
+    }
+    raw {
+        Alert => Alert;
+        Reject => Reject;
+    }
 }
 
 impl ProtocolMessage {
@@ -165,36 +241,6 @@ impl ProtocolMessage {
     /// Creates a pong reply with a specific block index and nonce.
     pub fn pong_with_block_index(block_index: u32, nonce: u32) -> Self {
         Self::Pong(PingPayload::create_with_nonce(block_index, nonce))
-    }
-
-    /// Returns the underlying command associated with this payload.
-    pub fn command(&self) -> MessageCommand {
-        match self {
-            Self::Version(_) => MessageCommand::Version,
-            Self::Verack => MessageCommand::Verack,
-            Self::GetAddr => MessageCommand::GetAddr,
-            Self::Addr(_) => MessageCommand::Addr,
-            Self::Ping(_) => MessageCommand::Ping,
-            Self::Pong(_) => MessageCommand::Pong,
-            Self::GetHeaders(_) => MessageCommand::GetHeaders,
-            Self::Headers(_) => MessageCommand::Headers,
-            Self::GetBlocks(_) => MessageCommand::GetBlocks,
-            Self::Mempool => MessageCommand::Mempool,
-            Self::Inv(_) => MessageCommand::Inv,
-            Self::GetData(_) => MessageCommand::GetData,
-            Self::GetBlockByIndex(_) => MessageCommand::GetBlockByIndex,
-            Self::NotFound(_) => MessageCommand::NotFound,
-            Self::Transaction(_) => MessageCommand::Transaction,
-            Self::Block(_) => MessageCommand::Block,
-            Self::Extensible(_) => MessageCommand::Extensible,
-            Self::FilterLoad(_) => MessageCommand::FilterLoad,
-            Self::FilterAdd(_) => MessageCommand::FilterAdd,
-            Self::FilterClear => MessageCommand::FilterClear,
-            Self::MerkleBlock(_) => MessageCommand::MerkleBlock,
-            Self::Alert(_) => MessageCommand::Alert,
-            Self::Reject(_) => MessageCommand::Reject,
-            Self::Unknown { command, .. } => *command,
-        }
     }
 
     fn should_try_compress(&self) -> bool {
@@ -209,120 +255,6 @@ impl ProtocolMessage {
     /// Reconstructs the payload from its binary form and command discriminator.
     pub fn from_bytes(command: MessageCommand, data: &[u8]) -> NetworkResult<Self> {
         Self::deserialize(command, data)
-    }
-
-    fn serialize(&self) -> NetworkResult<Vec<u8>> {
-        serialize_protocol_message!(
-            self;
-            payload {
-                Version,
-                Addr,
-                Ping,
-                Pong,
-                GetHeaders,
-                Headers,
-                GetBlocks,
-                Inv,
-                GetData,
-                GetBlockByIndex,
-                NotFound,
-                Transaction,
-                Block,
-                Extensible,
-                FilterLoad,
-                FilterAdd,
-                MerkleBlock,
-            }
-            raw { Alert, Reject }
-            empty { Verack, GetAddr, Mempool, FilterClear }
-        )
-    }
-
-    fn deserialize(command: MessageCommand, data: &[u8]) -> NetworkResult<Self> {
-        let message = match command {
-            MessageCommand::Version => {
-                let payload = deserialize_payload::<VersionPayload>(data)?;
-                Self::Version(payload)
-            }
-            MessageCommand::Verack => ensure_empty(command, data).map(|_| Self::Verack)?,
-            MessageCommand::GetAddr => ensure_empty(command, data).map(|_| Self::GetAddr)?,
-            MessageCommand::Addr => {
-                let payload = deserialize_payload::<AddrPayload>(data)?;
-                Self::Addr(payload)
-            }
-            MessageCommand::Ping => {
-                let payload = deserialize_payload::<PingPayload>(data)?;
-                Self::Ping(payload)
-            }
-            MessageCommand::Pong => {
-                let payload = deserialize_payload::<PingPayload>(data)?;
-                Self::Pong(payload)
-            }
-            MessageCommand::GetHeaders | MessageCommand::GetBlockByIndex => {
-                let payload = deserialize_payload::<GetBlockByIndexPayload>(data)?;
-                if command == MessageCommand::GetHeaders {
-                    Self::GetHeaders(payload)
-                } else {
-                    Self::GetBlockByIndex(payload)
-                }
-            }
-            MessageCommand::Headers => {
-                let payload = deserialize_payload::<HeadersPayload>(data)?;
-                Self::Headers(payload)
-            }
-            MessageCommand::GetBlocks => {
-                let payload = deserialize_payload::<GetBlocksPayload>(data)?;
-                Self::GetBlocks(payload)
-            }
-            MessageCommand::Mempool => ensure_empty(command, data).map(|_| Self::Mempool)?,
-            MessageCommand::Inv => {
-                let payload = deserialize_payload::<InvPayload>(data)?;
-                Self::Inv(payload)
-            }
-            MessageCommand::GetData => {
-                let payload = deserialize_payload::<InvPayload>(data)?;
-                Self::GetData(payload)
-            }
-            MessageCommand::NotFound => {
-                let payload = deserialize_payload::<InvPayload>(data)?;
-                Self::NotFound(payload)
-            }
-            MessageCommand::Transaction => {
-                let payload = deserialize_payload::<Transaction>(data)?;
-                Self::Transaction(payload)
-            }
-            MessageCommand::Block => {
-                let payload = deserialize_payload::<Block>(data)?;
-                Self::Block(payload)
-            }
-            MessageCommand::Extensible => {
-                let payload = deserialize_payload::<ExtensiblePayload>(data)?;
-                Self::Extensible(payload)
-            }
-            MessageCommand::Reject => Self::Reject(data.to_vec()),
-            MessageCommand::FilterLoad => {
-                let payload = deserialize_payload::<FilterLoadPayload>(data)?;
-                Self::FilterLoad(payload)
-            }
-            MessageCommand::FilterAdd => {
-                let payload = deserialize_payload::<FilterAddPayload>(data)?;
-                Self::FilterAdd(payload)
-            }
-            MessageCommand::FilterClear => {
-                ensure_empty(command, data).map(|_| Self::FilterClear)?
-            }
-            MessageCommand::MerkleBlock => {
-                let payload = deserialize_payload::<MerkleBlockPayload>(data)?;
-                Self::MerkleBlock(payload)
-            }
-            MessageCommand::Alert => Self::Alert(data.to_vec()),
-            MessageCommand::Unknown(value) => Self::Unknown {
-                command: MessageCommand::Unknown(value),
-                bytes: data.to_vec(),
-            },
-        };
-
-        Ok(message)
     }
 }
 
@@ -463,6 +395,55 @@ mod tests {
         assert_eq!(
             ProtocolMessage::Reject(reject.clone()).to_bytes().unwrap(),
             reject
+        );
+    }
+
+    #[test]
+    fn protocol_message_deserializes_typed_empty_raw_and_unknown_families() {
+        let ping = PingPayload::create_with_nonce(42, 7);
+        let ping_bytes = serialize_payload(&ping).unwrap();
+
+        match ProtocolMessage::from_bytes(MessageCommand::Ping, &ping_bytes).unwrap() {
+            ProtocolMessage::Ping(decoded) => {
+                assert_eq!(decoded.last_block_index, 42);
+                assert_eq!(decoded.nonce, 7);
+            }
+            other => panic!("expected ping payload, got {other:?}"),
+        }
+
+        assert!(matches!(
+            ProtocolMessage::from_bytes(MessageCommand::Verack, &[]).unwrap(),
+            ProtocolMessage::Verack
+        ));
+
+        let alert = ProtocolMessage::from_bytes(MessageCommand::Alert, &[0xA1, 0xA2]).unwrap();
+        assert!(matches!(alert, ProtocolMessage::Alert(bytes) if bytes == [0xA1, 0xA2]));
+
+        let unknown = ProtocolMessage::from_bytes(MessageCommand::Unknown(0xFE), &[0xB1]).unwrap();
+        assert!(
+            matches!(unknown, ProtocolMessage::Unknown { command: MessageCommand::Unknown(0xFE), bytes } if bytes == [0xB1])
+        );
+    }
+
+    #[test]
+    fn protocol_message_rejects_non_empty_empty_payloads() {
+        let error = ProtocolMessage::from_bytes(MessageCommand::FilterClear, &[0x01]).unwrap_err();
+
+        assert!(
+            matches!(error, NetworkError::InvalidMessage(message) if message.contains("does not carry a payload"))
+        );
+    }
+
+    #[test]
+    fn protocol_message_rejects_typed_payload_trailing_bytes() {
+        let ping = PingPayload::create_with_nonce(42, 7);
+        let mut ping_bytes = serialize_payload(&ping).unwrap();
+        ping_bytes.push(0xFF);
+
+        let error = ProtocolMessage::from_bytes(MessageCommand::Ping, &ping_bytes).unwrap_err();
+
+        assert!(
+            matches!(error, NetworkError::InvalidMessage(message) if message.contains("Trailing bytes present"))
         );
     }
 }
