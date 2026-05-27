@@ -257,7 +257,7 @@ impl Witness {
     /// Extracts public key from verification script (matches C# verification script parsing exactly).
     fn extract_public_key_from_verification_script(&self) -> Result<Vec<u8>, CoreError> {
         if !Helper::is_signature_contract(&self.verification_script) {
-            return Err(CoreError::InvalidData {
+            return Err(CoreError::Invalid {
                 message: "Unsupported verification script format".to_string(),
             });
         }
@@ -265,7 +265,7 @@ impl Witness {
         let public_key = self.verification_script[2..35].to_vec();
 
         if public_key.len() != 33 || (public_key[0] != 0x02 && public_key[0] != 0x03) {
-            return Err(CoreError::InvalidData {
+            return Err(CoreError::Invalid {
                 message: "Invalid compressed public key format".to_string(),
             });
         }
@@ -278,7 +278,7 @@ impl Witness {
         // Real C# Neo N3 implementation: Invocation script signature extraction
 
         if self.invocation_script.len() != 66 {
-            return Err(CoreError::InvalidData {
+            return Err(CoreError::Invalid {
                 message: "Invalid invocation script length".to_string(),
             });
         }
@@ -286,7 +286,7 @@ impl Witness {
         if self.invocation_script[0] != OpCode::PUSHDATA1.byte()
             || self.invocation_script[1] != 0x40
         {
-            return Err(CoreError::InvalidData {
+            return Err(CoreError::Invalid {
                 message: "Invalid invocation script format".to_string(),
             });
         }
@@ -294,7 +294,7 @@ impl Witness {
         let signature = self.invocation_script[2..66].to_vec();
 
         if signature.len() != 64 {
-            return Err(CoreError::InvalidData {
+            return Err(CoreError::Invalid {
                 message: "Invalid signature length".to_string(),
             });
         }
@@ -336,13 +336,13 @@ impl Witness {
         public_key: &[u8],
     ) -> Result<Vec<u8>, CoreError> {
         if public_key.len() != 33 {
-            return Err(CoreError::InvalidData {
+            return Err(CoreError::Invalid {
                 message: "Public key must be 33 bytes (compressed)".to_string(),
             });
         }
 
         if public_key[0] != 0x02 && public_key[0] != 0x03 {
-            return Err(CoreError::InvalidData {
+            return Err(CoreError::Invalid {
                 message: "Invalid compressed public key format".to_string(),
             });
         }

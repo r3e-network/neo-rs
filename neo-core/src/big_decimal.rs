@@ -187,7 +187,7 @@ impl BigDecimal {
 
         if let Some(index) = s.find(['e', 'E']) {
             let e_str = &s[(index + 1)..];
-            e = e_str.parse::<i32>().map_err(|_| CoreError::InvalidFormat {
+            e = e_str.parse::<i32>().map_err(|_| CoreError::Invalid {
                 message: "Invalid exponent".to_string(),
             })?;
             s = s[..index].to_string();
@@ -208,13 +208,13 @@ impl BigDecimal {
 
         let adjusted_decimals = decimal_places as i32 - e;
         if adjusted_decimals < 0 {
-            return Err(CoreError::InvalidFormat {
+            return Err(CoreError::Invalid {
                 message: "Negative decimals not supported".to_string(),
             });
         }
 
         // Parse the integer part
-        let value = BigInt::from_str(&s).map_err(|_| CoreError::InvalidFormat {
+        let value = BigInt::from_str(&s).map_err(|_| CoreError::Invalid {
             message: "Invalid number format".to_string(),
         })?;
 

@@ -34,17 +34,10 @@ use thiserror::Error;
 /// Core module errors
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum CoreError {
-    /// Invalid format error with detailed description
-    #[error("Invalid format: {message}")]
-    InvalidFormat {
-        /// Error message describing the format issue
-        message: String,
-    },
-
-    /// Invalid data error with context
-    #[error("Invalid data: {message}")]
-    InvalidData {
-        /// Error message describing the data issue
+    /// Invalid format or data error
+    #[error("Invalid: {message}")]
+    Invalid {
+        /// Error message describing the issue
         message: String,
     },
 
@@ -55,17 +48,10 @@ pub enum CoreError {
         message: String,
     },
 
-    /// Serialization failed
-    #[error("Serialization error: {message}")]
-    Serialization {
-        /// Error message describing the serialization issue
-        message: String,
-    },
-
-    /// Deserialization failed
-    #[error("Deserialization error: {message}")]
-    Deserialization {
-        /// Error message describing the deserialization issue
+    /// Serialization or deserialization failed
+    #[error("Codec error: {message}")]
+    Codec {
+        /// Error message describing the codec issue
         message: String,
     },
 
@@ -220,14 +206,14 @@ pub enum CoreError {
 impl CoreError {
     /// Create a new invalid format error
     pub fn invalid_format<S: Into<String>>(message: S) -> Self {
-        Self::InvalidFormat {
+        Self::Invalid {
             message: message.into(),
         }
     }
 
     /// Create a new invalid data error
     pub fn invalid_data<S: Into<String>>(message: S) -> Self {
-        Self::InvalidData {
+        Self::Invalid {
             message: message.into(),
         }
     }
@@ -241,14 +227,14 @@ impl CoreError {
 
     /// Create a new serialization error
     pub fn serialization<S: Into<String>>(message: S) -> Self {
-        Self::Serialization {
+        Self::Codec {
             message: message.into(),
         }
     }
 
     /// Create a new deserialization error
     pub fn deserialization<S: Into<String>>(message: S) -> Self {
-        Self::Deserialization {
+        Self::Codec {
             message: message.into(),
         }
     }
@@ -260,9 +246,9 @@ impl CoreError {
         }
     }
 
-    /// Create a new invalid argument error (maps to invalid data internally)
+    /// Create a new invalid argument error (maps to invalid internally)
     pub fn invalid_argument<S: Into<String>>(message: S) -> Self {
-        Self::InvalidData {
+        Self::Invalid {
             message: message.into(),
         }
     }
@@ -380,8 +366,7 @@ impl CoreError {
     pub fn is_user_error(&self) -> bool {
         matches!(
             self,
-            CoreError::InvalidFormat { .. }
-                | CoreError::InvalidData { .. }
+            CoreError::Invalid { .. }
                 | CoreError::InvalidOperation { .. }
                 | CoreError::ValidationFailed { .. }
                 | CoreError::TypeConversion { .. }
@@ -402,9 +387,9 @@ impl CoreError {
     /// Get error category for logging/metrics
     pub fn category(&self) -> &'static str {
         match self {
-            CoreError::InvalidFormat { .. } | CoreError::InvalidData { .. } => "validation",
+            CoreError::Invalid { .. } => "validation",
             CoreError::Io { .. } | CoreError::Network { .. } => "io",
-            CoreError::Serialization { .. } | CoreError::Deserialization { .. } => "serialization",
+            CoreError::Codec { .. } => "serialization",
             CoreError::InvalidOperation { .. } => "operation",
             CoreError::System { .. } => "system",
             CoreError::InsufficientGas { .. } => "resource",
@@ -492,8 +477,8 @@ mod tests {
     #[test]
     fn test_error_creation() {
         let error = CoreError::invalid_format("test message");
-        assert!(matches!(error, CoreError::InvalidFormat { .. }));
-        assert_eq!(error.to_string(), "Invalid format: test message");
+        assert!(matches!(error, CoreError::Invalid { .. }));
+        assert_eq!(error.to_string(), "Invalid: test message");
     }
 
     #[test]
