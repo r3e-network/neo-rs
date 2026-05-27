@@ -202,7 +202,7 @@ impl JToken {
     }
 
     /// Returns the boolean value or an error if the token is not a boolean.
-    pub const fn get_boolean(&self) -> Result<bool, JsonError> {
+    pub const fn try_as_boolean(&self) -> Result<bool, JsonError> {
         match self {
             Self::Boolean(value) => Ok(*value),
             _ => Err(JsonError::InvalidCast("Expected boolean token")),
@@ -210,7 +210,7 @@ impl JToken {
     }
 
     /// Returns the numeric value or an error if the token is not a number.
-    pub const fn get_number(&self) -> Result<f64, JsonError> {
+    pub const fn try_as_number(&self) -> Result<f64, JsonError> {
         match self {
             Self::Number(value) => Ok(*value),
             _ => Err(JsonError::InvalidCast("Expected number token")),
@@ -218,7 +218,7 @@ impl JToken {
     }
 
     /// Returns the string value or an error if the token is not a string.
-    pub fn get_string(&self) -> Result<String, JsonError> {
+    pub fn try_as_string(&self) -> Result<String, JsonError> {
         match self {
             Self::String(value) => Ok(value.clone()),
             _ => Err(JsonError::InvalidCast("Expected string token")),
@@ -226,8 +226,8 @@ impl JToken {
     }
 
     /// Returns the numeric value as an `i32`, or an error if not integral or out of range.
-    pub fn get_int32(&self) -> Result<i32, JsonError> {
-        let number = self.get_number()?;
+    pub fn try_as_int32(&self) -> Result<i32, JsonError> {
+        let number = self.try_as_number()?;
         if number.fract() != 0.0 {
             return Err(JsonError::InvalidCast("Number is not integral"));
         }

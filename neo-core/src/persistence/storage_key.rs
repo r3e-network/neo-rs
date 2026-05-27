@@ -69,8 +69,8 @@ mod tests {
     #[test]
     fn storage_key_get_hash_code() {
         let key = StorageKey::new(-1, vec![0x14, 0xAA, 0xBB]);
-        let hash1 = key.get_hash_code();
-        let hash2 = key.get_hash_code();
+        let hash1 = key.hash_code();
+        let hash2 = key.hash_code();
         assert_eq!(hash1, hash2);
     }
 }

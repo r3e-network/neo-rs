@@ -323,7 +323,7 @@ impl Header {
         }
 
         match result_item {
-            Some(item) => match item.get_boolean() {
+            Some(item) => match item.as_boolean() {
                 Ok(result) => {
                     debug!(
                         target: "neo",

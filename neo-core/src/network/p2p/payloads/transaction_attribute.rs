@@ -46,7 +46,7 @@ macro_rules! impl_transaction_attribute_wire {
         impl TransactionAttribute {
             /// Gets the type of the attribute.
             /// Matches C# Type property.
-            pub fn get_type(&self) -> TransactionAttributeType {
+            pub fn type_id(&self) -> TransactionAttributeType {
                 match self {
                     Self::$unit_variant => TransactionAttributeType::$unit_type,
                     $(
@@ -98,7 +98,7 @@ macro_rules! impl_transaction_attribute_wire {
             }
 
             fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-                writer.write_u8(self.get_type().to_byte())?;
+                writer.write_u8(self.type_id().to_byte())?;
                 self.serialize_body(writer)
             }
 
@@ -139,15 +139,15 @@ impl TransactionAttribute {
         Self::NotValidBefore(NotValidBefore::new(height))
     }
 
-    /// Alias for get_type() to match C# naming.
+    /// Alias for type_id() to match C# naming.
     pub fn attribute_type(&self) -> TransactionAttributeType {
-        self.get_type()
+        self.type_id()
     }
 
     /// Indicates whether multiple instances of this attribute are allowed.
     /// Matches C# AllowMultiple property.
     pub fn allow_multiple(&self) -> bool {
-        self.get_type().allows_multiple()
+        self.type_id().allows_multiple()
     }
 
     /// Verify the attribute.
@@ -172,7 +172,7 @@ impl TransactionAttribute {
     pub fn calculate_network_fee(&self, snapshot: &DataCache, tx: &Transaction) -> i64 {
         let policy = PolicyContract::new();
         let base_fee = policy
-            .get_attribute_fee_snapshot(snapshot, self.get_type())
+            .get_attribute_fee_snapshot(snapshot, self.type_id())
             .unwrap_or(PolicyContract::DEFAULT_ATTRIBUTE_FEE as i64);
 
         match self {
@@ -186,7 +186,7 @@ impl TransactionAttribute {
     /// Matches C# ToJson method.
     pub fn to_json(&self) -> serde_json::Value {
         let mut json = serde_json::json!({
-            "type": self.get_type().to_string(),
+            "type": self.type_id().to_string(),
         });
 
         match self {
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn wire_mapping_preserves_attribute_type_bytes() {
         for attribute in sample_attributes() {
-            let expected_type = attribute.get_type();
+            let expected_type = attribute.type_id();
             let mut writer = BinaryWriter::new();
 
             Serializable::serialize(&attribute, &mut writer).unwrap();
@@ -255,7 +255,7 @@ mod tests {
             let mut reader = MemoryReader::new(&bytes);
             let decoded = TransactionAttribute::deserialize_from(&mut reader).unwrap();
 
-            assert_eq!(decoded.get_type(), expected_type);
+            assert_eq!(decoded.type_id(), expected_type);
             assert_eq!(reader.remaining(), 0);
         }
     }
@@ -265,7 +265,7 @@ mod tests {
         for attribute in sample_attributes() {
             assert_eq!(
                 attribute.allow_multiple(),
-                attribute.get_type().allows_multiple(),
+                attribute.type_id().allows_multiple(),
                 "{attribute:?}"
             );
         }

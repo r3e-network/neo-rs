@@ -174,7 +174,7 @@ impl Nep17Tracker {
         let Ok(balance_item) = engine.peek(0) else {
             return;
         };
-        let Ok(balance) = balance_item.get_integer() else {
+        let Ok(balance) = balance_item.as_integer() else {
             TrackerBase::log(
                 self.track_name(),
                 "balanceOf returned non-integer",

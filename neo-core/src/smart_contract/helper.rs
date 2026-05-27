@@ -477,7 +477,7 @@ impl Helper {
             .peek(0)
             .map_err(|e| CoreError::invalid_operation(format!("Failed to peek result: {}", e)))?;
 
-        if !result.get_boolean().unwrap_or(false) {
+        if !result.as_boolean().unwrap_or(false) {
             return Err(CoreError::invalid_operation(
                 "Verification returned false".to_string(),
             ));

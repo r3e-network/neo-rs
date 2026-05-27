@@ -203,10 +203,10 @@ impl Nep11Tracker {
         let Ok(from_item) = engine.result_stack().peek(1) else {
             return;
         };
-        let Ok(to_balance) = to_item.get_integer() else {
+        let Ok(to_balance) = to_item.as_integer() else {
             return;
         };
-        let Ok(from_balance) = from_item.get_integer() else {
+        let Ok(from_balance) = from_item.as_integer() else {
             return;
         };
 

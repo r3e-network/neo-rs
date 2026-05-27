@@ -241,7 +241,7 @@ fn test_signature_contract_engine_fee_consumed() {
         .result_stack()
         .peek(0)
         .expect("result")
-        .get_boolean()
+        .as_boolean()
         .unwrap_or(false));
 
     let expected_opcode_units = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte()) * 2
@@ -356,7 +356,7 @@ fn test_multi_signature_contract_engine_fee_consumed() {
         .result_stack()
         .peek(0)
         .expect("result")
-        .get_boolean()
+        .as_boolean()
         .unwrap_or(false));
 
     let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());

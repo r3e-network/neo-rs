@@ -227,7 +227,7 @@ pub(super) fn query_asset_metadata(
 
     let symbol_bytes = symbol_item.as_bytes().ok()?;
     let symbol = String::from_utf8(symbol_bytes).ok()?;
-    let decimals = decimals_item.get_integer().ok()?.to_u32()?;
+    let decimals = decimals_item.as_integer().ok()?.to_u32()?;
 
     Some((symbol, decimals))
 }

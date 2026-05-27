@@ -1161,7 +1161,7 @@ mod tests {
             .result_stack()
             .peek(0)
             .expect("result")
-            .get_boolean()
+            .as_boolean()
             .unwrap_or(false));
 
         let expected_fee = engine.fee_consumed()

@@ -279,7 +279,7 @@ impl TrackerBase {
             .and_then(|b| UInt160::from_bytes(b).ok())
             .unwrap_or_else(UInt160::zero);
 
-        let amount = amount_item.get_integer().ok()?;
+        let amount = amount_item.as_integer().ok()?;
 
         let token_id = if state_items.len() == 4 {
             match &state_items[3] {

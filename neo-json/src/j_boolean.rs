@@ -38,12 +38,6 @@ impl JBoolean {
         self.value.to_string().to_lowercase()
     }
 
-    /// Gets the boolean value
-    #[must_use]
-    pub const fn get_boolean(&self) -> bool {
-        self.value
-    }
-
     /// Writes to a JSON writer
     pub fn write(&self, writer: &mut dyn Write) -> std::io::Result<()> {
         writer.write_all(self.as_string().as_bytes())

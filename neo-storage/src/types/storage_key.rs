@@ -196,7 +196,7 @@ impl StorageKey {
 
     /// Returns the hash code using the same algorithm as the C# implementation.
     #[must_use]
-    pub fn get_hash_code(&self) -> i32 {
+    pub fn hash_code(&self) -> i32 {
         let seed = default_xx_hash3_seed();
         let suffix_hash = xx_hash3_32(&self.key, seed);
         hash_code_combine_i32(self.id, suffix_hash)
@@ -448,8 +448,8 @@ mod tests {
     #[test]
     fn test_storage_key_get_hash_code() {
         let key = StorageKey::new(-1, vec![0x14, 0xAA, 0xBB]);
-        let hash1 = key.get_hash_code();
-        let hash2 = key.get_hash_code();
+        let hash1 = key.hash_code();
+        let hash2 = key.hash_code();
         assert_eq!(hash1, hash2);
     }
 

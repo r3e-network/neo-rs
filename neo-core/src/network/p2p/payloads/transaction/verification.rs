@@ -81,7 +81,7 @@ impl Transaction {
 
         let mut attributes_fee = 0i64;
         for attribute in &self.attributes {
-            if attribute.get_type() == TransactionAttributeType::NotaryAssisted
+            if attribute.type_id() == TransactionAttributeType::NotaryAssisted
                 && !settings.is_hardfork_enabled(Hardfork::HfEchidna, height)
             {
                 return VerifyResult::InvalidAttribute;
@@ -387,7 +387,7 @@ impl Transaction {
             return false;
         };
 
-        match result_item.get_boolean() {
+        match result_item.as_boolean() {
             Ok(true) => {
                 *fee = engine.fee_consumed();
                 true

@@ -127,8 +127,8 @@ mod tests {
         let a = UInt160::zero();
         let b = UInt160::parse("0x0000000000000000000000000000000000000001").unwrap();
 
-        assert_eq!(a.get_hash_code(), UInt160::zero().get_hash_code());
-        assert_ne!(a.get_hash_code(), b.get_hash_code());
+        assert_eq!(a.hash_code(), UInt160::zero().hash_code());
+        assert_ne!(a.hash_code(), b.hash_code());
     }
 
     #[test]

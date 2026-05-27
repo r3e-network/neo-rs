@@ -79,7 +79,7 @@ pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 /// JMPIF - Jump if true
 #[inline]
 pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    if engine.pop()?.get_boolean()? {
+    if engine.pop()?.as_boolean()? {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
@@ -89,7 +89,7 @@ pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 /// `JMPIF_L` - Jump if true (32-bit)
 #[inline]
 pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    if engine.pop()?.get_boolean()? {
+    if engine.pop()?.as_boolean()? {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
     }
@@ -99,7 +99,7 @@ pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 /// JMPIFNOT - Jump if false
 #[inline]
 pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    if !engine.pop()?.get_boolean()? {
+    if !engine.pop()?.as_boolean()? {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
@@ -109,7 +109,7 @@ pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRe
 /// `JMPIFNOT_L` - Jump if false (32-bit)
 #[inline]
 pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    if !engine.pop()?.get_boolean()? {
+    if !engine.pop()?.as_boolean()? {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
     }
@@ -331,7 +331,7 @@ pub fn abortmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmR
 
 /// ASSERT - Assert condition
 pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    if !engine.pop()?.get_boolean()? {
+    if !engine.pop()?.as_boolean()? {
         return Err(VmError::AssertFailed);
     }
     Ok(())
@@ -342,7 +342,7 @@ pub fn assertmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Vm
     let msg_item = engine.pop()?;
     let msg_bytes = msg_item.into_bytes()?;
     let msg = String::from_utf8_lossy(&msg_bytes).into_owned();
-    if !engine.pop()?.get_boolean()? {
+    if !engine.pop()?.as_boolean()? {
         return Err(VmError::AssertFailedMsg(msg));
     }
     Ok(())

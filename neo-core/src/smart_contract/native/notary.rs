@@ -142,7 +142,7 @@ impl Notary {
                 .map_err(|_| Error::native_contract("Invalid deposit recipient"))?
         };
 
-        let till_value = items[1].get_integer().map_err(|err| {
+        let till_value = items[1].as_integer().map_err(|err| {
             Error::native_contract(format!("Invalid deposit expiration: {}", err))
         })?;
         let till = till_value

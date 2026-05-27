@@ -137,7 +137,7 @@ impl Witness {
     /// # Returns
     ///
     /// The size in bytes
-    pub fn get_size(&self) -> usize {
+    pub fn size(&self) -> usize {
         get_var_size_bytes(&self.invocation_script) + get_var_size_bytes(&self.verification_script)
     }
 
@@ -359,7 +359,7 @@ impl Default for Witness {
 
 impl Serializable for Witness {
     fn size(&self) -> usize {
-        self.get_size()
+        self.size()
     }
 
     fn serialize(&self, writer: &mut crate::neo_io::BinaryWriter) -> crate::neo_io::IoResult<()> {
@@ -427,7 +427,7 @@ mod tests {
     #[test]
     fn test_witness_size() {
         let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
-        let size = witness.get_size();
+        let size = witness.size();
         assert_eq!(size, 8);
     }
 
@@ -441,10 +441,10 @@ mod tests {
 
             <Witness as Serializable>::serialize(&witness, &mut writer).unwrap();
 
-            assert_eq!(witness.get_size(), writer.as_bytes().len());
+            assert_eq!(witness.size(), writer.as_bytes().len());
             assert_eq!(witness.size(), writer.as_bytes().len());
             assert_eq!(
-                witness.get_size(),
+                witness.size(),
                 get_var_size_bytes(&witness.invocation_script)
                     + get_var_size_bytes(&witness.verification_script)
             );

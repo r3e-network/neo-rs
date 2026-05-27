@@ -597,7 +597,7 @@ fn calculate_network_fee_impl(
                 ));
             }
             let result_item = engine.result_stack().peek(0).map_err(|e| e.to_string())?;
-            if !result_item.get_boolean().unwrap_or(false) {
+            if !result_item.as_boolean().unwrap_or(false) {
                 return Err(format!(
                     "Smart contract {} verification fault.",
                     contract_hash

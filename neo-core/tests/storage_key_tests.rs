@@ -126,15 +126,15 @@ fn storage_key_hash_code_is_consistent() {
     let storage_key = StorageKey::new(0x42000000, data.clone());
 
     // Same key should always return the same hash code
-    let hash1 = storage_key.get_hash_code();
-    let hash2 = storage_key.get_hash_code();
+    let hash1 = storage_key.hash_code();
+    let hash2 = storage_key.hash_code();
     assert_eq!(hash1, hash2);
 
     // Different keys should produce different hashes (with high probability)
     let different_key = StorageKey::new(0x42000000, vec![0x43; 10]);
-    assert_ne!(storage_key.get_hash_code(), different_key.get_hash_code());
+    assert_ne!(storage_key.hash_code(), different_key.hash_code());
 
     // Keys with same data but different IDs should differ
     let different_id = StorageKey::new(0x78000000, data.clone());
-    assert_ne!(storage_key.get_hash_code(), different_id.get_hash_code());
+    assert_ne!(storage_key.hash_code(), different_id.hash_code());
 }

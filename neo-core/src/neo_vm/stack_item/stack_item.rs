@@ -326,13 +326,13 @@ impl StackItem {
 
     /// Returns the boolean value represented by the stack item.
     #[inline]
-    pub fn get_boolean(&self) -> VmResult<bool> {
+    pub fn as_boolean(&self) -> VmResult<bool> {
         self.as_bool()
     }
 
     /// Returns the integer value represented by the stack item.
     #[inline]
-    pub fn get_integer(&self) -> VmResult<BigInt> {
+    pub fn as_integer(&self) -> VmResult<BigInt> {
         self.as_int()
     }
 
@@ -540,7 +540,7 @@ impl StackItem {
 
     /// Computes a deterministic hash code compatible with the C# implementation.
     #[must_use]
-    pub fn get_hash_code(&self) -> i32 {
+    pub fn hash_code(&self) -> i32 {
         match self {
             Self::Null => 0,
             Self::Boolean(b) => i32::from(*b),
@@ -550,22 +550,22 @@ impl StackItem {
             Self::Array(array) => {
                 let mut hash = combine_hash(17, array.len() as i32);
                 for item in array {
-                    hash = combine_hash(hash, item.get_hash_code());
+                    hash = combine_hash(hash, item.hash_code());
                 }
                 hash
             }
             Self::Struct(structure) => {
                 let mut hash = combine_hash(17, structure.len() as i32);
                 for item in structure.items() {
-                    hash = combine_hash(hash, item.get_hash_code());
+                    hash = combine_hash(hash, item.hash_code());
                 }
                 hash
             }
             Self::Map(map) => {
                 let mut hash = combine_hash(17, map.len() as i32);
                 for (key, value) in map.items().iter() {
-                    hash = combine_hash(hash, key.get_hash_code());
-                    hash = combine_hash(hash, value.get_hash_code());
+                    hash = combine_hash(hash, key.hash_code());
+                    hash = combine_hash(hash, value.hash_code());
                 }
                 hash
             }

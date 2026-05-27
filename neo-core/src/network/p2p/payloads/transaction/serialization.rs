@@ -106,7 +106,7 @@ impl Transaction {
         let mut hashset = HashSet::new();
         deserialize_array_with(reader, max_count, |reader| {
             let attribute = <TransactionAttribute as Serializable>::deserialize(reader)?;
-            if !attribute.allow_multiple() && !hashset.insert(attribute.get_type()) {
+            if !attribute.allow_multiple() && !hashset.insert(attribute.type_id()) {
                 return Err(IoError::invalid_data("Duplicate attribute"));
             }
             Ok(attribute)

@@ -295,7 +295,7 @@ fn attribute_to_json(attr: &neo_core::TransactionAttribute) -> JObject {
     let mut json = JObject::new();
     json.insert(
         "type".to_string(),
-        JToken::String(attr.get_type().to_string()),
+        JToken::String(attr.type_id().to_string()),
     );
     // Add attribute-specific data based on type
     use neo_core::TransactionAttribute as TA;

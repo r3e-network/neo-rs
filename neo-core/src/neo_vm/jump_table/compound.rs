@@ -596,18 +596,18 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
     let result = match collection {
         StackItem::Array(array) => {
-            let idx = normalize_index("VMArray", &key.get_integer()?, array.len())?;
+            let idx = normalize_index("VMArray", &key.as_integer()?, array.len())?;
             array
                 .get(idx)
                 .ok_or_else(|| VmError::invalid_operation_msg("Index out of range"))?
         }
         StackItem::Struct(structure) => {
-            let idx = normalize_index("Struct", &key.get_integer()?, structure.len())?;
+            let idx = normalize_index("Struct", &key.as_integer()?, structure.len())?;
             structure.get(idx)?
         }
         StackItem::Map(map) => map.get(&key)?,
         StackItem::ByteString(bytes) => {
-            let idx = normalize_index("PrimitiveType", &key.get_integer()?, bytes.len())?;
+            let idx = normalize_index("PrimitiveType", &key.as_integer()?, bytes.len())?;
             pick_byte_sequence_item(neo_vm_rs::StackValue::ByteString(bytes.clone()), idx)?
         }
         // C# Neo VM PICKITEM on PrimitiveType reads the bytewise GetSpan()
@@ -615,12 +615,12 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         // remains a one-byte span [0], matching C# Boolean.Memory.
         item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => pick_byte_sequence_item(
             neo_vm_rs::StackValue::try_from(item)?,
-            key.get_integer()?
+            key.as_integer()?
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid primitive index"))?,
         )?,
         StackItem::Buffer(buffer) => {
-            let idx = normalize_index("Buffer", &key.get_integer()?, buffer.len())?;
+            let idx = normalize_index("Buffer", &key.as_integer()?, buffer.len())?;
             pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(buffer.data()), idx)?
         }
         _ => {
@@ -654,14 +654,14 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
             if let Some(rc) = array.reference_counter() {
                 value.attach_reference_counter(&rc)?;
             }
-            let idx = normalize_index("VMArray", &key.get_integer()?, array.len())?;
+            let idx = normalize_index("VMArray", &key.as_integer()?, array.len())?;
             array.set(idx, value)?;
         }
         StackItem::Struct(structure) => {
             if let Some(rc) = structure.reference_counter() {
                 value.attach_reference_counter(&rc)?;
             }
-            let idx = normalize_index("Struct", &key.get_integer()?, structure.len())?;
+            let idx = normalize_index("Struct", &key.as_integer()?, structure.len())?;
             structure.set(idx, value)?;
         }
         StackItem::Map(map) => {
@@ -671,8 +671,8 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
             map.set(key, value)?;
         }
         StackItem::Buffer(buffer) => {
-            let idx = normalize_index("Buffer", &key.get_integer()?, buffer.len())?;
-            let byte = value.get_integer().map_err(|_| {
+            let idx = normalize_index("Buffer", &key.as_integer()?, buffer.len())?;
+            let byte = value.as_integer().map_err(|_| {
                 VmError::invalid_operation_msg(format!(
                     "Only primitive type values can be set in Buffer in {:?}.",
                     instruction.opcode()

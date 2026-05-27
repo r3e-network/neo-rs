@@ -220,7 +220,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let symbol_bytes = symbol_item.as_bytes().expect("symbol bytes");
     let symbol = String::from_utf8(symbol_bytes).expect("symbol utf8");
     let decimals = decimals_item
-        .get_integer()
+        .as_integer()
         .expect("decimals integer")
         .to_u32()
         .expect("decimals u32");

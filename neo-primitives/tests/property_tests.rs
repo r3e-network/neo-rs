@@ -75,8 +75,8 @@ proptest! {
     #[test]
     fn test_uint160_hash_consistency(bytes in any::<[u8; 20]>()) {
         let uint = UInt160::from_bytes(&bytes).unwrap();
-        let hash1 = uint.get_hash_code();
-        let hash2 = uint.get_hash_code();
+        let hash1 = uint.hash_code();
+        let hash2 = uint.hash_code();
         prop_assert_eq!(hash1, hash2);
     }
 
@@ -84,8 +84,8 @@ proptest! {
     #[test]
     fn test_uint256_hash_consistency(bytes in any::<[u8; 32]>()) {
         let uint = UInt256::from_bytes(&bytes).unwrap();
-        let hash1 = uint.get_hash_code();
-        let hash2 = uint.get_hash_code();
+        let hash1 = uint.hash_code();
+        let hash2 = uint.hash_code();
         prop_assert_eq!(hash1, hash2);
     }
 
@@ -94,7 +94,7 @@ proptest! {
     fn test_uint160_equal_values_equal_hash(bytes in any::<[u8; 20]>()) {
         let uint1 = UInt160::from_bytes(&bytes).unwrap();
         let uint2 = UInt160::from_bytes(&bytes).unwrap();
-        prop_assert_eq!(uint1.get_hash_code(), uint2.get_hash_code());
+        prop_assert_eq!(uint1.hash_code(), uint2.hash_code());
     }
 
     /// Test that equal values have equal hash codes
@@ -102,7 +102,7 @@ proptest! {
     fn test_uint256_equal_values_equal_hash(bytes in any::<[u8; 32]>()) {
         let uint1 = UInt256::from_bytes(&bytes).unwrap();
         let uint2 = UInt256::from_bytes(&bytes).unwrap();
-        prop_assert_eq!(uint1.get_hash_code(), uint2.get_hash_code());
+        prop_assert_eq!(uint1.hash_code(), uint2.hash_code());
     }
 
     // =========================================================================

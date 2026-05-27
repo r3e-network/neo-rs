@@ -22,7 +22,7 @@ crate::uint_type! {
 impl UInt256 {
     #[allow(clippy::cast_possible_truncation)]
     #[must_use]
-    pub const fn get_hash_code(&self) -> i32 {
+    pub const fn hash_code(&self) -> i32 {
         let v1_hash = (self.value1 as i32) ^ ((self.value1 >> 32) as i32);
         let v2_hash = (self.value2 as i32) ^ ((self.value2 >> 32) as i32);
         let v3_hash = (self.value3 as i32) ^ ((self.value3 >> 32) as i32);
@@ -179,7 +179,7 @@ mod tests {
         #[test]
         fn test_get_hash_code_deterministic(bytes in any::<[u8; UINT256_SIZE]>()) {
             let uint = UInt256::from_bytes(&bytes).unwrap();
-            prop_assert_eq!(uint.get_hash_code(), uint.get_hash_code());
+            prop_assert_eq!(uint.hash_code(), uint.hash_code());
         }
 
         #[test]
