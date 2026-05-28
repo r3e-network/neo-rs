@@ -215,6 +215,47 @@ impl crate::Verifiable for Block {
     }
 }
 
+impl neo_primitives::SerializablePayload for Block {
+    fn hash_data(&self) -> Vec<u8> {
+        self.header.hash_data()
+    }
+
+    fn witness_count(&self) -> usize {
+        // Header witness + all transaction witnesses
+        1 + self.transactions.iter().map(|t| t.witness_count()).sum::<usize>()
+    }
+
+    fn invocation_script(&self, index: usize) -> &[u8] {
+        if index == 0 {
+            return self.header.invocation_script(0);
+        }
+        let mut offset = 1;
+        for tx in &self.transactions {
+            let tx_count = tx.witness_count();
+            if index < offset + tx_count {
+                return tx.invocation_script(index - offset);
+            }
+            offset += tx_count;
+        }
+        &[]
+    }
+
+    fn verification_script(&self, index: usize) -> &[u8] {
+        if index == 0 {
+            return self.header.verification_script(0);
+        }
+        let mut offset = 1;
+        for tx in &self.transactions {
+            let tx_count = tx.witness_count();
+            if index < offset + tx_count {
+                return tx.verification_script(index - offset);
+            }
+            offset += tx_count;
+        }
+        &[]
+    }
+}
+
 // Use macro to reduce boilerplate
 crate::impl_default_via_new!(Block);
 

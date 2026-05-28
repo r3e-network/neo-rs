@@ -4,7 +4,32 @@
 
 use super::*;
 use crate::error::CoreError;
+use neo_primitives::SerializablePayload;
 use neo_vm_rs::StackValue;
+
+impl SerializablePayload for Transaction {
+    fn hash_data(&self) -> Vec<u8> {
+        Transaction::hash_data(self)
+    }
+
+    fn witness_count(&self) -> usize {
+        self.witnesses.len()
+    }
+
+    fn invocation_script(&self, index: usize) -> &[u8] {
+        self.witnesses
+            .get(index)
+            .map(|w| w.invocation_script.as_slice())
+            .unwrap_or_default()
+    }
+
+    fn verification_script(&self, index: usize) -> &[u8] {
+        self.witnesses
+            .get(index)
+            .map(|w| w.verification_script.as_slice())
+            .unwrap_or_default()
+    }
+}
 
 impl Inventory for Transaction {
     fn inventory_type(&self) -> InventoryType {

@@ -227,5 +227,31 @@ impl crate::Verifiable for Header {
     }
 }
 
+impl neo_primitives::SerializablePayload for Header {
+    fn hash_data(&self) -> Vec<u8> {
+        Header::hash_data(self)
+    }
+
+    fn witness_count(&self) -> usize {
+        1
+    }
+
+    fn invocation_script(&self, index: usize) -> &[u8] {
+        if index == 0 {
+            self.witness.invocation_script.as_slice()
+        } else {
+            &[]
+        }
+    }
+
+    fn verification_script(&self, index: usize) -> &[u8] {
+        if index == 0 {
+            self.witness.verification_script.as_slice()
+        } else {
+            &[]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

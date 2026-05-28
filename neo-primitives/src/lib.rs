@@ -49,6 +49,7 @@ pub mod transaction_removal_reason;
 pub mod uint160;
 pub mod uint256;
 mod uint_hex;
+pub mod serializable_payload;
 pub mod verification;
 pub mod verify_result;
 pub mod witness_condition_type;
@@ -87,6 +88,7 @@ pub use blockchain::{
     RelayError, RelayResult, SendError, SendResult,
 };
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
+pub use serializable_payload::SerializablePayload;
 pub use verification::{
     BlockchainSnapshot, VerificationContext, Witness, VerificationError, VerificationResult,
 };
