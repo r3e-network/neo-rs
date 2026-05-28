@@ -35,10 +35,6 @@ impl Inventory for Transaction {
     fn inventory_type(&self) -> InventoryType {
         InventoryType::Transaction
     }
-
-    fn hash(&mut self) -> UInt256 {
-        Transaction::hash(self)
-    }
 }
 
 impl crate::Verifiable for Transaction {

@@ -38,6 +38,7 @@ pub mod contains_transaction_type;
 pub mod contract_parameter_type;
 pub mod error;
 pub mod hardfork;
+pub mod inventory;
 pub mod inventory_type;
 /// Macro helpers for compact protocol enum declarations.
 pub mod macros;
@@ -71,6 +72,7 @@ pub use contains_transaction_type::ContainsTransactionType;
 pub use contract_parameter_type::ContractParameterType;
 pub use error::{PrimitiveError, PrimitiveResult};
 pub use hardfork::{Hardfork, HardforkParseError};
+pub use inventory::Inventory;
 pub use inventory_type::InventoryType;
 pub use node_capability_type::NodeCapabilityType;
 pub use oracle_response_code::OracleResponseCode;

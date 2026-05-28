@@ -6,18 +6,14 @@
 // repository or http://www.opensource.org/licenses/mit-license.php
 // for more details.
 //
-// Redistribution and use in source and binary forms with or without
+// Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
-use super::InventoryType;
-use crate::Verifiable;
-use crate::UInt256;
+//! Re-export of the Inventory trait from neo-primitives.
+//!
+//! The canonical `Inventory` trait now lives in [`neo_primitives`] so that
+//! both neo-core (implementations) and neo-p2p (networking) can depend on
+//! it without a circular dependency.
 
-/// Represents a message that can be relayed on the NEO network.
-pub trait Inventory: Verifiable {
-    /// The type of the inventory.
-    fn inventory_type(&self) -> InventoryType;
-
-    /// Gets the hash of the inventory item.
-    fn hash(&mut self) -> UInt256;
-}
+pub use neo_primitives::Inventory;
+pub use neo_primitives::InventoryType;

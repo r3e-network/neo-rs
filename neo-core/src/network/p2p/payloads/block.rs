@@ -147,10 +147,6 @@ impl Inventory for Block {
     fn inventory_type(&self) -> InventoryType {
         InventoryType::Block
     }
-
-    fn hash(&mut self) -> UInt256 {
-        Header::hash(&mut self.header)
-    }
 }
 
 impl crate::Verifiable for Block {
