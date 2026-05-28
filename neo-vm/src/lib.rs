@@ -167,6 +167,9 @@ pub mod execution_context;
 /// - Tracks gas consumption
 pub mod execution_engine;
 
+/// JSON serialization for VM stack items.
+pub mod json_serializer;
+
 /// Interoperable trait for smart contract state round-tripping.
 pub mod interoperable;
 
@@ -258,6 +261,7 @@ pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
 pub use interoperable::Interoperable;
+pub use json_serializer::JsonSerializer;
 pub use notify_event_args::NotifyEventArgs;
 pub use interop_service::InteropService;
 pub use jump_table::JumpTable;
