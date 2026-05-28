@@ -2,59 +2,35 @@ use super::{WitnessCondition, WitnessRule};
 use crate::neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 
-impl WitnessCondition {
-    /// Converts the witness condition to a neo-vm-rs stack value (matches C# `WitnessCondition.ToStackItem` layout).
-    pub fn to_stack_value(&self) -> StackValue {
-        let mut items = vec![StackValue::Integer(i64::from(
-            self.condition_type().to_byte(),
-        ))];
+/// Extension trait for types that can be projected to VM stack items.
+///
+/// This is needed because `WitnessCondition` and `WitnessRule` are now defined
+/// in `neo-io`, so we cannot add inherent `to_stack_item()` methods from `neo-core`.
+/// The `to_stack_value()` methods are inherent on the types (defined in `neo-io`).
+pub trait ToStackItem {
+    /// Converts to a VM stack item.
+    fn to_stack_item(&self) -> StackItem;
+}
 
-        match self {
-            WitnessCondition::Boolean { value } => {
-                items.push(StackValue::Boolean(*value));
-            }
-            WitnessCondition::Not { condition } => {
-                items.push(condition.to_stack_value());
-            }
-            WitnessCondition::And { conditions } | WitnessCondition::Or { conditions } => {
-                let expressions = conditions
-                    .iter()
-                    .map(WitnessCondition::to_stack_value)
-                    .collect::<Vec<_>>();
-                items.push(StackValue::Array(expressions));
-            }
-            WitnessCondition::ScriptHash { hash } | WitnessCondition::CalledByContract { hash } => {
-                items.push(StackValue::ByteString(hash.to_bytes()));
-            }
-            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
-                items.push(StackValue::ByteString(group.clone()));
-            }
-            WitnessCondition::CalledByEntry => {}
-        }
+/// Converts a `StackValue` to a `StackItem`, panicking on conversion failure.
+///
+/// This is safe because witness rule StackValue projections only use
+/// VM StackItem-compatible values.
+fn stack_value_to_item(value: StackValue) -> StackItem {
+    StackItem::try_from(value)
+        .expect("witness rule StackValue projection uses only VM StackItem-compatible values")
+}
 
-        StackValue::Array(items)
-    }
-
+impl ToStackItem for WitnessCondition {
     /// Converts the witness condition to a VM stack item (matches C# `WitnessCondition.ToStackItem`).
-    pub fn to_stack_item(&self) -> StackItem {
-        StackItem::try_from(self.to_stack_value()).expect(
-            "witness condition StackValue projection uses only VM StackItem-compatible values",
-        )
+    fn to_stack_item(&self) -> StackItem {
+        stack_value_to_item(self.to_stack_value())
     }
 }
 
-impl WitnessRule {
-    /// Converts the witness rule to a neo-vm-rs stack value (matches C# `WitnessRule.ToStackItem` layout).
-    pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(vec![
-            StackValue::Integer(i64::from(self.action.to_byte())),
-            self.condition.to_stack_value(),
-        ])
-    }
-
+impl ToStackItem for WitnessRule {
     /// Converts the witness rule to a VM stack item (matches C# `WitnessRule.ToStackItem`).
-    pub fn to_stack_item(&self) -> StackItem {
-        StackItem::try_from(self.to_stack_value())
-            .expect("witness rule StackValue projection uses only VM StackItem-compatible values")
+    fn to_stack_item(&self) -> StackItem {
+        stack_value_to_item(self.to_stack_value())
     }
 }

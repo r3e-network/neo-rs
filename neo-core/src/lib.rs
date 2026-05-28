@@ -316,7 +316,7 @@ pub use time_provider::TimeProvider;
 pub use unhandled_exception_policy::UnhandledExceptionPolicy;
 pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
-pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
+pub use witness_rule::{ToStackItem, WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 
 // Runtime types (requires `runtime` feature)
 #[cfg(feature = "runtime")]

@@ -4,6 +4,7 @@
 
 pub mod caching;
 pub mod extensions;
+pub mod witness_rule;
 
 mod binary_writer;
 // Core interfaces
@@ -22,6 +23,9 @@ pub use extensions::{
     memory_reader::MemoryReaderExtensions,
     serializable::{SerializableCollectionExtensions, SerializableExtensions},
 };
+
+// Re-export witness rule types
+pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 
 // Re-export caching types
 pub use caching::{

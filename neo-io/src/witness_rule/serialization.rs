@@ -1,8 +1,8 @@
 use super::helpers::{read_group_bytes, ECPOINT_COMPRESSED_SIZE};
 use super::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
-use crate::neo_io::serializable::helper::{deserialize_array_with, serialize_array};
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::UInt160;
+use crate::serializable::helper::{deserialize_array_with, serialize_array};
+use crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_primitives::UInt160;
 
 impl Serializable for WitnessCondition {
     fn size(&self) -> usize {

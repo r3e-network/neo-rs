@@ -1,6 +1,6 @@
 use super::helpers::{encode_hex, parse_group_bytes};
 use super::{WitnessCondition, WitnessRule, WitnessRuleAction};
-use crate::UInt160;
+use neo_primitives::UInt160;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{json, Value};
