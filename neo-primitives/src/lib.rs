@@ -35,6 +35,7 @@ pub mod call_flags;
 pub mod blockchain;
 pub mod constants;
 pub mod contains_transaction_type;
+pub mod find_options;
 pub mod contract_parameter_type;
 pub mod error;
 pub mod hardfork;
@@ -72,6 +73,7 @@ pub use tests::*;
 // Re-exports
 pub use constants::*;
 pub use contains_transaction_type::ContainsTransactionType;
+pub use find_options::FindOptions;
 pub use contract_parameter_type::ContractParameterType;
 pub use error::{PrimitiveError, PrimitiveResult};
 pub use hardfork::{Hardfork, HardforkParseError};
