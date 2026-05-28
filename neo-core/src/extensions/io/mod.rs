@@ -1,4 +1,6 @@
-pub mod binary_reader;
-pub mod binary_writer;
-pub mod memory_reader;
-pub mod serializable;
+pub use neo_io_crate::extensions::{
+    binary_reader::BinaryReaderExtensions,
+    binary_writer::BinaryWriterExtensions,
+    memory_reader::MemoryReaderExtensions,
+    serializable::{SerializableCollectionExtensions, SerializableExtensions},
+};

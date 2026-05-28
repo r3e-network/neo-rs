@@ -1,4 +1,4 @@
-use neo_io_crate::var_int::read_var_int_prefix;
+use crate::var_int::read_var_int_prefix;
 use std::io::{Error, ErrorKind, Read, Result};
 
 /// Extension helpers for [`Read`] mirroring `Neo.Extensions.IO.BinaryReaderExtensions`.

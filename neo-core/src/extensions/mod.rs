@@ -21,7 +21,7 @@ pub use memory::ReadOnlyMemoryExtensions;
 pub use span::SpanExtensions;
 pub use utility::ExtensionsUtility;
 
-pub use io::binary_reader::BinaryReaderExtensions;
-pub use io::binary_writer::BinaryWriterExtensions;
-pub use io::memory_reader::MemoryReaderExtensions;
-pub use io::serializable::{SerializableCollectionExtensions, SerializableExtensions};
+pub use io::BinaryReaderExtensions;
+pub use io::BinaryWriterExtensions;
+pub use io::MemoryReaderExtensions;
+pub use io::{SerializableCollectionExtensions, SerializableExtensions};

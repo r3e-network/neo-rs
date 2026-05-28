@@ -349,7 +349,7 @@ pub use network::{NetworkError, NetworkResult};
 
 /// I/O utilities with extension traits.
 pub mod neo_io {
-    pub use crate::extensions::io::serializable::SerializableExtensions as SerializableExt;
+    pub use crate::extensions::io::SerializableExtensions as SerializableExt;
     pub use ::neo_io_crate::{
         impl_serializable,
         serializable::{self, helper},

@@ -1,4 +1,4 @@
-use neo_io_crate::{serializable::helper, BinaryWriter, IoError, IoResult, Serializable};
+use crate::{serializable::helper, BinaryWriter, IoError, IoResult, Serializable};
 
 /// Extension helpers for [`BinaryWriter`] mirroring
 /// `Neo.Extensions.IO.BinaryWriterExtensions`.
