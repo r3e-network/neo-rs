@@ -1,9 +1,10 @@
 //! Error types for P2P operations.
 
+use std::net::SocketAddr;
 use thiserror::Error;
 
 /// Errors that can occur during P2P operations.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum P2PError {
     /// Connection failed.
     #[error("Connection failed: {message}")]
@@ -33,6 +34,15 @@ pub enum P2PError {
         message: String,
     },
 
+    /// Protocol violation by a peer.
+    #[error("Protocol violation from {peer}: {violation}")]
+    ProtocolViolation {
+        /// The peer that violated the protocol.
+        peer: SocketAddr,
+        /// Description of the violation.
+        violation: String,
+    },
+
     /// Timeout.
     #[error("Timeout: {operation}")]
     Timeout {
@@ -41,8 +51,18 @@ pub enum P2PError {
     },
 
     /// IO error.
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("IO error: {message}")]
+    Io {
+        /// Error message.
+        message: String,
+    },
+
+    /// Other network error.
+    #[error("Network error: {message}")]
+    Other {
+        /// Error message.
+        message: String,
+    },
 }
 
 impl P2PError {
@@ -65,6 +85,39 @@ impl P2PError {
         Self::ProtocolError {
             message: message.into(),
         }
+    }
+
+    /// Create a protocol violation error.
+    pub fn protocol_violation<S: Into<String>>(peer: SocketAddr, violation: S) -> Self {
+        Self::ProtocolViolation {
+            peer,
+            violation: violation.into(),
+        }
+    }
+
+    /// Create a timeout error.
+    pub fn timeout<S: Into<String>>(operation: S) -> Self {
+        Self::Timeout {
+            operation: operation.into(),
+        }
+    }
+
+    /// Create an IO error.
+    pub fn io<S: Into<String>>(message: S) -> Self {
+        Self::Io {
+            message: message.into(),
+        }
+    }
+
+    /// Returns true when the error represents a timeout condition.
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, P2PError::Timeout { .. })
+    }
+}
+
+impl From<std::io::Error> for P2PError {
+    fn from(error: std::io::Error) -> Self {
+        Self::io(error.to_string())
     }
 }
 
