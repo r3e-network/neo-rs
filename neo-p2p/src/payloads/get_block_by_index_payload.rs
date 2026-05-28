@@ -6,10 +6,10 @@
 // repository or http://www.opensource.org/licenses/mit-license.php
 // for more details.
 //
-// Redistribution and use in source and binary forms with or without
+// Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
-use crate::neo_io::{impl_serializable, IoError};
+use neo_io::{impl_serializable, IoError};
 use serde::{Deserialize, Serialize};
 
 // Maximum headers count from HeadersPayload

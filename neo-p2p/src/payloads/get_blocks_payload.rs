@@ -6,11 +6,11 @@
 // repository or http://www.opensource.org/licenses/mit-license.php
 // for more details.
 //
-// Redistribution and use in source and binary forms with or without
+// Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
-use crate::neo_io::{impl_serializable, IoError};
-use crate::UInt256;
+use neo_io::{impl_serializable, IoError};
+use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
 /// This message is sent to request for blocks by hash.

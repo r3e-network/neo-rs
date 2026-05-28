@@ -200,6 +200,9 @@ pub mod transaction_removal_reason {
     pub use neo_primitives::TransactionRemovalReason;
 }
 
+/// Simple P2P payload types (serialization-only, no neo-core dependencies).
+pub mod payloads;
+
 /// Verification result enumeration.
 pub mod verify_result;
 

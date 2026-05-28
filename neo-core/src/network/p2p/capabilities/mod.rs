@@ -1,10 +1,8 @@
 //! Neo network capability descriptors.
 //!
-//! `NodeCapability` is the single wire container. Free constructors remain for
-//! callers that prefer the old module-level helper style.
+//! `NodeCapability` is defined in `neo_p2p::payloads::node_capability` and
+//! re-exported here for backward compatibility.
 
-/// Base node capability trait.
-pub mod node_capability;
 /// Node capability type enumeration.
 pub mod node_capability_type {
     pub use neo_primitives::NodeCapabilityType;
@@ -12,8 +10,9 @@ pub mod node_capability_type {
 
 use crate::neo_io::IoResult;
 
-pub use node_capability::{MAX_UNKNOWN_CAPABILITY_DATA, NodeCapability};
-pub(crate) use node_capability::{
+pub use neo_p2p::payloads::node_capability::MAX_UNKNOWN_CAPABILITY_DATA;
+pub use neo_p2p::payloads::node_capability::NodeCapability;
+pub(crate) use neo_p2p::payloads::node_capability::{
     deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
 };
 pub use node_capability_type::NodeCapabilityType;

@@ -6,16 +6,15 @@
 // repository or http://www.opensource.org/licenses/mit-license.php
 // for more details.
 //
-// Redistribution and use in source and binary forms with or without
+// Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
-use crate::neo_io::serializable::helper::get_var_size_str;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
-use crate::network::p2p::capabilities::{
+use super::node_capability::{
     deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
     NodeCapability,
 };
-use crate::protocol_settings::ProtocolSettings;
+use neo_io::serializable::helper::get_var_size_str;
+use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Protocol version constant
@@ -49,15 +48,15 @@ pub struct VersionPayload {
 
 impl VersionPayload {
     /// Creates a new instance of the VersionPayload class.
-    /// Matches C# VersionPayload.Create method
+    /// Matches C# VersionPayload.Create method.
     pub fn create(
-        settings: &ProtocolSettings,
+        network: u32,
         nonce: u32,
         user_agent: String,
         capabilities: Vec<NodeCapability>,
     ) -> Self {
         Self {
-            network: settings.network,
+            network,
             version: PROTOCOL_VERSION,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

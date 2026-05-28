@@ -1,10 +1,10 @@
 //! Capability container implementation (mirrors `NodeCapability.cs`).
 
-use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io::serializable::helper;
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_primitives::NodeCapabilityType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-
-use super::node_capability_type::NodeCapabilityType;
 
 /// Maximum number of bytes allowed for unknown capability payloads (matches C# `UnknownCapability.MaxDataSize`).
 pub const MAX_UNKNOWN_CAPABILITY_DATA: usize = 1024;
@@ -110,18 +110,18 @@ impl NodeCapability {
     }
 }
 
-pub(crate) fn node_capabilities_size(capabilities: &[NodeCapability]) -> usize {
+pub fn node_capabilities_size(capabilities: &[NodeCapability]) -> usize {
     helper::get_var_size_serializable_slice(capabilities)
 }
 
-pub(crate) fn serialize_node_capabilities(
+pub fn serialize_node_capabilities(
     capabilities: &[NodeCapability],
     writer: &mut BinaryWriter,
 ) -> IoResult<()> {
     helper::serialize_array(capabilities, writer)
 }
 
-pub(crate) fn deserialize_node_capabilities(
+pub fn deserialize_node_capabilities(
     reader: &mut MemoryReader,
     max: usize,
 ) -> IoResult<Vec<NodeCapability>> {
@@ -220,4 +220,29 @@ impl Serializable for NodeCapability {
 
         Ok(capability)
     }
+}
+
+/// Creates a TCP server capability descriptor.
+pub fn tcp_server(port: u16) -> NodeCapability {
+    NodeCapability::tcp_server(port)
+}
+
+/// Creates an archival node capability descriptor.
+pub fn archival_node() -> NodeCapability {
+    NodeCapability::archival_node()
+}
+
+/// Creates a disable-compression capability descriptor.
+pub fn disable_compression() -> NodeCapability {
+    NodeCapability::disable_compression()
+}
+
+/// Creates a full node capability descriptor.
+pub fn full_node(start_height: u32) -> NodeCapability {
+    NodeCapability::full_node(start_height)
+}
+
+/// Creates a WebSocket server capability descriptor.
+pub fn ws_server(port: u16) -> NodeCapability {
+    NodeCapability::ws_server(port)
 }

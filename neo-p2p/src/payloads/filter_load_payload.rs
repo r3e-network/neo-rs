@@ -6,12 +6,12 @@
 // repository or http://www.opensource.org/licenses/mit-license.php
 // for more details.
 //
-// Redistribution and use in source and binary forms with or without
+// Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
-use crate::cryptography::bloom_filter::BloomFilter;
-use crate::neo_io::serializable::helper::get_var_size_bytes;
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_crypto::bloom_filter::BloomFilter;
+use neo_io::serializable::helper::get_var_size_bytes;
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Maximum filter size (36000 bytes)

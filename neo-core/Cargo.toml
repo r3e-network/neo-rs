@@ -87,8 +87,8 @@ neo-json = { path = "../neo-json" }
 
 # New foundation crates (re-exported for backward compatibility)
 # Foundation layer dependencies only (Layer 0)
-# NOTE: neo-p2p and neo-consensus removed to fix layering violation
-# neo-core is Layer 1, should not depend on Layer 2 protocol crates
+# NOTE: neo-consensus removed to fix layering violation
+neo-p2p = { path = "../neo-p2p" }
 neo-config = { workspace = true }
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }

@@ -306,7 +306,7 @@ impl LocalNode {
         }
 
         VersionPayload::create(
-            &self.settings,
+            self.settings.network,
             self.nonce,
             self.user_agent.clone(),
             capabilities,

@@ -27,6 +27,9 @@ futures = { workspace = true }
 # Serialization
 serde = { workspace = true }
 
+# Random number generation
+rand = { workspace = true }
+
 # Error handling
 thiserror = { workspace = true }
 

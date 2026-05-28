@@ -6,14 +6,14 @@
 // repository or http://www.opensource.org/licenses/mit-license.php
 // for more details.
 //
-// Redistribution and use in source and binary forms with or without
+// Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
 use super::network_address_with_time::NetworkAddressWithTime;
-use crate::neo_io::serializable::helper::{
+use neo_io::serializable::helper::{
     deserialize_array, get_var_size_serializable_slice, serialize_array,
 };
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Indicates the maximum number of nodes sent each time.
