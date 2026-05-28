@@ -170,6 +170,9 @@ pub mod execution_engine;
 /// Interoperable trait for smart contract state round-tripping.
 pub mod interoperable;
 
+/// NotifyEventArgs for smart contract event notifications.
+pub mod notify_event_args;
+
 /// Interop service registry.
 ///
 /// [`InteropService`] manages native contract methods accessible via SYSCALL.
@@ -255,6 +258,7 @@ pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
 pub use interoperable::Interoperable;
+pub use notify_event_args::NotifyEventArgs;
 pub use interop_service::InteropService;
 pub use jump_table::JumpTable;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
