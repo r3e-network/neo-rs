@@ -45,6 +45,7 @@ pub mod hardfork;
 pub mod inventory;
 pub mod inventory_type;
 pub mod log_event_args;
+pub mod log_level;
 /// Macro helpers for compact protocol enum declarations.
 pub mod macros;
 pub mod node_capability_type;
@@ -88,6 +89,7 @@ pub use hardfork::{Hardfork, HardforkParseError};
 pub use inventory::Inventory;
 pub use inventory_type::InventoryType;
 pub use log_event_args::LogEventArgs;
+pub use log_level::LogLevel;
 pub use node_capability_type::NodeCapabilityType;
 pub use oracle_response_code::OracleResponseCode;
 pub use rpc_exception::RpcException;
