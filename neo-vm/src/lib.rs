@@ -196,6 +196,9 @@ pub mod rpc_json;
 /// Slot storage for locals, arguments, and static fields.
 pub mod slot;
 
+/// StorageContext for smart contract storage operations.
+pub mod storage_context;
+
 /// Stack item type alias and extension methods.
 ///
 /// `StackItem` is now a type alias for [`neo_vm_rs::StackValue`].
@@ -260,6 +263,7 @@ pub use script::Script;
 pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
 pub use stack_item::{StackItem, StackItemExt};
+pub use storage_context::StorageContext;
 
 // ============================================================================
 // I/O Abstraction
