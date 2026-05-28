@@ -187,6 +187,9 @@ pub mod script;
 /// Script builder for programmatically constructing VM scripts.
 pub mod script_builder;
 
+/// JSON-RPC envelope rendering for VM stack items.
+pub mod rpc_json;
+
 /// Slot storage for locals, arguments, and static fields.
 pub mod slot;
 
@@ -248,6 +251,7 @@ pub use execution_engine::ExecutionEngine;
 pub use interop_service::InteropService;
 pub use jump_table::JumpTable;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
+pub use rpc_json::{stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item};
 pub use script::Script;
 pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
