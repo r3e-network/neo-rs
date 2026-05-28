@@ -353,6 +353,16 @@ impl Witness {
 
 crate::impl_default_via_new!(Witness);
 
+impl neo_primitives::Witness for Witness {
+    fn invocation_script(&self) -> &[u8] {
+        &self.invocation_script
+    }
+
+    fn verification_script(&self) -> &[u8] {
+        &self.verification_script
+    }
+}
+
 impl Serializable for Witness {
     fn size(&self) -> usize {
         self.size()

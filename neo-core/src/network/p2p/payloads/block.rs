@@ -133,13 +133,36 @@ impl Block {
     }
 }
 
-impl crate::validation::BlockLike for Block {
-    fn size(&self) -> usize {
-        <Self as Serializable>::size(self)
+impl neo_primitives::BlockLike for Block {
+    type Transaction = Transaction;
+
+    fn hash(&self) -> UInt256 {
+        let mut clone = self.clone();
+        clone.try_hash().unwrap_or_default()
+    }
+
+    fn index(&self) -> u32 {
+        self.header.index()
+    }
+
+    fn timestamp(&self) -> u64 {
+        self.header.timestamp()
+    }
+
+    fn prev_hash(&self) -> UInt256 {
+        *self.header.prev_hash()
+    }
+
+    fn merkle_root(&self) -> UInt256 {
+        *self.header.merkle_root()
     }
 
     fn transaction_count(&self) -> usize {
         self.transactions.len()
+    }
+
+    fn size(&self) -> usize {
+        <Self as Serializable>::size(self)
     }
 }
 

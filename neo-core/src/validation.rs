@@ -145,13 +145,8 @@ pub fn validate_transaction_count_raw(tx_count: usize) -> Result<(), BlockValida
     Ok(())
 }
 
-/// Trait for types that can be validated as blocks
-pub trait BlockLike {
-    /// Returns the size of the block in bytes
-    fn size(&self) -> usize;
-    /// Returns the number of transactions in the block
-    fn transaction_count(&self) -> usize;
-}
+/// Re-export BlockLike from neo-primitives (single source of truth).
+pub use neo_primitives::BlockLike;
 
 /// Validates block timestamp is within acceptable bounds.
 ///

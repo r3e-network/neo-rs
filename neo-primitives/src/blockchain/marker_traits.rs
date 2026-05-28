@@ -38,6 +38,9 @@ pub trait BlockLike: Send + Sync {
 
     /// Returns the number of transactions.
     fn transaction_count(&self) -> usize;
+
+    /// Returns the serialized size of the block in bytes.
+    fn size(&self) -> usize;
 }
 
 /// Trait for block header data.
