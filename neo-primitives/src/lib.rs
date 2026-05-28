@@ -52,6 +52,7 @@ pub mod uint160;
 pub mod uint256;
 mod uint_hex;
 pub mod serializable_payload;
+pub mod unhandled_exception_policy;
 pub mod verification;
 pub mod verify_result;
 pub mod witness_condition_type;
@@ -93,6 +94,7 @@ pub use blockchain::{
 };
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use serializable_payload::SerializablePayload;
+pub use unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
 pub use verification::{
     BlockchainSnapshot, VerificationContext, Witness, VerificationError, VerificationResult,
 };
