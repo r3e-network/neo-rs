@@ -1,6 +1,6 @@
 // Syscall parity tests against C# Neo v3.9.1
 
-use neo_core::smart_contract::find_options::FindOptions;
+use neo_core::smart_contract::FindOptions;
 
 #[test]
 fn test_find_options_keys_only_and_values_only_conflict() {

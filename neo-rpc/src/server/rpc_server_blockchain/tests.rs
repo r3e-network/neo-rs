@@ -16,7 +16,7 @@ use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::smart_contract::native::GasToken;
 use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{BinarySerializer, ContractManifest, ContractState, NefFile};
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;

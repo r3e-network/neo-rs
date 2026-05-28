@@ -1,5 +1,5 @@
 use neo_core::neo_io::MemoryReader;
-use neo_core::smart_contract::storage_item::StorageItem;
+use neo_core::smart_contract::StorageItem;
 
 fn test_byte_array(length: usize, first_byte: u8) -> Vec<u8> {
     let mut data = vec![0x20; length];

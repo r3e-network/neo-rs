@@ -7,7 +7,7 @@ mod common;
 
 use base64::{engine::general_purpose, Engine as _};
 use common::{test_byte_array as get_test_byte_array, test_transaction as create_test_transaction};
-use neo_core::big_decimal::BigDecimal;
+use neo_core::BigDecimal;
 use neo_core::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
@@ -15,10 +15,10 @@ use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
-use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::helper::Helper as ContractHelper;
@@ -27,7 +27,7 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
 use neo_core::smart_contract::native::{GasToken, NativeContract, PolicyContract};
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::ContractBasicMethod;
 use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::ContractParametersContext;

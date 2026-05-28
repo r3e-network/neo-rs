@@ -97,27 +97,13 @@ pub mod macros;
 // Foundation Modules
 // ============================================================================
 
-/// Big decimal arithmetic for precise financial calculations.
-///
-/// Provides `BigDecimal` for handling NEO/GAS values with proper decimal precision.
-pub mod big_decimal;
-
 /// Builder pattern implementations for complex types.
 ///
 /// Contains builders for `Transaction`, `Signer`, `Witness`, and witness conditions.
 pub mod builders;
 
-/// Script bytecode construction helpers.
-///
-/// This is exposed outside the VM facade so callers that only need to build
-/// scripts do not depend on the local VM runtime surface.
-pub mod script_builder;
-
 /// Script bytecode validation helpers backed by external NeoVM metadata.
 pub mod script_validation;
-
-/// Host-specific VM runtime adapters.
-pub mod rpc_json;
 
 /// System-wide protocol constants.
 ///
@@ -128,20 +114,12 @@ pub mod constants;
 /// Transaction type containment checking.
 ///
 /// Provides utilities for checking if a transaction contains specific types.
-pub mod contains_transaction_type;
-
 /// Core error types and error handling utilities.
 /// Core error types and error handling utilities.
 ///
 /// This module provides comprehensive error handling for Neo core operations,
 /// including serialization errors, validation failures, and system errors.
 pub mod error;
-
-/// Plugin-style exception handling policies.
-/// Plugin-style exception handling policies.
-///
-/// Defines how unhandled exceptions should be processed by the system.
-pub mod unhandled_exception_policy;
 
 /// Compression utilities (LZ4, gzip).
 /// Compression utilities for data serialization.
@@ -290,12 +268,12 @@ pub mod tokens_tracker;
 // ============================================================================
 
 // Core types
-pub use big_decimal::BigDecimal;
+pub use neo_primitives::{BigDecimal, ContainsTransactionType, UnhandledExceptionPolicy, panic_message};
+pub use neo_vm::{ScriptBuilder, rpc_json};
 pub use builders::{
     AndConditionBuilder, OrConditionBuilder, SignerBuilder, TransactionAttributesBuilder,
     TransactionBuilder, WitnessBuilder, WitnessConditionBuilder, WitnessRuleBuilder,
 };
-pub use contains_transaction_type::ContainsTransactionType;
 pub use cryptography::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};
 pub use events::{EventHandler, EventManager};
@@ -313,7 +291,7 @@ pub use rpc::RpcException;
 pub use smart_contract::native::NativeContract;
 pub use smart_contract::{Contract, ContractManifest, ContractParameterType, ContractState};
 pub use time_provider::TimeProvider;
-pub use unhandled_exception_policy::UnhandledExceptionPolicy;
+
 pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{ToStackItem, WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};

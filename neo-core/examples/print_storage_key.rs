@@ -1,7 +1,7 @@
 use neo_core::persistence::{
     providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
 };
-use neo_core::smart_contract::binary_serializer::BinarySerializer;
+use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::StorageKey;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;

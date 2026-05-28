@@ -2,16 +2,16 @@ use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
-use neo_core::smart_contract::find_options::FindOptions;
+use neo_core::smart_contract::FindOptions;
 use neo_core::smart_contract::iterators::iterator::StorageIterator as _;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, WildCardContainer,
 };
-use neo_core::smart_contract::storage_context::StorageContext;
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::StorageContext;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::{constants, UInt160};
 use neo_vm_rs::OpCode;

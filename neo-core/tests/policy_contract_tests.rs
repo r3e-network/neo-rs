@@ -4,7 +4,7 @@
 
 use neo_core::hardfork::Hardfork;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::native::policy_contract::PolicyContract;
 use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::ContractParameterType;

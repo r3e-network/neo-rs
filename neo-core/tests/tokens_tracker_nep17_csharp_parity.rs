@@ -11,7 +11,7 @@ use neo_core::persistence::providers::MemoryStoreProvider;
 use neo_core::persistence::StoreProvider;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{GasToken, NativeContract, NeoToken};
-use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
+use neo_core::smart_contract::NotifyEventArgs;
 use neo_core::smart_contract::TriggerType;
 use neo_core::tokens_tracker::{
     find_prefix, Nep17Tracker, Nep17TransferKey, TokenTransfer, TokenTransferKeyView, Tracker,

@@ -198,7 +198,7 @@ mod tests {
         let nef = NefFile {
             compiler: "neo".into(),
             source: "src".into(),
-            tokens: vec![neo_core::smart_contract::method_token::MethodToken::default()],
+            tokens: vec![neo_core::smart_contract::MethodToken::default()],
             script: vec![1, 2, 3],
             checksum: 321,
         };

@@ -3,7 +3,7 @@ use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
 use base64::{engine::general_purpose, Engine as _};
 use mockito::{Matcher, Server};
 use neo_config::ProtocolSettings;
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
 use neo_vm_rs::OpCode;
@@ -127,7 +127,7 @@ fn build_dynamic_call_script(
         sb.emit_pack();
     }
 
-    sb.emit_push_int(neo_core::smart_contract::call_flags::CallFlags::ALL.bits() as i64);
+    sb.emit_push_int(neo_core::smart_contract::CallFlags::ALL.bits() as i64);
     sb.emit_push(operation.as_bytes());
     sb.emit_push(&script_hash.to_array());
     sb.emit_syscall("System.Contract.Call").expect("syscall");
@@ -154,7 +154,7 @@ fn build_transfer_script(
     sb.emit_push(&to.to_array());
     sb.emit_push(&from.to_array());
     sb.emit_push_int(4);
-    sb.emit_push_int(neo_core::smart_contract::call_flags::CallFlags::ALL.bits() as i64);
+    sb.emit_push_int(neo_core::smart_contract::CallFlags::ALL.bits() as i64);
     sb.emit_push(b"transfer");
     sb.emit_push(&script_hash.to_array());
     sb.emit_syscall("System.Contract.Call").expect("syscall");

@@ -9,7 +9,7 @@ use neo_core::network::p2p::payloads::{
     signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
 };
 use neo_core::smart_contract::native::{trimmed_block::TrimmedBlock, LedgerContract};
-use neo_core::smart_contract::storage_key::StorageKey;
+use neo_core::smart_contract::StorageKey;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
 use neo_vm_rs::VmState as VMState;

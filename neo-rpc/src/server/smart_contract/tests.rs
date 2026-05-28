@@ -4,7 +4,7 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::apply_tracked_items;
-use neo_core::smart_contract::binary_serializer::BinarySerializer;
+use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use neo_core::smart_contract::manifest::{
@@ -192,7 +192,7 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
     let mut store_cache = system.context().store_snapshot_cache();
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
-    let mut builder = neo_core::script_builder::ScriptBuilder::new();
+    let mut builder = neo_core::ScriptBuilder::new();
     builder.emit_push_bool(true);
     builder.emit_opcode(OpCode::RET);
     let nef = NefFile::new("test".to_string(), builder.to_array());
@@ -603,7 +603,7 @@ async fn invokescript_faults_when_gas_limit_exceeded() {
     let handlers = RpcServerSmartContract::register_handlers();
     let invokescript = find_handler(&handlers, "invokescript");
 
-    let mut builder = neo_core::script_builder::ScriptBuilder::new();
+    let mut builder = neo_core::ScriptBuilder::new();
     builder.emit_jump(OpCode::JMP_L, 0).expect("jump loop");
     let script = builder.to_array();
 

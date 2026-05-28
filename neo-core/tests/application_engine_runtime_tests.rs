@@ -6,16 +6,16 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractManifest, ContractParameterDefinition,
     ContractPermission, WildCardContainer,
 };
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::witness::Witness;
 use neo_core::{Verifiable, UInt160, WitnessScope};
 use neo_vm_rs::OpCode;

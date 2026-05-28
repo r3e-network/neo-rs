@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use neo_core::big_decimal::BigDecimal;
+use neo_core::BigDecimal;
 use neo_core::smart_contract::native::{ledger_contract::LedgerContract, NeoToken};
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;

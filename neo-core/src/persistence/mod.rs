@@ -31,7 +31,7 @@ pub use read_cache::{
 };
 pub use seek_direction::SeekDirection;
 pub use storage::StorageConfig;
-pub use storage_item::StorageItem;
+pub use storage_item::{StorageItem, StorageItemExt};
 pub use storage_key::StorageKey;
 pub use store_cache::StoreCache;
 pub use store_factory::StoreFactory;

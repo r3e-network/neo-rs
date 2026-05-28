@@ -3,9 +3,9 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
-use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::native::contract_management::ContractManagement;
 use neo_core::smart_contract::{ApplicationEngine, TriggerType};
 use neo_core::tokens_tracker::{

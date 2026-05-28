@@ -2,7 +2,7 @@
 use super::RemoteNode;
 use crate::UInt160;
 use crate::UInt256;
-use crate::contains_transaction_type::ContainsTransactionType;
+use crate::ContainsTransactionType;
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::neo_io::Serializable;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};

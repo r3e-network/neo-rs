@@ -6,7 +6,7 @@
 
 use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{IoResult, MemoryReader};
-use crate::smart_contract::binary_serializer::BinarySerializer;
+use crate::smart_contract::BinarySerializer;
 use crate::smart_contract::interoperable::Interoperable;
 use neo_storage::types::storage_item::CacheProvider;
 use neo_vm_rs::ExecutionEngineLimits;

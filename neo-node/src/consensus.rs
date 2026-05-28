@@ -22,7 +22,7 @@ use neo_core::network::p2p::{
 use neo_core::persistence::Store;
 use neo_core::prelude::Serializable;
 use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;

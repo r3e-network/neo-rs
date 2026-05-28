@@ -6,7 +6,7 @@ use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::neo_system::NeoSystem;
 use crate::persistence::{DataCache, Store, StoreSnapshot};
 use crate::smart_contract::{NotifyEventArgs, TriggerType};
-use crate::unhandled_exception_policy::panic_message;
+use crate::panic_message;
 use crate::neo_vm::StackItem;
 use crate::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
 use crate::UInt256;
@@ -345,7 +345,7 @@ mod tests {
         SeekDirection,
     };
     use crate::smart_contract::{StorageItem, StorageKey};
-    use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+    use crate::UnhandledExceptionPolicy;
 
     #[derive(Clone)]
     struct FailingStore;

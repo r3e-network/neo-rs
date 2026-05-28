@@ -3,10 +3,10 @@ use crate::ledger::HeaderCache;
 use crate::persistence::{DataCache, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::call_flags::CallFlags;
+use crate::smart_contract::CallFlags;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::{ContractManagement, LedgerContract};
-use crate::smart_contract::trigger_type::TriggerType;
+use crate::smart_contract::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
 use crate::validation::{
     validate_primary_index, validate_timestamp_bounds, validate_timestamp_progression,

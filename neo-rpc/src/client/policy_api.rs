@@ -102,7 +102,7 @@ mod tests {
     use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
-    use neo_core::script_builder::ScriptBuilder;
+    use neo_core::ScriptBuilder;
     use neo_json::{JArray, JObject, JToken};
     use neo_vm_rs::OpCode;
     use regex::escape;
@@ -185,7 +185,7 @@ mod tests {
             sb.emit_pack();
         }
 
-        sb.emit_push_int(neo_core::smart_contract::call_flags::CallFlags::ALL.bits() as i64);
+        sb.emit_push_int(neo_core::smart_contract::CallFlags::ALL.bits() as i64);
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&PolicyContract::new().hash().to_array());
         sb.emit_syscall("System.Contract.Call").expect("syscall");

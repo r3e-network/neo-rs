@@ -25,7 +25,7 @@ mod tests {
         },
     };
     use crate::persistence::StoreCache;
-    use crate::smart_contract::binary_serializer::BinarySerializer;
+    use crate::smart_contract::BinarySerializer;
     use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
     use crate::smart_contract::native::gas_token::GasToken;
     use crate::smart_contract::native::{

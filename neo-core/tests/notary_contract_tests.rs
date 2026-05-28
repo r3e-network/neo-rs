@@ -10,14 +10,14 @@ use neo_core::persistence::DataCache;
 use neo_core::persistence::ReadOnlyStoreGeneric;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::binary_serializer::BinarySerializer;
-use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::BinarySerializer;
+use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::native::notary::{Deposit, Notary};
 use neo_core::smart_contract::native::{
     GasToken, LedgerContract, NativeContract, NativeHelpers, NeoToken, PolicyContract, Role,
     RoleManagement,
 };
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType, StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{Verifiable, Result as CoreResult, UInt160, UInt256, WitnessScope};

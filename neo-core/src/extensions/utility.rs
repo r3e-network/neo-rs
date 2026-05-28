@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::log_level::LogLevel;
+use neo_primitives::LogLevel;
 use std::sync::LazyLock;
 use parking_lot::Mutex;
 

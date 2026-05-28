@@ -7,12 +7,12 @@ use neo_core::persistence::{
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::script_validation;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
-use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::execution_context_state::ExecutionContextState;
 use neo_core::smart_contract::native::ledger_contract::PersistedTransactionState;
 use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use neo_core::smart_contract::native::LedgerTransactionStates;
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::{Verifiable, UInt256};
 use neo_vm_rs::OpCode;

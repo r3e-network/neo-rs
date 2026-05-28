@@ -9,7 +9,7 @@ use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::trimmed_block::TrimmedBlock;
 use crate::smart_contract::native::LedgerContract;
-use crate::smart_contract::storage_key::StorageKey;
+use crate::smart_contract::StorageKey;
 use crate::smart_contract::StorageItem;
 use crate::Witness as LedgerWitness;
 use neo_vm_rs::OpCode;

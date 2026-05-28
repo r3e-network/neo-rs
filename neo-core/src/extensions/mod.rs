@@ -7,7 +7,7 @@
 
 pub mod byte;
 pub mod error;
-pub mod log_level;
+
 pub mod memory;
 pub mod span;
 pub mod utility;
@@ -16,7 +16,7 @@ pub mod io;
 
 pub use byte::ByteLz4Extensions;
 pub use error::ExtensionResult;
-pub use log_level::LogLevel;
+
 pub use memory::ReadOnlyMemoryExtensions;
 pub use span::SpanExtensions;
 pub use utility::ExtensionsUtility;

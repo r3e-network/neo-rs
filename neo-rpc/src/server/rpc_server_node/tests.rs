@@ -21,7 +21,7 @@ use neo_core::smart_contract::native::GasToken;
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::native::PolicyContract;
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::Contract;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;

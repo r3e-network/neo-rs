@@ -1,5 +1,5 @@
 use super::*;
-use crate::smart_contract::contract_basic_method::ContractBasicMethod;
+use crate::smart_contract::ContractBasicMethod;
 use std::sync::OnceLock;
 
 fn trace_block_range() -> Option<(u32, u32)> {

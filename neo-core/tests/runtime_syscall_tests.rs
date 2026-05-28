@@ -7,16 +7,16 @@ use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor,
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{UInt160, UInt256};
@@ -946,7 +946,7 @@ fn persist_oracle_request(snapshot: &DataCache, id: u64, original_tx_id: UInt256
         neo_core::neo_vm::StackItem::from_byte_string(b"callback".to_vec()),
         neo_core::neo_vm::StackItem::from_byte_string(Vec::<u8>::new()),
     ]);
-    let bytes = neo_core::smart_contract::binary_serializer::BinarySerializer::serialize(
+    let bytes = neo_core::smart_contract::BinarySerializer::serialize(
         &stack_item,
         &neo_vm_rs::ExecutionEngineLimits::default(),
     )

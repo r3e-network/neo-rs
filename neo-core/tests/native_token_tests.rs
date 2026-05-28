@@ -1,16 +1,16 @@
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::binary_serializer::BinarySerializer;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
+use neo_core::smart_contract::BinarySerializer;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
 use neo_core::smart_contract::native::{ContractManagement, GasToken, NativeContract, NeoToken};
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::Interoperable;
 use neo_core::wallets::KeyPair;
 use neo_core::witness::Witness;

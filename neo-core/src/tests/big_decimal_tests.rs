@@ -1,5 +1,5 @@
 // Converted from C# Neo.UnitTests.UT_BigDecimal
-use crate::big_decimal::BigDecimal;
+use crate::BigDecimal;
 use num_bigint::BigInt;
 
 #[cfg(test)]

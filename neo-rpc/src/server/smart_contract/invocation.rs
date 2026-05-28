@@ -41,7 +41,7 @@ enum WalletInvocationOutcome {
 struct PendingSignatureItem {
     account: UInt160,
     script: Option<Vec<u8>>,
-    parameter_types: Vec<neo_core::smart_contract::contract_parameter_type::ContractParameterType>,
+    parameter_types: Vec<neo_core::smart_contract::ContractParameterType>,
 }
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {

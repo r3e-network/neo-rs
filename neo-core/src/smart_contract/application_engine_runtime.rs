@@ -7,9 +7,9 @@ use crate::neo_vm::{ExecutionEngine, StackItem, StackItemExt, VmError, VmResult}
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE,
 };
-use crate::smart_contract::call_flags::CallFlags;
-use crate::smart_contract::contract_parameter_type::ContractParameterType;
-use crate::smart_contract::log_event_args::LogEventArgs;
+use crate::smart_contract::CallFlags;
+use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::LogEventArgs;
 use crate::smart_contract::ContractParameterDefinition;
 use crate::smart_contract::Interoperable;
 use crate::UInt160;

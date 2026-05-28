@@ -1,9 +1,9 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
-use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
+use neo_core::smart_contract::NotifyEventArgs;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::vm_runtime::rpc_json::stack_item_rpc_json_deferred_size_check;
 use neo_core::vm_runtime::StackItem;
@@ -80,7 +80,7 @@ pub(super) fn build_dynamic_call_script(
         .iter()
         .map(contract_parameter_to_stack_value)
         .collect::<Result<Vec<_>, _>>()?;
-    let mut builder = neo_core::script_builder::ScriptBuilder::new();
+    let mut builder = neo_core::ScriptBuilder::new();
 
     if args.is_empty() {
         builder.emit_opcode(neo_vm_rs::OpCode::NEWARRAY0);

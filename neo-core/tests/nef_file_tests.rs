@@ -1,6 +1,6 @@
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::smart_contract::contract_state::NefFile;
-use neo_core::smart_contract::method_token::MethodToken;
+use neo_core::smart_contract::MethodToken;
 use neo_core::smart_contract::CallFlags;
 use neo_primitives::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;

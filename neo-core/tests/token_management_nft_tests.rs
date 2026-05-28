@@ -6,7 +6,7 @@ use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::{NativeContract, TokenManagement};
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::{UInt160, UInt256};
 use num_bigint::BigInt;
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 const TEST_GAS_LIMIT: i64 = 3_000_000_000;
 
-use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::CallFlags;
 
 fn protocol_settings_with_faun() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();

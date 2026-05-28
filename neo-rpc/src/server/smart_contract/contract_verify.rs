@@ -6,8 +6,8 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::{ApplicationEngine, TriggerType};
 use neo_core::UInt160;
 use rand::random;
@@ -151,7 +151,7 @@ pub(super) fn invoke_contract_verify(
 fn build_verification_invocation_script(
     parameters: &[neo_core::smart_contract::contract_parameter::ContractParameter],
 ) -> Result<Vec<u8>, RpcException> {
-    let mut builder = neo_core::script_builder::ScriptBuilder::new();
+    let mut builder = neo_core::ScriptBuilder::new();
     for parameter in parameters.iter().rev() {
         let item = super::helpers::contract_parameter_to_stack_value(parameter)?;
         builder

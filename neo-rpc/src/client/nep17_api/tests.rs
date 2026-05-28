@@ -2,7 +2,7 @@ use super::*;
 use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
 use base64::{engine::general_purpose, Engine as _};
 use mockito::{Matcher, Server};
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::native::GasToken;
 use neo_core::NativeContract;
 use neo_json::{JArray, JObject, JToken};

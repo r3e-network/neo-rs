@@ -1,5 +1,5 @@
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::smart_contract::method_token::MethodToken;
+use neo_core::smart_contract::MethodToken;
 use neo_core::smart_contract::CallFlags;
 use neo_primitives::UInt160;
 

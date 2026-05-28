@@ -24,7 +24,7 @@ use neo_core::smart_contract::native::{
     ledger_contract::{HashOrIndex, LedgerContract},
     NativeRegistry,
 };
-use neo_core::smart_contract::storage_key::StorageKey;
+use neo_core::smart_contract::StorageKey;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
 use neo_vm_rs::VmState as VMState;

@@ -2,7 +2,7 @@ use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::contract::Contract;
-use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::wallets::key_pair::KeyPair;

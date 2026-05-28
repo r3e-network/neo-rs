@@ -498,7 +498,7 @@ impl ContractManifest {
         let mut feature_entries = Vec::with_capacity(self.features.len());
         for (key, value) in &self.features {
             let json_bytes =
-                crate::smart_contract::json_serializer::JsonSerializer::encode_value_csharp_compatible(
+                crate::smart_contract::JsonSerializer::encode_value_csharp_compatible(
                     value,
                 );
             feature_entries.push((
@@ -535,7 +535,7 @@ impl ContractManifest {
 
         let extra_bytes = match &self.extra {
             Some(extra) => {
-                crate::smart_contract::json_serializer::JsonSerializer::encode_value_csharp_compatible(
+                crate::smart_contract::JsonSerializer::encode_value_csharp_compatible(
                     extra,
                 )
             }

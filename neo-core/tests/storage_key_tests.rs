@@ -1,6 +1,6 @@
 use hex::decode;
 use neo_core::smart_contract::key_builder::KeyBuilder;
-use neo_core::smart_contract::storage_key::StorageKey;
+use neo_core::smart_contract::StorageKey;
 use neo_core::{ECCurve, ECPoint, UInt160, UInt256};
 
 fn sample_uint160() -> UInt160 {

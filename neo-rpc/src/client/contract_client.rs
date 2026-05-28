@@ -12,7 +12,7 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::RpcInvokeResult;
 use crate::{RpcClient, RpcError};
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::{
     smart_contract::call_flags::CallFlags, ContractManifest, KeyPair, Signer, Transaction,
@@ -119,7 +119,7 @@ mod tests {
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
     use neo_config::ProtocolSettings;
-    use neo_core::script_builder::ScriptBuilder;
+    use neo_core::ScriptBuilder;
     use neo_core::smart_contract::native::{GasToken, NativeContract};
     use neo_core::{ContractManifest, KeyPair};
     use neo_json::{JArray, JObject, JToken};

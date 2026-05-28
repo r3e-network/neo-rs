@@ -1,8 +1,8 @@
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::TriggerType;
 use neo_core::witness::Witness;
 use neo_core::{Verifiable, UInt160, WitnessScope};
 use std::sync::Arc;

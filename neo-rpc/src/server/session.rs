@@ -11,11 +11,11 @@ use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::StoreCache;
-use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::iterators::iterator::StorageIterator as _;
 use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::vm_runtime::{InteropInterface as VmInteropInterface, StackItem};
 use neo_core::Verifiable;
@@ -249,7 +249,7 @@ impl Session {
 mod tests {
     use super::*;
     use neo_core::persistence::{StorageItem, StorageKey};
-    use neo_core::smart_contract::find_options::FindOptions;
+    use neo_core::smart_contract::FindOptions;
     use neo_core::{NeoSystem, ProtocolSettings};
     use neo_vm_rs::OpCode;
 

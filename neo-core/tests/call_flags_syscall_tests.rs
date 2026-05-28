@@ -1,8 +1,8 @@
 use neo_core::persistence::DataCache;
-use neo_core::script_builder::ScriptBuilder;
+use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::TriggerType;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use std::sync::Arc;

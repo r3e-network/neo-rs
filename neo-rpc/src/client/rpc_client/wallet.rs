@@ -5,7 +5,7 @@ use super::helpers::{
     parse_object_array_result, token_as_boolean, token_as_object, token_as_string,
 };
 use crate::client::utility::object_array;
-use neo_core::big_decimal::BigDecimal;
+use neo_core::BigDecimal;
 use neo_json::{JObject, JToken};
 use num_bigint::BigInt;
 use std::str::FromStr;

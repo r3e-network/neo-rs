@@ -52,7 +52,7 @@ mod tests {
     use crate::protocol_settings::ProtocolSettings;
     use crate::smart_contract::application_engine::TEST_MODE_GAS;
     use crate::smart_contract::native::{LedgerContract, NativeContract};
-    use crate::smart_contract::trigger_type::TriggerType;
+    use crate::smart_contract::TriggerType;
     use crate::UInt160;
     use crate::WitnessScope;
     use std::sync::Arc;

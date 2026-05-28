@@ -5,7 +5,7 @@
 
 //! Integration tests for the Neo Core module.
 
-use neo_core::big_decimal::BigDecimal;
+use neo_core::BigDecimal;
 use neo_core::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 use neo_core::events::{EventHandler, EventManager};
 use neo_core::hardfork::{Hardfork, HardforkManager};
@@ -19,7 +19,7 @@ use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 // use neo_core::network::p2p::local_node::BroadcastEvent;
 // use neo_core::network::p2p::RelayInventory;
 // use neo_core::smart_contract::native::LedgerContract;
-// use neo_core::smart_contract::trigger_type::TriggerType;
+// use neo_core::smart_contract::TriggerType;
 // use neo_core::state_service::StateRoot;
 // use neo_core::WitnessScope;
 // use neo_vm_rs::OpCode;
