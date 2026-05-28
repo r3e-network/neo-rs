@@ -1,4 +1,6 @@
-pub use neo_vm_rs::{
+//! Script validation re-exported from neo-vm.
+
+pub use neo_vm::{
     parse_script_instructions, validate_script, validate_strict_script, ScriptInstruction,
     ValidatedScript, ValidationResult,
 };

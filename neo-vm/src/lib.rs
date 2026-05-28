@@ -231,7 +231,7 @@ pub use neo_vm_rs::next_stack_item_id;
 /// Syscall hash computation.
 pub use neo_vm_rs::interop_hash;
 /// Script validation functions.
-pub use neo_vm_rs::{validate_script, validate_strict_script};
+pub use neo_vm_rs::{validate_script, validate_strict_script, ScriptInstruction, ValidatedScript, ValidationResult};
 /// Instruction parsing utilities.
 pub use neo_vm_rs::{parse_script_instructions, instruction_jump_target, instruction_try_targets};
 /// VM constants.
