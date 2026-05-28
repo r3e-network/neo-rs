@@ -5,6 +5,7 @@
 pub mod caching;
 pub mod compression;
 pub mod extensions;
+pub mod method_token;
 pub mod witness_rule;
 
 mod binary_writer;
@@ -27,6 +28,9 @@ pub use extensions::{
 
 // Re-export compression types
 pub use compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD};
+
+// Re-export method token
+pub use method_token::MethodToken;
 
 // Re-export witness rule types
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
