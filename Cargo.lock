@@ -2398,9 +2398,12 @@ dependencies = [
  "bytes",
  "futures",
  "hashbrown 0.14.5",
+ "hex",
  "indexmap 2.8.0",
  "lru",
+ "lz4_flex",
  "neo-primitives",
+ "neo-vm-rs",
  "parking_lot",
  "serde",
  "serde_json",
@@ -2486,6 +2489,7 @@ dependencies = [
  "bs58",
  "hex",
  "num-bigint",
+ "num-integer",
  "num-traits",
  "proptest",
  "ripemd",
@@ -2634,6 +2638,7 @@ dependencies = [
 name = "neo-vm"
 version = "0.7.2"
 dependencies = [
+ "base64 0.22.1",
  "bitflags 2.11.0",
  "neo-crypto",
  "neo-io",
@@ -2643,6 +2648,7 @@ dependencies = [
  "num-traits",
  "parking_lot",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 

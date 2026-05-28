@@ -20,7 +20,7 @@ use crate::smart_contract::native::{
 };
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
-use crate::neo_vm::StackItem;
+use crate::neo_vm::{StackItem, StackItemExt};
 use crate::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
@@ -99,8 +99,8 @@ impl Notary {
             )?;
 
         if matches!(item, StackItem::ByteString(_) | StackItem::Buffer(_)) {
-            let nested_bytes = item.as_bytes().map_err(|err| {
-                Error::native_contract(format!("Invalid deposit metadata: {}", err))
+            let nested_bytes = item.as_bytes().ok_or_else(|| {
+                Error::native_contract("Invalid deposit metadata: cannot convert to bytes".to_string())
             })?;
             item = BinarySerializer::deserialize(
                 &nested_bytes,
@@ -120,19 +120,18 @@ impl Notary {
             ));
         };
 
-        let items = array.items();
-        if items.len() != 2 {
+        if array.len() != 2 {
             return Err(Error::native_contract(
                 "`data` parameter should be an array of 2 elements".to_string(),
             ));
         }
 
-        let owner = if items[0].is_null() {
+        let owner = if array[0].is_null() {
             *default_owner
         } else {
-            let bytes = items[0]
+            let bytes = array[0]
                 .as_bytes()
-                .map_err(|err| Error::native_contract(format!("Invalid deposit owner: {}", err)))?;
+                .ok_or_else(|| Error::native_contract("Invalid deposit owner: cannot convert to bytes".to_string()))?;
             if bytes.len() != UInt160::LENGTH {
                 return Err(Error::native_contract(
                     "Deposit owner must be 20 bytes".to_string(),
@@ -142,7 +141,7 @@ impl Notary {
                 .map_err(|_| Error::native_contract("Invalid deposit recipient"))?
         };
 
-        let till_value = items[1].as_integer().map_err(|err| {
+        let till_value = StackItemExt::as_int(&array[1]).map_err(|err| {
             Error::native_contract(format!("Invalid deposit expiration: {}", err))
         })?;
         let till = till_value
@@ -282,7 +281,7 @@ impl Notary {
 
         let tx_sender = engine
             .script_container()
-            .and_then(|container| container.as_transaction())
+            .and_then(|container| container.as_any().downcast_ref::<Transaction>())
             .and_then(Transaction::sender)
             .ok_or_else(|| Error::native_contract("onNEP17Payment requires transaction context"))?;
         let allowed_change_till = tx_sender == deposit_owner;
@@ -571,7 +570,7 @@ impl Notary {
 
         let Some(tx) = engine
             .script_container()
-            .and_then(|container| container.as_transaction())
+            .and_then(|container| container.as_any().downcast_ref::<Transaction>())
         else {
             return Ok(vec![0]);
         };

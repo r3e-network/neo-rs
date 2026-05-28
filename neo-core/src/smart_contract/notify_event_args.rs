@@ -2,7 +2,7 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::interoperable::Interoperable;
-use crate::neo_vm::StackItem;
+use crate::neo_vm::{StackItem, StackItemExt};
 use crate::{Verifiable, UInt160};
 use std::fmt;
 use std::sync::Arc;
@@ -76,7 +76,7 @@ impl Interoperable for NotifyEventArgs {
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         // Returns an array with [ScriptHash, EventName, State]
-        let state: Vec<StackItem> = self.state.iter().map(StackItem::deep_clone).collect();
+        let state: Vec<StackItem> = self.state.iter().cloned().collect();
         Ok(StackItem::from_array(vec![
             StackItem::from_byte_string(self.script_hash.to_bytes()),
             StackItem::from_byte_string(self.event_name.clone().into_bytes()),

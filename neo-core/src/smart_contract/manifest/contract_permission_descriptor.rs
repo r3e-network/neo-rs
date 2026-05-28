@@ -2,7 +2,7 @@
 
 use super::contract_group::ContractGroup;
 use crate::cryptography::ECPoint;
-use crate::neo_vm::StackItem;
+use crate::neo_vm::{StackItem, StackItemExt};
 use crate::UInt160;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};

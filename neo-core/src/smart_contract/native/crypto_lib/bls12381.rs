@@ -1,7 +1,5 @@
 use super::CryptoLib;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_vm::stack_item::InteropInterface as VmInteropInterface;
-use std::any::Any;
 
 use blst::{
     blst_fp, blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar, BLST_ERROR,
@@ -119,16 +117,6 @@ impl Bls12381Interop {
 
     fn bytes(&self) -> &[u8] {
         &self.bytes
-    }
-}
-
-impl VmInteropInterface for Bls12381Interop {
-    fn interface_type(&self) -> &str {
-        self.kind.interface_type()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 

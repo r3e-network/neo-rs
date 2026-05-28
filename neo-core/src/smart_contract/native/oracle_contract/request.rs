@@ -91,7 +91,7 @@ impl OracleContract {
 
         let original_tx_id = engine
             .script_container()
-            .and_then(|container| container.as_transaction().map(|tx| tx.hash()))
+            .and_then(|container| container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>().map(|tx| tx.hash()))
             .unwrap_or_else(UInt256::zero);
         let price = self.get_price_value(snapshot);
         let price_u64 = u64::try_from(price)

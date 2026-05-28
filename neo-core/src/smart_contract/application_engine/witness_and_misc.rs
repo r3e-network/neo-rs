@@ -1,4 +1,6 @@
 use super::*;
+use crate::neo_vm::StackItemExt;
+use crate::VerifiableExt;
 
 impl ApplicationEngine {
     /// Validates that the provided hash has a matching witness in the current transaction.
@@ -14,7 +16,7 @@ impl ApplicationEngine {
         };
 
         // 2. Transaction container path (witness rules and scopes).
-        if let Some(tx) = container.as_transaction() {
+        if let Some(tx) = container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() {
             let mut signers: Vec<_> = tx.signers().to_vec();
 
             // OracleResponse transactions inherit signers from the original request.
@@ -58,9 +60,9 @@ impl ApplicationEngine {
             ));
         }
 
-        Ok(container
-            .script_hashes_for_verifying(self.snapshot_cache.as_ref())
-            .contains(hash))
+        // Downcast to concrete types to call VerifiableExt::script_hashes_for_verifying
+        let hashes = script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
+        Ok(hashes.contains(hash))
     }
 
     /// Checks whether the specified hash has witnessed the current execution.
@@ -453,17 +455,17 @@ impl ApplicationEngine {
             ));
         }
 
-        let mut public_keys = Vec::with_capacity(public_keys_items.len());
+        let mut public_keys: Vec<Vec<u8>> = Vec::with_capacity(public_keys_items.len());
         for item in public_keys_items {
             let bytes = item
                 .as_bytes()
-                .map_err(|e| Error::invalid_operation(e.to_string()))?;
+                .ok_or_else(|| Error::invalid_operation("Cannot convert to bytes".to_string()))?;
             if bytes.len() != 33 {
                 return Err(Error::invalid_operation(
                     "Each multisig public key must be 33 bytes".to_string(),
                 ));
             }
-            public_keys.push(bytes);
+            public_keys.push(bytes.to_vec());
         }
 
         let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
@@ -665,11 +667,36 @@ impl ApplicationEngine {
             );
         }
         match item.as_bytes() {
-            Ok(bytes) => Ok(bytes),
-            Err(_) => crate::smart_contract::binary_serializer::BinarySerializer::serialize(
+            Some(bytes) => Ok(bytes.to_vec()),
+            None => crate::smart_contract::binary_serializer::BinarySerializer::serialize(
                 &item,
                 &ExecutionEngineLimits::default(),
             ),
         }
     }
+}
+
+/// Helper to call `script_hashes_for_verifying` on a `dyn Verifiable` by
+/// downcasting to known concrete types that implement `VerifiableExt`.
+fn script_hashes_for_verifying_dyn(
+    verifiable: &dyn Verifiable,
+    snapshot: &crate::persistence::DataCache,
+) -> Vec<UInt160> {
+    use crate::network::p2p::payloads::block::Block as PayloadBlock;
+    use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
+    use crate::network::p2p::payloads::header::Header;
+
+    if let Some(tx) = verifiable.as_any().downcast_ref::<Transaction>() {
+        return tx.script_hashes_for_verifying(snapshot);
+    }
+    if let Some(block) = verifiable.as_any().downcast_ref::<PayloadBlock>() {
+        return block.script_hashes_for_verifying(snapshot);
+    }
+    if let Some(header) = verifiable.as_any().downcast_ref::<Header>() {
+        return header.script_hashes_for_verifying(snapshot);
+    }
+    if let Some(payload) = verifiable.as_any().downcast_ref::<ExtensiblePayload>() {
+        return payload.script_hashes_for_verifying(snapshot);
+    }
+    Vec::new()
 }

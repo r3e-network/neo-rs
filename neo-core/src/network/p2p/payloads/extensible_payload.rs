@@ -17,6 +17,7 @@ use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
 use crate::{CoreResult, UInt160, UInt256};
+use neo_primitives::error::PrimitiveResult;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashSet;
@@ -83,7 +84,7 @@ impl ExtensiblePayload {
         }
 
         // Verify witness with max gas of 0.06 GAS
-        crate::Verifiable::verify_witnesses(self, settings, snapshot, 6_000_000)
+        crate::VerifiableExt::verify_witnesses(self, settings, snapshot, 6_000_000)
     }
 
     /// Returns the cached hash of the payload, computing it if necessary.
@@ -208,7 +209,26 @@ impl Inventory for ExtensiblePayload {
     }
 }
 
-impl crate::Verifiable for ExtensiblePayload {
+impl neo_primitives::Verifiable for ExtensiblePayload {
+    fn verify(&self) -> bool {
+        true
+    }
+
+    fn hash(&self) -> PrimitiveResult<UInt256> {
+        let mut clone = self.clone();
+        clone.try_hash().map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
+    }
+
+    fn hash_data(&self) -> Vec<u8> {
+        ExtensiblePayload::hash_data(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl crate::VerifiableExt for ExtensiblePayload {
     fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         vec![self.sender]
     }
@@ -219,23 +239,6 @@ impl crate::Verifiable for ExtensiblePayload {
 
     fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         vec![&mut self.witness]
-    }
-
-    fn verify(&self) -> bool {
-        true
-    }
-
-    fn hash(&self) -> CoreResult<UInt256> {
-        let mut clone = self.clone();
-        clone.try_hash()
-    }
-
-    fn hash_data(&self) -> Vec<u8> {
-        ExtensiblePayload::hash_data(self)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -311,6 +314,6 @@ mod tests {
 
         let expected = payload.try_hash().expect("try hash");
 
-        assert_eq!(crate::Verifiable::hash(&payload).unwrap(), expected);
+        assert_eq!(neo_primitives::Verifiable::hash(&payload).unwrap(), expected);
     }
 }

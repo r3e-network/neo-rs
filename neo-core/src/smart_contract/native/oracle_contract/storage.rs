@@ -9,7 +9,7 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::oracle_request::OracleRequest;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
-use crate::neo_vm::StackItem;
+use crate::neo_vm::{StackItem, StackItemExt};
 use crate::{UInt160, UInt256};
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
@@ -280,7 +280,7 @@ impl OracleContract {
         };
 
         let mut ids = Vec::with_capacity(array.len());
-        for element in array.items() {
+        for element in &array {
             let value = element
                 .as_int()
                 .map_err(|_| Error::invalid_data("Invalid URL id entry"))?;

@@ -19,7 +19,7 @@ pub fn get_sign_data<V>(
 where
     V: crate::Verifiable + ?Sized,
 {
-    let hash = verifiable.hash()?;
+    let hash = verifiable.hash().map_err(|e| crate::error::CoreError::invalid_operation(e.to_string()))?;
     let mut buffer = [0u8; SIGN_DATA_LENGTH];
     buffer[..4].copy_from_slice(&network.to_le_bytes());
     buffer[4..].copy_from_slice(&hash.as_bytes());

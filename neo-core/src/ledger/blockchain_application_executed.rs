@@ -22,7 +22,7 @@ impl ApplicationExecuted {
     pub(crate) fn new(engine: &mut ApplicationEngine) -> Self {
         let transaction = engine
             .script_container()
-            .and_then(|c| c.as_ref().as_transaction().cloned());
+            .and_then(|c| c.as_ref().as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>().cloned());
 
         if let Some(tx) = transaction.as_ref() {
             let hash = tx.hash();

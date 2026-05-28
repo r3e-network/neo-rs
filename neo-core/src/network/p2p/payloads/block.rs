@@ -15,6 +15,7 @@ use super::{
 use crate::neo_io::Serializable;
 use crate::persistence::DataCache;
 use crate::{CoreResult, UInt160, UInt256};
+use neo_primitives::error::PrimitiveResult;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
@@ -172,19 +173,7 @@ impl Inventory for Block {
     }
 }
 
-impl crate::Verifiable for Block {
-    fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
-        self.header.script_hashes_for_verifying(snapshot)
-    }
-
-    fn witnesses(&self) -> Vec<&Witness> {
-        self.header.witnesses()
-    }
-
-    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
-        self.header.witnesses_mut()
-    }
-
+impl neo_primitives::Verifiable for Block {
     /// Performs basic structural validation of the block.
     ///
     /// # Security Note
@@ -220,9 +209,9 @@ impl crate::Verifiable for Block {
         true
     }
 
-    fn hash(&self) -> CoreResult<UInt256> {
+    fn hash(&self) -> PrimitiveResult<UInt256> {
         let mut clone = self.clone();
-        clone.try_hash()
+        clone.try_hash().map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
     }
 
     fn hash_data(&self) -> Vec<u8> {
@@ -231,6 +220,20 @@ impl crate::Verifiable for Block {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+impl crate::VerifiableExt for Block {
+    fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
+        self.header.script_hashes_for_verifying(snapshot)
+    }
+
+    fn witnesses(&self) -> Vec<&Witness> {
+        self.header.witnesses()
+    }
+
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
+        self.header.witnesses_mut()
     }
 }
 
@@ -338,7 +341,7 @@ mod tests {
         let expected = expected_source.try_hash().expect("try hash");
 
         assert_eq!(
-            <Block as crate::Verifiable>::hash(&block).unwrap(),
+            <Block as neo_primitives::Verifiable>::hash(&block).unwrap(),
             expected
         );
     }

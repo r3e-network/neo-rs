@@ -70,7 +70,7 @@ impl Nep11Tracker {
 
         transfers.push(record.clone());
         if let Some(container) = container {
-            if let Some(tx) = container.as_transaction() {
+            if let Some(tx) = container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() {
                 self.record_transfer_history(&record, &token_id, &tx.hash(), transfer_index);
             }
         }

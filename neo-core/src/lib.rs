@@ -391,62 +391,18 @@ pub use neo_storage::{StorageItem, StorageKey};
 // Verifiable Trait
 // ============================================================================
 
-/// Trait for verifiable blockchain objects.
-///
-/// This trait defines the interface for objects that can be cryptographically
-/// verified, such as blocks and transactions. It consolidates witness-handling
-/// behaviour from C# `Verifiable` with the helper methods required by the
-/// runtime.
+// Re-export the base Verifiable trait from neo-primitives.
+pub use neo_primitives::Verifiable;
+
+/// Extension of [`neo_primitives::Verifiable`] with neo-core-specific methods
+/// that depend on `DataCache`, `ProtocolSettings`, and the smart contract engine.
 ///
 /// # Implementors
 ///
 /// - [`Block`]
 /// - [`Transaction`]
 /// - [`Header`](ledger::BlockHeader)
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use neo_core::Verifiable;
-/// use neo_primitives::UInt256;
-///
-/// fn verify_and_hash<T: Verifiable>(item: &T) -> Option<UInt256> {
-///     if item.verify() {
-///         item.hash().ok()
-///     } else {
-///         None
-///     }
-/// }
-/// ```
-pub trait Verifiable: std::any::Any + Send + Sync {
-    /// Verifies the cryptographic validity of the object.
-    ///
-    /// # Returns
-    ///
-    /// `true` if the object is valid, `false` otherwise.
-    fn verify(&self) -> bool;
-
-    /// Computes the hash of the object.
-    ///
-    /// # Returns
-    ///
-    /// A `CoreResult` containing the computed hash or an error.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if hash computation fails.
-    fn hash(&self) -> CoreResult<UInt256>;
-
-    /// Gets the serialized data used for hash computation.
-    ///
-    /// This method returns the byte representation that will be hashed
-    /// to produce the object's identifier.
-    ///
-    /// # Returns
-    ///
-    /// A vector of bytes representing the hashable data.
-    fn hash_data(&self) -> Vec<u8>;
-
+pub trait VerifiableExt: Verifiable {
     /// Gets the script hashes that should be verified for this container.
     fn script_hashes_for_verifying(
         &self,
@@ -476,15 +432,6 @@ pub trait Verifiable: std::any::Any + Send + Sync {
     fn as_transaction(&self) -> Option<&crate::network::p2p::payloads::Transaction> {
         self.as_any().downcast_ref()
     }
-
-    /// Returns a reference to self as `Any` for downcasting.
-    ///
-    /// This enables runtime type checking and downcasting to concrete types.
-    ///
-    /// # Returns
-    ///
-    /// A reference to self as a trait object.
-    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 // ============================================================================

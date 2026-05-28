@@ -1,7 +1,7 @@
 use super::{OracleContract, PendingRequest};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::neo_vm::StackItem;
+use crate::neo_vm::{StackItem, StackItemExt};
 use crate::UInt160;
 
 impl OracleContract {

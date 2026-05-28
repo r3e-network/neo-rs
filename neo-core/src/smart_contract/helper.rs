@@ -14,7 +14,8 @@ use crate::smart_contract::native::contract_management::ContractManagement;
 use crate::smart_contract::native::NativeRegistry;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
-use crate::{Verifiable, UInt160, UInt256};
+use crate::neo_vm::StackItemExt;
+use crate::{Verifiable, VerifiableExt, UInt160, UInt256};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use std::any::Any;
@@ -289,7 +290,7 @@ impl Helper {
     ///
     /// # Returns
     /// `true` if all witnesses verify successfully, `false` otherwise
-    pub fn verify_witnesses<V: Verifiable>(
+    pub fn verify_witnesses<V: VerifiableExt>(
         verifiable: &V,
         settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -349,7 +350,7 @@ impl Helper {
     ///
     /// # Returns
     /// `Ok(fee)` with consumed gas if verification succeeds, `Err` otherwise
-    pub fn verify_witness<V: Verifiable>(
+    pub fn verify_witness<V: VerifiableExt>(
         verifiable: &V,
         settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -366,7 +367,7 @@ impl Helper {
 
         // Create verification engine
         let cloned_snapshot = Arc::new(snapshot.clone_cache());
-        let container_hash = verifiable.hash()?;
+        let container_hash = verifiable.hash().map_err(|e| CoreError::invalid_operation(e.to_string()))?;
         let container: Arc<dyn Verifiable> = if let Some(transaction) = verifiable.as_transaction()
         {
             Arc::new(transaction.clone())
@@ -477,7 +478,7 @@ impl Helper {
             .peek(0)
             .map_err(|e| CoreError::invalid_operation(format!("Failed to peek result: {}", e)))?;
 
-        if !result.as_boolean().unwrap_or(false) {
+        if !result.as_bool().unwrap_or(false) {
             return Err(CoreError::invalid_operation(
                 "Verification returned false".to_string(),
             ));
@@ -516,7 +517,7 @@ impl Verifiable for VerifiableHashContainer {
         true
     }
 
-    fn hash(&self) -> CoreResult<UInt256> {
+    fn hash(&self) -> neo_primitives::error::PrimitiveResult<UInt256> {
         Ok(self.hash)
     }
 
@@ -524,6 +525,12 @@ impl Verifiable for VerifiableHashContainer {
         self.hash_data.clone()
     }
 
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl VerifiableExt for VerifiableHashContainer {
     fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         Vec::new()
     }
@@ -534,9 +541,5 @@ impl Verifiable for VerifiableHashContainer {
 
     fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         Vec::new()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }

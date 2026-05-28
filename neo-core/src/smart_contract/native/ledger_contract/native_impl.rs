@@ -12,7 +12,7 @@ use crate::smart_contract::native::{
     policy_contract::PolicyContract, NativeContract, NativeMethod,
 };
 use crate::smart_contract::{Interoperable, StorageItem, StorageKey};
-use crate::neo_vm::StackItem;
+use crate::neo_vm::{StackItem, StackItemExt};
 use crate::{UInt160, UInt256};
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;

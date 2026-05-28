@@ -1,4 +1,5 @@
 use super::*;
+use crate::neo_vm::StackItemExt;
 
 struct ExternalVmExecution {
     script: Vec<u8>,
@@ -189,7 +190,7 @@ impl ExternalVmHost<'_> {
                     stack.push(VmStackValue::Null);
                     return Ok(());
                 };
-                let Some(transaction) = container.as_ref().as_transaction() else {
+                let Some(transaction) = container.as_ref().as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() else {
                     stack.push(VmStackValue::Null);
                     return Ok(());
                 };
@@ -209,7 +210,7 @@ impl ExternalVmHost<'_> {
                     .get_script_container()
                     .ok_or_else(|| "No script container".to_string())?;
 
-                let Some(transaction) = container.as_ref().as_transaction() else {
+                let Some(transaction) = container.as_ref().as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() else {
                     return Err("Script container does not implement Interoperable".to_string());
                 };
 
@@ -314,9 +315,8 @@ impl ApplicationEngine {
             .evaluation_stack()
             .iter()
             .cloned()
-            .map(VmStackValue::try_from)
-            .collect::<VmResult<Vec<_>>>()
-            .ok()?;
+            .map(|v| VmStackValue::try_from(v).unwrap())
+            .collect::<Vec<_>>();
 
         Some(ExternalVmExecution {
             script: script.to_vec(),
@@ -349,14 +349,10 @@ impl ApplicationEngine {
     }
 
     fn apply_external_vm_halt(&mut self, stack: Vec<VmStackValue>) -> VMState {
-        let stack_items = match stack
+        let stack_items: Vec<StackItem> = stack
             .into_iter()
-            .map(StackItem::try_from)
-            .collect::<VmResult<Vec<_>>>()
-        {
-            Ok(items) => items,
-            Err(error) => return self.apply_external_vm_fault(error.to_string(), 0),
-        };
+            .map(|v| StackItem::try_from(v).unwrap())
+            .collect();
 
         let context_index = match self
             .vm_engine

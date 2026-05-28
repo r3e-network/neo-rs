@@ -16,6 +16,7 @@ use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::HEADER_SIZE;
 use crate::script_builder::ScriptBuilder;
 use crate::Verifiable as CoreIVerifiable;
+use crate::VerifiableExt;
 use crate::{
     network::p2p,
     persistence::DataCache,
@@ -39,6 +40,7 @@ use neo_primitives::base58_check::{self, AddressDecodeError, Base58CheckDecodeEr
 use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
 use neo_vm_rs::OpCode;
+use crate::neo_vm::StackItemExt;
 use num_bigint::{BigInt, Sign};
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -597,7 +599,7 @@ fn calculate_network_fee_impl(
                 ));
             }
             let result_item = engine.result_stack().peek(0).map_err(|e| e.to_string())?;
-            if !result_item.as_boolean().unwrap_or(false) {
+            if !result_item.as_bool().unwrap_or(false) {
                 return Err(format!(
                     "Smart contract {} verification fault.",
                     contract_hash

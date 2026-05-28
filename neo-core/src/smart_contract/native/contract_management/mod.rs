@@ -14,7 +14,7 @@ use crate::smart_contract::contract_state::{ContractState, NefFile};
 use crate::smart_contract::manifest::ContractManifest;
 use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract};
 use crate::smart_contract::StorageKey;
-use crate::neo_vm::StackItem;
+use crate::neo_vm::{StackItem, StackItemExt};
 use crate::UInt160;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;

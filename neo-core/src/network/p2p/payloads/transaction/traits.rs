@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::error::CoreError;
+use neo_primitives::error::PrimitiveResult;
 use neo_primitives::SerializablePayload;
 use neo_vm_rs::StackValue;
 
@@ -37,7 +38,7 @@ impl Inventory for Transaction {
     }
 }
 
-impl crate::Verifiable for Transaction {
+impl neo_primitives::Verifiable for Transaction {
     /// Performs basic structural validation of the transaction.
     ///
     /// # Security Note
@@ -85,14 +86,20 @@ impl crate::Verifiable for Transaction {
         true
     }
 
-    fn hash(&self) -> CoreResult<UInt256> {
-        Transaction::try_hash(self)
+    fn hash(&self) -> PrimitiveResult<UInt256> {
+        Transaction::try_hash(self).map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
     }
 
     fn hash_data(&self) -> Vec<u8> {
         Transaction::hash_data(self)
     }
 
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl crate::VerifiableExt for Transaction {
     fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         self.signers.iter().map(|s| s.account).collect()
     }
@@ -103,10 +110,6 @@ impl crate::Verifiable for Transaction {
 
     fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         self.witnesses.iter_mut().collect()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 

@@ -14,6 +14,7 @@ use crate::error::CoreResult;
 use crate::persistence::DataCache;
 use crate::smart_contract::native::LedgerContract;
 use crate::{UInt160, UInt256};
+use neo_primitives::error::PrimitiveResult;
 use serde::{Deserialize, Serialize};
 
 mod serialization;
@@ -172,7 +173,26 @@ impl Header {
 // Use macro to reduce boilerplate
 crate::impl_default_via_new!(Header);
 
-impl crate::Verifiable for Header {
+impl neo_primitives::Verifiable for Header {
+    fn verify(&self) -> bool {
+        true
+    }
+
+    fn hash(&self) -> PrimitiveResult<UInt256> {
+        let mut clone = self.clone();
+        clone.try_hash().map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
+    }
+
+    fn hash_data(&self) -> Vec<u8> {
+        Header::hash_data(self)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl crate::VerifiableExt for Header {
     fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         if self.prev_hash == UInt256::default() {
             return vec![self.witness.script_hash()];
@@ -207,23 +227,6 @@ impl crate::Verifiable for Header {
 
     fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         vec![&mut self.witness]
-    }
-
-    fn verify(&self) -> bool {
-        true
-    }
-
-    fn hash(&self) -> CoreResult<UInt256> {
-        let mut clone = self.clone();
-        clone.try_hash()
-    }
-
-    fn hash_data(&self) -> Vec<u8> {
-        Header::hash_data(self)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

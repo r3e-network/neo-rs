@@ -15,7 +15,7 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::native_contract::NativeMethod;
 use crate::smart_contract::native::NativeContract;
-use crate::neo_vm::StackItem;
+use crate::neo_vm::{StackItem, StackItemExt};
 use crate::UInt160;
 use num_bigint::BigInt;
 

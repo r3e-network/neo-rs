@@ -10,7 +10,7 @@ use crate::smart_contract::contract_parameter::ContractParameter;
 use crate::smart_contract::contract_parameter::ContractParameterValue;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::helper::Helper as ContractHelper;
-use crate::{Verifiable, UInt160, UInt256};
+use crate::{Verifiable, VerifiableExt, UInt160, UInt256};
 use base64::{engine::general_purpose, Engine as _};
 use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
@@ -139,7 +139,7 @@ impl ContractParametersContext {
     /// Creates a new context
     pub fn new(
         snapshot_cache: Arc<DataCache>,
-        verifiable: impl Verifiable + Serializable + 'static,
+        verifiable: impl VerifiableExt + Serializable + 'static,
         network: u32,
     ) -> Self {
         Self::new_with_type(snapshot_cache, verifiable, network, None)
@@ -148,7 +148,7 @@ impl ContractParametersContext {
     /// Creates a new context with an explicit type name (for parity with C# ToJson()).
     pub fn new_with_type(
         snapshot_cache: Arc<DataCache>,
-        verifiable: impl Verifiable + Serializable + 'static,
+        verifiable: impl VerifiableExt + Serializable + 'static,
         network: u32,
         verifiable_type: Option<String>,
     ) -> Self {
@@ -433,7 +433,7 @@ impl ContractParametersContext {
     /// Creates from JSON
     pub fn from_json(
         json: &serde_json::Value,
-        verifiable: impl Verifiable + Serializable + 'static,
+        verifiable: impl VerifiableExt + Serializable + 'static,
         snapshot: Arc<DataCache>,
     ) -> Result<Self, String> {
         let obj = json.as_object().ok_or("Expected object")?;
