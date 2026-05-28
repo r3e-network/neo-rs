@@ -31,6 +31,9 @@ tracing = { workspace = true, optional = true }
 # Encoding
 hex = { workspace = true }
 
+# Compression
+lz4_flex = { workspace = true }
+
 # Optional VM dependency (for stack projection)
 neo-vm-rs = { workspace = true, optional = true }
 

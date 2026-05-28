@@ -3,6 +3,7 @@
 //! This crate provides IO functionality matching C# Neo.IO namespace
 
 pub mod caching;
+pub mod compression;
 pub mod extensions;
 pub mod witness_rule;
 
@@ -23,6 +24,9 @@ pub use extensions::{
     memory_reader::MemoryReaderExtensions,
     serializable::{SerializableCollectionExtensions, SerializableExtensions},
 };
+
+// Re-export compression types
+pub use compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD};
 
 // Re-export witness rule types
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
