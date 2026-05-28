@@ -410,17 +410,17 @@ impl Serializable for Signer {
 }
 
 impl Interoperable for Signer {
-    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
+    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
         // This operation is not supported for Signer.
         // The C# implementation throws NotSupportedException.
-        Err(CoreError::InvalidOperation {
-            message: "Signer::from_stack_item is not supported".into(),
-        })
+        Err(crate::neo_vm::VmError::invalid_operation_msg(
+            "Signer::from_stack_item is not supported",
+        ))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
         StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            CoreError::invalid_operation(format!(
+            crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert signer StackValue to StackItem: {error}"
             ))
         })

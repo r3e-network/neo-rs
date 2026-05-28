@@ -95,16 +95,16 @@ impl_serializable! {
 }
 
 impl Interoperable for TrimmedBlock {
-    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
+    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
         // Not supported in C# implementation (throws NotSupportedException)
-        Err(CoreError::invalid_operation(
+        Err(crate::neo_vm::VmError::invalid_operation_msg(
             "FromStackItem is not supported for TrimmedBlock",
         ))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
         StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            CoreError::invalid_operation(format!(
+            crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert TrimmedBlock StackValue to StackItem: {error}"
             ))
         })

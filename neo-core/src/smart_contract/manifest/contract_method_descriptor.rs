@@ -181,17 +181,18 @@ impl ContractMethodDescriptor {
 }
 
 impl Interoperable for ContractMethodDescriptor {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
-            CoreError::invalid_format(format!(
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
+        let sv = StackValue::try_from(stack_item).map_err(|error| {
+            crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert ContractMethodDescriptor StackItem to StackValue: {error}"
             ))
-        })?)
+        })?;
+        self.from_stack_value(sv).map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
         StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            CoreError::invalid_operation(format!(
+            crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert ContractMethodDescriptor StackValue to StackItem: {error}"
             ))
         })

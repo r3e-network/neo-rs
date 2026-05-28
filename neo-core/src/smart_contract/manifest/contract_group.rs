@@ -175,14 +175,14 @@ impl Serialize for ContractGroup {
 }
 
 impl Interoperable for ContractGroup {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), crate::neo_vm::VmError> {
         match StackValue::try_from(stack_item)
             .map_err(|error| {
-                Error::invalid_data(format!(
+                crate::neo_vm::VmError::invalid_operation_msg(format!(
                     "Failed to convert ContractGroup StackItem to StackValue: {error}"
                 ))
             })
-            .and_then(Self::try_from_stack_value)
+            .and_then(|sv| Self::try_from_stack_value(sv).map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string())))
         {
             Ok(group) => *self = group,
             Err(e) => {
@@ -192,9 +192,9 @@ impl Interoperable for ContractGroup {
         Ok(())
     }
 
-    fn to_stack_item(&self) -> std::result::Result<StackItem, Error> {
+    fn to_stack_item(&self) -> std::result::Result<StackItem, crate::neo_vm::VmError> {
         StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            Error::invalid_operation(format!(
+            crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert ContractGroup StackValue to StackItem: {error}"
             ))
         })

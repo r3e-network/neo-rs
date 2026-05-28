@@ -78,7 +78,8 @@ use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::interop_service::InteropHost;
 use crate::neo_vm::jump_table::JumpTable;
 use crate::neo_vm::script::Script;
-use crate::neo_vm::stack_item::InteropInterface as VmInteropInterface;
+// InteropInterface trait removed - StackValue::Interop(u64) is used instead
+// VerifiableInterop is now stored via the interop host registry, not inline in the VM stack
 use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute};
 use crate::persistence::data_cache::DataCache;
@@ -98,7 +99,7 @@ use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::diagnostic::Diagnostic;
 use crate::smart_contract::iterators::iterator::StorageIterator as _;
-use crate::smart_contract::iterators::{IteratorInterop, StorageIterator};
+use crate::smart_contract::iterators::StorageIterator;
 use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::manifest::ContractMethodDescriptor;
 use crate::smart_contract::native::ContractManagement;
@@ -194,13 +195,9 @@ impl fmt::Debug for VerifiableInterop {
     }
 }
 
-impl VmInteropInterface for VerifiableInterop {
+impl VerifiableInterop {
     fn interface_type(&self) -> &str {
         "Verifiable"
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self.container.as_any()
     }
 }
 

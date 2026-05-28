@@ -477,6 +477,14 @@ impl From<neo_storage::StorageError> for CoreError {
     }
 }
 
+impl From<crate::neo_vm::VmError> for CoreError {
+    fn from(err: crate::neo_vm::VmError) -> Self {
+        CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
+    }
+}
+
 // Type conversion errors (require custom handling)
 impl From<std::num::ParseIntError> for CoreError {
     fn from(_error: std::num::ParseIntError) -> Self {

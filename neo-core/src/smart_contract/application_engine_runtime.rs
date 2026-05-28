@@ -3,7 +3,7 @@
 use crate::cryptography::murmur128;
 use crate::hardfork::Hardfork;
 use crate::neo_config::{ADDRESS_SIZE, HASH_SIZE};
-use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
+use crate::neo_vm::{ExecutionEngine, StackItem, StackItemExt, VmError, VmResult};
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE,
 };
@@ -345,7 +345,7 @@ impl ApplicationEngine {
             return self.push_null();
         };
 
-        let Some(tx) = container.as_ref().as_transaction() else {
+        let Some(tx) = container.as_ref().as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() else {
             return self.push_null();
         };
 
@@ -705,8 +705,7 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
                 true
             } else if matches!(item_type, StackItemType::ByteString | StackItemType::Buffer) {
                 item.as_bytes()
-                    .ok()
-                    .and_then(|bytes| StdString::from_utf8(bytes).ok())
+                    .and_then(|bytes| StdString::from_utf8(bytes.to_vec()).ok())
                     .is_some()
             } else {
                 false

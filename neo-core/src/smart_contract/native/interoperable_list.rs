@@ -77,25 +77,26 @@ impl<T: Interoperable + Clone> DerefMut for InteroperableList<T> {
 }
 
 impl<T: Interoperable + Clone + Default> Interoperable for InteroperableList<T> {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
         self.items.clear();
-        
+
         if let StackItem::Array(array) = stack_item {
             for element in array.items() {
                 let mut value = T::default();
-                value.from_stack_item(element);
+                value.from_stack_item(element)?;
                 self.items.push(value);
             }
         }
+        Ok(())
     }
-    
-    fn to_stack_item(&self) -> StackItem {
+
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
         let items: Vec<StackItem> = self.items
             .iter()
             .map(|item| item.to_stack_item())
-            .collect();
-        
-        StackItem::from_array(items)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(StackItem::from_array(items))
     }
     
     fn clone_box(&self) -> Box<dyn Interoperable> {

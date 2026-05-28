@@ -137,17 +137,18 @@ impl Transaction {
 }
 
 impl Interoperable for Transaction {
-    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
+    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
         // This operation is not supported for Transaction.
         // The C# implementation throws NotSupportedException.
-        Err(CoreError::invalid_operation(
+        Err(crate::neo_vm::VmError::invalid_operation_msg(
             "FromStackItem is not supported for Transaction",
         ))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        StackItem::try_from(self.to_stack_value()?).map_err(|error| {
-            CoreError::invalid_operation(format!(
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
+        let sv = self.to_stack_value().map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))?;
+        StackItem::try_from(sv).map_err(|error| {
+            crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert transaction StackValue to StackItem: {error}"
             ))
         })

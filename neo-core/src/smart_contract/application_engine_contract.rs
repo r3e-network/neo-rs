@@ -1,13 +1,12 @@
 //! ApplicationEngine.Contract - ports Neo.SmartContract.ApplicationEngine.Contract.cs
 
-use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
+use crate::neo_vm::{ExecutionEngine, StackItem, StackItemExt, VmError, VmResult};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::env_flags::env_flag_enabled;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
-use crate::smart_contract::iterators::IteratorInterop;
 use crate::smart_contract::native::crypto_lib::Bls12381Interop;
 use crate::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;
@@ -284,7 +283,7 @@ fn contract_call_native_handler(
             }
             if native_call_trace_enabled() {
                 let stack_type = item.stack_item_type();
-                let bytes_len = item.as_bytes().ok().map(|value| value.len());
+                let bytes_len = item.as_bytes().map(|value| value.len());
                 eprintln!(
                     "call_native stack_item[{index}] vm_type={stack_type:?} as_bytes_len={bytes_len:?}"
                 );
@@ -404,26 +403,30 @@ fn decode_native_result(
                 let iterator_id = id
                     .to_u32()
                     .ok_or_else(|| "Iterator identifier out of range".to_string())?;
-                return Ok(Some(StackItem::from_interface(IteratorInterop::new(
-                    iterator_id,
-                ))));
+                return Ok(Some(StackItem::Iterator(iterator_id as u64)));
             }
 
-            let interop =
-                Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
-            Ok(Some(StackItem::from_interface(interop)))
+            Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
+            Ok(Some(StackItem::from_byte_string(result)))
         }
         _ => Ok(Some(StackItem::from_byte_string(result))),
     }
 }
 
 fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
-    match item {
-        StackItem::InteropInterface(interface) => interface
-            .as_any()
-            .downcast_ref::<Bls12381Interop>()
-            .map(|interop| interop.to_encoded_bytes())
-            .ok_or_else(|| "Invalid interop interface argument".to_string()),
+    match &item {
+        StackItem::Interop(handle) => {
+            // Interop handles require host-side resolution; for now, encode the handle ID
+            Ok(handle.to_le_bytes().to_vec())
+        }
+        StackItem::Iterator(id) => {
+            Ok((*id as u32).to_le_bytes().to_vec())
+        }
+        StackItem::ByteString(bytes) => {
+            // Validate that the bytes are a valid Bls12381Interop encoding
+            Bls12381Interop::from_encoded_bytes(bytes).map_err(|e| e.to_string())?;
+            Ok(bytes.clone())
+        }
         _ => Err("Stack item is not an InteropInterface".to_string()),
     }
 }

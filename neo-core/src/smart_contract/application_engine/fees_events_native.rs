@@ -1,4 +1,5 @@
 use super::*;
+use crate::neo_vm::StackItemExt;
 use crate::smart_contract::env_flags::env_flag_enabled;
 use parking_lot::Mutex;
 use std::cmp::Ordering as CmpOrdering;

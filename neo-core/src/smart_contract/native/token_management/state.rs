@@ -56,12 +56,16 @@ impl Default for TokenState {
 }
 
 impl Interoperable for TokenState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        self.from_stack_value(stack_item_to_stack_value(stack_item, "TokenState")?)
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
+        let sv = stack_item_to_stack_value(stack_item, "TokenState")
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))?;
+        self.from_stack_value(sv)
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
         stack_value_to_stack_item(self.to_stack_value(), "TokenState")
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {
@@ -144,12 +148,16 @@ impl AccountState {
 }
 
 impl Interoperable for AccountState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        self.from_stack_value(stack_item_to_stack_value(stack_item, "AccountState")?)
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
+        let sv = stack_item_to_stack_value(stack_item, "AccountState")
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))?;
+        self.from_stack_value(sv)
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
         stack_value_to_stack_item(self.to_stack_value(), "AccountState")
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {
@@ -188,12 +196,16 @@ impl NFTState {
 }
 
 impl Interoperable for NFTState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        self.from_stack_value(stack_item_to_stack_value(stack_item, "NFTState")?)
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
+        let sv = stack_item_to_stack_value(stack_item, "NFTState")
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))?;
+        self.from_stack_value(sv)
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
         stack_value_to_stack_item(self.to_stack_value(), "NFTState")
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {

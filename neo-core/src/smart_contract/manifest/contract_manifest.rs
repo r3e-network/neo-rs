@@ -465,17 +465,18 @@ impl Serializable for ContractManifest {
 }
 
 impl Interoperable for ContractManifest {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
-        self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
-            Error::invalid_format(format!(
+    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), crate::neo_vm::VmError> {
+        let sv = StackValue::try_from(stack_item).map_err(|error| {
+            crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "ContractManifest expects Struct stack item: {error}"
             ))
-        })?)
+        })?;
+        self.from_stack_value(sv).map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> std::result::Result<StackItem, Error> {
+    fn to_stack_item(&self) -> std::result::Result<StackItem, crate::neo_vm::VmError> {
         StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            Error::invalid_format(format!(
+            crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "ContractManifest StackValue conversion failed: {error}"
             ))
         })

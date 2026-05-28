@@ -67,14 +67,14 @@ impl fmt::Debug for NotifyEventArgs {
 }
 
 impl Interoperable for NotifyEventArgs {
-    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
+    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), crate::neo_vm::VmError> {
         // Not supported in C# implementation (throws NotSupportedException)
-        Err(CoreError::invalid_operation(
+        Err(crate::neo_vm::VmError::invalid_operation_msg(
             "FromStackItem is not supported for NotifyEventArgs",
         ))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+    fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
         // Returns an array with [ScriptHash, EventName, State]
         let state: Vec<StackItem> = self.state.iter().cloned().collect();
         Ok(StackItem::from_array(vec![
