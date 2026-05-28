@@ -100,6 +100,16 @@ impl NetworkMessage {
     }
 }
 
+impl neo_primitives::NetworkMessage for NetworkMessage {
+    fn command(&self) -> &str {
+        self.header.command.as_str()
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        self.to_bytes(true).unwrap_or_default()
+    }
+}
+
 /// Strongly-typed representation of every payload carried by the Neo P2P
 /// protocol.
 #[allow(clippy::large_enum_variant)]
