@@ -169,6 +169,9 @@
 /// Transaction containment type enumeration.
 pub mod contains_transaction_type;
 
+/// Raw P2P message framing (wire format).
+pub mod message;
+
 /// Error types and result handling.
 pub mod error;
 
@@ -216,6 +219,7 @@ pub mod witness_rule_action {
 
 // Core types from this crate
 pub use contains_transaction_type::ContainsTransactionType;
+pub use message::RawMessage;
 pub use error::{P2PError, P2PResult};
 pub use inventory_type::InventoryType;
 pub use message_command::MessageCommand;
