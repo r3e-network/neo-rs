@@ -191,6 +191,7 @@ base64 = "0.22"
 
 # === Numeric types ===
 num-bigint = { version = "0.4", features = ["serde"] }
+num-integer = "0.1"
 num-traits = "0.2"
 # === Data structures ===
 smallvec = { version = "1.13", features = ["const_new", "union"] }
