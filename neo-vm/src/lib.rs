@@ -140,6 +140,9 @@
 // Core VM Modules
 // ============================================================================
 
+/// Binary serialization for VM stack items.
+pub mod binary_serializer;
+
 /// VM error types and result handling.
 pub mod error;
 
@@ -256,6 +259,7 @@ pub use neo_vm_rs::semantics;
 // Public Re-exports from neo-vm (stateful host types)
 // ============================================================================
 
+pub use binary_serializer::BinarySerializer;
 pub use error::{VmError, VmResult};
 pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
