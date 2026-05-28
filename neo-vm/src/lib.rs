@@ -184,19 +184,61 @@ pub mod reference_counter;
 /// VM script representation and validation.
 pub mod script;
 
+/// Script builder for programmatically constructing VM scripts.
+pub mod script_builder;
+
 /// Slot storage for locals, arguments, and static fields.
 pub mod slot;
 
-/// Polymorphic VM value types.
+/// Stack item type alias and extension methods.
 ///
-/// [`StackItem`] represents all values that can exist on the VM stack:
-/// - Primitive types (Integer, Boolean, ByteString)
-/// - Complex types (Array, Map, Struct)
-/// - Special types (Pointer, InteropInterface)
+/// `StackItem` is now a type alias for [`neo_vm_rs::StackValue`].
 pub mod stack_item;
 
 // ============================================================================
-// Public Re-exports
+// Public Re-exports from neo-vm-rs
+//
+// These types are the canonical definitions from the shared neo-vm-rs crate.
+// Re-exporting them allows downstream code to access them via `neo_vm::*`
+// without depending on neo-vm-rs directly.
+// ============================================================================
+
+/// Opcode enum — canonical NeoVM opcodes.
+pub use neo_vm_rs::OpCode;
+/// Parsed bytecode instruction.
+pub use neo_vm_rs::Instruction;
+/// Instruction parsing errors.
+pub use neo_vm_rs::{InstructionError, InstructionErrorKind, InstructionResult};
+/// Execution engine configuration limits.
+pub use neo_vm_rs::ExecutionEngineLimits;
+/// VM execution state (None/Halt/Fault/Break).
+pub use neo_vm_rs::VmState;
+/// Exception handling context for try/catch/finally.
+pub use neo_vm_rs::{ExceptionHandlingContext, ExceptionHandlingState};
+/// Stack item type discriminant.
+pub use neo_vm_rs::StackItemType;
+/// ABI-level stack value (lightweight, no reference counting).
+pub use neo_vm_rs::StackValue;
+/// Ordered dictionary for Map stack items.
+pub use neo_vm_rs::VmOrderedDictionary;
+/// Tarjan's algorithm for cycle detection (GC).
+pub use neo_vm_rs::Tarjan;
+/// Atomic counter for compound stack item identity.
+pub use neo_vm_rs::next_stack_item_id;
+/// Syscall hash computation.
+pub use neo_vm_rs::interop_hash;
+/// Script validation functions.
+pub use neo_vm_rs::{validate_script, validate_strict_script};
+/// Instruction parsing utilities.
+pub use neo_vm_rs::{parse_script_instructions, instruction_jump_target, instruction_try_targets};
+/// VM constants.
+pub use neo_vm_rs::{DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE};
+
+// Re-export semantics modules (pure opcode logic from neo-vm-rs).
+pub use neo_vm_rs::semantics;
+
+// ============================================================================
+// Public Re-exports from neo-vm (stateful host types)
 // ============================================================================
 
 pub use error::{VmError, VmResult};
@@ -207,8 +249,9 @@ pub use interop_service::InteropService;
 pub use jump_table::JumpTable;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
 pub use script::Script;
+pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
-pub use stack_item::StackItem;
+pub use stack_item::{StackItem, StackItemExt};
 
 // ============================================================================
 // I/O Abstraction

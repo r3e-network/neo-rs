@@ -1,5 +1,5 @@
 use super::binary_writer::BinaryWriterExtensions;
-use crate::io::{BinaryWriter, IoResult, Serializable};
+use neo_io_crate::{BinaryWriter, IoResult, Serializable};
 
 /// Extension helpers for [`Serializable`] values mirroring
 /// `Neo.Extensions.IO.ISerializableExtensions`.

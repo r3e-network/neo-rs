@@ -3,7 +3,7 @@ use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::transaction::apply_tracked_items;
+use neo_core::persistence::apply_tracked_items;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};

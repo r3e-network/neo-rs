@@ -4,7 +4,7 @@ use crate::messages::{
 };
 use crate::{ConsensusError, ConsensusMessageType};
 use crate::{ConsensusEvent, ConsensusService};
-use neo_core::cryptography::MerkleTree;
+use neo_crypto::MerkleTree;
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 

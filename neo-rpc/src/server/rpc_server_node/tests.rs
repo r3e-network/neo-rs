@@ -12,7 +12,7 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::network::p2p::payloads::{Block, Header, TransactionAttribute};
-use neo_core::persistence::transaction::apply_tracked_items;
+use neo_core::persistence::apply_tracked_items;
 use neo_core::persistence::StoreCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;

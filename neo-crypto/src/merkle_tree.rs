@@ -3,7 +3,7 @@
 //! This module provides Merkle tree functionality used for computing
 //! transaction and block payload roots.
 
-use neo_crypto::Crypto;
+use crate::Crypto;
 use neo_primitives::UInt256;
 
 /// A node in the Merkle tree.

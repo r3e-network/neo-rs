@@ -7,29 +7,11 @@
 
 pub use neo_crypto::{
     Base58, Base64, Bip32Crypto, BloomFilter, Bls12381Crypto, Crypto, CryptoError, CryptoResult,
-    ECC, ECCurve, ECDsa, ECPoint, Ed25519Crypto, HashAlgorithm, Hex, NEOFS_ECDSA_SHA512_PREFIX,
-    NEOFS_ECDSA_SHA512_SIGNATURE_LEN, NamedCurveHash, Secp256k1Crypto, Secp256r1Crypto,
-    Sha256Hasher, murmur32, murmur128,
+    ECC, ECCurve, ECDsa, ECPoint, Ed25519Crypto, HashAlgorithm, Hex, MerkleTree,
+    NEOFS_ECDSA_SHA512_PREFIX, NEOFS_ECDSA_SHA512_SIGNATURE_LEN, NamedCurveHash,
+    Secp256k1Crypto, Secp256r1Crypto, Sha256Hasher, bloom_filter, crypto_utils, mpt_trie,
+    murmur32, murmur128,
 };
-
-/// Merkle tree implementation (moved from neo_cryptography module)
-pub mod merkle_tree;
-pub use merkle_tree::MerkleTree;
-
-/// Bloom filter re-exports from neo-crypto.
-pub mod bloom_filter {
-    pub use neo_crypto::bloom_filter::*;
-}
-
-/// Cryptographic utilities re-exports from neo-crypto.
-pub mod crypto_utils {
-    pub use neo_crypto::crypto_utils::*;
-}
-
-/// Merkle Patricia Trie re-exports from neo-crypto.
-pub mod mpt_trie {
-    pub use neo_crypto::mpt_trie::*;
-}
 
 pub use neo_crypto::mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,

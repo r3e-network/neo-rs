@@ -239,11 +239,6 @@ pub mod extensions;
 /// Matches C# `Neo.Events` namespace.
 pub mod events;
 
-/// I/O abstractions and helpers.
-///
-/// Matches C# `Neo.IO` namespace.
-pub(crate) mod io;
-
 /// RPC models and utilities.
 pub mod rpc;
 

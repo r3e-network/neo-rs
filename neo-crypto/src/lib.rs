@@ -49,6 +49,8 @@ pub mod ecc;
 pub mod encoding;
 pub mod error;
 pub mod hash;
+/// Merkle tree implementation for computing transaction and block payload roots.
+pub mod merkle_tree;
 pub mod mpt_trie;
 /// Murmur3 hash helpers used by Neo runtime and native contracts.
 pub mod murmur;
@@ -64,6 +66,7 @@ pub use ecc::{ECCurve, ECPoint};
 pub use encoding::{Base58, Base64, Hex};
 pub use error::{CryptoError, CryptoResult};
 pub use hash::{Crypto, HashAlgorithm, Sha256Hasher, ct_hash_eq, ct_hash_slice_eq};
+pub use merkle_tree::MerkleTree;
 pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };

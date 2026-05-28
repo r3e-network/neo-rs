@@ -7,7 +7,7 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::store_cache::StoreCache;
+use neo_core::persistence::StoreCache;
 use neo_core::smart_contract::native::GasToken;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::{Wallet, WalletAccount};

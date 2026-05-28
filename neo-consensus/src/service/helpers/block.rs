@@ -2,11 +2,11 @@ use crate::context::ValidatorInfo;
 use neo_primitives::{UInt160, UInt256};
 
 pub(in crate::service) fn compute_merkle_root(hashes: &[UInt256]) -> UInt256 {
-    neo_core::cryptography::MerkleTree::compute_root(hashes).unwrap_or_else(UInt256::zero)
+    neo_crypto::MerkleTree::compute_root(hashes).unwrap_or_else(UInt256::zero)
 }
 
 pub(in crate::service) fn compute_next_consensus_address(validators: &[ValidatorInfo]) -> UInt160 {
-    use neo_core::script_builder::ScriptBuilder;
+    use neo_vm::ScriptBuilder;
     use neo_crypto::ECPoint;
 
     if validators.is_empty() {
