@@ -166,6 +166,9 @@
 // Module Declarations
 // ============================================================================
 
+/// Channel configuration for P2P node bootstrap.
+pub mod channels_config;
+
 /// Transaction containment type enumeration.
 pub mod contains_transaction_type;
 
@@ -195,6 +198,9 @@ pub mod oracle_response_code {
 /// P2P trait definitions.
 pub mod traits;
 
+/// Shared timeout counters for P2P operations.
+pub mod timeouts;
+
 /// Transaction removal reason enumeration.
 pub mod transaction_removal_reason {
     pub use neo_primitives::TransactionRemovalReason;
@@ -221,6 +227,7 @@ pub mod witness_rule_action {
 // ============================================================================
 
 // Core types from this crate
+pub use channels_config::ChannelsConfig;
 pub use contains_transaction_type::ContainsTransactionType;
 pub use message::RawMessage;
 pub use error::{P2PError, P2PResult};
