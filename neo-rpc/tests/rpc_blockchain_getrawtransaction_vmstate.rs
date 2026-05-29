@@ -131,7 +131,7 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn get_raw_transaction_verbose_confirmed_includes_vmstate() {
+async fn get_raw_transaction_verbose_omits_vmstate() {
     let system = neo_core::neo_system::NeoSystem::new(
         neo_core::protocol_settings::ProtocolSettings::default(),
         None,
@@ -157,12 +157,15 @@ async fn get_raw_transaction_verbose_confirmed_includes_vmstate() {
             .unwrap_or_default(),
         block_hash.to_string()
     );
-    assert_eq!(
-        obj.get("vmstate")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-        "HALT"
+    // C# GetRawTransaction verbose adds only blockhash, confirmations and blocktime
+    // (RpcServer.Blockchain.cs:373-381) — NOT vmstate, which belongs to
+    // getapplicationlog. Guard against re-introducing the non-C# field.
+    assert!(
+        obj.get("vmstate").is_none(),
+        "getrawtransaction verbose must not include a vmstate field (C# parity)"
     );
+    assert!(obj.get("confirmations").is_some());
+    assert!(obj.get("blocktime").is_some());
 
     let bytes = BASE64_STANDARD
         .decode(
