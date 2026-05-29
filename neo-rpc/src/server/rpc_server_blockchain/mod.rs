@@ -264,16 +264,10 @@ impl RpcServerBlockchain {
             let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
             obj.insert("confirmations".to_string(), json!(confirmations));
 
-            let vmstate_str = match state.vm_state() {
-                VMState::HALT => "HALT",
-                VMState::FAULT => "FAULT",
-                VMState::BREAK => "BREAK",
-                VMState::NONE => "NONE",
-            };
-            obj.insert(
-                "vmstate".to_string(),
-                Value::String(vmstate_str.to_string()),
-            );
+            // C# GetRawTransaction verbose adds only blockhash, confirmations and
+            // blocktime to Transaction.ToJson (RpcServer.Blockchain.cs:373-381);
+            // it does NOT add a vmstate field (that belongs to getapplicationlog).
+            // Emitting it here surprises strict clients / response-diff tooling.
 
             if let Some(block_hash) = ledger
                 .get_block_hash_by_index(&store, block_index)

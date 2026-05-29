@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use neo_core::BigDecimal;
 use neo_core::smart_contract::native::{ledger_contract::LedgerContract, NeoToken};
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
@@ -37,6 +36,9 @@ pub(super) fn get_unclaimed_gas(
 
     Ok(json!({
         "address": address,
-        "unclaimed": BigDecimal::new(unclaimed, neo.decimals()).to_string()
+        // C# GetUnclaimedGas returns the raw datoshi BigInteger as a string
+        // (NEO.UnclaimedGas(...).ToString()), e.g. "100000000" for 1 GAS — not
+        // the decimal form. Wrapping in BigDecimal would divide by 10^8.
+        "unclaimed": unclaimed.to_string()
     }))
 }

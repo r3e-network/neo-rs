@@ -14,17 +14,40 @@ use tokio::sync::oneshot;
 
 pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcException> {
     match result.result {
+        // C# GetRelayResult attaches WithData(reason.ToString()) to EVERY non-success
+        // case, so both the error message suffix and the `data` field carry the
+        // VerifyResult name. Mirror that for sendrawtransaction/submitblock parity.
         VerifyResult::Succeed => Ok(json!({ "hash": result.hash.to_string() })),
-        VerifyResult::AlreadyExists => Err(RpcException::from(RpcError::already_exists())),
-        VerifyResult::AlreadyInPool => Err(RpcException::from(RpcError::already_in_pool())),
-        VerifyResult::OutOfMemory => Err(RpcException::from(RpcError::mempool_cap_reached())),
-        VerifyResult::InvalidScript => Err(RpcException::from(RpcError::invalid_script())),
-        VerifyResult::InvalidAttribute => Err(RpcException::from(RpcError::invalid_attribute())),
-        VerifyResult::InvalidSignature => Err(RpcException::from(RpcError::invalid_signature())),
-        VerifyResult::OverSize => Err(RpcException::from(RpcError::invalid_size())),
-        VerifyResult::Expired => Err(RpcException::from(RpcError::expired_transaction())),
-        VerifyResult::InsufficientFunds => Err(RpcException::from(RpcError::insufficient_funds())),
-        VerifyResult::PolicyFail => Err(RpcException::from(RpcError::policy_failed())),
+        VerifyResult::AlreadyExists => Err(RpcException::from(
+            RpcError::already_exists().with_data("AlreadyExists"),
+        )),
+        VerifyResult::AlreadyInPool => Err(RpcException::from(
+            RpcError::already_in_pool().with_data("AlreadyInPool"),
+        )),
+        VerifyResult::OutOfMemory => Err(RpcException::from(
+            RpcError::mempool_cap_reached().with_data("OutOfMemory"),
+        )),
+        VerifyResult::InvalidScript => Err(RpcException::from(
+            RpcError::invalid_script().with_data("InvalidScript"),
+        )),
+        VerifyResult::InvalidAttribute => Err(RpcException::from(
+            RpcError::invalid_attribute().with_data("InvalidAttribute"),
+        )),
+        VerifyResult::InvalidSignature => Err(RpcException::from(
+            RpcError::invalid_signature().with_data("InvalidSignature"),
+        )),
+        VerifyResult::OverSize => Err(RpcException::from(
+            RpcError::invalid_size().with_data("OverSize"),
+        )),
+        VerifyResult::Expired => Err(RpcException::from(
+            RpcError::expired_transaction().with_data("Expired"),
+        )),
+        VerifyResult::InsufficientFunds => Err(RpcException::from(
+            RpcError::insufficient_funds().with_data("InsufficientFunds"),
+        )),
+        VerifyResult::PolicyFail => Err(RpcException::from(
+            RpcError::policy_failed().with_data("PolicyFail"),
+        )),
         VerifyResult::UnableToVerify => Err(RpcException::from(
             RpcError::verification_failed().with_data("UnableToVerify"),
         )),

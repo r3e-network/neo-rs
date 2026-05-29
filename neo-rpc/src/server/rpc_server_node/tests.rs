@@ -783,7 +783,8 @@ async fn send_raw_transaction_reports_already_exists() {
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::already_exists().code());
     assert_eq!(rpc_error.message(), RpcError::already_exists().message());
-    assert!(rpc_error.data().is_none());
+    // C# GetRelayResult attaches WithData(reason.ToString()) to every error case.
+    assert_eq!(rpc_error.data(), Some("AlreadyExists"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
