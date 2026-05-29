@@ -380,10 +380,13 @@ fn execution_engine_limits_facade_is_removed() {
     );
     assert_eq!(
         limits.max_item_size,
-        u16::MAX as u32,
-        "ExecutionEngineLimits must keep Neo N3's 65535-byte item-size limit"
+        (u16::MAX as u32) * 2,
+        "ExecutionEngineLimits.MaxItemSize must equal C#'s ushort.MaxValue * 2 = 131070"
     );
-    assert_eq!(limits.max_comparable_size, u16::MAX as u32);
+    assert_eq!(
+        limits.max_comparable_size, 65536,
+        "ExecutionEngineLimits.MaxComparableSize must equal C#'s 65536"
+    );
     assert_eq!(limits.max_shift, 256);
     assert_eq!(limits.max_try_nesting_depth, 16);
     assert!(limits.catch_engine_exceptions);
@@ -3881,10 +3884,20 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     );
     assert!(
         transaction_verification.contains("pub fn verify_state_dependent_at_height(")
-            && transaction_verification.contains("self.verify_state_dependent_at_height(")
-            && block_verification.contains("verify_state_dependent_at_height("),
-        "Block verification must use explicit height to avoid current_index=0 fast-sync expiry \
-         regressions"
+            && transaction_verification.contains("self.verify_state_dependent_at_height("),
+        "Transaction verification must expose explicit-height state-dependent verify to avoid \
+         current_index=0 fast-sync expiry regressions on the mempool/relay path"
+    );
+    // C# parity: Block.Verify is defined as `return Header.Verify(...)`. Block import
+    // must NOT re-verify each transaction (the header's consensus witness is the
+    // integrity guarantee; transactions are executed during persistence, not
+    // re-verified at import). Guard against reintroducing per-tx verification here.
+    assert!(
+        block_verification.contains("self.header.verify(")
+            && !block_verification.contains("verify_state_dependent_at_height(")
+            && !block_verification.contains("verify_state_independent("),
+        "Block::verify must be header-only (matching C# Block.Verify => Header.Verify), not \
+         re-verify per-transaction state"
     );
 }
 
