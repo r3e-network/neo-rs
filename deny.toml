@@ -1,0 +1,48 @@
+# cargo-deny configuration for the neo-rs workspace.
+#
+# Run locally / in CI with:  cargo deny check
+# Docs: https://embarkstudios.github.io/cargo-deny/
+#
+# This gate guards supply-chain hygiene the workspace previously lacked:
+#   - security advisories (RUSTSEC)
+#   - duplicate crate versions (e.g. the dual `sha2` 0.10/0.11 pulled in via the
+#     out-of-workspace neo-vm-rs path dependency)
+#   - license compliance
+
+[advisories]
+version = 2
+# Fail on any crate with an open RUSTSEC advisory or a yanked release.
+yanked = "deny"
+# Add RUSTSEC IDs here ONLY with a written justification + tracking issue.
+ignore = []
+
+[bans]
+# Surface duplicate versions of the same crate (warn first; ratchet to "deny"
+# once the known duplicates — sha2, secp256k1 — are reconciled).
+multiple-versions = "warn"
+# Disallow `version = "*"` style wildcard dependencies.
+wildcards = "deny"
+# Prefer the workspace dependency table over per-crate pins (advisory).
+workspace-default-features = "allow"
+
+[licenses]
+version = 2
+# OSI-approved / permissive licenses present in (or acceptable for) the tree.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.8
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
