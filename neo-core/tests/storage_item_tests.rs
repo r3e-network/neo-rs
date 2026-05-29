@@ -1,4 +1,5 @@
 use neo_core::neo_io::MemoryReader;
+use neo_core::persistence::StorageItemExt;
 use neo_core::smart_contract::StorageItem;
 
 fn test_byte_array(length: usize, first_byte: u8) -> Vec<u8> {
@@ -28,17 +29,20 @@ fn value_set_stores_bytes() {
 }
 
 #[test]
-fn size_uses_var_length_encoding() {
+fn size_returns_raw_value_length() {
+    // StorageItem (owned by neo-storage) serializes its value raw, so size() is
+    // the value byte length — see neo-storage StorageItem::size()/serialize() and
+    // its unit tests. Storage-fee accounting uses the raw value length directly.
     let mut uut = StorageItem::new();
     uut.set_value(test_byte_array(10, 0x42));
-    assert_eq!(uut.size(), 11);
+    assert_eq!(uut.size(), 10);
 }
 
 #[test]
 fn size_large_payload() {
     let mut uut = StorageItem::new();
     uut.set_value(test_byte_array(88, 0x42));
-    assert_eq!(uut.size(), 89);
+    assert_eq!(uut.size(), 88);
 }
 
 #[test]
@@ -60,7 +64,7 @@ fn deserialize_reads_all_bytes() {
     let data = vec![66, 32, 32, 32, 32, 32, 32, 32, 32, 32];
     let mut uut = StorageItem::new();
     let mut reader = MemoryReader::new(&data);
-    uut.deserialize(&mut reader).expect("deserialize");
+    uut.deserialize_reader(&mut reader).expect("deserialize");
 
     let value = uut.to_value();
     assert_eq!(value, data);

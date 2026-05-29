@@ -8,6 +8,7 @@ mod common;
 use common::{test_byte_array as get_test_byte_array, test_transaction as create_test_transaction};
 use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
 use neo_core::neo_io::Serializable;
+use neo_core::VerifiableExt;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
 use neo_core::persistence::DataCache;

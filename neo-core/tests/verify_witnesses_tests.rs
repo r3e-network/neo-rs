@@ -11,7 +11,7 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::smart_contract::ContractParameterType;
-use neo_core::{Verifiable, UInt160, UInt256, Witness};
+use neo_core::{Verifiable, VerifiableExt, UInt160, UInt256, Witness};
 use neo_vm_rs::OpCode;
 
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
@@ -110,7 +110,7 @@ impl Verifiable for ManualWitness {
         true
     }
 
-    fn hash(&self) -> neo_core::CoreResult<UInt256> {
+    fn hash(&self) -> neo_primitives::PrimitiveResult<UInt256> {
         Ok(self.hash)
     }
 
@@ -118,6 +118,12 @@ impl Verifiable for ManualWitness {
         self.hash_data.clone()
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl VerifiableExt for ManualWitness {
     fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         self.hashes.clone()
     }
@@ -128,10 +134,6 @@ impl Verifiable for ManualWitness {
 
     fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         self.witnesses.iter_mut().collect()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

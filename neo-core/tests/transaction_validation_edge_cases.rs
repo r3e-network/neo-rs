@@ -13,7 +13,7 @@ use neo_core::neo_io::serializable::helper::{
 };
 use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
-use neo_core::persistence::{DataCache, StorageItem, StorageKey};
+use neo_core::persistence::{DataCache, StorageItem, StorageItemExt, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;

@@ -17,7 +17,7 @@ use neo_core::network::p2p::payloads::{
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, PolicyContract};
-use neo_core::{UInt160, UInt256, Verifiable};
+use neo_core::{UInt160, UInt256, Verifiable, VerifiableExt};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use serde_json::json;
@@ -154,7 +154,7 @@ fn csharp_ut_version_payload_create_method() {
     ];
 
     let payload =
-        VersionPayload::create(&settings, nonce, user_agent.clone(), capabilities.clone());
+        VersionPayload::create(settings.network, nonce, user_agent.clone(), capabilities.clone());
 
     assert_eq!(payload.network, settings.network);
     assert_eq!(payload.version, 0);
