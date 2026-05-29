@@ -177,7 +177,12 @@ pub struct P2PConfig {
 impl Default for P2PConfig {
     fn default() -> Self {
         Self {
-            listen_address: "0.0.0.0:10333".parse().unwrap(),
+            // Construct directly (0.0.0.0:10333) rather than parse().unwrap() to
+            // avoid a latent panic in a Default impl.
+            listen_address: std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                10333,
+            ),
             max_inbound: 10,
             max_outbound: 10,
             seed_nodes: Vec::new(),
