@@ -1,7 +1,6 @@
 //! JSON-RPC envelope rendering for host VM stack items.
 
 use crate::error::VmError;
-use crate::stack_item::StackItemExt;
 use crate::StackItem;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_vm_rs::StackItemType;
@@ -77,7 +76,7 @@ fn render_stack_item(
 
     let mut value = None;
     match item {
-        StackItem::Null | StackItem::Interop(_) | StackItem::Iterator(_) => {}
+        StackItem::Null | StackItem::InteropInterface(_) => {}
         StackItem::Boolean(flag) => {
             budget.subtract(if *flag { 4 } else { 5 })?;
             value = Some(Value::Bool(*flag));
@@ -87,53 +86,49 @@ fn render_stack_item(
             budget.subtract(2 + text.len() as isize)?;
             value = Some(Value::String(text));
         }
-        StackItem::BigInteger(bytes) => {
-            let text = num_bigint::BigInt::from_signed_bytes_le(bytes).to_string();
-            budget.subtract(2 + text.len() as isize)?;
-            value = Some(Value::String(text));
-        }
         StackItem::ByteString(bytes) => {
             let encoded = BASE64_STANDARD.encode(bytes);
             budget.subtract(2 + encoded.len() as isize)?;
             value = Some(Value::String(encoded));
         }
         StackItem::Buffer(buffer) => {
-            let encoded = BASE64_STANDARD.encode(buffer);
+            let encoded = BASE64_STANDARD.encode(buffer.data());
             budget.subtract(2 + encoded.len() as isize)?;
             value = Some(Value::String(encoded));
         }
-        StackItem::Pointer(position) => {
+        StackItem::Pointer(pointer) => {
+            let position = pointer.position() as u64;
             budget.subtract(position.to_string().len() as isize)?;
-            value = Some(Value::Number(JsonNumber::from(*position as u64)));
+            value = Some(Value::Number(JsonNumber::from(position)));
         }
         StackItem::Array(array) => {
-            let identity = (array.as_ptr() as usize, StackItemType::Array);
+            let identity = (array.id(), StackItemType::Array);
             if !context.insert(identity) {
                 return Err(VmError::invalid_operation_msg("Circular reference in stack item"));
             }
             budget.subtract(2 + array.len().saturating_sub(1) as isize)?;
             let values = array
                 .iter()
-                .map(|entry| render_stack_item(entry, context, budget))
+                .map(|entry| render_stack_item(&entry, context, budget))
                 .collect::<Result<Vec<_>, _>>()?;
             context.remove(&identity);
             value = Some(Value::Array(values));
         }
         StackItem::Struct(structure) => {
-            let identity = (structure.as_ptr() as usize, StackItemType::Struct);
+            let identity = (structure.id(), StackItemType::Struct);
             if !context.insert(identity) {
                 return Err(VmError::invalid_operation_msg("Circular reference in stack item"));
             }
             budget.subtract(2 + structure.len().saturating_sub(1) as isize)?;
             let values = structure
                 .iter()
-                .map(|entry| render_stack_item(entry, context, budget))
+                .map(|entry| render_stack_item(&entry, context, budget))
                 .collect::<Result<Vec<_>, _>>()?;
             context.remove(&identity);
             value = Some(Value::Array(values));
         }
         StackItem::Map(map) => {
-            let identity = (map.as_ptr() as usize, StackItemType::Map);
+            let identity = (map.id(), StackItemType::Map);
             if !context.insert(identity) {
                 return Err(VmError::invalid_operation_msg("Circular reference in stack item"));
             }
@@ -142,8 +137,8 @@ fn render_stack_item(
                 .iter()
                 .map(|(key, value)| {
                     budget.subtract(17)?;
-                    let key = render_stack_item(key, context, budget)?;
-                    let value = render_stack_item(value, context, budget)?;
+                    let key = render_stack_item(&key, context, budget)?;
+                    let value = render_stack_item(&value, context, budget)?;
                     let mut entry = Map::new();
                     entry.insert("key".to_string(), key);
                     entry.insert("value".to_string(), value);
@@ -168,14 +163,14 @@ const fn stack_item_type_name(item: &StackItem) -> &'static str {
     match item {
         StackItem::Null => "Any",
         StackItem::Boolean(_) => "Boolean",
-        StackItem::Integer(_) | StackItem::BigInteger(_) => "Integer",
+        StackItem::Integer(_) => "Integer",
         StackItem::ByteString(_) => "ByteString",
         StackItem::Buffer(_) => "Buffer",
         StackItem::Array(_) => "Array",
         StackItem::Struct(_) => "Struct",
         StackItem::Map(_) => "Map",
         StackItem::Pointer(_) => "Pointer",
-        StackItem::Interop(_) | StackItem::Iterator(_) => "InteropInterface",
+        StackItem::InteropInterface(_) => "InteropInterface",
     }
 }
 
@@ -202,9 +197,25 @@ mod tests {
         stack_item_rpc_json, stack_item_rpc_json_deferred_size_check,
         stack_items_rpc_json_per_item,
     };
+    use crate::script::Script;
+    use crate::stack_item::InteropInterface;
     use crate::StackItem;
     use neo_vm_rs::VmOrderedDictionary;
     use serde_json::json;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct DummyInterop;
+
+    impl InteropInterface for DummyInterop {
+        fn interface_type(&self) -> &str {
+            "Dummy"
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
 
     #[test]
     fn renders_rpc_stack_item_type_matrix() {
@@ -233,7 +244,7 @@ mod tests {
                 json!({"type": "Buffer", "value": "AwQ="}),
             ),
             (
-                StackItem::Pointer(7),
+                StackItem::from_pointer(Arc::new(Script::new_from_bytes(vec![])), 7),
                 json!({"type": "Pointer", "value": 7}),
             ),
             (
@@ -256,7 +267,7 @@ mod tests {
                 }]}),
             ),
             (
-                StackItem::Interop(42),
+                StackItem::from_interface(DummyInterop),
                 json!({"type": "InteropInterface"}),
             ),
         ];

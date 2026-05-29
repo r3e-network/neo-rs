@@ -3,7 +3,7 @@
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
 use crate::reference_counter::ReferenceCounter;
-use crate::{StackItem, StackItemExt};
+use crate::StackItem;
 use neo_io_crate::var_int;
 use neo_io_crate::{IoError, MemoryReader};
 use neo_vm_rs::ExecutionEngineLimits;
@@ -119,8 +119,7 @@ impl BinarySerializer {
                     let bytes = reader
                         .read_var_bytes(max_size as usize)
                         .map_err(Self::io_error_to_string)?;
-                    let buffer = bytes.to_vec();
-                    pending.push(PendingItem::Value(StackItem::Buffer(buffer)));
+                    pending.push(PendingItem::Value(StackItem::from_buffer(bytes)));
                     total_items += 1;
                 }
                 StackItemType::Array | StackItemType::Struct => {
@@ -175,7 +174,7 @@ impl BinarySerializer {
                                         "Invalid serialized array data".to_string()
                                     })?);
                                 }
-                                StackItem::Array(elements)
+                                StackItem::from_array(elements)
                             }
                             StackItemType::Struct => {
                                 let mut elements = Vec::with_capacity(container.element_count);
@@ -184,7 +183,7 @@ impl BinarySerializer {
                                         "Invalid serialized struct data".to_string()
                                     })?);
                                 }
-                                StackItem::Struct(elements)
+                                StackItem::from_struct(elements)
                             }
                             StackItemType::Map => {
                                 let mut entries = Vec::with_capacity(container.element_count);
@@ -197,7 +196,11 @@ impl BinarySerializer {
                                     })?;
                                     entries.push((key, value));
                                 }
-                                StackItem::Map(entries)
+                                let mut dict = neo_vm_rs::VmOrderedDictionary::new();
+                                for (key, value) in entries {
+                                    dict.insert(key, value);
+                                }
+                                StackItem::from_map(dict)
                             }
                             _ => return Err("Invalid container descriptor".to_string()),
                         };
@@ -423,10 +426,10 @@ impl BinarySerializer {
                 }
                 StackItem::Integer(integer) => {
                     writer.push(StackItemType::Integer.to_byte());
-                    let bytes = if *integer == 0 {
+                    let bytes = if integer.is_zero() {
                         Vec::new()
                     } else {
-                        BigInt::from(*integer).to_signed_bytes_le()
+                        integer.to_signed_bytes_le()
                     };
                     var_int::write_var_bytes(&bytes, writer);
                 }
@@ -436,11 +439,11 @@ impl BinarySerializer {
                 }
                 StackItem::Buffer(buffer) => {
                     writer.push(StackItemType::Buffer.to_byte());
-                    var_int::write_var_bytes(buffer, writer);
+                    var_int::write_var_bytes(&buffer.data(), writer);
                 }
                 StackItem::Array(array) => {
                     writer.push(StackItemType::Array.to_byte());
-                    let identity = (array.as_ptr() as usize, StackItemType::Array);
+                    let identity = (array.id(), StackItemType::Array);
                     if !processed.insert(identity) {
                         return Err(
                             "Circular reference detected while serializing array".to_string()
@@ -453,7 +456,7 @@ impl BinarySerializer {
                 }
                 StackItem::Struct(struct_item) => {
                     writer.push(StackItemType::Struct.to_byte());
-                    let identity = (struct_item.as_ptr() as usize, StackItemType::Struct);
+                    let identity = (struct_item.id(), StackItemType::Struct);
                     if !processed.insert(identity) {
                         return Err(
                             "Circular reference detected while serializing struct".to_string()
@@ -466,7 +469,7 @@ impl BinarySerializer {
                 }
                 StackItem::Map(map) => {
                     writer.push(StackItemType::Map.to_byte());
-                    let identity = (map.as_ptr() as usize, StackItemType::Map);
+                    let identity = (map.id(), StackItemType::Map);
                     if !processed.insert(identity) {
                         return Err("Circular reference detected while serializing map".to_string());
                     }
@@ -500,6 +503,7 @@ impl BinarySerializer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stack_item::Map as MapItem;
     use neo_vm_rs::ExecutionEngineLimits;
 
     #[test]

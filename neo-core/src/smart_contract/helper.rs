@@ -14,7 +14,6 @@ use crate::smart_contract::native::contract_management::ContractManagement;
 use crate::smart_contract::native::NativeRegistry;
 use crate::smart_contract::TriggerType;
 use crate::smart_contract::ContractParameterType;
-use crate::neo_vm::StackItemExt;
 use crate::{Verifiable, VerifiableExt, UInt160, UInt256};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;

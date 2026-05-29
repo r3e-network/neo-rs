@@ -2,7 +2,7 @@ use super::{TokenManagement, TokenType};
 use crate::error::{CoreResult, ToNativeError};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::NativeContract;
-use crate::neo_vm::{StackItem, StackItemExt};
+use crate::neo_vm::{StackItem};
 use crate::UInt160;
 use num_bigint::BigInt;
 

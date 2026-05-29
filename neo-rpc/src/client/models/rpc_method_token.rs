@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::parse_number_or_string_token;
-use neo_core::smart_contract::{method_token::MethodToken, CallFlags};
+use neo_core::smart_contract::{CallFlags, MethodToken};
 use neo_json::JObject;
 use neo_primitives::UInt160;
 /// RPC method token helper matching C# `RpcMethodToken`

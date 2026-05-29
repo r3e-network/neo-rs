@@ -3,7 +3,7 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::BinarySerializer;
-use crate::neo_vm::{StackItem, StackItemExt};
+use crate::neo_vm::{StackItem};
 use unicode_segmentation::UnicodeSegmentation;
 
 impl StdLib {

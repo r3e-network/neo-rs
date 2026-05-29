@@ -24,7 +24,11 @@ impl OracleContract {
 
         let tx = engine
             .script_container()
-            .and_then(|container| container.as_transaction())
+            .and_then(|container| {
+                container
+                    .as_any()
+                    .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+            })
             .ok_or_else(|| {
                 Error::invalid_operation(
                     "Oracle finish must be invoked within a transaction".to_string(),

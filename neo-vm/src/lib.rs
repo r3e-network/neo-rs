@@ -274,7 +274,7 @@ pub use rpc_json::{stack_item_rpc_json, stack_item_rpc_json_deferred_size_check,
 pub use script::Script;
 pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
-pub use stack_item::{StackItem, StackItemExt};
+pub use stack_item::StackItem;
 pub use storage_context::StorageContext;
 
 // ============================================================================

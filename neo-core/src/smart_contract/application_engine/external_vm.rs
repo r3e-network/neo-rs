@@ -1,5 +1,4 @@
 use super::*;
-use crate::neo_vm::StackItemExt;
 
 struct ExternalVmExecution {
     script: Vec<u8>,

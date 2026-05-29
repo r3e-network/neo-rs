@@ -1,6 +1,6 @@
 use super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::{OracleService, OracleServiceError, OracleTask};
-use crate::Verifiable;
+use crate::{Verifiable, VerifiableExt};
 use crate::cryptography::ECPoint;
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::Transaction;

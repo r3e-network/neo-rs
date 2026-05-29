@@ -15,8 +15,8 @@ use neo_core::persistence::DataCache;
 use neo_core::smart_contract::native::GasToken;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{
-    smart_contract::ContractParametersContext, Contract, ECPoint, Verifiable, KeyPair,
-    NativeContract, Signer, Transaction, TransactionAttribute, Witness,
+    smart_contract::ContractParametersContext, Contract, ECPoint, KeyPair, NativeContract, Signer,
+    Transaction, TransactionAttribute, Verifiable, VerifiableExt, Witness,
 };
 use neo_primitives::UInt160;
 use num_bigint::BigInt;

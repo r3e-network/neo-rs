@@ -3,7 +3,9 @@
 use crate::cryptography::Crypto;
 use crate::hardfork::Hardfork;
 // Old wrapper types removed - StackValue compounds are flat Vecs now
-use crate::neo_vm::{StackItem, StackItemExt};
+use crate::neo_vm::{StackItem};
+use neo_vm::stack_item::{Array as ArrayItem, Map as MapItem, Struct as StructItem};
+use neo_vm::VmOrderedDictionary;
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE,
 };
@@ -156,25 +158,22 @@ impl ApplicationEngine {
     /// Helper to pop bytes from the stack
     pub fn pop_bytes(&mut self) -> Result<Vec<u8>, String> {
         let item = self.pop()?;
-        item.as_bytes()
-            .ok_or_else(|| "Cannot convert to bytes".to_string())
-            .map(|b| b.to_vec())
+        item.as_bytes().map_err(|e| e.to_string())
     }
 
     /// Helper to pop a string from the stack
     pub fn pop_string(&mut self) -> Result<String, String> {
         let item = self.pop()?;
-        let bytes = item.as_bytes()
-            .ok_or_else(|| "Cannot convert to bytes".to_string())?;
-        String::from_utf8(bytes.to_vec()).map_err(|_| "Invalid UTF-8".to_string())
+        let bytes = item.as_bytes().map_err(|e| e.to_string())?;
+        String::from_utf8(bytes).map_err(|_| "Invalid UTF-8".to_string())
     }
 
     /// Helper to pop an array from the stack
     pub fn pop_array(&mut self) -> Result<Vec<StackItem>, String> {
         let item = self.pop()?;
         match item {
-            StackItem::Array(array) => Ok(array),
-            StackItem::Struct(struct_item) => Ok(struct_item),
+            StackItem::Array(array) => Ok(array.items()),
+            StackItem::Struct(struct_item) => Ok(struct_item.items()),
             _ => Err("Expected array".to_string()),
         }
     }
@@ -306,18 +305,28 @@ fn detect_stack_item_cycle(
     visited: &mut HashSet<CompoundKey>,
 ) -> Result<(), String> {
     match item {
-        StackItem::Array(items) | StackItem::Struct(items) => {
-            let key = CompoundKey::Array(items.as_ptr() as usize);
+        StackItem::Array(array) => {
+            let key = CompoundKey::Array(array.id());
             detect_compound_cycle(
                 key,
                 visiting,
                 visited,
-                items.clone(),
+                array.items(),
+                "Circular reference detected while serializing compound",
+            )
+        }
+        StackItem::Struct(struct_item) => {
+            let key = CompoundKey::Struct(struct_item.id());
+            detect_compound_cycle(
+                key,
+                visiting,
+                visited,
+                struct_item.items(),
                 "Circular reference detected while serializing compound",
             )
         }
         StackItem::Map(entries) => {
-            let key = CompoundKey::Map(entries.as_ptr() as usize);
+            let key = CompoundKey::Map(entries.id());
             if visited.contains(&key) {
                 return Ok(());
             }
@@ -325,8 +334,8 @@ fn detect_stack_item_cycle(
                 return Err("Circular reference detected while serializing map".to_string());
             }
             for (entry_key, entry_value) in entries.iter() {
-                detect_stack_item_cycle(entry_key, visiting, visited)?;
-                detect_stack_item_cycle(entry_value, visiting, visited)?;
+                detect_stack_item_cycle(&entry_key, visiting, visited)?;
+                detect_stack_item_cycle(&entry_value, visiting, visited)?;
             }
             visiting.remove(&key);
             visited.insert(key);
@@ -373,53 +382,56 @@ fn clone_stack_item_as_immutable(
     match item {
         StackItem::Null => Ok(StackItem::Null),
         StackItem::Boolean(value) => Ok(StackItem::Boolean(*value)),
-        StackItem::Integer(value) => Ok(StackItem::Integer(*value)),
-        StackItem::BigInteger(bytes) => Ok(StackItem::BigInteger(bytes.clone())),
+        StackItem::Integer(value) => Ok(StackItem::Integer(value.clone())),
         StackItem::ByteString(bytes) => Ok(StackItem::ByteString(bytes.clone())),
-        StackItem::Buffer(buffer) => Ok(StackItem::Buffer(buffer.clone())),
-        StackItem::Pointer(pointer) => Ok(StackItem::Pointer(*pointer)),
-        StackItem::Interop(handle) => Ok(StackItem::Interop(*handle)),
-        StackItem::Iterator(handle) => Ok(StackItem::Iterator(*handle)),
-        StackItem::Array(items) => {
-            let key = CompoundKey::Array(item as *const _ as usize);
-            if let Some(existing) = seen.get(&key) {
-                return Ok(existing.clone());
-            }
-            let mut cloned_items = Vec::with_capacity(items.len());
-            let cloned_item = StackItem::Array(Vec::new());
-            seen.insert(key, cloned_item.clone());
-            for element in items {
-                cloned_items.push(clone_stack_item_as_immutable(element, seen)?);
-            }
-            Ok(StackItem::Array(cloned_items))
+        // Immutable clone (C# DeepCopy asImmutable=true): Buffer collapses to ByteString.
+        StackItem::Buffer(buffer) => Ok(StackItem::ByteString(buffer.data())),
+        StackItem::Pointer(pointer) => Ok(StackItem::Pointer(pointer.clone())),
+        StackItem::InteropInterface(interface) => {
+            Ok(StackItem::InteropInterface(interface.clone()))
         }
-        StackItem::Struct(items) => {
-            let key = CompoundKey::Struct(item as *const _ as usize);
+        StackItem::Array(array) => {
+            let key = CompoundKey::Array(array.id());
             if let Some(existing) = seen.get(&key) {
                 return Ok(existing.clone());
             }
-            let mut cloned_items = Vec::with_capacity(items.len());
-            let cloned_item = StackItem::Struct(Vec::new());
+            let cloned = ArrayItem::new_untracked(Vec::new());
+            let cloned_item = StackItem::Array(cloned.clone());
             seen.insert(key, cloned_item.clone());
-            for element in items {
-                cloned_items.push(clone_stack_item_as_immutable(element, seen)?);
+            for element in array.iter() {
+                let child = clone_stack_item_as_immutable(&element, seen)?;
+                cloned.push(child).map_err(|e| e.to_string())?;
             }
-            Ok(StackItem::Struct(cloned_items))
+            Ok(cloned_item)
+        }
+        StackItem::Struct(struct_item) => {
+            let key = CompoundKey::Struct(struct_item.id());
+            if let Some(existing) = seen.get(&key) {
+                return Ok(existing.clone());
+            }
+            let cloned = StructItem::new_untracked(Vec::new());
+            let cloned_item = StackItem::Struct(cloned.clone());
+            seen.insert(key, cloned_item.clone());
+            for element in struct_item.iter() {
+                let child = clone_stack_item_as_immutable(&element, seen)?;
+                cloned.push(child).map_err(|e| e.to_string())?;
+            }
+            Ok(cloned_item)
         }
         StackItem::Map(entries) => {
-            let key = CompoundKey::Map(item as *const _ as usize);
+            let key = CompoundKey::Map(entries.id());
             if let Some(existing) = seen.get(&key) {
                 return Ok(existing.clone());
             }
-            let mut cloned_entries = Vec::with_capacity(entries.len());
-            let cloned_item = StackItem::Map(Vec::new());
+            let cloned = MapItem::new_untracked(VmOrderedDictionary::new());
+            let cloned_item = StackItem::Map(cloned.clone());
             seen.insert(key, cloned_item.clone());
-            for (entry_key, entry_value) in entries {
-                let cloned_key = clone_stack_item_as_immutable(entry_key, seen)?;
-                let cloned_value = clone_stack_item_as_immutable(entry_value, seen)?;
-                cloned_entries.push((cloned_key, cloned_value));
+            for (entry_key, entry_value) in entries.iter() {
+                let cloned_key = clone_stack_item_as_immutable(&entry_key, seen)?;
+                let cloned_value = clone_stack_item_as_immutable(&entry_value, seen)?;
+                cloned.set(cloned_key, cloned_value).map_err(|e| e.to_string())?;
             }
-            Ok(StackItem::Map(cloned_entries))
+            Ok(cloned_item)
         }
     }
 }

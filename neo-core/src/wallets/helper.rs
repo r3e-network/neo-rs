@@ -40,7 +40,6 @@ use neo_primitives::base58_check::{self, AddressDecodeError, Base58CheckDecodeEr
 use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
 use neo_vm_rs::OpCode;
-use crate::neo_vm::StackItemExt;
 use num_bigint::{BigInt, Sign};
 use rand::rngs::OsRng;
 use rand::RngCore;

@@ -14,6 +14,8 @@ pub mod utility;
 
 pub mod io;
 
+pub use neo_primitives::log_level;
+
 pub use byte::ByteLz4Extensions;
 pub use error::ExtensionResult;
 

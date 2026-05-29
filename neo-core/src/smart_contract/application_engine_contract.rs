@@ -1,6 +1,6 @@
 //! ApplicationEngine.Contract - ports Neo.SmartContract.ApplicationEngine.Contract.cs
 
-use crate::neo_vm::{ExecutionEngine, StackItem, StackItemExt, VmError, VmResult};
+use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::BinarySerializer;
 use crate::smart_contract::CallFlags;
@@ -403,7 +403,7 @@ fn decode_native_result(
                 let iterator_id = id
                     .to_u32()
                     .ok_or_else(|| "Iterator identifier out of range".to_string())?;
-                return Ok(Some(StackItem::Iterator(iterator_id as u64)));
+                return Ok(Some(StackItem::from_i64(iterator_id as i64)));
             }
 
             Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
@@ -415,12 +415,15 @@ fn decode_native_result(
 
 fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
     match &item {
-        StackItem::Interop(handle) => {
-            // Interop handles require host-side resolution; for now, encode the handle ID
-            Ok(handle.to_le_bytes().to_vec())
-        }
-        StackItem::Iterator(id) => {
-            Ok((*id as u32).to_le_bytes().to_vec())
+        // Iterator/interop handles are carried as integer stack items.
+        StackItem::Integer(_) => {
+            let id = item
+                .clone()
+                .into_int()
+                .map_err(|e| e.to_string())?
+                .to_u32()
+                .ok_or_else(|| "Interop handle out of range".to_string())?;
+            Ok(id.to_le_bytes().to_vec())
         }
         StackItem::ByteString(bytes) => {
             // Validate that the bytes are a valid Bls12381Interop encoding

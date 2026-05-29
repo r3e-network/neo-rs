@@ -58,3 +58,10 @@ pub use neo_primitives::{
 pub use neo_io_crate::MethodToken;
 pub use neo_vm::{BinarySerializer, Interoperable, JsonSerializer, NotifyEventArgs, StorageContext};
 pub use crate::persistence::{StorageItem, StorageItemExt, StorageKey};
+
+// Module-path aliases for relocated modules (callers use `module::Type` paths).
+pub use neo_primitives::{call_flags, contract_parameter_type, find_options, trigger_type};
+pub use neo_primitives::{contract_basic_method, log_event_args};
+pub use neo_vm::{binary_serializer, storage_context};
+pub use neo_vm::notify_event_args;
+pub use crate::persistence::{storage_item, storage_key};

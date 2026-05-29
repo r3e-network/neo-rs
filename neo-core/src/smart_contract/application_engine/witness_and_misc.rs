@@ -1,5 +1,4 @@
 use super::*;
-use crate::neo_vm::StackItemExt;
 use crate::VerifiableExt;
 
 impl ApplicationEngine {
@@ -459,7 +458,7 @@ impl ApplicationEngine {
         for item in public_keys_items {
             let bytes = item
                 .as_bytes()
-                .ok_or_else(|| Error::invalid_operation("Cannot convert to bytes".to_string()))?;
+                .map_err(|_| Error::invalid_operation("Cannot convert to bytes".to_string()))?;
             if bytes.len() != 33 {
                 return Err(Error::invalid_operation(
                     "Each multisig public key must be 33 bytes".to_string(),
@@ -667,8 +666,8 @@ impl ApplicationEngine {
             );
         }
         match item.as_bytes() {
-            Some(bytes) => Ok(bytes.to_vec()),
-            None => crate::smart_contract::binary_serializer::BinarySerializer::serialize(
+            Ok(bytes) => Ok(bytes),
+            Err(_) => crate::smart_contract::binary_serializer::BinarySerializer::serialize(
                 &item,
                 &ExecutionEngineLimits::default(),
             ),

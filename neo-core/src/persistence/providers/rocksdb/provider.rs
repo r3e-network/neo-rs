@@ -102,7 +102,7 @@ impl StoreProvider for RocksDBStoreProvider {
         "RocksDBStore"
     }
 
-    fn get_store(&self, path: &str) -> CoreResult<Arc<dyn Store>> {
+    fn get_store(&self, path: &str) -> neo_storage::StorageResult<Arc<dyn Store>> {
         let resolved = self.resolved_path(path);
         let config = StorageConfig {
             path: resolved,
@@ -115,7 +115,7 @@ impl StoreProvider for RocksDBStoreProvider {
             self.enable_bloom_filters,
             self.enable_read_ahead,
         )
-        .map_err(|err| CoreError::Io {
+        .map_err(|err| neo_storage::StorageError::Io {
             message: format!(
                 "failed to open RocksDB store at {}: {err}",
                 config.path.display()

@@ -231,10 +231,10 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
 impl ReadOnlyStore for RocksDbStore {}
 
 impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
-    fn delete(&mut self, key: Vec<u8>) -> CoreResult<()> {
+    fn delete(&mut self, key: Vec<u8>) -> neo_storage::StorageResult<()> {
         self.db.delete(&key).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb delete failed");
-            CoreError::Io {
+            neo_storage::StorageError::Io {
                 message: format!("RocksDB delete failed: {}", err),
             }
         })?;
@@ -244,10 +244,10 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
         Ok(())
     }
 
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> CoreResult<()> {
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> neo_storage::StorageResult<()> {
         self.db.put(&key, &value).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb put failed");
-            CoreError::Io {
+            neo_storage::StorageError::Io {
                 message: format!("RocksDB put failed: {}", err),
             }
         })?;
@@ -257,12 +257,12 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
         Ok(())
     }
 
-    fn put_sync(&mut self, key: Vec<u8>, value: Vec<u8>) -> CoreResult<()> {
+    fn put_sync(&mut self, key: Vec<u8>, value: Vec<u8>) -> neo_storage::StorageResult<()> {
         let mut options = WriteOptions::default();
         options.set_sync(true);
         self.db.put_opt(&key, &value, &options).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb put_sync failed");
-            CoreError::Io {
+            neo_storage::StorageError::Io {
                 message: format!("RocksDB put_sync failed: {}", err),
             }
         })?;
@@ -638,7 +638,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
 impl ReadOnlyStore for RocksDbSnapshot {}
 
 impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
-    fn delete(&mut self, key: Vec<u8>) -> CoreResult<()> {
+    fn delete(&mut self, key: Vec<u8>) -> neo_storage::StorageResult<()> {
         self.write_batch.lock().delete(key.clone());
         self.pending_changes.lock().insert(key.clone(), None);
         if let Some(ref cache) = self.read_cache {
@@ -647,7 +647,7 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         Ok(())
     }
 
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> CoreResult<()> {
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> neo_storage::StorageResult<()> {
         self.write_batch.lock().put(key.clone(), value.clone());
         self.pending_changes
             .lock()

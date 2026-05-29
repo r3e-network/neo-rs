@@ -20,7 +20,7 @@ use crate::smart_contract::native::{
 };
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
-use crate::neo_vm::{StackItem, StackItemExt};
+use crate::neo_vm::{StackItem};
 use crate::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
@@ -99,7 +99,7 @@ impl Notary {
             )?;
 
         if matches!(item, StackItem::ByteString(_) | StackItem::Buffer(_)) {
-            let nested_bytes = item.as_bytes().ok_or_else(|| {
+            let nested_bytes = item.as_bytes().map_err(|_| {
                 Error::native_contract("Invalid deposit metadata: cannot convert to bytes".to_string())
             })?;
             item = BinarySerializer::deserialize(
@@ -119,6 +119,7 @@ impl Notary {
                 "`data` parameter should be an array of 2 elements".to_string(),
             ));
         };
+        let array = array.items();
 
         if array.len() != 2 {
             return Err(Error::native_contract(
@@ -131,7 +132,7 @@ impl Notary {
         } else {
             let bytes = array[0]
                 .as_bytes()
-                .ok_or_else(|| Error::native_contract("Invalid deposit owner: cannot convert to bytes".to_string()))?;
+                .map_err(|_| Error::native_contract("Invalid deposit owner: cannot convert to bytes".to_string()))?;
             if bytes.len() != UInt160::LENGTH {
                 return Err(Error::native_contract(
                     "Deposit owner must be 20 bytes".to_string(),
@@ -141,7 +142,7 @@ impl Notary {
                 .map_err(|_| Error::native_contract("Invalid deposit recipient"))?
         };
 
-        let till_value = StackItemExt::as_int(&array[1]).map_err(|err| {
+        let till_value = array[1].as_int().map_err(|err| {
             Error::native_contract(format!("Invalid deposit expiration: {}", err))
         })?;
         let till = till_value

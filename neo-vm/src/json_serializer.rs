@@ -2,11 +2,10 @@
 
 //! JsonSerializer - mirrors `Neo.SmartContract.JsonSerializer`.
 
-// Old wrapper types removed - StackValue compounds are flat Vecs now
-use crate::{StackItem, StackItemExt};
-use neo_vm_rs::StackItemType;
+use crate::stack_item::{Array, Map, Struct};
+use crate::StackItem;
+use neo_vm_rs::{StackItemType, VmOrderedDictionary};
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::HashSet;
 
@@ -135,18 +134,10 @@ impl JsonSerializer {
             StackItem::Null => Ok(JsonValue::Null),
             StackItem::Boolean(value) => Ok(JsonValue::Bool(*value)),
             StackItem::Integer(integer) => {
-                let int_value = *integer;
-                if !(Self::MIN_SAFE_INTEGER..=Self::MAX_SAFE_INTEGER).contains(&int_value) {
-                    return Err("Integer out of safe JSON range".to_string());
-                }
-                Ok(JsonValue::Number(JsonNumber::from(int_value)))
-            }
-            StackItem::BigInteger(bytes) => {
-                let big = BigInt::from_signed_bytes_le(bytes);
-                let int_value = big.to_i64().ok_or_else(|| "BigInteger too large for JSON".to_string())?;
-                if !(Self::MIN_SAFE_INTEGER..=Self::MAX_SAFE_INTEGER).contains(&int_value) {
-                    return Err("Integer out of safe JSON range".to_string());
-                }
+                let int_value = integer
+                    .to_i64()
+                    .filter(|v| (Self::MIN_SAFE_INTEGER..=Self::MAX_SAFE_INTEGER).contains(v))
+                    .ok_or_else(|| "Integer out of safe JSON range".to_string())?;
                 Ok(JsonValue::Number(JsonNumber::from(int_value)))
             }
             StackItem::ByteString(bytes) => {
@@ -154,31 +145,31 @@ impl JsonSerializer {
                 Ok(JsonValue::String(string))
             }
             StackItem::Buffer(buffer) => {
-                let string = String::from_utf8_lossy(buffer).to_string();
+                let string = String::from_utf8_lossy(&buffer.data()).to_string();
                 Ok(JsonValue::String(string))
             }
             StackItem::Array(array) => Self::serialize_compound_array(array, seen),
             StackItem::Struct(struct_item) => Self::serialize_compound_struct(struct_item, seen),
             StackItem::Map(map) => Self::serialize_map(map, seen),
             StackItem::Pointer(_) => Err("Cannot serialize Pointer to JSON".to_string()),
-            StackItem::Interop(_) | StackItem::Iterator(_) => {
+            StackItem::InteropInterface(_) => {
                 Err("Cannot serialize InteropInterface to JSON".to_string())
             }
         }
     }
 
     fn serialize_compound_array(
-        array: &[StackItem],
+        array: &Array,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
-        let identity = (array.as_ptr() as usize, StackItemType::Array);
+        let identity = (array.id(), StackItemType::Array);
         if !seen.insert(identity) {
             return Err("Circular reference detected".to_string());
         }
 
         let mut result = Vec::with_capacity(array.len());
-        for element in array {
-            result.push(Self::serialize_internal(element, seen)?);
+        for element in array.iter() {
+            result.push(Self::serialize_internal(&element, seen)?);
         }
 
         seen.remove(&identity);
@@ -186,17 +177,17 @@ impl JsonSerializer {
     }
 
     fn serialize_compound_struct(
-        structure: &[StackItem],
+        structure: &Struct,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
-        let identity = (structure.as_ptr() as usize, StackItemType::Struct);
+        let identity = (structure.id(), StackItemType::Struct);
         if !seen.insert(identity) {
             return Err("Circular reference detected".to_string());
         }
 
         let mut result = Vec::with_capacity(structure.len());
-        for element in structure {
-            result.push(Self::serialize_internal(element, seen)?);
+        for element in structure.iter() {
+            result.push(Self::serialize_internal(&element, seen)?);
         }
 
         seen.remove(&identity);
@@ -204,26 +195,26 @@ impl JsonSerializer {
     }
 
     fn serialize_map(
-        entries: &[(StackItem, StackItem)],
+        map: &Map,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
-        let identity = (entries.as_ptr() as usize, StackItemType::Map);
+        let identity = (map.id(), StackItemType::Map);
         if !seen.insert(identity) {
             return Err("Circular reference detected".to_string());
         }
 
         let mut result = JsonMap::new();
-        for (key, value) in entries {
-            let key_bytes = match key {
+        for (key, value) in map.iter() {
+            let key_bytes = match &key {
                 StackItem::ByteString(bytes) => bytes.clone(),
-                StackItem::Buffer(buffer) => buffer.clone(),
+                StackItem::Buffer(buffer) => buffer.data(),
                 _ => return Err("Map key must be a byte string".to_string()),
             };
 
             let key_str =
                 String::from_utf8(key_bytes).map_err(|_| "Invalid UTF-8 in map key".to_string())?;
 
-            let value_json = Self::serialize_internal(value, seen)?;
+            let value_json = Self::serialize_internal(&value, seen)?;
             result.insert(key_str, value_json);
         }
 
@@ -276,13 +267,13 @@ impl JsonSerializer {
                 // serde_json's `preserve_order` feature is enabled (workspace Cargo.toml),
                 // so iterating `obj` already yields entries in source order. Construct via
                 // Vec<(K, V)> instead of BTreeMap (which would alphabetically sort the keys).
-                let mut entries = Vec::with_capacity(obj.len());
+                let mut dict = VmOrderedDictionary::new();
                 for (key, element) in obj {
                     let key_item = StackItem::from_byte_string(key.as_bytes());
                     let value_item = Self::deserialize_internal(element, depth + 1, max_depth)?;
-                    entries.push((key_item, value_item));
+                    dict.insert(key_item, value_item);
                 }
-                Ok(StackItem::Map(entries))
+                Ok(StackItem::from_map(dict))
             }
         }
     }

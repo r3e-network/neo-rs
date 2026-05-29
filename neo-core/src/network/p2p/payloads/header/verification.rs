@@ -12,7 +12,6 @@ use crate::validation::{
     validate_primary_index, validate_timestamp_bounds, validate_timestamp_progression,
     validate_witness_scripts, BlockValidationError,
 };
-use crate::neo_vm::StackItemExt;
 use crate::{UInt160, UInt256};
 use std::sync::Arc;
 use tracing::debug;

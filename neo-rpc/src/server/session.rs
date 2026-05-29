@@ -17,7 +17,7 @@ use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::ApplicationEngine;
-use neo_core::vm_runtime::{InteropInterface as VmInteropInterface, StackItem};
+use neo_core::neo_vm::{InteropInterface as VmInteropInterface, StackItem};
 use neo_core::Verifiable;
 use rand::random;
 use uuid::Uuid;

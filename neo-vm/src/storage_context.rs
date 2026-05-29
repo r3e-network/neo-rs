@@ -1,6 +1,5 @@
 //! StorageContext - matches C# Neo.SmartContract.StorageContext exactly
 
-use crate::stack_item::StackItemExt;
 use crate::StackItem;
 use num_traits::ToPrimitive;
 
@@ -81,10 +80,9 @@ impl StorageContext {
     pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
         match item {
             StackItem::ByteString(bytes) => Self::from_bytes(bytes),
-            StackItem::Buffer(buffer) => Self::from_bytes(buffer),
-            StackItem::Struct(items) | StackItem::Array(items) => {
-                Self::from_stack_parts(items)
-            }
+            StackItem::Buffer(buffer) => Self::from_bytes(&buffer.data()),
+            StackItem::Struct(items) => Self::from_stack_parts(&items.items()),
+            StackItem::Array(items) => Self::from_stack_parts(&items.items()),
             _ => Err(format!(
                 "StorageContext stack representation must be a byte array or interop context, got {:?}",
                 item.stack_item_type()

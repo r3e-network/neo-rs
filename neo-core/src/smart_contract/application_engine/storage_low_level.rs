@@ -1,5 +1,4 @@
 use super::*;
-use crate::neo_vm::StackItemExt;
 
 impl ApplicationEngine {
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
@@ -95,17 +94,13 @@ impl ApplicationEngine {
         &mut self,
         _container: Arc<dyn Verifiable>,
     ) -> Result<(), String> {
-        // With StackValue::Interop(u64), we push a placeholder handle.
-        // The actual object storage is handled by the interop host.
-        self.push(StackItem::Interop(0))
+        // Iterator/interop handles are carried as integer stack items; the
+        // concrete object lives in the engine-side `storage_iterators` table.
+        self.push(StackItem::from_i64(0))
     }
 
     pub fn pop_iterator_id(&mut self) -> Result<u32, String> {
         let item = self.pop()?;
-        match &item {
-            StackItem::Interop(handle) => return Ok(*handle as u32),
-            _ => {}
-        }
         let identifier = item
             .into_int()
             .map_err(|e| e.to_string())?

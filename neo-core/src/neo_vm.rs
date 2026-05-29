@@ -16,8 +16,14 @@ pub use neo_vm::script;
 pub use neo_vm::slot;
 pub use neo_vm::stack_item;
 pub use neo_vm::io;
+pub use neo_vm::binary_serializer;
+pub use neo_vm::storage_context;
+pub use neo_vm::script_builder;
+pub use neo_vm::rpc_json;
+pub use neo_vm::ScriptBuilder;
 
 pub use neo_vm::{
     CompoundParent, EvaluationStack, ExecutionContext, ExecutionEngine, InteropService, JumpTable,
     ReferenceCounter, Script, Slot, StackItem, VmError, VmResult,
 };
+pub use neo_vm::stack_item::InteropInterface;

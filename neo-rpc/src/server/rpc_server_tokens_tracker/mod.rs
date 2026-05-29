@@ -11,7 +11,7 @@ use neo_core::smart_contract::{ApplicationEngine, TriggerType};
 use neo_core::tokens_tracker::{
     find_prefix, Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance,
 };
-use neo_core::vm_runtime::StackItem;
+use neo_core::neo_vm::StackItem;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
 use neo_vm_rs::VmState as VMState;
