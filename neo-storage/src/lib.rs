@@ -40,15 +40,16 @@
 //! let key = StorageKey::create_with_uint160(-1, 0x14, &hash);
 //! ```
 
-pub mod cache;
 pub mod error;
 pub mod hash_utils;
 pub mod key_builder;
 pub mod persistence;
 pub mod types;
 
-pub use cache::{
-    ClonedCache, DataCache, DataCacheError, DataCacheResult, Trackable, TrackableEntry,
+// Canonical cache types live in `persistence::data_cache`; re-export the common
+// surface at the crate root for ergonomic access.
+pub use persistence::data_cache::{
+    DataCache, DataCacheError, DataCacheResult, Trackable, TrackableEntry,
 };
 pub use error::{StorageError, StorageResult};
 pub use hash_utils::{

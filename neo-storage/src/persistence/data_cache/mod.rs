@@ -5,4 +5,4 @@ mod storage_watch;
 
 pub use cache::{DataCache, OnEntryDelegate};
 pub use prefetch::PrefetchPattern;
-pub use trackable::{DataCacheConfig, DataCacheError, DataCacheResult, Trackable};
+pub use trackable::{DataCacheConfig, DataCacheError, DataCacheResult, Trackable, TrackableEntry};
