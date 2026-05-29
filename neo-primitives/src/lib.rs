@@ -48,6 +48,7 @@ pub mod log_event_args;
 pub mod log_level;
 /// Macro helpers for compact protocol enum declarations.
 pub mod macros;
+pub mod network_error;
 pub mod node_capability_type;
 pub mod oracle_response_code;
 pub mod rpc_exception;
@@ -90,6 +91,7 @@ pub use inventory::Inventory;
 pub use inventory_type::InventoryType;
 pub use log_event_args::LogEventArgs;
 pub use log_level::LogLevel;
+pub use network_error::{NetworkError, NetworkResult};
 pub use node_capability_type::NodeCapabilityType;
 pub use oracle_response_code::OracleResponseCode;
 pub use rpc_exception::RpcException;
