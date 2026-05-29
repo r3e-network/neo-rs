@@ -7,6 +7,7 @@ use crate::smart_contract::CallFlags;
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::env_flags::env_flag_enabled;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
+use crate::smart_contract::iterators::IteratorInterop;
 use crate::smart_contract::native::crypto_lib::Bls12381Interop;
 use crate::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;
@@ -403,7 +404,12 @@ fn decode_native_result(
                 let iterator_id = id
                     .to_u32()
                     .ok_or_else(|| "Iterator identifier out of range".to_string())?;
-                return Ok(Some(StackItem::from_i64(iterator_id as i64)));
+                // Iterator results are InteropInterface values (C# parity): wrap
+                // the engine-side storage-iterator handle, do not surface it as a
+                // bare integer.
+                return Ok(Some(StackItem::from_interface(IteratorInterop::new(
+                    iterator_id,
+                ))));
             }
 
             Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
@@ -414,17 +420,11 @@ fn decode_native_result(
 }
 
 fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
+    // Iterator interop interfaces encode their engine-side handle id as 4 LE bytes.
+    if let Ok(iterator) = item.as_interface::<IteratorInterop>() {
+        return Ok(iterator.id().to_le_bytes().to_vec());
+    }
     match &item {
-        // Iterator/interop handles are carried as integer stack items.
-        StackItem::Integer(_) => {
-            let id = item
-                .clone()
-                .into_int()
-                .map_err(|e| e.to_string())?
-                .to_u32()
-                .ok_or_else(|| "Interop handle out of range".to_string())?;
-            Ok(id.to_le_bytes().to_vec())
-        }
         StackItem::ByteString(bytes) => {
             // Validate that the bytes are a valid Bls12381Interop encoding
             Bls12381Interop::from_encoded_bytes(bytes).map_err(|e| e.to_string())?;
