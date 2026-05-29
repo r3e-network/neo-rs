@@ -1,7 +1,7 @@
 use super::*;
 use crate::client::models::RpcRawMemPool;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::extensions::io::serializable::SerializableExtensions;
+use neo_core::extensions::SerializableExtensions;
 use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
 use neo_core::ledger::VerifyResult;

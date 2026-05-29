@@ -4,6 +4,7 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::apply_tracked_items;
+use neo_core::persistence::StorageItemExt;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
