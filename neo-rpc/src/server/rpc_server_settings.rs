@@ -33,7 +33,11 @@ pub enum UnhandledExceptionPolicy {
 }
 
 /// Represents a single RPC server configuration block (`RpcServersSettings`).
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+///
+/// `Debug` is implemented manually to redact the credential fields
+/// (`rpc_pass`, `ssl_cert_password`) so they never leak into logs or error
+/// output.
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 pub struct RpcServerConfig {
     #[serde(default = "RpcServerConfig::default_network", alias = "Network")]
     pub network: u32,
@@ -134,6 +138,38 @@ pub struct RpcServerConfig {
         alias = "MaxBatchSize"
     )]
     pub max_batch_size: usize,
+}
+
+impl std::fmt::Debug for RpcServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RpcServerConfig")
+            .field("network", &self.network)
+            .field("bind_address", &self.bind_address)
+            .field("port", &self.port)
+            .field("ssl_cert", &self.ssl_cert)
+            .field("ssl_cert_password", &"[redacted]")
+            .field("trusted_authorities", &self.trusted_authorities)
+            .field("max_concurrent_connections", &self.max_concurrent_connections)
+            .field("max_requests_per_second", &self.max_requests_per_second)
+            .field("rate_limit_burst", &self.rate_limit_burst)
+            .field("max_request_body_size", &self.max_request_body_size)
+            .field("rpc_user", &self.rpc_user)
+            .field("rpc_pass", &"[redacted]")
+            .field("enable_cors", &self.enable_cors)
+            .field("allow_origins", &self.allow_origins)
+            .field("keep_alive_timeout", &self.keep_alive_timeout)
+            .field("request_headers_timeout", &self.request_headers_timeout)
+            .field("max_gas_invoke", &self.max_gas_invoke)
+            .field("max_fee", &self.max_fee)
+            .field("max_iterator_result_items", &self.max_iterator_result_items)
+            .field("max_stack_size", &self.max_stack_size)
+            .field("disabled_methods", &self.disabled_methods)
+            .field("session_enabled", &self.session_enabled)
+            .field("session_expiration_time", &self.session_expiration_time)
+            .field("find_storage_page_size", &self.find_storage_page_size)
+            .field("max_batch_size", &self.max_batch_size)
+            .finish()
+    }
 }
 
 impl RpcServerConfig {
