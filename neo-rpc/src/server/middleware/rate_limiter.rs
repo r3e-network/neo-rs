@@ -135,10 +135,10 @@ struct TierLimiter {
 }
 
 fn quota_from_config(config: &RateLimitConfig) -> Quota {
-    let max_rps =
-        NonZeroU32::new(config.max_rps).expect("rate limiter quota requires a positive max_rps");
-    let burst =
-        NonZeroU32::new(config.burst).expect("rate limiter quota requires a positive burst");
+    // Callers (build_tier_limiters) already skip zero-valued configs; clamp to a
+    // positive minimum here as a defensive, non-panicking fallback.
+    let max_rps = NonZeroU32::new(config.max_rps).unwrap_or(NonZeroU32::MIN);
+    let burst = NonZeroU32::new(config.burst).unwrap_or(NonZeroU32::MIN);
     Quota::per_second(max_rps).allow_burst(burst)
 }
 
