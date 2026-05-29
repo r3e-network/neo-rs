@@ -239,10 +239,12 @@ impl GenesisConfig {
     #[must_use]
     pub fn private(validator_pubkey: &str) -> Self {
         Self {
+            // A pre-1970 system clock is the only failure mode here; fall back to 0
+            // rather than panicking inside a public constructor.
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
             validators: vec![GenesisValidator {
                 public_key: validator_pubkey.to_string(),
                 name: Some("Local Validator".to_string()),

@@ -464,20 +464,24 @@ impl Settings {
         self.network.effective_address_version()
     }
 
-    /// Get P2P socket address
-    #[must_use]
-    pub fn p2p_socket_addr(&self) -> std::net::SocketAddr {
-        format!("{}:{}", self.node.listen_address, self.node.p2p_port)
-            .parse()
-            .expect("Invalid P2P address")
+    /// Get P2P socket address.
+    ///
+    /// Returns [`ConfigError::InvalidValue`] when the configured listen address
+    /// and port do not form a parseable socket address, rather than panicking.
+    pub fn p2p_socket_addr(&self) -> Result<std::net::SocketAddr, ConfigError> {
+        let raw = format!("{}:{}", self.node.listen_address, self.node.p2p_port);
+        raw.parse()
+            .map_err(|_| ConfigError::InvalidValue(format!("invalid P2P socket address: {raw}")))
     }
 
-    /// Get RPC socket address
-    #[must_use]
-    pub fn rpc_socket_addr(&self) -> std::net::SocketAddr {
-        format!("{}:{}", self.rpc.address, self.rpc.port)
-            .parse()
-            .expect("Invalid RPC address")
+    /// Get RPC socket address.
+    ///
+    /// Returns [`ConfigError::InvalidValue`] when the configured RPC address and
+    /// port do not form a parseable socket address, rather than panicking.
+    pub fn rpc_socket_addr(&self) -> Result<std::net::SocketAddr, ConfigError> {
+        let raw = format!("{}:{}", self.rpc.address, self.rpc.port);
+        raw.parse()
+            .map_err(|_| ConfigError::InvalidValue(format!("invalid RPC socket address: {raw}")))
     }
 }
 
