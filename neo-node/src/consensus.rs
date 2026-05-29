@@ -294,15 +294,37 @@ impl ConsensusActor {
         self.missing_transactions = None;
     }
 
-    fn load_validators(&self, next_index: u32) -> Vec<neo_crypto::ECPoint> {
+    /// The round's signing validators. C# ConsensusContext.Reset always sets the
+    /// round Validators to NEO.GetNextBlockValidators (the previously-elected set);
+    /// the committee-refresh choice (ComputeNextBlockValidators) applies ONLY to the
+    /// announced NextConsensus, never to who signs the current block. Applying the
+    /// refresh here would let the freshly-elected committee both sign and be
+    /// announced at a rotation boundary, diverging from C# consensus.
+    fn load_validators(&self) -> Vec<neo_crypto::ECPoint> {
         let store_cache = self.system.store_cache();
         let snapshot = store_cache.data_cache();
         let settings = self.system.settings();
         let validators_count = settings.validators_count.max(0) as usize;
-        let refresh =
-            NativeHelpers::should_refresh_committee(next_index, settings.committee_members_count());
 
-        let result = if refresh {
+        NeoToken::new()
+            .get_next_block_validators_snapshot(snapshot, validators_count, settings)
+            .unwrap_or_else(|_| settings.standby_validators())
+    }
+
+    /// The validator set announced in the new block's `NextConsensus`. C#
+    /// ConsensusContext.Reset(0) sets NextConsensus = GetBFTAddress(
+    /// ShouldRefreshCommittee(blockIndex) ? ComputeNextBlockValidators
+    /// : GetNextBlockValidators) — i.e. the set that will sign the NEXT block.
+    fn next_consensus_validators(&self, block_index: u32) -> Vec<neo_crypto::ECPoint> {
+        let store_cache = self.system.store_cache();
+        let snapshot = store_cache.data_cache();
+        let settings = self.system.settings();
+        let validators_count = settings.validators_count.max(0) as usize;
+
+        let result = if NativeHelpers::should_refresh_committee(
+            block_index,
+            settings.committee_members_count(),
+        ) {
             NeoToken::new().compute_next_block_validators_snapshot(snapshot, settings)
         } else {
             NeoToken::new().get_next_block_validators_snapshot(snapshot, validators_count, settings)
@@ -377,7 +399,7 @@ impl ConsensusActor {
         self.current_prev_hash = Some(prev_hash);
         self.prev_timestamp = Some(prev_timestamp);
 
-        let validators = self.load_validators(block_index);
+        let validators = self.load_validators();
         let validator_infos = Self::build_validator_infos(&validators);
         let (my_index, private_key) = self.find_signing_key(&validators);
         let signer = Arc::new(WalletConsensusSigner::new(self.wallet.clone()));
@@ -948,7 +970,13 @@ impl ConsensusActor {
 
         let merkle_root =
             MerkleTree::compute_root(&block_data.transaction_hashes).unwrap_or_default();
-        let next_consensus = NativeHelpers::get_bft_address(&block_data.validator_pubkeys);
+        // NextConsensus is the BFT address of the NEXT block's validator set
+        // (refresh-conditional), NOT the current round's signing set. At a
+        // committee-refresh boundary these differ; using the signing set here
+        // would diverge the header (and its signed hash) from C#.
+        let next_consensus_validators =
+            self.next_consensus_validators(block_data.block_index);
+        let next_consensus = NativeHelpers::get_bft_address(&next_consensus_validators);
 
         let mut header = Header::new();
         header.set_version(0);
