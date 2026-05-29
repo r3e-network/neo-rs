@@ -6,7 +6,7 @@ use crate::messages::{
 };
 use crate::ConsensusMessageType;
 use crate::{ChangeViewReason, ConsensusEvent, ConsensusService};
-use neo_vm::ScriptBuilder;
+use neo_core::neo_vm::ScriptBuilder;
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 

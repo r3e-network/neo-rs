@@ -2287,10 +2287,10 @@ dependencies = [
  "async-trait",
  "bincode",
  "lru",
+ "neo-core",
  "neo-crypto",
  "neo-io",
  "neo-primitives",
- "neo-vm",
  "neo-vm-rs",
  "rand 0.8.5",
  "serde",
@@ -2340,7 +2340,6 @@ dependencies = [
  "neo-p2p",
  "neo-primitives",
  "neo-storage",
- "neo-vm",
  "neo-vm-rs",
  "num-bigint",
  "num-integer",
@@ -2677,25 +2676,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "neo-vm"
-version = "0.7.2"
-dependencies = [
- "base64 0.22.1",
- "bitflags 2.11.0",
- "hex",
- "neo-crypto",
- "neo-io",
- "neo-primitives",
- "neo-vm-rs",
- "num-bigint",
- "num-traits",
- "parking_lot",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]

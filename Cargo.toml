@@ -21,10 +21,10 @@ members = [
     "neo-json",
 
     # === Core Layer ===
-    # NeoVM runtime (execution engine, stack items, jump tables)
-    "neo-vm",
-
     # Core (matches C# Neo.csproj)
+    # NOTE: the NeoVM host (execution engine, stack items, jump tables,
+    # serializers, script builder) now lives in neo-core/src/neo_vm; pure
+    # VM semantics are provided by the external neo-vm-rs crate.
     "neo-core",
 
     # P2P networking
@@ -73,7 +73,6 @@ default-members = [
     "neo-storage",
     "neo-io",
     "neo-json",
-    "neo-vm",
     "neo-core",
     "neo-p2p",
     "neo-rpc",
@@ -119,7 +118,6 @@ neo-io = { path = "neo-io", version = "0.7.2" }
 neo-json = { path = "neo-json", version = "0.7.2" }
 
 # Core layer
-neo-vm = { path = "neo-vm", version = "0.7.2" }
 neo-core = { path = "neo-core", version = "0.7.2" }
 neo-vm-rs = { path = "../neo-vm-rs" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }

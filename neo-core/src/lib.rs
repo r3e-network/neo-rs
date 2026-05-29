@@ -257,7 +257,7 @@ pub mod tokens_tracker;
 
 // Core types
 pub use neo_primitives::{BigDecimal, ContainsTransactionType, UnhandledExceptionPolicy, panic_message};
-pub use neo_vm::{ScriptBuilder, rpc_json};
+pub use crate::neo_vm::{ScriptBuilder, rpc_json};
 // Module-path aliases for relocated root modules.
 pub use crate::neo_vm::script_builder;
 pub use neo_primitives::{big_decimal, contains_transaction_type, unhandled_exception_policy};

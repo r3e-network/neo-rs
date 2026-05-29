@@ -18,7 +18,8 @@ description = "dBFT consensus for Neo blockchain"
 neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
-neo-vm = { workspace = true }
+# ScriptBuilder + VM host live in neo-core/src/neo_vm; pure semantics in neo-vm-rs
+neo-core = { workspace = true }
 neo-vm-rs = { workspace = true }
 
 # Async runtime
