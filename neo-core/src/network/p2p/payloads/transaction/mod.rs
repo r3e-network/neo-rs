@@ -13,7 +13,7 @@ use super::{
     inventory::Inventory, signer::Signer, transaction_attribute::TransactionAttribute,
     witness::Witness, InventoryType, TransactionAttributeType,
 };
-use crate::cryptography::{Crypto, Secp256r1Crypto};
+use neo_crypto::{Crypto, Secp256r1Crypto};
 use crate::hardfork::Hardfork;
 use crate::neo_io::serializable::helper::{
     deserialize_array_with, deserialize_exact_array, get_var_size_bytes,

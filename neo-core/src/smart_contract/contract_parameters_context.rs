@@ -1,6 +1,6 @@
 //! ContractParametersContext - matches C# Neo.SmartContract.ContractParametersContext exactly
 
-use crate::cryptography::{ECPoint, Crypto};
+use neo_crypto::{ECPoint, Crypto};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::payloads::{transaction::Transaction, witness::Witness};
 use crate::persistence::DataCache;

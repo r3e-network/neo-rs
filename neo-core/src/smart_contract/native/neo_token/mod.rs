@@ -17,7 +17,7 @@ use super::{
     native_contract::{NativeContract, NativeMethod},
     policy_contract::PolicyContract,
 };
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::error::{CoreError, CoreResult, ToNativeError};
 use crate::hardfork::Hardfork;
 use crate::persistence::{read_only_store::ReadOnlyStoreGeneric, seek_direction::SeekDirection};

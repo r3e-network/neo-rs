@@ -3,7 +3,7 @@
 // helpers.rs mirrors the naming and call sites used by the C# native contracts
 // for dBFT consensus wiring, providing a consistent facade for the Rust port.
 
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::error::CoreResult;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;

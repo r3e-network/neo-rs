@@ -1,5 +1,5 @@
 use super::{StateStore, StateStoreSnapshot};
-use crate::cryptography::mpt_trie::Trie;
+use neo_crypto::mpt_trie::Trie;
 use crate::neo_io::{BinaryWriter, MemoryReader};
 use crate::smart_contract::StorageKey;
 use crate::UInt256;

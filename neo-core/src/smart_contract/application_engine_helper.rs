@@ -1,6 +1,6 @@
 //! ApplicationEngine.Helper - matches C# Neo.SmartContract.ApplicationEngine helper methods exactly
 
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::hardfork::Hardfork;
 // Old wrapper types removed - StackValue compounds are flat Vecs now
 use crate::neo_vm::{StackItem};

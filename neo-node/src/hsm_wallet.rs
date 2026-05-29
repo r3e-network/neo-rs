@@ -1,7 +1,7 @@
 //! HSM-backed wallet implementation for RPC signing.
 
 use anyhow::{anyhow, Result};
-use neo_core::cryptography::{ECCurve, ECPoint};
+use neo_crypto::{ECCurve, ECPoint};
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;

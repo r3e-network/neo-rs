@@ -1,4 +1,4 @@
-use neo_core::cryptography::{ECCurve, ECPoint, Crypto, Secp256r1Crypto};
+use neo_crypto::{ECCurve, ECPoint, Crypto, Secp256r1Crypto};
 use neo_core::ledger::{block::Block, block_header::BlockHeader};
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;

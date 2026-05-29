@@ -1,5 +1,6 @@
 use crate::network::p2p::payloads::{WitnessCondition, WitnessRule, WitnessRuleAction};
-use crate::{UInt160, cryptography::ECPoint};
+use crate::UInt160;
+use neo_crypto::ECPoint;
 
 macro_rules! impl_witness_condition_builder_methods {
     () => {

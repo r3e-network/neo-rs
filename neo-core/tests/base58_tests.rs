@@ -1,6 +1,6 @@
 //! Base58 tests converted from `Neo.UnitTests.Cryptography.UT_Base58`.
 
-use neo_core::cryptography::crypto_utils::base58;
+use neo_crypto::crypto_utils::base58;
 
 #[test]
 fn base58_encode_decode_vectors_match_csharp() {

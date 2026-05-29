@@ -1,5 +1,5 @@
 use crate::UInt256;
-use crate::cryptography::Sha256Hasher;
+use neo_crypto::Sha256Hasher;
 use crate::network::p2p::payloads::OracleResponseCode;
 use futures::StreamExt;
 use reqwest::StatusCode;

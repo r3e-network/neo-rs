@@ -1,4 +1,4 @@
-use crate::cryptography::mpt_trie::{MptResult, MptStoreSnapshot};
+use neo_crypto::mpt_trie::{MptResult, MptStoreSnapshot};
 use crate::persistence::store::Store;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;

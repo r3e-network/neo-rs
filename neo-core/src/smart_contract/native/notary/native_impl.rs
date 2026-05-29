@@ -69,7 +69,7 @@ impl NativeContract for Notary {
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
         let mut total_fees: i64 = 0;
-        let mut notaries: Option<Vec<crate::cryptography::ECPoint>> = None;
+        let mut notaries: Option<Vec<neo_crypto::ECPoint>> = None;
 
         for tx in &block.transactions {
             if let Some(TransactionAttribute::NotaryAssisted(attr)) =

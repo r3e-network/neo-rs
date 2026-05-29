@@ -1,4 +1,4 @@
-use neo_core::cryptography::{Base58, ECCurve};
+use neo_crypto::{Base58, ECCurve};
 use neo_core::wallets::ExtendedKey;
 
 #[test]

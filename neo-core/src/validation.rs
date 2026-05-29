@@ -16,7 +16,7 @@
 //! and merkle root tampering.
 
 use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
-use crate::cryptography::MerkleTree;
+use neo_crypto::MerkleTree;
 use crate::network::p2p::payloads::header::Header;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::time_provider::TimeProvider;

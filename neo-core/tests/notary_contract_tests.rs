@@ -167,7 +167,7 @@ fn designate_notary_nodes(
     snapshot: Arc<DataCache>,
     settings: ProtocolSettings,
     persisting_index: u32,
-    public_keys: Vec<neo_core::cryptography::ECPoint>,
+    public_keys: Vec<neo_crypto::ECPoint>,
 ) -> CoreResult<()> {
     let committee_address = NativeHelpers::committee_address(&settings, Some(snapshot.as_ref()));
     let tx = make_tx_with_signer(committee_address);

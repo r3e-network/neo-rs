@@ -1,5 +1,5 @@
 use super::{TokenManagement, ID, PREFIX_NFT_UNIQUE_ID_SEED};
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::error::{CoreError, CoreResult};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::NativeContract;

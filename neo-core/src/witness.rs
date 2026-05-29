@@ -36,7 +36,7 @@
 //! let script_hash = witness.script_hash();
 //! ```
 
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::error::{CoreError, CoreResult};
 use crate::neo_io::{serializable::helper::get_var_size_bytes, Serializable};
 use crate::smart_contract::helper::Helper;
@@ -196,7 +196,7 @@ impl Witness {
         public_keys: &[Vec<u8>],
         signatures: &[Vec<u8>],
     ) -> CoreResult<bool> {
-        use crate::cryptography::Secp256r1Crypto;
+        use neo_crypto::Secp256r1Crypto;
         use crate::smart_contract::helper::Helper;
 
         if required_signatures == 0
@@ -311,7 +311,7 @@ impl Witness {
     ) -> CoreResult<bool> {
         // Real C# Neo N3 implementation: ECDsa.VerifyData
 
-        use crate::cryptography::Secp256r1Crypto;
+        use neo_crypto::Secp256r1Crypto;
 
         let signature_bytes: [u8; 64] = signature
             .try_into()
@@ -407,7 +407,8 @@ impl fmt::Display for Witness {
 mod tests {
     use super::*;
     use crate::neo_io::Serializable;
-    use crate::{cryptography::Secp256r1Crypto, smart_contract::helper::Helper};
+    use crate::smart_contract::helper::Helper;
+    use neo_crypto::Secp256r1Crypto;
 
     #[test]
     fn test_witness_new() {

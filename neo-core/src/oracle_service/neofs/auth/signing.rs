@@ -1,4 +1,4 @@
-use crate::cryptography::Secp256r1Crypto;
+use neo_crypto::Secp256r1Crypto;
 use crate::neo_io::BinaryWriter;
 use crate::wallets::KeyPair;
 use base64::Engine as _;

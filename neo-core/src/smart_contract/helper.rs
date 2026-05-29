@@ -1,6 +1,6 @@
 //! Helper - matches C# Neo.SmartContract.Helper exactly
 
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;

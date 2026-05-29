@@ -52,7 +52,7 @@ fn make_ledger_block(
     let merkle_root = if hashes.is_empty() {
         UInt256::zero()
     } else {
-        neo_core::cryptography::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
+        neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
     };
 
     let header = LedgerBlockHeader {

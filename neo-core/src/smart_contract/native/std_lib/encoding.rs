@@ -1,5 +1,5 @@
 use super::StdLib;
-use crate::cryptography::{Base58, Base64, Hex};
+use neo_crypto::{Base58, Base64, Hex};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 

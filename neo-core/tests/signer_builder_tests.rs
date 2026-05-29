@@ -1,6 +1,6 @@
 use hex::decode as hex_decode;
 use neo_core::builders::SignerBuilder;
-use neo_core::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use neo_core::network::p2p::payloads::{WitnessCondition, WitnessRuleAction, WitnessScope};
 use neo_core::UInt160;
 

@@ -4,7 +4,7 @@
 //! core-specific helpers (e.g. `add_ecpoint`). All buffer construction and
 //! error types live in `neo-storage` as the single source of truth.
 
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::CoreError;
 use std::ops::{Deref, DerefMut};
 
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_add_ecpoint() {
-        use crate::cryptography::ECCurve;
+        use neo_crypto::ECCurve;
         use hex::decode;
 
         let point_bytes =

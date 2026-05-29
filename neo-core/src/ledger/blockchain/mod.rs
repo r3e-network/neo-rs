@@ -97,7 +97,7 @@ struct InventoryCacheKey {
 
 impl InventoryCacheKey {
     fn new(inventory_type: InventoryType, payload: &[u8]) -> Self {
-        let payload_hash = UInt256::from(crate::cryptography::Crypto::sha256(payload));
+        let payload_hash = UInt256::from(neo_crypto::Crypto::sha256(payload));
         Self {
             inventory_type,
             payload_hash,

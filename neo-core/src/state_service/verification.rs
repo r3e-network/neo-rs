@@ -13,7 +13,8 @@ use crate::smart_contract::native::Role;
 use crate::smart_contract::native::role_management::RoleManagement;
 use crate::state_service::{MessageType, StateRoot, StateStore, ValidatedRootPersisted, Vote};
 use crate::wallets::Wallet;
-use crate::{UInt160, cryptography::Crypto, neo_system::NeoSystem};
+use crate::{UInt160, neo_system::NeoSystem};
+use neo_crypto::Crypto;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
@@ -34,7 +35,7 @@ struct VerificationTimer {
 
 struct VerificationContext {
     root_index: u32,
-    validators: Vec<crate::cryptography::ECPoint>,
+    validators: Vec<neo_crypto::ECPoint>,
     my_index: usize,
     signatures: HashMap<usize, Vec<u8>>,
     retries: u32,
@@ -47,7 +48,7 @@ struct VerificationContext {
 impl VerificationContext {
     fn new(
         root_index: u32,
-        validators: Vec<crate::cryptography::ECPoint>,
+        validators: Vec<neo_crypto::ECPoint>,
         my_index: usize,
     ) -> Self {
         Self {
@@ -230,7 +231,7 @@ impl StateVerificationActor {
 
     fn find_validator_index(
         wallet: &Arc<dyn Wallet>,
-        validators: &[crate::cryptography::ECPoint],
+        validators: &[neo_crypto::ECPoint],
     ) -> Option<usize> {
         let accounts = wallet.get_accounts();
         for (idx, validator) in validators.iter().enumerate() {

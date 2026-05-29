@@ -127,7 +127,7 @@ impl Block {
             return Ok(());
         }
         let payload_hashes = self.transaction_hashes()?;
-        if let Some(root) = crate::cryptography::MerkleTree::compute_root(&payload_hashes) {
+        if let Some(root) = neo_crypto::MerkleTree::compute_root(&payload_hashes) {
             self.header.set_merkle_root(root);
         }
         Ok(())

@@ -1,7 +1,7 @@
 //! Contract - matches C# Neo.SmartContract.Contract exactly
 
 use crate::UInt160;
-use crate::cryptography::{Crypto, ECPoint};
+use neo_crypto::{Crypto, ECPoint};
 use crate::error::CoreError;
 use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::ContractParameterType;

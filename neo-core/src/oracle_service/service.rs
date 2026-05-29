@@ -9,7 +9,7 @@ mod utils;
 #[cfg(test)]
 mod tests;
 
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::neo_system::NeoSystem;
 use crate::network::p2p::payloads::Transaction;
 use crate::wallets::Wallet;

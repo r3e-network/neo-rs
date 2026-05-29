@@ -1,5 +1,5 @@
 use hex::{decode as hex_decode, encode as hex_encode};
-use neo_core::cryptography::Secp256r1Crypto;
+use neo_crypto::Secp256r1Crypto;
 use neo_core::ledger::Block;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_io::BinaryWriter;
@@ -879,7 +879,7 @@ fn sample_group(seed: u8) -> neo_core::ECPoint {
         bytes[31] = seed.max(1);
         bytes
     };
-    let public_key = neo_core::cryptography::Secp256r1Crypto::derive_public_key(&private_key)
+    let public_key = neo_crypto::Secp256r1Crypto::derive_public_key(&private_key)
         .expect("derive test key");
     neo_core::ECPoint::decode_compressed_with_curve(neo_core::ECCurve::secp256r1(), &public_key)
         .expect("static test key")

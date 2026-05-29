@@ -3,7 +3,7 @@
 //! This module provides the ContractState struct which represents the state
 //! of a deployed smart contract in the Neo blockchain.
 
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::error::{CoreError, CoreResult};
 use crate::neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,

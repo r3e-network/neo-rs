@@ -125,7 +125,7 @@ fn make_ledger_block(
         UInt256::zero()
     } else {
         let hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
-        neo_core::cryptography::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
+        neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
     };
 
     let header = LedgerBlockHeader {
@@ -248,7 +248,7 @@ fn serialize_test_stack_value(value: &StackValue) -> Vec<u8> {
 
 fn store_committee(
     store: &mut neo_core::persistence::StoreCache,
-    committee: &[neo_core::cryptography::ECPoint],
+    committee: &[neo_crypto::ECPoint],
 ) {
     const PREFIX_COMMITTEE: u8 = 0x0e;
     let neo_token_id = NativeRegistry::new()
@@ -273,7 +273,7 @@ fn store_committee(
 
 fn store_candidate_state(
     store: &mut neo_core::persistence::StoreCache,
-    candidate: &neo_core::cryptography::ECPoint,
+    candidate: &neo_crypto::ECPoint,
     registered: bool,
     votes: BigInt,
 ) {
@@ -287,7 +287,7 @@ fn store_candidate_state(
 
 fn store_candidate_state_raw(
     store: &mut neo_core::persistence::StoreCache,
-    candidate: &neo_core::cryptography::ECPoint,
+    candidate: &neo_crypto::ECPoint,
     bytes: Vec<u8>,
 ) {
     const PREFIX_CANDIDATE: u8 = 0x21;

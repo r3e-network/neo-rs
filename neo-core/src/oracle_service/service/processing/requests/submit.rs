@@ -1,6 +1,6 @@
 use super::super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::super::{OracleService, OracleServiceError};
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::smart_contract::native::{OracleContract, Role, RoleManagement};
 
 impl OracleService {

@@ -1,5 +1,5 @@
 use super::{StateServiceSettings, StateStoreBackend, StateStoreSnapshot};
-use crate::cryptography::mpt_trie::Trie;
+use neo_crypto::mpt_trie::Trie;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::state_service::keys::Keys;
 use crate::state_service::StateRoot;

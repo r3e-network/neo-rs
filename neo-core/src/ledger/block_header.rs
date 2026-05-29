@@ -1,4 +1,4 @@
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::neo_io::serializable::helper::{deserialize_array, get_var_size, serialize_array};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::{CoreResult, UInt160, UInt256, Witness};

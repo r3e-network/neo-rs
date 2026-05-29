@@ -4,7 +4,7 @@
 //! This contract assists with multisignature transaction forming by managing
 //! GAS deposits for notary service fees.
 
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::network::p2p::payloads::{Transaction, TransactionAttributeType};
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
@@ -634,7 +634,7 @@ impl Notary {
         Ok(vec![if valid { 1 } else { 0 }])
     }
 
-    fn get_notary_nodes(&self, snapshot: &DataCache) -> Result<Vec<crate::cryptography::ECPoint>> {
+    fn get_notary_nodes(&self, snapshot: &DataCache) -> Result<Vec<neo_crypto::ECPoint>> {
         let ledger = LedgerContract::new();
         let current_height = ledger
             .current_index(snapshot)

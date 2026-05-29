@@ -1,5 +1,5 @@
-use neo_core::cryptography::Crypto;
-use neo_core::cryptography::MerkleTree;
+use neo_crypto::Crypto;
+use neo_crypto::MerkleTree;
 use neo_core::network::p2p::payloads::{
     block::Block, merkle_block_payload::MerkleBlockPayload, transaction::Transaction,
 };

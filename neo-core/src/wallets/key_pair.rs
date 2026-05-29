@@ -3,7 +3,7 @@
 //! This module provides cryptographic key pair functionality,
 //! converted from the C# Neo KeyPair class (@neo-sharp/src/Neo/Wallets/KeyPair.cs).
 
-use crate::cryptography::{Base58, CryptoError, ECCurve, ECDsa, Secp256r1Crypto, ECC};
+use neo_crypto::{Base58, CryptoError, ECCurve, ECDsa, Secp256r1Crypto, ECC};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::constants::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
@@ -135,9 +135,9 @@ impl KeyPair {
     }
 
     /// Gets the public key as an ECPoint.
-    pub fn get_public_key_point(&self) -> Result<crate::cryptography::ECPoint> {
-        crate::cryptography::ECPoint::decode_compressed_with_curve(
-            crate::cryptography::ECCurve::secp256r1(),
+    pub fn get_public_key_point(&self) -> Result<neo_crypto::ECPoint> {
+        neo_crypto::ECPoint::decode_compressed_with_curve(
+            neo_crypto::ECCurve::secp256r1(),
             &self.compressed_public_key,
         )
         .map_err(|e| Error::InvalidOperation {
@@ -233,7 +233,7 @@ impl KeyPair {
         let script_hash =
             UInt160::from_script(&Self::try_get_verification_script_for_key(private_key)?);
         let address = WalletHelper::to_address(&script_hash, address_version);
-        let address_hash_full = crate::cryptography::Crypto::hash256(address.as_bytes());
+        let address_hash_full = neo_crypto::Crypto::hash256(address.as_bytes());
         let mut address_hash = [0u8; 4];
         address_hash.copy_from_slice(&address_hash_full[0..4]);
 
@@ -342,7 +342,7 @@ impl KeyPair {
         let verification_script = Self::try_get_verification_script_for_key(&private_key)?;
         let script_hash = UInt160::from_script(&verification_script);
         let address = WalletHelper::to_address(&script_hash, address_version);
-        let computed_hash_full = crate::cryptography::Crypto::hash256(address.as_bytes());
+        let computed_hash_full = neo_crypto::Crypto::hash256(address.as_bytes());
         let computed_hash = &computed_hash_full[0..4];
 
         // Constant-time comparison to prevent timing oracle on password verification

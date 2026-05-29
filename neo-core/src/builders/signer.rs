@@ -1,5 +1,6 @@
 use crate::network::p2p::payloads::{Signer, WitnessRule, WitnessRuleAction};
-use crate::{UInt160, WitnessScope, cryptography::ECPoint};
+use crate::{UInt160, WitnessScope};
+use neo_crypto::ECPoint;
 
 use super::WitnessRuleBuilder;
 

@@ -1,5 +1,5 @@
 use super::super::{OracleService, OracleServiceError};
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };

@@ -1,7 +1,7 @@
 //! Bloom filter state and filtered-block helpers for `RemoteNode`.
 
 use super::RemoteNode;
-use crate::cryptography::BloomFilter;
+use neo_crypto::BloomFilter;
 use crate::network::p2p::payloads::{
     block::Block, filter_add_payload::FilterAddPayload, filter_load_payload::FilterLoadPayload,
     transaction::Transaction,
@@ -175,7 +175,7 @@ impl RemoteNode {
 #[cfg(test)]
 mod tests {
     use super::BloomFilterState;
-    use crate::cryptography::BloomFilter;
+    use neo_crypto::BloomFilter;
     use crate::network::p2p::payloads::{
         block::Block, filter_add_payload::FilterAddPayload, filter_load_payload::FilterLoadPayload,
         signer::Signer, transaction::Transaction, witness::Witness,

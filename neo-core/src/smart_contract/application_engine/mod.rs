@@ -68,7 +68,7 @@
 //! directory to keep individual methods readable while preserving a single Rust
 //! module boundary (matching the C# layout).
 
-use crate::cryptography::{Crypto, murmur128};
+use neo_crypto::{Crypto, murmur128};
 use crate::error::{CoreError as Error, Result};
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;

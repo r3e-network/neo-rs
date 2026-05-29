@@ -3,8 +3,8 @@
 //! Provides cryptographic functions for the Neo blockchain.
 //! Matches the C# Neo.SmartContract.Native.CryptoLib contract.
 
-use crate::cryptography::crypto_utils::murmur::murmur32;
-use crate::cryptography::{Crypto, Ed25519Crypto, HashAlgorithm, NamedCurveHash};
+use neo_crypto::crypto_utils::murmur::murmur32;
+use neo_crypto::{Crypto, Ed25519Crypto, HashAlgorithm, NamedCurveHash};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
@@ -181,7 +181,7 @@ impl CryptoLib {
         let message_hash = &args[0];
         let signature = &args[1];
 
-        match crate::cryptography::Secp256k1Crypto::recover_public_key(message_hash, signature) {
+        match neo_crypto::Secp256k1Crypto::recover_public_key(message_hash, signature) {
             Ok(public_key) => Ok(public_key),
             Err(_) => Ok(Vec::new()),
         }

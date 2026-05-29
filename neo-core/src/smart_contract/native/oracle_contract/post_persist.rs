@@ -1,5 +1,5 @@
 use super::OracleContract;
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use crate::smart_contract::application_engine::ApplicationEngine;

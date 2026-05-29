@@ -4,7 +4,7 @@
 
 use hex::decode as hex_decode;
 use hex::encode as hex_encode;
-use neo_core::cryptography::{
+use neo_crypto::{
     Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, Secp256k1Crypto,
     Secp256r1Crypto,
 };

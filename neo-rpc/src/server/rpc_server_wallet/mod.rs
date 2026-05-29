@@ -3,7 +3,7 @@
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_core::BigDecimal;
-use neo_core::cryptography::{ECCurve, ECPoint};
+use neo_crypto::{ECCurve, ECPoint};
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;

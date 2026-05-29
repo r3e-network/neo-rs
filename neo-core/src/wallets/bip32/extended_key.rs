@@ -4,7 +4,7 @@
 #![allow(unused_assignments)]
 
 use super::key_path::KeyPath;
-use crate::cryptography::{Bip32Crypto, CryptoError, ECC, ECCurve, ECPoint};
+use neo_crypto::{Bip32Crypto, CryptoError, ECC, ECCurve, ECPoint};
 use zeroize::Zeroize;
 
 #[derive(Clone, Zeroize)]

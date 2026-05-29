@@ -1,6 +1,6 @@
 //! ContractParameter - matches C# Neo.SmartContract.ContractParameter exactly
 
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::smart_contract::ContractParameterType;
 use crate::{UInt160, UInt256};
 use base64::{engine::general_purpose, Engine as _};

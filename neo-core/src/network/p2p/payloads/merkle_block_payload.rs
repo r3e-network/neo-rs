@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{block::Block, header::Header};
-use crate::cryptography::MerkleTree;
+use neo_crypto::MerkleTree;
 use crate::neo_io::serializable::helper::{
     deserialize_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
 };

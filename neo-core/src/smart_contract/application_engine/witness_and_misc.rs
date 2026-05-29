@@ -152,7 +152,7 @@ impl ApplicationEngine {
             return Ok(false);
         };
 
-        let group_point = crate::cryptography::ECPoint::from_bytes(group)
+        let group_point = neo_crypto::ECPoint::from_bytes(group)
             .map_err(|e| Error::invalid_data(format!("Invalid witness group: {e}")))?;
         Ok(contract
             .manifest

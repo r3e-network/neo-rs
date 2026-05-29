@@ -111,7 +111,7 @@ impl ExtensiblePayload {
         }
 
         let hash_data = self.try_get_hash_data()?;
-        let hash = UInt256::from(crate::cryptography::Crypto::sha256(&hash_data));
+        let hash = UInt256::from(neo_crypto::Crypto::sha256(&hash_data));
         self._hash = Some(hash);
         Ok(hash)
     }

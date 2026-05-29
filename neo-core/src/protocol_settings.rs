@@ -10,9 +10,9 @@
 // modifications are permitted.
 use crate::{
     constants,
-    cryptography::ECPoint,
     hardfork::{Hardfork, HardforkManager},
 };
+use neo_crypto::ECPoint;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{hash_map::Entry, HashMap};

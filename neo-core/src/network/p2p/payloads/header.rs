@@ -164,7 +164,7 @@ impl Header {
 
         let hash_data = self.try_get_hash_data()?;
         // Neo N3 block hashes use single SHA-256 over the unsigned header payload.
-        let hash = UInt256::from(crate::cryptography::Crypto::sha256(&hash_data));
+        let hash = UInt256::from(neo_crypto::Crypto::sha256(&hash_data));
         self._hash = Some(hash);
         Ok(hash)
     }

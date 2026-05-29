@@ -128,11 +128,6 @@ pub mod error;
 pub mod compression;
 
 /// Cryptographic helper utilities.
-/// Cryptographic helper utilities.
-///
-/// Provides ECC operations, signature verification, and key derivation helpers.
-pub mod cryptography;
-
 /// Blockchain hardfork management.
 ///
 /// Tracks protocol upgrades (Aspidochelone, Basilisk, etc.).
@@ -270,7 +265,7 @@ pub use builders::{
     AndConditionBuilder, OrConditionBuilder, SignerBuilder, TransactionAttributesBuilder,
     TransactionBuilder, WitnessBuilder, WitnessConditionBuilder, WitnessRuleBuilder,
 };
-pub use cryptography::{ECCurve, ECPoint};
+pub use neo_crypto::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};
 pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;

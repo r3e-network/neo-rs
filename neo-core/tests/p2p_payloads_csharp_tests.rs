@@ -1,6 +1,6 @@
 use hex::{decode as hex_decode, encode as hex_encode};
-use neo_core::cryptography::bloom_filter::BloomFilter;
-use neo_core::cryptography::{Crypto, ECCurve, ECPoint};
+use neo_crypto::bloom_filter::BloomFilter;
+use neo_crypto::{Crypto, ECCurve, ECPoint};
 use neo_core::ledger::create_genesis_block;
 use neo_core::neo_io::{BinaryWriter, IoError, MemoryReader, Serializable, SerializableExt};
 use neo_core::network::p2p::capabilities::{NodeCapability, NodeCapabilityType};

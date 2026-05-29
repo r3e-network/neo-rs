@@ -1,5 +1,5 @@
 use super::{OracleServiceError, FILTER_MAX_NEST};
-use crate::cryptography::ECPoint;
+use neo_crypto::ECPoint;
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::Transaction;
 use crate::persistence::DataCache;

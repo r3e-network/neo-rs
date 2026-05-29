@@ -246,7 +246,7 @@ crate::impl_default_via_new!(RoleManagement);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cryptography::Secp256r1Crypto;
+    use neo_crypto::Secp256r1Crypto;
     use crate::hardfork::HardforkManager;
     use crate::ledger::{Block, BlockHeader};
     use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};

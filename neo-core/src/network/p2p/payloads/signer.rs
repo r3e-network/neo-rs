@@ -18,10 +18,8 @@ use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable}
 use crate::smart_contract::Interoperable;
 use crate::neo_vm::StackItem;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
-use crate::{
-    cryptography::{ECCurve, ECPoint},
-    WitnessCondition, WitnessScope,
-};
+use crate::{WitnessCondition, WitnessScope};
+use neo_crypto::{ECCurve, ECPoint};
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_primitives::{UInt160, UINT160_SIZE};
 use neo_vm_rs::StackValue;

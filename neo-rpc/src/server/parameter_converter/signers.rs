@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
-use neo_core::cryptography::{ECCurve, ECPoint};
+use neo_crypto::{ECCurve, ECPoint};
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_core::network::p2p::payloads::witness::Witness;

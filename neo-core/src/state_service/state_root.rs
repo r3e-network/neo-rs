@@ -2,7 +2,7 @@
 //!
 //! Matches C# Neo.Plugins.StateService.Network.StateRoot exactly.
 
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;

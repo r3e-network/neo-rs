@@ -5,7 +5,7 @@ use neo_consensus::{
     BlockData, ChangeViewReason, ConsensusContext, ConsensusEvent, ConsensusMessageType,
     ConsensusPayload, ConsensusService, ConsensusSigner, ValidatorInfo,
 };
-use neo_core::cryptography::MerkleTree;
+use neo_crypto::MerkleTree;
 use neo_core::i_event_handlers::MessageReceivedHandler;
 use neo_core::ledger::{
     PersistCompleted, RelayResult, TransactionVerificationContext, VerifyResult,
@@ -214,7 +214,7 @@ struct ConsensusActor {
     current_block_index: Option<u32>,
     current_prev_hash: Option<UInt256>,
     prev_timestamp: Option<u64>,
-    validators: Vec<neo_core::cryptography::ECPoint>,
+    validators: Vec<neo_crypto::ECPoint>,
     validator_infos: Vec<ValidatorInfo>,
     my_index: Option<u8>,
     recovery_path: PathBuf,
@@ -294,7 +294,7 @@ impl ConsensusActor {
         self.missing_transactions = None;
     }
 
-    fn load_validators(&self, next_index: u32) -> Vec<neo_core::cryptography::ECPoint> {
+    fn load_validators(&self, next_index: u32) -> Vec<neo_crypto::ECPoint> {
         let store_cache = self.system.store_cache();
         let snapshot = store_cache.data_cache();
         let settings = self.system.settings();
@@ -311,7 +311,7 @@ impl ConsensusActor {
         result.unwrap_or_else(|_| settings.standby_validators())
     }
 
-    fn build_validator_infos(validators: &[neo_core::cryptography::ECPoint]) -> Vec<ValidatorInfo> {
+    fn build_validator_infos(validators: &[neo_crypto::ECPoint]) -> Vec<ValidatorInfo> {
         validators
             .iter()
             .enumerate()
@@ -325,7 +325,7 @@ impl ConsensusActor {
 
     fn find_signing_key(
         &self,
-        validators: &[neo_core::cryptography::ECPoint],
+        validators: &[neo_crypto::ECPoint],
     ) -> (Option<u8>, Option<Vec<u8>>) {
         for (idx, pubkey) in validators.iter().enumerate() {
             let contract = Contract::create_signature_contract(pubkey.clone());
@@ -1262,7 +1262,7 @@ fn consensus_m_threshold(n: usize) -> usize {
     n - f
 }
 
-fn estimate_header_size(validators: &[neo_core::cryptography::ECPoint], m: usize) -> usize {
+fn estimate_header_size(validators: &[neo_crypto::ECPoint], m: usize) -> usize {
     if validators.is_empty() || m == 0 {
         return 0;
     }

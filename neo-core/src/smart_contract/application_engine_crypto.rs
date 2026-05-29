@@ -1,7 +1,7 @@
 //! ApplicationEngine.Crypto - matches C# Neo.SmartContract.ApplicationEngine.Crypto.cs
 
 use crate::Crypto;
-use crate::cryptography::{CryptoError, Secp256r1Crypto};
+use neo_crypto::{CryptoError, Secp256r1Crypto};
 use crate::neo_vm::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
 use crate::smart_contract::ApplicationEngine;

@@ -1,4 +1,4 @@
-use neo_core::cryptography::Crypto;
+use neo_crypto::Crypto;
 use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::{Signer, Witness};
 use neo_core::persistence::DataCache;

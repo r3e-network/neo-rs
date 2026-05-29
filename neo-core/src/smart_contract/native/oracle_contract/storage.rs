@@ -2,7 +2,7 @@ use super::{
     OracleContract, PendingRequest, DEFAULT_PRICE, MAX_PENDING_PER_URL, PREFIX_ID_LIST,
     PREFIX_PRICE, PREFIX_REQUEST, PREFIX_REQUEST_ID,
 };
-use crate::cryptography::Crypto;
+use neo_crypto::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::persistence::{read_only_store::ReadOnlyStoreGeneric, DataCache};
 use crate::smart_contract::binary_serializer::BinarySerializer;

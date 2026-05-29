@@ -1,5 +1,5 @@
 use super::super::{OracleService, OracleServiceSettings};
-use crate::cryptography::{ECCurve, ECPoint, Secp256r1Crypto};
+use neo_crypto::{ECCurve, ECPoint, Secp256r1Crypto};
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::payloads::{
     OracleResponse, OracleResponseCode, Signer, Transaction, Witness,

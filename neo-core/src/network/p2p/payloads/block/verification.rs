@@ -285,7 +285,7 @@ impl Block {
             }
         };
 
-        match crate::cryptography::MerkleTree::compute_root(&tx_hashes) {
+        match neo_crypto::MerkleTree::compute_root(&tx_hashes) {
             Some(computed_root) => computed_root == *self.header.merkle_root(),
             None => false, // Should not happen with non-empty transactions
         }

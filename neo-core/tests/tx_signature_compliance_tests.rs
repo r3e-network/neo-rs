@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use neo_core::cryptography::Secp256r1Crypto;
+    use neo_crypto::Secp256r1Crypto;
     use neo_core::network::p2p::helper;
     use neo_core::network::p2p::payloads::Transaction;
     use neo_core::wallets::KeyPair;
