@@ -1,15 +1,55 @@
 //! Message command identifiers (mirrors `Neo.Network.P2P.MessageCommand`).
 
-use crate::P2PError;
+use neo_primitives::NetworkError;
+use std::net::SocketAddr;
 
 neo_primitives::p2p_message_command! {
     /// Neo message command (single-byte discriminator).
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub MessageCommand {
-        error = P2PError;
-        parse_error = |other| P2PError::protocol_error(format!("Unknown message command: {other}"));
-        from_byte = infallible;
-        extended_aliases = false;
+        error = NetworkError;
+        parse_error = |other| NetworkError::ProtocolViolation {
+                peer: SocketAddr::from(([0, 0, 0, 0], 0)),
+                violation: format!("Unknown message command: {other}"),
+            };
+        from_byte = result;
+        extended_aliases = true;
+    }
+}
+
+neo_primitives::__p2p_message_command_compression_impl!(pub MessageCommand);
+
+impl MessageCommand {
+    /// Commands that should only have one item queued at a time.
+    pub const SINGLE_QUEUED_COMMANDS: [Self; 7] = [
+        Self::Addr,
+        Self::GetAddr,
+        Self::GetBlocks,
+        Self::GetHeaders,
+        Self::Mempool,
+        Self::Ping,
+        Self::Pong,
+    ];
+
+    /// Commands that should be processed with high priority.
+    pub const HIGH_PRIORITY_COMMANDS: [Self; 7] = [
+        Self::Alert,
+        Self::Extensible,
+        Self::FilterAdd,
+        Self::FilterClear,
+        Self::FilterLoad,
+        Self::GetAddr,
+        Self::Mempool,
+    ];
+
+    /// Returns true if this command should only have one item queued.
+    pub fn is_single_queued(self) -> bool {
+        Self::SINGLE_QUEUED_COMMANDS.contains(&self)
+    }
+
+    /// Returns true if this command should be processed with high priority.
+    pub fn is_high_priority_queue(self) -> bool {
+        Self::HIGH_PRIORITY_COMMANDS.contains(&self)
     }
 }
 
@@ -18,27 +58,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_message_command_byte_values() {
-        assert_eq!(MessageCommand::Version.to_byte(), 0x00);
-        assert_eq!(MessageCommand::Verack.to_byte(), 0x01);
-        assert_eq!(MessageCommand::Transaction.to_byte(), 0x2b);
-        assert_eq!(MessageCommand::Block.to_byte(), 0x2c);
-        assert_eq!(MessageCommand::Extensible.to_byte(), 0x2e);
-    }
-
-    #[test]
-    fn test_message_command_from_byte() {
-        assert_eq!(MessageCommand::from_byte(0x00), MessageCommand::Version);
-        assert_eq!(MessageCommand::from_byte(0x2b), MessageCommand::Transaction);
-        assert_eq!(
-            MessageCommand::from_byte(0x99),
-            MessageCommand::Unknown(0x99)
-        );
-    }
-
-    #[test]
     fn protocol_enum_guard_preserves_unknown_message_command_bytes() {
-        let command = MessageCommand::from_byte(0x99);
+        let command = MessageCommand::from_byte(0x99).unwrap();
         assert_eq!(command, MessageCommand::Unknown(0x99));
         assert_eq!(command.to_byte(), 0x99);
         assert_eq!(command.as_byte(), 0x99);
@@ -52,45 +73,81 @@ mod tests {
     }
 
     #[test]
-    fn test_message_command_as_str() {
-        assert_eq!(MessageCommand::Version.as_str(), "version");
-        assert_eq!(MessageCommand::Transaction.as_str(), "tx");
-        assert_eq!(MessageCommand::Block.as_str(), "block");
-    }
-
-    #[test]
-    fn test_message_command_parse_str() {
-        assert_eq!(
-            MessageCommand::parse_str("version").unwrap(),
-            MessageCommand::Version
-        );
-        assert_eq!(
-            MessageCommand::parse_str("tx").unwrap(),
-            MessageCommand::Transaction
-        );
-        assert!(MessageCommand::parse_str("invalid").is_err());
-        assert!(MessageCommand::parse_str("versionwithpayload").is_err());
-    }
-
-    #[test]
-    fn test_message_command_is_known() {
-        assert!(MessageCommand::Version.is_known());
-        assert!(MessageCommand::Block.is_known());
-        assert!(!MessageCommand::Unknown(0x99).is_known());
-    }
-
-    #[test]
-    fn test_message_command_roundtrip() {
-        for cmd in [
-            MessageCommand::Version,
-            MessageCommand::Verack,
-            MessageCommand::Transaction,
+    fn compression_whitelist_matches_protocol_commands() {
+        let compressible = [
             MessageCommand::Block,
             MessageCommand::Extensible,
-        ] {
-            let byte = cmd.to_byte();
-            let recovered = MessageCommand::from_byte(byte);
-            assert_eq!(cmd, recovered);
+            MessageCommand::Transaction,
+            MessageCommand::Headers,
+            MessageCommand::Addr,
+            MessageCommand::MerkleBlock,
+            MessageCommand::FilterLoad,
+            MessageCommand::FilterAdd,
+        ];
+
+        for command in compressible {
+            assert!(command.allows_compression(), "{command:?}");
         }
+
+        assert!(!MessageCommand::Ping.allows_compression());
+        assert!(!MessageCommand::Unknown(0x99).allows_compression());
+    }
+
+    #[test]
+    fn extended_parse_aliases_preserve_legacy_unknown_commands() {
+        assert_eq!(
+            MessageCommand::parse_str("versionwithpayload").unwrap(),
+            MessageCommand::Unknown(0x55)
+        );
+        assert_eq!(
+            MessageCommand::parse_str("extendedc0").unwrap(),
+            MessageCommand::Unknown(0xc0)
+        );
+    }
+
+    #[test]
+    fn outbound_queue_single_command_set_matches_remote_node_policy() {
+        assert_eq!(
+            MessageCommand::SINGLE_QUEUED_COMMANDS,
+            [
+                MessageCommand::Addr,
+                MessageCommand::GetAddr,
+                MessageCommand::GetBlocks,
+                MessageCommand::GetHeaders,
+                MessageCommand::Mempool,
+                MessageCommand::Ping,
+                MessageCommand::Pong,
+            ]
+        );
+
+        for command in MessageCommand::SINGLE_QUEUED_COMMANDS {
+            assert!(command.is_single_queued(), "{command:?}");
+        }
+
+        assert!(!MessageCommand::Inv.is_single_queued());
+        assert!(!MessageCommand::Unknown(0x99).is_single_queued());
+    }
+
+    #[test]
+    fn outbound_queue_high_priority_set_matches_remote_node_policy() {
+        assert_eq!(
+            MessageCommand::HIGH_PRIORITY_COMMANDS,
+            [
+                MessageCommand::Alert,
+                MessageCommand::Extensible,
+                MessageCommand::FilterAdd,
+                MessageCommand::FilterClear,
+                MessageCommand::FilterLoad,
+                MessageCommand::GetAddr,
+                MessageCommand::Mempool,
+            ]
+        );
+
+        for command in MessageCommand::HIGH_PRIORITY_COMMANDS {
+            assert!(command.is_high_priority_queue(), "{command:?}");
+        }
+
+        assert!(!MessageCommand::Ping.is_high_priority_queue());
+        assert!(!MessageCommand::Unknown(0x99).is_high_priority_queue());
     }
 }

@@ -83,7 +83,8 @@ impl RawMessage {
         let command_byte = reader
             .read_u8()
             .map_err(|e| P2PError::protocol_error(format!("Failed to read command: {e}")))?;
-        let command = MessageCommand::from_byte(command_byte);
+        let command = MessageCommand::from_byte(command_byte)
+            .map_err(|e| P2PError::protocol_error(format!("Unknown command: {e}")))?;
 
         let wire_payload = reader
             .read_var_bytes(PAYLOAD_MAX_SIZE)
