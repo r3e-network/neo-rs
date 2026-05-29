@@ -258,10 +258,11 @@ impl OracleContract {
         let items = list
             .iter()
             .map(|id| {
-                let id_i64 = i64::try_from(*id).expect("Oracle request id exceeds i64::MAX");
-                StackItem::from_int(id_i64)
+                i64::try_from(*id)
+                    .map(StackItem::from_int)
+                    .map_err(|_| Error::invalid_operation("Oracle request id exceeds i64::MAX"))
             })
-            .collect::<Vec<_>>();
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         BinarySerializer::serialize(
             &StackItem::from_array(items),
             &ExecutionEngineLimits::default(),

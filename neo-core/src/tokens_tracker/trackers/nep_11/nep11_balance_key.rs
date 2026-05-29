@@ -59,6 +59,7 @@ impl_serializable! {
     struct Nep11BalanceKey {
         user_script_hash: UInt160,
         asset_script_hash: UInt160,
-        token: var_bytes { max: usize::MAX },
+        // NEP-11 token IDs are bounded to 64 bytes by the standard.
+        token: var_bytes { max: 64 },
     }
 }

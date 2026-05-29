@@ -310,12 +310,16 @@ impl ApplicationEngine {
             return None;
         }
 
+        // The eval stack is guaranteed empty by the guard above; convert
+        // fallibly anyway and decline the external VM (fall back to the local
+        // engine) rather than panic if a value cannot be represented.
         let initial_stack = context
             .evaluation_stack()
             .iter()
             .cloned()
-            .map(|v| VmStackValue::try_from(v).unwrap())
-            .collect::<Vec<_>>();
+            .map(VmStackValue::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
 
         Some(ExternalVmExecution {
             script: script.to_vec(),
@@ -348,10 +352,18 @@ impl ApplicationEngine {
     }
 
     fn apply_external_vm_halt(&mut self, stack: Vec<VmStackValue>) -> VMState {
-        let stack_items: Vec<StackItem> = stack
-            .into_iter()
-            .map(|v| StackItem::try_from(v).unwrap())
-            .collect();
+        let mut stack_items: Vec<StackItem> = Vec::with_capacity(stack.len());
+        for v in stack {
+            match StackItem::try_from(v) {
+                Ok(item) => stack_items.push(item),
+                Err(error) => {
+                    return self.apply_external_vm_fault(
+                        format!("Failed to convert external VM stack item: {error}"),
+                        0,
+                    )
+                }
+            }
+        }
 
         let context_index = match self
             .vm_engine

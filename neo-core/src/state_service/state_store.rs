@@ -232,11 +232,11 @@ impl StateStore {
     ///
     /// If the trie already has a stored root (i.e. state roots were previously computed),
     /// this is a no-op.
-    pub fn initialize_trie_from_store(&self, blockchain_store: &Arc<dyn Store>) {
+    pub fn initialize_trie_from_store(&self, blockchain_store: &Arc<dyn Store>) -> CoreResult<()> {
         // Check if we already have a stored root — if so, no initialization needed.
         if self.local_root_index().is_some() {
             info!(target: "neo", "state trie already initialized, skipping population");
-            return;
+            return Ok(());
         }
 
         // Determine the current block height so the initial state root can be
@@ -269,7 +269,7 @@ impl StateStore {
         if current_height == 0 {
             info!(target: "neo",
                 "blockchain at genesis — starting state trie empty for incremental computation");
-            return;
+            return Ok(());
         }
 
         info!(target: "neo", "initializing state trie from current blockchain storage at height {}", current_height);
@@ -313,10 +313,15 @@ impl StateStore {
         }
 
         // Commit the populated trie AND the root metadata to the backend.
-        state_snap.commit().expect("commit initial trie");
+        state_snap.commit().map_err(|e| {
+            crate::error::CoreError::invalid_operation(format!(
+                "Failed to commit initial state trie: {e}"
+            ))
+        })?;
 
         // Update current snapshot to reflect the initialized state.
         *self.current_snapshot.write() = Some(self.snapshot());
+        Ok(())
     }
 
     /// Gets the current local root hash.

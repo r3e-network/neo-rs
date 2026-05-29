@@ -23,5 +23,5 @@ pub use j_array::JArray;
 pub use j_object::JObject;
 pub use j_path_token::JPathToken;
 pub use j_path_token_type::JPathTokenType;
-pub use j_token::{JToken, MAX_SAFE_INTEGER, MIN_SAFE_INTEGER};
+pub use j_token::{JToken, MAX_JSON_DEPTH, MAX_SAFE_INTEGER, MIN_SAFE_INTEGER};
 pub use ordered_dictionary::OrderedDictionary;

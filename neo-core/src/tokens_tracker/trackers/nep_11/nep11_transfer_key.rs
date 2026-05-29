@@ -63,7 +63,8 @@ impl Ord for Nep11TransferKey {
 impl_serializable! {
     struct Nep11TransferKey {
         base: TokenTransferKey,
-        token: var_bytes { max: usize::MAX },
+        // NEP-11 token IDs are bounded to 64 bytes by the standard.
+        token: var_bytes { max: 64 },
     }
 }
 

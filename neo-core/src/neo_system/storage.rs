@@ -32,7 +32,7 @@ pub(crate) fn init_store(
         let ss = Arc::new(ss);
         // Populate the trie with current blockchain storage if the trie is empty.
         // Without this, only block deltas would be in the trie, producing wrong roots.
-        ss.initialize_trie_from_store(&store);
+        ss.initialize_trie_from_store(&store)?;
         ss
     } else {
         // Disabled by default: keep an in-memory store instance but do not expose it via the

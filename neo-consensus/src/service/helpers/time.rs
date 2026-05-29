@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub(in crate::service) fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis() as u64
 }
 

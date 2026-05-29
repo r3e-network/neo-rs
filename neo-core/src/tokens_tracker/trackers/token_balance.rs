@@ -29,7 +29,10 @@ impl Serializable for TokenBalance {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let bytes = reader.read_var_bytes(usize::MAX)?;
+        // A VM BigInteger is capped at 256 bits; its signed little-endian form
+        // needs at most 33 bytes (32 data + 1 sign). Bound the read so a
+        // corrupt/adversarial record cannot trigger an unbounded allocation.
+        let bytes = reader.read_var_bytes(33)?;
         let balance = BigInt::from_signed_bytes_le(&bytes);
         let last_updated_block = reader.read_u32()?;
         Ok(Self {

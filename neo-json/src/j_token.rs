@@ -9,6 +9,12 @@ pub const MAX_SAFE_INTEGER: i64 = (1i64 << 53) - 1;
 
 /// Smallest safe integer in JSON (-(2^53 - 1)).
 pub const MIN_SAFE_INTEGER: i64 = -MAX_SAFE_INTEGER;
+
+/// Maximum nesting depth permitted when deserializing untrusted JSON.
+///
+/// Matches the Neo protocol JSON nesting limit and bounds recursion so that
+/// adversarial input cannot trigger a stack overflow via `serde_json::from_str`.
+pub const MAX_JSON_DEPTH: usize = 64;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 use serde_json::{self, ser::PrettyFormatter};
@@ -365,8 +371,8 @@ impl<'de> serde::Deserialize<'de> for JToken {
         D: Deserializer<'de>,
     {
         let seed = TokenSeed {
-            remaining_depth: usize::MAX,
-            max_depth: usize::MAX,
+            remaining_depth: MAX_JSON_DEPTH,
+            max_depth: MAX_JSON_DEPTH,
         };
         seed.deserialize(deserializer)
             .map(|value| value.unwrap_or(Self::Null))

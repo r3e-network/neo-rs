@@ -79,12 +79,10 @@ impl LedgerSigner {
             device_type: HsmDeviceType::Ledger,
             manufacturer: device
                 .manufacturer_string()
-                .unwrap_or(Some("Ledger"))
                 .unwrap_or("Ledger")
                 .to_string(),
             model: device
                 .product_string()
-                .unwrap_or(Some("Unknown"))
                 .unwrap_or("Unknown")
                 .to_string(),
             serial_number: device.serial_number().map(|s| s.to_string()),
@@ -311,35 +309,60 @@ impl HsmSigner for LedgerSigner {
 }
 
 impl LedgerSigner {
-    /// Convert DER-encoded signature to raw r||s format
+    /// Convert DER-encoded signature to raw r||s format.
+    ///
+    /// Parses untrusted bytes returned by the Ledger device, so every index is
+    /// bounds-checked: malformed input yields an error rather than a panic.
     fn der_to_raw(&self, der: &[u8]) -> HsmResult<Vec<u8>> {
         // DER format: 0x30 len 0x02 r_len r... 0x02 s_len s...
+        let invalid = || HsmError::SigningFailed("Invalid DER signature".to_string());
+
         if der.len() < 8 || der[0] != 0x30 {
-            return Err(HsmError::SigningFailed("Invalid DER signature".to_string()));
+            return Err(invalid());
         }
 
         let mut pos = 2; // Skip 0x30 and length
 
         // Parse r
-        if der[pos] != 0x02 {
-            return Err(HsmError::SigningFailed("Invalid r marker".to_string()));
+        if pos >= der.len() || der[pos] != 0x02 {
+            return Err(invalid());
         }
         pos += 1;
+        if pos >= der.len() {
+            return Err(invalid());
+        }
         let r_len = der[pos] as usize;
         pos += 1;
+        if pos >= der.len() || pos + r_len > der.len() {
+            return Err(invalid());
+        }
         let r_start = if der[pos] == 0x00 { pos + 1 } else { pos };
-        let r = &der[r_start..pos + r_len];
+        let r_end = pos + r_len;
+        if r_start > r_end {
+            return Err(invalid());
+        }
+        let r = &der[r_start..r_end];
         pos += r_len;
 
         // Parse s
-        if der[pos] != 0x02 {
-            return Err(HsmError::SigningFailed("Invalid s marker".to_string()));
+        if pos >= der.len() || der[pos] != 0x02 {
+            return Err(invalid());
         }
         pos += 1;
+        if pos >= der.len() {
+            return Err(invalid());
+        }
         let s_len = der[pos] as usize;
         pos += 1;
+        if pos >= der.len() || pos + s_len > der.len() {
+            return Err(invalid());
+        }
         let s_start = if der[pos] == 0x00 { pos + 1 } else { pos };
-        let s = &der[s_start..pos + s_len];
+        let s_end = pos + s_len;
+        if s_start > s_end {
+            return Err(invalid());
+        }
+        let s = &der[s_start..s_end];
 
         // Pad to 32 bytes each
         let mut raw = vec![0u8; 64];
