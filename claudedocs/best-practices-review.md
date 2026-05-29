@@ -163,6 +163,33 @@ core suites green, behavioral protocol changes can now be validated against test
   macros.rs:196, bls12381.rs:373, rocksdb/store.rs:375).
 - C# conformance vectors from Neo C# v3.9.1; pin the C# tag.
 
+## 4b. Workspace test-suite status (this session)
+
+Restored the entire workspace test suite from "does not compile" to:
+**3377 passing, 78 failing.** All 78 failures are confined to two *aspirational*
+test suites that encode the unfinished structural epics (they were red before
+this work and assert a future target state via source-inspection):
+
+- `tests/tests/layer_boundary_tests.rs` — 10/11 pass. The 1 failure
+  (`test_neo_io_only_depends_on_primitives`) requires relocating the
+  `WitnessCondition`/`WitnessRule` value types (and their `to_stack_value()`
+  StackValue projection) out of neo-io into neo-core, so neo-io stops depending
+  on neo-vm-rs. NOTE: neo-core actively uses neo-io's `to_stack_value()`
+  (`witness_rule/stack_projection.rs`, `signer.rs`), so this is a genuine
+  type-relocation (review Theme D), not dead-code removal.
+- `tests/tests/no_local_neo_vm_dependency.rs` (5204 lines, ~77 assertions) — the
+  executable "definition of done" for the VM-crate-deletion epic (Wave 4.1):
+  delete local neo-vm, port ~15K LOC of host code into neo-vm-rs, remove facades,
+  move call_flags, route opcodes through neo-vm-rs. Multi-week.
+
+These two suites must NOT be force-greened by weakening assertions; they are the
+migration's north star. Note a spec nuance: layer_boundary wants neo-io free of
+neo-vm-rs while no_local wants the StackValue projection present — both are
+satisfied only by moving the witness types to neo-core (not by editing neo-io in
+place). Every other test target — neo-core (lib+integration), neo-rpc (+server),
+neo-vm, neo-storage, neo-consensus, neo-p2p, neo-node, neo-tee, neo-json,
+neo-primitives, doctests, examples — compiles and passes.
+
 ## 5. Risks & sequencing
 - **Green build ≠ protocol conformance.** Wave 0 must precede any "it works" claim — the node would
   currently fork from mainnet (MaxStackSize, single-SHA, signer scope, 6 state-root divergences).
