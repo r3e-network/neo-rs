@@ -40,6 +40,17 @@ macro_rules! uint_type {
             #[must_use]
             pub const fn is_zero(&self) -> bool { $(self.$field == 0)&&+ }
 
+            /// Returns `true` when `other` is `Some` and equal to `self`.
+            ///
+            /// Mirrors C# `IEquatable<T>.Equals` with nullable comparison
+            /// semantics (a value never equals the absence of one). Prefer the
+            /// `==` operator in idiomatic Rust; this exists for C# parity.
+            #[inline]
+            #[must_use]
+            pub fn equals(&self, other: Option<&Self>) -> bool {
+                matches!(other, Some(o) if o == self)
+            }
+
             #[inline]
             #[must_use]
             pub fn as_bytes(&self) -> [u8; $size] { self.to_array() }

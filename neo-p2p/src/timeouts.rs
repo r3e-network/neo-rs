@@ -49,7 +49,10 @@ pub fn log_stats() {
     );
 }
 
-#[cfg(test)]
+/// Resets the global timeout counters to zero.
+///
+/// Primarily a diagnostic/test utility; exposed (not test-gated) so downstream
+/// crates can reset the shared counters in their own tests.
 pub fn reset() {
     HANDSHAKE_TIMEOUTS.store(0, Ordering::Relaxed);
     READ_TIMEOUTS.store(0, Ordering::Relaxed);

@@ -381,11 +381,11 @@ mod tests {
     impl ReadOnlyStore for FailingStore {}
 
     impl WriteStore<Vec<u8>, Vec<u8>> for FailingStore {
-        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
             Ok(())
         }
 
-        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
             Ok(())
         }
     }
@@ -423,12 +423,12 @@ mod tests {
     }
 
     impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshot {
-        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
             Ok(())
         }
 
-        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
-            Err(crate::error::CoreError::invalid_operation(
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
+            Err(neo_storage::StorageError::invalid_operation(
                 "injected application logs write failure",
             ))
         }

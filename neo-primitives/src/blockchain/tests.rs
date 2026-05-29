@@ -105,6 +105,11 @@ impl BlockLike for MockBlock {
     fn transaction_count(&self) -> usize {
         self.tx_count
     }
+    fn size(&self) -> usize {
+        // Mock value: the trait contract is exercised via dispatch, not the
+        // exact serialized size.
+        0
+    }
 }
 
 /// Mock header for testing.
