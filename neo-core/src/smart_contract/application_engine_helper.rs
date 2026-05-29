@@ -5,7 +5,7 @@ use crate::hardfork::Hardfork;
 // Old wrapper types removed - StackValue compounds are flat Vecs now
 use crate::neo_vm::{StackItem};
 use crate::neo_vm::stack_item::{Array as ArrayItem, Map as MapItem, Struct as StructItem};
-use crate::neo_vm::VmOrderedDictionary;
+use neo_vm_rs::VmOrderedDictionary;
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE,
 };

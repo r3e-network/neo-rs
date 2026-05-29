@@ -1,6 +1,6 @@
-//! Script validation re-exported from neo-vm.
+//! Script validation re-exported directly from the shared neo-vm-rs crate.
 
-pub use crate::neo_vm::{
+pub use neo_vm_rs::{
     parse_script_instructions, validate_script, validate_strict_script, ScriptInstruction,
     ValidatedScript, ValidationResult,
 };

@@ -140,9 +140,6 @@
 // Core VM Modules
 // ============================================================================
 
-/// Binary serialization for VM stack items.
-pub mod binary_serializer;
-
 /// VM error types and result handling.
 pub mod error;
 
@@ -208,58 +205,24 @@ pub mod slot;
 /// StorageContext for smart contract storage operations.
 pub mod storage_context;
 
-/// Stack item type alias and extension methods.
-///
-/// `StackItem` is now a type alias for [`neo_vm_rs::StackValue`].
+/// Stateful, reference-counted host stack item used by the local execution
+/// engine. The pure value type lives upstream in the `neo_vm_rs` crate; this
+/// host type adds reference counting and interop-interface support.
 pub mod stack_item;
 
 // ============================================================================
-// Public Re-exports from neo-vm-rs
+// Pure VM types come directly from the shared neo-vm-rs crate.
 //
-// These types are the canonical definitions from the shared neo-vm-rs crate.
-// Re-exporting them allows downstream code to access them via `neo_vm::*`
-// without depending on neo-vm-rs directly.
+// neo_core::neo_vm intentionally does NOT re-export the pure VM symbols defined
+// upstream. Callers import those directly from the `neo_vm_rs` crate so there
+// is a single, unambiguous source of truth for the shared VM semantics; this
+// module only re-exports the local stateful host types below.
 // ============================================================================
 
-/// Opcode enum — canonical NeoVM opcodes.
-pub use neo_vm_rs::OpCode;
-/// Parsed bytecode instruction.
-pub use neo_vm_rs::Instruction;
-/// Instruction parsing errors.
-pub use neo_vm_rs::{InstructionError, InstructionErrorKind, InstructionResult};
-/// Execution engine configuration limits.
-pub use neo_vm_rs::ExecutionEngineLimits;
-/// VM execution state (None/Halt/Fault/Break).
-pub use neo_vm_rs::VmState;
-/// Exception handling context for try/catch/finally.
-pub use neo_vm_rs::{ExceptionHandlingContext, ExceptionHandlingState};
-/// Stack item type discriminant.
-pub use neo_vm_rs::StackItemType;
-/// ABI-level stack value (lightweight, no reference counting).
-pub use neo_vm_rs::StackValue;
-/// Ordered dictionary for Map stack items.
-pub use neo_vm_rs::VmOrderedDictionary;
-/// Tarjan's algorithm for cycle detection (GC).
-pub use neo_vm_rs::Tarjan;
-/// Atomic counter for compound stack item identity.
-pub use neo_vm_rs::next_stack_item_id;
-/// Syscall hash computation.
-pub use neo_vm_rs::interop_hash;
-/// Script validation functions.
-pub use neo_vm_rs::{validate_script, validate_strict_script, ScriptInstruction, ValidatedScript, ValidationResult};
-/// Instruction parsing utilities.
-pub use neo_vm_rs::{parse_script_instructions, instruction_jump_target, instruction_try_targets};
-/// VM constants.
-pub use neo_vm_rs::{DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE};
-
-// Re-export semantics modules (pure opcode logic from neo-vm-rs).
-pub use neo_vm_rs::semantics;
-
 // ============================================================================
-// Public Re-exports from neo-vm (stateful host types)
+// Public Re-exports from the local VM host (stateful types)
 // ============================================================================
 
-pub use binary_serializer::BinarySerializer;
 pub use error::{VmError, VmResult};
 pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;

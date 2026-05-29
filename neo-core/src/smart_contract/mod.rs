@@ -56,12 +56,17 @@ pub use neo_primitives::{
     TriggerType,
 };
 pub use neo_io_crate::MethodToken;
-pub use crate::neo_vm::{BinarySerializer, Interoperable, JsonSerializer, NotifyEventArgs, StorageContext};
+pub use crate::neo_vm::{Interoperable, JsonSerializer, NotifyEventArgs, StorageContext};
 pub use crate::persistence::{StorageItem, StorageItemExt, StorageKey};
+
+/// BinarySerializer matches C# Neo.SmartContract.BinarySerializer: it lives in
+/// the smart-contract layer and serializes stack items to/from storage bytes.
+pub mod binary_serializer;
+pub use binary_serializer::BinarySerializer;
 
 // Module-path aliases for relocated modules (callers use `module::Type` paths).
 pub use neo_primitives::{call_flags, contract_parameter_type, find_options, trigger_type};
 pub use neo_primitives::{contract_basic_method, log_event_args};
-pub use crate::neo_vm::{binary_serializer, storage_context};
+pub use crate::neo_vm::{storage_context};
 pub use crate::neo_vm::notify_event_args;
 pub use crate::persistence::{storage_item, storage_key};
