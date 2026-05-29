@@ -5,7 +5,6 @@
 pub mod caching;
 pub mod compression;
 pub mod extensions;
-pub mod method_token;
 
 mod binary_writer;
 // Core interfaces
@@ -27,9 +26,6 @@ pub use extensions::{
 
 // Re-export compression types
 pub use compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD};
-
-// Re-export method token
-pub use method_token::MethodToken;
 
 // Re-export caching types
 pub use caching::{

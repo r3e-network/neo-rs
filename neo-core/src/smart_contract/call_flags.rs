@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use neo_primitives::CallFlags;
+//! use neo_core::smart_contract::CallFlags;
 //!
 //! let flags = CallFlags::READ_STATES | CallFlags::ALLOW_CALL;
 //! assert!(flags.contains(CallFlags::READ_STATES));

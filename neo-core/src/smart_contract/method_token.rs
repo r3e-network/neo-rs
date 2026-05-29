@@ -1,8 +1,9 @@
 //! MethodToken - matches C# Neo.SmartContract.MethodToken exactly
 
-use crate::serializable::helper::get_var_size_str;
-use crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_primitives::{CallFlags, UInt160};
+use super::CallFlags;
+use crate::UInt160;
+use neo_io_crate::serializable::helper::get_var_size_str;
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Represents the methods that a contract will call statically (matches C# MethodToken)

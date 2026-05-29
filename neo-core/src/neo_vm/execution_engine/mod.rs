@@ -69,7 +69,7 @@ use crate::neo_vm::jump_table::JumpTable;
 use crate::neo_vm::reference_counter::ReferenceCounter;
 use crate::neo_vm::script::Script;
 use crate::neo_vm::stack_item::StackItem;
-use neo_primitives::CallFlags;
+use crate::smart_contract::CallFlags;
 use neo_vm_rs::Instruction;
 
 use std::convert::TryFrom;

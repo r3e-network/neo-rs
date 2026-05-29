@@ -50,12 +50,21 @@ pub use manifest::{
 pub use max_length_attribute::MaxLengthAttribute;
 pub use validator_attribute::ValidatorAttribute;
 
+/// CallFlags matches C# Neo.SmartContract.CallFlags: the permission set granted
+/// when one contract invokes another, owned by the smart-contract layer.
+pub mod call_flags;
+pub use call_flags::CallFlags;
+
+/// MethodToken matches C# Neo.SmartContract.MethodToken: the NEF static-call
+/// descriptor, owned by the smart-contract layer.
+pub mod method_token;
+pub use method_token::MethodToken;
+
 // Re-exports from foundation crates (no separate files needed)
 pub use neo_primitives::{
-    CallFlags, ContractBasicMethod, ContractParameterType, ContractTask, FindOptions, LogEventArgs,
+    ContractBasicMethod, ContractParameterType, ContractTask, FindOptions, LogEventArgs,
     TriggerType,
 };
-pub use neo_io_crate::MethodToken;
 pub use crate::neo_vm::Interoperable;
 pub use crate::persistence::{StorageItem, StorageItemExt, StorageKey};
 
@@ -80,6 +89,6 @@ pub mod storage_context;
 pub use storage_context::StorageContext;
 
 // Module-path aliases for relocated modules (callers use `module::Type` paths).
-pub use neo_primitives::{call_flags, contract_parameter_type, find_options, trigger_type};
+pub use neo_primitives::{contract_parameter_type, find_options, trigger_type};
 pub use neo_primitives::{contract_basic_method, log_event_args};
 pub use crate::persistence::{storage_item, storage_key};
