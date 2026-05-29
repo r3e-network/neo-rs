@@ -21,14 +21,16 @@ pub trait CacheProvider: Send + Sync + fmt::Debug {
 
 /// Storage item for Neo blockchain.
 ///
-/// Represents a value stored in the contract storage, optionally backed by
-/// a typed cache (BigInteger / Interoperable) and a constant flag.
+/// Represents a value stored in contract storage, optionally backed by a typed
+/// cache (BigInteger / Interoperable) for lazy materialisation.
+///
+/// Mirrors C# `Neo.SmartContract.StorageItem` (v3.9): a plain value with no
+/// `IsConstant` flag. Its only serialized form is the raw value bytes
+/// (`StorageItem.Serialize => writer.Write(Value.Span)`).
 #[derive(Serialize, Deserialize)]
 pub struct StorageItem {
     /// The stored value bytes.
     value: Vec<u8>,
-    /// Whether this item is constant (cannot be modified).
-    is_constant: bool,
     /// Optional typed cache for lazy materialisation.
     #[serde(skip)]
     cache: Option<Box<dyn CacheProvider>>,
@@ -40,7 +42,6 @@ impl StorageItem {
     pub fn new() -> Self {
         Self {
             value: Vec::new(),
-            is_constant: false,
             cache: None,
         }
     }
@@ -48,21 +49,7 @@ impl StorageItem {
     /// Creates a storage item from bytes.
     #[must_use]
     pub fn from_bytes(value: Vec<u8>) -> Self {
-        Self {
-            value,
-            is_constant: false,
-            cache: None,
-        }
-    }
-
-    /// Creates a constant storage item.
-    #[must_use]
-    pub fn constant(value: Vec<u8>) -> Self {
-        Self {
-            value,
-            is_constant: true,
-            cache: None,
-        }
+        Self { value, cache: None }
     }
 
     /// Returns a clone of the stored value, converting from cache when the
@@ -97,12 +84,6 @@ impl StorageItem {
     pub fn set_value(&mut self, value: Vec<u8>) {
         self.value = value;
         self.cache = None;
-    }
-
-    /// Returns whether this item is constant.
-    #[must_use]
-    pub const fn is_constant(&self) -> bool {
-        self.is_constant
     }
 
     /// Returns the size of the stored value.
@@ -149,10 +130,9 @@ impl StorageItem {
         }
     }
 
-    /// Copies value, cache, and constant flag from another instance.
+    /// Copies value and cache from another instance.
     pub fn from_replica(&mut self, replica: &StorageItem) {
         self.value = replica.value.clone();
-        self.is_constant = replica.is_constant;
         self.cache = replica.cache.as_ref().map(|c| c.clone_box());
     }
 
@@ -175,7 +155,6 @@ impl Clone for StorageItem {
     fn clone(&self) -> Self {
         Self {
             value: self.value.clone(),
-            is_constant: self.is_constant,
             cache: self.cache.as_ref().map(|c| c.clone_box()),
         }
     }
@@ -183,7 +162,7 @@ impl Clone for StorageItem {
 
 impl PartialEq for StorageItem {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value && self.is_constant == other.is_constant
+        self.value == other.value
     }
 }
 
@@ -195,7 +174,6 @@ impl fmt::Debug for StorageItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StorageItem")
             .field("value", &self.value)
-            .field("is_constant", &self.is_constant)
             .field("has_cache", &self.cache.is_some())
             .finish()
     }
@@ -236,34 +214,20 @@ impl From<&[u8]> for StorageItem {
 ///
 /// # Serialization Format
 ///
-/// The storage format is:
-/// - 1 byte: `is_constant` flag (0x00 or 0x01)
-/// - N bytes: raw value data
-///
-/// This matches the expected format for neo-core compatibility.
+/// The storage format is the raw value bytes, matching C# v3.9
+/// `StorageItem.Serialize => writer.Write(Value.Span)` (no flags or prefixes),
+/// so persisted bytes / state roots stay byte-identical to C#.
 impl StorageValue for StorageItem {
     fn to_storage_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(1 + self.value.len());
-        bytes.push(u8::from(self.is_constant));
-        bytes.extend_from_slice(&self.value);
-        bytes
+        self.to_value()
     }
 
     fn from_storage_bytes(data: &[u8]) -> StorageValueResult<Self> {
-        if data.is_empty() {
-            return Ok(Self::default());
-        }
-        let is_constant = data[0] != 0;
-        let value = data[1..].to_vec();
-        Ok(Self {
-            value,
-            is_constant,
-            cache: None,
-        })
+        Ok(Self::from_bytes(data.to_vec()))
     }
 
     fn storage_size(&self) -> usize {
-        1 + self.value.len()
+        self.value.len()
     }
 }
 
@@ -275,13 +239,6 @@ mod tests {
     fn test_storage_item_creation() {
         let item = StorageItem::from_bytes(vec![0xAA, 0xBB]);
         assert_eq!(item.value(), &[0xAA, 0xBB]);
-        assert!(!item.is_constant());
-    }
-
-    #[test]
-    fn test_storage_item_constant() {
-        let item = StorageItem::constant(vec![0xCC]);
-        assert!(item.is_constant());
     }
 
     #[test]
@@ -308,7 +265,6 @@ mod tests {
         let item = StorageItem::default();
         let empty: &[u8] = &[];
         assert_eq!(item.value(), empty);
-        assert!(!item.is_constant());
         assert_eq!(item.size(), 0);
     }
 
@@ -316,7 +272,6 @@ mod tests {
     fn test_storage_item_from_bytes() {
         let item = StorageItem::from_bytes(vec![0xAA, 0xBB]);
         assert_eq!(item.value(), &[0xAA, 0xBB]);
-        assert!(!item.is_constant());
     }
 
     #[test]
@@ -331,11 +286,9 @@ mod tests {
         let item1 = StorageItem::from_bytes(vec![0x01]);
         let item2 = StorageItem::from_bytes(vec![0x01]);
         let item3 = StorageItem::from_bytes(vec![0x02]);
-        let item4 = StorageItem::constant(vec![0x01]);
 
         assert_eq!(item1, item2);
         assert_ne!(item1, item3);
-        assert_ne!(item1, item4); // Different is_constant flag
     }
 
     #[test]
@@ -360,59 +313,30 @@ mod tests {
 
     #[test]
     fn test_serde_storage_item() {
-        let item = StorageItem::constant(vec![0xAA, 0xBB]);
+        let item = StorageItem::from_bytes(vec![0xAA, 0xBB]);
         let serialized = serde_json::to_string(&item).unwrap();
         let deserialized: StorageItem = serde_json::from_str(&serialized).unwrap();
         assert_eq!(item, deserialized);
-        assert!(deserialized.is_constant());
     }
 
     #[test]
-    fn test_storage_item_to_storage_bytes() {
+    fn test_storage_item_to_storage_bytes_is_raw_value() {
+        // C# StorageItem.Serialize writes the raw value bytes only (no flag).
         let item = StorageItem::from_bytes(vec![0xAA, 0xBB, 0xCC]);
-        let bytes = item.to_storage_bytes();
-        assert_eq!(bytes[0], 0x00);
-        assert_eq!(&bytes[1..], &[0xAA, 0xBB, 0xCC]);
+        assert_eq!(item.to_storage_bytes(), vec![0xAA, 0xBB, 0xCC]);
     }
 
     #[test]
-    fn test_storage_item_to_storage_bytes_constant() {
-        let item = StorageItem::constant(vec![0x01, 0x02]);
-        let bytes = item.to_storage_bytes();
-        assert_eq!(bytes[0], 0x01);
-        assert_eq!(&bytes[1..], &[0x01, 0x02]);
-    }
-
-    #[test]
-    fn test_storage_item_from_storage_bytes() {
-        let data = vec![0x00, 0xAA, 0xBB];
+    fn test_storage_item_from_storage_bytes_is_raw_value() {
+        let data = vec![0xAA, 0xBB];
         let item = StorageItem::from_storage_bytes(&data).unwrap();
-        assert!(!item.is_constant());
         assert_eq!(item.value(), &[0xAA, 0xBB]);
-    }
-
-    #[test]
-    fn test_storage_item_from_storage_bytes_constant() {
-        let data = vec![0x01, 0x11, 0x22, 0x33];
-        let item = StorageItem::from_storage_bytes(&data).unwrap();
-        assert!(item.is_constant());
-        assert_eq!(item.value(), &[0x11, 0x22, 0x33]);
     }
 
     #[test]
     fn test_storage_item_from_storage_bytes_empty() {
         let data: &[u8] = &[];
         let item = StorageItem::from_storage_bytes(data).unwrap();
-        assert!(!item.is_constant());
-        let empty: &[u8] = &[];
-        assert_eq!(item.value(), empty);
-    }
-
-    #[test]
-    fn test_storage_item_from_storage_bytes_only_flag() {
-        let data = vec![0x01];
-        let item = StorageItem::from_storage_bytes(&data).unwrap();
-        assert!(item.is_constant());
         let empty: &[u8] = &[];
         assert_eq!(item.value(), empty);
     }
@@ -420,13 +344,13 @@ mod tests {
     #[test]
     fn test_storage_item_storage_size() {
         let item = StorageItem::from_bytes(vec![0x01, 0x02, 0x03]);
-        assert_eq!(item.storage_size(), 4);
+        assert_eq!(item.storage_size(), 3);
     }
 
     #[test]
     fn test_storage_item_storage_size_empty() {
         let item = StorageItem::from_bytes(vec![]);
-        assert_eq!(item.storage_size(), 1);
+        assert_eq!(item.storage_size(), 0);
     }
 
     #[test]
@@ -435,16 +359,6 @@ mod tests {
         let bytes = original.to_storage_bytes();
         let restored = StorageItem::from_storage_bytes(&bytes).unwrap();
         assert_eq!(original.value(), restored.value());
-        assert_eq!(original.is_constant(), restored.is_constant());
-    }
-
-    #[test]
-    fn test_storage_item_roundtrip_constant() {
-        let original = StorageItem::constant(vec![0xDE, 0xAD, 0xBE, 0xEF]);
-        let bytes = original.to_storage_bytes();
-        let restored = StorageItem::from_storage_bytes(&bytes).unwrap();
-        assert_eq!(original.value(), restored.value());
-        assert_eq!(original.is_constant(), restored.is_constant());
     }
 
     #[test]
@@ -454,7 +368,7 @@ mod tests {
         let bytes = original.to_storage_bytes();
         let restored = StorageItem::from_storage_bytes(&bytes).unwrap();
         assert_eq!(original.value(), restored.value());
-        assert_eq!(original.storage_size(), 1001);
+        assert_eq!(original.storage_size(), 1000);
     }
 
     #[test]
@@ -464,7 +378,7 @@ mod tests {
         }
 
         let item = StorageItem::from_bytes(vec![0x01, 0x02, 0x03]);
-        assert_eq!(use_storage_value(&item), 4);
+        assert_eq!(use_storage_value(&item), 3);
     }
 
     #[test]
@@ -485,11 +399,10 @@ mod tests {
 
     #[test]
     fn test_from_replica() {
-        let item1 = StorageItem::constant(vec![0xAA]);
+        let item1 = StorageItem::from_bytes(vec![0xAA]);
         let mut item2 = StorageItem::new();
         item2.from_replica(&item1);
         assert_eq!(item2.value(), &[0xAA]);
-        assert!(item2.is_constant());
     }
 
     #[test]
