@@ -40,10 +40,12 @@ pub trait NativeContract: Any + Send + Sync {
     /// Determines whether the native contract is active under the given settings.
     fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
         match self.active_in() {
-            Some(hardfork) => {
-                let activation_height = settings.hardforks.get(&hardfork).copied().unwrap_or(0);
-                block_height >= activation_height
-            }
+            // C# NativeContract.IsActive checks IsHardforkEnabled(ActiveIn, height),
+            // which returns false when the hardfork is NOT configured. An unscheduled
+            // ActiveIn hardfork therefore means the contract is never active. Treating
+            // a missing activation height as 0 (the old `unwrap_or(0)`) would wrongly
+            // activate/deploy the contract from genesis and diverge the state root.
+            Some(hardfork) => settings.is_hardfork_enabled(hardfork, block_height),
             None => true,
         }
     }
