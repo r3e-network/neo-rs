@@ -97,6 +97,35 @@ fn group_condition_json_roundtrip_without_prefix() {
 }
 
 #[test]
+fn group_condition_accepts_uncompressed_ecpoint_and_normalizes_to_compressed() {
+    // C# GroupCondition decodes via ECPoint.DecodePoint, which accepts both the
+    // 33-byte compressed and 65-byte uncompressed encodings and re-serializes
+    // compressed. A Rust node must accept the uncompressed form (and normalize it)
+    // or it would reject a transaction C# accepts.
+    let compressed =
+        parse_group_bytes("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+            .unwrap();
+    let point =
+        neo_crypto::ECPoint::from_bytes_with_curve(neo_crypto::ECCurve::Secp256r1, &compressed)
+            .unwrap();
+    let uncompressed = point.encode_point(false).unwrap();
+    assert_eq!(uncompressed.len(), 65);
+    assert_eq!(uncompressed[0], 0x04);
+
+    // Wire form of a Group condition carrying the uncompressed point.
+    let mut wire = vec![WitnessConditionType::Group.to_byte()];
+    wire.extend_from_slice(&uncompressed);
+
+    let mut reader = crate::neo_io::MemoryReader::new(&wire);
+    let condition =
+        <WitnessCondition as crate::neo_io::Serializable>::deserialize(&mut reader).unwrap();
+    match condition {
+        WitnessCondition::Group { group } => assert_eq!(group, compressed),
+        other => panic!("expected Group, got {other:?}"),
+    }
+}
+
+#[test]
 fn witness_rule_projects_to_neo_vm_rs_stack_value() {
     let hash = UInt160::from_bytes(&[0x11; ADDRESS_SIZE]).unwrap();
     let rule = WitnessRule::new(

@@ -29,7 +29,6 @@ use std::str::FromStr;
 
 // This limits maximum number of AllowedContracts or AllowedGroups
 const MAX_SUBITEMS: usize = 16;
-const ECPOINT_COMPRESSED_SIZE: usize = 33;
 
 /// Represents a signer of a Transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -385,8 +384,13 @@ impl Serializable for Signer {
         // Read allowed groups if flag is set
         if scopes.contains(WitnessScope::CUSTOM_GROUPS) {
             allowed_groups = deserialize_array_with(reader, MAX_SUBITEMS, |reader| {
-                let encoded = reader.read_bytes(ECPOINT_COMPRESSED_SIZE)?;
-                ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &encoded)
+                // C# Signer.Deserialize reads each AllowedGroups entry via ECPoint
+                // (DeserializeFrom -> DecodePoint), which accepts 33-byte compressed
+                // AND 65-byte uncompressed encodings. Reading a fixed 33 bytes here
+                // would misalign the stream on an uncompressed point and reject a
+                // transaction C# accepts (Signer is part of the tx hash preimage).
+                let encoded = crate::witness_rule::helpers::read_group_bytes(reader)?;
+                ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &encoded)
                     .map_err(|e| IoError::invalid_data(e.to_string()))
             })?;
         }

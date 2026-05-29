@@ -70,10 +70,13 @@ impl WitnessCondition {
     /// Helper to deserialize and validate group bytes.
     fn deserialize_group_bytes(reader: &mut MemoryReader) -> IoResult<Vec<u8>> {
         let bytes = read_group_bytes(reader)?;
-        if bytes.len() != ECPOINT_COMPRESSED_SIZE {
-            return Err(IoError::invalid_data("Invalid ECPoint length"));
-        }
-        Ok(bytes)
+        // C# GroupCondition decodes the group via ECPoint.DecodePoint, which accepts
+        // BOTH 33-byte compressed and 65-byte uncompressed encodings (validating the
+        // point lies on secp256r1) and re-serializes compressed. Normalize to the
+        // 33-byte compressed form so wire bytes / tx hashes match C# for either input.
+        neo_crypto::ECPoint::from_bytes_with_curve(neo_crypto::ECCurve::Secp256r1, &bytes)
+            .and_then(|p| p.encode_compressed())
+            .map_err(|e| IoError::invalid_data(format!("Invalid ECPoint in witness group: {e}")))
     }
 
     pub fn deserialize_with_depth(reader: &mut MemoryReader, max_depth: usize) -> IoResult<Self> {
