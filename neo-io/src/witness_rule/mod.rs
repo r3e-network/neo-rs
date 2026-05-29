@@ -33,8 +33,6 @@ mod display;
 pub mod helpers;
 mod json;
 mod serialization;
-#[cfg(feature = "vm-interop")]
-mod stack_projection;
 
 pub use neo_primitives::WitnessConditionType;
 pub use neo_primitives::WitnessRuleAction;

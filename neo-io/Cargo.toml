@@ -34,9 +34,6 @@ hex = { workspace = true }
 # Compression
 lz4_flex = { workspace = true }
 
-# Optional VM dependency (for stack projection)
-neo-vm-rs = { workspace = true, optional = true }
-
 # Internal dependencies
 # neo-primitives is a Layer 0 crate with no neo-* dependencies
 neo-primitives = { path = "../neo-primitives" }
@@ -44,7 +41,6 @@ neo-primitives = { path = "../neo-primitives" }
 [features]
 default = []
 tracing = ["dep:tracing"]
-vm-interop = ["dep:neo-vm-rs"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

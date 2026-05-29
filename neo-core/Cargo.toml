@@ -77,7 +77,7 @@ chrono.workspace = true
 futures.workspace = true
 neo-vm = { workspace = true }
 neo-vm-rs = { workspace = true }
-neo_io_crate = { path = "../neo-io", package = "neo-io", features = ["vm-interop"] }
+neo_io_crate = { path = "../neo-io", package = "neo-io" }
 inventory = "0.3"
 neo-json = { path = "../neo-json" }
 
