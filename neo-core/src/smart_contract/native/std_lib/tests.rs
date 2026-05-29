@@ -129,7 +129,7 @@ fn test_method_metadata_snapshot() {
             1 << 5,
             &[ContractParameterType::String],
             ContractParameterType::String,
-            Some(Hardfork::HfCockatrice),
+            Some(Hardfork::HfEchidna),
             &["data"],
         ),
         (
@@ -137,7 +137,7 @@ fn test_method_metadata_snapshot() {
             1 << 5,
             &[ContractParameterType::String],
             ContractParameterType::String,
-            Some(Hardfork::HfCockatrice),
+            Some(Hardfork::HfEchidna),
             &["s"],
         ),
         (

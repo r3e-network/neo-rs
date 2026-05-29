@@ -17,8 +17,8 @@ macro_rules! stdlib_method_table {
                 safe "atoi", fee = 1 << 6, flags = [], params = [String, Integer], returns = Integer, names = ["value", "base"] => args atoi;
                 safe "base64Encode", fee = 1 << 5, flags = [], params = [ByteArray], returns = String, names = ["data"] => args base64_encode;
                 safe "base64Decode", fee = 1 << 5, flags = [], params = [String], returns = ByteArray, names = ["s"] => args base64_decode;
-                safe "base64UrlEncode", fee = 1 << 5, flags = [], params = [String], returns = String, active = HfCockatrice, names = ["data"] => args base64_url_encode;
-                safe "base64UrlDecode", fee = 1 << 5, flags = [], params = [String], returns = String, active = HfCockatrice, names = ["s"] => args base64_url_decode;
+                safe "base64UrlEncode", fee = 1 << 5, flags = [], params = [String], returns = String, active = HfEchidna, names = ["data"] => args base64_url_encode;
+                safe "base64UrlDecode", fee = 1 << 5, flags = [], params = [String], returns = String, active = HfEchidna, names = ["s"] => args base64_url_decode;
                 safe "base58Encode", fee = 1 << 13, flags = [], params = [ByteArray], returns = String, names = ["data"] => args base58_encode;
                 safe "base58Decode", fee = 1 << 10, flags = [], params = [String], returns = ByteArray, names = ["s"] => args base58_decode;
                 safe "base58CheckEncode", fee = 1 << 16, flags = [], params = [ByteArray], returns = String, names = ["data"] => args base58_check_encode;

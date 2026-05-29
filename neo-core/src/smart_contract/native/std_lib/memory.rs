@@ -40,8 +40,10 @@ impl StdLib {
         let mem = &args[0];
         let value = &args[1];
 
+        // C# StdLib.MemorySearch annotates only `mem` with [MaxLength(MaxInputLength)];
+        // `value` is NOT length-limited (StdLib.cs:223,229,235). Over-enforcing on
+        // `value` would FAULT where C# succeeds, diverging VM results.
         self.ensure_max_input_len(mem, "memorySearch")?;
-        self.ensure_max_input_len(value, "memorySearch")?;
 
         // Parse optional start parameter (default: 0)
         let start = if args.len() >= 3 {

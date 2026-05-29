@@ -69,7 +69,9 @@ impl StdLib {
             ));
         }
 
-        self.ensure_max_input_len(&args[0], "jsonDeserialize")?;
+        // C# StdLib.JsonDeserialize has NO [MaxLength] on `json` (StdLib.cs:53); it
+        // relies solely on JToken.Parse(json, 10) depth-limiting. Do not impose an
+        // input-length cap that would FAULT where C# succeeds.
         let item = JsonSerializer::deserialize(&args[0], 10)
             .map_err(|e| Error::native_contract(format!("JSON deserialization error: {e}")))?;
         BinarySerializer::serialize(&item, engine.execution_limits())

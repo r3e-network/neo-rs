@@ -28,8 +28,9 @@ impl StdLib {
         let separator = String::from_utf8(args[1].clone())
             .map_err(|_| Error::native_contract("Invalid UTF-8 separator"))?;
 
+        // C# StdLib.StringSplit annotates only `str` with [MaxLength(MaxInputLength)];
+        // `separator` is NOT length-limited (StdLib.cs:250,256). Match C# exactly.
         self.ensure_max_input_len(string_data.as_bytes(), "stringSplit")?;
-        self.ensure_max_input_len(separator.as_bytes(), "stringSplit")?;
 
         // Parse optional removeEmptyEntries parameter (default: false)
         let remove_empty_entries = if args.len() >= 3 {

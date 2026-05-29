@@ -74,9 +74,12 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 5450000);
         hardforks.insert(Hardfork::HfDomovoi, 5570000);
         hardforks.insert(Hardfork::HfEchidna, 7300000);
-        hardforks.insert(Hardfork::HfFaun, 8800000);
-        // HfGorgon is defined but not activated on MainNet yet.
-        // See: https://github.com/neo-project/neo/blob/master/src/Neo/config.mainnet.json
+        // HfFaun and HfGorgon are defined in the Hardfork enum but are NOT
+        // scheduled on MainNet: C# v3.9.1 config.mainnet.json lists hardforks
+        // only through HF_Echidna. Scheduling them here would activate native
+        // changes (e.g. Treasury init, Policy scaling) that C# nodes do not
+        // perform, forking the chain. Heights must come from the loaded config.
+        // See: neo_csharp/src/Neo.CLI/config.mainnet.json
         Self { hardforks }
     }
 
@@ -88,9 +91,9 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 3967000);
         hardforks.insert(Hardfork::HfDomovoi, 4144000);
         hardforks.insert(Hardfork::HfEchidna, 5870000);
-        hardforks.insert(Hardfork::HfFaun, 12960000);
-        // HfGorgon is defined but not activated on TestNet yet.
-        // See: https://github.com/neo-project/neo/blob/master/src/Neo/config.testnet.json
+        // HfFaun and HfGorgon are defined in the Hardfork enum but are NOT
+        // scheduled on TestNet: C# v3.9.1 config.testnet.json lists hardforks
+        // only through HF_Echidna. See: neo_csharp/src/Neo.CLI/config.testnet.json
         Self { hardforks }
     }
 
@@ -181,8 +184,9 @@ mod tests {
         assert!(!manager.is_enabled(Hardfork::HfBasilisk, 4119999));
         assert!(manager.is_enabled(Hardfork::HfEchidna, 7300000));
         assert!(!manager.is_enabled(Hardfork::HfEchidna, 7299999));
-        assert!(manager.is_enabled(Hardfork::HfFaun, 8800000));
-        assert!(!manager.is_enabled(Hardfork::HfFaun, 8799999));
+        // HfFaun/HfGorgon are unscheduled on MainNet (match C# config): never enabled.
+        assert!(!manager.is_enabled(Hardfork::HfFaun, u32::MAX));
+        assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
     }
     #[test]
     fn test_testnet_hardforks() {
@@ -193,8 +197,9 @@ mod tests {
         assert!(!manager.is_enabled(Hardfork::HfBasilisk, 2679999));
         assert!(manager.is_enabled(Hardfork::HfEchidna, 5870000));
         assert!(!manager.is_enabled(Hardfork::HfEchidna, 5869999));
-        assert!(manager.is_enabled(Hardfork::HfFaun, 12960000));
-        assert!(!manager.is_enabled(Hardfork::HfFaun, 12959999));
+        // HfFaun/HfGorgon are unscheduled on TestNet (match C# config): never enabled.
+        assert!(!manager.is_enabled(Hardfork::HfFaun, u32::MAX));
+        assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
     }
     #[test]
     fn test_global_hardfork_manager() {
