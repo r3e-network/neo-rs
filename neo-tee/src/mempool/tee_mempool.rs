@@ -10,7 +10,7 @@ use crate::error::{TeeError, TeeResult};
 use crate::mempool::fair_ordering::{
     compute_ordering_key, FairOrderingPolicy, OrderingKey, TransactionTiming,
 };
-use neo_crypto::{Crypto, Secp256r1Crypto};
+use neo_crypto::Secp256r1Crypto;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -417,11 +417,15 @@ fn derive_secp256r1_key_from_sealing_key(sealing_key: &[u8; 32]) -> TeeResult<[u
         }
     }
 
-    // Fallback: a final hash with a different domain separator.
-    let fallback = Crypto::sha256(b"neo-tee-ordering-proof-key-v1-fallback");
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&fallback[..32]);
-    Ok(key)
+    // All 16 domain-separated probes failed to yield a valid secp256r1 scalar.
+    // This is astronomically unlikely (each probe succeeds with ~99.6%
+    // probability). Return an error rather than fall back to a constant key:
+    // a constant fallback would be identical across every enclave/node,
+    // collapsing per-enclave key isolation and letting any node forge another's
+    // ordering proofs.
+    Err(TeeError::Other(
+        "failed to derive a valid secp256r1 ordering-proof key from the sealing key".to_string(),
+    ))
 }
 
 #[cfg(test)]
