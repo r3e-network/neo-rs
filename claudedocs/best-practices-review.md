@@ -170,25 +170,29 @@ Restored the entire workspace test suite from "does not compile" to:
 test suites that encode the unfinished structural epics (they were red before
 this work and assert a future target state via source-inspection):
 
-- `tests/tests/layer_boundary_tests.rs` — 10/11 pass. The 1 failure
-  (`test_neo_io_only_depends_on_primitives`) requires relocating the
-  `WitnessCondition`/`WitnessRule` value types (and their `to_stack_value()`
-  StackValue projection) out of neo-io into neo-core, so neo-io stops depending
-  on neo-vm-rs. NOTE: neo-core actively uses neo-io's `to_stack_value()`
-  (`witness_rule/stack_projection.rs`, `signer.rs`), so this is a genuine
-  type-relocation (review Theme D), not dead-code removal.
-- `tests/tests/no_local_neo_vm_dependency.rs` (5204 lines, ~77 assertions) — the
-  executable "definition of done" for the VM-crate-deletion epic (Wave 4.1):
-  delete local neo-vm, port ~15K LOC of host code into neo-vm-rs, remove facades,
-  move call_flags, route opcodes through neo-vm-rs. Multi-week.
+- `tests/tests/layer_boundary_tests.rs` — **NOW 11/11 GREEN** (commit e2a46d25).
+  Fixed by moving the `WitnessCondition`/`WitnessRule` → `StackValue` projection
+  from neo-io into a neo-core `WitnessStackValue` trait and dropping neo-io's
+  optional neo-vm-rs dependency. neo-io now depends only on neo-primitives.
+- `tests/tests/no_local_neo_vm_dependency.rs` (5204 lines, 77 failing) —
+  **BLOCKED on a maintainer architectural decision; must NOT be mechanically
+  satisfied.** It is the "definition of done" for deleting the local (N3) neo-vm
+  crate and routing ALL execution through `neo-vm-rs`. Critical: neo-vm-rs
+  describes itself as *"Shared NeoVM semantics for Neo **N4** RISC-V and zkVM
+  execution profiles"* — it is the **N4** VM, not the N3 one. Forcing this green
+  would (a) bet N3 consensus on an N4/zkVM VM whose N3 parity is unvalidated — a
+  chain-fork risk, the same class of error as the refuted 0.2; (b) require a
+  multi-week ~15K-LOC host-code port (ExecutionEngine, JumpTable, rich StackItem,
+  ScriptBuilder, serializers) into the `no_std` neo-vm-rs; (c) regress completed
+  foundation work — it asserts `CallFlags` lives in `smart_contract/`, but the
+  layering migration correctly placed it in neo-primitives.
+  **RESOLUTION REQUIRED:** is the project committing N3 execution to neo-vm-rs
+  (the N4 VM), with N3 semantic parity validated against C# conformance vectors?
+  Until answered yes-with-evidence, keep this as the aspirational north star.
 
-These two suites must NOT be force-greened by weakening assertions; they are the
-migration's north star. Note a spec nuance: layer_boundary wants neo-io free of
-neo-vm-rs while no_local wants the StackValue projection present — both are
-satisfied only by moving the witness types to neo-core (not by editing neo-io in
-place). Every other test target — neo-core (lib+integration), neo-rpc (+server),
+Every other test target — neo-core (lib+integration), neo-rpc (+server),
 neo-vm, neo-storage, neo-consensus, neo-p2p, neo-node, neo-tee, neo-json,
-neo-primitives, doctests, examples — compiles and passes.
+neo-primitives, doctests, examples, and layer_boundary_tests — compiles and passes.
 
 ## 5. Risks & sequencing
 - **Green build ≠ protocol conformance.** Wave 0 must precede any "it works" claim — the node would
