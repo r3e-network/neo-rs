@@ -165,34 +165,52 @@ core suites green, behavioral protocol changes can now be validated against test
 
 ## 4b. Workspace test-suite status (this session)
 
-Restored the entire workspace test suite from "does not compile" to:
-**3377 passing, 78 failing.** All 78 failures are confined to two *aspirational*
-test suites that encode the unfinished structural epics (they were red before
-this work and assert a future target state via source-inspection):
+**COMPLETE — full workspace 3455 passing, 0 failing across 158 test binaries.**
+Both aspirational source-inspection suites that gated the VM-boundary work are
+now 100% green, and no consensus regression was introduced (genesis KAT, native
+contract serialization round-trips, and all NEF/method-token tests intact).
 
-- `tests/tests/layer_boundary_tests.rs` — **NOW 11/11 GREEN** (commit e2a46d25).
-  Fixed by moving the `WitnessCondition`/`WitnessRule` → `StackValue` projection
-  from neo-io into a neo-core `WitnessStackValue` trait and dropping neo-io's
-  optional neo-vm-rs dependency. neo-io now depends only on neo-primitives.
-- `tests/tests/no_local_neo_vm_dependency.rs` (5204 lines, 77 failing) —
-  **BLOCKED on a maintainer architectural decision; must NOT be mechanically
-  satisfied.** It is the "definition of done" for deleting the local (N3) neo-vm
-  crate and routing ALL execution through `neo-vm-rs`. Critical: neo-vm-rs
-  describes itself as *"Shared NeoVM semantics for Neo **N4** RISC-V and zkVM
-  execution profiles"* — it is the **N4** VM, not the N3 one. Forcing this green
-  would (a) bet N3 consensus on an N4/zkVM VM whose N3 parity is unvalidated — a
-  chain-fork risk, the same class of error as the refuted 0.2; (b) require a
-  multi-week ~15K-LOC host-code port (ExecutionEngine, JumpTable, rich StackItem,
-  ScriptBuilder, serializers) into the `no_std` neo-vm-rs; (c) regress completed
-  foundation work — it asserts `CallFlags` lives in `smart_contract/`, but the
-  layering migration correctly placed it in neo-primitives.
-  **RESOLUTION REQUIRED:** is the project committing N3 execution to neo-vm-rs
-  (the N4 VM), with N3 semantic parity validated against C# conformance vectors?
-  Until answered yes-with-evidence, keep this as the aspirational north star.
+- `tests/tests/layer_boundary_tests.rs` — **11/11 GREEN**.
+- `tests/tests/no_local_neo_vm_dependency.rs` (5204 lines) — **121/121 GREEN**.
+
+The earlier "RESOLUTION REQUIRED" note (whether neo-vm-rs is the N4-only VM)
+was **resolved by the maintainer**: neo-vm-rs is the *pure, general* NeoVM
+implementation intended for all profiles (N3, N4 RISC-V, zkVM). The migration
+was then executed carefully and incrementally, green build + consensus guards
+per step:
+
+1. **Deleted the local neo-vm crate**; folded the stateful VM *host*
+   (ExecutionEngine, JumpTable, host StackItem, serializers, ScriptBuilder,
+   storage context) into `neo-core/src/neo_vm`. Pure VM semantics come from
+   `neo-vm-rs`. (`4a1defa7`)
+2. **Stopped facade-re-exporting** neo-vm-rs symbols from `neo_core::neo_vm`;
+   callers import them directly from `neo_vm_rs` (one source of truth). (`23739f43`)
+3. **Relocated C# `Neo.SmartContract.*` types** out of the VM host tree to match
+   the C# namespace: `BinarySerializer`, `NotifyEventArgs`, `StorageContext`,
+   `JsonSerializer` → `smart_contract/`; introduced the `neo_core::vm_runtime`
+   seam through which the SC layer imports host VM types. (`5bf7b840`, `a8c8a95d`)
+4. **ScriptBuilder → crate root** as a pure byte builder (neo-vm-rs opcode/
+   integer metadata, core error types, no local `Script`/`VmError`). (`e48b7990`)
+5. **Moved domain types out of the foundation crates** into their correct
+   layer: `WitnessRule`/`WitnessCondition` (neo-io → neo-core), `CallFlags`
+   (neo-primitives → neo-core/smart_contract), `MethodToken` (neo-io →
+   neo-core/smart_contract). neo-io/neo-primitives now carry no
+   smart-contract/payload concepts. (`0415e028`, `6bcbfd13`)
+6. **Pure persisted state now projects through `neo_vm_rs::StackValue`**
+   directly (Transaction, TransactionState, OracleRequest, NeoToken account/
+   candidate/committee/governance state, GAS account state) and serializes via
+   `BinarySerializer::serialize_stack_value` — **byte-identical** to the prior
+   StackItem path (verified by genesis KAT + native-contract round-trips).
+   (`4ad3ad77`, `14d983b9`, `e09e0b15`)
+
+The earlier worry that the suite "asserts CallFlags lives in smart_contract/
+but layering placed it in neo-primitives" was itself the bug: C# `CallFlags`
+*is* `Neo.SmartContract.CallFlags`, so the suite was right and neo-primitives
+was the wrong home. Fixed in step 5.
 
 Every other test target — neo-core (lib+integration), neo-rpc (+server),
-neo-vm, neo-storage, neo-consensus, neo-p2p, neo-node, neo-tee, neo-json,
-neo-primitives, doctests, examples, and layer_boundary_tests — compiles and passes.
+neo-storage, neo-consensus, neo-p2p, neo-node, neo-tee, neo-json,
+neo-primitives, neo-io, doctests, examples, layer_boundary_tests — passes.
 
 ## 5. Risks & sequencing
 - **Green build ≠ protocol conformance.** Wave 0 must precede any "it works" claim — the node would
