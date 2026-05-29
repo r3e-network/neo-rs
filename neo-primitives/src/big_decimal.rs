@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use neo_core::BigDecimal;
+//! use neo_primitives::BigDecimal;
 //! use num_bigint::BigInt;
 //!
 //! // Create a BigDecimal with 8 decimal places

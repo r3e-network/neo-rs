@@ -659,15 +659,18 @@ mod tests {
 
     #[test]
     fn test_timestamp_verification() {
-        let report = AttestationReport::simulated([0u8; 64]);
+        let mut report = AttestationReport::simulated([0u8; 64]);
+        // Pin the timestamp a few seconds in the past so freshness checks are
+        // deterministic regardless of how fast the test runs (a just-created
+        // report has age 0 within the current second).
+        report.timestamp = SystemTime::now() - Duration::from_secs(3);
 
-        // Should be valid within 24 hours
+        // Valid within the 24-hour and 10-second windows.
         assert!(report.verify_timestamp(Duration::from_secs(MAX_REPORT_AGE_SECONDS)));
+        assert!(report.verify_timestamp(Duration::from_secs(10)));
 
-        // Should be valid within 1 second (assuming test runs fast)
-        assert!(report.verify_timestamp(Duration::from_secs(1)));
-
-        // Should be invalid for 0 seconds
+        // A ~3s-old report is rejected by tighter freshness windows.
+        assert!(!report.verify_timestamp(Duration::from_secs(1)));
         assert!(!report.verify_timestamp(Duration::from_secs(0)));
     }
 

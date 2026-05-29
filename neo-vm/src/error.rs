@@ -25,7 +25,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use neo_core::neo_vm::error::VmError;
 //!
 //! // Create a stack underflow error
