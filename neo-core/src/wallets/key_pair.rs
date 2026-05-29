@@ -9,12 +9,8 @@ use crate::constants::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
 use crate::wallets::helper::Helper as WalletHelper;
 use crate::UInt160;
+use aes::cipher::{generic_array::GenericArray, BlockDecrypt, BlockEncrypt, KeyInit};
 use aes::Aes256;
-use base64::Engine;
-use cbc::{
-    cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
-    Decryptor, Encryptor,
-};
 use neo_vm_rs::OpCode;
 use scrypt::Params;
 use std::fmt;
@@ -98,11 +94,13 @@ impl KeyPair {
     }
 
     /// Creates a key pair from a NEP-2 encrypted private key.
-    /// The encrypted_key should be base64-encoded NEP-2 data.
+    /// The encrypted_key should be the Base58Check-encoded NEP-2 "6P..." string.
     pub fn from_nep2(encrypted_key: &[u8], password: &str, address_version: u8) -> Result<Self> {
-        // First try to decode as base64
-        let decoded = base64::engine::general_purpose::STANDARD
-            .decode(encrypted_key)
+        // NEP-2 strings are Base58Check-encoded (standard "6P..." form), matching
+        // C# Wallet.GetPrivateKeyFromNEP2 -> Base58.Base58CheckDecode.
+        let encrypted_str = std::str::from_utf8(encrypted_key)
+            .map_err(|_| Error::invalid_nep2_key("invalid NEP-2 encrypted key"))?;
+        let decoded = Base58::decode_check(encrypted_str)
             .map_err(|_| Error::invalid_nep2_key("invalid NEP-2 encrypted key"))?;
 
         let private_key = Self::decrypt_nep2(&decoded, password, address_version)?;
@@ -110,7 +108,7 @@ impl KeyPair {
     }
 
     /// Creates a key pair from a NEP-2 encrypted private key string.
-    /// The encrypted_key should be a base64-encoded NEP-2 string.
+    /// The encrypted_key should be the Base58Check-encoded NEP-2 "6P..." string.
     pub fn from_nep2_string(
         encrypted_key: &str,
         password: &str,
@@ -182,7 +180,10 @@ impl KeyPair {
     /// Exports the key pair to NEP-2 format.
     pub fn to_nep2(&self, password: &str, address_version: u8) -> Result<String> {
         let encrypted = Self::encrypt_nep2(&self.private_key, password, address_version)?;
-        Ok(base64::engine::general_purpose::STANDARD.encode(encrypted))
+        // NEP-2 strings are Base58Check-encoded (C# KeyPair.Encrypt ->
+        // Base58.Base58CheckEncode), yielding the standard "6P..." form. Base64
+        // would produce a non-interoperable string that no other wallet accepts.
+        Ok(Base58::encode_check(&encrypted))
     }
 
     /// Decodes a WIF string to a private key.
@@ -262,18 +263,19 @@ impl KeyPair {
             xor_key[i] = private_key[i] ^ derived_half1[i];
         }
 
-        let cipher =
-            Encryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16])
-                .map_err(|e| Error::aes(e.to_string()))?;
-        let mut buffer = Zeroizing::new(xor_key.to_vec());
-        buffer.resize(HASH_SIZE, 0); // Ensure exactly HASH_SIZE bytes
-        let encrypted = cipher
-            .encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(
-                buffer.as_mut_slice(),
-                HASH_SIZE,
-            )
+        // NEP-2 uses AES-256 in ECB mode with no padding over the 32-byte
+        // XOR(privkey, derivedhalf1) (two independent 16-byte blocks), matching
+        // C# KeyPair.Encrypt (CipherMode.ECB, PaddingMode.None). A CBC mode would
+        // chain the second block and produce a non-interoperable encrypted key.
+        let cipher = Aes256::new_from_slice(derived_half2)
             .map_err(|e| Error::aes(e.to_string()))?;
-        let encrypted = encrypted.to_vec();
+        let mut block0 = GenericArray::clone_from_slice(&xor_key[0..16]);
+        let mut block1 = GenericArray::clone_from_slice(&xor_key[16..32]);
+        cipher.encrypt_block(&mut block0);
+        cipher.encrypt_block(&mut block1);
+        let mut encrypted = Vec::with_capacity(HASH_SIZE);
+        encrypted.extend_from_slice(&block0);
+        encrypted.extend_from_slice(&block1);
 
         let mut result = Vec::with_capacity(39);
         result.extend_from_slice(b"\x01\x42"); // NEP-2 prefix
@@ -324,13 +326,16 @@ impl KeyPair {
         let derived_half1 = &derived_key[0..HASH_SIZE];
         let derived_half2 = &derived_key[32..64];
 
-        let cipher =
-            Decryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16])
-                .map_err(|e| Error::aes(e.to_string()))?;
-        let mut buffer = Zeroizing::new(encrypted_data.to_vec());
-        let decrypted = cipher
-            .decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(buffer.as_mut_slice())
+        // AES-256-ECB no-padding over the two 16-byte blocks (C# parity).
+        let cipher = Aes256::new_from_slice(derived_half2)
             .map_err(|e| Error::aes(e.to_string()))?;
+        let mut block0 = GenericArray::clone_from_slice(&encrypted_data[0..16]);
+        let mut block1 = GenericArray::clone_from_slice(&encrypted_data[16..32]);
+        cipher.decrypt_block(&mut block0);
+        cipher.decrypt_block(&mut block1);
+        let mut decrypted = Zeroizing::new([0u8; HASH_SIZE]);
+        decrypted[0..16].copy_from_slice(&block0);
+        decrypted[16..32].copy_from_slice(&block1);
 
         // XOR with derived_half1 to get private key
         let mut private_key = [0u8; HASH_SIZE];
@@ -436,5 +441,30 @@ mod tests {
         let data = b"test data";
         let signature = key_pair.sign(data).unwrap();
         assert!(key_pair.verify(data, &signature).unwrap());
+    }
+
+    /// NEP-2 export must use Base58Check (standard "6P..." prefix), and AES-256-ECB,
+    /// matching C# KeyPair.Encrypt. A base64-encoded or CBC-encrypted key would not
+    /// be importable by C#/standard wallets. Round-trip + standard-prefix guard.
+    #[test]
+    fn test_nep2_round_trip_uses_standard_base58check_format() {
+        // N3 address version (0x35).
+        const N3_ADDRESS_VERSION: u8 = 0x35;
+        let key_pair = KeyPair::generate().unwrap();
+        let password = "Satoshi";
+
+        let nep2 = key_pair.to_nep2(password, N3_ADDRESS_VERSION).unwrap();
+        // NEP-2 (prefix bytes 0x01 0x42) Base58Check-encodes to a "6P..." string.
+        // A base64 encoding would never start with "6P".
+        assert!(
+            nep2.starts_with("6P"),
+            "NEP-2 string must be Base58Check ('6P...'), got: {nep2}"
+        );
+
+        let restored = KeyPair::from_nep2_string(&nep2, password, N3_ADDRESS_VERSION).unwrap();
+        assert_eq!(key_pair.private_key(), restored.private_key());
+
+        // Wrong password must fail the address-hash verification.
+        assert!(KeyPair::from_nep2_string(&nep2, "wrong", N3_ADDRESS_VERSION).is_err());
     }
 }
