@@ -17,7 +17,10 @@ use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::ScriptBuilder;
 use crate::smart_contract::CallFlags;
-use crate::smart_contract::native::{oracle_contract::OracleContract, NativeContract};
+use crate::smart_contract::native::{
+    oracle_contract::OracleContract, LedgerContract, NativeContract, NativeHelpers, Role,
+    RoleManagement,
+};
 use crate::WitnessScope;
 use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
@@ -65,26 +68,51 @@ impl OracleResponse {
             .clone()
     }
 
-    /// Verify the oracle response attribute.
+    /// Verify the oracle response attribute. Mirrors C# `OracleResponse.Verify`
+    /// (Neo/Network/P2P/Payloads/OracleResponse.cs), all five checks:
     pub fn verify(
         &self,
         _settings: &ProtocolSettings,
-        _snapshot: &DataCache,
+        snapshot: &DataCache,
         tx: &super::transaction::Transaction,
     ) -> bool {
-        // Check that no signers have scopes other than None
+        // 1. Every signer must use WitnessScope.None.
         if tx.signers().iter().any(|s| s.scopes != WitnessScope::NONE) {
             return false;
         }
 
-        // Check that the script matches the fixed script
+        // 2. The transaction script must be exactly the Oracle.finish fixed script.
         if tx.script() != Self::get_fixed_script() {
             return false;
         }
 
-        // Additional verification would check the oracle request exists
-        // and matches the response
-        true
+        // 3. The referenced oracle request must still exist.
+        let request = match OracleContract::new().get_request(snapshot, self.id) {
+            Ok(Some(request)) => request,
+            _ => return false,
+        };
+
+        // 4. NetworkFee + SystemFee must equal the request's GasForResponse.
+        if tx.network_fee().saturating_add(tx.system_fee()) != request.gas_for_response {
+            return false;
+        }
+
+        // 5. A signer must be the BFT address of the Oracle-role nodes designated
+        //    for the next block (CurrentIndex + 1), matching C#.
+        let next_index = match LedgerContract::new().current_index(snapshot) {
+            Ok(index) => index.saturating_add(1),
+            Err(_) => return false,
+        };
+        let oracle_nodes = match RoleManagement::new().get_designated_by_role_at(
+            snapshot,
+            Role::Oracle,
+            next_index,
+        ) {
+            Ok(nodes) if !nodes.is_empty() => nodes,
+            _ => return false,
+        };
+        let oracle_account = NativeHelpers::get_bft_address(&oracle_nodes);
+        tx.signers().iter().any(|s| s.account == oracle_account)
     }
 
     /// Serialize without type byte.

@@ -487,16 +487,22 @@ fn oracle_verify_returns_false_without_transaction_container() {
 }
 
 #[test]
-fn oracle_verify_accepts_fixed_oracle_response_transaction() {
+fn oracle_verify_rejects_response_without_backing_request() {
+    // C# OracleResponse.Verify (delegated to by OracleContract.Verify) requires
+    // the referenced request to exist, the tx fees to equal request.GasForResponse,
+    // and a signer to be the designated Oracle BFT address. A bare fixed-script
+    // response over an empty snapshot (no stored request) must be rejected — the
+    // earlier behavior of accepting it after only the scope+script checks diverged
+    // from C# and would admit invalid oracle-response transactions.
     let oracle = OracleContract::new();
     let tx = make_response_transaction(0, OracleResponseCode::Success, Vec::new());
     let mut engine = make_response_engine(Arc::new(DataCache::new(false)), tx);
 
     let result = oracle
         .invoke_method(&mut engine, "verify", &[])
-        .expect("fixed oracle response should verify");
+        .expect("verify should evaluate");
 
-    assert_eq!(result, vec![1]);
+    assert_eq!(result, vec![0], "incomplete oracle response must not verify");
 }
 
 #[test]
