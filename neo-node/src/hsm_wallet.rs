@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::hsm_integration::HsmRuntime;
-use crate::wallet_scripts::signature_invocation;
+use neo_core::wallets::signature_invocation;
 
 pub struct HsmWallet {
     name: String,

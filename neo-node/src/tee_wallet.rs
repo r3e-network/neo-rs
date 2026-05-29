@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::wallet_scripts::signature_invocation;
+use neo_core::wallets::signature_invocation;
 
 pub struct TeeWalletAdapter {
     name: String,
