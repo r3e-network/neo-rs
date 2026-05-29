@@ -243,7 +243,7 @@ impl NeoToken {
         if state.balance.is_zero() {
             engine.delete_storage_item(context, &key)?;
         } else {
-            let bytes = serialize_stack_value_native(&state.to_stack_value())?;
+            let bytes = BinarySerializer::serialize_stack_value(&state.to_stack_value(), &ExecutionEngineLimits::default()).map_err(CoreError::native_contract)?;
             engine.put_storage_item(context, &key, &bytes)?;
         }
         Ok(())

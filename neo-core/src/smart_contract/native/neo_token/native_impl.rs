@@ -82,7 +82,7 @@ impl NativeContract for NeoToken {
                 vote_to: None,
                 last_gas_per_vote: BigInt::zero(),
             };
-            let bytes = serialize_stack_value_native(&state.to_stack_value())?;
+            let bytes = BinarySerializer::serialize_stack_value(&state.to_stack_value(), &ExecutionEngineLimits::default()).map_err(CoreError::native_contract)?;
             engine.set_storage(account_key, StorageItem::from_bytes(bytes))?;
 
             // Write total supply (matches C# FungibleToken.Mint which updates TotalSupply)

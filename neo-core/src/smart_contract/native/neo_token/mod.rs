@@ -13,7 +13,7 @@ use super::{
     contract_management::ContractManagement,
     fungible_token::{FungibleToken, PREFIX_ACCOUNT},
     gas_token::GasToken,
-    helpers::{NativeHelpers, serialize_stack_value_native},
+    helpers::NativeHelpers,
     native_contract::{NativeContract, NativeMethod},
     policy_contract::PolicyContract,
 };

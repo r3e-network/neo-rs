@@ -155,7 +155,8 @@ impl NeoToken {
                 })
                 .collect(),
         );
-        serialize_stack_value_native(&value)
+        BinarySerializer::serialize_stack_value(&value, &ExecutionEngineLimits::default())
+            .map_err(CoreError::native_contract)
     }
 
     pub(super) fn compute_committee_members<S>(

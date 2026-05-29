@@ -63,7 +63,7 @@ impl NeoToken {
         let snapshot = engine.snapshot_cache();
         match self.get_account_state(snapshot.as_ref(), &account)? {
             Some(state) => {
-                let bytes = serialize_stack_value_native(&state.to_stack_value())?;
+                let bytes = BinarySerializer::serialize_stack_value(&state.to_stack_value(), &ExecutionEngineLimits::default()).map_err(CoreError::native_contract)?;
                 Ok(bytes)
             }
             None => Ok(vec![]), // Null for non-existent account
@@ -86,7 +86,7 @@ impl NeoToken {
             })
             .collect();
         let array = StackValue::Array(items);
-        let bytes = serialize_stack_value_native(&array)?;
+        let bytes = BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default()).map_err(CoreError::native_contract)?;
         Ok(bytes)
     }
 
@@ -224,9 +224,7 @@ impl NeoToken {
             return Ok(());
         }
 
-        let bytes = serialize_stack_value_native(
-            &state.to_stack_value(),
-        )?;
+        let bytes = BinarySerializer::serialize_stack_value(&state.to_stack_value(), &ExecutionEngineLimits::default()).map_err(CoreError::native_contract)?;
         engine.put_storage_item(context, &candidate_suffix, &bytes)?;
         Ok(())
     }
@@ -295,7 +293,7 @@ impl NeoToken {
             .map(|pk| StackValue::ByteString(pk.as_bytes().to_vec()))
             .collect();
         let array = StackValue::Array(items);
-        let bytes = serialize_stack_value_native(&array)?;
+        let bytes = BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default()).map_err(CoreError::native_contract)?;
         Ok(bytes)
     }
 
@@ -332,7 +330,7 @@ impl NeoToken {
             .map(|pk| StackValue::ByteString(pk.as_bytes().to_vec()))
             .collect();
         let array = StackValue::Array(items);
-        let bytes = serialize_stack_value_native(&array)?;
+        let bytes = BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default()).map_err(CoreError::native_contract)?;
         Ok(bytes)
     }
 
