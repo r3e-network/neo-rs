@@ -12,7 +12,6 @@ use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
-use crate::smart_contract::native::helpers::serialize_stack_value_native;
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
@@ -409,7 +408,11 @@ impl GasToken {
             }
         } else {
             let state = AccountState::with_balance(balance.clone());
-            let bytes = serialize_stack_value_native(&state.to_stack_value())?;
+            let bytes = BinarySerializer::serialize_stack_value(
+                &state.to_stack_value(),
+                &ExecutionEngineLimits::default(),
+            )
+            .map_err(crate::CoreError::native_contract)?;
             engine.put_storage_item(context, &key, &bytes)?;
             if watched {
                 tracing::info!(
