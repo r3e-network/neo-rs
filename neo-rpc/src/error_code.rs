@@ -73,68 +73,88 @@ rpc_error_codes! {
     /// Internal JSON-RPC error.
     InternalError = -32603 => "Internal error", standard = true;
 
+    // Neo: unknown entities (-101..-109), matching C# Neo.Plugins.RpcServer.RpcError
+    // and the server-side rpc_error.rs constructors.
     /// Unknown block.
-    UnknownBlock = -100 => "Unknown block", standard = false;
+    UnknownBlock = -101 => "Unknown block", standard = false;
     /// Unknown contract.
-    UnknownContract = -101 => "Unknown contract", standard = false;
+    UnknownContract = -102 => "Unknown contract", standard = false;
     /// Unknown transaction.
-    UnknownTransaction = -102 => "Unknown transaction", standard = false;
+    UnknownTransaction = -103 => "Unknown transaction", standard = false;
     /// Unknown storage item.
-    UnknownStorageItem = -103 => "Unknown storage item", standard = false;
+    UnknownStorageItem = -104 => "Unknown storage item", standard = false;
     /// Unknown script container.
-    UnknownScriptContainer = -104 => "Unknown script container", standard = false;
+    UnknownScriptContainer = -105 => "Unknown script container", standard = false;
     /// Unknown state root.
-    UnknownStateRoot = -105 => "Unknown state root", standard = false;
+    UnknownStateRoot = -106 => "Unknown state root", standard = false;
     /// Unknown session.
-    UnknownSession = -106 => "Unknown session", standard = false;
+    UnknownSession = -107 => "Unknown session", standard = false;
     /// Unknown iterator.
-    UnknownIterator = -107 => "Unknown iterator", standard = false;
+    UnknownIterator = -108 => "Unknown iterator", standard = false;
     /// Unknown height.
-    UnknownHeight = -108 => "Unknown height", standard = false;
+    UnknownHeight = -109 => "Unknown height", standard = false;
 
-    /// Insufficient funds for transfer.
-    InsufficientFunds = -300 => "Insufficient funds", standard = false;
-    /// Fee limit exceeded.
-    WalletFeeLimitExceeded = -301 => "Wallet fee limit exceeded", standard = false;
+    // Neo: wallet (-300..-305)
+    /// Insufficient funds in the opened wallet.
+    InsufficientFundsWallet = -300 => "Insufficient funds in wallet", standard = false;
+    /// Wallet fee limit exceeded.
+    WalletFeeLimit = -301 => "Wallet fee limit exceeded", standard = false;
     /// No opened wallet.
     NoOpenedWallet = -302 => "No opened wallet", standard = false;
-    /// Invalid wallet password.
-    InvalidWalletPassword = -303 => "Invalid wallet password", standard = false;
+    /// Wallet not found.
+    WalletNotFound = -303 => "Wallet not found", standard = false;
+    /// Wallet not supported.
+    WalletNotSupported = -304 => "Wallet not supported", standard = false;
+    /// Unknown account.
+    UnknownAccount = -305 => "Unknown account", standard = false;
 
+    // Neo: inventory/verification (-500..-512)
+    /// Inventory verification failed.
+    VerificationFailed = -500 => "Inventory verification failed", standard = false;
     /// Inventory already exists.
-    AlreadyExists = -500 => "Already exists", standard = false;
-    /// Memory pool is full.
-    MempoolCapReached = -501 => "Memory pool capacity reached", standard = false;
-    /// Already in pool.
-    AlreadyInPool = -502 => "Already in pool", standard = false;
+    AlreadyExists = -501 => "Inventory already exists", standard = false;
+    /// Memory pool capacity reached.
+    OutOfMemory = -502 => "Memory pool capacity reached", standard = false;
+    /// Already in the memory pool.
+    AlreadyInPool = -503 => "Already in pool", standard = false;
     /// Insufficient network fee.
-    InsufficientNetworkFee = -503 => "Insufficient network fee", standard = false;
+    InsufficientNetworkFee = -504 => "Insufficient network fee", standard = false;
     /// Policy check failed.
-    PolicyFailed = -504 => "Policy check failed", standard = false;
-    /// Invalid script.
-    InvalidScript = -505 => "Invalid script", standard = false;
-    /// Invalid attribute.
-    InvalidAttribute = -506 => "Invalid attribute", standard = false;
+    PolicyFailed = -505 => "Policy check failed", standard = false;
+    /// Invalid transaction script.
+    InvalidScript = -506 => "Invalid transaction script", standard = false;
+    /// Invalid transaction attribute.
+    InvalidAttribute = -507 => "Invalid transaction attribute", standard = false;
     /// Invalid signature.
-    InvalidSignature = -507 => "Invalid signature", standard = false;
-    /// Invalid size.
-    InvalidSize = -508 => "Invalid size", standard = false;
+    InvalidSignature = -508 => "Invalid signature", standard = false;
+    /// Invalid inventory size.
+    InvalidSize = -509 => "Invalid inventory size", standard = false;
     /// Expired transaction.
-    ExpiredTransaction = -509 => "Expired transaction", standard = false;
-    /// Insufficient funds.
-    InsufficientFundsForFee = -510 => "Insufficient funds for fee", standard = false;
-    /// Invalid verification script.
-    InvalidVerificationScript = -511 => "Invalid verification script", standard = false;
+    ExpiredTransaction = -510 => "Expired transaction", standard = false;
+    /// Insufficient funds for the network fee.
+    InsufficientFunds = -511 => "Insufficient funds for fee", standard = false;
+    /// Invalid contract verification function.
+    InvalidContractVerification = -512 => "Invalid contract verification function", standard = false;
 
+    // Neo: server / session / oracle / state (-600..-608)
     /// Access denied.
     AccessDenied = -600 => "Access denied", standard = false;
-
-    /// Session not found.
-    SessionNotFound = -700 => "Session not found", standard = false;
-    /// Oracle not found.
-    OracleNotFound = -701 => "Oracle not found", standard = false;
+    /// State iterator sessions disabled.
+    DisabledSession = -601 => "State iterator sessions disabled", standard = false;
+    /// Oracle service disabled.
+    OracleDisabled = -602 => "Oracle service disabled", standard = false;
+    /// Oracle request already finished.
+    OracleRequestFinished = -603 => "Oracle request already finished", standard = false;
     /// Oracle request not found.
-    OracleRequestNotFound = -702 => "Oracle request not found", standard = false;
+    OracleRequestNotFound = -604 => "Oracle request not found", standard = false;
+    /// Not a designated oracle node.
+    OracleNotDesignatedNode = -605 => "Not a designated oracle node", standard = false;
+    /// Old state not supported.
+    UnsupportedState = -606 => "Old state not supported", standard = false;
+    /// Invalid state proof.
+    InvalidProof = -607 => "Invalid state proof", standard = false;
+    /// Contract execution failed.
+    ExecutionFailed = -608 => "Contract execution failed", standard = false;
 }
 
 impl fmt::Display for RpcErrorCode {
@@ -164,11 +184,16 @@ mod tests {
 
     #[test]
     fn test_neo_error_codes() {
-        assert_eq!(RpcErrorCode::UnknownBlock.code(), -100);
-        assert_eq!(RpcErrorCode::UnknownContract.code(), -101);
-        assert_eq!(RpcErrorCode::InsufficientFunds.code(), -300);
-        assert_eq!(RpcErrorCode::AlreadyExists.code(), -500);
+        // Codes match C# Neo.Plugins.RpcServer.RpcError.
+        assert_eq!(RpcErrorCode::UnknownBlock.code(), -101);
+        assert_eq!(RpcErrorCode::UnknownContract.code(), -102);
+        assert_eq!(RpcErrorCode::UnknownHeight.code(), -109);
+        assert_eq!(RpcErrorCode::InsufficientFundsWallet.code(), -300);
+        assert_eq!(RpcErrorCode::VerificationFailed.code(), -500);
+        assert_eq!(RpcErrorCode::AlreadyExists.code(), -501);
+        assert_eq!(RpcErrorCode::InsufficientFunds.code(), -511);
         assert_eq!(RpcErrorCode::AccessDenied.code(), -600);
+        assert_eq!(RpcErrorCode::ExecutionFailed.code(), -608);
     }
 
     #[test]
@@ -178,9 +203,11 @@ mod tests {
             Some(RpcErrorCode::ParseError)
         );
         assert_eq!(
-            RpcErrorCode::from_code(-100),
+            RpcErrorCode::from_code(-101),
             Some(RpcErrorCode::UnknownBlock)
         );
+        // -100 is no longer a valid code (the group starts at -101).
+        assert_eq!(RpcErrorCode::from_code(-100), None);
         assert_eq!(RpcErrorCode::from_code(-999), None);
     }
 
