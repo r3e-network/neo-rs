@@ -42,6 +42,9 @@ impl DerefMut for KeyBuilder {
 }
 
 impl KeyBuilder {
+    /// Byte length of the fixed key prefix (contract id `i32` + prefix `u8`).
+    pub const PREFIX_LENGTH: usize = neo_storage::KeyBuilder::PREFIX_LENGTH;
+
     /// Initializes a new instance.
     pub fn try_new(id: i32, prefix: u8, max_length: usize) -> Result<Self, KeyBuilderError> {
         Ok(Self {
@@ -100,9 +103,19 @@ mod tests {
     use num_bigint::BigInt;
 
     #[test]
-    fn test_try_new_with_zero_max_length() {
-        let mut builder = KeyBuilder::try_new(1, 0x01, 0).expect("builder");
-        let result = builder.try_add(&[0x01]);
+    fn test_try_new_rejects_max_length_below_prefix() {
+        // max_length must accommodate at least the fixed prefix (id + prefix byte);
+        // a max_length of 0 cannot, so construction is rejected.
+        let result = KeyBuilder::try_new(1, 0x01, 0);
+        assert!(matches!(result, Err(KeyBuilderError::InvalidMaxLength)));
+    }
+
+    #[test]
+    fn test_try_add_rejects_data_exceeding_max_length() {
+        // `max_length` is the payload capacity; a 1-byte capacity overflows when
+        // more than one payload byte is appended.
+        let mut builder = KeyBuilder::try_new(1, 0x01, 1).expect("builder");
+        let result = builder.try_add(&[0x01, 0x02]);
         assert!(matches!(result, Err(KeyBuilderError::DataTooLarge { .. })));
     }
 

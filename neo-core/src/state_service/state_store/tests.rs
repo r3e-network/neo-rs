@@ -52,11 +52,11 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingSnapshotStore {
 }
 
 impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshotStore {
-    fn delete(&mut self, _key: Vec<u8>) -> CoreResult<()> {
+    fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
         Ok(())
     }
 
-    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> CoreResult<()> {
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
         Ok(())
     }
 }
@@ -96,11 +96,11 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
 }
 
 impl WriteStore<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
-    fn delete(&mut self, _key: Vec<u8>) -> CoreResult<()> {
+    fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
         Ok(())
     }
 
-    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> CoreResult<()> {
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
         Ok(())
     }
 }
