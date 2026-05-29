@@ -759,7 +759,10 @@ fn reorder_signers(sender: UInt160, mut signers: Vec<Signer>) -> Vec<Signer> {
         signers
     } else {
         let mut list = Vec::with_capacity(signers.len() + 1);
-        list.push(Signer::new(sender, WitnessScope::NONE));
+        // The synthesized sender signer must carry CalledByEntry (matching C#
+        // Wallet.MakeTransaction); WitnessScope::NONE grants no witness and would
+        // cause CheckWitness(sender) to fail for the produced transaction.
+        list.push(Signer::new(sender, WitnessScope::CALLED_BY_ENTRY));
         list.extend(signers);
         list
     }
