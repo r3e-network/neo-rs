@@ -6,7 +6,7 @@
 //! - Reusable buffer support for high-throughput scenarios
 
 use super::{
-    MessageCommand, message_flags::MessageFlags, messages::ProtocolMessage,
+    MessageCommand, MessageFlags, messages::ProtocolMessage,
 };
 use crate::compression::{
     compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,
@@ -260,9 +260,8 @@ impl Message {
 
 impl Serializable for Message {
     fn deserialize(reader: &mut MemoryReader) -> crate::neo_io::IoResult<Self> {
-        let flags = MessageFlags::from_byte(reader.read_u8()?).map_err(|_| {
-            IoError::invalid_data_with_context("Message::deserialize", "invalid flags value")
-        })?;
+        // MessageFlags preserves unknown bits, so parsing is infallible.
+        let flags = MessageFlags::from_byte(reader.read_u8()?);
         let command = MessageCommand::from_byte(reader.read_u8()?).map_err(|_| {
             IoError::invalid_data_with_context("Message::deserialize", "invalid command value")
         })?;
@@ -430,7 +429,7 @@ mod tests {
     #[test]
     fn from_payload_with_flags_preserves_unknown_compressed_bits() {
         let data = b"flagged".to_vec();
-        let flags = MessageFlags::from_byte(0x81).unwrap();
+        let flags = MessageFlags::from_byte(0x81);
 
         let message = Message::from_payload_with_flags(flags, MessageCommand::Ping, data.clone());
 

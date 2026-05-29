@@ -3,7 +3,7 @@
 use super::{
     message::Message,
     MessageCommand,
-    message_flags::MessageFlags,
+    MessageFlags,
     payloads::{
         AddrPayload, Block, ExtensiblePayload, FilterAddPayload, FilterLoadPayload,
         GetBlockByIndexPayload, GetBlocksPayload, HeadersPayload, InvPayload, MerkleBlockPayload,
