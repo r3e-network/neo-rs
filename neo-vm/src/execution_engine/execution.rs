@@ -231,11 +231,17 @@ impl ExecutionEngine {
             return Ok(());
         }
 
-        // Stack is at or over limit - perform thorough check with GC
-        let _current = self.reference_counter.check_zero_referred();
-        // Note: MaxStackSize check temporarily relaxed to diagnose reference
-        // counter over-counting vs C#. The actual execution should be correct;
-        // only the reference count tracking differs.
+        // Stack is at or over the fast-path limit: run the thorough GC pass
+        // (drops zero-referred items) and re-validate, matching C#
+        // ExecutionEngine.PostExecuteInstruction. Exceeding MaxStackSize after
+        // GC is a protocol fault, not a recoverable condition.
+        let current = self.reference_counter.check_zero_referred();
+        if current >= self.limits.max_stack_size as usize {
+            return Err(VmError::invalid_operation_msg(format!(
+                "MaxStackSize exceed: {}/{}",
+                current, self.limits.max_stack_size
+            )));
+        }
 
         if let Some(host) = self.interop_host {
             host.post_execute_instruction(self, instruction)?;

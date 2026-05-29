@@ -294,9 +294,9 @@ mod tests {
 
     #[test]
     fn reports_circular_reference() {
-        let mut item = StackItem::from_array(vec![StackItem::Null]);
-        if let StackItem::Array(ref mut array) = item {
-            array[0] = item.clone();
+        let item = StackItem::from_array(vec![StackItem::Null]);
+        if let StackItem::Array(array) = &item {
+            let _ = array.set(0, item.clone());
         }
 
         let err = stack_item_rpc_json(&item, None).unwrap_err();
@@ -306,9 +306,9 @@ mod tests {
 
     #[test]
     fn deferred_size_check_preserves_rpc_circular_reference_precedence() {
-        let mut item = StackItem::from_array(vec![StackItem::Null]);
-        if let StackItem::Array(ref mut array) = item {
-            array[0] = item.clone();
+        let item = StackItem::from_array(vec![StackItem::Null]);
+        if let StackItem::Array(array) = &item {
+            let _ = array.set(0, item.clone());
         }
 
         let err = stack_item_rpc_json_deferred_size_check(&item, Some(1)).unwrap_err();
