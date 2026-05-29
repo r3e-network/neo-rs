@@ -37,4 +37,57 @@ needs-refactor: **neo-config** (ProtocolSettings overlap), **neo-core** (P2P inf
 - low: hardfork sequence validation; SnapshotCache wrapper; UPnP stub; console REPL.
 
 ## Deferred / out of scope
-neo-plugins extraction (application_logs/oracle_service), Designate contract, plugin host, console REPL — standalone follow-ups, none blocks the boundary refactor.
+neo-plugins extraction (application_logs/oracle_service), plugin host, console REPL — standalone follow-ups, none blocks the boundary refactor.
+
+---
+
+## VERIFIED architectural realities (hands-on, correcting the audit's optimism)
+
+The synthesis flagged most moves "VERIFY-FIRST"; verification shows several are
+**not** mechanical and a few would create dependency cycles. Recorded so the
+roadmap is accurate and future work doesn't repeat the analysis:
+
+- **`Designate` native contract is NOT missing** — it is present as
+  `RoleManagement` (neo-core/src/smart_contract/native/role_management.rs, id -8,
+  hash 0x49cf…95e2). Neo N3 renamed Designate→RoleManagement. Audit false positive.
+- **P2P actors → neo-p2p creates a CYCLE.** The actors (local_node/remote_node/
+  task_manager) use both `Arc<NeoSystemContext>` AND neo-core payload types
+  (Block/Transaction/Message). neo-core already depends on neo-p2p (Cargo.toml),
+  so a reverse edge = cycle; a `NeoSystemContext` trait seam alone does not fix
+  the payload coupling. **Correct interpretation:** keep neo-p2p as the
+  low-level wire-types crate (below neo-core); the runtime actors are
+  orchestration that belongs in the runtime layer (neo-core `runtime`-gated, as
+  today, or neo-node) — NOT in low-level neo-p2p. The real P2P boundary fix is
+  **overlap elimination** of the wire types (see below), not an actor move.
+- **`neo_system` → neo-node also risks a cycle.** neo-consensus and neo-rpc
+  consume `NeoSystemContext`; both are below neo-node. Moving it up requires a
+  trait seam those crates depend on instead of the concrete type. Not a move.
+- **Wallet adapters → neo-hsm/neo-tee need decoupling first.** `hsm_wallet`
+  holds `runtime: HsmRuntime`, and `HsmRuntime` depends on `crate::cli::NodeCli`
+  (neo-node). Moving the wallet requires either moving/abstracting HsmRuntime or
+  refactoring the adapter to hold the `neo_hsm::HsmSigner` directly. (The shared
+  `signature_invocation` helper has been moved to neo-core/wallets — done.)
+- **ProtocolSettings is layered, not duplicated.** neo-config::ProtocolSettings
+  (TOML schema: ms_per_block:u64, String validators) and
+  neo-core::ProtocolSettings (runtime: milliseconds_per_block:u32, ECPoint
+  standby_committee, hardfork map, hardcoded mainnet/testnet keys) are different
+  layers with different field names/types — not a byte-dup. Consolidating is a
+  consensus-adjacent conversion-layer task (defaults feed genesis), not a merge.
+- **P2P wire-type "duplication"** (message_command/message_flags in neo-core vs
+  neo-p2p) is the same `neo_primitives::p2p_message_command!` /
+  `protocol_message_flags!` macro instantiated with different error types
+  (neo-core `NetworkError` vs neo-p2p `P2PError`). Consolidating means unifying
+  the networking error model — fiddly, low payoff, touches P2P infra.
+
+**Net:** decomposing the neo-core monolith further is a major trait-abstraction
+effort (neo-core is the integration hub, like C# Neo.dll), not file moves, and
+must be staged with the CONSENSUS GUARD. It needs a maintainer decision on the
+neo-p2p layering direction before the largest moves are attempted.
+
+## Completed safe boundary work (verified, committed)
+- **VM migration epic** (prior): deleted local neo-vm crate; VM host → neo-core;
+  BinarySerializer/JsonSerializer/NotifyEventArgs/StorageContext/ScriptBuilder →
+  correct layers; WitnessRule/CallFlags/MethodToken out of foundation crates;
+  StackValue projections — byte-identical, full workspace 3455 tests green.
+- **neo-config quality**: socket-addr accessors → `Result`; genesis panic removed.
+- **wallets**: `signature_invocation` helper relocated neo-node → neo-core/wallets.
