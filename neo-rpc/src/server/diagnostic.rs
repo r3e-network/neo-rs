@@ -1,7 +1,7 @@
 use neo_core::smart_contract::diagnostic::Diagnostic as DiagnosticTrait;
 use neo_core::smart_contract::execution_context_state::ExecutionContextState;
 use neo_core::smart_contract::ApplicationEngine;
-use neo_core::neo_vm::ExecutionContext;
+use neo_core::vm_runtime::ExecutionContext;
 use neo_core::UInt160;
 use neo_vm_rs::Instruction;
 use parking_lot::Mutex;

@@ -20,7 +20,7 @@ use crate::server::diagnostic::Diagnostic;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
-use neo_core::neo_vm::StackItem;
+use neo_core::vm_runtime::StackItem;
 use neo_vm_rs::VmState as VMState;
 
 use super::helpers::{

@@ -2,9 +2,9 @@
 
 //! JsonSerializer - mirrors `Neo.SmartContract.JsonSerializer`.
 
-use crate::neo_vm::stack_item::{Array, Map, Struct};
+use crate::neo_vm::stack_item::{Array, Map as MapItem, Struct};
 use crate::neo_vm::StackItem;
-use neo_vm_rs::{StackItemType, VmOrderedDictionary};
+use neo_vm_rs::StackItemType;
 use num_bigint::BigInt;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::HashSet;
@@ -195,7 +195,7 @@ impl JsonSerializer {
     }
 
     fn serialize_map(
-        map: &Map,
+        map: &MapItem,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
         let identity = (map.id(), StackItemType::Map);
@@ -265,15 +265,16 @@ impl JsonSerializer {
             JsonValue::Object(obj) => {
                 // C# parity: JSON object → StackItem::Map preserves insertion order.
                 // serde_json's `preserve_order` feature is enabled (workspace Cargo.toml),
-                // so iterating `obj` already yields entries in source order. Construct via
-                // Vec<(K, V)> instead of BTreeMap (which would alphabetically sort the keys).
-                let mut dict = VmOrderedDictionary::new();
+                // so iterating `obj` already yields entries in source order. Build a
+                // Vec<(K, V)> (not a BTreeMap, which would alphabetically sort the keys)
+                // and hand it straight to the ordered map item.
+                let mut entries = Vec::with_capacity(obj.len());
                 for (key, element) in obj {
                     let key_item = StackItem::from_byte_string(key.as_bytes());
                     let value_item = Self::deserialize_internal(element, depth + 1, max_depth)?;
-                    dict.insert(key_item, value_item);
+                    entries.push((key_item, value_item));
                 }
-                Ok(StackItem::from_map(dict))
+                Ok(StackItem::Map(MapItem::new_untracked(entries)))
             }
         }
     }

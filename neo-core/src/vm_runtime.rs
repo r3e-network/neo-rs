@@ -22,3 +22,6 @@ pub use crate::neo_vm::stack_item::InteropInterface;
 
 /// Access to the host stack-item submodule (compound item types: arrays, maps, structs).
 pub use crate::neo_vm::stack_item;
+
+/// Host stack-item RPC/JSON projection helpers (used by the RPC server).
+pub use crate::neo_vm::rpc_json;
