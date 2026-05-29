@@ -2,7 +2,7 @@
 
 use crate::cryptography::murmur128;
 use crate::hardfork::Hardfork;
-use crate::neo_config::{ADDRESS_SIZE, HASH_SIZE};
+use crate::constants::{ADDRESS_SIZE, HASH_SIZE};
 use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE,

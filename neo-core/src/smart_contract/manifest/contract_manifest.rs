@@ -7,7 +7,7 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::neo_config::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
+use crate::constants::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use crate::neo_io::serializable::helper::{get_var_size, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::interoperable::Interoperable;

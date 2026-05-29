@@ -1,5 +1,5 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_config::{BLOCK_MAX_TX_WIRE_LIMIT, HASH_SIZE, MAX_SCRIPT_SIZE};
+use crate::constants::{BLOCK_MAX_TX_WIRE_LIMIT, HASH_SIZE, MAX_SCRIPT_SIZE};
 
 /// Oracle configuration parameters.
 #[derive(Debug, Clone)]

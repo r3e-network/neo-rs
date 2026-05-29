@@ -5,7 +5,7 @@
 
 use crate::cryptography::{Base58, CryptoError, ECCurve, ECDsa, Secp256r1Crypto, ECC};
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_config::HASH_SIZE;
+use crate::constants::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
 use crate::wallets::helper::Helper as WalletHelper;
 use crate::UInt160;
@@ -412,7 +412,7 @@ impl Eq for KeyPair {}
 #[allow(dead_code)]
 mod tests {
     use super::*;
-    use crate::neo_config::HASH_SIZE;
+    use crate::constants::HASH_SIZE;
 
     #[test]
     fn test_key_pair_generation() {

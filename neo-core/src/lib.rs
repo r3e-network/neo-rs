@@ -300,11 +300,6 @@ pub use neo_system::NeoSystem;
 // Configuration Re-export
 // ============================================================================
 
-/// Protocol constants and configuration.
-pub mod neo_config {
-    pub use crate::constants::*;
-}
-
 /// Backward-compatible re-export of the `neo-config` crate.
 pub use neo_config_crate as config;
 

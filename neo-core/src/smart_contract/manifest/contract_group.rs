@@ -4,7 +4,7 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::neo_config::ADDRESS_SIZE;
+use crate::constants::ADDRESS_SIZE;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::neo_vm::StackItem;
 use crate::{ECCurve, ECPoint};

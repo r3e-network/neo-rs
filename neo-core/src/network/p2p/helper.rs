@@ -5,7 +5,7 @@
 //! signing payloads or inspecting hashes.  This module mirrors that behaviour so
 //! ported components can rely on identical semantics.
 
-use crate::neo_config::HASH_SIZE;
+use crate::constants::HASH_SIZE;
 
 /// Helper utilities for working with `Verifiable` payloads.
 const SIGN_DATA_LENGTH: usize = std::mem::size_of::<u32>() + HASH_SIZE;

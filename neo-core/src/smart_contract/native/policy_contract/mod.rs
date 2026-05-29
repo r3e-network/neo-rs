@@ -5,7 +5,7 @@
 
 use crate::error::{CoreError as Error, CoreResult as Result, ToNativeError};
 use crate::hardfork::Hardfork;
-use crate::neo_config::ADDRESS_SIZE;
+use crate::constants::ADDRESS_SIZE;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;

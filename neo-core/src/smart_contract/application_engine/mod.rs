@@ -72,7 +72,7 @@ use crate::cryptography::{Crypto, murmur128};
 use crate::error::{CoreError as Error, Result};
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
-use crate::neo_config::HASH_SIZE;
+use crate::constants::HASH_SIZE;
 use crate::neo_vm::evaluation_stack::EvaluationStack;
 use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::interop_service::InteropHost;
