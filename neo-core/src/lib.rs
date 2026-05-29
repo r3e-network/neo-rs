@@ -158,10 +158,6 @@ pub mod witness_rule;
 // Optional Features
 // ============================================================================
 
-/// Monitoring and metrics (requires `monitoring` feature).
-#[cfg(feature = "monitoring")]
-pub mod monitoring;
-
 /// Telemetry infrastructure for logging and tracing.
 pub mod telemetry;
 
@@ -216,9 +212,6 @@ pub mod extensions;
 ///
 /// Matches C# `Neo.Events` namespace.
 pub mod events;
-
-/// RPC models and utilities.
-pub mod rpc;
 
 /// Time provider abstraction for testability.
 pub mod time_provider;
@@ -290,7 +283,7 @@ pub use network::p2p::payloads::{
     TransactionAttributeType, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
 };
 pub use protocol_settings::ProtocolSettings;
-pub use rpc::RpcException;
+pub use neo_primitives::RpcException;
 pub use smart_contract::native::NativeContract;
 pub use smart_contract::{Contract, ContractManifest, ContractParameterType, ContractState};
 pub use time_provider::TimeProvider;

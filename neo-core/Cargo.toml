@@ -25,8 +25,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 byteorder = { workspace = true }
 bytes = { workspace = true }
-# tokio kept for monitoring and persistence/backup modules
-# Consider moving these to neo-node in future refactoring
 tokio = { workspace = true, features = ["sync", "time", "fs", "io-util", "rt"] }
 tokio-util = { workspace = true, features = ["codec", "rt"] }
 async-trait = { workspace = true }
@@ -37,8 +35,6 @@ bip39 = { workspace = true }
 # secp256k1, ed25519-dalek removed - use neo-crypto instead
 blst = { workspace = true }
 tracing = { workspace = true }
-prometheus = { workspace = true, optional = true }
-sysinfo = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"], optional = true }
 prost = { version = "0.12", optional = true }
@@ -125,8 +121,6 @@ default = []
 rocksdb = ["dep:rocksdb"]
 # UPnP network discovery - requires reqwest
 upnp = ["dep:reqwest", "dep:quick-xml"]
-# Monitoring subsystem - requires prometheus, sysinfo, reqwest
-monitoring = ["dep:prometheus", "dep:sysinfo", "dep:reqwest"]
 # Oracle service - requires reqwest
 oracle = ["dep:reqwest"]
 # NeoFS gRPC support (optional, for parity with C#)
@@ -134,7 +128,7 @@ neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
 # Parallel processing for bulk sync (rayon is always available)
 parallel = []
 # All optional features for full functionality
-full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc", "parallel"]
+full = ["rocksdb", "upnp", "oracle", "neofs-grpc", "parallel"]
 runtime = []
 performance-tests = []
 

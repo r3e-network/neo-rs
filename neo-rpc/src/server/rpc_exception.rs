@@ -1,4 +1,4 @@
-pub use neo_core::rpc::RpcException;
+pub use neo_core::RpcException;
 
 use super::rpc_error::RpcError;
 
