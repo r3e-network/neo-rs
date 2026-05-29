@@ -1,4 +1,4 @@
-use neo_io_crate::witness_rule::helpers::{encode_hex, parse_group_bytes};
+use super::helpers::{encode_hex, parse_group_bytes};
 use super::*;
 use crate::constants::ADDRESS_SIZE;
 use crate::neo_vm::StackItem;

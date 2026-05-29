@@ -1,4 +1,4 @@
-use crate::{IoError, IoResult, MemoryReader};
+use neo_io_crate::{IoError, IoResult, MemoryReader};
 use hex::{decode as hex_decode, encode as hex_encode};
 
 /// Size of a compressed ECPoint in bytes.
