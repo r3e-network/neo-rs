@@ -13,6 +13,12 @@ categories.workspace = true
 readme.workspace = true
 description = "RPC server and client for Neo blockchain"
 
+# The websocket-events integration test exercises the server module, which is
+# gated behind the (non-default) `server` feature.
+[[test]]
+name = "ws_events"
+required-features = ["server"]
+
 [dependencies]
 # Internal crates
 neo-primitives = { workspace = true }
