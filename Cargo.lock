@@ -2448,7 +2448,6 @@ dependencies = [
  "lru",
  "lz4_flex",
  "neo-primitives",
- "neo-vm-rs",
  "parking_lot",
  "serde",
  "serde_json",
