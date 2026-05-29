@@ -6,6 +6,29 @@ end with a green `cargo build --workspace`.
 
 Baseline restored on branch `refactor/restore-green-baseline` (commit f59c13d5).
 
+## Progress (branch `refactor/restore-green-baseline`)
+
+Done — each commit ends with green `cargo build --workspace`:
+- f59c13d5 restore green workspace baseline (StackItem migration repair)
+- 589143a8 Tier 0a: purge dead persistence code (backup.rs, storage_watch, phantom tests)
+- 395d4f10 Tier 0b: remove dead monitoring module + rpc shim (+ prometheus/sysinfo deps)
+- a220a0e3 Tier 0c: remove duplicate neo-storage root cache/ module
+- 0773ec16 Tier 1a: drop misleading neo_config inline shim
+- 60c98030 Tier 1: import crypto directly from neo-crypto, delete cryptography shim
+
+Removed ~3,700 LOC dead/duplicate code + 2 crossover shims (neo_config, cryptography).
+
+Open follow-ups (tasked):
+- Pre-existing neo-core **test-target** rot: `cargo build -p neo-core --tests` has 9
+  errors unrelated to this refactor (state_store FailingSnapshotStore returns
+  CoreResult vs StorageResult; KeyBuilder::PREFIX_LENGTH removed; CoreError variants
+  NativeContractError/Deserialization/InvalidData removed). Needs semantic mapping.
+- Tier 1b neo_io shim: NOT a clean codemod — the inline `neo_io` mod flattens
+  `serializable::helper` and aliases `SerializableExt`, so blind path replacement
+  breaks those. Needs per-symbol mapping.
+- Tier 1c: move P2P infra (rate limiter/BanList/PeerReputation) to neo-p2p; dedup
+  MessageCommand/MessageFlags.
+
 ## Dependency layering (target, downward-only)
 
 ```
