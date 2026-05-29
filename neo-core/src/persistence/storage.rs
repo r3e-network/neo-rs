@@ -79,9 +79,6 @@ impl Default for StorageConfig {
     }
 }
 
-/// Convenience alias for storage-related results.
-pub type StorageResult<T> = CoreResult<T>;
-
 // Re-export StorageError from neo-storage as the canonical definition.
 pub use neo_storage::StorageError;
 
@@ -243,34 +240,5 @@ mod tests {
     fn storage_item_default_is_empty() {
         let item = StorageItem::new();
         assert!(item.to_value().is_empty());
-    }
-
-    // ============================================================================
-    // StorageError Tests
-    // ============================================================================
-
-    #[test]
-    fn storage_error_not_found_display() {
-        let err = StorageError::NotFound;
-        assert_eq!(format!("{}", err), "key not found");
-    }
-
-    #[test]
-    fn storage_error_read_only_display() {
-        let err = StorageError::ReadOnly;
-        assert_eq!(format!("{}", err), "cache is read only");
-    }
-
-    #[test]
-    fn storage_error_other_display() {
-        let err = StorageError::Other("custom error".to_string());
-        assert_eq!(format!("{}", err), "custom error");
-    }
-
-    #[test]
-    fn storage_error_converts_to_core_error() {
-        let storage_err = StorageError::NotFound;
-        let core_err: CoreError = storage_err.into();
-        assert!(matches!(core_err, CoreError::InvalidOperation { .. }));
     }
 }

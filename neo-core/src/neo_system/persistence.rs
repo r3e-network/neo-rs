@@ -19,10 +19,7 @@ use crate::events::PluginEvent;
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::network::p2p::payloads::block::Block;
-use crate::persistence::data_cache::{
-    clear_storage_watch_context, set_storage_watch_context, DataCache, DataCacheConfig,
-    StorageWatchPhase,
-};
+use crate::persistence::data_cache::{DataCache, DataCacheConfig};
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::StoreTransaction;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -150,14 +147,6 @@ fn saturating_ns(duration: std::time::Duration) -> u64 {
     nanos.min(u128::from(u64::MAX)) as u64
 }
 
-struct StorageWatchContextGuard;
-
-impl Drop for StorageWatchContextGuard {
-    fn drop(&mut self) {
-        clear_storage_watch_context();
-    }
-}
-
 impl NeoSystem {
     /// Persists a block through the minimal smart-contract pipeline, returning
     /// the list of execution summaries produced during processing.
@@ -194,7 +183,6 @@ impl NeoSystem {
         };
 
         let ledger_block = convert_payload_block(&block);
-        let _watch_context_guard = StorageWatchContextGuard;
         let tx_count = ledger_block.transactions.len() as u64;
         let persisting_block = Arc::new(ledger_block.clone());
         let base_cache_config = DataCacheConfig {
@@ -261,7 +249,6 @@ impl NeoSystem {
         } else {
             None
         };
-        set_storage_watch_context(ledger_block.index(), StorageWatchPhase::OnPersist, None);
         on_persist_engine.native_on_persist()?;
         if let Some(started) = on_persist_native_started {
             persist_perf_stats()
@@ -307,11 +294,6 @@ impl NeoSystem {
         ));
         for tx in &ledger_block.transactions {
             let tx_hash = tx.try_hash()?;
-            set_storage_watch_context(
-                ledger_block.index(),
-                StorageWatchPhase::Application,
-                Some(tx_hash),
-            );
             let tx_prepare_started = if perf_enabled {
                 Some(Instant::now())
             } else {
@@ -483,7 +465,6 @@ impl NeoSystem {
             None
         };
         post_persist_engine.set_state(tx_states);
-        set_storage_watch_context(ledger_block.index(), StorageWatchPhase::PostPersist, None);
         post_persist_engine.native_post_persist()?;
         if let Some(started) = post_persist_native_started {
             persist_perf_stats()
