@@ -128,6 +128,9 @@ mod block_serialization_tests {
         tx.add_witness(Witness::empty());
 
         block.transactions.push(tx);
+        // A real block carries the computed merkle root; deserialize now validates
+        // it (matching C# DeserializeTransactions), so set it before serializing.
+        block.rebuild_merkle_root();
 
         let serialized = serialize_to_bytes(&block);
         let size = block.size();
@@ -173,6 +176,7 @@ mod block_serialization_tests {
             tx.add_witness(Witness::empty());
             block.transactions.push(tx);
         }
+        block.rebuild_merkle_root();
 
         let serialized = serialize_to_bytes(&block);
         let size = block.size();
@@ -396,6 +400,7 @@ mod block_serialization_tests {
             tx.add_witness(Witness::empty());
             block.transactions.push(tx);
         }
+        block.rebuild_merkle_root();
 
         // Serialize
         let serialized = serialize_to_bytes(&block);

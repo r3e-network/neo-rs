@@ -9,8 +9,7 @@ use crate::smart_contract::native::{ContractManagement, LedgerContract};
 use crate::smart_contract::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
 use crate::validation::{
-    validate_primary_index, validate_timestamp_bounds, validate_timestamp_progression,
-    validate_witness_scripts, BlockValidationError,
+    validate_primary_index, validate_timestamp_progression, BlockValidationError,
 };
 use crate::{UInt160, UInt256};
 use std::sync::Arc;
@@ -20,25 +19,19 @@ pub(super) const HEADER_VERIFY_GAS: i64 = 300_000_000;
 
 #[derive(Debug)]
 enum HeaderSelfValidationFailure {
-    Timestamp(BlockValidationError),
     PrimaryIndex(BlockValidationError),
-    WitnessScripts(BlockValidationError),
 }
 
 impl HeaderSelfValidationFailure {
     fn name(&self) -> &'static str {
         match self {
-            Self::Timestamp(_) => "timestamp_bounds",
             Self::PrimaryIndex(_) => "primary_index",
-            Self::WitnessScripts(_) => "witness_scripts",
         }
     }
 
     fn error(&self) -> &BlockValidationError {
         match self {
-            Self::Timestamp(error) | Self::PrimaryIndex(error) | Self::WitnessScripts(error) => {
-                error
-            }
+            Self::PrimaryIndex(error) => error,
         }
     }
 }
@@ -88,11 +81,14 @@ impl Header {
         &self,
         settings: &ProtocolSettings,
     ) -> Result<(), HeaderSelfValidationFailure> {
-        validate_timestamp_bounds(self.timestamp)
-            .map_err(HeaderSelfValidationFailure::Timestamp)?;
+        // C# Header.Verify checks only `PrimaryIndex < ValidatorsCount` among the
+        // pre-chain "self" checks. The future-timestamp (15-min drift) and witness
+        // script size/0xFF heuristics are NOT part of Neo consensus and would reject
+        // blocks C# accepts (valid blocks slightly ahead of local wall-clock, or
+        // legitimate large multisig witnesses). Witness validity is still enforced by
+        // verify_witness_against_hash (strict-script + metered execution), like C#.
         validate_primary_index(self.primary_index, settings.validators_count)
             .map_err(HeaderSelfValidationFailure::PrimaryIndex)?;
-        validate_witness_scripts(self).map_err(HeaderSelfValidationFailure::WitnessScripts)?;
         Ok(())
     }
 
