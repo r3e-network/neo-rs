@@ -102,15 +102,21 @@ verification agent (verdicts: 8 confirmed-bug, 1 nuanced) before any edit.
 - [ ] 0.10 RPC error-code off-by-one alignment + compile-time assertion — PENDING
       (macro rewrite to match C# RpcError codes exactly; medium effort).
 
-**Test-target rot — RESOLVED for the unit suites.** Both neo-vm and neo-core test
+**Test-target rot — LARGELY RESOLVED (Wave 2.1).** Both neo-vm and neo-core test
 targets had pre-existing compile rot (stale StackItem APIs, missing dev-deps,
-removed CoreError variants). Both unit-test targets are now green: **neo-vm 84
-tests pass; neo-core 575 tests pass**. Fixing neo-core's revealed (and we fixed) a
-real functional bug — the green-baseline iterator-as-Integer shortcut broke
-native-method iterator results; they are now `InteropInterface(IteratorInterop)`
-(C# parity). The neo-core *integration* tests (`tests/`) and doctests may still
-carry separate rot — audit next. With the unit suites green, behavioral protocol
-changes (e.g. 0.10) can now be validated.
+removed CoreError variants, the Verifiable/VerifiableExt split, relocated
+VersionPayload signature, removed `to_array`/`deserialize` APIs). Now green:
+- **neo-core: 1302 tests pass** (lib + all integration targets)
+- **neo-rpc (--features server): 576 pass**
+- **neo-vm: 84**, **neo-storage: 114** pass
+- neo-consensus / neo-p2p test targets compile
+
+Fixing neo-core's lib tests revealed (and we fixed) a real functional bug — the
+green-baseline iterator-as-Integer shortcut broke native-method iterator results;
+they are now `InteropInterface(IteratorInterop)` (C# parity). `ws_events` was
+gated behind the `server` feature it requires. Remaining test audit: neo-node /
+neo-tee / neo-hsm targets, the `tests` workspace crate, and doctests. With the
+core suites green, behavioral protocol changes can now be validated against tests.
 
 ### Wave 1 — Hygiene & lint gates
 - 1.1 Add `[workspace.lints]`, clippy.toml, deny.toml, rust-toolchain.toml; `lints.workspace = true`.
