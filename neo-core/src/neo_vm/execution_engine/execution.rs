@@ -236,7 +236,10 @@ impl ExecutionEngine {
         // ExecutionEngine.PostExecuteInstruction. Exceeding MaxStackSize after
         // GC is a protocol fault, not a recoverable condition.
         let current = self.reference_counter.check_zero_referred();
-        if current >= self.limits.max_stack_size as usize {
+        // C# faults only when STRICTLY greater than MaxStackSize
+        // (ExecutionEngine.cs:303-304). Reaching exactly MaxStackSize (2048) is
+        // valid in C#; using >= would FAULT a contract that C# HALTs.
+        if current > self.limits.max_stack_size as usize {
             return Err(VmError::invalid_operation_msg(format!(
                 "MaxStackSize exceed: {}/{}",
                 current, self.limits.max_stack_size

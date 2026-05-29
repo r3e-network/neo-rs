@@ -74,15 +74,15 @@ impl ExecutionEngine {
             VmError::invalid_operation_msg("Instruction pointer exceeds 32-bit range")
         })?;
 
+        // C# ExecuteEndTry faults if ENDTRY is reached while already in the FINALLY
+        // state (JumpTable.Control.cs:585-586). Treating it as a normal pop+jump
+        // would diverge HALT/FAULT from C# for malformed/adversarial scripts.
         if current_try_snapshot.state() == ExceptionHandlingState::Finally {
-            context.pop_try_context();
-            let end_pointer = base_ip
-                .checked_add(end_offset)
-                .ok_or_else(|| VmError::InvalidJump(end_offset))?;
-            let end_position =
-                usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
-            context.set_instruction_pointer(end_position);
-        } else if current_try_snapshot.has_finally() {
+            return Err(VmError::invalid_operation_msg(
+                "The opcode ENDTRY can't be executed in a FINALLY block",
+            ));
+        }
+        if current_try_snapshot.has_finally() {
             let try_entry = context
                 .try_stack_last_mut()
                 .expect("try stack should not be empty");
