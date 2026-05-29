@@ -66,16 +66,39 @@ workspace-wide: docs/tests.
 ## 3. Refactoring roadmap (sequenced waves; each increment ends green)
 
 ### Wave 0 — Correctness P0s (isolated, ship individually)
-- 0.1 Re-enable MaxStackSize (neo-vm execution.rs) — *needs ref-counter diagnosis; do not silence again.*
-- 0.2 Double-SHA block hash (neo-consensus block.rs) + vector.
-- 0.3 `WitnessScope::CALLED_BY_ENTRY` in wallets/helper.rs:762.
-- 0.4 external_vm.rs:317,353 unwrap → FAULT.
-- 0.5 Cap read_var_bytes in token tracker (3 sites).
-- 0.6 Oracle-id / state-store-init / consensus-time / f()-m() underflow / DER panics → Result/guards.
-- 0.7 RPC credential redaction + Zeroizing (rpc_server_settings.rs).
-- 0.8 neo-json serde depth guard (default 64).
-- 0.9 TEE: remove constant fallback key; pass min_counter on unseal; drop `simulation` default.
-- 0.10 RPC error-code off-by-one alignment + compile-time assertion.
+
+Each Wave-0 item was independently re-verified against the code + C# Neo by a
+verification agent (verdicts: 8 confirmed-bug, 1 nuanced) before any edit.
+
+- [x] 0.1 Re-enable MaxStackSize (neo-vm execution.rs) — DONE (commit 6017bcf2).
+      Re-validated: 84 neo-vm unit tests pass with the check on (no over-count).
+      Repaired the neo-vm unit-test target (Array::set, hex dev-dep) to validate.
+- [ ] 0.2 Double-SHA block/tx/header hash — **DEFERRED, highest priority.** All four
+      try_hash() sites use single `Crypto::sha256`; C# N3 uses `Crypto.Hash256`
+      (double), and the codebase's own `SerializablePayload::hash()` default is
+      already double — strong corroboration. NOT applied because it changes every
+      block/tx hash and the adjudicating known-answer test
+      (`neo-core/src/ledger/genesis.rs::mainnet_genesis_hash_matches_csharp`)
+      cannot run until the neo-core test target compiles (task #10). Apply only
+      after #10, gated on that test + a header double-SHA vector.
+- [x] 0.3 `WitnessScope::CALLED_BY_ENTRY` in wallets/helper.rs — DONE (4beff058).
+- [x] 0.4 external_vm.rs unwrap → FAULT — DONE (0bc5d4be).
+- [x] 0.5 Cap read_var_bytes in token tracker (3 sites) — DONE (0bc5d4be).
+- [x] 0.6 Oracle-id / state-store-init / consensus-time / f()-m() underflow / DER
+      panics → Result/guards — DONE (0bc5d4be). (Also fixed a stale hidapi
+      double-unwrap so neo-hsm `ledger` compiles.)
+- [x] 0.7 RPC credential redaction (manual Debug) — DONE (8b7bfc9e). Zeroizing
+      deferred (optional-dep/feature entanglement); Debug redaction is the exposure.
+- [x] 0.8 neo-json serde depth guard (MAX_JSON_DEPTH=64) — DONE (0bc5d4be).
+- [ ] 0.9 TEE: remove constant fallback key; pass min_counter; drop `simulation`
+      default — PENDING (security; verify against enclave counter API).
+- [ ] 0.10 RPC error-code off-by-one alignment + compile-time assertion — PENDING
+      (macro rewrite to match C# RpcError codes exactly; medium effort).
+
+**Test-target rot is the gate for the remaining behavioral fixes.** Both the
+neo-vm and neo-core test targets had pre-existing compile rot (stale StackItem
+APIs, missing dev-deps, removed CoreError variants). neo-vm's unit target is now
+green; neo-core's (task #10) must be fixed before 0.2 can be validated.
 
 ### Wave 1 — Hygiene & lint gates
 - 1.1 Add `[workspace.lints]`, clippy.toml, deny.toml, rust-toolchain.toml; `lints.workspace = true`.
