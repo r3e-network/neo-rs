@@ -146,8 +146,12 @@ impl Interoperable for Transaction {
     }
 
     fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
-        let sv = self.to_stack_value().map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))?;
-        StackItem::try_from(sv).map_err(|error| {
+        // Build the lean neo-vm-rs StackValue projection first, then adapt it to
+        // the host StackItem. Both steps' errors surface as a single VM error.
+        let to_item = || -> Result<StackItem, CoreError> {
+            Ok(StackItem::try_from(self.to_stack_value()?)?)
+        };
+        to_item().map_err(|error| {
             crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert transaction StackValue to StackItem: {error}"
             ))
