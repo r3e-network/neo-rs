@@ -86,9 +86,14 @@ impl Secp256k1Crypto {
         let message = Message::from_digest_slice(&message_hash)
             .map_err(|e| CryptoError::invalid_argument(format!("Invalid message: {e}")))?;
 
-        let signature = secp256k1::ecdsa::Signature::from_compact(signature)
+        let mut signature = secp256k1::ecdsa::Signature::from_compact(signature)
             .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
 
+        // C# (.NET ECDsa / BouncyCastle) accepts both low-s and high-s signatures;
+        // the libsecp256k1 binding rejects high-s. Normalize to low-s so a high-s
+        // signature that C# verifies also verifies here (malleability parity). A
+        // signature and its s-normalized form are both valid for the same key/msg.
+        signature.normalize_s();
         Ok(secp.verify_ecdsa(&message, &signature, &public_key).is_ok())
     }
 
@@ -297,13 +302,15 @@ fn verify_ecdsa_raw64_with_hash(
 ) -> CryptoResult<bool> {
     match (curve, hash_algorithm) {
         (ECCurve::Secp256k1, HashAlgorithm::Keccak256) => {
-            let sig = secp256k1::ecdsa::Signature::from_compact(signature)
+            let mut sig = secp256k1::ecdsa::Signature::from_compact(signature)
                 .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
             let pubkey = Secp256k1PublicKey::from_slice(public_key)
                 .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
             let hash = Crypto::keccak256(data);
             let msg = Message::from_digest_slice(&hash)
                 .map_err(|e| CryptoError::invalid_argument(format!("Invalid message: {e}")))?;
+            // Normalize to low-s for malleability parity with C# (see Secp256k1Crypto::verify).
+            sig.normalize_s();
             Ok(Secp256k1::verification_only()
                 .verify_ecdsa(&msg, &sig, &pubkey)
                 .is_ok())
@@ -530,6 +537,43 @@ mod tests {
         let is_valid = Secp256k1Crypto::verify(message, &signature, &public_key).unwrap();
 
         assert!(is_valid);
+    }
+
+    /// C# (.NET ECDsa / BouncyCastle) accepts high-s secp256k1 signatures; the
+    /// libsecp256k1 binding rejects them unless normalized. Verify the high-s
+    /// malleated form (s' = N - s) still validates, matching C# (consensus parity
+    /// for CryptoLib.verifyWithECDsa secp256k1 and Notary signature checks).
+    #[test]
+    fn secp256k1_verify_accepts_high_s_like_csharp() {
+        use num_bigint::BigUint;
+
+        let private_key = Secp256k1Crypto::generate_private_key().unwrap();
+        let public_key = Secp256k1Crypto::derive_public_key(&private_key).unwrap();
+        let message = b"high-s parity";
+
+        // The secp256k1 crate emits a canonical low-s signature.
+        let low_sig = Secp256k1Crypto::sign(message, &private_key).unwrap();
+        assert!(Secp256k1Crypto::verify(message, &low_sig, &public_key).unwrap());
+
+        // Malleate to the high-s representative: s' = N - s (> N/2).
+        let n = BigUint::parse_bytes(
+            b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
+            16,
+        )
+        .unwrap();
+        let s = BigUint::from_bytes_be(&low_sig[32..]);
+        let high_s = &n - &s;
+        assert_ne!(high_s, s, "freshly-signed s must be low-s");
+
+        let mut high_sig = [0u8; 64];
+        high_sig[..32].copy_from_slice(&low_sig[..32]);
+        let high_s_bytes = high_s.to_bytes_be();
+        high_sig[64 - high_s_bytes.len()..].copy_from_slice(&high_s_bytes);
+
+        assert!(
+            Secp256k1Crypto::verify(message, &high_sig, &public_key).unwrap(),
+            "high-s signature must verify (C# parity)"
+        );
     }
 
     #[test]

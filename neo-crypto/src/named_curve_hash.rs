@@ -12,10 +12,10 @@ protocol_enum! {
         Secp256k1SHA256 = 0x16 => "secp256k1SHA256",
         /// secp256r1 with SHA256.
         Secp256r1SHA256 = 0x17 => "secp256r1SHA256",
-        /// secp256k1 with Keccak256.
-        Secp256k1Keccak256 = 0x18 => "secp256k1Keccak256",
-        /// secp256r1 with Keccak256.
-        Secp256r1Keccak256 = 0x19 => "secp256r1Keccak256",
+        /// secp256k1 with Keccak256. C# NamedCurveHash.secp256k1Keccak256 = 122.
+        Secp256k1Keccak256 = 0x7A => "secp256k1Keccak256",
+        /// secp256r1 with Keccak256. C# NamedCurveHash.secp256r1Keccak256 = 123.
+        Secp256r1Keccak256 = 0x7B => "secp256r1Keccak256",
     }
 }
 
@@ -47,8 +47,8 @@ mod tests {
     fn test_named_curve_hash_values() {
         assert_eq!(NamedCurveHash::Secp256k1SHA256.to_byte(), 0x16);
         assert_eq!(NamedCurveHash::Secp256r1SHA256.to_byte(), 0x17);
-        assert_eq!(NamedCurveHash::Secp256k1Keccak256.to_byte(), 0x18);
-        assert_eq!(NamedCurveHash::Secp256r1Keccak256.to_byte(), 0x19);
+        assert_eq!(NamedCurveHash::Secp256k1Keccak256.to_byte(), 122);
+        assert_eq!(NamedCurveHash::Secp256r1Keccak256.to_byte(), 123);
     }
 
     #[test]
@@ -62,14 +62,17 @@ mod tests {
             Some(NamedCurveHash::Secp256r1SHA256)
         );
         assert_eq!(
-            NamedCurveHash::from_byte(0x18),
+            NamedCurveHash::from_byte(122),
             Some(NamedCurveHash::Secp256k1Keccak256)
         );
         assert_eq!(
-            NamedCurveHash::from_byte(0x19),
+            NamedCurveHash::from_byte(123),
             Some(NamedCurveHash::Secp256r1Keccak256)
         );
         assert_eq!(NamedCurveHash::from_byte(0x00), None);
+        // The old (incorrect) Keccak byte values must NOT decode.
+        assert_eq!(NamedCurveHash::from_byte(0x18), None);
+        assert_eq!(NamedCurveHash::from_byte(0x19), None);
     }
 
     #[test]
@@ -143,7 +146,7 @@ mod tests {
     #[test]
     fn test_named_curve_hash_serde_uses_protocol_byte() {
         let serialized = serde_json::to_string(&NamedCurveHash::Secp256r1Keccak256).unwrap();
-        assert_eq!(serialized, "25");
+        assert_eq!(serialized, "123");
 
         let deserialized: NamedCurveHash = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized, NamedCurveHash::Secp256r1Keccak256);
