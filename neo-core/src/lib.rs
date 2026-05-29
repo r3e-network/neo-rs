@@ -257,9 +257,14 @@ pub mod tokens_tracker;
 
 // Core types
 pub use neo_primitives::{BigDecimal, ContainsTransactionType, UnhandledExceptionPolicy, panic_message};
-pub use crate::neo_vm::{ScriptBuilder, rpc_json};
-// Module-path aliases for relocated root modules.
-pub use crate::neo_vm::script_builder;
+pub use crate::neo_vm::rpc_json;
+
+/// ScriptBuilder is a pure script-byte construction helper (C# Neo.VM.ScriptBuilder).
+/// It lives at the crate root rather than inside the local VM host tree because
+/// it only emits bytecode from neo-vm-rs opcode/integer metadata; it does not
+/// depend on the stateful execution engine.
+pub mod script_builder;
+pub use script_builder::ScriptBuilder;
 pub use neo_primitives::{big_decimal, contains_transaction_type, unhandled_exception_policy};
 pub use builders::{
     AndConditionBuilder, OrConditionBuilder, SignerBuilder, TransactionAttributesBuilder,

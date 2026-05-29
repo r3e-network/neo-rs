@@ -2,7 +2,7 @@
 //!
 //! This module provides a way to programmatically construct scripts for the Neo VM.
 
-use crate::neo_vm::error::{VmError, VmResult};
+use crate::error::{CoreError, CoreResult};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::StackValue;
 use num_bigint::{BigInt, Sign};
@@ -150,7 +150,7 @@ impl ScriptBuilder {
     }
 
     /// Emits a push operation for an arbitrary precision integer (C# parity).
-    pub fn emit_push_bigint(&mut self, value: BigInt) -> VmResult<&mut Self> {
+    pub fn emit_push_bigint(&mut self, value: BigInt) -> CoreResult<&mut Self> {
         if value >= BigInt::from(-1) && value <= BigInt::from(16) {
             if let Some(v) = value.to_i64() {
                 if v == -1 {
@@ -183,7 +183,7 @@ impl ScriptBuilder {
         } else if bytes.len() <= 32 {
             32
         } else {
-            return Err(VmError::invalid_operation_msg(
+            return Err(CoreError::invalid_operation(
                 "BigInteger value exceeds PUSHINT256 capacity",
             ));
         };
@@ -197,7 +197,7 @@ impl ScriptBuilder {
             16 => OpCode::PUSHINT128,
             32 => OpCode::PUSHINT256,
             _ => {
-                return Err(VmError::invalid_operation_msg(format!(
+                return Err(CoreError::invalid_operation(format!(
                     "Invalid integer size for push: {target_len}"
                 )))
             }
@@ -208,7 +208,7 @@ impl ScriptBuilder {
     }
 
     /// Emits a push operation for a `neo-vm-rs` stack value.
-    pub fn emit_push_stack_value(&mut self, item: &StackValue) -> VmResult<&mut Self> {
+    pub fn emit_push_stack_value(&mut self, item: &StackValue) -> CoreResult<&mut Self> {
         match item {
             StackValue::Null => {
                 self.emit_opcode(OpCode::PUSHNULL);
@@ -249,13 +249,13 @@ impl ScriptBuilder {
                 }
             }
             StackValue::Pointer(_) => {
-                return Err(VmError::invalid_operation_msg(
+                return Err(CoreError::invalid_operation(
                     "Cannot serialize Pointer to script".to_string(),
                 ));
             }
             StackValue::Interop(_) | StackValue::Iterator(_) => {
                 // Interop handles cannot be serialized to script.
-                return Err(VmError::invalid_operation_msg(
+                return Err(CoreError::invalid_operation(
                     "Cannot serialize InteropInterface to script".to_string(),
                 ));
             }
@@ -265,10 +265,10 @@ impl ScriptBuilder {
     }
 
     /// Emits a jump operation, automatically upgrading to the long form when needed.
-    pub fn emit_jump(&mut self, mut opcode: OpCode, offset: i32) -> VmResult<&mut Self> {
+    pub fn emit_jump(&mut self, mut opcode: OpCode, offset: i32) -> CoreResult<&mut Self> {
         let opcode_value = opcode.byte();
         if opcode_value < OpCode::JMP.byte() || opcode_value > OpCode::JMPLE_L.byte() {
-            return Err(VmError::invalid_operation_msg(format!(
+            return Err(CoreError::invalid_operation(format!(
                 "Invalid jump operation: {opcode:?}"
             )));
         }
@@ -277,7 +277,7 @@ impl ScriptBuilder {
         if is_short {
             if offset < i32::from(i8::MIN) || offset > i32::from(i8::MAX) {
                 opcode = OpCode::try_from(opcode_value + 1)
-                    .map_err(|_| VmError::invalid_operation_msg("Invalid long jump opcode"))?;
+                    .map_err(|_| CoreError::invalid_operation("Invalid long jump opcode"))?;
                 self.emit_instruction(opcode, &offset.to_le_bytes());
             } else {
                 let short = (offset as i8) as u8;
@@ -291,7 +291,7 @@ impl ScriptBuilder {
     }
 
     /// Emits a call operation.
-    pub fn emit_call(&mut self, offset: i32) -> VmResult<&mut Self> {
+    pub fn emit_call(&mut self, offset: i32) -> CoreResult<&mut Self> {
         if offset < i32::from(i8::MIN) || offset > i32::from(i8::MAX) {
             self.emit_instruction(OpCode::CALL_L, &offset.to_le_bytes());
         } else {
@@ -302,9 +302,9 @@ impl ScriptBuilder {
     }
 
     /// Emits a syscall operation.
-    pub fn emit_syscall(&mut self, api: &str) -> VmResult<&mut Self> {
+    pub fn emit_syscall(&mut self, api: &str) -> CoreResult<&mut Self> {
         if api.len() > 252 {
-            return Err(VmError::invalid_operation_msg(format!(
+            return Err(CoreError::invalid_operation(format!(
                 "Syscall API too long: {} bytes (max 252)",
                 api.len()
             )));
