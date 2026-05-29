@@ -4,7 +4,7 @@ use crate::persistence::data_cache::DataCache;
 use crate::smart_contract::CallFlags;
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::contract_state::ContractState;
-use crate::neo_vm::ExecutionContext;
+use crate::vm_runtime::ExecutionContext;
 use crate::UInt160;
 use std::sync::Arc;
 

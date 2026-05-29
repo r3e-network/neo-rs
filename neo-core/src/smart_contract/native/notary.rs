@@ -20,7 +20,7 @@ use crate::smart_contract::native::{
 };
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
-use crate::neo_vm::{StackItem};
+use crate::neo_vm::StackItem;
 use crate::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;

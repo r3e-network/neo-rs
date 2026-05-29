@@ -173,9 +173,6 @@ pub mod json_serializer;
 /// Interoperable trait for smart contract state round-tripping.
 pub mod interoperable;
 
-/// NotifyEventArgs for smart contract event notifications.
-pub mod notify_event_args;
-
 /// Interop service registry.
 ///
 /// [`InteropService`] manages native contract methods accessible via SYSCALL.
@@ -202,9 +199,6 @@ pub mod rpc_json;
 /// Slot storage for locals, arguments, and static fields.
 pub mod slot;
 
-/// StorageContext for smart contract storage operations.
-pub mod storage_context;
-
 /// Stateful, reference-counted host stack item used by the local execution
 /// engine. The pure value type lives upstream in the `neo_vm_rs` crate; this
 /// host type adds reference counting and interop-interface support.
@@ -229,7 +223,6 @@ pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
 pub use interoperable::Interoperable;
 pub use json_serializer::JsonSerializer;
-pub use notify_event_args::NotifyEventArgs;
 pub use interop_service::InteropService;
 pub use jump_table::JumpTable;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
@@ -238,7 +231,6 @@ pub use script::Script;
 pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
 pub use stack_item::{InteropInterface, StackItem};
-pub use storage_context::StorageContext;
 
 // ============================================================================
 // I/O Abstraction

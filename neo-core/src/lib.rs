@@ -328,6 +328,10 @@ pub mod neo_io {
 /// Neo VM compatibility types used by core and downstream crates.
 pub mod neo_vm;
 
+/// Host VM runtime boundary: the single seam through which the smart-contract
+/// layer imports the local, stateful VM host types (see [`vm_runtime`]).
+pub mod vm_runtime;
+
 // ============================================================================
 // Ledger Re-export
 // ============================================================================

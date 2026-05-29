@@ -3,7 +3,7 @@
 use neo_crypto::Crypto;
 use crate::hardfork::Hardfork;
 // Old wrapper types removed - StackValue compounds are flat Vecs now
-use crate::neo_vm::{StackItem};
+use crate::neo_vm::StackItem;
 use crate::neo_vm::stack_item::{Array as ArrayItem, Map as MapItem, Struct as StructItem};
 use neo_vm_rs::VmOrderedDictionary;
 use crate::smart_contract::application_engine::{
