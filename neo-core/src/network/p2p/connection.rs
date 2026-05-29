@@ -7,7 +7,7 @@
 //! - Reduced allocations in message serialization
 
 use super::{
-    channels_config::ChannelsConfig,
+    ChannelsConfig,
     framed::{
         FrameConfig, FrameReader, WriteBuffer, flush_write_buffer, write_frame,
         write_frame_vectored,

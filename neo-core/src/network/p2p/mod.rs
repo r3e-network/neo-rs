@@ -45,7 +45,6 @@
 //! while maintaining backward compatibility through capability negotiation.
 
 pub mod capabilities;
-pub mod channels_config;
 pub mod connection;
 pub mod framed;
 mod framed_codec;
@@ -62,10 +61,13 @@ pub mod remote_node;
 #[cfg(feature = "runtime")]
 pub mod task_manager;
 pub mod task_session;
-pub mod timeouts;
 
 // Re-export commonly used types
-pub use channels_config::ChannelsConfig;
+// ChannelsConfig + timeout counters are canonical in neo-p2p (low-level wire layer).
+// neo-core's `network::p2p` acts as the facade mirroring C# `Neo.Network.P2P`,
+// re-exporting the canonical neo-p2p submodules rather than duplicating them.
+pub use neo_p2p::{channels_config, timeouts};
+pub use neo_p2p::ChannelsConfig;
 pub use connection::PeerConnection;
 pub use framed::FrameConfig;
 pub use helper::{get_sign_data, get_sign_data_vec};

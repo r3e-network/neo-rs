@@ -15,7 +15,7 @@ mod routing;
 mod timers;
 
 use super::{
-    channels_config::ChannelsConfig,
+    ChannelsConfig,
     connection::{ConnectionState, PeerConnection},
     local_node::{LocalNode, RemoteNodeSnapshot},
     payloads::VersionPayload,

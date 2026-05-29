@@ -59,7 +59,7 @@
 
 use super::{
     capabilities::NodeCapability,
-    channels_config::ChannelsConfig,
+    ChannelsConfig,
     peer::{MAX_COUNT_FROM_SEED_LIST, PeerCommand, PeerState, PeerTimer},
     remote_node::{RemoteNode, RemoteNodeCommand},
 };

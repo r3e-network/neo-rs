@@ -8,7 +8,7 @@
 //! bookkeeping to this component while preserving actor-runtime semantics.
 
 use super::{
-    channels_config::ChannelsConfig, local_node::RemoteNodeSnapshot, payloads::VersionPayload,
+    ChannelsConfig, local_node::RemoteNodeSnapshot, payloads::VersionPayload,
     validate_peer_endpoint,
 };
 use crate::runtime::{ActorContext, ActorRef, ScheduleHandle};

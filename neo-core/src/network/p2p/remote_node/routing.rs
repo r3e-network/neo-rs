@@ -92,7 +92,7 @@ impl RemoteNode {
         let mut connection = self.connection.lock().await;
         if let Err(err) = connection.send_message(message).await {
             if err.is_timeout() {
-                crate::network::p2p::timeouts::inc_write_timeout();
+                neo_p2p::timeouts::inc_write_timeout();
             }
             tracing::warn!(
                 target: "neo",
@@ -107,7 +107,7 @@ impl RemoteNode {
         // are put on the wire immediately instead of waiting for buffer thresholds.
         if let Err(err) = connection.flush().await {
             if err.is_timeout() {
-                crate::network::p2p::timeouts::inc_write_timeout();
+                neo_p2p::timeouts::inc_write_timeout();
             }
             tracing::warn!(
                 target: "neo",

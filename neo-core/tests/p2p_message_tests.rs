@@ -4,8 +4,7 @@
 
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::message::{Message, PAYLOAD_MAX_SIZE};
-use neo_core::network::p2p::message_command::MessageCommand;
-use neo_core::network::p2p::message_flags::MessageFlags;
+use neo_core::network::p2p::{MessageCommand, MessageFlags};
 use neo_core::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT};
 use neo_core::network::p2p::payloads::ping_payload::PingPayload;
 use neo_core::network::p2p::payloads::InventoryType;
@@ -26,7 +25,7 @@ fn test_payload_max_size() {
 /// Tests MessageFlags parsing
 #[test]
 fn test_message_flags_none() {
-    let flags = MessageFlags::from_byte(0x00).unwrap();
+    let flags = MessageFlags::from_byte(0x00);
     assert_eq!(flags, MessageFlags::NONE);
     assert!(!flags.is_compressed());
 }
@@ -34,7 +33,7 @@ fn test_message_flags_none() {
 /// Tests MessageFlags compression flag
 #[test]
 fn test_message_flags_compressed() {
-    let flags = MessageFlags::from_byte(0x01).unwrap();
+    let flags = MessageFlags::from_byte(0x01);
     assert_eq!(flags, MessageFlags::COMPRESSED);
     assert!(flags.is_compressed());
 }
@@ -45,11 +44,8 @@ fn test_message_flags_roundtrip() {
     assert_eq!(MessageFlags::NONE.to_byte(), 0x00);
     assert_eq!(MessageFlags::COMPRESSED.to_byte(), 0x01);
 
-    assert_eq!(MessageFlags::from_byte(0x00).unwrap(), MessageFlags::NONE);
-    assert_eq!(
-        MessageFlags::from_byte(0x01).unwrap(),
-        MessageFlags::COMPRESSED
-    );
+    assert_eq!(MessageFlags::from_byte(0x00), MessageFlags::NONE);
+    assert_eq!(MessageFlags::from_byte(0x01), MessageFlags::COMPRESSED);
 }
 
 /// Tests MessageCommand conversions

@@ -3,7 +3,7 @@ use super::{RemoteNode, RemoteNodeCommand};
 use crate::network::error::NetworkError;
 use crate::network::p2p::connection::ConnectionState;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
-use crate::network::p2p::timeouts;
+use neo_p2p::timeouts;
 use crate::runtime::{ActorContext, ActorResult};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;

@@ -110,3 +110,10 @@ neo-csharp-latest/
 /tools/sgx-evidence-helper/Enclave/*.o
 /tools/sgx-evidence-helper/Enclave/Enclave_private_test.pem
 .omx/
+
+# C# v3.9.x reference repos (audit only, not part of build)
+neo_csharp_vm/
+neo_csharp_node/
+
+# Local working docs / analysis scratch
+claudedocs/

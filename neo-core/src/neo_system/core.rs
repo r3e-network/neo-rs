@@ -75,8 +75,9 @@ use crate::hardfork::Hardfork;
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand, BlockchainHandle};
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
-    LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, payloads::block::Block, timeouts,
+    LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, payloads::block::Block,
 };
+use neo_p2p::timeouts;
 use crate::persistence::{StoreCache, StoreFactory, store::Store, store_provider::StoreProvider};
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
