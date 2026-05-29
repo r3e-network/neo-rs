@@ -1,6 +1,6 @@
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, SeekDirection, StorageConfig, StorageKey,
-    StoreCache,
+    providers::RocksDBStoreProvider, SeekDirection, StorageConfig, StorageItemExt, StorageKey,
+    StoreCache, StoreProvider,
 };
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::UInt160;
