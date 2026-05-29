@@ -2,7 +2,7 @@
 
 use super::{
     message::Message,
-    message_command::MessageCommand,
+    MessageCommand,
     message_flags::MessageFlags,
     payloads::{
         AddrPayload, Block, ExtensiblePayload, FilterAddPayload, FilterLoadPayload,

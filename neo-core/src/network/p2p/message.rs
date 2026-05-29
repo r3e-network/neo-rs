@@ -6,7 +6,7 @@
 //! - Reusable buffer support for high-throughput scenarios
 
 use super::{
-    message_command::MessageCommand, message_flags::MessageFlags, messages::ProtocolMessage,
+    MessageCommand, message_flags::MessageFlags, messages::ProtocolMessage,
 };
 use crate::compression::{
     compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,

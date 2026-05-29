@@ -53,7 +53,6 @@ pub mod helper;
 #[cfg(feature = "runtime")]
 pub mod local_node;
 pub mod message;
-pub mod message_command;
 pub mod message_flags;
 pub mod messages;
 pub mod payloads;
@@ -77,7 +76,9 @@ pub use local_node::{
     RemoteNodeSnapshot,
 };
 pub use message::Message;
-pub use message_command::MessageCommand;
+// MessageCommand is the canonical P2P wire enum defined in neo-p2p; neo-core
+// re-exports it rather than defining a byte-identical duplicate.
+pub use neo_p2p::MessageCommand;
 pub use message_flags::MessageFlags;
 pub use messages::{MessageHeader, NetworkMessage, ProtocolMessage};
 #[cfg(feature = "runtime")]
