@@ -15,12 +15,13 @@ a real `workspace.dependencies` table.
 But it is mid-refactor and **not production-ready**. Several findings are protocol-
 correctness defects, not style. The 7 dominant themes:
 
-1. **Protocol-correctness defects (consensus-breaking).** MaxStackSize enforcement
-   deliberately disabled (`neo-vm/src/execution_engine/execution.rs:~236`, verified);
-   consensus block hash uses single SHA-256 where N3 needs double
-   (`neo-consensus/.../block.rs:75`); wallet helper builds txns with `WitnessScope::NONE`
-   instead of `CALLED_BY_ENTRY` (`neo-core/src/wallets/helper.rs:762`, verified); 6
-   mainnet-block repro tests document state-root divergence vs C#.
+1. **Protocol-correctness defects.** MaxStackSize enforcement deliberately disabled
+   (`neo-vm/.../execution.rs:~236`, verified — FIXED); wallet helper builds txns with
+   `WitnessScope::NONE` instead of `CALLED_BY_ENTRY` (`wallets/helper.rs:762`, verified
+   — FIXED); 6 mainnet-block repro tests document state-root divergence vs C#.
+   **CORRECTION:** the "single vs double SHA-256 block hash" finding is **REFUTED** —
+   see 0.2 below. Neo N3 block/header/tx hashing uses single SHA-256; the current code
+   is correct, proven by the now-runnable genesis known-answer test.
 2. **Panics reachable from library code.** ~1,611 unwrap/expect outside tests; two on the
    VM hot path (`external_vm.rs:317,353`, verified) → node abort (`panic="abort"` release);
    unbounded `read_var_bytes(usize::MAX)` reachable from on-chain events (OOM DoS).
@@ -73,14 +74,20 @@ verification agent (verdicts: 8 confirmed-bug, 1 nuanced) before any edit.
 - [x] 0.1 Re-enable MaxStackSize (neo-vm execution.rs) — DONE (commit 6017bcf2).
       Re-validated: 84 neo-vm unit tests pass with the check on (no over-count).
       Repaired the neo-vm unit-test target (Array::set, hex dev-dep) to validate.
-- [ ] 0.2 Double-SHA block/tx/header hash — **DEFERRED, highest priority.** All four
-      try_hash() sites use single `Crypto::sha256`; C# N3 uses `Crypto.Hash256`
-      (double), and the codebase's own `SerializablePayload::hash()` default is
-      already double — strong corroboration. NOT applied because it changes every
-      block/tx hash and the adjudicating known-answer test
-      (`neo-core/src/ledger/genesis.rs::mainnet_genesis_hash_matches_csharp`)
-      cannot run until the neo-core test target compiles (task #10). Apply only
-      after #10, gated on that test + a header double-SHA vector.
+- [x] 0.2 Double-SHA block/tx/header hash — **REFUTED. Do NOT apply.** After fixing
+      the neo-core test target (#10), the known-answer test
+      `genesis.rs::mainnet_genesis_hash_matches_csharp` was run: it PASSES with the
+      current single-`Crypto::sha256` code, and validates against the real N3 mainnet
+      genesis hash `0x1f4d…87c15` plus the real genesis next-consensus address
+      (`NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1`). So Neo N3 block/header/tx hashing uses
+      SINGLE SHA-256 and the code is correct; switching to double would break consensus
+      parity. The review's double-SHA claim over-relied on general Bitcoin-lineage
+      lore + the unused `SerializablePayload::hash()` default (which is itself the
+      dormant inconsistency — it should be single; low-priority cleanup since unused).
+      The state-root divergences have a different root cause (storage-key/native-
+      contract layout), NOT the hash function.
+      LESSON: this vindicates gating consensus-critical changes on a runnable
+      known-answer test rather than agent confidence.
 - [x] 0.3 `WitnessScope::CALLED_BY_ENTRY` in wallets/helper.rs — DONE (4beff058).
 - [x] 0.4 external_vm.rs unwrap → FAULT — DONE (0bc5d4be).
 - [x] 0.5 Cap read_var_bytes in token tracker (3 sites) — DONE (0bc5d4be).
@@ -95,10 +102,15 @@ verification agent (verdicts: 8 confirmed-bug, 1 nuanced) before any edit.
 - [ ] 0.10 RPC error-code off-by-one alignment + compile-time assertion — PENDING
       (macro rewrite to match C# RpcError codes exactly; medium effort).
 
-**Test-target rot is the gate for the remaining behavioral fixes.** Both the
-neo-vm and neo-core test targets had pre-existing compile rot (stale StackItem
-APIs, missing dev-deps, removed CoreError variants). neo-vm's unit target is now
-green; neo-core's (task #10) must be fixed before 0.2 can be validated.
+**Test-target rot — RESOLVED for the unit suites.** Both neo-vm and neo-core test
+targets had pre-existing compile rot (stale StackItem APIs, missing dev-deps,
+removed CoreError variants). Both unit-test targets are now green: **neo-vm 84
+tests pass; neo-core 575 tests pass**. Fixing neo-core's revealed (and we fixed) a
+real functional bug — the green-baseline iterator-as-Integer shortcut broke
+native-method iterator results; they are now `InteropInterface(IteratorInterop)`
+(C# parity). The neo-core *integration* tests (`tests/`) and doctests may still
+carry separate rot — audit next. With the unit suites green, behavioral protocol
+changes (e.g. 0.10) can now be validated.
 
 ### Wave 1 — Hygiene & lint gates
 - 1.1 Add `[workspace.lints]`, clippy.toml, deny.toml, rust-toolchain.toml; `lints.workspace = true`.
