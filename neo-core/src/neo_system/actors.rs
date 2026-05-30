@@ -10,8 +10,10 @@
 use std::sync::Arc;
 
 use crate::ledger::transaction_router::TransactionRouter;
-use crate::runtime::{ActorRef, ActorRuntimeError, ActorRuntimeResult};
-use tokio::{sync::mpsc, task::JoinHandle};
+use crate::runtime::{
+    ActorRef, ActorRuntimeError, ActorRuntimeResult, CancellationToken, TaskExecutor,
+};
+use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::ledger::blockchain::{BlockchainCommand, BlockchainHandle};
@@ -33,7 +35,7 @@ struct TransactionRouterEnvelope {
 #[derive(Clone, Debug)]
 pub struct TransactionRouterHandle {
     sender: mpsc::Sender<TransactionRouterEnvelope>,
-    task: Arc<JoinHandle<()>>,
+    executor: TaskExecutor,
 }
 
 impl TransactionRouterHandle {
@@ -44,18 +46,22 @@ impl TransactionRouterHandle {
     ) -> Self {
         let (sender, receiver) = mpsc::channel(TX_ROUTER_MAILBOX_CAPACITY);
         let router = TransactionRouter::new((*settings).clone());
-        let task = Arc::new(tokio::spawn(run_transaction_router(
-            router,
-            blockchain.into(),
-            receiver,
-        )));
+        let blockchain = blockchain.into();
+        let executor = TaskExecutor::new();
+        executor.spawn(move |shutdown| {
+            run_transaction_router(router, blockchain, receiver, shutdown)
+        });
 
-        Self { sender, task }
+        Self { sender, executor }
     }
 
-    /// Stops the router worker task.
+    /// Requests cooperative shutdown of the router worker.
+    ///
+    /// Unlike a hard `JoinHandle::abort`, this signals the worker through its
+    /// cancellation token so it finishes the in-flight pre-verification and
+    /// stops at a safe point (reth/Substrate-style graceful shutdown).
     pub fn abort(&self) {
-        self.task.abort();
+        self.executor.trigger_shutdown();
     }
 
     /// Enqueues transaction pre-verification without waiting for mailbox capacity.
@@ -105,8 +111,16 @@ async fn run_transaction_router(
     router: TransactionRouter,
     blockchain: BlockchainHandle,
     mut receiver: mpsc::Receiver<TransactionRouterEnvelope>,
+    shutdown: CancellationToken,
 ) {
-    while let Some(envelope) = receiver.recv().await {
+    loop {
+        let envelope = tokio::select! {
+            _ = shutdown.cancelled() => break,
+            maybe = receiver.recv() => match maybe {
+                Some(envelope) => envelope,
+                None => break,
+            },
+        };
         let completed = router.preverify(envelope.transaction, envelope.relay);
         if let Err(error) = blockchain.tell_from(
             BlockchainCommand::PreverifyCompleted(completed),

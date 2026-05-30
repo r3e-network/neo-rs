@@ -13,6 +13,7 @@ mod mailbox;
 mod message;
 mod props;
 mod scheduler;
+mod task_executor;
 
 pub use actor::{Actor, ActorResult, SupervisorDirective};
 pub use actor_ref::ActorRef;
@@ -25,6 +26,7 @@ pub use event_stream::EventStreamHandle;
 pub use message::{Envelope, MailboxMessage, SystemMessage, Terminated};
 pub use props::Props;
 pub use scheduler::{Cancelable, ScheduleHandle, Scheduler};
+pub use task_executor::{CancellationToken, TaskExecutor};
 
 #[cfg(test)]
 mod tests;

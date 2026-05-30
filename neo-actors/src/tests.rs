@@ -551,3 +551,50 @@ fn default_mailbox_prioritizes_system_messages() {
     );
     assert!(mailbox.is_empty());
 }
+
+#[tokio::test]
+async fn task_executor_cancels_and_awaits_tasks() {
+    let executor = TaskExecutor::new();
+    let stopped = Arc::new(AtomicUsize::new(0));
+    let stopped_clone = stopped.clone();
+    executor.spawn(move |token| async move {
+        token.cancelled().await;
+        stopped_clone.store(1, Ordering::SeqCst);
+    });
+
+    assert!(!executor.is_shutting_down());
+    executor.shutdown().await;
+    assert!(executor.is_shutting_down());
+    assert_eq!(
+        stopped.load(Ordering::SeqCst),
+        1,
+        "task must observe cooperative cancellation"
+    );
+}
+
+#[tokio::test]
+async fn task_executor_stops_select_loop_on_shutdown() {
+    let executor = TaskExecutor::new();
+    let ticks = Arc::new(AtomicUsize::new(0));
+    let ticks_clone = ticks.clone();
+    executor.spawn(move |token| async move {
+        loop {
+            tokio::select! {
+                _ = token.cancelled() => break,
+                _ = sleep(Duration::from_millis(1)) => {
+                    ticks_clone.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        }
+    });
+
+    sleep(Duration::from_millis(5)).await;
+    executor.shutdown().await;
+    let after = ticks.load(Ordering::SeqCst);
+    sleep(Duration::from_millis(5)).await;
+    assert_eq!(
+        after,
+        ticks.load(Ordering::SeqCst),
+        "the select! loop must stop incrementing after shutdown"
+    );
+}
