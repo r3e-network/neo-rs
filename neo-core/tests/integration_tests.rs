@@ -7,7 +7,6 @@
 
 use neo_core::BigDecimal;
 use neo_core::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
-use neo_core::events::{EventHandler, EventManager};
 use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
@@ -27,10 +26,6 @@ use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 
 use num_bigint::BigInt;
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
 
 fn to_hex(bytes: &[u8], little_endian: bool) -> String {
     let mut data = bytes.to_vec();
@@ -249,35 +244,6 @@ fn test_hardfork_manager() {
     assert!(!manager.is_enabled(Hardfork::HfBasilisk, 199));
     assert!(manager.is_enabled(Hardfork::HfBasilisk, 200));
     assert!(manager.is_enabled(Hardfork::HfBasilisk, 201));
-}
-
-struct TestHandler {
-    called: Arc<AtomicBool>,
-}
-
-impl EventHandler for TestHandler {
-    fn handle(&self, _sender: &dyn std::any::Any, _args: &dyn std::any::Any) {
-        self.called.store(true, Ordering::SeqCst);
-    }
-}
-
-#[test]
-fn test_event_manager() {
-    // Test EventManager
-    let manager = EventManager::new();
-    let called = Arc::new(AtomicBool::new(false));
-
-    let handler = TestHandler {
-        called: called.clone(),
-    };
-
-    // Register handler
-    assert!(manager.register("test_event", handler));
-
-    // Trigger event
-    manager.trigger("test_event", &"sender", &"args");
-
-    assert!(called.load(Ordering::SeqCst));
 }
 
 // NeoSystem moved to neo-node (Phase 2 refactoring)

@@ -273,7 +273,6 @@ pub use builders::{
 };
 pub use neo_crypto::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};
-pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
 pub use ledger::{Block, BlockHeader};
 pub use neo_primitives::{
