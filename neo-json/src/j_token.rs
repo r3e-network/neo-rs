@@ -15,9 +15,9 @@ pub const MIN_SAFE_INTEGER: i64 = -MAX_SAFE_INTEGER;
 /// Matches the Neo protocol JSON nesting limit and bounds recursion so that
 /// adversarial input cannot trigger a stack overflow via `serde_json::from_str`.
 pub const MAX_JSON_DEPTH: usize = 64;
+use crate::escape;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
-use serde_json::{self, ser::PrettyFormatter};
 use std::fmt;
 use std::io::Write;
 
@@ -267,17 +267,12 @@ impl JToken {
     }
 
     /// Serializes this token to a UTF-8 byte vector, optionally with indentation.
+    ///
+    /// Strings are escaped to match C# `System.Text.Json` with the default
+    /// encoder (`JavaScriptEncoder.Default`): `<` `>` `&` `'` `+` `` ` `` and
+    /// every non-ASCII code point are emitted as `\uXXXX`.
     pub fn to_byte_array(&self, indented: bool) -> Result<Vec<u8>, JsonError> {
-        let mut buffer = Vec::new();
-        if indented {
-            let formatter = PrettyFormatter::with_indent(b"  ");
-            let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
-            self.serialize(&mut serializer)?;
-        } else {
-            let mut serializer = serde_json::Serializer::new(&mut buffer);
-            self.serialize(&mut serializer)?;
-        }
-        Ok(buffer)
+        Ok(escape::to_vec(self, indented)?)
     }
 
     /// Serializes this token to a JSON string, optionally with indentation.
@@ -287,16 +282,11 @@ impl JToken {
     }
 
     /// Writes this token as JSON to the given writer, optionally with indentation.
+    ///
+    /// Uses C#-compatible escaping (`JavaScriptEncoder.Default`); see
+    /// [`to_byte_array`](Self::to_byte_array).
     pub fn write(&self, writer: &mut dyn Write, indented: bool) -> Result<(), JsonError> {
-        if indented {
-            let formatter = PrettyFormatter::with_indent(b"  ");
-            let mut serializer = serde_json::Serializer::with_formatter(writer, formatter);
-            self.serialize(&mut serializer)?;
-        } else {
-            let mut serializer = serde_json::Serializer::new(writer);
-            self.serialize(&mut serializer)?;
-        }
-        Ok(())
+        Ok(escape::to_writer(writer, self, indented)?)
     }
 
     /// Evaluates a JSONPath expression against this token and returns matching elements.
@@ -358,7 +348,9 @@ impl From<Vec<Option<Self>>> for JToken {
 
 impl fmt::Display for JToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match serde_json::to_string(self) {
+        // Matches C# `JToken.ToString()`, which serializes through
+        // `Utf8JsonWriter` with `JavaScriptEncoder.Default` escaping.
+        match escape::to_string(self, false) {
             Ok(text) => f.write_str(&text),
             Err(_) => Err(fmt::Error),
         }

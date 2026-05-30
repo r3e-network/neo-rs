@@ -94,7 +94,11 @@ impl fmt::Display for JObject {
             if index > 0 {
                 f.write_str(",")?;
             }
-            write!(f, "\"{key}\":")?;
+            // Property names are escaped the same way C# `Utf8JsonWriter`
+            // escapes them (`JavaScriptEncoder.Default`); `escape::to_string`
+            // yields a fully quoted, escaped JSON string.
+            let key_json = crate::escape::to_string(key, false).map_err(|_| fmt::Error)?;
+            write!(f, "{key_json}:")?;
             match value {
                 Some(token) => write!(f, "{token}")?,
                 None => f.write_str("null")?,

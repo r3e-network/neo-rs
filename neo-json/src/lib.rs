@@ -4,6 +4,9 @@
 /// Error types for the Neo JSON library.
 pub mod error;
 
+/// C#-compatible JSON string escaping (`JavaScriptEncoder.Default`).
+pub mod escape;
+
 /// JSON array type (matches C# `JArray`).
 pub mod j_array;
 /// JSON object type (matches C# `JObject`).
@@ -19,6 +22,7 @@ pub mod ordered_dictionary;
 
 // Re-exports for convenience (matching C# namespace exports)
 pub use error::JsonError;
+pub use escape::CSharpEscapeFormatter;
 pub use j_array::JArray;
 pub use j_object::JObject;
 pub use j_path_token::JPathToken;

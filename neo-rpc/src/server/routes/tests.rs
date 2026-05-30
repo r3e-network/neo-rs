@@ -531,3 +531,26 @@ async fn process_body_returns_internal_error_on_panic() {
         Some(RpcError::internal_server_error().code() as i64)
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_response_escapes_like_csharp_javascript_encoder() {
+    // C# RPC responses serialize via `JToken.ToString()` -> `Utf8JsonWriter`
+    // with `JavaScriptEncoder.Default`, which escapes `<` `>` `&` `'` `+` `` ` ``
+    // and every non-ASCII code point as `\uXXXX` (surrogate pairs for astral
+    // chars), while leaving plain ASCII untouched.
+    let body = success_response(
+        Some(Value::from(1)),
+        Value::String("<a> & 'b' + `c` 中😀".to_string()),
+    );
+
+    let response = build_http_response(Some(body), false, false);
+    let bytes = warp::hyper::body::to_bytes(response.into_body())
+        .await
+        .expect("aggregate body");
+    let text = String::from_utf8(bytes.to_vec()).expect("ascii-only body is valid utf8");
+
+    assert_eq!(
+        text,
+        "{\"jsonrpc\":\"2.0\",\"result\":\"\\u003Ca\\u003E \\u0026 \\u0027b\\u0027 \\u002B \\u0060c\\u0060 \\u4E2D\\uD83D\\uDE00\",\"id\":1}"
+    );
+}

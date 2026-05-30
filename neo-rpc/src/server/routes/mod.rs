@@ -169,7 +169,12 @@ pub(super) fn build_http_response(
     challenge: bool,
 ) -> HttpResponse {
     let (mut response, _has_body) = if let Some(body) = body {
-        let json = serde_json::to_vec(&body).unwrap_or_else(|_| b"{}".to_vec());
+        // Match the C# RPC server, which serializes every response via
+        // `JToken.ToString()` -> `Utf8JsonWriter` with `JavaScriptEncoder.Default`:
+        // `<` `>` `&` `'` `+` `` ` `` and all non-ASCII code points are emitted as
+        // `\uXXXX`. serde_json's default serializer only escapes the JSON-mandatory
+        // set, so route through the C#-compatible escaping formatter instead.
+        let json = neo_json::escape::to_vec(&body, false).unwrap_or_else(|_| b"{}".to_vec());
         let mut response = HttpResponse::new(json.into());
         response
             .headers_mut()
