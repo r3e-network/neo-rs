@@ -45,8 +45,6 @@ pub mod security_fixes;
 mod stack_value_numeric;
 /// Standard library native contract.
 pub mod std_lib;
-/// Token management (NFT) native contract.
-pub mod token_management;
 /// Transaction state for ledger.
 pub mod transaction_state;
 /// Treasury native contract.
@@ -76,7 +74,6 @@ pub use security_fixes::{
     StateValidator,
 };
 pub use std_lib::StdLib;
-pub use token_management::{TokenManagement, TokenState, TokenType};
 pub use transaction_state::TransactionState;
 pub use treasury::TreasuryContract;
 
@@ -185,9 +182,6 @@ impl NativeRegistry {
 
         // Register Treasury contract (active after HF_Faun)
         self.register(Arc::new(TreasuryContract::new()));
-
-        // Register TokenManagement contract (active after HF_Faun)
-        self.register(Arc::new(TokenManagement::new()));
     }
 }
 
@@ -243,7 +237,6 @@ mod tests {
             "OracleContract".to_string(),
             "Notary".to_string(),
             "Treasury".to_string(),
-            "TokenManagement".to_string(),
         ];
 
         assert_eq!(names, expected);
