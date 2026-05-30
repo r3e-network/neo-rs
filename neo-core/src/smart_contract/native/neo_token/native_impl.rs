@@ -113,7 +113,7 @@ impl NativeContract for NeoToken {
         let snapshot = engine.snapshot_cache();
         let old_committee =
             self.committee_from_cache_with_votes(snapshot.as_ref(), engine.protocol_settings())?;
-        let old_keys: Vec<ECPoint> = old_committee.iter().map(|(pk, _)| pk.clone()).collect();
+        let old_keys: Vec<ECPoint> = old_committee.into_iter().map(|(pk, _)| pk).collect();
 
         let new_committee =
             self.compute_committee_members(snapshot.as_ref(), engine.protocol_settings())?;
@@ -126,7 +126,7 @@ impl NativeContract for NeoToken {
         engine.put_storage_item(&context, &committee_suffix, &committee_bytes)?;
 
         if engine.is_hardfork_enabled(crate::hardfork::Hardfork::HfCockatrice) {
-            let new_keys: Vec<ECPoint> = new_committee.iter().map(|(pk, _)| pk.clone()).collect();
+            let new_keys: Vec<ECPoint> = new_committee.into_iter().map(|(pk, _)| pk).collect();
             if new_keys != old_keys {
                 let old_array = StackItem::from_array(
                     old_keys

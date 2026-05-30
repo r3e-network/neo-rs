@@ -32,26 +32,38 @@ pub fn insert_optional_string(json: &mut JObject, field: &str, value: Option<imp
 
 /// Reads a required numeric field as a `u64`.
 pub fn required_u64_number(json: &JObject, field: &str) -> Result<u64, String> {
-    json.get(field)
+    let value = json
+        .get(field)
         .and_then(JToken::as_number)
-        .map(|value| value as u64)
-        .ok_or_else(|| format!("Missing or invalid '{field}' field"))
+        .ok_or_else(|| format!("Missing or invalid '{field}' field"))?;
+    if value < 0.0 || value > u64::MAX as f64 || value.fract() != 0.0 {
+        return Err(format!("Field '{field}' is out of range for u64: {value}"));
+    }
+    Ok(value as u64)
 }
 
 /// Reads a required numeric field as a `u32`.
 pub fn required_u32_number(json: &JObject, field: &str) -> Result<u32, String> {
-    json.get(field)
+    let value = json
+        .get(field)
         .and_then(JToken::as_number)
-        .map(|value| value as u32)
-        .ok_or_else(|| format!("Missing or invalid '{field}' field"))
+        .ok_or_else(|| format!("Missing or invalid '{field}' field"))?;
+    if value < 0.0 || value > f64::from(u32::MAX) || value.fract() != 0.0 {
+        return Err(format!("Field '{field}' is out of range for u32: {value}"));
+    }
+    Ok(value as u32)
 }
 
 /// Reads a required numeric field as a `u16`.
 pub fn required_u16_number(json: &JObject, field: &str) -> Result<u16, String> {
-    json.get(field)
+    let value = json
+        .get(field)
         .and_then(JToken::as_number)
-        .map(|value| value as u16)
-        .ok_or_else(|| format!("Missing or invalid '{field}' field"))
+        .ok_or_else(|| format!("Missing or invalid '{field}' field"))?;
+    if value < 0.0 || value > f64::from(u16::MAX) || value.fract() != 0.0 {
+        return Err(format!("Field '{field}' is out of range for u16: {value}"));
+    }
+    Ok(value as u16)
 }
 
 /// Parses a token that may be encoded as either a JSON number or decimal string.

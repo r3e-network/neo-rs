@@ -562,7 +562,10 @@ impl Blockchain {
             result,
             task.relay,
             if task.relay && result == VerifyResult::Succeed {
-                Some(RelayInventory::Transaction(task.transaction.clone()))
+                // Move the owned transaction into the relay inventory instead of
+                // deep-cloning it; `task.relay` is Copy and already read above,
+                // and `task` is not used afterwards. Byte-identical payload.
+                Some(RelayInventory::Transaction(task.transaction))
             } else {
                 None
             },
