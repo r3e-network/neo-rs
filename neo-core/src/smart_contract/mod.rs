@@ -28,6 +28,7 @@ pub mod key_builder;
 pub mod manifest;
 pub mod max_length_attribute;
 pub mod native;
+pub mod nef_file;
 pub mod validator_attribute;
 
 // Re-export commonly used types
@@ -35,7 +36,8 @@ pub use application_engine::ApplicationEngine;
 pub use contract::Contract;
 pub use contract_parameter::ContractParameter;
 pub use contract_parameters_context::ContractParametersContext;
-pub use contract_state::{ContractState, NefFile};
+pub use contract_state::ContractState;
+pub use nef_file::NefFile;
 pub use deployed_contract::DeployedContract;
 pub use diagnostic::Diagnostic;
 pub use execution_context_state::ExecutionContextState;

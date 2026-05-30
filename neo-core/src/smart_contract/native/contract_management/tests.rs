@@ -6,13 +6,13 @@ use crate::persistence::providers::memory_store::MemoryStore;
 use crate::persistence::{DataCache, Store, SeekDirection, StorageItem, StoreCache};
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
-use crate::smart_contract::contract_state::NefFile;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractMethodDescriptor,
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
+use crate::smart_contract::nef_file::NefFile;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
 use crate::neo_vm::StackItem;

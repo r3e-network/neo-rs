@@ -1,7 +1,8 @@
 //! DeployedContract - matches C# Neo.SmartContract.DeployedContract exactly
 
-use crate::smart_contract::contract_state::{ContractState, NefFile};
+use crate::smart_contract::contract_state::ContractState;
 use crate::smart_contract::manifest::ContractManifest;
+use crate::smart_contract::nef_file::NefFile;
 use crate::UInt160;
 
 /// Represents a deployed contract (matches C# DeployedContract)
