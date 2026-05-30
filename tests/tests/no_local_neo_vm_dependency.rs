@@ -854,7 +854,7 @@ fn vm_state_byte_serialization_uses_neo_vm_rs_mapping() {
         "neo-core/src/smart_contract/native/ledger_contract/state.rs",
         "neo-core/src/smart_contract/native/transaction_state.rs",
         "neo-rpc/src/server/rpc_server_node/mod.rs",
-        "neo-core/src/oracle_service/service/tests/response_tx.rs",
+        "neo-oracle-service/src/service/tests/response_tx.rs",
         "neo-core/tests/ledger_contract_tests.rs",
         "neo-core/tests/p2p_payloads_csharp_tests.rs",
         "neo-core/tests/runtime_syscall_tests.rs",
@@ -2474,8 +2474,10 @@ fn stack_item_primitive_truthiness_reuses_neo_vm_rs_rules() {
         "StackItem primitive truthiness should reuse neo-vm-rs StackValue truthiness rules"
     );
     assert!(
-        stack_item.contains("StackValue::ByteString(b.clone())"),
-        "ByteString truthiness should adapt through neo-vm-rs after preserving the local max-size guard"
+        stack_item.contains("Cannot convert ByteString to Boolean")
+            && stack_item.contains("b.iter().any(|byte| *byte != 0)"),
+        "ByteString truthiness must preserve the local max-size guard and then compute the \
+         neo-vm-rs NotZero rule (true iff any byte is non-zero), matching C# Unsafe.NotZero"
     );
     assert!(
         !stack_item.contains("Self::Integer(i) => Ok(!i.is_zero())"),
@@ -3976,18 +3978,22 @@ fn smart_contract_support_modules_use_vm_runtime_boundary() {
 fn protocol_data_modules_use_vm_runtime_stack_items() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/application_logs/service.rs",
+        "neo-application-logs/src/service.rs",
         "neo-core/src/ledger/blockchain_application_executed.rs",
         "neo-core/src/network/p2p/payloads/signer.rs",
         "neo-core/src/network/p2p/payloads/transaction/mod.rs",
-        "neo-core/src/tokens_tracker/trackers/tracker_base.rs",
-        "neo-core/src/tokens_tracker/trackers/nep_17/nep17_tracker.rs",
-        "neo-core/src/tokens_tracker/trackers/nep_11/nep11_tracker.rs",
+        "neo-tokens-tracker/src/trackers/tracker_base.rs",
+        "neo-tokens-tracker/src/trackers/nep_17/nep17_tracker.rs",
+        "neo-tokens-tracker/src/trackers/nep_11/nep11_tracker.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        // The neo_vm host StackItem must come through the `neo_vm` seam — either
+        // `crate::neo_vm::StackItem` (inside neo-core) or `neo_core::neo_vm::StackItem`
+        // (extracted plugin crates). `neo_vm::StackItem` matches both and excludes
+        // the pure-VM `neo_vm_rs::StackItem`.
         assert!(
-            source.contains("crate::neo_vm::StackItem"),
-            "{relative} should import StackItem through neo_vm"
+            source.contains("neo_vm::StackItem"),
+            "{relative} should import StackItem through the neo_vm host seam"
         );
     }
 }
@@ -4007,9 +4013,13 @@ fn manifest_modules_use_vm_runtime_stack_items() {
         "neo-core/src/smart_contract/manifest/wild_card_container.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        // The neo_vm host StackItem must come through the `neo_vm` seam — either
+        // `crate::neo_vm::StackItem` (inside neo-core) or `neo_core::neo_vm::StackItem`
+        // (extracted plugin crates). `neo_vm::StackItem` matches both and excludes
+        // the pure-VM `neo_vm_rs::StackItem`.
         assert!(
-            source.contains("crate::neo_vm::StackItem"),
-            "{relative} should import StackItem through neo_vm"
+            source.contains("neo_vm::StackItem"),
+            "{relative} should import StackItem through the neo_vm host seam"
         );
     }
 }
@@ -4024,9 +4034,13 @@ fn native_event_and_data_modules_use_vm_runtime_stack_items() {
         "neo-core/src/smart_contract/native/trimmed_block.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        // The neo_vm host StackItem must come through the `neo_vm` seam — either
+        // `crate::neo_vm::StackItem` (inside neo-core) or `neo_core::neo_vm::StackItem`
+        // (extracted plugin crates). `neo_vm::StackItem` matches both and excludes
+        // the pure-VM `neo_vm_rs::StackItem`.
         assert!(
-            source.contains("crate::neo_vm::StackItem"),
-            "{relative} should import StackItem through neo_vm"
+            source.contains("neo_vm::StackItem"),
+            "{relative} should import StackItem through the neo_vm host seam"
         );
     }
 }
@@ -4040,9 +4054,13 @@ fn host_adapter_modules_use_vm_runtime_stack_items() {
         "neo-core/src/neo_system/persistence.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        // The neo_vm host StackItem must come through the `neo_vm` seam — either
+        // `crate::neo_vm::StackItem` (inside neo-core) or `neo_core::neo_vm::StackItem`
+        // (extracted plugin crates). `neo_vm::StackItem` matches both and excludes
+        // the pure-VM `neo_vm_rs::StackItem`.
         assert!(
-            source.contains("crate::neo_vm::StackItem"),
-            "{relative} should import StackItem through neo_vm"
+            source.contains("neo_vm::StackItem"),
+            "{relative} should import StackItem through the neo_vm host seam"
         );
     }
 }
@@ -4068,9 +4086,13 @@ fn native_contract_modules_use_vm_runtime_stack_items() {
         "neo-core/src/smart_contract/native/std_lib/strings.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        // The neo_vm host StackItem must come through the `neo_vm` seam — either
+        // `crate::neo_vm::StackItem` (inside neo-core) or `neo_core::neo_vm::StackItem`
+        // (extracted plugin crates). `neo_vm::StackItem` matches both and excludes
+        // the pure-VM `neo_vm_rs::StackItem`.
         assert!(
-            source.contains("crate::neo_vm::StackItem"),
-            "{relative} should import StackItem through neo_vm"
+            source.contains("neo_vm::StackItem"),
+            "{relative} should import StackItem through the neo_vm host seam"
         );
     }
 }
@@ -4301,30 +4323,38 @@ fn script_builder_implementation_lives_outside_local_neo_vm_tree() {
 }
 
 #[test]
-fn call_flags_implementation_lives_in_smart_contract_layer() {
+fn call_flags_is_owned_by_neo_primitives() {
+    // CallFlags is a shared permission-flag type both the VM host and the
+    // smart-contract layer reference. The A1/S1 seam moved it DOWN into
+    // neo-primitives (Layer 0) so neither layer imports it upward — breaking the
+    // old neo_vm <-> smart_contract cycle. smart_contract/call_flags.rs keeps a
+    // thin re-export for the historical `neo_core::smart_contract::CallFlags`
+    // path; the neo-vm host must not own or expose it.
     let workspace = workspace_root();
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
+    let primitives_call_flags =
+        read_source(workspace.join("neo-primitives/src/call_flags.rs"));
     let smart_contract_call_flags =
         read_source(workspace.join("neo-core/src/smart_contract/call_flags.rs"));
 
     assert!(
-        smart_contract_call_flags.contains("pub struct CallFlags"),
-        "CallFlags should be implemented in neo-core/src/smart_contract/call_flags.rs; \
-         it is smart-contract invocation permission metadata, not local VM runtime state"
+        primitives_call_flags.contains("CallFlags"),
+        "CallFlags should be defined in neo-primitives/src/call_flags.rs (Layer 0), shared \
+         by the VM host and smart-contract layer without an upward dependency"
     );
     assert!(
-        !smart_contract_call_flags.contains("pub use crate::neo_vm::call_flags::CallFlags"),
-        "smart_contract::call_flags should own CallFlags instead of re-exporting it from \
-         the local neo_vm tree"
+        smart_contract_call_flags.contains("pub use neo_primitives::CallFlags"),
+        "smart_contract::call_flags should re-export CallFlags from neo-primitives, not \
+         redefine it"
     );
     assert!(
         !workspace.join("neo-vm/src/call_flags.rs").exists(),
-        "CallFlags implementation should be moved out of neo-vm/src"
+        "CallFlags must not live in the neo-vm host crate"
     );
     assert!(
         !vm_module.contains("pub mod call_flags")
             && !vm_module.contains("pub use call_flags::CallFlags"),
-        "neo_core::neo_vm should not expose CallFlags once the smart_contract layer owns it"
+        "the neo-vm host should not own or expose CallFlags; it comes from neo-primitives"
     );
 }
 
@@ -4530,13 +4560,13 @@ fn nep11_token_ordering_does_not_use_local_bytestring_wrapper() {
     let workspace = workspace_root();
     let stack_item_module = read_source(workspace.join("neo-vm/src/stack_item/mod.rs"));
     let balance_key = read_source(
-        workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/nep11_balance_key.rs"),
+        workspace.join("neo-tokens-tracker/src/trackers/nep_11/nep11_balance_key.rs"),
     );
     let transfer_key = read_source(
-        workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/nep11_transfer_key.rs"),
+        workspace.join("neo-tokens-tracker/src/trackers/nep_11/nep11_transfer_key.rs"),
     );
     let nep11_module =
-        read_source(workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/mod.rs"));
+        read_source(workspace.join("neo-tokens-tracker/src/trackers/nep_11/mod.rs"));
 
     assert!(
         !workspace
