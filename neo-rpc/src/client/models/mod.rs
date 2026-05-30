@@ -47,6 +47,7 @@ pub mod rpc_contract_state;
 pub mod rpc_invoke_result;
 pub mod rpc_method_token;
 pub mod rpc_nef_file;
+pub mod rpc_stack;
 
 // NEP17 token types
 pub mod rpc_nep17_balances;
@@ -93,7 +94,8 @@ pub use rpc_block::RpcBlock;
 pub use rpc_block_header::RpcBlockHeader;
 pub use rpc_contract_state::RpcContractState;
 pub use rpc_found_states::RpcFoundStates;
-pub use rpc_invoke_result::{RpcInvokeResult, RpcStack};
+pub use rpc_invoke_result::RpcInvokeResult;
+pub use rpc_stack::RpcStack;
 pub use rpc_method_token::RpcMethodToken;
 pub use rpc_nef_file::RpcNefFile;
 pub use rpc_nep11_balances::{RpcNep11Balance, RpcNep11Balances, RpcNep11TokenBalance};
