@@ -345,11 +345,28 @@ where
     T: FromStr,
     T::Err: Display,
 {
-    if let Some(number) = token.as_number() {
-        Ok(from_number(number))
-    } else if let Some(text) = token.as_string() {
+    // String FIRST: Neo serializes large integers (e.g. sysfee/netfee) as
+    // decimal strings, which must parse losslessly via FromStr. Going through
+    // `as_number()` first would funnel them through f64 and silently corrupt any
+    // value above 2^53.
+    if let Some(text) = token.as_string() {
         text.parse::<T>()
             .map_err(|err| format!("Invalid {integer_kind} integer for '{field}': {err}"))
+    } else if let JToken::Number(number) = token {
+        let number = *number;
+        if !number.is_finite() || number.fract() != 0.0 {
+            return Err(format!(
+                "Invalid {integer_kind} integer for '{field}': {number} is not an integer"
+            ));
+        }
+        // Round-trip through a decimal string so out-of-range values error
+        // instead of saturating, with per-type bounds checking for free.
+        format!("{number:.0}")
+            .parse::<T>()
+            .map_err(|err| format!("Invalid {integer_kind} integer for '{field}': {err}"))
+    } else if let Some(number) = token.as_number() {
+        // Boolean coercion fallback (true -> 1.0 / false -> 0.0): prior behavior.
+        Ok(from_number(number))
     } else {
         Err(format!("Field '{field}' must be a number"))
     }
@@ -362,6 +379,13 @@ pub fn parse_nonce_token(token: &JToken) -> Result<u64, String> {
         u64::from_str_radix(value, 16)
             .map_err(|err| format!("Invalid nonce hex string '{text}': {err}"))
     } else if let Some(number) = token.as_number() {
+        // 2^64 exclusive: `u64::MAX as f64` rounds UP to 2^64, so an exact 2^64
+        // would otherwise slip through to a saturating cast.
+        if !number.is_finite() || number < 0.0 || number.fract() != 0.0 || number >= 2f64.powi(64) {
+            return Err(format!(
+                "Invalid nonce number '{number}': out of u64 range or not an integer"
+            ));
+        }
         Ok(number as u64)
     } else {
         Err("Nonce value must be a hex string or number".to_string())
@@ -477,6 +501,33 @@ mod tests {
             parse_u64_token(&JToken::Null, "id").expect_err("non-number token"),
             "Field 'id' must be a number"
         );
+    }
+
+    #[test]
+    fn integer_token_parsers_preserve_string_encoded_large_integers() {
+        // Neo serializes sysfee/netfee as decimal strings. Values above 2^53
+        // must round-trip losslessly through FromStr, not be funneled through
+        // f64 (which would round 9007199254740993 down to ...992).
+        assert_eq!(
+            parse_i64_token(&JToken::String("9007199254740993".to_string()), "sysfee"),
+            Ok(9_007_199_254_740_993)
+        );
+        assert_eq!(
+            parse_u64_token(&JToken::String("18446744073709551615".to_string()), "value"),
+            Ok(u64::MAX)
+        );
+    }
+
+    #[test]
+    fn integer_token_parsers_reject_invalid_json_numbers() {
+        // Out-of-range JSON number must error, not saturate.
+        assert!(parse_u32_token(&JToken::Number(5_000_000_000.0), "x").is_err());
+        // Negative into unsigned must error.
+        assert!(parse_u32_token(&JToken::Number(-5.0), "x").is_err());
+        // Fractional must error.
+        assert!(parse_u32_token(&JToken::Number(1.5), "x").is_err());
+        // In-range integral JSON number still parses.
+        assert_eq!(parse_u32_token(&JToken::Number(4_294_967_295.0), "x"), Ok(u32::MAX));
     }
 
     #[test]
