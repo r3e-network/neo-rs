@@ -46,6 +46,7 @@
 
 pub mod capabilities;
 pub mod connection;
+pub mod connection_state;
 pub mod framed;
 mod framed_codec;
 pub mod helper;
