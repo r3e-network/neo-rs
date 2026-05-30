@@ -2359,6 +2359,7 @@ dependencies = [
  "neo-p2p",
  "neo-primitives",
  "neo-storage",
+ "neo-storage-rocksdb",
  "neo-vm-rs",
  "num-bigint",
  "num-integer",
@@ -2371,7 +2372,6 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "reqwest",
- "rocksdb",
  "scrypt",
  "secp256k1",
  "serde",
@@ -2628,6 +2628,17 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "xxhash-rust",
+]
+
+[[package]]
+name = "neo-storage-rocksdb"
+version = "0.7.2"
+dependencies = [
+ "neo-storage",
+ "parking_lot",
+ "rocksdb",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]

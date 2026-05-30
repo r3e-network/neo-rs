@@ -5,20 +5,14 @@
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
-#[cfg(feature = "rocksdb")]
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "rocksdb")]
 use parking_lot::Mutex;
-#[cfg(feature = "rocksdb")]
 use tracing::{debug, error, trace};
 
-#[cfg(feature = "rocksdb")]
 use neo_storage::{StorageError, StorageResult};
 
-#[cfg(feature = "rocksdb")]
 use rocksdb::{WriteBatch, WriteOptions, DB};
 
 /// Statistics for write batch operations.
@@ -187,7 +181,6 @@ impl WriteBatchConfig {
 }
 
 /// Buffered write batch for RocksDB.
-#[cfg(feature = "rocksdb")]
 pub struct WriteBatchBuffer {
     config: WriteBatchConfig,
     stats: Arc<WriteBatchStats>,
@@ -199,7 +192,6 @@ pub struct WriteBatchBuffer {
     last_flush_time_ms: AtomicU64,
 }
 
-#[cfg(feature = "rocksdb")]
 impl WriteBatchBuffer {
     /// Creates a new write batch buffer.
     pub fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
@@ -429,12 +421,10 @@ impl WriteBatchBuffer {
 }
 
 /// Auto-flushing write batch buffer with background timer.
-#[cfg(feature = "rocksdb")]
 pub struct AutoFlushBatchBuffer {
     inner: Arc<WriteBatchBuffer>,
 }
 
-#[cfg(feature = "rocksdb")]
 impl AutoFlushBatchBuffer {
     /// Creates a new auto-flushing batch buffer.
     pub fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {

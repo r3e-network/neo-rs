@@ -16,7 +16,6 @@ pub mod storage_item;
 pub mod storage_key;
 pub use neo_storage::persistence::track_state;
 pub use neo_storage::persistence::transaction;
-pub mod write_batch_buffer;
 pub use neo_storage::persistence::write_store;
 
 pub use data_cache::{DataCache, Trackable};
@@ -37,6 +36,3 @@ pub use store_cache::StoreCache;
 pub use store_factory::StoreFactory;
 pub use track_state::TrackState;
 pub use transaction::{apply_tracked_items, StoreTransaction};
-#[cfg(feature = "rocksdb")]
-pub use write_batch_buffer::{AutoFlushBatchBuffer, WriteBatchBuffer};
-pub use write_batch_buffer::{WriteBatchConfig, WriteBatchStats, WriteBatchStatsSnapshot};

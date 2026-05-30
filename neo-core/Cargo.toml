@@ -43,7 +43,7 @@ uuid = { workspace = true }
 base64 = { workspace = true }
 murmur3 = { workspace = true }
 zstd = "0.13"
-rocksdb = { workspace = true, optional = true }
+neo-storage-rocksdb = { workspace = true, optional = true }
 url = { workspace = true }
 percent-encoding = "2.3"
 bincode = { workspace = true }
@@ -118,7 +118,7 @@ protoc-bin-vendored = "3.0"
 [features]
 default = []
 # RocksDB storage provider - enable for production use
-rocksdb = ["dep:rocksdb"]
+rocksdb = ["dep:neo-storage-rocksdb"]
 # UPnP network discovery - requires reqwest
 upnp = ["dep:reqwest", "dep:quick-xml"]
 # Oracle service - requires reqwest

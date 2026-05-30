@@ -14,6 +14,9 @@ members = [
     # Storage traits and abstractions
     "neo-storage",
 
+    # RocksDB storage backend (optional, behind neo-core's `rocksdb` feature)
+    "neo-storage-rocksdb",
+
     # IO (matches C# Neo.IO)
     "neo-io",
 
@@ -117,6 +120,7 @@ neo-primitives = { path = "neo-primitives", version = "0.7.2" }
 neo-config = { path = "neo-config", version = "0.7.2" }
 neo-crypto = { path = "neo-crypto", version = "0.7.2" }
 neo-storage = { path = "neo-storage", version = "0.7.2" }
+neo-storage-rocksdb = { path = "neo-storage-rocksdb", version = "0.7.2" }
 neo-io = { path = "neo-io", version = "0.7.2" }
 neo-json = { path = "neo-json", version = "0.7.2" }
 

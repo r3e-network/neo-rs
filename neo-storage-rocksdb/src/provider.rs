@@ -1,11 +1,9 @@
-use crate::{
-    persistence::{
-        read_cache::ReadCacheConfig,
-        storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
-        store::Store,
-        store_provider::StoreProvider,
-        write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig},
-    },
+use crate::write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig};
+use neo_storage::persistence::{
+    read_cache::ReadCacheConfig,
+    storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
+    store::Store,
+    store_provider::StoreProvider,
 };
 use rocksdb::{
     BlockBasedOptions, Cache, DB, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
@@ -15,7 +13,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use super::store::RocksDbStore;
 
-pub use crate::persistence::write_batch_buffer::{
+pub use crate::write_batch_buffer::{
     WriteBatchConfig as BatchCommitConfig, WriteBatchStats as BatchCommitStats,
     WriteBatchStatsSnapshot as BatchCommitStatsSnapshot,
 };
@@ -174,10 +172,10 @@ pub(crate) fn iterator_from<'a>(
     db: &'a DB,
     read_options: Option<ReadOptions>,
     key_or_prefix: &[u8],
-    direction: crate::persistence::seek_direction::SeekDirection,
+    direction: neo_storage::persistence::seek_direction::SeekDirection,
     read_ahead_config: &ReadAheadConfig,
 ) -> DBIteratorWithThreadMode<'a, DB> {
-    use crate::persistence::seek_direction::SeekDirection;
+    use neo_storage::persistence::seek_direction::SeekDirection;
 
     let mode = match direction {
         SeekDirection::Forward => {

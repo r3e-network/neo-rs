@@ -1,17 +1,14 @@
-use crate::{
-    persistence::{
-        read_cache::{ReadCacheConfig, StorageReadCache},
-        read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
-        seek_direction::SeekDirection,
-        storage::StorageConfig,
-        store::{Store, OnNewSnapshotDelegate},
-        store_snapshot::StoreSnapshot,
-        write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot},
-        write_store::WriteStore,
-        StorageItem, StorageKey,
-    },
+use crate::write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot};
+use neo_storage::persistence::{
+    read_cache::{ReadCacheConfig, StorageReadCache},
+    read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
+    seek_direction::SeekDirection,
+    storage::StorageConfig,
+    store::{OnNewSnapshotDelegate, Store},
+    store_snapshot::StoreSnapshot,
+    write_store::WriteStore,
 };
-use neo_storage::StorageResult;
+use neo_storage::{StorageItem, StorageKey, StorageResult};
 use parking_lot::{Mutex, RwLock};
 use rocksdb::{
     DB, DBIteratorWithThreadMode, ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions,
@@ -664,8 +661,8 @@ impl StoreSnapshot for RocksDbSnapshot {
         self.store.clone() as Arc<dyn Store>
     }
 
-    fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
-        use crate::persistence::storage::StorageError;
+    fn try_commit(&mut self) -> neo_storage::persistence::store_snapshot::SnapshotCommitResult {
+        use neo_storage::StorageError;
 
         let mut batch_guard = self.write_batch.lock();
         let mut pending_guard = self.pending_changes.lock();
@@ -786,7 +783,7 @@ impl RocksDbStore {
     /// Gets read cache statistics if caching is enabled.
     pub fn read_cache_stats(
         &self,
-    ) -> Option<crate::persistence::read_cache::ReadCacheStatsSnapshot> {
+    ) -> Option<neo_storage::persistence::read_cache::ReadCacheStatsSnapshot> {
         self.read_cache.as_ref().map(|c| c.stats())
     }
 
