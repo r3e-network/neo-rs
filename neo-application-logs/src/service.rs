@@ -1,15 +1,15 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
-use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
-use crate::ledger::block::Block as LedgerBlock;
-use crate::ledger::blockchain_application_executed::ApplicationExecuted;
-use crate::neo_system::NeoSystem;
-use crate::persistence::{DataCache, Store, StoreSnapshot};
-use crate::smart_contract::{NotifyEventArgs, TriggerType};
-use crate::panic_message;
-use crate::neo_vm::StackItem;
-use crate::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
-use crate::UInt256;
+use neo_core::i_event_handlers::{CommittedHandler, CommittingHandler};
+use neo_core::ledger::block::Block as LedgerBlock;
+use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_core::neo_system::NeoSystem;
+use neo_core::persistence::{DataCache, Store, StoreSnapshot};
+use neo_core::smart_contract::{NotifyEventArgs, TriggerType};
+use neo_core::panic_message;
+use neo_core::neo_vm::StackItem;
+use neo_core::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
+use neo_core::UInt256;
 use neo_vm_rs::VmState as VMState;
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
@@ -337,15 +337,15 @@ fn notification_to_json(event: &NotifyEventArgs) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::persistence::{
+    use neo_core::persistence::{
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         storage::StorageError,
         store::OnNewSnapshotDelegate,
         write_store::WriteStore,
         SeekDirection,
     };
-    use crate::smart_contract::{StorageItem, StorageKey};
-    use crate::UnhandledExceptionPolicy;
+    use neo_core::smart_contract::{StorageItem, StorageKey};
+    use neo_core::UnhandledExceptionPolicy;
 
     #[derive(Clone)]
     struct FailingStore;
@@ -439,7 +439,7 @@ mod tests {
             Arc::clone(&self.store)
         }
 
-        fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
+        fn try_commit(&mut self) -> neo_core::persistence::store_snapshot::SnapshotCommitResult {
             Err(StorageError::CommitFailed(
                 "injected application logs commit failure".to_string(),
             ))

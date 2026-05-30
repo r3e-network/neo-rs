@@ -39,13 +39,14 @@ members = [
     # dBFT consensus
     "neo-consensus",
 
-    # Extensions (matches C# Neo.Extensions)
+    # === Plugin Layer (leaf consumers of neo-core) ===
+    # ApplicationLogs plugin (execution-log persistence + RPC queries)
+    "neo-application-logs",
 
-    # NOTE: C# Neo's plugin set has been inlined:
-    #   ApplicationLogs → neo-core/src/application_logs
+    # NOTE: remaining C# Neo plugins still inlined; extraction in progress:
     #   DBFTPlugin      → neo-consensus
     #   RpcServer       → neo-rpc/src/server
-    #   TokensTracker   → neo-core/src/tokens_tracker
+    #   TokensTracker   → neo-core/src/tokens_tracker (extraction pending)
 
     # TEE (Trusted Execution Environment) support
     # Optional feature-gated integration via neo-node (`--features tee`)

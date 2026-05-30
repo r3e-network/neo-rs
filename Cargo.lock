@@ -2270,6 +2270,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-application-logs"
+version = "0.7.2"
+dependencies = [
+ "neo-core",
+ "neo-storage",
+ "neo-vm-rs",
+ "parking_lot",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "neo-benches"
 version = "0.7.2"
 dependencies = [
@@ -2499,6 +2511,7 @@ dependencies = [
  "hyper 0.14.32",
  "mimalloc",
  "neo-actors",
+ "neo-application-logs",
  "neo-consensus",
  "neo-core",
  "neo-crypto",
@@ -2580,6 +2593,7 @@ dependencies = [
  "jsonrpsee",
  "mockito",
  "neo-actors",
+ "neo-application-logs",
  "neo-config",
  "neo-core",
  "neo-crypto",

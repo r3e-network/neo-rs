@@ -153,10 +153,6 @@ pub mod witness_rule;
 // Optional Features
 // ============================================================================
 
-/// Application logs plugin support (requires `runtime` feature).
-#[cfg(feature = "runtime")]
-pub mod application_logs;
-
 // ============================================================================
 // C# Neo Project Modules
 // ============================================================================

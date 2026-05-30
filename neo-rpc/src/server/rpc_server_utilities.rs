@@ -5,7 +5,7 @@ use neo_core::wallets::Helper as WalletHelper;
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
 use super::rpc_server::{RpcHandler, RpcServer};
-use neo_core::application_logs::ApplicationLogsService;
+use neo_application_logs::ApplicationLogsService;
 use neo_core::tokens_tracker::TokensTrackerService;
 
 pub struct RpcServerUtilities;

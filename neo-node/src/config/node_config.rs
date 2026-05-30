@@ -4,8 +4,8 @@
 //! along with free utility functions.
 
 use anyhow::{bail, Context, Result};
+use neo_application_logs::ApplicationLogsSettings;
 use neo_core::{
-    application_logs::ApplicationLogsSettings,
     constants::{MAINNET_MAGIC, TESTNET_MAGIC},
     network::p2p::channels_config::ChannelsConfig,
     oracle_service::OracleServiceSettings,

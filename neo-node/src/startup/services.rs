@@ -8,8 +8,8 @@ use crate::config::{
 use crate::consensus::DbftConsensusController;
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{bail, Context, Result};
+use neo_application_logs::ApplicationLogsService;
 use neo_core::{
-    application_logs::ApplicationLogsService,
     i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler},
     neo_system::NeoSystem,
     network::p2p::channels_config::ChannelsConfig,

@@ -26,6 +26,7 @@ neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-config = { workspace = true, optional = true }
 neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
+neo-application-logs = { path = "../neo-application-logs", optional = true }
 neo-actors = { workspace = true, optional = true }
 neo-json = { path = "../neo-json", optional = true }
 neo-vm-rs = { workspace = true, optional = true }
@@ -96,6 +97,7 @@ server = [
     "client",  # Server uses client models for JSON serialization
     "dep:neo-config",
     "dep:neo-core",
+    "dep:neo-application-logs",
     "dep:neo-json",
     "dep:neo-vm-rs",
     "dep:neo-actors",
