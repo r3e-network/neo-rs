@@ -39,6 +39,11 @@ impl OracleContract {
         };
         let callback = String::from_utf8(args[2].clone())
             .map_err(|_| Error::invalid_operation("Invalid callback"))?;
+        // `userData` is declared as `Any` in the native ABI, so the dispatcher
+        // (application_engine_contract.rs) hands us the BinarySerializer-serialized
+        // form of the stack item. C# stores exactly this serialized blob and caps
+        // it at MaxUserDataLength=512 (OracleContract.cs:265), so `user_data.len()`
+        // here is the serialized byte length we must bound against the cap below.
         let user_data = args[3].clone();
         let gas_for_response = BigInt::from_signed_bytes_le(&args[4])
             .to_i64()

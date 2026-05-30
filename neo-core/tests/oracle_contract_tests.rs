@@ -712,6 +712,62 @@ fn oracle_request_escrows_gas_for_response_to_oracle_contract_balance() {
 }
 
 #[test]
+fn oracle_request_enforces_512_byte_serialized_user_data_cap() {
+    // C# OracleContract.cs:265 caps the BinarySerializer-serialized `userData`
+    // at MaxUserDataLength = 512 bytes, faulting when exceeded. The native
+    // dispatcher serializes the `Any` userData param before request() runs, so
+    // `args[3]` is the already-serialized blob and its length is what must be
+    // bounded against 512.
+    let snapshot = Arc::new(DataCache::new(false));
+    let calling_contract = make_test_contract(1, "oracleRequester");
+    add_contract_to_snapshot(snapshot.as_ref(), &calling_contract);
+
+    let oracle = OracleContract::new();
+    let request_args = |user_data: Vec<u8>| {
+        vec![
+            b"https://example.com/userdata-cap".to_vec(),
+            Vec::new(),
+            b"callback".to_vec(),
+            user_data,
+            BigInt::from(10_000_000i64).to_signed_bytes_le(),
+        ]
+    };
+
+    // Exactly 512 serialized bytes is accepted.
+    let mut ok_engine = make_request_engine(Arc::clone(&snapshot));
+    ok_engine.set_current_script_hash(Some(oracle.hash()));
+    ok_engine.set_calling_script_hash(Some(calling_contract.hash));
+    ok_engine
+        .call_native_contract(oracle.hash(), "request", &request_args(vec![0u8; 512]))
+        .expect("512-byte serialized userData should be accepted");
+    let ok_snapshot = ok_engine.snapshot_cache();
+    let stored = oracle
+        .get_request(ok_snapshot.as_ref(), 0)
+        .expect("get request")
+        .expect("512-byte userData request should be persisted");
+    assert_eq!(stored.user_data, vec![0u8; 512]);
+
+    // 513 serialized bytes faults and persists nothing.
+    let mut over_engine = make_request_engine(Arc::clone(&snapshot));
+    over_engine.set_current_script_hash(Some(oracle.hash()));
+    over_engine.set_calling_script_hash(Some(calling_contract.hash));
+    let err = over_engine
+        .call_native_contract(oracle.hash(), "request", &request_args(vec![0u8; 513]))
+        .expect_err("513-byte serialized userData must be rejected");
+    assert!(
+        err.to_string().contains("User data too long"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        oracle
+            .get_requests(over_engine.snapshot_cache().as_ref())
+            .expect("get requests")
+            .is_empty(),
+        "oversized userData request must not be persisted"
+    );
+}
+
+#[test]
 fn oracle_request_distinguishes_null_filter_from_empty_filter() {
     let snapshot = Arc::new(DataCache::new(false));
     let calling_contract = make_test_contract(1, "oracleRequester");

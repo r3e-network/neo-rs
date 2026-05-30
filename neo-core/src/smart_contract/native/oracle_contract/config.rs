@@ -1,5 +1,5 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::constants::{BLOCK_MAX_TX_WIRE_LIMIT, HASH_SIZE, MAX_SCRIPT_SIZE};
+use crate::constants::{HASH_SIZE, MAX_SCRIPT_SIZE};
 
 /// Oracle configuration parameters.
 #[derive(Debug, Clone)]
@@ -13,7 +13,8 @@ pub struct OracleConfig {
     /// Maximum callback method name length.
     pub max_callback_length: usize,
 
-    /// Maximum user data length.
+    /// Maximum user data length, measured on the BinarySerializer-serialized
+    /// form of the `userData` stack item (C# `MaxUserDataLength`).
     pub max_user_data_length: usize,
 
     /// Maximum response data length.
@@ -35,7 +36,9 @@ impl Default for OracleConfig {
             max_url_length: 256,
             max_filter_length: 128,
             max_callback_length: HASH_SIZE,
-            max_user_data_length: BLOCK_MAX_TX_WIRE_LIMIT,
+            // C# OracleContract.MaxUserDataLength = 512; enforced on the
+            // BinarySerializer-serialized userData (OracleContract.cs:39, :265).
+            max_user_data_length: 512,
             max_response_length: MAX_SCRIPT_SIZE,
             request_timeout: 144, // ~24 hours at 10 second blocks
             min_response_gas: 10_000_000,
