@@ -1,0 +1,23 @@
+[package]
+name = "neo-actors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Lightweight tokio-based actor runtime for Neo node components (supervision, mailboxes, scheduling)"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["rt"] }
+async-trait = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }

@@ -232,12 +232,16 @@ pub mod services;
 // ============================================================================
 
 /// Actor runtime for async components (requires `runtime` feature).
+///
+/// The generic actor runtime now lives in the standalone `neo-actors` crate
+/// (zero neo-* coupling). Re-exported here for the historical `neo_core::actors`
+/// / `neo_core::runtime` paths.
 #[cfg(feature = "runtime")]
-pub mod actors;
+pub use neo_actors as actors;
 
 /// Neutral actor runtime facade for async node components (requires `runtime` feature).
 #[cfg(feature = "runtime")]
-pub use actors as runtime;
+pub use neo_actors as runtime;
 
 /// System management and orchestration (requires `runtime` feature).
 #[cfg(feature = "runtime")]

@@ -17,6 +17,8 @@ mod scheduler;
 pub use actor::{Actor, ActorResult, SupervisorDirective};
 pub use actor_ref::ActorRef;
 pub use actor_system::{ActorPath, ActorSystem, ActorSystemHandle};
+#[doc(hidden)]
+pub use actor_system::MailboxCommand;
 pub use context::ActorContext;
 pub use error::{ActorRuntimeError, ActorRuntimeResult};
 pub use event_stream::EventStreamHandle;

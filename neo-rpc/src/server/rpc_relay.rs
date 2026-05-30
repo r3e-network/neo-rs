@@ -4,7 +4,7 @@ use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
 use async_trait::async_trait;
 use neo_core::ledger::{RelayResult, VerifyResult};
-use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
+use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::any::Any;

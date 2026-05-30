@@ -84,6 +84,7 @@ neo-json = { path = "../neo-json" }
 # Foundation layer dependencies only (Layer 0)
 # NOTE: neo-consensus removed to fix layering violation
 neo-p2p = { path = "../neo-p2p" }
+neo-actors = { path = "../neo-actors", optional = true }
 neo-config = { workspace = true }
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
@@ -128,7 +129,7 @@ neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
 parallel = []
 # All optional features for full functionality
 full = ["rocksdb", "upnp", "oracle", "neofs-grpc", "parallel"]
-runtime = []
+runtime = ["dep:neo-actors"]
 performance-tests = []
 
 [[example]]

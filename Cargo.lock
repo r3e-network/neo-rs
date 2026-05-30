@@ -2257,6 +2257,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-actors"
+version = "0.7.2"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "parking_lot",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "neo-benches"
 version = "0.7.2"
 dependencies = [
@@ -2333,6 +2346,7 @@ dependencies = [
  "lz4_flex",
  "memchr",
  "murmur3",
+ "neo-actors",
  "neo-config",
  "neo-crypto",
  "neo-io",
@@ -2479,6 +2493,7 @@ dependencies = [
  "futures",
  "hyper 0.14.32",
  "mimalloc",
+ "neo-actors",
  "neo-consensus",
  "neo-core",
  "neo-crypto",
@@ -2559,6 +2574,7 @@ dependencies = [
  "hyper 0.14.32",
  "jsonrpsee",
  "mockito",
+ "neo-actors",
  "neo-config",
  "neo-core",
  "neo-crypto",

@@ -2,7 +2,6 @@ use super::*;
 use crate::neo_system::NeoSystem;
 use crate::protocol_settings::ProtocolSettings;
 use crate::runtime::ActorPath;
-use std::sync::Weak;
 use tokio::sync::mpsc;
 
 fn insert_session(manager: &mut TaskManager, actor: &ActorRef) -> String {
@@ -32,12 +31,7 @@ fn block_hash(block: &Block) -> UInt256 {
 #[test]
 fn complete_inventory_records_non_header_hashes_only() {
     let mut manager = TaskManager::new();
-    let (mailbox, _rx) = mpsc::channel(8);
-    let actor = ActorRef::new(
-        ActorPath::root("test", "peer-known-hash"),
-        mailbox,
-        Weak::new(),
-    );
+    let actor = ActorRef::detached(ActorPath::root("test", "peer-known-hash"));
     let block_hash = UInt256::from([9u8; 32]);
 
     manager.complete_inventory(&actor, HEADER_TASK_HASH, None, None);
@@ -51,11 +45,7 @@ fn complete_inventory_records_non_header_hashes_only() {
 fn mempool_request_is_one_shot_and_marks_sent_before_delivery_result() {
     let mut session = TaskSession::new(&VersionPayload::default());
     let (mailbox, mut rx) = mpsc::channel(8);
-    let actor = ActorRef::new(
-        ActorPath::root("test", "peer-mempool"),
-        mailbox,
-        Weak::new(),
-    );
+    let actor = ActorRef::with_mailbox(ActorPath::root("test", "peer-mempool"), mailbox);
 
     assert!(request_mempool_once(&actor, &mut session));
     assert!(session.mempool_sent);
@@ -72,11 +62,7 @@ async fn request_tasks_rolls_back_header_and_index_tasks_when_peer_send_fails() 
     manager.system = Some(neo_system.context());
     let (mailbox, rx) = mpsc::channel(1);
     drop(rx);
-    let actor = ActorRef::new(
-        ActorPath::root("test", "peer-send-failure"),
-        mailbox,
-        Weak::new(),
-    );
+    let actor = ActorRef::with_mailbox(ActorPath::root("test", "peer-send-failure"), mailbox);
     let path = insert_session(&mut manager, &actor);
     {
         let session = &mut manager.sessions.get_mut(&path).expect("session").session;
@@ -101,11 +87,7 @@ async fn request_tasks_rolls_back_header_and_index_tasks_when_peer_send_fails() 
 fn complete_inventory_stores_hashable_block() {
     let mut manager = TaskManager::new();
     let (mailbox, mut rx) = mpsc::channel(8);
-    let actor = ActorRef::new(
-        ActorPath::root("test", "peer-valid-block"),
-        mailbox,
-        Weak::new(),
-    );
+    let actor = ActorRef::with_mailbox(ActorPath::root("test", "peer-valid-block"), mailbox);
     let path = insert_session(&mut manager, &actor);
     let block = block_with_index_and_nonce(7, 1);
     let hash = block_hash(&block);
@@ -121,11 +103,7 @@ fn complete_inventory_stores_hashable_block() {
 fn complete_inventory_disconnects_conflicting_block() {
     let mut manager = TaskManager::new();
     let (mailbox, mut rx) = mpsc::channel(8);
-    let actor = ActorRef::new(
-        ActorPath::root("test", "peer-conflict-block"),
-        mailbox,
-        Weak::new(),
-    );
+    let actor = ActorRef::with_mailbox(ActorPath::root("test", "peer-conflict-block"), mailbox);
     let path = insert_session(&mut manager, &actor);
     let existing = block_with_index_and_nonce(7, 1);
     manager
@@ -146,11 +124,7 @@ fn complete_inventory_disconnects_conflicting_block() {
 fn persist_completed_disconnects_mismatched_cached_block() {
     let mut manager = TaskManager::new();
     let (mailbox, mut rx) = mpsc::channel(8);
-    let actor = ActorRef::new(
-        ActorPath::root("test", "peer-persist-mismatch"),
-        mailbox,
-        Weak::new(),
-    );
+    let actor = ActorRef::with_mailbox(ActorPath::root("test", "peer-persist-mismatch"), mailbox);
     let path = insert_session(&mut manager, &actor);
     let stored = block_with_index_and_nonce(9, 1);
     manager

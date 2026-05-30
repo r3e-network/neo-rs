@@ -66,7 +66,11 @@ impl fmt::Display for ActorPath {
     }
 }
 
-pub(crate) enum MailboxCommand {
+/// Internal mailbox transport command. Exposed (doc-hidden) only so that
+/// [`ActorRef::with_mailbox`](crate::ActorRef::with_mailbox) can wire an actor to
+/// a caller-provided channel for testing; not part of the stable API.
+#[doc(hidden)]
+pub enum MailboxCommand {
     Message(MailboxMessage),
 }
 

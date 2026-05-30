@@ -26,6 +26,7 @@ neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-config = { workspace = true, optional = true }
 neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
+neo-actors = { workspace = true, optional = true }
 neo-json = { path = "../neo-json", optional = true }
 neo-vm-rs = { workspace = true, optional = true }
 # neo-config merged into neo-core
@@ -97,6 +98,7 @@ server = [
     "dep:neo-core",
     "dep:neo-json",
     "dep:neo-vm-rs",
+    "dep:neo-actors",
     "dep:warp",
     "dep:hyper",
     "dep:uuid",

@@ -21,7 +21,7 @@ use neo_core::network::p2p::{
 };
 use neo_core::persistence::Store;
 use neo_core::prelude::Serializable;
-use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
+use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
 use neo_core::ScriptBuilder;
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::smart_contract::contract::Contract;

@@ -29,6 +29,37 @@ impl ActorRef {
         }
     }
 
+    /// Creates a detached `ActorRef` with the given path and a closed mailbox,
+    /// not attached to any running `ActorSystem`.
+    ///
+    /// Intended as a test sentinel / placeholder where only the actor *identity*
+    /// (its `ActorPath`) matters. Sends will fail because no mailbox is served.
+    #[must_use]
+    pub fn detached(path: ActorPath) -> Self {
+        let (mailbox, _rx) = mpsc::channel(1);
+        Self {
+            path,
+            mailbox,
+            system: Weak::new(),
+        }
+    }
+
+    /// Creates an `ActorRef` wired to a caller-provided mailbox channel, detached
+    /// from any `ActorSystem`. Lets a test observe the commands delivered to the
+    /// actor (via the matching receiver) or simulate a closed mailbox.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_mailbox(
+        path: ActorPath,
+        mailbox: mpsc::Sender<crate::actor_system::MailboxCommand>,
+    ) -> Self {
+        Self {
+            path,
+            mailbox,
+            system: Weak::new(),
+        }
+    }
+
     /// Sends a message to the actor without specifying a sender.
     pub fn tell<M>(&self, message: M) -> ActorRuntimeResult<()>
     where

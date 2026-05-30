@@ -52,6 +52,9 @@ members = [
     # Optional feature-gated integration via neo-node (`--features hsm`)
     "neo-hsm",
 
+    # Generic actor runtime (no neo-* deps)
+    "neo-actors",
+
     # === Telemetry ===
     # Observability stack
     "neo-telemetry",
@@ -127,6 +130,9 @@ neo-consensus = { path = "neo-consensus", version = "0.7.2" }
 # Infrastructure layer
 neo-tee = { path = "neo-tee", version = "0.7.2" }
 neo-hsm = { path = "neo-hsm", version = "0.7.2" }
+
+# Actor runtime
+neo-actors = { path = "neo-actors", version = "0.7.2" }
 
 # Telemetry
 neo-telemetry = { path = "neo-telemetry", version = "0.7.2" }
