@@ -1,4 +1,6 @@
-#![cfg(feature = "runtime")]
+//! NEP-17 tracker C# v3.9.1 parity test. Relocated from neo-core with the
+//! tokens_tracker extraction; neo-tokens-tracker always pulls neo-core with
+//! the `runtime` feature, so the test runs unconditionally.
 
 use neo_core::ledger::{Block, BlockHeader};
 use neo_core::neo_ledger::ApplicationExecuted;
@@ -13,7 +15,7 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::NotifyEventArgs;
 use neo_core::smart_contract::TriggerType;
-use neo_core::tokens_tracker::{
+use neo_tokens_tracker::{
     find_prefix, Nep17Tracker, Nep17TransferKey, TokenTransfer, TokenTransferKeyView, Tracker,
 };
 use neo_core::{UInt160, WitnessScope};

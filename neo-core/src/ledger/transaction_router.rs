@@ -2,18 +2,11 @@
 //!
 //! This module provides the TransactionRouter functionality exactly matching C# Neo TransactionRouter.
 
-use super::VerifyResult;
 use crate::network::p2p::payloads::Transaction;
 use crate::protocol_settings::ProtocolSettings;
-use serde::{Deserialize, Serialize};
 
-/// public record PreverifyCompleted(Transaction Transaction, bool Relay, VerifyResult Result);
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PreverifyCompleted {
-    pub transaction: Transaction,
-    pub relay: bool,
-    pub result: VerifyResult,
-}
+mod preverify_completed;
+pub use preverify_completed::PreverifyCompleted;
 
 /// Transaction router for handling transaction pre-verification
 pub struct TransactionRouter {

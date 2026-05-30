@@ -2,8 +2,11 @@
 
 use crate::{ChangeViewReason, ConsensusError, ConsensusResult};
 use lru::LruCache;
+use neo_primitives::UInt256;
+#[cfg(test)]
 use neo_crypto::ECPoint;
-use neo_primitives::{UInt160, UInt256};
+#[cfg(test)]
+use neo_primitives::UInt160;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -25,32 +28,11 @@ pub const MAX_VALIDATORS: usize = 21;
 /// Matches C# `DBFTPlugin`'s message caching behavior
 pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
 
-/// Consensus state enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ConsensusState {
-    /// Initial state, waiting to start
-    #[default]
-    Initial,
-    /// Primary (speaker) mode - proposing blocks
-    Primary,
-    /// Backup (validator) mode - validating proposals
-    Backup,
-    /// View changing - requesting view change
-    ViewChanging,
-    /// Committed - block has been committed
-    Committed,
-}
+mod state;
+mod validator_info;
 
-/// Validator information
-#[derive(Debug, Clone)]
-pub struct ValidatorInfo {
-    /// Validator index (0 to n-1)
-    pub index: u8,
-    /// Public key
-    pub public_key: ECPoint,
-    /// Script hash (account)
-    pub script_hash: UInt160,
-}
+pub use state::ConsensusState;
+pub use validator_info::ValidatorInfo;
 
 /// Persisted consensus state for crash recovery
 /// Contains only the essential state needed to resume consensus after a restart
