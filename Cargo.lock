@@ -2287,7 +2287,12 @@ name = "neo-config"
 version = "0.7.2"
 dependencies = [
  "dirs",
+ "hex",
+ "neo-crypto",
+ "neo-primitives",
+ "parking_lot",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "toml",
  "uuid",

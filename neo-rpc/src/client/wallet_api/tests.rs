@@ -748,7 +748,7 @@ async fn wallet_api_wait_transaction_returns_confirmed_tx() {
     }
 
     let mut settings = ProtocolSettings::default_settings();
-    settings.ms_per_block = 2;
+    settings.milliseconds_per_block = 2;
     let tx = Transaction::new();
 
     let Some(result_json) = load_rpc_case_result("getrawtransactionasync") else {
@@ -793,7 +793,7 @@ async fn wallet_api_wait_transaction_times_out() {
     }
 
     let mut settings = ProtocolSettings::default_settings();
-    settings.ms_per_block = 2;
+    settings.milliseconds_per_block = 2;
     let tx = Transaction::new();
 
     let Some(mut unconfirmed) = load_rpc_case_result("getrawtransactionasync") else {

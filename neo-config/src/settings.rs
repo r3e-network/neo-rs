@@ -17,8 +17,13 @@ pub struct Settings {
     #[serde(default)]
     pub network: NetworkConfig,
 
-    /// Protocol settings
-    #[serde(default)]
+    /// Protocol settings.
+    ///
+    /// Not (de)serialized in the node-settings TOML: the canonical typed
+    /// `ProtocolSettings` (committee as `ECPoint`s, hardforks as a typed map) is
+    /// loaded from the C#-compatible protocol config (JSON) via
+    /// `ProtocolSettings::load`, not the TOML node config. Defaulted here.
+    #[serde(skip)]
     pub protocol: ProtocolSettings,
 
     /// Genesis configuration

@@ -22,12 +22,14 @@
 
 mod error;
 mod genesis;
+pub mod hardfork;
 mod network;
 mod protocol;
 mod settings;
 
 pub use error::{ConfigError, ConfigResult};
 pub use genesis::{GenesisConfig, GenesisValidator};
+pub use hardfork::{is_hardfork_enabled, Hardfork, HardforkManager, HardforkParseError};
 pub use network::{NetworkConfig, NetworkType};
 pub use protocol::ProtocolSettings;
 pub use settings::{

@@ -15,7 +15,13 @@ description = "Configuration management for Neo N3 blockchain node"
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 toml = { workspace = true }
 uuid = { workspace = true }
 dirs = "5.0"
 thiserror = { workspace = true }
+# Canonical typed ProtocolSettings + HardforkManager live here (moved from neo-core)
+neo-primitives = { workspace = true }
+neo-crypto = { workspace = true }
+hex = { workspace = true }
+parking_lot = { workspace = true }
