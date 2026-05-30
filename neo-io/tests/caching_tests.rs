@@ -1,6 +1,5 @@
 use neo_io::{
-    Cache, ECDsaCache, ECDsaCacheItem, ECPointCache, EncodablePoint, FIFOCache, HashSetCache,
-    InventoryHash, IoCache, LRUCache, RelayCache,
+    Cache, FIFOCache, HashSetCache, InventoryHash, IoCache, RelayCache,
 };
 use std::hash::{Hash, Hasher};
 
@@ -419,49 +418,6 @@ fn fifo_cache_access_paths_do_not_refresh_fifo_order() {
     assert!(!cache.contains_key(&1));
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct MockPoint(Vec<u8>);
-
-impl EncodablePoint for MockPoint {
-    fn encode_point_compressed(&self) -> Vec<u8> {
-        self.0.clone()
-    }
-}
-
-#[test]
-fn ec_point_cache_uses_compressed_encoding_as_key() {
-    let cache = ECPointCache::new(2);
-    let point1 = MockPoint(vec![1, 2, 3]);
-    let point2 = MockPoint(vec![4, 5, 6]);
-
-    cache.add(point1.clone());
-    cache.add(point2.clone());
-
-    assert_eq!(cache.count(), 2);
-    assert!(cache.contains(&point1));
-    assert!(cache.contains(&point2));
-    assert_eq!(cache.values().len(), 2);
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct MockSigner(&'static str);
-
-#[test]
-fn ecdsa_cache_evicts_oldest_entries() {
-    let cache: ECDsaCache<MockPoint, MockSigner> = ECDsaCache::new(2);
-    cache.add(ECDsaCacheItem::new(MockPoint(vec![1]), MockSigner("A")));
-    cache.add(ECDsaCacheItem::new(MockPoint(vec![2]), MockSigner("B")));
-
-    assert!(cache.contains_key(&MockPoint(vec![1])));
-    assert!(cache.contains_key(&MockPoint(vec![2])));
-
-    cache.add(ECDsaCacheItem::new(MockPoint(vec![3]), MockSigner("C")));
-
-    assert!(!cache.contains_key(&MockPoint(vec![1])));
-    assert!(cache.contains_key(&MockPoint(vec![2])));
-    assert!(cache.contains_key(&MockPoint(vec![3])));
-}
-
 #[derive(Clone, Debug)]
 struct MockInventory {
     hash: Vec<u8>,
@@ -499,105 +455,6 @@ fn relay_cache_keys_on_inventory_hash() {
     assert!(cache.contains_key(&vec![3]));
 }
 
-#[test]
-fn lru_cache_eviction_matches_csharp() {
-    let cache = LRUCache::new(3, |item: &String| item.parse::<i32>().unwrap());
-    assert!(cache.is_empty());
-
-    cache.add("1".to_string());
-    cache.add("2".to_string());
-    cache.add("3".to_string());
-    assert_eq!(cache.count(), 3);
-    assert!(cache.contains(&"1".to_string()));
-    assert!(cache.contains(&"2".to_string()));
-    assert!(cache.contains(&"3".to_string()));
-    assert!(!cache.contains(&"4".to_string()));
-
-    let cached = cache.get(&2).unwrap();
-    assert_eq!(cached, "2");
-    assert_eq!(cache.count(), 3);
-    assert!(cache.contains_key(&1));
-    assert!(cache.contains_key(&2));
-    assert!(cache.contains_key(&3));
-    assert!(!cache.contains_key(&4));
-
-    cache.add("4".to_string());
-    assert_eq!(cache.count(), 3);
-    assert!(cache.contains_key(&3));
-    assert!(cache.contains_key(&2));
-    assert!(cache.contains_key(&4));
-    assert!(!cache.contains_key(&1));
-
-    cache.add("5".to_string());
-    assert_eq!(cache.count(), 3);
-    assert!(!cache.contains_key(&1));
-    assert!(cache.contains_key(&2));
-    assert!(!cache.contains_key(&3));
-    assert!(cache.contains_key(&4));
-    assert!(cache.contains_key(&5));
-
-    cache.add("6".to_string());
-    assert_eq!(cache.count(), 3);
-    assert!(cache.contains_key(&5));
-    assert!(cache.contains_key(&6));
-}
-
-#[test]
-fn lru_cache_access_paths_refresh_order() {
-    let cache = LRUCache::new(2, |value: &i32| *value);
-    cache.add(1);
-    cache.add(2);
-
-    assert!(cache.contains_key(&1));
-    cache.add(3);
-
-    assert_eq!(cache.values(), vec![1, 3]);
-    assert!(cache.contains_key(&1));
-    assert!(!cache.contains_key(&2));
-}
-
-#[test]
-fn lru_cache_duplicate_add_refreshes_order() {
-    let cache = LRUCache::new(2, |value: &i32| *value);
-    cache.add(1);
-    cache.add(2);
-
-    cache.add(1);
-    cache.add(3);
-
-    assert_eq!(cache.values(), vec![1, 3]);
-    assert!(cache.contains_key(&1));
-    assert!(!cache.contains_key(&2));
-}
-
-#[test]
-fn lru_cache_try_get_refreshes_order() {
-    let cache = LRUCache::new(2, |value: &i32| *value);
-    cache.add(1);
-    cache.add(2);
-
-    assert_eq!(cache.try_get(&1), Some(1));
-    cache.add(3);
-
-    assert_eq!(cache.values(), vec![1, 3]);
-    assert!(cache.contains_key(&1));
-    assert!(!cache.contains_key(&2));
-}
-
-#[test]
-fn lru_cache_contains_value_refreshes_order() {
-    let cache = LRUCache::new(2, |value: &i32| *value);
-    cache.add(1);
-    cache.add(2);
-
-    assert!(cache.contains(&1));
-    cache.add(3);
-
-    assert_eq!(cache.values(), vec![1, 3]);
-    assert!(cache.contains_key(&1));
-    assert!(!cache.contains_key(&2));
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct VersionedValue {
     key: i32,
@@ -621,46 +478,4 @@ fn io_cache_duplicate_add_preserves_original_value() {
 
     assert_eq!(cache.get(&1), Some(original.clone()));
     assert_eq!(cache.values(), vec![original]);
-}
-
-#[test]
-fn lru_cache_duplicate_add_refreshes_without_overwriting_value() {
-    let cache = LRUCache::new(2, |value: &VersionedValue| value.key);
-    let original = VersionedValue {
-        key: 1,
-        payload: "original",
-    };
-    let replacement = VersionedValue {
-        key: 1,
-        payload: "replacement",
-    };
-
-    cache.add(original.clone());
-    cache.add(VersionedValue {
-        key: 2,
-        payload: "second",
-    });
-    cache.add(replacement);
-    cache.add(VersionedValue {
-        key: 3,
-        payload: "third",
-    });
-
-    assert_eq!(cache.get(&1), Some(original));
-    assert!(!cache.contains_key(&2));
-    assert!(cache.contains_key(&3));
-}
-
-#[test]
-fn lru_cache_copy_to_uses_lru_order_after_refresh() {
-    let cache = LRUCache::new(3, |value: &i32| *value);
-    cache.add(1);
-    cache.add(2);
-    cache.add(3);
-
-    assert_eq!(cache.get(&2), Some(2));
-    let mut values = [0; 5];
-    cache.copy_to(&mut values, 1).unwrap();
-
-    assert_eq!(values, [0, 1, 3, 2, 0]);
 }

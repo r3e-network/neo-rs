@@ -30,10 +30,7 @@ pub use compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRE
 // Re-export caching types
 pub use caching::{
     cache::{Cache, IoCache},
-    ec_point_cache::{ECPointCache, EncodablePoint},
-    ecdsa_cache::{ECDsaCache, ECDsaCacheItem},
     fifo_cache::FIFOCache,
     hashset_cache::HashSetCache,
-    lru_cache::LRUCache,
     relay_cache::{InventoryHash, RelayCache},
 };
