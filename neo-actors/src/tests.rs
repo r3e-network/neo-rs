@@ -255,6 +255,74 @@ async fn event_stream_publish_delivers_messages() -> ActorRuntimeResult<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn event_stream_subscribe_channel_delivers_messages() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-event-stream-channel")?;
+    let event_stream = system.event_stream();
+    let mut rx = event_stream.subscribe_channel::<TestEvent>();
+
+    event_stream.publish(TestEvent(7));
+
+    let value = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .map_err(|_| ActorRuntimeError::AskTimeout)?
+        .expect("channel subscriber should receive the published event");
+
+    assert_eq!(value.0, 7);
+
+    system.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn event_stream_channel_subscribers_each_receive_a_copy() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-event-stream-channel-fanout")?;
+    let event_stream = system.event_stream();
+    let mut rx1 = event_stream.subscribe_channel::<TestEvent>();
+    let mut rx2 = event_stream.subscribe_channel::<TestEvent>();
+
+    event_stream.publish(TestEvent(11));
+
+    let v1 = timeout(Duration::from_millis(200), rx1.recv())
+        .await
+        .map_err(|_| ActorRuntimeError::AskTimeout)?
+        .expect("first channel subscriber");
+    let v2 = timeout(Duration::from_millis(200), rx2.recv())
+        .await
+        .map_err(|_| ActorRuntimeError::AskTimeout)?
+        .expect("second channel subscriber");
+
+    assert_eq!(v1.0, 11);
+    assert_eq!(v2.0, 11);
+
+    system.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn event_stream_channel_subscriber_pruned_after_receiver_dropped() -> ActorRuntimeResult<()> {
+    let system = ActorSystem::new("actor-runtime-event-stream-channel-prune")?;
+    let event_stream = system.event_stream();
+
+    // Drop the receiver, then publish: the dead sender must be pruned without
+    // panicking. A fresh subscriber registered afterwards still receives events.
+    let rx = event_stream.subscribe_channel::<TestEvent>();
+    drop(rx);
+    event_stream.publish(TestEvent(1));
+
+    let mut rx2 = event_stream.subscribe_channel::<TestEvent>();
+    event_stream.publish(TestEvent(2));
+
+    let value = timeout(Duration::from_millis(200), rx2.recv())
+        .await
+        .map_err(|_| ActorRuntimeError::AskTimeout)?
+        .expect("fresh channel subscriber should receive the event");
+    assert_eq!(value.0, 2);
+
+    system.shutdown().await?;
+    Ok(())
+}
+
 struct StopProbe {
     stopped: Option<oneshot::Sender<()>>,
 }

@@ -1,10 +1,21 @@
 use super::actor_ref::ActorRef;
 use parking_lot::RwLock;
-use std::{any::TypeId, collections::HashMap, sync::Arc};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    sync::Arc,
+};
+use tokio::sync::mpsc;
+
+/// Type-erased channel sender used to fan published events out to plain async
+/// tasks rather than actor mailboxes. Stored as `Box<dyn Any>` keyed by the
+/// event `TypeId` and downcast back to `mpsc::UnboundedSender<T>` on publish.
+type ChannelSubscriber = Box<dyn Any + Send + Sync>;
 
 #[derive(Default)]
 pub struct EventStream {
     subscribers: RwLock<HashMap<TypeId, Vec<ActorRef>>>,
+    channel_subscribers: RwLock<HashMap<TypeId, Vec<ChannelSubscriber>>>,
 }
 
 impl EventStream {
@@ -38,14 +49,48 @@ impl EventStream {
         });
     }
 
+    /// Subscribes a plain async task to events of type `T`, delivered over an
+    /// unbounded tokio channel instead of an actor mailbox.
+    ///
+    /// This is the actor-free counterpart to [`subscribe`](Self::subscribe):
+    /// the returned [`mpsc::UnboundedReceiver`] is driven directly from a
+    /// `tokio::select!` loop. The subscription is removed automatically the
+    /// next time an event is published after the receiver is dropped, so there
+    /// is no explicit unsubscribe.
+    pub fn subscribe_channel<T: Clone + Send + 'static>(&self) -> mpsc::UnboundedReceiver<T> {
+        let (sender, receiver) = mpsc::unbounded_channel::<T>();
+        let mut subs = self.channel_subscribers.write();
+        subs.entry(TypeId::of::<T>())
+            .or_default()
+            .push(Box::new(sender));
+        receiver
+    }
+
     pub fn publish<T>(&self, message: T)
     where
         T: Clone + Send + 'static,
     {
-        let subs = self.subscribers.read();
-        if let Some(entry) = subs.get(&TypeId::of::<T>()) {
-            for actor in entry.iter() {
-                let _ = actor.tell(message.clone());
+        {
+            let subs = self.subscribers.read();
+            if let Some(entry) = subs.get(&TypeId::of::<T>()) {
+                for actor in entry.iter() {
+                    let _ = actor.tell(message.clone());
+                }
+            }
+        }
+
+        let mut channel_subs = self.channel_subscribers.write();
+        if let Some(entry) = channel_subs.get_mut(&TypeId::of::<T>()) {
+            // Deliver to each channel subscriber, pruning any whose receiver has
+            // been dropped (send returns Err once the receiver is gone).
+            entry.retain(|boxed| {
+                match boxed.downcast_ref::<mpsc::UnboundedSender<T>>() {
+                    Some(sender) => sender.send(message.clone()).is_ok(),
+                    None => true,
+                }
+            });
+            if entry.is_empty() {
+                channel_subs.remove(&TypeId::of::<T>());
             }
         }
     }
@@ -71,6 +116,11 @@ impl EventStreamHandle {
 
     pub fn unsubscribe_all(&self, actor: &ActorRef) {
         self.inner.unsubscribe_all(actor);
+    }
+
+    /// Actor-free subscription: see [`EventStream::subscribe_channel`].
+    pub fn subscribe_channel<T: Clone + Send + 'static>(&self) -> mpsc::UnboundedReceiver<T> {
+        self.inner.subscribe_channel::<T>()
     }
 
     pub fn publish<T>(&self, message: T)
