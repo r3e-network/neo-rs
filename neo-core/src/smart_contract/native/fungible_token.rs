@@ -18,6 +18,7 @@ use crate::smart_contract::native::NativeContract;
 use crate::neo_vm::StackItem;
 use crate::UInt160;
 use num_bigint::BigInt;
+use num_traits::Signed;
 
 /// Prefix for storing total supply in storage.
 pub const PREFIX_TOTAL_SUPPLY: u8 = 11;
@@ -180,7 +181,7 @@ pub trait FungibleToken: NativeContract {
     where
         Self: Sized,
     {
-        if amount < &BigInt::from(0) {
+        if amount.is_negative() {
             return Err(Error::native_contract(
                 "Transfer amount cannot be negative".to_string(),
             ));

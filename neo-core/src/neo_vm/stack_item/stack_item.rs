@@ -310,7 +310,10 @@ impl StackItem {
                         "Cannot convert ByteString to Boolean",
                     ));
                 }
-                Ok(stack_value_truthy(StackValue::ByteString(b.clone())))
+                // NeoVM truthiness: true iff any byte is non-zero (matches
+                // neo_vm_rs boolean_value / C# Unsafe.NotZero). Avoids cloning the
+                // Vec<u8> just to wrap it in StackValue::ByteString.
+                Ok(b.iter().any(|byte| *byte != 0))
             }
             Self::Buffer(_b) => Ok(true),
             Self::Array(_a) => Ok(true),
@@ -1100,9 +1103,7 @@ impl Ord for StackItem {
                 std::cmp::Ordering::Equal
             }
             _ => {
-                let _self_discriminant = std::mem::discriminant(self);
-                let _other_discriminant = std::mem::discriminant(other);
-                // based on the variant order in the enum
+                // Different variants: order by variant rank.
                 match (self, other) {
                     (Self::Null, _) => std::cmp::Ordering::Less,
                     (_, Self::Null) => std::cmp::Ordering::Greater,

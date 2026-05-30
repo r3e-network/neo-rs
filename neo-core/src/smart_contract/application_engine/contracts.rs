@@ -114,7 +114,9 @@ impl ApplicationEngine {
 
         let context = self.load_script_with_state(script_bytes, rvcount, offset, move |state| {
             state.call_flags = flags;
-            state.contract = Some(contract_clone.clone());
+            // UInt160 is Copy — read the hash before moving contract_clone below.
+            state.script_hash = Some(contract_clone.hash);
+            state.contract = Some(contract_clone);
             state.method_name = Some(method_clone.name.clone());
             state.argument_count = argument_count;
             state.return_type = Some(method_clone.return_type);
@@ -125,7 +127,6 @@ impl ApplicationEngine {
                 .collect();
             state.native_calling_script_hash = None;
             state.is_dynamic_call = false;
-            state.script_hash = Some(contract_clone.hash);
             state.calling_context = prev_context_clone.clone();
             state.calling_script_hash = prev_hash;
         })?;

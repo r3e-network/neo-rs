@@ -295,18 +295,12 @@ impl MemoryPool {
             }
         }
 
-        // OPTIMIZATION: Build conflict transactions Vec with pre-allocated capacity.
-        // Use Arc::clone to share references instead of deep cloning transaction data.
+        // Build the conflict transactions Vec; collect() sizes from the
+        // iterator's exact size_hint, so this is pre-allocated already.
         let conflict_transactions: Vec<Transaction> = conflicts_to_remove
             .iter()
             .map(|item| item.transaction.as_ref().clone())
-            .fold(
-                Vec::with_capacity(conflicts_to_remove.len()),
-                |mut acc, tx| {
-                    acc.push(tx);
-                    acc
-                },
-            );
+            .collect();
 
         // State-dependent validation (requires blockchain state)
         let result = tx.verify_state_dependent(
@@ -569,14 +563,12 @@ impl MemoryPool {
                 }
             };
 
-            // Build conflict transactions Vec with pre-allocated capacity
+            // Build the conflict transactions Vec; collect() pre-sizes from the
+            // iterator's exact size_hint.
             let conflict_txs: Vec<Transaction> = conflicts
                 .iter()
                 .map(|pool_item| pool_item.transaction.as_ref().clone())
-                .fold(Vec::with_capacity(conflicts.len()), |mut acc, tx| {
-                    acc.push(tx);
-                    acc
-                });
+                .collect();
 
             let verify_result = item.transaction.verify_state_dependent(
                 settings,

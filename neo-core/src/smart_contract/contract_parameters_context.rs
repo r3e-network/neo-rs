@@ -406,7 +406,7 @@ impl ContractParametersContext {
         );
 
         let data_bytes = self.hash_data();
-        let hash_bytes = Crypto::hash256(&data_bytes);
+        let hash_bytes = Crypto::hash256(data_bytes);
         let hash = UInt256::from_bytes(&hash_bytes).unwrap_or_else(|_| UInt256::default());
         obj.insert(
             "hash".to_string(),
@@ -492,8 +492,8 @@ impl ContractParametersContext {
         Self::from_transaction_json(&value, snapshot)
     }
 
-    fn hash_data(&self) -> Vec<u8> {
-        self.verifiable_bytes.clone()
+    fn hash_data(&self) -> &[u8] {
+        &self.verifiable_bytes
     }
 
     /// Exposes script hashes for verification (C# ScriptHashes)

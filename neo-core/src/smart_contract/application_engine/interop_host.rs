@@ -205,23 +205,26 @@ impl InteropHost for ApplicationEngine {
 
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-        let contract = {
+        // Clone only the (small) method-token vector instead of the whole
+        // ContractState, which carries the full NEF bytecode and manifest.
+        let tokens = {
             let state = state_arc.lock();
-            state.contract.clone().ok_or_else(|| {
+            let contract = state.contract.as_ref().ok_or_else(|| {
                 VmError::invalid_operation_msg("No contract in current execution context")
-            })?
+            })?;
+            contract.nef.tokens.clone()
         };
 
         // 3. Validate token index and get the method token
         let token_idx = token_id as usize;
-        if token_idx >= contract.nef.tokens.len() {
+        if token_idx >= tokens.len() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Token index {} out of range (max: {})",
                 token_idx,
-                contract.nef.tokens.len()
+                tokens.len()
             )));
         }
-        let token = contract.nef.tokens[token_idx].clone();
+        let token = tokens[token_idx].clone();
 
         // 4. Validate stack has enough parameters
         let stack_count = context.evaluation_stack().len();
