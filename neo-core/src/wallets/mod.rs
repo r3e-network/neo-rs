@@ -15,6 +15,7 @@ pub mod transfer_output;
 pub mod version;
 pub mod wallet;
 pub mod wallet_account;
+pub mod wallet_manager;
 
 // Re-export commonly used types
 pub use asset_descriptor::AssetDescriptor;
@@ -28,5 +29,6 @@ pub use nep6::{Nep6Account, Nep6Wallet, ScryptParameters};
 pub use scripts::signature_invocation;
 pub use transfer_output::TransferOutput;
 pub use version::Version;
-pub use wallet::{Wallet, WalletError, WalletManager, WalletResult};
+pub use wallet::{Wallet, WalletError, WalletResult};
 pub use wallet_account::{StandardWalletAccount, WalletAccount};
+pub use wallet_manager::WalletManager;
