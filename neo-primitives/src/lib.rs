@@ -33,6 +33,7 @@ pub use bitflags;
 pub mod base58_check;
 pub mod big_decimal;
 pub mod blockchain;
+pub mod call_flags;
 pub mod constants;
 pub mod contains_transaction_type;
 pub mod contract_basic_method;
@@ -78,6 +79,7 @@ pub use tests::*;
 
 // Re-exports
 pub use constants::*;
+pub use call_flags::CallFlags;
 pub use contains_transaction_type::ContainsTransactionType;
 pub use contract_basic_method::ContractBasicMethod;
 pub use contract_task::ContractTask;
