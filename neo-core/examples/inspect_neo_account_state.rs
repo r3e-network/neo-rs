@@ -1,5 +1,6 @@
+use neo_core::smart_contract::StorageItemExt;
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, SeekDirection, StorageConfig, StorageItemExt, StorageKey,
+    providers::RocksDBStoreProvider, SeekDirection, StorageConfig, StorageKey,
     StoreCache, StoreProvider,
 };
 use neo_core::smart_contract::BinarySerializer;

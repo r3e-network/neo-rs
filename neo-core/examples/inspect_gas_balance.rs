@@ -1,6 +1,7 @@
+use neo_core::smart_contract::StorageItemExt;
 #[cfg(feature = "rocksdb")]
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StorageConfig, StorageItemExt, StorageKey, StoreCache,
+    providers::RocksDBStoreProvider, StorageConfig, StorageKey, StoreCache,
     StoreProvider,
 };
 #[cfg(feature = "rocksdb")]

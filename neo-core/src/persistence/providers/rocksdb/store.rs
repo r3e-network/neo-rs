@@ -9,8 +9,8 @@ use crate::{
         store_snapshot::StoreSnapshot,
         write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot},
         write_store::WriteStore,
+        StorageItem, StorageKey,
     },
-    smart_contract::{StorageItem, StorageKey},
 };
 use parking_lot::{Mutex, RwLock};
 use rocksdb::{

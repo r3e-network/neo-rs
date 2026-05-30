@@ -66,7 +66,14 @@ pub use neo_primitives::{
     TriggerType,
 };
 pub use crate::neo_vm::Interoperable;
-pub use crate::persistence::{StorageItem, StorageItemExt, StorageKey};
+pub use crate::persistence::{StorageItem, StorageKey};
+
+/// Cache-aware `StorageItem` extension (BigInteger/Interoperable), owned by the
+/// smart-contract layer because it depends on VM interop. `StorageItem` itself
+/// stays canonical in neo-storage; this keeps the storage layer free of any edge
+/// back into smart-contract.
+pub mod storage_item_ext;
+pub use storage_item_ext::StorageItemExt;
 
 /// BinarySerializer matches C# Neo.SmartContract.BinarySerializer: it lives in
 /// the smart-contract layer and serializes stack items to/from storage bytes.

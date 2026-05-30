@@ -7,7 +7,7 @@ use crate::persistence::store::Store;
 use crate::persistence::store_provider::StoreProvider;
 use crate::persistence::write_batch_buffer::WriteBatchConfig;
 use crate::persistence::write_store::WriteStore;
-use crate::smart_contract::{StorageItem, StorageKey};
+use crate::persistence::{StorageItem, StorageKey};
 use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
