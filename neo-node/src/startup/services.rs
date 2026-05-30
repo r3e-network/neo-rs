@@ -9,6 +9,7 @@ use crate::consensus::DbftConsensusController;
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{bail, Context, Result};
 use neo_application_logs::ApplicationLogsService;
+use neo_tokens_tracker::{TokensTracker, TokensTrackerService};
 use neo_core::{
     i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler},
     neo_system::NeoSystem,
@@ -20,7 +21,6 @@ use neo_core::{
         state_store::StateServiceSettings,
         verification::StateServiceVerification,
     },
-    tokens_tracker::{TokensTracker, TokensTrackerService},
     wallets::{WalletProvider, Nep6Wallet, Wallet as CoreWallet},
 };
 use neo_rpc::server::{

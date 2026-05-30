@@ -3,8 +3,8 @@
 //! Storage key for NEP-17 transfer records.
 
 use super::super::token_transfer_key::TokenTransferKey;
-use crate::UInt160;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use neo_core::UInt160;
+use neo_core::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 

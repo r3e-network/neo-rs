@@ -2,8 +2,8 @@
 //!
 //! Storage key for NEP-17 token balances.
 
-use crate::neo_io::impl_serializable;
-use crate::UInt160;
+use neo_core::neo_io::impl_serializable;
+use neo_core::UInt160;
 use serde::{Deserialize, Serialize};
 
 /// Key for NEP-17 balance records.
@@ -25,7 +25,7 @@ impl Nep17BalanceKey {
     }
 }
 
-crate::impl_ord_by_fields!(Nep17BalanceKey, user_script_hash, asset_script_hash);
+neo_core::impl_ord_by_fields!(Nep17BalanceKey, user_script_hash, asset_script_hash);
 
 impl_serializable! {
     struct Nep17BalanceKey {

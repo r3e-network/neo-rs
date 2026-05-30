@@ -3,8 +3,8 @@
 //! Represents a single token transfer event.
 
 use super::super::extensions::bigint_var_size;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
-use crate::{UInt160, UInt256};
+use neo_core::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use neo_core::{UInt160, UInt256};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 

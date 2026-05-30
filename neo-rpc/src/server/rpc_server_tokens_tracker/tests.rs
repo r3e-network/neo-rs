@@ -15,7 +15,7 @@ use neo_core::smart_contract::native::NativeRegistry;
 use neo_core::smart_contract::{
     ContractParameterType, ContractState, NefFile, StorageItem, StorageKey,
 };
-use neo_core::tokens_tracker::{
+use neo_tokens_tracker::{
     find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService,
     TokensTrackerSettings,
 };

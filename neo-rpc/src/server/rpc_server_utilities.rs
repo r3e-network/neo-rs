@@ -6,7 +6,7 @@ use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
 use super::rpc_server::{RpcHandler, RpcServer};
 use neo_application_logs::ApplicationLogsService;
-use neo_core::tokens_tracker::TokensTrackerService;
+use neo_tokens_tracker::TokensTrackerService;
 
 pub struct RpcServerUtilities;
 

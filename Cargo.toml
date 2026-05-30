@@ -43,10 +43,12 @@ members = [
     # ApplicationLogs plugin (execution-log persistence + RPC queries)
     "neo-application-logs",
 
+    # TokensTracker plugin (NEP-11/NEP-17 balance + transfer indexing)
+    "neo-tokens-tracker",
+
     # NOTE: remaining C# Neo plugins still inlined; extraction in progress:
     #   DBFTPlugin      → neo-consensus
     #   RpcServer       → neo-rpc/src/server
-    #   TokensTracker   → neo-core/src/tokens_tracker (extraction pending)
 
     # TEE (Trusted Execution Environment) support
     # Optional feature-gated integration via neo-node (`--features tee`)

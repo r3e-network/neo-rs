@@ -2520,6 +2520,7 @@ dependencies = [
  "neo-rpc",
  "neo-tee",
  "neo-telemetry",
+ "neo-tokens-tracker",
  "neo-vm-rs",
  "num_cpus",
  "parking_lot",
@@ -2600,6 +2601,7 @@ dependencies = [
  "neo-io",
  "neo-json",
  "neo-primitives",
+ "neo-tokens-tracker",
  "neo-vm-rs",
  "num-bigint",
  "num-traits",
@@ -2722,6 +2724,23 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "neo-tokens-tracker"
+version = "0.7.2"
+dependencies = [
+ "base64 0.22.1",
+ "neo-core",
+ "neo-storage",
+ "neo-vm-rs",
+ "num-bigint",
+ "num-traits",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

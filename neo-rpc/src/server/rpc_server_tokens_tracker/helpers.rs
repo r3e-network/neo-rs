@@ -4,11 +4,11 @@ use crate::server::rpc_helpers::{internal_error, invalid_params};
 use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
 use neo_core::smart_contract::CallFlags;
-use neo_core::tokens_tracker::{
+use neo_tokens_tracker::{
     find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer,
     TokensTrackerService,
 };
-use neo_core::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
+use neo_tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
 use neo_vm_rs::OpCode;

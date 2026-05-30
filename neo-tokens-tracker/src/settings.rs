@@ -6,7 +6,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+use neo_core::unhandled_exception_policy::UnhandledExceptionPolicy;
 
 /// Configuration settings for the TokensTracker.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]

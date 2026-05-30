@@ -2,9 +2,9 @@
 //!
 //! Utility functions for serialization size calculation and database queries.
 
-use crate::neo_io::serializable::helper::get_var_size_bytes;
-use crate::neo_io::{MemoryReader, Serializable};
-use crate::persistence::{Store, SeekDirection};
+use neo_core::neo_io::serializable::helper::get_var_size_bytes;
+use neo_core::neo_io::{MemoryReader, Serializable};
+use neo_core::persistence::{Store, SeekDirection};
 use base64::Engine;
 use num_bigint::BigInt;
 

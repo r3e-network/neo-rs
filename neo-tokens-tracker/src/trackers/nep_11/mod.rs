@@ -21,8 +21,8 @@ fn token_id_integer(token: &[u8]) -> BigInt {
 #[cfg(test)]
 mod tests {
     use super::{Nep11BalanceKey, Nep11TransferKey};
-    use crate::neo_io::{BinaryWriter, Serializable};
-    use crate::UInt160;
+    use neo_core::neo_io::{BinaryWriter, Serializable};
+    use neo_core::UInt160;
 
     fn hash(seed: u8) -> UInt160 {
         UInt160::from_bytes(&[seed; 20]).expect("valid UInt160")

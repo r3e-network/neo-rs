@@ -7,16 +7,16 @@ use super::super::token_transfer::TokenTransfer;
 use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
 use super::nep11_balance_key::Nep11BalanceKey;
 use super::nep11_transfer_key::Nep11TransferKey;
-use crate::extensions::log_level::LogLevel;
-use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::persistence::DataCache;
-use crate::script_builder::ScriptBuilder;
-use crate::smart_contract::call_flags::CallFlags;
-use crate::smart_contract::native::contract_management::ContractManagement;
-use crate::smart_contract::ApplicationEngine;
-use crate::smart_contract::TriggerType;
-use crate::neo_vm::StackItem;
-use crate::{NeoSystem, UInt160};
+use neo_core::extensions::log_level::LogLevel;
+use neo_core::neo_ledger::{ApplicationExecuted, Block};
+use neo_core::persistence::DataCache;
+use neo_core::script_builder::ScriptBuilder;
+use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::native::contract_management::ContractManagement;
+use neo_core::smart_contract::ApplicationEngine;
+use neo_core::smart_contract::TriggerType;
+use neo_core::neo_vm::StackItem;
+use neo_core::{NeoSystem, UInt160};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
@@ -38,7 +38,7 @@ pub struct Nep11Tracker {
 impl Nep11Tracker {
     /// Creates a new NEP-11 tracker.
     pub fn new(
-        db: Arc<dyn crate::persistence::Store>,
+        db: Arc<dyn neo_core::persistence::Store>,
         max_results: u32,
         should_track_history: bool,
         neo_system: Arc<NeoSystem>,
@@ -52,7 +52,7 @@ impl Nep11Tracker {
 
     fn handle_notification(
         &mut self,
-        container: Option<&Arc<dyn crate::Verifiable>>,
+        container: Option<&Arc<dyn neo_core::Verifiable>>,
         asset: &UInt160,
         state_items: &[StackItem],
         transfers: &mut Vec<TransferRecord>,
@@ -70,7 +70,7 @@ impl Nep11Tracker {
 
         transfers.push(record.clone());
         if let Some(container) = container {
-            if let Some(tx) = container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() {
+            if let Some(tx) = container.as_any().downcast_ref::<neo_core::network::p2p::payloads::Transaction>() {
                 self.record_transfer_history(&record, &token_id, &tx.hash(), transfer_index);
             }
         }
@@ -80,7 +80,7 @@ impl Nep11Tracker {
         &mut self,
         record: &TransferRecord,
         token_id: &[u8],
-        tx_hash: &crate::UInt256,
+        tx_hash: &neo_core::UInt256,
         transfer_index: &mut u32,
     ) {
         if !self.base.should_track_history {

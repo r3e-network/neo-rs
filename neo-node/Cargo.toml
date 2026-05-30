@@ -35,6 +35,7 @@ hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 # Enable full neo-core features for production node (rocksdb, upnp, monitoring, parallel)
 neo-core = { path = "../neo-core", features = ["runtime"] }
 neo-application-logs = { path = "../neo-application-logs" }
+neo-tokens-tracker = { path = "../neo-tokens-tracker" }
 neo-actors = { workspace = true }
 neo-consensus = { path = "../neo-consensus" }
 neo-p2p = { path = "../neo-p2p" }

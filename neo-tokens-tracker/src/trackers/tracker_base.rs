@@ -4,12 +4,12 @@
 //! database operations and transfer record extraction.
 
 use super::token_transfer_key::TokenTransferKey;
-use crate::extensions::log_level::LogLevel;
-use crate::neo_io::{MemoryReader, Serializable, SerializableExt};
-use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::persistence::{DataCache, Store, SeekDirection, StoreSnapshot};
-use crate::neo_vm::StackItem;
-use crate::{NeoSystem, UInt160};
+use neo_core::extensions::log_level::LogLevel;
+use neo_core::neo_io::{MemoryReader, Serializable, SerializableExt};
+use neo_core::neo_ledger::{ApplicationExecuted, Block};
+use neo_core::persistence::{DataCache, Store, SeekDirection, StoreSnapshot};
+use neo_core::neo_vm::StackItem;
+use neo_core::{NeoSystem, UInt160};
 use num_bigint::BigInt;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -337,14 +337,14 @@ impl TrackerBase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::persistence::{
+    use neo_core::persistence::{
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         storage::StorageError,
         store::OnNewSnapshotDelegate,
         write_store::WriteStore,
     };
-    use crate::protocol_settings::ProtocolSettings;
-    use crate::smart_contract::{StorageItem, StorageKey};
+    use neo_core::protocol_settings::ProtocolSettings;
+    use neo_core::smart_contract::{StorageItem, StorageKey};
     use std::any::Any;
 
     #[derive(Clone)]
@@ -437,7 +437,7 @@ mod tests {
             Arc::clone(&self.store)
         }
 
-        fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
+        fn try_commit(&mut self) -> neo_core::persistence::store_snapshot::SnapshotCommitResult {
             Err(StorageError::CommitFailed(
                 "injected tracker commit failure".to_string(),
             ))

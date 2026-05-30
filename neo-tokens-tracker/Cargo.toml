@@ -1,0 +1,29 @@
+[package]
+name = "neo-tokens-tracker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "TokensTracker plugin for the Neo blockchain (NEP-11/NEP-17 balance and transfer indexing)"
+
+[dependencies]
+neo-core = { path = "../neo-core", features = ["runtime"] }
+neo-vm-rs = { workspace = true }
+neo-storage = { path = "../neo-storage" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+base64 = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

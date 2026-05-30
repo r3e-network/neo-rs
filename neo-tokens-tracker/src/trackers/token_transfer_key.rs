@@ -2,8 +2,8 @@
 //!
 //! Common transfer key structure used by both NEP-11 and NEP-17.
 
-use crate::UInt160;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use neo_core::UInt160;
+use neo_core::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Key for transfer history records.
@@ -36,7 +36,7 @@ impl TokenTransferKey {
     }
 }
 
-crate::impl_ord_by_fields!(
+neo_core::impl_ord_by_fields!(
     TokenTransferKey,
     user_script_hash,
     timestamp_ms,

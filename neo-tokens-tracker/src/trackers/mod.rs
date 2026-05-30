@@ -5,12 +5,12 @@
 
 macro_rules! impl_token_transfer_key_as_ref {
     ($type:ty, $field:tt) => {
-        impl AsRef<crate::tokens_tracker::trackers::token_transfer_key::TokenTransferKey>
+        impl AsRef<crate::trackers::token_transfer_key::TokenTransferKey>
             for $type
         {
             fn as_ref(
                 &self,
-            ) -> &crate::tokens_tracker::trackers::token_transfer_key::TokenTransferKey {
+            ) -> &crate::trackers::token_transfer_key::TokenTransferKey {
                 &self.$field
             }
         }

@@ -8,7 +8,7 @@ use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::native::contract_management::ContractManagement;
 use neo_core::smart_contract::{ApplicationEngine, TriggerType};
-use neo_core::tokens_tracker::{
+use neo_tokens_tracker::{
     find_prefix, Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance,
 };
 use neo_core::vm_runtime::StackItem;

@@ -7,11 +7,11 @@ use super::settings::TokensTrackerSettings;
 use super::trackers::nep_11::Nep11Tracker;
 use super::trackers::nep_17::Nep17Tracker;
 use super::trackers::tracker_base::Tracker;
-use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
-use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::persistence::{DataCache, Store};
-use crate::unhandled_exception_policy::panic_message;
-use crate::NeoSystem;
+use neo_core::i_event_handlers::{CommittedHandler, CommittingHandler};
+use neo_core::neo_ledger::{ApplicationExecuted, Block};
+use neo_core::persistence::{DataCache, Store};
+use neo_core::unhandled_exception_policy::panic_message;
+use neo_core::NeoSystem;
 use parking_lot::RwLock;
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
@@ -91,7 +91,7 @@ impl TokensTracker {
         error_message: String,
     ) -> bool {
         match self.settings.exception_policy {
-            crate::unhandled_exception_policy::UnhandledExceptionPolicy::Ignore => return true,
+            neo_core::unhandled_exception_policy::UnhandledExceptionPolicy::Ignore => return true,
             _ => {
                 error!(
                     target: "neo::tokens_tracker",
@@ -200,7 +200,7 @@ impl CommittedHandler for TokensTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+    use neo_core::unhandled_exception_policy::UnhandledExceptionPolicy;
 
     fn tracker_with_policy(exception_policy: UnhandledExceptionPolicy) -> TokensTracker {
         TokensTracker {
