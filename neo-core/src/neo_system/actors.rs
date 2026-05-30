@@ -35,33 +35,27 @@ struct TransactionRouterEnvelope {
 #[derive(Clone, Debug)]
 pub struct TransactionRouterHandle {
     sender: mpsc::Sender<TransactionRouterEnvelope>,
-    executor: TaskExecutor,
 }
 
 impl TransactionRouterHandle {
-    /// Spawns a typed transaction-router worker.
+    /// Spawns a typed transaction-router worker on the shared node [`TaskExecutor`].
+    ///
+    /// The worker selects on the executor's cancellation token, so the node's
+    /// `TaskExecutor::shutdown` stops it gracefully (finish the in-flight
+    /// pre-verification, drain at a safe point) instead of a hard abort.
     pub(crate) fn spawn(
         settings: Arc<ProtocolSettings>,
         blockchain: impl Into<BlockchainHandle>,
+        executor: &TaskExecutor,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(TX_ROUTER_MAILBOX_CAPACITY);
         let router = TransactionRouter::new((*settings).clone());
         let blockchain = blockchain.into();
-        let executor = TaskExecutor::new();
         executor.spawn(move |shutdown| {
             run_transaction_router(router, blockchain, receiver, shutdown)
         });
 
-        Self { sender, executor }
-    }
-
-    /// Requests cooperative shutdown of the router worker.
-    ///
-    /// Unlike a hard `JoinHandle::abort`, this signals the worker through its
-    /// cancellation token so it finishes the in-flight pre-verification and
-    /// stops at a safe point (reth/Substrate-style graceful shutdown).
-    pub fn abort(&self) {
-        self.executor.trigger_shutdown();
+        Self { sender }
     }
 
     /// Enqueues transaction pre-verification without waiting for mailbox capacity.
@@ -226,7 +220,7 @@ mod tests {
                 .expect("probe actor")
         };
         let settings = Arc::new(ProtocolSettings::default());
-        let handle = TransactionRouterHandle::spawn(settings.clone(), probe);
+        let handle = TransactionRouterHandle::spawn(settings.clone(), probe, &TaskExecutor::new());
         let transaction = Transaction::new();
         let expected = transaction.verify_state_independent(&settings);
 
@@ -267,7 +261,11 @@ mod tests {
                 .expect("blockchain probe")
         };
         let handle =
-            TransactionRouterHandle::spawn(Arc::new(ProtocolSettings::default()), blockchain);
+            TransactionRouterHandle::spawn(
+                Arc::new(ProtocolSettings::default()),
+                blockchain,
+                &TaskExecutor::new(),
+            );
 
         handle
             .try_enqueue_preverify_from(Transaction::new(), true, Some(sender_ref))

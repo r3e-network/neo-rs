@@ -65,7 +65,7 @@ use super::registry::ServiceRegistry;
 use super::relay::{RELAY_CACHE_CAPACITY, RelayExtensibleCache};
 use super::system::STATE_STORE_SERVICE;
 
-use crate::runtime::{ActorRef, ActorSystem, EventStreamHandle};
+use crate::runtime::{ActorRef, ActorSystem, EventStreamHandle, TaskExecutor};
 
 use crate::error::{CoreError, CoreResult};
 use crate::events::{PluginEvent, broadcast_plugin_event};
@@ -129,6 +129,10 @@ pub struct NeoSystem {
     pub(crate) local_node: LocalNodeHandle,
     task_manager: TaskManagerHandle,
     tx_router: TransactionRouterHandle,
+    /// Single node-wide task lifecycle owner (reth-tasks / sc-service TaskManager
+    /// pattern). Background workers spawn through this and observe its
+    /// cancellation token for cooperative graceful shutdown.
+    task_executor: TaskExecutor,
     store_provider: Arc<dyn StoreProvider>,
     store: Arc<dyn Store>,
     ledger: Arc<LedgerContext>,
@@ -243,11 +247,13 @@ impl NeoSystem {
             &state_store,
         )?;
 
+        let task_executor = TaskExecutor::new();
         let (blockchain, local_node, task_manager, tx_router) = spawn_core_actors(
             &actor_system,
             ledger.clone(),
             local_node_state.clone(),
             settings_arc.clone(),
+            &task_executor,
         )?;
 
         let context = Arc::new(NeoSystemContext {
@@ -310,6 +316,7 @@ impl NeoSystem {
             local_node,
             task_manager,
             tx_router,
+            task_executor,
             store_provider,
             store,
             ledger,
@@ -467,6 +474,14 @@ impl NeoSystem {
         self.tx_router.clone()
     }
 
+    /// Returns the node-wide task executor that background workers spawn through
+    /// (reth-tasks / Substrate `sc-service::TaskManager` pattern). Spawn through
+    /// this instead of a bare `tokio::spawn` so the task is tracked and observes
+    /// the node's cancellation token for cooperative graceful shutdown.
+    pub fn task_executor(&self) -> &TaskExecutor {
+        &self.task_executor
+    }
+
     /// Shared in-memory ledger facade used by networking components.
     pub fn ledger_context(&self) -> Arc<LedgerContext> {
         self.ledger.clone()
@@ -503,7 +518,9 @@ impl NeoSystem {
         // Drop the global logging hook to avoid leaking callbacks across system lifetimes.
         ExtensionsUtility::set_logging(None);
         timeouts::log_stats();
-        self.tx_router.abort();
+        // Cooperatively stop node background workers (currently the tx-router)
+        // and await them before tearing down the actor hierarchy.
+        self.task_executor.shutdown().await;
         self.actor_system.shutdown().await.map_err(to_core_error)
     }
 }
@@ -548,6 +565,7 @@ fn spawn_core_actors(
     ledger: Arc<LedgerContext>,
     local_node_state: Arc<LocalNode>,
     settings: Arc<ProtocolSettings>,
+    executor: &TaskExecutor,
 ) -> CoreResult<(
     BlockchainHandle,
     LocalNodeHandle,
@@ -566,7 +584,7 @@ fn spawn_core_actors(
         .actor_of(TaskManager::props(), "task_manager")
         .map_err(to_core_error)?;
     let task_manager = TaskManagerHandle::new(task_manager);
-    let tx_router = TransactionRouterHandle::spawn(settings, blockchain.clone());
+    let tx_router = TransactionRouterHandle::spawn(settings, blockchain.clone(), executor);
     Ok((blockchain, local_node, task_manager, tx_router))
 }
 
