@@ -165,7 +165,15 @@ impl RpcClient {
         let start = Instant::now();
 
         let result: Result<RpcResponse, ClientRpcError> = async {
-            let request_json = request.to_json().to_string();
+            // Serialize the outgoing request with plain JSON (serde_json default
+            // escaping). RPC *responses* must match C# JavaScriptEncoder.Default
+            // byte-for-byte (see neo_json::escape) because clients byte-compare
+            // them; a request only needs to be valid JSON the node can parse.
+            // JToken::to_string now applies the C# encoder, which would escape the
+            // '+' characters in base64 params (decoded identically by any server) —
+            // unnecessary noise on requests, so serialize plainly here.
+            let request_json = serde_json::to_string(&JToken::Object(request.to_json()))
+                .unwrap_or_else(|_| request.to_json().to_string());
 
             let response = self
                 .http_client

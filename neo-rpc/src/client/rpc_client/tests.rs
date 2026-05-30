@@ -512,7 +512,10 @@ async fn send_async_returns_error_when_throw_is_false() {
         .expect("case response");
 
     let mut server = Server::new_async().await;
-    let request_body = request.to_json().to_string();
+    // The client serializes requests with plain serde_json (not the C# escaper);
+    // build the expected body the same way so Matcher::Exact matches.
+    let request_body = serde_json::to_string(&JToken::Object(request.to_json()))
+        .expect("serialize request");
     let _m = server
         .mock("POST", "/")
         .match_body(Matcher::Exact(request_body))

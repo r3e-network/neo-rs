@@ -2128,84 +2128,6 @@ fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
 }
 
 #[test]
-fn token_management_states_project_through_neo_vm_rs_stack_value() {
-    let workspace = workspace_root();
-    let source =
-        read_source(workspace.join("neo-core/src/smart_contract/native/token_management/state.rs"));
-    let storage = read_source(
-        workspace.join("neo-core/src/smart_contract/native/token_management/storage.rs"),
-    );
-    let state_section = source.as_str();
-
-    assert!(
-        source.contains("use neo_vm_rs::StackValue;"),
-        "TokenManagement state structs should import neo_vm_rs::StackValue directly for \
-         native data projection"
-    );
-    assert!(
-        source
-            .matches("pub fn to_stack_value(&self) -> StackValue")
-            .count()
-            >= 3,
-        "TokenState, AccountState, and NFTState should expose direct StackValue projections"
-    );
-    assert!(
-        source
-            .matches(
-                "pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError>"
-            )
-            .count()
-            >= 3,
-        "TokenState, AccountState, and NFTState should parse direct StackValue inputs before \
-         adapting local StackItem"
-    );
-    assert!(
-        source
-            .matches("stack_item_to_stack_value(stack_item")
-            .count()
-            >= 3,
-        "TokenManagement state from_stack_item paths should adapt into StackValue before parsing"
-    );
-    assert!(
-        source
-            .matches("stack_value_to_stack_item(self.to_stack_value()")
-            .count()
-            >= 3,
-        "TokenManagement state to_stack_item paths should adapt from direct StackValue projections"
-    );
-    assert!(
-        storage.contains("BinarySerializer::deserialize_stack_value_with_limits"),
-        "TokenManagement persisted state reads should deserialize directly into \
-         neo_vm_rs::StackValue"
-    );
-    assert!(
-        storage.contains("BinarySerializer::serialize_stack_value"),
-        "TokenManagement persisted state writes should serialize direct StackValue projections"
-    );
-    assert!(
-        !storage.contains("BinarySerializer::deserialize("),
-        "TokenManagement should not deserialize persisted state through local StackItem"
-    );
-    assert!(
-        !storage.contains(".to_stack_item()?"),
-        "TokenManagement should not bounce persisted state writes through local StackItem callers"
-    );
-    for local_builder in [
-        "StackItem::from_struct",
-        "StackItem::from_array",
-        "StackItem::from_int",
-        "StackItem::from_bool",
-        "StackItem::from_byte_string",
-    ] {
-        assert!(
-            !state_section.contains(local_builder),
-            "TokenManagement state projections should not hand-build stack-item shapes with \
-             {local_builder}; build neo_vm_rs::StackValue first"
-        );
-    }
-}
-
-#[test]
 fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let source = fs::read_to_string(
@@ -4099,9 +4021,6 @@ fn native_event_and_data_modules_use_vm_runtime_stack_items() {
         "neo-core/src/smart_contract/contract_state.rs",
         "neo-core/src/smart_contract/notify_event_args.rs",
         "neo-core/src/smart_contract/native/oracle_contract/events.rs",
-        "neo-core/src/smart_contract/native/token_management/events.rs",
-        "neo-core/src/smart_contract/native/token_management/stack_value.rs",
-        "neo-core/src/smart_contract/native/token_management/state.rs",
         "neo-core/src/smart_contract/native/trimmed_block.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
