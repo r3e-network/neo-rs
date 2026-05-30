@@ -1,6 +1,5 @@
 //! Storage configuration helpers and shared enums.
 
-use crate::error::CoreResult;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -80,12 +79,12 @@ impl Default for StorageConfig {
 }
 
 // Re-export StorageError from neo-storage as the canonical definition.
-pub use neo_storage::StorageError;
+pub use crate::StorageError;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::persistence::{StorageItem, StorageKey};
+    use crate::{StorageItem, StorageKey};
 
     // ============================================================================
     // CompressionAlgorithm Tests

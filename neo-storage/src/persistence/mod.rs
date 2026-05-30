@@ -4,6 +4,7 @@ pub mod providers;
 pub mod read_cache;
 pub mod read_only_store;
 pub mod seek_direction;
+pub mod storage;
 pub mod store;
 pub mod store_cache;
 pub mod store_factory;

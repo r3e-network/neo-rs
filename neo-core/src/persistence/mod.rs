@@ -11,7 +11,7 @@ pub use neo_storage::persistence::store_cache;
 pub use neo_storage::persistence::store_factory;
 pub use neo_storage::persistence::store_provider;
 pub use neo_storage::persistence::store_snapshot;
-pub mod storage;
+pub use neo_storage::persistence::storage;
 pub mod storage_item;
 pub mod storage_key;
 pub use neo_storage::persistence::track_state;
