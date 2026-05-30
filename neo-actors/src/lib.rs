@@ -4,6 +4,7 @@
 //! and basic scheduling utilities built on top of tokio channels.
 
 mod actor;
+mod actor_path;
 mod actor_ref;
 mod actor_system;
 mod context;
@@ -16,8 +17,9 @@ mod scheduler;
 mod task_executor;
 
 pub use actor::{Actor, ActorResult, SupervisorDirective};
+pub use actor_path::ActorPath;
 pub use actor_ref::ActorRef;
-pub use actor_system::{ActorPath, ActorSystem, ActorSystemHandle};
+pub use actor_system::{ActorSystem, ActorSystemHandle};
 #[doc(hidden)]
 pub use actor_system::MailboxCommand;
 pub use context::ActorContext;

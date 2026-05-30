@@ -1,5 +1,6 @@
 use super::{
-    actor_system::{ActorPath, ActorSystemInner, MailboxCommand},
+    actor_path::ActorPath,
+    actor_system::{ActorSystemInner, MailboxCommand},
     error::{ActorRuntimeError, ActorRuntimeResult},
     message::{Envelope, MailboxMessage, SystemMessage},
 };

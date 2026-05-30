@@ -1,5 +1,6 @@
 use super::{
     actor::{Actor, SupervisorDirective},
+    actor_path::ActorPath,
     actor_ref::ActorRef,
     context::ActorContext,
     error::{ActorRuntimeError, ActorRuntimeResult},
@@ -11,60 +12,10 @@ use super::{
 };
 use async_trait::async_trait;
 use dashmap::{mapref::entry::Entry, DashMap};
-use std::{any::Any, fmt, sync::Arc, time::Duration};
+use std::{any::Any, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::task::TaskTracker;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ActorPath {
-    system: String,
-    segments: Vec<String>,
-}
-
-impl ActorPath {
-    pub fn new(system: impl Into<String>, segments: Vec<String>) -> Self {
-        Self {
-            system: system.into(),
-            segments,
-        }
-    }
-
-    pub fn root(system: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            system: system.into(),
-            segments: vec![name.into()],
-        }
-    }
-
-    pub fn child(&self, name: impl Into<String>) -> Self {
-        let mut segments = self.segments.clone();
-        segments.push(name.into());
-        Self {
-            system: self.system.clone(),
-            segments,
-        }
-    }
-
-    pub fn segments(&self) -> &[String] {
-        &self.segments
-    }
-
-    pub fn parse(path: &str) -> Option<Self> {
-        let mut parts = path.split('/').filter(|p| !p.is_empty());
-        let system = parts.next()?.to_string();
-        let segments: Vec<String> = parts.map(|p| p.to_string()).collect();
-        if segments.is_empty() {
-            return None;
-        }
-        Some(Self { system, segments })
-    }
-}
-
-impl fmt::Display for ActorPath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "/{}/{}", self.system, self.segments.join("/"))
-    }
-}
 
 /// Internal mailbox transport command. Exposed (doc-hidden) only so that
 /// [`ActorRef::with_mailbox`](crate::ActorRef::with_mailbox) can wire an actor to
@@ -237,7 +188,7 @@ impl ActorSystem {
 
     pub fn actor_selection(&self, path: &str) -> Option<ActorRef> {
         let parsed = ActorPath::parse(path)?;
-        if parsed.system != self.name() {
+        if parsed.system() != self.name() {
             return None;
         }
         self.inner.clone().resolve(&parsed)
