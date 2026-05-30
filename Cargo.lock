@@ -2363,6 +2363,7 @@ dependencies = [
  "neo-primitives",
  "neo-storage",
  "neo-storage-rocksdb",
+ "neo-vm",
  "neo-vm-rs",
  "num-bigint",
  "num-integer",
@@ -2759,6 +2760,22 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "neo-vm"
+version = "0.7.2"
+dependencies = [
+ "base64 0.22.1",
+ "neo-crypto",
+ "neo-io",
+ "neo-primitives",
+ "neo-vm-rs",
+ "num-bigint",
+ "num-traits",
+ "parking_lot",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

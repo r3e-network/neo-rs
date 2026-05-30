@@ -320,8 +320,11 @@ pub mod neo_io {
 // VM Compatibility Surface
 // ============================================================================
 
-/// Neo VM compatibility types used by core and downstream crates.
-pub mod neo_vm;
+/// The stateful NeoVM host now lives in the standalone `neo-vm` crate. It is
+/// re-exported under the original `neo_core::neo_vm` path so existing
+/// `crate::neo_vm::*` / `neo_core::neo_vm::*` imports across the codebase keep
+/// resolving unchanged.
+pub use ::neo_vm;
 
 /// Host VM runtime boundary: the single seam through which the smart-contract
 /// layer imports the local, stateful VM host types (see [`vm_runtime`]).
