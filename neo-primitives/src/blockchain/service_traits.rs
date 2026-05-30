@@ -1,6 +1,8 @@
 use super::errors::*;
 use super::marker_traits::*;
 use super::peer::*;
+use super::peer_info::*;
+use super::send_error::*;
 use crate::UInt256;
 
 // ============ Service Traits ============

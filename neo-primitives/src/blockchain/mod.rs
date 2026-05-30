@@ -30,12 +30,18 @@
 pub use errors::*;
 pub use marker_traits::*;
 pub use peer::*;
+pub use peer_info::*;
+pub use send_error::*;
 pub use service_traits::*;
 
 /// Blockchain and relay error types.
 pub mod errors;
 /// Peer identity and endpoint metadata.
 pub mod peer;
+/// Connected-peer information record.
+pub mod peer_info;
+/// Peer message-send error type.
+pub mod send_error;
 /// Minimal marker traits used to decouple higher-level crates.
 pub mod marker_traits;
 /// Service traits for blockchain and peer registry access.
