@@ -1,5 +1,4 @@
 use crate::{
-    error::{CoreError, CoreResult},
     persistence::{
         read_cache::{ReadCacheConfig, StorageReadCache},
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
@@ -12,6 +11,7 @@ use crate::{
         StorageItem, StorageKey,
     },
 };
+use neo_storage::StorageResult;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::{
     DB, DBIteratorWithThreadMode, ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions,
@@ -804,7 +804,7 @@ impl RocksDbStore {
     }
 
     /// Forces a flush of pending batch writes.
-    pub fn flush_batch_writes(&self) -> CoreResult<()> {
+    pub fn flush_batch_writes(&self) -> StorageResult<()> {
         self.batch_committer.buffer.force_flush()
     }
 }

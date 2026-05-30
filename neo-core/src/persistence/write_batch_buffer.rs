@@ -16,7 +16,7 @@ use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 
 #[cfg(feature = "rocksdb")]
-use crate::{CoreError, CoreResult};
+use neo_storage::{StorageError, StorageResult};
 
 #[cfg(feature = "rocksdb")]
 use rocksdb::{WriteBatch, WriteOptions, DB};
@@ -325,7 +325,7 @@ impl WriteBatchBuffer {
     }
 
     /// Flushes the batch to the database.
-    pub fn flush(&self) -> CoreResult<()> {
+    pub fn flush(&self) -> StorageResult<()> {
         let mut batch = self.batch.lock();
 
         if batch.is_empty() {
@@ -379,7 +379,7 @@ impl WriteBatchBuffer {
             }
             Err(e) => {
                 error!(target: "neo", error = %e, "write batch flush failed");
-                Err(CoreError::Io {
+                Err(StorageError::Io {
                     message: format!("RocksDB write batch flush failed: {}", e),
                 })
             }
@@ -387,7 +387,7 @@ impl WriteBatchBuffer {
     }
 
     /// Forces a flush regardless of batch size or time.
-    pub fn force_flush(&self) -> CoreResult<()> {
+    pub fn force_flush(&self) -> StorageResult<()> {
         debug!(target: "neo", "force flushing write batch");
         self.flush()
     }
@@ -481,7 +481,7 @@ impl AutoFlushBatchBuffer {
     }
 
     /// Forces a flush.
-    pub fn flush(&self) -> CoreResult<()> {
+    pub fn flush(&self) -> StorageResult<()> {
         self.inner.force_flush()
     }
 }

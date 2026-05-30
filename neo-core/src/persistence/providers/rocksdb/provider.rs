@@ -1,5 +1,4 @@
 use crate::{
-    error::{CoreError, CoreResult},
     persistence::{
         read_cache::ReadCacheConfig,
         storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
