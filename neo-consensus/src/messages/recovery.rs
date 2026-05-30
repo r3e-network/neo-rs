@@ -224,6 +224,17 @@ impl RecoveryMessage {
     pub fn serialize(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
 
+        // The three compact arrays are serialized in ASCENDING validator-index
+        // order to match C# byte-for-byte (NOT a divergence): C#
+        // `MakeRecoveryMessage` builds each `Dictionary<byte, ...Compact>` from a
+        // validator-indexed payload array via
+        // `.Where(p => p != null).ToDictionary(p => p.ValidatorIndex)` — so the
+        // dictionary's insertion order is ascending validator index — and
+        // `Serialize` writes `.Values.ToArray()` in that insertion order
+        // (RecoveryMessage.cs:117/130-131, ConsensusContext.MakePayload.cs:149-165).
+        // Sorting here yields that same deterministic order regardless of our
+        // source collection's iteration order; removing it would break parity.
+
         // ChangeViewMessages (serializable array)
         let mut cvs = self.change_view_messages.clone();
         cvs.sort_by_key(|p| p.validator_index);
