@@ -25,7 +25,6 @@ use neo_core::smart_contract::native::{
     NativeRegistry,
 };
 use neo_core::smart_contract::StorageKey;
-use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
 use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
@@ -618,35 +617,11 @@ impl RpcServerBlockchain {
         current_index: u32,
         next_hash: Option<UInt256>,
     ) -> Map<String, Value> {
-        let mut header_clone = header.clone();
-        let hash = header_clone.hash();
-        let mut json = Map::new();
-        json.insert("hash".to_string(), Value::String(hash.to_string()));
-        json.insert("size".to_string(), json!(header.size()));
-        json.insert("version".to_string(), json!(header.version()));
-        json.insert(
-            "previousblockhash".to_string(),
-            Value::String(header.prev_hash().to_string()),
-        );
-        json.insert(
-            "merkleroot".to_string(),
-            Value::String(header.merkle_root().to_string()),
-        );
-        json.insert("time".to_string(), json!(header.timestamp()));
-        json.insert(
-            "nonce".to_string(),
-            Value::String(format!("{:016X}", header.nonce())),
-        );
-        json.insert("index".to_string(), json!(header.index()));
-        json.insert("primary".to_string(), json!(header.primary_index()));
+        // Canonical header wire-JSON is owned by neo-core `Header::to_json`
+        // (single source of truth shared with the RPC client); the server adds
+        // only the contextual confirmations / nextblockhash on top.
         let system = server.system();
-        let address_version = system.settings().address_version;
-        let next_consensus = WalletHelper::to_address(header.next_consensus(), address_version);
-        json.insert("nextconsensus".to_string(), Value::String(next_consensus));
-        json.insert(
-            "witnesses".to_string(),
-            Value::Array(vec![header.witness.to_json()]),
-        );
+        let mut json = header.to_json(system.settings());
         let confirmations = current_index.saturating_sub(header.index()) + 1;
         json.insert("confirmations".to_string(), json!(confirmations));
         if let Some(hash) = next_hash {

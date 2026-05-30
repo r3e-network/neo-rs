@@ -11,8 +11,11 @@
 
 use super::witness::Witness;
 use crate::error::CoreResult;
+use crate::neo_io::Serializable;
 use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
+use crate::wallets::helper::Helper as WalletHelper;
 use crate::{UInt160, UInt256};
 use neo_primitives::error::PrimitiveResult;
 use serde::{Deserialize, Serialize};
@@ -153,6 +156,49 @@ impl Header {
                 UInt256::zero()
             }
         }
+    }
+
+    /// Serializes this header to its canonical Neo RPC JSON object, matching C#
+    /// `Header.ToJson` (field set and ordering: hash, size, version,
+    /// previousblockhash, merkleroot, time, nonce as `{:016X}`, index, primary,
+    /// nextconsensus, witnesses). This is the single source of truth for the
+    /// header wire-JSON shared by the RPC server and client; callers that serve
+    /// `getblock`/`getblockheader` add the contextual `confirmations` and
+    /// optional `nextblockhash` fields on top.
+    pub fn to_json(&self, settings: &ProtocolSettings) -> serde_json::Map<String, serde_json::Value> {
+        use serde_json::{json, Value};
+        let hash = self.clone().hash();
+        let mut json = serde_json::Map::new();
+        json.insert("hash".to_string(), Value::String(hash.to_string()));
+        json.insert("size".to_string(), json!(self.size()));
+        json.insert("version".to_string(), json!(self.version()));
+        json.insert(
+            "previousblockhash".to_string(),
+            Value::String(self.prev_hash().to_string()),
+        );
+        json.insert(
+            "merkleroot".to_string(),
+            Value::String(self.merkle_root().to_string()),
+        );
+        json.insert("time".to_string(), json!(self.timestamp()));
+        json.insert(
+            "nonce".to_string(),
+            Value::String(format!("{:016X}", self.nonce())),
+        );
+        json.insert("index".to_string(), json!(self.index()));
+        json.insert("primary".to_string(), json!(self.primary_index()));
+        json.insert(
+            "nextconsensus".to_string(),
+            Value::String(WalletHelper::to_address(
+                self.next_consensus(),
+                settings.address_version,
+            )),
+        );
+        json.insert(
+            "witnesses".to_string(),
+            Value::Array(vec![self.witness.to_json()]),
+        );
+        json
     }
 
     /// Gets the hash of the header, failing closed if unsigned serialization
