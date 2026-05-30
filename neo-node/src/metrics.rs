@@ -1,10 +1,10 @@
 //! Metrics for neo-node health and performance.
 //!
-//! This module provides metrics collection using the neo-core telemetry system,
+//! This module provides metrics collection using the neo-telemetry facade,
 //! with optional Prometheus export support for backward compatibility.
 
 use neo_core::network::p2p::timeouts::TimeoutStats;
-use neo_core::telemetry::Telemetry;
+use neo_telemetry::Telemetry;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

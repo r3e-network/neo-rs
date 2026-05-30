@@ -2656,7 +2656,9 @@ version = "0.7.2"
 dependencies = [
  "anyhow",
  "chrono",
+ "dashmap",
  "hyper 0.14.32",
+ "parking_lot",
  "prometheus",
  "serde",
  "serde_json",

@@ -1,22 +1,17 @@
-//! Telemetry module for Neo node metrics and observability.
+//! Lightweight in-process metrics facade.
 //!
-//! **IMPORTANT**: This module provides **internal metrics collection** for neo-core.
-//! For production deployment with Prometheus endpoints and system monitoring,
-//! use the `neo_telemetry` crate instead.
+//! This module provides **dependency-free internal metric collection** for node
+//! components: counters, gauges, histograms, snapshots, and timers with no HTTP
+//! server or external scraping. For the production observability stack (Prometheus
+//! endpoint, system monitoring, health probes, logging setup) use the other
+//! modules of this crate via [`crate::init`].
 //!
-//! ## When to use this module
+//! ## When to use this facade
 //!
-//! - **Internal metrics**: Recording blockchain metrics within neo-core components
+//! - **Internal metrics**: Recording blockchain metrics within node components
 //! - **No external dependencies**: When you need lightweight metric collection
 //! - **Snapshot export**: Getting point-in-time metric snapshots in JSON or Prometheus text
 //! - **Timer utilities**: Measuring operation durations
-//!
-//! ## When to use neo-telemetry
-//!
-//! - **Production deployment**: HTTP metrics endpoint for Prometheus scraping
-//! - **System monitoring**: CPU, memory, disk usage metrics
-//! - **Health checks**: Liveness and readiness probes for Kubernetes
-//! - **Logging configuration**: Structured logging setup
 //!
 //! This module supports:
 //! - Metrics collection (counters, gauges, histograms)
@@ -34,7 +29,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use neo_core::telemetry::{Telemetry, MetricType};
+//! use neo_telemetry::{Telemetry, MetricType};
 //!
 //! let telemetry = Telemetry::new("neo-node", "1.0.0");
 //! telemetry.record_gauge("block_height", 12345.0);

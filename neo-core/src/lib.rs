@@ -153,9 +153,6 @@ pub mod witness_rule;
 // Optional Features
 // ============================================================================
 
-/// Telemetry infrastructure for logging and tracing.
-pub mod telemetry;
-
 /// Application logs plugin support (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub mod application_logs;

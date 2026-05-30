@@ -2,20 +2,24 @@
 //!
 //! Production observability stack for Neo N3 blockchain node.
 //!
-//! **IMPORTANT**: This crate provides the **production deployment** telemetry stack.
-//! For internal metrics collection within neo-core components (without external dependencies),
-//! use `neo_core::telemetry` instead.
+//! This crate is the single home for all node observability. It provides both:
 //!
-//! ## When to use this crate
+//! - the **production deployment** stack ([`init`], [`Metrics`], [`SystemMonitor`],
+//!   health probes, logging setup), and
+//! - the lightweight **in-process metrics facade** ([`Telemetry`], [`Counter`],
+//!   [`Gauge`], [`Histogram`], [`MetricsRecorder`]) for dependency-free metric
+//!   collection within node components (see the [`facade`] module).
+//!
+//! ## Production stack
 //!
 //! - **Production deployment**: HTTP metrics endpoint for Prometheus scraping
 //! - **System monitoring**: CPU, memory, disk usage metrics
 //! - **Health checks**: Liveness and readiness probes for Kubernetes
 //! - **Logging configuration**: Structured logging with JSON or text output
 //!
-//! ## When to use neo-core::telemetry
+//! ## In-process facade
 //!
-//! - **Internal metrics**: Recording blockchain metrics within neo-core components
+//! - **Internal metrics**: Recording blockchain metrics within node components
 //! - **No external dependencies**: When you need lightweight metric collection
 //! - **Snapshot export**: Getting point-in-time metric snapshots
 //! - **Timer utilities**: Measuring operation durations
@@ -37,6 +41,7 @@
 
 mod config;
 mod error;
+pub mod facade;
 mod health;
 mod logging;
 mod metrics;
@@ -59,6 +64,12 @@ pub use logging::init_logging;
 
 // Public exports - Basic Metrics
 pub use metrics::{Metrics, MetricsServer};
+
+// Public exports - In-process metrics facade (lightweight, dependency-free)
+pub use facade::{
+    Counter, Gauge, Histogram, MetricValue, MetricsRecorder, MetricsSnapshot, Telemetry,
+    TelemetryTimer,
+};
 
 // Public exports - Node-specific (merged from neo-node)
 pub use node_health::{
