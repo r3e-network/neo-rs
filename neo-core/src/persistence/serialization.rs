@@ -1,19 +1,25 @@
-//! Serialization functionality for persistence layer.
+//! Serialization helpers for the persistence layer.
 //!
-//! This module provides data serialization and deserialization capabilities
-//! that match the C# Neo implementation exactly.
+//! IMPORTANT: only the `*_neo_binary` helpers (and the `Serializable` trait they
+//! wrap) produce the C#-compatible Neo `ISerializable` wire/storage format used
+//! for consensus-relevant state. The `serialize`/`deserialize`/`*_json`/size
+//! helpers use Rust-specific formats (bincode / serde_json) that have NO
+//! relationship to C# Neo's encoding — they are internal/diagnostic utilities and
+//! MUST NOT be used to persist consensus-relevant data or compute state roots.
 
 use crate::error::CoreError;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
-/// Serializes data to binary format (production implementation matching C# Neo exactly)
+/// Serializes data to bincode (a Rust-specific format — NOT the C# Neo encoding;
+/// internal/diagnostic only, never for consensus-relevant persisted state).
 pub fn serialize<T: Serialize>(data: &T) -> crate::Result<Vec<u8>> {
     bincode::serialize(data)
         .map_err(|e| CoreError::serialization(format!("Binary serialization failed: {}", e)))
 }
 
-/// Deserializes data from binary format (production implementation matching C# Neo exactly)
+/// Deserializes data from bincode (Rust-specific format — see [`serialize`]; not
+/// C#-compatible, internal/diagnostic only).
 pub fn deserialize<T: for<'de> Deserialize<'de>>(data: &[u8]) -> crate::Result<T> {
     // Validate input data
     if data.is_empty() {
