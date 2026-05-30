@@ -2,27 +2,12 @@
 //!
 //! Production observability stack for Neo N3 blockchain node.
 //!
-//! This crate is the single home for all node observability. It provides both:
-//!
-//! - the **production deployment** stack ([`init`], [`Metrics`], [`SystemMonitor`],
-//!   health probes, logging setup), and
-//! - the lightweight **in-process metrics facade** ([`Telemetry`], [`Counter`],
-//!   [`Gauge`], [`Histogram`], [`MetricsRecorder`]) for dependency-free metric
-//!   collection within node components (see the [`facade`] module).
-//!
-//! ## Production stack
+//! This crate is the single home for all node observability:
 //!
 //! - **Production deployment**: HTTP metrics endpoint for Prometheus scraping
 //! - **System monitoring**: CPU, memory, disk usage metrics
 //! - **Health checks**: Liveness and readiness probes for Kubernetes
 //! - **Logging configuration**: Structured logging with JSON or text output
-//!
-//! ## In-process facade
-//!
-//! - **Internal metrics**: Recording blockchain metrics within node components
-//! - **No external dependencies**: When you need lightweight metric collection
-//! - **Snapshot export**: Getting point-in-time metric snapshots
-//! - **Timer utilities**: Measuring operation durations
 //!
 //! ## Example
 //!
@@ -41,7 +26,6 @@
 
 mod config;
 mod error;
-pub mod facade;
 mod health;
 mod logging;
 mod metrics;
@@ -64,12 +48,6 @@ pub use logging::init_logging;
 
 // Public exports - Basic Metrics
 pub use metrics::{Metrics, MetricsServer};
-
-// Public exports - In-process metrics facade (lightweight, dependency-free)
-pub use facade::{
-    Counter, Gauge, Histogram, MetricValue, MetricsRecorder, MetricsSnapshot, Telemetry,
-    TelemetryTimer,
-};
 
 // Public exports - Node-specific (merged from neo-node)
 pub use node_health::{

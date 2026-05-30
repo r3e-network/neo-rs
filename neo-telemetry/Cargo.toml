@@ -22,10 +22,6 @@ tracing-appender = { workspace = true }
 # Metrics
 prometheus = { workspace = true }
 
-# In-process facade (lock-free counters + RwLock histograms)
-dashmap = { workspace = true }
-parking_lot = { workspace = true }
-
 # System info
 sysinfo = { workspace = true }
 
