@@ -81,10 +81,10 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use super::VerifyResult;
-use types::{ImportDisposition, UnverifiedBlocksList, classify_import_block};
+use internal::{ImportDisposition, UnverifiedBlocksList, classify_import_block};
 
 #[cfg(test)]
-use types::should_schedule_reverify_idle;
+use internal::should_schedule_reverify_idle;
 
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
 const MAX_REVERIFY_INVENTORY_CACHE: usize = 256;
@@ -222,15 +222,30 @@ impl Blockchain {
 mod actor;
 mod block_processing;
 mod handle;
+mod command;
+mod fill_completed;
+mod fill_memory_pool;
 mod handlers;
+mod import;
+mod import_completed;
+mod internal;
+mod inventory_payload;
+mod persist_completed;
+mod relay_result;
+mod reverify;
 mod transaction;
-mod types;
 
+pub use command::BlockchainCommand;
+pub use fill_completed::FillCompleted;
+pub use fill_memory_pool::FillMemoryPool;
 pub use handle::BlockchainHandle;
-pub use types::{
-    BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted, InventoryPayload,
-    PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
-};
+pub use import::Import;
+pub use import_completed::ImportCompleted;
+pub use internal::PreverifyCompleted;
+pub use inventory_payload::InventoryPayload;
+pub use persist_completed::PersistCompleted;
+pub use relay_result::RelayResult;
+pub use reverify::{Reverify, ReverifyItem};
 
 #[cfg(test)]
 mod tests;
