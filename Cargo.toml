@@ -46,6 +46,9 @@ members = [
     # TokensTracker plugin (NEP-11/NEP-17 balance + transfer indexing)
     "neo-tokens-tracker",
 
+    # Oracle plugin (HTTPS + NeoFS oracle request fulfilment)
+    "neo-oracle-service",
+
     # NOTE: remaining C# Neo plugins still inlined; extraction in progress:
     #   DBFTPlugin      → neo-consensus
     #   RpcServer       → neo-rpc/src/server

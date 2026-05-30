@@ -6,10 +6,10 @@
 use anyhow::{bail, Context, Result};
 use neo_application_logs::ApplicationLogsSettings;
 use neo_tokens_tracker::TokensTrackerSettings;
+use neo_oracle_service::OracleServiceSettings;
 use neo_core::{
     constants::{MAINNET_MAGIC, TESTNET_MAGIC},
     network::p2p::channels_config::ChannelsConfig,
-    oracle_service::OracleServiceSettings,
     persistence::storage::{CompressionAlgorithm, StorageConfig},
     protocol_settings::ProtocolSettings,
     state_service::state_store::StateServiceSettings,

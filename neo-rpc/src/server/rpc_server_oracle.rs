@@ -3,7 +3,7 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{expect_base64_param, internal_error, invalid_params};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use neo_crypto::{ECCurve, ECPoint};
-use neo_core::oracle_service::{OracleService, OracleServiceError};
+use neo_oracle_service::{OracleService, OracleServiceError};
 use serde_json::{json, Value};
 use std::sync::Arc;
 

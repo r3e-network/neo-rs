@@ -10,11 +10,11 @@ use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{bail, Context, Result};
 use neo_application_logs::ApplicationLogsService;
 use neo_tokens_tracker::{TokensTracker, TokensTrackerService};
+use neo_oracle_service::OracleService;
 use neo_core::{
     i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler},
     neo_system::NeoSystem,
     network::p2p::channels_config::ChannelsConfig,
-    oracle_service::OracleService,
     protocol_settings::ProtocolSettings,
     smart_contract::native::ContractManagement,
     state_service::{

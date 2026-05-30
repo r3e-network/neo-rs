@@ -36,6 +36,7 @@ hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 neo-core = { path = "../neo-core", features = ["runtime"] }
 neo-application-logs = { path = "../neo-application-logs" }
 neo-tokens-tracker = { path = "../neo-tokens-tracker" }
+neo-oracle-service = { path = "../neo-oracle-service" }
 neo-actors = { workspace = true }
 neo-consensus = { path = "../neo-consensus" }
 neo-p2p = { path = "../neo-p2p" }

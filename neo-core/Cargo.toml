@@ -12,7 +12,6 @@ keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
 description = "Core functionality for Neo blockchain"
-build = "build.rs"
 
 [dependencies]
 # External dependencies
@@ -36,8 +35,6 @@ bip39 = { workspace = true }
 blst = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true, optional = true }
-tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"], optional = true }
-prost = { version = "0.12", optional = true }
 quick-xml = { version = "0.31", features = ["serialize"], optional = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
@@ -107,28 +104,16 @@ harness = false
 #name = "storage"
 #harness = false
 
-[build-dependencies]
-# NOTE: These are only used when neofs-grpc feature is enabled (build.rs checks
-# CARGO_FEATURE_NEOFS_GRPC). Cargo does not support feature-gating build-deps,
-# so they are always compiled. Consider moving proto generation to a build script
-# crate or xtask to avoid compiling these unconditionally.
-tonic-build = "0.11"
-protoc-bin-vendored = "3.0"
-
 [features]
 default = []
 # RocksDB storage provider - enable for production use
 rocksdb = ["dep:neo-storage-rocksdb"]
 # UPnP network discovery - requires reqwest
 upnp = ["dep:reqwest", "dep:quick-xml"]
-# Oracle service - requires reqwest
-oracle = ["dep:reqwest"]
-# NeoFS gRPC support (optional, for parity with C#)
-neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
 # Parallel processing for bulk sync (rayon is always available)
 parallel = []
 # All optional features for full functionality
-full = ["rocksdb", "upnp", "oracle", "neofs-grpc", "parallel"]
+full = ["rocksdb", "upnp", "parallel"]
 runtime = ["dep:neo-actors"]
 performance-tests = []
 

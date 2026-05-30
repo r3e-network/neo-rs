@@ -1,9 +1,10 @@
 use anyhow::{Context, Result, bail};
 use neo_application_logs::ApplicationLogsSettings;
 use neo_tokens_tracker::TokensTrackerSettings;
+use neo_oracle_service::OracleServiceSettings;
 use neo_core::{
     UnhandledExceptionPolicy, constants::MAX_BLOCK_SIZE,
-    oracle_service::OracleServiceSettings, state_service::state_store::StateServiceSettings,
+    state_service::state_store::StateServiceSettings,
 };
 use serde::Deserialize;
 use std::{env, fs, path::PathBuf, time::Duration};

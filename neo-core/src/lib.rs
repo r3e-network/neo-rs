@@ -241,8 +241,6 @@ pub use neo_actors as runtime;
 pub mod neo_system;
 
 /// Oracle service implementation (requires `runtime` feature).
-#[cfg(feature = "runtime")]
-pub mod oracle_service;
 
 // ============================================================================
 // Public Re-exports
