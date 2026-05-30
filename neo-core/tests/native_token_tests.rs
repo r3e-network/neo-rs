@@ -5,7 +5,8 @@ use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::ContractParameterType;
-use neo_core::smart_contract::contract_state::{ContractState, NefFile};
+use neo_core::smart_contract::contract_state::ContractState;
+use neo_core::smart_contract::nef_file::NefFile;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };

@@ -71,16 +71,21 @@ use tracing::{info, warn};
 
 mod backend;
 mod cache_ops;
+mod memory_state_store_backend;
 mod proof;
 mod settings;
 mod snapshot;
+mod snapshot_backed_state_store_backend;
+mod state_store_snapshot;
+mod state_store_transaction;
 mod verification_ops;
 mod verification_result;
 mod verifier;
-pub use backend::{
-    MemoryStateStoreBackend, SnapshotBackedStateStoreBackend, StateStoreBackend,
-    StateStoreSnapshot, StateStoreTransaction,
-};
+pub use backend::StateStoreBackend;
+pub use memory_state_store_backend::MemoryStateStoreBackend;
+pub use snapshot_backed_state_store_backend::SnapshotBackedStateStoreBackend;
+pub use state_store_snapshot::StateStoreSnapshot;
+pub use state_store_transaction::StateStoreTransaction;
 pub use settings::StateServiceSettings;
 pub use snapshot::StateSnapshot;
 pub use verification_result::StateRootVerificationResult;

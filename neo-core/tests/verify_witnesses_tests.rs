@@ -4,7 +4,8 @@ use neo_core::network::p2p::payloads::header::Header;
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::ContractBasicMethod;
-use neo_core::smart_contract::contract_state::{ContractState, NefFile};
+use neo_core::smart_contract::contract_state::ContractState;
+use neo_core::smart_contract::nef_file::NefFile;
 use neo_core::smart_contract::helper::Helper;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,

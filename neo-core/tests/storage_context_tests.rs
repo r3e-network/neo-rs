@@ -3,7 +3,8 @@ use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::contract_state::{ContractState, NefFile};
+use neo_core::smart_contract::contract_state::ContractState;
+use neo_core::smart_contract::nef_file::NefFile;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, WildCardContainer,
 };
