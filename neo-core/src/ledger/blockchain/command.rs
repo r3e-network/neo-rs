@@ -48,5 +48,5 @@ pub enum BlockchainCommand {
     /// for the next-to-persist block is delayed in the mailbox.
     DrainUnverified,
     /// Attach the system context.
-    AttachSystem(Arc<NeoSystemContext>),
+    AttachSystem(Arc<dyn SystemContext>),
 }

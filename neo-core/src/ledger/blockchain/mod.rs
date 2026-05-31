@@ -54,7 +54,7 @@ use crate::error::CoreError;
 use crate::events::PluginEvent;
 use crate::ledger::LedgerContext;
 use crate::neo_io::{MemoryReader, Serializable};
-use crate::neo_system::NeoSystemContext;
+use crate::services::SystemContext;
 use crate::network::p2p::{
     local_node::RelayInventory,
     payloads::{
@@ -118,7 +118,7 @@ const MAX_UNVERIFIED_CACHE_SIZE: usize = 20000;
 /// Rust analogue of `Neo.Ledger.Blockchain` using the async actor runtime.
 pub struct Blockchain {
     ledger: Arc<LedgerContext>,
-    system_context: Option<Arc<NeoSystemContext>>,
+    system_context: Option<Arc<dyn SystemContext>>,
     _block_cache: Arc<DashMap<UInt256, Arc<Block>>>,
     _block_cache_unverified: Arc<DashMap<u32, UnverifiedBlocksList>>,
     _extensible_witness_white_list: Arc<RwLock<HashSet<UInt160>>>,

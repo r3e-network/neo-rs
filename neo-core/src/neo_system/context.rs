@@ -728,4 +728,52 @@ impl SystemContext for NeoSystemContext {
     fn notify_application_notify(&self, engine: &ApplicationEngine, args: &NotifyEventArgs) {
         NeoSystemContext::notify_application_notify(self, engine, args);
     }
+
+    fn settings(&self) -> Arc<ProtocolSettings> {
+        NeoSystemContext::settings(self)
+    }
+
+    fn header_cache(&self) -> Arc<HeaderCache> {
+        NeoSystemContext::header_cache(self)
+    }
+
+    fn ledger(&self) -> Arc<LedgerContext> {
+        NeoSystemContext::ledger(self)
+    }
+
+    fn memory_pool(&self) -> Arc<Mutex<MemoryPool>> {
+        NeoSystemContext::memory_pool(self)
+    }
+
+    fn memory_pool_handle(&self) -> Arc<Mutex<MemoryPool>> {
+        NeoSystemContext::memory_pool_handle(self)
+    }
+
+    fn broadcast_plugin_event(&self, event: PluginEvent) {
+        NeoSystemContext::broadcast_plugin_event(self, event)
+    }
+
+    fn record_extensible(&self, payload: ExtensiblePayload) -> CoreResult<UInt256> {
+        NeoSystemContext::record_extensible(self, payload)
+    }
+
+    fn is_fast_sync_mode(&self) -> bool {
+        NeoSystemContext::is_fast_sync_mode(self)
+    }
+
+    fn neo_system(&self) -> Option<Arc<NeoSystem>> {
+        NeoSystemContext::neo_system(self)
+    }
+
+    fn state_store(&self) -> CoreResult<Option<Arc<StateStore>>> {
+        NeoSystemContext::state_store(self)
+    }
+
+    fn actor_system(&self) -> &ActorSystemHandle {
+        &self.actor_system
+    }
+
+    fn local_node(&self) -> &LocalNodeHandle {
+        &self.local_node
+    }
 }

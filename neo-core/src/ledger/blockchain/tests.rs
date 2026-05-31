@@ -381,8 +381,9 @@ mod tests {
         sign_extensible_payload(&mut payload, &keypair, &settings);
 
         let blockchain = Blockchain::new(system.ledger_context());
+        let context: std::sync::Arc<dyn crate::services::SystemContext> = system.context();
         let accepted = blockchain
-            .process_state_service_payload(&system.context(), &payload)
+            .process_state_service_payload(&context, &payload)
             .expect("state service payload");
         assert!(accepted);
         assert_eq!(state_store.validated_root_index(), Some(height));

@@ -299,7 +299,7 @@ impl Blockchain {
     /// which is rare during normal operation.
     fn find_block_in_cache_by_index(
         &self,
-        _context: &Arc<NeoSystemContext>,
+        _context: &Arc<dyn SystemContext>,
         index: u32,
     ) -> Option<Arc<Block>> {
         for entry in self._block_cache.iter() {
@@ -424,7 +424,7 @@ impl Blockchain {
 
     pub(super) fn process_state_service_payload(
         &self,
-        context: &Arc<NeoSystemContext>,
+        context: &Arc<dyn SystemContext>,
         payload: &ExtensiblePayload,
     ) -> Result<bool, CoreError> {
         if payload.data.is_empty() {
@@ -448,7 +448,7 @@ impl Blockchain {
 
         let accepted = state_store.on_new_state_root(state_root.clone());
         if accepted {
-            context.actor_system.event_stream().publish(
+            context.actor_system().event_stream().publish(
                 crate::state_service::ValidatedRootPersisted {
                     index: state_root.index,
                 },

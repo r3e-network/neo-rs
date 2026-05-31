@@ -53,10 +53,19 @@ pub trait RpcService: Send + Sync {
     fn is_started(&self) -> bool;
 }
 
+use crate::events::PluginEvent;
+use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
+use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
+use crate::network::p2p::LocalNodeHandle;
+use crate::neo_system::NeoSystem;
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::runtime::ActorSystemHandle;
 use crate::smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs};
+use crate::state_service::StateStore;
+use crate::CoreResult;
 use neo_primitives::UInt256;
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 /// System context trait providing access to core runtime services.
@@ -71,7 +80,7 @@ use std::sync::Arc;
 /// - **Decoupling**: Protocol code doesn't depend on actor framework
 /// - **Testability**: Easy to mock for unit tests
 /// - **Flexibility**: Runtime can be swapped without changing protocol code
-pub trait SystemContext: Send + Sync {
+pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// Returns a snapshot of the current store cache for read operations.
     fn store_cache(&self) -> StoreCache;
 
@@ -101,6 +110,46 @@ pub trait SystemContext: Send + Sync {
 
     /// Dispatches an ApplicationEngine notification event to registered handlers.
     fn notify_application_notify(&self, engine: &ApplicationEngine, args: &NotifyEventArgs);
+
+    // --- Runtime/ledger handles used by the Blockchain and P2P actors ---
+    // (Added for the A5 SystemContext inversion: actors program against the
+    // trait rather than the concrete NeoSystemContext.)
+
+    /// Effective protocol settings handle.
+    fn settings(&self) -> Arc<ProtocolSettings>;
+
+    /// Shared header cache.
+    fn header_cache(&self) -> Arc<HeaderCache>;
+
+    /// Ledger context (blockchain read/relay surface).
+    fn ledger(&self) -> Arc<LedgerContext>;
+
+    /// Shared memory pool.
+    fn memory_pool(&self) -> Arc<Mutex<MemoryPool>>;
+
+    /// Shared memory pool handle (alias used by some actors).
+    fn memory_pool_handle(&self) -> Arc<Mutex<MemoryPool>>;
+
+    /// Broadcast a plugin event to registered handlers.
+    fn broadcast_plugin_event(&self, event: PluginEvent);
+
+    /// Record an extensible payload for relay; returns its hash.
+    fn record_extensible(&self, payload: ExtensiblePayload) -> CoreResult<UInt256>;
+
+    /// Whether the node is in fast-sync mode.
+    fn is_fast_sync_mode(&self) -> bool;
+
+    /// The owning `NeoSystem`, if attached.
+    fn neo_system(&self) -> Option<Arc<NeoSystem>>;
+
+    /// The state store service, if available.
+    fn state_store(&self) -> CoreResult<Option<Arc<StateStore>>>;
+
+    /// Handle to the actor system (for event-stream publishing).
+    fn actor_system(&self) -> &ActorSystemHandle;
+
+    /// Handle to the local P2P node (for direct relay).
+    fn local_node(&self) -> &LocalNodeHandle;
 }
 
 #[cfg(test)]

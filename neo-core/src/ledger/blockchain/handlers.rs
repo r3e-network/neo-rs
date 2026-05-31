@@ -148,7 +148,7 @@ impl Blockchain {
             // TaskManager depends on persist notifications to release per-peer
             // block queues and request subsequent ranges.
             context
-                .actor_system
+                .actor_system()
                 .event_stream()
                 .publish(PersistCompleted {
                     block: Arc::clone(&block),
@@ -576,7 +576,7 @@ impl Blockchain {
     #[allow(clippy::too_many_arguments)]
     fn publish_inventory_relay_result(
         &self,
-        context: &Arc<NeoSystemContext>,
+        context: &Arc<dyn SystemContext>,
         hash: UInt256,
         inventory_type: InventoryType,
         block_index: Option<u32>,
@@ -587,7 +587,7 @@ impl Blockchain {
     ) {
         if relay && result == VerifyResult::Succeed {
             if let Some(inv) = inventory {
-                if let Err(error) = context.local_node.relay_directly(inv, block_index) {
+                if let Err(error) = context.local_node().relay_directly(inv, block_index) {
                     tracing::debug!(
                         target: "neo",
                         %error,
@@ -605,7 +605,7 @@ impl Blockchain {
         };
 
         context
-            .actor_system
+            .actor_system()
             .event_stream()
             .publish(relay_message.clone());
 

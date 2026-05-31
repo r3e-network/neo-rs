@@ -1,4 +1,4 @@
-use neo_core::builders::WitnessBuilder;
+use neo_tx_builder::WitnessBuilder;
 use neo_vm_rs::OpCode;
 
 #[test]

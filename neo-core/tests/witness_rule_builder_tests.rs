@@ -1,4 +1,4 @@
-use neo_core::builders::WitnessRuleBuilder;
+use neo_tx_builder::WitnessRuleBuilder;
 use neo_core::network::p2p::payloads::{WitnessCondition, WitnessRuleAction};
 use neo_core::UInt160;
 
