@@ -15,7 +15,7 @@ use crate::neo_io::serializable::helper::{
     get_var_size_serializable_slice, serialize_array, serialize_array_with,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::smart_contract::Interoperable;
+use crate::neo_vm::Interoperable;
 use crate::neo_vm::StackItem;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use crate::{WitnessCondition, WitnessScope};
@@ -438,7 +438,7 @@ crate::impl_hash_for_fields!(Signer, account, scopes);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::smart_contract::Interoperable;
+    use crate::neo_vm::Interoperable;
     use neo_vm_rs::StackValue;
 
     #[test]

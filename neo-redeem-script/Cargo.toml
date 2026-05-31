@@ -1,0 +1,14 @@
+[package]
+name = "neo-redeem-script"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Neo N3 redeem-script primitives (signature/multi-sig verification scripts + pattern checks), layered below neo-core"
+
+[dependencies]
+neo-crypto = { workspace = true }
+neo-script-builder = { workspace = true }
+neo-vm-rs = { workspace = true }
+thiserror = { workspace = true }

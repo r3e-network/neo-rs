@@ -2361,6 +2361,7 @@ dependencies = [
  "neo-json",
  "neo-p2p",
  "neo-primitives",
+ "neo-redeem-script",
  "neo-script-builder",
  "neo-storage",
  "neo-storage-rocksdb",
@@ -2596,6 +2597,16 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "neo-redeem-script"
+version = "0.7.2"
+dependencies = [
+ "neo-crypto",
+ "neo-script-builder",
+ "neo-vm-rs",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

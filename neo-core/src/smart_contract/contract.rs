@@ -73,33 +73,10 @@ impl Contract {
         m: usize,
         public_keys: &[ECPoint],
     ) -> Result<Vec<u8>, CoreError> {
-        let n = public_keys.len();
-        if n == 0 {
-            return Err(CoreError::invalid_operation("No public keys provided for multi-sig contract"));
-        }
-        if n > 1024 {
-            return Err(CoreError::invalid_operation(format!("Too many public keys: {} (max 1024)", n)));
-        }
-        if !(1..=n).contains(&m) {
-            return Err(CoreError::invalid_operation(format!("Invalid multi-sig parameters: m={}, n={}", m, n)));
-        }
-
-        let mut builder = ScriptBuilder::new();
-        builder.emit_push_int(m as i64);
-
-        let mut sorted_keys = public_keys.to_vec();
-        sorted_keys.sort();
-        for key in sorted_keys.iter() {
-            let encoded = key.encode_point(true).unwrap_or_else(|_| key.to_bytes());
-            builder.emit_push(&encoded);
-        }
-
-        builder.emit_push_int(n as i64);
-        builder
-            .emit_syscall("System.Crypto.CheckMultisig")
-            .map_err(|err| CoreError::invalid_operation(format!("Failed to build contract script: {}", err)))?;
-
-        Ok(builder.to_array())
+        // The redeem-script byte construction was hoisted into the
+        // `neo-redeem-script` crate (below neo-core); kept here for the
+        // historical `Contract::try_create_multi_sig_redeem_script` path.
+        neo_redeem_script::multi_sig_redeem_script_from_points(m, public_keys).map_err(Into::into)
     }
 
     /// Creates the script of a multi-sig contract (panics on invalid input).

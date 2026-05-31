@@ -39,7 +39,6 @@
 use neo_crypto::Crypto;
 use crate::error::{CoreError, CoreResult};
 use crate::neo_io::{serializable::helper::get_var_size_bytes, Serializable};
-use crate::smart_contract::helper::Helper;
 use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
 use neo_vm_rs::OpCode;
@@ -197,7 +196,6 @@ impl Witness {
         signatures: &[Vec<u8>],
     ) -> CoreResult<bool> {
         use neo_crypto::Secp256r1Crypto;
-        use crate::smart_contract::helper::Helper;
 
         if required_signatures == 0
             || public_keys.is_empty()
@@ -207,7 +205,10 @@ impl Witness {
             return Ok(false);
         }
 
-        let script = match Helper::try_multi_sig_redeem_script(required_signatures, public_keys) {
+        let script = match neo_redeem_script::multi_sig_redeem_script_from_keys(
+            required_signatures,
+            public_keys,
+        ) {
             Ok(script) => script,
             Err(_) => return Ok(false),
         };
@@ -256,7 +257,7 @@ impl Witness {
 
     /// Extracts public key from verification script (matches C# verification script parsing exactly).
     fn extract_public_key_from_verification_script(&self) -> Result<Vec<u8>, CoreError> {
-        if !Helper::is_signature_contract(&self.verification_script) {
+        if !neo_redeem_script::is_signature_contract(&self.verification_script) {
             return Err(CoreError::Invalid {
                 message: "Unsupported verification script format".to_string(),
             });
@@ -347,7 +348,7 @@ impl Witness {
             });
         }
 
-        Ok(Helper::signature_redeem_script(public_key))
+        Ok(neo_redeem_script::signature_redeem_script(public_key))
     }
 }
 
@@ -407,7 +408,6 @@ impl fmt::Display for Witness {
 mod tests {
     use super::*;
     use crate::neo_io::Serializable;
-    use crate::smart_contract::helper::Helper;
     use neo_crypto::Secp256r1Crypto;
 
     #[test]
@@ -497,7 +497,9 @@ mod tests {
         pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         let public_keys: Vec<Vec<u8>> = pairs.iter().map(|(p, _)| p.clone()).collect();
-        let verification_script = Helper::multi_sig_redeem_script(m, &public_keys);
+        let verification_script =
+            neo_redeem_script::multi_sig_redeem_script_from_keys(m, &public_keys)
+                .expect("multi-sig redeem script");
         let account = UInt160::from_script(&verification_script);
 
         let signatures: Vec<Vec<u8>> = pairs

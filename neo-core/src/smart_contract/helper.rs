@@ -1,6 +1,5 @@
 //! Helper - matches C# Neo.SmartContract.Helper exactly
 
-use neo_crypto::ECPoint;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
@@ -67,37 +66,18 @@ impl Helper {
         Self::is_signature_contract(script) || Self::is_multi_sig_contract(script)
     }
 
-    /// Checks if a script is a signature contract
+    /// Checks if a script is a signature contract.
+    ///
+    /// Delegates to the `neo-redeem-script` crate (the redeem-script primitives
+    /// were hoisted below neo-core); kept here for the historical
+    /// `Helper::is_signature_contract` path.
     pub fn is_signature_contract(script: &[u8]) -> bool {
-        if script.len() != 40 {
-            return false;
-        }
-
-        // Check pattern: PUSHDATA1 (33 bytes pubkey) SYSCALL (CheckSig)
-        script[0] == OpCode::PUSHDATA1.byte() &&
-        script[1] == 33 &&   // 33 bytes
-        script[35] == OpCode::SYSCALL.byte() &&
-        script[36..40] == Self::check_sig_hash()
+        neo_redeem_script::is_signature_contract(script)
     }
 
-    /// Checks if a script is a multi-sig contract
+    /// Checks if a script is a multi-sig contract. Delegates to `neo-redeem-script`.
     pub fn is_multi_sig_contract(script: &[u8]) -> bool {
-        if script.len() < 42 {
-            return false;
-        }
-
-        // Check basic pattern for multi-sig
-        let _m = match script[0] {
-            value if (OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&value) => {
-                value - OpCode::PUSH0.byte()
-            }
-            _ => return false,
-        };
-
-        // Verify ending with SYSCALL CheckMultisig
-        let len = script.len();
-        script[len - 5] == OpCode::SYSCALL.byte()
-            && script[len - 4..] == Self::check_multisig_hash()
+        neo_redeem_script::is_multi_sig_contract(script)
     }
 
     /// Gets the script hash from a contract
@@ -105,18 +85,12 @@ impl Helper {
         contract.script_hash()
     }
 
-    /// Creates a signature redeem script
+    /// Creates a signature redeem script. Delegates to `neo-redeem-script`.
     pub fn signature_redeem_script(public_key: &[u8]) -> Vec<u8> {
-        let mut script = Vec::new();
-        script.push(OpCode::PUSHDATA1.byte());
-        script.push(public_key.len() as u8);
-        script.extend_from_slice(public_key);
-        script.push(OpCode::SYSCALL.byte());
-        script.extend_from_slice(&Self::check_sig_hash());
-        script
+        neo_redeem_script::signature_redeem_script(public_key)
     }
 
-    /// Creates a multi-sig redeem script.
+    /// Creates a multi-sig redeem script. Delegates to `neo-redeem-script`.
     ///
     /// # Errors
     ///
@@ -124,24 +98,9 @@ impl Helper {
     /// - `m` is not in range `1..=16`
     /// - `public_keys.len()` exceeds 16
     /// - `m` exceeds `public_keys.len()`
+    /// - any public key fails to parse
     pub fn try_multi_sig_redeem_script(m: usize, public_keys: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        if !(1..=16).contains(&m) || public_keys.len() > 16 || m > public_keys.len() {
-            return Err(CoreError::invalid_operation(format!(
-                "Invalid multi-sig parameters: m={}, n={}",
-                m,
-                public_keys.len()
-            )));
-        }
-
-        let mut points = Vec::with_capacity(public_keys.len());
-        for key in public_keys {
-            let point = ECPoint::from_bytes(key)
-                .map_err(|e| CoreError::invalid_operation(format!("Invalid public key: {e}")))?;
-            points.push(point);
-        }
-
-        Contract::try_create_multi_sig_redeem_script(m, &points)
-            .map_err(|err| CoreError::invalid_operation(err.to_string()))
+        neo_redeem_script::multi_sig_redeem_script_from_keys(m, public_keys).map_err(Into::into)
     }
 
     /// Creates a multi-sig redeem script (panics on invalid input).
@@ -150,21 +109,6 @@ impl Helper {
     #[inline]
     pub fn multi_sig_redeem_script(m: usize, public_keys: &[Vec<u8>]) -> Vec<u8> {
         Self::try_multi_sig_redeem_script(m, public_keys).expect("Invalid multi-sig parameters")
-    }
-
-    /// Gets the CheckSig syscall hash
-    fn check_sig_hash() -> [u8; 4] {
-        Self::syscall_hash("System.Crypto.CheckSig")
-    }
-
-    /// Gets the CheckMultisig syscall hash
-    fn check_multisig_hash() -> [u8; 4] {
-        Self::syscall_hash("System.Crypto.CheckMultisig")
-    }
-
-    /// Computes syscall hash
-    fn syscall_hash(name: &str) -> [u8; 4] {
-        neo_vm_rs::interop_hash(name).to_le_bytes()
     }
 
     /// Computes the hash of a deployed contract.
@@ -229,7 +173,7 @@ impl Helper {
         if script[offset] != OpCode::SYSCALL.byte() {
             return None;
         }
-        if script[offset + 1..offset + 5] != Self::check_multisig_hash() {
+        if script[offset + 1..offset + 5] != neo_redeem_script::check_multisig_hash() {
             return None;
         }
 

@@ -602,18 +602,22 @@ fn interop_service_hashes_syscalls_with_neo_vm_rs_directly() {
 }
 
 #[test]
-fn smart_contract_helper_hashes_syscalls_with_neo_vm_rs_directly() {
+fn redeem_script_hashes_syscalls_with_neo_vm_rs_directly() {
+    // The redeem-script primitives (and their CheckSig/CheckMultisig syscall
+    // hashing) were hoisted out of smart_contract::Helper into the
+    // neo-redeem-script crate; the syscall-hash derivation must still go through
+    // neo-vm-rs interop_hash, not a local sha256 duplicate.
     let workspace = workspace_root();
-    let helper =
-        read_source(workspace.join("neo-core/src/smart_contract/helper.rs"));
+    let redeem =
+        read_source(workspace.join("neo-redeem-script/src/lib.rs"));
 
     assert!(
-        helper.contains("neo_vm_rs::interop_hash(name).to_le_bytes()"),
-        "smart_contract::Helper should use neo-vm-rs interop_hash for syscall IDs"
+        redeem.contains("neo_vm_rs::interop_hash(name).to_le_bytes()"),
+        "neo-redeem-script should use neo-vm-rs interop_hash for syscall IDs"
     );
     assert!(
-        !helper.contains("Crypto::sha256(name.as_bytes())"),
-        "smart_contract::Helper should not duplicate syscall hash derivation locally"
+        !redeem.contains("Crypto::sha256(name.as_bytes())"),
+        "neo-redeem-script should not duplicate syscall hash derivation locally"
     );
 }
 

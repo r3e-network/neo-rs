@@ -75,6 +75,7 @@ futures.workspace = true
 neo-vm-rs = { workspace = true }
 neo-vm = { workspace = true }
 neo-script-builder = { workspace = true }
+neo-redeem-script = { workspace = true }
 neo_io_crate = { path = "../neo-io", package = "neo-io" }
 inventory = "0.3"
 neo-json = { path = "../neo-json" }

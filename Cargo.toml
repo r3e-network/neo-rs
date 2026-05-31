@@ -33,6 +33,11 @@ members = [
     # layers can build redeem scripts without the stateful VM host.
     "neo-script-builder",
 
+    # Redeem-script primitives (signature/multi-sig verification scripts +
+    # pattern checks). On neo-crypto + neo-script-builder; below neo-core so the
+    # chain types build account scripts without the smart-contract engine.
+    "neo-redeem-script",
+
     # === Core Layer ===
     # Core (matches C# Neo.csproj)
     # NOTE: the NeoVM host is the separate `neo-vm` crate above; pure VM
@@ -146,6 +151,7 @@ neo-json = { path = "neo-json", version = "0.7.2" }
 neo-core = { path = "neo-core", version = "0.7.2" }
 neo-vm = { path = "neo-vm", version = "0.7.2" }
 neo-script-builder = { path = "neo-script-builder", version = "0.7.2" }
+neo-redeem-script = { path = "neo-redeem-script", version = "0.7.2" }
 neo-tx-builder = { path = "neo-tx-builder", version = "0.7.2" }
 neo-vm-rs = { path = "../neo-vm-rs" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }
