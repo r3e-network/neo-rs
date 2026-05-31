@@ -27,7 +27,7 @@
 //! | `CalledByContract` | Called by specific contract |
 //! | `CalledByGroup` | Called by specific group |
 
-use neo_io_crate::serializable::helper::get_var_size_serializable_slice;
+use neo_io::serializable::helper::get_var_size_serializable_slice;
 
 mod display;
 pub mod helpers;

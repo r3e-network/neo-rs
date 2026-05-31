@@ -2569,9 +2569,12 @@ version = "0.7.2"
 dependencies = [
  "async-trait",
  "futures",
+ "hex",
  "neo-crypto",
  "neo-io",
  "neo-primitives",
+ "neo-vm",
+ "neo-vm-rs",
  "rand 0.8.5",
  "serde",
  "serde_json",

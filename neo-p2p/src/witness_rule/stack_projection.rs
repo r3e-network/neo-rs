@@ -1,5 +1,5 @@
 use super::{WitnessCondition, WitnessRule};
-use crate::neo_vm::StackItem;
+use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 
 /// Projects witness-rule types to the lean neo-vm-rs [`StackValue`] form.

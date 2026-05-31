@@ -147,7 +147,9 @@ pub mod protocol_settings;
 pub mod witness;
 
 /// Witness rule evaluation for conditional verification.
-pub mod witness_rule;
+/// Relocated into the `neo-p2p` crate; re-exported here so the historical
+/// `neo_core::witness_rule` path stays stable.
+pub use neo_p2p::witness_rule;
 
 // ============================================================================
 // Optional Features

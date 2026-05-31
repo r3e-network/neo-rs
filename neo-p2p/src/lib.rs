@@ -216,6 +216,9 @@ pub mod witness_rule_action {
     pub use neo_primitives::WitnessRuleAction;
 }
 
+/// Witness rule / condition types and their evaluation + projections.
+pub mod witness_rule;
+
 // ============================================================================
 // Public Re-exports
 // ============================================================================
@@ -233,6 +236,7 @@ pub use transaction_removal_reason::TransactionRemovalReason;
 pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
 pub use witness_rule_action::WitnessRuleAction;
+pub use witness_rule::{ToStackItem, WitnessCondition, WitnessRule};
 
 // Re-exports from neo-primitives
 pub use neo_primitives::{InvalidWitnessScopeError, TransactionAttributeType, WitnessScope};
