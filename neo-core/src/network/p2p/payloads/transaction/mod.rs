@@ -30,7 +30,6 @@ use crate::smart_contract::native::{ContractManagement, LedgerContract, PolicyCo
 use crate::smart_contract::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType, Interoperable};
 use crate::neo_vm::StackItem;
-use crate::wallets::helper::Helper as WalletHelper;
 use crate::{ledger::VerifyResult, CoreResult, UInt160, UInt256, Verifiable, VerifiableExt};
 use base64::{engine::general_purpose, Engine as _};
 use neo_vm_rs::OpCode;

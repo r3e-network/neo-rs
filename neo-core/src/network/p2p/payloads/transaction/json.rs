@@ -19,7 +19,7 @@ impl Transaction {
 
         let sender_value = self
             .sender()
-            .map(|account| WalletHelper::to_address(&account, settings.address_version));
+            .map(|account| account.to_address_with_version(settings.address_version));
         json.insert(
             "sender".to_string(),
             sender_value

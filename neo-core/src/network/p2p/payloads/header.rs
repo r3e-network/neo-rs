@@ -15,7 +15,6 @@ use crate::neo_io::Serializable;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
-use crate::wallets::helper::Helper as WalletHelper;
 use crate::{UInt160, UInt256};
 use neo_primitives::error::PrimitiveResult;
 use serde::{Deserialize, Serialize};
@@ -189,10 +188,10 @@ impl Header {
         json.insert("primary".to_string(), json!(self.primary_index()));
         json.insert(
             "nextconsensus".to_string(),
-            Value::String(WalletHelper::to_address(
-                self.next_consensus(),
-                settings.address_version,
-            )),
+            Value::String(
+                self.next_consensus()
+                    .to_address_with_version(settings.address_version),
+            ),
         );
         json.insert(
             "witnesses".to_string(),

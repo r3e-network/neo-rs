@@ -72,7 +72,7 @@ use crate::network::p2p::payloads::{
 use crate::network::p2p::{NetworkMessage, ProtocolMessage};
 use crate::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
 use crate::services::PeerManagerService;
-use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings};
+use crate::protocol_settings::ProtocolSettings;
 use async_trait::async_trait;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rand::{RngCore, rngs::OsRng, seq::IteratorRandom, thread_rng};
