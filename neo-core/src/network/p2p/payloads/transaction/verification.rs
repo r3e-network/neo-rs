@@ -226,7 +226,8 @@ impl Transaction {
             return Ok(StandardWitnessKind::SingleSignature);
         }
 
-        let Some((m, public_keys)) = Helper::parse_multi_sig_contract(&witness.verification_script)
+        let Some((m, public_keys)) =
+            neo_redeem_script::parse_multi_sig_contract(&witness.verification_script)
         else {
             return Ok(StandardWitnessKind::NonStandard);
         };
@@ -235,7 +236,8 @@ impl Transaction {
             return Err(VerifyResult::Invalid);
         }
 
-        let Some(signatures) = Helper::parse_multi_sig_invocation(&witness.invocation_script, m)
+        let Some(signatures) =
+            neo_redeem_script::parse_multi_sig_invocation(&witness.invocation_script, m)
         else {
             return Err(VerifyResult::Invalid);
         };
@@ -405,7 +407,7 @@ impl Transaction {
     }
 
     pub(super) fn parse_single_signature_contract(script: &[u8]) -> Option<&[u8]> {
-        if !Helper::is_signature_contract(script) {
+        if !neo_redeem_script::is_signature_contract(script) {
             return None;
         }
         // Signature contract pattern: PUSHDATA1(33) <33-byte pubkey> SYSCALL <CheckSig hash>
