@@ -28,7 +28,7 @@ use super::payloads::{VersionPayload, block::Block, inv_payload::InvPayload};
 use super::task_session::TaskSession;
 use crate::UInt256;
 use crate::ledger::{PersistCompleted, RelayResult};
-use crate::neo_system::NeoSystemContext;
+use crate::services::SystemContext;
 use crate::runtime::{
     Actor, ActorContext, ActorRef, ActorResult, EventStreamHandle, Props, ScheduleHandle,
     Terminated,
@@ -100,7 +100,7 @@ fn request_mempool_once(actor: &ActorRef, session: &mut TaskSession) -> bool {
 
 /// Actor-independent state for the task manager.
 pub struct TaskManager {
-    system: Option<Arc<NeoSystemContext>>,
+    system: Option<Arc<dyn SystemContext>>,
     sessions: HashMap<String, SessionEntry>,
     known_hashes: HashSetCache<UInt256>,
     event_stream: Option<EventStreamHandle>,
@@ -296,7 +296,7 @@ impl Actor for TaskManagerActor {
 #[derive(Debug, Clone)]
 pub enum TaskManagerCommand {
     AttachSystem {
-        context: Arc<NeoSystemContext>,
+        context: Arc<dyn SystemContext>,
     },
     Register {
         peer: ActorRef,

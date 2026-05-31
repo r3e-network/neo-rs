@@ -776,4 +776,56 @@ impl SystemContext for NeoSystemContext {
     fn local_node(&self) -> &LocalNodeHandle {
         &self.local_node
     }
+
+    fn blockchain(&self) -> &BlockchainHandle {
+        &self.blockchain
+    }
+
+    fn task_manager(&self) -> &TaskManagerHandle {
+        &self.task_manager
+    }
+
+    fn tx_router(&self) -> &TransactionRouterHandle {
+        &self.tx_router
+    }
+
+    fn event_stream(&self) -> EventStreamHandle {
+        NeoSystemContext::event_stream(self)
+    }
+
+    fn try_get_block(&self, hash: &UInt256) -> Option<Block> {
+        NeoSystemContext::try_get_block(self, hash)
+    }
+
+    fn try_get_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload> {
+        NeoSystemContext::try_get_extensible(self, hash)
+    }
+
+    fn try_get_relay_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload> {
+        NeoSystemContext::try_get_relay_extensible(self, hash)
+    }
+
+    fn block_hashes_from(&self, hash_start: &UInt256, count: usize) -> Vec<UInt256> {
+        NeoSystemContext::block_hashes_from(self, hash_start, count)
+    }
+
+    fn try_get_transaction_from_mempool(&self, hash: &UInt256) -> Option<Transaction> {
+        NeoSystemContext::try_get_transaction_from_mempool(self, hash)
+    }
+
+    fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType {
+        NeoSystemContext::contains_transaction(self, hash)
+    }
+
+    fn contains_conflict_hash(&self, hash: &UInt256, signers: &[UInt160]) -> bool {
+        NeoSystemContext::contains_conflict_hash(self, hash, signers)
+    }
+
+    fn headers_from_index(&self, index_start: u32, count: usize) -> Vec<Header> {
+        NeoSystemContext::headers_from_index(self, index_start, count)
+    }
+
+    fn mempool_transaction_hashes(&self) -> Vec<UInt256> {
+        NeoSystemContext::mempool_transaction_hashes(self)
+    }
 }

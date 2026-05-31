@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::network::p2p::{BanList, InboundRateLimiter, PeerReputationTracker};
+use crate::services::SystemContext;
 use crate::wallets::KeyPair;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -53,7 +54,7 @@ pub struct LocalNode {
     /// Pending outbound connection attempts keyed by endpoint.
     pending_connections: Arc<RwLock<HashSet<SocketAddr>>>,
     /// Shared system context providing access to global actors/services.
-    system_context: RwLock<Option<Arc<NeoSystemContext>>>,
+    system_context: RwLock<Option<Arc<dyn SystemContext>>>,
     /// SECURITY: Rate limiter for inbound connections to prevent DoS attacks.
     inbound_rate_limiter: RwLock<InboundRateLimiter>,
     /// SECURITY: Ban list for misbehaving peers.
@@ -258,12 +259,12 @@ impl LocalNode {
     }
 
     /// Associates the Neo system context with this local node.
-    pub fn set_system_context(&self, context: Arc<NeoSystemContext>) {
+    pub fn set_system_context(&self, context: Arc<dyn SystemContext>) {
         *self.system_context.write() = Some(context);
     }
 
     /// Returns the previously attached system context if available.
-    pub fn system_context(&self) -> Option<Arc<NeoSystemContext>> {
+    pub fn system_context(&self) -> Option<Arc<dyn SystemContext>> {
         self.system_context.read().as_ref().cloned()
     }
 

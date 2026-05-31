@@ -26,7 +26,7 @@ impl RemoteNode {
         self.last_block_index = payload.last_block_index;
         if let Err(err) = self
             .system
-            .task_manager
+            .task_manager()
             .update_peer(ctx.self_ref(), payload.last_block_index)
         {
             warn!(target: "neo", error = %err, "failed to forward peer height update to task manager");
@@ -82,7 +82,7 @@ impl RemoteNode {
         if !payload.headers.is_empty() {
             if let Err(err) = self
                 .system
-                .blockchain
+                .blockchain()
                 .tell_from_async(
                     BlockchainCommand::Headers(payload.headers),
                     Some(ctx.self_ref()),
@@ -92,7 +92,7 @@ impl RemoteNode {
                 warn!(target: "neo", error = %err, "failed to forward headers to blockchain");
             }
 
-            if let Err(err) = self.system.task_manager.headers(ctx.self_ref()) {
+            if let Err(err) = self.system.task_manager().headers(ctx.self_ref()) {
                 warn!(target: "neo", error = %err, "failed to notify task manager about headers");
             }
         }

@@ -26,7 +26,7 @@ use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::inv_payload::InvPayload;
 use crate::runtime::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
 use crate::{
-    CoreResult, UInt256, neo_system::NeoSystemContext, protocol_settings::ProtocolSettings,
+    CoreResult, UInt256, services::SystemContext, protocol_settings::ProtocolSettings,
 };
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
@@ -53,7 +53,7 @@ const READER_TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Remote node actor responsible for protocol negotiation and message relay.
 pub struct RemoteNode {
-    system: Arc<NeoSystemContext>,
+    system: Arc<dyn SystemContext>,
     connection: Arc<Mutex<PeerConnection>>,
     endpoint: SocketAddr,
     _local_endpoint: SocketAddr,
@@ -128,7 +128,7 @@ impl RemoteNode {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        system: Arc<NeoSystemContext>,
+        system: Arc<dyn SystemContext>,
         local_node: Arc<LocalNode>,
         connection: Arc<Mutex<PeerConnection>>,
         endpoint: SocketAddr,
@@ -176,7 +176,7 @@ impl RemoteNode {
 
     #[allow(clippy::too_many_arguments)]
     pub fn props(
-        system: Arc<NeoSystemContext>,
+        system: Arc<dyn SystemContext>,
         local_node: Arc<LocalNode>,
         connection: Arc<Mutex<PeerConnection>>,
         endpoint: SocketAddr,
@@ -389,7 +389,7 @@ impl RemoteNode {
         if let Some(version) = self.remote_version.clone() {
             if let Err(err) = self
                 .system
-                .task_manager
+                .task_manager()
                 .register_peer(ctx.self_ref(), version)
             {
                 warn!(target: "neo", error = %err, "failed to notify task manager about session registration");

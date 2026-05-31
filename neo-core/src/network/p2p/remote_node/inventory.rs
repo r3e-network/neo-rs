@@ -101,7 +101,7 @@ impl RemoteNode {
             self.pending_known_hashes.try_add(*hash, now);
         }
 
-        if let Err(err) = self.system.task_manager.new_tasks(
+        if let Err(err) = self.system.task_manager().new_tasks(
             ctx.self_ref(),
             InvPayload::new(payload.inventory_type, hashes),
         ) {
@@ -122,7 +122,7 @@ impl RemoteNode {
     ) {
         if let Err(err) =
             self.system
-                .task_manager
+                .task_manager()
                 .inventory_completed(ctx.self_ref(), hash, block, block_index)
         {
             warn!(
@@ -191,7 +191,7 @@ impl RemoteNode {
 
         if let Err(err) = self
             .system
-            .tx_router
+            .tx_router()
             .enqueue_preverify_from(transaction, true, Some(ctx.self_ref()))
             .await
         {
@@ -260,7 +260,7 @@ impl RemoteNode {
 
         if let Err(err) = self
             .system
-            .blockchain
+            .blockchain()
             .tell_from_async(
                 BlockchainCommand::InventoryBlock {
                     block,
@@ -306,7 +306,7 @@ impl RemoteNode {
         trace!(target: "neo", hash = %hash, "extensible payload received");
         if let Err(err) = self
             .system
-            .blockchain
+            .blockchain()
             .tell_from_async(
                 BlockchainCommand::InventoryExtensible {
                     payload,
@@ -505,7 +505,7 @@ impl RemoteNode {
 
         if let Err(err) = self
             .system
-            .task_manager
+            .task_manager()
             .restart_tasks(ctx.self_ref(), payload)
         {
             warn!(

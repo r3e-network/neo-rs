@@ -1,13 +1,13 @@
 use super::TaskManager;
 use crate::ledger::{PersistCompleted, RelayResult};
-use crate::neo_system::NeoSystemContext;
+use crate::services::SystemContext;
 use crate::runtime::ActorContext;
 use crate::UInt256;
 use std::sync::Arc;
 use tracing::trace;
 
 impl TaskManager {
-    pub(super) fn attach_system(&mut self, context: Arc<NeoSystemContext>, ctx: &ActorContext) {
+    pub(super) fn attach_system(&mut self, context: Arc<dyn SystemContext>, ctx: &ActorContext) {
         trace!(target: "neo", "task manager attached to system context");
         let capacity = context.memory_pool().lock().capacity.max(100);
         self.known_hashes.set_capacity(capacity);

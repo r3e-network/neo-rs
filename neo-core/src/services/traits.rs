@@ -53,18 +53,23 @@ pub trait RpcService: Send + Sync {
     fn is_started(&self) -> bool;
 }
 
+use crate::contains_transaction_type::ContainsTransactionType;
 use crate::events::PluginEvent;
+use crate::ledger::blockchain::BlockchainHandle;
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
-use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
-use crate::network::p2p::LocalNodeHandle;
+use crate::network::p2p::payloads::{
+    block::Block, extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction,
+};
+use crate::network::p2p::{LocalNodeHandle, TaskManagerHandle};
+use crate::neo_system::actors::TransactionRouterHandle;
 use crate::neo_system::NeoSystem;
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::runtime::ActorSystemHandle;
+use crate::runtime::{ActorSystemHandle, EventStreamHandle};
 use crate::smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs};
 use crate::state_service::StateStore;
 use crate::CoreResult;
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -150,6 +155,47 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
 
     /// Handle to the local P2P node (for direct relay).
     fn local_node(&self) -> &LocalNodeHandle;
+
+    // --- Handles + query methods used by the P2P actors (A5 part 2) ---
+
+    /// Handle to the blockchain actor.
+    fn blockchain(&self) -> &BlockchainHandle;
+
+    /// Handle to the task-manager actor.
+    fn task_manager(&self) -> &TaskManagerHandle;
+
+    /// Handle to the transaction-router actor.
+    fn tx_router(&self) -> &TransactionRouterHandle;
+
+    /// Event stream handle for publishing/subscribing to system events.
+    fn event_stream(&self) -> EventStreamHandle;
+
+    /// Look up a block by hash (ledger).
+    fn try_get_block(&self, hash: &UInt256) -> Option<Block>;
+
+    /// Look up an extensible payload by hash.
+    fn try_get_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload>;
+
+    /// Look up an extensible payload queued for relay.
+    fn try_get_relay_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload>;
+
+    /// Block hashes starting from a given hash (inventory sync).
+    fn block_hashes_from(&self, hash_start: &UInt256, count: usize) -> Vec<UInt256>;
+
+    /// Look up a transaction in the mempool.
+    fn try_get_transaction_from_mempool(&self, hash: &UInt256) -> Option<Transaction>;
+
+    /// Whether a transaction is known (mempool/ledger).
+    fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType;
+
+    /// Whether a conflict record exists for the given hash + signers.
+    fn contains_conflict_hash(&self, hash: &UInt256, signers: &[UInt160]) -> bool;
+
+    /// Headers starting from an index (header sync).
+    fn headers_from_index(&self, index_start: u32, count: usize) -> Vec<Header>;
+
+    /// All mempool transaction hashes.
+    fn mempool_transaction_hashes(&self) -> Vec<UInt256>;
 }
 
 #[cfg(test)]

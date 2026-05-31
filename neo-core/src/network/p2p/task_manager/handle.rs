@@ -1,6 +1,6 @@
 use super::TaskManagerCommand;
 use crate::UInt256;
-use crate::neo_system::NeoSystemContext;
+use crate::services::SystemContext;
 use crate::network::p2p::payloads::{VersionPayload, block::Block, inv_payload::InvPayload};
 use crate::runtime::{ActorRef, ActorRuntimeResult};
 use std::sync::Arc;
@@ -28,7 +28,7 @@ impl TaskManagerHandle {
     }
 
     /// Attaches the shared system context to the task manager.
-    pub fn attach_system(&self, context: Arc<NeoSystemContext>) -> ActorRuntimeResult<()> {
+    pub fn attach_system(&self, context: Arc<dyn SystemContext>) -> ActorRuntimeResult<()> {
         self.tell(TaskManagerCommand::AttachSystem { context })
     }
 
