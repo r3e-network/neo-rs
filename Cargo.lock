@@ -2361,6 +2361,7 @@ dependencies = [
  "neo-json",
  "neo-p2p",
  "neo-primitives",
+ "neo-script-builder",
  "neo-storage",
  "neo-storage-rocksdb",
  "neo-tx-builder",
@@ -2646,6 +2647,16 @@ dependencies = [
  "uuid",
  "warp",
  "zeroize",
+]
+
+[[package]]
+name = "neo-script-builder"
+version = "0.7.2"
+dependencies = [
+ "neo-vm-rs",
+ "num-bigint",
+ "num-traits",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

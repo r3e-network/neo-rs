@@ -28,6 +28,11 @@ members = [
     # external pure neo-vm-rs semantics. Extracted from neo-core/src/neo_vm.
     "neo-vm",
 
+    # Programmatic VM script construction (C# Neo.VM.ScriptBuilder). Pure
+    # bytecode emitter on neo-vm-rs; layered below neo-core so crypto/payload
+    # layers can build redeem scripts without the stateful VM host.
+    "neo-script-builder",
+
     # === Core Layer ===
     # Core (matches C# Neo.csproj)
     # NOTE: the NeoVM host is the separate `neo-vm` crate above; pure VM
@@ -140,6 +145,7 @@ neo-json = { path = "neo-json", version = "0.7.2" }
 # Core layer
 neo-core = { path = "neo-core", version = "0.7.2" }
 neo-vm = { path = "neo-vm", version = "0.7.2" }
+neo-script-builder = { path = "neo-script-builder", version = "0.7.2" }
 neo-tx-builder = { path = "neo-tx-builder", version = "0.7.2" }
 neo-vm-rs = { path = "../neo-vm-rs" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }

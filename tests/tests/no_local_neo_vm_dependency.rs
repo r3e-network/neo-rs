@@ -637,7 +637,7 @@ fn interop_descriptor_hashes_syscalls_with_neo_vm_rs_directly() {
 fn script_builder_reuses_neo_vm_rs_integer_encoding_for_i64_pushes() {
     let workspace = workspace_root();
     let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+        read_source(workspace.join("neo-script-builder/src/lib.rs"));
 
     assert!(
         script_builder.matches("neo_vm_rs::encode_integer").count() >= 2,
@@ -659,7 +659,7 @@ fn script_builder_reuses_neo_vm_rs_integer_encoding_for_i64_pushes() {
 fn script_builder_emits_opcode_bytes_via_neo_vm_rs_opcode_metadata() {
     let workspace = workspace_root();
     let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+        read_source(workspace.join("neo-script-builder/src/lib.rs"));
 
     assert!(
         script_builder.contains("op.byte()"),
@@ -675,7 +675,7 @@ fn script_builder_emits_opcode_bytes_via_neo_vm_rs_opcode_metadata() {
 fn script_builder_derives_opcode_bytes_from_neo_vm_rs_metadata() {
     let workspace = workspace_root();
     let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+        read_source(workspace.join("neo-script-builder/src/lib.rs"));
 
     assert!(
         script_builder.contains("OpCode::PUSH0.byte()"),
@@ -765,7 +765,9 @@ fn remaining_production_script_bytes_use_neo_vm_rs_opcode_metadata() {
     let workspace = workspace_root();
     for relative in [
         "benches-package/benches/vm_execution.rs",
-        "neo-core/src/builders/mod.rs",
+        // builders were extracted from neo-core into the neo-tx-builder crate;
+        // transaction.rs is the builder script-byte emitter that remains.
+        "neo-tx-builder/src/transaction.rs",
         "neo-core/src/ledger/genesis.rs",
         "neo-core/src/wallets/wallet_account.rs",
         "neo-rpc/src/server/session.rs",
@@ -1019,7 +1021,7 @@ fn vm_dispatch_uses_neo_vm_rs_opcode_byte_metadata() {
 fn script_builder_emit_syscall_hashes_with_neo_vm_rs_directly() {
     let workspace = workspace_root();
     let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+        read_source(workspace.join("neo-script-builder/src/lib.rs"));
 
     assert!(
         script_builder.contains("neo_vm_rs::interop_hash(api)"),
@@ -1038,7 +1040,7 @@ fn script_builder_emit_syscall_hashes_with_neo_vm_rs_directly() {
 fn script_builder_does_not_accept_local_stackitem_bridge() {
     let workspace = workspace_root();
     let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+        read_source(workspace.join("neo-script-builder/src/lib.rs"));
 
     assert!(
         !script_builder.contains("use crate::neo_vm::stack_item::StackItem")
@@ -2178,7 +2180,7 @@ fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
 fn script_builder_does_not_return_local_script_objects() {
     let workspace = workspace_root();
     let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+        read_source(workspace.join("neo-script-builder/src/lib.rs"));
 
     assert!(
         !script_builder.contains("use crate::neo_vm::script::Script")
@@ -2193,7 +2195,7 @@ fn script_builder_does_not_return_local_script_objects() {
 fn script_builder_does_not_use_local_vm_error_types() {
     let workspace = workspace_root();
     let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+        read_source(workspace.join("neo-script-builder/src/lib.rs"));
 
     assert!(
         !script_builder.contains("VmError")
@@ -4302,10 +4304,22 @@ fn script_builder_implementation_lives_outside_local_neo_vm_tree() {
     let workspace = workspace_root();
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
 
+    // ScriptBuilder now lives in the dedicated `neo-script-builder` crate (C#
+    // Neo.VM.ScriptBuilder), layered on neo-vm-rs *below* neo-core so script
+    // construction stays outside the local VM runtime AND off the neo-core
+    // monolith. neo-core keeps a thin re-export at src/script_builder.rs for the
+    // historical `neo_core::script_builder::ScriptBuilder` path.
+    let impl_source = read_source(workspace.join("neo-script-builder/src/lib.rs"));
     assert!(
-        workspace.join("neo-core/src/script_builder.rs").exists(),
-        "ScriptBuilder should live at neo-core/src/script_builder.rs so script construction \
-         is layered outside the local VM runtime"
+        impl_source.contains("pub struct ScriptBuilder"),
+        "ScriptBuilder should be implemented in the neo-script-builder crate, layered \
+         outside both the local VM runtime and the neo-core monolith"
+    );
+    let core_shim = read_source(workspace.join("neo-core/src/script_builder.rs"));
+    assert!(
+        core_shim.contains("pub use neo_script_builder::") && !core_shim.contains("pub struct ScriptBuilder"),
+        "neo-core/src/script_builder.rs should be a thin re-export of the neo-script-builder \
+         crate, not a second implementation"
     );
     assert!(
         !workspace
@@ -4850,7 +4864,7 @@ fn rpc_error_type_does_not_expose_local_vm_error() {
 fn rpc_server_invoke_arguments_push_neo_vm_rs_stackvalue_directly() {
     let workspace = workspace_root();
     let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+        read_source(workspace.join("neo-script-builder/src/lib.rs"));
     assert!(
         script_builder.contains("pub fn emit_push_stack_value")
             && script_builder.contains("neo_vm_rs::StackValue"),

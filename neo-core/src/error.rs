@@ -485,6 +485,14 @@ impl From<crate::neo_vm::VmError> for CoreError {
     }
 }
 
+impl From<neo_script_builder::ScriptBuilderError> for CoreError {
+    fn from(err: neo_script_builder::ScriptBuilderError) -> Self {
+        CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
+    }
+}
+
 // Type conversion errors (require custom handling)
 impl From<std::num::ParseIntError> for CoreError {
     fn from(_error: std::num::ParseIntError) -> Self {
