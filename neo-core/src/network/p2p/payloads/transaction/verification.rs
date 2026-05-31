@@ -4,9 +4,15 @@
 
 use super::*;
 
-enum StandardWitnessVerification {
+/// Classification of a standard (non-contract) witness after its signatures
+/// have been cryptographically verified. The verification *fee* is computed by
+/// the caller — only the state-dependent path needs it — which keeps the
+/// signature CHECK itself engine-free (crypto + redeem-script recognizers only),
+/// so `verify_state_independent` does not reach into ApplicationEngine pricing.
+enum StandardWitnessKind {
     NonStandard,
-    Verified { unscaled_verification_fee: i64 },
+    SingleSignature,
+    MultiSignature { m: i32, n: i32 },
 }
 
 impl Transaction {
@@ -124,12 +130,13 @@ impl Transaction {
             let witness = &self.witnesses[i];
 
             match Self::verify_standard_witness(hash, witness, &sign_data) {
-                Ok(StandardWitnessVerification::Verified {
-                    unscaled_verification_fee,
-                }) => {
-                    net_fee_datoshi -= exec_fee_factor * unscaled_verification_fee;
+                Ok(StandardWitnessKind::SingleSignature) => {
+                    net_fee_datoshi -= exec_fee_factor * Helper::signature_contract_cost();
                 }
-                Ok(StandardWitnessVerification::NonStandard) => {
+                Ok(StandardWitnessKind::MultiSignature { m, n }) => {
+                    net_fee_datoshi -= exec_fee_factor * Helper::multi_signature_contract_cost(m, n);
+                }
+                Ok(StandardWitnessKind::NonStandard) => {
                     let mut fee = 0i64;
                     if !self.verify_witness(
                         settings,
@@ -192,7 +199,7 @@ impl Transaction {
         hash: &UInt160,
         witness: &Witness,
         sign_data: &[u8],
-    ) -> Result<StandardWitnessVerification, VerifyResult> {
+    ) -> Result<StandardWitnessKind, VerifyResult> {
         if let Some(public_key) =
             Self::parse_single_signature_contract(&witness.verification_script)
         {
@@ -216,14 +223,12 @@ impl Transaction {
                 return Err(VerifyResult::InvalidSignature);
             }
 
-            return Ok(StandardWitnessVerification::Verified {
-                unscaled_verification_fee: Helper::signature_contract_cost(),
-            });
+            return Ok(StandardWitnessKind::SingleSignature);
         }
 
         let Some((m, public_keys)) = Helper::parse_multi_sig_contract(&witness.verification_script)
         else {
-            return Ok(StandardWitnessVerification::NonStandard);
+            return Ok(StandardWitnessKind::NonStandard);
         };
 
         if witness.script_hash() != *hash {
@@ -272,9 +277,7 @@ impl Transaction {
         }
 
         let n = public_keys.len() as i32;
-        Ok(StandardWitnessVerification::Verified {
-            unscaled_verification_fee: Helper::multi_signature_contract_cost(m as i32, n),
-        })
+        Ok(StandardWitnessKind::MultiSignature { m: m as i32, n })
     }
 
     /// Verify a single witness.
