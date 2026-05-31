@@ -152,12 +152,12 @@ macro_rules! impl_hash_for_fields {
 /// ```
 pub trait OptionExt<T> {
     /// Converts `Option<T>` to `IoResult<T>` with an invalid data error message.
-    fn ok_or_invalid_data(self, msg: &str) -> crate::neo_io::IoResult<T>;
+    fn ok_or_invalid_data(self, msg: &str) -> crate::IoResult<T>;
 }
 
 impl<T> OptionExt<T> for Option<T> {
-    fn ok_or_invalid_data(self, msg: &str) -> crate::neo_io::IoResult<T> {
-        self.ok_or_else(|| crate::neo_io::IoError::invalid_data(msg))
+    fn ok_or_invalid_data(self, msg: &str) -> crate::IoResult<T> {
+        self.ok_or_else(|| crate::IoError::invalid_data(msg))
     }
 }
 
@@ -173,13 +173,13 @@ impl<T> OptionExt<T> for Option<T> {
 /// ```
 pub trait ValidateLength {
     /// Validates that the length does not exceed the maximum.
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::neo_io::IoResult<()>;
+    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::IoResult<()>;
 }
 
 impl<T> ValidateLength for Vec<T> {
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::neo_io::IoResult<()> {
+    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::IoResult<()> {
         if self.len() > max {
-            Err(crate::neo_io::IoError::invalid_data(format!(
+            Err(crate::IoError::invalid_data(format!(
                 "{} exceeds maximum length of {} (got {})",
                 field_name,
                 max,
@@ -192,9 +192,9 @@ impl<T> ValidateLength for Vec<T> {
 }
 
 impl ValidateLength for [u8] {
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::neo_io::IoResult<()> {
+    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::IoResult<()> {
         if self.len() > max {
-            Err(crate::neo_io::IoError::invalid_data(format!(
+            Err(crate::IoError::invalid_data(format!(
                 "{} exceeds maximum length of {} (got {})",
                 field_name,
                 max,
@@ -207,9 +207,9 @@ impl ValidateLength for [u8] {
 }
 
 impl ValidateLength for str {
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::neo_io::IoResult<()> {
+    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::IoResult<()> {
         if self.len() > max {
-            Err(crate::neo_io::IoError::invalid_data(format!(
+            Err(crate::IoError::invalid_data(format!(
                 "{} exceeds maximum length of {} (got {})",
                 field_name,
                 max,
@@ -222,7 +222,7 @@ impl ValidateLength for str {
 }
 
 impl ValidateLength for String {
-    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::neo_io::IoResult<()> {
+    fn validate_max_length(&self, max: usize, field_name: &str) -> crate::IoResult<()> {
         self.as_str().validate_max_length(max, field_name)
     }
 }

@@ -7,12 +7,18 @@ pub mod compression;
 pub mod extensions;
 
 mod binary_writer;
+/// Generic derive-style macros and IO helper traits (OptionExt, ValidateLength).
+/// Relocated from neo-core so layered crates (e.g. neo-p2p chain types) can use
+/// them without depending on neo-core.
+#[macro_use]
+pub mod macros;
 // Core interfaces
 mod memory_reader;
 pub mod serializable;
 pub mod var_int;
 
 pub use binary_writer::BinaryWriter;
+pub use macros::{OptionExt, ValidateLength};
 pub use memory_reader::{IoError, IoResult, MemoryReader};
 pub use serializable::Serializable;
 

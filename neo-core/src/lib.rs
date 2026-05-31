@@ -90,8 +90,16 @@ extern crate self as neo_core;
 // Declarative Macros (must be declared before other modules)
 // ============================================================================
 
-#[macro_use]
-pub mod macros;
+/// IO helper traits + derive-style macros, relocated into the `neo-io` crate so
+/// layered crates can use them without depending on neo-core. Re-exported here
+/// so the historical `crate::macros::*` and `crate::impl_*!` paths stay stable.
+pub mod macros {
+    pub use neo_io_crate::{OptionExt, ValidateLength};
+}
+pub use neo_io_crate::{
+    impl_default_via_new, impl_error_from, impl_from_bytes, impl_hash_for_fields,
+    impl_ord_by_fields,
+};
 
 // ============================================================================
 // Foundation Modules
