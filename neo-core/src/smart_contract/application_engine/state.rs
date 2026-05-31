@@ -338,7 +338,7 @@ impl ApplicationEngine {
     /// Returns the index of the block currently being persisted.
     pub fn current_block_index(&self) -> u32 {
         if let Some(block) = self.persisting_block.as_ref() {
-            return block.header.index;
+            return block.header.index();
         }
 
         LedgerContract::new()
@@ -350,7 +350,7 @@ impl ApplicationEngine {
     pub fn current_block_timestamp(&self) -> Result<u64, String> {
         self.persisting_block
             .as_deref()
-            .map(|block| block.header.timestamp)
+            .map(|block| block.header.timestamp())
             .ok_or_else(|| "GetTime can only be called with Application trigger.".to_string())
     }
 

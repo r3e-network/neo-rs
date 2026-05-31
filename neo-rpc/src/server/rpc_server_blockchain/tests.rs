@@ -2,8 +2,8 @@ use super::*;
 use crate::client::models::RpcRawMemPool;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_core::extensions::SerializableExtensions;
-use neo_core::ledger::block::Block as LedgerBlock;
-use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
+use neo_core::ledger::Block as LedgerBlock;
+use neo_core::ledger::BlockHeader as LedgerBlockHeader;
 use neo_core::ledger::VerifyResult;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::helper::get_sign_data_vec;
@@ -128,19 +128,9 @@ fn make_ledger_block(
         neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
     };
 
-    let header = LedgerBlockHeader {
-        index,
-        previous_hash: prev_hash,
-        merkle_root,
-        timestamp: 1,
-        nonce: 0,
-        primary_index: 0,
-        next_consensus: UInt160::zero(),
-        witnesses: vec![LedgerWitness::empty()],
-        ..Default::default()
-    };
+    let header = LedgerBlockHeader::new_with_witnesses(0, prev_hash, merkle_root, 1, 0, index, 0, UInt160::zero(), vec![LedgerWitness::empty()]);
 
-    LedgerBlock::new(header, transactions)
+    LedgerBlock::from_parts(header, transactions)
 }
 
 fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBlock) {
@@ -569,7 +559,7 @@ async fn get_block_genesis_roundtrips_and_reports_empty_txs() {
     let handler = find_handler(&handlers, "getblock");
 
     let genesis = system.genesis_block();
-    let genesis_hash = genesis.hash().expect("genesis hash");
+    let genesis_hash = genesis.hash();
 
     let params = [Value::Number(0u32.into())];
     let result = (handler.callback())(&server, &params).expect("get genesis block");

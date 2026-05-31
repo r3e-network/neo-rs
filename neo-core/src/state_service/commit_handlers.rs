@@ -12,7 +12,7 @@ use std::thread::JoinHandle;
 
 use crate::error::{CoreError, CoreResult};
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
-use crate::ledger::{block::Block, blockchain_application_executed::ApplicationExecuted};
+use crate::ledger::{Block, blockchain_application_executed::ApplicationExecuted};
 use crate::persistence::data_cache::DataCache;
 use crate::state_service::StateStore;
 use crate::unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
@@ -174,7 +174,7 @@ impl CommittedHandler for StateServiceCommitHandlers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ledger::block_header::BlockHeader;
+    use crate::ledger::BlockHeader;
     use crate::smart_contract::{StorageItem, StorageKey};
     use crate::state_service::state_store::{StateServiceSettings, StateStoreBackend};
     use crate::{UInt160, UInt256, Witness};
@@ -207,8 +207,8 @@ mod tests {
     }
 
     fn test_block(index: u32) -> Block {
-        Block::new(
-            BlockHeader::new(
+        Block::from_parts(
+            BlockHeader::new_with_witnesses(
                 0,
                 UInt256::zero(),
                 UInt256::zero(),

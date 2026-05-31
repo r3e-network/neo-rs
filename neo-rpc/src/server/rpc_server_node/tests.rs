@@ -155,7 +155,7 @@ fn build_signed_block(
         .expect("prev trimmed query")
         .expect("prev trimmed block");
     let prev_index = prev_trimmed.header.index();
-    let prev_timestamp = prev_trimmed.header.timestamp;
+    let prev_timestamp = prev_trimmed.header.timestamp();
 
     let validators = settings.standby_validators();
     let next_consensus = NativeHelpers::get_bft_address(&validators);

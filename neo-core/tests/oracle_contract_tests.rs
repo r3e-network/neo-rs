@@ -1,5 +1,5 @@
 use neo_crypto::{ECCurve, ECPoint, Crypto, Secp256r1Crypto};
-use neo_core::ledger::{block::Block, block_header::BlockHeader};
+use neo_core::ledger::{Block, BlockHeader};
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{
@@ -1057,13 +1057,11 @@ fn oracle_post_persist_cleans_known_requests_and_mints_gas_for_designated_nodes(
         StackItem::from_byte_string(b"payload".to_vec()),
     );
 
-    let header = BlockHeader {
-        index: 7,
-        timestamp: 1_700_000_000,
-        ..Default::default()
-    };
+    let mut header = BlockHeader::default();
+    header.set_index(7);
+    header.set_timestamp(1_700_000_000);
     let tx = make_response_transaction(0, OracleResponseCode::Success, Vec::new());
-    let block = Block::new(header, vec![tx]);
+    let block = Block::from_parts(header, vec![tx]);
     let mut engine = setup_post_persist_engine(Arc::clone(&snapshot), block);
 
     let role_contract = RoleManagement::new();
@@ -1111,13 +1109,11 @@ fn oracle_post_persist_cleans_known_requests_and_mints_gas_for_designated_nodes(
 #[test]
 fn oracle_post_persist_ignores_unknown_response_ids() {
     let snapshot = Arc::new(DataCache::new(false));
-    let header = BlockHeader {
-        index: 7,
-        timestamp: 1_700_000_000,
-        ..Default::default()
-    };
+    let mut header = BlockHeader::default();
+    header.set_index(7);
+    header.set_timestamp(1_700_000_000);
     let tx = make_response_transaction(42, OracleResponseCode::Success, Vec::new());
-    let block = Block::new(header, vec![tx]);
+    let block = Block::from_parts(header, vec![tx]);
     let mut engine = setup_post_persist_engine(Arc::clone(&snapshot), block);
 
     let role_contract = RoleManagement::new();

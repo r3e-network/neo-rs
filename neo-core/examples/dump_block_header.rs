@@ -29,15 +29,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_block(&cache, HashOrIndex::Index(block_idx))?
         .ok_or("block not found")?;
     let h = &block.header;
-    println!("version={}", h.version);
-    println!("prev_hash=0x{}", hex::encode(h.previous_hash.as_bytes()));
-    println!("merkle_root=0x{}", hex::encode(h.merkle_root.as_bytes()));
-    println!("timestamp={}", h.timestamp);
-    println!("nonce={}", h.nonce);
-    println!("index={}", h.index);
-    println!("primary_index={}", h.primary_index);
-    println!("next_consensus={}", h.next_consensus);
-    if let Some(w) = h.witnesses.first() {
+    println!("version={}", h.version());
+    println!("prev_hash=0x{}", hex::encode(h.prev_hash().as_bytes()));
+    println!("merkle_root=0x{}", hex::encode(h.merkle_root().as_bytes()));
+    println!("timestamp={}", h.timestamp());
+    println!("nonce={}", h.nonce());
+    println!("index={}", h.index());
+    println!("primary_index={}", h.primary_index());
+    println!("next_consensus={}", h.next_consensus());
+    if let Some(w) = [&h.witness].first() {
         println!("witness_inv_b64={}", BASE64.encode(w.invocation_script()));
         println!("witness_ver_b64={}", BASE64.encode(w.verification_script()));
     }

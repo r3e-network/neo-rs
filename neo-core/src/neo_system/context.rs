@@ -16,7 +16,6 @@ use crate::runtime::{ActorSystemHandle, EventStreamHandle};
 use tracing::{trace, warn};
 
 use super::actors::TransactionRouterHandle;
-use super::converters::{convert_ledger_block, convert_ledger_header};
 use super::registry::ServiceRegistry;
 use super::relay::{LEDGER_HYDRATION_WINDOW, RelayExtensibleCache, RelayExtensibleEntry};
 use super::system::{ReadinessStatus, STATE_STORE_SERVICE};
@@ -460,7 +459,7 @@ impl NeoSystemContext {
         for index in start..=height {
             match ledger_contract.get_block(store_cache, HashOrIndex::Index(index)) {
                 Ok(Some(block)) => {
-                    let payload_block = convert_ledger_block(block);
+                    let payload_block = block;
                     let header_clone = payload_block.header.clone();
                     // insert_block will populate hash/header caches and advance height markers.
                     match ledger.insert_block(payload_block) {
@@ -520,7 +519,7 @@ impl NeoSystemContext {
             .get_block(&store_cache, HashOrIndex::Hash(*hash))
             .ok()
             .flatten()
-            .map(convert_ledger_block)
+            
     }
 
     /// Attempts to retrieve an extensible payload by hash.
@@ -639,7 +638,7 @@ impl NeoSystemContext {
 
         while headers.len() < count {
             match ledger_contract.get_block(&store_cache, HashOrIndex::Index(next_index)) {
-                Ok(Some(block)) => headers.push(convert_ledger_header(block.header)),
+                Ok(Some(block)) => headers.push(block.header),
                 _ => break,
             }
             next_index = next_index.saturating_add(1);

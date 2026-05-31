@@ -197,7 +197,7 @@ fn replay_block_294369_debug() {
     )]);
 
     // Block 294,369 from mainnet RPC getblock
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         u256("0x0bfb4028cce5f3914d103e4cc38370baf38cdf0895be5dec2dc51321b565c650"),
         u256("0x0000000000000000000000000000000000000000000000000000000000000000"), // filled by block
@@ -208,7 +208,7 @@ fn replay_block_294369_debug() {
         UInt160::from_address("NSiVJYZej4XsxG5CUpdwn7VRQk8iiiDMPM").expect("nextconsensus"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx1.clone(), tx2.clone()]));
+    let block = Arc::new(Block::from_parts(header, vec![tx1.clone(), tx2.clone()]));
 
     let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
         TriggerType::OnPersist,

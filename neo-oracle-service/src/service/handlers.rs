@@ -10,7 +10,7 @@ impl neo_core::i_event_handlers::CommittingHandler for OracleService {
     fn blockchain_committing_handler(
         &self,
         system: &dyn std::any::Any,
-        _block: &neo_core::ledger::block::Block,
+        _block: &neo_core::ledger::Block,
         snapshot: &DataCache,
         _application_executed_list: &[neo_core::ledger::blockchain_application_executed::ApplicationExecuted],
     ) {

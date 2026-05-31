@@ -1,7 +1,7 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
 use neo_core::i_event_handlers::{CommittedHandler, CommittingHandler};
-use neo_core::ledger::block::Block as LedgerBlock;
+use neo_core::ledger::Block as LedgerBlock;
 use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
 use neo_core::neo_system::NeoSystem;
 use neo_core::persistence::{DataCache, Store, StoreSnapshot};

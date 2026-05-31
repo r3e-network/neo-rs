@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
-use super::converters::convert_payload_block;
 
 // Type aliases for complex closure types
 type StorageGetFn = Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync>;
@@ -16,7 +15,7 @@ type StorageFindFn =
 use super::NeoSystem;
 use crate::error::{CoreError, CoreResult};
 use crate::events::PluginEvent;
-use crate::ledger::block::Block as LedgerBlock;
+use crate::ledger::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::network::p2p::payloads::block::Block;
 use crate::persistence::data_cache::{DataCache, DataCacheConfig};
@@ -182,7 +181,7 @@ impl NeoSystem {
             None
         };
 
-        let ledger_block = convert_payload_block(&block);
+        let mut ledger_block = block.clone();
         let tx_count = ledger_block.transactions.len() as u64;
         let persisting_block = Arc::new(ledger_block.clone());
         let base_cache_config = DataCacheConfig {

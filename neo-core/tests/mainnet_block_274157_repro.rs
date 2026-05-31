@@ -156,7 +156,7 @@ fn replay_block_274157_debug() {
         "DCECcCBOlRTJboIjs+ZDa3mu4PKIn1OLPDZV1LtmUwUf5pxBVuezJw==",
     )]);
 
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         u256("0x42f6d000000000000000000000000000000000000000000000000000000042f6"),
         u256("0x27d8e5db1db58b5110337ed34241782505f05653dc56c55eb3d7e7af4041d7e9"),
@@ -167,7 +167,7 @@ fn replay_block_274157_debug() {
         UInt160::from_address("NSiVJYZej4XsxG5CUpdwn7VRQk8iiiDMPM").expect("nextconsensus"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx.clone()]));
+    let block = Arc::new(Block::from_parts(header, vec![tx.clone()]));
 
     let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
         TriggerType::OnPersist,

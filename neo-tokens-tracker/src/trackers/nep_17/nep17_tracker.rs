@@ -105,7 +105,7 @@ impl Nep17Tracker {
         if record.from != UInt160::zero() {
             let key = Nep17TransferKey::new(
                 record.from,
-                block.header.timestamp,
+                block.header.timestamp(),
                 record.asset,
                 *transfer_index,
             );
@@ -121,7 +121,7 @@ impl Nep17Tracker {
         if record.to != UInt160::zero() {
             let key = Nep17TransferKey::new(
                 record.to,
-                block.header.timestamp,
+                block.header.timestamp(),
                 record.asset,
                 *transfer_index,
             );

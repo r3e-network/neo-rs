@@ -177,7 +177,7 @@ mod tests {
         let ledger = LedgerContract::new();
         let snapshot = DataCache::new(false);
         let tx = make_unserializable_transaction();
-        let block = Block::new(BlockHeader::default(), vec![tx.clone()]);
+        let block = Block::from_parts(BlockHeader::default(), vec![tx.clone()]);
         let tx_states = vec![PersistedTransactionState::new(&tx, block.index())];
 
         assert!(ledger

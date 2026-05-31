@@ -10,7 +10,7 @@ use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
 use neo_core::ledger::{
-    block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
+    Block as LedgerBlock, BlockHeader as LedgerBlockHeader,
 };
 use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::{
@@ -281,7 +281,7 @@ impl RpcServerBlockchain {
                     .get_block(&store, HashOrIndex::Index(block_index))
                     .map_err(internal_error)?
                 {
-                    obj.insert("blocktime".to_string(), json!(block.header.timestamp));
+                    obj.insert("blocktime".to_string(), json!(block.header.timestamp()));
                 }
             }
         }
@@ -639,20 +639,15 @@ impl RpcServerBlockchain {
 
     fn convert_ledger_header(header: &LedgerBlockHeader) -> Header {
         let mut converted = Header::new();
-        converted.set_version(header.version);
-        converted.set_prev_hash(header.previous_hash);
-        converted.set_merkle_root(header.merkle_root);
-        converted.set_timestamp(header.timestamp);
-        converted.set_nonce(header.nonce);
-        converted.set_index(header.index);
-        converted.set_primary_index(header.primary_index);
-        converted.set_next_consensus(header.next_consensus);
-        let witness = header
-            .witnesses
-            .first()
-            .map(Self::convert_witness)
-            .unwrap_or_default();
-        converted.witness = witness;
+        converted.set_version(header.version());
+        converted.set_prev_hash(header.prev_hash().clone());
+        converted.set_merkle_root(header.merkle_root().clone());
+        converted.set_timestamp(header.timestamp());
+        converted.set_nonce(header.nonce());
+        converted.set_index(header.index());
+        converted.set_primary_index(header.primary_index());
+        converted.set_next_consensus(header.next_consensus().clone());
+        converted.witness = Self::convert_witness(&header.witness);
         converted
     }
 

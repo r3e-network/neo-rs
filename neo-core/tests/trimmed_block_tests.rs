@@ -1,5 +1,5 @@
 use chrono::{TimeZone, Utc};
-use neo_core::ledger::block_header::BlockHeader;
+use neo_core::ledger::BlockHeader;
 use neo_core::ledger::Block;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::transaction::Transaction;
@@ -19,7 +19,7 @@ fn sample_witness() -> Witness {
 }
 
 fn trimmed_block_with_no_transactions() -> TrimmedBlock {
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01")
             .unwrap(),
@@ -45,12 +45,12 @@ fn transaction_with_tail(byte: u8) -> Transaction {
 fn trimmed_block_header_fields_match() {
     let block = trimmed_block_with_no_transactions();
     assert_eq!(
-        block.header.previous_hash,
+        block.header.prev_hash().clone(),
         UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01")
             .unwrap()
     );
     assert_eq!(
-        block.header.merkle_root,
+        block.header.merkle_root().clone(),
         UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff02")
             .unwrap()
     );
@@ -78,7 +78,7 @@ fn trimmed_block_clone_produces_independent_copy() {
         ];
 
     let mut clone = original.clone();
-    clone.header.index += 1;
+    clone.header.set_index(clone.header.index() + 1);
 
     let mut writer = BinaryWriter::new();
     original.serialize(&mut writer).expect("serialize original");
@@ -89,7 +89,7 @@ fn trimmed_block_clone_produces_independent_copy() {
     let clone_bytes = writer.into_bytes();
 
     assert_ne!(original_bytes, clone_bytes);
-    assert_ne!(original.header.index, clone.header.index);
+    assert_ne!(original.header.index(), clone.header.index());
 }
 
 #[test]
@@ -111,14 +111,14 @@ fn trimmed_block_serialization_roundtrips() {
     assert_eq!(deserialized.hash(), block.hash());
     assert_eq!(deserialized.hashes(), block.hashes());
     assert_eq!(
-        deserialized.header.next_consensus,
-        block.header.next_consensus
+        deserialized.header.next_consensus().clone(),
+        block.header.next_consensus().clone()
     );
 }
 
 #[test]
 fn trimmed_block_from_block_collects_transaction_hashes() {
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::parse("0x1000000000000000000000000000000000000000000000000000000000000000")
             .unwrap(),
@@ -136,7 +136,7 @@ fn trimmed_block_from_block_collects_transaction_hashes() {
     let mut tx2 = transaction_with_tail(0x02);
     tx2.set_nonce(1234);
 
-    let block = Block::new(header.clone(), vec![tx1.clone(), tx2.clone()]);
+    let block = Block::from_parts(header.clone(), vec![tx1.clone(), tx2.clone()]);
 
     let trimmed = TrimmedBlock::from_block(&block);
     let hashes: Vec<UInt256> = vec![tx1.hash(), tx2.hash()];

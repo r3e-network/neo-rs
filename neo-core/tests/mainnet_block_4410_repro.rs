@@ -48,14 +48,12 @@ fn open_state_store() -> StateStore {
 }
 
 fn block_4410() -> Block {
-    let header = BlockHeader {
-        index: 4410,
-        timestamp: 1_627_972_036_949,
-        primary_index: 6,
-        next_consensus: u160_from_address("NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1"),
-        ..Default::default()
-    };
-    Block::new(header, Vec::new())
+    let mut header = BlockHeader::default();
+    header.set_index(4410);
+    header.set_timestamp(1_627_972_036_949);
+    header.set_primary_index(6);
+    header.set_next_consensus(u160_from_address("NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1"));
+    Block::from_parts(header, Vec::new())
 }
 
 fn tracked_suffixes(cache: &DataCache, contract_id: i32, prefix: u8) -> Vec<(Vec<u8>, Trackable)> {

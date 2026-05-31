@@ -94,7 +94,7 @@ impl RpcBlockHeader {
             parsed_witnesses.push(RpcUtility::witness_from_json(witness_obj)?);
         }
 
-        let header = BlockHeader::new(
+        let header = BlockHeader::new_with_witnesses(
             version,
             previous_hash,
             merkle_root,
@@ -136,36 +136,36 @@ impl RpcBlockHeader {
         json.insert("size".to_string(), JToken::Number(header.size() as f64));
         json.insert(
             "version".to_string(),
-            JToken::Number(f64::from(header.version)),
+            JToken::Number(f64::from(header.version())),
         );
         json.insert(
             "previousblockhash".to_string(),
-            JToken::String(header.previous_hash.to_string()),
+            JToken::String(header.prev_hash().to_string()),
         );
         json.insert(
             "merkleroot".to_string(),
-            JToken::String(header.merkle_root.to_string()),
+            JToken::String(header.merkle_root().to_string()),
         );
-        json.insert("time".to_string(), JToken::Number(header.timestamp as f64));
+        json.insert("time".to_string(), JToken::Number(header.timestamp() as f64));
         json.insert(
             "nonce".to_string(),
-            JToken::String(format!("{:016X}", header.nonce)),
+            JToken::String(format!("{:016X}", header.nonce())),
         );
-        json.insert("index".to_string(), JToken::Number(f64::from(header.index)));
+        json.insert("index".to_string(), JToken::Number(f64::from(header.index())));
         json.insert(
             "primary".to_string(),
-            JToken::Number(f64::from(header.primary_index)),
+            JToken::Number(f64::from(header.primary_index())),
         );
         json.insert(
             "nextconsensus".to_string(),
             JToken::String(WalletHelper::to_address(
-                &header.next_consensus,
+                header.next_consensus(),
                 protocol_settings.address_version,
             )),
         );
         json.insert(
             "witnesses".to_string(),
-            object_array(&header.witnesses, witness_to_json),
+            object_array(&[header.witness.clone()], witness_to_json),
         );
         json.insert(
             "confirmations".to_string(),
@@ -240,12 +240,12 @@ mod tests {
         let settings = ProtocolSettings::default();
         let rpc_header = RpcBlockHeader::from_json(&json, &settings).expect("should parse");
 
-        assert_eq!(rpc_header.header.version, 0);
-        assert_eq!(rpc_header.header.timestamp, 123);
-        assert_eq!(rpc_header.header.nonce, 42);
+        assert_eq!(rpc_header.header.version(), 0);
+        assert_eq!(rpc_header.header.timestamp(), 123);
+        assert_eq!(rpc_header.header.nonce(), 42);
         assert_eq!(rpc_header.confirmations, 8);
         assert!(rpc_header.next_block_hash.is_some());
-        assert_eq!(rpc_header.header.witnesses.len(), 1);
+        // header carries exactly one witness by type (single `witness` field)
     }
 
     #[test]

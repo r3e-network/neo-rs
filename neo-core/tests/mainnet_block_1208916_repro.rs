@@ -155,7 +155,7 @@ fn replay_block_1208916_assert_csharp_root() {
     tx.set_script(BASE64.decode(TX_SCRIPT.trim()).expect("tx script"));
     tx.set_witnesses(vec![witness(TX_INV.trim(), TX_VER.trim())]);
 
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         u256("0xd0fc0d09c1a3d083126c37b7ce0dffba901975cb71f568eec979f7e6118ebdf1"),
         u256("0xa34897145bd5ba320365b26a05d5cd0a0145da8d2db56fe7311cc12b0e7707e7"),
@@ -166,7 +166,7 @@ fn replay_block_1208916_assert_csharp_root() {
         u160("0x682cca3ebdc66210e5847d7f8115846586079d4a"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx.clone()]));
+    let block = Arc::new(Block::from_parts(header, vec![tx.clone()]));
 
     // OnPersist
     let mut on_persist_engine = ApplicationEngine::new_with_shared_block(

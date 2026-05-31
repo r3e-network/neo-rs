@@ -1,7 +1,7 @@
 use crate::{
     error::CoreResult,
     ledger::{
-        block::Block,
+        Block,
         blockchain_application_executed::ApplicationExecuted,
     },
     network::message::Message,

@@ -333,9 +333,8 @@ pub mod vm_runtime;
 /// Re-export of ledger types.
 pub mod neo_ledger {
     pub use crate::ledger::{
-        block::Block, block_header::BlockHeader,
         blockchain_application_executed::ApplicationExecuted, header_cache::HeaderCache,
-        memory_pool::MemoryPool, verify_result::VerifyResult,
+        memory_pool::MemoryPool, verify_result::VerifyResult, Block, BlockHeader,
     };
 }
 

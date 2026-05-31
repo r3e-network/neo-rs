@@ -116,7 +116,7 @@ impl RoleManagement {
         let persisting_block = engine
             .persisting_block()
             .ok_or_else(|| Error::invalid_operation("Persisting block is not available"))?;
-        let persisting_index = persisting_block.header.index;
+        let persisting_index = persisting_block.header.index();
         let designation_index = persisting_index
             .checked_add(1)
             .ok_or_else(|| Error::invalid_operation("Block index overflowed"))?;
@@ -291,7 +291,7 @@ use crate::neo_vm::StackItem;
     }
 
     fn make_block(index: u32, timestamp: u64) -> Block {
-        let header = BlockHeader::new(
+        let header = BlockHeader::new_with_witnesses(
             0,
             UInt256::zero(),
             UInt256::zero(),
@@ -302,7 +302,7 @@ use crate::neo_vm::StackItem;
             UInt160::zero(),
             vec![Witness::empty()],
         );
-        Block::new(header, Vec::new())
+        Block::from_parts(header, Vec::new())
     }
 
     fn make_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {

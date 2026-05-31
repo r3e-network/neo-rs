@@ -71,7 +71,7 @@ fn tx_203262() -> Transaction {
 }
 
 fn block_203262(tx: Transaction) -> Block {
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         u256("0xf862ec72f135b8cd6a40004efc2dbda09382f53bfc977bf92e160249500c4957"),
         u256("0x7cb8524fe4710d5af4fe365977b3339713a438b950e54f12d70e3106bb045b4e"),
@@ -86,7 +86,7 @@ fn block_203262(tx: Transaction) -> Block {
         )],
     );
 
-    Block::new(header, vec![tx])
+    Block::from_parts(header, vec![tx])
 }
 
 fn open_state_store() -> StateStore {

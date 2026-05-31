@@ -1,15 +1,9 @@
 use super::*;
 use crate::i_event_handlers::WalletChangedHandler;
-use crate::ledger::Block as LedgerBlock;
-use crate::ledger::{
-    block_header::BlockHeader as LedgerBlockHeader,
-    Block,
-};
+use crate::ledger::Block;
 use crate::neo_io::Serializable;
-use crate::neo_system::converters::{convert_ledger_block, convert_ledger_header};
 use crate::neo_system::relay::LEDGER_HYDRATION_WINDOW;
 use crate::neo_system::NeoSystemContext;
-use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
 use crate::network::p2p::payloads::Transaction;
 use crate::network::p2p::ChannelsConfig;
 use crate::persistence::store::Store;
@@ -77,17 +71,11 @@ fn hydrate_ledger_restores_height_and_headers() {
 
     // Persist two blocks (genesis index 0 and block index 1).
     let mut persist_block = |index: u32, nonce: u64| {
-        let header = crate::ledger::block_header::BlockHeader {
-            index,
-            timestamp: index as u64,
-            nonce,
-            witnesses: vec![Witness::new()],
-            ..Default::default()
-        };
-        let block = Block {
-            header: header.clone(),
-            transactions: Vec::new(),
-        };
+        let mut header = crate::ledger::BlockHeader::default();
+        header.set_index(index);
+        header.set_timestamp(index as u64);
+        header.set_nonce(nonce);
+        let block = Block::from_parts(header.clone(), Vec::new());
         let hash = block.hash();
 
         let key =
@@ -140,17 +128,11 @@ fn hydrate_ledger_respects_bounded_window() {
     let total_blocks = LEDGER_HYDRATION_WINDOW + 5;
     let mut last_hash = UInt256::zero();
     for index in 0..=total_blocks {
-        let header = crate::ledger::block_header::BlockHeader {
-            index,
-            timestamp: index as u64,
-            nonce: index as u64,
-            witnesses: vec![Witness::new()],
-            ..Default::default()
-        };
-        let block = Block {
-            header: header.clone(),
-            transactions: Vec::new(),
-        };
+        let mut header = crate::ledger::BlockHeader::default();
+        header.set_index(index);
+        header.set_timestamp(index as u64);
+        header.set_nonce(index as u64);
+        let block = Block::from_parts(header.clone(), Vec::new());
         let hash = block.hash();
 
         let key =
@@ -197,62 +179,6 @@ fn sample_u256(byte: u8) -> UInt256 {
 
 fn sample_u160(byte: u8) -> UInt160 {
     UInt160::from_bytes(&[byte; 20]).expect("uint160 from bytes")
-}
-
-fn sample_ledger_header() -> LedgerBlockHeader {
-    let witness = crate::Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
-    LedgerBlockHeader {
-        version: 1,
-        previous_hash: sample_u256(1),
-        merkle_root: sample_u256(2),
-        timestamp: 42,
-        nonce: 7,
-        index: 10,
-        primary_index: 3,
-        next_consensus: sample_u160(5),
-        witnesses: vec![witness],
-        ..Default::default()
-    }
-}
-
-#[test]
-fn convert_ledger_header_preserves_fields() {
-    let header = sample_ledger_header();
-    let converted = convert_ledger_header(header.clone());
-
-    assert_eq!(converted.version(), 1);
-    assert_eq!(converted.prev_hash(), &sample_u256(1));
-    assert_eq!(converted.merkle_root(), &sample_u256(2));
-    assert_eq!(converted.timestamp(), 42);
-    assert_eq!(converted.nonce(), 7);
-    assert_eq!(converted.index(), 10);
-    assert_eq!(converted.primary_index(), 3);
-    assert_eq!(converted.next_consensus(), &sample_u160(5));
-
-    let expected_witness = PayloadWitness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
-    assert_eq!(
-        converted.witness.invocation_script,
-        expected_witness.invocation_script
-    );
-    assert_eq!(
-        converted.witness.verification_script,
-        expected_witness.verification_script
-    );
-
-    assert_eq!(header.witnesses.len(), 1);
-}
-
-#[test]
-fn convert_ledger_block_transfers_transactions() {
-    let header = sample_ledger_header();
-    let txs = Vec::new();
-    let ledger_block = LedgerBlock {
-        header,
-        transactions: txs.clone(),
-    };
-    let block = convert_ledger_block(ledger_block);
-    assert_eq!(block.transactions.len(), txs.len());
-    assert_eq!(block.header.index(), 10);
 }
 
 #[derive(Default)]

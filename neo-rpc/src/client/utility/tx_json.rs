@@ -29,36 +29,36 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     json.insert("size".to_string(), JToken::Number(block_size as f64));
     json.insert(
         "version".to_string(),
-        JToken::Number(f64::from(header.version)),
+        JToken::Number(f64::from(header.version())),
     );
     json.insert(
         "previousblockhash".to_string(),
-        JToken::String(header.previous_hash.to_string()),
+        JToken::String(header.prev_hash().to_string()),
     );
     json.insert(
         "merkleroot".to_string(),
-        JToken::String(header.merkle_root.to_string()),
+        JToken::String(header.merkle_root().to_string()),
     );
-    json.insert("time".to_string(), JToken::Number(header.timestamp as f64));
+    json.insert("time".to_string(), JToken::Number(header.timestamp() as f64));
     json.insert(
         "nonce".to_string(),
-        JToken::String(format!("{:016X}", header.nonce)),
+        JToken::String(format!("{:016X}", header.nonce())),
     );
-    json.insert("index".to_string(), JToken::Number(f64::from(header.index)));
+    json.insert("index".to_string(), JToken::Number(f64::from(header.index())));
     json.insert(
         "primary".to_string(),
-        JToken::Number(f64::from(header.primary_index)),
+        JToken::Number(f64::from(header.primary_index())),
     );
     json.insert(
         "nextconsensus".to_string(),
         JToken::String(WalletHelper::to_address(
-            &header.next_consensus,
+            header.next_consensus(),
             protocol_settings.address_version,
         )),
     );
     json.insert(
         "witnesses".to_string(),
-        object_array(&header.witnesses, witness_to_json),
+        object_array(&[header.witness.clone()], witness_to_json),
     );
     json.insert(
         "tx".to_string(),
@@ -91,7 +91,7 @@ pub fn block_from_json(
         },
     )?;
 
-    Ok(Block::new(header, transactions))
+    Ok(Block::from_parts(header, transactions))
 }
 
 /// Converts a transaction to JSON

@@ -89,7 +89,7 @@ impl Serializable for Header {
             primary_index,
             next_consensus,
             witness,
-            _hash: None,
+            _hash: parking_lot::Mutex::new(None),
         })
     }
 }

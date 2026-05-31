@@ -13,9 +13,7 @@
 //! - Event callbacks for transaction lifecycle
 
 /// Block structure and operations.
-pub mod block;
 /// Block header structure.
-pub mod block_header;
 /// Blockchain state management.
 #[cfg(feature = "runtime")]
 pub mod blockchain;
@@ -42,9 +40,12 @@ pub mod transaction_router;
 pub mod transaction_verification_context;
 pub mod verify_result;
 
-// Re-export commonly used types
-pub use block::Block;
-pub use block_header::BlockHeader;
+// Re-export commonly used types. The block + header types are the canonical
+// payloads ones (the former ledger Block/BlockHeader were a byte-identical
+// duplicate, collapsed in B5). `BlockHeader` is kept as an alias of the
+// payloads `Header` for back-compat.
+pub use crate::network::p2p::payloads::block::Block;
+pub use crate::network::p2p::payloads::header::Header as BlockHeader;
 #[cfg(feature = "runtime")]
 pub use blockchain::{
     Blockchain, BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import,

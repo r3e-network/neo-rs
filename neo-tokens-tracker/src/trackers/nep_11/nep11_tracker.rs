@@ -93,7 +93,7 @@ impl Nep11Tracker {
         if record.from != UInt160::zero() {
             let key = Nep11TransferKey::new(
                 record.from,
-                block.header.timestamp,
+                block.header.timestamp(),
                 record.asset,
                 token_id.to_vec(),
                 *transfer_index,
@@ -110,7 +110,7 @@ impl Nep11Tracker {
         if record.to != UInt160::zero() {
             let key = Nep11TransferKey::new(
                 record.to,
-                block.header.timestamp,
+                block.header.timestamp(),
                 record.asset,
                 token_id.to_vec(),
                 *transfer_index,

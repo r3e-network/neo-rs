@@ -209,7 +209,7 @@ fn replay_block_1074782_debug() {
     tx2.set_script(BASE64.decode(TX2_SCRIPT.trim()).expect("tx2 script"));
     tx2.set_witnesses(vec![witness(TX2_INV.trim(), TX2_VER.trim())]);
 
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         u256("0x11002b37048d3c6c8745214dcf9a0809d9d399e71d74d08aa7ca830cc8940f65"),
         u256("0x0000000000000000000000000000000000000000000000000000000000000000"),
@@ -220,7 +220,7 @@ fn replay_block_1074782_debug() {
         UInt160::from_address("NSiVJYZej4XsxG5CUpdwn7VRQk8iiiDMPM").expect("nextconsensus"),
         vec![],
     );
-    let block = Arc::new(Block::new(
+    let block = Arc::new(Block::from_parts(
         header,
         vec![tx0.clone(), tx1.clone(), tx2.clone()],
     ));

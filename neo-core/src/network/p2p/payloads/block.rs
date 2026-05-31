@@ -41,14 +41,28 @@ impl Block {
         }
     }
 
+    /// Creates a block from a header and its transactions. Replaces the former
+    /// `ledger::Block::from_parts(header, transactions)`.
+    pub fn from_parts(header: Header, transactions: Vec<Transaction>) -> Self {
+        Self {
+            header,
+            transactions,
+        }
+    }
+
+    /// Returns the block's primary (consensus) witness.
+    pub fn primary_witness(&self) -> Option<&crate::Witness> {
+        Some(&self.header.witness)
+    }
+
     /// Gets the hash of the block.
-    pub fn hash(&mut self) -> UInt256 {
-        Header::hash(&mut self.header)
+    pub fn hash(&self) -> UInt256 {
+        Header::hash(&self.header)
     }
 
     /// Gets the hash of the block, failing closed if the header cannot be
     /// serialized.
-    pub fn try_hash(&mut self) -> CoreResult<UInt256> {
+    pub fn try_hash(&self) -> CoreResult<UInt256> {
         self.header.try_hash()
     }
 

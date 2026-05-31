@@ -22,7 +22,7 @@ pub fn create_genesis_block(settings: &ProtocolSettings) -> Block {
     } else {
         NativeHelpers::get_bft_address(&validators)
     };
-    let header = BlockHeader::new(
+    let header = BlockHeader::from_parts(
         0,
         UInt256::zero(),
         UInt256::zero(),
@@ -31,13 +31,10 @@ pub fn create_genesis_block(settings: &ProtocolSettings) -> Block {
         0,
         0,
         next_consensus,
-        vec![Witness::new_with_scripts(
-            Vec::new(),
-            vec![OpCode::PUSH1.byte()],
-        )],
+        Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1.byte()]),
     );
 
-    Block::new(header, Vec::new())
+    Block::from_parts(header, Vec::new())
 }
 
 #[cfg(test)]
@@ -49,14 +46,14 @@ mod tests {
     fn genesis_block_has_correct_index() {
         let settings = ProtocolSettings::default_settings();
         let genesis = create_genesis_block(&settings);
-        assert_eq!(genesis.header.index, 0);
+        assert_eq!(genesis.header.index(), 0);
     }
 
     #[test]
     fn genesis_block_has_zero_prev_hash() {
         let settings = ProtocolSettings::default_settings();
         let genesis = create_genesis_block(&settings);
-        assert_eq!(genesis.header.previous_hash, UInt256::zero());
+        assert_eq!(genesis.header.prev_hash().clone(), UInt256::zero());
     }
 
     #[test]
@@ -70,19 +67,19 @@ mod tests {
     fn genesis_block_has_correct_timestamp() {
         let settings = ProtocolSettings::default_settings();
         let genesis = create_genesis_block(&settings);
-        assert_eq!(genesis.header.timestamp, GENESIS_TIMESTAMP_MS);
+        assert_eq!(genesis.header.timestamp(), GENESIS_TIMESTAMP_MS);
     }
 
     #[test]
     fn mainnet_genesis_next_consensus_matches_csharp() {
         let settings = ProtocolSettings::mainnet();
-        let genesis = create_genesis_block(&settings);
+        let mut genesis = create_genesis_block(&settings);
         let expected = Helper::to_script_hash(
             "NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1",
             settings.address_version,
         )
         .expect("reference address should decode");
-        assert_eq!(genesis.header.next_consensus, expected);
+        assert_eq!(genesis.header.next_consensus().clone(), expected);
     }
 
     #[test]

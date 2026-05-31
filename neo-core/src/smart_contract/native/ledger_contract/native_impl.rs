@@ -101,7 +101,7 @@ impl NativeContract for LedgerContract {
         let block = engine
             .persisting_block()
             .ok_or_else(|| Error::native_contract("No current block available for persistence"))?;
-        let block_clone = block.clone();
+        let mut block_clone = block.clone();
         let hash = block_clone.hash();
         let index = block_clone.index();
         self.update_current_block_state(snapshot.as_ref(), &hash, index)?;

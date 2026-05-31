@@ -23,7 +23,7 @@ mod serialization;
 mod verification;
 
 /// Represents the header of a block.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Header {
     version: u32,
     prev_hash: UInt256,
@@ -37,8 +37,27 @@ pub struct Header {
     /// The witness of the block.
     pub witness: Witness,
 
+    // Interior-mutable lazy hash cache (so `hash()` is `&self`, matching the
+    // former ledger `BlockHeader`). Excluded from (de)serialization and Clone.
     #[serde(skip)]
-    _hash: Option<UInt256>,
+    _hash: parking_lot::Mutex<Option<UInt256>>,
+}
+
+impl Clone for Header {
+    fn clone(&self) -> Self {
+        Self {
+            version: self.version,
+            prev_hash: self.prev_hash,
+            merkle_root: self.merkle_root,
+            timestamp: self.timestamp,
+            nonce: self.nonce,
+            index: self.index,
+            primary_index: self.primary_index,
+            next_consensus: self.next_consensus,
+            witness: self.witness.clone(),
+            _hash: parking_lot::Mutex::new(*self._hash.lock()),
+        }
+    }
 }
 
 impl Header {
@@ -54,7 +73,63 @@ impl Header {
             primary_index: 0,
             next_consensus: UInt160::default(),
             witness: Witness::new(),
-            _hash: None,
+            _hash: parking_lot::Mutex::new(None),
+        }
+    }
+
+    /// Back-compat constructor taking a witness vector (Neo N3 headers carry
+    /// exactly one witness; the first is used). Replaces the former
+    /// `ledger::BlockHeader::new_with_witnesses(.., witnesses: Vec<Witness>)`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_witnesses(
+        version: u32,
+        prev_hash: UInt256,
+        merkle_root: UInt256,
+        timestamp: u64,
+        nonce: u64,
+        index: u32,
+        primary_index: u8,
+        next_consensus: UInt160,
+        witnesses: Vec<Witness>,
+    ) -> Self {
+        Self::from_parts(
+            version,
+            prev_hash,
+            merkle_root,
+            timestamp,
+            nonce,
+            index,
+            primary_index,
+            next_consensus,
+            witnesses.into_iter().next().unwrap_or_else(Witness::new),
+        )
+    }
+
+    /// Creates a header from all of its parts (Neo N3 headers carry exactly one
+    /// witness). Replaces the former `ledger::BlockHeader::new_with_witnesses(.., Vec<Witness>)`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        version: u32,
+        prev_hash: UInt256,
+        merkle_root: UInt256,
+        timestamp: u64,
+        nonce: u64,
+        index: u32,
+        primary_index: u8,
+        next_consensus: UInt160,
+        witness: Witness,
+    ) -> Self {
+        Self {
+            version,
+            prev_hash,
+            merkle_root,
+            timestamp,
+            nonce,
+            index,
+            primary_index,
+            next_consensus,
+            witness,
+            _hash: parking_lot::Mutex::new(None),
         }
     }
 
@@ -66,7 +141,7 @@ impl Header {
     /// Sets the version of the block.
     pub fn set_version(&mut self, value: u32) {
         self.version = value;
-        self._hash = None;
+        *self._hash.lock() = None;
     }
 
     /// Gets the hash of the previous block.
@@ -77,7 +152,7 @@ impl Header {
     /// Sets the hash of the previous block.
     pub fn set_prev_hash(&mut self, value: UInt256) {
         self.prev_hash = value;
-        self._hash = None;
+        *self._hash.lock() = None;
     }
 
     /// Gets the merkle root of the transactions.
@@ -88,7 +163,7 @@ impl Header {
     /// Sets the merkle root of the transactions.
     pub fn set_merkle_root(&mut self, value: UInt256) {
         self.merkle_root = value;
-        self._hash = None;
+        *self._hash.lock() = None;
     }
 
     /// Gets the timestamp of the block.
@@ -99,7 +174,7 @@ impl Header {
     /// Sets the timestamp of the block.
     pub fn set_timestamp(&mut self, value: u64) {
         self.timestamp = value;
-        self._hash = None;
+        *self._hash.lock() = None;
     }
 
     /// Gets the nonce of the block.
@@ -110,7 +185,7 @@ impl Header {
     /// Sets the nonce of the block.
     pub fn set_nonce(&mut self, value: u64) {
         self.nonce = value;
-        self._hash = None;
+        *self._hash.lock() = None;
     }
 
     /// Gets the index of the block.
@@ -121,7 +196,7 @@ impl Header {
     /// Sets the index of the block.
     pub fn set_index(&mut self, value: u32) {
         self.index = value;
-        self._hash = None;
+        *self._hash.lock() = None;
     }
 
     /// Gets the primary index of the consensus node.
@@ -132,7 +207,7 @@ impl Header {
     /// Sets the primary index of the consensus node.
     pub fn set_primary_index(&mut self, value: u8) {
         self.primary_index = value;
-        self._hash = None;
+        *self._hash.lock() = None;
     }
 
     /// Gets the next consensus address.
@@ -143,11 +218,11 @@ impl Header {
     /// Sets the next consensus address.
     pub fn set_next_consensus(&mut self, value: UInt160) {
         self.next_consensus = value;
-        self._hash = None;
+        *self._hash.lock() = None;
     }
 
     /// Gets the hash of the header.
-    pub fn hash(&mut self) -> UInt256 {
+    pub fn hash(&self) -> UInt256 {
         match self.try_hash() {
             Ok(hash) => hash,
             Err(err) => {
@@ -166,7 +241,7 @@ impl Header {
     /// optional `nextblockhash` fields on top.
     pub fn to_json(&self, settings: &ProtocolSettings) -> serde_json::Map<String, serde_json::Value> {
         use serde_json::{json, Value};
-        let hash = self.clone().hash();
+        let hash = self.hash();
         let mut json = serde_json::Map::new();
         json.insert("hash".to_string(), Value::String(hash.to_string()));
         json.insert("size".to_string(), json!(self.size()));
@@ -202,15 +277,15 @@ impl Header {
 
     /// Gets the hash of the header, failing closed if unsigned serialization
     /// fails.
-    pub fn try_hash(&mut self) -> CoreResult<UInt256> {
-        if let Some(hash) = self._hash {
+    pub fn try_hash(&self) -> CoreResult<UInt256> {
+        if let Some(hash) = *self._hash.lock() {
             return Ok(hash);
         }
 
         let hash_data = self.try_get_hash_data()?;
         // Neo N3 block hashes use single SHA-256 over the unsigned header payload.
         let hash = UInt256::from(neo_crypto::Crypto::sha256(&hash_data));
-        self._hash = Some(hash);
+        *self._hash.lock() = Some(hash);
         Ok(hash)
     }
 }
@@ -263,7 +338,7 @@ impl crate::VerifiableExt for Header {
             }
         };
 
-        vec![prev.header.next_consensus]
+        vec![prev.header.next_consensus().clone()]
     }
 
     fn witnesses(&self) -> Vec<&Witness> {

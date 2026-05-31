@@ -648,7 +648,7 @@ impl ApplicationEngine {
         }
 
         if let Some(block) = persisting_block {
-            let nonce_bytes = block.header.nonce.to_le_bytes();
+            let nonce_bytes = block.header.nonce().to_le_bytes();
             for (slot, byte) in data.iter_mut().take(8).zip(nonce_bytes.iter()) {
                 *slot ^= *byte;
             }

@@ -2,7 +2,7 @@
 
 use neo_core::error::{CoreError, CoreResult};
 use neo_core::i_event_handlers::CommittingHandler;
-use neo_core::ledger::block::Block as LedgerBlock;
+use neo_core::ledger::Block as LedgerBlock;
 use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
 use neo_core::neo_system::NeoSystem;
 use neo_core::network::p2p::payloads::block::Block as PayloadBlock;

@@ -1,5 +1,5 @@
 use crate::error::CoreError;
-use crate::ledger::{block_header::BlockHeader, Block};
+use crate::ledger::{BlockHeader, Block};
 use crate::neo_io::impl_serializable;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::neo_vm::StackItem;
@@ -74,14 +74,14 @@ impl TrimmedBlock {
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Array(vec![
             StackValue::ByteString(self.hash().to_bytes()),
-            StackValue::Integer(i64::from(self.header.version)),
-            StackValue::ByteString(self.header.previous_hash.to_bytes()),
-            StackValue::ByteString(self.header.merkle_root.to_bytes()),
-            Self::u64_stack_integer(self.header.timestamp),
-            Self::u64_stack_integer(self.header.nonce),
-            StackValue::Integer(i64::from(self.header.index)),
-            StackValue::Integer(i64::from(self.header.primary_index)),
-            StackValue::ByteString(self.header.next_consensus.to_bytes()),
+            StackValue::Integer(i64::from(self.header.version())),
+            StackValue::ByteString(self.header.prev_hash().to_bytes()),
+            StackValue::ByteString(self.header.merkle_root().to_bytes()),
+            Self::u64_stack_integer(self.header.timestamp()),
+            Self::u64_stack_integer(self.header.nonce()),
+            StackValue::Integer(i64::from(self.header.index())),
+            StackValue::Integer(i64::from(self.header.primary_index())),
+            StackValue::ByteString(self.header.next_consensus().to_bytes()),
             Self::usize_stack_integer(self.hashes.len()),
         ])
     }
@@ -126,7 +126,7 @@ mod tests {
     use neo_vm_rs::StackValue;
 
     fn sample_block() -> TrimmedBlock {
-        let header = BlockHeader::new(
+        let header = BlockHeader::new_with_witnesses(
             0,
             UInt256::from_bytes(&[1u8; 32]).unwrap(),
             UInt256::from_bytes(&[2u8; 32]).unwrap(),
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn try_from_block_rejects_unserializable_transaction_hash() {
-        let block = Block::new(
+        let block = Block::from_parts(
             BlockHeader::default(),
             vec![transaction_with_script(vec![
                 OpCode::NOP.byte();

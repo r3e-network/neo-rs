@@ -49,7 +49,7 @@ fn store_trimmed_block(snapshot: &DataCache, trimmed: &TrimmedBlock) {
 }
 
 fn make_trimmed_block(next_consensus: UInt160) -> TrimmedBlock {
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::zero(),
         UInt256::zero(),

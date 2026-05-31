@@ -227,7 +227,7 @@ impl RpcUtility {
             },
         )?;
 
-        Ok(BlockHeader::new(
+        Ok(BlockHeader::new_with_witnesses(
             version,
             previous_hash,
             merkle_root,
@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn block_roundtrip_json() {
         let witness = Witness::new_with_scripts(vec![0xAA, 0xBB], vec![0xCC, 0xDD]);
-        let header = BlockHeader::new(
+        let header = BlockHeader::new_with_witnesses(
             0,
             UInt256::zero(),
             UInt256::zero(),
@@ -616,19 +616,19 @@ mod tests {
         let mut tx = Transaction::new();
         tx.set_script(vec![9, 9, 9]);
         tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
-        let block = Block::new(header, vec![tx]);
+        let block = Block::from_parts(header, vec![tx]);
 
         let json = RpcUtility::block_to_json(&block, &ProtocolSettings::default_settings());
         let parsed =
             RpcUtility::block_from_json(&json, &ProtocolSettings::default_settings()).unwrap();
 
-        assert_eq!(parsed.header.index, block.header.index);
-        assert_eq!(parsed.header.timestamp, block.header.timestamp);
+        assert_eq!(parsed.header.index(), block.header.index());
+        assert_eq!(parsed.header.timestamp(), block.header.timestamp());
         assert_eq!(parsed.transactions.len(), 1);
         assert_eq!(parsed.transactions[0].script(), b"\t\t\t");
-        assert_eq!(parsed.header.witnesses.len(), 1);
+        // header carries exactly one witness by type (single `witness` field)
         assert_eq!(
-            parsed.header.witnesses[0].invocation_script(),
+            parsed.header.witness.invocation_script(),
             witness.invocation_script()
         );
     }

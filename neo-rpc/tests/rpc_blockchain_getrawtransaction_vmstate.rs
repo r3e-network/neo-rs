@@ -1,9 +1,7 @@
 #![cfg(feature = "server")]
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::ledger::{
-    block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
-};
+use neo_core::ledger::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
 use neo_core::network::p2p::payloads::{
     signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
@@ -55,19 +53,9 @@ fn make_ledger_block(
         neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
     };
 
-    let header = LedgerBlockHeader {
-        index,
-        previous_hash: prev_hash,
-        merkle_root,
-        timestamp: 1,
-        nonce: 0,
-        primary_index: 0,
-        next_consensus: UInt160::zero(),
-        witnesses: vec![LedgerWitness::empty()],
-        ..Default::default()
-    };
+    let header = LedgerBlockHeader::new_with_witnesses(0, prev_hash, merkle_root, 1, 0, index, 0, UInt160::zero(), vec![LedgerWitness::empty()]);
 
-    LedgerBlock::new(header, transactions)
+    LedgerBlock::from_parts(header, transactions)
 }
 
 fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBlock) {

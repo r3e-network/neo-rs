@@ -142,7 +142,7 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
 }
 
 fn make_block(index: u32, timestamp: u64) -> Block {
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::zero(),
         UInt256::zero(),
@@ -153,7 +153,7 @@ fn make_block(index: u32, timestamp: u64) -> Block {
         UInt160::zero(),
         vec![Witness::empty()],
     );
-    Block::new(header, Vec::new())
+    Block::from_parts(header, Vec::new())
 }
 
 fn make_engine(

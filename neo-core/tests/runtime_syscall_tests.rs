@@ -1,7 +1,7 @@
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_crypto::Secp256r1Crypto;
 use neo_core::ledger::Block;
-use neo_core::ledger::block_header::BlockHeader;
+use neo_core::ledger::BlockHeader;
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
@@ -278,7 +278,7 @@ fn runtime_get_trigger_returns_application() {
 #[test]
 fn runtime_get_time_returns_block_timestamp() {
     let snapshot = Arc::new(DataCache::new(false));
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::default(),
         UInt256::default(),
@@ -289,7 +289,7 @@ fn runtime_get_time_returns_block_timestamp() {
         UInt160::zero(),
         Vec::new(),
     );
-    let block = Block::new(header, Vec::new());
+    let block = Block::from_parts(header, Vec::new());
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         None,

@@ -1,6 +1,6 @@
 use super::verification::HEADER_VERIFY_GAS;
 use super::*;
-use crate::ledger::block_header::BlockHeader as LedgerBlockHeader;
+use crate::ledger::BlockHeader as LedgerBlockHeader;
 use crate::ledger::HeaderCache;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::store::Store;
@@ -81,7 +81,7 @@ fn insert_trimmed_block(store_cache: &mut StoreCache, header: &Header, block_has
         header.witness.verification_script.clone(),
     );
 
-    let ledger_header = LedgerBlockHeader::new(
+    let ledger_header = LedgerBlockHeader::new_with_witnesses(
         header.version(),
         *header.prev_hash(),
         *header.merkle_root(),
@@ -222,7 +222,7 @@ fn verify_uses_persisted_state_when_cache_empty() {
         &settings,
         prev_trimmed.index(),
         &prev_trimmed.hash(),
-        prev_trimmed.header.timestamp,
+        prev_trimmed.header.timestamp(),
     );
     assert!(
         validation.is_ok(),
@@ -233,7 +233,7 @@ fn verify_uses_persisted_state_when_cache_empty() {
     let verified = header.verify_witness_against_hash(
         &settings,
         store_cache.data_cache(),
-        &prev_trimmed.header.next_consensus,
+        &prev_trimmed.header.next_consensus().clone(),
         &header.witness,
         HEADER_VERIFY_GAS,
     );

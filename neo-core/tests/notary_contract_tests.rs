@@ -87,7 +87,7 @@ fn set_ledger_current_index(snapshot: &Arc<DataCache>, index: u32) {
 }
 
 fn make_persisting_block(index: u32, transactions: Vec<Transaction>) -> Block {
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::zero(),
         UInt256::zero(),
@@ -98,7 +98,7 @@ fn make_persisting_block(index: u32, transactions: Vec<Transaction>) -> Block {
         UInt160::zero(),
         vec![neo_core::Witness::empty()],
     );
-    Block::new(header, transactions)
+    Block::from_parts(header, transactions)
 }
 
 fn make_tx_with_signer(account: UInt160) -> Transaction {
@@ -782,7 +782,7 @@ fn check_expiration_of() {
     assert_eq!(expiration.to_u32().unwrap(), expected_till);
 
     // Withdraw own deposit after expiration.
-    persisting_block.header.index = till + 1;
+    persisting_block.header.set_index(till + 1);
     set_ledger_current_index(&snapshot, persisting_block.index());
     let ok = call_notary_bool(
         Arc::clone(&snapshot),
@@ -1051,7 +1051,7 @@ fn check_balance_of() {
     );
     assert_eq!(balance, expected_balance);
 
-    persisting_block.header.index = till + 1;
+    persisting_block.header.set_index(till + 1);
     set_ledger_current_index(&snapshot, persisting_block.index());
     let ok = call_notary_bool(
         Arc::clone(&snapshot),
@@ -1141,7 +1141,7 @@ fn check_withdraw() {
     assert!(!ok);
 
     // Good withdrawal after expiration.
-    persisting_block.header.index = till + 1;
+    persisting_block.header.set_index(till + 1);
     set_ledger_current_index(&snapshot, persisting_block.index());
     let ok = call_notary_bool(
         Arc::clone(&snapshot),

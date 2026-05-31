@@ -43,11 +43,12 @@ async fn nep17_tracker_matches_csharp_history_indexing() {
     let tx_hash = tx.hash();
     let tx_container: Arc<dyn neo_core::Verifiable> = Arc::new(tx.clone());
 
-    let block = Block::new(
-        BlockHeader {
-            index: 38_781,
-            timestamp: 1_628_511_122_592,
-            ..Default::default()
+    let block = Block::from_parts(
+        {
+            let mut h = BlockHeader::default();
+            h.set_index(38_781);
+            h.set_timestamp(1_628_511_122_592);
+            h
         },
         vec![tx.clone()],
     );
@@ -127,14 +128,14 @@ async fn nep17_tracker_matches_csharp_history_indexing() {
     assert_eq!(received.len(), 1);
 
     let (sent_key, sent_value) = &sent[0];
-    assert_eq!(sent_key.timestamp_ms(), block.header.timestamp);
+    assert_eq!(sent_key.timestamp_ms(), block.header.timestamp());
     assert_eq!(sent_key.block_xfer_notification_index(), 0);
     assert_eq!(sent_value.tx_hash, tx_hash);
     assert_eq!(sent_value.amount, BigInt::from(33i64));
     assert_eq!(sent_value.user_script_hash, recipient);
 
     let (recv_key, recv_value) = &received[0];
-    assert_eq!(recv_key.timestamp_ms(), block.header.timestamp);
+    assert_eq!(recv_key.timestamp_ms(), block.header.timestamp());
     assert_eq!(recv_key.block_xfer_notification_index(), 1);
     assert_eq!(recv_value.tx_hash, tx_hash);
     assert_eq!(recv_value.amount, BigInt::from(660i64));

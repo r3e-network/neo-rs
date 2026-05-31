@@ -127,7 +127,7 @@ fn call_get_contract(
 }
 
 fn make_block(index: u32) -> Block {
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::zero(),
         UInt256::zero(),
@@ -138,7 +138,7 @@ fn make_block(index: u32) -> Block {
         UInt160::zero(),
         vec![Witness::empty()],
     );
-    Block::new(header, Vec::new())
+    Block::from_parts(header, Vec::new())
 }
 
 #[derive(Debug, Clone, Copy)]

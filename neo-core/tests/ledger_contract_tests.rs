@@ -1,5 +1,5 @@
 use neo_core::constants::GENESIS_TIMESTAMP_MS;
-use neo_core::ledger::block_header::BlockHeader;
+use neo_core::ledger::BlockHeader;
 use neo_core::ledger::Block;
 use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::neo_vm::StackItem;
@@ -36,18 +36,8 @@ fn make_transaction(nonce: u32) -> Transaction {
 }
 
 fn make_block(index: u32, transactions: Vec<Transaction>) -> Block {
-    let header = BlockHeader {
-        index,
-        previous_hash: UInt256::zero(),
-        merkle_root: UInt256::zero(),
-        timestamp: 1,
-        nonce: 0,
-        primary_index: 0,
-        next_consensus: UInt160::zero(),
-        witnesses: vec![Witness::empty()],
-        ..Default::default()
-    };
-    Block::new(header, transactions)
+    let header = BlockHeader::new_with_witnesses(0, UInt256::zero(), UInt256::zero(), 1, 0, index, 0, UInt160::zero(), vec![Witness::empty()]);
+    Block::from_parts(header, transactions)
 }
 
 fn make_genesis_block(settings: &ProtocolSettings) -> Block {
@@ -58,7 +48,7 @@ fn make_genesis_block(settings: &ProtocolSettings) -> Block {
         NativeHelpers::get_bft_address(&validators)
     };
 
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::zero(),
         UInt256::zero(),
@@ -73,7 +63,7 @@ fn make_genesis_block(settings: &ProtocolSettings) -> Block {
         )],
     );
 
-    Block::new(header, Vec::new())
+    Block::from_parts(header, Vec::new())
 }
 
 fn persist_block(snapshot: &Arc<DataCache>, block: &Block, settings: ProtocolSettings) {
@@ -342,7 +332,7 @@ fn ledger_get_block_reconstructs_from_trimmed_block_and_states() {
         StorageItem::from_bytes(serialize_transaction_state_record(1, VMState::NONE, &tx2)),
     );
 
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01")
             .unwrap(),
@@ -380,17 +370,17 @@ fn ledger_get_block_reconstructs_from_trimmed_block_and_states() {
         .expect("block present");
 
     assert_eq!(block.index(), 1);
-    assert_eq!(block.header.merkle_root, header.merkle_root);
+    assert_eq!(block.header.merkle_root().clone(), header.merkle_root().clone());
     assert_eq!(block.transactions.len(), 2);
     assert_eq!(block.transactions[0].hash(), tx1.hash());
     assert_eq!(block.transactions[1].hash(), tx2.hash());
     assert_eq!(
-        block.header.witnesses[0].invocation_script,
-        header.witnesses[0].invocation_script
+        block.header.witness.invocation_script,
+        header.witness.invocation_script
     );
     assert_eq!(
-        block.header.witnesses[0].verification_script,
-        header.witnesses[0].verification_script
+        block.header.witness.verification_script,
+        header.witness.verification_script
     );
 }
 

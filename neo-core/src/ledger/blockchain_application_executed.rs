@@ -76,7 +76,7 @@ mod tests {
 
         let container: Arc<dyn crate::Verifiable> =
             Arc::new(transaction.clone()) as Arc<dyn crate::Verifiable>;
-        let block = Block::new(BlockHeader::default(), vec![transaction.clone()]);
+        let block = Block::from_parts(BlockHeader::default(), vec![transaction.clone()]);
         let snapshot = Arc::new(DataCache::new(false));
 
         let mut engine = ApplicationEngine::new(

@@ -270,7 +270,7 @@ fn replay_block_1465790_assert_csharp_root() {
     let tx0 = build_tx0();
     let tx1 = build_tx1();
 
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         u256("0xbe276ec4e25894636137aef36f96e34f440c2f4ba002c950494e9d3f3c45b3b9"),
         u256("0xfe06f88d9cc1d17dc8c654543cc6b1c1343e615ba6bf23fea40e84f8aa4ee5e2"),
@@ -281,7 +281,7 @@ fn replay_block_1465790_assert_csharp_root() {
         u160_from_address("NSiVJYZej4XsxG5CUpdwn7VRQk8iiiDMPM"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx0.clone(), tx1.clone()]));
+    let block = Arc::new(Block::from_parts(header, vec![tx0.clone(), tx1.clone()]));
 
     // Seed LedgerContract.current_block with prev block's hash+index.
     // State trie excludes LedgerContract (id=-4), so on_persist's read of

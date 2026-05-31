@@ -193,9 +193,9 @@ impl NeoSystem {
 
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
-        let genesis_ledger = crate::ledger::create_genesis_block(&settings);
+        let mut genesis_ledger = crate::ledger::create_genesis_block(&settings);
         let genesis_hash = genesis_ledger.hash();
-        let genesis_block = Arc::new(super::converters::convert_ledger_block(genesis_ledger));
+        let genesis_block = Arc::new(genesis_ledger);
 
         let service_registry = Arc::new(ServiceRegistry::new());
         let wallet_changed_handlers = Arc::new(RwLock::new(Vec::new()));

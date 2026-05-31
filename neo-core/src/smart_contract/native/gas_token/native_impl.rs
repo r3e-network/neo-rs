@@ -150,7 +150,7 @@ impl NativeContract for GasToken {
                 .unwrap_or_else(|_| engine.protocol_settings().standby_validators());
 
             if !validators.is_empty() {
-                let primary_index = block.header.primary_index as usize;
+                let primary_index = block.header.primary_index() as usize;
                 if primary_index < validators.len() {
                     let primary_validator = &validators[primary_index];
                     let primary_account =

@@ -147,7 +147,7 @@ fn replay_block_1394579_assert_csharp_root() {
     tx.set_script(BASE64.decode(TX_SCRIPT.trim()).expect("tx script"));
     tx.set_witnesses(vec![witness(TX_INV.trim(), TX_VER.trim())]);
 
-    let header = BlockHeader::new(
+    let header = BlockHeader::new_with_witnesses(
         0,
         u256("0xb8feec0bb6ee206cc6e17c777f0393af22920c94e0a05df2abed00cd6ecc9e15"),
         u256("0xecaece852369d908134a777f709d1525d53b54053fc8366872eec28a83560ffa"),
@@ -158,7 +158,7 @@ fn replay_block_1394579_assert_csharp_root() {
         u160("0x8f1d380112e1234f851b0b1768c2fbc1c35c571c"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx.clone()]));
+    let block = Arc::new(Block::from_parts(header, vec![tx.clone()]));
 
     // LedgerContract storage is intentionally excluded from the state trie (matches C#
     // StateService behavior). The chain DB holds it independently, but the test only

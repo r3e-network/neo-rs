@@ -164,7 +164,7 @@ impl LedgerContract {
             }
         }
 
-        Ok(Some(Block::new(trimmed.header, transactions)))
+        Ok(Some(Block::from_parts(trimmed.header, transactions)))
     }
 
     pub(super) fn load_block_hash<S>(&self, snapshot: &S, index: u32) -> Result<Option<UInt256>>
@@ -253,7 +253,7 @@ impl LedgerContract {
         block: &Block,
         tx_states: &[PersistedTransactionState],
     ) -> Result<()> {
-        let block_hash = block.hash();
+        let block_hash = block.clone().hash();
         let index = block.index();
         let trimmed = TrimmedBlock::try_from_block(block)?;
         let block_bytes = serialize_trimmed_block(&trimmed)?;

@@ -298,7 +298,7 @@ impl ApplicationEngine {
         let block_height = self
             .persisting_block
             .as_ref()
-            .map(|block| block.header.index)
+            .map(|block| block.header.index())
             .unwrap_or_else(|| self.current_block_index());
 
         let active_contracts: Vec<Arc<dyn NativeContract>> = self
@@ -363,7 +363,7 @@ impl ApplicationEngine {
         let block_height = self
             .persisting_block
             .as_ref()
-            .map(|block| block.header.index)
+            .map(|block| block.header.index())
             .unwrap_or_else(|| self.current_block_index());
 
         let active_contracts: Vec<Arc<dyn NativeContract>> = self

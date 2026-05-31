@@ -1,5 +1,5 @@
 use neo_core::hardfork::Hardfork;
-use neo_core::ledger::block_header::BlockHeader;
+use neo_core::ledger::BlockHeader;
 use neo_core::ledger::Block;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
@@ -47,11 +47,9 @@ fn make_engine_with_height(height: Option<u32>) -> ApplicationEngine {
     container.add_witness(Witness::new());
     let script_container: Arc<dyn Verifiable> = Arc::new(container);
     let persisting_block = height.map(|index| {
-        let header = BlockHeader {
-            index,
-            ..Default::default()
-        };
-        Block::new(header, Vec::new())
+        let mut header = BlockHeader::default();
+        header.set_index(index);
+        Block::from_parts(header, Vec::new())
     });
     ApplicationEngine::new(
         TriggerType::Application,

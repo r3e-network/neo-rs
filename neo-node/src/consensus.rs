@@ -1268,7 +1268,7 @@ fn fetch_block_timestamp(system: &neo_core::neo_system::NeoSystem, index: u32) -
         .get_block(&store_cache, HashOrIndex::Index(index))
         .ok()
         .flatten()
-        .map(|block| block.header.timestamp)
+        .map(|block| block.header.timestamp())
 }
 
 fn extract_signature(witness: &Witness) -> Option<Vec<u8>> {

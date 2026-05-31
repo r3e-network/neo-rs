@@ -50,11 +50,9 @@ fn make_test_transaction(sender: UInt160) -> Transaction {
 }
 
 fn make_persisting_block(nonce: u64) -> Block {
-    let header = BlockHeader {
-        nonce,
-        ..Default::default()
-    };
-    Block::new(header, Vec::new())
+    let mut header = BlockHeader::default();
+    header.set_nonce(nonce);
+    Block::from_parts(header, Vec::new())
 }
 
 fn build_get_random_script(count: usize) -> Vec<u8> {
