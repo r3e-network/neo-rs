@@ -105,11 +105,8 @@ pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
-// New trait re-exports for crate refactoring (Phase 1)
-pub use blockchain::{
-    BlockchainProvider, BlockLike, HeaderLike, NetworkMessage, TransactionLike, PeerId, PeerInfo, PeerRegistry,
-    RelayError, RelayResult, SendError, SendResult,
-};
+// Marker traits used to decouple higher-level crates from concrete chain types.
+pub use blockchain::{BlockLike, NetworkMessage};
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use serializable_payload::SerializablePayload;
 pub use unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};

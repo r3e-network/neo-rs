@@ -192,9 +192,6 @@ pub mod oracle_response_code {
     pub use neo_primitives::OracleResponseCode;
 }
 
-/// P2P trait definitions.
-pub mod traits;
-
 /// Shared timeout counters for P2P operations.
 pub mod timeouts;
 
@@ -239,9 +236,3 @@ pub use witness_rule_action::WitnessRuleAction;
 
 // Re-exports from neo-primitives
 pub use neo_primitives::{InvalidWitnessScopeError, TransactionAttributeType, WitnessScope};
-
-// P2P traits for implementing network services
-pub use traits::{
-    Broadcaster, DataRequester, P2PConfig, P2PEvent, P2PEventSubscriber, P2PService, PeerInfo,
-    PeerManager,
-};
