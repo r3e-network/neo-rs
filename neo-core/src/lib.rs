@@ -108,7 +108,9 @@ pub mod script_validation;
 /// System-wide protocol constants.
 ///
 /// Network magic numbers, port defaults, fee constants, and size limits.
-pub mod constants;
+/// Protocol constants (single source of truth in `neo-primitives`), re-exported
+/// under the historical `neo_core::constants` path.
+pub use neo_primitives::constants;
 
 /// Transaction containment type enumeration.
 /// Transaction type containment checking.

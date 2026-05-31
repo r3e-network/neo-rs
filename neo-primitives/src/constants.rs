@@ -193,6 +193,12 @@ pub const PRIVATE_NET_RPC_PORT: u16 = 30332;
 /// Default P2P port for private networks.
 pub const PRIVATE_NET_P2P_PORT: u16 = 30333;
 
+/// Wire-format upper bound for the transaction count in a serialised block
+/// (matches C# `Block.MaxTransactionsPerBlock = 0xFFFF`). Used only during block
+/// deserialization; consensus validation uses [`MAX_TRANSACTIONS_PER_BLOCK`] (or
+/// the runtime protocol setting).
+pub const BLOCK_MAX_TX_WIRE_LIMIT: usize = 65_535; // u16::MAX
+
 #[cfg(test)]
 mod tests {
     use super::*;
