@@ -2363,6 +2363,7 @@ dependencies = [
  "neo-primitives",
  "neo-storage",
  "neo-storage-rocksdb",
+ "neo-tx-builder",
  "neo-vm",
  "neo-vm-rs",
  "num-bigint",
@@ -2760,6 +2761,15 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "neo-tx-builder"
+version = "0.7.2"
+dependencies = [
+ "neo-core",
+ "neo-crypto",
+ "neo-vm-rs",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
-use crate::UInt256;
-use crate::network::p2p::payloads::{
+use neo_core::UInt256;
+use neo_core::network::p2p::payloads::{
     Conflicts, NotValidBefore, OracleResponse, OracleResponseCode, TransactionAttribute,
 };
 
@@ -9,7 +9,7 @@ pub struct TransactionAttributesBuilder {
     attributes: Vec<TransactionAttribute>,
 }
 
-crate::impl_default_via_new!(TransactionAttributesBuilder);
+neo_core::impl_default_via_new!(TransactionAttributesBuilder);
 
 impl TransactionAttributesBuilder {
     pub fn new() -> Self {

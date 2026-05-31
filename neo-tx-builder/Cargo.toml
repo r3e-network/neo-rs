@@ -1,0 +1,13 @@
+[package]
+name = "neo-tx-builder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Fluent builders for Neo N3 transactions, signers, witnesses, and witness rules/conditions"
+
+[dependencies]
+neo-core = { path = "../neo-core" }
+neo-crypto = { workspace = true }
+neo-vm-rs = { workspace = true }

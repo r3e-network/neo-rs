@@ -37,6 +37,9 @@ members = [
     # P2P networking
     "neo-p2p",
 
+    # Fluent transaction/witness/signer builders (extracted from neo-core)
+    "neo-tx-builder",
+
     # RPC server and client
     "neo-rpc",
 
@@ -137,6 +140,7 @@ neo-json = { path = "neo-json", version = "0.7.2" }
 # Core layer
 neo-core = { path = "neo-core", version = "0.7.2" }
 neo-vm = { path = "neo-vm", version = "0.7.2" }
+neo-tx-builder = { path = "neo-tx-builder", version = "0.7.2" }
 neo-vm-rs = { path = "../neo-vm-rs" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }
 neo-rpc = { path = "neo-rpc", version = "0.7.2" }

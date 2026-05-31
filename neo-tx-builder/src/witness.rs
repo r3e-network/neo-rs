@@ -1,6 +1,6 @@
-use crate::error::CoreError;
-use crate::network::p2p::payloads::Witness;
-use crate::ScriptBuilder;
+use neo_core::error::CoreError;
+use neo_core::network::p2p::payloads::Witness;
+use neo_core::ScriptBuilder;
 
 /// Builder for `Witness` instances.
 #[derive(Default)]

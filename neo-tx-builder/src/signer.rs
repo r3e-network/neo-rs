@@ -1,5 +1,5 @@
-use crate::network::p2p::payloads::{Signer, WitnessRule, WitnessRuleAction};
-use crate::{UInt160, WitnessScope};
+use neo_core::network::p2p::payloads::{Signer, WitnessRule, WitnessRuleAction};
+use neo_core::{UInt160, WitnessScope};
 use neo_crypto::ECPoint;
 
 use super::WitnessRuleBuilder;
@@ -16,7 +16,7 @@ pub struct SignerBuilder {
     rules: Vec<WitnessRule>,
 }
 
-crate::impl_default_via_new!(SignerBuilder);
+neo_core::impl_default_via_new!(SignerBuilder);
 
 impl SignerBuilder {
     /// Creates a builder with default signer settings (zero account,

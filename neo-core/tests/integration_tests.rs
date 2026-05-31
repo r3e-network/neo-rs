@@ -6,7 +6,7 @@
 //! Integration tests for the Neo Core module.
 
 use neo_core::BigDecimal;
-use neo_core::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
+use neo_tx_builder::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};

@@ -1,5 +1,5 @@
-use crate::network::p2p::payloads::{Signer, Transaction, Witness};
-use crate::ScriptBuilder;
+use neo_core::network::p2p::payloads::{Signer, Transaction, Witness};
+use neo_core::ScriptBuilder;
 use neo_vm_rs::OpCode;
 
 use super::{SignerBuilder, TransactionAttributesBuilder, WitnessBuilder};

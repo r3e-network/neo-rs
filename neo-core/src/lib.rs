@@ -97,10 +97,8 @@ pub mod macros;
 // Foundation Modules
 // ============================================================================
 
-/// Builder pattern implementations for complex types.
-///
-/// Contains builders for `Transaction`, `Signer`, `Witness`, and witness conditions.
-pub mod builders;
+// Fluent transaction/witness/signer builders now live in the standalone
+// `neo-tx-builder` crate (it depends on neo-core's payload types).
 
 /// Script bytecode validation helpers backed by external NeoVM metadata.
 pub mod script_validation;
@@ -259,10 +257,6 @@ pub use crate::neo_vm::rpc_json;
 pub mod script_builder;
 pub use script_builder::ScriptBuilder;
 pub use neo_primitives::{big_decimal, contains_transaction_type, unhandled_exception_policy};
-pub use builders::{
-    AndConditionBuilder, OrConditionBuilder, SignerBuilder, TransactionAttributesBuilder,
-    TransactionBuilder, WitnessBuilder, WitnessConditionBuilder, WitnessRuleBuilder,
-};
 pub use neo_crypto::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};
 pub use hardfork::Hardfork;

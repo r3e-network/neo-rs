@@ -91,6 +91,9 @@ xxhash-rust = { workspace = true }
 unicode-segmentation = "1.10"
 
 [dev-dependencies]
+# neo-tx-builder depends on neo-core; used here only by integration tests
+# (dev-dependency cycles are permitted by Cargo).
+neo-tx-builder = { workspace = true }
 criterion = { workspace = true }
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
