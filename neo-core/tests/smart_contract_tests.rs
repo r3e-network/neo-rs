@@ -4,7 +4,7 @@
 //! Note: This file contains basic tests that can run at the core level.
 //! More advanced VM and smart contract tests will be in their respective crates.
 
-use neo_crypto::crypto_utils::{murmur, Crypto};
+use neo_crypto::{murmur, Crypto};
 use neo_core::{Transaction, UInt160, UInt256};
 use std::str::FromStr;
 

@@ -3,7 +3,7 @@
 //! Provides cryptographic functions for the Neo blockchain.
 //! Matches the C# Neo.SmartContract.Native.CryptoLib contract.
 
-use neo_crypto::crypto_utils::murmur::murmur32;
+use neo_crypto::murmur::murmur32;
 use neo_crypto::{Crypto, Ed25519Crypto, HashAlgorithm, NamedCurveHash};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;

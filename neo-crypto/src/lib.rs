@@ -42,7 +42,6 @@ pub mod bloom_filter;
 /// BLS12-381 signature helpers for Neo.
 pub mod bls12381;
 /// Compatibility re-exports for cryptographic utility types.
-pub mod crypto_utils;
 /// Elliptic curve point and curve helpers.
 pub mod ecc;
 /// Encoding helpers used by Neo cryptographic APIs.

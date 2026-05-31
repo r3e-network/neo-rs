@@ -67,7 +67,7 @@ impl ContractGroup {
         let signature_array: [u8; 64] = <[u8; 64]>::try_from(self.signature.as_slice())
             .map_err(|_| Error::invalid_data("Invalid signature length"))?;
 
-        match neo_crypto::crypto_utils::Secp256r1Crypto::verify(
+        match neo_crypto::Secp256r1Crypto::verify(
             contract_hash,
             &signature_array,
             &public_key_bytes,

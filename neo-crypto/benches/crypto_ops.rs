@@ -299,7 +299,7 @@ fn bench_key_generation(c: &mut Criterion) {
 }
 
 fn bench_base58(c: &mut Criterion) {
-    use neo_crypto::crypto_utils::Base58;
+    use neo_crypto::Base58;
 
     let mut group = c.benchmark_group("crypto_base58");
 
