@@ -163,6 +163,103 @@ pub fn multi_sig_redeem_script_from_keys(
     multi_sig_redeem_script_from_points(m, &points)
 }
 
+/// Parses a multi-signature verification script, returning `(m, ordered public
+/// keys)` when the script matches the canonical Neo multi-sig format. The
+/// inverse of [`multi_sig_redeem_script_from_keys`] / [`is_multi_sig_contract`].
+pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
+    if script.len() < 42 {
+        return None;
+    }
+
+    let mut offset = 0usize;
+    let first = script[offset];
+    if !(OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&first) {
+        return None;
+    }
+    let m = (first - OpCode::PUSH0.byte()) as usize;
+    offset += 1;
+
+    let mut public_keys = Vec::new();
+    while offset < script.len() {
+        if script[offset] != OpCode::PUSHDATA1.byte() {
+            break;
+        }
+        offset += 1;
+        if offset >= script.len() {
+            return None;
+        }
+        let key_len = script[offset] as usize;
+        offset += 1;
+        if key_len != 33 || offset + key_len > script.len() {
+            return None;
+        }
+        public_keys.push(script[offset..offset + key_len].to_vec());
+        offset += key_len;
+    }
+
+    if public_keys.is_empty() {
+        return None;
+    }
+    let n = public_keys.len();
+
+    if offset >= script.len() || script[offset] != OpCode::PUSH0.byte().wrapping_add(n as u8) {
+        return None;
+    }
+    offset += 1;
+
+    if script.len() != offset + 5 {
+        return None;
+    }
+    if script[offset] != OpCode::SYSCALL.byte() {
+        return None;
+    }
+    if script[offset + 1..offset + 5] != check_multisig_hash() {
+        return None;
+    }
+
+    if m == 0 || m > n {
+        return None;
+    }
+
+    Some((m, public_keys))
+}
+
+/// Parses a multi-signature invocation script, returning the signatures when it
+/// pushes exactly `required_signatures` 64-byte signatures via `PUSHDATA1`.
+pub fn parse_multi_sig_invocation(
+    invocation: &[u8],
+    required_signatures: usize,
+) -> Option<Vec<Vec<u8>>> {
+    if required_signatures == 0 {
+        return None;
+    }
+
+    let mut signatures = Vec::with_capacity(required_signatures);
+    let mut offset = 0usize;
+    while offset < invocation.len() {
+        if invocation[offset] != OpCode::PUSHDATA1.byte() {
+            return None;
+        }
+        offset += 1;
+        if offset >= invocation.len() {
+            return None;
+        }
+        let len = invocation[offset] as usize;
+        offset += 1;
+        if len != 64 || offset + len > invocation.len() {
+            return None;
+        }
+        signatures.push(invocation[offset..offset + len].to_vec());
+        offset += len;
+    }
+
+    if signatures.len() == required_signatures {
+        Some(signatures)
+    } else {
+        None
+    }
+}
+
 /// Gets the `System.Crypto.CheckSig` syscall hash (little-endian) — the 4-byte
 /// suffix of a single-signature verification script.
 pub fn check_sig_hash() -> [u8; 4] {

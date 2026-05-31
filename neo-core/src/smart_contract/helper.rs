@@ -123,103 +123,18 @@ impl Helper {
     }
 
     /// Parses a multi-signature contract script, returning the required signature count and
-    /// the ordered public keys when the script matches the canonical Neo multi-sig format.
+    /// the ordered public keys. Delegates to `neo-redeem-script` (recognizer primitives were
+    /// hoisted below neo-core); kept here for the historical `Helper::parse_multi_sig_contract` path.
     pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
-        use neo_vm_rs::OpCode;
-
-        if script.len() < 42 {
-            return None;
-        }
-
-        let mut offset = 0usize;
-        let first = script[offset];
-        if !(OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&first) {
-            return None;
-        }
-        let m = (first - OpCode::PUSH0.byte()) as usize;
-        offset += 1;
-
-        let mut public_keys = Vec::new();
-        while offset < script.len() {
-            if script[offset] != OpCode::PUSHDATA1.byte() {
-                break;
-            }
-            offset += 1;
-            if offset >= script.len() {
-                return None;
-            }
-            let key_len = script[offset] as usize;
-            offset += 1;
-            if key_len != 33 || offset + key_len > script.len() {
-                return None;
-            }
-            public_keys.push(script[offset..offset + key_len].to_vec());
-            offset += key_len;
-        }
-
-        if public_keys.is_empty() {
-            return None;
-        }
-        let n = public_keys.len();
-
-        if offset >= script.len() || script[offset] != OpCode::PUSH0.byte().wrapping_add(n as u8) {
-            return None;
-        }
-        offset += 1;
-
-        if script.len() != offset + 5 {
-            return None;
-        }
-        if script[offset] != OpCode::SYSCALL.byte() {
-            return None;
-        }
-        if script[offset + 1..offset + 5] != neo_redeem_script::check_multisig_hash() {
-            return None;
-        }
-
-        if m == 0 || m > n {
-            return None;
-        }
-
-        Some((m, public_keys))
+        neo_redeem_script::parse_multi_sig_contract(script)
     }
 
-    /// Parses a multi-signature invocation script, returning the list of signatures when the
-    /// script pushes the expected number of signatures encoded with `PUSHDATA1` opcodes.
+    /// Parses a multi-signature invocation script. Delegates to `neo-redeem-script`.
     pub fn parse_multi_sig_invocation(
         invocation: &[u8],
         required_signatures: usize,
     ) -> Option<Vec<Vec<u8>>> {
-        use neo_vm_rs::OpCode;
-
-        if required_signatures == 0 {
-            return None;
-        }
-
-        let mut signatures = Vec::with_capacity(required_signatures);
-        let mut offset = 0usize;
-        while offset < invocation.len() {
-            if invocation[offset] != OpCode::PUSHDATA1.byte() {
-                return None;
-            }
-            offset += 1;
-            if offset >= invocation.len() {
-                return None;
-            }
-            let len = invocation[offset] as usize;
-            offset += 1;
-            if len != 64 || offset + len > invocation.len() {
-                return None;
-            }
-            signatures.push(invocation[offset..offset + len].to_vec());
-            offset += len;
-        }
-
-        if signatures.len() == required_signatures {
-            Some(signatures)
-        } else {
-            None
-        }
+        neo_redeem_script::parse_multi_sig_invocation(invocation, required_signatures)
     }
 
     /// Verifies all witnesses for a verifiable object.
