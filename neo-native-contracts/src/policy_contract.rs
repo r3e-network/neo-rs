@@ -16,6 +16,8 @@ const PREFIX_FEE_PER_BYTE: u8 = 10;
 const PREFIX_STORAGE_PRICE: u8 = 19;
 /// C# `PolicyContract.DefaultStoragePrice`.
 const DEFAULT_STORAGE_PRICE: i64 = 100_000;
+/// C# `PolicyContract.Prefix_BlockedAccount` storage prefix.
+const PREFIX_BLOCKED_ACCOUNT: u8 = 15;
 
 /// Lazily-initialised script-hash handle for the PolicyContract.
 pub static POLICY_HASH: LazyLock<UInt160> = LazyLock::new(|| *POLICY_CONTRACT_HASH);
@@ -123,6 +125,14 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![],
             ContractParameterType::Integer,
         ),
+        NativeMethod::new(
+            "isBlocked".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+        ),
     ]
 });
 
@@ -151,12 +161,25 @@ impl NativeContract for PolicyContract {
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
-        _args: &[Vec<u8>],
+        args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         match method {
             "getFeePerByte" => Ok(BigInt::from(fee_per_byte(&snapshot)?).to_signed_bytes_le()),
             "getStoragePrice" => Ok(BigInt::from(storage_price(&snapshot)?).to_signed_bytes_le()),
+            "isBlocked" => {
+                let account_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation("PolicyContract::isBlocked requires an account")
+                })?;
+                let account = UInt160::from_bytes(account_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!("PolicyContract::isBlocked: bad account: {e}"))
+                })?;
+                let mut key_bytes = vec![PREFIX_BLOCKED_ACCOUNT];
+                key_bytes.extend_from_slice(&account.to_bytes());
+                // C# IsBlocked = snapshot.Contains(key(Prefix_BlockedAccount, account)).
+                let blocked = snapshot.get(&StorageKey::new(Self::ID, key_bytes)).is_some();
+                Ok(vec![u8::from(blocked)])
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "PolicyContract method '{other}' is not implemented"
             ))),
@@ -176,7 +199,22 @@ mod tests {
         assert_eq!(NativeContract::name(&c), "PolicyContract");
         assert_eq!(NativeContract::hash(&c), *POLICY_CONTRACT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["getFeePerByte", "getStoragePrice"]);
+        assert_eq!(names, ["getFeePerByte", "getStoragePrice", "isBlocked"]);
+    }
+
+    #[test]
+    fn is_blocked_checks_storage_existence() {
+        let cache = DataCache::new(false);
+        let account = UInt160::from_bytes(&[3u8; 20]).unwrap();
+        let key = {
+            let mut k = vec![PREFIX_BLOCKED_ACCOUNT];
+            k.extend_from_slice(&account.to_bytes());
+            StorageKey::new(PolicyContract::ID, k)
+        };
+        // Not blocked until a record exists.
+        assert!(cache.get(&key).is_none());
+        cache.add(key.clone(), StorageItem::from_bytes(vec![]));
+        assert!(cache.get(&key).is_some());
     }
 
     #[test]
