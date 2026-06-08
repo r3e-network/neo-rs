@@ -16,7 +16,7 @@ use neo_execution::native_contract_provider::{install_provider, NativeContractPr
 use neo_execution::NativeContract;
 use neo_primitives::UInt160;
 
-use crate::CryptoLib;
+use crate::{CryptoLib, StdLib};
 
 /// Provider over the implemented standard native contracts, in canonical
 /// (ascending-id-magnitude) registration order.
@@ -28,7 +28,9 @@ impl StandardNativeProvider {
     /// Builds the provider with every native contract that currently
     /// implements the [`NativeContract`] trait.
     pub fn new() -> Self {
-        let contracts: Vec<Arc<dyn NativeContract>> = vec![Arc::new(CryptoLib::new())];
+        // Canonical registration order (matches C# native-contract ids).
+        let contracts: Vec<Arc<dyn NativeContract>> =
+            vec![Arc::new(StdLib::new()), Arc::new(CryptoLib::new())];
         Self { contracts }
     }
 }
@@ -88,7 +90,12 @@ mod tests {
         assert_eq!(by_hash.name(), "CryptoLib");
 
         assert!(provider.get_native_contract_by_name("crypTOlib").is_some());
-        assert_eq!(provider.all_native_contract_hashes(), vec![*CRYPTO_LIB_HASH]);
+
+        // Both implemented contracts are registered (StdLib + CryptoLib).
+        let hashes = provider.all_native_contract_hashes();
+        assert!(hashes.contains(&*CRYPTO_LIB_HASH));
+        assert!(hashes.contains(&*crate::hashes::STDLIB_HASH));
+        assert!(provider.get_native_contract_by_name("StdLib").is_some());
     }
 
     #[test]
