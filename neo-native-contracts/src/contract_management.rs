@@ -11,12 +11,20 @@
 
 use crate::hashes::CONTRACT_MANAGEMENT_HASH;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::ContractState;
+use neo_execution::{ApplicationEngine, ContractState, NativeContract, NativeMethod};
 use neo_io::{MemoryReader, Serializable};
-use neo_primitives::UInt160;
+use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_storage::persistence::DataCache;
 use neo_storage::StorageKey;
+use num_bigint::BigInt;
+use std::any::Any;
 use std::sync::LazyLock;
+
+/// Storage prefix for the minimum-deployment-fee setting (C#
+/// `ContractManagement.Prefix_MinimumDeploymentFee`).
+const PREFIX_MINIMUM_DEPLOYMENT_FEE: u8 = 20;
+/// C# default minimum deployment fee: 10 GAS, in datoshi.
+const DEFAULT_MINIMUM_DEPLOYMENT_FEE: i64 = 10_00000000;
 
 /// Storage prefix for the per-contract record (matches C#
 /// `ContractManagement.PREFIX_CONTRACT`).
@@ -138,4 +146,104 @@ fn contract_id_storage_key_legacy(id: i32) -> Vec<u8> {
     key.push(PREFIX_CONTRACT_HASH);
     key.extend_from_slice(&id.to_le_bytes());
     key
+}
+
+static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    vec![NativeMethod::new(
+        "getMinimumDeploymentFee".to_string(),
+        1 << 15,
+        true,
+        CallFlags::READ_STATES.bits(),
+        vec![],
+        ContractParameterType::Integer,
+    )]
+});
+
+impl NativeContract for ContractManagement {
+    fn id(&self) -> i32 {
+        Self::ID
+    }
+
+    fn hash(&self) -> UInt160 {
+        *CONTRACT_MANAGEMENT_HASH_REF
+    }
+
+    fn name(&self) -> &str {
+        "ContractManagement"
+    }
+
+    fn methods(&self) -> &[NativeMethod] {
+        &CONTRACT_MANAGEMENT_METHODS
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn invoke(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        let snapshot = engine.snapshot_cache();
+        match method {
+            "getMinimumDeploymentFee" => {
+                let fee = crate::read_storage_int(
+                    &snapshot,
+                    Self::ID,
+                    PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                    DEFAULT_MINIMUM_DEPLOYMENT_FEE,
+                )?;
+                Ok(BigInt::from(fee).to_signed_bytes_le())
+            }
+            other => Err(CoreError::invalid_operation(format!(
+                "ContractManagement method '{other}' is not implemented"
+            ))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_storage::StorageItem;
+
+    #[test]
+    fn native_contract_surface() {
+        let c = ContractManagement::new();
+        assert_eq!(NativeContract::id(&c), -1);
+        assert_eq!(NativeContract::name(&c), "ContractManagement");
+        assert_eq!(NativeContract::hash(&c), *CONTRACT_MANAGEMENT_HASH);
+        let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["getMinimumDeploymentFee"]);
+    }
+
+    #[test]
+    fn minimum_deployment_fee_reads_storage_with_default() {
+        let cache = DataCache::new(false);
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            DEFAULT_MINIMUM_DEPLOYMENT_FEE
+        );
+
+        let key = StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]);
+        cache.add(key, StorageItem::from_bytes(BigInt::from(5_00000000).to_signed_bytes_le()));
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            5_00000000
+        );
+    }
 }

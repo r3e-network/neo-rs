@@ -7,8 +7,17 @@
 //! native-contract cache.
 
 use crate::hashes::ORACLE_CONTRACT_HASH;
-use neo_primitives::{UInt160, UInt256};
+use neo_error::{CoreError, CoreResult};
+use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
+use num_bigint::BigInt;
+use std::any::Any;
 use std::sync::LazyLock;
+
+/// Storage prefix for the oracle request price (C# `OracleContract.Prefix_Price`).
+const PREFIX_PRICE: u8 = 5;
+/// C# default oracle price: 0.5 GAS, in datoshi.
+const DEFAULT_ORACLE_PRICE: i64 = 50000000;
 
 /// Lazily-initialised script-hash handle for the OracleContract.
 pub static ORACLE_HASH: LazyLock<UInt160> = LazyLock::new(|| *ORACLE_CONTRACT_HASH);
@@ -104,5 +113,91 @@ impl OracleRequest {
             callback_method: callback_method.into(),
             user_data,
         }
+    }
+}
+
+static ORACLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    vec![NativeMethod::new(
+        "getPrice".to_string(),
+        1 << 15,
+        true,
+        CallFlags::READ_STATES.bits(),
+        vec![],
+        ContractParameterType::Integer,
+    )]
+});
+
+impl NativeContract for OracleContract {
+    fn id(&self) -> i32 {
+        Self::ID
+    }
+
+    fn hash(&self) -> UInt160 {
+        *ORACLE_HASH
+    }
+
+    fn name(&self) -> &str {
+        "OracleContract"
+    }
+
+    fn methods(&self) -> &[NativeMethod] {
+        &ORACLE_METHODS
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn invoke(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        let snapshot = engine.snapshot_cache();
+        match method {
+            "getPrice" => {
+                let price =
+                    crate::read_storage_int(&snapshot, Self::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)?;
+                Ok(BigInt::from(price).to_signed_bytes_le())
+            }
+            other => Err(CoreError::invalid_operation(format!(
+                "OracleContract method '{other}' is not implemented"
+            ))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod oracle_native_tests {
+    use super::*;
+    use neo_storage::persistence::DataCache;
+    use neo_storage::{StorageItem, StorageKey};
+
+    #[test]
+    fn native_contract_surface() {
+        let c = OracleContract::new();
+        assert_eq!(NativeContract::id(&c), -9);
+        assert_eq!(NativeContract::name(&c), "OracleContract");
+        assert_eq!(NativeContract::hash(&c), *ORACLE_CONTRACT_HASH);
+        let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["getPrice"]);
+    }
+
+    #[test]
+    fn price_reads_storage_with_default() {
+        let cache = DataCache::new(false);
+        assert_eq!(
+            crate::read_storage_int(&cache, OracleContract::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)
+                .unwrap(),
+            DEFAULT_ORACLE_PRICE
+        );
+        let key = StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]);
+        cache.add(key, StorageItem::from_bytes(BigInt::from(12345678).to_signed_bytes_le()));
+        assert_eq!(
+            crate::read_storage_int(&cache, OracleContract::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)
+                .unwrap(),
+            12345678
+        );
     }
 }

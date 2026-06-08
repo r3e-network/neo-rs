@@ -7,7 +7,6 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_storage::persistence::DataCache;
 use neo_storage::StorageKey;
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
 use std::any::Any;
 use std::sync::LazyLock;
 
@@ -90,28 +89,19 @@ impl PolicyContract {
     }
 }
 
-/// Reads a policy integer (stored as a C# `BigInteger` in signed little-endian
-/// bytes) from the snapshot under `prefix`, defaulting to `default` when the key
-/// is absent (these keys are written at contract initialization, so absence only
-/// happens pre-genesis / in tests).
-fn read_policy_int(snapshot: &DataCache, prefix: u8, default: i64) -> CoreResult<i64> {
-    let key = StorageKey::new(PolicyContract::ID, vec![prefix]);
-    match snapshot.get(&key) {
-        Some(item) => BigInt::from_signed_bytes_le(&item.value_bytes())
-            .to_i64()
-            .ok_or_else(|| CoreError::invalid_operation("PolicyContract: stored value out of range")),
-        None => Ok(default),
-    }
-}
-
 /// C# `GetFeePerByte` = `(long)(BigInteger)snapshot[_feePerByte]`.
 fn fee_per_byte(snapshot: &DataCache) -> CoreResult<i64> {
-    read_policy_int(snapshot, PREFIX_FEE_PER_BYTE, i64::from(DEFAULT_FEE_PER_BYTE))
+    crate::read_storage_int(
+        snapshot,
+        PolicyContract::ID,
+        PREFIX_FEE_PER_BYTE,
+        i64::from(DEFAULT_FEE_PER_BYTE),
+    )
 }
 
 /// C# `GetStoragePrice` = `(uint)(BigInteger)snapshot[_storagePrice]`.
 fn storage_price(snapshot: &DataCache) -> CoreResult<i64> {
-    read_policy_int(snapshot, PREFIX_STORAGE_PRICE, DEFAULT_STORAGE_PRICE)
+    crate::read_storage_int(snapshot, PolicyContract::ID, PREFIX_STORAGE_PRICE, DEFAULT_STORAGE_PRICE)
 }
 
 static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {

@@ -62,3 +62,29 @@ pub use treasury::Treasury;
 pub mod helpers {
     pub use neo_execution::native_registry::NativeRegistry as NativeHelpers;
 }
+
+/// Reads a native-contract integer setting from `snapshot` under
+/// `(contract_id, prefix)`, returning `default` when the key is absent.
+///
+/// Native settings (fee-per-byte, storage price, oracle price, …) are stored as
+/// C# `BigInteger` values in signed little-endian bytes; C# reads them via
+/// `(long)(BigInteger)snapshot[key]`. The value is written at contract
+/// initialization, so absence only happens pre-genesis / in tests, where the
+/// caller supplies the same default the init routine would write.
+pub(crate) fn read_storage_int(
+    snapshot: &neo_storage::persistence::DataCache,
+    contract_id: i32,
+    prefix: u8,
+    default: i64,
+) -> neo_error::CoreResult<i64> {
+    use num_traits::ToPrimitive;
+    let key = neo_storage::StorageKey::new(contract_id, vec![prefix]);
+    match snapshot.get(&key) {
+        Some(item) => num_bigint::BigInt::from_signed_bytes_le(&item.value_bytes())
+            .to_i64()
+            .ok_or_else(|| {
+                neo_error::CoreError::invalid_operation("native storage integer out of range")
+            }),
+        None => Ok(default),
+    }
+}

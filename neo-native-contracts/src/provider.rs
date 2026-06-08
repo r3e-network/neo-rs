@@ -16,7 +16,10 @@ use neo_execution::native_contract_provider::{install_provider, NativeContractPr
 use neo_execution::NativeContract;
 use neo_primitives::UInt160;
 
-use crate::{CryptoLib, GasToken, LedgerContract, NeoToken, PolicyContract, StdLib};
+use crate::{
+    ContractManagement, CryptoLib, GasToken, LedgerContract, NeoToken, Notary, OracleContract,
+    PolicyContract, StdLib,
+};
 
 /// Provider over the implemented standard native contracts, in canonical
 /// (ascending-id-magnitude) registration order.
@@ -30,12 +33,15 @@ impl StandardNativeProvider {
     pub fn new() -> Self {
         // Canonical registration order (matches C# native-contract ids).
         let contracts: Vec<Arc<dyn NativeContract>> = vec![
+            Arc::new(ContractManagement::new()),
             Arc::new(StdLib::new()),
             Arc::new(CryptoLib::new()),
             Arc::new(LedgerContract::new()),
             Arc::new(NeoToken::new()),
             Arc::new(GasToken::new()),
             Arc::new(PolicyContract::new()),
+            Arc::new(OracleContract::new()),
+            Arc::new(Notary::new()),
         ];
         Self { contracts }
     }
