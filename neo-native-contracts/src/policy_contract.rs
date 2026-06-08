@@ -210,6 +210,56 @@ fn put_milliseconds_per_block(snapshot: &DataCache, value: i64) {
     snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
 }
 
+/// C# `PolicyContract.MaxMaxValidUntilBlockIncrement`.
+const MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT: i64 = 86_400;
+/// C# `PolicyContract.MaxMaxTraceableBlocks`.
+const MAX_MAX_TRACEABLE_BLOCKS: i64 = 2_102_400;
+
+/// C# `SetMaxValidUntilBlockIncrement` range guard: `[1, 86400]`.
+fn validate_max_valid_until_block_increment(value: i64) -> CoreResult<()> {
+    if !(1..=MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT).contains(&value) {
+        return Err(CoreError::invalid_operation(format!(
+            "MaxValidUntilBlockIncrement must be between [1, {MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT}], got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// C# `SetMaxTraceableBlocks` range guard: `[1, 2102400]`.
+fn validate_max_traceable_blocks(value: i64) -> CoreResult<()> {
+    if !(1..=MAX_MAX_TRACEABLE_BLOCKS).contains(&value) {
+        return Err(CoreError::invalid_operation(format!(
+            "MaxTraceableBlocks must be between [1, {MAX_MAX_TRACEABLE_BLOCKS}], got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// C# `GetMaxValidUntilBlockIncrement`: stored `Prefix_MaxValidUntilBlockIncrement`,
+/// defaulting to the `ProtocolSettings` value (written at HF_Echidna activation).
+fn read_max_valid_until_block_increment(engine: &ApplicationEngine) -> CoreResult<i64> {
+    let default = i64::from(engine.protocol_settings().max_valid_until_block_increment);
+    let snapshot = engine.snapshot_cache();
+    crate::read_storage_int(
+        &snapshot,
+        PolicyContract::ID,
+        PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
+        default,
+    )
+}
+
+/// Writes `Prefix_MaxValidUntilBlockIncrement` (C# `GetAndChange(...).Set(value)`).
+fn put_max_valid_until_block_increment(snapshot: &DataCache, value: i64) {
+    let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT]);
+    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+}
+
+/// Writes `Prefix_MaxTraceableBlocks` (C# `GetAndChange(_maxTraceableBlocks).Set(value)`).
+fn put_max_traceable_blocks(snapshot: &DataCache, value: i64) {
+    let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_MAX_TRACEABLE_BLOCKS]);
+    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+}
+
 /// Returns the effective `MaxTraceableBlocks` for traceability checks, mirroring
 /// the source selection in C# `LedgerContract.IsTraceableBlock`: before
 /// `HF_Echidna` it is the static `ProtocolSettings.MaxTraceableBlocks`; from
@@ -277,6 +327,25 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             1 << 15,
             false,
             (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        )
+        .with_active_in(Hardfork::HfEchidna),
+        // HF_Echidna chain-parameter setters with cross-value invariants (States).
+        NativeMethod::new(
+            "setMaxValidUntilBlockIncrement".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        )
+        .with_active_in(Hardfork::HfEchidna),
+        NativeMethod::new(
+            "setMaxTraceableBlocks".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
         )
@@ -404,27 +473,46 @@ impl NativeContract for PolicyContract {
                     })?;
                 Ok(Vec::new())
             }
+            "setMaxValidUntilBlockIncrement" => {
+                // C#: range [1, 86400] -> value < MaxTraceableBlocks -> committee.
+                let value = setter_int_arg(args, "setMaxValidUntilBlockIncrement")?;
+                validate_max_valid_until_block_increment(value)?;
+                let mtb = max_traceable_blocks(engine)? as i64;
+                if value >= mtb {
+                    return Err(CoreError::invalid_operation(format!(
+                        "MaxValidUntilBlockIncrement must be lower than MaxTraceableBlocks ({value} vs {mtb})"
+                    )));
+                }
+                assert_committee(engine, "setMaxValidUntilBlockIncrement")?;
+                put_max_valid_until_block_increment(&engine.snapshot_cache(), value);
+                Ok(Vec::new())
+            }
+            "setMaxTraceableBlocks" => {
+                // C#: range [1, 2102400] -> can only decrease -> value >
+                // MaxValidUntilBlockIncrement -> committee.
+                let value = setter_int_arg(args, "setMaxTraceableBlocks")?;
+                validate_max_traceable_blocks(value)?;
+                let old = max_traceable_blocks(engine)? as i64;
+                if value > old {
+                    return Err(CoreError::invalid_operation(format!(
+                        "MaxTraceableBlocks can not be increased (old {old}, new {value})"
+                    )));
+                }
+                let mvub = read_max_valid_until_block_increment(engine)?;
+                if value <= mvub {
+                    return Err(CoreError::invalid_operation(format!(
+                        "MaxTraceableBlocks must be larger than MaxValidUntilBlockIncrement ({value} vs {mvub})"
+                    )));
+                }
+                assert_committee(engine, "setMaxTraceableBlocks")?;
+                put_max_traceable_blocks(&engine.snapshot_cache(), value);
+                Ok(Vec::new())
+            }
             "getMaxValidUntilBlockIncrement" => {
-                let default = i64::from(engine.protocol_settings().max_valid_until_block_increment);
-                let snapshot = engine.snapshot_cache();
-                let v = crate::read_storage_int(
-                    &snapshot,
-                    Self::ID,
-                    PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
-                    default,
-                )?;
-                Ok(BigInt::from(v).to_signed_bytes_le())
+                Ok(BigInt::from(read_max_valid_until_block_increment(engine)?).to_signed_bytes_le())
             }
             "getMaxTraceableBlocks" => {
-                let default = i64::from(engine.protocol_settings().max_traceable_blocks);
-                let snapshot = engine.snapshot_cache();
-                let v = crate::read_storage_int(
-                    &snapshot,
-                    Self::ID,
-                    PREFIX_MAX_TRACEABLE_BLOCKS,
-                    default,
-                )?;
-                Ok(BigInt::from(v).to_signed_bytes_le())
+                Ok(BigInt::from(max_traceable_blocks(engine)? as i64).to_signed_bytes_le())
             }
             other => Err(CoreError::invalid_operation(format!(
                 "PolicyContract method '{other}' is not implemented"
@@ -453,6 +541,8 @@ mod tests {
                 "setFeePerByte",
                 "setStoragePrice",
                 "setMillisecondsPerBlock",
+                "setMaxValidUntilBlockIncrement",
+                "setMaxTraceableBlocks",
                 "isBlocked",
                 "getMillisecondsPerBlock",
                 "getMaxValidUntilBlockIncrement",
@@ -479,6 +569,14 @@ mod tests {
         );
         assert_eq!(ms.return_type, ContractParameterType::Void);
         assert_eq!(ms.active_in, Some(Hardfork::HfEchidna));
+        // The cross-validated Echidna setters are non-safe, States, Void, gated.
+        for name in ["setMaxValidUntilBlockIncrement", "setMaxTraceableBlocks"] {
+            let m = c.methods().iter().find(|m| m.name == name).unwrap();
+            assert!(!m.safe, "{name} must not be safe");
+            assert_eq!(m.required_call_flags, CallFlags::STATES.bits());
+            assert_eq!(m.return_type, ContractParameterType::Void);
+            assert_eq!(m.active_in, Some(Hardfork::HfEchidna));
+        }
     }
 
     #[test]
@@ -539,6 +637,42 @@ mod tests {
             crate::read_storage_int(&cache, PolicyContract::ID, PREFIX_MILLISECONDS_PER_BLOCK, 0)
                 .unwrap(),
             7_000
+        );
+    }
+
+    #[test]
+    fn max_chain_param_setter_range_bounds() {
+        // C# MaxMaxValidUntilBlockIncrement = 86400, MaxMaxTraceableBlocks = 2102400.
+        assert!(validate_max_valid_until_block_increment(1).is_ok());
+        assert!(validate_max_valid_until_block_increment(MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT).is_ok());
+        assert!(validate_max_valid_until_block_increment(0).is_err());
+        assert!(validate_max_valid_until_block_increment(MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT + 1).is_err());
+
+        assert!(validate_max_traceable_blocks(1).is_ok());
+        assert!(validate_max_traceable_blocks(MAX_MAX_TRACEABLE_BLOCKS).is_ok());
+        assert!(validate_max_traceable_blocks(0).is_err());
+        assert!(validate_max_traceable_blocks(MAX_MAX_TRACEABLE_BLOCKS + 1).is_err());
+    }
+
+    #[test]
+    fn max_chain_param_writes_persist_to_storage() {
+        let cache = DataCache::new(false);
+        put_max_valid_until_block_increment(&cache, 5_000);
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                PolicyContract::ID,
+                PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
+                0
+            )
+            .unwrap(),
+            5_000
+        );
+        put_max_traceable_blocks(&cache, 1_000_000);
+        assert_eq!(
+            crate::read_storage_int(&cache, PolicyContract::ID, PREFIX_MAX_TRACEABLE_BLOCKS, 0)
+                .unwrap(),
+            1_000_000
         );
     }
 
