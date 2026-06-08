@@ -1,0 +1,79 @@
+//! ExecutionContextState - matches C# Neo.SmartContract.ExecutionContextState exactly
+
+use neo_data_cache::DataCache;
+use neo_manifest::CallFlags;
+use neo_primitives::ContractParameterType;
+use crate::contract_state::ContractState;
+use neo_vm::ExecutionContext;
+use neo_primitives::UInt160;
+use std::sync::Arc;
+
+/// State associated with an execution context (matches C# ExecutionContextState)
+#[derive(Clone)]
+pub struct ExecutionContextState {
+    /// The script hash being executed
+    pub script_hash: Option<UInt160>,
+
+    /// The calling script hash (matches C# CallingContext hash resolution)
+    pub calling_script_hash: Option<UInt160>,
+
+    /// The calling execution context (matches C# CallingContext property)
+    pub calling_context: Option<ExecutionContext>,
+
+    /// The native calling script hash (set by native contracts)
+    pub native_calling_script_hash: Option<UInt160>,
+
+    /// The contract being executed
+    pub contract: Option<ContractState>,
+
+    /// The call flags for this context
+    pub call_flags: CallFlags,
+
+    /// Cloned snapshot cache for the context
+    pub snapshot_cache: Option<Arc<DataCache>>,
+
+    /// Notification count emitted by this context
+    pub notification_count: usize,
+
+    /// Indicates whether this context was produced by a dynamic call
+    pub is_dynamic_call: bool,
+
+    /// Indicates whether this context is whitelisted for fixed fees
+    pub whitelisted: bool,
+
+    /// Name of the method currently executing
+    pub method_name: Option<String>,
+
+    /// Number of arguments supplied to the method
+    pub argument_count: usize,
+
+    /// Return type of the executing method
+    pub return_type: Option<ContractParameterType>,
+
+    /// Parameter types for the executing method
+    pub parameter_types: Vec<ContractParameterType>,
+}
+
+impl ExecutionContextState {
+    /// Creates a new execution context state
+    pub fn new() -> Self {
+        Self {
+            script_hash: None,
+            calling_script_hash: None,
+            calling_context: None,
+            native_calling_script_hash: None,
+            contract: None,
+            call_flags: CallFlags::ALL,
+            snapshot_cache: None,
+            notification_count: 0,
+            is_dynamic_call: false,
+            whitelisted: false,
+            method_name: None,
+            argument_count: 0,
+            return_type: None,
+            parameter_types: Vec::new(),
+        }
+    }
+}
+
+crate::impl_default_via_new!(ExecutionContextState);

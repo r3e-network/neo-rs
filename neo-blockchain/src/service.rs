@@ -1,0 +1,312 @@
+//! Canonical [`BlockchainService`] implementation.
+//!
+//! The service is constructed via [`BlockchainService::new`], which
+//! returns a `(service, handle)` pair. The handle is what other
+//! subsystems store; the service is moved into a `tokio::spawn`'d
+//! task that drives the command loop in [`BlockchainService::run`].
+//!
+//! ## Why two layers?
+//!
+//! The blockchain is the only subsystem in the node that has
+//! command-shaped semantics rather than method-shaped. Every state
+//! mutation is funnelled through a single async command loop so the
+//! loop can serialise concurrent callers (consensus driver, RPC
+//! submit, network inventory, reverify ticker) without an actor
+//! framework. The companion [`crate::BlockchainHandle`] is the
+//! cheap-to-clone facade the rest of the node uses to talk to the
+//! loop.
+
+use std::fmt;
+use std::sync::Arc;
+
+use neo_primitives::verify_result::VerifyResult;
+use parking_lot::Mutex;
+use tokio::sync::{broadcast, mpsc};
+
+use crate::command::BlockchainCommand;
+use crate::handle::BlockchainHandle;
+use crate::header_cache::HeaderCache;
+use crate::ledger_context::LedgerContext;
+use crate::service_context::SystemContext;
+
+/// Backwards-compatible alias for the legacy actor name.
+///
+/// The old `neo_core::ledger::blockchain::Blockchain` was an
+/// Akka-style actor. The new struct is a reth-style service; the
+/// name is kept around so old `use Blockchain;` statements keep
+/// resolving.
+pub type Blockchain = BlockchainService;
+
+// `AddTransactionReply` is re-exported from `crate::command` for
+// downstream callers; the service uses it through that re-export.
+pub use crate::command::AddTransactionReply as _AddTransactionReplyAlias;
+
+/// Reth-style blockchain service.
+///
+/// The service owns the command channel (mpsc), the event channel
+/// (broadcast), and the heavy state the legacy actor used to hold
+/// (ledger context, header cache, mempool handle, …). Construction
+/// goes through [`BlockchainService::new`], which returns the
+/// `(service, handle)` pair; the service is moved into a
+/// `tokio::spawn`'d task that calls [`BlockchainService::run`].
+pub struct BlockchainService {
+    /// System context: trait object giving the service access to the
+    /// ledger, the mempool, the storage backend, and the network
+    /// event stream. The trait is implemented by `neo_core::neo_system`.
+    pub(crate) system: Arc<dyn SystemContext>,
+    /// In-memory ledger cache. The actor's old struct held this
+    /// directly; we keep it on the service so a single
+    /// `Arc<BlockchainService>` is still the only owner of the
+    /// canonical ledger state.
+    pub(crate) ledger: Arc<LedgerContext>,
+    /// Header cache (headers received ahead of their blocks).
+    pub(crate) header_cache: Arc<HeaderCache>,
+    /// Command receiver half. The producer end lives on the
+    /// [`BlockchainHandle`].
+    pub(crate) cmd_rx: mpsc::Receiver<BlockchainCommand>,
+    /// Event broadcast sender. The actor's old implementation
+    /// published events through the actor-system event stream; the
+    /// new implementation publishes through a `broadcast::Sender`
+    /// that subscribers (RPC server, plugins, …) attach to via
+    /// [`BlockchainHandle::subscribe`].
+    pub(crate) event_tx: broadcast::Sender<crate::RuntimeEvent>,
+    /// Mempool access (used by the high-level `add_transaction` API).
+    pub(crate) mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>>,
+}
+
+impl fmt::Debug for BlockchainService {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BlockchainService")
+            .field("ledger_height", &self.ledger.current_height())
+            .field("header_cache_count", &self.header_cache.count())
+            .field("cmd_capacity", &self.cmd_rx.capacity())
+            .field("event_receivers", &self.event_tx.receiver_count())
+            .finish()
+    }
+}
+
+impl BlockchainService {
+    /// Construct a fresh `(service, handle)` pair.
+    ///
+    /// `cmd_capacity` and `event_capacity` set the sizes of the
+    /// mpsc command queue and the broadcast event queue
+    /// respectively. Use [`crate::blockchain::DEFAULT_COMMAND_CAPACITY`]
+    /// and [`crate::blockchain::DEFAULT_EVENT_CAPACITY`] for the
+    /// default sizes.
+    pub fn new(
+        system: Arc<dyn SystemContext>,
+        ledger: Arc<LedgerContext>,
+        header_cache: Arc<HeaderCache>,
+        mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>>,
+        cmd_capacity: usize,
+        event_capacity: usize,
+    ) -> (Self, BlockchainHandle) {
+        let (cmd_tx, cmd_rx) = mpsc::channel(cmd_capacity);
+        let (event_tx, _event_rx) = broadcast::channel(event_capacity);
+        let handle = BlockchainHandle {
+            cmd_tx,
+            event_tx: event_tx.clone(),
+        };
+        let service = Self {
+            system,
+            ledger,
+            header_cache,
+            cmd_rx,
+            event_tx,
+            mempool,
+        };
+        (service, handle)
+    }
+
+    /// Convenience constructor that uses the default channel
+    /// capacities from the runtime crate.
+    pub fn with_defaults(
+        system: Arc<dyn SystemContext>,
+        ledger: Arc<LedgerContext>,
+        header_cache: Arc<HeaderCache>,
+        mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>>,
+    ) -> (Self, BlockchainHandle) {
+        Self::new(
+            system,
+            ledger,
+            header_cache,
+            mempool,
+            crate::blockchain::DEFAULT_COMMAND_CAPACITY,
+            crate::blockchain::DEFAULT_EVENT_CAPACITY,
+        )
+    }
+
+    /// Drive the service loop until the command channel is closed.
+    ///
+    /// Every command is dispatched to a synchronous handler method
+    /// on the service struct; the loop itself is just
+    /// `while let Some(cmd) = self.cmd_rx.recv().await`. This is the
+    /// equivalent of the legacy actor's `handle()` method, but
+    /// expressed as a normal `async fn` rather than a trait object.
+    pub async fn run(mut self) {
+        tracing::debug!(target: "neo", "blockchain service run loop started");
+        while let Some(cmd) = self.cmd_rx.recv().await {
+            self.dispatch(cmd).await;
+        }
+        tracing::debug!(target: "neo", "blockchain service run loop exited");
+    }
+
+    /// Dispatch a single command to its handler. Public for testing
+    /// — production callers go through [`Self::run`].
+    pub async fn dispatch(&mut self, cmd: BlockchainCommand) {
+        match cmd {
+            BlockchainCommand::PersistCompleted(persist) => {
+                self.handle_persist_completed(persist).await;
+            }
+            BlockchainCommand::Import(import) => {
+                self.handle_import(import).await;
+            }
+            BlockchainCommand::FillMemoryPool(fill) => {
+                self.handle_fill_memory_pool(fill).await;
+            }
+            BlockchainCommand::FillCompleted => {}
+            BlockchainCommand::Reverify(reverify) => {
+                self.handle_reverify(reverify).await;
+            }
+            BlockchainCommand::InventoryBlock {
+                block,
+                relay,
+                pre_verified,
+            } => {
+                let _ = self
+                    .handle_block_inventory(block, relay, pre_verified)
+                    .await;
+            }
+            BlockchainCommand::InventoryExtensible { payload, relay } => {
+                let _ = self.handle_extensible_inventory(payload, relay).await;
+            }
+            BlockchainCommand::PreverifyCompleted(preverify) => {
+                self.handle_preverify_completed(preverify).await;
+            }
+            BlockchainCommand::Headers(headers) => {
+                self.handle_headers(headers);
+            }
+            BlockchainCommand::Idle => {
+                self.handle_idle().await;
+            }
+            BlockchainCommand::DrainUnverified => {
+                self.handle_drain_unverified().await;
+            }
+            BlockchainCommand::RelayResult(result) => {
+                self.handle_relay_result(result).await;
+            }
+            BlockchainCommand::Initialize => {
+                self.initialize().await;
+            }
+            BlockchainCommand::AddTransaction { transaction, reply } => {
+                let _ = reply.send(self.add_transaction(transaction).await);
+            }
+            BlockchainCommand::GetHeight { reply } => {
+                let _ = reply.send(self.ledger.current_height());
+            }
+            BlockchainCommand::GetBlock { hash, reply } => {
+                let _ = reply.send(self.ledger.get_block(&hash));
+            }
+            BlockchainCommand::GetBlockByHeight { height, reply } => {
+                let _ = reply.send(self.ledger.get_block_by_height(height));
+            }
+        }
+    }
+}
+
+/// Minimal mempool facade used by the high-level service API.
+///
+/// The trait exists so the blockchain service can be unit-tested
+/// with a mock mempool; concrete implementations in `neo-core`
+/// forward to the real `MemoryPool` type. The shape is intentionally
+/// tiny — the full mempool surface (verification context,
+/// conflict attribute detection, reverify queue) lives in
+/// `neo-mempool` and is exposed by the [`SystemContext`] trait.
+pub trait MempoolLike: std::fmt::Debug + Send + Sync {
+    /// Try to add a transaction to the mempool. Returns the verify
+    /// result.
+    fn try_add(
+        &self,
+        tx: &neo_payloads::Transaction,
+        snapshot: &neo_data_cache::DataCache,
+        settings: &neo_config::ProtocolSettings,
+    ) -> VerifyResult;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handle::BlockchainHandle;
+    use std::sync::Arc;
+
+    /// Trivial in-memory mempool used by the unit tests.
+    #[derive(Debug, Default)]
+    struct TestMempool;
+
+    impl MempoolLike for TestMempool {
+        fn try_add(
+            &self,
+            _tx: &neo_payloads::Transaction,
+            _snapshot: &neo_data_cache::DataCache,
+            _settings: &neo_config::ProtocolSettings,
+        ) -> VerifyResult {
+            VerifyResult::Succeed
+        }
+    }
+
+    /// Stub system context used by the unit tests.
+    #[derive(Debug)]
+    struct TestContext;
+
+    impl crate::service_context::SystemContext for TestContext {
+        fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+            Arc::new(neo_config::ProtocolSettings::default())
+        }
+
+        fn current_height(&self) -> u32 {
+            0
+        }
+    }
+
+    #[tokio::test]
+    async fn run_loop_processes_simple_command() {
+        let system: Arc<dyn crate::service_context::SystemContext> = Arc::new(TestContext);
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::default());
+        let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
+        let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+
+        let task = tokio::spawn(service.run());
+
+        // GetHeight command.
+        let height = handle.get_height().await.expect("get_height");
+        assert_eq!(height, 0);
+
+        // GetBlock for an unknown hash returns None.
+        let hash = neo_primitives::UInt256::zero();
+        let block = handle.get_block(&hash).await.expect("get_block");
+        assert!(block.is_none());
+
+        // Drop the handle to close the channel; the run loop should exit.
+        drop(handle);
+        task.await.expect("service task");
+    }
+
+    #[test]
+    fn handle_debug_includes_capacity() {
+        let (handle, _rx) = BlockchainHandle::with_capacity();
+        let s = format!("{:?}", handle);
+        assert!(s.contains("BlockchainHandle"));
+    }
+
+    #[test]
+    fn service_debug_does_not_panic() {
+        let system: Arc<dyn crate::service_context::SystemContext> = Arc::new(TestContext);
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::default());
+        let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
+        let (service, _handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+        let s = format!("{:?}", service);
+        assert!(s.contains("BlockchainService"));
+    }
+}

@@ -1,0 +1,43 @@
+[package]
+name = "neo-block"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Block-layer data types: ApplicationExecuted, NotifyEventArgs, TransactionState, VerifyResult (the Block / Header data types themselves live in neo-payloads)"
+
+[dependencies]
+# Foundation layer
+neo-primitives = { workspace = true }
+neo-ledger-types = { workspace = true }
+neo-serialization = { workspace = true }
+neo-payloads = { workspace = true }
+neo-error = { workspace = true }
+neo-io = { workspace = true }
+neo-crypto = { workspace = true }
+neo-config = { workspace = true }
+
+# Protocol layer
+neo-data-cache = { workspace = true }
+neo-events = { workspace = true }
+
+# VM
+neo-vm = { workspace = true }
+neo-vm-rs = { workspace = true }
+
+# External
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+hex = { workspace = true }
+
+[features]
+default = []

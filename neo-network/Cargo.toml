@@ -1,0 +1,56 @@
+[package]
+name = "neo-network"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Canonical home for Neo P2P network host: reth-style LocalNode, RemoteNode, and TaskManager services"
+
+[dependencies]
+# Foundation / Layer 0
+neo-primitives = { workspace = true }
+neo-error = { workspace = true }
+neo-config = { workspace = true }
+
+# Layer 1 (protocol types)
+neo-ledger-types = { workspace = true }
+neo-payloads = { workspace = true }
+neo-wire = { workspace = true }
+
+# Layer 2 (services we talk to)
+neo-runtime = { workspace = true }
+neo-blockchain = { workspace = true }
+neo-mempool = { workspace = true }
+
+# Legacy actor types — re-exported for back-compat with the existing
+# consumers (neo-rpc, neo-node, neo-consensus). Will be removed in
+# Stage F once consumer migration is complete.
+neo-p2p = { workspace = true }
+neo-services = { workspace = true }
+neo-events = { workspace = true }
+neo-state-types = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+
+# Errors / logging
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
+
+[features]
+default = []
+upnp = []

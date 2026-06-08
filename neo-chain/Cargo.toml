@@ -1,0 +1,27 @@
+[package]
+name = "neo-chain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Block / chain validation and orchestration for the Neo blockchain (pure validation layer)"
+
+[dependencies]
+# Foundation layer
+neo-crypto = { workspace = true }
+neo-error = { workspace = true }
+neo-primitives = { workspace = true }
+neo-time = { workspace = true }
+
+# Protocol layer
+neo-ledger-types = { workspace = true }
+
+# External
+thiserror = { workspace = true }

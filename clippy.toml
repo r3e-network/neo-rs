@@ -1,0 +1,4 @@
+# Clippy configuration for the neo-rs workspace.
+# Align Clippy's MSRV-aware lints with the declared workspace rust-version so it
+# does not suggest APIs newer than the minimum supported toolchain.
+msrv = "1.85"

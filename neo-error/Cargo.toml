@@ -1,0 +1,23 @@
+[package]
+name = "neo-error"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Authoritative error type for the Neo workspace (CoreError + CoreResult)"
+
+[dependencies]
+neo-primitives = { workspace = true }
+neo-io = { workspace = true }
+neo-storage = { workspace = true }
+neo-vm = { workspace = true }
+neo-script-builder = { workspace = true }
+neo-redeem-script = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,404 @@
+[workspace]
+resolver = "2"
+members = [
+    # === Foundation Layer (no neo-* dependencies) ===
+    # Primitive types (UInt160, UInt256, BigDecimal)
+    "neo-primitives",
+
+    # Config (zero cross-module deps)
+    "neo-config",
+
+    # Cryptography (hashing, ECC, signatures)
+    "neo-crypto",
+
+    # Storage traits and abstractions
+    "neo-storage",
+
+        "neo-storage-rocksdb",
+
+    # IO (matches C# Neo.IO)
+    "neo-io",
+
+    # JSON (matches C# Neo.Json)
+    "neo-json",
+
+    # === VM Host Layer ===
+    # Stateful NeoVM host (execution engine, stack items, jump tables) over the
+        "neo-vm",
+
+    # Programmatic VM script construction (C# Neo.VM.ScriptBuilder). Pure
+    # bytecode emitter on neo-vm-rs; layered below so crypto/payload
+        "neo-script-builder",
+
+    # Redeem-script primitives (signature/multi-sig verification scripts +
+    # pattern checks). On neo-crypto + neo-script-builder; below so the
+    # chain types build account scripts without the smart-contract engine.
+    "neo-redeem-script",
+
+        # CoreError authority (foundation Layer 0)
+    "neo-error",
+
+    # Witness/Block/Transaction data (ledger layer)
+    "neo-ledger-types",
+
+    # Block validation + blockchain orchestration (service layer)
+    "neo-blockchain",
+    "neo-chain",
+
+    # Smart-contract execution engine 
+    "neo-execution",
+
+    # Ledger state management
+    "neo-state-service",
+
+    # Native contracts (NEP-17, governance, etc.)
+    "neo-native-contracts",
+
+    # Wallet/key management
+    "neo-wallets",
+
+    # System service layer
+    "neo-system",
+
+    # Transaction pool
+    "neo-mempool",
+
+    # TimeProvider abstraction (Layer 0)
+    "neo-time",
+
+    # RPC client + server
+
+    # Contract manifest + NEF types
+    "neo-smart-contract-types",
+
+    # Protocol interfaces
+
+    # P2P networking
+    "neo-p2p",
+
+    # I/O extensions and utility traits 
+    "neo-extensions",
+
+    # Service trait interfaces 
+    "neo-services",
+
+    # Typed event payloads and broadcast helpers 
+    "neo-events",
+    "neo-event-handlers",
+
+    # Pure data types for the State Service plugin 
+    "neo-state-types",
+
+    # Pure smart-contract manifest / ABI / NEF data types 
+    "neo-smart-contract-types",
+
+    # Foundation layer: data cache (DataCache, StorageKey, StorageItem)
+    "neo-data-cache",
+
+    # Foundation layer: serialization (compression, binary/json serializers, providers)
+    "neo-serialization",
+
+    # Foundation layer: block (Block, Genesis, ApplicationExecuted, VerifyResult)
+    "neo-block",
+
+    # Foundation layer: manifest (ABI, NEF, CallFlags, MethodToken, ValidatorAttribute)
+    "neo-manifest",
+    
+    # Canonical home for Neo P2P payload types (Block, Header, Transaction, etc.)
+    "neo-payloads",
+    
+    # Canonical home for Neo P2P wire envelope (NetworkMessage, framed transport)
+    "neo-wire",
+    
+    # Canonical home for Neo P2P network host (LocalNode, RemoteNode, connections)
+    "neo-network",
+
+    # Fluent transaction/witness/signer builders 
+    "neo-tx-builder",
+
+    # RPC server and client
+    "neo-rpc",
+
+    # dBFT consensus
+    "neo-consensus",
+
+        # ApplicationLogs plugin (execution-log persistence + RPC queries)
+    "neo-application-logs",
+
+    # TokensTracker plugin (NEP-11/NEP-17 balance + transfer indexing)
+    "neo-tokens-tracker",
+
+    # Oracle plugin (HTTPS + NeoFS oracle request fulfilment)
+    "neo-oracle-service",
+
+    # NOTE: remaining C# Neo plugins still inlined; extraction in progress:
+    #   DBFTPlugin      → neo-consensus
+    #   RpcServer       → neo-rpc/src/server
+
+    # TEE (Trusted Execution Environment) support
+    # Optional feature-gated integration via neo-node (`--features tee`)
+    "neo-tee",
+
+    # HSM (Hardware Security Module) support
+    # Optional feature-gated integration via neo-node (`--features hsm`)
+    "neo-hsm",
+
+    # Generic actor runtime (no neo-* deps)
+    # Reth-style service architecture (service traits + Node builder)
+    "neo-runtime",
+
+    # === Telemetry ===
+    # Observability stack
+    "neo-telemetry",
+
+    # === Application Layer ===
+    # Node daemon (standalone RPC server)
+    "neo-node",
+
+    # === Integration Tests ===
+    "tests",
+
+    # === Benchmarks ===
+    "benches-package",
+]
+default-members = [
+    "neo-primitives",
+    "neo-config",
+    "neo-crypto",
+    "neo-storage",
+    "neo-io",
+    "neo-json",
+    "neo-p2p",
+    "neo-rpc",
+    "neo-consensus",
+    "neo-node",
+]
+exclude = [
+    "target",
+    "data",
+    "docs",
+    "examples",
+    "neo_csharp",
+    "fuzz",
+]
+
+[workspace.package]
+version = "0.7.2"
+edition = "2024"
+rust-version = "1.85"
+authors = [
+    "R3E Network <jimmy@r3e.network>"
+]
+homepage = "https://neo.org"
+repository = "https://github.com/r3e-network/neo-rs"
+documentation = "https://docs.rs/neo-rs"
+license = "MIT"
+keywords = ["blockchain", "neo", "smart-contracts", "cryptocurrency", "consensus"]
+categories = ["cryptography", "network-programming", "database", "development-tools"]
+readme = "README.md"
+
+[workspace.metadata]
+# Minimum supported Rust version policy
+msrv = "1.85"
+
+[workspace.dependencies]
+# === Internal crates ===
+# Foundation layer
+neo-primitives = { path = "neo-primitives", version = "0.7.2" }
+neo-config = { path = "neo-config", version = "0.7.2" }
+neo-crypto = { path = "neo-crypto", version = "0.7.2" }
+neo-storage = { path = "neo-storage", version = "0.7.2" }
+neo-storage-rocksdb = { path = "neo-storage-rocksdb", version = "0.7.2" }
+neo-io = { path = "neo-io", version = "0.7.2" }
+neo-json = { path = "neo-json", version = "0.7.2" }
+
+# Core layer
+neo-vm = { path = "neo-vm", version = "0.7.2" }
+neo-script-builder = { path = "neo-script-builder", version = "0.7.2" }
+neo-redeem-script = { path = "neo-redeem-script", version = "0.7.2" }
+neo-extensions = { path = "neo-extensions", version = "0.7.2" }
+neo-services = { path = "neo-services", version = "0.7.2" }
+neo-events = { path = "neo-events", version = "0.7.2" }
+neo-event-handlers = { path = "neo-event-handlers", version = "0.7.2" }
+neo-state-types = { path = "neo-state-types", version = "0.7.2" }
+neo-tx-builder = { path = "neo-tx-builder", version = "0.7.2" }
+neo-vm-rs = { path = "../neo-vm-rs" }
+neo-p2p = { path = "neo-p2p", version = "0.7.2" }
+neo-rpc = { path = "neo-rpc", version = "0.7.2" }
+neo-consensus = { path = "neo-consensus", version = "0.7.2" }
+
+neo-error = { path = "neo-error", version = "0.7.2" }
+neo-ledger-types = { path = "neo-ledger-types", version = "0.7.2" }
+neo-chain = { path = "neo-chain", version = "0.7.2" }
+neo-blockchain = { path = "neo-blockchain", version = "0.7.2" }
+neo-state-service = { path = "neo-state-service", version = "0.7.2" }
+neo-time = { path = "neo-time", version = "0.7.2" }
+neo-execution = { path = "neo-execution", version = "0.7.2" }
+neo-system = { path = "neo-system", version = "0.7.2" }
+neo-wallets = { path = "neo-wallets", version = "0.7.2" }
+neo-mempool = { path = "neo-mempool", version = "0.7.2" }
+neo-native-contracts = { path = "neo-native-contracts", version = "0.7.2" }
+neo-smart-contract-types = { path = "neo-smart-contract-types", version = "0.7.2" }
+neo-data-cache = { path = "neo-data-cache", version = "0.7.2" }
+neo-serialization = { path = "neo-serialization", version = "0.7.2" }
+neo-block = { path = "neo-block", version = "0.7.2" }
+neo-manifest = { path = "neo-manifest", version = "0.7.2" }
+neo-payloads = { path = "neo-payloads", version = "0.7.2" }
+neo-wire = { path = "neo-wire", version = "0.7.2" }
+neo-network = { path = "neo-network", version = "0.7.2" }
+# Infrastructure layer
+neo-tee = { path = "neo-tee", version = "0.7.2" }
+neo-hsm = { path = "neo-hsm", version = "0.7.2" }
+
+# Actor runtime
+# Reth-style service architecture
+neo-runtime = { path = "neo-runtime", version = "0.7.2" }
+
+# Telemetry
+neo-telemetry = { path = "neo-telemetry", version = "0.7.2" }
+
+# Application layer
+# neo-cli removed: functionality merged into neo-node
+neo-node = { path = "neo-node", version = "0.7.2" }
+
+# === Core dependencies ===
+# Async runtime
+# TODO: Reduce tokio features per-crate for faster compilation
+tokio = { version = "1.35", features = ["full"] }
+tokio-util = "0.7"
+async-trait = "0.1"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+bincode = "1.3"
+toml = "0.8"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+zeroize = { version = "1.8", features = ["derive", "serde"] }
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "ansi"] }
+tracing-appender = "0.2"
+# CLI
+clap = { version = "=4.5.53", features = ["derive", "env", "unicode"] }
+
+# === Cryptography ===
+# Elliptic curve cryptography
+secp256k1 = { version = "0.28", features = ["recovery", "global-context"] }
+ed25519-dalek = { version = "=2.1.1", features = ["rand_core"] }
+k256 = { version = "0.13", features = ["ecdsa", "sha256"] }
+p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
+
+# BLS12-381 cryptography
+blst = "0.3"
+
+# Hashing
+sha2 = "0.10"
+sha3 = "0.10"
+ripemd = "0.1"
+blake2 = "0.10"
+blake2b_simd = "1.0"
+
+# Random number generation
+rand = "0.8"
+
+# === Encoding ===
+hex = "0.4"
+bs58 = { version = "0.5", features = ["check"] }
+bip39 = { version = "2.2", features = ["all-languages", "zeroize"] }
+base64 = "0.22"
+
+# === Numeric types ===
+num-bigint = { version = "0.4", features = ["serde"] }
+num-integer = "0.1"
+num-traits = "0.2"
+# === Data structures ===
+smallvec = { version = "1.13", features = ["const_new", "union"] }
+bytes = "1.5"
+hashbrown = { version = "0.14", features = ["serde"] }
+indexmap = { version = "=2.8.0", features = ["serde"] }
+lru = "0.12"
+fastbloom = { version = "0.17", default-features = false }
+bitflags = "2.4"
+bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
+dashmap = "6.2.1"
+governor = { version = "0.10.4", default-features = false, features = ["std", "dashmap"] }
+memchr = "2.8"
+
+# === Storage ===
+rocksdb = { version = "0.21", default-features = false, features = ["snappy", "lz4", "zlib"] }
+
+# === Network ===
+# HTTP and JSON-RPC
+hyper = { version = "0.14", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "stream", "gzip"] }
+# Low-level networking
+socket2 = "0.5"
+
+# === Utilities ===
+uuid = { version = "=1.18.1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+url = { version = "=2.5.4", features = ["serde"] }
+parking_lot = "0.12"
+# === Development and testing ===
+tempfile = "=3.23.0"
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "=1.7.0"
+mockall = "0.12"
+
+# === Profiling ===
+pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
+
+# Compression and metrics (always enabled)
+lz4_flex = "=0.10.0"
+prometheus = "0.14"
+sysinfo = "0.29"
+
+# Additional shared deps not previously centralized
+num_cpus = "1.16"
+murmur3 = "0.5"
+rayon = "=1.10.0"
+subtle = "2.5"
+byteorder = "1.5"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+
+# Profiles
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+incremental = false
+
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+lto = false
+
+[profile.test]
+opt-level = 1
+debug = true
+lto = false
+
+[profile.bench]
+opt-level = 3
+debug = false
+lto = "fat"
+codegen-units = 1
+
+# Custom profile for production
+[profile.production]
+inherits = "release"
+debug = false
+strip = true
+panic = "abort"
+lto = "fat"
+codegen-units = 1
+incremental = false

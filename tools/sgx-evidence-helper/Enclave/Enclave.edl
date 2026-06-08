@@ -1,0 +1,12 @@
+enclave {
+    include "sgx_report.h"
+    from "sgx_tstdc.edl" import *;
+
+    trusted {
+        public sgx_status_t ecall_create_qe_report(
+            [in] const sgx_target_info_t* qe_target_info,
+            [in, size=64] const uint8_t* report_data,
+            [out] sgx_report_t* report
+        );
+    };
+};

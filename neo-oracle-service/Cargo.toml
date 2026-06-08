@@ -1,0 +1,73 @@
+[package]
+name = "neo-oracle-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Oracle plugin for the Neo blockchain (HTTPS + NeoFS oracle request fulfilment)"
+
+[dependencies]
+neo-vm-rs = { workspace = true }
+neo-storage = { path = "../neo-storage" }
+neo-crypto = { path = "../neo-crypto" }
+neo-json = { path = "../neo-json" }
+base64 = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+percent-encoding = "2.3"
+url = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+# HTTPS oracle fetching (behind the `oracle` feature, matching neo-core's prior gating).
+reqwest = { workspace = true, optional = true }
+# NeoFS gRPC transport (behind `neofs-grpc`).
+tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"], optional = true }
+prost = { version = "0.12", optional = true }
+
+neo-config = { workspace = true }
+neo-execution = { workspace = true }
+neo-io = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-network = { workspace = true }
+neo-payloads = { workspace = true }
+neo-primitives = { workspace = true }
+neo-system = { workspace = true }
+neo-wallets = { workspace = true }
+neo-event-handlers = { workspace = true }
+neo-block = { workspace = true }
+neo-script-builder = { workspace = true }
+
+
+neo-blockchain = { workspace = true }
+neo-manifest = { workspace = true }
+
+neo-time = { workspace = true }
+
+[build-dependencies]
+# Only used when the neofs-grpc feature is enabled (build.rs checks
+# CARGO_FEATURE_NEOFS_GRPC); Cargo cannot feature-gate build-deps.
+tonic-build = "0.11"
+protoc-bin-vendored = "3.0"
+
+[features]
+default = []
+# Oracle HTTPS fetching - requires reqwest.
+oracle = ["dep:reqwest"]
+# NeoFS gRPC oracle protocol - requires tonic/prost and pulls in oracle.
+neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

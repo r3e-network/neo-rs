@@ -1,0 +1,44 @@
+use std::str::FromStr;
+
+use neo_native_contracts::{ledger_contract::LedgerContract, NeoToken};
+use neo_wallets::Helper as WalletHelper;
+use neo_primitives::UInt160;
+use serde_json::{json, Value};
+
+use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_server::RpcServer;
+
+use super::helpers::{expect_string_param, internal_error, invalid_params};
+
+pub(super) fn get_unclaimed_gas(
+    server: &RpcServer,
+    params: &[Value],
+) -> Result<Value, RpcException> {
+    let address_text = expect_string_param(params, 0, "getunclaimedgas")?;
+    let version = server.system().settings().address_version;
+    let script_hash = if let Ok(hash) = UInt160::from_str(&address_text) {
+        hash
+   } else {
+        WalletHelper::to_script_hash(&address_text, version).map_err(invalid_params)?
+   };
+
+    let store = server.system().store_cache();
+    let ledger = LedgerContract::new();
+    let height = ledger
+        .current_index(&store)
+        .map_err(|err| internal_error(err.to_string()))?
+        .saturating_add(1);
+    let neo = NeoToken::new();
+    let unclaimed = neo
+        .unclaimed_gas(&store, &script_hash, height)
+        .map_err(|err| internal_error(err.to_string()))?;
+    let address = WalletHelper::to_address(&script_hash, version);
+
+    Ok(json!({
+        "address": address,
+        // C# GetUnclaimedGas returns the raw datoshi BigInteger as a string
+        // (NEO.UnclaimedGas(...).ToString()), e.g. "100000000" for 1 GAS — not
+        // the decimal form. Wrapping in BigDecimal would divide by 10^8.
+        "unclaimed": unclaimed.to_string()
+   }))
+}

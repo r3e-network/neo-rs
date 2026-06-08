@@ -1,0 +1,834 @@
+#![allow(clippy::mutable_key_type)]
+
+//! Contract manifest implementation.
+//!
+//! Represents the manifest of a smart contract which declares the features
+//! and permissions it will use when deployed.
+
+use neo_error::CoreError as Error;
+use neo_error::CoreResult as Result;
+use neo_primitives::constants::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
+use neo_io::serializable::helper::{get_var_size, get_var_size_str};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_vm::Interoperable;
+use crate::manifest::{
+    ContractAbi, ContractGroup, ContractPermission, ContractPermissionDescriptor, WildCardContainer,
+};
+use neo_vm::StackItem;
+use neo_primitives::UInt160;
+use neo_vm_rs::StackValue;
+use serde::{Deserialize, Serialize};
+use serde_json::{self, Value};
+use std::collections::{HashMap, HashSet};
+
+/// Maximum length of a contract manifest in bytes.
+pub const MAX_MANIFEST_LENGTH: usize = u16::MAX as usize;
+
+fn map_json_error(err: serde_json::Error) -> IoError {
+    IoError::invalid_data(err.to_string())
+}
+
+fn write_json_item<T: serde::Serialize>(item: &T, writer: &mut BinaryWriter) -> IoResult<()> {
+    let json = serde_json::to_string(item).map_err(map_json_error)?;
+    writer.write_var_string(&json)
+}
+
+fn read_json_item<T: for<'de> serde::Deserialize<'de>>(
+    reader: &mut MemoryReader,
+    max_len: usize,
+) -> IoResult<T> {
+    let json = reader.read_var_string(max_len)?;
+    serde_json::from_str(&json).map_err(map_json_error)
+}
+
+/// Represents the manifest of a smart contract.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContractManifest {
+    /// The name of the contract.
+    pub name: String,
+
+    /// The groups that the contract belongs to.
+    #[serde(default)]
+    pub groups: Vec<ContractGroup>,
+
+    /// The features supported by the contract.
+    #[serde(default)]
+    pub features: HashMap<String, Value>,
+
+    /// The standards supported by the contract.
+    #[serde(default, rename = "supportedstandards")]
+    pub supported_standards: Vec<String>,
+
+    /// The ABI (Application Binary Interface) of the contract.
+    pub abi: ContractAbi,
+
+    /// The permissions required by the contract.
+    #[serde(default)]
+    pub permissions: Vec<ContractPermission>,
+
+    /// The contracts and groups that this contract trusts.
+    #[serde(default)]
+    pub trusts: WildCardContainer<ContractPermissionDescriptor>,
+
+    /// Additional metadata.
+    #[serde(default)]
+    pub extra: Option<Value>,
+}
+
+impl ContractManifest {
+    /// Creates a new contract manifest.
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            groups: Vec::new(),
+            features: HashMap::new(),
+            supported_standards: Vec::new(),
+            abi: ContractAbi::default(),
+            permissions: vec![ContractPermission::default_wildcard()],
+            trusts: WildCardContainer::create_wildcard(),
+            extra: None,
+        }
+    }
+
+    /// Creates a new native contract manifest.
+    pub fn new_native(name: String) -> Self {
+        Self {
+            name,
+            groups: Vec::new(),
+            features: HashMap::new(),
+            supported_standards: Vec::new(),
+            abi: ContractAbi::default(),
+            permissions: vec![ContractPermission::default_wildcard()],
+            trusts: WildCardContainer::default(),
+            extra: None,
+        }
+    }
+
+    /// Gets the size of the manifest in bytes.
+    pub fn size(&self) -> usize {
+        // NOTE: The binary manifest format embeds several fields as JSON strings (matching the C#
+        // node). Size calculations must mirror `serialize_io` exactly.
+        let mut size = 0usize;
+
+        size += get_var_size_str(&self.name);
+
+        size += get_var_size(self.groups.len() as u64);
+        for group in &self.groups {
+            let group_json = serde_json::to_string(group).unwrap_or_default();
+            size += get_var_size_str(&group_json);
+        }
+
+        let features_json = serde_json::to_string(&self.features).unwrap_or_default();
+        size += get_var_size_str(&features_json);
+
+        size += get_var_size(self.supported_standards.len() as u64);
+        for standard in &self.supported_standards {
+            size += get_var_size_str(standard);
+        }
+
+        let abi_json = serde_json::to_string(&self.abi).unwrap_or_default();
+        size += get_var_size_str(&abi_json);
+
+        size += get_var_size(self.permissions.len() as u64);
+        for permission in &self.permissions {
+            let permission_json = serde_json::to_string(permission).unwrap_or_default();
+            size += get_var_size_str(&permission_json);
+        }
+
+        match &self.trusts {
+            WildCardContainer::Wildcard => size += get_var_size(0),
+            WildCardContainer::List(trusts) => {
+                size += get_var_size(trusts.len() as u64);
+                for trust in trusts {
+                    let trust_json = serde_json::to_string(trust).unwrap_or_default();
+                    size += get_var_size_str(&trust_json);
+                }
+            }
+        }
+
+        let extra_json = self
+            .extra
+            .as_ref()
+            .and_then(|value| serde_json::to_string(value).ok())
+            .unwrap_or_default();
+        size += get_var_size_str(&extra_json);
+
+        size
+    }
+
+    /// Converts the manifest to JSON.
+    pub fn to_json(&self) -> Result<Value> {
+        serde_json::to_value(self).map_err(|e| Error::serialization(e.to_string()))
+    }
+
+    /// Creates a manifest from a JSON string.
+    pub fn from_json_str(json: &str) -> Result<Self> {
+        serde_json::from_str(json).map_err(|e| Error::serialization(e.to_string()))
+    }
+
+    /// Alias to maintain backwards compatibility with older code paths.
+    pub fn from_json(json: &str) -> Result<Self> {
+        Self::from_json_str(json)
+    }
+
+    /// Parses a contract manifest from JSON.
+    /// This is an alias for `from_json_str` to match C# `ContractManifest.Parse` exactly.
+    pub fn parse(json: &str) -> Result<Self> {
+        Self::from_json_str(json)
+    }
+
+    /// Validates the manifest.
+    pub fn validate(&self) -> Result<()> {
+        // Validate name
+        if self.name.is_empty() {
+            return Err(Error::invalid_data("Contract name cannot be empty"));
+        }
+
+        if !self.features.is_empty() {
+            return Err(Error::invalid_data("Features field must be empty"));
+        }
+
+        let mut seen_standards = HashSet::new();
+        for standard in &self.supported_standards {
+            if standard.is_empty() {
+                return Err(Error::invalid_data(
+                    "Supported standards cannot include empty strings",
+                ));
+            }
+            if !seen_standards.insert(standard) {
+                return Err(Error::invalid_data("Supported standards must be unique"));
+            }
+        }
+
+        // Validate manifest size
+        if self.size() > MAX_MANIFEST_LENGTH {
+            return Err(Error::invalid_data(
+                "Manifest exceeds maximum allowed length",
+            ));
+        }
+
+        // Validate groups
+        let mut group_keys = Vec::new();
+        for group in &self.groups {
+            group.validate()?;
+            if group_keys.iter().any(|key| key == &group.pub_key) {
+                return Err(Error::invalid_data(
+                    "Duplicate group public key in manifest",
+                ));
+            }
+            group_keys.push(group.pub_key.clone());
+        }
+
+        // Validate permissions. Neo N3 allows empty permissions arrays, which
+        // means the contract is not allowed to call any external methods.
+        let mut permission_contracts = Vec::new();
+        for permission in &self.permissions {
+            permission.validate()?;
+            if permission_contracts
+                .iter()
+                .any(|contract| contract == &permission.contract)
+            {
+                return Err(Error::invalid_data(
+                    "Duplicate permission contract in manifest",
+                ));
+            }
+            permission_contracts.push(permission.contract.clone());
+        }
+
+        if let WildCardContainer::List(trusts) = &self.trusts {
+            let mut seen_trusts = Vec::new();
+            for trust in trusts {
+                if seen_trusts.iter().any(|existing| existing == trust) {
+                    return Err(Error::invalid_data("Duplicate trust entry in manifest"));
+                }
+                seen_trusts.push(trust.clone());
+                if let ContractPermissionDescriptor::Group(pub_key) = trust {
+                    if !pub_key.is_valid() {
+                        return Err(Error::invalid_data("Invalid group public key in trusts"));
+                    }
+                }
+            }
+        }
+
+        // Validate ABI
+        self.abi.validate().map_err(Error::invalid_data)?;
+
+        Ok(())
+    }
+
+    /// Checks if the contract can call another contract.
+    pub fn can_call(
+        &self,
+        target_manifest: &ContractManifest,
+        target_hash: &UInt160,
+        target_method: &str,
+    ) -> bool {
+        match &self.trusts {
+            WildCardContainer::Wildcard => return true,
+            WildCardContainer::List(trusts) => {
+                if trusts.iter().any(|descriptor| {
+                    descriptor.matches_contract(target_hash, &target_manifest.groups)
+                }) {
+                    return true;
+                }
+            }
+        }
+
+        self.permissions
+            .iter()
+            .any(|permission| permission.is_allowed(target_manifest, target_hash, target_method))
+    }
+
+    /// Gets a method from the ABI by name.
+    pub fn get_method(
+        &self,
+        name: &str,
+    ) -> Option<
+        &crate::ContractMethodDescriptor,
+    > {
+        self.abi.methods.iter().find(|m| m.name == name)
+    }
+
+    /// Checks if the contract supports a specific standard.
+    pub fn supports_standard(&self, standard: &str) -> bool {
+        self.supported_standards.contains(&standard.to_string())
+    }
+
+    /// Serializes the contract manifest to bytes.
+    pub fn serialize(&self, writer: &mut BinaryWriter) -> Result<()> {
+        self.serialize_io(writer)
+            .map_err(|e| Error::serialization(e.to_string()))
+    }
+
+    fn serialize_io(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_var_string(&self.name)?;
+
+        writer.write_var_int(self.groups.len() as u64)?;
+        for group in &self.groups {
+            self.serialize_contract_group(group, writer)?;
+        }
+
+        let features_json = serde_json::to_string(&self.features).map_err(map_json_error)?;
+        writer.write_var_string(&features_json)?;
+
+        writer.write_var_int(self.supported_standards.len() as u64)?;
+        for standard in &self.supported_standards {
+            writer.write_var_string(standard)?;
+        }
+
+        self.serialize_contract_abi(&self.abi, writer)?;
+
+        writer.write_var_int(self.permissions.len() as u64)?;
+        for permission in &self.permissions {
+            self.serialize_contract_permission(permission, writer)?;
+        }
+
+        match &self.trusts {
+            WildCardContainer::Wildcard => writer.write_var_int(0)?,
+            WildCardContainer::List(trusts) => {
+                writer.write_var_int(trusts.len() as u64)?;
+                for trust in trusts {
+                    let trust_json = serde_json::to_string(trust).map_err(map_json_error)?;
+                    writer.write_var_string(&trust_json)?;
+                }
+            }
+        }
+
+        let extra_json = match &self.extra {
+            Some(value) => serde_json::to_string(value).map_err(map_json_error)?,
+            None => String::new(),
+        };
+        writer.write_var_string(&extra_json)?;
+
+        Ok(())
+    }
+
+    /// Deserializes the contract manifest from bytes.
+    pub fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
+        Self::deserialize_io(reader).map_err(|e| Error::serialization(e.to_string()))
+    }
+
+    fn deserialize_io(reader: &mut MemoryReader) -> IoResult<Self> {
+        let name = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max MAX_SCRIPT_SIZE chars for name
+
+        // Deserialize groups
+        let groups_count = reader.read_var_int(256)? as usize; // Max 256 groups
+        let mut groups = Vec::with_capacity(groups_count);
+        for _ in 0..groups_count {
+            let group = Self::deserialize_contract_group(reader)?;
+            groups.push(group);
+        }
+
+        // Deserialize features
+        let features_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?; // Max 64KB for features
+        let features = serde_json::from_str(&features_json).map_err(map_json_error)?;
+
+        // Deserialize supported standards
+        let standards_count = reader.read_var_int(256)? as usize; // Max 256 standards
+        let mut supported_standards = Vec::with_capacity(standards_count);
+        for _ in 0..standards_count {
+            let standard = reader.read_var_string(256)?; // Max 256 chars per standard
+            supported_standards.push(standard);
+        }
+
+        // Deserialize ABI
+        let abi = Self::deserialize_contract_abi(reader)?;
+
+        // Deserialize permissions
+        let permissions_count = reader.read_var_int(256)? as usize; // Max 256 permissions
+        let mut permissions = Vec::with_capacity(permissions_count);
+        for _ in 0..permissions_count {
+            let permission = Self::deserialize_contract_permission(reader)?;
+            permissions.push(permission);
+        }
+
+        // Deserialize trusts
+        let trusts_count = reader.read_var_int(256)? as usize;
+        let trusts = if trusts_count == 0 {
+            WildCardContainer::create_wildcard()
+        } else {
+            let mut entries = Vec::with_capacity(trusts_count);
+            for _ in 0..trusts_count {
+                let trust_json = reader.read_var_string(MAX_SCRIPT_SIZE)?;
+                let trust: ContractPermissionDescriptor =
+                    serde_json::from_str(&trust_json).map_err(map_json_error)?;
+                entries.push(trust);
+            }
+            WildCardContainer::create(entries)
+        };
+
+        // Deserialize extra
+        let extra_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?; // Max 64KB for extra
+        let extra = if extra_json.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_str(&extra_json).map_err(map_json_error)?)
+        };
+
+        Ok(Self {
+            name,
+            groups,
+            features,
+            supported_standards,
+            abi,
+            permissions,
+            trusts,
+            extra,
+        })
+    }
+
+    fn serialize_contract_group(
+        &self,
+        group: &ContractGroup,
+        writer: &mut BinaryWriter,
+    ) -> IoResult<()> {
+        write_json_item(group, writer)
+    }
+
+    fn deserialize_contract_group(reader: &mut MemoryReader) -> IoResult<ContractGroup> {
+        read_json_item(reader, MAX_SCRIPT_SIZE)
+    }
+
+    fn serialize_contract_abi(&self, abi: &ContractAbi, writer: &mut BinaryWriter) -> IoResult<()> {
+        write_json_item(abi, writer)
+    }
+
+    fn deserialize_contract_abi(reader: &mut MemoryReader) -> IoResult<ContractAbi> {
+        read_json_item(reader, MAX_SCRIPT_LENGTH)
+    }
+
+    fn serialize_contract_permission(
+        &self,
+        permission: &ContractPermission,
+        writer: &mut BinaryWriter,
+    ) -> IoResult<()> {
+        write_json_item(permission, writer)
+    }
+
+    fn deserialize_contract_permission(reader: &mut MemoryReader) -> IoResult<ContractPermission> {
+        read_json_item(reader, MAX_SCRIPT_SIZE)
+    }
+}
+
+impl Serializable for ContractManifest {
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        Self::deserialize_io(reader)
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        self.serialize_io(writer)
+    }
+
+    fn size(&self) -> usize {
+        self.size()
+    }
+}
+
+impl Interoperable for ContractManifest {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), neo_vm::VmError> {
+        let sv = StackValue::try_from(stack_item).map_err(|error| {
+            neo_vm::VmError::invalid_operation_msg(format!(
+                "ContractManifest expects Struct stack item: {error}"
+            ))
+        })?;
+        self.from_stack_value(sv).map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+    }
+
+    fn to_stack_item(&self) -> std::result::Result<StackItem, neo_vm::VmError> {
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            neo_vm::VmError::invalid_operation_msg(format!(
+                "ContractManifest StackValue conversion failed: {error}"
+            ))
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn Interoperable> {
+        Box::new(self.clone())
+    }
+}
+
+impl ContractManifest {
+    pub fn to_stack_value(&self) -> StackValue {
+        let group_items = self
+            .groups
+            .iter()
+            .map(ContractGroup::to_stack_value)
+            .collect::<Vec<_>>();
+
+        let mut feature_entries = Vec::with_capacity(self.features.len());
+        for (key, value) in &self.features {
+            let json_bytes =
+                neo_serialization::JsonSerializer::encode_value_csharp_compatible(
+                    value,
+                );
+            feature_entries.push((
+                StackValue::ByteString(key.as_bytes().to_vec()),
+                StackValue::ByteString(json_bytes),
+            ));
+        }
+        feature_entries.sort_by(|(left, _), (right, _)| {
+            left.to_byte_string_bytes()
+                .cmp(&right.to_byte_string_bytes())
+        });
+
+        let standards_items = self
+            .supported_standards
+            .iter()
+            .map(|standard| StackValue::ByteString(standard.as_bytes().to_vec()))
+            .collect::<Vec<_>>();
+
+        let permission_items = self
+            .permissions
+            .iter()
+            .map(ContractPermission::to_stack_value)
+            .collect::<Vec<_>>();
+
+        let trusts_item = match &self.trusts {
+            WildCardContainer::Wildcard => StackValue::Null,
+            WildCardContainer::List(trusts) => StackValue::Array(
+                trusts
+                    .iter()
+                    .map(ContractPermissionDescriptor::to_stack_value)
+                    .collect(),
+            ),
+        };
+
+        let extra_bytes = match &self.extra {
+            Some(extra) => {
+                neo_serialization::JsonSerializer::encode_value_csharp_compatible(
+                    extra,
+                )
+            }
+            None => b"null".to_vec(),
+        };
+
+        StackValue::Struct(vec![
+            StackValue::ByteString(self.name.as_bytes().to_vec()),
+            StackValue::Array(group_items),
+            StackValue::Map(feature_entries),
+            StackValue::Array(standards_items),
+            self.abi.to_stack_value(),
+            StackValue::Array(permission_items),
+            trusts_item,
+            StackValue::ByteString(extra_bytes),
+        ])
+    }
+
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> std::result::Result<(), Error> {
+        let StackValue::Struct(items) = stack_value else {
+            return Err(Error::invalid_format(
+                "ContractManifest expects Struct stack value",
+            ));
+        };
+
+        if items.len() < 8 {
+            return Err(Error::invalid_format(format!(
+                "ContractManifest stack value must contain 8 elements, found {}",
+                items.len()
+            )));
+        }
+
+        let name_bytes = items[0]
+            .to_byte_string_bytes()
+            .ok_or_else(|| Error::invalid_format("ContractManifest name must be ByteString"))?;
+        self.name = String::from_utf8(name_bytes)
+            .map_err(|_| Error::invalid_format("ContractManifest name must be valid UTF-8"))?;
+
+        self.groups = match &items[1] {
+            StackValue::Array(groups) => groups
+                .iter()
+                .filter_map(|item| ContractGroup::try_from_stack_value(item.clone()).ok())
+                .collect(),
+            _ => {
+                return Err(Error::invalid_format(
+                    "ContractManifest groups must be an Array",
+                ));
+            }
+        };
+
+        if let StackValue::Map(features) = &items[2] {
+            if !features.is_empty() {
+                tracing::warn!("ContractManifest features map is not empty, ignoring");
+            }
+        } else {
+            return Err(Error::invalid_format(
+                "ContractManifest features must be a Map",
+            ));
+        }
+        self.features.clear();
+
+        self.supported_standards = match &items[3] {
+            StackValue::Array(standards) => standards
+                .iter()
+                .filter_map(|item| {
+                    let bytes = item.to_byte_string_bytes()?;
+                    String::from_utf8(bytes).ok()
+                })
+                .collect(),
+            _ => {
+                return Err(Error::invalid_format(
+                    "ContractManifest supported standards must be an Array",
+                ));
+            }
+        };
+
+        let mut abi = ContractAbi::default();
+        abi.from_stack_value(items[4].clone())?;
+        self.abi = abi;
+
+        self.permissions = match &items[5] {
+            StackValue::Array(permissions) => {
+                let mut values = Vec::new();
+                for item in permissions {
+                    let mut permission = ContractPermission::default_wildcard();
+                    permission.from_stack_value(item.clone())?;
+                    values.push(permission);
+                }
+                values
+            }
+            _ => {
+                return Err(Error::invalid_format(
+                    "ContractManifest permissions must be an Array",
+                ));
+            }
+        };
+
+        self.trusts = match &items[6] {
+            StackValue::Null => WildCardContainer::create_wildcard(),
+            StackValue::Array(trusts) => WildCardContainer::create(
+                trusts
+                    .iter()
+                    .filter_map(|item| {
+                        ContractPermissionDescriptor::from_stack_value(item.clone()).ok()
+                    })
+                    .collect(),
+            ),
+            _ => {
+                return Err(Error::invalid_format(
+                    "ContractManifest trusts must be Null or Array",
+                ));
+            }
+        };
+
+        self.extra = match &items[7] {
+            StackValue::Null => None,
+            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
+                parse_extra_bytes(bytes.as_slice())
+            }
+            other => {
+                tracing::error!(
+                    "ContractManifest extra must be byte string or null, found {:?}",
+                    other.compact_type_tag()
+                );
+                None
+            }
+        };
+
+        Ok(())
+    }
+}
+
+impl Default for ContractManifest {
+    fn default() -> Self {
+        Self {
+            name: "DefaultContract".to_string(),
+            groups: Vec::new(),
+            features: HashMap::new(),
+            supported_standards: Vec::new(),
+            abi: ContractAbi::default(),
+            permissions: vec![ContractPermission::default_wildcard()],
+            trusts: WildCardContainer::Wildcard,
+            extra: None,
+        }
+    }
+}
+
+fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let text = match std::str::from_utf8(bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("ContractManifest extra must be UTF-8: {}", e);
+            return None;
+        }
+    };
+
+    if text == "null" {
+        None
+    } else {
+        match serde_json::from_str(text) {
+            Ok(value) => Some(value),
+            Err(e) => {
+                tracing::error!("Invalid JSON in manifest extra: {}", e);
+                None
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod manifest_extra_escape_tests {
+    use super::*;
+    use neo_vm::Interoperable;
+    use neo_vm_rs::StackValue;
+
+    /// Bug #10 regression — manifest `extra` JSON must use C# JavaScriptEncoder.Default
+    /// escape semantics. serde_json's minimal RFC-8259 escape set produces wrong bytes
+    /// for `&`, `<`, `>`, `'`, `+`, `` ` ``, and all non-ASCII. Block 1,208,916 deploy
+    /// of "Three Orange Hearts" NEP-11 had `&` in the description; serde_json kept it
+    /// literal, C# escaped it to `&`, state roots diverged from that block onward.
+    #[test]
+    fn extra_with_ampersand_uses_csharp_escape() {
+        let m = ContractManifest {
+            extra: Some(serde_json::json!({
+                "description": "NEO, GAS, & FLM on Neo N3"
+            })),
+            ..Default::default()
+        };
+        let stack = m.to_stack_item().expect("to_stack_item");
+        let StackItem::Struct(s) = stack else {
+            panic!("expected Struct")
+        };
+        let items = s.items();
+        // extra is the last (8th) field per to_stack_item layout.
+        let extra_item = &items[7];
+        let extra_bytes = extra_item.as_bytes().expect("extra bytes");
+        let extra_str = std::str::from_utf8(&extra_bytes).expect("utf-8");
+        // Output must contain the escape sequence (6 ASCII chars: \, u, 0, 0, 2, 6)
+        // and must NOT contain a literal `&`.
+        assert!(
+            extra_str.contains("\\u0026"),
+            "expected `&` to be escaped as `\\u0026`, got: {extra_str}"
+        );
+        assert!(
+            !extra_str.contains('&'),
+            "raw `&` must NOT appear in C#-compatible output, got: {extra_str}"
+        );
+    }
+
+    #[test]
+    fn contract_manifest_projects_to_stack_value() {
+        let mut manifest = ContractManifest::new("sample".to_string());
+        manifest.supported_standards = vec!["NEP-17".to_string()];
+        manifest.features.insert(
+            "feature".to_string(),
+            serde_json::json!({
+                "description": "GAS & NEO"
+            }),
+        );
+        manifest.extra = Some(serde_json::json!({
+            "description": "NEO, GAS, & FLM on Neo N3"
+        }));
+
+        let value = manifest.to_stack_value();
+        let StackValue::Struct(items) = value else {
+            panic!("expected manifest Struct")
+        };
+
+        assert_eq!(items[0], StackValue::ByteString(b"sample".to_vec()));
+        assert_eq!(items[1], StackValue::Array(Vec::new()));
+        let StackValue::Map(features) = &items[2] else {
+            panic!("expected features map")
+        };
+        assert_eq!(features.len(), 1);
+        assert_eq!(features[0].0, StackValue::ByteString(b"feature".to_vec()));
+        let StackValue::ByteString(feature_bytes) = &features[0].1 else {
+            panic!("expected feature ByteString")
+        };
+        let feature = std::str::from_utf8(feature_bytes).expect("feature utf8");
+        assert!(
+            feature.contains("\\u0026"),
+            "feature values should use C# JSON escapes"
+        );
+        assert_eq!(
+            items[3],
+            StackValue::Array(vec![StackValue::ByteString(b"NEP-17".to_vec())])
+        );
+        assert_eq!(items[4], manifest.abi.to_stack_value());
+        assert_eq!(
+            items[5],
+            StackValue::Array(vec![manifest.permissions[0].to_stack_value()])
+        );
+        assert_eq!(items[6], StackValue::Null);
+        let StackValue::ByteString(extra_bytes) = &items[7] else {
+            panic!("expected extra ByteString")
+        };
+        let extra = std::str::from_utf8(extra_bytes).expect("extra utf8");
+        assert!(
+            extra.contains("\\u0026"),
+            "extra should use C# JSON escapes"
+        );
+    }
+
+    #[test]
+    fn contract_manifest_reads_stack_value() {
+        let mut source = ContractManifest::new("sample".to_string());
+        source.supported_standards = vec!["NEP-17".to_string()];
+        source.extra = Some(serde_json::json!({"description": "ok"}));
+
+        let mut decoded = ContractManifest::default();
+        decoded
+            .from_stack_value(source.to_stack_value())
+            .expect("manifest from stack value");
+
+        assert_eq!(decoded.name, source.name);
+        assert_eq!(decoded.supported_standards, source.supported_standards);
+        assert_eq!(decoded.abi, source.abi);
+        assert_eq!(decoded.permissions, source.permissions);
+        assert_eq!(decoded.trusts, source.trusts);
+        assert_eq!(decoded.extra, source.extra);
+    }
+
+    #[test]
+    fn contract_manifest_stack_item_projection_matches_stack_value_projection() {
+        let mut manifest = ContractManifest::new("sample".to_string());
+        manifest.supported_standards = vec!["NEP-17".to_string()];
+
+        let expected = StackItem::try_from(manifest.to_stack_value()).unwrap();
+
+        assert_eq!(manifest.to_stack_item().unwrap(), expected);
+    }
+}

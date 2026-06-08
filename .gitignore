@@ -1,0 +1,13 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Target
+target/
+
+# Some openspec files
+openspec/changes/2026-06-03-kill-neo-core/design.md

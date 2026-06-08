@@ -1,0 +1,122 @@
+//! Commands accepted by the [`crate::service::BlockchainService`].
+//!
+//! The blockchain service is *command-shaped*: every interaction (a
+//! consensus-driver block proposal, a network inventory message, an RPC
+//! submit, a reverify tick, …) is sent through the same `mpsc::Sender`
+//! as a `BlockchainCommand`. The `run()` loop in [`crate::service`]
+//! dispatches each command to an `async fn` handler on the service
+//! struct, so the dispatch is a single `match` against the enum rather
+//! than the per-message `tell()` / `ask()` boilerplate the old actor
+//! model used.
+//!
+//! This is the *internal* command set, the one the actor's old mailbox
+//! used. The *trait-level* request/response surface (used by new code
+//! that wants a normal `async fn` API) lives in
+//! [`crate::blockchain::RuntimeBlockchainCommand`] — re-exported from
+//! [`neo_runtime`].
+
+use std::sync::Arc;
+
+use neo_payloads::{extensible_payload::ExtensiblePayload, header::Header, Block, Transaction};
+
+use crate::fill_memory_pool::FillMemoryPool;
+use crate::import::Import;
+use crate::persist_completed::PersistCompleted;
+use crate::relay_result::RelayResult;
+use crate::reverify::Reverify;
+use crate::PreverifyCompleted;
+
+/// Reply payload for [`BlockchainCommand::AddTransaction`].
+#[derive(Debug, Clone, Copy)]
+pub struct AddTransactionReply {
+    /// Verify result of the transaction.
+    pub result: neo_primitives::verify_result::VerifyResult,
+    /// Hash of the transaction.
+    pub hash: neo_primitives::UInt256,
+}
+
+/// Reply payload for [`BlockchainCommand::GetHeight`].
+pub type HeightReply = u32;
+
+/// Reply payload for [`BlockchainCommand::GetBlock`] /
+/// [`BlockchainCommand::GetBlockByHeight`].
+pub type BlockReply = Option<Block>;
+
+/// Commands accepted by the blockchain service.
+///
+/// Note: variants that carry a `oneshot::Sender` for a reply cannot
+/// derive `Clone` (a `Sender` is a one-shot channel), so the enum
+/// itself is intentionally not `Clone`. Callers that need to keep a
+/// copy of a variant should not — the whole point of the command
+/// channel is that each command is processed exactly once.
+#[derive(Debug)]
+pub enum BlockchainCommand {
+    /// Notification that a block was persisted.
+    PersistCompleted(PersistCompleted),
+    /// Request to import blocks.
+    Import(Import),
+    /// Request to fill the memory pool.
+    FillMemoryPool(FillMemoryPool),
+    /// Notification that fill completed.
+    FillCompleted,
+    /// Request to reverify inventories.
+    Reverify(Reverify),
+    /// Inventory block received.
+    InventoryBlock {
+        /// The block.
+        block: Arc<Block>,
+        /// Whether to relay.
+        relay: bool,
+        /// Whether state-independent verification (signatures) was already performed.
+        pre_verified: bool,
+    },
+    /// Extensible payload received.
+    InventoryExtensible {
+        /// The extensible payload.
+        payload: ExtensiblePayload,
+        /// Whether to relay.
+        relay: bool,
+    },
+    /// Preverification completed.
+    PreverifyCompleted(PreverifyCompleted),
+    /// Headers received.
+    Headers(Vec<Header>),
+    /// Idle tick for background processing.
+    Idle,
+    /// Relay result notification.
+    RelayResult(RelayResult),
+    /// Initialize the blockchain service.
+    Initialize,
+    /// Check unverified cache and persist any ready consecutive blocks.
+    /// Self-scheduled by the service when blocks are parked in the
+    /// unverified cache to ensure persistence continues even when the
+    /// specific `InventoryBlock` message for the next-to-persist block
+    /// is delayed in the mailbox.
+    DrainUnverified,
+    /// Attach a new transaction (used by the high-level service API).
+    AddTransaction {
+        /// The transaction to add.
+        transaction: Transaction,
+        /// Reply channel.
+        reply: tokio::sync::oneshot::Sender<AddTransactionReply>,
+    },
+    /// Get the current canonical tip height.
+    GetHeight {
+        /// Reply channel.
+        reply: tokio::sync::oneshot::Sender<HeightReply>,
+    },
+    /// Get a block by its hash.
+    GetBlock {
+        /// The block hash.
+        hash: neo_primitives::UInt256,
+        /// Reply channel.
+        reply: tokio::sync::oneshot::Sender<BlockReply>,
+    },
+    /// Get a block by its height.
+    GetBlockByHeight {
+        /// The block height.
+        height: u32,
+        /// Reply channel.
+        reply: tokio::sync::oneshot::Sender<BlockReply>,
+    },
+}

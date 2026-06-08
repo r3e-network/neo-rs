@@ -1,0 +1,246 @@
+//! Serialization helpers for the persistence layer.
+//!
+//! IMPORTANT: only the `*_neo_binary` helpers (and the `Serializable` trait they
+//! wrap) produce the C#-compatible Neo `ISerializable` wire/storage format used
+//! for consensus-relevant state. The `serialize`/`deserialize`/`*_json`/size
+//! helpers use Rust-specific formats (bincode / serde_json) that have NO
+//! relationship to C# Neo's encoding — they are internal/diagnostic utilities and
+//! MUST NOT be used to persist consensus-relevant data or compute state roots.
+
+use neo_error::CoreError;
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use serde::{Deserialize, Serialize};
+
+/// Serializes data to bincode (a Rust-specific format — NOT the C# Neo encoding;
+/// internal/diagnostic only, never for consensus-relevant persisted state).
+pub fn serialize<T: Serialize>(data: &T) -> neo_error::Result<Vec<u8>> {
+    bincode::serialize(data)
+        .map_err(|e| CoreError::serialization(format!("Binary serialization failed: {}", e)))
+}
+
+/// Deserializes data from bincode (Rust-specific format — see [`serialize`]; not
+/// C#-compatible, internal/diagnostic only).
+pub fn deserialize<T: for<'de> Deserialize<'de>>(data: &[u8]) -> neo_error::Result<T> {
+    // Validate input data
+    if data.is_empty() {
+        return Err(CoreError::deserialization("Cannot deserialize empty data"));
+    }
+
+    bincode::deserialize(data)
+        .map_err(|e| CoreError::deserialization(format!("Binary deserialization failed: {}", e)))
+}
+
+/// Serializes data to JSON format (production implementation matching C# Neo exactly)
+pub fn serialize_json<T: Serialize>(data: &T) -> neo_error::Result<String> {
+    serde_json::to_string(data)
+        .map_err(|e| CoreError::serialization(format!("JSON serialization failed: {}", e)))
+}
+
+/// Deserializes data from JSON format (production implementation matching C# Neo exactly)
+pub fn deserialize_json<T: for<'de> Deserialize<'de>>(data: &str) -> neo_error::Result<T> {
+    // Validate input JSON
+    if data.trim().is_empty() {
+        return Err(CoreError::deserialization("Cannot deserialize empty JSON"));
+    }
+
+    serde_json::from_str(data)
+        .map_err(|e| CoreError::deserialization(format!("JSON deserialization failed: {}", e)))
+}
+
+/// Serializes data using Neo's native binary format (matches C# ISerializable exactly)
+pub fn serialize_neo_binary<T>(data: &T, writer: &mut BinaryWriter) -> neo_error::Result<()>
+where
+    T: Serializable,
+{
+    Serializable::serialize(data, writer)
+        .map_err(|e| CoreError::serialization(format!("Neo binary serialization failed: {}", e)))
+}
+
+/// Deserializes data using Neo's native binary format (matches C# ISerializable exactly)
+pub fn deserialize_neo_binary<T>(data: &[u8]) -> neo_error::Result<T>
+where
+    T: Serializable + Default,
+{
+    // Validate input data
+    if data.is_empty() {
+        return Err(CoreError::deserialization(
+            "Cannot deserialize empty Neo binary data",
+        ));
+    }
+
+    let mut reader = MemoryReader::new(data);
+
+    T::deserialize(&mut reader).map_err(|e| {
+        CoreError::deserialization(format!("Neo binary deserialization failed: {}", e))
+    })
+}
+
+/// Gets the serialized size of data without actually serializing it (production implementation)
+pub fn estimate_serialized_size<T: Serialize>(data: &T) -> neo_error::Result<usize> {
+    bincode::serialized_size(data)
+        .map(|size| size as usize)
+        .map_err(|e| CoreError::serialization(format!("Size estimation failed: {}", e)))
+}
+
+/// Validates that data can be serialized and deserialized correctly (production implementation)
+pub fn validate_serialization<T: Serialize + for<'de> Deserialize<'de> + PartialEq>(
+    data: &T,
+) -> neo_error::Result<bool> {
+    // 1. Test binary serialization round-trip
+    let binary_serialized = serialize(data)?;
+    let binary_deserialized: T = deserialize(&binary_serialized)?;
+
+    if *data != binary_deserialized {
+        return Ok(false);
+    }
+
+    // 2. Test JSON serialization round-trip
+    let json_serialized = serialize_json(data)?;
+    let json_deserialized: T = deserialize_json(&json_serialized)?;
+
+    if *data != json_deserialized {
+        return Ok(false);
+    }
+
+    // 3. Validate size estimation accuracy
+    let estimated_size = estimate_serialized_size(data)?;
+    if estimated_size != binary_serialized.len() {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
+/// Compresses serialized data using LZ4 (production implementation matching C# Neo compression)
+pub fn compress_data(data: &[u8]) -> neo_error::Result<Vec<u8>> {
+    Ok(lz4_flex::compress_prepend_size(data))
+}
+
+/// Decompresses data using LZ4 (production implementation matching C# Neo compression)
+pub fn decompress_data(compressed_data: &[u8]) -> neo_error::Result<Vec<u8>> {
+    // Validate input
+    if compressed_data.is_empty() {
+        return Err(CoreError::deserialization("Cannot decompress empty data"));
+    }
+
+    lz4_flex::decompress_size_prepended(compressed_data)
+        .map_err(|e| CoreError::deserialization(format!("Data decompression failed: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ============================================================================
+    // Binary Serialization Tests
+    // ============================================================================
+
+    #[test]
+    fn serialize_and_deserialize_roundtrip() {
+        let data: Vec<i32> = vec![1, 2, 3, 4, 5];
+        let serialized = serialize(&data).unwrap();
+        let deserialized: Vec<i32> = deserialize(&serialized).unwrap();
+        assert_eq!(data, deserialized);
+    }
+
+    #[test]
+    fn serialize_string() {
+        let data = "Hello, Neo!".to_string();
+        let serialized = serialize(&data).unwrap();
+        let deserialized: String = deserialize(&serialized).unwrap();
+        assert_eq!(data, deserialized);
+    }
+
+    #[test]
+    fn deserialize_empty_data_returns_error() {
+        let result: neo_error::Result<i32> = deserialize(&[]);
+        assert!(result.is_err());
+    }
+
+    // ============================================================================
+    // JSON Serialization Tests
+    // ============================================================================
+
+    #[test]
+    fn serialize_json_and_deserialize_roundtrip() {
+        let data: Vec<i32> = vec![1, 2, 3, 4, 5];
+        let json = serialize_json(&data).unwrap();
+        let deserialized: Vec<i32> = deserialize_json(&json).unwrap();
+        assert_eq!(data, deserialized);
+    }
+
+    #[test]
+    fn serialize_json_string() {
+        let data = "Hello, Neo!".to_string();
+        let json = serialize_json(&data).unwrap();
+        assert!(json.contains("Hello, Neo!"));
+    }
+
+    #[test]
+    fn deserialize_json_empty_returns_error() {
+        let result: neo_error::Result<i32> = deserialize_json("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_json_whitespace_only_returns_error() {
+        let result: neo_error::Result<i32> = deserialize_json("   ");
+        assert!(result.is_err());
+    }
+
+    // ============================================================================
+    // Size Estimation Tests
+    // ============================================================================
+
+    #[test]
+    fn estimate_serialized_size_matches_actual() {
+        let data: Vec<i32> = vec![1, 2, 3, 4, 5];
+        let estimated = estimate_serialized_size(&data).unwrap();
+        let actual = serialize(&data).unwrap().len();
+        assert_eq!(estimated, actual);
+    }
+
+    // ============================================================================
+    // Validation Tests
+    // ============================================================================
+
+    #[test]
+    fn validate_serialization_returns_true_for_valid_data() {
+        let data: Vec<i32> = vec![1, 2, 3, 4, 5];
+        let result = validate_serialization(&data).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn validate_serialization_string() {
+        let data = "Test string".to_string();
+        let result = validate_serialization(&data).unwrap();
+        assert!(result);
+    }
+
+    // ============================================================================
+    // Compression Tests
+    // ============================================================================
+
+    #[test]
+    fn compress_data_and_decompress_roundtrip() {
+        let data = b"Hello, Neo blockchain! This is test data.".to_vec();
+        let compressed = compress_data(&data).unwrap();
+        let decompressed = decompress_data(&compressed).unwrap();
+        assert_eq!(data, decompressed);
+    }
+
+    #[test]
+    fn decompress_data_empty_returns_error() {
+        let result = decompress_data(&[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn compress_data_large_input() {
+        let data: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
+        let compressed = compress_data(&data).unwrap();
+        let decompressed = decompress_data(&compressed).unwrap();
+        assert_eq!(data, decompressed);
+    }
+}

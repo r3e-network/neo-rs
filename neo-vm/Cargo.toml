@@ -1,0 +1,20 @@
+[package]
+name = "neo-vm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Stateful NeoVM host (execution engine, contexts, reference-counted StackItem) over the pure neo-vm-rs semantics"
+
+[dependencies]
+neo-vm-rs = { workspace = true }
+neo_io_crate = { path = "../neo-io", package = "neo-io" }
+neo-primitives = { path = "../neo-primitives" }
+neo-crypto = { path = "../neo-crypto" }
+parking_lot = { workspace = true }
+base64 = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
+serde_json = { workspace = true }

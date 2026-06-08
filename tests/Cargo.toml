@@ -1,0 +1,84 @@
+[package]
+name = "neo-tests"
+version = "0.7.2"
+edition = "2024"
+publish = false
+description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"
+
+# This is a test-only crate, not part of the main workspace
+# Run with: cargo test -p neo-tests
+
+[dependencies]
+# Layer 0 - Foundation
+neo-primitives = { workspace = true }
+neo-io = { workspace = true }
+neo-json = { workspace = true }
+neo-storage = { workspace = true }
+
+# Layer 1 - Crypto
+neo-crypto = { workspace = true }
+
+# Layer 2 - Protocol
+neo-consensus = { workspace = true }
+neo-p2p = { workspace = true }
+neo-payloads = { workspace = true }
+
+# Layer 4 - Services
+neo-rpc = { workspace = true }
+neo-telemetry = { workspace = true }
+neo-vm-rs = { workspace = true }
+
+# Utilities
+num-bigint = { workspace = true }
+hex = { workspace = true }
+tokio = { workspace = true, features = ["full", "test-util"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+neo-network = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
+
+[[test]]
+name = "layer_boundary_tests"
+path = "tests/layer_boundary_tests.rs"
+
+[[test]]
+name = "consensus_integration_tests"
+path = "tests/consensus_integration_tests.rs"
+
+[[test]]
+name = "state_integration_tests"
+path = "tests/state_integration_tests.rs"
+
+[[test]]
+name = "end_to_end_tests"
+path = "tests/end_to_end_tests.rs"
+
+[[test]]
+name = "chaos_tests"
+path = "tests/chaos_tests.rs"
+
+[[test]]
+name = "e2e_transaction_flow"
+path = "tests/e2e_transaction_flow.rs"
+
+[[test]]
+name = "block_persistence"
+path = "tests/block_persistence.rs"
+
+[[test]]
+name = "p2p_message_exchange"
+path = "tests/p2p_message_exchange.rs"
+
+[[test]]
+name = "contract_execution"
+path = "tests/contract_execution.rs"
+
+[[bench]]
+name = "performance_benchmarks"
+path = "benches/performance_benchmarks.rs"
+harness = false

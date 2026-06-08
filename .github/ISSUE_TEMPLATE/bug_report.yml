@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a problem with neo-rs
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue. Please avoid filing vulnerabilities here; use the contact in `SECURITY.md`.
+  - type: input
+    id: version
+    attributes:
+      label: neo-rs version
+      description: Output of `neo-cli --version` or commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, CPU/arch, storage backend (rocksdb/memory), container/host, network (mainnet/testnet/private), and any custom config flags
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the issue and expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include commands, configuration snippets, and any relevant logs
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Attach relevant log excerpts (redact secrets)
+      render: shell

@@ -1,0 +1,16 @@
+target
+dist
+data
+Logs
+backups
+tmp
+reports
+*.tar.gz
+*.log
+.git
+.github
+neo_csharp
+.cargo-ai
+rust_out
+scripts/__pycache__
+.env

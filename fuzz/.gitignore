@@ -1,0 +1,5 @@
+# Fuzzing artifacts and corpus
+artifacts/
+corpus/
+*.log
+coverage/

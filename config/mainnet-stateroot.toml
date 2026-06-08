@@ -1,0 +1,54 @@
+# Neo N3 MainNet - State Root Validation Config
+
+[network]
+network_magic = 0x334F454E
+
+[storage]
+backend = "rocksdb"
+data_dir = "./data/mainnet-stateroot"
+read_only = false
+
+[p2p]
+port = 20333
+max_connections = 50
+min_desired_connections = 10
+seed_nodes = [
+    "seed1.neo.org:10333",
+    "seed2.neo.org:10333",
+    "seed3.neo.org:10333",
+    "seed4.neo.org:10333",
+    "seed5.neo.org:10333"
+]
+enable_compression = true
+
+[rpc]
+enabled = true
+port = 20332
+bind_address = "127.0.0.1"
+cors_enabled = false
+auth_enabled = false
+max_gas_invoke = 50000000
+
+[consensus]
+enabled = false
+
+[telemetry]
+[telemetry.metrics]
+enabled = false
+
+[logging]
+level = "info"
+
+[blockchain]
+block_time = 15000
+max_transactions_per_block = 512
+
+[mempool]
+max_transactions = 50000
+
+[state_service]
+enabled = true
+path = "StateRoot"
+full_state = true
+auto_verify = false
+max_find_result_items = 100

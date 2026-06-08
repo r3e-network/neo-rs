@@ -1,0 +1,50 @@
+{
+  "first_divergent_block": 4410,
+  "details": [
+    {
+      "block": 4408,
+      "local": "0x8c8a3d926e2d5212237318285fcaf7ad2f4c1c4e586bb39e469bb84911e013d2",
+      "reference": "0x8c8a3d926e2d5212237318285fcaf7ad2f4c1c4e586bb39e469bb84911e013d2",
+      "match": true
+    },
+    {
+      "block": 4409,
+      "local": "0x4a6fa6640a06af9e2a20c39d5e0379c65c7a836a1368a752713a4c78237f35f3",
+      "reference": "0x4a6fa6640a06af9e2a20c39d5e0379c65c7a836a1368a752713a4c78237f35f3",
+      "match": true
+    },
+    {
+      "block": 4410,
+      "local": "0xc3848bd687f3637a4a9565cc87b65336a362627df475f8e761f148788e56288e",
+      "reference": "0x750c662a633387c5dece78ba7f71384cc10427089c9e7321e19841c93efb9b81",
+      "match": false
+    },
+    {
+      "block": 4411,
+      "local": "0x6b852b505c52b38948052055a4c2f703e5476d1cccd030fccfea2e8ef0e3f069",
+      "reference": "0x8b29e156a1ccb3377da692b79b65a4a89749a1cf97a983d6f2d7173965771d82",
+      "match": false
+    },
+    {
+      "block": 4412,
+      "local": "0x8afd43109f13335f2bbb52175fd06ad899dfb1a9d6188e04737e7dbe46e46d5e",
+      "reference": "0x35ae7ff848ab0b6085b8256f3ec2f02ad7445ffc48b4247d1a9570b112b60038",
+      "match": false
+    },
+    {
+      "block": 4413,
+      "local": "0x8a2f513107278ecdd50e3b9dfeaf06420109fa802f86084101c7e720b4caf18d",
+      "reference": "0x6320bdb3cac205736b5efbe4f3547e6277a0994740caaee479dd391cf7775606",
+      "match": false
+    },
+    {
+      "block": 4414,
+      "local": "0xe680c61c5a16c7f83fd594705e2575aebf68411b2448662beb2bed0c1cc2f854",
+      "reference": "0x94088f6432608a54e82eedefd22e67cb1baefa5f15af7ee30c568994142ed6a8",
+      "match": false
+    }
+  ],
+  "local_endpoint": "http://127.0.0.1:10332",
+  "reference_endpoint": "http://seed1.neo.org:10332",
+  "max_height_searched": 5106
+}

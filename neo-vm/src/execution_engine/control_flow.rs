@@ -1,0 +1,98 @@
+//
+// control_flow.rs - Jump, call, and syscall operations
+//
+
+use super::{ExecutionEngine, VmError, VmResult};
+
+impl ExecutionEngine {
+    /// Executes a jump to the specified absolute position in the current script.
+    ///
+    /// # Arguments
+    /// * `position` - The target instruction pointer position
+    ///
+    /// # Errors
+    /// Returns an error if the position is out of bounds or no context exists.
+    #[inline]
+    pub fn execute_jump(&mut self, position: i32) -> VmResult<()> {
+        let script_len = self
+            .current_context()
+            .map(|ctx| ctx.script().len())
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+        if position < 0 || (position as usize) >= script_len {
+            return Err(VmError::InvalidJump(position));
+        }
+
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        context.set_instruction_pointer(position as usize);
+        self.is_jumping = true;
+        Ok(())
+    }
+
+    /// Executes a jump by a relative offset from the current instruction pointer.
+    ///
+    /// # Arguments
+    /// * `offset` - The relative offset to jump by
+    ///
+    /// # Errors
+    /// Returns an error if the resulting position is out of bounds.
+    #[inline]
+    pub fn execute_jump_offset(&mut self, offset: i32) -> VmResult<()> {
+        let current_ip = self
+            .current_context()
+            .map(super::super::execution_context::ExecutionContext::instruction_pointer)
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+        let new_position = (current_ip as i64)
+            .checked_add(i64::from(offset))
+            .ok_or_else(|| VmError::InvalidJump(offset))?;
+
+        if new_position < 0 || new_position > i64::from(i32::MAX) {
+            return Err(VmError::InvalidJump(offset));
+        }
+
+        self.execute_jump(new_position as i32)
+    }
+
+    /// Executes a call to the specified position, creating a new execution context.
+    ///
+    /// # Arguments
+    /// * `position` - The target position in the current script
+    ///
+    /// # Errors
+    /// Returns an error if the position is out of bounds or no context exists.
+    pub fn execute_call(&mut self, position: usize) -> VmResult<()> {
+        let context = self
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        if position >= context.script().len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Call target out of range: {position}"
+            )));
+        }
+
+        let new_context = context.clone_with_position(position);
+        self.load_context(new_context)?;
+
+        Ok(())
+    }
+
+    /// Handles system calls. Delegates to the configured interop service when available.
+    pub fn on_syscall(&mut self, descriptor: u32) -> VmResult<()> {
+        if self.interop_service.is_none() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Syscall {descriptor} not supported"
+            )));
+        }
+
+        let mut service = self
+            .interop_service
+            .take()
+            .expect("interop service should exist");
+        let result = service.invoke_by_hash(self, descriptor);
+        self.interop_service = Some(service);
+        result
+    }
+}

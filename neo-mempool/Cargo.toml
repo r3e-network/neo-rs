@@ -1,0 +1,32 @@
+[package]
+name = "neo-mempool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Canonical home for the Neo transaction memory pool, PoolItem, transaction router, and per-block verification context"
+
+[dependencies]
+neo-primitives = { workspace = true }
+neo-payloads = { workspace = true }
+neo-data-cache = { workspace = true }
+neo-config = { workspace = true }
+neo-error = { workspace = true }
+neo-storage = { workspace = true }
+neo-execution = { workspace = true }
+neo-crypto = { workspace = true }
+tracing.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
+
+[dev-dependencies]
+hex = { workspace = true }
+neo-vm-rs = { workspace = true }

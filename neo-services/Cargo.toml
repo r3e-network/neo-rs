@@ -1,0 +1,24 @@
+[package]
+name = "neo-services"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Typed service interfaces for Neo subsystems (ledger, mempool, state store, peer manager, RPC, system context)"
+
+[dependencies]
+# Foundation layer
+neo-primitives = { workspace = true }
+neo-error = { workspace = true }
+neo-ledger-types = { workspace = true }
+neo-chain = { workspace = true }
+
+# External
+parking_lot = { workspace = true }
