@@ -135,6 +135,51 @@ fn put_fee_per_byte(snapshot: &DataCache, value: i64) {
     snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
 }
 
+/// C# upper bound on storage price: `PolicyContract.MaxStoragePrice`.
+const MAX_STORAGE_PRICE: i64 = 10_000_000;
+
+/// C# `SetStoragePrice` range guard: the value must be in `[1, MAX_STORAGE_PRICE]`
+/// (C# rejects `value == 0 || value > MaxStoragePrice`).
+fn validate_storage_price(value: i64) -> CoreResult<()> {
+    if !(1..=MAX_STORAGE_PRICE).contains(&value) {
+        return Err(CoreError::invalid_operation(format!(
+            "StoragePrice must be between [1, {MAX_STORAGE_PRICE}], got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// Writes the storage price to `Prefix_StoragePrice` as a `BigInteger`
+/// (C# `GetAndChange(_storagePrice).Set(value)`).
+fn put_storage_price(snapshot: &DataCache, value: i64) {
+    let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_STORAGE_PRICE]);
+    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+}
+
+/// C# `NativeContract.AssertCommittee`: returns an error unless the committee
+/// multisig address witnessed this call. Shared by all committee-gated setters.
+fn assert_committee(engine: &ApplicationEngine, method: &str) -> CoreResult<()> {
+    let authorized = engine
+        .check_committee_witness()
+        .map_err(|e| CoreError::invalid_operation(format!("{method} committee check: {e}")))?;
+    if !authorized {
+        return Err(CoreError::invalid_operation(format!(
+            "{method} requires committee authorization"
+        )));
+    }
+    Ok(())
+}
+
+/// Parses a single integer argument into an `i64` for a setter, faulting when
+/// absent or out of `i64` range (C# marshals the Integer arg to `long`/`uint`).
+fn setter_int_arg(args: &[Vec<u8>], method: &str) -> CoreResult<i64> {
+    args.first()
+        .map(|b| BigInt::from_signed_bytes_le(b))
+        .ok_or_else(|| CoreError::invalid_operation(format!("{method} requires a value")))?
+        .to_i64()
+        .ok_or_else(|| CoreError::invalid_operation(format!("{method}: value out of range")))
+}
+
 /// Returns the effective `MaxTraceableBlocks` for traceability checks, mirroring
 /// the source selection in C# `LedgerContract.IsTraceableBlock`: before
 /// `HF_Echidna` it is the static `ProtocolSettings.MaxTraceableBlocks`; from
@@ -179,9 +224,17 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![],
             ContractParameterType::Integer,
         ),
-        // Committee-gated setter: not safe, requires write (States) call flags.
+        // Committee-gated setters: not safe, require write (States) call flags.
         NativeMethod::new(
             "setFeePerByte".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        ),
+        NativeMethod::new(
+            "setStoragePrice".to_string(),
             1 << 15,
             false,
             CallFlags::STATES.bits(),
@@ -261,27 +314,17 @@ impl NativeContract for PolicyContract {
             "getStoragePrice" => Ok(BigInt::from(storage_price(&snapshot)?).to_signed_bytes_le()),
             "setFeePerByte" => {
                 // C# order: validate range, then AssertCommittee, then write.
-                let value = args
-                    .first()
-                    .map(|b| BigInt::from_signed_bytes_le(b))
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation("setFeePerByte requires a value")
-                    })?
-                    .to_i64()
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation("setFeePerByte: value out of range")
-                    })?;
+                let value = setter_int_arg(args, "setFeePerByte")?;
                 validate_fee_per_byte(value)?;
-                // C# AssertCommittee: a committee multisig witness is required.
-                let authorized = engine.check_committee_witness().map_err(|e| {
-                    CoreError::invalid_operation(format!("setFeePerByte committee check: {e}"))
-                })?;
-                if !authorized {
-                    return Err(CoreError::invalid_operation(
-                        "setFeePerByte requires committee authorization",
-                    ));
-                }
+                assert_committee(engine, "setFeePerByte")?;
                 put_fee_per_byte(&engine.snapshot_cache(), value);
+                Ok(Vec::new())
+            }
+            "setStoragePrice" => {
+                let value = setter_int_arg(args, "setStoragePrice")?;
+                validate_storage_price(value)?;
+                assert_committee(engine, "setStoragePrice")?;
+                put_storage_price(&engine.snapshot_cache(), value);
                 Ok(Vec::new())
             }
             "isBlocked" => {
@@ -355,6 +398,7 @@ mod tests {
                 "getFeePerByte",
                 "getStoragePrice",
                 "setFeePerByte",
+                "setStoragePrice",
                 "isBlocked",
                 "getMillisecondsPerBlock",
                 "getMaxValidUntilBlockIncrement",
@@ -364,12 +408,14 @@ mod tests {
         // The Echidna-era chain-parameter getters are hardfork-gated.
         let mtb = c.methods().iter().find(|m| m.name == "getMaxTraceableBlocks").unwrap();
         assert_eq!(mtb.active_in, Some(Hardfork::HfEchidna));
-        // The setter is a non-safe, write-flagged (States), Void method.
-        let setter = c.methods().iter().find(|m| m.name == "setFeePerByte").unwrap();
-        assert!(!setter.safe);
-        assert_eq!(setter.required_call_flags, CallFlags::STATES.bits());
-        assert_eq!(setter.parameters, vec![ContractParameterType::Integer]);
-        assert_eq!(setter.return_type, ContractParameterType::Void);
+        // The setters are non-safe, write-flagged (States), Void methods.
+        for name in ["setFeePerByte", "setStoragePrice"] {
+            let setter = c.methods().iter().find(|m| m.name == name).unwrap();
+            assert!(!setter.safe, "{name} must not be safe");
+            assert_eq!(setter.required_call_flags, CallFlags::STATES.bits());
+            assert_eq!(setter.parameters, vec![ContractParameterType::Integer]);
+            assert_eq!(setter.return_type, ContractParameterType::Void);
+        }
     }
 
     #[test]
@@ -391,6 +437,24 @@ mod tests {
         // Overwriting an existing value is read back as the new value.
         put_fee_per_byte(&cache, 5000);
         assert_eq!(fee_per_byte(&cache).unwrap(), 5000);
+    }
+
+    #[test]
+    fn set_storage_price_validation_bounds() {
+        // C# SetStoragePrice accepts [1, MaxStoragePrice] and rejects outside.
+        assert!(validate_storage_price(1).is_ok());
+        assert!(validate_storage_price(MAX_STORAGE_PRICE).is_ok());
+        assert!(validate_storage_price(0).is_err());
+        assert!(validate_storage_price(MAX_STORAGE_PRICE + 1).is_err());
+    }
+
+    #[test]
+    fn storage_price_write_then_read_round_trips() {
+        let cache = DataCache::new(false);
+        put_storage_price(&cache, 250_000);
+        assert_eq!(storage_price(&cache).unwrap(), 250_000);
+        put_storage_price(&cache, 1_000_000);
+        assert_eq!(storage_price(&cache).unwrap(), 1_000_000);
     }
 
     #[test]
