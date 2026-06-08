@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
-use neo_primitives::{ContractParameterType, UInt160};
+use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use num_bigint::BigInt;
 
 use crate::hashes::GAS_TOKEN_HASH;
@@ -42,10 +42,28 @@ impl GasToken {
 }
 
 static GAS_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
-    // `[ContractMethod]` with no CpuFee -> fee 0, RequiredCallFlags None.
+    let read_states = CallFlags::READ_STATES.bits();
     vec![
+        // NEP-17 metadata: `[ContractMethod]` with no CpuFee -> fee 0, no flags.
         NativeMethod::new("symbol".into(), 0, true, 0, vec![], ContractParameterType::String),
         NativeMethod::new("decimals".into(), 0, true, 0, vec![], ContractParameterType::Integer),
+        // NEP-17 state reads: CpuFee 1<<15, RequiredCallFlags ReadStates.
+        NativeMethod::new(
+            "totalSupply".into(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        ),
+        NativeMethod::new(
+            "balanceOf".into(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash160],
+            ContractParameterType::Integer,
+        ),
     ]
 });
 
@@ -72,13 +90,29 @@ impl NativeContract for GasToken {
 
     fn invoke(
         &self,
-        _engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine,
         method: &str,
-        _args: &[Vec<u8>],
+        args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         match method {
             "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
             "decimals" => Ok(BigInt::from(Self::DECIMALS).to_signed_bytes_le()),
+            "totalSupply" => {
+                let snapshot = engine.snapshot_cache();
+                let total =
+                    crate::read_storage_int(&snapshot, Self::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY, 0)?;
+                Ok(BigInt::from(total).to_signed_bytes_le())
+            }
+            "balanceOf" => {
+                let account_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation("GasToken::balanceOf requires an account")
+                })?;
+                let account = UInt160::from_bytes(account_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!("GasToken::balanceOf: bad account: {e}"))
+                })?;
+                let snapshot = engine.snapshot_cache();
+                Ok(crate::read_nep17_balance(&snapshot, Self::ID, &account)?.to_signed_bytes_le())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "GasToken method '{other}' is not implemented"
             ))),
@@ -97,8 +131,23 @@ mod tests {
         assert_eq!(NativeContract::name(&c), "GasToken");
         assert_eq!(NativeContract::hash(&c), *GAS_TOKEN_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["symbol", "decimals"]);
-        // NEP-17 metadata getters: zero fee, no required state access.
-        assert!(c.methods().iter().all(|m| m.safe && m.cpu_fee == 0 && m.required_call_flags == 0));
+        assert_eq!(names, ["symbol", "decimals", "totalSupply", "balanceOf"]);
+        // Metadata getters are zero-fee; the state reads are ReadStates getters.
+        let symbol = c.methods().iter().find(|m| m.name == "symbol").unwrap();
+        assert!(symbol.safe && symbol.cpu_fee == 0 && symbol.required_call_flags == 0);
+        let balance = c.methods().iter().find(|m| m.name == "balanceOf").unwrap();
+        assert_eq!(balance.required_call_flags, CallFlags::READ_STATES.bits());
+    }
+
+    #[test]
+    fn balance_of_absent_account_is_zero() {
+        use neo_storage::persistence::DataCache;
+        let cache = DataCache::new(false);
+        let account = UInt160::from_bytes(&[1u8; 20]).unwrap();
+        // C# BalanceOf returns BigInteger.Zero when the account has no entry.
+        assert_eq!(
+            crate::read_nep17_balance(&cache, GasToken::ID, &account).unwrap(),
+            BigInt::from(0)
+        );
     }
 }

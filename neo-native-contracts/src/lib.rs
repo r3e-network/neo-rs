@@ -88,3 +88,45 @@ pub(crate) fn read_storage_int(
         None => Ok(default),
     }
 }
+
+/// C# `FungibleToken.Prefix_TotalSupply`.
+pub(crate) const NEP17_PREFIX_TOTAL_SUPPLY: u8 = 11;
+/// C# `FungibleToken.Prefix_Account`.
+pub(crate) const NEP17_PREFIX_ACCOUNT: u8 = 20;
+
+/// Reads a NEP-17 account balance — the `Balance` field (index 0) of the
+/// account-state struct stored under `(contract_id, [20] ++ account)` — returning
+/// 0 when the account has no entry. Matches C# `FungibleToken.BalanceOf`, which
+/// reads `item.GetInteroperable<TState>().Balance` and returns
+/// `BigInteger.Zero` when the key is absent.
+pub(crate) fn read_nep17_balance(
+    snapshot: &neo_storage::persistence::DataCache,
+    contract_id: i32,
+    account: &neo_primitives::UInt160,
+) -> neo_error::CoreResult<num_bigint::BigInt> {
+    let mut key_bytes = vec![NEP17_PREFIX_ACCOUNT];
+    key_bytes.extend_from_slice(&account.to_bytes());
+    let key = neo_storage::StorageKey::new(contract_id, key_bytes);
+
+    let Some(item) = snapshot.get(&key) else {
+        return Ok(num_bigint::BigInt::from(0));
+    };
+    let state = neo_serialization::BinarySerializer::deserialize(
+        &item.value_bytes(),
+        &neo_vm_rs::ExecutionEngineLimits::default(),
+        None,
+    )
+    .map_err(|e| neo_error::CoreError::deserialization(format!("NEP-17 account state: {e}")))?;
+    let neo_vm::StackItem::Struct(fields) = state else {
+        return Err(neo_error::CoreError::invalid_data(
+            "NEP-17 account state is not a struct",
+        ));
+    };
+    let items = fields.items();
+    let balance = items
+        .first()
+        .ok_or_else(|| neo_error::CoreError::invalid_data("NEP-17 account state is empty"))?;
+    balance
+        .as_int()
+        .map_err(|e| neo_error::CoreError::invalid_data(format!("NEP-17 balance: {e}")))
+}
