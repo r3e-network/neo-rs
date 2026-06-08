@@ -346,6 +346,14 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash256],
             ContractParameterType::Integer,
         ),
+        NativeMethod::new(
+            "getTransactionVMState".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash256],
+            ContractParameterType::Integer,
+        ),
     ]
 });
 
@@ -408,6 +416,31 @@ impl NativeContract for LedgerContract {
                 };
                 Ok(BigInt::from(height).to_signed_bytes_le())
             }
+            "getTransactionVMState" => {
+                let hash_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "LedgerContract::getTransactionVMState requires a hash",
+                    )
+                })?;
+                let hash = UInt256::from_bytes(hash_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "LedgerContract::getTransactionVMState: bad hash: {e}"
+                    ))
+                })?;
+                // C# returns VMState.NONE for an absent, conflict-stub, or
+                // untraceable transaction; otherwise the recorded execution state.
+                let vm_state = match self.get_transaction_state(&snapshot, &hash)? {
+                    Some(state) if state.transaction.is_some() => {
+                        if is_traceable_block(engine, state.block_index)? {
+                            state.state.to_byte()
+                        } else {
+                            VMState::NONE.to_byte()
+                        }
+                    }
+                    _ => VMState::NONE.to_byte(),
+                };
+                Ok(BigInt::from(vm_state).to_signed_bytes_le())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "LedgerContract method '{other}' is not implemented"
             ))),
@@ -426,15 +459,20 @@ mod tests {
         assert_eq!(NativeContract::name(&c), "LedgerContract");
         assert_eq!(NativeContract::hash(&c), *LEDGER_CONTRACT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["currentHash", "currentIndex", "getTransactionHeight"]);
+        assert_eq!(
+            names,
+            ["currentHash", "currentIndex", "getTransactionHeight", "getTransactionVMState"]
+        );
         assert!(c
             .methods()
             .iter()
             .all(|m| m.safe && m.required_call_flags == CallFlags::READ_STATES.bits()));
-        let h = c.methods().iter().find(|m| m.name == "getTransactionHeight").unwrap();
-        assert_eq!(h.parameters, vec![ContractParameterType::Hash256]);
-        assert_eq!(h.return_type, ContractParameterType::Integer);
-        assert_eq!(h.cpu_fee, 1 << 15);
+        for name in ["getTransactionHeight", "getTransactionVMState"] {
+            let m = c.methods().iter().find(|m| m.name == name).unwrap();
+            assert_eq!(m.parameters, vec![ContractParameterType::Hash256]);
+            assert_eq!(m.return_type, ContractParameterType::Integer);
+            assert_eq!(m.cpu_fee, 1 << 15);
+        }
     }
 
     #[test]
