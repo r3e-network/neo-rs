@@ -39,7 +39,7 @@ enum WalletInvocationOutcome {
 struct PendingSignatureItem {
     account: UInt160,
     script: Option<Vec<u8>>,
-    parameter_types: Vec<neo_execution::ContractParameterType>}
+    parameter_types: Vec<neo_primitives::ContractParameterType>}
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
     let script_hash = expect_string_param(params, 0, "invokefunction")?;

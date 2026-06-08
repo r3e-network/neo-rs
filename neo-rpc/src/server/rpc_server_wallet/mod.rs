@@ -815,7 +815,7 @@ impl RpcServerWallet {
                         let sign_data = if let Some(data) = sign_data.as_ref() {
                             data.clone()
                        } else {
-                            let data = neo_network::get_sign_data(
+                            let data = neo_payloads::get_sign_data(
                                 &tx,
                                 server.system().settings().network,
                             )

@@ -26,6 +26,7 @@ use std::time::Duration;
 use super::routes::{BasicAuth, build_rpc_routes, build_ws_route};
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
+use neo_wallets::Wallet;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_transport::{

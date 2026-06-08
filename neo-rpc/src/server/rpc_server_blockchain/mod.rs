@@ -9,7 +9,7 @@ use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
-use neo_block::{
+use neo_payloads::{
     Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
 use neo_io::Serializable;
 use neo_payloads::{
