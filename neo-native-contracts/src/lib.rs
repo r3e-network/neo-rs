@@ -39,10 +39,12 @@ pub mod notary;
 pub mod oracle_contract;
 pub mod policy_contract;
 pub mod role;
+pub mod provider;
 pub mod role_management;
 pub mod std_lib;
 pub mod treasury;
 
+pub use provider::{install, StandardNativeProvider};
 pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
 pub use gas_token::GasToken;

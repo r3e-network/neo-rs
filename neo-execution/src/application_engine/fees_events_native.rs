@@ -195,9 +195,15 @@ impl ApplicationEngine {
     ) -> Result<Vec<u8>> {
         self.refresh_context_tracking()?;
 
+        // Resolve the native contract from the engine-local registry, falling
+        // back to the globally-installed native-contract provider (the seam to
+        // `neo-native-contracts`, which cannot be a direct dependency without a
+        // crate cycle). Without an installed provider the fallback is a no-op,
+        // preserving the previous "not found" behaviour.
         let native = self
             .native_registry
             .get(&contract_hash)
+            .or_else(|| crate::native_contract_provider::get_native_contract(&contract_hash))
             .ok_or_else(|| Error::not_found(contract_hash.to_string()))?;
 
         let block_height = self.current_block_index();

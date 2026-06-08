@@ -103,6 +103,11 @@ impl NodeBuilder {
 
     /// Finalise the builder.
     pub fn build(self) -> NodeResult<Node> {
+        // Install the standard native-contract provider into neo-execution's
+        // global seam before any ApplicationEngine runs, so native-contract
+        // calls (CryptoLib, …) dispatch instead of returning "not found".
+        neo_native_contracts::install();
+
         let settings = self
             .settings
             .ok_or_else(|| crate::error::NodeError::missing_config("settings"))?;
