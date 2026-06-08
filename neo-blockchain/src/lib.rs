@@ -69,7 +69,6 @@ pub mod internal;
 pub mod inventory_payload;
 pub mod ledger_context;
 pub mod persist_completed;
-pub mod preverify_completed;
 pub mod relay_result;
 pub mod reverify;
 pub mod service;
@@ -102,7 +101,10 @@ pub use import_completed::ImportCompleted;
 pub use internal::{ImportDisposition, UnverifiedBlocksList};
 pub use inventory_payload::InventoryPayload;
 pub use persist_completed::PersistCompleted;
-pub use preverify_completed::PreverifyCompleted;
+// `PreverifyCompleted` is produced by `neo-mempool`'s transaction router and
+// only consumed here; re-export the single canonical definition rather than
+// duplicating the record. (neo-blockchain depends on neo-mempool.)
+pub use neo_mempool::PreverifyCompleted;
 pub use relay_result::RelayResult;
 pub use reverify::{Reverify, ReverifyItem};
 pub use command::AddTransactionReply;
