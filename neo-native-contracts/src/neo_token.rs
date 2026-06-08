@@ -12,9 +12,21 @@ use std::sync::LazyLock;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
+use neo_storage::persistence::{DataCache, SeekDirection};
+use neo_storage::StorageKey;
 use num_bigint::BigInt;
 
 use crate::hashes::NEO_TOKEN_HASH;
+use crate::LedgerContract;
+
+/// C# `NeoToken.Prefix_RegisterPrice`.
+const PREFIX_REGISTER_PRICE: u8 = 13;
+/// C# default candidate register price: 1000 GAS, in datoshi (1000 * 1e8).
+const DEFAULT_REGISTER_PRICE: i64 = 1000 * 100_000_000;
+/// C# `NeoToken.Prefix_GasPerBlock`.
+const PREFIX_GAS_PER_BLOCK: u8 = 29;
+/// C# default GAS-per-block at index 0: 5 GAS, in datoshi (5 * 1e8).
+const DEFAULT_GAS_PER_BLOCK: i64 = 5 * 100_000_000;
 
 /// Lazily-initialised script-hash handle for the NEO native contract.
 pub static NEO_HASH: LazyLock<UInt160> = LazyLock::new(|| *NEO_TOKEN_HASH);
@@ -42,29 +54,54 @@ impl NeoToken {
     }
 }
 
+/// C# `GetRegisterPrice` = `(long)(BigInteger)snapshot[_registerPrice]`.
+fn register_price(snapshot: &DataCache) -> CoreResult<i64> {
+    crate::read_storage_int(
+        snapshot,
+        NeoToken::ID,
+        PREFIX_REGISTER_PRICE,
+        DEFAULT_REGISTER_PRICE,
+    )
+}
+
+/// Returns the GAS-per-block effective at `index`: the most recent
+/// `Prefix_GasPerBlock` record whose record index is ≤ `index` (C#
+/// `GetSortedGasRecords(...).First().GasPerBlock`), defaulting to 5 GAS.
+fn gas_per_block_at(snapshot: &DataCache, index: u32) -> BigInt {
+    let prefix = StorageKey::new(NeoToken::ID, vec![PREFIX_GAS_PER_BLOCK]);
+    for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
+        let key_bytes = key.key();
+        if key_bytes.len() >= 5 {
+            let record_index =
+                u32::from_be_bytes([key_bytes[1], key_bytes[2], key_bytes[3], key_bytes[4]]);
+            if record_index <= index {
+                return BigInt::from_signed_bytes_le(&item.value_bytes());
+            }
+        }
+    }
+    BigInt::from(DEFAULT_GAS_PER_BLOCK)
+}
+
 static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
+    let int = ContractParameterType::Integer;
     vec![
         // NEP-17 metadata: `[ContractMethod]` with no CpuFee -> fee 0, no flags.
         NativeMethod::new("symbol".into(), 0, true, 0, vec![], ContractParameterType::String),
-        NativeMethod::new("decimals".into(), 0, true, 0, vec![], ContractParameterType::Integer),
+        NativeMethod::new("decimals".into(), 0, true, 0, vec![], int),
         // NEP-17 state reads: CpuFee 1<<15, RequiredCallFlags ReadStates.
-        NativeMethod::new(
-            "totalSupply".into(),
-            1 << 15,
-            true,
-            read_states,
-            vec![],
-            ContractParameterType::Integer,
-        ),
+        NativeMethod::new("totalSupply".into(), 1 << 15, true, read_states, vec![], int),
         NativeMethod::new(
             "balanceOf".into(),
             1 << 15,
             true,
             read_states,
             vec![ContractParameterType::Hash160],
-            ContractParameterType::Integer,
+            int,
         ),
+        // Governance reads.
+        NativeMethod::new("getGasPerBlock".into(), 1 << 15, true, read_states, vec![], int),
+        NativeMethod::new("getRegisterPrice".into(), 1 << 15, true, read_states, vec![], int),
     ]
 });
 
@@ -114,6 +151,15 @@ impl NativeContract for NeoToken {
                 let snapshot = engine.snapshot_cache();
                 Ok(crate::read_nep17_balance(&snapshot, Self::ID, &account)?.to_signed_bytes_le())
             }
+            "getGasPerBlock" => {
+                let snapshot = engine.snapshot_cache();
+                let index = LedgerContract::new().current_index(&snapshot)?.saturating_add(1);
+                Ok(gas_per_block_at(&snapshot, index).to_signed_bytes_le())
+            }
+            "getRegisterPrice" => {
+                let snapshot = engine.snapshot_cache();
+                Ok(BigInt::from(register_price(&snapshot)?).to_signed_bytes_le())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "NeoToken method '{other}' is not implemented"
             ))),
@@ -132,7 +178,10 @@ mod tests {
         assert_eq!(NativeContract::name(&c), "NeoToken");
         assert_eq!(NativeContract::hash(&c), *NEO_TOKEN_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["symbol", "decimals", "totalSupply", "balanceOf"]);
+        assert_eq!(
+            names,
+            ["symbol", "decimals", "totalSupply", "balanceOf", "getGasPerBlock", "getRegisterPrice"]
+        );
         let symbol = c.methods().iter().find(|m| m.name == "symbol").unwrap();
         assert!(symbol.safe && symbol.cpu_fee == 0 && symbol.required_call_flags == 0);
         let balance = c.methods().iter().find(|m| m.name == "balanceOf").unwrap();
@@ -141,12 +190,38 @@ mod tests {
 
     #[test]
     fn balance_of_absent_account_is_zero() {
-        use neo_storage::persistence::DataCache;
         let cache = DataCache::new(false);
         let account = UInt160::from_bytes(&[2u8; 20]).unwrap();
         assert_eq!(
             crate::read_nep17_balance(&cache, NeoToken::ID, &account).unwrap(),
             BigInt::from(0)
         );
+    }
+
+    #[test]
+    fn governance_reads_have_defaults_and_read_storage() {
+        use neo_storage::StorageItem;
+        let cache = DataCache::new(false);
+
+        // Defaults when unset: 1000 GAS register price, 5 GAS per block.
+        assert_eq!(register_price(&cache).unwrap(), DEFAULT_REGISTER_PRICE);
+        assert_eq!(gas_per_block_at(&cache, 100), BigInt::from(DEFAULT_GAS_PER_BLOCK));
+
+        // register price reads the prefix-13 BigInteger.
+        cache.add(
+            StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE]),
+            StorageItem::from_bytes(BigInt::from(500 * 100_000_000i64).to_signed_bytes_le()),
+        );
+        assert_eq!(register_price(&cache).unwrap(), 500 * 100_000_000);
+
+        // gas-per-block backward seek: record at index 10 applies from 10 on.
+        let mut key = vec![PREFIX_GAS_PER_BLOCK];
+        key.extend_from_slice(&10u32.to_be_bytes());
+        cache.add(
+            StorageKey::new(NeoToken::ID, key),
+            StorageItem::from_bytes(BigInt::from(3 * 100_000_000i64).to_signed_bytes_le()),
+        );
+        assert_eq!(gas_per_block_at(&cache, 9), BigInt::from(DEFAULT_GAS_PER_BLOCK));
+        assert_eq!(gas_per_block_at(&cache, 20), BigInt::from(3 * 100_000_000i64));
     }
 }
