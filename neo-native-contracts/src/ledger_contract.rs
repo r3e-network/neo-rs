@@ -296,6 +296,29 @@ pub fn serialize_conflict_stub(block_index: u32) -> CoreResult<Vec<u8>> {
     Ok(writer.into_bytes())
 }
 
+/// Mirrors C# `LedgerContract.IsTraceableBlock(engine, index)`: resolves the
+/// effective `MaxTraceableBlocks` (pre-`HF_Echidna`: the protocol setting; from
+/// `HF_Echidna`: the Policy storage value) and the current height, then applies
+/// the trace-window test.
+fn is_traceable_block(engine: &ApplicationEngine, index: u32) -> CoreResult<bool> {
+    let max_traceable_blocks = crate::policy_contract::max_traceable_blocks(engine)?;
+    let snapshot = engine.snapshot_cache();
+    let current = LedgerContract::new().current_index(&snapshot)?;
+    Ok(is_within_trace_window(index, current, max_traceable_blocks))
+}
+
+/// Pure core of C# `LedgerContract.IsTraceableBlock(snapshot, index, mtb)`:
+/// a block `index` is traceable at height `current` iff it is not in the future
+/// and lies within the last `max_traceable_blocks` blocks. C# uses unchecked
+/// `uint` addition, so `wrapping_add` is used to match the (unreachable) overflow
+/// corner byte-for-byte.
+fn is_within_trace_window(index: u32, current: u32, max_traceable_blocks: u32) -> bool {
+    if index > current {
+        return false;
+    }
+    index.wrapping_add(max_traceable_blocks) > current
+}
+
 static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
     vec![
@@ -313,6 +336,14 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             true,
             read_states,
             vec![],
+            ContractParameterType::Integer,
+        ),
+        NativeMethod::new(
+            "getTransactionHeight".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash256],
             ContractParameterType::Integer,
         ),
     ]
@@ -343,14 +374,40 @@ impl NativeContract for LedgerContract {
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
-        _args: &[Vec<u8>],
+        args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        // Both wired methods are read-only queries over persisted ledger state,
+        // All wired methods are read-only queries over persisted ledger state,
         // served from the engine's snapshot (C# `RequiredCallFlags = ReadStates`).
         let snapshot = engine.snapshot_cache();
         match method {
             "currentIndex" => Ok(BigInt::from(self.current_index(&snapshot)?).to_signed_bytes_le()),
             "currentHash" => Ok(self.current_hash(&snapshot)?.to_bytes()),
+            "getTransactionHeight" => {
+                let hash_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "LedgerContract::getTransactionHeight requires a hash",
+                    )
+                })?;
+                let hash = UInt256::from_bytes(hash_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "LedgerContract::getTransactionHeight: bad hash: {e}"
+                    ))
+                })?;
+                // C# `GetTransactionState` returns null for a conflict stub (its
+                // `Transaction` is null), and `getTransactionHeight` returns -1 for
+                // an absent or untraceable transaction; otherwise `(int)BlockIndex`.
+                let height = match self.get_transaction_state(&snapshot, &hash)? {
+                    Some(state) if state.transaction.is_some() => {
+                        if is_traceable_block(engine, state.block_index)? {
+                            i64::from(state.block_index as i32)
+                        } else {
+                            -1
+                        }
+                    }
+                    _ => -1,
+                };
+                Ok(BigInt::from(height).to_signed_bytes_le())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "LedgerContract method '{other}' is not implemented"
             ))),
@@ -369,11 +426,50 @@ mod tests {
         assert_eq!(NativeContract::name(&c), "LedgerContract");
         assert_eq!(NativeContract::hash(&c), *LEDGER_CONTRACT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["currentHash", "currentIndex"]);
+        assert_eq!(names, ["currentHash", "currentIndex", "getTransactionHeight"]);
         assert!(c
             .methods()
             .iter()
             .all(|m| m.safe && m.required_call_flags == CallFlags::READ_STATES.bits()));
+        let h = c.methods().iter().find(|m| m.name == "getTransactionHeight").unwrap();
+        assert_eq!(h.parameters, vec![ContractParameterType::Hash256]);
+        assert_eq!(h.return_type, ContractParameterType::Integer);
+        assert_eq!(h.cpu_fee, 1 << 15);
+    }
+
+    #[test]
+    fn trace_window_matches_csharp_is_traceable_block() {
+        // current=100, mtb=10 => traceable indices are (90, 100].
+        // Future block: never traceable.
+        assert!(!is_within_trace_window(101, 100, 10));
+        // Lower boundary is exclusive: index + mtb must be strictly > current.
+        // index=90 -> 90+10=100, not > 100 -> not traceable.
+        assert!(!is_within_trace_window(90, 100, 10));
+        // index=91 -> 101 > 100 -> traceable; current index is traceable.
+        assert!(is_within_trace_window(91, 100, 10));
+        assert!(is_within_trace_window(100, 100, 10));
+        // Genesis is traceable at genesis for any positive window.
+        assert!(is_within_trace_window(0, 0, 2_102_400));
+    }
+
+    #[test]
+    fn get_transaction_state_distinguishes_absent_stub_and_full() {
+        let cache = DataCache::new(false);
+        let ledger = LedgerContract::new();
+        let tx_hash = UInt256::from_bytes(&[9u8; 32]).unwrap();
+
+        // Absent -> None (getTransactionHeight would return -1).
+        assert!(ledger.get_transaction_state(&cache, &tx_hash).unwrap().is_none());
+
+        // Conflict stub -> Some, but `transaction` is None, so C#
+        // `GetTransactionState` treats it as null and height is -1.
+        cache.add(
+            transaction_storage_key(LedgerContract::ID, &tx_hash),
+            StorageItem::from_bytes(serialize_conflict_stub(4242).unwrap()),
+        );
+        let stub = ledger.get_transaction_state(&cache, &tx_hash).unwrap().unwrap();
+        assert!(stub.transaction.is_none());
+        assert_eq!(stub.block_index, 4242);
     }
 
     #[test]

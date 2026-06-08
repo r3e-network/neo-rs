@@ -113,6 +113,31 @@ fn storage_price(snapshot: &DataCache) -> CoreResult<i64> {
     crate::read_storage_int(snapshot, PolicyContract::ID, PREFIX_STORAGE_PRICE, DEFAULT_STORAGE_PRICE)
 }
 
+/// Returns the effective `MaxTraceableBlocks` for traceability checks, mirroring
+/// the source selection in C# `LedgerContract.IsTraceableBlock`: before
+/// `HF_Echidna` it is the static `ProtocolSettings.MaxTraceableBlocks`; from
+/// `HF_Echidna` onward it is the committee-adjustable Policy value (storage
+/// prefix 23), written at activation to `ProtocolSettings.MaxTraceableBlocks`.
+///
+/// Lives in PolicyContract because C# reads it via `Policy.GetMaxTraceableBlocks`;
+/// keeping the prefix/default here is the single source of truth shared with the
+/// `getMaxTraceableBlocks` getter.
+pub(crate) fn max_traceable_blocks(engine: &ApplicationEngine) -> CoreResult<u32> {
+    let default = engine.protocol_settings().max_traceable_blocks;
+    if !engine.is_hardfork_enabled(Hardfork::HfEchidna) {
+        return Ok(default);
+    }
+    let snapshot = engine.snapshot_cache();
+    let value = crate::read_storage_int(
+        &snapshot,
+        PolicyContract::ID,
+        PREFIX_MAX_TRACEABLE_BLOCKS,
+        i64::from(default),
+    )?;
+    u32::try_from(value)
+        .map_err(|_| CoreError::invalid_operation("MaxTraceableBlocks out of u32 range"))
+}
+
 static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
     vec![
