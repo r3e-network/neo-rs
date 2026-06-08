@@ -1,44 +1,104 @@
-//! NeoToken (NEO) native contract stub.
+//! NeoToken (NEO) native contract (id -5).
 //!
-//! Provides the public API surface used by external crates
-//! (consensus, plugins, etc.) without depending on the full
-//! implementation in `neo-core::smart_contract::native::neo_token`.
-//!
-//! The stub returns empty/zero values from every storage query; a
-//! real executor should wire this up to a populated native-contract
-//! cache.
+//! Implements the NEP-17 metadata of the C# `Neo.SmartContract.Native.NeoToken`
+//! (`symbol` "NEO", `decimals` 0). NEO's stateful surface (NEP-17 balances plus
+//! governance: vote, candidates, committee, getGasPerBlock, unclaimedGas, ...)
+//! is the next increment on the storage-backed pattern; the methods declared
+//! below are byte-for-byte C# parity.
+
+use std::any::Any;
+use std::sync::LazyLock;
+
+use neo_error::{CoreError, CoreResult};
+use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_primitives::{ContractParameterType, UInt160};
+use num_bigint::BigInt;
 
 use crate::hashes::NEO_TOKEN_HASH;
-use neo_primitives::UInt160;
-use std::sync::LazyLock;
 
 /// Lazily-initialised script-hash handle for the NEO native contract.
 pub static NEO_HASH: LazyLock<UInt160> = LazyLock::new(|| *NEO_TOKEN_HASH);
 
-/// Static accessor for the NeoToken native contract.
-///
-/// Mirrors the C# `NeoToken` static class. Constructing it is cheap;
-/// the heavy work (cache lookup, method dispatch) is done by the
-/// [`NativeContract`] trait.
+/// The NeoToken native contract.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NeoToken;
 
 impl NeoToken {
-    /// Stable native contract id (-5 in C# NEO contract).
+    /// Stable native contract id (matches C# `NeoToken`).
     pub const ID: i32 = -5;
+    /// NEP-17 symbol (C# `NeoToken.Symbol => "NEO"`).
+    pub const SYMBOL: &'static str = "NEO";
+    /// NEP-17 decimals (C# `NeoToken.Decimals => 0`).
+    pub const DECIMALS: u8 = 0;
 
     /// Construct a new `NeoToken` handle.
     pub fn new() -> Self {
         Self
     }
 
-    /// Returns the script hash of the .* native contract\.
-    pub fn hash(&self) -> UInt160 {
+    /// Returns the NEO script hash.
+    pub fn script_hash() -> UInt160 {
+        *NEO_HASH
+    }
+}
+
+static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    // `[ContractMethod]` with no CpuFee -> fee 0, RequiredCallFlags None.
+    vec![
+        NativeMethod::new("symbol".into(), 0, true, 0, vec![], ContractParameterType::String),
+        NativeMethod::new("decimals".into(), 0, true, 0, vec![], ContractParameterType::Integer),
+    ]
+});
+
+impl NativeContract for NeoToken {
+    fn id(&self) -> i32 {
+        Self::ID
+    }
+
+    fn hash(&self) -> UInt160 {
         *NEO_HASH
     }
 
-    /// Returns the script hash of the .* native contract (static).
-    pub fn script_hash() -> UInt160 {
-        *NEO_HASH
+    fn name(&self) -> &str {
+        "NeoToken"
+    }
+
+    fn methods(&self) -> &[NativeMethod] {
+        &NEO_METHODS
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn invoke(
+        &self,
+        _engine: &mut ApplicationEngine,
+        method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        match method {
+            "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
+            "decimals" => Ok(BigInt::from(Self::DECIMALS).to_signed_bytes_le()),
+            other => Err(CoreError::invalid_operation(format!(
+                "NeoToken method '{other}' is not implemented"
+            ))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_contract_surface() {
+        let c = NeoToken::new();
+        assert_eq!(NativeContract::id(&c), -5);
+        assert_eq!(NativeContract::name(&c), "NeoToken");
+        assert_eq!(NativeContract::hash(&c), *NEO_TOKEN_HASH);
+        let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["symbol", "decimals"]);
+        assert!(c.methods().iter().all(|m| m.safe && m.cpu_fee == 0 && m.required_call_flags == 0));
     }
 }

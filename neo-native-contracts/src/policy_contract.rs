@@ -13,6 +13,10 @@ use std::sync::LazyLock;
 
 /// C# `PolicyContract.Prefix_FeePerByte` storage prefix.
 const PREFIX_FEE_PER_BYTE: u8 = 10;
+/// C# `PolicyContract.Prefix_StoragePrice` storage prefix.
+const PREFIX_STORAGE_PRICE: u8 = 19;
+/// C# `PolicyContract.DefaultStoragePrice`.
+const DEFAULT_STORAGE_PRICE: i64 = 100_000;
 
 /// Lazily-initialised script-hash handle for the PolicyContract.
 pub static POLICY_HASH: LazyLock<UInt160> = LazyLock::new(|| *POLICY_CONTRACT_HASH);
@@ -86,31 +90,50 @@ impl PolicyContract {
     }
 }
 
-/// Reads the configured fee-per-byte from the snapshot, defaulting to
-/// [`DEFAULT_FEE_PER_BYTE`] when the policy key is absent (it is written at
-/// contract initialization, so absence only happens pre-genesis / in tests).
-///
-/// C# `GetFeePerByte` evaluates `(long)(BigInteger)snapshot[_feePerByte]`; the
-/// stored value is a `BigInteger` in signed little-endian bytes.
-fn fee_per_byte(snapshot: &DataCache) -> CoreResult<i64> {
-    let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_FEE_PER_BYTE]);
+/// Reads a policy integer (stored as a C# `BigInteger` in signed little-endian
+/// bytes) from the snapshot under `prefix`, defaulting to `default` when the key
+/// is absent (these keys are written at contract initialization, so absence only
+/// happens pre-genesis / in tests).
+fn read_policy_int(snapshot: &DataCache, prefix: u8, default: i64) -> CoreResult<i64> {
+    let key = StorageKey::new(PolicyContract::ID, vec![prefix]);
     match snapshot.get(&key) {
         Some(item) => BigInt::from_signed_bytes_le(&item.value_bytes())
             .to_i64()
-            .ok_or_else(|| CoreError::invalid_operation("PolicyContract: feePerByte out of range")),
-        None => Ok(i64::from(DEFAULT_FEE_PER_BYTE)),
+            .ok_or_else(|| CoreError::invalid_operation("PolicyContract: stored value out of range")),
+        None => Ok(default),
     }
 }
 
+/// C# `GetFeePerByte` = `(long)(BigInteger)snapshot[_feePerByte]`.
+fn fee_per_byte(snapshot: &DataCache) -> CoreResult<i64> {
+    read_policy_int(snapshot, PREFIX_FEE_PER_BYTE, i64::from(DEFAULT_FEE_PER_BYTE))
+}
+
+/// C# `GetStoragePrice` = `(uint)(BigInteger)snapshot[_storagePrice]`.
+fn storage_price(snapshot: &DataCache) -> CoreResult<i64> {
+    read_policy_int(snapshot, PREFIX_STORAGE_PRICE, DEFAULT_STORAGE_PRICE)
+}
+
 static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
-    vec![NativeMethod::new(
-        "getFeePerByte".to_string(),
-        1 << 15,
-        true,
-        CallFlags::READ_STATES.bits(),
-        vec![],
-        ContractParameterType::Integer,
-    )]
+    let read_states = CallFlags::READ_STATES.bits();
+    vec![
+        NativeMethod::new(
+            "getFeePerByte".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        ),
+        NativeMethod::new(
+            "getStoragePrice".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        ),
+    ]
 });
 
 impl NativeContract for PolicyContract {
@@ -143,6 +166,7 @@ impl NativeContract for PolicyContract {
         let snapshot = engine.snapshot_cache();
         match method {
             "getFeePerByte" => Ok(BigInt::from(fee_per_byte(&snapshot)?).to_signed_bytes_le()),
+            "getStoragePrice" => Ok(BigInt::from(storage_price(&snapshot)?).to_signed_bytes_le()),
             other => Err(CoreError::invalid_operation(format!(
                 "PolicyContract method '{other}' is not implemented"
             ))),
@@ -162,7 +186,7 @@ mod tests {
         assert_eq!(NativeContract::name(&c), "PolicyContract");
         assert_eq!(NativeContract::hash(&c), *POLICY_CONTRACT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["getFeePerByte"]);
+        assert_eq!(names, ["getFeePerByte", "getStoragePrice"]);
     }
 
     #[test]
@@ -175,5 +199,15 @@ mod tests {
         let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_FEE_PER_BYTE]);
         cache.add(key, StorageItem::from_bytes(BigInt::from(4242).to_signed_bytes_le()));
         assert_eq!(fee_per_byte(&cache).unwrap(), 4242);
+    }
+
+    #[test]
+    fn storage_price_reads_storage_with_default() {
+        let cache = DataCache::new(false);
+        assert_eq!(storage_price(&cache).unwrap(), DEFAULT_STORAGE_PRICE);
+
+        let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_STORAGE_PRICE]);
+        cache.add(key, StorageItem::from_bytes(BigInt::from(250_000).to_signed_bytes_le()));
+        assert_eq!(storage_price(&cache).unwrap(), 250_000);
     }
 }
