@@ -17,10 +17,10 @@ use neo_payloads::{
 use neo_storage::persistence::SeekDirection;
 use neo_storage::persistence::ReadOnlyStoreGeneric;
 use neo_execution::contract_state::ContractState;
+use neo_blockchain::HashOrIndex;
 use neo_native_contracts::{
     contract_management::ContractManagement,
-    use neo_blockchain::HashOrIndex;
-use neo_native_contracts::LedgerContract,
+    LedgerContract,
     NativeRegistry};
 use neo_storage::StorageKey;
 use neo_primitives::{UInt160, UInt256, Witness as LedgerWitness};
