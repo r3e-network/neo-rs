@@ -15,12 +15,15 @@
 
 use crate::hashes::LEDGER_CONTRACT_HASH;
 use neo_error::{CoreError, CoreResult};
+use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_payloads::Transaction;
-use neo_primitives::{UInt160, UInt256};
+use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::VmState as VMState;
+use num_bigint::BigInt;
+use std::any::Any;
 use std::sync::LazyLock;
 
 /// Storage prefix for the per-block-index → block-hash index.
@@ -291,4 +294,107 @@ pub fn serialize_conflict_stub(block_index: u32) -> CoreResult<Vec<u8>> {
         .write_u32(block_index)
         .map_err(|e| CoreError::serialization(e.to_string()))?;
     Ok(writer.into_bytes())
+}
+
+static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    let read_states = CallFlags::READ_STATES.bits();
+    vec![
+        NativeMethod::new(
+            "currentHash".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Hash256,
+        ),
+        NativeMethod::new(
+            "currentIndex".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        ),
+    ]
+});
+
+impl NativeContract for LedgerContract {
+    fn id(&self) -> i32 {
+        Self::ID
+    }
+
+    fn hash(&self) -> UInt160 {
+        *LEDGER_CONTRACT_HASH
+    }
+
+    fn name(&self) -> &str {
+        "LedgerContract"
+    }
+
+    fn methods(&self) -> &[NativeMethod] {
+        &LEDGER_METHODS
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn invoke(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        // Both wired methods are read-only queries over persisted ledger state,
+        // served from the engine's snapshot (C# `RequiredCallFlags = ReadStates`).
+        let snapshot = engine.snapshot_cache();
+        match method {
+            "currentIndex" => Ok(BigInt::from(self.current_index(&snapshot)?).to_signed_bytes_le()),
+            "currentHash" => Ok(self.current_hash(&snapshot)?.to_bytes()),
+            other => Err(CoreError::invalid_operation(format!(
+                "LedgerContract method '{other}' is not implemented"
+            ))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_contract_surface() {
+        let c = LedgerContract::new();
+        assert_eq!(NativeContract::id(&c), -4);
+        assert_eq!(NativeContract::name(&c), "LedgerContract");
+        assert_eq!(NativeContract::hash(&c), *LEDGER_CONTRACT_HASH);
+        let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["currentHash", "currentIndex"]);
+        assert!(c
+            .methods()
+            .iter()
+            .all(|m| m.safe && m.required_call_flags == CallFlags::READ_STATES.bits()));
+    }
+
+    #[test]
+    fn current_index_and_hash_round_trip_through_storage() {
+        let cache = DataCache::new(false);
+        let ledger = LedgerContract::new();
+
+        // Empty ledger: index 0, zero hash (C# returns these when the
+        // current-block pointer is absent).
+        assert_eq!(ledger.current_index(&cache).unwrap(), 0);
+        assert_eq!(ledger.current_hash(&cache).unwrap(), UInt256::default());
+
+        // Write a HashIndexState under the current-block key (prefix 12) and
+        // read it back, exercising the exact on-disk format the engine uses.
+        let hash = UInt256::from_bytes(&[7u8; 32]).unwrap();
+        let bytes = serialize_hash_index_state(&hash, 1234).unwrap();
+        cache.add(
+            current_block_storage_key(LedgerContract::ID),
+            StorageItem::from_bytes(bytes),
+        );
+        assert_eq!(ledger.current_index(&cache).unwrap(), 1234);
+        assert_eq!(ledger.current_hash(&cache).unwrap(), hash);
+    }
 }
