@@ -16,6 +16,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 use crate::hashes::STDLIB_HASH;
 
@@ -92,27 +93,99 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
                 "StdLib::memoryCompare requires two arguments".to_string(),
             )),
         },
+        // memorySearch(mem, value[, start[, backward]]) -> Integer index or -1.
+        "memorySearch" => memory_search_impl(args),
         _ => return None,
     };
     Some(result)
 }
 
+/// C# `StdLib.MemorySearch` (its 3 overloads dispatch by argument count):
+/// forward search returns `mem[start..].IndexOf(value) + start` (or -1);
+/// backward search returns `mem[0..start].LastIndexOf(value)` (or -1).
+fn memory_search_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let mem = args.first().map(Vec::as_slice).ok_or_else(|| {
+        CoreError::invalid_operation("StdLib::memorySearch requires (mem, value)")
+    })?;
+    let value = args.get(1).map(Vec::as_slice).ok_or_else(|| {
+        CoreError::invalid_operation("StdLib::memorySearch requires (mem, value)")
+    })?;
+    let start = match args.get(2) {
+        Some(b) => BigInt::from_signed_bytes_le(b).to_usize().ok_or_else(|| {
+            CoreError::invalid_operation("StdLib::memorySearch: start out of range")
+        })?,
+        None => 0,
+    };
+    // C# `AsSpan(start)` / `AsSpan(0, start)` throw when start exceeds the length.
+    if start > mem.len() {
+        return Err(CoreError::invalid_operation(
+            "StdLib::memorySearch: start out of range",
+        ));
+    }
+    let backward = args.get(3).map(|b| b.iter().any(|x| *x != 0)).unwrap_or(false);
+    Ok(BigInt::from(memory_search(mem, value, start, backward)).to_signed_bytes_le())
+}
+
+fn memory_search(mem: &[u8], value: &[u8], start: usize, backward: bool) -> i64 {
+    if backward {
+        last_index_of(&mem[..start], value)
+    } else {
+        match index_of(&mem[start..], value) {
+            Some(i) => (i + start) as i64,
+            None => -1,
+        }
+    }
+}
+
+/// First index of `needle` in `haystack`, matching .NET `Span.IndexOf`
+/// (an empty needle is found at 0).
+fn index_of(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    if needle.len() > haystack.len() {
+        return None;
+    }
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+/// Last index of `needle` in `haystack` (or -1), matching .NET `Span.LastIndexOf`
+/// (an empty needle is reported at `haystack.len()`).
+fn last_index_of(haystack: &[u8], needle: &[u8]) -> i64 {
+    if needle.is_empty() {
+        return haystack.len() as i64;
+    }
+    if needle.len() > haystack.len() {
+        return -1;
+    }
+    haystack
+        .windows(needle.len())
+        .rposition(|w| w == needle)
+        .map_or(-1, |i| i as i64)
+}
+
 static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let bytes = ContractParameterType::ByteArray;
     let string = ContractParameterType::String;
+    let int = ContractParameterType::Integer;
+    let boolean = ContractParameterType::Boolean;
     vec![
         NativeMethod::new("base64Encode".into(), 1 << 5, true, 0, vec![bytes], string),
         NativeMethod::new("base58Encode".into(), 1 << 13, true, 0, vec![bytes], string),
         NativeMethod::new("base58Decode".into(), 1 << 10, true, 0, vec![string], bytes),
         NativeMethod::new("base58CheckEncode".into(), 1 << 16, true, 0, vec![bytes], string),
         NativeMethod::new("base58CheckDecode".into(), 1 << 16, true, 0, vec![string], bytes),
+        NativeMethod::new("memoryCompare".into(), 1 << 5, true, 0, vec![bytes, bytes], int),
+        // memorySearch's 3 C# overloads (dispatched by argument count).
+        NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes], int),
+        NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes, int], int),
         NativeMethod::new(
-            "memoryCompare".into(),
-            1 << 5,
+            "memorySearch".into(),
+            1 << 6,
             true,
             0,
-            vec![bytes, bytes],
-            ContractParameterType::Integer,
+            vec![bytes, bytes, int, boolean],
+            int,
         ),
     ]
 });
@@ -217,9 +290,48 @@ mod tests {
                 "base58Decode",
                 "base58CheckEncode",
                 "base58CheckDecode",
-                "memoryCompare"
+                "memoryCompare",
+                "memorySearch",
+                "memorySearch",
+                "memorySearch"
             ]
         );
         assert!(c.methods().iter().all(|m| m.safe));
+        // The three memorySearch overloads are distinguished by parameter count.
+        let counts: Vec<usize> = c
+            .methods()
+            .iter()
+            .filter(|m| m.name == "memorySearch")
+            .map(|m| m.parameters.len())
+            .collect();
+        assert_eq!(counts, [2, 3, 4]);
+    }
+
+    #[test]
+    fn memory_search_matches_csharp() {
+        let search = |args: &[&[u8]]| -> i64 {
+            let owned: Vec<Vec<u8>> = args.iter().map(|a| a.to_vec()).collect();
+            let out = dispatch("memorySearch", &owned).unwrap().unwrap();
+            BigInt::from_signed_bytes_le(&out).to_i64().unwrap()
+        };
+        let n = |v: i64| BigInt::from(v).to_signed_bytes_le();
+
+        // Forward (2-arg): first occurrence, or -1.
+        assert_eq!(search(&[b"hello world", b"o"]), 4);
+        assert_eq!(search(&[b"hello world", b"world"]), 6);
+        assert_eq!(search(&[b"hello", b"z"]), -1);
+        // 3-arg: start offset is added back to the in-slice index.
+        assert_eq!(search(&[b"hello world", b"o", &n(5)]), 7);
+        // 4-arg backward: last occurrence within mem[0..start].
+        assert_eq!(search(&[b"hello world", b"o", &n(11), &[1]]), 7);
+        assert_eq!(search(&[b"hello world", b"o", &n(5), &[1]]), 4);
+    }
+
+    #[test]
+    fn memory_search_start_out_of_range_faults() {
+        // C# AsSpan(start) throws when start exceeds the length.
+        assert!(dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]])
+            .unwrap()
+            .is_err());
     }
 }
