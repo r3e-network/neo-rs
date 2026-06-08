@@ -36,8 +36,6 @@
 //! let script_hash = witness.script_hash();
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/neo-ledger-types/0.7.2")]
-
 use base64::{engine::general_purpose, Engine as _};
 use neo_crypto::Crypto;
 use neo_error::{CoreError, CoreResult};
