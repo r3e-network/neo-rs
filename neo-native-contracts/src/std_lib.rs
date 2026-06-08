@@ -1,11 +1,12 @@
 //! StdLib native contract (id -2).
 //!
-//! Implements the C# `Neo.SmartContract.Native.StdLib` Base64-encode / Base58
-//! primitives, dispatched through the [`NativeContract`] trait. The remaining
-//! StdLib surface (`base64Decode` — pending a strict, whitespace-exact decoder
-//! to match `Convert.FromBase64String`; `itoa`/`atoi`, `jsonSerialize`/
-//! `jsonDeserialize`, `serialize`/`deserialize`, `memoryCompare`/`memorySearch`,
-//! `stringSplit`, `strLen`, `base64Url*`) is the next increment; every method
+//! Implements the C# `Neo.SmartContract.Native.StdLib` Base64/Base58 primitives
+//! plus `memoryCompare` / `memorySearch`, dispatched through the
+//! [`NativeContract`] trait. The remaining StdLib surface (`base64Decode` —
+//! pending a strict, whitespace-exact decoder to match `Convert.FromBase64String`;
+//! `itoa`/`atoi` — .NET two's-complement hex semantics; `jsonSerialize`/
+//! `jsonDeserialize`, `serialize`/`deserialize`, `stringSplit`, `strLen`
+//! — grapheme counting, `base64Url*`) is the next increment; every method
 //! declared below is byte-for-byte C# parity with a real implementation.
 
 use std::any::Any;
