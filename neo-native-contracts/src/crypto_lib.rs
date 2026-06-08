@@ -12,10 +12,12 @@ use std::any::Any;
 use std::sync::LazyLock;
 
 use neo_config::Hardfork;
-use neo_crypto::Crypto;
+use neo_crypto::{murmur32, Crypto};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 use crate::hashes::CRYPTO_LIB_HASH;
 
@@ -88,6 +90,15 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             byte_array,
         )
         .with_active_in(Hardfork::HfCockatrice),
+        // murmur32(data: ByteArray, seed: Integer) -> ByteArray, C# CpuFee 1<<13.
+        NativeMethod::new(
+            "murmur32".to_string(),
+            1 << 13,
+            true,
+            0,
+            vec![byte_array, ContractParameterType::Integer],
+            byte_array,
+        ),
     ]
 });
 
@@ -118,6 +129,23 @@ impl NativeContract for CryptoLib {
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
+        // murmur32 takes (ByteArray data, Integer seed) and returns the 32-bit
+        // hash little-endian (C# `BinaryPrimitives.WriteUInt32LittleEndian`).
+        if method == "murmur32" {
+            let data = args.first().ok_or_else(|| {
+                CoreError::invalid_operation("CryptoLib::murmur32 requires two arguments")
+            })?;
+            let seed_bytes = args.get(1).ok_or_else(|| {
+                CoreError::invalid_operation("CryptoLib::murmur32 requires two arguments")
+            })?;
+            // The VM integer seed is converted to `uint` exactly as C# `(uint)`
+            // does: the low 32 bits (two's complement) of the BigInteger.
+            let seed = (BigInt::from_signed_bytes_le(seed_bytes) & BigInt::from(u32::MAX))
+                .to_u32()
+                .unwrap_or(0);
+            return Ok(murmur32(data, seed).to_le_bytes().to_vec());
+        }
+
         // Every CryptoLib hash method takes a single ByteArray and returns a
         // ByteArray; the engine marshals the argument to raw bytes and the
         // ByteArray return back to a VM ByteString.
@@ -157,6 +185,17 @@ mod tests {
     }
 
     #[test]
+    fn murmur32_is_little_endian() {
+        // MurmurHash3 x86 32 of empty input with seed 0 is 0 -> LE bytes 0,0,0,0
+        // (C# `BinaryPrimitives.WriteUInt32LittleEndian`).
+        assert_eq!(murmur32(b"", 0).to_le_bytes().to_vec(), vec![0u8, 0, 0, 0]);
+        // Deterministic and non-trivial for a non-empty input.
+        let h = murmur32(b"hello", 0);
+        assert_eq!(murmur32(b"hello", 0), h);
+        assert_eq!(h.to_le_bytes().len(), 4);
+    }
+
+    #[test]
     fn native_contract_surface_is_consistent() {
         let c = CryptoLib::new();
         assert_eq!(NativeContract::id(&c), -3);
@@ -164,7 +203,7 @@ mod tests {
         assert_eq!(NativeContract::hash(&c), *CRYPTO_LIB_HASH);
 
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["sha256", "ripemd160", "keccak256"]);
+        assert_eq!(names, ["sha256", "ripemd160", "keccak256", "murmur32"]);
         // keccak256 is hardfork-gated; the unconditional hashes are not.
         let keccak = c.methods().iter().find(|m| m.name == "keccak256").unwrap();
         assert_eq!(keccak.active_in, Some(Hardfork::HfCockatrice));

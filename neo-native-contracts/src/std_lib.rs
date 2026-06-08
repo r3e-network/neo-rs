@@ -15,6 +15,7 @@ use neo_crypto::{Base58, Base64};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
+use num_bigint::BigInt;
 
 use crate::hashes::STDLIB_HASH;
 
@@ -76,6 +77,21 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
                 CoreError::invalid_operation(format!("StdLib::base58CheckDecode: {e}"))
             })
         }),
+        // memoryCompare(a, b) -> Math.Sign(a.SequenceCompareTo(b)) as Integer.
+        // Rust slice `cmp` is the same lexicographic-then-length ordering.
+        "memoryCompare" => match (args.first(), args.get(1)) {
+            (Some(a), Some(b)) => {
+                let sign: i32 = match a.as_slice().cmp(b.as_slice()) {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                };
+                Ok(BigInt::from(sign).to_signed_bytes_le())
+            }
+            _ => Err(CoreError::invalid_operation(
+                "StdLib::memoryCompare requires two arguments".to_string(),
+            )),
+        },
         _ => return None,
     };
     Some(result)
@@ -90,6 +106,14 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
         NativeMethod::new("base58Decode".into(), 1 << 10, true, 0, vec![string], bytes),
         NativeMethod::new("base58CheckEncode".into(), 1 << 16, true, 0, vec![bytes], string),
         NativeMethod::new("base58CheckDecode".into(), 1 << 16, true, 0, vec![string], bytes),
+        NativeMethod::new(
+            "memoryCompare".into(),
+            1 << 5,
+            true,
+            0,
+            vec![bytes, bytes],
+            ContractParameterType::Integer,
+        ),
     ]
 });
 
@@ -158,6 +182,22 @@ mod tests {
     }
 
     #[test]
+    fn memory_compare_matches_csharp_sign() {
+        let cmp = |a: &[u8], b: &[u8]| -> BigInt {
+            let out = dispatch("memoryCompare", &[a.to_vec(), b.to_vec()])
+                .unwrap()
+                .unwrap();
+            BigInt::from_signed_bytes_le(&out)
+        };
+        assert_eq!(cmp(b"abc", b"abc"), BigInt::from(0));
+        assert_eq!(cmp(b"abc", b"abd"), BigInt::from(-1));
+        assert_eq!(cmp(b"abd", b"abc"), BigInt::from(1));
+        // Prefix is "less" than the longer string (SequenceCompareTo semantics).
+        assert_eq!(cmp(b"ab", b"abc"), BigInt::from(-1));
+        assert_eq!(cmp(b"abc", b"ab"), BigInt::from(1));
+    }
+
+    #[test]
     fn unknown_method_is_none() {
         assert!(dispatch("itoa", &[vec![1]]).is_none());
     }
@@ -176,7 +216,8 @@ mod tests {
                 "base58Encode",
                 "base58Decode",
                 "base58CheckEncode",
-                "base58CheckDecode"
+                "base58CheckDecode",
+                "memoryCompare"
             ]
         );
         assert!(c.methods().iter().all(|m| m.safe));
