@@ -36,6 +36,14 @@ impl RedeemScriptError {
     }
 }
 
+impl From<RedeemScriptError> for neo_error::CoreError {
+    fn from(err: RedeemScriptError) -> Self {
+        neo_error::CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
+    }
+}
+
 /// Creates a signature redeem script from a raw (compressed) public key.
 ///
 /// Layout (40 bytes): `PUSHDATA1 0x21 <33-byte pubkey> SYSCALL <CheckSig hash>`.

@@ -16,6 +16,7 @@ description = "Storage traits and abstractions for Neo blockchain"
 [dependencies]
 # Internal crates
 neo-primitives = { workspace = true }
+neo-error = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

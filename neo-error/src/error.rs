@@ -479,50 +479,12 @@ impl From<PrimitiveError> for CoreError {
 // its own `impl From<its_error> for neo_error::CoreError` instead — see
 // `neo-storage`, `neo-vm`, `neo-script-builder`, and `neo-redeem-script`.
 
-// TODO(track-c): once `neo-script-builder`, `neo-redeem-script`, `neo-vm`,
-// and `neo-storage` provide their own `From<X> for neo_error::CoreError`
-// impls, remove these centralized conversions and trim `neo-error`'s
-// dependency list down to `neo-primitives` + `neo-io` only.
-
-impl From<neo_storage::StorageError> for CoreError {
-    fn from(err: neo_storage::StorageError) -> Self {
-        CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
-
-impl From<neo_storage::KeyBuilderError> for CoreError {
-    fn from(err: neo_storage::KeyBuilderError) -> Self {
-        CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
-
-impl From<neo_vm::VmError> for CoreError {
-    fn from(err: neo_vm::VmError) -> Self {
-        CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
-
-impl From<neo_script_builder::ScriptBuilderError> for CoreError {
-    fn from(err: neo_script_builder::ScriptBuilderError) -> Self {
-        CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
-
-impl From<neo_redeem_script::RedeemScriptError> for CoreError {
-    fn from(err: neo_redeem_script::RedeemScriptError) -> Self {
-        CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
+// The cross-crate `From<OtherError> for CoreError` impls now live in their
+// owning crates (`neo-storage`, `neo-vm`, `neo-script-builder`,
+// `neo-redeem-script`), each implementing `From<LocalError> for
+// neo_error::CoreError`. This keeps `neo-error` at the foundation layer
+// (it depends only on `neo-primitives` + `neo-io`), per the reth-style
+// per-crate error model.
 
 // Type conversion errors (require custom handling)
 impl From<std::num::ParseIntError> for CoreError {
