@@ -38,6 +38,8 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 
 neo-network = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-block = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
@@ -77,6 +79,10 @@ path = "tests/p2p_message_exchange.rs"
 [[test]]
 name = "contract_execution"
 path = "tests/contract_execution.rs"
+
+[[test]]
+name = "csharp_compatibility_tests"
+path = "tests/csharp_compatibility_tests.rs"
 
 [[bench]]
 name = "performance_benchmarks"

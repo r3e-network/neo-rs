@@ -13,10 +13,10 @@
 //! - the storage-query surface needed by external plugins and
 //!   services (`get_request`, `get_designated_by_role_at`, …)
 //!
-//! The stubs in this crate return empty / zero values from every
-//! storage query. A real executor should wire them up to a
-//! populated native-contract cache backed by the
-//! `ApplicationEngine`.
+//! The implementations mirror the C# `Neo.SmartContract.Native.*`
+//! storage layout (prefix bytes, account-hash encoding, value
+//! serialization) so the Rust native-contract surface is
+//! byte-compatible with the canonical C# node.
 
 #![allow(missing_docs)]
 #![allow(dead_code)]

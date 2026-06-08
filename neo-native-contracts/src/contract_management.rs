@@ -139,3 +139,121 @@ fn contract_id_storage_key_legacy(id: i32) -> Vec<u8> {
     key.extend_from_slice(&id.to_le_bytes());
     key
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_data_cache::DataCache;
+    use neo_io::BinaryWriter;
+    use neo_storage::StorageItem;
+    use std::sync::Arc;
+
+    fn fresh_cache() -> Arc<DataCache> {
+        Arc::new(DataCache::new_with_config(
+            false,
+            None,
+            None,
+            Default::default(),
+        ))
+    }
+
+    fn sample_hash(byte: u8) -> UInt160 {
+        UInt160::from_bytes(&[byte; 20]).unwrap()
+    }
+
+    #[test]
+    fn test_contract_management_constants() {
+        assert_eq!(ContractManagement::ID, -1);
+    }
+
+    #[test]
+    fn test_contract_management_hash() {
+        let expected = *CONTRACT_MANAGEMENT_HASH;
+        assert_eq!(ContractManagement::script_hash(), expected);
+        assert_eq!(ContractManagement::new().hash(), expected);
+    }
+
+    #[test]
+    fn test_is_contract_false_when_missing() {
+        let cache = fresh_cache();
+        assert!(!ContractManagement::is_contract(&cache, &sample_hash(1)));
+    }
+
+    #[test]
+    fn test_get_contract_returns_none_when_missing() {
+        let cache = fresh_cache();
+        let res = ContractManagement::get_contract_from_snapshot(&cache, &sample_hash(1)).unwrap();
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_get_contract_by_id_returns_none_when_missing() {
+        let cache = fresh_cache();
+        let res = ContractManagement::get_contract_by_id_from_snapshot(&cache, 42).unwrap();
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_contract_storage_key_format() {
+        let key = StorageKey::new(ContractManagement::ID, {
+            let mut k = vec![PREFIX_CONTRACT];
+            k.extend_from_slice(&sample_hash(1).to_bytes());
+            k
+        });
+        assert_eq!(key.id(), ContractManagement::ID);
+        assert_eq!(key.key()[0], PREFIX_CONTRACT);
+        assert_eq!(key.key().len(), 21);
+    }
+
+    #[test]
+    fn test_contract_id_storage_key_be() {
+        let key = StorageKey::new(ContractManagement::ID, {
+            let mut k = vec![PREFIX_CONTRACT_HASH];
+            k.extend_from_slice(&42i32.to_be_bytes());
+            k
+        });
+        assert_eq!(key.id(), ContractManagement::ID);
+        assert_eq!(key.key()[0], PREFIX_CONTRACT_HASH);
+        // 1 prefix + 4 id bytes (big-endian)
+        assert_eq!(key.key().len(), 5);
+        assert_eq!(&key.key()[1..], &42i32.to_be_bytes());
+    }
+
+    #[test]
+    fn test_write_then_read_contract() {
+        let cache = fresh_cache();
+        let hash = sample_hash(7);
+
+        // Synthesise a serialised ContractState. The real one is
+        // constructed by the blockchain service; we just need any
+        // payload that round-trips for the storage check.
+        let payload = {
+            let mut w = BinaryWriter::new();
+            w.write_u16(0) // version
+             .unwrap();
+            w.write_bytes(&[0xAB; 20]) // hash
+             .unwrap();
+            w.into_bytes()
+        };
+        let key = StorageKey::new(ContractManagement::ID, {
+            let mut k = vec![PREFIX_CONTRACT];
+            k.extend_from_slice(&hash.to_bytes());
+            k
+        });
+        cache.add(key, StorageItem::from_bytes(payload.clone()));
+
+        assert!(ContractManagement::is_contract(&cache, &hash));
+        let value = cache
+            .get(&StorageKey::new(ContractManagement::ID, {
+                let mut k = vec![PREFIX_CONTRACT];
+                k.extend_from_slice(&hash.to_bytes());
+                k
+            }))
+            .unwrap();
+        assert_eq!(value.value_bytes().as_ref(), payload.as_slice());
+    }
+}

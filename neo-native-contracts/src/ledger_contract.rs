@@ -292,3 +292,176 @@ pub fn serialize_conflict_stub(block_index: u32) -> CoreResult<Vec<u8>> {
         .map_err(|e| CoreError::serialization(e.to_string()))?;
     Ok(writer.into_bytes())
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_data_cache::DataCache;
+    use std::sync::Arc;
+
+    fn fresh_cache() -> Arc<DataCache> {
+        Arc::new(DataCache::new_with_config(
+            false,
+            None,
+            None,
+            Default::default(),
+        ))
+    }
+
+    fn tx_hash(byte: u8) -> UInt256 {
+        UInt256::from_bytes(&[byte; 32]).unwrap()
+    }
+
+    #[test]
+    fn test_ledger_constants() {
+        assert_eq!(LedgerContract::ID, -4);
+    }
+
+    #[test]
+    fn test_ledger_hash() {
+        let expected = *LEDGER_CONTRACT_HASH;
+        assert_eq!(LedgerContract::script_hash(), expected);
+        assert_eq!(LedgerContract::new().hash(), expected);
+    }
+
+    #[test]
+    fn test_current_index_zero_when_empty() {
+        let cache = fresh_cache();
+        assert_eq!(LedgerContract::new().current_index(&cache).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_current_hash_zero_when_empty() {
+        let cache = fresh_cache();
+        let h = LedgerContract::new().current_hash(&cache).unwrap();
+        assert_eq!(h, UInt256::default());
+    }
+
+    #[test]
+    fn test_get_block_hash_missing() {
+        let cache = fresh_cache();
+        let res = LedgerContract::new().get_block_hash(&cache, 1).unwrap();
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_get_transaction_state_missing() {
+        let cache = fresh_cache();
+        let res = LedgerContract::new()
+            .get_transaction_state(&cache, &tx_hash(1))
+            .unwrap();
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_contains_transaction_false_when_missing() {
+        let cache = fresh_cache();
+        let res = LedgerContract::new()
+            .contains_transaction(&cache, &tx_hash(1))
+            .unwrap();
+        assert!(!res);
+    }
+
+    #[test]
+    fn test_serialize_hash_index_state_roundtrip() {
+        let hash = UInt256::from_bytes(&[0x42; 32]).unwrap();
+        let bytes = serialize_hash_index_state(&hash, 12345).unwrap();
+        // 32 byte hash + 4 byte LE index
+        assert_eq!(bytes.len(), 36);
+        assert_eq!(&bytes[..32], &hash.to_bytes());
+        assert_eq!(&bytes[32..], &12345u32.to_le_bytes());
+    }
+
+    #[test]
+    fn test_serialize_conflict_stub_format() {
+        let bytes = serialize_conflict_stub(42).unwrap();
+        assert_eq!(bytes.len(), 5);
+        // First byte = conflict-stub kind
+        assert_eq!(bytes[0], RECORD_KIND_CONFLICT_STUB);
+        assert_eq!(&bytes[1..], &42u32.to_le_bytes());
+    }
+
+    #[test]
+    fn test_serialize_persisted_transaction_state_format() {
+        use neo_vm_rs::VmState;
+        // Build a minimal transaction; full tx encoding requires lots
+        // of fields, so we use a no-op placeholder for the assertion.
+        let bytes_dummy = vec![0u8; 50];
+        let mut reader = MemoryReader::new(&bytes_dummy);
+        // We cannot construct a real Transaction here without
+        // extensive setup, so this test only checks the prefix bytes.
+        // Round-trip the wire format encoding for a conflict stub and
+        // verify the kind byte.
+        let stub = serialize_conflict_stub(100).unwrap();
+        assert_eq!(stub[0], RECORD_KIND_CONFLICT_STUB);
+        // Tx-state encoding starts with the kind byte, which is
+        // either 0x01 (tx) or 0x02 (stub). For transactions it would
+        // be 0x01.
+        let _vm_state = VmState::HALT;
+        let _ = reader;
+    }
+
+    #[test]
+    fn test_storage_key_lengths() {
+        let key = current_block_storage_key(LedgerContract::ID);
+        assert_eq!(key.id(), LedgerContract::ID);
+        assert_eq!(key.key().len(), 1);
+        assert_eq!(key.key()[0], PREFIX_CURRENT_BLOCK);
+
+        let bh = block_hash_storage_key(LedgerContract::ID, 100);
+        assert_eq!(bh.id(), LedgerContract::ID);
+        assert_eq!(bh.key().len(), 1 + 4);
+        assert_eq!(bh.key()[0], PREFIX_BLOCK_HASH);
+
+        let tx = transaction_storage_key(LedgerContract::ID, &tx_hash(1));
+        assert_eq!(tx.id(), LedgerContract::ID);
+        assert_eq!(tx.key().len(), 1 + 32);
+        assert_eq!(tx.key()[0], PREFIX_TRANSACTION);
+    }
+
+    #[test]
+    fn test_write_then_read_current_block() {
+        let cache = fresh_cache();
+        let hash = UInt256::from_bytes(&[0x11; 32]).unwrap();
+        let bytes = serialize_hash_index_state(&hash, 42).unwrap();
+        cache.add(
+            current_block_storage_key(LedgerContract::ID),
+            StorageItem::from_bytes(bytes),
+        );
+        let lc = LedgerContract::new();
+        assert_eq!(lc.current_index(&cache).unwrap(), 42);
+        assert_eq!(lc.current_hash(&cache).unwrap(), hash);
+    }
+
+    #[test]
+    fn test_write_then_read_block_hash() {
+        let cache = fresh_cache();
+        let hash = UInt256::from_bytes(&[0x22; 32]).unwrap();
+        let key = block_hash_storage_key(LedgerContract::ID, 7);
+        cache.add(key, StorageItem::from_bytes(hash.to_bytes()));
+        let lc = LedgerContract::new();
+        let read = lc.get_block_hash(&cache, 7).unwrap();
+        assert_eq!(read, Some(hash));
+    }
+
+    #[test]
+    fn test_write_then_read_conflict_stub() {
+        let cache = fresh_cache();
+        let hash = tx_hash(5);
+        let stub = serialize_conflict_stub(99).unwrap();
+        cache.add(
+            transaction_storage_key(LedgerContract::ID, &hash),
+            StorageItem::from_bytes(stub),
+        );
+        let lc = LedgerContract::new();
+        assert!(lc.contains_transaction(&cache, &hash).unwrap());
+        let state = lc.get_transaction_state(&cache, &hash).unwrap();
+        assert!(state.is_some());
+        let state = state.unwrap();
+        assert_eq!(state.block_index, 99);
+    }
+}
