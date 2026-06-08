@@ -16,7 +16,7 @@ use neo_execution::native_contract_provider::{install_provider, NativeContractPr
 use neo_execution::NativeContract;
 use neo_primitives::UInt160;
 
-use crate::{CryptoLib, LedgerContract, StdLib};
+use crate::{CryptoLib, LedgerContract, PolicyContract, StdLib};
 
 /// Provider over the implemented standard native contracts, in canonical
 /// (ascending-id-magnitude) registration order.
@@ -33,6 +33,7 @@ impl StandardNativeProvider {
             Arc::new(StdLib::new()),
             Arc::new(CryptoLib::new()),
             Arc::new(LedgerContract::new()),
+            Arc::new(PolicyContract::new()),
         ];
         Self { contracts }
     }
