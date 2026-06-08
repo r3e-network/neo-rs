@@ -18,7 +18,7 @@ use neo_primitives::UInt160;
 
 use crate::{
     ContractManagement, CryptoLib, GasToken, LedgerContract, NeoToken, Notary, OracleContract,
-    PolicyContract, StdLib,
+    PolicyContract, StdLib, Treasury,
 };
 
 /// Provider over the implemented standard native contracts, in canonical
@@ -42,6 +42,7 @@ impl StandardNativeProvider {
             Arc::new(PolicyContract::new()),
             Arc::new(OracleContract::new()),
             Arc::new(Notary::new()),
+            Arc::new(Treasury::new()),
         ];
         Self { contracts }
     }
