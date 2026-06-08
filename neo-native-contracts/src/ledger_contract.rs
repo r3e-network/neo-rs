@@ -15,13 +15,14 @@
 
 use crate::hashes::LEDGER_CONTRACT_HASH;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{ApplicationEngine, Interoperable, NativeContract, NativeMethod};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_payloads::Transaction;
 use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
+use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::VmState as VMState;
+use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
 use num_bigint::BigInt;
 use std::any::Any;
 use std::sync::LazyLock;
@@ -354,6 +355,14 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash256],
             ContractParameterType::Integer,
         ),
+        NativeMethod::new(
+            "getTransaction".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash256],
+            ContractParameterType::Array,
+        ),
     ]
 });
 
@@ -441,6 +450,45 @@ impl NativeContract for LedgerContract {
                 };
                 Ok(BigInt::from(vm_state).to_signed_bytes_le())
             }
+            "getTransaction" => {
+                let hash_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "LedgerContract::getTransaction requires a hash",
+                    )
+                })?;
+                let hash = UInt256::from_bytes(hash_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "LedgerContract::getTransaction: bad hash: {e}"
+                    ))
+                })?;
+                // C# returns the transaction (Array via ToStackItem) for a
+                // traceable full record; null (empty payload) for an absent,
+                // conflict-stub, or untraceable transaction.
+                match self.get_transaction_state(&snapshot, &hash)? {
+                    Some(state) => {
+                        if let Some(tx) = &state.transaction {
+                            if is_traceable_block(engine, state.block_index)? {
+                                let item = tx.to_stack_item().map_err(|e| {
+                                    CoreError::invalid_operation(format!(
+                                        "LedgerContract::getTransaction: stack item: {e}"
+                                    ))
+                                })?;
+                                BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+                                    .map_err(|e| {
+                                        CoreError::invalid_operation(format!(
+                                            "LedgerContract::getTransaction: serialize: {e}"
+                                        ))
+                                    })
+                            } else {
+                                Ok(Vec::new())
+                            }
+                        } else {
+                            Ok(Vec::new())
+                        }
+                    }
+                    None => Ok(Vec::new()),
+                }
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "LedgerContract method '{other}' is not implemented"
             ))),
@@ -461,7 +509,13 @@ mod tests {
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(
             names,
-            ["currentHash", "currentIndex", "getTransactionHeight", "getTransactionVMState"]
+            [
+                "currentHash",
+                "currentIndex",
+                "getTransactionHeight",
+                "getTransactionVMState",
+                "getTransaction"
+            ]
         );
         assert!(c
             .methods()
@@ -473,6 +527,10 @@ mod tests {
             assert_eq!(m.return_type, ContractParameterType::Integer);
             assert_eq!(m.cpu_fee, 1 << 15);
         }
+        let get_tx = c.methods().iter().find(|m| m.name == "getTransaction").unwrap();
+        assert_eq!(get_tx.parameters, vec![ContractParameterType::Hash256]);
+        assert_eq!(get_tx.return_type, ContractParameterType::Array);
+        assert_eq!(get_tx.cpu_fee, 1 << 15);
     }
 
     #[test]
