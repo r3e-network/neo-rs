@@ -7,6 +7,7 @@ use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -180,6 +181,35 @@ fn setter_int_arg(args: &[Vec<u8>], method: &str) -> CoreResult<i64> {
         .ok_or_else(|| CoreError::invalid_operation(format!("{method}: value out of range")))
 }
 
+/// C# `PolicyContract.MaxMillisecondsPerBlock`.
+const MAX_MILLISECONDS_PER_BLOCK: i64 = 30_000;
+
+/// C# `SetMillisecondsPerBlock` range guard: `[1, MaxMillisecondsPerBlock]`.
+fn validate_milliseconds_per_block(value: i64) -> CoreResult<()> {
+    if !(1..=MAX_MILLISECONDS_PER_BLOCK).contains(&value) {
+        return Err(CoreError::invalid_operation(format!(
+            "MillisecondsPerBlock must be between [1, {MAX_MILLISECONDS_PER_BLOCK}], got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// C# `GetMillisecondsPerBlock`: the stored `Prefix_MillisecondsPerBlock`, or the
+/// `ProtocolSettings` value written at HF_Echidna activation. Shared by the getter
+/// and the setter (which reads the old value for its change event).
+fn read_milliseconds_per_block(engine: &ApplicationEngine) -> CoreResult<i64> {
+    let default = i64::from(engine.protocol_settings().milliseconds_per_block);
+    let snapshot = engine.snapshot_cache();
+    crate::read_storage_int(&snapshot, PolicyContract::ID, PREFIX_MILLISECONDS_PER_BLOCK, default)
+}
+
+/// Writes the milliseconds-per-block to `Prefix_MillisecondsPerBlock`
+/// (C# `GetAndChange(_millisecondsPerBlock).Set(value)`).
+fn put_milliseconds_per_block(snapshot: &DataCache, value: i64) {
+    let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_MILLISECONDS_PER_BLOCK]);
+    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+}
+
 /// Returns the effective `MaxTraceableBlocks` for traceability checks, mirroring
 /// the source selection in C# `LedgerContract.IsTraceableBlock`: before
 /// `HF_Echidna` it is the static `ProtocolSettings.MaxTraceableBlocks`; from
@@ -241,6 +271,16 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
         ),
+        // HF_Echidna setter that emits a change notification (States|AllowNotify).
+        NativeMethod::new(
+            "setMillisecondsPerBlock".to_string(),
+            1 << 15,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        )
+        .with_active_in(Hardfork::HfEchidna),
         NativeMethod::new(
             "isBlocked".to_string(),
             1 << 15,
@@ -341,15 +381,28 @@ impl NativeContract for PolicyContract {
                 Ok(vec![u8::from(blocked)])
             }
             "getMillisecondsPerBlock" => {
-                let default = i64::from(engine.protocol_settings().milliseconds_per_block);
-                let snapshot = engine.snapshot_cache();
-                let v = crate::read_storage_int(
-                    &snapshot,
-                    Self::ID,
-                    PREFIX_MILLISECONDS_PER_BLOCK,
-                    default,
-                )?;
-                Ok(BigInt::from(v).to_signed_bytes_le())
+                Ok(BigInt::from(read_milliseconds_per_block(engine)?).to_signed_bytes_le())
+            }
+            "setMillisecondsPerBlock" => {
+                // C#: validate range -> AssertCommittee -> read old -> write ->
+                // emit MillisecondsPerBlockChanged[oldValue, newValue].
+                let value = setter_int_arg(args, "setMillisecondsPerBlock")?;
+                validate_milliseconds_per_block(value)?;
+                assert_committee(engine, "setMillisecondsPerBlock")?;
+                let old = read_milliseconds_per_block(engine)?;
+                put_milliseconds_per_block(&engine.snapshot_cache(), value);
+                engine
+                    .send_notification(
+                        Self::script_hash(),
+                        "MillisecondsPerBlockChanged".to_string(),
+                        vec![StackItem::from_int(old), StackItem::from_int(value)],
+                    )
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "setMillisecondsPerBlock notify: {e}"
+                        ))
+                    })?;
+                Ok(Vec::new())
             }
             "getMaxValidUntilBlockIncrement" => {
                 let default = i64::from(engine.protocol_settings().max_valid_until_block_increment);
@@ -399,6 +452,7 @@ mod tests {
                 "getStoragePrice",
                 "setFeePerByte",
                 "setStoragePrice",
+                "setMillisecondsPerBlock",
                 "isBlocked",
                 "getMillisecondsPerBlock",
                 "getMaxValidUntilBlockIncrement",
@@ -408,7 +462,7 @@ mod tests {
         // The Echidna-era chain-parameter getters are hardfork-gated.
         let mtb = c.methods().iter().find(|m| m.name == "getMaxTraceableBlocks").unwrap();
         assert_eq!(mtb.active_in, Some(Hardfork::HfEchidna));
-        // The setters are non-safe, write-flagged (States), Void methods.
+        // The fee/price setters are non-safe, write-flagged (States), Void methods.
         for name in ["setFeePerByte", "setStoragePrice"] {
             let setter = c.methods().iter().find(|m| m.name == name).unwrap();
             assert!(!setter.safe, "{name} must not be safe");
@@ -416,6 +470,15 @@ mod tests {
             assert_eq!(setter.parameters, vec![ContractParameterType::Integer]);
             assert_eq!(setter.return_type, ContractParameterType::Void);
         }
+        // The Echidna setter additionally emits a notification (States|AllowNotify).
+        let ms = c.methods().iter().find(|m| m.name == "setMillisecondsPerBlock").unwrap();
+        assert!(!ms.safe);
+        assert_eq!(
+            ms.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+        );
+        assert_eq!(ms.return_type, ContractParameterType::Void);
+        assert_eq!(ms.active_in, Some(Hardfork::HfEchidna));
     }
 
     #[test]
@@ -455,6 +518,28 @@ mod tests {
         assert_eq!(storage_price(&cache).unwrap(), 250_000);
         put_storage_price(&cache, 1_000_000);
         assert_eq!(storage_price(&cache).unwrap(), 1_000_000);
+    }
+
+    #[test]
+    fn set_milliseconds_per_block_validation_bounds() {
+        // C# SetMillisecondsPerBlock accepts [1, MaxMillisecondsPerBlock].
+        assert!(validate_milliseconds_per_block(1).is_ok());
+        assert!(validate_milliseconds_per_block(MAX_MILLISECONDS_PER_BLOCK).is_ok());
+        assert!(validate_milliseconds_per_block(0).is_err());
+        assert!(validate_milliseconds_per_block(MAX_MILLISECONDS_PER_BLOCK + 1).is_err());
+    }
+
+    #[test]
+    fn milliseconds_per_block_write_persists_to_storage() {
+        let cache = DataCache::new(false);
+        put_milliseconds_per_block(&cache, 7_000);
+        // Read back the raw storage value (the engine-aware getter adds the
+        // ProtocolSettings default, which isn't needed once a value is stored).
+        assert_eq!(
+            crate::read_storage_int(&cache, PolicyContract::ID, PREFIX_MILLISECONDS_PER_BLOCK, 0)
+                .unwrap(),
+            7_000
+        );
     }
 
     #[test]
