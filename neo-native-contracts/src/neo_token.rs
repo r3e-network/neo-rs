@@ -9,11 +9,16 @@
 use std::any::Any;
 use std::sync::LazyLock;
 
+use neo_config::Hardfork;
+use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
+use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::StorageKey;
+use neo_vm::StackItem;
+use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 
 use crate::hashes::NEO_TOKEN_HASH;
@@ -27,6 +32,8 @@ const DEFAULT_REGISTER_PRICE: i64 = 1000 * 100_000_000;
 const PREFIX_GAS_PER_BLOCK: u8 = 29;
 /// C# default GAS-per-block at index 0: 5 GAS, in datoshi (5 * 1e8).
 const DEFAULT_GAS_PER_BLOCK: i64 = 5 * 100_000_000;
+/// C# `NeoToken.Prefix_Committee` — the cached `(pubkey, votes)` committee list.
+const PREFIX_COMMITTEE: u8 = 14;
 
 /// Lazily-initialised script-hash handle for the NEO native contract.
 pub static NEO_HASH: LazyLock<UInt160> = LazyLock::new(|| *NEO_TOKEN_HASH);
@@ -82,6 +89,68 @@ fn gas_per_block_at(snapshot: &DataCache, index: u32) -> BigInt {
     BigInt::from(DEFAULT_GAS_PER_BLOCK)
 }
 
+/// Reads the cached committee public keys from `Prefix_Committee` (C#
+/// `GetCommitteeFromCache`). The value is a `BinarySerializer` array whose
+/// elements are `Struct[pubkey(33-byte compressed), votes]` (C#
+/// `CachedCommittee.ElementToStackItem`); only the public keys are returned, in
+/// stored order.
+fn read_committee_points(snapshot: &DataCache) -> CoreResult<Vec<ECPoint>> {
+    let key = StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]);
+    let item = snapshot.get(&key).ok_or_else(|| {
+        CoreError::invalid_operation("NeoToken committee cache is not initialized")
+    })?;
+    let decoded = BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
+        .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
+    let StackItem::Array(array) = decoded else {
+        return Err(CoreError::invalid_data("committee cache is not an array"));
+    };
+    let mut points = Vec::with_capacity(array.items().len());
+    for element in array.items() {
+        let StackItem::Struct(fields) = element else {
+            return Err(CoreError::invalid_data("committee element is not a struct"));
+        };
+        let items = fields.items();
+        let pubkey = items
+            .first()
+            .ok_or_else(|| CoreError::invalid_data("committee element is empty"))?;
+        let bytes = pubkey
+            .as_bytes()
+            .map_err(|e| CoreError::invalid_data(format!("committee pubkey: {e}")))?;
+        points.push(
+            ECPoint::from_bytes(&bytes)
+                .map_err(|e| CoreError::invalid_data(format!("committee EC point: {e}")))?,
+        );
+    }
+    Ok(points)
+}
+
+/// C# `GetCommittee` = committee public keys sorted ascending (`OrderBy(p => p)`).
+fn committee_sorted(snapshot: &DataCache) -> CoreResult<Vec<ECPoint>> {
+    let mut points = read_committee_points(snapshot)?;
+    points.sort();
+    Ok(points)
+}
+
+/// The committee multisig threshold `m = n - (n - 1) / 2` (committee majority,
+/// matching C# `GetCommitteeAddress`). `n` must be non-zero.
+fn committee_threshold(n: usize) -> usize {
+    n - (n - 1) / 2
+}
+
+/// C# `GetCommitteeAddress` = script hash of the `m`-of-`n` multisig over the
+/// committee public keys, where `m = n - (n - 1) / 2`. The multisig builder sorts
+/// the keys ascending exactly as C# `Contract.CreateMultiSigRedeemScript` does.
+fn committee_address(snapshot: &DataCache) -> CoreResult<UInt160> {
+    let points = read_committee_points(snapshot)?;
+    if points.is_empty() {
+        return Err(CoreError::invalid_operation("committee is empty"));
+    }
+    let m = committee_threshold(points.len());
+    let script = neo_redeem_script::multi_sig_redeem_script_from_points(m, &points)
+        .map_err(|e| CoreError::invalid_operation(format!("committee multisig script: {e}")))?;
+    Ok(UInt160::from_script(&script))
+}
+
 static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
     let int = ContractParameterType::Integer;
@@ -102,6 +171,24 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
         // Governance reads.
         NativeMethod::new("getGasPerBlock".into(), 1 << 15, true, read_states, vec![], int),
         NativeMethod::new("getRegisterPrice".into(), 1 << 15, true, read_states, vec![], int),
+        // Committee reads (CpuFee 1<<16 in C#).
+        NativeMethod::new(
+            "getCommittee".into(),
+            1 << 16,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Array,
+        ),
+        NativeMethod::new(
+            "getCommitteeAddress".into(),
+            1 << 16,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Hash160,
+        )
+        .with_active_in(Hardfork::HfCockatrice),
     ]
 });
 
@@ -160,6 +247,24 @@ impl NativeContract for NeoToken {
                 let snapshot = engine.snapshot_cache();
                 Ok(BigInt::from(register_price(&snapshot)?).to_signed_bytes_le())
             }
+            "getCommittee" => {
+                let snapshot = engine.snapshot_cache();
+                // C# returns ECPoint[] sorted ascending; marshaled as an Array of
+                // compressed (33-byte) public-key byte strings.
+                let points = committee_sorted(&snapshot)?;
+                let array = StackItem::from_array(
+                    points
+                        .iter()
+                        .map(|p| StackItem::from_byte_string(p.to_bytes()))
+                        .collect::<Vec<_>>(),
+                );
+                BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+                    .map_err(|e| CoreError::invalid_operation(format!("getCommittee: {e}")))
+            }
+            "getCommitteeAddress" => {
+                let snapshot = engine.snapshot_cache();
+                Ok(committee_address(&snapshot)?.to_bytes())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "NeoToken method '{other}' is not implemented"
             ))),
@@ -180,12 +285,118 @@ mod tests {
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(
             names,
-            ["symbol", "decimals", "totalSupply", "balanceOf", "getGasPerBlock", "getRegisterPrice"]
+            [
+                "symbol",
+                "decimals",
+                "totalSupply",
+                "balanceOf",
+                "getGasPerBlock",
+                "getRegisterPrice",
+                "getCommittee",
+                "getCommitteeAddress"
+            ]
         );
         let symbol = c.methods().iter().find(|m| m.name == "symbol").unwrap();
         assert!(symbol.safe && symbol.cpu_fee == 0 && symbol.required_call_flags == 0);
         let balance = c.methods().iter().find(|m| m.name == "balanceOf").unwrap();
         assert_eq!(balance.required_call_flags, CallFlags::READ_STATES.bits());
+
+        let committee = c.methods().iter().find(|m| m.name == "getCommittee").unwrap();
+        assert_eq!(committee.cpu_fee, 1 << 16);
+        assert_eq!(committee.return_type, ContractParameterType::Array);
+        assert!(committee.active_in.is_none());
+        let addr = c.methods().iter().find(|m| m.name == "getCommitteeAddress").unwrap();
+        assert_eq!(addr.cpu_fee, 1 << 16);
+        assert_eq!(addr.return_type, ContractParameterType::Hash160);
+        assert_eq!(addr.active_in, Some(Hardfork::HfCockatrice));
+    }
+
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// Stores a committee cache (Array of `Struct[pubkey, votes]`) under
+    /// `Prefix_Committee`, mirroring C# `CachedCommittee.ToStackItem`.
+    fn seed_committee(cache: &DataCache, points: &[ECPoint]) {
+        use neo_storage::StorageItem;
+        let array = StackItem::from_array(
+            points
+                .iter()
+                .map(|p| {
+                    StackItem::from_struct(vec![
+                        StackItem::from_byte_string(p.to_bytes()),
+                        StackItem::from_int(0),
+                    ])
+                })
+                .collect::<Vec<_>>(),
+        );
+        let bytes =
+            BinarySerializer::serialize(&array, &ExecutionEngineLimits::default()).unwrap();
+        cache.add(
+            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageItem::from_bytes(bytes),
+        );
+    }
+
+    fn sample_committee() -> Vec<ECPoint> {
+        // Three valid secp256r1 public keys (Neo N3 standby validators).
+        [
+            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
+            "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093",
+            "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
+        ]
+        .iter()
+        .map(|h| ECPoint::from_bytes(&hex(h)).unwrap())
+        .collect()
+    }
+
+    #[test]
+    fn committee_threshold_is_majority() {
+        // m = n - (n - 1) / 2.
+        assert_eq!(committee_threshold(1), 1);
+        assert_eq!(committee_threshold(3), 2);
+        assert_eq!(committee_threshold(4), 3);
+        assert_eq!(committee_threshold(7), 4);
+        assert_eq!(committee_threshold(21), 11);
+    }
+
+    #[test]
+    fn committee_read_decodes_and_sorts() {
+        let cache = DataCache::new(false);
+        let points = sample_committee();
+        seed_committee(&cache, &points);
+
+        // Decoded points round-trip (stored order).
+        let read = read_committee_points(&cache).unwrap();
+        assert_eq!(read, points);
+
+        // getCommittee returns them sorted ascending (C# OrderBy).
+        let mut expected = points.clone();
+        expected.sort();
+        assert_eq!(committee_sorted(&cache).unwrap(), expected);
+    }
+
+    #[test]
+    fn committee_address_matches_multisig_script_hash() {
+        let cache = DataCache::new(false);
+        let points = sample_committee();
+        seed_committee(&cache, &points);
+
+        // For n=3, m=2; the address is the 2-of-3 multisig script hash. The
+        // builder sorts the keys the same way C# CreateMultiSigRedeemScript does.
+        let script = neo_redeem_script::multi_sig_redeem_script_from_points(2, &points).unwrap();
+        assert_eq!(committee_address(&cache).unwrap(), UInt160::from_script(&script));
+    }
+
+    #[test]
+    fn committee_address_uninitialized_errors() {
+        // C# indexes snapshot[Prefix_Committee] and throws when absent.
+        let cache = DataCache::new(false);
+        assert!(committee_address(&cache).is_err());
+        assert!(read_committee_points(&cache).is_err());
     }
 
     #[test]
