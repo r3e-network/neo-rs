@@ -6,8 +6,9 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_storage::persistence::DataCache;
-use neo_storage::StorageKey;
+use neo_storage::{StorageItem, StorageKey};
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use std::any::Any;
 use std::sync::LazyLock;
 
@@ -113,6 +114,27 @@ fn storage_price(snapshot: &DataCache) -> CoreResult<i64> {
     crate::read_storage_int(snapshot, PolicyContract::ID, PREFIX_STORAGE_PRICE, DEFAULT_STORAGE_PRICE)
 }
 
+/// C# upper bound on fee-per-byte: 1 GAS in datoshi (`SetFeePerByte` rejects
+/// anything outside `[0, 100000000]`).
+const MAX_FEE_PER_BYTE: i64 = 100_000_000;
+
+/// C# `SetFeePerByte` range guard: the value must be in `[0, MAX_FEE_PER_BYTE]`.
+fn validate_fee_per_byte(value: i64) -> CoreResult<()> {
+    if !(0..=MAX_FEE_PER_BYTE).contains(&value) {
+        return Err(CoreError::invalid_operation(format!(
+            "FeePerByte must be between [0, {MAX_FEE_PER_BYTE}], got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// Writes the fee-per-byte to `Prefix_FeePerByte` as a `BigInteger`, mirroring
+/// C# `GetAndChange(_feePerByte).Set(value)` (overwrite-as-Changed semantics).
+fn put_fee_per_byte(snapshot: &DataCache, value: i64) {
+    let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_FEE_PER_BYTE]);
+    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+}
+
 /// Returns the effective `MaxTraceableBlocks` for traceability checks, mirroring
 /// the source selection in C# `LedgerContract.IsTraceableBlock`: before
 /// `HF_Echidna` it is the static `ProtocolSettings.MaxTraceableBlocks`; from
@@ -156,6 +178,15 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![],
             ContractParameterType::Integer,
+        ),
+        // Committee-gated setter: not safe, requires write (States) call flags.
+        NativeMethod::new(
+            "setFeePerByte".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
         ),
         NativeMethod::new(
             "isBlocked".to_string(),
@@ -228,6 +259,31 @@ impl NativeContract for PolicyContract {
         match method {
             "getFeePerByte" => Ok(BigInt::from(fee_per_byte(&snapshot)?).to_signed_bytes_le()),
             "getStoragePrice" => Ok(BigInt::from(storage_price(&snapshot)?).to_signed_bytes_le()),
+            "setFeePerByte" => {
+                // C# order: validate range, then AssertCommittee, then write.
+                let value = args
+                    .first()
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("setFeePerByte requires a value")
+                    })?
+                    .to_i64()
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("setFeePerByte: value out of range")
+                    })?;
+                validate_fee_per_byte(value)?;
+                // C# AssertCommittee: a committee multisig witness is required.
+                let authorized = engine.check_committee_witness().map_err(|e| {
+                    CoreError::invalid_operation(format!("setFeePerByte committee check: {e}"))
+                })?;
+                if !authorized {
+                    return Err(CoreError::invalid_operation(
+                        "setFeePerByte requires committee authorization",
+                    ));
+                }
+                put_fee_per_byte(&engine.snapshot_cache(), value);
+                Ok(Vec::new())
+            }
             "isBlocked" => {
                 let account_bytes = args.first().ok_or_else(|| {
                     CoreError::invalid_operation("PolicyContract::isBlocked requires an account")
@@ -298,6 +354,7 @@ mod tests {
             [
                 "getFeePerByte",
                 "getStoragePrice",
+                "setFeePerByte",
                 "isBlocked",
                 "getMillisecondsPerBlock",
                 "getMaxValidUntilBlockIncrement",
@@ -307,6 +364,33 @@ mod tests {
         // The Echidna-era chain-parameter getters are hardfork-gated.
         let mtb = c.methods().iter().find(|m| m.name == "getMaxTraceableBlocks").unwrap();
         assert_eq!(mtb.active_in, Some(Hardfork::HfEchidna));
+        // The setter is a non-safe, write-flagged (States), Void method.
+        let setter = c.methods().iter().find(|m| m.name == "setFeePerByte").unwrap();
+        assert!(!setter.safe);
+        assert_eq!(setter.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(setter.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(setter.return_type, ContractParameterType::Void);
+    }
+
+    #[test]
+    fn set_fee_per_byte_validation_bounds() {
+        // C# SetFeePerByte accepts [0, 100000000] and rejects outside.
+        assert!(validate_fee_per_byte(0).is_ok());
+        assert!(validate_fee_per_byte(MAX_FEE_PER_BYTE).is_ok());
+        assert!(validate_fee_per_byte(-1).is_err());
+        assert!(validate_fee_per_byte(MAX_FEE_PER_BYTE + 1).is_err());
+    }
+
+    #[test]
+    fn fee_per_byte_write_then_read_round_trips() {
+        let cache = DataCache::new(false);
+        // Writing via the setter's storage effect is observed by the getter,
+        // exercising the GetAndChange (overwrite-as-Changed) semantics.
+        put_fee_per_byte(&cache, 4242);
+        assert_eq!(fee_per_byte(&cache).unwrap(), 4242);
+        // Overwriting an existing value is read back as the new value.
+        put_fee_per_byte(&cache, 5000);
+        assert_eq!(fee_per_byte(&cache).unwrap(), 5000);
     }
 
     #[test]
