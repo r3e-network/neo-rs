@@ -1,6 +1,7 @@
 //! PolicyContract native contract stub.
 
 use crate::hashes::POLICY_CONTRACT_HASH;
+use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
@@ -18,6 +19,12 @@ const PREFIX_STORAGE_PRICE: u8 = 19;
 const DEFAULT_STORAGE_PRICE: i64 = 100_000;
 /// C# `PolicyContract.Prefix_BlockedAccount` storage prefix.
 const PREFIX_BLOCKED_ACCOUNT: u8 = 15;
+/// C# `PolicyContract.Prefix_MillisecondsPerBlock` (HF_Echidna).
+const PREFIX_MILLISECONDS_PER_BLOCK: u8 = 21;
+/// C# `PolicyContract.Prefix_MaxValidUntilBlockIncrement` (HF_Echidna).
+const PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT: u8 = 22;
+/// C# `PolicyContract.Prefix_MaxTraceableBlocks` (HF_Echidna).
+const PREFIX_MAX_TRACEABLE_BLOCKS: u8 = 23;
 
 /// Lazily-initialised script-hash handle for the PolicyContract.
 pub static POLICY_HASH: LazyLock<UInt160> = LazyLock::new(|| *POLICY_CONTRACT_HASH);
@@ -133,6 +140,35 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160],
             ContractParameterType::Boolean,
         ),
+        // HF_Echidna moved these chain parameters from ProtocolSettings into
+        // PolicyContract storage; the getters default to the settings value.
+        NativeMethod::new(
+            "getMillisecondsPerBlock".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        )
+        .with_active_in(Hardfork::HfEchidna),
+        NativeMethod::new(
+            "getMaxValidUntilBlockIncrement".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        )
+        .with_active_in(Hardfork::HfEchidna),
+        NativeMethod::new(
+            "getMaxTraceableBlocks".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        )
+        .with_active_in(Hardfork::HfEchidna),
     ]
 });
 
@@ -180,6 +216,39 @@ impl NativeContract for PolicyContract {
                 let blocked = snapshot.get(&StorageKey::new(Self::ID, key_bytes)).is_some();
                 Ok(vec![u8::from(blocked)])
             }
+            "getMillisecondsPerBlock" => {
+                let default = i64::from(engine.protocol_settings().milliseconds_per_block);
+                let snapshot = engine.snapshot_cache();
+                let v = crate::read_storage_int(
+                    &snapshot,
+                    Self::ID,
+                    PREFIX_MILLISECONDS_PER_BLOCK,
+                    default,
+                )?;
+                Ok(BigInt::from(v).to_signed_bytes_le())
+            }
+            "getMaxValidUntilBlockIncrement" => {
+                let default = i64::from(engine.protocol_settings().max_valid_until_block_increment);
+                let snapshot = engine.snapshot_cache();
+                let v = crate::read_storage_int(
+                    &snapshot,
+                    Self::ID,
+                    PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
+                    default,
+                )?;
+                Ok(BigInt::from(v).to_signed_bytes_le())
+            }
+            "getMaxTraceableBlocks" => {
+                let default = i64::from(engine.protocol_settings().max_traceable_blocks);
+                let snapshot = engine.snapshot_cache();
+                let v = crate::read_storage_int(
+                    &snapshot,
+                    Self::ID,
+                    PREFIX_MAX_TRACEABLE_BLOCKS,
+                    default,
+                )?;
+                Ok(BigInt::from(v).to_signed_bytes_le())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "PolicyContract method '{other}' is not implemented"
             ))),
@@ -199,7 +268,20 @@ mod tests {
         assert_eq!(NativeContract::name(&c), "PolicyContract");
         assert_eq!(NativeContract::hash(&c), *POLICY_CONTRACT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["getFeePerByte", "getStoragePrice", "isBlocked"]);
+        assert_eq!(
+            names,
+            [
+                "getFeePerByte",
+                "getStoragePrice",
+                "isBlocked",
+                "getMillisecondsPerBlock",
+                "getMaxValidUntilBlockIncrement",
+                "getMaxTraceableBlocks"
+            ]
+        );
+        // The Echidna-era chain-parameter getters are hardfork-gated.
+        let mtb = c.methods().iter().find(|m| m.name == "getMaxTraceableBlocks").unwrap();
+        assert_eq!(mtb.active_in, Some(Hardfork::HfEchidna));
     }
 
     #[test]
