@@ -4,7 +4,7 @@ use super::parsing::{
     required_script_hash_or_address, required_u16_number, required_u32_number, required_u64_number,
     required_uint256};
 use neo_config::ProtocolSettings;
-use neo_wallets::Helper as WalletHelper;
+use neo_wallets::wallet_helper as WalletHelper;
 use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;

@@ -45,9 +45,10 @@ pub use witness_rule::rule_from_json;
 
 use neo_config::ProtocolSettings;
 use neo_native_contracts::NativeRegistry;
-use neo_wallets::Helper as WalletHelper;
+use neo_wallets::wallet_helper as WalletHelper;
 use neo_payloads::{Block, BlockHeader, Transaction, Witness};
-use neo_crypto::{ECCurve, ECPoint, KeyPair};
+use neo_crypto::{ECCurve, ECPoint};
+use neo_wallets::KeyPair;
 use neo_execution::{Contract};
 use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};

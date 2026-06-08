@@ -13,9 +13,10 @@ use super::models::RpcTransaction;
 use crate::{Nep17Api, RpcClient, RpcError, RpcUtility};
 use neo_primitives::BigDecimal;
 use neo_native_contracts::{GasToken, NeoToken};
-use neo_wallets::Helper as WalletHelper;
+use neo_wallets::wallet_helper as WalletHelper;
 use neo_payloads::{Transaction};
-use neo_crypto::{ECPoint, KeyPair};
+use neo_crypto::ECPoint;
+use neo_wallets::KeyPair;
 use neo_execution::{Contract, NativeContract};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
@@ -420,7 +421,9 @@ fn gas_hash() -> UInt160 {
 }
 
 fn gas_factor() -> u64 {
-    10u64.saturating_pow(u32::from(GasToken::new().decimals()))
+    // GAS is a NEP-17 token with a fixed 8 decimals (C# `GasToken.Decimals => 8`).
+    const GAS_DECIMALS: u8 = 8;
+    10u64.saturating_pow(u32::from(GAS_DECIMALS))
 }
 
 /// Lightweight account snapshot returned by wallet RPC helpers

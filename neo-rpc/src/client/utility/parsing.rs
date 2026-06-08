@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_payloads::OracleResponseCode;
-use neo_wallets::Helper as WalletHelper;
+use neo_wallets::wallet_helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
@@ -395,7 +395,7 @@ pub fn parse_nonce_token(token: &JToken) -> Result<u64, String> {
 /// Parses an oracle response code supporting string, hex, or numeric values.
 pub fn parse_oracle_response_code(
     token: &JToken,
-) -> Result<neo_payloads::oracle_response_code::OracleResponseCode, String> {
+) -> Result<OracleResponseCode, String> {
     if let Some(text) = token.as_string() {
         match text.as_str() {
             "Success" => Ok(OracleResponseCode::Success),
@@ -449,7 +449,7 @@ pub fn jtoken_to_serde(token: &JToken) -> Result<JsonValue, String> {
 mod tests {
     use super::*;
     use neo_config::ProtocolSettings;
-    use neo_wallets::Helper as WalletHelper;
+    use neo_wallets::wallet_helper as WalletHelper;
     use neo_json::{JArray, JObject};
     use neo_primitives::UInt160;
 
