@@ -140,7 +140,7 @@ fn committee_threshold(n: usize) -> usize {
 /// C# `GetCommitteeAddress` = script hash of the `m`-of-`n` multisig over the
 /// committee public keys, where `m = n - (n - 1) / 2`. The multisig builder sorts
 /// the keys ascending exactly as C# `Contract.CreateMultiSigRedeemScript` does.
-fn committee_address(snapshot: &DataCache) -> CoreResult<UInt160> {
+fn compute_committee_address(snapshot: &DataCache) -> CoreResult<UInt160> {
     let points = read_committee_points(snapshot)?;
     if points.is_empty() {
         return Err(CoreError::invalid_operation("committee is empty"));
@@ -213,6 +213,13 @@ impl NativeContract for NeoToken {
         self
     }
 
+    /// C# `NEO.GetCommitteeAddress`, exposed through the native-contract seam so
+    /// the engine's `check_committee_witness` can verify committee-gated writers
+    /// without depending on `neo-native-contracts`.
+    fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
+        Ok(Some(compute_committee_address(snapshot)?))
+    }
+
     fn invoke(
         &self,
         engine: &mut ApplicationEngine,
@@ -263,7 +270,7 @@ impl NativeContract for NeoToken {
             }
             "getCommitteeAddress" => {
                 let snapshot = engine.snapshot_cache();
-                Ok(committee_address(&snapshot)?.to_bytes())
+                Ok(compute_committee_address(&snapshot)?.to_bytes())
             }
             other => Err(CoreError::invalid_operation(format!(
                 "NeoToken method '{other}' is not implemented"
@@ -388,15 +395,30 @@ mod tests {
         // For n=3, m=2; the address is the 2-of-3 multisig script hash. The
         // builder sorts the keys the same way C# CreateMultiSigRedeemScript does.
         let script = neo_redeem_script::multi_sig_redeem_script_from_points(2, &points).unwrap();
-        assert_eq!(committee_address(&cache).unwrap(), UInt160::from_script(&script));
+        assert_eq!(compute_committee_address(&cache).unwrap(), UInt160::from_script(&script));
     }
 
     #[test]
     fn committee_address_uninitialized_errors() {
         // C# indexes snapshot[Prefix_Committee] and throws when absent.
         let cache = DataCache::new(false);
-        assert!(committee_address(&cache).is_err());
+        assert!(compute_committee_address(&cache).is_err());
         assert!(read_committee_points(&cache).is_err());
+    }
+
+    #[test]
+    fn committee_address_trait_override_feeds_the_engine_seam() {
+        // The `NativeContract::committee_address` override is what the engine's
+        // check_committee_witness reaches through the provider seam; it must
+        // return the computed address (Some), and fault on a missing committee.
+        let cache = DataCache::new(false);
+        seed_committee(&cache, &sample_committee());
+        let neo = NeoToken::new();
+        assert_eq!(
+            NativeContract::committee_address(&neo, &cache).unwrap(),
+            Some(compute_committee_address(&cache).unwrap())
+        );
+        assert!(NativeContract::committee_address(&neo, &DataCache::new(false)).is_err());
     }
 
     #[test]

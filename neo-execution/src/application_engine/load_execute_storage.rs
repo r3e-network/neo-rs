@@ -189,24 +189,22 @@ impl ApplicationEngine {
     /// (or standby committee if not yet initialized) using a multi-signature
     /// script requiring majority approval.
     pub fn check_committee_witness(&self) -> Result<bool> {
-        // SECURITY FIX: Previously this just called container.verify() which
-        // always returned true. Now we properly verify against the committee
-        // multi-signature address.
-
-        // Get the committee multi-signature address
-        // This computes the script hash from committee public keys with M-of-N threshold
-        // NativeHelpers::committee_address is provided by neo-native-contracts.
-        // The engine can't depend on it directly; use a stub here that
-        // returns the empty address. The actual committee verification
-        // happens through the native contract in the persisted state.
-        let committee_address = neo_primitives::UInt160::zero();
-
-        // Verify that the committee address has witnessed this execution
-        // This checks if the transaction signers include the committee multi-sig
-        if committee_address != neo_primitives::UInt160::zero() {
-            return self.check_witness_hash(&committee_address);
-        }
-        Ok(false)
+        // Mirrors C# `NativeContract.CheckCommittee`: verify a witness from the
+        // committee multisig address. That address is `NEO.GetCommitteeAddress`,
+        // computed by NeoToken (which owns the committee cache) and reached here
+        // through the native-contract seam — the engine cannot depend on
+        // `neo-native-contracts` directly. C# `GetCommitteeAddress` faults if the
+        // committee cache is missing, so a lookup error is propagated. When no
+        // provider is installed (engine used standalone), we fail closed.
+        let committee_address = match crate::native_contract_provider::lookup_committee_address(
+            self.snapshot_cache.as_ref(),
+        )
+        .map_err(|e| Error::invalid_operation(format!("committee address lookup failed: {e}")))?
+        {
+            Some(address) => address,
+            None => return Ok(false),
+        };
+        self.check_witness_hash(&committee_address)
     }
 
     /// Clear all storage for a contract
