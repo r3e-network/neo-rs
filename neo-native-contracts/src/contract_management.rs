@@ -14,9 +14,9 @@ use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, ContractState, Interoperable, NativeContract, NativeMethod};
 use neo_io::{MemoryReader, Serializable};
-use neo_primitives::{CallFlags, ContractParameterType, UInt160};
+use neo_primitives::{CallFlags, ContractParameterType, FindOptions, UInt160};
 use neo_serialization::BinarySerializer;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
@@ -185,6 +185,15 @@ fn contract_state_to_bytes(state: &ContractState, method: &str) -> CoreResult<Ve
     })
 }
 
+/// Collects the `Prefix_ContractHash` storage entries (`id -> hash`) in
+/// forward-seek order, the backing set for C# `GetContractHashes`'s iterator.
+fn contract_hash_entries(snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
+    let prefix_key = StorageKey::new(ContractManagement::ID, vec![PREFIX_CONTRACT_HASH]);
+    snapshot
+        .find(Some(&prefix_key), SeekDirection::Forward)
+        .collect()
+}
+
 /// C# `SetMinimumDeploymentFee` storage effect: overwrite
 /// `Prefix_MinimumDeploymentFee` (`GetAndChange(...).Set(value)`). The key is
 /// genesis-initialised, so `update` (= C# GetAndChange) is the correct primitive;
@@ -259,6 +268,15 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
+        ),
+        // getContractHashes() -> Iterator over (id, hash) for deployed contracts.
+        NativeMethod::new(
+            "getContractHashes".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::InteropInterface,
         ),
     ]
 });
@@ -357,6 +375,21 @@ impl NativeContract for ContractManagement {
                 put_minimum_deployment_fee(&engine.snapshot_cache(), &value);
                 Ok(Vec::new())
             }
+            "getContractHashes" => {
+                // C# GetContractHashes: an iterator over Prefix_ContractHash with
+                // FindOptions.RemovePrefix and prefix length 1, yielding
+                // Struct[id_bytes, hash]. The 4-byte iterator id is decoded back
+                // into an InteropInterface (StorageIterator) by the dispatcher.
+                let results = contract_hash_entries(&snapshot);
+                let iterator_id = engine
+                    .create_storage_iterator_with_options(results, 1, FindOptions::RemovePrefix)
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "ContractManagement::getContractHashes: {e}"
+                        ))
+                    })?;
+                Ok(iterator_id.to_le_bytes().to_vec())
+            }
             "isContract" => {
                 let hash = parse_hash_arg(args, "isContract")?;
                 // C# `IsContract` = snapshot.Contains(key(Prefix_Contract, hash)).
@@ -417,9 +450,16 @@ mod tests {
                 "getMinimumDeploymentFee",
                 "isContract",
                 "hasMethod",
-                "setMinimumDeploymentFee"
+                "setMinimumDeploymentFee",
+                "getContractHashes"
             ]
         );
+        // getContractHashes is a safe, ReadStates, no-arg iterator reader.
+        let hashes = c.methods().iter().find(|m| m.name == "getContractHashes").unwrap();
+        assert!(hashes.safe && hashes.active_in.is_none());
+        assert!(hashes.parameters.is_empty());
+        assert_eq!(hashes.return_type, ContractParameterType::InteropInterface);
+        assert_eq!(hashes.required_call_flags, CallFlags::READ_STATES.bits());
         // The committee-gated setter: not safe, States, Integer -> Void.
         let setter = c
             .methods()
@@ -474,6 +514,35 @@ mod tests {
         assert!(ContractManagement::get_contract_by_id_from_snapshot(&cache, 42)
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn contract_hash_entries_scopes_to_prefix_contract_hash() {
+        let cache = DataCache::new(false);
+        // Two Prefix_ContractHash entries (id -> hash) plus an unrelated
+        // Prefix_Contract entry that must NOT appear in the iterator's backing set.
+        let mut k1 = vec![PREFIX_CONTRACT_HASH];
+        k1.extend_from_slice(&1i32.to_be_bytes());
+        let mut k2 = vec![PREFIX_CONTRACT_HASH];
+        k2.extend_from_slice(&2i32.to_be_bytes());
+        cache.add(
+            StorageKey::new(ContractManagement::ID, k1),
+            StorageItem::from_bytes(vec![0xAA; 20]),
+        );
+        cache.add(
+            StorageKey::new(ContractManagement::ID, k2),
+            StorageItem::from_bytes(vec![0xBB; 20]),
+        );
+        cache.add(
+            StorageKey::new(ContractManagement::ID, contract_storage_key(&UInt160::zero())),
+            StorageItem::from_bytes(vec![1]),
+        );
+
+        let entries = contract_hash_entries(&cache);
+        assert_eq!(entries.len(), 2, "only Prefix_ContractHash entries are included");
+        // Forward-seek order: id 1 before id 2 (big-endian id keys sort ascending).
+        assert_eq!(entries[0].1.value_bytes().to_vec(), vec![0xAA; 20]);
+        assert_eq!(entries[1].1.value_bytes().to_vec(), vec![0xBB; 20]);
     }
 
     #[test]
