@@ -3,11 +3,12 @@
 //! Implements the C# `Neo.SmartContract.Native.NeoToken`: NEP-17 metadata
 //! (`symbol` "NEO", `decimals` 0) and balances, the committee/candidate reads
 //! (getCommittee, getCandidates, getNextBlockValidators, …), the committee
-//! setters (setGasPerBlock, setRegisterPrice), and candidate registration
-//! (`registerCandidate` / `unregisterCandidate`). The remaining governance
-//! surface — `vote`/`VoteInternal`, the vote-weighted committee recompute, and
-//! the GAS reward math (`unclaimedGas`, NEP-17 `transfer`'s mint side) — is the
-//! next increment. Methods declared below are byte-for-byte C# parity.
+//! setters (setGasPerBlock, setRegisterPrice), candidate registration
+//! (`registerCandidate` / `unregisterCandidate`), and the GAS reward read
+//! `unclaimedGas` (C# `CalculateBonus`). The remaining governance surface —
+//! `vote`/`VoteInternal` (which reuses `calculate_bonus` for its GAS
+//! distribution), the vote-weighted committee recompute, and NEP-17 `transfer`'s
+//! mint side — is the next increment. Methods below are byte-for-byte C# parity.
 
 use std::any::Any;
 use std::sync::LazyLock;
@@ -40,6 +41,14 @@ const DEFAULT_GAS_PER_BLOCK: i64 = 5 * 100_000_000;
 const PREFIX_COMMITTEE: u8 = 14;
 /// C# `NeoToken.Prefix_Candidate` — per-candidate `(Registered, Votes)` state.
 const PREFIX_CANDIDATE: u8 = 33;
+/// C# `NeoToken.Prefix_VoterRewardPerCommittee` — accumulated GAS-per-vote.
+const PREFIX_VOTER_REWARD_PER_COMMITTEE: u8 = 23;
+/// C# `NeoToken.NeoHolderRewardRatio` (10%).
+const NEO_HOLDER_REWARD_RATIO: i64 = 10;
+/// C# `NeoToken.VoteFactor` (1e8): the zoom factor for per-vote GAS rewards.
+const VOTE_FACTOR: i64 = 100_000_000;
+/// C# `NeoToken.TotalAmount` = 100,000,000 NEO (decimals 0, so Factor = 1).
+const NEO_TOTAL_AMOUNT: i64 = 100_000_000;
 
 /// Lazily-initialised script-hash handle for the NEO native contract.
 pub static NEO_HASH: LazyLock<UInt160> = LazyLock::new(|| *NEO_TOKEN_HASH);
@@ -117,6 +126,130 @@ fn gas_per_block_at(snapshot: &DataCache, index: u32) -> BigInt {
         }
     }
     BigInt::from(DEFAULT_GAS_PER_BLOCK)
+}
+
+/// Decoded view of a `NeoAccountState` (`Struct[Balance, BalanceHeight, VoteTo,
+/// LastGasPerVote]`, C# `NeoAccountState.FromStackItem`).
+struct NeoAccountStateView {
+    balance: BigInt,
+    balance_height: u32,
+    vote_to: Option<ECPoint>,
+    last_gas_per_vote: BigInt,
+}
+
+/// Decodes a stored `NeoAccountState` struct into its fields.
+fn decode_neo_account_state(value: &[u8]) -> CoreResult<NeoAccountStateView> {
+    let decoded = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
+        .map_err(|e| CoreError::deserialization(format!("neo account state: {e}")))?;
+    let StackItem::Struct(fields) = decoded else {
+        return Err(CoreError::invalid_data("neo account state is not a struct"));
+    };
+    let items = fields.items();
+    let balance = items
+        .first()
+        .ok_or_else(|| CoreError::invalid_data("neo account state missing balance"))?
+        .as_int()
+        .map_err(|e| CoreError::invalid_data(format!("account balance: {e}")))?;
+    let balance_height = match items.get(1) {
+        Some(f) => f
+            .as_int()
+            .map_err(|e| CoreError::invalid_data(format!("account balanceHeight: {e}")))?
+            .to_u32()
+            .unwrap_or(0),
+        None => 0,
+    };
+    let vote_to = match items.get(2) {
+        Some(f) if !matches!(f, StackItem::Null) => {
+            let bytes = f
+                .as_bytes()
+                .map_err(|e| CoreError::invalid_data(format!("account voteTo: {e}")))?;
+            Some(
+                ECPoint::from_bytes(&bytes)
+                    .map_err(|e| CoreError::invalid_data(format!("account voteTo point: {e}")))?,
+            )
+        }
+        _ => None,
+    };
+    let last_gas_per_vote = match items.get(3) {
+        Some(f) => f
+            .as_int()
+            .map_err(|e| CoreError::invalid_data(format!("account lastGasPerVote: {e}")))?,
+        None => BigInt::from(0),
+    };
+    Ok(NeoAccountStateView { balance, balance_height, vote_to, last_gas_per_vote })
+}
+
+/// C# `GetSortedGasRecords(snapshot, end)`: the `Prefix_GasPerBlock` records with
+/// index ≤ `end`, descending by index.
+fn sorted_gas_records(snapshot: &DataCache, end: u32) -> Vec<(u32, BigInt)> {
+    let prefix = StorageKey::new(NeoToken::ID, vec![PREFIX_GAS_PER_BLOCK]);
+    let mut out = Vec::new();
+    for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
+        let key_bytes = key.key();
+        if key_bytes.len() >= 5 {
+            let index =
+                u32::from_be_bytes([key_bytes[1], key_bytes[2], key_bytes[3], key_bytes[4]]);
+            if index <= end {
+                out.push((index, BigInt::from_signed_bytes_le(&item.value_bytes())));
+            }
+        }
+    }
+    out
+}
+
+/// Reads the accumulated GAS-per-vote for `pubkey` (`Prefix_VoterRewardPerCommittee`).
+fn voter_reward_per_committee(snapshot: &DataCache, pubkey: &ECPoint) -> BigInt {
+    let mut key_bytes = vec![PREFIX_VOTER_REWARD_PER_COMMITTEE];
+    key_bytes.extend_from_slice(&pubkey.to_bytes());
+    snapshot
+        .get(&StorageKey::new(NeoToken::ID, key_bytes))
+        .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+        .unwrap_or_else(|| BigInt::from(0))
+}
+
+/// C# `NeoToken.CalculateBonus`: the unclaimed GAS for an account between
+/// `BalanceHeight` and `end` — the NEO-holder reward (`balance * Σ gasPerBlock *
+/// 10 / 100 / TotalAmount`) plus the vote reward (`balance * (latestGasPerVote -
+/// lastGasPerVote) / VoteFactor`).
+fn calculate_bonus(snapshot: &DataCache, state: &NeoAccountStateView, end: u32) -> CoreResult<BigInt> {
+    if state.balance == BigInt::from(0) {
+        return Ok(BigInt::from(0));
+    }
+    if state.balance < BigInt::from(0) {
+        return Err(CoreError::invalid_operation("NeoToken account balance cannot be negative"));
+    }
+    if state.balance_height >= end {
+        return Ok(BigInt::from(0));
+    }
+
+    // NEO-holder reward over [BalanceHeight, end), folding in each gas-per-block
+    // change point (C# CalculateReward).
+    let start = state.balance_height;
+    let mut sum_gas_per_block = BigInt::from(0);
+    let mut window_end = end;
+    for (index, gas_per_block) in sorted_gas_records(snapshot, end.saturating_sub(1)) {
+        if index > start {
+            sum_gas_per_block += &gas_per_block * (window_end - index);
+            window_end = index;
+        } else {
+            sum_gas_per_block += &gas_per_block * (window_end - start);
+            break;
+        }
+    }
+    let neo_holder_reward = &state.balance * &sum_gas_per_block * NEO_HOLDER_REWARD_RATIO
+        / 100
+        / NEO_TOTAL_AMOUNT;
+
+    // Vote reward (only when the account currently votes).
+    let vote_reward = match &state.vote_to {
+        Some(vote) => {
+            let latest = voter_reward_per_committee(snapshot, vote);
+            &state.balance * (latest - &state.last_gas_per_vote) / VOTE_FACTOR
+        }
+        None => BigInt::from(0),
+    };
+
+    Ok(neo_holder_reward + vote_reward)
 }
 
 /// Reads the cached committee public keys from `Prefix_Committee` (C#
@@ -354,6 +487,15 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash160],
             ContractParameterType::Array,
+        ),
+        // unclaimedGas(account, end) -> Integer (CpuFee 1<<17, ReadStates).
+        NativeMethod::new(
+            "unclaimedGas".into(),
+            1 << 17,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash160, int],
+            int,
         ),
         // getNextBlockValidators -> ECPoint[] (Array), CpuFee 1<<16 in C#.
         NativeMethod::new(
@@ -722,6 +864,44 @@ impl NativeContract for NeoToken {
                 // when the account has no entry.
                 Ok(read_account_state(&snapshot, &account).unwrap_or_default())
             }
+            "unclaimedGas" => {
+                // C# UnclaimedGas(account, end): `end` must equal the persisting
+                // block index (or Ledger.CurrentIndex + 1); compute CalculateBonus
+                // for the account's NeoAccountState (zero when it has no entry).
+                let account_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation("NeoToken::unclaimedGas requires an account")
+                })?;
+                let account = UInt160::from_bytes(account_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!("NeoToken::unclaimedGas: bad account: {e}"))
+                })?;
+                let end = args
+                    .get(1)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_u32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("NeoToken::unclaimedGas requires an end index")
+                    })?;
+                let snapshot = engine.snapshot_cache();
+                let expect_end = match engine.persisting_block() {
+                    Some(block) => block.index(),
+                    None => LedgerContract::new()
+                        .current_index(&snapshot)?
+                        .saturating_add(1),
+                };
+                if end != expect_end {
+                    return Err(CoreError::invalid_operation(format!(
+                        "NeoToken::unclaimedGas: end {end} must equal {expect_end}"
+                    )));
+                }
+                let bonus = match read_account_state(&snapshot, &account) {
+                    Some(bytes) => {
+                        let state = decode_neo_account_state(&bytes)?;
+                        calculate_bonus(&snapshot, &state, end)?
+                    }
+                    None => BigInt::from(0),
+                };
+                Ok(bonus.to_signed_bytes_le())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "NeoToken method '{other}' is not implemented"
             ))),
@@ -752,6 +932,7 @@ mod tests {
                 "getCommittee",
                 "getCommitteeAddress",
                 "getAccountState",
+                "unclaimedGas",
                 "getNextBlockValidators",
                 "getCandidates",
                 "getCandidateVote",
@@ -922,6 +1103,56 @@ mod tests {
         assert_eq!(by_key.get(&points[0].to_bytes()), Some(&BigInt::from(100)));
         assert_eq!(by_key.get(&points[2].to_bytes()), Some(&BigInt::from(50)));
         assert!(!by_key.contains_key(&points[1].to_bytes()));
+    }
+
+    #[test]
+    fn calculate_bonus_matches_csharp_testcalculatebonus() {
+        // C# UT_NeoToken.TestCalculateBonus "Normal 1": balance 100, no vote,
+        // BalanceHeight 0, the genesis 5-GAS gasPerBlock record at index 0, end
+        // 100 -> 100 * (5e8 * 100) * 10 / 100 / 100_000_000 = 5000.
+        let cache = DataCache::new(false);
+        put_gas_per_block(&cache, 0, &BigInt::from(DEFAULT_GAS_PER_BLOCK));
+        let holder = NeoAccountStateView {
+            balance: BigInt::from(100),
+            balance_height: 0,
+            vote_to: None,
+            last_gas_per_vote: BigInt::from(0),
+        };
+        assert_eq!(calculate_bonus(&cache, &holder, 100).unwrap(), BigInt::from(5000));
+
+        // balance == 0 -> 0; BalanceHeight >= end -> 0; balance < 0 -> fault.
+        let zero = NeoAccountStateView { balance: BigInt::from(0), ..clone_view(&holder) };
+        assert_eq!(calculate_bonus(&cache, &zero, 100).unwrap(), BigInt::from(0));
+        let future = NeoAccountStateView { balance_height: 100, ..clone_view(&holder) };
+        assert_eq!(calculate_bonus(&cache, &future, 100).unwrap(), BigInt::from(0));
+        let negative = NeoAccountStateView { balance: BigInt::from(-100), ..clone_view(&holder) };
+        assert!(calculate_bonus(&cache, &negative, 100).is_err());
+    }
+
+    fn clone_view(v: &NeoAccountStateView) -> NeoAccountStateView {
+        NeoAccountStateView {
+            balance: v.balance.clone(),
+            balance_height: v.balance_height,
+            vote_to: v.vote_to.clone(),
+            last_gas_per_vote: v.last_gas_per_vote.clone(),
+        }
+    }
+
+    #[test]
+    fn neo_account_state_decodes_struct_fields() {
+        // Struct[Balance, BalanceHeight, VoteTo(null), LastGasPerVote].
+        let item = StackItem::from_struct(vec![
+            StackItem::from_int(BigInt::from(100)),
+            StackItem::from_int(BigInt::from(42)),
+            StackItem::null(),
+            StackItem::from_int(BigInt::from(7)),
+        ]);
+        let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
+        let state = decode_neo_account_state(&bytes).unwrap();
+        assert_eq!(state.balance, BigInt::from(100));
+        assert_eq!(state.balance_height, 42);
+        assert!(state.vote_to.is_none());
+        assert_eq!(state.last_gas_per_vote, BigInt::from(7));
     }
 
     #[test]
