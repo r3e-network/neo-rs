@@ -9,6 +9,7 @@ description = "Programmatic Neo VM script construction (ScriptBuilder), layered 
 
 [dependencies]
 neo-vm-rs = { workspace = true }
+neo-error = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
 thiserror = { workspace = true }

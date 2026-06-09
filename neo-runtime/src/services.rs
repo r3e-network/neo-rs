@@ -1,25 +1,29 @@
 //! Reth-style async service traits for the Neo node runtime.
 //!
-//! Every long-running component of a Neo node (block executor, mempool,
-//! network stack, consensus, engine API, blockchain orchestrator) is
-//! modelled as an `async_trait` *service*. A service is a `Send + Sync`
-//! value that exposes its capabilities as plain `async fn`s on a trait
-//! object (`Arc<dyn ServiceTrait>`), and is *constructed* via the
-//! [`crate::NodeBuilder`].
+//! Every long-running component of a Neo node (block executor, network
+//! stack, consensus, engine API, blockchain orchestrator) is modelled as
+//! an `async_trait` *service*. A service is a `Send + Sync` value that
+//! exposes its capabilities as plain `async fn`s on a trait object
+//! (`Arc<dyn ServiceTrait>`). The concrete node that wires these services
+//! together lives in `neo-system` (`neo_system::Node`).
 //!
 //! The choice of trait objects (vs. generics) is deliberate: it matches
-//! the reth convention, makes the [`crate::Node`] container cheap to
-//! clone, and lets tests swap in a mock for any single service without
+//! the reth convention, makes each service cheap to clone behind an
+//! `Arc`, and lets tests swap in a mock for any single service without
 //! recompiling the rest of the graph. None of the traits require
 //! `'static` beyond what `Arc<dyn Trait>` already implies, so individual
 //! concrete services can hold any state they like behind the trait.
+//!
+//! The transaction pool is intentionally *not* modelled as a service
+//! trait here: the concrete mempool (`neo-mempool`) is reached through
+//! the transaction-router handle on `neo_system::Node`, not an
+//! `Arc<dyn MempoolService>`.
 //!
 //! ## Pattern cheat-sheet
 //!
 //! | Reth trait              | Neo trait (this crate)        | Backing primitive      |
 //! |-------------------------|-------------------------------|------------------------|
 //! | `BlockExecutor`         | [`BlockExecutor`]             | `Arc<dyn BlockExecutor>` |
-//! | `TransactionPool`       | [`MempoolService`]            | `Arc<dyn MempoolService>` |
 //! | `NetworkManager`        | [`NetworkService`]            | `Arc<dyn NetworkService>` |
 //! | `Consensus`             | [`ConsensusService`]          | `Arc<dyn ConsensusService>` |
 //! | `Engine`                | [`NeoEngine`]                 | `Arc<dyn NeoEngine>`     |
@@ -40,16 +44,15 @@ pub type TxHash = UInt256;
 
 /// Marker trait implemented by every Neo runtime service.
 ///
-/// `Service` exists to give the [`crate::NodeBuilder`] a single bound that
-/// every component must satisfy, and to give the [`crate::Node`] a uniform
-/// way to print / log a description of its components. There is no
-/// required method beyond the auto-trait bounds.
+/// `Service` exists to give every component a single bound to satisfy and
+/// a uniform way to print / log a description of itself when held behind a
+/// trait object. There is no required method beyond the auto-trait bounds.
 pub trait Service: Send + Sync + std::fmt::Debug + 'static {
     /// Short, human-readable name of the service implementation.
     ///
-    /// Used in log lines, metrics labels, and the [`std::fmt::Debug`]
-    /// output of [`crate::Node`]. Should be stable per implementation
-    /// (e.g. `"RocksDbMempool"`, `"LocalNetworkService"`).
+    /// Used in log lines, metrics labels, and `Debug` output. Should be
+    /// stable per implementation (e.g. `"RocksDbExecutor"`,
+    /// `"LocalNetworkService"`).
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
     }
@@ -81,35 +84,6 @@ pub trait BlockExecutor: Service {
     /// transactions; for full state-transition validation use
     /// [`Self::execute`] and inspect [`ExecutionOutcome::ok`].
     async fn validate(&self, block: &Block) -> Result<(), ServiceError>;
-}
-
-// =============================================================================
-// MempoolService
-// =============================================================================
-
-/// Manages the transaction pool.
-///
-/// Direct port of reth's `TransactionPool` interface to the Neo mempool
-/// (`neo-mempool`). The trait exposes a CRUD-shaped surface
-/// (add / list / remove) rather than a `tell` mailbox, so the call site
-/// reads like a normal async function: `pool.add_transaction(tx).await?`.
-#[async_trait]
-pub trait MempoolService: Service {
-    /// Insert a transaction into the pool. Returns the transaction's
-    /// hash on success.
-    async fn add_transaction(&self, tx: Transaction) -> Result<TxHash, ServiceError>;
-
-    /// Return up to `max` transactions from the pool for the next block.
-    /// The exact ordering (highest fee, FIFO, …) is up to the
-    /// implementation; the contract is "some prefix of the pool".
-    async fn get_transactions(&self, max: usize) -> Result<Vec<Transaction>, ServiceError>;
-
-    /// Remove the transaction with the given hash from the pool. Returns
-    /// `Ok(())` even when the hash was not present (idempotent removal).
-    async fn remove_transaction(&self, hash: &UInt256) -> Result<(), ServiceError>;
-
-    /// Current number of transactions tracked by the pool.
-    async fn count(&self) -> usize;
 }
 
 // =============================================================================
@@ -195,7 +169,6 @@ pub trait NeoEngine: Service {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// No-op service used to verify the trait is object-safe and can be
     /// held behind an `Arc<dyn ...>`.
@@ -215,47 +188,9 @@ mod tests {
         }
     }
 
-    /// No-op mempool used to verify the trait is object-safe.
-    #[derive(Debug)]
-    struct DummyMempool {
-        count: AtomicUsize,
-    }
-
-    impl DummyMempool {
-        fn new() -> Self {
-            Self {
-                count: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    impl Service for DummyMempool {}
-
-    #[async_trait]
-    impl MempoolService for DummyMempool {
-        async fn add_transaction(&self, _tx: Transaction) -> Result<TxHash, ServiceError> {
-            self.count.fetch_add(1, Ordering::SeqCst);
-            Ok(UInt256::default())
-        }
-
-        async fn get_transactions(&self, _max: usize) -> Result<Vec<Transaction>, ServiceError> {
-            Ok(Vec::new())
-        }
-
-        async fn remove_transaction(&self, _hash: &UInt256) -> Result<(), ServiceError> {
-            self.count.fetch_sub(1, Ordering::SeqCst);
-            Ok(())
-        }
-
-        async fn count(&self) -> usize {
-            self.count.load(Ordering::SeqCst)
-        }
-    }
-
     #[test]
     fn traits_are_object_safe() {
         fn _executor(_: &dyn BlockExecutor) {}
-        fn _mempool(_: &dyn MempoolService) {}
         fn _network(_: &dyn NetworkService) {}
         fn _consensus(_: &dyn ConsensusService) {}
         fn _engine(_: &dyn NeoEngine) {}
@@ -268,14 +203,5 @@ mod tests {
         let outcome = exec.execute(&block).await.expect("execute");
         assert!(outcome.ok || !outcome.ok); // trivial; ensures trait is callable
         exec.validate(&block).await.expect("validate");
-    }
-
-    #[tokio::test]
-    async fn dummy_mempool_counts() {
-        let pool: Arc<dyn MempoolService> = Arc::new(DummyMempool::new());
-        assert_eq!(pool.count().await, 0);
-        let tx = Transaction::new();
-        let _ = pool.add_transaction(tx).await.expect("add");
-        assert_eq!(pool.count().await, 1);
     }
 }

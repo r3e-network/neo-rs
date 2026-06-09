@@ -10,13 +10,25 @@
 //! depending on `neo-blockchain`.
 
 use crate::hashes::CONTRACT_MANAGEMENT_HASH;
+use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::ContractState;
+use neo_execution::{ApplicationEngine, ContractState, Interoperable, NativeContract, NativeMethod};
 use neo_io::{MemoryReader, Serializable};
-use neo_primitives::UInt160;
-use neo_storage::persistence::DataCache;
-use neo_storage::StorageKey;
+use neo_primitives::{CallFlags, ContractParameterType, FindOptions, UInt160};
+use neo_serialization::BinarySerializer;
+use neo_storage::persistence::{DataCache, SeekDirection};
+use neo_storage::{StorageItem, StorageKey};
+use neo_vm_rs::ExecutionEngineLimits;
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
+use std::any::Any;
 use std::sync::LazyLock;
+
+/// Storage prefix for the minimum-deployment-fee setting (C#
+/// `ContractManagement.Prefix_MinimumDeploymentFee`).
+const PREFIX_MINIMUM_DEPLOYMENT_FEE: u8 = 20;
+/// C# default minimum deployment fee: 10 GAS, in datoshi.
+const DEFAULT_MINIMUM_DEPLOYMENT_FEE: i64 = 10_00000000;
 
 /// Storage prefix for the per-contract record (matches C#
 /// `ContractManagement.PREFIX_CONTRACT`).
@@ -140,120 +152,534 @@ fn contract_id_storage_key_legacy(id: i32) -> Vec<u8> {
     key
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
+/// Parses the leading `Hash160` argument shared by `getContract`/`isContract`.
+fn parse_hash_arg(args: &[Vec<u8>], method: &str) -> CoreResult<UInt160> {
+    let hash_bytes = args.first().ok_or_else(|| {
+        CoreError::invalid_operation(format!("ContractManagement::{method} requires a hash"))
+    })?;
+    UInt160::from_bytes(hash_bytes).map_err(|e| {
+        CoreError::invalid_operation(format!("ContractManagement::{method}: bad hash: {e}"))
+    })
+}
+
+/// C# `ContractAbi.GetMethod(name, pcount) != null`: true when the manifest ABI
+/// declares a method named `name` whose parameter count matches `pcount`, where
+/// `pcount == -1` matches any count.
+fn abi_has_method(manifest: &neo_manifest::ContractManifest, name: &str, pcount: i32) -> bool {
+    manifest
+        .abi
+        .methods
+        .iter()
+        .any(|m| m.name == name && (pcount == -1 || m.parameters.len() as i32 == pcount))
+}
+
+/// Marshals a `ContractState` to the Array return bytes (C# `ToStackItem` +
+/// `BinarySerializer`) — shared by `getContract` / `getContractById`. A miss is
+/// the caller's responsibility (an empty payload encodes the C# `null`).
+fn contract_state_to_bytes(state: &ContractState, method: &str) -> CoreResult<Vec<u8>> {
+    let item = state.to_stack_item().map_err(|e| {
+        CoreError::invalid_operation(format!("ContractManagement::{method}: stack item: {e}"))
+    })?;
+    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).map_err(|e| {
+        CoreError::invalid_operation(format!("ContractManagement::{method}: serialize: {e}"))
+    })
+}
+
+/// Collects the `Prefix_ContractHash` storage entries (`id -> hash`) in
+/// forward-seek order, the backing set for C# `GetContractHashes`'s iterator.
+fn contract_hash_entries(snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
+    let prefix_key = StorageKey::new(ContractManagement::ID, vec![PREFIX_CONTRACT_HASH]);
+    snapshot
+        .find(Some(&prefix_key), SeekDirection::Forward)
+        .collect()
+}
+
+/// C# `SetMinimumDeploymentFee` storage effect: overwrite
+/// `Prefix_MinimumDeploymentFee` (`GetAndChange(...).Set(value)`). The key is
+/// genesis-initialised, so `update` (= C# GetAndChange) is the correct primitive;
+/// the value is stored as the full signed-LE BigInteger (the C# parameter is
+/// `BigInteger`, not `long`).
+fn put_minimum_deployment_fee(snapshot: &DataCache, value: &BigInt) {
+    snapshot.update(
+        StorageKey::new(
+            ContractManagement::ID,
+            vec![PREFIX_MINIMUM_DEPLOYMENT_FEE],
+        ),
+        StorageItem::from_bytes(value.to_signed_bytes_le()),
+    );
+}
+
+static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    let read_states = CallFlags::READ_STATES.bits();
+    vec![
+        NativeMethod::new(
+            "getContract".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash160],
+            ContractParameterType::Array,
+        ),
+        NativeMethod::new(
+            "getContractById".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Array,
+        ),
+        NativeMethod::new(
+            "getMinimumDeploymentFee".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        ),
+        // HF_Echidna added the cheap existence check (CpuFee 1<<14).
+        NativeMethod::new(
+            "isContract".to_string(),
+            1 << 14,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfEchidna),
+        // HF_Echidna: hasMethod(hash, method, pcount) -> bool.
+        NativeMethod::new(
+            "hasMethod".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::String,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfEchidna),
+        // Committee-gated setter: not safe, States, Integer -> Void.
+        NativeMethod::new(
+            "setMinimumDeploymentFee".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        ),
+        // getContractHashes() -> Iterator over (id, hash) for deployed contracts.
+        NativeMethod::new(
+            "getContractHashes".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::InteropInterface,
+        ),
+    ]
+});
+
+impl NativeContract for ContractManagement {
+    fn id(&self) -> i32 {
+        Self::ID
+    }
+
+    fn hash(&self) -> UInt160 {
+        *CONTRACT_MANAGEMENT_HASH_REF
+    }
+
+    fn name(&self) -> &str {
+        "ContractManagement"
+    }
+
+    fn methods(&self) -> &[NativeMethod] {
+        &CONTRACT_MANAGEMENT_METHODS
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    /// Resolves a deployed contract's state from storage.
+    ///
+    /// ContractManagement owns the per-contract records, so it backs the
+    /// engine's `fetch_contract` storage path (via the native-contract
+    /// provider seam): `System.Contract.Call` to any deployed contract —
+    /// native or user — resolves its NEF/manifest through here. Delegates to
+    /// the read helper used by the `getContract` invoke arm.
+    fn lookup_contract_state(
+        &self,
+        snapshot: &DataCache,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        Self::get_contract_from_snapshot(snapshot, hash)
+    }
+
+    fn invoke(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        let snapshot = engine.snapshot_cache();
+        match method {
+            "getContract" => {
+                let hash = parse_hash_arg(args, "getContract")?;
+                // C# `GetContract` returns the ContractState (as an Array via
+                // ToStackItem) or null on miss; the native return marshaling
+                // encodes a null Array result as an empty payload.
+                match Self::get_contract_from_snapshot(&snapshot, &hash)? {
+                    Some(state) => contract_state_to_bytes(&state, "getContract"),
+                    None => Ok(Vec::new()),
+                }
+            }
+            "getContractById" => {
+                // C# `GetContractById` maps the id to a hash via the
+                // contract-id index, then returns that ContractState (or null).
+                let id = args
+                    .first()
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "ContractManagement::getContractById requires an integer id",
+                        )
+                    })?;
+                match Self::get_contract_by_id_from_snapshot(&snapshot, id)? {
+                    Some(state) => contract_state_to_bytes(&state, "getContractById"),
+                    None => Ok(Vec::new()),
+                }
+            }
+            "getMinimumDeploymentFee" => {
+                let fee = crate::read_storage_int(
+                    &snapshot,
+                    Self::ID,
+                    PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                    DEFAULT_MINIMUM_DEPLOYMENT_FEE,
+                )?;
+                Ok(BigInt::from(fee).to_signed_bytes_le())
+            }
+            "setMinimumDeploymentFee" => {
+                // C#: validate value >= 0 -> AssertCommittee -> overwrite
+                // Prefix_MinimumDeploymentFee (stored as the full BigInteger).
+                let value = args
+                    .first()
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "ContractManagement::setMinimumDeploymentFee requires a value",
+                        )
+                    })?;
+                if value < BigInt::from(0) {
+                    return Err(CoreError::invalid_operation(
+                        "MinimumDeploymentFee cannot be negative",
+                    ));
+                }
+                let authorized = engine.check_committee_witness().map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "setMinimumDeploymentFee committee check: {e}"
+                    ))
+                })?;
+                if !authorized {
+                    return Err(CoreError::invalid_operation(
+                        "setMinimumDeploymentFee requires committee authorization",
+                    ));
+                }
+                put_minimum_deployment_fee(&engine.snapshot_cache(), &value);
+                Ok(Vec::new())
+            }
+            "getContractHashes" => {
+                // C# GetContractHashes: an iterator over Prefix_ContractHash with
+                // FindOptions.RemovePrefix and prefix length 1, yielding
+                // Struct[id_bytes, hash]. The 4-byte iterator id is decoded back
+                // into an InteropInterface (StorageIterator) by the dispatcher.
+                let results = contract_hash_entries(&snapshot);
+                let iterator_id = engine
+                    .create_storage_iterator_with_options(results, 1, FindOptions::RemovePrefix)
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "ContractManagement::getContractHashes: {e}"
+                        ))
+                    })?;
+                Ok(iterator_id.to_le_bytes().to_vec())
+            }
+            "isContract" => {
+                let hash = parse_hash_arg(args, "isContract")?;
+                // C# `IsContract` = snapshot.Contains(key(Prefix_Contract, hash)).
+                Ok(vec![u8::from(Self::is_contract(&snapshot, &hash))])
+            }
+            "hasMethod" => {
+                let hash = parse_hash_arg(args, "hasMethod")?;
+                let method_name = args
+                    .get(1)
+                    .map(|b| String::from_utf8_lossy(b).into_owned())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "ContractManagement::hasMethod requires a method name",
+                        )
+                    })?;
+                let pcount = args
+                    .get(2)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "ContractManagement::hasMethod requires a parameter count",
+                        )
+                    })?;
+                // C#: false if the contract does not exist; otherwise whether its
+                // manifest ABI declares the (method, pcount) method.
+                let has = match Self::get_contract_from_snapshot(&snapshot, &hash)? {
+                    Some(state) => abi_has_method(&state.manifest, &method_name, pcount),
+                    None => false,
+                };
+                Ok(vec![u8::from(has)])
+            }
+            other => Err(CoreError::invalid_operation(format!(
+                "ContractManagement method '{other}' is not implemented"
+            ))),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_data_cache::DataCache;
-    use neo_io::BinaryWriter;
     use neo_storage::StorageItem;
-    use std::sync::Arc;
-
-    fn fresh_cache() -> Arc<DataCache> {
-        Arc::new(DataCache::new_with_config(
-            false,
-            None,
-            None,
-            Default::default(),
-        ))
-    }
-
-    fn sample_hash(byte: u8) -> UInt160 {
-        UInt160::from_bytes(&[byte; 20]).unwrap()
-    }
+    use neo_vm::StackItem;
 
     #[test]
-    fn test_contract_management_constants() {
-        assert_eq!(ContractManagement::ID, -1);
-    }
-
-    #[test]
-    fn test_contract_management_hash() {
-        let expected = *CONTRACT_MANAGEMENT_HASH;
-        assert_eq!(ContractManagement::script_hash(), expected);
-        assert_eq!(ContractManagement::new().hash(), expected);
-    }
-
-    #[test]
-    fn test_is_contract_false_when_missing() {
-        let cache = fresh_cache();
-        assert!(!ContractManagement::is_contract(&cache, &sample_hash(1)));
-    }
-
-    #[test]
-    fn test_get_contract_returns_none_when_missing() {
-        let cache = fresh_cache();
-        let res = ContractManagement::get_contract_from_snapshot(&cache, &sample_hash(1)).unwrap();
-        assert!(res.is_none());
-    }
-
-    #[test]
-    fn test_get_contract_by_id_returns_none_when_missing() {
-        let cache = fresh_cache();
-        let res = ContractManagement::get_contract_by_id_from_snapshot(&cache, 42).unwrap();
-        assert!(res.is_none());
-    }
-
-    #[test]
-    fn test_contract_storage_key_format() {
-        let key = StorageKey::new(ContractManagement::ID, {
-            let mut k = vec![PREFIX_CONTRACT];
-            k.extend_from_slice(&sample_hash(1).to_bytes());
-            k
-        });
-        assert_eq!(key.id(), ContractManagement::ID);
-        assert_eq!(key.key()[0], PREFIX_CONTRACT);
-        assert_eq!(key.key().len(), 21);
-    }
-
-    #[test]
-    fn test_contract_id_storage_key_be() {
-        let key = StorageKey::new(ContractManagement::ID, {
-            let mut k = vec![PREFIX_CONTRACT_HASH];
-            k.extend_from_slice(&42i32.to_be_bytes());
-            k
-        });
-        assert_eq!(key.id(), ContractManagement::ID);
-        assert_eq!(key.key()[0], PREFIX_CONTRACT_HASH);
-        // 1 prefix + 4 id bytes (big-endian)
-        assert_eq!(key.key().len(), 5);
-        assert_eq!(&key.key()[1..], &42i32.to_be_bytes());
-    }
-
-    #[test]
-    fn test_write_then_read_contract() {
-        let cache = fresh_cache();
-        let hash = sample_hash(7);
-
-        // Synthesise a serialised ContractState. The real one is
-        // constructed by the blockchain service; we just need any
-        // payload that round-trips for the storage check.
-        let payload = {
-            let mut w = BinaryWriter::new();
-            w.write_u16(0) // version
-             .unwrap();
-            w.write_bytes(&[0xAB; 20]) // hash
-             .unwrap();
-            w.into_bytes()
-        };
-        let key = StorageKey::new(ContractManagement::ID, {
-            let mut k = vec![PREFIX_CONTRACT];
-            k.extend_from_slice(&hash.to_bytes());
-            k
-        });
-        cache.add(key, StorageItem::from_bytes(payload.clone()));
-
-        assert!(ContractManagement::is_contract(&cache, &hash));
-        let value = cache
-            .get(&StorageKey::new(ContractManagement::ID, {
-                let mut k = vec![PREFIX_CONTRACT];
-                k.extend_from_slice(&hash.to_bytes());
-                k
-            }))
+    fn native_contract_surface() {
+        let c = ContractManagement::new();
+        assert_eq!(NativeContract::id(&c), -1);
+        assert_eq!(NativeContract::name(&c), "ContractManagement");
+        assert_eq!(NativeContract::hash(&c), *CONTRACT_MANAGEMENT_HASH);
+        let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "getContract",
+                "getContractById",
+                "getMinimumDeploymentFee",
+                "isContract",
+                "hasMethod",
+                "setMinimumDeploymentFee",
+                "getContractHashes"
+            ]
+        );
+        // getContractHashes is a safe, ReadStates, no-arg iterator reader.
+        let hashes = c.methods().iter().find(|m| m.name == "getContractHashes").unwrap();
+        assert!(hashes.safe && hashes.active_in.is_none());
+        assert!(hashes.parameters.is_empty());
+        assert_eq!(hashes.return_type, ContractParameterType::InteropInterface);
+        assert_eq!(hashes.required_call_flags, CallFlags::READ_STATES.bits());
+        // The committee-gated setter: not safe, States, Integer -> Void.
+        let setter = c
+            .methods()
+            .iter()
+            .find(|m| m.name == "setMinimumDeploymentFee")
             .unwrap();
-        assert_eq!(value.value_bytes().as_ref(), payload.as_slice());
+        assert!(!setter.safe);
+        assert_eq!(setter.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(setter.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(setter.return_type, ContractParameterType::Void);
+        assert_eq!(setter.cpu_fee, 1 << 15);
+        assert!(setter.active_in.is_none());
+        let has_method = c.methods().iter().find(|m| m.name == "hasMethod").unwrap();
+        assert_eq!(has_method.active_in, Some(Hardfork::HfEchidna));
+        assert_eq!(has_method.return_type, ContractParameterType::Boolean);
+        assert_eq!(has_method.parameters.len(), 3);
+
+        let get_contract = c.methods().iter().find(|m| m.name == "getContract").unwrap();
+        assert_eq!(get_contract.parameters, vec![ContractParameterType::Hash160]);
+        assert_eq!(get_contract.return_type, ContractParameterType::Array);
+        assert_eq!(get_contract.cpu_fee, 1 << 15);
+        assert!(get_contract.safe && get_contract.active_in.is_none());
+
+        let by_id = c.methods().iter().find(|m| m.name == "getContractById").unwrap();
+        assert_eq!(by_id.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(by_id.return_type, ContractParameterType::Array);
+        assert_eq!(by_id.cpu_fee, 1 << 15);
+
+        let is_contract = c.methods().iter().find(|m| m.name == "isContract").unwrap();
+        assert_eq!(is_contract.parameters, vec![ContractParameterType::Hash160]);
+        assert_eq!(is_contract.return_type, ContractParameterType::Boolean);
+        assert_eq!(is_contract.cpu_fee, 1 << 14);
+        assert_eq!(is_contract.active_in, Some(Hardfork::HfEchidna));
+    }
+
+    #[test]
+    fn get_contract_miss_returns_none() {
+        // C# `GetContract` returns null for an unknown hash; the invoke arm maps
+        // `None` to an empty payload, which the engine decodes to StackItem::Null.
+        let cache = DataCache::new(false);
+        let hash = UInt160::from_bytes(&[7u8; 20]).unwrap();
+        assert!(ContractManagement::get_contract_from_snapshot(&cache, &hash)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn get_contract_by_id_miss_returns_none() {
+        // C# `GetContractById` returns null when the id has no hash-index entry;
+        // the invoke arm maps that to an empty payload (StackItem::Null).
+        let cache = DataCache::new(false);
+        assert!(ContractManagement::get_contract_by_id_from_snapshot(&cache, 42)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn contract_hash_entries_scopes_to_prefix_contract_hash() {
+        let cache = DataCache::new(false);
+        // Two Prefix_ContractHash entries (id -> hash) plus an unrelated
+        // Prefix_Contract entry that must NOT appear in the iterator's backing set.
+        let mut k1 = vec![PREFIX_CONTRACT_HASH];
+        k1.extend_from_slice(&1i32.to_be_bytes());
+        let mut k2 = vec![PREFIX_CONTRACT_HASH];
+        k2.extend_from_slice(&2i32.to_be_bytes());
+        cache.add(
+            StorageKey::new(ContractManagement::ID, k1),
+            StorageItem::from_bytes(vec![0xAA; 20]),
+        );
+        cache.add(
+            StorageKey::new(ContractManagement::ID, k2),
+            StorageItem::from_bytes(vec![0xBB; 20]),
+        );
+        cache.add(
+            StorageKey::new(ContractManagement::ID, contract_storage_key(&UInt160::zero())),
+            StorageItem::from_bytes(vec![1]),
+        );
+
+        let entries = contract_hash_entries(&cache);
+        assert_eq!(entries.len(), 2, "only Prefix_ContractHash entries are included");
+        // Forward-seek order: id 1 before id 2 (big-endian id keys sort ascending).
+        assert_eq!(entries[0].1.value_bytes().to_vec(), vec![0xAA; 20]);
+        assert_eq!(entries[1].1.value_bytes().to_vec(), vec![0xBB; 20]);
+    }
+
+    #[test]
+    fn set_minimum_deployment_fee_write_round_trips() {
+        // The setter's storage effect (overwrite Prefix_MinimumDeploymentFee) is
+        // observed by the getMinimumDeploymentFee reader, matching C#
+        // GetAndChange(...).Set(value).
+        let cache = DataCache::new(false);
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            DEFAULT_MINIMUM_DEPLOYMENT_FEE
+        );
+        // Zero is permitted (C# rejects only value < 0).
+        put_minimum_deployment_fee(&cache, &BigInt::from(0));
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            0
+        );
+        // Overwrite with a positive fee (GetAndChange semantics).
+        put_minimum_deployment_fee(&cache, &BigInt::from(25_00000000i64));
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            25_00000000
+        );
+    }
+
+    #[test]
+    fn abi_has_method_matches_name_and_pcount() {
+        use neo_manifest::{
+            ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+        };
+        let mut manifest = ContractManifest::new("test".to_string());
+        manifest.abi.methods.push(ContractMethodDescriptor {
+            name: "transfer".to_string(),
+            parameters: vec![ContractParameterDefinition::default(); 4],
+            ..Default::default()
+        });
+
+        // Exact (name, count) match.
+        assert!(abi_has_method(&manifest, "transfer", 4));
+        // Wrong count -> no match.
+        assert!(!abi_has_method(&manifest, "transfer", 3));
+        // pcount == -1 matches any count.
+        assert!(abi_has_method(&manifest, "transfer", -1));
+        // Unknown name -> no match.
+        assert!(!abi_has_method(&manifest, "balanceOf", -1));
+        // Empty manifest -> no match.
+        assert!(!abi_has_method(&ContractManifest::new("e".to_string()), "transfer", -1));
+    }
+
+    #[test]
+    fn is_contract_checks_storage_existence() {
+        let cache = DataCache::new(false);
+        let hash = UInt160::from_bytes(&[8u8; 20]).unwrap();
+        assert!(!ContractManagement::is_contract(&cache, &hash));
+        cache.add(
+            StorageKey::new(ContractManagement::ID, contract_storage_key(&hash)),
+            StorageItem::from_bytes(vec![1]),
+        );
+        assert!(ContractManagement::is_contract(&cache, &hash));
+    }
+
+    #[test]
+    fn contract_state_marshals_to_five_element_array() {
+        // getContract's hit path serializes ContractState.to_stack_item() via the
+        // BinarySerializer; the result must be a 5-field Array (id, updateCounter,
+        // hash, nef, manifest) per C# ContractState.ToStackItem.
+        let state = ContractState::default();
+        let item = state.to_stack_item().unwrap();
+        let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
+        assert!(!bytes.is_empty());
+        let decoded =
+            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
+        match decoded {
+            StackItem::Array(array) => assert_eq!(array.items().len(), 5),
+            other => panic!("expected Array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn minimum_deployment_fee_reads_storage_with_default() {
+        let cache = DataCache::new(false);
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            DEFAULT_MINIMUM_DEPLOYMENT_FEE
+        );
+
+        let key = StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]);
+        cache.add(key, StorageItem::from_bytes(BigInt::from(5_00000000).to_signed_bytes_le()));
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            5_00000000
+        );
     }
 }

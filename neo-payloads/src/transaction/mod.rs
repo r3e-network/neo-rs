@@ -109,6 +109,7 @@ impl Clone for Transaction {
 
 // Include implementation files
 mod core;
+mod json;
 mod traits;
 
 // ============================================================================

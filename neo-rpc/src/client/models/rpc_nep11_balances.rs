@@ -160,7 +160,7 @@ impl RpcNep11TokenBalance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_wallets::Helper as WalletHelper;
+    use neo_wallets::wallet_helper as WalletHelper;
     use neo_json::JArray;
 
     #[test]

@@ -12,7 +12,7 @@ use neo_storage::StorageItem;
 use neo_native_contracts::NativeContract;
 use neo_native_contracts::contract_management::ContractManagement;
 use neo_storage::StorageKey;
-use neo_state_types::{StateRoot, StateStore};
+use neo_state_service::{StateRoot, StateStore};
 use neo_primitives::{UInt160, UInt256};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;

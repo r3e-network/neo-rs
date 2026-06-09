@@ -9,7 +9,7 @@ use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
-use neo_block::{
+use neo_payloads::{
     Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
 use neo_io::Serializable;
 use neo_payloads::{
@@ -17,10 +17,10 @@ use neo_payloads::{
 use neo_storage::persistence::SeekDirection;
 use neo_storage::persistence::ReadOnlyStoreGeneric;
 use neo_execution::contract_state::ContractState;
+use neo_blockchain::HashOrIndex;
 use neo_native_contracts::{
     contract_management::ContractManagement,
-    use neo_blockchain::HashOrIndex;
-use neo_native_contracts::LedgerContract,
+    LedgerContract,
     NativeRegistry};
 use neo_storage::StorageKey;
 use neo_primitives::{UInt160, UInt256, Witness as LedgerWitness};

@@ -400,8 +400,11 @@ impl ApplicationEngine {
     /// Queues a contract call requested by a native contract.
     ///
     /// The queued call will be loaded after the current native syscall finishes,
-    /// ensuring the native return value is pushed to the correct context.
-    pub(crate) fn queue_contract_call_from_native(
+    /// ensuring the native return value is pushed to the correct context. This is
+    /// the faithful equivalent of C# `ApplicationEngine.CallFromNativeContractAsync`
+    /// (used by NEP-17 `transfer` to invoke the recipient's `onNEP17Payment`):
+    /// the call runs after the native method returns, not synchronously within it.
+    pub fn queue_contract_call_from_native(
         &mut self,
         calling_script_hash: UInt160,
         contract_hash: UInt160,

@@ -15,8 +15,8 @@ use crate::{RpcClient, RpcError};
 use neo_script_builder::ScriptBuilder;
 use neo_native_contracts::ContractManagement;
 use neo_payloads::{Signer, Transaction};
-use neo_primitives::{WitnessScope};
-use neo_crypto::KeyPair;
+use neo_primitives::{CallFlags, WitnessScope};
+use neo_wallets::KeyPair;
 use neo_manifest::{ContractManifest};
 use neo_primitives::UInt160;
 use std::sync::Arc;
@@ -98,7 +98,7 @@ impl ContractClient {
         sb.emit_pack();
         emit_contract_call(
             &mut sb,
-            &ContractManagement::contract_hash(),
+            &ContractManagement::script_hash(),
             "deploy",
             call_flags,
         )?;

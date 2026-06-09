@@ -180,6 +180,22 @@ pub fn is_contract_blocked_by_policy(
     policy.is_contract_blocked(snapshot, contract_hash)
 }
 
+/// Convenience wrapper around `NeoToken.committee_address` (C#
+/// `NEO.GetCommitteeAddress`). Returns `Ok(None)` when no provider is installed
+/// or NeoToken is not registered, so the caller falls back to fail-closed
+/// behaviour.
+pub fn lookup_committee_address(
+    snapshot: &neo_data_cache::DataCache,
+) -> neo_error::CoreResult<Option<neo_primitives::UInt160>> {
+    let Some(provider) = native_contract_provider() else {
+        return Ok(None);
+    };
+    let Some(neo) = provider.get_native_contract_by_name("NeoToken") else {
+        return Ok(None);
+    };
+    neo.committee_address(snapshot)
+}
+
 /// Convenience wrapper around `PolicyContract.whitelisted_fee`.
 pub fn get_whitelisted_fee_for_policy(
     snapshot: &neo_data_cache::DataCache,

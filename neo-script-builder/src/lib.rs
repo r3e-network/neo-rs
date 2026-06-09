@@ -19,8 +19,8 @@ use num_traits::ToPrimitive;
 /// Errors raised while constructing a VM script.
 ///
 /// These correspond to programmer/usage errors (oversized integers, invalid
-/// jump opcodes, non-serializable stack values, over-long syscall names). The
-/// `neo-core` layer provides `From<ScriptBuilderError> for CoreError` so callers
+/// jump opcodes, non-serializable stack values, over-long syscall names). This
+/// crate provides `From<ScriptBuilderError> for neo_error::CoreError` so callers
 /// returning `CoreResult` can keep using `?` unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScriptBuilderError {
@@ -33,6 +33,14 @@ impl ScriptBuilderError {
     /// Creates an [`ScriptBuilderError::InvalidOperation`] from any message.
     pub fn invalid_operation(message: impl Into<String>) -> Self {
         Self::InvalidOperation(message.into())
+    }
+}
+
+impl From<ScriptBuilderError> for neo_error::CoreError {
+    fn from(err: ScriptBuilderError) -> Self {
+        neo_error::CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
     }
 }
 

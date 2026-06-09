@@ -152,6 +152,8 @@ client = [
     "dep:neo-config",
     "dep:neo-json",
     "dep:neo-vm-rs",
+    "dep:neo-payloads",
+    "dep:neo-execution",
     "dep:reqwest",
     "dep:hyper",
     "dep:anyhow",

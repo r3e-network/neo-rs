@@ -20,8 +20,6 @@
 //! verification (consensus, native-contract checks, DataCache lookup)
 //! is the job of `neo-core`'s `BlockVerificationExt` extension trait.
 
-#![doc(html_root_url = "https://docs.rs/neo-chain/0.7.2")]
-
 use neo_crypto::MerkleTree;
 use neo_ledger_types::Witness;
 use neo_primitives::blockchain::marker_traits::BlockLike;

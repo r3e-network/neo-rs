@@ -9,6 +9,7 @@ description = "Neo N3 redeem-script primitives (signature/multi-sig verification
 
 [dependencies]
 neo-crypto = { workspace = true }
+neo-error = { workspace = true }
 neo-script-builder = { workspace = true }
 neo-vm-rs = { workspace = true }
 thiserror = { workspace = true }

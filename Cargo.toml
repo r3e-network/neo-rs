@@ -68,9 +68,6 @@ members = [
 
     # RPC client + server
 
-    # Contract manifest + NEF types
-    "neo-smart-contract-types",
-
     # Protocol interfaces
 
     # P2P networking
@@ -88,9 +85,6 @@ members = [
 
     # Pure data types for the State Service plugin 
     "neo-state-types",
-
-    # Pure smart-contract manifest / ABI / NEF data types 
-    "neo-smart-contract-types",
 
     # Foundation layer: data cache (DataCache, StorageKey, StorageItem)
     "neo-data-cache",
@@ -238,7 +232,6 @@ neo-system = { path = "neo-system", version = "0.7.2" }
 neo-wallets = { path = "neo-wallets", version = "0.7.2" }
 neo-mempool = { path = "neo-mempool", version = "0.7.2" }
 neo-native-contracts = { path = "neo-native-contracts", version = "0.7.2" }
-neo-smart-contract-types = { path = "neo-smart-contract-types", version = "0.7.2" }
 neo-data-cache = { path = "neo-data-cache", version = "0.7.2" }
 neo-serialization = { path = "neo-serialization", version = "0.7.2" }
 neo-block = { path = "neo-block", version = "0.7.2" }

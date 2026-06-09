@@ -214,6 +214,18 @@ pub trait NativeContract: Any + Send + Sync {
         Ok(false)
     }
 
+    /// Returns the committee multisig address (C# `NEO.GetCommitteeAddress`),
+    /// used by `check_committee_witness` to authorize committee-gated operations.
+    ///
+    /// The default implementation returns `Ok(None)`; only `NeoToken` (which
+    /// owns the committee cache) overrides this.
+    fn committee_address(
+        &self,
+        _snapshot: &neo_data_cache::DataCache,
+    ) -> Result<Option<neo_primitives::UInt160>> {
+        Ok(None)
+    }
+
     /// Returns the whitelisted fee (in datoshi) for the given contract
     /// method, or `None` if no whitelist applies.
     ///

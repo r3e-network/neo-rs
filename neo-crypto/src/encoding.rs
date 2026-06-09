@@ -1,7 +1,10 @@
 //! Encoding helpers used by Neo cryptographic APIs.
 
 use crate::error::{CryptoError, CryptoResult};
-use base64::{engine::general_purpose, Engine as _};
+use base64::alphabet;
+use base64::engine::general_purpose::{self, GeneralPurpose, GeneralPurposeConfig};
+use base64::engine::DecodePaddingMode;
+use base64::Engine as _;
 use neo_primitives::base58_check::{self, Base58CheckDecodeError};
 
 /// Base58 encoding/decoding utilities.
@@ -65,6 +68,22 @@ impl Base64 {
             .map_err(|e| CryptoError::encoding_error(format!("Base64 decode error: {e}")))
     }
 
+    /// Strict standard-alphabet Base64 decode with **no** whitespace tolerance,
+    /// matching .NET `Convert.FromBase64String` once whitespace has been
+    /// stripped by the caller: canonical padding is required (input length must
+    /// be a multiple of 4 including `=`), while non-canonical trailing bits in
+    /// the final quantum are tolerated (as .NET does). Any non-alphabet byte —
+    /// including whitespace — is rejected.
+    pub fn decode_strict(s: &str) -> CryptoResult<Vec<u8>> {
+        let engine = GeneralPurpose::new(
+            &alphabet::STANDARD,
+            GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+        );
+        engine
+            .decode(s.as_bytes())
+            .map_err(|e| CryptoError::encoding_error(format!("Base64 decode error: {e}")))
+    }
+
     /// Encodes data to URL-safe Base64 without padding.
     #[must_use]
     pub fn url_encode_no_pad(data: &[u8]) -> String {
@@ -76,6 +95,23 @@ impl Base64 {
         let normalized = strip_whitespace(s);
         general_purpose::URL_SAFE_NO_PAD
             .decode(normalized.as_bytes())
+            .map_err(|e| CryptoError::encoding_error(format!("Base64Url decode error: {e}")))
+    }
+
+    /// Strict URL-safe Base64 decode with **no** padding and **no** whitespace
+    /// tolerance, matching the decode side of .NET `Base64UrlEncoder` once the
+    /// caller has stripped the whitespace .NET ignores: URL-safe alphabet
+    /// (`-`/`_`), padding rejected, non-canonical trailing bits tolerated. Any
+    /// other byte (including whitespace and standard-alphabet `+`/`/`) faults.
+    pub fn url_decode_no_pad_strict(s: &str) -> CryptoResult<Vec<u8>> {
+        let engine = GeneralPurpose::new(
+            &alphabet::URL_SAFE,
+            GeneralPurposeConfig::new()
+                .with_decode_padding_mode(DecodePaddingMode::RequireNone)
+                .with_decode_allow_trailing_bits(true),
+        );
+        engine
+            .decode(s.as_bytes())
             .map_err(|e| CryptoError::encoding_error(format!("Base64Url decode error: {e}")))
     }
 }
@@ -185,6 +221,20 @@ mod tests {
     }
 
     #[test]
+    fn base64_decode_strict_round_trips_and_rejects_whitespace() {
+        // Canonical inputs decode (no whitespace tolerance in this primitive).
+        assert_eq!(Base64::decode_strict("AQIDBA==").unwrap(), [1, 2, 3, 4]);
+        assert_eq!(Base64::decode_strict("AQID").unwrap(), [1, 2, 3]);
+        assert_eq!(Base64::decode_strict("").unwrap(), Vec::<u8>::new());
+        // Whitespace and non-alphabet bytes are rejected (the caller strips
+        // the whitespace .NET tolerates before calling this).
+        assert!(Base64::decode_strict("AQ ID").is_err());
+        assert!(Base64::decode_strict("@@@@").is_err());
+        // Missing padding (length not a multiple of 4) is rejected.
+        assert!(Base64::decode_strict("AQI").is_err());
+    }
+
+    #[test]
     fn base64_url_no_pad_round_trips_known_vector() {
         let data = b"Subject=test@example.com&Issuer=https://example.com";
         let encoded = Base64::url_encode_no_pad(data);
@@ -195,6 +245,17 @@ mod tests {
 
         let decoded = Base64::url_decode_no_pad_lenient(&encoded).unwrap();
         assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn url_decode_no_pad_strict_round_trips_and_rejects_whitespace() {
+        let data = b"Subject=test@example.com&Issuer=https://example.com";
+        let encoded = Base64::url_encode_no_pad(data);
+        assert_eq!(Base64::url_decode_no_pad_strict(&encoded).unwrap(), data);
+        // No whitespace tolerance here (the caller strips what .NET ignores).
+        assert!(Base64::url_decode_no_pad_strict("U3Vi amVjdA").is_err());
+        // Standard-alphabet '+'/'/' are not part of the URL-safe alphabet.
+        assert!(Base64::url_decode_no_pad_strict("ab+/").is_err());
     }
 
     #[test]

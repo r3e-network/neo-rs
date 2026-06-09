@@ -106,7 +106,7 @@ mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
     use neo_config::ProtocolSettings;
-    use neo_wallets::Helper as WalletHelper;
+    use neo_wallets::wallet_helper as WalletHelper;
     use neo_json::{JArray, JToken};
 
     #[test]

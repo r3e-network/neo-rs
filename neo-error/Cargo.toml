@@ -16,8 +16,4 @@ description = "Authoritative error type for the Neo workspace (CoreError + CoreR
 [dependencies]
 neo-primitives = { workspace = true }
 neo-io = { workspace = true }
-neo-storage = { workspace = true }
-neo-vm = { workspace = true }
-neo-script-builder = { workspace = true }
-neo-redeem-script = { workspace = true }
 thiserror = { workspace = true }

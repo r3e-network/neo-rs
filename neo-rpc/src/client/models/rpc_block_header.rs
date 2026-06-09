@@ -11,8 +11,8 @@
 
 use super::super::utility::{RpcUtility, object_array, witness_to_json};
 use neo_config::ProtocolSettings;
-use neo_payloads::header::BlockHeader;
-use neo_wallets::Helper as WalletHelper;
+use neo_payloads::BlockHeader;
+use neo_wallets::wallet_helper as WalletHelper;
 use neo_io::Serializable;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;

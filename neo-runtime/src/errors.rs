@@ -1,7 +1,7 @@
-//! Service-layer error type shared by every reth-style service in [`neo_runtime`].
+//! Service-layer error type shared by every reth-style service in `neo_runtime`.
 //!
 //! `ServiceError` is the single vocabulary used by the `BlockExecutor`,
-//! `MempoolService`, `NetworkService`, `ConsensusService`, `NeoEngine`, and
+//! `NetworkService`, `ConsensusService`, `NeoEngine`, and
 //! `BlockchainHandle` APIs. Lower-layer errors (storage, IO, crypto, …) are
 //! lifted into the `Internal` arm by the concrete service implementation; the
 //! trait-level API never exposes a foreign error type. This keeps the public
@@ -23,10 +23,10 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ServiceError {
     /// The targeted service is not running, the command channel is closed,
-    /// or the underlying actor has been shut down.
+    /// or the underlying service has been shut down.
     ///
-    /// Callers can usually recover by recreating the [`crate::Node`] and
-    /// re-issuing the request.
+    /// Callers can usually recover by recreating the node (`neo_system::Node`)
+    /// and re-issuing the request.
     #[error("service unavailable: {0}")]
     ServiceUnavailable(String),
 
@@ -119,7 +119,7 @@ impl ServiceError {
     }
 }
 
-/// Result alias used by every service method in [`neo_runtime`].
+/// Result alias used by every service method in `neo_runtime`.
 pub type ServiceResult<T> = Result<T, ServiceError>;
 
 #[cfg(test)]

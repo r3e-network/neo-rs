@@ -2,13 +2,12 @@
 //!
 //! Pure ledger and wire data types for the Neo blockchain.
 //!
-//! This crate is the **single** canonical home for protocol-layer data
-//! types: `Witness`, `Header`, `HeadersPayload`, and (in later slices)
-//! `Block`, `Transaction`, `Signer`, `WitnessRule`, transaction
-//! attributes, and the protocol enums that go with them
-//! (`InventoryType`, `TransactionAttributeType`, `OracleResponseCode`,
-//! `TransactionRemovalReason`, `VerifyResult`, `WitnessConditionType`,
-//! `WitnessRuleAction`, etc.).
+//! This crate is the canonical home for the low-level [`Witness`] type —
+//! the signature / verification-script pair attached to a verifiable
+//! payload. The richer block-level wire types (`Block`, `Header`,
+//! `Transaction`, `Signer`, `HeadersPayload`, transaction attributes and
+//! the protocol enums) live in `neo-payloads`, with the P2P message
+//! payloads in `neo-p2p`; both depend on this crate for `Witness`.
 //!
 //! ## Layering
 //!
@@ -28,22 +27,18 @@
 //!
 //! ## What belongs here
 //!
-//! - `Witness` — signature / verification-script pair attached to a
-//!   verifiable payload.
-//! - `Header` / `HeadersPayload` — block header and the response
-//!   payload to `GetHeaders` messages.
-//! - (future) `Block`, `Transaction` — block-level data.
-//! - (future) `Signer` — per-transaction signer with scope rules.
-//! - (future) `WitnessRule` / `WitnessCondition` — conditional
-//!   verification rules (moved here from `neo-p2p`).
-//! - (future) protocol enums (`InventoryType`, `VerifyResult`, ...).
+//! - [`Witness`] — the signature / verification-script pair attached to a
+//!   verifiable payload, plus its serialization and script-hash helpers.
 //!
 //! ## What does **not** belong here
 //!
+//! - The block-level data types (`Block`, `Header`, `Transaction`,
+//!   `Signer`, `HeadersPayload`, transaction attributes) — those live in
+//!   `neo-payloads`, which depends on this crate for `Witness`.
+//! - The P2P message payloads and witness-rule conditions — `neo-p2p`.
 //! - Anything that needs `DataCache` / `ProtocolSettings` (stateful
-//!   verification) — that lives in `neo-core` as a `<Type>Ext` trait.
-//! - Anything that needs the application engine or native contracts —
-//!   that lives in `neo-execution`.
+//!   verification) or the application engine / native contracts — the
+//!   `neo-payloads` verification helpers and `neo-execution`.
 
 #![doc(html_root_url = "https://docs.rs/neo-ledger-types/0.7.2")]
 #![deny(unsafe_code)]
@@ -60,10 +55,6 @@ pub use neo_io::{
     impl_ord_by_fields,
 };
 
-pub mod header;
-pub mod headers_payload;
 pub mod witness;
 
-pub use header::Header;
-pub use headers_payload::{HeadersPayload, MAX_HEADERS_COUNT};
 pub use witness::Witness;

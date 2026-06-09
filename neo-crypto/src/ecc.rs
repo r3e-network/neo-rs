@@ -11,8 +11,10 @@
 #![allow(unused_assignments)]
 
 use crate::error::{CryptoError, CryptoResult};
+use crate::hash::HashAlgorithm;
 use ed25519_dalek::{Signature as Ed25519Signature, SigningKey as Ed25519SigningKey, VerifyingKey};
 use k256::{
+    ecdsa::signature::hazmat::PrehashVerifier as K256PrehashVerifier,
     ecdsa::{
         Signature as K256Signature, SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey,
     },
@@ -23,6 +25,7 @@ use k256::{
     AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
 };
 use p256::{
+    ecdsa::signature::hazmat::PrehashVerifier as P256PrehashVerifier,
     ecdsa::signature::Verifier,
     ecdsa::{
         Signature as P256Signature, SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey,
@@ -632,6 +635,69 @@ pub fn verify_signature_secp256k1(
     Ok(verifying_key.verify(message, &sig).is_ok())
 }
 
+/// Verifies an ECDSA signature over `message`, hashing the message with the
+/// selected `hash` algorithm before verification.
+///
+/// Mirrors C# `Crypto.VerifySignature(message, signature, pubkey, curve,
+/// hashAlgorithm)` used by `CryptoLib.VerifyWithECDsa`: the message is reduced to
+/// a 32-byte digest (SHA-256 or Keccak-256), which is then ECDSA-verified against
+/// the public key. Only `Sha256` and `Keccak256` are valid ECDSA hashes; any
+/// other algorithm (or the non-ECDSA `Ed25519` curve) is an error. A malformed
+/// public key or signature yields `Ok(false)`, matching the C# path that catches
+/// `ArgumentException` and returns `false`.
+///
+/// For the SHA-256 algorithm this is equivalent to [`verify_signature`] (whose
+/// `Verifier::verify` hashes with the curve's SHA-256 digest); the Keccak-256
+/// variants were added by the `HF_Cockatrice` hardfork.
+pub fn verify_signature_with_hash(
+    curve: ECCurve,
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+    hash: HashAlgorithm,
+) -> CryptoResult<bool> {
+    use sha2::{Digest as _, Sha256};
+    use sha3::Keccak256;
+
+    let digest: [u8; 32] = match hash {
+        HashAlgorithm::Sha256 => Sha256::digest(message).into(),
+        HashAlgorithm::Keccak256 => Keccak256::digest(message).into(),
+        other => {
+            return Err(CryptoError::invalid_argument(format!(
+                "ECDSA verification does not support hash algorithm {other:?}"
+            )))
+        }
+    };
+
+    match curve {
+        ECCurve::Secp256r1 => {
+            let Ok(verifying_key) = P256VerifyingKey::from_sec1_bytes(public_key) else {
+                return Ok(false);
+            };
+            let Ok(sig) = P256Signature::from_der(signature)
+                .or_else(|_| P256Signature::from_slice(signature))
+            else {
+                return Ok(false);
+            };
+            Ok(P256PrehashVerifier::verify_prehash(&verifying_key, &digest, &sig).is_ok())
+        }
+        ECCurve::Secp256k1 => {
+            let Ok(verifying_key) = K256VerifyingKey::from_sec1_bytes(public_key) else {
+                return Ok(false);
+            };
+            let Ok(sig) = K256Signature::from_der(signature)
+                .or_else(|_| K256Signature::from_slice(signature))
+            else {
+                return Ok(false);
+            };
+            Ok(K256PrehashVerifier::verify_prehash(&verifying_key, &digest, &sig).is_ok())
+        }
+        ECCurve::Ed25519 => Err(CryptoError::invalid_argument(
+            "Ed25519 is not an ECDSA curve".to_string(),
+        )),
+    }
+}
+
 /// Verifies an Ed25519 signature.
 pub fn verify_ed25519(public_key: &[u8], message: &[u8], signature: &[u8]) -> CryptoResult<bool> {
     let pk_bytes: [u8; 32] = public_key
@@ -827,6 +893,103 @@ mod tests {
         let mut bad_sig = signature_bytes;
         bad_sig[0] ^= 0x01;
         assert!(!verify_signature_secp256r1(&pub_bytes, message, &bad_sig).unwrap());
+    }
+
+    #[test]
+    fn verify_with_hash_sha256_matches_default_verify() {
+        // For SHA-256, verify_signature_with_hash must agree with the existing
+        // SHA-256 ECDSA verify (whose Verifier::verify hashes with SHA-256).
+        let signing_key = p256_signing_key();
+        let pub_bytes = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let message = b"neo-ecdsa-hash-selectable";
+        let signature: P256Signature = signing_key.sign(message);
+        let sig_bytes = signature.to_bytes();
+
+        assert!(verify_signature_with_hash(
+            ECCurve::Secp256r1,
+            &pub_bytes,
+            message,
+            sig_bytes.as_slice(),
+            HashAlgorithm::Sha256,
+        )
+        .unwrap());
+        assert!(verify_signature_secp256r1(&pub_bytes, message, sig_bytes.as_slice()).unwrap());
+
+        // A Keccak-256 verification of a SHA-256 signature must fail (the digest
+        // differs), and a malformed key yields false (not an error).
+        assert!(!verify_signature_with_hash(
+            ECCurve::Secp256r1,
+            &pub_bytes,
+            message,
+            sig_bytes.as_slice(),
+            HashAlgorithm::Keccak256,
+        )
+        .unwrap());
+        assert!(!verify_signature_with_hash(
+            ECCurve::Secp256r1,
+            &[0u8; 33],
+            message,
+            sig_bytes.as_slice(),
+            HashAlgorithm::Sha256,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn verify_with_hash_keccak256_round_trips_both_curves() {
+        use k256::ecdsa::signature::hazmat::PrehashSigner as K256PrehashSigner;
+        use p256::ecdsa::signature::hazmat::PrehashSigner as P256PrehashSigner;
+        use sha3::{Digest as _, Keccak256};
+
+        let message = b"neo-keccak-ecdsa";
+        let digest = Keccak256::digest(message);
+
+        // secp256r1 + Keccak-256.
+        let p256_key = p256_signing_key();
+        let p256_pub = p256_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let p256_sig: P256Signature = p256_key.sign_prehash(&digest).unwrap();
+        assert!(verify_signature_with_hash(
+            ECCurve::Secp256r1,
+            &p256_pub,
+            message,
+            p256_sig.to_bytes().as_slice(),
+            HashAlgorithm::Keccak256,
+        )
+        .unwrap());
+        // The same signature must NOT verify under SHA-256 (wrong digest).
+        assert!(!verify_signature_with_hash(
+            ECCurve::Secp256r1,
+            &p256_pub,
+            message,
+            p256_sig.to_bytes().as_slice(),
+            HashAlgorithm::Sha256,
+        )
+        .unwrap());
+
+        // secp256k1 + Keccak-256.
+        let k256_key = k256_signing_key();
+        let k256_pub = k256_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let k256_sig: K256Signature = k256_key.sign_prehash(&digest).unwrap();
+        assert!(verify_signature_with_hash(
+            ECCurve::Secp256k1,
+            &k256_pub,
+            message,
+            k256_sig.to_bytes().as_slice(),
+            HashAlgorithm::Keccak256,
+        )
+        .unwrap());
     }
 
     #[test]

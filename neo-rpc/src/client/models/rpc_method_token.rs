@@ -11,7 +11,7 @@
 
 use super::super::utility::parse_number_or_string_token;
 use neo_primitives::CallFlags;
-use neo_smart_contract_types::MethodToken;
+use neo_manifest::MethodToken;
 use neo_json::JObject;
 use neo_primitives::UInt160;
 /// RPC method token helper matching C# `RpcMethodToken`
