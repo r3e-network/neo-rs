@@ -166,6 +166,72 @@ fn post_transfer(
     Ok(())
 }
 
+/// C# `GasToken.Mint` (`FungibleToken.Mint`): credits `amount` GAS to `account`,
+/// raises the total supply, and emits `Transfer(null, account, amount)` —
+/// queuing the recipient's `onNEP17Payment` when `call_on_payment` and the
+/// recipient is a deployed contract. A zero amount is a no-op; a negative amount
+/// faults. `pub(crate)` so NeoToken's reward distribution can mint GAS.
+pub(crate) fn gas_mint(
+    engine: &mut ApplicationEngine,
+    account: &UInt160,
+    amount: &BigInt,
+    call_on_payment: bool,
+) -> CoreResult<()> {
+    if amount < &BigInt::zero() {
+        return Err(CoreError::invalid_operation("GasToken::mint: amount cannot be negative"));
+    }
+    if amount.is_zero() {
+        return Ok(());
+    }
+    let snapshot = engine.snapshot_cache();
+    let balance = read_gas_account(&snapshot, account)?.unwrap_or_else(BigInt::zero) + amount;
+    write_gas_account(&snapshot, account, &balance)?;
+    let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+    let supply = snapshot
+        .get(&supply_key)
+        .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+        .unwrap_or_else(BigInt::zero)
+        + amount;
+    snapshot.update(supply_key, StorageItem::from_bytes(supply.to_signed_bytes_le()));
+    post_mint(engine, account, amount, call_on_payment)
+}
+
+/// C# `PostTransferAsync(null, account, amount, …)` for the mint case: emit
+/// `Transfer(null, account, amount)`, then queue `onNEP17Payment(null, amount,
+/// null)` when `call_on_payment` and the recipient is a deployed contract.
+fn post_mint(
+    engine: &mut ApplicationEngine,
+    account: &UInt160,
+    amount: &BigInt,
+    call_on_payment: bool,
+) -> CoreResult<()> {
+    let gas_hash = *GAS_HASH;
+    engine
+        .send_notification(
+            gas_hash,
+            "Transfer".to_string(),
+            vec![
+                StackItem::null(),
+                StackItem::from_byte_string(account.to_bytes()),
+                StackItem::from_int(amount.clone()),
+            ],
+        )
+        .map_err(|e| CoreError::invalid_operation(format!("GasToken::mint notify: {e}")))?;
+    if !call_on_payment {
+        return Ok(());
+    }
+    if !crate::ContractManagement::is_contract(&engine.snapshot_cache(), account) {
+        return Ok(());
+    }
+    engine.queue_contract_call_from_native(
+        gas_hash,
+        *account,
+        "onNEP17Payment",
+        vec![StackItem::null(), StackItem::from_int(amount.clone()), StackItem::null()],
+    );
+    Ok(())
+}
+
 /// Lazily-initialised script-hash handle for the GAS native contract.
 pub static GAS_HASH: LazyLock<UInt160> = LazyLock::new(|| *GAS_TOKEN_HASH);
 
