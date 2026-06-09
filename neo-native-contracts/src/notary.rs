@@ -20,6 +20,7 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 use crate::hashes::NOTARY_HASH;
+use crate::LedgerContract;
 
 /// Lazily-initialised script-hash handle for the Notary contract.
 pub static NOTARY_HASH_REF: LazyLock<UInt160> = LazyLock::new(|| *NOTARY_HASH);
@@ -54,6 +55,74 @@ fn read_deposit_field(snapshot: &DataCache, account: &UInt160, index: usize) -> 
     field
         .as_int()
         .map_err(|e| CoreError::invalid_data(format!("Notary deposit field: {e}")))
+}
+
+/// The deposit storage key `(Notary.ID, [Prefix_Deposit, account])`.
+fn deposit_key(account: &UInt160) -> StorageKey {
+    let mut key_bytes = vec![PREFIX_DEPOSIT];
+    key_bytes.extend_from_slice(&account.to_bytes());
+    StorageKey::new(Notary::ID, key_bytes)
+}
+
+/// Reads the full `Deposit` `(Amount, Till)` for `account`, or `None` when the
+/// account has no deposit (C# `GetDepositFor` returning null).
+fn read_deposit(snapshot: &DataCache, account: &UInt160) -> CoreResult<Option<(BigInt, u32)>> {
+    let Some(item) = snapshot.get(&deposit_key(account)) else {
+        return Ok(None);
+    };
+    let state =
+        BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
+            .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
+    let StackItem::Struct(fields) = state else {
+        return Err(CoreError::invalid_data("Notary deposit is not a struct"));
+    };
+    let items = fields.items();
+    let amount = items
+        .first()
+        .ok_or_else(|| CoreError::invalid_data("Notary deposit Amount missing"))?
+        .as_int()
+        .map_err(|e| CoreError::invalid_data(format!("Notary deposit Amount: {e}")))?;
+    let till = items
+        .get(1)
+        .ok_or_else(|| CoreError::invalid_data("Notary deposit Till missing"))?
+        .as_int()
+        .map_err(|e| CoreError::invalid_data(format!("Notary deposit Till: {e}")))?
+        .to_u32()
+        .ok_or_else(|| CoreError::invalid_data("Notary deposit Till out of range"))?;
+    Ok(Some((amount, till)))
+}
+
+/// Writes the `Deposit` `(Amount, Till)` struct for `account` (C# `PutDepositFor`):
+/// the BinarySerialized `Struct[Amount, Till]`.
+fn write_deposit(snapshot: &DataCache, account: &UInt160, amount: &BigInt, till: u32) -> CoreResult<()> {
+    let item = StackItem::from_struct(vec![
+        StackItem::from_int(amount.clone()),
+        StackItem::from_int(till),
+    ]);
+    let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::serialization(format!("Notary deposit serialize: {e}")))?;
+    snapshot.update(deposit_key(account), StorageItem::from_bytes(bytes));
+    Ok(())
+}
+
+/// Pure decision core of C# `LockDepositUntil` (after the witness check): returns
+/// `Some((amount, till))` to write, or `None` to return `false`. The new `till`
+/// must be at least `current_index + 2` (so the deposit outlives the next block)
+/// and at least the deposit's existing `Till` (locks cannot be shortened), and a
+/// deposit must already exist. `wrapping_add` matches C#'s unchecked `uint` math.
+fn lock_deposit_decision(
+    current_index: u32,
+    deposit: Option<(BigInt, u32)>,
+    till: u32,
+) -> Option<(BigInt, u32)> {
+    if till < current_index.wrapping_add(2) {
+        return None;
+    }
+    let (amount, existing_till) = deposit?;
+    if till < existing_till {
+        return None;
+    }
+    Some((amount, till))
 }
 
 /// C# `SetMaxNotValidBeforeDelta` storage effect: overwrite
@@ -133,6 +202,15 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![int],
             ContractParameterType::Void,
         ),
+        // lockDepositUntil(account, till) -> bool: account-witnessed, States.
+        NativeMethod::new(
+            "lockDepositUntil".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Hash160, int],
+            ContractParameterType::Boolean,
+        ),
     ]
 });
 
@@ -181,6 +259,35 @@ impl NativeContract for Notary {
             "expirationOf" => {
                 let account = parse_account(args, "expirationOf")?;
                 Ok(read_deposit_field(&snapshot, &account, 1)?.to_signed_bytes_le())
+            }
+            "lockDepositUntil" => {
+                // C#: CheckWitnessInternal(account) (false return on no witness),
+                // then till >= currentIndex+2, an existing deposit, and till not
+                // shortening it; on success update Deposit.Till and write back.
+                let account = parse_account(args, "lockDepositUntil")?;
+                let till = args
+                    .get(1)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_u32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("Notary::lockDepositUntil requires a uint till")
+                    })?;
+                // CheckWitnessInternal: a missing witness returns false (not a fault).
+                let witnessed = engine.check_witness(&account).map_err(|e| {
+                    CoreError::invalid_operation(format!("lockDepositUntil witness: {e}"))
+                })?;
+                if !witnessed {
+                    return Ok(vec![0]);
+                }
+                let current = LedgerContract::new().current_index(&snapshot)?;
+                let deposit = read_deposit(&snapshot, &account)?;
+                match lock_deposit_decision(current, deposit, till) {
+                    Some((amount, new_till)) => {
+                        write_deposit(&engine.snapshot_cache(), &account, &amount, new_till)?;
+                        Ok(vec![1])
+                    }
+                    None => Ok(vec![0]),
+                }
             }
             "setMaxNotValidBeforeDelta" => {
                 // C# param is `uint value`: decode as u32 (out-of-range faults like
@@ -244,7 +351,8 @@ mod tests {
                 "getMaxNotValidBeforeDelta",
                 "balanceOf",
                 "expirationOf",
-                "setMaxNotValidBeforeDelta"
+                "setMaxNotValidBeforeDelta",
+                "lockDepositUntil"
             ]
         );
         for name in ["balanceOf", "expirationOf"] {
@@ -263,6 +371,50 @@ mod tests {
         assert_eq!(setter.parameters, vec![ContractParameterType::Integer]);
         assert_eq!(setter.return_type, ContractParameterType::Void);
         assert_eq!(setter.cpu_fee, 1 << 15);
+        // lockDepositUntil: not safe, States, (Hash160, Integer) -> Boolean.
+        let lock = c.methods().iter().find(|m| m.name == "lockDepositUntil").unwrap();
+        assert!(!lock.safe);
+        assert_eq!(lock.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(
+            lock.parameters,
+            vec![ContractParameterType::Hash160, ContractParameterType::Integer]
+        );
+        assert_eq!(lock.return_type, ContractParameterType::Boolean);
+    }
+
+    #[test]
+    fn deposit_round_trips_and_lock_decision_matches_csharp() {
+        let cache = DataCache::new(false);
+        let account = UInt160::from_bytes(&[7u8; 20]).unwrap();
+
+        // No deposit -> read_deposit None; lock decision -> None (false).
+        assert!(read_deposit(&cache, &account).unwrap().is_none());
+        assert!(lock_deposit_decision(100, None, 200).is_none());
+
+        // Write a deposit (Amount=1000, Till=150) and read it back.
+        write_deposit(&cache, &account, &BigInt::from(1000), 150).unwrap();
+        assert_eq!(
+            read_deposit(&cache, &account).unwrap(),
+            Some((BigInt::from(1000), 150))
+        );
+
+        let deposit = read_deposit(&cache, &account).unwrap();
+        // till below current+2 -> None.
+        assert!(lock_deposit_decision(199, deposit.clone(), 200).is_none());
+        // till below existing Till (150) -> None (can't shorten).
+        assert!(lock_deposit_decision(100, deposit.clone(), 149).is_none());
+        // Valid extension keeps Amount, updates Till.
+        assert_eq!(
+            lock_deposit_decision(100, deposit, 300),
+            Some((BigInt::from(1000), 300))
+        );
+
+        // The lock write preserves Amount and updates Till.
+        write_deposit(&cache, &account, &BigInt::from(1000), 300).unwrap();
+        assert_eq!(
+            read_deposit(&cache, &account).unwrap(),
+            Some((BigInt::from(1000), 300))
+        );
     }
 
     #[test]
