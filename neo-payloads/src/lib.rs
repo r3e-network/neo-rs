@@ -139,6 +139,8 @@ pub mod signer;
 pub mod transaction;
 /// Transaction attribute base.
 pub mod transaction_attribute;
+/// Trimmed block (header + transaction hashes) used by LedgerContract storage.
+pub mod trimmed_block;
 /// Block validation constants (block-size / tx-count caps, merkle checks).
 pub mod validation;
 /// Extension of [`neo_primitives::Verifiable`] with payload-level helpers.
@@ -175,6 +177,7 @@ pub use script_validation::{
 pub use signer::Signer;
 pub use transaction::{HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE, Transaction};
 pub use transaction_attribute::TransactionAttribute;
+pub use trimmed_block::TrimmedBlock;
 pub use verifiable_ext::VerifiableExt;
 pub use witness::Witness;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
