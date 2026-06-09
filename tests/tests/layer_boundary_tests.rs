@@ -155,11 +155,15 @@ fn test_storage_only_depends_on_primitives() {
 
     let deps = parse_neo_dependencies(&cargo_toml);
 
-    // neo-storage can depend on neo-primitives (for UInt160/UInt256 key types)
+    // neo-storage may depend on neo-primitives (UInt160/UInt256 key types) and
+    // neo-error (it lifts StorageError / KeyBuilderError into neo_error::CoreError
+    // in neo-storage/src/error.rs). Both are acyclic foundation crates — neo-error
+    // depends only on neo-primitives + neo-io — so this keeps neo-storage at the
+    // foundation layer without introducing a cycle.
     for dep in &deps {
-        assert_eq!(
-            dep, "neo-primitives",
-            "neo-storage should only depend on neo-primitives, but found: {}",
+        assert!(
+            dep == "neo-primitives" || dep == "neo-error",
+            "neo-storage should only depend on neo-primitives or neo-error, but found: {}",
             dep
         );
     }
