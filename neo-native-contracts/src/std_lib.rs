@@ -13,7 +13,7 @@ use std::any::Any;
 use std::sync::LazyLock;
 
 use neo_config::Hardfork;
-use neo_crypto::{Base58, Base64};
+use neo_crypto::{Base58, Base64, Hex};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
@@ -76,6 +76,9 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
         // base64Url* (HF_Echidna): String <-> String, URL-safe alphabet, no padding.
         "base64UrlEncode" => base64_url_encode_impl(args),
         "base64UrlDecode" => base64_url_decode_impl(args),
+        // hexEncode/hexDecode (HF_Faun): ByteArray <-> lowercase hex String.
+        "hexEncode" => hex_encode_impl(args),
+        "hexDecode" => hex_decode_impl(args),
         "base58Encode" => arg_bytes(args, method).map(|b| Base58::encode(b).into_bytes()),
         "base58CheckEncode" => {
             arg_bytes(args, method).map(|b| Base58::encode_check(b).into_bytes())
@@ -306,6 +309,34 @@ fn atoi_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
     Ok(parsed.to_signed_bytes_le())
 }
 
+/// C# `StdLib.HexEncode(bytes)` (HF_Faun) = `bytes.ToHexString()`: lowercase hex,
+/// no prefix. Enforces the C# `[MaxLength(1024)]` cap on the input.
+fn hex_encode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let raw = arg_bytes(args, "hexEncode")?;
+    if raw.len() > MAX_INPUT_LENGTH {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::hexEncode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+        )));
+    }
+    Ok(Hex::encode(raw).into_bytes())
+}
+
+/// C# `StdLib.HexDecode(str)` (HF_Faun) = `str.HexToBytes()` (`Convert.FromHexString`):
+/// case-insensitive hex, length must be even, no prefix/whitespace. Enforces the
+/// C# `[MaxLength(1024)]` cap on the input.
+fn hex_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let raw = arg_bytes(args, "hexDecode")?;
+    if raw.len() > MAX_INPUT_LENGTH {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::hexDecode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+        )));
+    }
+    let value = std::str::from_utf8(raw).map_err(|_| {
+        CoreError::invalid_operation("StdLib::hexDecode: argument is not valid UTF-8".to_string())
+    })?;
+    Hex::decode(value).map_err(|e| CoreError::invalid_operation(format!("StdLib::hexDecode: {e}")))
+}
+
 /// C# `StdLib.StringSplit(str, separator[, removeEmptyEntries])` = `String.Split`:
 /// split `str` on each occurrence of `separator`, keeping empty entries unless
 /// `removeEmptyEntries` is true. An empty separator yields `[str]` (the whole
@@ -471,6 +502,11 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             .with_active_in(Hardfork::HfEchidna),
         NativeMethod::new("base64UrlDecode".into(), 1 << 5, true, 0, vec![string], string)
             .with_active_in(Hardfork::HfEchidna),
+        // hexEncode/hexDecode are available from the Faun hardfork onward.
+        NativeMethod::new("hexEncode".into(), 1 << 5, true, 0, vec![bytes], string)
+            .with_active_in(Hardfork::HfFaun),
+        NativeMethod::new("hexDecode".into(), 1 << 5, true, 0, vec![string], bytes)
+            .with_active_in(Hardfork::HfFaun),
     ]
 });
 
@@ -595,6 +631,34 @@ mod tests {
         for name in ["base64UrlEncode", "base64UrlDecode"] {
             let m = c.methods().iter().find(|m| m.name == name).unwrap();
             assert_eq!(m.active_in, Some(Hardfork::HfEchidna), "{name} must gate on Echidna");
+        }
+    }
+
+    #[test]
+    fn hex_encode_decode_matches_csharp_vectors() {
+        // C# UT_StdLib.TestHexEncodeDecode: hexEncode([0,1,2,3]) == "00010203".
+        assert_eq!(call("hexEncode", &[0, 1, 2, 3]).unwrap(), b"00010203");
+        assert_eq!(call("hexDecode", b"00010203").unwrap(), vec![0, 1, 2, 3]);
+        assert_eq!(call("hexEncode", b"").unwrap(), b"");
+        // Lowercase, no prefix; round-trips arbitrary bytes.
+        assert_eq!(call("hexEncode", &[0xab, 0xff]).unwrap(), b"abff");
+        assert_eq!(call("hexDecode", b"ABFF").unwrap(), vec![0xab, 0xff]); // case-insensitive
+    }
+
+    #[test]
+    fn hex_decode_rejects_invalid() {
+        // Odd length and non-hex characters fault (Convert.FromHexString parity).
+        assert!(call("hexDecode", b"012").is_err());
+        assert!(call("hexDecode", b"zz").is_err());
+        assert!(call("hexDecode", b"0x10").is_err()); // no "0x" prefix accepted
+    }
+
+    #[test]
+    fn hex_methods_are_faun_gated() {
+        let c = StdLib::new();
+        for name in ["hexEncode", "hexDecode"] {
+            let m = c.methods().iter().find(|m| m.name == name).unwrap();
+            assert_eq!(m.active_in, Some(Hardfork::HfFaun), "{name} must gate on Faun");
         }
     }
 
@@ -815,7 +879,9 @@ mod tests {
                 "stringSplit",
                 "stringSplit",
                 "base64UrlEncode",
-                "base64UrlDecode"
+                "base64UrlDecode",
+                "hexEncode",
+                "hexDecode"
             ]
         );
         assert!(c.methods().iter().all(|m| m.safe));
