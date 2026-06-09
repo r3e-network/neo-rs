@@ -156,24 +156,44 @@ impl JsonSerializer {
     }
 
     /// Deserializes a JSON payload into a [`StackItem`].
-    pub fn deserialize(json: &[u8], max_depth: usize) -> Result<StackItem, String> {
+    ///
+    /// `max_depth` bounds nesting (C# `JToken.Parse(json, 10)`); `max_items`
+    /// bounds the total produced item count (C# `JsonSerializer.Deserialize`
+    /// decrements `engine.Limits.MaxStackSize`, default 2048, once per item and
+    /// once per map entry, faulting when exhausted). Both faults match C#.
+    pub fn deserialize(json: &[u8], max_depth: usize, max_items: usize) -> Result<StackItem, String> {
         let value: JsonValue = serde_json::from_slice(json).map_err(|e| e.to_string())?;
-        Self::deserialize_from_json(&value, max_depth)
+        Self::deserialize_from_json(&value, max_depth, max_items)
     }
 
-    /// Deserializes a [`JsonValue`] into a stack item.
-    pub fn deserialize_from_json(value: &JsonValue, max_depth: usize) -> Result<StackItem, String> {
-        Self::deserialize_internal(value, 0, max_depth)
+    /// Deserializes a [`JsonValue`] into a stack item (see [`deserialize`] for the
+    /// limit semantics).
+    ///
+    /// [`deserialize`]: Self::deserialize
+    pub fn deserialize_from_json(
+        value: &JsonValue,
+        max_depth: usize,
+        max_items: usize,
+    ) -> Result<StackItem, String> {
+        let mut remaining = max_items;
+        Self::deserialize_internal(value, 0, max_depth, &mut remaining)
     }
 
     fn deserialize_internal(
         value: &JsonValue,
         depth: usize,
         max_depth: usize,
+        remaining: &mut usize,
     ) -> Result<StackItem, String> {
         if depth >= max_depth {
             return Err("Maximum JSON depth exceeded".to_string());
         }
+        // C# decrements maxStackSize before processing each item and faults when
+        // it was already 0 (`if (maxStackSize-- == 0) throw`).
+        if *remaining == 0 {
+            return Err("Max stack size reached".to_string());
+        }
+        *remaining -= 1;
 
         match value {
             JsonValue::Null => Ok(StackItem::null()),
@@ -210,7 +230,7 @@ impl JsonSerializer {
             JsonValue::Array(arr) => {
                 let mut items = Vec::with_capacity(arr.len());
                 for element in arr {
-                    items.push(Self::deserialize_internal(element, depth + 1, max_depth)?);
+                    items.push(Self::deserialize_internal(element, depth + 1, max_depth, remaining)?);
                 }
                 Ok(StackItem::from_array(items))
             }
@@ -222,8 +242,15 @@ impl JsonSerializer {
                 // and hand it straight to the ordered map item.
                 let mut entries = Vec::with_capacity(obj.len());
                 for (key, element) in obj {
+                    // C# charges an extra `maxStackSize--` per map entry (before
+                    // the value) on top of the value's own item cost.
+                    if *remaining == 0 {
+                        return Err("Max stack size reached".to_string());
+                    }
+                    *remaining -= 1;
                     let key_item = StackItem::from_byte_string(key.as_bytes());
-                    let value_item = Self::deserialize_internal(element, depth + 1, max_depth)?;
+                    let value_item =
+                        Self::deserialize_internal(element, depth + 1, max_depth, remaining)?;
                     entries.push((key_item, value_item));
                 }
                 Ok(StackItem::Map(MapItem::new_untracked(entries)))
@@ -242,7 +269,8 @@ mod tests {
     }
 
     fn de(json: &str) -> Result<StackItem, String> {
-        JsonSerializer::deserialize(json.as_bytes(), 64)
+        // C# defaults: JToken.Parse depth 10, engine MaxStackSize 2048.
+        JsonSerializer::deserialize(json.as_bytes(), 10, 2048)
     }
 
     #[test]
@@ -291,5 +319,22 @@ mod tests {
         assert_eq!(ser(&de(r#""test""#).unwrap()), r#""test""#);
         assert_eq!(ser(&de("[1,true,null]").unwrap()), "[1,true,null]");
         assert_eq!(ser(&de(r#"{"b":1,"a":2}"#).unwrap()), r#"{"b":1,"a":2}"#);
+    }
+
+    #[test]
+    fn deserialize_enforces_depth_and_item_limits() {
+        // Depth limit faults (C# JToken.Parse(json, maxDepth)).
+        assert!(JsonSerializer::deserialize(b"[[[1]]]", 2, 2048).is_err());
+        assert!(JsonSerializer::deserialize(b"[[[1]]]", 8, 2048).is_ok());
+
+        // Item-count limit faults like C# maxStackSize: a wide-but-shallow array
+        // would HALT without this guard but must FAULT to match C#.
+        // `[1,1,1,1,1]` = 1 (array) + 5 (elements) = 6 items.
+        assert!(JsonSerializer::deserialize(b"[1,1,1,1,1]", 10, 6).is_ok());
+        assert!(JsonSerializer::deserialize(b"[1,1,1,1,1]", 10, 5).is_err());
+
+        // A map charges 1 (map) + 2 per entry (entry + value): {"a":1} = 3.
+        assert!(JsonSerializer::deserialize(br#"{"a":1}"#, 10, 3).is_ok());
+        assert!(JsonSerializer::deserialize(br#"{"a":1}"#, 10, 2).is_err());
     }
 }
