@@ -1,13 +1,13 @@
 //! ContractManagement native contract.
 //!
-//! Concrete implementation of the read-side surface of the
-//! ContractManagement native contract. The full deploy / update /
-//! destroy mutating surface lives in the `neo-blockchain` reth-style
-//! service (which writes the storage entries this module reads), but
-//! the read surface (look up a deployed contract by hash) is consumed
-//! by oracle service, RPC, the application engine, and the tokens
-//! tracker, so it lives here so all those crates can share it without
-//! depending on `neo-blockchain`.
+//! Concrete implementation of the read-side surface plus the `destroy`
+//! writer of the ContractManagement native contract. The deploy /
+//! update mutating surface (NEF + manifest validation) lives in the
+//! `neo-blockchain` reth-style service (which writes the storage
+//! entries this module reads), but the read surface (look up a
+//! deployed contract by hash) is consumed by oracle service, RPC, the
+//! application engine, and the tokens tracker, so it lives here so all
+//! those crates can share it without depending on `neo-blockchain`.
 
 use crate::hashes::CONTRACT_MANAGEMENT_HASH;
 use neo_config::Hardfork;
@@ -18,6 +18,7 @@ use neo_primitives::{CallFlags, ContractParameterType, FindOptions, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
+use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -36,6 +37,13 @@ const PREFIX_CONTRACT: u8 = 8;
 /// Storage prefix for the contract-id → hash index (matches C#
 /// `ContractManagement.PREFIX_CONTRACT_HASH`).
 const PREFIX_CONTRACT_HASH: u8 = 12;
+
+/// C# `PolicyContract.Prefix_BlockedAccount` — written cross-natively here by
+/// `destroy` (C# `ContractManagement.Destroy` → `Policy.BlockAccountInternal`).
+const POLICY_PREFIX_BLOCKED_ACCOUNT: u8 = 15;
+/// C# `PolicyContract.Prefix_WhitelistedFeeContracts` — cleaned cross-natively
+/// here by `destroy` (C# `ContractManagement.Destroy` → `Policy.CleanWhitelist`).
+const POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS: u8 = 16;
 
 /// Lazily-initialised script-hash handle for the ContractManagement contract.
 pub static CONTRACT_MANAGEMENT_HASH_REF: LazyLock<UInt160> =
@@ -187,11 +195,104 @@ fn contract_state_to_bytes(state: &ContractState, method: &str) -> CoreResult<Ve
 
 /// Collects the `Prefix_ContractHash` storage entries (`id -> hash`) in
 /// forward-seek order, the backing set for C# `GetContractHashes`'s iterator.
+///
+/// C# reads the contract id back out of each key
+/// (`ReadInt32BigEndian(key.Key[1..])`) and keeps only `id >= 0`, which
+/// excludes the native contracts (negative ids; their big-endian
+/// two's-complement keys sort after every non-negative id).
 fn contract_hash_entries(snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
     let prefix_key = StorageKey::new(ContractManagement::ID, vec![PREFIX_CONTRACT_HASH]);
     snapshot
         .find(Some(&prefix_key), SeekDirection::Forward)
+        .filter(|(key, _)| {
+            let suffix = key.suffix();
+            suffix.len() >= 5
+                && i32::from_be_bytes([suffix[1], suffix[2], suffix[3], suffix[4]]) >= 0
+        })
         .collect()
+}
+
+/// C# `NativeContract.IsNative(hash)`: whether the hash belongs to one of the
+/// 11 registered native contracts.
+fn is_native_contract_hash(hash: &UInt160) -> bool {
+    [
+        *crate::hashes::CONTRACT_MANAGEMENT_HASH,
+        *crate::hashes::STDLIB_HASH,
+        *crate::hashes::CRYPTO_LIB_HASH,
+        *crate::hashes::LEDGER_CONTRACT_HASH,
+        *crate::hashes::NEO_TOKEN_HASH,
+        *crate::hashes::GAS_TOKEN_HASH,
+        *crate::hashes::POLICY_CONTRACT_HASH,
+        *crate::hashes::ROLE_MANAGEMENT_HASH,
+        *crate::hashes::ORACLE_CONTRACT_HASH,
+        *crate::hashes::NOTARY_HASH,
+        *crate::hashes::TREASURY_HASH,
+    ]
+    .contains(hash)
+}
+
+/// C# `PolicyContract.CleanWhitelist(engine, contract)` (PolicyContract.cs
+/// ~368), invoked cross-natively by `ContractManagement.Destroy`: deletes every
+/// `Prefix_WhitelistedFeeContracts ++ contract.Hash` entry and emits Policy's
+/// `WhitelistFeeChanged` event (`[hash, method, argCount, null]`) per removal.
+/// Entries decode as the C# `WhitelistedContract` interoperable
+/// `Struct[ContractHash, Method, ArgCount, FixedFee]`.
+fn policy_clean_whitelist(
+    engine: &mut ApplicationEngine,
+    contract: &ContractState,
+) -> CoreResult<()> {
+    let snapshot = engine.snapshot_cache();
+    let mut prefix_bytes = Vec::with_capacity(1 + 20);
+    prefix_bytes.push(POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS);
+    prefix_bytes.extend_from_slice(&contract.hash.to_bytes());
+    let prefix_key = StorageKey::new(crate::PolicyContract::ID, prefix_bytes);
+    let entries: Vec<(StorageKey, StorageItem)> = snapshot
+        .find(Some(&prefix_key), SeekDirection::Forward)
+        .collect();
+    for (key, item) in entries {
+        snapshot.delete(&key);
+        let decoded = BinarySerializer::deserialize(
+            &item.value_bytes(),
+            &ExecutionEngineLimits::default(),
+            None,
+        )
+        .map_err(|e| {
+            CoreError::invalid_operation(format!(
+                "ContractManagement::destroy: whitelist entry: {e}"
+            ))
+        })?;
+        let StackItem::Struct(fields) = decoded else {
+            return Err(CoreError::invalid_data(
+                "whitelisted-contract entry is not a struct",
+            ));
+        };
+        let items = fields.items();
+        let method = items
+            .get(1)
+            .ok_or_else(|| CoreError::invalid_data("whitelisted-contract entry missing method"))?
+            .as_bytes()
+            .map_err(|e| CoreError::invalid_data(format!("whitelist method: {e}")))?;
+        let arg_count = items
+            .get(2)
+            .ok_or_else(|| CoreError::invalid_data("whitelisted-contract entry missing argCount"))?
+            .as_int()
+            .map_err(|e| CoreError::invalid_data(format!("whitelist argCount: {e}")))?;
+        engine
+            .send_notification(
+                crate::PolicyContract::script_hash(),
+                "WhitelistFeeChanged".to_string(),
+                vec![
+                    StackItem::from_byte_string(contract.hash.to_bytes()),
+                    StackItem::from_byte_string(method),
+                    StackItem::from_int(arg_count),
+                    StackItem::Null,
+                ],
+            )
+            .map_err(|e| {
+                CoreError::invalid_operation(format!("ContractManagement::destroy: notify: {e}"))
+            })?;
+    }
+    Ok(())
 }
 
 /// C# `SetMinimumDeploymentFee` storage effect: overwrite
@@ -205,7 +306,7 @@ fn put_minimum_deployment_fee(snapshot: &DataCache, value: &BigInt) {
             ContractManagement::ID,
             vec![PREFIX_MINIMUM_DEPLOYMENT_FEE],
         ),
-        StorageItem::from_bytes(value.to_signed_bytes_le()),
+        StorageItem::from_bytes(crate::bigint_to_storage_bytes(value)),
     );
 }
 
@@ -277,6 +378,16 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             read_states,
             vec![],
             ContractParameterType::InteropInterface,
+        ),
+        // destroy(): the calling contract destroys itself. Not safe,
+        // States|AllowNotify, Void (C# ContractManagement.Destroy).
+        NativeMethod::new(
+            "destroy".to_string(),
+            1 << 15,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![],
+            ContractParameterType::Void,
         ),
     ]
 });
@@ -437,6 +548,55 @@ impl NativeContract for ContractManagement {
                 };
                 Ok(vec![u8::from(has)])
             }
+            "destroy" => {
+                // C# Destroy (~382): the CALLING contract destroys itself
+                // (hash = engine.CallingScriptHash; a missing calling context
+                // is the C# null-deref fault).
+                let hash = engine.get_calling_script_hash().ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "ContractManagement::destroy requires a calling contract",
+                    )
+                })?;
+                // C#: `if (contract is null) return;` — a non-contract caller
+                // is a successful no-op.
+                let Some(contract) = Self::get_contract_from_snapshot(&snapshot, &hash)? else {
+                    return Ok(Vec::new());
+                };
+                // Delete the per-contract record and the id -> hash index entry.
+                snapshot.delete(&StorageKey::new(Self::ID, contract_storage_key(&hash)));
+                snapshot.delete(&StorageKey::new(
+                    Self::ID,
+                    contract_id_storage_key(contract.id),
+                ));
+                // Delete ALL of the contract's own storage (C# Find over
+                // `StorageKey.CreateSearchPrefix(contract.Id, empty)`).
+                let search_prefix = StorageKey::new(contract.id, Vec::new());
+                let keys: Vec<StorageKey> = snapshot
+                    .find(Some(&search_prefix), SeekDirection::Forward)
+                    .map(|(key, _)| key)
+                    .collect();
+                for key in keys {
+                    snapshot.delete(&key);
+                }
+                // C#: `await Policy.BlockAccountInternal(engine, hash)` — lock
+                // the destroyed contract (the bool result is discarded).
+                crate::policy_contract::block_account_internal(engine, &hash)?;
+                // C#: `Policy.CleanWhitelist(engine, contract)`.
+                policy_clean_whitelist(engine, &contract)?;
+                // Emit the Destroy event with the destroyed hash.
+                engine
+                    .send_notification(
+                        Self::script_hash(),
+                        "Destroy".to_string(),
+                        vec![StackItem::from_byte_string(hash.to_bytes())],
+                    )
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "ContractManagement::destroy: notify: {e}"
+                        ))
+                    })?;
+                Ok(Vec::new())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "ContractManagement method '{other}' is not implemented"
             ))),
@@ -466,7 +626,8 @@ mod tests {
                 "isContract",
                 "hasMethod",
                 "setMinimumDeploymentFee",
-                "getContractHashes"
+                "getContractHashes",
+                "destroy"
             ]
         );
         // getContractHashes is a safe, ReadStates, no-arg iterator reader.
@@ -508,6 +669,20 @@ mod tests {
         assert_eq!(is_contract.return_type, ContractParameterType::Boolean);
         assert_eq!(is_contract.cpu_fee, 1 << 14);
         assert_eq!(is_contract.active_in, Some(Hardfork::HfEchidna));
+
+        // destroy(): not safe, States|AllowNotify, no params, Void, no hardfork
+        // (C# [ContractMethod(CpuFee = 1 << 15,
+        // RequiredCallFlags = CallFlags.States | CallFlags.AllowNotify)]).
+        let destroy = c.methods().iter().find(|m| m.name == "destroy").unwrap();
+        assert!(!destroy.safe);
+        assert_eq!(
+            destroy.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+        );
+        assert!(destroy.parameters.is_empty());
+        assert_eq!(destroy.return_type, ContractParameterType::Void);
+        assert_eq!(destroy.cpu_fee, 1 << 15);
+        assert!(destroy.active_in.is_none());
     }
 
     #[test]
@@ -558,6 +733,138 @@ mod tests {
         // Forward-seek order: id 1 before id 2 (big-endian id keys sort ascending).
         assert_eq!(entries[0].1.value_bytes().to_vec(), vec![0xAA; 20]);
         assert_eq!(entries[1].1.value_bytes().to_vec(), vec![0xBB; 20]);
+    }
+
+    #[test]
+    fn contract_hash_entries_skips_native_negative_ids() {
+        // C# GetContractHashes filters `ReadInt32BigEndian(key.Key[1..]) >= 0`:
+        // native contracts (negative ids) never appear in the iterator.
+        let cache = DataCache::new(false);
+        for id in [-1i32, -11] {
+            let mut key = vec![PREFIX_CONTRACT_HASH];
+            key.extend_from_slice(&id.to_be_bytes());
+            cache.add(
+                StorageKey::new(ContractManagement::ID, key),
+                StorageItem::from_bytes(vec![0xCC; 20]),
+            );
+        }
+        let mut user = vec![PREFIX_CONTRACT_HASH];
+        user.extend_from_slice(&1i32.to_be_bytes());
+        cache.add(
+            StorageKey::new(ContractManagement::ID, user),
+            StorageItem::from_bytes(vec![0xDD; 20]),
+        );
+
+        let entries = contract_hash_entries(&cache);
+        assert_eq!(entries.len(), 1, "native (negative-id) entries are skipped");
+        assert_eq!(entries[0].1.value_bytes().to_vec(), vec![0xDD; 20]);
+        // id 0 is the boundary: C# keeps `Id >= 0`.
+        let mut zero = vec![PREFIX_CONTRACT_HASH];
+        zero.extend_from_slice(&0i32.to_be_bytes());
+        cache.add(
+            StorageKey::new(ContractManagement::ID, zero),
+            StorageItem::from_bytes(vec![0xEE; 20]),
+        );
+        assert_eq!(contract_hash_entries(&cache).len(), 2);
+    }
+
+    #[test]
+    fn get_contract_by_id_round_trips_through_the_id_index() {
+        // Deploy-shaped fixture: the per-contract record (prefix 8) plus the
+        // big-endian id -> hash index entry (prefix 12), as written by C#
+        // Deploy; GetContractById resolves the id through the index and then
+        // dereferences the hash.
+        let cache = DataCache::new(false);
+        let hash = UInt160::from_bytes(&[0x42u8; 20]).unwrap();
+        let state = ContractState::new_native(7, hash, "TestUserContract".to_string());
+        let mut writer = neo_io::BinaryWriter::new();
+        state.serialize(&mut writer).expect("serialize contract state");
+        cache.add(
+            StorageKey::new(ContractManagement::ID, contract_storage_key(&hash)),
+            StorageItem::from_bytes(writer.to_bytes()),
+        );
+        cache.add(
+            StorageKey::new(ContractManagement::ID, contract_id_storage_key(7)),
+            StorageItem::from_bytes(hash.to_bytes().to_vec()),
+        );
+
+        let fetched = ContractManagement::get_contract_by_id_from_snapshot(&cache, 7)
+            .unwrap()
+            .expect("id 7 resolves to the deployed contract");
+        assert_eq!(fetched.id, 7);
+        assert_eq!(fetched.hash, hash);
+        // A different id still misses.
+        assert!(ContractManagement::get_contract_by_id_from_snapshot(&cache, 8)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn has_method_resolves_contract_from_snapshot() {
+        use neo_manifest::{ContractMethodDescriptor, ContractParameterDefinition};
+        // The hasMethod invoke arm = GetContract(hash) -> Abi.GetMethod(name,
+        // pcount) != null; exercise the same composition over a seeded record.
+        let cache = DataCache::new(false);
+        let hash = UInt160::from_bytes(&[0x51u8; 20]).unwrap();
+        let mut state = ContractState::new_native(9, hash, "HasMethodFixture".to_string());
+        state.manifest.abi.methods.push(ContractMethodDescriptor {
+            name: "transfer".to_string(),
+            parameters: vec![ContractParameterDefinition::default(); 4],
+            ..Default::default()
+        });
+        let mut writer = neo_io::BinaryWriter::new();
+        state.serialize(&mut writer).expect("serialize contract state");
+        cache.add(
+            StorageKey::new(ContractManagement::ID, contract_storage_key(&hash)),
+            StorageItem::from_bytes(writer.to_bytes()),
+        );
+
+        let fetched = ContractManagement::get_contract_from_snapshot(&cache, &hash)
+            .unwrap()
+            .expect("contract record resolves");
+        // Positive: exact pcount and the -1 wildcard.
+        assert!(abi_has_method(&fetched.manifest, "transfer", 4));
+        assert!(abi_has_method(&fetched.manifest, "transfer", -1));
+        // Negative: wrong pcount / unknown name.
+        assert!(!abi_has_method(&fetched.manifest, "transfer", 3));
+        assert!(!abi_has_method(&fetched.manifest, "balanceOf", -1));
+        // Missing contract -> C# returns false before any ABI lookup.
+        let absent = UInt160::from_bytes(&[0x52u8; 20]).unwrap();
+        assert!(ContractManagement::get_contract_from_snapshot(&cache, &absent)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn is_native_contract_hash_covers_all_eleven_natives() {
+        for native in [
+            *crate::hashes::CONTRACT_MANAGEMENT_HASH,
+            *crate::hashes::STDLIB_HASH,
+            *crate::hashes::CRYPTO_LIB_HASH,
+            *crate::hashes::LEDGER_CONTRACT_HASH,
+            *crate::hashes::NEO_TOKEN_HASH,
+            *crate::hashes::GAS_TOKEN_HASH,
+            *crate::hashes::POLICY_CONTRACT_HASH,
+            *crate::hashes::ROLE_MANAGEMENT_HASH,
+            *crate::hashes::ORACLE_CONTRACT_HASH,
+            *crate::hashes::NOTARY_HASH,
+            *crate::hashes::TREASURY_HASH,
+        ] {
+            assert!(is_native_contract_hash(&native));
+        }
+        let user = UInt160::from_bytes(&[0x99u8; 20]).unwrap();
+        assert!(!is_native_contract_hash(&user));
+    }
+
+    #[test]
+    fn policy_blocked_account_key_matches_policy_layout() {
+        // The cross-native blocked-account key must match PolicyContract's own
+        // layout: (PolicyContract.ID, [Prefix_BlockedAccount(15), account]).
+        let account = UInt160::from_bytes(&[0x77u8; 20]).unwrap();
+        let key = crate::policy_contract::blocked_account_key(&account);
+        assert_eq!(key.id, crate::PolicyContract::ID);
+        assert_eq!(key.suffix()[0], POLICY_PREFIX_BLOCKED_ACCOUNT);
+        assert_eq!(&key.suffix()[1..], account.to_bytes().as_slice());
     }
 
     #[test]
@@ -680,6 +987,282 @@ mod tests {
             )
             .unwrap(),
             5_00000000
+        );
+    }
+}
+
+/// Engine-level tests for `destroy` and its `Policy.BlockAccountInternal` /
+/// `Policy.CleanWhitelist` ports, using the witness-gated script-execution
+/// harness proven in `neo_token::governance_writer_tests`.
+#[cfg(test)]
+mod destroy_engine_tests {
+    use super::*;
+    use neo_config::ProtocolSettings;
+    use neo_execution::native_contract::build_native_contract_state;
+    use neo_io::BinaryWriter;
+    use neo_payloads::signer::Signer;
+    use neo_payloads::transaction::Transaction;
+    use neo_payloads::witness::Witness;
+    use neo_payloads::{Block, BlockHeader};
+    use neo_primitives::{TriggerType, Verifiable, WitnessScope};
+    use neo_script_builder::ScriptBuilder;
+    use neo_vm_rs::VmState;
+    use std::sync::Arc;
+
+    /// Writes a serialized contract record under `Prefix_Contract ++ hash`.
+    fn put_contract_record(cache: &DataCache, state: &ContractState) {
+        let mut writer = BinaryWriter::new();
+        state.serialize(&mut writer).expect("serialize contract state");
+        cache.add(
+            StorageKey::new(ContractManagement::ID, contract_storage_key(&state.hash)),
+            StorageItem::from_bytes(writer.to_bytes()),
+        );
+    }
+
+    /// Builds the entry script `System.Contract.Call(CM, "destroy", [])`.
+    fn destroy_script() -> Vec<u8> {
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push_int(0);
+        builder.emit_pack();
+        builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
+        builder.emit_push("destroy".as_bytes());
+        builder.emit_push(&ContractManagement::script_hash().to_array());
+        builder
+            .emit_syscall("System.Contract.Call")
+            .expect("System.Contract.Call");
+        builder.to_array()
+    }
+
+    fn engine_for(
+        snapshot: Arc<DataCache>,
+        persisting_block: Option<Block>,
+        settings: ProtocolSettings,
+    ) -> ApplicationEngine {
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+        ApplicationEngine::new(
+            TriggerType::Application,
+            Some(container),
+            snapshot,
+            persisting_block,
+            settings,
+            100_00000000,
+            None,
+        )
+        .expect("engine builds")
+    }
+
+    #[test]
+    fn destroy_removes_record_index_storage_and_blocks_hash() {
+        crate::install();
+        let cache = DataCache::new(false);
+        // Seed the ContractManagement native record so System.Contract.Call
+        // resolves the callee.
+        put_contract_record(
+            &cache,
+            &build_native_contract_state(&ContractManagement, &ProtocolSettings::default(), 0),
+        );
+
+        // The entry script IS the calling contract: pin its hash, then deploy
+        // a user contract under that hash (record + id index + one storage
+        // row + one Policy whitelist entry).
+        let script = destroy_script();
+        let self_hash = UInt160::from_script(&script);
+        let user = ContractState::new_native(7, self_hash, "SelfDestructFixture".to_string());
+        put_contract_record(&cache, &user);
+        let index_key = StorageKey::new(ContractManagement::ID, contract_id_storage_key(7));
+        cache.add(index_key.clone(), StorageItem::from_bytes(self_hash.to_bytes().to_vec()));
+        let user_row = StorageKey::new(7, vec![0x01]);
+        cache.add(user_row.clone(), StorageItem::from_bytes(vec![0xEE]));
+        // A whitelist entry for the contract (C# WhitelistedContract
+        // Struct[ContractHash, Method, ArgCount, FixedFee]) that CleanWhitelist
+        // must remove and report.
+        let mut wl_suffix = vec![POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS];
+        wl_suffix.extend_from_slice(&self_hash.to_bytes());
+        wl_suffix.extend_from_slice(&0i32.to_be_bytes());
+        let wl_key = StorageKey::new(crate::PolicyContract::ID, wl_suffix);
+        let wl_value = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![
+                StackItem::from_byte_string(self_hash.to_bytes()),
+                StackItem::from_byte_string("transfer".as_bytes().to_vec()),
+                StackItem::from_int(4),
+                StackItem::from_int(0),
+            ]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        cache.add(wl_key.clone(), StorageItem::from_bytes(wl_value));
+        let snapshot = Arc::new(cache);
+
+        // HF_Faun is unscheduled on default (MainNet) settings, so this runs
+        // the pre-Faun BlockAccountInternal branch (empty blocked value).
+        let mut engine =
+            engine_for(Arc::clone(&snapshot), None, ProtocolSettings::default());
+        engine
+            .load_script(script, CallFlags::ALL, Some(self_hash))
+            .expect("script loads");
+        assert_eq!(engine.execute_allow_fault(), VmState::HALT, "destroy must HALT");
+
+        // The contract record, id index, and contract storage are gone.
+        assert!(
+            snapshot
+                .get(&StorageKey::new(ContractManagement::ID, contract_storage_key(&self_hash)))
+                .is_none(),
+            "contract record deleted"
+        );
+        assert!(snapshot.get(&index_key).is_none(), "id->hash index entry deleted");
+        assert!(snapshot.get(&user_row).is_none(), "contract storage deleted");
+        // The destroyed hash is locked via Policy's blocked-account entry,
+        // pre-Faun with an EMPTY value (C# StorageItem([])).
+        let blocked = snapshot
+            .get(&crate::policy_contract::blocked_account_key(&self_hash))
+            .expect("destroyed contract is blocked");
+        assert!(blocked.value_bytes().is_empty(), "pre-Faun blocked value is empty");
+        // The whitelist entry was cleaned.
+        assert!(snapshot.get(&wl_key).is_none(), "whitelist entry deleted");
+
+        // Events: Policy's WhitelistFeeChanged for the cleaned entry, then
+        // ContractManagement's Destroy with the destroyed hash.
+        let notifications = engine.notifications();
+        let destroy_event = notifications
+            .iter()
+            .find(|n| n.event_name == "Destroy")
+            .expect("Destroy event emitted");
+        assert_eq!(destroy_event.script_hash, ContractManagement::script_hash());
+        assert_eq!(
+            destroy_event.state[0].as_bytes().unwrap(),
+            self_hash.to_bytes().to_vec()
+        );
+        let wl_event = notifications
+            .iter()
+            .find(|n| n.event_name == "WhitelistFeeChanged")
+            .expect("WhitelistFeeChanged event emitted");
+        assert_eq!(wl_event.script_hash, crate::PolicyContract::script_hash());
+        assert_eq!(wl_event.state[1].as_bytes().unwrap(), b"transfer".to_vec());
+        assert_eq!(wl_event.state[2].as_int().unwrap(), BigInt::from(4));
+        assert!(matches!(wl_event.state[3], StackItem::Null));
+    }
+
+    #[test]
+    fn destroy_is_a_noop_for_a_non_contract_caller() {
+        crate::install();
+        let cache = DataCache::new(false);
+        put_contract_record(
+            &cache,
+            &build_native_contract_state(&ContractManagement, &ProtocolSettings::default(), 0),
+        );
+        let script = destroy_script();
+        let self_hash = UInt160::from_script(&script);
+        let snapshot = Arc::new(cache);
+
+        // No contract record for the calling script: C# `if (contract is null)
+        // return;` — a successful no-op that writes nothing.
+        let mut engine =
+            engine_for(Arc::clone(&snapshot), None, ProtocolSettings::default());
+        engine
+            .load_script(script, CallFlags::ALL, Some(self_hash))
+            .expect("script loads");
+        assert_eq!(engine.execute_allow_fault(), VmState::HALT, "no-op destroy HALTs");
+        assert!(
+            snapshot.get(&crate::policy_contract::blocked_account_key(&self_hash)).is_none(),
+            "no blocked-account entry for a no-op destroy"
+        );
+        assert!(
+            engine.notifications().iter().all(|n| n.event_name != "Destroy"),
+            "no Destroy event for a no-op destroy"
+        );
+    }
+
+    #[test]
+    fn block_account_internal_faun_writes_timestamp_and_is_idempotent() {
+        crate::install();
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfFaun, 0);
+        let mut header = BlockHeader::default();
+        header.set_index(1);
+        header.set_timestamp(1_700_000_123_456);
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = engine_for(
+            Arc::clone(&snapshot),
+            Some(Block::from_parts(header, vec![])),
+            settings,
+        );
+
+        let account = UInt160::from_bytes(&[0x33u8; 20]).unwrap();
+        // First block: post-Faun the entry stores GetTime() (the persisting
+        // block's timestamp) for Policy's recoverFund.
+        assert!(crate::policy_contract::block_account_internal(&mut engine, &account).unwrap());
+        let item = snapshot
+            .get(&crate::policy_contract::blocked_account_key(&account))
+            .expect("blocked entry written");
+        assert_eq!(
+            BigInt::from_signed_bytes_le(&item.value_bytes()),
+            BigInt::from(1_700_000_123_456i64)
+        );
+        // Already blocked -> false, nothing rewritten (C# returns early).
+        assert!(!crate::policy_contract::block_account_internal(&mut engine, &account).unwrap());
+    }
+
+    #[test]
+    fn block_account_internal_rejects_native_hashes() {
+        crate::install();
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = engine_for(Arc::clone(&snapshot), None, ProtocolSettings::default());
+        // C#: "Cannot block a native contract."
+        let neo_hash = *crate::hashes::NEO_TOKEN_HASH;
+        let err = crate::policy_contract::block_account_internal(&mut engine, &neo_hash).unwrap_err();
+        assert!(err.to_string().contains("native"));
+        assert!(snapshot.get(&crate::policy_contract::blocked_account_key(&neo_hash)).is_none());
+    }
+
+    #[test]
+    fn block_account_internal_faun_runs_vote_transition_for_neo_holders() {
+        // C# BlockAccountInternal post-Faun runs NEO.VoteInternal(account,
+        // null): for a NEO-holding account the full vote transition executes
+        // (here a no-op un-vote — the account votes for nobody), then the
+        // blocked entry is written with the persisting block's timestamp.
+        crate::install();
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfFaun, 0);
+        let mut header = BlockHeader::default();
+        header.set_index(1);
+        header.set_timestamp(1_700_000_000_000);
+        let cache = DataCache::new(false);
+        let account = UInt160::from_bytes(&[0x44u8; 20]).unwrap();
+        // Seed a NeoToken account state holding 100 NEO.
+        let mut neo_key = vec![crate::NEP17_PREFIX_ACCOUNT];
+        neo_key.extend_from_slice(&account.to_bytes());
+        let neo_state = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![
+                StackItem::from_int(100),
+                StackItem::from_int(0),
+                StackItem::Null,
+                StackItem::from_int(0),
+            ]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        cache.add(
+            StorageKey::new(crate::NeoToken::ID, neo_key),
+            StorageItem::from_bytes(neo_state),
+        );
+        let snapshot = Arc::new(cache);
+        let mut engine = engine_for(
+            Arc::clone(&snapshot),
+            Some(Block::from_parts(header, vec![])),
+            settings,
+        );
+
+        assert!(crate::policy_contract::block_account_internal(&mut engine, &account).unwrap());
+        let item = snapshot
+            .get(&crate::policy_contract::blocked_account_key(&account))
+            .expect("blocked entry written after the vote transition");
+        assert_eq!(
+            BigInt::from_signed_bytes_le(&item.value_bytes()),
+            BigInt::from(1_700_000_000_000i64),
+            "entry stores GetTime() for recoverFund"
         );
     }
 }
