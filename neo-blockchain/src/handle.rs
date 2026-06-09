@@ -30,6 +30,7 @@ use std::sync::Arc;
 
 use neo_payloads::Block;
 use neo_primitives::UInt256;
+use neo_runtime::ServiceError;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::command::{AddTransactionReply, BlockchainCommand};
@@ -210,20 +211,11 @@ impl BlockchainHandle {
     }
 }
 
-/// Minimal error vocabulary used by the new request/response API.
-///
-/// Mirrors the public surface of `neo_runtime::ServiceError` (which is
-/// a `thiserror` enum with several variants). We intentionally
-/// duplicate the small subset we use here so the handle can be
-/// constructed without dragging the rest of `neo_runtime` into the
-/// public surface of the blockchain handle.
-#[derive(Debug, thiserror::Error)]
-pub enum ServiceError {
-    /// The targeted service is not running, the command channel is closed,
-    /// or the underlying service has been shut down.
-    #[error("service unavailable: {0}")]
-    ServiceUnavailable(String),
-}
+// The request/response methods above surface failures through the canonical
+// `neo_runtime::ServiceError` (imported at the top of this module) rather than
+// a duplicated local subset — `neo_runtime` is already part of this crate's
+// public surface (see the `RuntimeEvent` / `RuntimeCommand` re-exports), so the
+// single shared error vocabulary keeps the runtime layer overlap-free.
 
 // =============================================================================
 // Legacy actor-style back-compat shims

@@ -95,7 +95,7 @@ pub use command::BlockchainCommand;
 pub use neo_runtime::BlockchainEvent;
 pub use fill_completed::FillCompleted;
 pub use fill_memory_pool::FillMemoryPool;
-pub use handle::{BlockchainHandle, ServiceError};
+pub use handle::BlockchainHandle;
 pub use import::Import;
 pub use import_completed::ImportCompleted;
 pub use internal::{ImportDisposition, UnverifiedBlocksList};
@@ -112,7 +112,7 @@ pub use service::{Blockchain, BlockchainService};
 
 pub use neo_runtime::{
     BlockchainCommand as RuntimeCommand, BlockchainEvent as RuntimeEvent,
-    BlockchainHandle as RuntimeHandle,
+    BlockchainHandle as RuntimeHandle, ServiceError,
 };
 
 pub use header_cache::HeaderCache;
