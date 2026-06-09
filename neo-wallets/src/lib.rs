@@ -73,11 +73,14 @@ pub mod bip39;
 pub mod version;
 /// NEP-17 transfer output descriptor.
 pub mod transfer_output;
+/// NEP-17 asset descriptor (name / symbol / decimals lookup).
+pub mod asset_descriptor;
 
 // ============================================================================
 // Public re-exports
 // ============================================================================
 
+pub use asset_descriptor::AssetDescriptor;
 pub use bip32::{ExtendedKey, KeyPath};
 pub use bip39::{get_mnemonic_code, get_mnemonic_code_with_language, mnemonic_to_entropy};
 pub use key_pair::KeyPair;

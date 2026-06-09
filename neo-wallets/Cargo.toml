@@ -25,6 +25,7 @@ neo-script-builder = { workspace = true }
 neo-ledger-types = { workspace = true }
 neo-payloads = { workspace = true }
 neo-execution = { workspace = true }
+neo-native-contracts = { workspace = true }
 neo-manifest = { workspace = true }
 neo-vm-rs = { workspace = true }
 

@@ -302,6 +302,21 @@ impl NativeContract for ContractManagement {
         self
     }
 
+    /// Resolves a deployed contract's state from storage.
+    ///
+    /// ContractManagement owns the per-contract records, so it backs the
+    /// engine's `fetch_contract` storage path (via the native-contract
+    /// provider seam): `System.Contract.Call` to any deployed contract —
+    /// native or user — resolves its NEF/manifest through here. Delegates to
+    /// the read helper used by the `getContract` invoke arm.
+    fn lookup_contract_state(
+        &self,
+        snapshot: &DataCache,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        Self::get_contract_from_snapshot(snapshot, hash)
+    }
+
     fn invoke(
         &self,
         engine: &mut ApplicationEngine,
