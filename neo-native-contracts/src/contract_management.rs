@@ -162,6 +162,17 @@ fn parse_hash_arg(args: &[Vec<u8>], method: &str) -> CoreResult<UInt160> {
     })
 }
 
+/// C# `ContractAbi.GetMethod(name, pcount) != null`: true when the manifest ABI
+/// declares a method named `name` whose parameter count matches `pcount`, where
+/// `pcount == -1` matches any count.
+fn abi_has_method(manifest: &neo_manifest::ContractManifest, name: &str, pcount: i32) -> bool {
+    manifest
+        .abi
+        .methods
+        .iter()
+        .any(|m| m.name == name && (pcount == -1 || m.parameters.len() as i32 == pcount))
+}
+
 /// Marshals a `ContractState` to the Array return bytes (C# `ToStackItem` +
 /// `BinarySerializer`) — shared by `getContract` / `getContractById`. A miss is
 /// the caller's responsibility (an empty payload encodes the C# `null`).
@@ -208,6 +219,20 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             true,
             read_states,
             vec![ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfEchidna),
+        // HF_Echidna: hasMethod(hash, method, pcount) -> bool.
+        NativeMethod::new(
+            "hasMethod".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::String,
+                ContractParameterType::Integer,
+            ],
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfEchidna),
@@ -284,6 +309,33 @@ impl NativeContract for ContractManagement {
                 // C# `IsContract` = snapshot.Contains(key(Prefix_Contract, hash)).
                 Ok(vec![u8::from(Self::is_contract(&snapshot, &hash))])
             }
+            "hasMethod" => {
+                let hash = parse_hash_arg(args, "hasMethod")?;
+                let method_name = args
+                    .get(1)
+                    .map(|b| String::from_utf8_lossy(b).into_owned())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "ContractManagement::hasMethod requires a method name",
+                        )
+                    })?;
+                let pcount = args
+                    .get(2)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "ContractManagement::hasMethod requires a parameter count",
+                        )
+                    })?;
+                // C#: false if the contract does not exist; otherwise whether its
+                // manifest ABI declares the (method, pcount) method.
+                let has = match Self::get_contract_from_snapshot(&snapshot, &hash)? {
+                    Some(state) => abi_has_method(&state.manifest, &method_name, pcount),
+                    None => false,
+                };
+                Ok(vec![u8::from(has)])
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "ContractManagement method '{other}' is not implemented"
             ))),
@@ -306,8 +358,18 @@ mod tests {
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(
             names,
-            ["getContract", "getContractById", "getMinimumDeploymentFee", "isContract"]
+            [
+                "getContract",
+                "getContractById",
+                "getMinimumDeploymentFee",
+                "isContract",
+                "hasMethod"
+            ]
         );
+        let has_method = c.methods().iter().find(|m| m.name == "hasMethod").unwrap();
+        assert_eq!(has_method.active_in, Some(Hardfork::HfEchidna));
+        assert_eq!(has_method.return_type, ContractParameterType::Boolean);
+        assert_eq!(has_method.parameters.len(), 3);
 
         let get_contract = c.methods().iter().find(|m| m.name == "getContract").unwrap();
         assert_eq!(get_contract.parameters, vec![ContractParameterType::Hash160]);
@@ -346,6 +408,30 @@ mod tests {
         assert!(ContractManagement::get_contract_by_id_from_snapshot(&cache, 42)
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn abi_has_method_matches_name_and_pcount() {
+        use neo_manifest::{
+            ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+        };
+        let mut manifest = ContractManifest::new("test".to_string());
+        manifest.abi.methods.push(ContractMethodDescriptor {
+            name: "transfer".to_string(),
+            parameters: vec![ContractParameterDefinition::default(); 4],
+            ..Default::default()
+        });
+
+        // Exact (name, count) match.
+        assert!(abi_has_method(&manifest, "transfer", 4));
+        // Wrong count -> no match.
+        assert!(!abi_has_method(&manifest, "transfer", 3));
+        // pcount == -1 matches any count.
+        assert!(abi_has_method(&manifest, "transfer", -1));
+        // Unknown name -> no match.
+        assert!(!abi_has_method(&manifest, "balanceOf", -1));
+        // Empty manifest -> no match.
+        assert!(!abi_has_method(&ContractManifest::new("e".to_string()), "transfer", -1));
     }
 
     #[test]
