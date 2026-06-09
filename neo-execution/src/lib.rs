@@ -62,6 +62,8 @@ pub mod native_contract_provider;
 // ============================================================================
 // Core smart-contract data types
 // ============================================================================
+/// `InteropInterface` wrapper for BLS12-381 curve points (CryptoLib).
+pub mod bls12381_interop;
 pub mod contract;
 pub mod contract_parameter;
 pub mod contract_parameters_context;
@@ -84,6 +86,7 @@ pub mod storage_item_ext;
 // Re-exports at the crate root
 // ============================================================================
 pub use application_engine::ApplicationEngine;
+pub use bls12381_interop::Bls12381Interop;
 pub use contract::Contract;
 pub use contract_parameter::ContractParameter;
 pub use contract_parameters_context::ContractParametersContext;

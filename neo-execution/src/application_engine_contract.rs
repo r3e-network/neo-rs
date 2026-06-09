@@ -7,9 +7,9 @@ use neo_manifest::CallFlags;
 use neo_primitives::ContractParameterType;
 use crate::env_flags::env_flag_enabled;
 use crate::execution_context_state::ExecutionContextState;
+use crate::bls12381_interop::Bls12381Interop;
 use crate::iterators::IteratorInterop;
-// Bls12381Interop validation moved to CryptoLib native contract
-// (the engine no longer imports the blst-backed interop type directly).
+use neo_crypto::bls12381_point::{G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE};
 use neo_primitives::UInt160;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
@@ -443,7 +443,16 @@ fn decode_native_result(
                 ))));
             }
 
-            let _ = &result; // validation moved to native contract
+            // A BLS12-381 point: the native CryptoLib methods
+            // (bls12381Deserialize / …Add / …Mul / …Pairing) return a point's
+            // canonical encoding — 48 (G1) / 96 (G2) / 576 (Gt) bytes. Wrap it
+            // as a typed interop object so a following BLS call (or
+            // bls12381Serialize) accepts it while a plain byte string is
+            // rejected, matching C#'s `InteropInterface` parameter binding.
+            if matches!(result.len(), G1_COMPRESSED_SIZE | G2_COMPRESSED_SIZE | GT_SIZE) {
+                return Ok(Some(StackItem::from_interface(Bls12381Interop::new(result))));
+            }
+
             Ok(Some(StackItem::from_byte_string(result)))
         }
         _ => Ok(Some(StackItem::from_byte_string(result))),
@@ -455,14 +464,14 @@ fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
     if let Ok(iterator) = item.as_interface::<IteratorInterop>() {
         return Ok(iterator.id().to_le_bytes().to_vec());
     }
-    match &item {
-        StackItem::ByteString(bytes) => {
-            // Bls12381Interop validation moved to CryptoLib native contract
-            let _ = bytes;
-            Ok(bytes.clone())
-        }
-        _ => Err("Stack item is not an InteropInterface".to_string()),
+    // BLS12-381 points carry their canonical encoding directly.
+    if let Ok(point) = item.as_interface::<Bls12381Interop>() {
+        return Ok(point.bytes().to_vec());
     }
+    // Anything else (e.g. a plain byte string) is NOT a live interop object;
+    // rejecting it matches C#, where binding an `InteropInterface` parameter
+    // from a non-interface stack item throws and faults the VM.
+    Err("Stack item is not an InteropInterface".to_string())
 }
 
 fn contract_native_on_persist_handler(
@@ -529,5 +538,46 @@ mod tests {
             .expect("decode")
             .expect("stack item");
         assert!(matches!(decoded, StackItem::Array(_)));
+    }
+
+    #[test]
+    fn decode_native_result_interop_wraps_bls_point_lengths() {
+        // A 4-byte InteropInterface payload is an iterator handle.
+        let iter = decode_native_result(ContractParameterType::InteropInterface, vec![1, 0, 0, 0])
+            .expect("decode")
+            .expect("stack item");
+        assert!(iter.as_interface::<IteratorInterop>().is_ok());
+
+        // 48 / 96 / 576-byte payloads are BLS12-381 points → Bls12381Interop.
+        for len in [G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE] {
+            let bytes = vec![0u8; len];
+            let item = decode_native_result(ContractParameterType::InteropInterface, bytes.clone())
+                .expect("decode")
+                .expect("stack item");
+            let point = item
+                .as_interface::<Bls12381Interop>()
+                .expect("BLS interop wrapper");
+            assert_eq!(point.bytes(), bytes.as_slice());
+            // It is NOT an iterator (the two interop kinds are distinct).
+            assert!(item.as_interface::<IteratorInterop>().is_err());
+        }
+    }
+
+    #[test]
+    fn interop_bytes_round_trips_typed_objects_and_rejects_plain_bytestring() {
+        // A Bls12381Interop operand unwraps back to its canonical bytes.
+        let bytes = vec![7u8; GT_SIZE];
+        let item = StackItem::from_interface(Bls12381Interop::new(bytes.clone()));
+        assert_eq!(stack_item_to_interop_bytes(item).expect("bls bytes"), bytes);
+
+        // An IteratorInterop operand encodes its handle id as 4 LE bytes.
+        let iter = StackItem::from_interface(IteratorInterop::new(5));
+        assert_eq!(stack_item_to_interop_bytes(iter).expect("iter id"), 5u32.to_le_bytes());
+
+        // A plain ByteString is NOT a live interop object: C# faults when binding
+        // an InteropInterface parameter from a non-interface item, so we must err
+        // rather than silently accept the raw bytes.
+        let raw = StackItem::from_byte_string(vec![0u8; GT_SIZE]);
+        assert!(stack_item_to_interop_bytes(raw).is_err());
     }
 }

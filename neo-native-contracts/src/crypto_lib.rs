@@ -1,18 +1,21 @@
 //! CryptoLib native contract (id -3).
 //!
-//! Implements the C# `Neo.SmartContract.Native.CryptoLib` hash primitives
-//! (`sha256`, `ripemd160`, `keccak256`) with byte-for-byte parity, dispatched
-//! through the [`NativeContract`] trait so the application engine can invoke
-//! them. The remaining CryptoLib surface (`murmur32`, `verifyWithECDsa`,
-//! `verifyWithEd25519`, `recoverSecp256K1`, and the BLS12-381 operations) is
-//! the next increment; the methods declared in [`CryptoLib::methods`] all have
-//! working implementations — none are stubs.
+//! Implements the full C# `Neo.SmartContract.Native.CryptoLib` surface with
+//! byte-for-byte parity, dispatched through the [`NativeContract`] trait so the
+//! application engine can invoke it: the hash primitives (`sha256`,
+//! `ripemd160`, `keccak256`, `murmur32`), signature verification
+//! (`verifyWithECDsa`, `verifyWithEd25519`, `recoverSecp256K1`), and the
+//! BLS12-381 operations (`bls12381Serialize` / `…Deserialize` / `…Equal` /
+//! `…Add` / `…Mul` / `…Pairing`). The BLS points cross the native boundary as
+//! `InteropInterface` objects (`neo_execution::Bls12381Interop`) wrapping the
+//! canonical encoding, backed by `neo_crypto::Bls12381Point`. Every method
+//! declared in [`CryptoLib::methods`] has a working implementation — no stubs.
 
 use std::any::Any;
 use std::sync::LazyLock;
 
 use neo_config::Hardfork;
-use neo_crypto::{murmur32, Crypto, HashAlgorithm, NamedCurveHash, Secp256k1Crypto};
+use neo_crypto::{murmur32, Bls12381Point, Crypto, HashAlgorithm, NamedCurveHash, Secp256k1Crypto};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
@@ -45,6 +48,13 @@ impl CryptoLib {
 
 // C# `CpuFee = 1 << 15` for sha256 / ripemd160 / keccak256.
 const CPU_FEE_HASH: i64 = 1 << 15;
+
+// C# CryptoLib BLS12-381 CpuFees (CryptoLib.BLS12_381.cs).
+const CPU_FEE_BLS_SERIALIZE: i64 = 1 << 19;
+const CPU_FEE_BLS_EQUAL: i64 = 1 << 5;
+const CPU_FEE_BLS_ADD: i64 = 1 << 19;
+const CPU_FEE_BLS_MUL: i64 = 1 << 21;
+const CPU_FEE_BLS_PAIRING: i64 = 1 << 23;
 
 /// Computes a CryptoLib hash method, returning `None` for an unknown method.
 ///
@@ -110,8 +120,68 @@ fn recover_secp256k1_method(message_hash: &[u8], signature: &[u8]) -> Option<Vec
     Secp256k1Crypto::recover_public_key(message_hash, signature).ok()
 }
 
+/// Deserializes the `idx`-th argument as a BLS12-381 point, faulting on a
+/// missing argument or a malformed/off-curve/wrong-subgroup encoding (C#
+/// `InteropInterface` binding + `FromCompressed`/`FromBytes` throw → VM fault).
+fn bls_point(method: &str, args: &[Vec<u8>], idx: usize) -> CoreResult<Bls12381Point> {
+    let bytes = args.get(idx).ok_or_else(|| {
+        CoreError::invalid_operation(format!("CryptoLib::{method} is missing argument {idx}"))
+    })?;
+    Bls12381Point::deserialize(bytes)
+        .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::{method}: {e}")))
+}
+
+/// Pure BLS12-381 `CryptoLib` dispatch (serialize / deserialize / equal / add /
+/// mul / pairing), split out so it can be unit-tested without an
+/// [`ApplicationEngine`]. Point arguments arrive as their canonical encoding
+/// (the dispatcher unwraps the `Bls12381Interop` operands to raw bytes); point
+/// results are returned as canonical bytes for the dispatcher to re-wrap as a
+/// `Bls12381Interop`. `bls12381Equal` returns a single boolean byte.
+///
+/// Returns `Ok(None)` when `method` is not a BLS method (so the caller can fall
+/// through to the hash methods).
+fn bls12381_method(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
+    let result = match method {
+        // Serialize takes a point (InteropInterface) and returns its bytes; the
+        // operand already arrives canonical, so round-tripping it normalizes.
+        "bls12381Serialize" => bls_point(method, args, 0).map(|p| p.serialize()),
+        // Deserialize validates raw bytes into a point; the dispatcher re-wraps
+        // the canonical encoding as an interop object.
+        "bls12381Deserialize" => bls_point(method, args, 0).map(|p| p.serialize()),
+        "bls12381Equal" => bls_point(method, args, 0).and_then(|a| {
+            let b = bls_point(method, args, 1)?;
+            Ok(vec![u8::from(a.equals(&b))])
+        }),
+        "bls12381Add" => bls_point(method, args, 0).and_then(|a| {
+            let b = bls_point(method, args, 1)?;
+            a.add(&b)
+                .map(|sum| sum.serialize())
+                .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::bls12381Add: {e}")))
+        }),
+        "bls12381Mul" => bls_point(method, args, 0).and_then(|p| {
+            let mul = args.get(1).ok_or_else(|| {
+                CoreError::invalid_operation("CryptoLib::bls12381Mul is missing the multiplier")
+            })?;
+            // The `neg` flag (3rd arg) is a VM Boolean: any non-zero byte is true.
+            let neg = args.get(2).is_some_and(|b| b.iter().any(|x| *x != 0));
+            p.mul(mul, neg)
+                .map(|out| out.serialize())
+                .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::bls12381Mul: {e}")))
+        }),
+        "bls12381Pairing" => bls_point(method, args, 0).and_then(|g1| {
+            let g2 = bls_point(method, args, 1)?;
+            g1.pairing(&g2).map(|gt| gt.serialize()).map_err(|e| {
+                CoreError::invalid_operation(format!("CryptoLib::bls12381Pairing: {e}"))
+            })
+        }),
+        _ => return None,
+    };
+    Some(result)
+}
+
 static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let byte_array = ContractParameterType::ByteArray;
+    let interop = ContractParameterType::InteropInterface;
     vec![
         // Unconditional since genesis.
         NativeMethod::new(
@@ -185,6 +255,56 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             byte_array,
         )
         .with_active_in(Hardfork::HfEchidna),
+        // BLS12-381 operations (genesis-active; CryptoLib.BLS12_381.cs). Points
+        // are passed/returned as InteropInterface objects (Bls12381Interop).
+        NativeMethod::new(
+            "bls12381Serialize".to_string(),
+            CPU_FEE_BLS_SERIALIZE,
+            true,
+            0,
+            vec![interop],
+            byte_array,
+        ),
+        NativeMethod::new(
+            "bls12381Deserialize".to_string(),
+            CPU_FEE_BLS_SERIALIZE,
+            true,
+            0,
+            vec![byte_array],
+            interop,
+        ),
+        NativeMethod::new(
+            "bls12381Equal".to_string(),
+            CPU_FEE_BLS_EQUAL,
+            true,
+            0,
+            vec![interop, interop],
+            ContractParameterType::Boolean,
+        ),
+        NativeMethod::new(
+            "bls12381Add".to_string(),
+            CPU_FEE_BLS_ADD,
+            true,
+            0,
+            vec![interop, interop],
+            interop,
+        ),
+        NativeMethod::new(
+            "bls12381Mul".to_string(),
+            CPU_FEE_BLS_MUL,
+            true,
+            0,
+            vec![interop, byte_array, ContractParameterType::Boolean],
+            interop,
+        ),
+        NativeMethod::new(
+            "bls12381Pairing".to_string(),
+            CPU_FEE_BLS_PAIRING,
+            true,
+            0,
+            vec![interop, interop],
+            interop,
+        ),
     ]
 });
 
@@ -293,6 +413,13 @@ impl NativeContract for CryptoLib {
             };
         }
 
+        // BLS12-381 operations (bls12381Serialize/Deserialize/Equal/Add/Mul/
+        // Pairing). Point operands/results cross the native boundary as their
+        // canonical encoding, wrapped by the dispatcher as `Bls12381Interop`.
+        if let Some(result) = bls12381_method(method, args) {
+            return result;
+        }
+
         // Every CryptoLib hash method takes a single ByteArray and returns a
         // ByteArray; the engine marshals the argument to raw bytes and the
         // ByteArray return back to a VM ByteString.
@@ -359,7 +486,13 @@ mod tests {
                 "murmur32",
                 "verifyWithEd25519",
                 "verifyWithECDsa",
-                "recoverSecp256K1"
+                "recoverSecp256K1",
+                "bls12381Serialize",
+                "bls12381Deserialize",
+                "bls12381Equal",
+                "bls12381Add",
+                "bls12381Mul",
+                "bls12381Pairing",
             ]
         );
         // keccak256 is hardfork-gated; the unconditional hashes are not.
@@ -386,6 +519,107 @@ mod tests {
         assert_eq!(recover.return_type, ContractParameterType::ByteArray);
         assert_eq!(recover.parameters, vec![ContractParameterType::ByteArray; 2]);
         assert!(recover.safe);
+
+        // BLS12-381 ABI (genesis-active, all safe; CryptoLib.BLS12_381.cs fees).
+        let interop = ContractParameterType::InteropInterface;
+        let bls = |name: &str| c.methods().iter().find(|m| m.name == name).cloned().unwrap();
+        let ser = bls("bls12381Serialize");
+        assert_eq!(ser.cpu_fee, 1 << 19);
+        assert_eq!(ser.parameters, vec![interop]);
+        assert_eq!(ser.return_type, ContractParameterType::ByteArray);
+        let de = bls("bls12381Deserialize");
+        assert_eq!(de.cpu_fee, 1 << 19);
+        assert_eq!(de.parameters, vec![ContractParameterType::ByteArray]);
+        assert_eq!(de.return_type, interop);
+        let eq = bls("bls12381Equal");
+        assert_eq!(eq.cpu_fee, 1 << 5);
+        assert_eq!(eq.parameters, vec![interop, interop]);
+        assert_eq!(eq.return_type, ContractParameterType::Boolean);
+        let add = bls("bls12381Add");
+        assert_eq!(add.cpu_fee, 1 << 19);
+        assert_eq!(add.parameters, vec![interop, interop]);
+        assert_eq!(add.return_type, interop);
+        let mul = bls("bls12381Mul");
+        assert_eq!(mul.cpu_fee, 1 << 21);
+        assert_eq!(
+            mul.parameters,
+            vec![interop, ContractParameterType::ByteArray, ContractParameterType::Boolean]
+        );
+        assert_eq!(mul.return_type, interop);
+        let pairing = bls("bls12381Pairing");
+        assert_eq!(pairing.cpu_fee, 1 << 23);
+        assert_eq!(pairing.parameters, vec![interop, interop]);
+        assert_eq!(pairing.return_type, interop);
+        for name in [
+            "bls12381Serialize",
+            "bls12381Deserialize",
+            "bls12381Equal",
+            "bls12381Add",
+            "bls12381Mul",
+            "bls12381Pairing",
+        ] {
+            let m = bls(name);
+            assert!(m.safe, "{name} is safe");
+            assert_eq!(m.active_in, None, "{name} is genesis-active");
+        }
+    }
+
+    // BLS12-381 dispatch vectors (a subset of UT_CryptoLib; s_gtHex == e(g1,g2)).
+    // The full byte-exact arithmetic is verified in neo_crypto::bls12381_point —
+    // these confirm the native dispatch maps each method to the right operation,
+    // parses the (point, scalar, neg) arguments correctly, and returns canonical
+    // bytes / boolean bytes the way the engine marshaling expects.
+    const BLS_G1: &str = "97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb";
+    const BLS_G2: &str = "93e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8";
+    const BLS_GT: &str = "0f41e58663bf08cf068672cbd01a7ec73baca4d72ca93544deff686bfd6df543d48eaa24afe47e1efde449383b67663104c581234d086a9902249b64728ffd21a189e87935a954051c7cdba7b3872629a4fafc05066245cb9108f0242d0fe3ef03350f55a7aefcd3c31b4fcb6ce5771cc6a0e9786ab5973320c806ad360829107ba810c5a09ffdd9be2291a0c25a99a211b8b424cd48bf38fcef68083b0b0ec5c81a93b330ee1a677d0d15ff7b984e8978ef48881e32fac91b93b47333e2ba5706fba23eb7c5af0d9f80940ca771b6ffd5857baaf222eb95a7d2809d61bfe02e1bfd1b68ff02f0b8102ae1c2d5d5ab1a19f26337d205fb469cd6bd15c3d5a04dc88784fbb3d0b2dbdea54d43b2b73f2cbb12d58386a8703e0f948226e47ee89d018107154f25a764bd3c79937a45b84546da634b8f6be14a8061e55cceba478b23f7dacaa35c8ca78beae9624045b4b601b2f522473d171391125ba84dc4007cfbf2f8da752f7c74185203fcca589ac719c34dffbbaad8431dad1c1fb597aaa5193502b86edb8857c273fa075a50512937e0794e1e65a7617c90d8bd66065b1fffe51d7a579973b1315021ec3c19934f1368bb445c7c2d209703f239689ce34c0378a68e72a6b3b216da0e22a5031b54ddff57309396b38c881c4c849ec23e87089a1c5b46e5110b86750ec6a532348868a84045483c92b7af5af689452eafabf1a8943e50439f1d59882a98eaa0170f1250ebd871fc0a92a7b2d83168d0d727272d441befa15c503dd8e90ce98db3e7b6d194f60839c508a84305aaca1789b6";
+
+    #[test]
+    fn bls12381_dispatch_matches_crypto_layer() {
+        let g1 = hex::decode(BLS_G1).unwrap();
+        let g2 = hex::decode(BLS_G2).unwrap();
+        let gt = hex::decode(BLS_GT).unwrap();
+        let call = |m: &str, args: &[Vec<u8>]| {
+            bls12381_method(m, args)
+                .expect("is a BLS method")
+                .expect("method succeeds")
+        };
+        let scalar = |n: u8| {
+            let mut s = [0u8; 32];
+            s[0] = n;
+            s.to_vec()
+        };
+
+        // Deserialize normalizes to canonical bytes; Serialize returns them.
+        assert_eq!(call("bls12381Deserialize", &[g1.clone()]), g1);
+        assert_eq!(call("bls12381Serialize", &[g1.clone()]), g1);
+
+        // Pairing e(g1,g2) == s_gtHex — the headline C# vector through dispatch.
+        assert_eq!(call("bls12381Pairing", &[g1.clone(), g2.clone()]), gt);
+
+        // Add(gt,gt) == Mul(gt, 2): cross-checks the Add and Mul wiring.
+        assert_eq!(
+            call("bls12381Add", &[gt.clone(), gt.clone()]),
+            call("bls12381Mul", &[gt.clone(), scalar(2), vec![0]])
+        );
+
+        // gt*3 + gt*(-3) == gt*0 (identity): verifies Mul's `neg` flag + Add.
+        let pos = call("bls12381Mul", &[gt.clone(), scalar(3), vec![0]]);
+        let neg = call("bls12381Mul", &[gt.clone(), scalar(3), vec![1]]);
+        let identity = call("bls12381Mul", &[gt.clone(), scalar(0), vec![0]]);
+        assert_eq!(call("bls12381Equal", &[call("bls12381Add", &[pos, neg]), identity]), vec![1u8]);
+
+        // Equal: same point true, cross-group false.
+        assert_eq!(call("bls12381Equal", &[g1.clone(), g1.clone()]), vec![1u8]);
+        assert_eq!(call("bls12381Equal", &[g1.clone(), g2.clone()]), vec![0u8]);
+
+        // Faults (Err → VM fault): malformed point, swapped pairing operands,
+        // wrong scalar length.
+        assert!(bls12381_method("bls12381Deserialize", &[vec![0u8; 47]]).unwrap().is_err());
+        assert!(bls12381_method("bls12381Pairing", &[g2.clone(), g1.clone()]).unwrap().is_err());
+        assert!(bls12381_method("bls12381Mul", &[gt.clone(), vec![0u8; 31], vec![0]]).unwrap().is_err());
+
+        // A non-BLS method is not handled here (falls through to hash dispatch).
+        assert!(bls12381_method("sha256", &[]).is_none());
     }
 
     #[test]
