@@ -10,7 +10,10 @@ use crate::hashes::ORACLE_CONTRACT_HASH;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
+use neo_storage::persistence::DataCache;
+use neo_storage::{StorageItem, StorageKey};
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use std::any::Any;
 use std::sync::LazyLock;
 
@@ -18,6 +21,15 @@ use std::sync::LazyLock;
 const PREFIX_PRICE: u8 = 5;
 /// C# default oracle price: 0.5 GAS, in datoshi.
 const DEFAULT_ORACLE_PRICE: i64 = 50000000;
+
+/// C# `SetPrice` storage effect: overwrite `Prefix_Price` as a `BigInteger`
+/// (`GetAndChange(...).Set(price)`).
+fn put_price(snapshot: &DataCache, price: i64) {
+    snapshot.update(
+        StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]),
+        StorageItem::from_bytes(BigInt::from(price).to_signed_bytes_le()),
+    );
+}
 
 /// Lazily-initialised script-hash handle for the OracleContract.
 pub static ORACLE_HASH: LazyLock<UInt160> = LazyLock::new(|| *ORACLE_CONTRACT_HASH);
@@ -117,14 +129,25 @@ impl OracleRequest {
 }
 
 static ORACLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
-    vec![NativeMethod::new(
-        "getPrice".to_string(),
-        1 << 15,
-        true,
-        CallFlags::READ_STATES.bits(),
-        vec![],
-        ContractParameterType::Integer,
-    )]
+    vec![
+        NativeMethod::new(
+            "getPrice".to_string(),
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            vec![],
+            ContractParameterType::Integer,
+        ),
+        // Committee-gated price setter (not safe, States, Void).
+        NativeMethod::new(
+            "setPrice".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        ),
+    ]
 });
 
 impl NativeContract for OracleContract {
@@ -152,7 +175,7 @@ impl NativeContract for OracleContract {
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
-        _args: &[Vec<u8>],
+        args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         match method {
@@ -160,6 +183,31 @@ impl NativeContract for OracleContract {
                 let price =
                     crate::read_storage_int(&snapshot, Self::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)?;
                 Ok(BigInt::from(price).to_signed_bytes_le())
+            }
+            "setPrice" => {
+                // C#: validate price > 0 -> AssertCommittee -> overwrite Prefix_Price.
+                let price = args
+                    .first()
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i64())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("OracleContract::setPrice requires a price")
+                    })?;
+                if price <= 0 {
+                    return Err(CoreError::invalid_operation(format!(
+                        "Oracle price must be positive, got {price}"
+                    )));
+                }
+                let authorized = engine.check_committee_witness().map_err(|e| {
+                    CoreError::invalid_operation(format!("setPrice committee check: {e}"))
+                })?;
+                if !authorized {
+                    return Err(CoreError::invalid_operation(
+                        "setPrice requires committee authorization",
+                    ));
+                }
+                put_price(&engine.snapshot_cache(), price);
+                Ok(Vec::new())
             }
             other => Err(CoreError::invalid_operation(format!(
                 "OracleContract method '{other}' is not implemented"
@@ -181,7 +229,25 @@ mod oracle_native_tests {
         assert_eq!(NativeContract::name(&c), "OracleContract");
         assert_eq!(NativeContract::hash(&c), *ORACLE_CONTRACT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["getPrice"]);
+        assert_eq!(names, ["getPrice", "setPrice"]);
+        let setter = c.methods().iter().find(|m| m.name == "setPrice").unwrap();
+        assert!(!setter.safe);
+        assert_eq!(setter.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(setter.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(setter.return_type, ContractParameterType::Void);
+    }
+
+    #[test]
+    fn set_price_write_round_trips() {
+        let cache = DataCache::new(false);
+        // The setter's storage effect (overwrite Prefix_Price) is observed by
+        // the getter's reader.
+        put_price(&cache, 7_5000000); // 0.75 GAS
+        assert_eq!(
+            crate::read_storage_int(&cache, OracleContract::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)
+                .unwrap(),
+            7_5000000
+        );
     }
 
     #[test]
