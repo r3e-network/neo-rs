@@ -28,6 +28,26 @@ const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
 /// at the `Vec<u8>` args layer — see `OracleContract::request` filter handling).
 pub struct NativeArgNullMask(pub u32);
 
+/// Per-call marker set by a native method to force its return value to
+/// `StackItem::Null`, regardless of the (non-`Void`) ABI return type.
+///
+/// This lets a method whose C# signature is a nullable reference (e.g.
+/// `byte[]?` for `CryptoLib.recoverSecp256K1`) return `null` through the
+/// `Vec<u8>` result channel, which otherwise cannot distinguish an empty byte
+/// string from `null`. The dispatcher in [`contract_call_native_handler`]
+/// consumes this marker right after the native call and, when present, pushes
+/// `Null` instead of decoding the (empty) result payload.
+pub(crate) struct NativeReturnNull;
+
+impl ApplicationEngine {
+    /// Signals that the currently-executing native method returns `null` (for a
+    /// nullable-reference return such as `CryptoLib.recoverSecp256K1`). The method
+    /// should still return `Ok(Vec::new())`; the dispatcher pushes `StackItem::Null`.
+    pub fn set_native_return_null(&mut self) {
+        self.set_state(NativeReturnNull);
+    }
+}
+
 fn native_call_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| env_flag_enabled("NEO_TRACE_CALL_NATIVE", false))
@@ -314,6 +334,10 @@ fn contract_call_native_handler(
         let call_result = app.call_native_contract(script_hash, &method_name, &args);
         app.take_state::<NativeArgNullMask>();
         let result_bytes = call_result.map_err(|e| e.to_string())?;
+        // A native method may signal a `null` return (a nullable-reference result
+        // such as `byte[]?`) via `set_native_return_null`; consume it here so it
+        // never leaks into the next call.
+        let force_null_return = app.take_state::<NativeReturnNull>().is_some();
 
         if native_call_trace_enabled() {
             let preview_len = result_bytes.len().min(24);
@@ -335,7 +359,13 @@ fn contract_call_native_handler(
         }
 
         if let Some(ret_type) = return_type {
-            push_native_result(engine, ret_type, result_bytes)?;
+            if force_null_return {
+                // The native method explicitly returned `null` (e.g. a failed
+                // `recoverSecp256K1`); push `Null` rather than the empty payload.
+                engine.push(StackItem::null()).map_err(|e| e.to_string())?;
+            } else {
+                push_native_result(engine, ret_type, result_bytes)?;
+            }
         }
 
         // Load any queued calls requested by the native method (e.g. NEP-17 callbacks).

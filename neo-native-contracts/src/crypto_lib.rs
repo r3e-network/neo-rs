@@ -12,7 +12,7 @@ use std::any::Any;
 use std::sync::LazyLock;
 
 use neo_config::Hardfork;
-use neo_crypto::{murmur32, Crypto, HashAlgorithm, NamedCurveHash};
+use neo_crypto::{murmur32, Crypto, HashAlgorithm, NamedCurveHash, Secp256k1Crypto};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
@@ -102,6 +102,14 @@ fn verify_ecdsa_method(
     .unwrap_or(false))
 }
 
+/// Pure secp256k1 public-key recovery with C# `RecoverSecp256K1` semantics:
+/// returns the 33-byte compressed public key, or `None` when recovery fails (C#
+/// wraps `Crypto.ECRecover` in try/catch and returns `null`). Split out so the
+/// success/null decision can be unit tested without an [`ApplicationEngine`].
+fn recover_secp256k1_method(message_hash: &[u8], signature: &[u8]) -> Option<Vec<u8>> {
+    Secp256k1Crypto::recover_public_key(message_hash, signature).ok()
+}
+
 static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let byte_array = ContractParameterType::ByteArray;
     vec![
@@ -165,6 +173,18 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![byte_array, byte_array, byte_array, ContractParameterType::Integer],
             ContractParameterType::Boolean,
         ),
+        // recoverSecp256K1(messageHash, signature) -> ByteArray? (HF_Echidna).
+        // Returns the compressed pubkey, or null on failure (signaled at runtime
+        // via engine.set_native_return_null()).
+        NativeMethod::new(
+            "recoverSecp256K1".to_string(),
+            CPU_FEE_HASH,
+            true,
+            0,
+            vec![byte_array, byte_array],
+            byte_array,
+        )
+        .with_active_in(Hardfork::HfEchidna),
     ]
 });
 
@@ -252,6 +272,27 @@ impl NativeContract for CryptoLib {
             )?)]);
         }
 
+        if method == "recoverSecp256K1" {
+            // C# RecoverSecp256K1(messageHash, signature): the compressed pubkey,
+            // or null on any recovery failure (the C# try/catch returns null).
+            let arg_err = || {
+                CoreError::invalid_operation(
+                    "CryptoLib::recoverSecp256K1 requires (messageHash, signature)",
+                )
+            };
+            let message_hash = args.first().map(Vec::as_slice).ok_or_else(arg_err)?;
+            let signature = args.get(1).map(Vec::as_slice).ok_or_else(arg_err)?;
+            return match recover_secp256k1_method(message_hash, signature) {
+                Some(pubkey) => Ok(pubkey),
+                None => {
+                    // C# returns null; signal a null return so the dispatcher pushes
+                    // StackItem::Null instead of an empty byte string.
+                    engine.set_native_return_null();
+                    Ok(Vec::new())
+                }
+            };
+        }
+
         // Every CryptoLib hash method takes a single ByteArray and returns a
         // ByteArray; the engine marshals the argument to raw bytes and the
         // ByteArray return back to a VM ByteString.
@@ -317,7 +358,8 @@ mod tests {
                 "keccak256",
                 "murmur32",
                 "verifyWithEd25519",
-                "verifyWithECDsa"
+                "verifyWithECDsa",
+                "recoverSecp256K1"
             ]
         );
         // keccak256 is hardfork-gated; the unconditional hashes are not.
@@ -337,6 +379,24 @@ mod tests {
         assert_eq!(ecdsa.active_in, None);
         assert_eq!(ecdsa.parameters.len(), 4);
         assert_eq!(ecdsa.parameters[3], ContractParameterType::Integer);
+        // recoverSecp256K1 is HF_Echidna-gated, safe, (messageHash, signature) ->
+        // ByteArray (nullable at runtime via set_native_return_null).
+        let recover = c.methods().iter().find(|m| m.name == "recoverSecp256K1").unwrap();
+        assert_eq!(recover.active_in, Some(Hardfork::HfEchidna));
+        assert_eq!(recover.return_type, ContractParameterType::ByteArray);
+        assert_eq!(recover.parameters, vec![ContractParameterType::ByteArray; 2]);
+        assert!(recover.safe);
+    }
+
+    #[test]
+    fn recover_secp256k1_returns_none_on_bad_input() {
+        // The success path is round-trip-tested in neo-crypto
+        // (recover_public_key_round_trips_and_rejects_bad_input); here we cover the
+        // null path that maps to C# RecoverSecp256K1 returning null.
+        let hash = [0x42u8; 32];
+        assert!(recover_secp256k1_method(&hash, &[0u8; 10]).is_none()); // bad sig length
+        assert!(recover_secp256k1_method(&[0u8; 31], &[0u8; 65]).is_none()); // bad hash length
+        assert!(recover_secp256k1_method(&hash, &[0u8; 65]).is_none()); // invalid signature
     }
 
     #[test]
