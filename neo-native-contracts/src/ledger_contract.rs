@@ -22,6 +22,7 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
+use neo_vm::StackItem;
 use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
 use num_bigint::BigInt;
 use std::any::Any;
@@ -363,6 +364,14 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash256],
             ContractParameterType::Array,
         ),
+        NativeMethod::new(
+            "getTransactionSigners".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash256],
+            ContractParameterType::Array,
+        ),
     ]
 });
 
@@ -489,6 +498,50 @@ impl NativeContract for LedgerContract {
                     None => Ok(Vec::new()),
                 }
             }
+            "getTransactionSigners" => {
+                let hash_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "LedgerContract::getTransactionSigners requires a hash",
+                    )
+                })?;
+                let hash = UInt256::from_bytes(hash_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "LedgerContract::getTransactionSigners: bad hash: {e}"
+                    ))
+                })?;
+                // C# returns the transaction's Signer[] (Array via ToStackItem) for
+                // a traceable full record; null (empty payload) otherwise.
+                match self.get_transaction_state(&snapshot, &hash)? {
+                    Some(state) => {
+                        if let Some(tx) = &state.transaction {
+                            if is_traceable_block(engine, state.block_index)? {
+                                let mut items = Vec::with_capacity(tx.signers().len());
+                                for signer in tx.signers() {
+                                    items.push(signer.to_stack_item().map_err(|e| {
+                                        CoreError::invalid_operation(format!(
+                                            "LedgerContract::getTransactionSigners: stack item: {e}"
+                                        ))
+                                    })?);
+                                }
+                                BinarySerializer::serialize(
+                                    &StackItem::from_array(items),
+                                    &ExecutionEngineLimits::default(),
+                                )
+                                .map_err(|e| {
+                                    CoreError::invalid_operation(format!(
+                                        "LedgerContract::getTransactionSigners: serialize: {e}"
+                                    ))
+                                })
+                            } else {
+                                Ok(Vec::new())
+                            }
+                        } else {
+                            Ok(Vec::new())
+                        }
+                    }
+                    None => Ok(Vec::new()),
+                }
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "LedgerContract method '{other}' is not implemented"
             ))),
@@ -514,7 +567,8 @@ mod tests {
                 "currentIndex",
                 "getTransactionHeight",
                 "getTransactionVMState",
-                "getTransaction"
+                "getTransaction",
+                "getTransactionSigners"
             ]
         );
         assert!(c
@@ -527,10 +581,12 @@ mod tests {
             assert_eq!(m.return_type, ContractParameterType::Integer);
             assert_eq!(m.cpu_fee, 1 << 15);
         }
-        let get_tx = c.methods().iter().find(|m| m.name == "getTransaction").unwrap();
-        assert_eq!(get_tx.parameters, vec![ContractParameterType::Hash256]);
-        assert_eq!(get_tx.return_type, ContractParameterType::Array);
-        assert_eq!(get_tx.cpu_fee, 1 << 15);
+        for name in ["getTransaction", "getTransactionSigners"] {
+            let m = c.methods().iter().find(|m| m.name == name).unwrap();
+            assert_eq!(m.parameters, vec![ContractParameterType::Hash256]);
+            assert_eq!(m.return_type, ContractParameterType::Array);
+            assert_eq!(m.cpu_fee, 1 << 15);
+        }
     }
 
     #[test]
