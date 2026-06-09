@@ -17,107 +17,40 @@ impl JsonSerializer {
     pub const MAX_SAFE_INTEGER: i64 = 9007199254740991;
     pub const MIN_SAFE_INTEGER: i64 = -9007199254740991;
 
-    /// Serializes a [`StackItem`] to a UTF-8 JSON byte vector.
+    /// Serializes a [`StackItem`] to a UTF-8 JSON byte vector, matching C# Neo's
+    /// `StdLib.jsonSerialize` (`JsonSerializer.SerializeToByteArray`).
     ///
-    /// String escape behavior matches C# Neo's `StdLib.jsonSerialize`, which uses
-    /// .NET's `System.Text.Json.JsonSerializer` with default `JavaScriptEncoder.Default`.
-    /// The default encoder escapes `"`, `\`, control chars, all non-ASCII, plus
-    /// `<`, `>`, `&`, `'`, `+`, `` ` ``. This differs from serde_json's minimal escape
-    /// set, so we bypass serde_json's string output and write our own JSON encoder.
+    /// String escaping matches `System.Text.Json`'s default
+    /// `JavaScriptEncoder.Default` (see [`encode_value_csharp_compatible`]).
+    /// `max_size` mirrors C#'s `engine.Limits.MaxItemSize` bound: a payload longer
+    /// than the limit faults (C# throws `InvalidOperationException`).
+    ///
+    /// [`encode_value_csharp_compatible`]: Self::encode_value_csharp_compatible
     pub fn serialize_to_byte_array(item: &StackItem, max_size: u32) -> Result<Vec<u8>, String> {
         let json = Self::serialize_to_json(item)?;
-        let mut payload = Vec::new();
-        Self::write_json_value(&json, &mut payload);
+        let payload = Self::encode_value_csharp_compatible(&json);
         if payload.len() > max_size as usize {
             return Err("JSON output too large".to_string());
         }
         Ok(payload)
     }
 
-    /// Encodes a `serde_json::Value` to UTF-8 JSON bytes using .NET
-    /// `System.Text.Json.JsonSerializer` default semantics — i.e. with
-    /// `JavaScriptEncoder.Default` escaping. Use this anywhere a contract
-    /// manifest, native ABI member, or other persisted JSON payload must
-    /// be byte-identical with C# Neo v3.x.
+    /// Encodes a `serde_json::Value` to UTF-8 JSON bytes byte-identically with
+    /// C# Neo's `System.Text.Json` default output (`JavaScriptEncoder.Default`).
+    ///
+    /// Delegates to [`neo_json::escape`], whose `CSharpEscapeFormatter` reproduces
+    /// the default encoder exactly: the quote is emitted as `"` (not `\"`),
+    /// `\`/`\b`/`\f`/`\n`/`\r`/`\t` use their short forms, `/` is left unescaped,
+    /// and `<` `>` `&` `'` `+` `` ` `` plus every non-ASCII code point are emitted
+    /// as `\uXXXX` (uppercase hex, surrogate pairs for astral-plane chars).
+    /// Use this anywhere a manifest, native ABI member, or other persisted JSON
+    /// payload must match C# Neo v3.x.
     pub fn encode_value_csharp_compatible(value: &JsonValue) -> Vec<u8> {
-        let mut out = Vec::new();
-        Self::write_json_value(value, &mut out);
-        out
-    }
-
-    /// Writes a [`JsonValue`] using C#-compatible escape semantics.
-    fn write_json_value(value: &JsonValue, out: &mut Vec<u8>) {
-        match value {
-            JsonValue::Null => out.extend_from_slice(b"null"),
-            JsonValue::Bool(true) => out.extend_from_slice(b"true"),
-            JsonValue::Bool(false) => out.extend_from_slice(b"false"),
-            JsonValue::Number(n) => out.extend_from_slice(n.to_string().as_bytes()),
-            JsonValue::String(s) => Self::write_json_string(s, out),
-            JsonValue::Array(items) => {
-                out.push(b'[');
-                for (i, item) in items.iter().enumerate() {
-                    if i > 0 {
-                        out.push(b',');
-                    }
-                    Self::write_json_value(item, out);
-                }
-                out.push(b']');
-            }
-            JsonValue::Object(obj) => {
-                out.push(b'{');
-                for (i, (k, v)) in obj.iter().enumerate() {
-                    if i > 0 {
-                        out.push(b',');
-                    }
-                    Self::write_json_string(k, out);
-                    out.push(b':');
-                    Self::write_json_value(v, out);
-                }
-                out.push(b'}');
-            }
-        }
-    }
-
-    /// Writes a JSON string with .NET `JavaScriptEncoder.Default`-compatible escaping.
-    /// Escapes: `"`, `\`, control chars (<0x20), DEL (0x7F), all non-ASCII (≥0x80),
-    /// plus `<` `>` `&` `'` `+` `` ` `` (the JS-safe additional set).
-    fn write_json_string(s: &str, out: &mut Vec<u8>) {
-        out.push(b'"');
-        for c in s.chars() {
-            match c {
-                '"' => out.extend_from_slice(b"\\\""),
-                '\\' => out.extend_from_slice(b"\\\\"),
-                '\u{0008}' => out.extend_from_slice(b"\\b"),
-                '\u{000C}' => out.extend_from_slice(b"\\f"),
-                '\n' => out.extend_from_slice(b"\\n"),
-                '\r' => out.extend_from_slice(b"\\r"),
-                '\t' => out.extend_from_slice(b"\\t"),
-                c if (c as u32) < 0x20
-                    || (c as u32) == 0x7F
-                    || (c as u32) > 0x7F
-                    || matches!(c, '<' | '>' | '&' | '\'' | '+' | '`') =>
-                {
-                    let cp = c as u32;
-                    if cp <= 0xFFFF {
-                        let _ = std::io::Write::write_fmt(out, format_args!("\\u{:04X}", cp));
-                    } else {
-                        // Encode supplementary chars as UTF-16 surrogate pair.
-                        let v = cp - 0x10000;
-                        let hi = 0xD800 + (v >> 10);
-                        let lo = 0xDC00 + (v & 0x3FF);
-                        let _ = std::io::Write::write_fmt(
-                            out,
-                            format_args!("\\u{:04X}\\u{:04X}", hi, lo),
-                        );
-                    }
-                }
-                c => {
-                    // ASCII-safe printable char.
-                    out.push(c as u8);
-                }
-            }
-        }
-        out.push(b'"');
+        // serde_json::Value serialization writes only to the in-memory buffer and
+        // cannot fail, so the (impossible) error is surfaced as a panic guarding
+        // the invariant rather than silently corrupting output.
+        neo_json::escape::to_vec(value, false)
+            .expect("serde_json::Value serializes to an in-memory buffer infallibly")
     }
 
     /// Serializes a stack item to a [`JsonValue`].
@@ -246,12 +179,31 @@ impl JsonSerializer {
             JsonValue::Null => Ok(StackItem::null()),
             JsonValue::Bool(b) => Ok(StackItem::from_bool(*b)),
             JsonValue::Number(n) => {
+                // C# JsonSerializer.Deserialize treats every JNumber as a double:
+                // a fractional value faults ("Decimal value is not allowed"), and
+                // an integer-valued number becomes a BigInteger (post-Basilisk via
+                // BigInteger.Parse(value.ToString())). serde_json types integer
+                // literals as i64/u64 and only non-integers as f64, so check those
+                // first — they are exact — and fall back to the double path.
                 if let Some(i) = n.as_i64() {
                     Ok(StackItem::from_int(BigInt::from(i)))
                 } else if let Some(u) = n.as_u64() {
                     Ok(StackItem::from_int(BigInt::from(u)))
                 } else {
-                    Err("Unsupported JSON number".to_string())
+                    let f = n
+                        .as_f64()
+                        .ok_or_else(|| "Invalid JSON number".to_string())?;
+                    if f.fract() != 0.0 {
+                        return Err("Decimal value is not allowed".to_string());
+                    }
+                    // `{f}` is the shortest round-trippable decimal in fixed (never
+                    // scientific) notation — matching the integer value C# obtains
+                    // from `BigInteger.Parse(double.ToString())`, not the double's
+                    // exact stored value (which `{:.0}` would give).
+                    let big = format!("{f}")
+                        .parse::<BigInt>()
+                        .map_err(|_| "Invalid JSON integer".to_string())?;
+                    Ok(StackItem::from_int(big))
                 }
             }
             JsonValue::String(s) => Ok(StackItem::from_byte_string(s.as_bytes())),
@@ -277,5 +229,67 @@ impl JsonSerializer {
                 Ok(StackItem::Map(MapItem::new_untracked(entries)))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ser(item: &StackItem) -> String {
+        let bytes = JsonSerializer::serialize_to_byte_array(item, 1 << 20).expect("serialize");
+        String::from_utf8(bytes).expect("ascii/utf8 output")
+    }
+
+    fn de(json: &str) -> Result<StackItem, String> {
+        JsonSerializer::deserialize(json.as_bytes(), 64)
+    }
+
+    #[test]
+    fn serialize_matches_csharp_stdlib_vectors() {
+        // C# UT_StdLib.Json_Serialize.
+        assert_eq!(ser(&StackItem::from_int(BigInt::from(5))), "5");
+        assert_eq!(ser(&StackItem::from_bool(true)), "true");
+        assert_eq!(ser(&StackItem::from_byte_string(b"test".to_vec())), "\"test\"");
+        assert_eq!(ser(&StackItem::null()), "null");
+        // Map{"key":"value"} (built via deserialize) round-trips compactly.
+        assert_eq!(ser(&de(r#"{"key":"value"}"#).unwrap()), r#"{"key":"value"}"#);
+    }
+
+    #[test]
+    fn serialize_escapes_like_system_text_json() {
+        // JavaScriptEncoder.Default: quote -> ", '<'/'>' -> </>,
+        // all non-ASCII -> \uXXXX (uppercase), but short forms for \n \t \\.
+        assert_eq!(ser(&StackItem::from_byte_string(b"a\"b".to_vec())), "\"a\\u0022b\"");
+        assert_eq!(
+            ser(&StackItem::from_byte_string("<x>".as_bytes().to_vec())),
+            "\"\\u003Cx\\u003E\""
+        );
+        assert_eq!(ser(&StackItem::from_byte_string("中".as_bytes().to_vec())), "\"\\u4E2D\"");
+        assert_eq!(ser(&StackItem::from_byte_string(b"\n\t\\".to_vec())), r#""\n\t\\""#);
+    }
+
+    #[test]
+    fn serialize_rejects_out_of_safe_range_integer() {
+        // C# throws when the integer leaves the JS safe-integer range.
+        let too_big = BigInt::from(JsonSerializer::MAX_SAFE_INTEGER) + 1;
+        assert!(JsonSerializer::serialize_to_byte_array(&StackItem::from_int(too_big), 1 << 20).is_err());
+    }
+
+    #[test]
+    fn deserialize_matches_csharp_vectors() {
+        // C# UT_StdLib.Json_Deserialize: "123" -> 123, "null" -> Null,
+        // "***" -> fault, "123.45" -> fault ("no decimals"). Verified by
+        // re-serializing (round-trip) so no StackItem accessor is needed.
+        assert!(matches!(de("null").unwrap(), StackItem::Null));
+        assert_eq!(ser(&de("123").unwrap()), "123");
+        // UT_JsonSerializer.Numbers: integer-valued scientific float -> integer.
+        assert_eq!(ser(&de("200.500000E+005").unwrap()), "20050000");
+        assert!(de("123.45").is_err(), "fractional value is rejected");
+        assert!(de("***").is_err(), "invalid JSON is rejected");
+        // Structural round-trips (string / array / object key order).
+        assert_eq!(ser(&de(r#""test""#).unwrap()), r#""test""#);
+        assert_eq!(ser(&de("[1,true,null]").unwrap()), "[1,true,null]");
+        assert_eq!(ser(&de(r#"{"b":1,"a":2}"#).unwrap()), r#"{"b":1,"a":2}"#);
     }
 }

@@ -22,6 +22,8 @@ neo-storage = { workspace = true }
 neo-io = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-vm = { workspace = true }
+# JSON token model + C#-faithful (JavaScriptEncoder.Default) escaping/parsing.
+neo-json = { workspace = true }
 
 # External
 serde = { workspace = true }
