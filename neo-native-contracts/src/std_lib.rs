@@ -12,6 +12,7 @@
 use std::any::Any;
 use std::sync::LazyLock;
 
+use neo_config::Hardfork;
 use neo_crypto::{Base58, Base64};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
@@ -72,6 +73,9 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
         "base64Encode" => arg_bytes(args, method).map(|b| Base64::encode(b).into_bytes()),
         // base64Decode: String -> ByteArray (C# Convert.FromBase64String).
         "base64Decode" => base64_decode_impl(args),
+        // base64Url* (HF_Echidna): String <-> String, URL-safe alphabet, no padding.
+        "base64UrlEncode" => base64_url_encode_impl(args),
+        "base64UrlDecode" => base64_url_decode_impl(args),
         "base58Encode" => arg_bytes(args, method).map(|b| Base58::encode(b).into_bytes()),
         "base58CheckEncode" => {
             arg_bytes(args, method).map(|b| Base58::encode_check(b).into_bytes())
@@ -221,6 +225,43 @@ fn base64_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         .collect();
     Base64::decode_strict(&stripped)
         .map_err(|e| CoreError::invalid_operation(format!("StdLib::base64Decode: {e}")))
+}
+
+/// C# `StdLib.Base64UrlEncode(data)` (HF_Echidna) = `Base64UrlEncoder.Encode`:
+/// encodes the UTF-8 bytes of the input string into a URL-safe, unpadded base64
+/// string. Enforces the C# `[MaxLength(1024)]` cap on the input.
+fn base64_url_encode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let raw = arg_bytes(args, "base64UrlEncode")?;
+    if raw.len() > MAX_INPUT_LENGTH {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::base64UrlEncode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+        )));
+    }
+    Ok(Base64::url_encode_no_pad(raw).into_bytes())
+}
+
+/// C# `StdLib.Base64UrlDecode(s)` (HF_Echidna) = `Base64UrlEncoder.Decode`: strip
+/// the four whitespace characters .NET tolerates ({space, `\t`, `\n`, `\r`}),
+/// then strict URL-safe-no-padding decode. The decoded bytes are returned as the
+/// `String` result. Enforces the C# `[MaxLength(1024)]` cap on the input.
+fn base64_url_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let raw = arg_bytes(args, "base64UrlDecode")?;
+    if raw.len() > MAX_INPUT_LENGTH {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::base64UrlDecode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+        )));
+    }
+    let value = std::str::from_utf8(raw).map_err(|_| {
+        CoreError::invalid_operation(
+            "StdLib::base64UrlDecode: argument is not valid UTF-8".to_string(),
+        )
+    })?;
+    let stripped: String = value
+        .chars()
+        .filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r'))
+        .collect();
+    Base64::url_decode_no_pad_strict(&stripped)
+        .map_err(|e| CoreError::invalid_operation(format!("StdLib::base64UrlDecode: {e}")))
 }
 
 /// C# `StdLib.Itoa(value[, base])`: base 10 -> `BigInteger.ToString()` (decimal),
@@ -425,6 +466,11 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![string, string, boolean],
             array,
         ),
+        // base64Url* are available from the Echidna hardfork onward.
+        NativeMethod::new("base64UrlEncode".into(), 1 << 5, true, 0, vec![string], string)
+            .with_active_in(Hardfork::HfEchidna),
+        NativeMethod::new("base64UrlDecode".into(), 1 << 5, true, 0, vec![string], string)
+            .with_active_in(Hardfork::HfEchidna),
     ]
 });
 
@@ -510,6 +556,46 @@ mod tests {
         assert!(dispatch("base64Decode", &[ok.into_bytes()]).unwrap().is_ok());
         let too_long = "A".repeat(MAX_INPUT_LENGTH + 1);
         assert!(dispatch("base64Decode", &[too_long.into_bytes()]).unwrap().is_err());
+    }
+
+    #[test]
+    fn base64_url_matches_csharp_vectors() {
+        // C# UT_StdLib.TestBase64Url (the in-repo oracle).
+        let plain = "Subject=test@example.com&Issuer=https://example.com";
+        let encoded = "U3ViamVjdD10ZXN0QGV4YW1wbGUuY29tJklzc3Vlcj1odHRwczovL2V4YW1wbGUuY29t";
+        // base64UrlEncode encodes the UTF-8 bytes of the input string.
+        assert_eq!(
+            String::from_utf8(call("base64UrlEncode", plain.as_bytes()).unwrap()).unwrap(),
+            encoded
+        );
+        // base64UrlDecode returns the decoded bytes as a string.
+        assert_eq!(
+            String::from_utf8(call("base64UrlDecode", encoded.as_bytes()).unwrap()).unwrap(),
+            plain
+        );
+        // The four whitespace chars .NET ignores are stripped before decoding.
+        let spaced = "U 3 \t V \n \riamVjdD10ZXN0QGV4YW1wbGUuY29tJklzc3Vlcj1odHRwczovL2V4YW1wbGUuY29t";
+        assert_eq!(
+            String::from_utf8(call("base64UrlDecode", spaced.as_bytes()).unwrap()).unwrap(),
+            plain
+        );
+    }
+
+    #[test]
+    fn base64_url_decode_rejects_invalid() {
+        // Standard-alphabet '+'/'/' are not URL-safe; a stray vertical tab is not
+        // among the tolerated whitespace — both fault.
+        assert!(call("base64UrlDecode", b"ab+/").is_err());
+        assert!(call("base64UrlDecode", b"U3Vi\x0bamVjdA").is_err());
+    }
+
+    #[test]
+    fn base64_url_methods_are_echidna_gated() {
+        let c = StdLib::new();
+        for name in ["base64UrlEncode", "base64UrlDecode"] {
+            let m = c.methods().iter().find(|m| m.name == name).unwrap();
+            assert_eq!(m.active_in, Some(Hardfork::HfEchidna), "{name} must gate on Echidna");
+        }
     }
 
     #[test]
@@ -727,7 +813,9 @@ mod tests {
                 "atoi",
                 "atoi",
                 "stringSplit",
-                "stringSplit"
+                "stringSplit",
+                "base64UrlEncode",
+                "base64UrlDecode"
             ]
         );
         assert!(c.methods().iter().all(|m| m.safe));

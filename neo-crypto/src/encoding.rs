@@ -3,6 +3,7 @@
 use crate::error::{CryptoError, CryptoResult};
 use base64::alphabet;
 use base64::engine::general_purpose::{self, GeneralPurpose, GeneralPurposeConfig};
+use base64::engine::DecodePaddingMode;
 use base64::Engine as _;
 use neo_primitives::base58_check::{self, Base58CheckDecodeError};
 
@@ -94,6 +95,23 @@ impl Base64 {
         let normalized = strip_whitespace(s);
         general_purpose::URL_SAFE_NO_PAD
             .decode(normalized.as_bytes())
+            .map_err(|e| CryptoError::encoding_error(format!("Base64Url decode error: {e}")))
+    }
+
+    /// Strict URL-safe Base64 decode with **no** padding and **no** whitespace
+    /// tolerance, matching the decode side of .NET `Base64UrlEncoder` once the
+    /// caller has stripped the whitespace .NET ignores: URL-safe alphabet
+    /// (`-`/`_`), padding rejected, non-canonical trailing bits tolerated. Any
+    /// other byte (including whitespace and standard-alphabet `+`/`/`) faults.
+    pub fn url_decode_no_pad_strict(s: &str) -> CryptoResult<Vec<u8>> {
+        let engine = GeneralPurpose::new(
+            &alphabet::URL_SAFE,
+            GeneralPurposeConfig::new()
+                .with_decode_padding_mode(DecodePaddingMode::RequireNone)
+                .with_decode_allow_trailing_bits(true),
+        );
+        engine
+            .decode(s.as_bytes())
             .map_err(|e| CryptoError::encoding_error(format!("Base64Url decode error: {e}")))
     }
 }
@@ -227,6 +245,17 @@ mod tests {
 
         let decoded = Base64::url_decode_no_pad_lenient(&encoded).unwrap();
         assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn url_decode_no_pad_strict_round_trips_and_rejects_whitespace() {
+        let data = b"Subject=test@example.com&Issuer=https://example.com";
+        let encoded = Base64::url_encode_no_pad(data);
+        assert_eq!(Base64::url_decode_no_pad_strict(&encoded).unwrap(), data);
+        // No whitespace tolerance here (the caller strips what .NET ignores).
+        assert!(Base64::url_decode_no_pad_strict("U3Vi amVjdA").is_err());
+        // Standard-alphabet '+'/'/' are not part of the URL-safe alphabet.
+        assert!(Base64::url_decode_no_pad_strict("ab+/").is_err());
     }
 
     #[test]
