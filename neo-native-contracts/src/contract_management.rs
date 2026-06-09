@@ -20,6 +20,7 @@ use neo_storage::persistence::DataCache;
 use neo_storage::StorageKey;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use std::any::Any;
 use std::sync::LazyLock;
 
@@ -161,6 +162,18 @@ fn parse_hash_arg(args: &[Vec<u8>], method: &str) -> CoreResult<UInt160> {
     })
 }
 
+/// Marshals a `ContractState` to the Array return bytes (C# `ToStackItem` +
+/// `BinarySerializer`) — shared by `getContract` / `getContractById`. A miss is
+/// the caller's responsibility (an empty payload encodes the C# `null`).
+fn contract_state_to_bytes(state: &ContractState, method: &str) -> CoreResult<Vec<u8>> {
+    let item = state.to_stack_item().map_err(|e| {
+        CoreError::invalid_operation(format!("ContractManagement::{method}: stack item: {e}"))
+    })?;
+    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).map_err(|e| {
+        CoreError::invalid_operation(format!("ContractManagement::{method}: serialize: {e}"))
+    })
+}
+
 static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
     vec![
@@ -170,6 +183,14 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             true,
             read_states,
             vec![ContractParameterType::Hash160],
+            ContractParameterType::Array,
+        ),
+        NativeMethod::new(
+            "getContractById".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Integer],
             ContractParameterType::Array,
         ),
         NativeMethod::new(
@@ -228,19 +249,24 @@ impl NativeContract for ContractManagement {
                 // ToStackItem) or null on miss; the native return marshaling
                 // encodes a null Array result as an empty payload.
                 match Self::get_contract_from_snapshot(&snapshot, &hash)? {
-                    Some(state) => {
-                        let item = state.to_stack_item().map_err(|e| {
-                            CoreError::invalid_operation(format!(
-                                "ContractManagement::getContract: stack item: {e}"
-                            ))
-                        })?;
-                        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                            .map_err(|e| {
-                                CoreError::invalid_operation(format!(
-                                    "ContractManagement::getContract: serialize: {e}"
-                                ))
-                            })
-                    }
+                    Some(state) => contract_state_to_bytes(&state, "getContract"),
+                    None => Ok(Vec::new()),
+                }
+            }
+            "getContractById" => {
+                // C# `GetContractById` maps the id to a hash via the
+                // contract-id index, then returns that ContractState (or null).
+                let id = args
+                    .first()
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "ContractManagement::getContractById requires an integer id",
+                        )
+                    })?;
+                match Self::get_contract_by_id_from_snapshot(&snapshot, id)? {
+                    Some(state) => contract_state_to_bytes(&state, "getContractById"),
                     None => Ok(Vec::new()),
                 }
             }
@@ -278,13 +304,21 @@ mod tests {
         assert_eq!(NativeContract::name(&c), "ContractManagement");
         assert_eq!(NativeContract::hash(&c), *CONTRACT_MANAGEMENT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["getContract", "getMinimumDeploymentFee", "isContract"]);
+        assert_eq!(
+            names,
+            ["getContract", "getContractById", "getMinimumDeploymentFee", "isContract"]
+        );
 
         let get_contract = c.methods().iter().find(|m| m.name == "getContract").unwrap();
         assert_eq!(get_contract.parameters, vec![ContractParameterType::Hash160]);
         assert_eq!(get_contract.return_type, ContractParameterType::Array);
         assert_eq!(get_contract.cpu_fee, 1 << 15);
         assert!(get_contract.safe && get_contract.active_in.is_none());
+
+        let by_id = c.methods().iter().find(|m| m.name == "getContractById").unwrap();
+        assert_eq!(by_id.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(by_id.return_type, ContractParameterType::Array);
+        assert_eq!(by_id.cpu_fee, 1 << 15);
 
         let is_contract = c.methods().iter().find(|m| m.name == "isContract").unwrap();
         assert_eq!(is_contract.parameters, vec![ContractParameterType::Hash160]);
@@ -300,6 +334,16 @@ mod tests {
         let cache = DataCache::new(false);
         let hash = UInt160::from_bytes(&[7u8; 20]).unwrap();
         assert!(ContractManagement::get_contract_from_snapshot(&cache, &hash)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn get_contract_by_id_miss_returns_none() {
+        // C# `GetContractById` returns null when the id has no hash-index entry;
+        // the invoke arm maps that to an empty payload (StackItem::Null).
+        let cache = DataCache::new(false);
+        assert!(ContractManagement::get_contract_by_id_from_snapshot(&cache, 42)
             .unwrap()
             .is_none());
     }
