@@ -16,10 +16,11 @@ use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
-use neo_storage::StorageKey;
+use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 use crate::hashes::NEO_TOKEN_HASH;
 use crate::LedgerContract;
@@ -71,6 +72,15 @@ fn register_price(snapshot: &DataCache) -> CoreResult<i64> {
         PREFIX_REGISTER_PRICE,
         DEFAULT_REGISTER_PRICE,
     )
+}
+
+/// C# `SetRegisterPrice` storage effect: overwrite `Prefix_RegisterPrice` as a
+/// `BigInteger` (`GetAndChange(_registerPrice).Set(registerPrice)`).
+fn put_register_price(snapshot: &DataCache, price: i64) {
+    snapshot.update(
+        StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE]),
+        StorageItem::from_bytes(BigInt::from(price).to_signed_bytes_le()),
+    );
 }
 
 /// Returns the GAS-per-block effective at `index`: the most recent
@@ -336,6 +346,16 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::PublicKey],
             int,
         ),
+        // Governance writers. setRegisterPrice(price): committee-gated, States,
+        // Void (C# CpuFee 1<<15, RequiredCallFlags States).
+        NativeMethod::new(
+            "setRegisterPrice".into(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        ),
     ]
 });
 
@@ -400,6 +420,32 @@ impl NativeContract for NeoToken {
             "getRegisterPrice" => {
                 let snapshot = engine.snapshot_cache();
                 Ok(BigInt::from(register_price(&snapshot)?).to_signed_bytes_le())
+            }
+            "setRegisterPrice" => {
+                // C#: validate registerPrice > 0 -> AssertCommittee -> overwrite
+                // Prefix_RegisterPrice.
+                let price = args
+                    .first()
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i64())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("NeoToken::setRegisterPrice requires a price")
+                    })?;
+                if price <= 0 {
+                    return Err(CoreError::invalid_operation(format!(
+                        "RegisterPrice must be positive, got {price}"
+                    )));
+                }
+                let authorized = engine.check_committee_witness().map_err(|e| {
+                    CoreError::invalid_operation(format!("setRegisterPrice committee check: {e}"))
+                })?;
+                if !authorized {
+                    return Err(CoreError::invalid_operation(
+                        "setRegisterPrice requires committee authorization",
+                    ));
+                }
+                put_register_price(&engine.snapshot_cache(), price);
+                Ok(Vec::new())
             }
             "getCommittee" => {
                 // C# returns ECPoint[] sorted ascending; marshaled as an Array of
@@ -481,9 +527,17 @@ mod tests {
                 "getAccountState",
                 "getNextBlockValidators",
                 "getCandidates",
-                "getCandidateVote"
+                "getCandidateVote",
+                "setRegisterPrice"
             ]
         );
+        // setRegisterPrice is the sole writer: not safe, States, Integer -> Void.
+        let set_rp = c.methods().iter().find(|m| m.name == "setRegisterPrice").unwrap();
+        assert!(!set_rp.safe);
+        assert_eq!(set_rp.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(set_rp.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(set_rp.return_type, ContractParameterType::Void);
+        assert_eq!(set_rp.cpu_fee, 1 << 15);
         let acct = c.methods().iter().find(|m| m.name == "getAccountState").unwrap();
         assert_eq!(acct.parameters, vec![ContractParameterType::Hash160]);
         assert_eq!(acct.return_type, ContractParameterType::Array);
@@ -724,6 +778,20 @@ mod tests {
         );
         assert_eq!(gas_per_block_at(&cache, 9), BigInt::from(DEFAULT_GAS_PER_BLOCK));
         assert_eq!(gas_per_block_at(&cache, 20), BigInt::from(3 * 100_000_000i64));
+    }
+
+    #[test]
+    fn set_register_price_write_round_trips() {
+        // The setRegisterPrice storage effect (overwrite Prefix_RegisterPrice) is
+        // observed by the getRegisterPrice reader, matching C#
+        // GetAndChange(_registerPrice).Set(price).
+        let cache = DataCache::new(false);
+        assert_eq!(register_price(&cache).unwrap(), DEFAULT_REGISTER_PRICE);
+        put_register_price(&cache, 500 * 100_000_000);
+        assert_eq!(register_price(&cache).unwrap(), 500 * 100_000_000);
+        // Overwrite (GetAndChange semantics), not insert-once.
+        put_register_price(&cache, 2000 * 100_000_000);
+        assert_eq!(register_price(&cache).unwrap(), 2000 * 100_000_000);
     }
 
     #[test]
