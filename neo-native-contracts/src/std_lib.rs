@@ -16,6 +16,8 @@ use neo_crypto::{Base58, Base64};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
+use neo_serialization::BinarySerializer;
+use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -96,6 +98,18 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
         },
         // memorySearch(mem, value[, start[, backward]]) -> Integer index or -1.
         "memorySearch" => memory_search_impl(args),
+        // serialize(item) -> the item's BinarySerializer bytes. The `Any`-typed
+        // arg is already BinarySerialized by the engine, so C#
+        // `BinarySerializer.Serialize(item)` is exactly args[0].
+        "serialize" => arg_bytes(args, method).map(<[u8]>::to_vec),
+        // deserialize(data) -> the StackItem. We validate the payload here
+        // (C# faults on malformed input, whereas the engine's Any-return decode
+        // falls back to a raw ByteString) and hand the bytes back for that decode.
+        "deserialize" => arg_bytes(args, method).and_then(|data| {
+            BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
+                .map(|_| data.to_vec())
+                .map_err(|e| CoreError::invalid_operation(format!("StdLib::deserialize: {e}")))
+        }),
         _ => return None,
     };
     Some(result)
@@ -176,6 +190,9 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
         NativeMethod::new("base58Decode".into(), 1 << 10, true, 0, vec![string], bytes),
         NativeMethod::new("base58CheckEncode".into(), 1 << 16, true, 0, vec![bytes], string),
         NativeMethod::new("base58CheckDecode".into(), 1 << 16, true, 0, vec![string], bytes),
+        // serialize(Any) -> ByteArray; deserialize(ByteArray) -> Any.
+        NativeMethod::new("serialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes),
+        NativeMethod::new("deserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any),
         NativeMethod::new("memoryCompare".into(), 1 << 5, true, 0, vec![bytes, bytes], int),
         // memorySearch's 3 C# overloads (dispatched by argument count).
         NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes], int),
@@ -291,6 +308,8 @@ mod tests {
                 "base58Decode",
                 "base58CheckEncode",
                 "base58CheckDecode",
+                "serialize",
+                "deserialize",
                 "memoryCompare",
                 "memorySearch",
                 "memorySearch",
@@ -332,6 +351,31 @@ mod tests {
     fn memory_search_start_out_of_range_faults() {
         // C# AsSpan(start) throws when start exceeds the length.
         assert!(dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]])
+            .unwrap()
+            .is_err());
+    }
+
+    #[test]
+    fn serialize_deserialize_round_trip_and_fault() {
+        use neo_vm::StackItem;
+        // The serialize arg arrives already BinarySerialized by the engine, so
+        // dispatch("serialize") is a passthrough of that payload.
+        let payload = BinarySerializer::serialize(
+            &StackItem::from_int(BigInt::from(42)),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            dispatch("serialize", &[payload.clone()]).unwrap().unwrap(),
+            payload
+        );
+        // deserialize accepts the valid payload (returns it for the Any-return
+        // decode) and faults on malformed input.
+        assert_eq!(
+            dispatch("deserialize", &[payload.clone()]).unwrap().unwrap(),
+            payload
+        );
+        assert!(dispatch("deserialize", &[vec![0xff, 0xff, 0xff]])
             .unwrap()
             .is_err());
     }
