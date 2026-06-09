@@ -1,13 +1,15 @@
 //! StdLib native contract (id -2).
 //!
-//! Implements the C# `Neo.SmartContract.Native.StdLib` Base64/Base58 primitives,
-//! `itoa`/`atoi` (decimal + .NET two's-complement hex), and
-//! `memoryCompare` / `memorySearch`, dispatched through the [`NativeContract`]
-//! trait. The remaining StdLib surface (`base64Decode` — pending a strict,
-//! whitespace-exact decoder to match `Convert.FromBase64String`;
-//! `jsonSerialize`/`jsonDeserialize`, `stringSplit`, `strLen` — grapheme
-//! counting, `base64Url*`) is the next increment; every method declared below
-//! is byte-for-byte C# parity with a real implementation.
+//! Implements the C# `Neo.SmartContract.Native.StdLib` surface, dispatched
+//! through the [`NativeContract`] trait: Base64/Base58 (incl. `base64Url*` and
+//! Base58Check), hex, `itoa`/`atoi` (decimal + .NET two's-complement hex),
+//! `memoryCompare` / `memorySearch`, `stringSplit`, the binary
+//! `serialize`/`deserialize` (BinarySerializer), and `jsonSerialize`/
+//! `jsonDeserialize` (System.Text.Json byte-exact, via
+//! [`neo_serialization::JsonSerializer`]). Every method declared below is
+//! byte-for-byte C# parity with a real implementation. The one remaining method
+//! is `strLen`, which depends on .NET's `StringInfo` grapheme-cluster algorithm
+//! (and its Unicode version) and is not yet pinned by an in-repo oracle.
 
 use std::any::Any;
 use std::sync::LazyLock;
@@ -17,7 +19,7 @@ use neo_crypto::{Base58, Base64, Hex};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
-use neo_serialization::BinarySerializer;
+use neo_serialization::{BinarySerializer, JsonSerializer};
 use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::{BigInt, Sign};
@@ -127,6 +129,30 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
             BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
                 .map(|_| data.to_vec())
                 .map_err(|e| CoreError::invalid_operation(format!("StdLib::deserialize: {e}")))
+        }),
+        // jsonSerialize(item) -> JSON bytes (System.Text.Json byte-exact). The
+        // `Any`-typed arg arrives BinarySerialized by the engine, so decode it to
+        // a StackItem first, then JSON-encode bounded by the VM item-size limit
+        // (C# `SerializeToByteArray(item, engine.Limits.MaxItemSize)`).
+        "jsonSerialize" => arg_bytes(args, method).and_then(|data| {
+            let limits = ExecutionEngineLimits::default();
+            let item = BinarySerializer::deserialize(data, &limits, None)
+                .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}")))?;
+            JsonSerializer::serialize_to_byte_array(&item, limits.max_item_size)
+                .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}")))
+        }),
+        // jsonDeserialize(json) -> the StackItem, re-encoded as BinarySerializer
+        // bytes for the engine's `Any`-return decode. Depth 10 + MaxStackSize
+        // match C# (`JToken.Parse(json, 10)` + `engine.Limits`).
+        "jsonDeserialize" => arg_bytes(args, method).and_then(|json| {
+            let limits = ExecutionEngineLimits::default();
+            let item = JsonSerializer::deserialize(json, 10, limits.max_stack_size as usize)
+                .map_err(|e| {
+                    CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
+                })?;
+            BinarySerializer::serialize(&item, &limits).map_err(|e| {
+                CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
+            })
         }),
         _ => return None,
     };
@@ -470,6 +496,10 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
         // serialize(Any) -> ByteArray; deserialize(ByteArray) -> Any.
         NativeMethod::new("serialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes),
         NativeMethod::new("deserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any),
+        // jsonSerialize(Any) -> ByteArray; jsonDeserialize(ByteArray) -> Any
+        // (C# StdLib.cs CpuFees 1<<12 / 1<<14).
+        NativeMethod::new("jsonSerialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes),
+        NativeMethod::new("jsonDeserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any),
         NativeMethod::new("memoryCompare".into(), 1 << 5, true, 0, vec![bytes, bytes], int),
         // memorySearch's 3 C# overloads (dispatched by argument count).
         NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes], int),
@@ -693,7 +723,7 @@ mod tests {
 
     #[test]
     fn unknown_method_is_none() {
-        assert!(dispatch("jsonSerialize", &[vec![1]]).is_none());
+        assert!(dispatch("notAStdLibMethod", &[vec![1]]).is_none());
     }
 
     /// stringSplit via the dispatch seam: decodes the BinarySerialized Array
@@ -868,6 +898,8 @@ mod tests {
                 "base58CheckDecode",
                 "serialize",
                 "deserialize",
+                "jsonSerialize",
+                "jsonDeserialize",
                 "memoryCompare",
                 "memorySearch",
                 "memorySearch",
@@ -946,5 +978,45 @@ mod tests {
         assert!(dispatch("deserialize", &[vec![0xff, 0xff, 0xff]])
             .unwrap()
             .is_err());
+    }
+
+    #[test]
+    fn json_serialize_deserialize_match_csharp_vectors() {
+        use neo_vm::StackItem;
+        let limits = ExecutionEngineLimits::default();
+        // The engine BinarySerializes the `Any` arg before dispatch sees it.
+        let ser = |item: &StackItem| -> String {
+            let payload = BinarySerializer::serialize(item, &limits).unwrap();
+            let json = dispatch("jsonSerialize", &[payload]).unwrap().unwrap();
+            String::from_utf8(json).unwrap()
+        };
+        // C# UT_StdLib.Json_Serialize.
+        assert_eq!(ser(&StackItem::from_int(BigInt::from(5))), "5");
+        assert_eq!(ser(&StackItem::from_bool(true)), "true");
+        assert_eq!(ser(&StackItem::from_byte_string(b"test".to_vec())), "\"test\"");
+        assert_eq!(ser(&StackItem::null()), "null");
+
+        // jsonDeserialize returns the StackItem re-encoded as BinarySerializer
+        // bytes (for the engine's Any-return decode); compare to the direct
+        // encoding of the expected item.
+        let de_eq = |json: &str, item: &StackItem| {
+            let out = dispatch("jsonDeserialize", &[json.as_bytes().to_vec()])
+                .unwrap()
+                .unwrap();
+            assert_eq!(out, BinarySerializer::serialize(item, &limits).unwrap(), "{json}");
+        };
+        // C# UT_StdLib.Json_Deserialize.
+        de_eq("123", &StackItem::from_int(BigInt::from(123)));
+        de_eq("null", &StackItem::null());
+        // Faults: invalid JSON ("***") and a fractional number ("no decimals").
+        assert!(dispatch("jsonDeserialize", &[b"***".to_vec()]).unwrap().is_err());
+        assert!(dispatch("jsonDeserialize", &[b"123.45".to_vec()]).unwrap().is_err());
+
+        // Serialize -> deserialize round-trips a structured value.
+        let payload = dispatch("jsonDeserialize", &[br#"{"k":[1,true,null]}"#.to_vec()])
+            .unwrap()
+            .unwrap();
+        let item = BinarySerializer::deserialize(&payload, &limits, None).unwrap();
+        assert_eq!(ser(&item), r#"{"k":[1,true,null]}"#);
     }
 }
