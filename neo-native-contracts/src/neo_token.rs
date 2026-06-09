@@ -1,10 +1,13 @@
 //! NeoToken (NEO) native contract (id -5).
 //!
-//! Implements the NEP-17 metadata of the C# `Neo.SmartContract.Native.NeoToken`
-//! (`symbol` "NEO", `decimals` 0). NEO's stateful surface (NEP-17 balances plus
-//! governance: vote, candidates, committee, getGasPerBlock, unclaimedGas, ...)
-//! is the next increment on the storage-backed pattern; the methods declared
-//! below are byte-for-byte C# parity.
+//! Implements the C# `Neo.SmartContract.Native.NeoToken`: NEP-17 metadata
+//! (`symbol` "NEO", `decimals` 0) and balances, the committee/candidate reads
+//! (getCommittee, getCandidates, getNextBlockValidators, …), the committee
+//! setters (setGasPerBlock, setRegisterPrice), and candidate registration
+//! (`registerCandidate` / `unregisterCandidate`). The remaining governance
+//! surface — `vote`/`VoteInternal`, the vote-weighted committee recompute, and
+//! the GAS reward math (`unclaimedGas`, NEP-17 `transfer`'s mint side) — is the
+//! next increment. Methods declared below are byte-for-byte C# parity.
 
 use std::any::Any;
 use std::sync::LazyLock;
@@ -12,7 +15,7 @@ use std::sync::LazyLock;
 use neo_config::Hardfork;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
@@ -184,6 +187,24 @@ fn decode_candidate_state(value: &[u8]) -> CoreResult<(bool, BigInt)> {
         None => BigInt::from(0),
     };
     Ok((registered, votes))
+}
+
+/// Encodes a `CandidateState` storage value — a `Struct[Registered(bool),
+/// Votes]` — the write counterpart of [`decode_candidate_state`].
+fn encode_candidate_state(registered: bool, votes: &BigInt) -> CoreResult<Vec<u8>> {
+    let item = StackItem::from_struct(vec![
+        StackItem::from_bool(registered),
+        StackItem::from_int(votes.clone()),
+    ]);
+    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::invalid_operation(format!("encode candidate state: {e}")))
+}
+
+/// The `Prefix_Candidate` storage key for `pubkey` (`prefix ++ 33-byte pubkey`).
+fn candidate_key(pubkey: &ECPoint) -> StorageKey {
+    let mut key = vec![PREFIX_CANDIDATE];
+    key.extend_from_slice(&pubkey.to_bytes());
+    StorageKey::new(NeoToken::ID, key)
 }
 
 /// C# `GetCandidates` (= `GetCandidatesInternal.Where(Registered)`): scan
@@ -378,6 +399,25 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
         ),
+        // Candidate registration (Echidna V1: States|AllowNotify). registerCandidate
+        // has no manifest CpuFee (it charges GetRegisterPrice dynamically);
+        // unregisterCandidate is CpuFee 1<<16. Both return Boolean.
+        NativeMethod::new(
+            "registerCandidate".into(),
+            0,
+            false,
+            CallFlags::STATES.bits() | CallFlags::ALLOW_NOTIFY.bits(),
+            vec![ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+        ),
+        NativeMethod::new(
+            "unregisterCandidate".into(),
+            1 << 16,
+            false,
+            CallFlags::STATES.bits() | CallFlags::ALLOW_NOTIFY.bits(),
+            vec![ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+        ),
     ]
 });
 
@@ -543,6 +583,127 @@ impl NativeContract for NeoToken {
                 let snapshot = engine.snapshot_cache();
                 Ok(candidate_vote(&snapshot, &pubkey)?.to_signed_bytes_le())
             }
+            "registerCandidate" => {
+                // C# RegisterCandidate (Echidna V1) + RegisterInternal: charge the
+                // register price, then require a witness from the candidate's
+                // signature-contract account; create/flip the CandidateState to
+                // Registered and (post-Echidna) emit CandidateStateChanged.
+                let pubkey_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation("NeoToken::registerCandidate requires a public key")
+                })?;
+                let pubkey = ECPoint::from_bytes(pubkey_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "NeoToken::registerCandidate: bad public key: {e}"
+                    ))
+                })?;
+                // engine.AddFee(GetRegisterPrice * FeeFactor) — charged before the
+                // witness check, matching the V1 ordering.
+                let price = register_price(&engine.snapshot_cache())?;
+                engine
+                    .charge_execution_fee(u64::try_from(price).unwrap_or(0))
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!("NeoToken::registerCandidate: fee: {e}"))
+                    })?;
+                let account =
+                    UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+                let authorized = engine.check_witness_hash(&account).map_err(|e| {
+                    CoreError::invalid_operation(format!("NeoToken::registerCandidate: witness: {e}"))
+                })?;
+                if !authorized {
+                    return Ok(vec![0u8]);
+                }
+                let snapshot = engine.snapshot_cache();
+                let key = candidate_key(&pubkey);
+                let (registered, votes) = match snapshot.get(&key) {
+                    Some(item) => decode_candidate_state(&item.value_bytes())?,
+                    None => (false, BigInt::from(0)),
+                };
+                if registered {
+                    return Ok(vec![1u8]);
+                }
+                snapshot.update(key, StorageItem::from_bytes(encode_candidate_state(true, &votes)?));
+                if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
+                    engine
+                        .send_notification(
+                            Self::script_hash(),
+                            "CandidateStateChanged".to_string(),
+                            vec![
+                                StackItem::from_byte_string(pubkey.to_bytes()),
+                                StackItem::from_bool(true),
+                                StackItem::from_int(votes),
+                            ],
+                        )
+                        .map_err(|e| {
+                            CoreError::invalid_operation(format!(
+                                "NeoToken::registerCandidate: notify: {e}"
+                            ))
+                        })?;
+                }
+                Ok(vec![1u8])
+            }
+            "unregisterCandidate" => {
+                // C# UnregisterCandidate: witness on the candidate account, flip the
+                // CandidateState to unregistered; CheckCandidate deletes the entry
+                // once it has no remaining votes.
+                let pubkey_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "NeoToken::unregisterCandidate requires a public key",
+                    )
+                })?;
+                let pubkey = ECPoint::from_bytes(pubkey_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "NeoToken::unregisterCandidate: bad public key: {e}"
+                    ))
+                })?;
+                let account =
+                    UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+                let authorized = engine.check_witness_hash(&account).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "NeoToken::unregisterCandidate: witness: {e}"
+                    ))
+                })?;
+                if !authorized {
+                    return Ok(vec![0u8]);
+                }
+                let snapshot = engine.snapshot_cache();
+                let key = candidate_key(&pubkey);
+                let Some(item) = snapshot.get(&key) else {
+                    return Ok(vec![1u8]); // not a candidate -> true
+                };
+                let (registered, votes) = decode_candidate_state(&item.value_bytes())?;
+                if !registered {
+                    return Ok(vec![1u8]);
+                }
+                // CheckCandidate: with no remaining votes the entry is removed (the
+                // voter-reward sweep is a no-op until votes exist); otherwise it is
+                // retained as unregistered.
+                if votes == BigInt::from(0) {
+                    snapshot.delete(&key);
+                } else {
+                    snapshot.update(
+                        key,
+                        StorageItem::from_bytes(encode_candidate_state(false, &votes)?),
+                    );
+                }
+                if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
+                    engine
+                        .send_notification(
+                            Self::script_hash(),
+                            "CandidateStateChanged".to_string(),
+                            vec![
+                                StackItem::from_byte_string(pubkey.to_bytes()),
+                                StackItem::from_bool(false),
+                                StackItem::from_int(votes),
+                            ],
+                        )
+                        .map_err(|e| {
+                            CoreError::invalid_operation(format!(
+                                "NeoToken::unregisterCandidate: notify: {e}"
+                            ))
+                        })?;
+                }
+                Ok(vec![1u8])
+            }
             "getCommitteeAddress" => {
                 let snapshot = engine.snapshot_cache();
                 Ok(compute_committee_address(&snapshot)?.to_bytes())
@@ -595,7 +756,9 @@ mod tests {
                 "getCandidates",
                 "getCandidateVote",
                 "setRegisterPrice",
-                "setGasPerBlock"
+                "setGasPerBlock",
+                "registerCandidate",
+                "unregisterCandidate"
             ]
         );
         // The governance writers: not safe, States, Integer -> Void, CpuFee 1<<15.
@@ -606,6 +769,18 @@ mod tests {
             assert_eq!(w.parameters, vec![ContractParameterType::Integer]);
             assert_eq!(w.return_type, ContractParameterType::Void);
             assert_eq!(w.cpu_fee, 1 << 15);
+        }
+        // Candidate writers: not safe, States|AllowNotify, PublicKey -> Boolean;
+        // registerCandidate has no manifest CpuFee, unregisterCandidate is 1<<16.
+        let notify_flags = CallFlags::STATES.bits() | CallFlags::ALLOW_NOTIFY.bits();
+        for (name, fee) in [("registerCandidate", 0i64), ("unregisterCandidate", 1 << 16)] {
+            let w = c.methods().iter().find(|m| m.name == name).unwrap();
+            assert!(!w.safe, "{name} is not safe");
+            assert_eq!(w.required_call_flags, notify_flags, "{name} flags");
+            assert_eq!(w.parameters, vec![ContractParameterType::PublicKey], "{name} params");
+            assert_eq!(w.return_type, ContractParameterType::Boolean, "{name} return");
+            assert_eq!(w.cpu_fee, fee, "{name} cpu_fee");
+            assert_eq!(w.active_in, None, "{name} genesis-active");
         }
         let acct = c.methods().iter().find(|m| m.name == "getAccountState").unwrap();
         assert_eq!(acct.parameters, vec![ContractParameterType::Hash160]);
@@ -996,5 +1171,136 @@ mod witness_harness_tests {
         let (state2, ok2) = run_signed(check_witness_script(&stranger), &[signer]);
         assert_eq!(state2, VmState::HALT, "script must HALT");
         assert!(!ok2, "CheckWitness must be false for a non-signer");
+    }
+}
+
+/// End-to-end verification of the candidate-registration writers through the VM
+/// (the witness-gated script-execution path proven by `witness_harness_tests`):
+/// a script `System.Contract.Call`s NeoToken with the candidate as signer, and
+/// the resulting candidate state is asserted against the shared snapshot.
+#[cfg(test)]
+mod governance_writer_tests {
+    use super::*;
+    use neo_config::ProtocolSettings;
+    use neo_execution::contract_state::ContractState;
+    use neo_execution::native_contract::build_native_contract_state;
+    use neo_execution::{ApplicationEngine, Contract};
+    use neo_io::{BinaryWriter, Serializable};
+    use neo_payloads::signer::Signer;
+    use neo_payloads::transaction::Transaction;
+    use neo_payloads::witness::Witness;
+    use neo_primitives::{CallFlags, TriggerType, Verifiable, WitnessScope};
+    use neo_script_builder::ScriptBuilder;
+    use neo_vm_rs::VmState;
+    use std::sync::Arc;
+
+    /// ContractManagement per-contract storage prefix (mirrors asset_descriptor).
+    const CM_PREFIX_CONTRACT: u8 = 8;
+
+    fn candidate_pubkey() -> ECPoint {
+        // A valid secp256r1 public key (a Neo N3 standby validator).
+        ECPoint::from_bytes(
+            &hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn deploy_native(cache: &DataCache, state: &ContractState) {
+        let mut writer = BinaryWriter::new();
+        state.serialize(&mut writer).expect("serialize contract state");
+        let mut key = vec![CM_PREFIX_CONTRACT];
+        key.extend_from_slice(&state.hash.to_bytes());
+        cache.add(
+            StorageKey::new(crate::ContractManagement::ID, key),
+            StorageItem::from_bytes(writer.to_bytes()),
+        );
+    }
+
+    /// Runs `method(pubkey)` on NeoToken via System.Contract.Call, signed (Global)
+    /// by `signer`, against the shared `snapshot`. Returns the final VM state.
+    fn call(snapshot: Arc<DataCache>, signer: UInt160, pubkey: &[u8], method: &str) -> VmState {
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push(pubkey);
+        builder.emit_push_int(1);
+        builder.emit_pack();
+        builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
+        builder.emit_push(method.as_bytes());
+        builder.emit_push(&NeoToken::script_hash().to_array());
+        builder
+            .emit_syscall("System.Contract.Call")
+            .expect("System.Contract.Call");
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            Some(container),
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            2000_00000000, // > the 1000-GAS register price
+            None,
+        )
+        .expect("engine builds");
+        engine
+            .load_script(builder.to_array(), CallFlags::ALL, None)
+            .expect("script loads");
+        engine.execute_allow_fault()
+    }
+
+    fn seeded_snapshot() -> Arc<DataCache> {
+        crate::install();
+        let cache = DataCache::new(false);
+        let neo_state = build_native_contract_state(&NeoToken, &ProtocolSettings::default(), 0);
+        deploy_native(&cache, &neo_state);
+        Arc::new(cache)
+    }
+
+    #[test]
+    fn register_then_unregister_candidate_round_trip() {
+        let pubkey = candidate_pubkey();
+        let pubkey_bytes = pubkey.to_bytes();
+        let account =
+            UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+        let snapshot = seeded_snapshot();
+
+        // Register (signed by the candidate's account) → Registered with 0 votes.
+        let state = call(Arc::clone(&snapshot), account, &pubkey_bytes, "registerCandidate");
+        assert_eq!(state, VmState::HALT, "registerCandidate must HALT");
+        let item = snapshot
+            .get(&candidate_key(&pubkey))
+            .expect("candidate entry written");
+        let (registered, votes) = decode_candidate_state(&item.value_bytes()).unwrap();
+        assert!(registered, "candidate is Registered");
+        assert_eq!(votes, BigInt::from(0));
+        assert_eq!(read_registered_candidates(&snapshot).unwrap().len(), 1);
+
+        // Unregister → the zero-vote entry is removed.
+        let state2 = call(Arc::clone(&snapshot), account, &pubkey_bytes, "unregisterCandidate");
+        assert_eq!(state2, VmState::HALT, "unregisterCandidate must HALT");
+        assert!(
+            snapshot.get(&candidate_key(&pubkey)).is_none(),
+            "zero-vote candidate entry removed"
+        );
+    }
+
+    #[test]
+    fn register_candidate_requires_the_candidate_witness() {
+        let pubkey = candidate_pubkey();
+        let pubkey_bytes = pubkey.to_bytes();
+        let wrong = UInt160::from_bytes(&[0x09; 20]).unwrap();
+        let snapshot = seeded_snapshot();
+
+        // Signed by the wrong account → no candidate is registered.
+        let state = call(Arc::clone(&snapshot), wrong, &pubkey_bytes, "registerCandidate");
+        assert_eq!(state, VmState::HALT);
+        assert!(
+            snapshot.get(&candidate_key(&pubkey)).is_none(),
+            "no candidate registered without its witness"
+        );
     }
 }
