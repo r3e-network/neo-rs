@@ -69,6 +69,8 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
     let result = match method {
         // Encoders: ByteArray -> String (returned as UTF-8 bytes).
         "base64Encode" => arg_bytes(args, method).map(|b| Base64::encode(b).into_bytes()),
+        // base64Decode: String -> ByteArray (C# Convert.FromBase64String).
+        "base64Decode" => base64_decode_impl(args),
         "base58Encode" => arg_bytes(args, method).map(|b| Base58::encode(b).into_bytes()),
         "base58CheckEncode" => {
             arg_bytes(args, method).map(|b| Base58::encode_check(b).into_bytes())
@@ -196,6 +198,28 @@ fn optional_base(args: &[Vec<u8>], index: usize, method: &str) -> CoreResult<i64
     }
 }
 
+/// C# `StdLib.Base64Decode` = `Convert.FromBase64String`: strip the four
+/// whitespace characters .NET tolerates ({space, `\t`, `\n`, `\r`}), then
+/// strict-decode the remainder (any other character — including other
+/// whitespace — faults). Enforces the C# `[MaxLength(1024)]` cap on the input.
+fn base64_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let raw = arg_bytes(args, "base64Decode")?;
+    if raw.len() > MAX_INPUT_LENGTH {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::base64Decode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+        )));
+    }
+    let value = std::str::from_utf8(raw).map_err(|_| {
+        CoreError::invalid_operation("StdLib::base64Decode: argument is not valid UTF-8".to_string())
+    })?;
+    let stripped: String = value
+        .chars()
+        .filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r'))
+        .collect();
+    Base64::decode_strict(&stripped)
+        .map_err(|e| CoreError::invalid_operation(format!("StdLib::base64Decode: {e}")))
+}
+
 /// C# `StdLib.Itoa(value[, base])`: base 10 -> `BigInteger.ToString()` (decimal),
 /// base 16 -> `BigInteger.ToString("x")` (lowercase two's-complement hex).
 /// Any other base throws `ArgumentOutOfRangeException`.
@@ -316,6 +340,7 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let boolean = ContractParameterType::Boolean;
     vec![
         NativeMethod::new("base64Encode".into(), 1 << 5, true, 0, vec![bytes], string),
+        NativeMethod::new("base64Decode".into(), 1 << 5, true, 0, vec![string], bytes),
         NativeMethod::new("base58Encode".into(), 1 << 13, true, 0, vec![bytes], string),
         NativeMethod::new("base58Decode".into(), 1 << 10, true, 0, vec![string], bytes),
         NativeMethod::new("base58CheckEncode".into(), 1 << 16, true, 0, vec![bytes], string),
@@ -392,6 +417,39 @@ mod tests {
         assert_eq!(call("base64Encode", b"abc").unwrap(), b"YWJj");
         assert_eq!(call("base64Encode", b"").unwrap(), b"");
         assert_eq!(call("base64Encode", &[0xff, 0xfe]).unwrap(), b"//4=");
+    }
+
+    #[test]
+    fn base64_decode_matches_csharp_vectors() {
+        // C# UT_StdLib.TestBinary vectors (the in-repo oracle).
+        // Round-trips of Base64Encode output.
+        assert_eq!(call("base64Decode", b"").unwrap(), Vec::<u8>::new());
+        let enc3 = call("base64Encode", &[1, 2, 3]).unwrap();
+        assert_eq!(call("base64Decode", &enc3).unwrap(), vec![1, 2, 3]);
+        // Whitespace {space, \r, \t, \n} is stripped before decoding.
+        assert_eq!(call("base64Decode", b"A \r Q \t I \n D").unwrap(), vec![1, 2, 3]);
+        assert_eq!(call("base64Decode", b"AQIDBA==").unwrap(), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn base64_decode_rejects_invalid() {
+        // Non-alphabet bytes fault.
+        assert!(call("base64Decode", b"@@@@").is_err());
+        // Whitespace other than {space, \t, \n, \r} is NOT tolerated (C# faults):
+        // a vertical tab (0x0B) survives the strip and faults the strict decode.
+        assert!(call("base64Decode", b"AQI\x0bD").is_err());
+        // Non-multiple-of-4 length (missing padding) faults.
+        assert!(call("base64Decode", b"AQI").is_err());
+    }
+
+    #[test]
+    fn base64_decode_respects_max_input_length() {
+        // 1024 bytes ok ("QQ==" padded chunks stay valid); 1025 faults pre-decode.
+        let ok = "A".repeat(MAX_INPUT_LENGTH - 4) + "QQ==";
+        assert_eq!(ok.len(), MAX_INPUT_LENGTH);
+        assert!(dispatch("base64Decode", &[ok.into_bytes()]).unwrap().is_ok());
+        let too_long = "A".repeat(MAX_INPUT_LENGTH + 1);
+        assert!(dispatch("base64Decode", &[too_long.into_bytes()]).unwrap().is_err());
     }
 
     #[test]
@@ -550,6 +608,7 @@ mod tests {
             names,
             [
                 "base64Encode",
+                "base64Decode",
                 "base58Encode",
                 "base58Decode",
                 "base58CheckEncode",

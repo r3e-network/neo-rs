@@ -1,7 +1,9 @@
 //! Encoding helpers used by Neo cryptographic APIs.
 
 use crate::error::{CryptoError, CryptoResult};
-use base64::{engine::general_purpose, Engine as _};
+use base64::alphabet;
+use base64::engine::general_purpose::{self, GeneralPurpose, GeneralPurposeConfig};
+use base64::Engine as _;
 use neo_primitives::base58_check::{self, Base58CheckDecodeError};
 
 /// Base58 encoding/decoding utilities.
@@ -62,6 +64,22 @@ impl Base64 {
         let normalized = strip_whitespace(s);
         general_purpose::STANDARD
             .decode(normalized.as_bytes())
+            .map_err(|e| CryptoError::encoding_error(format!("Base64 decode error: {e}")))
+    }
+
+    /// Strict standard-alphabet Base64 decode with **no** whitespace tolerance,
+    /// matching .NET `Convert.FromBase64String` once whitespace has been
+    /// stripped by the caller: canonical padding is required (input length must
+    /// be a multiple of 4 including `=`), while non-canonical trailing bits in
+    /// the final quantum are tolerated (as .NET does). Any non-alphabet byte —
+    /// including whitespace — is rejected.
+    pub fn decode_strict(s: &str) -> CryptoResult<Vec<u8>> {
+        let engine = GeneralPurpose::new(
+            &alphabet::STANDARD,
+            GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+        );
+        engine
+            .decode(s.as_bytes())
             .map_err(|e| CryptoError::encoding_error(format!("Base64 decode error: {e}")))
     }
 
@@ -182,6 +200,20 @@ mod tests {
     fn base64_standard_decode_ignores_whitespace() {
         let decoded = Base64::decode_lenient("A \r Q \t I \n D").unwrap();
         assert_eq!(decoded, [1, 2, 3]);
+    }
+
+    #[test]
+    fn base64_decode_strict_round_trips_and_rejects_whitespace() {
+        // Canonical inputs decode (no whitespace tolerance in this primitive).
+        assert_eq!(Base64::decode_strict("AQIDBA==").unwrap(), [1, 2, 3, 4]);
+        assert_eq!(Base64::decode_strict("AQID").unwrap(), [1, 2, 3]);
+        assert_eq!(Base64::decode_strict("").unwrap(), Vec::<u8>::new());
+        // Whitespace and non-alphabet bytes are rejected (the caller strips
+        // the whitespace .NET tolerates before calling this).
+        assert!(Base64::decode_strict("AQ ID").is_err());
+        assert!(Base64::decode_strict("@@@@").is_err());
+        // Missing padding (length not a multiple of 4) is rejected.
+        assert!(Base64::decode_strict("AQI").is_err());
     }
 
     #[test]
