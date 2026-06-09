@@ -95,7 +95,7 @@ fn register_price(snapshot: &DataCache) -> CoreResult<i64> {
 fn put_register_price(snapshot: &DataCache, price: i64) {
     snapshot.update(
         StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE]),
-        StorageItem::from_bytes(BigInt::from(price).to_signed_bytes_le()),
+        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(price))),
     );
 }
 
@@ -110,7 +110,7 @@ fn put_gas_per_block(snapshot: &DataCache, index: u32, gas_per_block: &BigInt) {
     key.extend_from_slice(&index.to_be_bytes());
     snapshot.update(
         StorageKey::new(NeoToken::ID, key),
-        StorageItem::from_bytes(gas_per_block.to_signed_bytes_le()),
+        StorageItem::from_bytes(crate::bigint_to_storage_bytes(gas_per_block)),
     );
 }
 
@@ -215,7 +215,7 @@ fn read_voters_count(snapshot: &DataCache) -> BigInt {
 
 /// Writes the total voted NEO (`Prefix_VotersCount`).
 fn write_voters_count(snapshot: &DataCache, value: &BigInt) {
-    snapshot.update(voters_count_key(), StorageItem::from_bytes(value.to_signed_bytes_le()));
+    snapshot.update(voters_count_key(), StorageItem::from_bytes(crate::bigint_to_storage_bytes(value)));
 }
 
 /// C# `NeoToken.CheckCandidate`: when a candidate is unregistered and has no
@@ -395,6 +395,126 @@ fn neo_transfer_core(
     neo_post_transfer(engine, from, to, amount, data)?;
     for (account, datoshi) in distributions {
         crate::gas_token::gas_mint(engine, &account, &datoshi, true)?;
+    }
+    Ok(true)
+}
+
+/// C# `NeoToken.VoteInternal(engine, account, voteTo)`: the vote transition
+/// applied after the caller has authorized the voter — `_votersCount`
+/// bookkeeping, the GAS reward (`DistributeGas` + `GAS.Mint`), candidate
+/// vote-weight deltas, the `NeoAccountState.VoteTo` update, and the `Vote`
+/// notification. Returns `false` (no fault) when the account has no state, a
+/// zero balance, or the new candidate is missing/unregistered, matching C#.
+///
+/// Exposed `pub(crate)` because C# `PolicyContract.BlockAccountInternal`
+/// (HF_Faun) clears a blocked account's vote by calling
+/// `NEO.VoteInternal(engine, account, null)` directly, bypassing the witness
+/// check performed by the public `vote` method.
+pub(crate) fn vote_internal(
+    engine: &mut ApplicationEngine,
+    account: &UInt160,
+    vote_to: Option<&ECPoint>,
+) -> CoreResult<bool> {
+    let vote_to: Option<ECPoint> = vote_to.cloned();
+    let snapshot = engine.snapshot_cache();
+    let Some(acct_bytes) = read_account_state(&snapshot, account) else {
+        return Ok(false); // no account state
+    };
+    let mut acct = decode_neo_account_state(&acct_bytes)?;
+    if acct.balance == BigInt::from(0) {
+        return Ok(false);
+    }
+    // The new candidate must exist and be registered.
+    if let Some(new_pk) = &vote_to {
+        match snapshot.get(&candidate_key(new_pk)) {
+            Some(item) => {
+                let (registered, _) = decode_candidate_state(&item.value_bytes())?;
+                if !registered {
+                    return Ok(false);
+                }
+            }
+            None => return Ok(false),
+        }
+    }
+    let old_vote = acct.vote_to.clone();
+    // _votersCount changes only when the account starts or stops voting.
+    if old_vote.is_none() != vote_to.is_none() {
+        let mut count = read_voters_count(&snapshot);
+        if old_vote.is_none() {
+            count += &acct.balance;
+        } else {
+            count -= &acct.balance;
+        }
+        write_voters_count(&snapshot, &count);
+    }
+    // DistributeGas: compute the bonus with the OLD state, then advance
+    // BalanceHeight + LastGasPerVote (only when a persisting block exists).
+    let mut gas_to_mint = BigInt::from(0);
+    if let Some(block) = engine.persisting_block() {
+        let end = block.index();
+        let bonus = calculate_bonus(&snapshot, &acct, end)?;
+        acct.balance_height = end;
+        if let Some(old_pk) = &old_vote {
+            acct.last_gas_per_vote = voter_reward_per_committee(&snapshot, old_pk);
+        }
+        if bonus != BigInt::from(0) {
+            gas_to_mint = bonus;
+        }
+    }
+    // Remove the account's weight from the previously-voted candidate.
+    if let Some(old_pk) = &old_vote {
+        if let Some(item) = snapshot.get(&candidate_key(old_pk)) {
+            let (registered, mut votes) = decode_candidate_state(&item.value_bytes())?;
+            votes -= &acct.balance;
+            check_candidate(&snapshot, old_pk, registered, &votes)?;
+        }
+    }
+    // Switching to a new (different) candidate resets the reward marker.
+    if let Some(new_pk) = &vote_to {
+        if Some(new_pk) != old_vote.as_ref() {
+            acct.last_gas_per_vote = voter_reward_per_committee(&snapshot, new_pk);
+        }
+    }
+    let from = old_vote.clone();
+    acct.vote_to = vote_to.clone();
+    // Add the account's weight to the new candidate (re-read so a vote
+    // for the same candidate nets to zero), else clear the reward marker.
+    if let Some(new_pk) = &vote_to {
+        let item = snapshot.get(&candidate_key(new_pk)).ok_or_else(|| {
+            CoreError::invalid_operation("NeoToken::vote: candidate disappeared")
+        })?;
+        let (registered, mut votes) = decode_candidate_state(&item.value_bytes())?;
+        votes += &acct.balance;
+        snapshot.update(
+            candidate_key(new_pk),
+            StorageItem::from_bytes(encode_candidate_state(registered, &votes)?),
+        );
+    } else {
+        acct.last_gas_per_vote = BigInt::from(0);
+    }
+    snapshot.update(
+        neo_account_key(account),
+        StorageItem::from_bytes(encode_neo_account_state(&acct)?),
+    );
+
+    let to_item = |pk: &Option<ECPoint>| match pk {
+        Some(p) => StackItem::from_byte_string(p.to_bytes()),
+        None => StackItem::null(),
+    };
+    engine
+        .send_notification(
+            NeoToken::script_hash(),
+            "Vote".to_string(),
+            vec![
+                StackItem::from_byte_string(account.to_bytes()),
+                to_item(&from),
+                to_item(&vote_to),
+                StackItem::from_int(acct.balance.clone()),
+            ],
+        )
+        .map_err(|e| CoreError::invalid_operation(format!("NeoToken::vote: notify: {e}")))?;
+    if gas_to_mint > BigInt::from(0) {
+        crate::gas_token::gas_mint(engine, account, &gas_to_mint, true)?;
     }
     Ok(true)
 }
@@ -1118,8 +1238,9 @@ impl NativeContract for NeoToken {
             }
             "vote" => {
                 // C# Vote -> VoteInternal: witness on the voter, then the vote
-                // transition — candidate vote-weight deltas, _votersCount, the GAS
-                // reward (DistributeGas + GAS.Mint), and the Vote notification.
+                // transition (extracted into `vote_internal` so PolicyContract's
+                // blockAccount can clear a blocked account's vote the way C#
+                // calls `NEO.VoteInternal` directly).
                 let account_bytes = args.first().ok_or_else(|| {
                     CoreError::invalid_operation("NeoToken::vote requires an account")
                 })?;
@@ -1145,110 +1266,7 @@ impl NativeContract for NeoToken {
                 })? {
                     return Ok(vec![0u8]);
                 }
-
-                let snapshot = engine.snapshot_cache();
-                let Some(acct_bytes) = read_account_state(&snapshot, &account) else {
-                    return Ok(vec![0u8]); // no account state
-                };
-                let mut acct = decode_neo_account_state(&acct_bytes)?;
-                if acct.balance == BigInt::from(0) {
-                    return Ok(vec![0u8]);
-                }
-                // The new candidate must exist and be registered.
-                if let Some(new_pk) = &vote_to {
-                    match snapshot.get(&candidate_key(new_pk)) {
-                        Some(item) => {
-                            let (registered, _) = decode_candidate_state(&item.value_bytes())?;
-                            if !registered {
-                                return Ok(vec![0u8]);
-                            }
-                        }
-                        None => return Ok(vec![0u8]),
-                    }
-                }
-                let old_vote = acct.vote_to.clone();
-                // _votersCount changes only when the account starts or stops voting.
-                if old_vote.is_none() != vote_to.is_none() {
-                    let mut count = read_voters_count(&snapshot);
-                    if old_vote.is_none() {
-                        count += &acct.balance;
-                    } else {
-                        count -= &acct.balance;
-                    }
-                    write_voters_count(&snapshot, &count);
-                }
-                // DistributeGas: compute the bonus with the OLD state, then advance
-                // BalanceHeight + LastGasPerVote (only when a persisting block exists).
-                let mut gas_to_mint = BigInt::from(0);
-                if let Some(block) = engine.persisting_block() {
-                    let end = block.index();
-                    let bonus = calculate_bonus(&snapshot, &acct, end)?;
-                    acct.balance_height = end;
-                    if let Some(old_pk) = &old_vote {
-                        acct.last_gas_per_vote = voter_reward_per_committee(&snapshot, old_pk);
-                    }
-                    if bonus != BigInt::from(0) {
-                        gas_to_mint = bonus;
-                    }
-                }
-                // Remove the account's weight from the previously-voted candidate.
-                if let Some(old_pk) = &old_vote {
-                    if let Some(item) = snapshot.get(&candidate_key(old_pk)) {
-                        let (registered, mut votes) = decode_candidate_state(&item.value_bytes())?;
-                        votes -= &acct.balance;
-                        check_candidate(&snapshot, old_pk, registered, &votes)?;
-                    }
-                }
-                // Switching to a new (different) candidate resets the reward marker.
-                if let Some(new_pk) = &vote_to {
-                    if Some(new_pk) != old_vote.as_ref() {
-                        acct.last_gas_per_vote = voter_reward_per_committee(&snapshot, new_pk);
-                    }
-                }
-                let from = old_vote.clone();
-                acct.vote_to = vote_to.clone();
-                // Add the account's weight to the new candidate (re-read so a vote
-                // for the same candidate nets to zero), else clear the reward marker.
-                if let Some(new_pk) = &vote_to {
-                    let item = snapshot.get(&candidate_key(new_pk)).ok_or_else(|| {
-                        CoreError::invalid_operation("NeoToken::vote: candidate disappeared")
-                    })?;
-                    let (registered, mut votes) = decode_candidate_state(&item.value_bytes())?;
-                    votes += &acct.balance;
-                    snapshot.update(
-                        candidate_key(new_pk),
-                        StorageItem::from_bytes(encode_candidate_state(registered, &votes)?),
-                    );
-                } else {
-                    acct.last_gas_per_vote = BigInt::from(0);
-                }
-                snapshot.update(
-                    neo_account_key(&account),
-                    StorageItem::from_bytes(encode_neo_account_state(&acct)?),
-                );
-
-                let to_item = |pk: &Option<ECPoint>| match pk {
-                    Some(p) => StackItem::from_byte_string(p.to_bytes()),
-                    None => StackItem::null(),
-                };
-                engine
-                    .send_notification(
-                        Self::script_hash(),
-                        "Vote".to_string(),
-                        vec![
-                            StackItem::from_byte_string(account.to_bytes()),
-                            to_item(&from),
-                            to_item(&vote_to),
-                            StackItem::from_int(acct.balance.clone()),
-                        ],
-                    )
-                    .map_err(|e| {
-                        CoreError::invalid_operation(format!("NeoToken::vote: notify: {e}"))
-                    })?;
-                if gas_to_mint > BigInt::from(0) {
-                    crate::gas_token::gas_mint(engine, &account, &gas_to_mint, true)?;
-                }
-                Ok(vec![1u8])
+                Ok(vec![u8::from(vote_internal(engine, &account, vote_to.as_ref())?)])
             }
             "getCommitteeAddress" => {
                 let snapshot = engine.snapshot_cache();
@@ -1509,6 +1527,30 @@ mod tests {
         assert_eq!(by_key.get(&points[0].to_bytes()), Some(&BigInt::from(100)));
         assert_eq!(by_key.get(&points[2].to_bytes()), Some(&BigInt::from(50)));
         assert!(!by_key.contains_key(&points[1].to_bytes()));
+    }
+
+    #[test]
+    fn zero_bigint_storage_writes_match_csharp_empty_bytes() {
+        // C# StorageItem stores BigInteger.ToByteArrayStandard(): EMPTY bytes for
+        // zero (num-bigint's to_signed_bytes_le would give [0x00] — a raw stored-
+        // bytes / state-root divergence). _votersCount can legitimately reach 0
+        // when the last voter un-votes; gasPerBlock can be set to 0.
+        let cache = DataCache::new(false);
+        write_voters_count(&cache, &BigInt::from(0));
+        let stored = cache.get(&voters_count_key()).expect("entry written");
+        assert!(stored.value_bytes().is_empty(), "zero votersCount stores empty bytes");
+        assert_eq!(read_voters_count(&cache), BigInt::from(0));
+
+        put_gas_per_block(&cache, 7, &BigInt::from(0));
+        let mut key = vec![PREFIX_GAS_PER_BLOCK];
+        key.extend_from_slice(&7u32.to_be_bytes());
+        let stored = cache.get(&StorageKey::new(NeoToken::ID, key)).expect("entry written");
+        assert!(stored.value_bytes().is_empty(), "zero gasPerBlock stores empty bytes");
+
+        // Non-zero values keep the signed-LE form.
+        write_voters_count(&cache, &BigInt::from(300));
+        let stored = cache.get(&voters_count_key()).expect("entry written");
+        assert_eq!(stored.value_bytes().as_ref(), BigInt::from(300).to_signed_bytes_le());
     }
 
     #[test]

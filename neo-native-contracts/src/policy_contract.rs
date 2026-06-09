@@ -2,12 +2,15 @@
 
 use crate::hashes::POLICY_CONTRACT_HASH;
 use neo_config::Hardfork;
+use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, FindOptions, TransactionAttributeType, UInt160};
+use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
+use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -23,6 +26,10 @@ const PREFIX_EXEC_FEE_FACTOR: u8 = 18;
 const DEFAULT_STORAGE_PRICE: i64 = 100_000;
 /// C# `PolicyContract.Prefix_BlockedAccount` storage prefix.
 const PREFIX_BLOCKED_ACCOUNT: u8 = 15;
+/// C# `PolicyContract.Prefix_WhitelistedFeeContracts` storage prefix (HF_Faun).
+const PREFIX_WHITELISTED_FEE_CONTRACTS: u8 = 16;
+/// C# `PolicyContract.RequiredTimeForRecoverFund`: 1 year in milliseconds.
+const REQUIRED_TIME_FOR_RECOVER_FUND: u64 = 365 * 24 * 60 * 60 * 1_000;
 /// C# `PolicyContract.Prefix_MillisecondsPerBlock` (HF_Echidna).
 const PREFIX_MILLISECONDS_PER_BLOCK: u8 = 21;
 /// C# `PolicyContract.Prefix_MaxValidUntilBlockIncrement` (HF_Echidna).
@@ -135,7 +142,7 @@ fn validate_fee_per_byte(value: i64) -> CoreResult<()> {
 /// C# `GetAndChange(_feePerByte).Set(value)` (overwrite-as-Changed semantics).
 fn put_fee_per_byte(snapshot: &DataCache, value: i64) {
     let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_FEE_PER_BYTE]);
-    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+    snapshot.update(key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))));
 }
 
 /// C# upper bound on storage price: `PolicyContract.MaxStoragePrice`.
@@ -156,7 +163,7 @@ fn validate_storage_price(value: i64) -> CoreResult<()> {
 /// (C# `GetAndChange(_storagePrice).Set(value)`).
 fn put_storage_price(snapshot: &DataCache, value: i64) {
     let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_STORAGE_PRICE]);
-    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+    snapshot.update(key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))));
 }
 
 /// C# `ApplicationEngine.FeeFactor` (10000): from the HF_Faun hardfork the exec
@@ -201,7 +208,7 @@ fn validate_exec_fee_factor(engine: &ApplicationEngine, value: i64) -> CoreResul
 /// (C# `GetAndChange(_execFeeFactor).Set(value)`).
 fn put_exec_fee_factor(snapshot: &DataCache, value: i64) {
     let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_EXEC_FEE_FACTOR]);
-    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+    snapshot.update(key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))));
 }
 
 /// C# `PolicyContract.Prefix_AttributeFee` storage prefix.
@@ -255,7 +262,7 @@ pub(crate) fn attribute_fee(
 fn put_attribute_fee(snapshot: &DataCache, attribute_type: u8, value: i64) {
     snapshot.update(
         attribute_fee_key(attribute_type),
-        StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()),
+        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
     );
 }
 
@@ -275,7 +282,7 @@ fn assert_committee(engine: &ApplicationEngine, method: &str) -> CoreResult<()> 
 
 /// The blocked-account storage key `(PolicyContract.ID, [Prefix_BlockedAccount,
 /// account])`, shared by `isBlocked` / `blockAccount` / `unblockAccount`.
-fn blocked_account_key(account: &UInt160) -> StorageKey {
+pub(crate) fn blocked_account_key(account: &UInt160) -> StorageKey {
     let mut key_bytes = vec![PREFIX_BLOCKED_ACCOUNT];
     key_bytes.extend_from_slice(&account.to_bytes());
     StorageKey::new(PolicyContract::ID, key_bytes)
@@ -290,6 +297,280 @@ fn blocked_account_entries(snapshot: &DataCache) -> Vec<(StorageKey, StorageItem
         .collect()
 }
 
+/// C# `NativeContract.IsNative(hash)`: whether `hash` is one of the canonical
+/// native-contract script hashes (`s_contractsDictionary.ContainsKey`). Used by
+/// `BlockAccountInternal` to refuse blocking a native contract.
+fn is_native_contract_hash(hash: &UInt160) -> bool {
+    [
+        *crate::hashes::CONTRACT_MANAGEMENT_HASH,
+        *crate::hashes::STDLIB_HASH,
+        *crate::hashes::CRYPTO_LIB_HASH,
+        *crate::hashes::LEDGER_CONTRACT_HASH,
+        *crate::hashes::NEO_TOKEN_HASH,
+        *crate::hashes::GAS_TOKEN_HASH,
+        *crate::hashes::POLICY_CONTRACT_HASH,
+        *crate::hashes::ROLE_MANAGEMENT_HASH,
+        *crate::hashes::ORACLE_CONTRACT_HASH,
+        *crate::hashes::NOTARY_HASH,
+        *crate::hashes::TREASURY_HASH,
+    ]
+    .contains(hash)
+}
+
+/// C# `PolicyContract.BlockAccountInternal` (shared by the genesis-era
+/// `blockAccount` V0 and the HF_Faun V1 — both call `AssertCommittee` first):
+/// refuse native hashes, return `false` when already blocked, clear the
+/// account's vote from HF_Faun (`NEO.VoteInternal(engine, account, null)`),
+/// then store `Prefix_BlockedAccount ++ account` with the persisting block's
+/// millisecond timestamp (`engine.GetTime()`, HF_Faun — the recoverFund
+/// request time) or empty bytes (pre-Faun).
+pub(crate) fn block_account_internal(
+    engine: &mut ApplicationEngine,
+    account: &UInt160,
+) -> CoreResult<bool> {
+    if is_native_contract_hash(account) {
+        return Err(CoreError::invalid_operation("Cannot block a native contract."));
+    }
+
+    let key = blocked_account_key(account);
+    if engine.snapshot_cache().get(&key).is_some() {
+        return Ok(false);
+    }
+
+    if engine.is_hardfork_enabled(Hardfork::HfFaun) {
+        // C# discards VoteInternal's boolean result (false when the account has
+        // no NEO state / zero balance) but propagates faults.
+        let _ = crate::neo_token::vote_internal(engine, account, None)?;
+    }
+
+    let value = if engine.is_hardfork_enabled(Hardfork::HfFaun) {
+        // C# `new StorageItem(engine.GetTime())`: the persisting block's
+        // timestamp as a BigInteger; GetTime faults without a persisting block.
+        let time = engine
+            .current_block_timestamp()
+            .map_err(CoreError::invalid_operation)?;
+        crate::bigint_to_storage_bytes(&BigInt::from(time))
+    } else {
+        // C# `new StorageItem([])`.
+        Vec::new()
+    };
+    engine.snapshot_cache().update(key, StorageItem::from_bytes(value));
+    Ok(true)
+}
+
+/// The whitelisted-fee storage key `(PolicyContract.ID,
+/// [Prefix_WhitelistedFeeContracts, contractHash, methodOffset])` — the C#
+/// `CreateStorageKey(Prefix_WhitelistedFeeContracts, contractHash,
+/// methodDescriptor.Offset)`, whose trailing `int` is big-endian (KeyBuilder
+/// `AddBigEndian(int)`).
+fn whitelist_fee_key(contract_hash: &UInt160, method_offset: i32) -> StorageKey {
+    let mut key_bytes = vec![PREFIX_WHITELISTED_FEE_CONTRACTS];
+    key_bytes.extend_from_slice(&contract_hash.to_bytes());
+    key_bytes.extend_from_slice(&method_offset.to_be_bytes());
+    StorageKey::new(PolicyContract::ID, key_bytes)
+}
+
+/// Decoded view of a stored `WhitelistedContract` (C#
+/// `Struct[ContractHash, Method, ArgCount, FixedFee]`,
+/// `WhitelistedContract.FromStackItem`).
+struct WhitelistedContractView {
+    contract_hash: UInt160,
+    method: String,
+    arg_count: i32,
+    fixed_fee: i64,
+}
+
+/// Decodes a stored `WhitelistedContract` struct into its fields.
+fn decode_whitelisted_contract(value: &[u8]) -> CoreResult<WhitelistedContractView> {
+    let decoded = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
+        .map_err(|e| CoreError::deserialization(format!("whitelisted contract: {e}")))?;
+    let StackItem::Struct(fields) = decoded else {
+        return Err(CoreError::invalid_data("whitelisted contract is not a struct"));
+    };
+    let items = fields.items();
+    let hash_bytes = items
+        .first()
+        .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing hash"))?
+        .as_bytes()
+        .map_err(|e| CoreError::invalid_data(format!("whitelisted contract hash: {e}")))?;
+    let contract_hash = UInt160::from_bytes(&hash_bytes)
+        .map_err(|e| CoreError::invalid_data(format!("whitelisted contract hash: {e}")))?;
+    let method_bytes = items
+        .get(1)
+        .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing method"))?
+        .as_bytes()
+        .map_err(|e| CoreError::invalid_data(format!("whitelisted contract method: {e}")))?;
+    let method = String::from_utf8(method_bytes.to_vec())
+        .map_err(|e| CoreError::invalid_data(format!("whitelisted contract method: {e}")))?;
+    let arg_count = items
+        .get(2)
+        .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing argCount"))?
+        .as_int()
+        .map_err(|e| CoreError::invalid_data(format!("whitelisted contract argCount: {e}")))?
+        .to_i32()
+        .ok_or_else(|| CoreError::invalid_data("whitelisted contract argCount out of range"))?;
+    let fixed_fee = items
+        .get(3)
+        .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing fixedFee"))?
+        .as_int()
+        .map_err(|e| CoreError::invalid_data(format!("whitelisted contract fixedFee: {e}")))?
+        .to_i64()
+        .ok_or_else(|| CoreError::invalid_data("whitelisted contract fixedFee out of range"))?;
+    Ok(WhitelistedContractView { contract_hash, method, arg_count, fixed_fee })
+}
+
+/// Encodes a `WhitelistedContract` (`Struct[ContractHash, Method, ArgCount,
+/// FixedFee]`, C# `WhitelistedContract.ToStackItem`) — the write counterpart of
+/// [`decode_whitelisted_contract`].
+fn encode_whitelisted_contract(view: &WhitelistedContractView) -> CoreResult<Vec<u8>> {
+    let item = StackItem::from_struct(vec![
+        StackItem::from_byte_string(view.contract_hash.to_bytes()),
+        StackItem::from_byte_string(view.method.as_bytes().to_vec()),
+        StackItem::from_int(BigInt::from(view.arg_count)),
+        StackItem::from_int(BigInt::from(view.fixed_fee)),
+    ]);
+    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::invalid_operation(format!("encode whitelisted contract: {e}")))
+}
+
+/// Collects the `Prefix_WhitelistedFeeContracts` storage entries in
+/// forward-seek order, the backing set for the `getWhitelistFeeContracts`
+/// iterator (C# `GetWhitelistFeeContracts`).
+fn whitelist_fee_entries(snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
+    let prefix_key = StorageKey::new(PolicyContract::ID, vec![PREFIX_WHITELISTED_FEE_CONTRACTS]);
+    snapshot
+        .find(Some(&prefix_key), SeekDirection::Forward)
+        .collect()
+}
+
+/// Resolves the manifest method `(name, argCount)` of a deployed contract to
+/// its bytecode offset, the discriminant of the whitelist storage key. Mirrors
+/// the shared prologue of C# `SetWhitelistFeeContract` /
+/// `RemoveWhitelistFeeContract`: `ContractManagement.GetContract` (fault
+/// "Is not a valid contract" when missing) then
+/// `Manifest.Abi.Methods.SingleOrDefault(name, argCount)` (fault when missing
+/// or ambiguous — C# `SingleOrDefault` throws on multiple matches).
+fn resolve_whitelist_method_offset(
+    snapshot: &DataCache,
+    contract_hash: &UInt160,
+    method: &str,
+    arg_count: i32,
+) -> CoreResult<i32> {
+    let contract = crate::ContractManagement::get_contract_from_snapshot(snapshot, contract_hash)?
+        .ok_or_else(|| CoreError::invalid_operation("Is not a valid contract"))?;
+    let arg_count = usize::try_from(arg_count).map_err(|_| {
+        CoreError::invalid_operation(format!(
+            "Method {method} with {arg_count} args was not found in {contract_hash}"
+        ))
+    })?;
+    let mut matches = contract
+        .manifest
+        .abi
+        .methods
+        .iter()
+        .filter(|m| m.name == method && m.parameters.len() == arg_count);
+    let Some(descriptor) = matches.next() else {
+        return Err(CoreError::invalid_operation(format!(
+            "Method {method} with {arg_count} args was not found in {contract_hash}"
+        )));
+    };
+    if matches.next().is_some() {
+        // C# SingleOrDefault throws InvalidOperationException on >1 match.
+        return Err(CoreError::invalid_operation(format!(
+            "Method {method} with {arg_count} args is ambiguous in {contract_hash}"
+        )));
+    }
+    Ok(descriptor.offset)
+}
+
+/// C# `NeoToken.Prefix_Committee` (the committee cache NeoToken owns). Policy
+/// reads it for `AssertAlmostFullCommittee`, exactly as C# Policy reaches into
+/// `NativeContract.NEO.GetCommittee(engine.SnapshotCache)`.
+const NEO_PREFIX_COMMITTEE: u8 = 14;
+
+/// C# `NEO.GetCommittee(snapshot)`: decodes NeoToken's `Prefix_Committee`
+/// cache (an Array of `Struct[pubkey, votes]`, C#
+/// `CachedCommittee.ToStackItem`) and returns the public keys sorted ascending
+/// (`OrderBy(p => p)`). Faults when the cache is missing, matching the C#
+/// indexer throw.
+fn read_neo_committee_sorted(snapshot: &DataCache) -> CoreResult<Vec<ECPoint>> {
+    let key = StorageKey::new(crate::NeoToken::ID, vec![NEO_PREFIX_COMMITTEE]);
+    let item = snapshot.get(&key).ok_or_else(|| {
+        CoreError::invalid_operation("NeoToken committee cache is not initialized")
+    })?;
+    let decoded =
+        BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
+            .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
+    let StackItem::Array(array) = decoded else {
+        return Err(CoreError::invalid_data("committee cache is not an array"));
+    };
+    let mut points = Vec::with_capacity(array.items().len());
+    for element in array.items() {
+        let StackItem::Struct(fields) = element else {
+            return Err(CoreError::invalid_data("committee element is not a struct"));
+        };
+        let pubkey = fields
+            .items()
+            .first()
+            .ok_or_else(|| CoreError::invalid_data("committee element is empty"))?
+            .as_bytes()
+            .map_err(|e| CoreError::invalid_data(format!("committee pubkey: {e}")))?;
+        points.push(
+            ECPoint::from_bytes(&pubkey)
+                .map_err(|e| CoreError::invalid_data(format!("committee EC point: {e}")))?,
+        );
+    }
+    points.sort();
+    Ok(points)
+}
+
+/// C# `NativeContract.AssertAlmostFullCommittee`: requires a witness from the
+/// `max(max(1, n - (n - 1) / 2), n - 2)`-of-`n` multisig over the committee
+/// public keys ("signed by maximum of (half committee + 1) and
+/// (committee - 2)") and returns that multisig address. Used by `recoverFund`.
+fn assert_almost_full_committee(engine: &ApplicationEngine) -> CoreResult<UInt160> {
+    let snapshot = engine.snapshot_cache();
+    let committees = read_neo_committee_sorted(&snapshot)?;
+    let n = i64::try_from(committees.len())
+        .map_err(|_| CoreError::invalid_operation("committee is too large"))?;
+    let min = std::cmp::max(1, n - (n - 1) / 2);
+    let m = std::cmp::max(min, n - 2);
+    let m = usize::try_from(m)
+        .map_err(|_| CoreError::invalid_operation("invalid committee threshold"))?;
+    let script = neo_redeem_script::multi_sig_redeem_script_from_points(m, &committees)
+        .map_err(|e| CoreError::invalid_operation(format!("committee multisig script: {e}")))?;
+    let address = UInt160::from_script(&script);
+    let authorized = engine.check_witness_hash(&address).map_err(|e| {
+        CoreError::invalid_operation(format!("recoverFund committee check: {e}"))
+    })?;
+    if !authorized {
+        return Err(CoreError::invalid_operation(
+            "Invalid committee signature. It should be a multisig(max(1,len(committee) - 2))).",
+        ));
+    }
+    Ok(address)
+}
+
+/// Formats the remaining wait time for `recoverFund`'s rejection message,
+/// mirroring the C# ternary chain in `PolicyContract.RecoverFund`
+/// (`{d}d {h}h {m}m` / `{h}h {m}m {s}s` / `{m}m {s}s` / `{s}s`).
+fn format_remaining_time(remaining: &BigInt) -> String {
+    let zero = BigInt::from(0);
+    let days = remaining / 86_400_000;
+    let hours = (remaining % 86_400_000) / 3_600_000;
+    let minutes = (remaining % 3_600_000) / 60_000;
+    let seconds = (remaining % 60_000) / 1_000;
+    if days > zero {
+        format!("{days}d {hours}h {minutes}m")
+    } else if hours > zero {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > zero {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
 /// Parses a single integer argument into an `i64` for a setter, faulting when
 /// absent or out of `i64` range (C# marshals the Integer arg to `long`/`uint`).
 fn setter_int_arg(args: &[Vec<u8>], method: &str) -> CoreResult<i64> {
@@ -298,6 +579,17 @@ fn setter_int_arg(args: &[Vec<u8>], method: &str) -> CoreResult<i64> {
         .ok_or_else(|| CoreError::invalid_operation(format!("{method} requires a value")))?
         .to_i64()
         .ok_or_else(|| CoreError::invalid_operation(format!("{method}: value out of range")))
+}
+
+/// Decodes the `args[index]` Hash160 parameter (C# `UInt160` marshaling: 20
+/// raw bytes, faulting otherwise).
+fn hash160_arg(args: &[Vec<u8>], index: usize, method: &str) -> CoreResult<UInt160> {
+    let bytes = args.get(index).ok_or_else(|| {
+        CoreError::invalid_operation(format!("PolicyContract::{method} requires a Hash160 argument"))
+    })?;
+    UInt160::from_bytes(bytes).map_err(|e| {
+        CoreError::invalid_operation(format!("PolicyContract::{method}: bad Hash160: {e}"))
+    })
 }
 
 /// Decodes the leading `byte attributeType` argument (C# `byte` parameter
@@ -337,7 +629,7 @@ fn read_milliseconds_per_block(engine: &ApplicationEngine) -> CoreResult<i64> {
 /// (C# `GetAndChange(_millisecondsPerBlock).Set(value)`).
 fn put_milliseconds_per_block(snapshot: &DataCache, value: i64) {
     let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_MILLISECONDS_PER_BLOCK]);
-    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+    snapshot.update(key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))));
 }
 
 /// C# `PolicyContract.MaxMaxValidUntilBlockIncrement`.
@@ -386,13 +678,13 @@ pub(crate) fn read_max_valid_until_block_increment(engine: &ApplicationEngine) -
 /// Writes `Prefix_MaxValidUntilBlockIncrement` (C# `GetAndChange(...).Set(value)`).
 fn put_max_valid_until_block_increment(snapshot: &DataCache, value: i64) {
     let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT]);
-    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+    snapshot.update(key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))));
 }
 
 /// Writes `Prefix_MaxTraceableBlocks` (C# `GetAndChange(_maxTraceableBlocks).Set(value)`).
 fn put_max_traceable_blocks(snapshot: &DataCache, value: i64) {
     let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_MAX_TRACEABLE_BLOCKS]);
-    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+    snapshot.update(key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))));
 }
 
 /// Returns the effective `MaxTraceableBlocks` for traceability checks, mirroring
@@ -590,6 +882,78 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ContractParameterType::Integer,
         )
         .with_active_in(Hardfork::HfEchidna),
+        // blockAccount: dual manifest registration under one name (C# V0/V1).
+        // V0 = ContractMethod(true, HF_Faun): genesis-active, DeprecatedIn Faun,
+        // flags States. V1 = ActiveIn HF_Faun, flags States|AllowNotify (the
+        // Faun path emits NEO's Vote notification via VoteInternal). Exactly one
+        // is active at any height, so the manifest/dispatcher never sees both.
+        NativeMethod::new(
+            "blockAccount".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+        )
+        .with_deprecated_in(Hardfork::HfFaun),
+        NativeMethod::new(
+            "blockAccount".to_string(),
+            1 << 15,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfFaun),
+        // Whitelisted fixed-fee contracts (HF_Faun): committee-gated writers
+        // that notify WhitelistFeeChanged, plus the safe iterator reader.
+        NativeMethod::new(
+            "setWhitelistFeeContract".to_string(),
+            1 << 15,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::String,
+                ContractParameterType::Integer,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Void,
+        )
+        .with_active_in(Hardfork::HfFaun),
+        NativeMethod::new(
+            "removeWhitelistFeeContract".to_string(),
+            1 << 15,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::String,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Void,
+        )
+        .with_active_in(Hardfork::HfFaun),
+        NativeMethod::new(
+            "getWhitelistFeeContracts".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::InteropInterface,
+        )
+        .with_active_in(Hardfork::HfFaun),
+        // recoverFund(account, token) -> Boolean (HF_Faun): an almost-full
+        // committee sweep of a long-blocked account's NEP-17 funds to Treasury.
+        NativeMethod::new(
+            "recoverFund".to_string(),
+            1 << 15,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![ContractParameterType::Hash160, ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfFaun),
     ]
 });
 
@@ -612,6 +976,39 @@ impl NativeContract for PolicyContract {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    /// C# `PolicyContract.IsWhitelistFeeContract(snapshot, contractHash,
+    /// method, out fixedFee)`, reached by the engine's contract-call fee logic
+    /// through the native-contract seam: the contract must exist in
+    /// ContractManagement, the `(method, paramCount)` descriptor must resolve,
+    /// and a `Prefix_WhitelistedFeeContracts ++ hash ++ offset` entry must be
+    /// stored — then its `FixedFee` applies instead of per-instruction fees.
+    fn whitelisted_fee(
+        &self,
+        snapshot: &DataCache,
+        contract_hash: &UInt160,
+        method: &str,
+        param_count: u32,
+    ) -> CoreResult<Option<i64>> {
+        let Some(contract) =
+            crate::ContractManagement::get_contract_from_snapshot(snapshot, contract_hash)?
+        else {
+            return Ok(None);
+        };
+        let Some(descriptor) = contract
+            .manifest
+            .abi
+            .methods
+            .iter()
+            .find(|m| m.name == method && m.parameters.len() == param_count as usize)
+        else {
+            return Ok(None);
+        };
+        match snapshot.get(&whitelist_fee_key(contract_hash, descriptor.offset)) {
+            Some(item) => Ok(Some(decode_whitelisted_contract(&item.value_bytes())?.fixed_fee)),
+            None => Ok(None),
+        }
     }
 
     fn invoke(
@@ -805,6 +1202,228 @@ impl NativeContract for PolicyContract {
             "getMaxTraceableBlocks" => {
                 Ok(BigInt::from(max_traceable_blocks(engine)? as i64).to_signed_bytes_le())
             }
+            "blockAccount" => {
+                // C# BlockAccountV0/V1 (identical bodies; only the manifest call
+                // flags differ): AssertCommittee, then BlockAccountInternal.
+                let account = hash160_arg(args, 0, "blockAccount")?;
+                assert_committee(engine, "blockAccount")?;
+                Ok(vec![u8::from(block_account_internal(engine, &account)?)])
+            }
+            "setWhitelistFeeContract" => {
+                // C# SetWhitelistFeeContract: ThrowIfNegative(fixedFee) ->
+                // CheckCommittee -> GetContract -> resolve the (method, argCount)
+                // descriptor -> upsert WhitelistedContract (only FixedFee changes
+                // on an existing entry) -> notify WhitelistFeeChanged.
+                let contract_hash = hash160_arg(args, 0, "setWhitelistFeeContract")?;
+                let method_name = String::from_utf8(
+                    args.get(1)
+                        .ok_or_else(|| {
+                            CoreError::invalid_operation(
+                                "PolicyContract::setWhitelistFeeContract requires a method name",
+                            )
+                        })?
+                        .clone(),
+                )
+                .map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "PolicyContract::setWhitelistFeeContract: bad method name: {e}"
+                    ))
+                })?;
+                let arg_count = args
+                    .get(2)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "PolicyContract::setWhitelistFeeContract requires an argCount",
+                        )
+                    })?;
+                let fixed_fee = args
+                    .get(3)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i64())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "PolicyContract::setWhitelistFeeContract requires a fixedFee",
+                        )
+                    })?;
+                if fixed_fee < 0 {
+                    return Err(CoreError::invalid_operation(format!(
+                        "fixedFee ('{fixed_fee}') must be a non-negative value."
+                    )));
+                }
+                assert_committee(engine, "setWhitelistFeeContract")?;
+                let snapshot = engine.snapshot_cache();
+                let offset =
+                    resolve_whitelist_method_offset(&snapshot, &contract_hash, &method_name, arg_count)?;
+                let key = whitelist_fee_key(&contract_hash, offset);
+                let view = match snapshot.get(&key) {
+                    // GetAndChange on an existing entry mutates FixedFee only.
+                    Some(item) => {
+                        let mut view = decode_whitelisted_contract(&item.value_bytes())?;
+                        view.fixed_fee = fixed_fee;
+                        view
+                    }
+                    None => WhitelistedContractView {
+                        contract_hash,
+                        method: method_name.clone(),
+                        arg_count,
+                        fixed_fee,
+                    },
+                };
+                snapshot.update(key, StorageItem::from_bytes(encode_whitelisted_contract(&view)?));
+                engine
+                    .send_notification(
+                        Self::script_hash(),
+                        "WhitelistFeeChanged".to_string(),
+                        vec![
+                            StackItem::from_byte_string(contract_hash.to_bytes()),
+                            StackItem::from_byte_string(method_name.into_bytes()),
+                            StackItem::from_int(BigInt::from(arg_count)),
+                            StackItem::from_int(BigInt::from(fixed_fee)),
+                        ],
+                    )
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!("setWhitelistFeeContract notify: {e}"))
+                    })?;
+                Ok(Vec::new())
+            }
+            "removeWhitelistFeeContract" => {
+                // C# RemoveWhitelistFeeContract: CheckCommittee -> GetContract ->
+                // resolve the descriptor -> fault when no whitelist entry exists
+                // -> delete -> notify WhitelistFeeChanged with a null fee.
+                let contract_hash = hash160_arg(args, 0, "removeWhitelistFeeContract")?;
+                let method_name = String::from_utf8(
+                    args.get(1)
+                        .ok_or_else(|| {
+                            CoreError::invalid_operation(
+                                "PolicyContract::removeWhitelistFeeContract requires a method name",
+                            )
+                        })?
+                        .clone(),
+                )
+                .map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "PolicyContract::removeWhitelistFeeContract: bad method name: {e}"
+                    ))
+                })?;
+                let arg_count = args
+                    .get(2)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_i32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "PolicyContract::removeWhitelistFeeContract requires an argCount",
+                        )
+                    })?;
+                assert_committee(engine, "removeWhitelistFeeContract")?;
+                let snapshot = engine.snapshot_cache();
+                let offset =
+                    resolve_whitelist_method_offset(&snapshot, &contract_hash, &method_name, arg_count)?;
+                let key = whitelist_fee_key(&contract_hash, offset);
+                if snapshot.get(&key).is_none() {
+                    return Err(CoreError::invalid_operation("Whitelist not found"));
+                }
+                snapshot.delete(&key);
+                engine
+                    .send_notification(
+                        Self::script_hash(),
+                        "WhitelistFeeChanged".to_string(),
+                        vec![
+                            StackItem::from_byte_string(contract_hash.to_bytes()),
+                            StackItem::from_byte_string(method_name.into_bytes()),
+                            StackItem::from_int(BigInt::from(arg_count)),
+                            StackItem::null(),
+                        ],
+                    )
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "removeWhitelistFeeContract notify: {e}"
+                        ))
+                    })?;
+                Ok(Vec::new())
+            }
+            "getWhitelistFeeContracts" => {
+                // C# GetWhitelistFeeContracts: an iterator over
+                // Prefix_WhitelistedFeeContracts with FindOptions.RemovePrefix |
+                // ValuesOnly | DeserializeValues and prefix length 1, yielding the
+                // deserialized WhitelistedContract structs.
+                let results = whitelist_fee_entries(&snapshot);
+                let iterator_id = engine
+                    .create_storage_iterator_with_options(
+                        results,
+                        1,
+                        FindOptions::RemovePrefix
+                            | FindOptions::ValuesOnly
+                            | FindOptions::DeserializeValues,
+                    )
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "PolicyContract::getWhitelistFeeContracts: {e}"
+                        ))
+                    })?;
+                Ok(iterator_id.to_le_bytes().to_vec())
+            }
+            "recoverFund" => {
+                // C# RecoverFund: AssertAlmostFullCommittee -> the blocked-account
+                // entry is the request record (fault "Request not found.") -> at
+                // least 1 year must have elapsed since its timestamp -> the token
+                // must be a deployed NEP-17 contract -> sweep the account's
+                // balance to Treasury via balanceOf/transfer.
+                let account = hash160_arg(args, 0, "recoverFund")?;
+                let token = hash160_arg(args, 1, "recoverFund")?;
+                assert_almost_full_committee(engine)?;
+
+                let snapshot = engine.snapshot_cache();
+                let entry = snapshot
+                    .get(&blocked_account_key(&account))
+                    .ok_or_else(|| CoreError::invalid_operation("Request not found."))?;
+                let request_time = BigInt::from_signed_bytes_le(&entry.value_bytes());
+                let now = BigInt::from(
+                    engine
+                        .current_block_timestamp()
+                        .map_err(CoreError::invalid_operation)?,
+                );
+                let elapsed = now - request_time;
+                let required = BigInt::from(REQUIRED_TIME_FOR_RECOVER_FUND);
+                if elapsed < required {
+                    let remaining = required - elapsed;
+                    return Err(CoreError::invalid_operation(format!(
+                        "Request must be signed at least 1 year ago. Remaining time: {}.",
+                        format_remaining_time(&remaining)
+                    )));
+                }
+
+                let contract =
+                    crate::ContractManagement::get_contract_from_snapshot(&snapshot, &token)?
+                        .ok_or_else(|| {
+                            CoreError::invalid_operation(format!(
+                                "Contract {token} does not exist."
+                            ))
+                        })?;
+                if !contract
+                    .manifest
+                    .supported_standards
+                    .iter()
+                    .any(|s| s == "NEP-17")
+                {
+                    return Err(CoreError::invalid_operation(format!(
+                        "Contract {token} does not implement NEP-17 standard."
+                    )));
+                }
+
+                // C# now awaits CallFromNativeContractAsync(account, token,
+                // "balanceOf"/"transfer", …) — a result-returning contract call
+                // issued from inside the native frame. This engine's native calls
+                // are queued and run only after the native method returns
+                // (`queue_contract_call_from_native`), so the balance cannot be
+                // observed nor the transfer result checked from here. Fault
+                // explicitly rather than diverge silently.
+                Err(CoreError::invalid_operation(
+                    "recoverFund: result-returning contract calls from a native frame \
+                     are not supported by this engine",
+                ))
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "PolicyContract method '{other}' is not implemented"
             ))),
@@ -844,7 +1463,13 @@ mod tests {
                 "unblockAccount",
                 "getMillisecondsPerBlock",
                 "getMaxValidUntilBlockIncrement",
-                "getMaxTraceableBlocks"
+                "getMaxTraceableBlocks",
+                "blockAccount",
+                "blockAccount",
+                "setWhitelistFeeContract",
+                "removeWhitelistFeeContract",
+                "getWhitelistFeeContracts",
+                "recoverFund"
             ]
         );
         // The Echidna-era chain-parameter getters are hardfork-gated.
@@ -918,6 +1543,87 @@ mod tests {
         assert!(blocked.safe && blocked.parameters.is_empty());
         assert_eq!(blocked.return_type, ContractParameterType::InteropInterface);
         assert_eq!(blocked.required_call_flags, CallFlags::READ_STATES.bits());
+        // blockAccount is registered twice (C# V0/V1): V0 genesis-active and
+        // DeprecatedIn HF_Faun with States; V1 ActiveIn HF_Faun with
+        // States|AllowNotify. Both Hash160 -> Boolean, not safe, CpuFee 1<<15.
+        let block_versions: Vec<&NativeMethod> =
+            c.methods().iter().filter(|m| m.name == "blockAccount").collect();
+        assert_eq!(block_versions.len(), 2);
+        for m in &block_versions {
+            assert!(!m.safe);
+            assert_eq!(m.cpu_fee, 1 << 15);
+            assert_eq!(m.parameters, vec![ContractParameterType::Hash160]);
+            assert_eq!(m.return_type, ContractParameterType::Boolean);
+        }
+        let v0 = block_versions
+            .iter()
+            .find(|m| m.deprecated_in == Some(Hardfork::HfFaun))
+            .expect("blockAccount V0");
+        assert_eq!(v0.active_in, None);
+        assert_eq!(v0.required_call_flags, CallFlags::STATES.bits());
+        let v1 = block_versions
+            .iter()
+            .find(|m| m.active_in == Some(Hardfork::HfFaun))
+            .expect("blockAccount V1");
+        assert_eq!(v1.deprecated_in, None);
+        assert_eq!(
+            v1.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+        );
+        // Whitelist writers: HF_Faun, not safe, States|AllowNotify, Void.
+        let set_wl = c.methods().iter().find(|m| m.name == "setWhitelistFeeContract").unwrap();
+        assert!(!set_wl.safe);
+        assert_eq!(set_wl.active_in, Some(Hardfork::HfFaun));
+        assert_eq!(
+            set_wl.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+        );
+        assert_eq!(
+            set_wl.parameters,
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::String,
+                ContractParameterType::Integer,
+                ContractParameterType::Integer
+            ]
+        );
+        assert_eq!(set_wl.return_type, ContractParameterType::Void);
+        let rm_wl = c.methods().iter().find(|m| m.name == "removeWhitelistFeeContract").unwrap();
+        assert!(!rm_wl.safe);
+        assert_eq!(rm_wl.active_in, Some(Hardfork::HfFaun));
+        assert_eq!(
+            rm_wl.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+        );
+        assert_eq!(
+            rm_wl.parameters,
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::String,
+                ContractParameterType::Integer
+            ]
+        );
+        assert_eq!(rm_wl.return_type, ContractParameterType::Void);
+        // getWhitelistFeeContracts: HF_Faun, safe, no-arg iterator reader.
+        let get_wl = c.methods().iter().find(|m| m.name == "getWhitelistFeeContracts").unwrap();
+        assert_eq!(get_wl.active_in, Some(Hardfork::HfFaun));
+        assert!(get_wl.safe && get_wl.parameters.is_empty());
+        assert_eq!(get_wl.return_type, ContractParameterType::InteropInterface);
+        assert_eq!(get_wl.required_call_flags, CallFlags::READ_STATES.bits());
+        // recoverFund: HF_Faun, not safe, States|AllowNotify, two Hash160 args.
+        let recover = c.methods().iter().find(|m| m.name == "recoverFund").unwrap();
+        assert!(!recover.safe);
+        assert_eq!(recover.active_in, Some(Hardfork::HfFaun));
+        assert_eq!(
+            recover.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+        );
+        assert_eq!(
+            recover.parameters,
+            vec![ContractParameterType::Hash160, ContractParameterType::Hash160]
+        );
+        assert_eq!(recover.return_type, ContractParameterType::Boolean);
+        assert_eq!(recover.cpu_fee, 1 << 15);
     }
 
     #[test]
@@ -1122,5 +1828,676 @@ mod tests {
         let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_STORAGE_PRICE]);
         cache.add(key, StorageItem::from_bytes(BigInt::from(250_000).to_signed_bytes_le()));
         assert_eq!(storage_price(&cache).unwrap(), 250_000);
+    }
+
+    #[test]
+    fn whitelisted_contract_struct_round_trips() {
+        // C# WhitelistedContract.ToStackItem/FromStackItem: a Struct of
+        // [ContractHash, Method, ArgCount, FixedFee].
+        let view = WhitelistedContractView {
+            contract_hash: UInt160::from_bytes(&[0x42; 20]).unwrap(),
+            method: "balanceOf".to_string(),
+            arg_count: 1,
+            fixed_fee: 123_456,
+        };
+        let bytes = encode_whitelisted_contract(&view).unwrap();
+        let decoded = decode_whitelisted_contract(&bytes).unwrap();
+        assert_eq!(decoded.contract_hash, view.contract_hash);
+        assert_eq!(decoded.method, view.method);
+        assert_eq!(decoded.arg_count, view.arg_count);
+        assert_eq!(decoded.fixed_fee, view.fixed_fee);
+    }
+
+    #[test]
+    fn whitelist_fee_key_is_prefix_hash_and_big_endian_offset() {
+        // C# CreateStorageKey(Prefix_WhitelistedFeeContracts, contractHash,
+        // methodDescriptor.Offset): [16] ++ hash(20) ++ offset as big-endian i32.
+        let hash = UInt160::from_bytes(&[0xAB; 20]).unwrap();
+        let key = whitelist_fee_key(&hash, 0x0102_0304);
+        let suffix = key.suffix();
+        assert_eq!(suffix.len(), 1 + 20 + 4);
+        assert_eq!(suffix[0], PREFIX_WHITELISTED_FEE_CONTRACTS);
+        assert_eq!(&suffix[1..21], &[0xAB; 20]);
+        assert_eq!(&suffix[21..25], &[0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn whitelist_fee_entries_scope_to_prefix() {
+        let cache = DataCache::new(false);
+        let h1 = UInt160::from_bytes(&[0x11; 20]).unwrap();
+        let h2 = UInt160::from_bytes(&[0x22; 20]).unwrap();
+        let entry = |hash: &UInt160, method: &str| {
+            encode_whitelisted_contract(&WhitelistedContractView {
+                contract_hash: *hash,
+                method: method.to_string(),
+                arg_count: 0,
+                fixed_fee: 5,
+            })
+            .unwrap()
+        };
+        cache.add(whitelist_fee_key(&h1, 0), StorageItem::from_bytes(entry(&h1, "a")));
+        cache.add(whitelist_fee_key(&h2, 7), StorageItem::from_bytes(entry(&h2, "b")));
+        // An unrelated blocked-account record must not appear.
+        cache.add(blocked_account_key(&h1), StorageItem::from_bytes(Vec::new()));
+
+        let entries = whitelist_fee_entries(&cache);
+        assert_eq!(entries.len(), 2);
+        for (key, _) in &entries {
+            assert_eq!(key.suffix()[0], PREFIX_WHITELISTED_FEE_CONTRACTS);
+            assert_eq!(key.suffix().len(), 1 + 20 + 4);
+        }
+    }
+
+    #[test]
+    fn native_hashes_cannot_be_blocked() {
+        // C# BlockAccountInternal: IsNative(account) -> fault. All 11 canonical
+        // native hashes must be covered; a regular account must not.
+        for native in [
+            *crate::hashes::CONTRACT_MANAGEMENT_HASH,
+            *crate::hashes::STDLIB_HASH,
+            *crate::hashes::CRYPTO_LIB_HASH,
+            *crate::hashes::LEDGER_CONTRACT_HASH,
+            *crate::hashes::NEO_TOKEN_HASH,
+            *crate::hashes::GAS_TOKEN_HASH,
+            *crate::hashes::POLICY_CONTRACT_HASH,
+            *crate::hashes::ROLE_MANAGEMENT_HASH,
+            *crate::hashes::ORACLE_CONTRACT_HASH,
+            *crate::hashes::NOTARY_HASH,
+            *crate::hashes::TREASURY_HASH,
+        ] {
+            assert!(is_native_contract_hash(&native), "{native} is native");
+        }
+        assert!(!is_native_contract_hash(&UInt160::from_bytes(&[0x42; 20]).unwrap()));
+    }
+
+    #[test]
+    fn remaining_time_message_matches_csharp_format() {
+        // C# RecoverFund's ternary chain: days -> "{d}d {h}h {m}m",
+        // hours -> "{h}h {m}m {s}s", minutes -> "{m}m {s}s", else "{s}s".
+        let ms =
+            |d: i64, h: i64, m: i64, s: i64| d * 86_400_000 + h * 3_600_000 + m * 60_000 + s * 1_000;
+        assert_eq!(format_remaining_time(&BigInt::from(ms(2, 3, 4, 5))), "2d 3h 4m");
+        assert_eq!(format_remaining_time(&BigInt::from(ms(0, 3, 4, 5))), "3h 4m 5s");
+        assert_eq!(format_remaining_time(&BigInt::from(ms(0, 0, 4, 5))), "4m 5s");
+        assert_eq!(format_remaining_time(&BigInt::from(ms(0, 0, 0, 5))), "5s");
+        assert_eq!(format_remaining_time(&BigInt::from(999)), "0s");
+    }
+
+    #[test]
+    fn required_recover_fund_time_is_one_year_of_milliseconds() {
+        // C# RequiredTimeForRecoverFund = 365 * 24 * 60 * 60 * 1_000UL.
+        assert_eq!(REQUIRED_TIME_FOR_RECOVER_FUND, 31_536_000_000);
+    }
+}
+
+/// End-to-end verification of the committee-gated PolicyContract writers
+/// through the VM (the witness-gated script-execution path proven by
+/// `neo_token::witness_harness_tests`): a script `System.Contract.Call`s
+/// PolicyContract with the committee multisig address as signer, and the
+/// resulting storage transitions are asserted against the shared snapshot.
+#[cfg(test)]
+mod policy_writer_tests {
+    use super::*;
+    use neo_config::ProtocolSettings;
+    use neo_execution::contract_state::ContractState;
+    use neo_execution::native_contract::build_native_contract_state;
+    use neo_io::{BinaryWriter, Serializable};
+    use neo_payloads::signer::Signer;
+    use neo_payloads::transaction::Transaction;
+    use neo_payloads::witness::Witness;
+    use neo_payloads::{Block, BlockHeader};
+    use neo_primitives::{TriggerType, Verifiable, WitnessScope};
+    use neo_script_builder::ScriptBuilder;
+    use neo_vm_rs::VmState;
+    use std::sync::Arc;
+
+    /// ContractManagement per-contract storage prefix (mirrors asset_descriptor).
+    const CM_PREFIX_CONTRACT: u8 = 8;
+
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn sample_committee() -> Vec<ECPoint> {
+        // Three valid secp256r1 public keys (Neo N3 standby validators).
+        [
+            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
+            "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093",
+            "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
+        ]
+        .iter()
+        .map(|h| ECPoint::from_bytes(&hex(h)).unwrap())
+        .collect()
+    }
+
+    /// Stores NeoToken's committee cache (Array of `Struct[pubkey, votes]`)
+    /// under `Prefix_Committee`, mirroring C# `CachedCommittee.ToStackItem`,
+    /// so `check_committee_witness` can compute the committee address.
+    fn seed_committee(cache: &DataCache, points: &[ECPoint]) {
+        let array = StackItem::from_array(
+            points
+                .iter()
+                .map(|p| {
+                    StackItem::from_struct(vec![
+                        StackItem::from_byte_string(p.to_bytes()),
+                        StackItem::from_int(0),
+                    ])
+                })
+                .collect::<Vec<_>>(),
+        );
+        let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default()).unwrap();
+        cache.add(
+            StorageKey::new(crate::NeoToken::ID, vec![NEO_PREFIX_COMMITTEE]),
+            StorageItem::from_bytes(bytes),
+        );
+    }
+
+    /// The `m = n - (n - 1) / 2` committee multisig address (C#
+    /// `NEO.GetCommitteeAddress`) for the sample 3-member committee (2-of-3).
+    fn committee_address(points: &[ECPoint]) -> UInt160 {
+        let script = neo_redeem_script::multi_sig_redeem_script_from_points(2, points).unwrap();
+        UInt160::from_script(&script)
+    }
+
+    fn deploy_native(cache: &DataCache, state: &ContractState) {
+        let mut writer = BinaryWriter::new();
+        state.serialize(&mut writer).expect("serialize contract state");
+        let mut key = vec![CM_PREFIX_CONTRACT];
+        key.extend_from_slice(&state.hash.to_bytes());
+        cache.add(
+            StorageKey::new(crate::ContractManagement::ID, key),
+            StorageItem::from_bytes(writer.to_bytes()),
+        );
+    }
+
+    /// ProtocolSettings with HF_Faun scheduled from genesis.
+    fn faun_settings() -> ProtocolSettings {
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfFaun, 0);
+        settings
+    }
+
+    /// Runs `method(args...)` on PolicyContract via System.Contract.Call,
+    /// signed (Global) by `signer`, against the shared `snapshot`. The closure
+    /// must push the call arguments in REVERSE order (deepest first). Returns
+    /// the final VM state and the boolean on top of the result stack (if any).
+    fn call_policy(
+        snapshot: Arc<DataCache>,
+        signer: UInt160,
+        settings: ProtocolSettings,
+        block: Option<Block>,
+        method: &str,
+        argc: i64,
+        push_args_reversed: &dyn Fn(&mut ScriptBuilder),
+    ) -> (VmState, Option<bool>) {
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+        let mut builder = ScriptBuilder::new();
+        push_args_reversed(&mut builder);
+        builder.emit_push_int(argc);
+        builder.emit_pack();
+        builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
+        builder.emit_push(method.as_bytes());
+        builder.emit_push(&PolicyContract::script_hash().to_array());
+        builder
+            .emit_syscall("System.Contract.Call")
+            .expect("System.Contract.Call");
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            Some(container),
+            snapshot,
+            block,
+            settings,
+            2000_00000000,
+            None,
+        )
+        .expect("engine builds");
+        engine
+            .load_script(builder.to_array(), CallFlags::ALL, None)
+            .expect("script loads");
+        let state = engine.execute_allow_fault();
+        let top = engine
+            .result_stack()
+            .peek(0)
+            .ok()
+            .and_then(|item| item.as_bool().ok());
+        (state, top)
+    }
+
+    /// Pre-Faun blockAccount (the V0 registration): committee-gated, writes an
+    /// empty `Prefix_BlockedAccount` record, and double-blocking returns false
+    /// (C# UT_PolicyContract.Check_BlockAccount).
+    #[test]
+    fn block_account_e2e_pre_faun_blocks_then_double_block_returns_false() {
+        crate::install();
+        let settings = ProtocolSettings::default(); // HF_Faun unscheduled
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 0));
+        let snapshot = Arc::new(cache);
+        let signer = committee_address(&committee);
+        let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
+
+        let (state, result) = call_policy(
+            Arc::clone(&snapshot),
+            signer,
+            settings.clone(),
+            None,
+            "blockAccount",
+            1,
+            &|b| {
+                b.emit_push(&account.to_array());
+            },
+        );
+        assert_eq!(state, VmState::HALT, "blockAccount must HALT");
+        assert_eq!(result, Some(true), "first block returns true");
+        let item = snapshot
+            .get(&blocked_account_key(&account))
+            .expect("blocked entry written");
+        assert!(item.value_bytes().is_empty(), "pre-Faun blocked value is empty");
+
+        // Blocking the same account again returns false (no fault).
+        let (state2, result2) = call_policy(
+            Arc::clone(&snapshot),
+            signer,
+            settings,
+            None,
+            "blockAccount",
+            1,
+            &|b| {
+                b.emit_push(&account.to_array());
+            },
+        );
+        assert_eq!(state2, VmState::HALT, "double block must still HALT");
+        assert_eq!(result2, Some(false), "double block returns false");
+    }
+
+    /// blockAccount without the committee witness faults (C# AssertCommittee
+    /// throws) and writes nothing.
+    #[test]
+    fn block_account_e2e_requires_committee_witness() {
+        crate::install();
+        let settings = ProtocolSettings::default();
+        let cache = DataCache::new(false);
+        seed_committee(&cache, &sample_committee());
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 0));
+        let snapshot = Arc::new(cache);
+        let stranger = UInt160::from_bytes(&[0x09; 20]).unwrap();
+        let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
+
+        let (state, _) = call_policy(
+            Arc::clone(&snapshot),
+            stranger,
+            settings,
+            None,
+            "blockAccount",
+            1,
+            &|b| {
+                b.emit_push(&account.to_array());
+            },
+        );
+        assert_eq!(state, VmState::FAULT, "non-committee blockAccount must FAULT");
+        assert!(snapshot.get(&blocked_account_key(&account)).is_none());
+    }
+
+    /// blockAccount on a native contract hash faults ("Cannot block a native
+    /// contract.") even with the committee witness.
+    #[test]
+    fn block_account_e2e_rejects_native_contract_hash() {
+        crate::install();
+        let settings = ProtocolSettings::default();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 0));
+        let snapshot = Arc::new(cache);
+        let gas_hash = *crate::hashes::GAS_TOKEN_HASH;
+
+        let (state, _) = call_policy(
+            Arc::clone(&snapshot),
+            committee_address(&committee),
+            settings,
+            None,
+            "blockAccount",
+            1,
+            &|b| {
+                b.emit_push(&gas_hash.to_array());
+            },
+        );
+        assert_eq!(state, VmState::FAULT, "blocking a native hash must FAULT");
+        assert!(snapshot.get(&blocked_account_key(&gas_hash)).is_none());
+    }
+
+    /// Faun-path blockAccount (the V1 registration): clears the account's vote
+    /// via NEO.VoteInternal (candidate weight drops, VoteTo cleared,
+    /// _votersCount reduced) and stamps the blocked entry with the persisting
+    /// block's millisecond timestamp (`engine.GetTime()`).
+    #[test]
+    fn block_account_e2e_faun_clears_vote_and_stamps_time() {
+        const BLOCK_TIME_MS: u64 = 1_234_567_890;
+        crate::install();
+        let settings = faun_settings();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 100));
+
+        // A registered candidate with 100 votes, all from `voter` (balance 100,
+        // voting since height 0), and the matching _votersCount.
+        let candidate = committee[0].clone();
+        let voter = UInt160::from_bytes(&[0x07; 20]).unwrap();
+        let candidate_state = StackItem::from_struct(vec![
+            StackItem::from_bool(true),
+            StackItem::from_int(100),
+        ]);
+        let mut candidate_key = vec![33u8]; // NeoToken Prefix_Candidate
+        candidate_key.extend_from_slice(&candidate.to_bytes());
+        let candidate_key = StorageKey::new(crate::NeoToken::ID, candidate_key);
+        cache.add(
+            candidate_key.clone(),
+            StorageItem::from_bytes(
+                BinarySerializer::serialize(&candidate_state, &ExecutionEngineLimits::default())
+                    .unwrap(),
+            ),
+        );
+        let voter_state = StackItem::from_struct(vec![
+            StackItem::from_int(100), // Balance
+            StackItem::from_int(0),   // BalanceHeight
+            StackItem::from_byte_string(candidate.to_bytes()), // VoteTo
+            StackItem::from_int(0),   // LastGasPerVote
+        ]);
+        let mut voter_key = vec![20u8]; // NEP-17 Prefix_Account
+        voter_key.extend_from_slice(&voter.to_bytes());
+        let voter_key = StorageKey::new(crate::NeoToken::ID, voter_key);
+        cache.add(
+            voter_key.clone(),
+            StorageItem::from_bytes(
+                BinarySerializer::serialize(&voter_state, &ExecutionEngineLimits::default())
+                    .unwrap(),
+            ),
+        );
+        let voters_count_key = StorageKey::new(crate::NeoToken::ID, vec![1u8]);
+        cache.add(
+            voters_count_key.clone(),
+            StorageItem::from_bytes(BigInt::from(100).to_signed_bytes_le()),
+        );
+        let snapshot = Arc::new(cache);
+
+        // Persisting block at index 100 with a known timestamp (GetTime source).
+        let mut header = BlockHeader::default();
+        header.set_index(100);
+        header.set_timestamp(BLOCK_TIME_MS);
+        let block = Block::from_parts(header, vec![]);
+
+        let (state, result) = call_policy(
+            Arc::clone(&snapshot),
+            committee_address(&committee),
+            settings,
+            Some(block),
+            "blockAccount",
+            1,
+            &|b| {
+                b.emit_push(&voter.to_array());
+            },
+        );
+        assert_eq!(state, VmState::HALT, "Faun blockAccount must HALT");
+        assert_eq!(result, Some(true));
+
+        // The blocked entry carries the block timestamp (the recoverFund clock).
+        let blocked = snapshot
+            .get(&blocked_account_key(&voter))
+            .expect("blocked entry written");
+        assert_eq!(
+            blocked.value_bytes().into_owned(),
+            BigInt::from(BLOCK_TIME_MS).to_signed_bytes_le()
+        );
+
+        // The candidate lost the voter's 100-NEO weight (still registered).
+        let cand = snapshot.get(&candidate_key).expect("candidate entry kept");
+        let decoded =
+            BinarySerializer::deserialize(&cand.value_bytes(), &ExecutionEngineLimits::default(), None)
+                .unwrap();
+        let StackItem::Struct(fields) = decoded else {
+            panic!("candidate state is not a struct");
+        };
+        assert!(fields.items()[0].as_bool().unwrap(), "candidate stays registered");
+        assert_eq!(fields.items()[1].as_int().unwrap(), BigInt::from(0), "votes cleared");
+
+        // The voter's VoteTo is now null and the reward markers advanced.
+        let acct = snapshot.get(&voter_key).expect("voter account kept");
+        let decoded =
+            BinarySerializer::deserialize(&acct.value_bytes(), &ExecutionEngineLimits::default(), None)
+                .unwrap();
+        let StackItem::Struct(fields) = decoded else {
+            panic!("voter account state is not a struct");
+        };
+        assert_eq!(fields.items()[0].as_int().unwrap(), BigInt::from(100), "balance kept");
+        assert!(matches!(fields.items()[2], StackItem::Null), "VoteTo cleared");
+
+        // _votersCount dropped by the voter's balance (100 -> 0).
+        let voters = snapshot.get(&voters_count_key).expect("voters count kept");
+        assert_eq!(
+            BigInt::from_signed_bytes_le(&voters.value_bytes()),
+            BigInt::from(0)
+        );
+    }
+
+    /// setWhitelistFeeContract / removeWhitelistFeeContract round trip (HF_Faun):
+    /// the committee whitelists NEO.balanceOf (mirroring C# TestWhiteListFee),
+    /// the entry lands under [16] ++ hash ++ offset(BE) with the
+    /// WhitelistedContract struct value, the `whitelisted_fee` seam reads it
+    /// back, and the remove writer deletes it again.
+    #[test]
+    fn whitelist_fee_contract_e2e_set_then_remove() {
+        crate::install();
+        let settings = faun_settings();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 0));
+        // The whitelist target: NEO's deployed state (its manifest carries the
+        // balanceOf(1) descriptor whose offset keys the whitelist entry).
+        let neo_state = build_native_contract_state(&crate::NeoToken, &settings, 0);
+        let balance_of_offset = neo_state
+            .manifest
+            .abi
+            .methods
+            .iter()
+            .find(|m| m.name == "balanceOf" && m.parameters.len() == 1)
+            .expect("NEO balanceOf in manifest")
+            .offset;
+        deploy_native(&cache, &neo_state);
+        let snapshot = Arc::new(cache);
+        let signer = committee_address(&committee);
+        let neo_hash = crate::NeoToken::script_hash();
+
+        // setWhitelistFeeContract(NEO, "balanceOf", 1, 12345).
+        let (state, _) = call_policy(
+            Arc::clone(&snapshot),
+            signer,
+            settings.clone(),
+            None,
+            "setWhitelistFeeContract",
+            4,
+            &|b| {
+                b.emit_push_int(12345); // fixedFee (arg 3, deepest)
+                b.emit_push_int(1); // argCount (arg 2)
+                b.emit_push("balanceOf".as_bytes()); // method (arg 1)
+                b.emit_push(&neo_hash.to_array()); // contractHash (arg 0, top)
+            },
+        );
+        assert_eq!(state, VmState::HALT, "setWhitelistFeeContract must HALT");
+        let key = whitelist_fee_key(&neo_hash, balance_of_offset);
+        let item = snapshot.get(&key).expect("whitelist entry written");
+        let view = decode_whitelisted_contract(&item.value_bytes()).unwrap();
+        assert_eq!(view.contract_hash, neo_hash);
+        assert_eq!(view.method, "balanceOf");
+        assert_eq!(view.arg_count, 1);
+        assert_eq!(view.fixed_fee, 12345);
+
+        // The engine-facing seam (C# IsWhitelistFeeContract) resolves the fee.
+        assert_eq!(
+            NativeContract::whitelisted_fee(&PolicyContract::new(), &snapshot, &neo_hash, "balanceOf", 1)
+                .unwrap(),
+            Some(12345)
+        );
+        // A different method / a missing contract resolve to no whitelist.
+        assert_eq!(
+            NativeContract::whitelisted_fee(&PolicyContract::new(), &snapshot, &neo_hash, "transfer", 4)
+                .unwrap(),
+            None
+        );
+        let unknown = UInt160::from_bytes(&[0x55; 20]).unwrap();
+        assert_eq!(
+            NativeContract::whitelisted_fee(&PolicyContract::new(), &snapshot, &unknown, "balanceOf", 1)
+                .unwrap(),
+            None
+        );
+
+        // removeWhitelistFeeContract(NEO, "balanceOf", 1) deletes the entry.
+        let (state2, _) = call_policy(
+            Arc::clone(&snapshot),
+            signer,
+            settings.clone(),
+            None,
+            "removeWhitelistFeeContract",
+            3,
+            &|b| {
+                b.emit_push_int(1); // argCount (arg 2, deepest)
+                b.emit_push("balanceOf".as_bytes()); // method (arg 1)
+                b.emit_push(&neo_hash.to_array()); // contractHash (arg 0, top)
+            },
+        );
+        assert_eq!(state2, VmState::HALT, "removeWhitelistFeeContract must HALT");
+        assert!(snapshot.get(&key).is_none(), "whitelist entry deleted");
+
+        // Removing again faults: C# throws "Whitelist not found".
+        let (state3, _) = call_policy(
+            Arc::clone(&snapshot),
+            signer,
+            settings,
+            None,
+            "removeWhitelistFeeContract",
+            3,
+            &|b| {
+                b.emit_push_int(1);
+                b.emit_push("balanceOf".as_bytes());
+                b.emit_push(&neo_hash.to_array());
+            },
+        );
+        assert_eq!(state3, VmState::FAULT, "removing a missing whitelist must FAULT");
+    }
+
+    /// setWhitelistFeeContract rejects a negative fixedFee before the committee
+    /// check (C# ArgumentOutOfRangeException.ThrowIfNegative) and faults for an
+    /// unknown method (C# "Method ... was not found").
+    #[test]
+    fn whitelist_fee_contract_e2e_validation_faults() {
+        crate::install();
+        let settings = faun_settings();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 0));
+        deploy_native(&cache, &build_native_contract_state(&crate::NeoToken, &settings, 0));
+        let snapshot = Arc::new(cache);
+        let signer = committee_address(&committee);
+        let neo_hash = crate::NeoToken::script_hash();
+
+        // Negative fixedFee -> FAULT.
+        let (state, _) = call_policy(
+            Arc::clone(&snapshot),
+            signer,
+            settings.clone(),
+            None,
+            "setWhitelistFeeContract",
+            4,
+            &|b| {
+                b.emit_push_int(-1);
+                b.emit_push_int(1);
+                b.emit_push("balanceOf".as_bytes());
+                b.emit_push(&neo_hash.to_array());
+            },
+        );
+        assert_eq!(state, VmState::FAULT, "negative fixedFee must FAULT");
+
+        // Unknown method name -> FAULT, nothing stored.
+        let (state2, _) = call_policy(
+            Arc::clone(&snapshot),
+            signer,
+            settings,
+            None,
+            "setWhitelistFeeContract",
+            4,
+            &|b| {
+                b.emit_push_int(5);
+                b.emit_push_int(0);
+                b.emit_push("noexists".as_bytes());
+                b.emit_push(&neo_hash.to_array());
+            },
+        );
+        assert_eq!(state2, VmState::FAULT, "unknown method must FAULT");
+        assert!(whitelist_fee_entries(&snapshot).is_empty());
+    }
+
+    /// recoverFund's verifiable prefix: the almost-full-committee gate (2-of-3
+    /// here, max(max(1, n-(n-1)/2), n-2) = 2 for n = 3) plus the
+    /// "Request not found." fault for an account that was never blocked.
+    #[test]
+    fn recover_fund_e2e_requires_request_and_committee() {
+        const BLOCK_TIME_MS: u64 = 1_000_000;
+        crate::install();
+        let settings = faun_settings();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 100));
+        let snapshot = Arc::new(cache);
+        let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
+        let gas_hash = *crate::hashes::GAS_TOKEN_HASH;
+        let mut header = BlockHeader::default();
+        header.set_index(100);
+        header.set_timestamp(BLOCK_TIME_MS);
+
+        // Without the almost-full-committee witness -> FAULT.
+        let stranger = UInt160::from_bytes(&[0x09; 20]).unwrap();
+        let (state, _) = call_policy(
+            Arc::clone(&snapshot),
+            stranger,
+            settings.clone(),
+            Some(Block::from_parts(header.clone(), vec![])),
+            "recoverFund",
+            2,
+            &|b| {
+                b.emit_push(&gas_hash.to_array()); // token (arg 1, deeper)
+                b.emit_push(&account.to_array()); // account (arg 0, top)
+            },
+        );
+        assert_eq!(state, VmState::FAULT, "non-committee recoverFund must FAULT");
+
+        // With the witness but no blocked entry -> FAULT ("Request not found.").
+        // For the 3-member sample committee the almost-full threshold equals the
+        // regular committee threshold (both 2-of-3), so the same address signs.
+        let (state2, _) = call_policy(
+            Arc::clone(&snapshot),
+            committee_address(&committee),
+            settings,
+            Some(Block::from_parts(header, vec![])),
+            "recoverFund",
+            2,
+            &|b| {
+                b.emit_push(&gas_hash.to_array());
+                b.emit_push(&account.to_array());
+            },
+        );
+        assert_eq!(state2, VmState::FAULT, "recoverFund without a request must FAULT");
     }
 }

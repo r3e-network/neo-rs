@@ -192,7 +192,7 @@ pub(crate) fn gas_mint(
         .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
         .unwrap_or_else(BigInt::zero)
         + amount;
-    snapshot.update(supply_key, StorageItem::from_bytes(supply.to_signed_bytes_le()));
+    snapshot.update(supply_key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)));
     post_mint(engine, account, amount, call_on_payment)
 }
 
