@@ -151,6 +151,19 @@ fn compute_committee_address(snapshot: &DataCache) -> CoreResult<UInt160> {
     Ok(UInt160::from_script(&script))
 }
 
+/// C# `GetAccountState`: the stored `NeoAccountState` struct bytes under
+/// `Prefix_Account ++ account`, or `None` when the account has no entry. The
+/// stored value is already the BinarySerializer-encoded struct (balance,
+/// balanceHeight, voteTo, lastGasPerVote), which is exactly the Array/Struct
+/// return shape — so it is returned as-is (the same pattern as
+/// `getDesignatedByRole` / `getContract`).
+fn read_account_state(snapshot: &DataCache, account: &UInt160) -> Option<Vec<u8>> {
+    let mut key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
+    key_bytes.extend_from_slice(&account.to_bytes());
+    let key = StorageKey::new(NeoToken::ID, key_bytes);
+    snapshot.get(&key).map(|item| item.value_bytes().into_owned())
+}
+
 static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
     let int = ContractParameterType::Integer;
@@ -189,6 +202,15 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ContractParameterType::Hash160,
         )
         .with_active_in(Hardfork::HfCockatrice),
+        // getAccountState(account) -> NeoAccountState struct (Array) or null.
+        NativeMethod::new(
+            "getAccountState".into(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Hash160],
+            ContractParameterType::Array,
+        ),
     ]
 });
 
@@ -272,6 +294,20 @@ impl NativeContract for NeoToken {
                 let snapshot = engine.snapshot_cache();
                 Ok(compute_committee_address(&snapshot)?.to_bytes())
             }
+            "getAccountState" => {
+                let account_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation("NeoToken::getAccountState requires an account")
+                })?;
+                let account = UInt160::from_bytes(account_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "NeoToken::getAccountState: bad account: {e}"
+                    ))
+                })?;
+                let snapshot = engine.snapshot_cache();
+                // C# returns the NeoAccountState struct, or null (empty payload)
+                // when the account has no entry.
+                Ok(read_account_state(&snapshot, &account).unwrap_or_default())
+            }
             other => Err(CoreError::invalid_operation(format!(
                 "NeoToken method '{other}' is not implemented"
             ))),
@@ -300,9 +336,14 @@ mod tests {
                 "getGasPerBlock",
                 "getRegisterPrice",
                 "getCommittee",
-                "getCommitteeAddress"
+                "getCommitteeAddress",
+                "getAccountState"
             ]
         );
+        let acct = c.methods().iter().find(|m| m.name == "getAccountState").unwrap();
+        assert_eq!(acct.parameters, vec![ContractParameterType::Hash160]);
+        assert_eq!(acct.return_type, ContractParameterType::Array);
+        assert_eq!(acct.cpu_fee, 1 << 15);
         let symbol = c.methods().iter().find(|m| m.name == "symbol").unwrap();
         assert!(symbol.safe && symbol.cpu_fee == 0 && symbol.required_call_flags == 0);
         let balance = c.methods().iter().find(|m| m.name == "balanceOf").unwrap();
@@ -456,5 +497,38 @@ mod tests {
         );
         assert_eq!(gas_per_block_at(&cache, 9), BigInt::from(DEFAULT_GAS_PER_BLOCK));
         assert_eq!(gas_per_block_at(&cache, 20), BigInt::from(3 * 100_000_000i64));
+    }
+
+    #[test]
+    fn account_state_returns_stored_struct_or_none() {
+        use neo_storage::StorageItem;
+        let cache = DataCache::new(false);
+        let account = UInt160::from_bytes(&[5u8; 20]).unwrap();
+
+        // Absent -> None (invoke maps it to an empty payload = null).
+        assert!(read_account_state(&cache, &account).is_none());
+
+        // Store a NeoAccountState struct [balance, height, voteTo(Null),
+        // lastGasPerVote] and read its raw bytes back unchanged.
+        let state = StackItem::from_struct(vec![
+            StackItem::from_int(123),
+            StackItem::from_int(7),
+            StackItem::null(),
+            StackItem::from_int(0),
+        ]);
+        let bytes = BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
+        let mut key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
+        key_bytes.extend_from_slice(&account.to_bytes());
+        cache.add(
+            StorageKey::new(NeoToken::ID, key_bytes),
+            StorageItem::from_bytes(bytes.clone()),
+        );
+        assert_eq!(read_account_state(&cache, &account), Some(bytes.clone()));
+        // The returned bytes deserialize to the 4-field struct.
+        match BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap()
+        {
+            StackItem::Struct(s) => assert_eq!(s.items().len(), 4),
+            other => panic!("expected Struct, got {other:?}"),
+        }
     }
 }
