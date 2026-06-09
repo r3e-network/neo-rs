@@ -4,7 +4,7 @@ use crate::hashes::POLICY_CONTRACT_HASH;
 use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
-use neo_primitives::{CallFlags, ContractParameterType, UInt160};
+use neo_primitives::{CallFlags, ContractParameterType, TransactionAttributeType, UInt160};
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
@@ -204,6 +204,58 @@ fn put_exec_fee_factor(snapshot: &DataCache, value: i64) {
     snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
 }
 
+/// C# `PolicyContract.Prefix_AttributeFee` storage prefix.
+const PREFIX_ATTRIBUTE_FEE: u8 = 20;
+/// C# `PolicyContract.DefaultAttributeFee`.
+const DEFAULT_ATTRIBUTE_FEE: i64 = 0;
+/// C# `PolicyContract.MaxAttributeFee` (10 GAS in datoshi).
+const MAX_ATTRIBUTE_FEE: i64 = 10_0000_0000;
+
+/// C# attribute-type guard shared by get/setAttributeFee: the byte must be a
+/// defined `TransactionAttributeType`, and `NotaryAssisted` is only accepted when
+/// `allow_notary_assisted` (i.e. from HF_Echidna). Mirrors
+/// `!Enum.IsDefined(...) || (!allowNotaryAssisted && type == NotaryAssisted)`.
+fn validate_attribute_type(attribute_type: u8, allow_notary_assisted: bool) -> CoreResult<()> {
+    let defined = TransactionAttributeType::from_byte(attribute_type).is_some();
+    let is_notary = attribute_type == TransactionAttributeType::NotaryAssisted.to_byte();
+    if !defined || (!allow_notary_assisted && is_notary) {
+        return Err(CoreError::invalid_operation(format!(
+            "Attribute type {attribute_type} is not supported."
+        )));
+    }
+    Ok(())
+}
+
+/// The `(PolicyContract.ID, [Prefix_AttributeFee, attributeType])` storage key.
+fn attribute_fee_key(attribute_type: u8) -> StorageKey {
+    StorageKey::new(PolicyContract::ID, vec![PREFIX_ATTRIBUTE_FEE, attribute_type])
+}
+
+/// C# `GetAttributeFee`: validate the type, then read `Prefix_AttributeFee+type`
+/// as a `BigInteger`, defaulting to `DefaultAttributeFee` (0) when unset.
+fn attribute_fee(
+    snapshot: &DataCache,
+    attribute_type: u8,
+    allow_notary_assisted: bool,
+) -> CoreResult<i64> {
+    validate_attribute_type(attribute_type, allow_notary_assisted)?;
+    match snapshot.get(&attribute_fee_key(attribute_type)) {
+        Some(item) => BigInt::from_signed_bytes_le(&item.value_bytes())
+            .to_i64()
+            .ok_or_else(|| CoreError::invalid_operation("AttributeFee storage integer out of range")),
+        None => Ok(DEFAULT_ATTRIBUTE_FEE),
+    }
+}
+
+/// C# `SetAttributeFee` storage effect: overwrite `Prefix_AttributeFee+type`
+/// (`GetAndChange(key, () => 0).Set(value)`).
+fn put_attribute_fee(snapshot: &DataCache, attribute_type: u8, value: i64) {
+    snapshot.update(
+        attribute_fee_key(attribute_type),
+        StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()),
+    );
+}
+
 /// C# `NativeContract.AssertCommittee`: returns an error unless the committee
 /// multisig address witnessed this call. Shared by all committee-gated setters.
 fn assert_committee(engine: &ApplicationEngine, method: &str) -> CoreResult<()> {
@@ -234,6 +286,17 @@ fn setter_int_arg(args: &[Vec<u8>], method: &str) -> CoreResult<i64> {
         .ok_or_else(|| CoreError::invalid_operation(format!("{method} requires a value")))?
         .to_i64()
         .ok_or_else(|| CoreError::invalid_operation(format!("{method}: value out of range")))
+}
+
+/// Decodes the leading `byte attributeType` argument (C# `byte` parameter
+/// binding faults for a value outside `[0, 255]`).
+fn attribute_type_arg(args: &[Vec<u8>], method: &str) -> CoreResult<u8> {
+    args.first()
+        .map(|b| BigInt::from_signed_bytes_le(b))
+        .and_then(|b| b.to_u8())
+        .ok_or_else(|| {
+            CoreError::invalid_operation(format!("{method} requires a byte attribute type"))
+        })
 }
 
 /// C# `PolicyContract.MaxMillisecondsPerBlock`.
@@ -409,6 +472,27 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
         ),
+        // getAttributeFee / setAttributeFee: present from genesis (C# V0) with a
+        // V1 from HF_Echidna that only differs by allowing the NotaryAssisted
+        // attribute type. The ABI signature is identical across versions, so a
+        // single always-active registration is manifest-equivalent; the
+        // NotaryAssisted gate is applied in invoke via the HF_Echidna check.
+        NativeMethod::new(
+            "getAttributeFee".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Integer,
+        ),
+        NativeMethod::new(
+            "setAttributeFee".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer, ContractParameterType::Integer],
+            ContractParameterType::Void,
+        ),
         // HF_Echidna setter that emits a change notification (States|AllowNotify).
         NativeMethod::new(
             "setMillisecondsPerBlock".to_string(),
@@ -555,6 +639,35 @@ impl NativeContract for PolicyContract {
                 put_exec_fee_factor(&engine.snapshot_cache(), value);
                 Ok(Vec::new())
             }
+            "getAttributeFee" => {
+                // C# V0/V1: allowNotaryAssisted is exactly "HF_Echidna enabled".
+                let attribute_type = attribute_type_arg(args, "getAttributeFee")?;
+                let allow_notary = engine.is_hardfork_enabled(Hardfork::HfEchidna);
+                let fee = attribute_fee(&snapshot, attribute_type, allow_notary)?;
+                Ok(BigInt::from(fee).to_signed_bytes_le())
+            }
+            "setAttributeFee" => {
+                // C#: validate type (NotaryAssisted gated by HF_Echidna), then
+                // value <= MaxAttributeFee, then AssertCommittee, then write.
+                let attribute_type = attribute_type_arg(args, "setAttributeFee")?;
+                let value = args
+                    .get(1)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .and_then(|b| b.to_u32())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("PolicyContract::setAttributeFee requires a uint value")
+                    })?;
+                let allow_notary = engine.is_hardfork_enabled(Hardfork::HfEchidna);
+                validate_attribute_type(attribute_type, allow_notary)?;
+                if i64::from(value) > MAX_ATTRIBUTE_FEE {
+                    return Err(CoreError::invalid_operation(format!(
+                        "AttributeFee must be less than {MAX_ATTRIBUTE_FEE}, got {value}"
+                    )));
+                }
+                assert_committee(engine, "setAttributeFee")?;
+                put_attribute_fee(&engine.snapshot_cache(), attribute_type, i64::from(value));
+                Ok(Vec::new())
+            }
             "isBlocked" => {
                 let account_bytes = args.first().ok_or_else(|| {
                     CoreError::invalid_operation("PolicyContract::isBlocked requires an account")
@@ -680,6 +793,8 @@ mod tests {
                 "getExecFeeFactor",
                 "getExecPicoFeeFactor",
                 "setExecFeeFactor",
+                "getAttributeFee",
+                "setAttributeFee",
                 "setMillisecondsPerBlock",
                 "setMaxValidUntilBlockIncrement",
                 "setMaxTraceableBlocks",
@@ -741,6 +856,39 @@ mod tests {
         assert_eq!(set_exec.parameters, vec![ContractParameterType::Integer]);
         assert_eq!(set_exec.return_type, ContractParameterType::Void);
         assert!(set_exec.active_in.is_none());
+        // getAttributeFee is a safe Integer read; setAttributeFee is a non-safe
+        // States writer taking (attributeType, value). Both are always-active.
+        let get_af = c.methods().iter().find(|m| m.name == "getAttributeFee").unwrap();
+        assert!(get_af.safe && get_af.active_in.is_none());
+        assert_eq!(get_af.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(get_af.return_type, ContractParameterType::Integer);
+        let set_af = c.methods().iter().find(|m| m.name == "setAttributeFee").unwrap();
+        assert!(!set_af.safe && set_af.active_in.is_none());
+        assert_eq!(set_af.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(
+            set_af.parameters,
+            vec![ContractParameterType::Integer, ContractParameterType::Integer]
+        );
+        assert_eq!(set_af.return_type, ContractParameterType::Void);
+    }
+
+    #[test]
+    fn attribute_fee_validates_type_and_round_trips() {
+        let cache = DataCache::new(false);
+        // HighPriority (0x01) is a defined type: defaults to 0, then round-trips.
+        let hp = TransactionAttributeType::HighPriority.to_byte();
+        assert_eq!(attribute_fee(&cache, hp, false).unwrap(), DEFAULT_ATTRIBUTE_FEE);
+        put_attribute_fee(&cache, hp, 5_000);
+        assert_eq!(attribute_fee(&cache, hp, false).unwrap(), 5_000);
+
+        // An undefined attribute byte is rejected regardless of the notary flag.
+        assert!(attribute_fee(&cache, 0xFE, true).is_err());
+
+        // NotaryAssisted (0x22) is gated: rejected pre-Echidna (allow=false),
+        // accepted from Echidna (allow=true).
+        let na = TransactionAttributeType::NotaryAssisted.to_byte();
+        assert!(attribute_fee(&cache, na, false).is_err());
+        assert_eq!(attribute_fee(&cache, na, true).unwrap(), DEFAULT_ATTRIBUTE_FEE);
     }
 
     #[test]
