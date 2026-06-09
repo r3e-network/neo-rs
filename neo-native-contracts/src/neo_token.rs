@@ -131,6 +131,28 @@ fn committee_sorted(snapshot: &DataCache) -> CoreResult<Vec<ECPoint>> {
     Ok(points)
 }
 
+/// C# `GetNextBlockValidators`: the first `validators_count` committee members
+/// (in stored, vote-ranked order), then sorted ascending.
+fn next_block_validators(snapshot: &DataCache, validators_count: usize) -> CoreResult<Vec<ECPoint>> {
+    let mut points = read_committee_points(snapshot)?;
+    points.truncate(validators_count);
+    points.sort();
+    Ok(points)
+}
+
+/// Serializes EC points as an Array of compressed (33-byte) byte strings — the
+/// return shape shared by `getCommittee` / `getNextBlockValidators`.
+fn points_to_array_bytes(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
+    let array = StackItem::from_array(
+        points
+            .iter()
+            .map(|p| StackItem::from_byte_string(p.to_bytes()))
+            .collect::<Vec<_>>(),
+    );
+    BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::invalid_operation(format!("NeoToken point array: {e}")))
+}
+
 /// The committee multisig threshold `m = n - (n - 1) / 2` (committee majority,
 /// matching C# `GetCommitteeAddress`). `n` must be non-zero.
 fn committee_threshold(n: usize) -> usize {
@@ -211,6 +233,15 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160],
             ContractParameterType::Array,
         ),
+        // getNextBlockValidators -> ECPoint[] (Array), CpuFee 1<<16 in C#.
+        NativeMethod::new(
+            "getNextBlockValidators".into(),
+            1 << 16,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Array,
+        ),
     ]
 });
 
@@ -277,18 +308,17 @@ impl NativeContract for NeoToken {
                 Ok(BigInt::from(register_price(&snapshot)?).to_signed_bytes_le())
             }
             "getCommittee" => {
-                let snapshot = engine.snapshot_cache();
                 // C# returns ECPoint[] sorted ascending; marshaled as an Array of
                 // compressed (33-byte) public-key byte strings.
-                let points = committee_sorted(&snapshot)?;
-                let array = StackItem::from_array(
-                    points
-                        .iter()
-                        .map(|p| StackItem::from_byte_string(p.to_bytes()))
-                        .collect::<Vec<_>>(),
-                );
-                BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
-                    .map_err(|e| CoreError::invalid_operation(format!("getCommittee: {e}")))
+                let snapshot = engine.snapshot_cache();
+                points_to_array_bytes(&committee_sorted(&snapshot)?)
+            }
+            "getNextBlockValidators" => {
+                // First ValidatorsCount committee members (stored order), sorted.
+                let count =
+                    usize::try_from(engine.protocol_settings().validators_count).unwrap_or(0);
+                let snapshot = engine.snapshot_cache();
+                points_to_array_bytes(&next_block_validators(&snapshot, count)?)
             }
             "getCommitteeAddress" => {
                 let snapshot = engine.snapshot_cache();
@@ -337,13 +367,18 @@ mod tests {
                 "getRegisterPrice",
                 "getCommittee",
                 "getCommitteeAddress",
-                "getAccountState"
+                "getAccountState",
+                "getNextBlockValidators"
             ]
         );
         let acct = c.methods().iter().find(|m| m.name == "getAccountState").unwrap();
         assert_eq!(acct.parameters, vec![ContractParameterType::Hash160]);
         assert_eq!(acct.return_type, ContractParameterType::Array);
         assert_eq!(acct.cpu_fee, 1 << 15);
+        let nbv = c.methods().iter().find(|m| m.name == "getNextBlockValidators").unwrap();
+        assert_eq!(nbv.return_type, ContractParameterType::Array);
+        assert_eq!(nbv.cpu_fee, 1 << 16);
+        assert!(nbv.parameters.is_empty());
         let symbol = c.methods().iter().find(|m| m.name == "symbol").unwrap();
         assert!(symbol.safe && symbol.cpu_fee == 0 && symbol.required_call_flags == 0);
         let balance = c.methods().iter().find(|m| m.name == "balanceOf").unwrap();
@@ -425,6 +460,24 @@ mod tests {
         let mut expected = points.clone();
         expected.sort();
         assert_eq!(committee_sorted(&cache).unwrap(), expected);
+    }
+
+    #[test]
+    fn next_block_validators_takes_count_then_sorts() {
+        let cache = DataCache::new(false);
+        let points = sample_committee(); // 3 stored points
+        seed_committee(&cache, &points);
+
+        // Take the first 2 (stored order), then sort ascending.
+        let result = next_block_validators(&cache, 2).unwrap();
+        let mut expected: Vec<ECPoint> = points[..2].to_vec();
+        expected.sort();
+        assert_eq!(result, expected);
+
+        // A count >= committee size returns all members, sorted.
+        let mut all_expected = points.clone();
+        all_expected.sort();
+        assert_eq!(next_block_validators(&cache, 10).unwrap(), all_expected);
     }
 
     #[test]
