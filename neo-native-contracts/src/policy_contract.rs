@@ -233,7 +233,10 @@ fn attribute_fee_key(attribute_type: u8) -> StorageKey {
 
 /// C# `GetAttributeFee`: validate the type, then read `Prefix_AttributeFee+type`
 /// as a `BigInteger`, defaulting to `DefaultAttributeFee` (0) when unset.
-fn attribute_fee(
+///
+/// Exposed `pub(crate)` so `Notary::onNEP17Payment` can read the NotaryAssisted
+/// attribute fee (C# `Policy.GetAttributeFeeV1`).
+pub(crate) fn attribute_fee(
     snapshot: &DataCache,
     attribute_type: u8,
     allow_notary_assisted: bool,

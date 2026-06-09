@@ -10,7 +10,8 @@ use std::sync::LazyLock;
 
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
-use neo_primitives::{CallFlags, ContractParameterType, UInt160};
+use neo_payloads::Transaction;
+use neo_primitives::{CallFlags, ContractParameterType, TransactionAttributeType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
@@ -20,7 +21,11 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 use crate::hashes::NOTARY_HASH;
-use crate::LedgerContract;
+use crate::{GasToken, LedgerContract};
+
+/// C# `Notary.DefaultDepositDeltaTill`: the default lock-height delta applied to a
+/// first deposit whose `till` the depositor isn't allowed to set itself.
+const DEFAULT_DEPOSIT_DELTA_TILL: u32 = 5760;
 
 /// Lazily-initialised script-hash handle for the Notary contract.
 pub static NOTARY_HASH_REF: LazyLock<UInt160> = LazyLock::new(|| *NOTARY_HASH);
@@ -125,6 +130,85 @@ fn lock_deposit_decision(
     Some((amount, till))
 }
 
+/// Parses the `onNEP17Payment` `data` argument (an `Any` param that arrives
+/// BinarySerialized). C# requires it to be an `Array` of exactly 2 elements:
+/// `[to, till]` where `to` is `Null` (use the GAS sender `from`) or a `UInt160`,
+/// and `till` is the requested lock height.
+fn parse_onnep17_data(from: &UInt160, data: &[u8]) -> CoreResult<(UInt160, u32)> {
+    let item = BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
+        .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment data: {e}")))?;
+    let StackItem::Array(arr) = item else {
+        return Err(CoreError::invalid_operation(
+            "Notary::onNEP17Payment data must be an array of 2 elements",
+        ));
+    };
+    let items = arr.items();
+    if items.len() != 2 {
+        return Err(CoreError::invalid_operation(
+            "Notary::onNEP17Payment data must be an array of 2 elements",
+        ));
+    }
+    let to = if matches!(items[0], StackItem::Null) {
+        *from
+    } else {
+        let bytes = items[0]
+            .as_bytes()
+            .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment to: {e}")))?;
+        UInt160::from_bytes(&bytes).map_err(|e| {
+            CoreError::invalid_operation(format!("Notary::onNEP17Payment to: bad hash: {e}"))
+        })?
+    };
+    let till = items[1]
+        .as_int()
+        .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment till: {e}")))?
+        .to_u32()
+        .ok_or_else(|| {
+            CoreError::invalid_operation("Notary::onNEP17Payment till out of uint range")
+        })?;
+    Ok((to, till))
+}
+
+/// The pure deposit decision of C# `Notary.OnNEP17Payment` (after the GAS-caller
+/// and data checks). Returns the `(Amount, Till)` to write, or an error string
+/// describing the C# fault. `existing` is the current deposit for `to`
+/// (`None` = first deposit). `wrapping_add` matches C#'s unchecked `uint` math.
+fn compute_deposit(
+    existing: Option<(BigInt, u32)>,
+    amount: &BigInt,
+    till: u32,
+    allowed_change_till: bool,
+    current_height: u32,
+    fee_per_key: i64,
+) -> Result<(BigInt, u32), &'static str> {
+    if till < current_height.wrapping_add(2) {
+        return Err("`till` is below the chain height + 2");
+    }
+    match existing {
+        Some((existing_amount, existing_till)) => {
+            if till < existing_till {
+                return Err("`till` is below the previous deposit Till");
+            }
+            // An existing deposit only adopts the requested `till` when the GAS
+            // sender is the deposit owner; otherwise the lock height is unchanged.
+            let final_till = if allowed_change_till { till } else { existing_till };
+            Ok((existing_amount + amount, final_till))
+        }
+        None => {
+            // First deposit must be at least 2 * the NotaryAssisted attribute fee.
+            let minimum = BigInt::from(2) * BigInt::from(fee_per_key);
+            if amount < &minimum {
+                return Err("first deposit is below 2 * the NotaryAssisted fee");
+            }
+            let final_till = if allowed_change_till {
+                till
+            } else {
+                current_height.wrapping_add(DEFAULT_DEPOSIT_DELTA_TILL)
+            };
+            Ok((amount.clone(), final_till))
+        }
+    }
+}
+
 /// C# `SetMaxNotValidBeforeDelta` storage effect: overwrite
 /// `Prefix_MaxNotValidBeforeDelta` (`GetAndChange(...).Set(value)`). The key is
 /// genesis-initialised (`OnPersist` Add), so `update` (= C# GetAndChange) is the
@@ -211,6 +295,19 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160, int],
             ContractParameterType::Boolean,
         ),
+        // onNEP17Payment(from, amount, data) -> Void: GAS deposit callback, States.
+        NativeMethod::new(
+            "onNEP17Payment".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![
+                ContractParameterType::Hash160,
+                int,
+                ContractParameterType::Any,
+            ],
+            ContractParameterType::Void,
+        ),
     ]
 });
 
@@ -289,6 +386,49 @@ impl NativeContract for Notary {
                     None => Ok(vec![0]),
                 }
             }
+            "onNEP17Payment" => {
+                // C#: only GAS may deposit; data = Array[to?, till]; the deposit
+                // owner (tx.Sender == to) may set the lock height.
+                let from = parse_account(args, "onNEP17Payment")?;
+                let amount = args
+                    .get(1)
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("Notary::onNEP17Payment requires an amount")
+                    })?;
+                let data = args.get(2).map(Vec::as_slice).unwrap_or(&[]);
+
+                if engine.get_calling_script_hash() != Some(GasToken::script_hash()) {
+                    return Err(CoreError::invalid_operation(
+                        "Notary::onNEP17Payment: only GAS can be accepted for deposit",
+                    ));
+                }
+                let (to, till) = parse_onnep17_data(&from, data)?;
+                // C# `allowedChangeTill = tx.Sender == to`; the script container is
+                // the persisting transaction (the GAS transfer that triggered this).
+                let sender = engine
+                    .script_container()
+                    .and_then(|c| c.as_any().downcast_ref::<Transaction>())
+                    .and_then(|tx| tx.sender());
+                let allowed_change_till = sender == Some(to);
+
+                let current = LedgerContract::new().current_index(&snapshot)?;
+                let fee_per_key = crate::policy_contract::attribute_fee(
+                    &snapshot,
+                    TransactionAttributeType::NotaryAssisted.to_byte(),
+                    true,
+                )?;
+                let existing = read_deposit(&snapshot, &to)?;
+                match compute_deposit(existing, &amount, till, allowed_change_till, current, fee_per_key) {
+                    Ok((new_amount, new_till)) => {
+                        write_deposit(&engine.snapshot_cache(), &to, &new_amount, new_till)?;
+                        Ok(Vec::new())
+                    }
+                    Err(msg) => Err(CoreError::invalid_operation(format!(
+                        "Notary::onNEP17Payment: {msg}"
+                    ))),
+                }
+            }
             "setMaxNotValidBeforeDelta" => {
                 // C# param is `uint value`: decode as u32 (out-of-range faults like
                 // the C# uint parameter binding).
@@ -352,9 +492,23 @@ mod tests {
                 "balanceOf",
                 "expirationOf",
                 "setMaxNotValidBeforeDelta",
-                "lockDepositUntil"
+                "lockDepositUntil",
+                "onNEP17Payment"
             ]
         );
+        // onNEP17Payment: not safe, States, (Hash160, Integer, Any) -> Void.
+        let on_pay = c.methods().iter().find(|m| m.name == "onNEP17Payment").unwrap();
+        assert!(!on_pay.safe);
+        assert_eq!(on_pay.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(
+            on_pay.parameters,
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::Integer,
+                ContractParameterType::Any
+            ]
+        );
+        assert_eq!(on_pay.return_type, ContractParameterType::Void);
         for name in ["balanceOf", "expirationOf"] {
             let m = c.methods().iter().find(|m| m.name == name).unwrap();
             assert_eq!(m.parameters, vec![ContractParameterType::Hash160]);
@@ -415,6 +569,65 @@ mod tests {
             read_deposit(&cache, &account).unwrap(),
             Some((BigInt::from(1000), 300))
         );
+    }
+
+    #[test]
+    fn compute_deposit_matches_csharp_onnep17_rules() {
+        let amount = BigInt::from(100);
+        // current=10 -> till must be >= 12.
+        assert!(compute_deposit(None, &amount, 11, true, 10, 0).is_err());
+
+        // First deposit below 2*feePerKey (fee=60 -> min 120) -> error.
+        assert!(compute_deposit(None, &amount, 100, true, 10, 60).is_err());
+        // First deposit, owner sets till (allowed) -> Amount=amount, Till=requested.
+        assert_eq!(
+            compute_deposit(None, &amount, 100, true, 10, 10).unwrap(),
+            (BigInt::from(100), 100)
+        );
+        // First deposit, NOT owner -> till forced to current + DefaultDepositDeltaTill.
+        assert_eq!(
+            compute_deposit(None, &amount, 100, false, 10, 10).unwrap(),
+            (BigInt::from(100), 10 + DEFAULT_DEPOSIT_DELTA_TILL)
+        );
+
+        // Existing deposit: till below previous Till -> error.
+        assert!(compute_deposit(Some((BigInt::from(50), 200)), &amount, 150, true, 10, 0).is_err());
+        // Existing, owner extends -> Amount accumulates, Till = requested.
+        assert_eq!(
+            compute_deposit(Some((BigInt::from(50), 200)), &amount, 300, true, 10, 0).unwrap(),
+            (BigInt::from(150), 300)
+        );
+        // Existing, NOT owner -> Amount accumulates, Till unchanged.
+        assert_eq!(
+            compute_deposit(Some((BigInt::from(50), 200)), &amount, 300, false, 10, 0).unwrap(),
+            (BigInt::from(150), 200)
+        );
+    }
+
+    #[test]
+    fn parse_onnep17_data_handles_null_and_explicit_to() {
+        let from = UInt160::from_bytes(&[1u8; 20]).unwrap();
+        let explicit = UInt160::from_bytes(&[2u8; 20]).unwrap();
+
+        // [Null, 500] -> to defaults to `from`.
+        let null_to = StackItem::from_array(vec![StackItem::null(), StackItem::from_int(500)]);
+        let bytes =
+            BinarySerializer::serialize(&null_to, &ExecutionEngineLimits::default()).unwrap();
+        assert_eq!(parse_onnep17_data(&from, &bytes).unwrap(), (from, 500));
+
+        // [explicit_to, 700] -> to is the provided hash.
+        let with_to = StackItem::from_array(vec![
+            StackItem::from_byte_string(explicit.to_bytes()),
+            StackItem::from_int(700),
+        ]);
+        let bytes2 =
+            BinarySerializer::serialize(&with_to, &ExecutionEngineLimits::default()).unwrap();
+        assert_eq!(parse_onnep17_data(&from, &bytes2).unwrap(), (explicit, 700));
+
+        // Wrong shape (not a 2-element array) -> error.
+        let bad = StackItem::from_array(vec![StackItem::from_int(1)]);
+        let bad_bytes = BinarySerializer::serialize(&bad, &ExecutionEngineLimits::default()).unwrap();
+        assert!(parse_onnep17_data(&from, &bad_bytes).is_err());
     }
 
     #[test]
