@@ -5,11 +5,11 @@
 //! (getCommittee, getCandidates, getNextBlockValidators, …), the committee
 //! setters (setGasPerBlock, setRegisterPrice), candidate registration
 //! (`registerCandidate` / `unregisterCandidate`), the GAS reward read
-//! `unclaimedGas` (C# `CalculateBonus`), and `vote`/`VoteInternal` (the full
-//! transition: candidate vote-weight deltas, `_votersCount`, `DistributeGas` +
-//! `GAS.Mint`, the Vote notification). The remaining surface — NEP-17 `transfer`
-//! (with NEO's governance `OnBalanceChanging`) and the vote-weighted committee
-//! recompute — is the next increment. Methods below are byte-for-byte C# parity.
+//! `unclaimedGas` (C# `CalculateBonus`), `vote`/`VoteInternal`, and NEP-17
+//! `transfer` (with NEO's governance `OnBalanceChanging`: GAS reward
+//! distribution + vote-weight tracking on both accounts). The full ABI surface
+//! is implemented and byte-for-byte C# parity. What remains is the block-boundary
+//! committee recompute (`OnPersist`, not an ABI method).
 
 use std::any::Any;
 use std::sync::LazyLock;
@@ -230,6 +230,173 @@ fn check_candidate(snapshot: &DataCache, pubkey: &ECPoint, registered: bool, vot
         snapshot.update(candidate_key(pubkey), StorageItem::from_bytes(encode_candidate_state(registered, votes)?));
     }
     Ok(())
+}
+
+/// C# `NeoToken.OnBalanceChanging`: invoked whenever an account's NEO balance is
+/// about to change by `amount` (a signed delta). It (a) computes the account's
+/// accrued GAS via `DistributeGas` — mutating `state.balance_height` /
+/// `state.last_gas_per_vote` and returning the datoshi to mint (or `None`), and
+/// (b) when the account votes, shifts that candidate's vote weight and the global
+/// voters-count by `amount`. The caller writes `state` back and mints the return.
+fn neo_on_balance_changing(
+    engine: &ApplicationEngine,
+    snapshot: &DataCache,
+    state: &mut NeoAccountStateView,
+    amount: &BigInt,
+) -> CoreResult<Option<BigInt>> {
+    // DistributeGas: bonus on the OLD state, then advance the reward markers.
+    let mut distribution = None;
+    if let Some(block) = engine.persisting_block() {
+        let end = block.index();
+        let bonus = calculate_bonus(snapshot, state, end)?;
+        state.balance_height = end;
+        if let Some(vote_to) = &state.vote_to {
+            state.last_gas_per_vote = voter_reward_per_committee(snapshot, vote_to);
+        }
+        if bonus != BigInt::from(0) {
+            distribution = Some(bonus);
+        }
+    }
+    // Vote-weight: a balance delta moves the voted candidate's weight + voters count.
+    if *amount != BigInt::from(0) {
+        if let Some(vote_to) = state.vote_to.clone() {
+            let mut count = read_voters_count(snapshot);
+            count += amount;
+            write_voters_count(snapshot, &count);
+            if let Some(item) = snapshot.get(&candidate_key(&vote_to)) {
+                let (registered, mut votes) = decode_candidate_state(&item.value_bytes())?;
+                votes += amount;
+                check_candidate(snapshot, &vote_to, registered, &votes)?;
+            }
+        }
+    }
+    Ok(distribution)
+}
+
+/// C# `FungibleToken.PostTransferAsync` for NEO: emit `Transfer(from, to, amount)`
+/// and, when `to` is a deployed contract, queue its `onNEP17Payment` callback.
+fn neo_post_transfer(
+    engine: &mut ApplicationEngine,
+    from: &UInt160,
+    to: &UInt160,
+    amount: &BigInt,
+    data: &[u8],
+) -> CoreResult<()> {
+    engine
+        .send_notification(
+            NeoToken::script_hash(),
+            "Transfer".to_string(),
+            vec![
+                StackItem::from_byte_string(from.to_bytes()),
+                StackItem::from_byte_string(to.to_bytes()),
+                StackItem::from_int(amount.clone()),
+            ],
+        )
+        .map_err(|e| CoreError::invalid_operation(format!("NeoToken::transfer notify: {e}")))?;
+    if !crate::ContractManagement::is_contract(&engine.snapshot_cache(), to) {
+        return Ok(());
+    }
+    let data_item = if data.is_empty() {
+        StackItem::null()
+    } else {
+        BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
+            .map_err(|e| CoreError::deserialization(format!("NeoToken::transfer data: {e}")))?
+    };
+    engine.queue_contract_call_from_native(
+        NeoToken::script_hash(),
+        *to,
+        "onNEP17Payment",
+        vec![
+            StackItem::from_byte_string(from.to_bytes()),
+            StackItem::from_int(amount.clone()),
+            data_item,
+        ],
+    );
+    Ok(())
+}
+
+/// C# `FungibleToken.Transfer` specialised to NEO (`NeoAccountState`): witness the
+/// `from` account (with the calling-contract bypass), move the balance applying
+/// `OnBalanceChanging` on each side, then `PostTransfer` and mint the collected
+/// GAS distributions. Returns `false` (no fault) on a failed witness / missing
+/// source / insufficient balance, matching C#.
+fn neo_transfer_core(
+    engine: &mut ApplicationEngine,
+    caller: UInt160,
+    from: &UInt160,
+    to: &UInt160,
+    amount: &BigInt,
+    data: &[u8],
+) -> CoreResult<bool> {
+    if *amount < BigInt::from(0) {
+        return Err(CoreError::invalid_operation("NeoToken::transfer: amount cannot be negative"));
+    }
+    if caller != *from
+        && !engine
+            .check_witness(from)
+            .map_err(|e| CoreError::invalid_operation(format!("NeoToken::transfer: witness: {e}")))?
+    {
+        return Ok(false);
+    }
+    let snapshot = engine.snapshot_cache();
+    let zero = BigInt::from(0);
+    let mut distributions: Vec<(UInt160, BigInt)> = Vec::new();
+    let from_state = read_account_state(&snapshot, from);
+
+    if *amount == zero {
+        if let Some(bytes) = from_state {
+            let mut state = decode_neo_account_state(&bytes)?;
+            if let Some(d) = neo_on_balance_changing(engine, &snapshot, &mut state, &zero)? {
+                distributions.push((*from, d));
+            }
+            snapshot.update(neo_account_key(from), StorageItem::from_bytes(encode_neo_account_state(&state)?));
+        }
+    } else {
+        let Some(bytes) = from_state else {
+            return Ok(false);
+        };
+        let mut from_state = decode_neo_account_state(&bytes)?;
+        if from_state.balance < *amount {
+            return Ok(false);
+        }
+        if from == to {
+            if let Some(d) = neo_on_balance_changing(engine, &snapshot, &mut from_state, &zero)? {
+                distributions.push((*from, d));
+            }
+            snapshot.update(neo_account_key(from), StorageItem::from_bytes(encode_neo_account_state(&from_state)?));
+        } else {
+            let neg_amount = -amount;
+            if let Some(d) = neo_on_balance_changing(engine, &snapshot, &mut from_state, &neg_amount)? {
+                distributions.push((*from, d));
+            }
+            if from_state.balance == *amount {
+                snapshot.delete(&neo_account_key(from));
+            } else {
+                from_state.balance -= amount;
+                snapshot.update(neo_account_key(from), StorageItem::from_bytes(encode_neo_account_state(&from_state)?));
+            }
+            let mut to_state = match read_account_state(&snapshot, to) {
+                Some(bytes) => decode_neo_account_state(&bytes)?,
+                None => NeoAccountStateView {
+                    balance: BigInt::from(0),
+                    balance_height: 0,
+                    vote_to: None,
+                    last_gas_per_vote: BigInt::from(0),
+                },
+            };
+            if let Some(d) = neo_on_balance_changing(engine, &snapshot, &mut to_state, amount)? {
+                distributions.push((*to, d));
+            }
+            to_state.balance += amount;
+            snapshot.update(neo_account_key(to), StorageItem::from_bytes(encode_neo_account_state(&to_state)?));
+        }
+    }
+
+    neo_post_transfer(engine, from, to, amount, data)?;
+    for (account, datoshi) in distributions {
+        crate::gas_token::gas_mint(engine, &account, &datoshi, true)?;
+    }
+    Ok(true)
 }
 
 /// C# `GetSortedGasRecords(snapshot, end)`: the `Prefix_GasPerBlock` records with
@@ -518,6 +685,21 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160],
             int,
         ),
+        // NEP-17 transfer(from, to, amount, data) -> Boolean (CpuFee 1<<17,
+        // States|AllowCall|AllowNotify; NEO governance runs in OnBalanceChanging).
+        NativeMethod::new(
+            "transfer".into(),
+            1 << 17,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::Hash160,
+                ContractParameterType::Integer,
+                ContractParameterType::Any,
+            ],
+            ContractParameterType::Boolean,
+        ),
         // Governance reads.
         NativeMethod::new("getGasPerBlock".into(), 1 << 15, true, read_states, vec![], int),
         NativeMethod::new("getRegisterPrice".into(), 1 << 15, true, read_states, vec![], int),
@@ -685,6 +867,24 @@ impl NativeContract for NeoToken {
                 })?;
                 let snapshot = engine.snapshot_cache();
                 Ok(crate::read_nep17_balance(&snapshot, Self::ID, &account)?.to_signed_bytes_le())
+            }
+            "transfer" => {
+                // C# FungibleToken.Transfer(from, to, amount, data) with NEO's
+                // governance OnBalanceChanging side-effects.
+                let from = UInt160::from_bytes(args.first().ok_or_else(|| {
+                    CoreError::invalid_operation("NeoToken::transfer requires a from account")
+                })?)
+                .map_err(|e| CoreError::invalid_operation(format!("NeoToken::transfer: bad from: {e}")))?;
+                let to = UInt160::from_bytes(args.get(1).ok_or_else(|| {
+                    CoreError::invalid_operation("NeoToken::transfer requires a to account")
+                })?)
+                .map_err(|e| CoreError::invalid_operation(format!("NeoToken::transfer: bad to: {e}")))?;
+                let amount = BigInt::from_signed_bytes_le(args.get(2).ok_or_else(|| {
+                    CoreError::invalid_operation("NeoToken::transfer requires an amount")
+                })?);
+                let data = args.get(3).map(Vec::as_slice).unwrap_or(&[]);
+                let caller = engine.get_calling_script_hash().unwrap_or_else(UInt160::zero);
+                Ok(vec![u8::from(neo_transfer_core(engine, caller, &from, &to, &amount, data)?)])
             }
             "getGasPerBlock" => {
                 let snapshot = engine.snapshot_cache();
@@ -1131,6 +1331,7 @@ mod tests {
                 "decimals",
                 "totalSupply",
                 "balanceOf",
+                "transfer",
                 "getGasPerBlock",
                 "getRegisterPrice",
                 "getCommittee",
@@ -1821,5 +2022,75 @@ mod governance_writer_tests {
         };
         let gas_balance = fields.items().first().unwrap().as_int().unwrap();
         assert_eq!(gas_balance, BigInt::from(5000));
+    }
+
+    #[test]
+    fn transfer_moves_balance_and_follows_vote_weight() {
+        let candidate = candidate_pubkey();
+        let from = UInt160::from_bytes(&[0x0A; 20]).unwrap();
+        let to = UInt160::from_bytes(&[0x0B; 20]).unwrap();
+
+        crate::install();
+        let cache = DataCache::new(false);
+        deploy_native(&cache, &build_native_contract_state(&NeoToken, &ProtocolSettings::default(), 0));
+        // Candidate with 100 votes; `from` holds 100 NEO and votes for it.
+        cache.update(
+            candidate_key(&candidate),
+            StorageItem::from_bytes(encode_candidate_state(true, &BigInt::from(100)).unwrap()),
+        );
+        let from_state = NeoAccountStateView {
+            balance: BigInt::from(100),
+            balance_height: 0,
+            vote_to: Some(candidate.clone()),
+            last_gas_per_vote: BigInt::from(0),
+        };
+        cache.update(
+            neo_account_key(&from),
+            StorageItem::from_bytes(encode_neo_account_state(&from_state).unwrap()),
+        );
+        let snapshot = Arc::new(cache);
+
+        // transfer(from, to, 30, <empty>), signed by `from`, no persisting block
+        // (so DistributeGas is skipped and the test isolates the transfer/vote
+        // bookkeeping).
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![Signer::new(from, WitnessScope::GLOBAL)]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+        let mut b = ScriptBuilder::new();
+        b.emit_push(&[]); // data (arg 3, pushed deepest)
+        b.emit_push_int(30); // amount (arg 2)
+        b.emit_push(&to.to_array()); // to (arg 1)
+        b.emit_push(&from.to_array()); // from (arg 0, top)
+        b.emit_push_int(4);
+        b.emit_pack();
+        b.emit_push_int(i64::from(CallFlags::ALL.bits()));
+        b.emit_push("transfer".as_bytes());
+        b.emit_push(&NeoToken::script_hash().to_array());
+        b.emit_syscall("System.Contract.Call").expect("call");
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            Some(container),
+            Arc::clone(&snapshot),
+            None,
+            ProtocolSettings::default(),
+            2000_00000000,
+            None,
+        )
+        .expect("engine builds");
+        engine.load_script(b.to_array(), CallFlags::ALL, None).expect("loads");
+        assert_eq!(engine.execute_allow_fault(), VmState::HALT, "transfer must HALT");
+
+        // Balances moved 30 NEO from `from` to `to`.
+        let from_after = decode_neo_account_state(&read_account_state(&snapshot, &from).unwrap()).unwrap();
+        assert_eq!(from_after.balance, BigInt::from(70));
+        let to_after = decode_neo_account_state(&read_account_state(&snapshot, &to).unwrap()).unwrap();
+        assert_eq!(to_after.balance, BigInt::from(30));
+        // The candidate's vote weight followed `from`'s reduced balance (100 -> 70).
+        let (_, cand_votes) =
+            decode_candidate_state(&snapshot.get(&candidate_key(&candidate)).unwrap().value_bytes())
+                .unwrap();
+        assert_eq!(cand_votes, BigInt::from(70));
     }
 }
