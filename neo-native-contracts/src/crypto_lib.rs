@@ -12,7 +12,7 @@ use std::any::Any;
 use std::sync::LazyLock;
 
 use neo_config::Hardfork;
-use neo_crypto::{murmur32, Crypto};
+use neo_crypto::{murmur32, Crypto, HashAlgorithm, NamedCurveHash};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
@@ -68,6 +68,40 @@ fn verify_ed25519_method(message: &[u8], pubkey: &[u8], signature: &[u8]) -> boo
         && neo_crypto::ecc::verify_ed25519(pubkey, message, signature).unwrap_or(false)
 }
 
+/// Pure ECDSA verification with C# `VerifyWithECDsa` semantics, split out so the
+/// curve/hash dispatch can be unit tested without an [`ApplicationEngine`].
+///
+/// `allow_keccak` reflects the `HF_Cockatrice` hardfork (the V0/V1 split): before
+/// Cockatrice only the SHA-256 named curves are valid, so a Keccak-256 curve
+/// faults (C# `VerifyWithECDsaV0` throws `ArgumentOutOfRangeException`); an
+/// undefined `curve` byte also faults (C# `s_curves[...]` `KeyNotFoundException`).
+/// A malformed key or signature yields `Ok(false)` (the C# `ArgumentException`
+/// catch).
+fn verify_ecdsa_method(
+    message: &[u8],
+    pubkey: &[u8],
+    signature: &[u8],
+    curve: u8,
+    allow_keccak: bool,
+) -> CoreResult<bool> {
+    let named = NamedCurveHash::from_byte(curve).ok_or_else(|| {
+        CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: unsupported curve {curve}"))
+    })?;
+    if !allow_keccak && matches!(named.hash_algorithm(), HashAlgorithm::Keccak256) {
+        return Err(CoreError::invalid_operation(
+            "CryptoLib::verifyWithECDsa: Keccak256 curves require the Cockatrice hardfork",
+        ));
+    }
+    Ok(neo_crypto::ecc::verify_signature_with_hash(
+        named.curve(),
+        pubkey,
+        message,
+        signature,
+        named.hash_algorithm(),
+    )
+    .unwrap_or(false))
+}
+
 static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let byte_array = ContractParameterType::ByteArray;
     vec![
@@ -118,6 +152,19 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfEchidna),
+        // verifyWithECDsa(message, pubkey, signature, curveHash) -> bool. Present
+        // from genesis (C# V0, SHA-256 curves only); HF_Cockatrice (V1) adds the
+        // Keccak-256 curves. The ABI signature is identical across versions, so a
+        // single always-active registration is manifest-equivalent and the Keccak
+        // gate is applied in invoke via the HF_Cockatrice check.
+        NativeMethod::new(
+            "verifyWithECDsa".to_string(),
+            CPU_FEE_HASH,
+            true,
+            0,
+            vec![byte_array, byte_array, byte_array, ContractParameterType::Integer],
+            ContractParameterType::Boolean,
+        ),
     ]
 });
 
@@ -144,7 +191,7 @@ impl NativeContract for CryptoLib {
 
     fn invoke(
         &self,
-        _engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
@@ -178,6 +225,31 @@ impl NativeContract for CryptoLib {
             let pubkey = args.get(1).map(Vec::as_slice).ok_or_else(arg_err)?;
             let signature = args.get(2).map(Vec::as_slice).ok_or_else(arg_err)?;
             return Ok(vec![u8::from(verify_ed25519_method(message, pubkey, signature))]);
+        }
+
+        if method == "verifyWithECDsa" {
+            // C# VerifyWithECDsa(message, pubkey, signature, curveHash): the
+            // curveHash integer selects the (curve, hash) pair; Keccak-256 pairs
+            // are only valid from HF_Cockatrice (the V0/V1 split).
+            let arg_err = || {
+                CoreError::invalid_operation(
+                    "CryptoLib::verifyWithECDsa requires (message, pubkey, signature, curveHash)",
+                )
+            };
+            let message = args.first().map(Vec::as_slice).ok_or_else(arg_err)?;
+            let pubkey = args.get(1).map(Vec::as_slice).ok_or_else(arg_err)?;
+            let signature = args.get(2).map(Vec::as_slice).ok_or_else(arg_err)?;
+            let curve = args
+                .get(3)
+                .map(|b| BigInt::from_signed_bytes_le(b))
+                .and_then(|b| b.to_u8())
+                .ok_or_else(|| {
+                    CoreError::invalid_operation("CryptoLib::verifyWithECDsa: curveHash out of range")
+                })?;
+            let allow_keccak = engine.is_hardfork_enabled(Hardfork::HfCockatrice);
+            return Ok(vec![u8::from(verify_ecdsa_method(
+                message, pubkey, signature, curve, allow_keccak,
+            )?)]);
         }
 
         // Every CryptoLib hash method takes a single ByteArray and returns a
@@ -239,7 +311,14 @@ mod tests {
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(
             names,
-            ["sha256", "ripemd160", "keccak256", "murmur32", "verifyWithEd25519"]
+            [
+                "sha256",
+                "ripemd160",
+                "keccak256",
+                "murmur32",
+                "verifyWithEd25519",
+                "verifyWithECDsa"
+            ]
         );
         // keccak256 is hardfork-gated; the unconditional hashes are not.
         let keccak = c.methods().iter().find(|m| m.name == "keccak256").unwrap();
@@ -251,6 +330,37 @@ mod tests {
         assert_eq!(ed.return_type, ContractParameterType::Boolean);
         assert_eq!(ed.active_in, Some(Hardfork::HfEchidna));
         assert_eq!(ed.parameters.len(), 3);
+        // verifyWithECDsa is always active (C# V0 from genesis); Boolean with
+        // (message, pubkey, signature, curveHash) parameters.
+        let ecdsa = c.methods().iter().find(|m| m.name == "verifyWithECDsa").unwrap();
+        assert_eq!(ecdsa.return_type, ContractParameterType::Boolean);
+        assert_eq!(ecdsa.active_in, None);
+        assert_eq!(ecdsa.parameters.len(), 4);
+        assert_eq!(ecdsa.parameters[3], ContractParameterType::Integer);
+    }
+
+    #[test]
+    fn verify_ecdsa_dispatch_gates_keccak_and_rejects_unknown_curve() {
+        // The curve/hash dispatch + Cockatrice gate are tested here; the ECDSA
+        // mechanics themselves are covered by neo-crypto's verify_signature_with_hash
+        // tests (SHA-256 cross-check + Keccak-256 round-trips).
+        let msg = b"message";
+        let empty = b""; // malformed key/sig -> underlying verify yields false
+
+        // Undefined curve byte -> error (C# KeyNotFound/ArgumentOutOfRange faults).
+        assert!(verify_ecdsa_method(msg, empty, empty, 0x00, true).is_err());
+
+        // SHA-256 curves (0x16/0x17) are valid at any height; malformed inputs
+        // dispatch to a false result rather than faulting.
+        assert!(!verify_ecdsa_method(msg, empty, empty, 0x16, false).unwrap());
+        assert!(!verify_ecdsa_method(msg, empty, empty, 0x17, false).unwrap());
+
+        // Keccak-256 curves (0x7A/0x7B) require Cockatrice: gated off -> fault.
+        assert!(verify_ecdsa_method(msg, empty, empty, 0x7A, false).is_err());
+        assert!(verify_ecdsa_method(msg, empty, empty, 0x7B, false).is_err());
+        // Enabled -> dispatch (malformed inputs -> false).
+        assert!(!verify_ecdsa_method(msg, empty, empty, 0x7A, true).unwrap());
+        assert!(!verify_ecdsa_method(msg, empty, empty, 0x7B, true).unwrap());
     }
 
     fn hex_bytes(s: &str) -> Vec<u8> {
