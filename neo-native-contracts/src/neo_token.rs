@@ -142,6 +142,25 @@ fn next_block_validators(snapshot: &DataCache, validators_count: usize) -> CoreR
     Ok(points)
 }
 
+/// Decodes a `CandidateState` storage value — a `Struct[Registered(bool), Votes]`
+/// — into `(registered, votes)`.
+fn decode_candidate_state(value: &[u8]) -> CoreResult<(bool, BigInt)> {
+    let decoded = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
+        .map_err(|e| CoreError::deserialization(format!("candidate state: {e}")))?;
+    let StackItem::Struct(fields) = decoded else {
+        return Err(CoreError::invalid_data("candidate state is not a struct"));
+    };
+    let items = fields.items();
+    let registered = items.first().is_some_and(|f| f.as_bool().unwrap_or(false));
+    let votes = match items.get(1) {
+        Some(f) => f
+            .as_int()
+            .map_err(|e| CoreError::invalid_data(format!("candidate votes: {e}")))?,
+        None => BigInt::from(0),
+    };
+    Ok((registered, votes))
+}
+
 /// C# `GetCandidates` (= `GetCandidatesInternal.Where(Registered)`): scan
 /// `Prefix_Candidate` (key = prefix ++ 33-byte pubkey; value = CandidateState
 /// `Struct[Registered(bool), Votes]`), returning the `(pubkey, votes)` pairs of
@@ -157,29 +176,26 @@ fn read_registered_candidates(snapshot: &DataCache) -> CoreResult<Vec<(ECPoint, 
         let Ok(pubkey) = ECPoint::from_bytes(&key_bytes[1..34]) else {
             continue;
         };
-        let decoded = BinarySerializer::deserialize(
-            &item.value_bytes(),
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .map_err(|e| CoreError::deserialization(format!("candidate state: {e}")))?;
-        let StackItem::Struct(fields) = decoded else {
-            return Err(CoreError::invalid_data("candidate state is not a struct"));
-        };
-        let items = fields.items();
-        let registered = items.first().is_some_and(|f| f.as_bool().unwrap_or(false));
-        if !registered {
-            continue;
+        let (registered, votes) = decode_candidate_state(&item.value_bytes())?;
+        if registered {
+            out.push((pubkey, votes));
         }
-        let votes = match items.get(1) {
-            Some(f) => f
-                .as_int()
-                .map_err(|e| CoreError::invalid_data(format!("candidate votes: {e}")))?,
-            None => BigInt::from(0),
-        };
-        out.push((pubkey, votes));
     }
     Ok(out)
+}
+
+/// C# `GetCandidateVote`: the votes for `pubkey` if it is a registered candidate,
+/// else -1 (also -1 when there is no candidate entry at all).
+fn candidate_vote(snapshot: &DataCache, pubkey: &ECPoint) -> CoreResult<BigInt> {
+    let mut key_bytes = vec![PREFIX_CANDIDATE];
+    key_bytes.extend_from_slice(&pubkey.to_bytes());
+    match snapshot.get(&StorageKey::new(NeoToken::ID, key_bytes)) {
+        Some(item) => {
+            let (registered, votes) = decode_candidate_state(&item.value_bytes())?;
+            Ok(if registered { votes } else { BigInt::from(-1) })
+        }
+        None => Ok(BigInt::from(-1)),
+    }
 }
 
 /// Marshals `(pubkey, votes)` candidate pairs as an Array of `Struct[pubkey,
@@ -311,6 +327,15 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![],
             ContractParameterType::Array,
         ),
+        // getCandidateVote(pubkey) -> votes, or -1 if not a registered candidate.
+        NativeMethod::new(
+            "getCandidateVote".into(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::PublicKey],
+            int,
+        ),
     ]
 });
 
@@ -393,6 +418,19 @@ impl NativeContract for NeoToken {
                 let snapshot = engine.snapshot_cache();
                 candidates_to_array_bytes(&read_registered_candidates(&snapshot)?)
             }
+            "getCandidateVote" => {
+                let pubkey_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation("NeoToken::getCandidateVote requires a public key")
+                })?;
+                // C# takes an ECPoint; an invalid key faults at marshaling.
+                let pubkey = ECPoint::from_bytes(pubkey_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "NeoToken::getCandidateVote: bad public key: {e}"
+                    ))
+                })?;
+                let snapshot = engine.snapshot_cache();
+                Ok(candidate_vote(&snapshot, &pubkey)?.to_signed_bytes_le())
+            }
             "getCommitteeAddress" => {
                 let snapshot = engine.snapshot_cache();
                 Ok(compute_committee_address(&snapshot)?.to_bytes())
@@ -442,7 +480,8 @@ mod tests {
                 "getCommitteeAddress",
                 "getAccountState",
                 "getNextBlockValidators",
-                "getCandidates"
+                "getCandidates",
+                "getCandidateVote"
             ]
         );
         let acct = c.methods().iter().find(|m| m.name == "getAccountState").unwrap();
@@ -585,6 +624,34 @@ mod tests {
         assert_eq!(by_key.get(&points[0].to_bytes()), Some(&BigInt::from(100)));
         assert_eq!(by_key.get(&points[2].to_bytes()), Some(&BigInt::from(50)));
         assert!(!by_key.contains_key(&points[1].to_bytes()));
+    }
+
+    #[test]
+    fn candidate_vote_is_votes_or_minus_one() {
+        use neo_storage::StorageItem;
+        let cache = DataCache::new(false);
+        let points = sample_committee();
+
+        // No entry at all -> -1.
+        assert_eq!(candidate_vote(&cache, &points[0]).unwrap(), BigInt::from(-1));
+
+        let store = |pk: &ECPoint, registered: bool, votes: i64| {
+            let state = StackItem::from_struct(vec![
+                StackItem::from_bool(registered),
+                StackItem::from_int(votes),
+            ]);
+            let bytes =
+                BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
+            let mut key = vec![PREFIX_CANDIDATE];
+            key.extend_from_slice(&pk.to_bytes());
+            cache.add(StorageKey::new(NeoToken::ID, key), StorageItem::from_bytes(bytes));
+        };
+
+        // Registered -> its votes; unregistered -> -1 even with a stored entry.
+        store(&points[0], true, 250);
+        store(&points[1], false, 999);
+        assert_eq!(candidate_vote(&cache, &points[0]).unwrap(), BigInt::from(250));
+        assert_eq!(candidate_vote(&cache, &points[1]).unwrap(), BigInt::from(-1));
     }
 
     #[test]
