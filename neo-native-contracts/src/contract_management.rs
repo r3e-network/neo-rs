@@ -17,7 +17,7 @@ use neo_io::{MemoryReader, Serializable};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
-use neo_storage::StorageKey;
+use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -185,6 +185,21 @@ fn contract_state_to_bytes(state: &ContractState, method: &str) -> CoreResult<Ve
     })
 }
 
+/// C# `SetMinimumDeploymentFee` storage effect: overwrite
+/// `Prefix_MinimumDeploymentFee` (`GetAndChange(...).Set(value)`). The key is
+/// genesis-initialised, so `update` (= C# GetAndChange) is the correct primitive;
+/// the value is stored as the full signed-LE BigInteger (the C# parameter is
+/// `BigInteger`, not `long`).
+fn put_minimum_deployment_fee(snapshot: &DataCache, value: &BigInt) {
+    snapshot.update(
+        StorageKey::new(
+            ContractManagement::ID,
+            vec![PREFIX_MINIMUM_DEPLOYMENT_FEE],
+        ),
+        StorageItem::from_bytes(value.to_signed_bytes_le()),
+    );
+}
+
 static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
     vec![
@@ -236,6 +251,15 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfEchidna),
+        // Committee-gated setter: not safe, States, Integer -> Void.
+        NativeMethod::new(
+            "setMinimumDeploymentFee".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        ),
     ]
 });
 
@@ -304,6 +328,35 @@ impl NativeContract for ContractManagement {
                 )?;
                 Ok(BigInt::from(fee).to_signed_bytes_le())
             }
+            "setMinimumDeploymentFee" => {
+                // C#: validate value >= 0 -> AssertCommittee -> overwrite
+                // Prefix_MinimumDeploymentFee (stored as the full BigInteger).
+                let value = args
+                    .first()
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "ContractManagement::setMinimumDeploymentFee requires a value",
+                        )
+                    })?;
+                if value < BigInt::from(0) {
+                    return Err(CoreError::invalid_operation(
+                        "MinimumDeploymentFee cannot be negative",
+                    ));
+                }
+                let authorized = engine.check_committee_witness().map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "setMinimumDeploymentFee committee check: {e}"
+                    ))
+                })?;
+                if !authorized {
+                    return Err(CoreError::invalid_operation(
+                        "setMinimumDeploymentFee requires committee authorization",
+                    ));
+                }
+                put_minimum_deployment_fee(&engine.snapshot_cache(), &value);
+                Ok(Vec::new())
+            }
             "isContract" => {
                 let hash = parse_hash_arg(args, "isContract")?;
                 // C# `IsContract` = snapshot.Contains(key(Prefix_Contract, hash)).
@@ -363,9 +416,22 @@ mod tests {
                 "getContractById",
                 "getMinimumDeploymentFee",
                 "isContract",
-                "hasMethod"
+                "hasMethod",
+                "setMinimumDeploymentFee"
             ]
         );
+        // The committee-gated setter: not safe, States, Integer -> Void.
+        let setter = c
+            .methods()
+            .iter()
+            .find(|m| m.name == "setMinimumDeploymentFee")
+            .unwrap();
+        assert!(!setter.safe);
+        assert_eq!(setter.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(setter.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(setter.return_type, ContractParameterType::Void);
+        assert_eq!(setter.cpu_fee, 1 << 15);
+        assert!(setter.active_in.is_none());
         let has_method = c.methods().iter().find(|m| m.name == "hasMethod").unwrap();
         assert_eq!(has_method.active_in, Some(Hardfork::HfEchidna));
         assert_eq!(has_method.return_type, ContractParameterType::Boolean);
@@ -408,6 +474,48 @@ mod tests {
         assert!(ContractManagement::get_contract_by_id_from_snapshot(&cache, 42)
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn set_minimum_deployment_fee_write_round_trips() {
+        // The setter's storage effect (overwrite Prefix_MinimumDeploymentFee) is
+        // observed by the getMinimumDeploymentFee reader, matching C#
+        // GetAndChange(...).Set(value).
+        let cache = DataCache::new(false);
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            DEFAULT_MINIMUM_DEPLOYMENT_FEE
+        );
+        // Zero is permitted (C# rejects only value < 0).
+        put_minimum_deployment_fee(&cache, &BigInt::from(0));
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            0
+        );
+        // Overwrite with a positive fee (GetAndChange semantics).
+        put_minimum_deployment_fee(&cache, &BigInt::from(25_00000000i64));
+        assert_eq!(
+            crate::read_storage_int(
+                &cache,
+                ContractManagement::ID,
+                PREFIX_MINIMUM_DEPLOYMENT_FEE,
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE
+            )
+            .unwrap(),
+            25_00000000
+        );
     }
 
     #[test]
