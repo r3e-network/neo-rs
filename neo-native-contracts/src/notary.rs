@@ -1,18 +1,23 @@
 //! Notary native contract (id -10).
 //!
-//! Implements the read-side `getMaxNotValidBeforeDelta` of the C#
-//! `Neo.SmartContract.Native.Notary`. The stateful surface (deposits, `verify`,
-//! `onNEP17Payment`, `withdraw`, ...) is the next increment on the
-//! storage-backed pattern.
+//! Implements the method surface of the C# `Neo.SmartContract.Native.Notary`:
+//! the `getMaxNotValidBeforeDelta` / `setMaxNotValidBeforeDelta` setting, the
+//! GAS-deposit lifecycle (`onNEP17Payment`, `balanceOf`, `expirationOf`,
+//! `lockDepositUntil`, `withdraw`), and `verify` — the notary-witness check
+//! that validates a designated P2PNotary node's signature over the
+//! transaction sign-data.
 
 use std::any::Any;
 use std::sync::LazyLock;
 
+use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
-use neo_payloads::Transaction;
-use neo_primitives::{CallFlags, ContractParameterType, TransactionAttributeType, UInt160};
+use neo_payloads::{get_sign_data, Transaction};
+use neo_primitives::{
+    CallFlags, ContractParameterType, TransactionAttributeType, UInt160, WitnessScope,
+};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
@@ -22,7 +27,7 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 use crate::hashes::NOTARY_HASH;
-use crate::{GasToken, LedgerContract};
+use crate::{GasToken, LedgerContract, Role, RoleManagement};
 
 /// C# `Notary.DefaultDepositDeltaTill`: the default lock-height delta applied to a
 /// first deposit whose `till` the depositor isn't allowed to set itself.
@@ -324,6 +329,15 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160, ContractParameterType::Hash160],
             ContractParameterType::Boolean,
         ),
+        // verify(signature) -> bool: notary-witness verification, ReadStates.
+        NativeMethod::new(
+            "verify".to_string(),
+            1 << 15,
+            false,
+            read_states,
+            vec![ContractParameterType::ByteArray],
+            ContractParameterType::Boolean,
+        ),
     ]
 });
 
@@ -338,6 +352,19 @@ impl NativeContract for Notary {
 
     fn name(&self) -> &str {
         "Notary"
+    }
+
+    // C# `Notary.Activations => [Hardfork.HF_Echidna, Hardfork.HF_Faun]`
+    // (Notary.cs): the contract itself does not exist before HF_Echidna —
+    // `ActiveIn` is the first activation. Without this override the contract
+    // would be genesis-active in neo-rs, diverging native deployment, manifest
+    // state, and call resolution below the Echidna height.
+    fn active_in(&self) -> Option<Hardfork> {
+        Some(Hardfork::HfEchidna)
+    }
+
+    fn activations(&self) -> Vec<Hardfork> {
+        vec![Hardfork::HfEchidna, Hardfork::HfFaun]
     }
 
     fn methods(&self) -> &[NativeMethod] {
@@ -498,6 +525,83 @@ impl NativeContract for Notary {
                 }
                 Ok(vec![1])
             }
+            "verify" => {
+                // C# Verify(engine, byte[] signature): the script container must
+                // be a Transaction carrying a NotaryAssisted attribute whose
+                // Notary-account signer (when present) has WitnessScope.None; a
+                // Notary-paid transaction (Sender == Hash) must have exactly
+                // [Notary, payer] signers with the payer's deposit covering
+                // SystemFee + NetworkFee; finally `signature` must be a valid
+                // secp256r1 signature over the tx sign-data (network magic ++
+                // tx hash) by ONE of the designated P2PNotary nodes. Every
+                // rejection returns false, never a fault.
+                let signature_is_null = engine
+                    .get_state::<NativeArgNullMask>()
+                    .is_some_and(|mask| mask.0 & 1 != 0);
+                let signature = args.first().map(Vec::as_slice).unwrap_or(&[]);
+                if signature_is_null || signature.len() != 64 {
+                    return Ok(vec![0]);
+                }
+                let Some(tx) = engine
+                    .script_container()
+                    .and_then(|c| c.as_any().downcast_ref::<Transaction>())
+                else {
+                    return Ok(vec![0]); // C# `engine.ScriptContainer as Transaction` null
+                };
+                if tx
+                    .get_attribute(TransactionAttributeType::NotaryAssisted)
+                    .is_none()
+                {
+                    return Ok(vec![0]);
+                }
+                let notary_hash = Self::script_hash();
+                // The Notary-account signer must not request any witness scope.
+                for signer in tx.signers() {
+                    if signer.account == notary_hash {
+                        if signer.scopes != WitnessScope::NONE {
+                            return Ok(vec![0]);
+                        }
+                        break;
+                    }
+                }
+                // C# `tx.Sender` is `Signers[0].Account`: a signer-less
+                // transaction faults there rather than returning false.
+                let sender = tx.sender().ok_or_else(|| {
+                    CoreError::invalid_operation("Notary::verify: transaction has no signers")
+                })?;
+                if sender == notary_hash {
+                    // Notary pays the fees: exactly [Notary, payer] signers and
+                    // a deposit for the payer that covers the transaction fees.
+                    if tx.signers().len() != 2 {
+                        return Ok(vec![0]);
+                    }
+                    let payer = tx.signers()[1].account;
+                    let Some((amount, _till)) = read_deposit(&snapshot, &payer)? else {
+                        return Ok(vec![0]);
+                    };
+                    // C# `tx.NetworkFee + tx.SystemFee` is unchecked long math.
+                    let fees = BigInt::from(tx.network_fee().wrapping_add(tx.system_fee()));
+                    if amount < fees {
+                        return Ok(vec![0]);
+                    }
+                }
+                // C# GetNotaryNodes: the P2PNotary designation effective at
+                // Ledger.CurrentIndex + 1.
+                let current = LedgerContract::new().current_index(&snapshot)?;
+                let notaries = RoleManagement::new().get_designated_by_role_at(
+                    &snapshot,
+                    Role::P2PNotary,
+                    current.wrapping_add(1),
+                )?;
+                let network = engine.protocol_settings().network;
+                let sign_data = get_sign_data(tx, network)?;
+                // C# Crypto.VerifySignature returns false (never throws) for a
+                // malformed 64-byte signature; map decode errors to false.
+                let valid = notaries
+                    .iter()
+                    .any(|n| n.verify_signature(&sign_data, signature).unwrap_or(false));
+                Ok(vec![u8::from(valid)])
+            }
             "setMaxNotValidBeforeDelta" => {
                 // C# param is `uint value`: decode as u32 (out-of-range faults like
                 // the C# uint parameter binding).
@@ -563,9 +667,17 @@ mod tests {
                 "setMaxNotValidBeforeDelta",
                 "lockDepositUntil",
                 "onNEP17Payment",
-                "withdraw"
+                "withdraw",
+                "verify"
             ]
         );
+        // verify: not safe, ReadStates, (ByteArray) -> Boolean.
+        let verify = c.methods().iter().find(|m| m.name == "verify").unwrap();
+        assert!(!verify.safe);
+        assert_eq!(verify.required_call_flags, CallFlags::READ_STATES.bits());
+        assert_eq!(verify.parameters, vec![ContractParameterType::ByteArray]);
+        assert_eq!(verify.return_type, ContractParameterType::Boolean);
+        assert_eq!(verify.cpu_fee, 1 << 15);
         // withdraw: not safe, CallFlags.All (re-entrant GAS transfer),
         // (Hash160, Hash160) -> Boolean.
         let withdraw = c.methods().iter().find(|m| m.name == "withdraw").unwrap();
@@ -782,5 +894,321 @@ mod tests {
                 .unwrap(),
             200
         );
+    }
+}
+
+/// End-to-end coverage of `verify` through the VM dispatch (the proven
+/// witness-gated script-execution harness): the Notary native is seeded via a
+/// ContractManagement record, a P2PNotary designation is written in the
+/// RoleManagement storage layout, and `verify(signature)` is exercised through
+/// `System.Contract.Call` against NotaryAssisted transaction containers.
+#[cfg(test)]
+mod verify_dispatch_tests {
+    use super::*;
+    use neo_config::ProtocolSettings;
+
+    /// ProtocolSettings with HF_Echidna scheduled from genesis — the Notary
+    /// contract is Echidna-activated (C# `Notary.Activations`), so e2e calls at
+    /// height 0 need it enabled (mirrors C# `TestProtocolSettings`).
+    fn echidna_settings() -> ProtocolSettings {
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfEchidna, 0);
+        settings
+    }
+    use neo_crypto::Secp256r1Crypto;
+    use neo_execution::contract_state::ContractState;
+    use neo_execution::native_contract::build_native_contract_state;
+    use neo_execution::ApplicationEngine;
+    use neo_io::{BinaryWriter, Serializable};
+    use neo_payloads::{NotaryAssisted, Signer, TransactionAttribute, Witness};
+    use neo_primitives::{TriggerType, Verifiable};
+    use neo_script_builder::ScriptBuilder;
+    use neo_vm_rs::{OpCode, VmState};
+    use std::sync::Arc;
+
+    /// ContractManagement per-contract storage prefix (mirrors the neo_token
+    /// governance harness).
+    const CM_PREFIX_CONTRACT: u8 = 8;
+
+    fn deploy_native(cache: &DataCache, state: &ContractState) {
+        let mut writer = BinaryWriter::new();
+        state.serialize(&mut writer).expect("serialize contract state");
+        let mut key = vec![CM_PREFIX_CONTRACT];
+        key.extend_from_slice(&state.hash.to_bytes());
+        cache.add(
+            StorageKey::new(crate::ContractManagement::ID, key),
+            StorageItem::from_bytes(writer.to_bytes()),
+        );
+    }
+
+    /// Writes a P2PNotary designation effective from block `index`: the
+    /// RoleManagement record `(role_byte, index_be)` -> BinarySerializer array
+    /// of compressed EC-point byte strings.
+    fn seed_notary_designation(cache: &DataCache, index: u32, pubkeys: &[Vec<u8>]) {
+        let list = StackItem::from_array(
+            pubkeys
+                .iter()
+                .map(|p| StackItem::from_byte_string(p.clone()))
+                .collect::<Vec<_>>(),
+        );
+        let value = BinarySerializer::serialize(&list, &ExecutionEngineLimits::default()).unwrap();
+        let mut key = vec![Role::P2PNotary.as_byte()];
+        key.extend_from_slice(&index.to_be_bytes());
+        cache.add(
+            StorageKey::new(RoleManagement::ID, key),
+            StorageItem::from_bytes(value),
+        );
+    }
+
+    /// A snapshot with the Notary native deployed and (optionally) the given
+    /// compressed public keys designated as P2PNotary nodes from genesis.
+    fn seeded_snapshot(notary_pubkeys: &[Vec<u8>]) -> Arc<DataCache> {
+        crate::install();
+        let cache = DataCache::new(false);
+        deploy_native(
+            &cache,
+            &build_native_contract_state(&Notary, &echidna_settings(), 0),
+        );
+        if !notary_pubkeys.is_empty() {
+            seed_notary_designation(&cache, 0, notary_pubkeys);
+        }
+        Arc::new(cache)
+    }
+
+    /// Calls `verify(signature)` on the Notary via System.Contract.Call with
+    /// `container` as the script container; `signature: None` pushes Null.
+    /// Returns the final VM state and the Boolean result.
+    fn call_verify(
+        snapshot: Arc<DataCache>,
+        container: Option<Arc<dyn Verifiable>>,
+        signature: Option<&[u8]>,
+    ) -> (VmState, bool) {
+        let mut builder = ScriptBuilder::new();
+        match signature {
+            Some(bytes) => {
+                builder.emit_push(bytes);
+            }
+            None => {
+                builder.emit_opcode(OpCode::PUSHNULL);
+            }
+        }
+        builder.emit_push_int(1);
+        builder.emit_pack();
+        builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
+        builder.emit_push("verify".as_bytes());
+        builder.emit_push(&Notary::script_hash().to_array());
+        builder.emit_syscall("System.Contract.Call").expect("call");
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            container,
+            snapshot,
+            None,
+            echidna_settings(),
+            10_00000000,
+            None,
+        )
+        .expect("engine builds");
+        engine
+            .load_script(builder.to_array(), CallFlags::ALL, None)
+            .expect("script loads");
+        let state = engine.execute_allow_fault();
+        let result = engine
+            .result_stack()
+            .peek(0)
+            .ok()
+            .and_then(|item| item.as_bool().ok())
+            .unwrap_or(false);
+        (state, result)
+    }
+
+    /// A transaction carrying a NotaryAssisted attribute with the given signers.
+    fn notary_assisted_tx(signers: Vec<Signer>) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_valid_until_block(100);
+        tx.set_script(vec![0x40]); // RET
+        tx.set_signers(signers);
+        tx.set_attributes(vec![TransactionAttribute::NotaryAssisted(NotaryAssisted::new(1))]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
+
+    /// Signs the C# `tx.GetSignData(network)` payload with the secp256r1 key.
+    fn sign_tx(tx: &Transaction, private_key: &[u8; 32]) -> Vec<u8> {
+        let sign_data = get_sign_data(tx, echidna_settings().network).unwrap();
+        Secp256r1Crypto::sign(&sign_data, private_key).unwrap().to_vec()
+    }
+
+    #[test]
+    fn verify_accepts_designated_notary_signature() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let pubkey = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let snapshot = seeded_snapshot(&[pubkey]);
+
+        let payer = UInt160::from_bytes(&[0x05; 20]).unwrap();
+        let tx = notary_assisted_tx(vec![Signer::new(payer, WitnessScope::NONE)]);
+        let signature = sign_tx(&tx, &private_key);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+        // A designated notary's signature over the tx sign-data verifies.
+        let (state, ok) = call_verify(
+            Arc::clone(&snapshot),
+            Some(Arc::clone(&container)),
+            Some(&signature),
+        );
+        assert_eq!(state, VmState::HALT, "verify must HALT");
+        assert!(ok, "designated notary signature must verify");
+
+        // Tampering with one byte invalidates it (still a clean false).
+        let mut tampered = signature.clone();
+        tampered[10] ^= 0xFF;
+        let (state2, ok2) = call_verify(snapshot, Some(container), Some(&tampered));
+        assert_eq!(state2, VmState::HALT);
+        assert!(!ok2, "tampered signature must not verify");
+    }
+
+    #[test]
+    fn verify_rejects_missing_container_attribute_or_malformed_signature() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let pubkey = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let snapshot = seeded_snapshot(&[pubkey]);
+        let payer = UInt160::from_bytes(&[0x05; 20]).unwrap();
+
+        // No script container -> false.
+        let (state, ok) = call_verify(Arc::clone(&snapshot), None, Some(&[0u8; 64]));
+        assert_eq!(state, VmState::HALT);
+        assert!(!ok, "verify without a transaction container must be false");
+
+        // A transaction WITHOUT the NotaryAssisted attribute -> false even with
+        // a valid notary signature over its sign-data.
+        let mut plain = Transaction::new();
+        plain.set_valid_until_block(100);
+        plain.set_script(vec![0x40]);
+        plain.set_signers(vec![Signer::new(payer, WitnessScope::NONE)]);
+        plain.set_witnesses(vec![Witness::empty()]);
+        let signature = sign_tx(&plain, &private_key);
+        let container: Arc<dyn Verifiable> = Arc::new(plain);
+        let (state2, ok2) = call_verify(Arc::clone(&snapshot), Some(container), Some(&signature));
+        assert_eq!(state2, VmState::HALT);
+        assert!(!ok2, "verify requires the NotaryAssisted attribute");
+
+        // Wrong signature length and Null signature -> false.
+        let tx = notary_assisted_tx(vec![Signer::new(payer, WitnessScope::NONE)]);
+        let container2: Arc<dyn Verifiable> = Arc::new(tx);
+        let (state3, ok3) = call_verify(
+            Arc::clone(&snapshot),
+            Some(Arc::clone(&container2)),
+            Some(&[1u8; 10]),
+        );
+        assert_eq!(state3, VmState::HALT);
+        assert!(!ok3, "a 10-byte signature must be rejected");
+        let (state4, ok4) = call_verify(snapshot, Some(container2), None);
+        assert_eq!(state4, VmState::HALT);
+        assert!(!ok4, "a Null signature must be rejected");
+    }
+
+    #[test]
+    fn verify_rejects_when_no_notary_nodes_designated() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let snapshot = seeded_snapshot(&[]); // no designation
+
+        let payer = UInt160::from_bytes(&[0x05; 20]).unwrap();
+        let tx = notary_assisted_tx(vec![Signer::new(payer, WitnessScope::NONE)]);
+        let signature = sign_tx(&tx, &private_key);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+        let (state, ok) = call_verify(snapshot, Some(container), Some(&signature));
+        assert_eq!(state, VmState::HALT);
+        assert!(!ok, "no designated notaries -> false");
+    }
+
+    #[test]
+    fn verify_requires_scope_none_on_the_notary_signer() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let pubkey = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let snapshot = seeded_snapshot(&[pubkey]);
+
+        // The Notary-account signer (second, so Sender stays the payer) carries
+        // a non-None scope -> false despite the valid signature.
+        let payer = UInt160::from_bytes(&[0x05; 20]).unwrap();
+        let tx = notary_assisted_tx(vec![
+            Signer::new(payer, WitnessScope::NONE),
+            Signer::new(Notary::script_hash(), WitnessScope::GLOBAL),
+        ]);
+        let signature = sign_tx(&tx, &private_key);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+        let (state, ok) = call_verify(Arc::clone(&snapshot), Some(container), Some(&signature));
+        assert_eq!(state, VmState::HALT);
+        assert!(!ok, "a scoped Notary signer must be rejected");
+
+        // Scope None on the Notary signer passes the check.
+        let tx2 = notary_assisted_tx(vec![
+            Signer::new(payer, WitnessScope::NONE),
+            Signer::new(Notary::script_hash(), WitnessScope::NONE),
+        ]);
+        let signature2 = sign_tx(&tx2, &private_key);
+        let container2: Arc<dyn Verifiable> = Arc::new(tx2);
+        let (state2, ok2) = call_verify(snapshot, Some(container2), Some(&signature2));
+        assert_eq!(state2, VmState::HALT);
+        assert!(ok2, "a scope-None Notary signer must pass");
+    }
+
+    #[test]
+    fn verify_notary_paid_transactions_require_a_funding_deposit() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let pubkey = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let payer = UInt160::from_bytes(&[0x06; 20]).unwrap();
+
+        // Sender == Notary (fees paid from the payer's deposit): SystemFee +
+        // NetworkFee = 10 must be covered by the deposit.
+        let mut tx = notary_assisted_tx(vec![
+            Signer::new(Notary::script_hash(), WitnessScope::NONE),
+            Signer::new(payer, WitnessScope::NONE),
+        ]);
+        tx.set_system_fee(6);
+        tx.set_network_fee(4);
+        let signature = sign_tx(&tx, &private_key);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+        // No deposit -> false.
+        let snapshot = seeded_snapshot(&[pubkey]);
+        let (state, ok) = call_verify(
+            Arc::clone(&snapshot),
+            Some(Arc::clone(&container)),
+            Some(&signature),
+        );
+        assert_eq!(state, VmState::HALT);
+        assert!(!ok, "a Notary-paid tx without a payer deposit must be false");
+
+        // An underfunded deposit (9 < 10) -> false.
+        write_deposit(&snapshot, &payer, &BigInt::from(9), 1000).unwrap();
+        let (state2, ok2) = call_verify(
+            Arc::clone(&snapshot),
+            Some(Arc::clone(&container)),
+            Some(&signature),
+        );
+        assert_eq!(state2, VmState::HALT);
+        assert!(!ok2, "an underfunded deposit must be false");
+
+        // A deposit covering the fees exactly -> true.
+        write_deposit(&snapshot, &payer, &BigInt::from(10), 1000).unwrap();
+        let (state3, ok3) = call_verify(
+            Arc::clone(&snapshot),
+            Some(container),
+            Some(&signature),
+        );
+        assert_eq!(state3, VmState::HALT);
+        assert!(ok3, "a funded deposit must verify");
+
+        // A single-signer Notary-paid tx (Signers.Length != 2) -> false.
+        let mut single =
+            notary_assisted_tx(vec![Signer::new(Notary::script_hash(), WitnessScope::NONE)]);
+        single.set_system_fee(6);
+        single.set_network_fee(4);
+        let sig_single = sign_tx(&single, &private_key);
+        let container_single: Arc<dyn Verifiable> = Arc::new(single);
+        let (state4, ok4) = call_verify(snapshot, Some(container_single), Some(&sig_single));
+        assert_eq!(state4, VmState::HALT);
+        assert!(!ok4, "Sender == Notary requires exactly two signers");
     }
 }
