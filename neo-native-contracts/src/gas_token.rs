@@ -190,6 +190,63 @@ impl GasToken {
     pub fn script_hash() -> UInt160 {
         *GAS_HASH
     }
+
+    /// Core NEP-17 transfer (C# `FungibleToken.Transfer`), shared by the `transfer`
+    /// ABI method and by native-to-native callers (e.g. `Notary.withdraw`).
+    ///
+    /// `caller` is the script hash treated as the immediate caller for the witness
+    /// bypass — C# `from.Equals(CallingScriptHash)`. The ABI method passes the
+    /// engine's calling script hash; a native contract transferring its own balance
+    /// (where C#'s nested call would set `CallingScriptHash` to that contract)
+    /// passes its own hash, so the witness check passes. Returns `Ok(true)`/
+    /// `Ok(false)` per NEP-17, or `Err` for a negative `amount`.
+    pub(crate) fn transfer_core(
+        engine: &mut ApplicationEngine,
+        caller: UInt160,
+        from: &UInt160,
+        to: &UInt160,
+        amount: &BigInt,
+        data: &[u8],
+    ) -> CoreResult<bool> {
+        // C#: amount.Sign < 0 -> ArgumentOutOfRangeException (fault).
+        if amount < &BigInt::zero() {
+            return Err(CoreError::invalid_operation(
+                "GasToken::transfer: amount cannot be negative",
+            ));
+        }
+        // C#: !from.Equals(CallingScriptHash) && !CheckWitnessInternal(from) -> false.
+        let witnessed = from == &caller
+            || engine.check_witness(from).map_err(|e| {
+                CoreError::invalid_operation(format!("GasToken::transfer witness: {e}"))
+            })?;
+        if !witnessed {
+            return Ok(false);
+        }
+
+        let snapshot = engine.snapshot_cache();
+        let from_balance = read_gas_account(&snapshot, from)?;
+        let to_balance = read_gas_account(&snapshot, to)?;
+        match compute_gas_transfer(from_balance, to_balance, from == to, amount) {
+            GasTransferOutcome::InsufficientBalance => return Ok(false),
+            GasTransferOutcome::NoMovement => {}
+            GasTransferOutcome::Move {
+                from_new,
+                delete_from,
+                to_new,
+            } => {
+                if delete_from {
+                    delete_gas_account(&snapshot, from);
+                } else {
+                    write_gas_account(&snapshot, from, &from_new)?;
+                }
+                write_gas_account(&snapshot, to, &to_new)?;
+            }
+        }
+
+        // PostTransfer: emit Transfer + (if `to` is a contract) onNEP17Payment.
+        post_transfer(engine, from, to, amount, data)?;
+        Ok(true)
+    }
 }
 
 static GAS_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
@@ -297,45 +354,13 @@ impl NativeContract for GasToken {
                 let amount = BigInt::from_signed_bytes_le(args.get(2).ok_or_else(|| {
                     CoreError::invalid_operation("GasToken::transfer requires an amount")
                 })?);
-                // C#: amount.Sign < 0 -> ArgumentOutOfRangeException (fault).
-                if amount < BigInt::zero() {
-                    return Err(CoreError::invalid_operation(
-                        "GasToken::transfer: amount cannot be negative",
-                    ));
-                }
-                // C#: !from.Equals(CallingScriptHash) && !CheckWitnessInternal(from) ->
-                // false. check_witness already returns true when from == calling hash.
-                let witnessed = engine.check_witness(&from).map_err(|e| {
-                    CoreError::invalid_operation(format!("GasToken::transfer witness: {e}"))
-                })?;
-                if !witnessed {
-                    return Ok(vec![0]);
-                }
-
-                let snapshot = engine.snapshot_cache();
-                let from_balance = read_gas_account(&snapshot, &from)?;
-                let to_balance = read_gas_account(&snapshot, &to)?;
-                match compute_gas_transfer(from_balance, to_balance, from == to, &amount) {
-                    GasTransferOutcome::InsufficientBalance => return Ok(vec![0]),
-                    GasTransferOutcome::NoMovement => {}
-                    GasTransferOutcome::Move {
-                        from_new,
-                        delete_from,
-                        to_new,
-                    } => {
-                        if delete_from {
-                            delete_gas_account(&snapshot, &from);
-                        } else {
-                            write_gas_account(&snapshot, &from, &from_new)?;
-                        }
-                        write_gas_account(&snapshot, &to, &to_new)?;
-                    }
-                }
-
-                // PostTransfer: emit Transfer + (if `to` is a contract) onNEP17Payment.
                 let data = args.get(3).map(Vec::as_slice).unwrap_or(&[]);
-                post_transfer(engine, &from, &to, &amount, data)?;
-                Ok(vec![1])
+                // The witness bypass uses the engine's calling script hash
+                // (C# `from.Equals(CallingScriptHash)`).
+                let caller = engine.get_calling_script_hash().unwrap_or_else(UInt160::zero);
+                Ok(vec![u8::from(Self::transfer_core(
+                    engine, caller, &from, &to, &amount, data,
+                )?)])
             }
             other => Err(CoreError::invalid_operation(format!(
                 "GasToken method '{other}' is not implemented"

@@ -9,6 +9,7 @@ use std::any::Any;
 use std::sync::LazyLock;
 
 use neo_error::{CoreError, CoreResult};
+use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_payloads::Transaction;
 use neo_primitives::{CallFlags, ContractParameterType, TransactionAttributeType, UInt160};
@@ -95,6 +96,11 @@ fn read_deposit(snapshot: &DataCache, account: &UInt160) -> CoreResult<Option<(B
         .to_u32()
         .ok_or_else(|| CoreError::invalid_data("Notary deposit Till out of range"))?;
     Ok(Some((amount, till)))
+}
+
+/// Deletes the deposit entry for `account` (C# `RemoveDepositFor`).
+fn delete_deposit(snapshot: &DataCache, account: &UInt160) {
+    snapshot.delete(&deposit_key(account));
 }
 
 /// Writes the `Deposit` `(Amount, Till)` struct for `account` (C# `PutDepositFor`):
@@ -308,6 +314,16 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ],
             ContractParameterType::Void,
         ),
+        // withdraw(from, to?) -> bool: depositor-witnessed; transfers the unlocked
+        // deposit GAS from Notary to `to` (re-entrant, CallFlags.All).
+        NativeMethod::new(
+            "withdraw".to_string(),
+            1 << 15,
+            false,
+            CallFlags::ALL.bits(),
+            vec![ContractParameterType::Hash160, ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+        ),
     ]
 });
 
@@ -429,6 +445,59 @@ impl NativeContract for Notary {
                     ))),
                 }
             }
+            "withdraw" => {
+                // C# Withdraw(from, to?): witness the depositor, then transfer the
+                // unlocked deposit GAS from Notary to `to` (defaulting to `from`).
+                let from = parse_account(args, "withdraw")?;
+                // `to` is a nullable UInt160?: a Null arg (bit 1 of the native arg
+                // null-mask) means "send to `from`".
+                let to_is_null = engine
+                    .get_state::<NativeArgNullMask>()
+                    .is_some_and(|mask| mask.0 & (1 << 1) != 0);
+                let receive = if to_is_null {
+                    from
+                } else {
+                    let bytes = args.get(1).ok_or_else(|| {
+                        CoreError::invalid_operation("Notary::withdraw requires a to account")
+                    })?;
+                    UInt160::from_bytes(bytes).map_err(|e| {
+                        CoreError::invalid_operation(format!("Notary::withdraw: bad to: {e}"))
+                    })?
+                };
+
+                let witnessed = engine.check_witness(&from).map_err(|e| {
+                    CoreError::invalid_operation(format!("withdraw witness: {e}"))
+                })?;
+                if !witnessed {
+                    return Ok(vec![0]);
+                }
+                let Some((amount, till)) = read_deposit(&snapshot, &from)? else {
+                    return Ok(vec![0]); // no deposit
+                };
+                if LedgerContract::new().current_index(&snapshot)? < till {
+                    return Ok(vec![0]); // still locked
+                }
+                // C# removes the deposit BEFORE the transfer; a failed transfer
+                // throws, which rolls back this delete with the rest of the call.
+                delete_deposit(&engine.snapshot_cache(), &from);
+                let notary_hash = Notary::script_hash();
+                // from == caller == Notary, so the transfer's witness check passes
+                // (Notary moves its own balance), faithful to the C# nested call.
+                let ok = GasToken::transfer_core(
+                    engine,
+                    notary_hash,
+                    &notary_hash,
+                    &receive,
+                    &amount,
+                    &[],
+                )?;
+                if !ok {
+                    return Err(CoreError::invalid_operation(format!(
+                        "Notary::withdraw: transfer to {receive} failed"
+                    )));
+                }
+                Ok(vec![1])
+            }
             "setMaxNotValidBeforeDelta" => {
                 // C# param is `uint value`: decode as u32 (out-of-range faults like
                 // the C# uint parameter binding).
@@ -493,9 +562,20 @@ mod tests {
                 "expirationOf",
                 "setMaxNotValidBeforeDelta",
                 "lockDepositUntil",
-                "onNEP17Payment"
+                "onNEP17Payment",
+                "withdraw"
             ]
         );
+        // withdraw: not safe, CallFlags.All (re-entrant GAS transfer),
+        // (Hash160, Hash160) -> Boolean.
+        let withdraw = c.methods().iter().find(|m| m.name == "withdraw").unwrap();
+        assert!(!withdraw.safe);
+        assert_eq!(withdraw.required_call_flags, CallFlags::ALL.bits());
+        assert_eq!(
+            withdraw.parameters,
+            vec![ContractParameterType::Hash160, ContractParameterType::Hash160]
+        );
+        assert_eq!(withdraw.return_type, ContractParameterType::Boolean);
         // onNEP17Payment: not safe, States, (Hash160, Integer, Any) -> Void.
         let on_pay = c.methods().iter().find(|m| m.name == "onNEP17Payment").unwrap();
         assert!(!on_pay.safe);
@@ -569,6 +649,10 @@ mod tests {
             read_deposit(&cache, &account).unwrap(),
             Some((BigInt::from(1000), 300))
         );
+
+        // withdraw's RemoveDepositFor: delete clears the entry.
+        delete_deposit(&cache, &account);
+        assert!(read_deposit(&cache, &account).unwrap().is_none());
     }
 
     #[test]
