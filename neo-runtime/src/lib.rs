@@ -3,9 +3,9 @@
 //! Reth-style async service architecture for the Neo node.
 //!
 //! This crate is the **service pattern** for the rest of the workspace.
-//! Every long-running component of a Neo node (block executor, mempool,
-//! network stack, consensus, engine API, blockchain orchestrator) is
-//! modelled as an `async_trait` service trait. There is no actor
+//! Every long-running component of a Neo node (block executor, network
+//! stack, consensus, engine API, blockchain orchestrator) is modelled as
+//! an `async_trait` service trait. There is no actor
 //! framework, no `ActorRef`, no mailbox — the runtime is just `async` +
 //! `tokio::sync::mpsc` + `tokio::sync::broadcast` + `tokio::sync::oneshot`,
 //! which is what reth and polkadot-sdk do.
@@ -36,7 +36,6 @@
 //! |------|------|---------|
 //! | Service trait base | [`Service`] | `Send + Sync + Debug + 'static` marker |
 //! | Block executor | [`BlockExecutor`] | Execute / validate blocks |
-//! | Mempool | [`MempoolService`] | Transaction pool |
 //! | Network | [`NetworkService`] | P2P networking |
 //! | Consensus | [`ConsensusService`] | dBFT loop |
 //! | Engine | [`NeoEngine`] | Engine API |
@@ -104,5 +103,5 @@ pub use blockchain::{
 pub use errors::{ServiceError, ServiceResult};
 pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
 pub use services::{
-    BlockExecutor, ConsensusService, MempoolService, NeoEngine, NetworkService, Service, TxHash,
+    BlockExecutor, ConsensusService, NeoEngine, NetworkService, Service, TxHash,
 };
