@@ -245,7 +245,12 @@ fn validate_max_traceable_blocks(value: i64) -> CoreResult<()> {
 
 /// C# `GetMaxValidUntilBlockIncrement`: stored `Prefix_MaxValidUntilBlockIncrement`,
 /// defaulting to the `ProtocolSettings` value (written at HF_Echidna activation).
-fn read_max_valid_until_block_increment(engine: &ApplicationEngine) -> CoreResult<i64> {
+///
+/// Exposed `pub(crate)` so other native contracts (e.g. `Notary`) can reuse the
+/// hardfork-aware source, matching the C# extension
+/// `IReadOnlyStore.GetMaxValidUntilBlockIncrement(ProtocolSettings)` (pre-Echidna
+/// the protocol setting; from Echidna the Policy storage value).
+pub(crate) fn read_max_valid_until_block_increment(engine: &ApplicationEngine) -> CoreResult<i64> {
     let default = i64::from(engine.protocol_settings().max_valid_until_block_increment);
     let snapshot = engine.snapshot_cache();
     crate::read_storage_int(
