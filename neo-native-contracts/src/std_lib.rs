@@ -17,6 +17,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
+use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
@@ -106,6 +107,8 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
         // itoa(value[, base]) -> String; atoi(value[, base]) -> Integer.
         "itoa" => itoa_impl(args),
         "atoi" => atoi_impl(args),
+        // stringSplit(str, separator[, removeEmptyEntries]) -> Array of String.
+        "stringSplit" => string_split_impl(args),
         // serialize(item) -> the item's BinarySerializer bytes. The `Any`-typed
         // arg is already BinarySerialized by the engine, so C#
         // `BinarySerializer.Serialize(item)` is exactly args[0].
@@ -262,6 +265,52 @@ fn atoi_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
     Ok(parsed.to_signed_bytes_le())
 }
 
+/// C# `StdLib.StringSplit(str, separator[, removeEmptyEntries])` = `String.Split`:
+/// split `str` on each occurrence of `separator`, keeping empty entries unless
+/// `removeEmptyEntries` is true. An empty separator yields `[str]` (the whole
+/// string), matching .NET's `string.Split(string)` overload. Enforces the C#
+/// `[MaxLength(1024)]` cap on `str`. Returns a VM Array of ByteStrings
+/// (BinarySerialized; the engine deserializes it for the `Array` return type).
+fn string_split_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let raw = arg_bytes(args, "stringSplit")?;
+    if raw.len() > MAX_INPUT_LENGTH {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::stringSplit: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+        )));
+    }
+    let value = std::str::from_utf8(raw).map_err(|_| {
+        CoreError::invalid_operation("StdLib::stringSplit: argument is not valid UTF-8".to_string())
+    })?;
+    let separator = match args.get(1) {
+        Some(bytes) => std::str::from_utf8(bytes).map_err(|_| {
+            CoreError::invalid_operation(
+                "StdLib::stringSplit: separator is not valid UTF-8".to_string(),
+            )
+        })?,
+        None => {
+            return Err(CoreError::invalid_operation(
+                "StdLib::stringSplit requires (str, separator)".to_string(),
+            ))
+        }
+    };
+    let remove_empty = args.get(2).map(|b| b.iter().any(|x| *x != 0)).unwrap_or(false);
+
+    let parts: Vec<&str> = if separator.is_empty() {
+        // .NET `string.Split("")` returns the whole string as a single element.
+        vec![value]
+    } else {
+        value.split(separator).collect()
+    };
+    let items: Vec<StackItem> = parts
+        .into_iter()
+        .filter(|part| !remove_empty || !part.is_empty())
+        .map(|part| StackItem::from_byte_string(part.as_bytes().to_vec()))
+        .collect();
+
+    BinarySerializer::serialize(&StackItem::from_array(items), &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
+}
+
 /// Mirrors .NET `BigInteger.ToString("x")`: lowercase, minimal two's-complement
 /// hex with a sign-disambiguating leading nibble (a positive value whose top
 /// nibble is >= 8 gets a leading `0`; negatives are rendered in two's
@@ -338,6 +387,7 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let string = ContractParameterType::String;
     let int = ContractParameterType::Integer;
     let boolean = ContractParameterType::Boolean;
+    let array = ContractParameterType::Array;
     vec![
         NativeMethod::new("base64Encode".into(), 1 << 5, true, 0, vec![bytes], string),
         NativeMethod::new("base64Decode".into(), 1 << 5, true, 0, vec![string], bytes),
@@ -365,6 +415,16 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
         NativeMethod::new("itoa".into(), 1 << 12, true, 0, vec![int, int], string),
         NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string], int),
         NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string, int], int),
+        // stringSplit(str, separator[, removeEmptyEntries]) -> Array of String.
+        NativeMethod::new("stringSplit".into(), 1 << 8, true, 0, vec![string, string], array),
+        NativeMethod::new(
+            "stringSplit".into(),
+            1 << 8,
+            true,
+            0,
+            vec![string, string, boolean],
+            array,
+        ),
     ]
 });
 
@@ -484,6 +544,49 @@ mod tests {
     #[test]
     fn unknown_method_is_none() {
         assert!(dispatch("jsonSerialize", &[vec![1]]).is_none());
+    }
+
+    /// stringSplit via the dispatch seam: decodes the BinarySerialized Array
+    /// return back into the substrings for comparison.
+    fn split(args: &[&[u8]]) -> Vec<String> {
+        let owned: Vec<Vec<u8>> = args.iter().map(|a| a.to_vec()).collect();
+        let bytes = dispatch("stringSplit", &owned).unwrap().unwrap();
+        let item =
+            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
+        item.as_array()
+            .unwrap()
+            .iter()
+            .map(|s| String::from_utf8(s.as_bytes().unwrap()).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn string_split_matches_csharp_vector() {
+        // C# UT_StdLib.StringSplit: stringSplit("a,b", ",") -> ["a","b"].
+        assert_eq!(split(&[b"a,b", b","]), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn string_split_keeps_empty_entries_by_default() {
+        // StringSplitOptions.None keeps empty entries (C# string.Split).
+        assert_eq!(split(&[b"a,,b", b","]), vec!["a", "", "b"]);
+        assert_eq!(split(&[b",a,", b","]), vec!["", "a", ""]);
+        // Empty input -> a single empty element.
+        assert_eq!(split(&[b"", b","]), vec![""]);
+        // Multi-char separator.
+        assert_eq!(split(&[b"a::b::c", b"::"]), vec!["a", "b", "c"]);
+        // Empty separator -> the whole string as one element (.NET string overload).
+        assert_eq!(split(&[b"abc", b""]), vec!["abc"]);
+    }
+
+    #[test]
+    fn string_split_remove_empty_entries() {
+        // 3-arg overload with removeEmptyEntries = true filters empties.
+        assert_eq!(split(&[b"a,,b", b",", &[1]]), vec!["a", "b"]);
+        assert_eq!(split(&[b",a,", b",", &[1]]), vec!["a"]);
+        assert_eq!(split(&[b"", b",", &[1]]), Vec::<String>::new());
+        // removeEmptyEntries = false keeps them (same as the 2-arg form).
+        assert_eq!(split(&[b"a,,b", b",", &[0]]), vec!["a", "", "b"]);
     }
 
     /// itoa via the dispatch seam: `value` is a signed-LE Integer, optional
@@ -622,7 +725,9 @@ mod tests {
                 "itoa",
                 "itoa",
                 "atoi",
-                "atoi"
+                "atoi",
+                "stringSplit",
+                "stringSplit"
             ]
         );
         assert!(c.methods().iter().all(|m| m.safe));
