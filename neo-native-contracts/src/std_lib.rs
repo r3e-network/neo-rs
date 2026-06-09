@@ -1,13 +1,13 @@
 //! StdLib native contract (id -2).
 //!
-//! Implements the C# `Neo.SmartContract.Native.StdLib` Base64/Base58 primitives
-//! plus `memoryCompare` / `memorySearch`, dispatched through the
-//! [`NativeContract`] trait. The remaining StdLib surface (`base64Decode` —
-//! pending a strict, whitespace-exact decoder to match `Convert.FromBase64String`;
-//! `itoa`/`atoi` — .NET two's-complement hex semantics; `jsonSerialize`/
-//! `jsonDeserialize`, `serialize`/`deserialize`, `stringSplit`, `strLen`
-//! — grapheme counting, `base64Url*`) is the next increment; every method
-//! declared below is byte-for-byte C# parity with a real implementation.
+//! Implements the C# `Neo.SmartContract.Native.StdLib` Base64/Base58 primitives,
+//! `itoa`/`atoi` (decimal + .NET two's-complement hex), and
+//! `memoryCompare` / `memorySearch`, dispatched through the [`NativeContract`]
+//! trait. The remaining StdLib surface (`base64Decode` — pending a strict,
+//! whitespace-exact decoder to match `Convert.FromBase64String`;
+//! `jsonSerialize`/`jsonDeserialize`, `stringSplit`, `strLen` — grapheme
+//! counting, `base64Url*`) is the next increment; every method declared below
+//! is byte-for-byte C# parity with a real implementation.
 
 use std::any::Any;
 use std::sync::LazyLock;
@@ -18,10 +18,13 @@ use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_vm_rs::ExecutionEngineLimits;
-use num_bigint::BigInt;
+use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 
 use crate::hashes::STDLIB_HASH;
+
+/// C# `StdLib.MaxInputLength` — the `[MaxLength]` cap on string/byte inputs.
+const MAX_INPUT_LENGTH: usize = 1024;
 
 /// Lazily-initialised script-hash handle for the StdLib contract.
 pub static STDLIB_HASH_REF: LazyLock<UInt160> = LazyLock::new(|| *STDLIB_HASH);
@@ -98,6 +101,9 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
         },
         // memorySearch(mem, value[, start[, backward]]) -> Integer index or -1.
         "memorySearch" => memory_search_impl(args),
+        // itoa(value[, base]) -> String; atoi(value[, base]) -> Integer.
+        "itoa" => itoa_impl(args),
+        "atoi" => atoi_impl(args),
         // serialize(item) -> the item's BinarySerializer bytes. The `Any`-typed
         // arg is already BinarySerialized by the engine, so C#
         // `BinarySerializer.Serialize(item)` is exactly args[0].
@@ -179,6 +185,130 @@ fn last_index_of(haystack: &[u8], needle: &[u8]) -> i64 {
         .map_or(-1, |i| i as i64)
 }
 
+/// Reads an optional integer `base` argument (C# StdLib's `@base` overload),
+/// defaulting to 10 when absent. Integer args arrive as signed little-endian.
+fn optional_base(args: &[Vec<u8>], index: usize, method: &str) -> CoreResult<i64> {
+    match args.get(index) {
+        None => Ok(10),
+        Some(bytes) => BigInt::from_signed_bytes_le(bytes).to_i64().ok_or_else(|| {
+            CoreError::invalid_argument(format!("StdLib::{method}: base out of range"))
+        }),
+    }
+}
+
+/// C# `StdLib.Itoa(value[, base])`: base 10 -> `BigInteger.ToString()` (decimal),
+/// base 16 -> `BigInteger.ToString("x")` (lowercase two's-complement hex).
+/// Any other base throws `ArgumentOutOfRangeException`.
+fn itoa_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let value = BigInt::from_signed_bytes_le(arg_bytes(args, "itoa")?);
+    let text = match optional_base(args, 1, "itoa")? {
+        10 => value.to_str_radix(10),
+        16 => dotnet_bigint_to_hex(&value),
+        other => {
+            return Err(CoreError::invalid_argument(format!(
+                "StdLib::itoa: invalid base: {other}"
+            )))
+        }
+    };
+    Ok(text.into_bytes())
+}
+
+/// C# `StdLib.Atoi(value[, base])`: base 10 -> `BigInteger.Parse(AllowLeadingSign)`,
+/// base 16 -> `BigInteger.Parse(AllowHexSpecifier)` (two's-complement). Enforces
+/// the C# `[MaxLength(1024)]` cap on the input. Any other base throws.
+fn atoi_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let raw = arg_bytes(args, "atoi")?;
+    if raw.len() > MAX_INPUT_LENGTH {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::atoi: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+        )));
+    }
+    let value = std::str::from_utf8(raw).map_err(|_| {
+        CoreError::invalid_operation("StdLib::atoi: argument is not valid UTF-8".to_string())
+    })?;
+    let parsed = match optional_base(args, 1, "atoi")? {
+        10 => parse_dotnet_decimal(value)?,
+        16 => parse_dotnet_hex(value)?,
+        other => {
+            return Err(CoreError::invalid_argument(format!(
+                "StdLib::atoi: invalid base: {other}"
+            )))
+        }
+    };
+    Ok(parsed.to_signed_bytes_le())
+}
+
+/// Mirrors .NET `BigInteger.ToString("x")`: lowercase, minimal two's-complement
+/// hex with a sign-disambiguating leading nibble (a positive value whose top
+/// nibble is >= 8 gets a leading `0`; negatives are rendered in two's
+/// complement, e.g. `-1` -> "f", `255` -> "0ff", `-256` -> "f00").
+fn dotnet_bigint_to_hex(value: &BigInt) -> String {
+    if value.sign() == Sign::NoSign {
+        return "0".to_string();
+    }
+    let negative = value.sign() == Sign::Minus;
+    let mut hex = String::new();
+    for byte in value.to_signed_bytes_be() {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    let chars: Vec<char> = hex.chars().collect();
+    let mut start = 0;
+    // Drop redundant leading sign nibbles while the remainder keeps the sign.
+    while start + 1 < chars.len() {
+        let redundant = if negative {
+            chars[start] == 'f' && matches!(chars[start + 1], '8'..='9' | 'a'..='f')
+        } else {
+            chars[start] == '0' && matches!(chars[start + 1], '0'..='7')
+        };
+        if redundant {
+            start += 1;
+        } else {
+            break;
+        }
+    }
+    chars[start..].iter().collect()
+}
+
+/// Mirrors .NET `BigInteger.Parse(value, NumberStyles.AllowLeadingSign)`: an
+/// optional leading `+`/`-` then one or more decimal digits, nothing else
+/// (no whitespace, separators, or radix point).
+fn parse_dotnet_decimal(value: &str) -> CoreResult<BigInt> {
+    let (digits, negative) = match value.as_bytes().first() {
+        Some(b'+') => (&value[1..], false),
+        Some(b'-') => (&value[1..], true),
+        _ => (value, false),
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::atoi: '{value}' is not a valid base-10 integer"
+        )));
+    }
+    let magnitude = BigInt::parse_bytes(digits.as_bytes(), 10).ok_or_else(|| {
+        CoreError::invalid_operation(format!("StdLib::atoi: '{value}' is not a valid integer"))
+    })?;
+    Ok(if negative { -magnitude } else { magnitude })
+}
+
+/// Mirrors .NET `BigInteger.Parse(value, NumberStyles.AllowHexSpecifier)`:
+/// case-insensitive hex digits interpreted as two's-complement (a leading
+/// nibble >= 8 makes the value negative, e.g. "ff" -> -1, "0ff" -> 255).
+fn parse_dotnet_hex(value: &str) -> CoreResult<BigInt> {
+    if value.is_empty() || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::atoi: '{value}' is not a valid base-16 integer"
+        )));
+    }
+    let lower = value.to_ascii_lowercase();
+    let magnitude = BigInt::parse_bytes(lower.as_bytes(), 16).ok_or_else(|| {
+        CoreError::invalid_operation(format!("StdLib::atoi: '{value}' is not a valid integer"))
+    })?;
+    if matches!(lower.as_bytes()[0], b'8'..=b'9' | b'a'..=b'f') {
+        Ok(magnitude - (BigInt::from(1) << (4 * lower.len())))
+    } else {
+        Ok(magnitude)
+    }
+}
+
 static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let bytes = ContractParameterType::ByteArray;
     let string = ContractParameterType::String;
@@ -205,6 +335,11 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![bytes, bytes, int, boolean],
             int,
         ),
+        // itoa(value[, base]) -> String; atoi(value[, base]) -> Integer.
+        NativeMethod::new("itoa".into(), 1 << 12, true, 0, vec![int], string),
+        NativeMethod::new("itoa".into(), 1 << 12, true, 0, vec![int, int], string),
+        NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string], int),
+        NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string, int], int),
     ]
 });
 
@@ -290,7 +425,118 @@ mod tests {
 
     #[test]
     fn unknown_method_is_none() {
-        assert!(dispatch("itoa", &[vec![1]]).is_none());
+        assert!(dispatch("jsonSerialize", &[vec![1]]).is_none());
+    }
+
+    /// itoa via the dispatch seam: `value` is a signed-LE Integer, optional
+    /// `base` is a signed-LE Integer; the result is the UTF-8 string bytes.
+    fn itoa(value: i64, base: Option<i64>) -> CoreResult<String> {
+        let mut args = vec![BigInt::from(value).to_signed_bytes_le()];
+        if let Some(base) = base {
+            args.push(BigInt::from(base).to_signed_bytes_le());
+        }
+        dispatch("itoa", &args)
+            .unwrap()
+            .map(|b| String::from_utf8(b).unwrap())
+    }
+
+    /// atoi via the dispatch seam: `value` is UTF-8 string bytes, optional
+    /// `base` is a signed-LE Integer; the result is the signed-LE Integer.
+    fn atoi(value: &str, base: Option<i64>) -> CoreResult<BigInt> {
+        let mut args = vec![value.as_bytes().to_vec()];
+        if let Some(base) = base {
+            args.push(BigInt::from(base).to_signed_bytes_le());
+        }
+        dispatch("atoi", &args)
+            .unwrap()
+            .map(|b| BigInt::from_signed_bytes_le(&b))
+    }
+
+    #[test]
+    fn itoa_base10_matches_csharp() {
+        // C# Itoa(value) == value.ToString().
+        assert_eq!(itoa(0, None).unwrap(), "0");
+        assert_eq!(itoa(123, None).unwrap(), "123");
+        assert_eq!(itoa(-123, None).unwrap(), "-123");
+        assert_eq!(itoa(123, Some(10)).unwrap(), "123");
+    }
+
+    #[test]
+    fn itoa_base16_matches_dotnet_twos_complement() {
+        // C# Itoa(value, 16) == value.ToString("x"): lowercase, sign-disambiguated.
+        assert_eq!(itoa(0, Some(16)).unwrap(), "0");
+        assert_eq!(itoa(1, Some(16)).unwrap(), "1");
+        assert_eq!(itoa(10, Some(16)).unwrap(), "0a"); // top nibble >= 8 -> leading 0
+        assert_eq!(itoa(15, Some(16)).unwrap(), "0f");
+        assert_eq!(itoa(16, Some(16)).unwrap(), "10");
+        assert_eq!(itoa(127, Some(16)).unwrap(), "7f");
+        assert_eq!(itoa(128, Some(16)).unwrap(), "080");
+        assert_eq!(itoa(255, Some(16)).unwrap(), "0ff");
+        assert_eq!(itoa(256, Some(16)).unwrap(), "100");
+        // Negatives render in two's complement.
+        assert_eq!(itoa(-1, Some(16)).unwrap(), "f");
+        assert_eq!(itoa(-16, Some(16)).unwrap(), "f0");
+        assert_eq!(itoa(-128, Some(16)).unwrap(), "80");
+        assert_eq!(itoa(-129, Some(16)).unwrap(), "f7f");
+        assert_eq!(itoa(-256, Some(16)).unwrap(), "f00");
+    }
+
+    #[test]
+    fn itoa_invalid_base_faults() {
+        assert!(itoa(1, Some(2)).is_err());
+        assert!(itoa(1, Some(8)).is_err());
+    }
+
+    #[test]
+    fn atoi_base10_matches_csharp() {
+        assert_eq!(atoi("0", None).unwrap(), BigInt::from(0));
+        assert_eq!(atoi("123", None).unwrap(), BigInt::from(123));
+        assert_eq!(atoi("-123", None).unwrap(), BigInt::from(-123));
+        assert_eq!(atoi("+123", None).unwrap(), BigInt::from(123));
+        assert_eq!(atoi("-0", None).unwrap(), BigInt::from(0));
+        // AllowLeadingSign rejects whitespace, separators, and junk.
+        assert!(atoi(" 1", None).is_err());
+        assert!(atoi("1 ", None).is_err());
+        assert!(atoi("1.0", None).is_err());
+        assert!(atoi("", None).is_err());
+        assert!(atoi("+", None).is_err());
+        assert!(atoi("0x10", None).is_err());
+    }
+
+    #[test]
+    fn atoi_base16_matches_dotnet_twos_complement() {
+        // AllowHexSpecifier: leading nibble >= 8 -> negative.
+        assert_eq!(atoi("ff", Some(16)).unwrap(), BigInt::from(-1));
+        assert_eq!(atoi("0ff", Some(16)).unwrap(), BigInt::from(255));
+        assert_eq!(atoi("f", Some(16)).unwrap(), BigInt::from(-1));
+        assert_eq!(atoi("0f", Some(16)).unwrap(), BigInt::from(15));
+        assert_eq!(atoi("80", Some(16)).unwrap(), BigInt::from(-128));
+        assert_eq!(atoi("080", Some(16)).unwrap(), BigInt::from(128));
+        assert_eq!(atoi("7f", Some(16)).unwrap(), BigInt::from(127));
+        assert_eq!(atoi("100", Some(16)).unwrap(), BigInt::from(256));
+        assert_eq!(atoi("f00", Some(16)).unwrap(), BigInt::from(-256));
+        // Case-insensitive; a leading sign is NOT allowed for hex.
+        assert_eq!(atoi("FF", Some(16)).unwrap(), BigInt::from(-1));
+        assert!(atoi("-1", Some(16)).is_err());
+        assert!(atoi("zz", Some(16)).is_err());
+    }
+
+    #[test]
+    fn itoa_atoi_round_trip_hex() {
+        // atoi(itoa(v, 16), 16) == v across the sign boundary.
+        for v in [-300i64, -256, -129, -128, -1, 0, 1, 127, 128, 255, 256, 65535] {
+            let hex = itoa(v, Some(16)).unwrap();
+            assert_eq!(atoi(&hex, Some(16)).unwrap(), BigInt::from(v), "hex={hex}");
+        }
+    }
+
+    #[test]
+    fn atoi_respects_max_input_length() {
+        // C# [MaxLength(1024)] on the input: 1024 bytes ok, 1025 faults.
+        let ok = "1".repeat(MAX_INPUT_LENGTH);
+        assert!(dispatch("atoi", &[ok.into_bytes()]).unwrap().is_ok());
+        let too_long = "1".repeat(MAX_INPUT_LENGTH + 1);
+        assert!(dispatch("atoi", &[too_long.into_bytes()]).unwrap().is_err());
     }
 
     #[test]
@@ -313,7 +559,11 @@ mod tests {
                 "memoryCompare",
                 "memorySearch",
                 "memorySearch",
-                "memorySearch"
+                "memorySearch",
+                "itoa",
+                "itoa",
+                "atoi",
+                "atoi"
             ]
         );
         assert!(c.methods().iter().all(|m| m.safe));
