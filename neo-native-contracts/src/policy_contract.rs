@@ -17,6 +17,8 @@ use std::sync::LazyLock;
 const PREFIX_FEE_PER_BYTE: u8 = 10;
 /// C# `PolicyContract.Prefix_StoragePrice` storage prefix.
 const PREFIX_STORAGE_PRICE: u8 = 19;
+/// C# `PolicyContract.Prefix_ExecFeeFactor` storage prefix.
+const PREFIX_EXEC_FEE_FACTOR: u8 = 18;
 /// C# `PolicyContract.DefaultStoragePrice`.
 const DEFAULT_STORAGE_PRICE: i64 = 100_000;
 /// C# `PolicyContract.Prefix_BlockedAccount` storage prefix.
@@ -154,6 +156,51 @@ fn validate_storage_price(value: i64) -> CoreResult<()> {
 /// (C# `GetAndChange(_storagePrice).Set(value)`).
 fn put_storage_price(snapshot: &DataCache, value: i64) {
     let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_STORAGE_PRICE]);
+    snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
+}
+
+/// C# `ApplicationEngine.FeeFactor` (10000): from the HF_Faun hardfork the exec
+/// fee factor is stored in pico-GAS (the raw value carries this extra scaling),
+/// so the legacy `getExecFeeFactor` divides it out and the bound is widened.
+/// Mirrors `neo_execution::FEE_FACTOR`.
+const FEE_FACTOR: i64 = 10_000;
+/// C# `PolicyContract.MaxExecFeeFactor`.
+const MAX_EXEC_FEE_FACTOR: i64 = 100;
+
+/// Reads the raw stored exec fee factor (`Prefix_ExecFeeFactor`), defaulting to
+/// `DEFAULT_EXEC_FEE_FACTOR`. The value is the on-disk `BigInteger`; callers apply
+/// the HF_Faun pico-GAS scaling.
+fn exec_fee_factor_raw(snapshot: &DataCache) -> CoreResult<i64> {
+    crate::read_storage_int(
+        snapshot,
+        PolicyContract::ID,
+        PREFIX_EXEC_FEE_FACTOR,
+        i64::from(DEFAULT_EXEC_FEE_FACTOR),
+    )
+}
+
+/// C# `SetExecFeeFactor` range guard. The upper bound is `MaxExecFeeFactor`
+/// before HF_Faun and `FeeFactor * MaxExecFeeFactor` from HF_Faun onward; the
+/// value must be at least 1 (the C# parameter is `ulong`, so a non-positive value
+/// is rejected exactly like the `value == 0` check plus the unsigned binding).
+fn validate_exec_fee_factor(engine: &ApplicationEngine, value: i64) -> CoreResult<()> {
+    let max_value = if engine.is_hardfork_enabled(Hardfork::HfFaun) {
+        FEE_FACTOR * MAX_EXEC_FEE_FACTOR
+    } else {
+        MAX_EXEC_FEE_FACTOR
+    };
+    if !(1..=max_value).contains(&value) {
+        return Err(CoreError::invalid_operation(format!(
+            "ExecFeeFactor must be between [1, {max_value}], got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// Writes the exec fee factor to `Prefix_ExecFeeFactor` as a `BigInteger`
+/// (C# `GetAndChange(_execFeeFactor).Set(value)`).
+fn put_exec_fee_factor(snapshot: &DataCache, value: i64) {
+    let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_EXEC_FEE_FACTOR]);
     snapshot.update(key, StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()));
 }
 
@@ -334,6 +381,34 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
         ),
+        // Execution fee factor: getExecFeeFactor (always present; divides out the
+        // HF_Faun pico-GAS scaling), getExecPicoFeeFactor (HF_Faun; raw pico-GAS),
+        // and the committee-gated setExecFeeFactor.
+        NativeMethod::new(
+            "getExecFeeFactor".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        ),
+        NativeMethod::new(
+            "getExecPicoFeeFactor".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        )
+        .with_active_in(Hardfork::HfFaun),
+        NativeMethod::new(
+            "setExecFeeFactor".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        ),
         // HF_Echidna setter that emits a change notification (States|AllowNotify).
         NativeMethod::new(
             "setMillisecondsPerBlock".to_string(),
@@ -458,6 +533,28 @@ impl NativeContract for PolicyContract {
                 put_storage_price(&engine.snapshot_cache(), value);
                 Ok(Vec::new())
             }
+            "getExecFeeFactor" => {
+                // C#: from HF_Faun the stored value is pico-GAS, so divide it out;
+                // before Faun (the current reality, Faun unscheduled) return it raw.
+                let raw = exec_fee_factor_raw(&snapshot)?;
+                let value = if engine.is_hardfork_enabled(Hardfork::HfFaun) {
+                    raw / FEE_FACTOR
+                } else {
+                    raw
+                };
+                Ok(BigInt::from(value).to_signed_bytes_le())
+            }
+            "getExecPicoFeeFactor" => {
+                // C# (HF_Faun): the raw stored pico-GAS value, undivided.
+                Ok(BigInt::from(exec_fee_factor_raw(&snapshot)?).to_signed_bytes_le())
+            }
+            "setExecFeeFactor" => {
+                let value = setter_int_arg(args, "setExecFeeFactor")?;
+                validate_exec_fee_factor(engine, value)?;
+                assert_committee(engine, "setExecFeeFactor")?;
+                put_exec_fee_factor(&engine.snapshot_cache(), value);
+                Ok(Vec::new())
+            }
             "isBlocked" => {
                 let account_bytes = args.first().ok_or_else(|| {
                     CoreError::invalid_operation("PolicyContract::isBlocked requires an account")
@@ -580,6 +677,9 @@ mod tests {
                 "getStoragePrice",
                 "setFeePerByte",
                 "setStoragePrice",
+                "getExecFeeFactor",
+                "getExecPicoFeeFactor",
+                "setExecFeeFactor",
                 "setMillisecondsPerBlock",
                 "setMaxValidUntilBlockIncrement",
                 "setMaxTraceableBlocks",
@@ -624,6 +724,39 @@ mod tests {
             assert_eq!(m.return_type, ContractParameterType::Void);
             assert_eq!(m.active_in, Some(Hardfork::HfEchidna));
         }
+        // getExecFeeFactor is always present; getExecPicoFeeFactor is HF_Faun-gated;
+        // both are safe Integer reads.
+        let exec = c.methods().iter().find(|m| m.name == "getExecFeeFactor").unwrap();
+        assert!(exec.safe && exec.active_in.is_none());
+        assert_eq!(exec.return_type, ContractParameterType::Integer);
+        assert_eq!(exec.cpu_fee, 1 << 15);
+        let pico = c.methods().iter().find(|m| m.name == "getExecPicoFeeFactor").unwrap();
+        assert!(pico.safe);
+        assert_eq!(pico.active_in, Some(Hardfork::HfFaun));
+        assert_eq!(pico.return_type, ContractParameterType::Integer);
+        // setExecFeeFactor is a non-safe, States, Integer -> Void writer.
+        let set_exec = c.methods().iter().find(|m| m.name == "setExecFeeFactor").unwrap();
+        assert!(!set_exec.safe);
+        assert_eq!(set_exec.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(set_exec.parameters, vec![ContractParameterType::Integer]);
+        assert_eq!(set_exec.return_type, ContractParameterType::Void);
+        assert!(set_exec.active_in.is_none());
+    }
+
+    #[test]
+    fn exec_fee_factor_reads_default_and_round_trips_through_storage() {
+        // Pre-Faun (the current reality, Faun unscheduled) the reader returns the
+        // raw stored value; the writer's effect is observed by the reader.
+        let cache = DataCache::new(false);
+        assert_eq!(
+            exec_fee_factor_raw(&cache).unwrap(),
+            i64::from(DEFAULT_EXEC_FEE_FACTOR)
+        );
+        put_exec_fee_factor(&cache, 50);
+        assert_eq!(exec_fee_factor_raw(&cache).unwrap(), 50);
+        // Overwrite (GetAndChange semantics).
+        put_exec_fee_factor(&cache, 100);
+        assert_eq!(exec_fee_factor_raw(&cache).unwrap(), 100);
     }
 
     #[test]
