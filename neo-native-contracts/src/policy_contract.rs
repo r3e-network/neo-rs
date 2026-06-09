@@ -4,8 +4,8 @@ use crate::hashes::POLICY_CONTRACT_HASH;
 use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
-use neo_primitives::{CallFlags, ContractParameterType, TransactionAttributeType, UInt160};
-use neo_storage::persistence::DataCache;
+use neo_primitives::{CallFlags, ContractParameterType, FindOptions, TransactionAttributeType, UInt160};
+use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
 use num_bigint::BigInt;
@@ -278,6 +278,15 @@ fn blocked_account_key(account: &UInt160) -> StorageKey {
     StorageKey::new(PolicyContract::ID, key_bytes)
 }
 
+/// Collects the `Prefix_BlockedAccount` storage entries in forward-seek order,
+/// the backing set for the `getBlockedAccounts` iterator (C# `GetBlockedAccounts`).
+fn blocked_account_entries(snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
+    let prefix_key = StorageKey::new(PolicyContract::ID, vec![PREFIX_BLOCKED_ACCOUNT]);
+    snapshot
+        .find(Some(&prefix_key), SeekDirection::Forward)
+        .collect()
+}
+
 /// Parses a single integer argument into an `i64` for a setter, faulting when
 /// absent or out of `i64` range (C# marshals the Integer arg to `long`/`uint`).
 fn setter_int_arg(args: &[Vec<u8>], method: &str) -> CoreResult<i64> {
@@ -493,6 +502,16 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer, ContractParameterType::Integer],
             ContractParameterType::Void,
         ),
+        // getBlockedAccounts() -> Iterator over blocked account hashes (HF_Faun).
+        NativeMethod::new(
+            "getBlockedAccounts".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::InteropInterface,
+        )
+        .with_active_in(Hardfork::HfFaun),
         // HF_Echidna setter that emits a change notification (States|AllowNotify).
         NativeMethod::new(
             "setMillisecondsPerBlock".to_string(),
@@ -668,6 +687,25 @@ impl NativeContract for PolicyContract {
                 put_attribute_fee(&engine.snapshot_cache(), attribute_type, i64::from(value));
                 Ok(Vec::new())
             }
+            "getBlockedAccounts" => {
+                // C# GetBlockedAccounts: an iterator over Prefix_BlockedAccount with
+                // FindOptions.RemovePrefix | KeysOnly and prefix length 1, yielding
+                // the blocked account hashes (keys only). The 4-byte iterator id is
+                // decoded back into an InteropInterface by the dispatcher.
+                let results = blocked_account_entries(&snapshot);
+                let iterator_id = engine
+                    .create_storage_iterator_with_options(
+                        results,
+                        1,
+                        FindOptions::RemovePrefix | FindOptions::KeysOnly,
+                    )
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "PolicyContract::getBlockedAccounts: {e}"
+                        ))
+                    })?;
+                Ok(iterator_id.to_le_bytes().to_vec())
+            }
             "isBlocked" => {
                 let account_bytes = args.first().ok_or_else(|| {
                     CoreError::invalid_operation("PolicyContract::isBlocked requires an account")
@@ -795,6 +833,7 @@ mod tests {
                 "setExecFeeFactor",
                 "getAttributeFee",
                 "setAttributeFee",
+                "getBlockedAccounts",
                 "setMillisecondsPerBlock",
                 "setMaxValidUntilBlockIncrement",
                 "setMaxTraceableBlocks",
@@ -870,6 +909,32 @@ mod tests {
             vec![ContractParameterType::Integer, ContractParameterType::Integer]
         );
         assert_eq!(set_af.return_type, ContractParameterType::Void);
+        // getBlockedAccounts is an HF_Faun-gated, safe, no-arg iterator reader.
+        let blocked = c.methods().iter().find(|m| m.name == "getBlockedAccounts").unwrap();
+        assert_eq!(blocked.active_in, Some(Hardfork::HfFaun));
+        assert!(blocked.safe && blocked.parameters.is_empty());
+        assert_eq!(blocked.return_type, ContractParameterType::InteropInterface);
+        assert_eq!(blocked.required_call_flags, CallFlags::READ_STATES.bits());
+    }
+
+    #[test]
+    fn blocked_account_entries_scopes_to_prefix_blocked_account() {
+        let cache = DataCache::new(false);
+        // Two blocked accounts plus an unrelated fee entry that must not appear.
+        let a1 = UInt160::from_bytes(&[0x11; 20]).unwrap();
+        let a2 = UInt160::from_bytes(&[0x22; 20]).unwrap();
+        cache.add(blocked_account_key(&a1), StorageItem::from_bytes(Vec::new()));
+        cache.add(blocked_account_key(&a2), StorageItem::from_bytes(Vec::new()));
+        put_fee_per_byte(&cache, 1234); // Prefix_FeePerByte, must be excluded
+
+        let entries = blocked_account_entries(&cache);
+        assert_eq!(entries.len(), 2);
+        // Each key's suffix is [Prefix_BlockedAccount, account]; the iterator
+        // strips the 1-byte prefix to yield the account hash.
+        for (key, _) in &entries {
+            assert_eq!(key.suffix()[0], PREFIX_BLOCKED_ACCOUNT);
+            assert_eq!(key.suffix().len(), 1 + 20);
+        }
     }
 
     #[test]
