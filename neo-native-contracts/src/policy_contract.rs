@@ -171,6 +171,14 @@ fn assert_committee(engine: &ApplicationEngine, method: &str) -> CoreResult<()> 
     Ok(())
 }
 
+/// The blocked-account storage key `(PolicyContract.ID, [Prefix_BlockedAccount,
+/// account])`, shared by `isBlocked` / `blockAccount` / `unblockAccount`.
+fn blocked_account_key(account: &UInt160) -> StorageKey {
+    let mut key_bytes = vec![PREFIX_BLOCKED_ACCOUNT];
+    key_bytes.extend_from_slice(&account.to_bytes());
+    StorageKey::new(PolicyContract::ID, key_bytes)
+}
+
 /// Parses a single integer argument into an `i64` for a setter, faulting when
 /// absent or out of `i64` range (C# marshals the Integer arg to `long`/`uint`).
 fn setter_int_arg(args: &[Vec<u8>], method: &str) -> CoreResult<i64> {
@@ -358,6 +366,15 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160],
             ContractParameterType::Boolean,
         ),
+        // Committee-gated unblock writer (not safe, States, Boolean return).
+        NativeMethod::new(
+            "unblockAccount".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+        ),
         // HF_Echidna moved these chain parameters from ProtocolSettings into
         // PolicyContract storage; the getters default to the settings value.
         NativeMethod::new(
@@ -443,11 +460,29 @@ impl NativeContract for PolicyContract {
                 let account = UInt160::from_bytes(account_bytes).map_err(|e| {
                     CoreError::invalid_operation(format!("PolicyContract::isBlocked: bad account: {e}"))
                 })?;
-                let mut key_bytes = vec![PREFIX_BLOCKED_ACCOUNT];
-                key_bytes.extend_from_slice(&account.to_bytes());
                 // C# IsBlocked = snapshot.Contains(key(Prefix_BlockedAccount, account)).
-                let blocked = snapshot.get(&StorageKey::new(Self::ID, key_bytes)).is_some();
+                let blocked = snapshot.get(&blocked_account_key(&account)).is_some();
                 Ok(vec![u8::from(blocked)])
+            }
+            "unblockAccount" => {
+                // C#: AssertCommittee -> if not blocked return false ->
+                // delete the entry -> return true.
+                let account_bytes = args.first().ok_or_else(|| {
+                    CoreError::invalid_operation("PolicyContract::unblockAccount requires an account")
+                })?;
+                let account = UInt160::from_bytes(account_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "PolicyContract::unblockAccount: bad account: {e}"
+                    ))
+                })?;
+                assert_committee(engine, "unblockAccount")?;
+                let key = blocked_account_key(&account);
+                let snapshot = engine.snapshot_cache();
+                let was_blocked = snapshot.get(&key).is_some();
+                if was_blocked {
+                    snapshot.delete(&key);
+                }
+                Ok(vec![u8::from(was_blocked)])
             }
             "getMillisecondsPerBlock" => {
                 Ok(BigInt::from(read_milliseconds_per_block(engine)?).to_signed_bytes_le())
@@ -544,6 +579,7 @@ mod tests {
                 "setMaxValidUntilBlockIncrement",
                 "setMaxTraceableBlocks",
                 "isBlocked",
+                "unblockAccount",
                 "getMillisecondsPerBlock",
                 "getMaxValidUntilBlockIncrement",
                 "getMaxTraceableBlocks"
@@ -552,6 +588,12 @@ mod tests {
         // The Echidna-era chain-parameter getters are hardfork-gated.
         let mtb = c.methods().iter().find(|m| m.name == "getMaxTraceableBlocks").unwrap();
         assert_eq!(mtb.active_in, Some(Hardfork::HfEchidna));
+        // unblockAccount is a non-safe, write-flagged (States), Boolean writer.
+        let unblock = c.methods().iter().find(|m| m.name == "unblockAccount").unwrap();
+        assert!(!unblock.safe);
+        assert_eq!(unblock.required_call_flags, CallFlags::STATES.bits());
+        assert_eq!(unblock.parameters, vec![ContractParameterType::Hash160]);
+        assert_eq!(unblock.return_type, ContractParameterType::Boolean);
         // The fee/price setters are non-safe, write-flagged (States), Void methods.
         for name in ["setFeePerByte", "setStoragePrice"] {
             let setter = c.methods().iter().find(|m| m.name == name).unwrap();
@@ -586,6 +628,21 @@ mod tests {
         assert!(validate_fee_per_byte(MAX_FEE_PER_BYTE).is_ok());
         assert!(validate_fee_per_byte(-1).is_err());
         assert!(validate_fee_per_byte(MAX_FEE_PER_BYTE + 1).is_err());
+    }
+
+    #[test]
+    fn blocked_account_key_block_then_unblock_storage_effect() {
+        let cache = DataCache::new(false);
+        let account = UInt160::from_bytes(&[4u8; 20]).unwrap();
+        let key = blocked_account_key(&account);
+        // Not blocked initially.
+        assert!(cache.get(&key).is_none());
+        // Block (add) then unblock (delete) — the exact storage effect the
+        // isBlocked / unblockAccount arms rely on.
+        cache.add(key.clone(), StorageItem::from_bytes(vec![]));
+        assert!(cache.get(&key).is_some());
+        cache.delete(&key);
+        assert!(cache.get(&key).is_none());
     }
 
     #[test]
