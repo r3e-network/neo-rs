@@ -34,6 +34,8 @@ const PREFIX_GAS_PER_BLOCK: u8 = 29;
 const DEFAULT_GAS_PER_BLOCK: i64 = 5 * 100_000_000;
 /// C# `NeoToken.Prefix_Committee` — the cached `(pubkey, votes)` committee list.
 const PREFIX_COMMITTEE: u8 = 14;
+/// C# `NeoToken.Prefix_Candidate` — per-candidate `(Registered, Votes)` state.
+const PREFIX_CANDIDATE: u8 = 33;
 
 /// Lazily-initialised script-hash handle for the NEO native contract.
 pub static NEO_HASH: LazyLock<UInt160> = LazyLock::new(|| *NEO_TOKEN_HASH);
@@ -140,6 +142,64 @@ fn next_block_validators(snapshot: &DataCache, validators_count: usize) -> CoreR
     Ok(points)
 }
 
+/// C# `GetCandidates` (= `GetCandidatesInternal.Where(Registered)`): scan
+/// `Prefix_Candidate` (key = prefix ++ 33-byte pubkey; value = CandidateState
+/// `Struct[Registered(bool), Votes]`), returning the `(pubkey, votes)` pairs of
+/// the registered candidates in storage-scan order.
+fn read_registered_candidates(snapshot: &DataCache) -> CoreResult<Vec<(ECPoint, BigInt)>> {
+    let prefix = StorageKey::new(NeoToken::ID, vec![PREFIX_CANDIDATE]);
+    let mut out = Vec::new();
+    for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
+        let key_bytes = key.key();
+        if key_bytes.len() < 34 {
+            continue;
+        }
+        let Ok(pubkey) = ECPoint::from_bytes(&key_bytes[1..34]) else {
+            continue;
+        };
+        let decoded = BinarySerializer::deserialize(
+            &item.value_bytes(),
+            &ExecutionEngineLimits::default(),
+            None,
+        )
+        .map_err(|e| CoreError::deserialization(format!("candidate state: {e}")))?;
+        let StackItem::Struct(fields) = decoded else {
+            return Err(CoreError::invalid_data("candidate state is not a struct"));
+        };
+        let items = fields.items();
+        let registered = items.first().is_some_and(|f| f.as_bool().unwrap_or(false));
+        if !registered {
+            continue;
+        }
+        let votes = match items.get(1) {
+            Some(f) => f
+                .as_int()
+                .map_err(|e| CoreError::invalid_data(format!("candidate votes: {e}")))?,
+            None => BigInt::from(0),
+        };
+        out.push((pubkey, votes));
+    }
+    Ok(out)
+}
+
+/// Marshals `(pubkey, votes)` candidate pairs as an Array of `Struct[pubkey,
+/// votes]` (C# `(ECPoint, BigInteger)[]` return shape).
+fn candidates_to_array_bytes(candidates: &[(ECPoint, BigInt)]) -> CoreResult<Vec<u8>> {
+    let array = StackItem::from_array(
+        candidates
+            .iter()
+            .map(|(pk, votes)| {
+                StackItem::from_struct(vec![
+                    StackItem::from_byte_string(pk.to_bytes()),
+                    StackItem::from_int(votes.clone()),
+                ])
+            })
+            .collect::<Vec<_>>(),
+    );
+    BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::invalid_operation(format!("getCandidates: {e}")))
+}
+
 /// Serializes EC points as an Array of compressed (33-byte) byte strings — the
 /// return shape shared by `getCommittee` / `getNextBlockValidators`.
 fn points_to_array_bytes(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
@@ -242,6 +302,15 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![],
             ContractParameterType::Array,
         ),
+        // getCandidates -> (ECPoint, BigInteger)[] (Array of Structs), CpuFee 1<<22.
+        NativeMethod::new(
+            "getCandidates".into(),
+            1 << 22,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Array,
+        ),
     ]
 });
 
@@ -320,6 +389,10 @@ impl NativeContract for NeoToken {
                 let snapshot = engine.snapshot_cache();
                 points_to_array_bytes(&next_block_validators(&snapshot, count)?)
             }
+            "getCandidates" => {
+                let snapshot = engine.snapshot_cache();
+                candidates_to_array_bytes(&read_registered_candidates(&snapshot)?)
+            }
             "getCommitteeAddress" => {
                 let snapshot = engine.snapshot_cache();
                 Ok(compute_committee_address(&snapshot)?.to_bytes())
@@ -368,7 +441,8 @@ mod tests {
                 "getCommittee",
                 "getCommitteeAddress",
                 "getAccountState",
-                "getNextBlockValidators"
+                "getNextBlockValidators",
+                "getCandidates"
             ]
         );
         let acct = c.methods().iter().find(|m| m.name == "getAccountState").unwrap();
@@ -478,6 +552,39 @@ mod tests {
         let mut all_expected = points.clone();
         all_expected.sort();
         assert_eq!(next_block_validators(&cache, 10).unwrap(), all_expected);
+    }
+
+    #[test]
+    fn candidates_filters_registered_and_decodes_votes() {
+        use neo_storage::StorageItem;
+        let cache = DataCache::new(false);
+        let points = sample_committee(); // 3 valid points
+
+        // p0 registered w/ 100 votes, p1 unregistered, p2 registered w/ 50 votes.
+        for (pk, registered, votes) in [
+            (&points[0], true, 100i64),
+            (&points[1], false, 0),
+            (&points[2], true, 50),
+        ] {
+            let state = StackItem::from_struct(vec![
+                StackItem::from_bool(registered),
+                StackItem::from_int(votes),
+            ]);
+            let bytes =
+                BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
+            let mut key = vec![PREFIX_CANDIDATE];
+            key.extend_from_slice(&pk.to_bytes());
+            cache.add(StorageKey::new(NeoToken::ID, key), StorageItem::from_bytes(bytes));
+        }
+
+        let candidates = read_registered_candidates(&cache).unwrap();
+        // Only the two registered candidates are returned.
+        assert_eq!(candidates.len(), 2);
+        let by_key: std::collections::HashMap<Vec<u8>, BigInt> =
+            candidates.iter().map(|(pk, v)| (pk.to_bytes(), v.clone())).collect();
+        assert_eq!(by_key.get(&points[0].to_bytes()), Some(&BigInt::from(100)));
+        assert_eq!(by_key.get(&points[2].to_bytes()), Some(&BigInt::from(50)));
+        assert!(!by_key.contains_key(&points[1].to_bytes()));
     }
 
     #[test]
