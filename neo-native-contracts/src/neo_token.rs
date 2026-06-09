@@ -83,6 +83,21 @@ fn put_register_price(snapshot: &DataCache, price: i64) {
     );
 }
 
+/// C# `SetGasPerBlock` storage effect: write a `Prefix_GasPerBlock` record at
+/// `index` (a big-endian `uint` key suffix), overwriting any record already at
+/// that index (`GetAndChange(key, factory).Set(gasPerBlock)`). `update` upserts
+/// (a brand-new index key is tracked as Changed), which commits to the same
+/// stored key/value as the C# Added path — only the resulting store contents
+/// feed the state root.
+fn put_gas_per_block(snapshot: &DataCache, index: u32, gas_per_block: &BigInt) {
+    let mut key = vec![PREFIX_GAS_PER_BLOCK];
+    key.extend_from_slice(&index.to_be_bytes());
+    snapshot.update(
+        StorageKey::new(NeoToken::ID, key),
+        StorageItem::from_bytes(gas_per_block.to_signed_bytes_le()),
+    );
+}
+
 /// Returns the GAS-per-block effective at `index`: the most recent
 /// `Prefix_GasPerBlock` record whose record index is ≤ `index` (C#
 /// `GetSortedGasRecords(...).First().GasPerBlock`), defaulting to 5 GAS.
@@ -346,10 +361,17 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::PublicKey],
             int,
         ),
-        // Governance writers. setRegisterPrice(price): committee-gated, States,
-        // Void (C# CpuFee 1<<15, RequiredCallFlags States).
+        // Governance writers (committee-gated, States, Void; C# CpuFee 1<<15).
         NativeMethod::new(
             "setRegisterPrice".into(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        ),
+        NativeMethod::new(
+            "setGasPerBlock".into(),
             1 << 15,
             false,
             CallFlags::STATES.bits(),
@@ -447,6 +469,50 @@ impl NativeContract for NeoToken {
                 put_register_price(&engine.snapshot_cache(), price);
                 Ok(Vec::new())
             }
+            "setGasPerBlock" => {
+                // C#: validate 0 <= gasPerBlock <= 10*GAS.Factor -> AssertCommittee
+                // -> write a Prefix_GasPerBlock record at (persisting index + 1).
+                let gas_per_block = args
+                    .first()
+                    .map(|b| BigInt::from_signed_bytes_le(b))
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation("NeoToken::setGasPerBlock requires a value")
+                    })?;
+                // GAS.Factor = 10^8; the inclusive upper bound is 10 GAS.
+                let max = BigInt::from(10) * BigInt::from(100_000_000i64);
+                if gas_per_block < BigInt::from(0) || gas_per_block > max {
+                    return Err(CoreError::invalid_operation(format!(
+                        "GasPerBlock must be between [0, {max}]"
+                    )));
+                }
+                let authorized = engine.check_committee_witness().map_err(|e| {
+                    CoreError::invalid_operation(format!("setGasPerBlock committee check: {e}"))
+                })?;
+                if !authorized {
+                    return Err(CoreError::invalid_operation(
+                        "setGasPerBlock requires committee authorization",
+                    ));
+                }
+                // C# `engine.PersistingBlock!.Index + 1`: the method runs during
+                // block persistence, so a missing persisting block is a fault
+                // (matching the C# null-forgiving deref throwing on null).
+                let index = engine
+                    .persisting_block()
+                    .map(|b| b.index())
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "NeoToken::setGasPerBlock requires a persisting block",
+                        )
+                    })?
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "NeoToken::setGasPerBlock: block index overflow",
+                        )
+                    })?;
+                put_gas_per_block(&engine.snapshot_cache(), index, &gas_per_block);
+                Ok(Vec::new())
+            }
             "getCommittee" => {
                 // C# returns ECPoint[] sorted ascending; marshaled as an Array of
                 // compressed (33-byte) public-key byte strings.
@@ -528,16 +594,19 @@ mod tests {
                 "getNextBlockValidators",
                 "getCandidates",
                 "getCandidateVote",
-                "setRegisterPrice"
+                "setRegisterPrice",
+                "setGasPerBlock"
             ]
         );
-        // setRegisterPrice is the sole writer: not safe, States, Integer -> Void.
-        let set_rp = c.methods().iter().find(|m| m.name == "setRegisterPrice").unwrap();
-        assert!(!set_rp.safe);
-        assert_eq!(set_rp.required_call_flags, CallFlags::STATES.bits());
-        assert_eq!(set_rp.parameters, vec![ContractParameterType::Integer]);
-        assert_eq!(set_rp.return_type, ContractParameterType::Void);
-        assert_eq!(set_rp.cpu_fee, 1 << 15);
+        // The governance writers: not safe, States, Integer -> Void, CpuFee 1<<15.
+        for name in ["setRegisterPrice", "setGasPerBlock"] {
+            let w = c.methods().iter().find(|m| m.name == name).unwrap();
+            assert!(!w.safe);
+            assert_eq!(w.required_call_flags, CallFlags::STATES.bits());
+            assert_eq!(w.parameters, vec![ContractParameterType::Integer]);
+            assert_eq!(w.return_type, ContractParameterType::Void);
+            assert_eq!(w.cpu_fee, 1 << 15);
+        }
         let acct = c.methods().iter().find(|m| m.name == "getAccountState").unwrap();
         assert_eq!(acct.parameters, vec![ContractParameterType::Hash160]);
         assert_eq!(acct.return_type, ContractParameterType::Array);
@@ -792,6 +861,24 @@ mod tests {
         // Overwrite (GetAndChange semantics), not insert-once.
         put_register_price(&cache, 2000 * 100_000_000);
         assert_eq!(register_price(&cache).unwrap(), 2000 * 100_000_000);
+    }
+
+    #[test]
+    fn set_gas_per_block_write_round_trips() {
+        // The setGasPerBlock storage effect (a Prefix_GasPerBlock record at a
+        // big-endian uint index) is observed by gas_per_block_at's backward seek:
+        // a record at index N applies from N onward, never before.
+        let cache = DataCache::new(false);
+        assert_eq!(gas_per_block_at(&cache, 50), BigInt::from(DEFAULT_GAS_PER_BLOCK));
+
+        put_gas_per_block(&cache, 10, &BigInt::from(7 * 100_000_000i64));
+        assert_eq!(gas_per_block_at(&cache, 9), BigInt::from(DEFAULT_GAS_PER_BLOCK));
+        assert_eq!(gas_per_block_at(&cache, 10), BigInt::from(7 * 100_000_000i64));
+        assert_eq!(gas_per_block_at(&cache, 100), BigInt::from(7 * 100_000_000i64));
+
+        // Overwrite at the same index (GetAndChange semantics).
+        put_gas_per_block(&cache, 10, &BigInt::from(2 * 100_000_000i64));
+        assert_eq!(gas_per_block_at(&cache, 10), BigInt::from(2 * 100_000_000i64));
     }
 
     #[test]
