@@ -22,6 +22,18 @@ neo-error = { workspace = true }
 neo-storage = { workspace = true }
 neo-execution = { workspace = true }
 neo-crypto = { workspace = true }
+# Transaction verification (C# Transaction.Verify port): native state
+# readers, redeem-script recognizers, strict script validation, the
+# oracle fixed script, and the NEP-17 account-state codec.
+neo-native-contracts = { workspace = true }
+neo-redeem-script = { workspace = true }
+neo-script-builder = { workspace = true }
+neo-serialization = { workspace = true }
+neo-vm = { workspace = true }
+neo-vm-rs = { workspace = true }
+neo-io = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
 tracing.workspace = true
 parking_lot.workspace = true
 thiserror.workspace = true
@@ -29,4 +41,3 @@ tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 
 [dev-dependencies]
 hex = { workspace = true }
-neo-vm-rs = { workspace = true }

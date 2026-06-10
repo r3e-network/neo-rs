@@ -372,17 +372,21 @@ impl BlockchainService {
             }
         };
 
-        // In the full impl, the mempool is a parking_lot::Mutex<MemoryPool>.
-        // For Stage B we have a `Mutex<dyn MempoolLike>`, so we just call
-        // try_add on the trait object.
+        // C# Blockchain.OnNewTransaction verifies against the live store
+        // view (`system.StoreView`): hand the mempool the system context's
+        // store snapshot so admission runs the real verification pipeline.
+        // Contexts without a store (lightweight tests) fall back to an
+        // empty cache, which fails state-dependent checks closed.
         let result = {
             let pool = self.mempool.lock();
-            // The snapshot and settings are not consulted by the stub
-            // mempool; the real implementation in `neo-core` will
-            // thread them through once the trait surface is widened.
-            let snapshot = neo_data_cache::DataCache::new(false);
             let settings = self.system.settings();
-            pool.try_add(&transaction, &snapshot, &settings)
+            match self.system.store_snapshot() {
+                Some(snapshot) => pool.try_add(&transaction, snapshot.as_ref(), &settings),
+                None => {
+                    let snapshot = neo_data_cache::DataCache::new(false);
+                    pool.try_add(&transaction, &snapshot, &settings)
+                }
+            }
         };
 
         if result == VerifyResult::Succeed {
@@ -415,9 +419,14 @@ impl BlockchainService {
         }
 
         let pool = self.mempool.lock();
-        let snapshot = neo_data_cache::DataCache::new(false);
         let settings = self.system.settings();
-        let result = pool.try_add(transaction, &snapshot, &settings);
+        let result = match self.system.store_snapshot() {
+            Some(snapshot) => pool.try_add(transaction, snapshot.as_ref(), &settings),
+            None => {
+                let snapshot = neo_data_cache::DataCache::new(false);
+                pool.try_add(transaction, &snapshot, &settings)
+            }
+        };
         if result == VerifyResult::Succeed {
             // Best-effort cache insertion; the mempool is the source
             // of truth.

@@ -38,6 +38,10 @@ neo-events = { workspace = true }
 neo-time = { workspace = true }
 neo-telemetry = { workspace = true }
 neo-execution = { workspace = true }
+# Ledger-record codec (serialize_persisted_transaction_state /
+# serialize_conflict_stub / serialize_hash_index_state) + native ids: the
+# persist pipeline writes the records the LedgerContract reads.
+neo-native-contracts = { workspace = true }
 
 # External
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
@@ -53,8 +57,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-# The persistence-pipeline tests execute the real native contracts.
-neo-native-contracts = { workspace = true }
 num-bigint = { workspace = true }
 
 [features]

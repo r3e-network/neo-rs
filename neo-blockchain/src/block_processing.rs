@@ -37,13 +37,14 @@ impl BlockchainService {
         VerifyResult::Succeed
     }
 
-    /// Persist a consecutive block sequence: run the native-contract
-    /// persistence pipeline (C# `Blockchain.Persist`'s OnPersist /
-    /// PostPersist scripts, plus activation-block native
-    /// initialization) when the system context exposes a store
-    /// snapshot. Without a store snapshot this remains the Stage B
-    /// no-op. Transaction execution is not integrated yet (see
-    /// [`crate::native_persist`]).
+    /// Persist a consecutive block sequence: run the C#
+    /// `Blockchain.Persist` pipeline (native OnPersist + ledger
+    /// records, per-transaction Application execution, native
+    /// PostPersist) when the system context exposes a store snapshot.
+    /// The pipeline stages all writes in a child cache and commits
+    /// them into the snapshot only when the whole sequence succeeds
+    /// (see [`crate::native_persist`]). Without a store snapshot this
+    /// remains the Stage B no-op.
     pub(crate) async fn persist_block_sequence(&self, block: Arc<Block>) -> bool {
         let Some(snapshot) = self.system.store_snapshot() else {
             debug!(
@@ -59,13 +60,13 @@ impl BlockchainService {
                 debug!(
                     target: "neo",
                     initialized = ?outcome.initialized,
-                    skipped_transactions = outcome.skipped_transactions,
-                    "native persistence pipeline completed"
+                    engines = outcome.application_executed.len(),
+                    "block persistence pipeline completed"
                 );
                 true
             }
             Err(err) => {
-                error!(target: "neo", %err, "native persistence pipeline failed");
+                error!(target: "neo", %err, "block persistence pipeline failed");
                 false
             }
         }

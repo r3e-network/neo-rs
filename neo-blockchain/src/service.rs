@@ -233,6 +233,42 @@ pub trait MempoolLike: std::fmt::Debug + Send + Sync {
     ) -> VerifyResult;
 }
 
+/// Production [`MempoolLike`] over the real [`neo_mempool::MemoryPool`]:
+/// admission runs the full C# `Transaction.Verify` pipeline
+/// (`neo_mempool::verification`) against the provided snapshot. The
+/// pool owns its protocol settings (taken at construction), matching
+/// C# `MemoryPool`'s `_system.Settings` access.
+impl MempoolLike for neo_mempool::MemoryPool {
+    fn try_add(
+        &self,
+        tx: &neo_payloads::Transaction,
+        snapshot: &neo_data_cache::DataCache,
+        _settings: &neo_config::ProtocolSettings,
+    ) -> VerifyResult {
+        neo_mempool::MemoryPool::try_add(self, tx.clone(), snapshot)
+    }
+}
+
+/// Shared-pool adapter so a composition root can hand the *same*
+/// `Arc<MemoryPool>` to both the blockchain service (admission) and
+/// the node (RPC reads), mirroring how C# `NeoSystem.MemPool` is
+/// shared. A newtype rather than `impl MempoolLike for Arc<MemoryPool>`
+/// so the trait method does not shadow the pool's inherent `try_add`
+/// for `Arc<MemoryPool>` callers.
+#[derive(Debug)]
+pub struct SharedMempool(pub Arc<neo_mempool::MemoryPool>);
+
+impl MempoolLike for SharedMempool {
+    fn try_add(
+        &self,
+        tx: &neo_payloads::Transaction,
+        snapshot: &neo_data_cache::DataCache,
+        _settings: &neo_config::ProtocolSettings,
+    ) -> VerifyResult {
+        neo_mempool::MemoryPool::try_add(&self.0, tx.clone(), snapshot)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,12 +1,30 @@
 //! Native-contract block-persistence pipeline.
 //!
-//! Replicates the native-contract part of C# `Blockchain.Persist`
+//! Replicates C# `Blockchain.Persist`
 //! (`neo_csharp/src/Neo/Ledger/Blockchain.cs:410`): every persisted
 //! block runs an `OnPersist`-trigger [`ApplicationEngine`] over the
 //! block snapshot executing `System.Contract.NativeOnPersist`, then
-//! the block's transactions, then a `PostPersist`-trigger engine
-//! executing `System.Contract.NativePostPersist`. Both native scripts
-//! must HALT (an error here aborts the block).
+//! executes each block transaction in its own `Application`-trigger
+//! engine (gas limit = the transaction's system fee) over a per-tx
+//! child cache that commits on HALT and is discarded on FAULT, then a
+//! `PostPersist`-trigger engine executing
+//! `System.Contract.NativePostPersist`. The native scripts must HALT
+//! (an error there aborts the block).
+//!
+//! ## Per-block atomicity
+//!
+//! C# stages every write of the sequence in one `snapshot =
+//! system.GetSnapshotCache()` and calls `snapshot.Commit()` only after
+//! the whole sequence succeeds; a throw disposes the snapshot and
+//! nothing lands in the store. [`persist_block_natives`] mirrors that
+//! with a child [`DataCache`] (`snapshot.clone_cache()`): all three
+//! stages write into the child, and only a fully successful sequence
+//! commits it into the caller's snapshot. On any error the child is
+//! dropped, so observers of the caller's snapshot (e.g. the genesis
+//! re-init guard [`chain_state_initialized`]) can never see partial
+//! block state. The per-transaction engines add the inner C# layer:
+//! `clonedSnapshot = snapshot.CloneCache()` per transaction,
+//! committed into the block cache only when the script HALTs.
 //!
 //! The per-stage native hooks are driven directly off the installed
 //! global provider (see [`run_native_persist_hooks`]) rather than via
@@ -31,37 +49,37 @@
 //! [`NativeContract::initialize`] pass itself, immediately before the
 //! `OnPersist` hooks — the same observable order as C#, where
 //! ContractManagement is the first native in the OnPersist sequence.
+//! Similarly, the Rust `LedgerContract::on_persist`/`post_persist`
+//! hooks are read-only no-ops, so the block/transaction records C#
+//! writes there come from [`crate::ledger_records`] at the same stage
+//! boundaries.
 //!
-//! ## What is wired vs. what remains
+//! ## Remaining gaps (documented)
 //!
-//! - **Wired**: genesis/activation-block `initialize()` for every
-//!   registered native, the `OnPersist` native hooks, and the
-//!   `PostPersist` native hooks, all sharing one snapshot the caller
-//!   commits.
-//! - **NOT wired (documented gap)**: per-transaction execution. C#
-//!   runs each transaction in its own `Application`-trigger engine on
-//!   a cloned snapshot (gas = `tx.SystemFee`), committing per-HALT,
-//!   and `LedgerContract.OnPersist` stores the block/transaction
-//!   records consumed by that loop. Neither the transaction-state
-//!   bookkeeping nor the Rust `LedgerContract::on_persist` hook exist
-//!   yet, so [`persist_block_natives`] reports skipped transactions in
-//!   its outcome instead of executing them.
 //! - The native deploy *records* (`ContractManagement` `Prefix_Contract`
 //!   entries + `Deploy` notifications) are ContractManagement's job and
 //!   are not written here.
+//! - C# `GasToken.OnPersist` burns each transaction's system+network
+//!   fee from its sender and mints the network fees to the primary;
+//!   the Rust `GasToken` does not override `on_persist` yet, so fee
+//!   burn/mint records are absent until `neo-native-contracts` grows
+//!   that hook.
 
 use std::sync::Arc;
 
+use neo_block::ApplicationExecuted;
 use neo_config::ProtocolSettings;
 use neo_data_cache::DataCache;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::native_contract_provider::native_contract_provider;
 use neo_execution::ApplicationEngine;
+use neo_manifest::CallFlags;
 use neo_payloads::{Block, Header, Witness};
-use neo_primitives::{TriggerType, UInt160, UInt256};
+use neo_primitives::{TriggerType, UInt160, UInt256, Verifiable};
 use neo_storage::persistence::SeekDirection;
 use neo_storage::StorageKey;
 use neo_vm::StackItem;
+use neo_vm_rs::VmState as VMState;
 
 /// C# genesis timestamp: `2016-07-15T15:08:21Z` in Unix milliseconds.
 const GENESIS_TIMESTAMP_MS: u64 = 1_468_595_301_000;
@@ -98,10 +116,10 @@ pub struct NativePersistOutcome {
     /// Names of the native contracts whose `initialize()` ran at this
     /// block (their activation block is this block).
     pub initialized: Vec<String>,
-    /// Number of block transactions that were NOT executed — the
-    /// transaction-execution stage of `Blockchain.Persist` is not
-    /// integrated yet (see the module docs).
-    pub skipped_transactions: usize,
+    /// Per-engine execution records, in C# `Blockchain.Persist` order:
+    /// the `OnPersist` engine, one entry per block transaction, then
+    /// the `PostPersist` engine (C# `allApplicationExecuted`).
+    pub application_executed: Vec<ApplicationExecuted>,
     /// Notifications emitted by the `OnPersist` native hooks.
     pub on_persist_notifications: Vec<NativePersistNotification>,
     /// Notifications emitted by the `PostPersist` native hooks.
@@ -110,12 +128,12 @@ pub struct NativePersistOutcome {
 
 /// C# `NativeContract.Ledger.Initialized(snapshot)` (LedgerContract.cs:91):
 /// whether the chain state has been bootstrapped, i.e. the genesis block
-/// has been persisted. C# probes for any `LedgerContract` `Prefix_Block`
-/// record; the Rust `LedgerContract::on_persist` hook does not write those
-/// records yet, so this additionally probes the `NeoToken` committee cache
-/// — a key that genesis initialization always seeds and that can never be
-/// deleted afterwards. Once the Ledger hook lands, the first probe becomes
-/// the literal C# check and the second stays a correct invariant.
+/// has been persisted. The first probe is the literal C# check (any
+/// `LedgerContract` `Prefix_Block` record, written by the persist
+/// pipeline via [`crate::ledger_records`]); the second probes the
+/// `NeoToken` committee cache — a key genesis initialization always
+/// seeds and that can never be deleted afterwards — which keeps stores
+/// persisted before the ledger records landed reporting initialized.
 pub fn chain_state_initialized(snapshot: &DataCache) -> bool {
     let block_prefix = StorageKey::new(LEDGER_CONTRACT_ID, vec![LEDGER_PREFIX_BLOCK]);
     if snapshot
@@ -205,11 +223,18 @@ fn run_native_persist_hooks(
     Ok(())
 }
 
-/// Runs the native-contract persistence sequence for `block` against
-/// `snapshot` (see the module docs for the C# mapping and the
-/// remaining transaction-execution gap). All writes land in `snapshot`;
-/// committing it to the backing store is the caller's responsibility,
-/// mirroring C#'s final `snapshot.Commit()`.
+/// Runs the C# `Blockchain.Persist` sequence for `block` against
+/// `snapshot`: native `OnPersist` (with activation-block
+/// initialization and the LedgerContract block/transaction records),
+/// per-transaction `Application` execution (gas = the transaction's
+/// system fee, per-tx child cache committed on HALT), and native
+/// `PostPersist` (with the LedgerContract current-block pointer).
+///
+/// The whole sequence is staged in a child cache over `snapshot` and
+/// committed into it only when every stage succeeds, mirroring C#'s
+/// single `snapshot.Commit()` at the end of `Persist` (see the module
+/// docs). Committing `snapshot` itself to the backing store remains
+/// the caller's responsibility.
 ///
 /// Requires the global native-contract provider to be installed
 /// (`neo_native_contracts::install()`), like every engine-based
@@ -226,14 +251,23 @@ pub fn persist_block_natives(
         )
     })?;
     let block_index = block.index();
+    let block_hash = block.header.try_hash().map_err(|e| {
+        CoreError::invalid_operation(format!("persist: block hash: {e}"))
+    })?;
     let contracts = provider.all_native_contracts();
     let mut outcome = NativePersistOutcome::default();
+
+    // Per-block atomicity: stage the whole sequence in a child cache
+    // over the caller's snapshot (C# `using var snapshot = …` with the
+    // final `snapshot.Commit()`); only a fully successful sequence is
+    // merged back, a fault drops every staged write.
+    let block_cache = Arc::new(snapshot.clone_cache());
 
     // --- OnPersist stage (C# TriggerType.OnPersist engine, gas 0) ---
     let mut engine = ApplicationEngine::new_with_shared_block(
         TriggerType::OnPersist,
         None,
-        Arc::clone(&snapshot),
+        Arc::clone(&block_cache),
         Some(Arc::clone(&block)),
         settings.clone(),
         0,
@@ -246,7 +280,11 @@ pub fn persist_block_natives(
     // whose activation block is this block. Genesis-active natives
     // (ActiveIn == None) initialize at block 0; hardfork-activated
     // natives initialize at their scheduled activation height. An
-    // unscheduled ActiveIn hardfork never activates (C# IsActive).
+    // UNCONFIGURED ActiveIn hardfork never initializes: C#
+    // IsInitializeBlock skips unconfigured hardforks ("treated as
+    // disabled"), even though C# IsActive treats the same contract as
+    // genesis-active — such a native runs its (no-op) hooks but is
+    // never deployed/initialized, and the Rust pipeline matches that.
     //
     // `NativeContract::is_initialize_block` is deliberately NOT used
     // here: it also fires on later method-hardfork blocks (C# passes
@@ -273,38 +311,114 @@ pub fn persist_block_natives(
         }
     }
 
+    // LedgerContract.OnPersistAsync record writes (the Rust ledger
+    // hook is a read-only no-op; see `ledger_records`): the block-hash
+    // index entry, the trimmed block, the per-transaction records
+    // (VMState::NONE until executed), and the conflict stubs.
+    crate::ledger_records::write_on_persist_records(&block_cache, &block, &block_hash)?;
+
     run_native_persist_hooks(&contracts, &mut engine, settings, block_index)?;
     outcome.on_persist_notifications = collect_notifications(&engine);
+    outcome
+        .application_executed
+        .push(application_executed(&engine, None, VMState::HALT));
     drop(engine);
 
-    // --- Transaction stage: NOT integrated (documented gap) ---
-    // C# executes each transaction in an Application-trigger engine on
-    // a cloned snapshot with gas = tx.SystemFee, committing on HALT.
-    outcome.skipped_transactions = block.transactions.len();
-    if outcome.skipped_transactions > 0 {
-        tracing::warn!(
-            target: "neo",
+    // --- Transaction stage (C# Blockchain.Persist:433-453) ---
+    // Each transaction runs in its own Application-trigger engine with
+    // gas limit = tx.SystemFee over a child cache of the block cache
+    // (C# `clonedSnapshot = snapshot.CloneCache()`): HALT commits the
+    // child into the block cache, FAULT discards it. Either way the
+    // transaction's ledger record is rewritten with the final VM state
+    // (C# mutates the TransactionState stored by Ledger.OnPersist).
+    for tx in &block.transactions {
+        let tx_hash = tx.try_hash().map_err(|e| {
+            CoreError::invalid_operation(format!("persist: tx hash: {e}"))
+        })?;
+        let tx_cache = Arc::new(block_cache.clone_cache());
+        let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
+        let mut engine = ApplicationEngine::new_with_shared_block(
+            TriggerType::Application,
+            Some(container),
+            Arc::clone(&tx_cache),
+            Some(Arc::clone(&block)),
+            settings.clone(),
+            tx.system_fee(),
+            None,
+        )?;
+        // C# loads the script unchecked and lets execution FAULT on a
+        // bad instruction; a Rust load error therefore faults the
+        // transaction, never the block.
+        let (vm_state, load_error) =
+            match engine.load_script(tx.script().to_vec(), CallFlags::ALL, None) {
+                Ok(()) => (engine.execute_allow_fault(), None),
+                Err(error) => (VMState::FAULT, Some(error.to_string())),
+            };
+        let mut executed = application_executed(&engine, Some(tx.clone()), vm_state);
+        if executed.exception.is_none() {
+            executed.exception = load_error;
+        }
+        outcome.application_executed.push(executed);
+        drop(engine);
+
+        if vm_state == VMState::HALT {
+            tx_cache.commit();
+        }
+        crate::ledger_records::update_transaction_vm_state(
+            &block_cache,
             block_index,
-            count = outcome.skipped_transactions,
-            "block transactions were NOT executed: the transaction-execution \
-             stage of the persist pipeline is not integrated yet"
-        );
+            tx,
+            &tx_hash,
+            vm_state,
+        )?;
     }
 
     // --- PostPersist stage (C# TriggerType.PostPersist engine, gas 0) ---
     let mut engine = ApplicationEngine::new_with_shared_block(
         TriggerType::PostPersist,
         None,
-        snapshot,
+        Arc::clone(&block_cache),
         Some(block),
         settings.clone(),
         0,
         None,
     )?;
     run_native_persist_hooks(&contracts, &mut engine, settings, block_index)?;
+    // LedgerContract.PostPersistAsync: the current-block pointer.
+    crate::ledger_records::write_post_persist_record(&block_cache, &block_hash, block_index)?;
     outcome.post_persist_notifications = collect_notifications(&engine);
+    outcome
+        .application_executed
+        .push(application_executed(&engine, None, VMState::HALT));
+    drop(engine);
+
+    // The whole sequence succeeded: merge the staged writes into the
+    // caller's snapshot (C# `snapshot.Commit()`).
+    block_cache.commit();
 
     Ok(outcome)
+}
+
+/// Builds the C# `ApplicationExecuted` record for a finished engine.
+/// `GasConsumed` is the datoshi fee (C# `engine.FeeConsumed`), the
+/// stack is the engine's result stack, and the notifications/logs are
+/// the engine's captured events.
+fn application_executed(
+    engine: &ApplicationEngine,
+    transaction: Option<neo_payloads::Transaction>,
+    vm_state: VMState,
+) -> ApplicationExecuted {
+    let mut executed = ApplicationExecuted::new(
+        transaction,
+        engine.trigger_type(),
+        vm_state,
+        engine.fault_exception().map(str::to_owned),
+        engine.fee_consumed(),
+        engine.result_stack().iter().cloned().collect(),
+    );
+    executed.notifications = engine.notifications().to_vec();
+    executed.logs = engine.logs().to_vec();
+    executed
 }
 
 /// Copies the engine's emitted notifications into the outcome shape.
@@ -392,7 +506,17 @@ mod tests {
         // Genesis-active natives initialized (NeoToken + OracleContract among them).
         assert!(outcome.initialized.iter().any(|n| n == "NeoToken"));
         assert!(outcome.initialized.iter().any(|n| n == "OracleContract"));
-        assert_eq!(outcome.skipped_transactions, 0);
+        // C# allApplicationExecuted for an empty block: the OnPersist
+        // engine and the PostPersist engine.
+        assert_eq!(outcome.application_executed.len(), 2);
+        assert_eq!(
+            outcome.application_executed[0].trigger,
+            neo_primitives::TriggerType::OnPersist
+        );
+        assert_eq!(
+            outcome.application_executed[1].trigger,
+            neo_primitives::TriggerType::PostPersist
+        );
 
         // --- NeoToken.Initialize seeds (byte-exact) ---
         // Committee cache: Array of Struct[pubkey, 0] in standby order.
@@ -594,22 +718,165 @@ mod tests {
         assert!(chain_state_initialized(&ledger_only));
     }
 
+    /// Mainnet genesis-hash pin. Oracle:
+    /// `neo_csharp/tests/Neo.UnitTests/SmartContract/UT_InteropService.cs:872`
+    /// (`TestGetBlockHash`) asserts block 0's hash under
+    /// `TestProtocolSettings.Default`, whose `StandbyCommittee` /
+    /// `ValidatorsCount` are byte-identical to
+    /// `neo_csharp/src/Neo.CLI/config.mainnet.json` (verified 2026-06-10).
+    /// The header hash covers only the serialized unsigned header
+    /// (`Neo.Network.P2P.Helper.CalculateHash` — single SHA-256, no
+    /// network magic), so the test-chain genesis hash IS the mainnet
+    /// genesis hash. This transitively pins `NextConsensus`, the
+    /// standby-validator multisig redeem script, and hash160.
     #[test]
-    fn persist_skipped_transactions_are_reported() {
+    fn mainnet_genesis_hash_matches_csharp() {
+        let settings = ProtocolSettings::default();
+        let block = genesis_block(&settings).expect("genesis block");
+        let hash = block.header.try_hash().expect("genesis hash");
+        assert_eq!(
+            hash.to_string(),
+            "0x1f4d1defa46faa5e7b9b8d3f79a06bec777d7c26c4aa5f6f5899a291daa87c15",
+            "mainnet genesis hash must match the C# oracle \
+             (UT_InteropService.TestGetBlockHash)"
+        );
+    }
+
+    /// The transaction stage of `Blockchain.Persist`: a HALTing and a
+    /// FAULTing transaction in one block both execute and get ledger
+    /// records carrying their final VM state, and the
+    /// `ApplicationExecuted` list has the C# shape (OnPersist, one per
+    /// tx, PostPersist).
+    #[test]
+    fn persist_executes_transactions_and_records_vm_states() {
         neo_native_contracts::install();
         let settings = ProtocolSettings::default();
         let snapshot = Arc::new(DataCache::new(false));
         let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
         persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
 
+        // tx1 faults (ABORT), tx2 halts (PUSH1).
+        let signer = neo_payloads::Signer::new(
+            neo_primitives::UInt160::from_bytes(&[0x33; 20]).unwrap(),
+            neo_primitives::WitnessScope::NONE,
+        );
+        let mut tx1 = neo_payloads::Transaction::new();
+        tx1.set_nonce(1);
+        tx1.set_script(vec![neo_vm_rs::OpCode::ABORT.byte()]);
+        tx1.set_system_fee(1_0000_0000);
+        tx1.set_signers(vec![signer.clone()]);
+        tx1.set_witnesses(vec![neo_payloads::Witness::empty()]);
+        let mut tx2 = neo_payloads::Transaction::new();
+        tx2.set_nonce(2);
+        tx2.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+        tx2.set_system_fee(1_0000_0000);
+        tx2.set_signers(vec![signer]);
+        tx2.set_witnesses(vec![neo_payloads::Witness::empty()]);
+        let tx1_hash = tx1.try_hash().unwrap();
+        let tx2_hash = tx2.try_hash().unwrap();
+
         let mut header = Header::new();
         header.set_index(1);
-        let block = Arc::new(Block::from_parts(
-            header,
-            vec![neo_payloads::Transaction::new()],
-        ));
-        let outcome =
-            persist_block_natives(snapshot, block, &settings).expect("block 1 persist");
-        assert_eq!(outcome.skipped_transactions, 1);
+        let block = Arc::new(Block::from_parts(header, vec![tx1, tx2]));
+        let block_hash = block.header.try_hash().unwrap();
+        let outcome = persist_block_natives(Arc::clone(&snapshot), block, &settings)
+            .expect("block 1 persist");
+
+        // C# allApplicationExecuted: OnPersist, tx1, tx2, PostPersist.
+        assert_eq!(outcome.application_executed.len(), 4);
+        let tx1_exec = &outcome.application_executed[1];
+        assert_eq!(tx1_exec.trigger, neo_primitives::TriggerType::Application);
+        assert_eq!(tx1_exec.vm_state, neo_vm_rs::VmState::FAULT);
+        assert!(tx1_exec.transaction.is_some());
+        let tx2_exec = &outcome.application_executed[2];
+        assert_eq!(tx2_exec.vm_state, neo_vm_rs::VmState::HALT);
+        // PUSH1 leaves the integer 1 on the result stack.
+        assert_eq!(tx2_exec.stack.len(), 1);
+        assert_eq!(
+            tx2_exec.stack[0].as_int().expect("stack int"),
+            BigInt::from(1)
+        );
+
+        // Ledger records carry the final VM states (C# mutates the
+        // TransactionState stored by Ledger.OnPersist) and the block
+        // records exist.
+        let ledger = neo_native_contracts::LedgerContract::new();
+        let s1 = ledger
+            .get_transaction_state(&snapshot, &tx1_hash)
+            .unwrap()
+            .expect("tx1 record");
+        assert_eq!(s1.state, neo_vm_rs::VmState::FAULT);
+        assert_eq!(s1.block_index, 1);
+        let s2 = ledger
+            .get_transaction_state(&snapshot, &tx2_hash)
+            .unwrap()
+            .expect("tx2 record");
+        assert_eq!(s2.state, neo_vm_rs::VmState::HALT);
+        assert_eq!(ledger.get_block_hash(&snapshot, 1).unwrap(), Some(block_hash));
+        let trimmed = ledger
+            .get_trimmed_block(&snapshot, &block_hash)
+            .unwrap()
+            .expect("trimmed block");
+        assert_eq!(trimmed.hashes, vec![tx1_hash, tx2_hash]);
+        // PostPersist current-block pointer.
+        assert_eq!(ledger.current_index(&snapshot).unwrap(), 1);
+        assert_eq!(ledger.current_hash(&snapshot).unwrap(), block_hash);
+    }
+
+    /// Genesis persist now writes the C#-faithful Ledger records: the
+    /// `Prefix_Block` probe of [`chain_state_initialized`] (the literal
+    /// C# `Ledger.Initialized` check) and the current-block pointer.
+    #[test]
+    fn genesis_persist_writes_ledger_records() {
+        neo_native_contracts::install();
+        let settings = ProtocolSettings::default();
+        let snapshot = Arc::new(DataCache::new(false));
+        let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+        let genesis_hash = genesis.header.try_hash().unwrap();
+        persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
+
+        let ledger = neo_native_contracts::LedgerContract::new();
+        assert_eq!(ledger.get_block_hash(&snapshot, 0).unwrap(), Some(genesis_hash));
+        assert_eq!(ledger.current_index(&snapshot).unwrap(), 0);
+        assert_eq!(ledger.current_hash(&snapshot).unwrap(), genesis_hash);
+        let block_prefix = StorageKey::new(LEDGER_CONTRACT_ID, vec![LEDGER_PREFIX_BLOCK]);
+        assert!(
+            snapshot
+                .find(Some(&block_prefix), neo_storage::persistence::SeekDirection::Forward)
+                .next()
+                .is_some(),
+            "the C# Ledger.Initialized probe (any Prefix_Block record) must hit"
+        );
+    }
+
+    /// The staging contract the per-block atomicity rests on: writes
+    /// into a `clone_cache()` child are invisible to the parent until
+    /// `commit()`, and dropping the child discards them. The persist
+    /// pipeline stages every block write in such a child, so a
+    /// mid-sequence error can never leave partial block state in the
+    /// caller's snapshot.
+    #[test]
+    fn block_staging_cache_isolates_until_commit() {
+        let parent = DataCache::new(false);
+        let key = StorageKey::new(-4, vec![5, 0xAA]);
+
+        // Discard leg: child writes never reach the parent.
+        {
+            let child = parent.clone_cache();
+            child.add(key.clone(), neo_data_cache::StorageItem::from_bytes(vec![1]));
+            assert!(child.get(&key).is_some());
+            assert!(parent.get(&key).is_none(), "uncommitted child write leaked");
+        }
+        assert!(parent.get(&key).is_none(), "dropped child write leaked");
+
+        // Commit leg: the child write lands atomically on commit.
+        let child = parent.clone_cache();
+        child.add(key.clone(), neo_data_cache::StorageItem::from_bytes(vec![2]));
+        assert!(parent.get(&key).is_none());
+        child.commit();
+        assert_eq!(
+            parent.get(&key).map(|i| i.value_bytes().into_owned()),
+            Some(vec![2])
+        );
     }
 }

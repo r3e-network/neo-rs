@@ -47,6 +47,7 @@ pub mod pool_item;
 pub mod transaction_removed_event_args;
 pub mod transaction_router;
 pub mod transaction_verification_context;
+pub mod verification;
 
 pub use memory_pool::{
     MemoryPool, NewTransactionCallback, SharedMemoryPool, TransactionAddedCallback,
@@ -58,3 +59,4 @@ pub use pool_item::PoolItem;
 pub use transaction_removed_event_args::TransactionRemovedEventArgs;
 pub use transaction_router::{PreverifyCompleted, TransactionRouter};
 pub use transaction_verification_context::TransactionVerificationContext;
+pub use verification::{verify_state_dependent, verify_state_independent, verify_transaction};
