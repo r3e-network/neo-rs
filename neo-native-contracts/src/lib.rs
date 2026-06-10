@@ -30,6 +30,8 @@ pub use neo_execution::{
 
 pub mod contract_management;
 pub mod crypto_lib;
+mod dotnet_graphemes;
+mod dotnet_text_segmentation;
 pub mod gas_token;
 pub mod hashes;
 pub mod ledger_contract;

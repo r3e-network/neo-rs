@@ -3,13 +3,13 @@
 //! Implements the C# `Neo.SmartContract.Native.StdLib` surface, dispatched
 //! through the [`NativeContract`] trait: Base64/Base58 (incl. `base64Url*` and
 //! Base58Check), hex, `itoa`/`atoi` (decimal + .NET two's-complement hex),
-//! `memoryCompare` / `memorySearch`, `stringSplit`, the binary
-//! `serialize`/`deserialize` (BinarySerializer), and `jsonSerialize`/
-//! `jsonDeserialize` (System.Text.Json byte-exact, via
-//! [`neo_serialization::JsonSerializer`]). Every method declared below is
-//! byte-for-byte C# parity with a real implementation. The one remaining method
-//! is `strLen`, which depends on .NET's `StringInfo` grapheme-cluster algorithm
-//! (and its Unicode version) and is not yet pinned by an in-repo oracle.
+//! `memoryCompare` / `memorySearch`, `stringSplit`, `strLen` (.NET
+//! `StringInfo` text elements, via [`crate::dotnet_text_segmentation`] and an
+//! in-repo .NET oracle fixture), the binary `serialize`/`deserialize`
+//! (BinarySerializer), and `jsonSerialize`/`jsonDeserialize`
+//! (System.Text.Json byte-exact, via [`neo_serialization::JsonSerializer`]).
+//! Every method declared below is byte-for-byte C# parity with a real
+//! implementation.
 
 use std::any::Any;
 use std::sync::LazyLock;
@@ -25,6 +25,7 @@ use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 
+use crate::dotnet_text_segmentation::text_element_count;
 use crate::hashes::STDLIB_HASH;
 
 /// C# `StdLib.MaxInputLength` — the `[MaxLength]` cap on string/byte inputs.
@@ -118,6 +119,8 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
         "atoi" => atoi_impl(args),
         // stringSplit(str, separator[, removeEmptyEntries]) -> Array of String.
         "stringSplit" => string_split_impl(args),
+        // strLen(str) -> Integer: the .NET StringInfo text-element count.
+        "strLen" => str_len_impl(args),
         // serialize(item) -> the item's BinarySerializer bytes. The `Any`-typed
         // arg is already BinarySerialized by the engine, so C#
         // `BinarySerializer.Serialize(item)` is exactly args[0].
@@ -409,6 +412,25 @@ fn string_split_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
 }
 
+/// C# `StdLib.StrLen(str)`: the number of text elements in the string, i.e.
+/// .NET `StringInfo` extended grapheme clusters (UAX #29 minus GB9c over the
+/// .NET runtime's break-property snapshot; see
+/// [`crate::dotnet_text_segmentation`]). Enforces the C# `[MaxLength(1024)]`
+/// cap on the raw input bytes; invalid UTF-8 faults the call, matching the C#
+/// `StrictUTF8` string conversion.
+fn str_len_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    let raw = arg_bytes(args, "strLen")?;
+    if raw.len() > MAX_INPUT_LENGTH {
+        return Err(CoreError::invalid_operation(format!(
+            "StdLib::strLen: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+        )));
+    }
+    let value = std::str::from_utf8(raw).map_err(|_| {
+        CoreError::invalid_operation("StdLib::strLen: argument is not valid UTF-8".to_string())
+    })?;
+    Ok(BigInt::from(text_element_count(value)).to_signed_bytes_le())
+}
+
 /// Mirrors .NET `BigInteger.ToString("x")`: lowercase, minimal two's-complement
 /// hex with a sign-disambiguating leading nibble (a positive value whose top
 /// nibble is >= 8 gets a leading `0`; negatives are rendered in two's
@@ -527,6 +549,9 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![string, string, boolean],
             array,
         ),
+        // strLen(str) -> Integer (count of .NET StringInfo text elements);
+        // ungated in C# StdLib.cs, CpuFee 1 << 8.
+        NativeMethod::new("strLen".into(), 1 << 8, true, 0, vec![string], int),
         // base64Url* are available from the Echidna hardfork onward.
         NativeMethod::new("base64UrlEncode".into(), 1 << 5, true, 0, vec![string], string)
             .with_active_in(Hardfork::HfEchidna),
@@ -910,6 +935,7 @@ mod tests {
                 "atoi",
                 "stringSplit",
                 "stringSplit",
+                "strLen",
                 "base64UrlEncode",
                 "base64UrlDecode",
                 "hexEncode",
@@ -925,6 +951,70 @@ mod tests {
             .map(|m| m.parameters.len())
             .collect();
         assert_eq!(counts, [2, 3, 4]);
+    }
+
+    /// strLen via the dispatch seam: UTF-8 string bytes in, signed-LE Integer out.
+    fn str_len(arg: &[u8]) -> CoreResult<i64> {
+        dispatch("strLen", &[arg.to_vec()])
+            .unwrap()
+            .map(|b| BigInt::from_signed_bytes_le(&b).to_i64().unwrap())
+    }
+
+    #[test]
+    fn str_len_matches_csharp_ut_vectors() {
+        // C# UT_StdLib.StringElementLength: duck emoji, a-tilde and 'a' are all 1.
+        assert_eq!(str_len("\u{1F986}".as_bytes()).unwrap(), 1);
+        assert_eq!(str_len("\u{00E3}".as_bytes()).unwrap(), 1);
+        assert_eq!(str_len(b"a").unwrap(), 1);
+        // C# UT_StdLib.TestInvalidUtf8Sequence: (char)0xff is emitted as the
+        // UTF-8 encoding of U+00FF (C3 BF) and counts as one element.
+        assert_eq!(str_len(&[0xC3, 0xBF]).unwrap(), 1);
+        assert_eq!(str_len(&[0xC3, 0xBF, b'a', b'b']).unwrap(), 3);
+        // Decomposed a-tilde is also a single element; empty string is 0.
+        assert_eq!(str_len("a\u{0303}".as_bytes()).unwrap(), 1);
+        assert_eq!(str_len(b"").unwrap(), 0);
+        // The .NET-specific divergence: no GB9c, Indic conjuncts stay split.
+        assert_eq!(str_len("\u{0915}\u{094D}\u{0915}".as_bytes()).unwrap(), 2);
+        // Emoji ZWJ family sequence and a flag are one element each.
+        assert_eq!(
+            str_len("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}".as_bytes())
+                .unwrap(),
+            1
+        );
+        assert_eq!(str_len("\u{1F1FA}\u{1F1F8}".as_bytes()).unwrap(), 1);
+    }
+
+    #[test]
+    fn str_len_rejects_invalid_utf8() {
+        // C# converts the ByteString with StrictUTF8: invalid UTF-8 faults.
+        assert!(str_len(&[0xFF]).is_err());
+        assert!(str_len(&[0xC3]).is_err()); // truncated sequence
+        assert!(str_len(&[0xED, 0xA0, 0x80]).is_err()); // surrogate encoding
+    }
+
+    #[test]
+    fn str_len_respects_max_input_length() {
+        // C# [MaxLength(1024)] validates the raw StackItem bytes.
+        let ok = vec![b'a'; MAX_INPUT_LENGTH];
+        assert_eq!(str_len(&ok).unwrap(), 1024);
+        let too_long = vec![b'a'; MAX_INPUT_LENGTH + 1];
+        assert!(str_len(&too_long).is_err());
+        // The cap is on bytes, not characters: 342 three-byte scalars = 1026 bytes.
+        let multibyte = "\u{20AC}".repeat(342);
+        assert_eq!(multibyte.len(), 1026);
+        assert!(str_len(multibyte.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn str_len_is_ungated_and_safe() {
+        // C# StdLib.cs declares StrLen with CpuFee = 1 << 8 and no hardfork.
+        let c = StdLib::new();
+        let m = c.methods().iter().find(|m| m.name == "strLen").unwrap();
+        assert_eq!(m.active_in, None, "strLen must not be hardfork-gated");
+        assert!(m.safe);
+        assert_eq!(m.cpu_fee, 1 << 8);
+        assert_eq!(m.parameters, vec![ContractParameterType::String]);
+        assert_eq!(m.return_type, ContractParameterType::Integer);
     }
 
     #[test]
