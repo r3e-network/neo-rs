@@ -14,10 +14,12 @@
 //!
 //! Mirrors the C# `StateService.Storage.StateStore` shape.
 
+use crate::mpt_store::MptStore;
 use crate::state_root::StateRoot;
 use neo_primitives::UInt256;
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 /// The kind of [`StateStore`] record a [`StateStore::get_state_root`]
 /// query should return.
@@ -33,6 +35,11 @@ pub enum StateStoreLookup {
 #[derive(Debug, Default)]
 pub struct StateStore {
     inner: RwLock<StateStoreInner>,
+    /// Optional persisted MPT backend (trie nodes + local-root
+    /// records). `None` reproduces the verification-cache-only
+    /// behaviour; composition roots that persist the trie construct
+    /// the store via [`StateStore::with_mpt`].
+    mpt: Option<Arc<MptStore>>,
 }
 
 #[derive(Debug, Default)]
@@ -75,9 +82,28 @@ impl StateStoreTransaction {
 }
 
 impl StateStore {
-    /// Constructs a new, empty state store.
+    /// Constructs a new, empty state store without an MPT backend.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Constructs a state store with a persisted MPT backend.
+    ///
+    /// `full_state` mirrors the C# `StateServiceSettings.FullState`
+    /// flag: `true` retains every historical trie version (so
+    /// `getstate` / `getproof` / `findstates` can serve old roots),
+    /// `false` prunes superseded nodes on each applied block, leaving
+    /// only the current root resolvable.
+    pub fn with_mpt(full_state: bool) -> Self {
+        Self {
+            inner: RwLock::default(),
+            mpt: Some(Arc::new(MptStore::new(full_state))),
+        }
+    }
+
+    /// Returns the persisted MPT backend, if this store maintains one.
+    pub fn mpt(&self) -> Option<Arc<MptStore>> {
+        self.mpt.clone()
     }
 
     /// Returns the number of state roots currently in the store.
@@ -162,6 +188,11 @@ impl Clone for StateStore {
     fn clone(&self) -> Self {
         Self {
             inner: RwLock::new(self.inner.read().clone()),
+            // The MPT backend is shared, not deep-copied: clones (and
+            // the transactions built from them) observe the same
+            // persisted trie, exactly as C# snapshots share the one
+            // underlying `IStore`.
+            mpt: self.mpt.clone(),
         }
     }
 }

@@ -6,7 +6,7 @@
 //! Merkle Patricia trie.
 
 use neo_crypto::Crypto;
-use neo_io::{BinaryWriter, IoResult, Serializable};
+use neo_io::{BinaryWriter, IoResult};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 

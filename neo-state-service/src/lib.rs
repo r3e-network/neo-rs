@@ -12,6 +12,10 @@
 //!   state roots.
 //! - [`state_store::StateStore`] / [`state_store::StateStoreTransaction`]
 //!   - storage for state roots and pending candidates.
+//! - [`mpt_store::MptStore`] - persisted MPT-node + local-state-root
+//!   storage (the C# `StateService` plugin's `Storage` layer) with the
+//!   block-changeset application seam
+//!   [`mpt_store::MptStore::apply_block_changes`].
 //! - [`commit_handlers::StateServiceCommitHandlers`] - block-commit
 //!   handler pipeline (computes and stages state roots).
 //! - [`verification::Verifier`] - state-root verification pipeline.
@@ -37,6 +41,7 @@
 #![warn(missing_docs)]
 
 pub mod commit_handlers;
+pub mod mpt_store;
 pub mod root_cache;
 pub mod state_root;
 pub mod state_store;
@@ -49,6 +54,7 @@ pub use neo_state_types::{
     Keys, MessageType, StateRootIngestStats, Vote, STATE_SERVICE_CATEGORY,
 };
 
+pub use mpt_store::{MptChange, MptStore};
 pub use root_cache::{
     StateRootCache, StateRootCacheEntry, StateRootCacheStats, StateRootCacheStatsSnapshot,
     DEFAULT_ROOT_CACHE_CAPACITY,
