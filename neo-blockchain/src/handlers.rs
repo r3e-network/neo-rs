@@ -134,7 +134,19 @@ impl BlockchainService {
                 ImportDisposition::NextExpected => {}
             }
 
-            if let Err(error) = self.ledger.insert_block(block) {
+            // C# Blockchain.OnImport runs `Persist(block)` — the state
+            // transition — before the block becomes the new tip.
+            let block = Arc::new(block);
+            if !self.persist_block_sequence(Arc::clone(&block)).await {
+                warn!(
+                    target: "neo",
+                    height = index,
+                    "import aborted: native persistence pipeline failed"
+                );
+                break;
+            }
+
+            if let Err(error) = self.ledger.insert_block((*block).clone()) {
                 warn!(
                     target: "neo",
                     %error,
@@ -209,6 +221,14 @@ impl BlockchainService {
             return Ok(());
         }
 
+        // C# Blockchain.OnNewBlock → Persist(block): the native-contract
+        // state transition runs before the block becomes the new tip.
+        if !self.persist_block_sequence(Arc::clone(&block)).await {
+            return Err(format!(
+                "native persistence pipeline failed for block {index}"
+            ));
+        }
+
         if let Err(error) = self.ledger.insert_block((*block).clone()) {
             return Err(format!("ledger insert: {error}"));
         }
@@ -271,7 +291,59 @@ impl BlockchainService {
     pub(crate) async fn handle_relay_result(&self, _result: RelayResult) {}
 
     /// Handle a [`BlockchainCommand::Initialize`] command.
+    ///
+    /// C# `Blockchain.OnInitialize` (Blockchain.cs:197): when the chain
+    /// state is uninitialized (`!NativeContract.Ledger.Initialized`),
+    /// persist the genesis block — which deploys/initializes the
+    /// genesis-active natives (NEO committee cache + total-supply mint,
+    /// Oracle price, …) and runs their OnPersist/PostPersist hooks.
+    /// Without a store snapshot from the [`SystemContext`] this remains
+    /// the Stage B no-op.
     pub(crate) async fn initialize(&self) {
+        if let Some(snapshot) = self.system.store_snapshot() {
+            if !crate::native_persist::chain_state_initialized(&snapshot) {
+                let settings = self.system.settings();
+                match crate::native_persist::genesis_block(settings.as_ref()) {
+                    Ok(genesis) => {
+                        let genesis = Arc::new(genesis);
+                        match crate::native_persist::persist_block_natives(
+                            snapshot,
+                            Arc::clone(&genesis),
+                            settings.as_ref(),
+                        ) {
+                            Ok(outcome) => {
+                                if let Err(error) = self.ledger.insert_block((*genesis).clone()) {
+                                    warn!(
+                                        target: "neo",
+                                        %error,
+                                        "failed to record the genesis block in the ledger cache"
+                                    );
+                                }
+                                debug!(
+                                    target: "neo",
+                                    initialized = ?outcome.initialized,
+                                    "genesis block persisted"
+                                );
+                            }
+                            Err(error) => {
+                                tracing::error!(
+                                    target: "neo",
+                                    %error,
+                                    "genesis persistence failed"
+                                );
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::error!(
+                            target: "neo",
+                            %error,
+                            "genesis block construction failed"
+                        );
+                    }
+                }
+            }
+        }
         debug!(
             target: "neo",
             height = self.ledger.current_height(),
@@ -406,6 +478,102 @@ mod tests {
         let header_cache = Arc::new(HeaderCache::default());
         let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
         BlockchainService::with_defaults(system, ledger, header_cache, mempool)
+    }
+
+    /// [`SystemContext`] over a shared in-memory store snapshot, so the
+    /// native persistence pipeline actually runs.
+    struct StoreContext {
+        snapshot: Arc<neo_data_cache::DataCache>,
+    }
+    impl std::fmt::Debug for StoreContext {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("StoreContext").finish_non_exhaustive()
+        }
+    }
+    impl SystemContext for StoreContext {
+        fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+            Arc::new(neo_config::ProtocolSettings::default())
+        }
+        fn current_height(&self) -> u32 {
+            0
+        }
+        fn store_snapshot(&self) -> Option<Arc<neo_data_cache::DataCache>> {
+            Some(Arc::clone(&self.snapshot))
+        }
+    }
+
+    fn store_fixture() -> (BlockchainService, BlockchainHandle, Arc<neo_data_cache::DataCache>) {
+        neo_native_contracts::install();
+        let snapshot = Arc::new(neo_data_cache::DataCache::new(false));
+        let system: Arc<dyn SystemContext> = Arc::new(StoreContext {
+            snapshot: Arc::clone(&snapshot),
+        });
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::default());
+        let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
+        let (service, handle) =
+            BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+        (service, handle, snapshot)
+    }
+
+    /// NEO total supply read (NEP-17 `Prefix_TotalSupply` = 11).
+    fn neo_total_supply(snapshot: &neo_data_cache::DataCache) -> Option<num_bigint::BigInt> {
+        snapshot
+            .get(&neo_data_cache::StorageKey::new(
+                neo_native_contracts::NeoToken::ID,
+                vec![11],
+            ))
+            .map(|item| num_bigint::BigInt::from_signed_bytes_le(&item.value_bytes()))
+    }
+
+    #[tokio::test]
+    async fn initialize_bootstraps_genesis_once_and_inventory_runs_native_hooks() {
+        let (service, _handle, snapshot) = store_fixture();
+
+        // C# Blockchain.OnInitialize: an uninitialized store gets the
+        // genesis block persisted (native deploy seeds + mints).
+        service.initialize().await;
+        assert!(crate::native_persist::chain_state_initialized(&snapshot));
+        assert_eq!(
+            neo_total_supply(&snapshot),
+            Some(num_bigint::BigInt::from(100_000_000)),
+            "genesis minted the NEO total supply"
+        );
+        assert!(service.ledger.block_hash_at(0).is_some(), "genesis cached in the ledger");
+
+        // Re-initializing must NOT re-persist (the initialized probe
+        // guards the C# `Ledger.Initialized` branch): the supply stays
+        // 100M instead of doubling.
+        service.initialize().await;
+        assert_eq!(neo_total_supply(&snapshot), Some(num_bigint::BigInt::from(100_000_000)));
+
+        // An inventory block at the next height runs the OnPersist /
+        // PostPersist native hooks over the same store: block 1 mints
+        // the 0.5-GAS committee reward to standby_committee[1 % 21].
+        let mut header = Header::new();
+        header.set_index(1);
+        let block = Arc::new(Block::from_parts(header, vec![]));
+        service
+            .handle_block_inventory(block, false, false)
+            .await
+            .expect("inventory block persists");
+        assert_eq!(service.ledger.current_height(), 1);
+
+        let settings = neo_config::ProtocolSettings::default();
+        let member = &settings.standby_committee[1];
+        let script = neo_redeem_script::signature_redeem_script(&member.to_bytes());
+        let account = neo_primitives::UInt160::from_script(&script);
+        let mut key = vec![20u8]; // shared NEP-17 Prefix_Account
+        key.extend_from_slice(&account.to_bytes());
+        assert!(
+            snapshot
+                .get(&neo_data_cache::StorageKey::new(
+                    neo_native_contracts::GasToken::ID,
+                    key
+                ))
+                .is_some(),
+            "block-1 PostPersist minted the rotating committee reward"
+        );
     }
 
     #[tokio::test]

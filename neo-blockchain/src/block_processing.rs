@@ -7,12 +7,20 @@
 //! `neo-runtime`. The placeholder exists so the public surface of
 //! the crate is stable and the rest of the workspace can compile
 //! against it.
+//!
+//! The native-contract half of C# `Blockchain.Persist` IS wired:
+//! when the [`crate::service_context::SystemContext`] exposes a
+//! store snapshot, [`BlockchainService::persist_block_sequence`]
+//! runs [`crate::native_persist::persist_block_natives`] (genesis
+//! initialization + `OnPersist` + `PostPersist` native hooks) over
+//! it. Transaction execution and the store commit remain Stage C
+//! work — see the `native_persist` module docs for the precise gap.
 
 use std::sync::Arc;
 
 use neo_payloads::Block;
 use neo_primitives::verify_result::VerifyResult;
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::service::BlockchainService;
 
@@ -29,9 +37,38 @@ impl BlockchainService {
         VerifyResult::Succeed
     }
 
-    /// Persist a consecutive block sequence. Stage B is a no-op.
-    pub(crate) async fn persist_block_sequence(&self, _block: Arc<Block>) -> bool {
-        true
+    /// Persist a consecutive block sequence: run the native-contract
+    /// persistence pipeline (C# `Blockchain.Persist`'s OnPersist /
+    /// PostPersist scripts, plus activation-block native
+    /// initialization) when the system context exposes a store
+    /// snapshot. Without a store snapshot this remains the Stage B
+    /// no-op. Transaction execution is not integrated yet (see
+    /// [`crate::native_persist`]).
+    pub(crate) async fn persist_block_sequence(&self, block: Arc<Block>) -> bool {
+        let Some(snapshot) = self.system.store_snapshot() else {
+            debug!(
+                target: "neo",
+                index = block.index(),
+                "persist_block_sequence: no store snapshot exposed (stage B stub)"
+            );
+            return true;
+        };
+        let settings = self.system.settings();
+        match crate::native_persist::persist_block_natives(snapshot, block, settings.as_ref()) {
+            Ok(outcome) => {
+                debug!(
+                    target: "neo",
+                    initialized = ?outcome.initialized,
+                    skipped_transactions = outcome.skipped_transactions,
+                    "native persistence pipeline completed"
+                );
+                true
+            }
+            Err(err) => {
+                error!(target: "neo", %err, "native persistence pipeline failed");
+                false
+            }
+        }
     }
 
     /// Drain the unverified block cache. Stage B is a no-op.

@@ -68,6 +68,7 @@ pub mod import_completed;
 pub mod internal;
 pub mod inventory_payload;
 pub mod ledger_context;
+pub mod native_persist;
 pub mod persist_completed;
 pub mod relay_result;
 pub mod reverify;
@@ -100,6 +101,10 @@ pub use import::Import;
 pub use import_completed::ImportCompleted;
 pub use internal::{ImportDisposition, UnverifiedBlocksList};
 pub use inventory_payload::InventoryPayload;
+pub use native_persist::{
+    chain_state_initialized, genesis_block, persist_block_natives, NativePersistNotification,
+    NativePersistOutcome,
+};
 pub use persist_completed::PersistCompleted;
 // `PreverifyCompleted` is produced by `neo-mempool`'s transaction router and
 // only consumed here; re-export the single canonical definition rather than

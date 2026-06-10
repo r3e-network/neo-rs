@@ -36,6 +36,17 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
 
     /// Returns the current canonical chain height.
     fn current_height(&self) -> u32;
+
+    /// Returns a data-cache snapshot over the canonical store for block
+    /// persistence, or `None` when the implementation exposes no store
+    /// (e.g. lightweight test contexts). When this returns a snapshot,
+    /// [`crate::service::BlockchainService`] runs the native-contract
+    /// persistence pipeline ([`crate::native_persist::persist_block_natives`])
+    /// against it for every persisted block; committing the snapshot to the
+    /// backing store remains the implementation's responsibility.
+    fn store_snapshot(&self) -> Option<Arc<neo_data_cache::DataCache>> {
+        None
+    }
 }
 
 /// Async variant of [`SystemContext`]; the trait object behind the

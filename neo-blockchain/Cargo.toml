@@ -37,6 +37,7 @@ neo-config = { workspace = true }
 neo-events = { workspace = true }
 neo-time = { workspace = true }
 neo-telemetry = { workspace = true }
+neo-execution = { workspace = true }
 
 # External
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
@@ -50,6 +51,11 @@ hashbrown = { workspace = true }
 dashmap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+# The persistence-pipeline tests execute the real native contracts.
+neo-native-contracts = { workspace = true }
+num-bigint = { workspace = true }
 
 [features]
 default = []

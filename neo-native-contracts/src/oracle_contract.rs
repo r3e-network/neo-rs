@@ -11,6 +11,7 @@
 //! oracle fee to the designated oracle nodes.
 
 use crate::hashes::ORACLE_CONTRACT_HASH;
+use neo_config::{Hardfork, ProtocolSettings};
 use neo_crypto::Crypto;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
@@ -449,6 +450,27 @@ impl NativeContract for OracleContract {
         &ORACLE_METHODS
     }
 
+    /// C# `OracleContract.Activations => [null, HF_Faun]` (OracleContract.cs:56):
+    /// active from genesis, but the manifest's supported standards update at
+    /// Faun, so the Faun boundary must refresh the stored contract state.
+    fn activations(&self) -> Vec<Hardfork> {
+        vec![Hardfork::HfFaun]
+    }
+
+    /// C# `OracleContract.OnManifestCompose` (OracleContract.cs:58-64): NEP-30
+    /// once HF_Faun is enabled at the height; no standards before it.
+    fn supported_standards(
+        &self,
+        settings: &ProtocolSettings,
+        block_height: u32,
+    ) -> Vec<String> {
+        if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
+            vec!["NEP-30".to_string()]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -478,6 +500,25 @@ impl NativeContract for OracleContract {
     ) -> CoreResult<Option<OracleRequestDetails>> {
         Ok(read_request(snapshot, id)?
             .map(|request| OracleRequestDetails::new(request.url, request.original_tx_id)))
+    }
+
+    /// C# `OracleContract.InitializeAsync(engine, hardfork)` for
+    /// `hardfork == ActiveIn` (the Oracle contract is genesis-active): seed the
+    /// request-id counter with `BigInteger.Zero` (stored as empty bytes) and the
+    /// request price with 0.5 GAS (`0_50000000` datoshi).
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let snapshot = engine.snapshot_cache();
+        snapshot.add(
+            request_id_key(),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(0))),
+        );
+        snapshot.add(
+            StorageKey::new(Self::ID, vec![PREFIX_PRICE]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_ORACLE_PRICE,
+            ))),
+        );
+        Ok(())
     }
 
     /// C# `OracleContract.PostPersistAsync`: for every oracle-response
@@ -1163,6 +1204,29 @@ mod oracle_native_tests {
         assert_eq!(details.url, request.url);
         assert_eq!(details.original_tx_id, request.original_tx_id);
     }
+
+    /// C# `OracleContract.OnManifestCompose` (OracleContract.cs:58-64): no
+    /// standards before HF_Faun, NEP-30 from the Faun height — and the Faun
+    /// boundary is a manifest-refresh activation (`Activations => [null,
+    /// HF_Faun]`, OracleContract.cs:56).
+    #[test]
+    fn manifest_standards_gain_nep30_at_faun() {
+        use neo_config::{Hardfork, ProtocolSettings};
+        use neo_execution::native_contract::build_native_contract_state;
+
+        let unscheduled =
+            build_native_contract_state(&OracleContract, &ProtocolSettings::default(), 0);
+        assert!(unscheduled.manifest.supported_standards.is_empty());
+
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfFaun, 10);
+        let before = build_native_contract_state(&OracleContract, &settings, 9);
+        assert!(before.manifest.supported_standards.is_empty());
+        let after = build_native_contract_state(&OracleContract, &settings, 10);
+        assert_eq!(after.manifest.supported_standards, ["NEP-30"]);
+
+        assert_eq!(NativeContract::activations(&OracleContract), [Hardfork::HfFaun]);
+    }
 }
 
 #[cfg(test)]
@@ -1188,13 +1252,13 @@ mod oracle_request_finish_tests {
     const CM_PREFIX_CONTRACT: u8 = 8;
 
     fn deploy_contract(cache: &DataCache, state: &ContractState) {
-        let mut writer = BinaryWriter::new();
-        state.serialize(&mut writer).expect("serialize contract state");
         let mut key = vec![CM_PREFIX_CONTRACT];
         key.extend_from_slice(&state.hash.to_bytes());
         cache.add(
             StorageKey::new(crate::ContractManagement::ID, key),
-            StorageItem::from_bytes(writer.to_bytes()),
+            StorageItem::from_bytes(
+                state.serialize_contract_record().expect("record bytes"),
+            ),
         );
     }
 
