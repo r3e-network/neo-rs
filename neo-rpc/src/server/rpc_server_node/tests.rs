@@ -261,20 +261,32 @@ async fn get_peers_folds_connect_and_disconnect_events() {
     let network = system.network();
     let events = network.event_sender();
 
-    // Outbound-style peer: lifecycle event plus a recorded dial
-    // address (the order the real dial path produces).
+    // Outbound-style peer: the dial path publishes the lifecycle
+    // event carrying the dialed endpoint (the peer's listener — the
+    // `Remote.Address` / `ListenerTcpPort` pair C# reports).
     events
         .send(neo_network::event::NetworkEvent::PeerConnected {
             peer_id: "peer:11".to_string(),
+            address: Some("10.1.2.3:20333".parse().expect("addr")),
         })
         .expect("publish connect");
-    network.record_peer_address("peer:11", "10.1.2.3:20333".parse().expect("addr"));
-    // Inbound-style peer: the lifecycle event carries only the opaque
-    // id, so it folds into the connection count but is omitted from
-    // the connected array (no address to report).
+    // Inbound-style peer: the accept loop publishes the accepted
+    // connection's source endpoint (remote IP + ephemeral source
+    // port; C# would report the listener port advertised in the
+    // peer's version payload, which the Rust per-peer service does
+    // not capture yet).
     events
         .send(neo_network::event::NetworkEvent::PeerConnected {
             peer_id: "peer:12".to_string(),
+            address: Some("198.51.100.7:54321".parse().expect("addr")),
+        })
+        .expect("publish connect");
+    // Address-less peer: folds into the connection count but is
+    // omitted from the connected array (no address to report).
+    events
+        .send(neo_network::event::NetworkEvent::PeerConnected {
+            peer_id: "peer:13".to_string(),
+            address: None,
         })
         .expect("publish connect");
 
@@ -283,30 +295,56 @@ async fn get_peers_folds_connect_and_disconnect_events() {
         .get("connected")
         .and_then(|v| v.as_array())
         .expect("connected array");
-    assert_eq!(connected.len(), 1);
+    assert_eq!(connected.len(), 2);
+    // Deterministic peer-id order: "peer:11" < "peer:12".
     assert_eq!(
         connected[0].get("address").and_then(Value::as_str),
         Some("10.1.2.3")
     );
     // C# emits the port as a JSON number, not a string.
     assert_eq!(connected[0].get("port").and_then(Value::as_u64), Some(20333));
+    // The inbound peer appears with its remote address.
+    assert_eq!(
+        connected[1].get("address").and_then(Value::as_str),
+        Some("198.51.100.7")
+    );
+    assert_eq!(connected[1].get("port").and_then(Value::as_u64), Some(54321));
     let count = (count_handler.callback())(&server, &[]).expect("count");
-    assert_eq!(count.as_u64(), Some(2));
+    assert_eq!(count.as_u64(), Some(3));
 
     // The C#-shaped payload roundtrips through the client model.
     let parsed = RpcPeers::from_json(&parse_object(&result)).expect("parse peers");
     assert!(parsed.unconnected.is_empty());
     assert!(parsed.bad.is_empty());
-    assert_eq!(parsed.connected.len(), 1);
+    assert_eq!(parsed.connected.len(), 2);
     assert_eq!(parsed.connected[0].address, "10.1.2.3");
     assert_eq!(parsed.connected[0].port, 20333);
+    assert_eq!(parsed.connected[1].address, "198.51.100.7");
+    assert_eq!(parsed.connected[1].port, 54321);
 
-    // Disconnect removes the peer from the folded view.
+    // Disconnects remove the peers from the folded view.
     events
         .send(neo_network::event::NetworkEvent::PeerDisconnected {
             peer_id: "peer:11".to_string(),
         })
         .expect("publish disconnect");
+    events
+        .send(neo_network::event::NetworkEvent::PeerDisconnected {
+            peer_id: "peer:12".to_string(),
+        })
+        .expect("publish disconnect");
+    let result = (peers_handler.callback())(&server, &[]).expect("get peers");
+    let connected = result
+        .get("connected")
+        .and_then(|v| v.as_array())
+        .expect("connected array");
+    assert!(connected.is_empty());
+    let count = (count_handler.callback())(&server, &[]).expect("count");
+    assert_eq!(count.as_u64(), Some(1));
+
+    // A stale address record for an already-disconnected peer must
+    // not resurrect it in either view.
+    network.record_peer_address("peer:11", "10.1.2.3:20333".parse().expect("addr"));
     let result = (peers_handler.callback())(&server, &[]).expect("get peers");
     let connected = result
         .get("connected")
@@ -708,7 +746,6 @@ async fn send_raw_transaction_accepts_valid_transaction() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires the relay transaction-verification pipeline (C# Blockchain.OnNewTransaction -> tx.Verify); the blockchain service's mempool admission defers verification, so cause-specific VerifyResults are not produced yet"]
 async fn send_raw_transaction_reports_insufficient_funds() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings.clone());
@@ -728,7 +765,6 @@ async fn send_raw_transaction_reports_insufficient_funds() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires the relay transaction-verification pipeline (C# Blockchain.OnNewTransaction -> tx.Verify); the blockchain service's mempool admission defers verification, so cause-specific VerifyResults are not produced yet"]
 async fn send_raw_transaction_reports_invalid_signature() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings.clone());
@@ -765,7 +801,6 @@ async fn send_raw_transaction_reports_invalid_signature() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires the relay transaction-verification pipeline (C# Blockchain.OnNewTransaction -> tx.Verify); the blockchain service's mempool admission defers verification, so cause-specific VerifyResults are not produced yet"]
 async fn send_raw_transaction_reports_invalid_size() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings.clone());
@@ -798,7 +833,6 @@ async fn send_raw_transaction_reports_invalid_size() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires the relay transaction-verification pipeline (C# Blockchain.OnNewTransaction -> tx.Verify); the blockchain service's mempool admission defers verification, so cause-specific VerifyResults are not produced yet"]
 async fn send_raw_transaction_reports_invalid_script() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings.clone());
@@ -826,7 +860,6 @@ async fn send_raw_transaction_reports_invalid_script() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires the relay transaction-verification pipeline (C# Blockchain.OnNewTransaction -> tx.Verify); the blockchain service's mempool admission defers verification, so cause-specific VerifyResults are not produced yet"]
 async fn send_raw_transaction_reports_invalid_attribute() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings.clone());
@@ -865,7 +898,6 @@ async fn send_raw_transaction_reports_invalid_attribute() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires the relay transaction-verification pipeline (C# Blockchain.OnNewTransaction -> tx.Verify); the blockchain service's mempool admission defers verification, so cause-specific VerifyResults are not produced yet"]
 async fn send_raw_transaction_reports_expired_transaction() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings.clone());
@@ -893,7 +925,6 @@ async fn send_raw_transaction_reports_expired_transaction() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires the relay transaction-verification pipeline (C# Blockchain.OnNewTransaction -> tx.Verify); the blockchain service's mempool admission defers verification, so cause-specific VerifyResults are not produced yet"]
 async fn send_raw_transaction_reports_policy_failed() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings.clone());

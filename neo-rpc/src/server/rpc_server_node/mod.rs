@@ -113,13 +113,17 @@ impl RpcServerNode {
         // - `bad`: always an empty array in C# v3.9.1 (no bad-peer book).
         // - `connected`: C# serves `Remote.Address` + `ListenerTcpPort`
         //   per remote node. The handle-side tracker folds the service's
-        //   peer lifecycle events; entries carry an address only when
-        //   the handle observed one (outbound dials record the dialed
-        //   endpoint, which is the peer's listener — the same pair C#
-        //   reports). Peers whose address never became known at the
-        //   handle seam (inbound connections; the events carry only
-        //   opaque ids) are counted by `getconnectioncount` but omitted
-        //   here, since fabricating an address would corrupt the shape.
+        //   `PeerConnected` events, which carry the transport address:
+        //   outbound dials publish the dialed endpoint (the peer's
+        //   listener — exactly the pair C# reports); inbound accepts
+        //   publish the remote IP + *ephemeral* source port, because
+        //   the per-peer service does not parse version payloads yet
+        //   and so cannot learn the advertised `ListenerTcpPort`
+        //   (divergence documented on
+        //   `neo_runtime::NetworkEvent::PeerConnected`). Peers whose
+        //   address never became known at the handle seam are counted
+        //   by `getconnectioncount` but omitted here, since fabricating
+        //   an address would corrupt the shape.
         Self::with_local_node(server, |node| {
             let connected: Vec<Value> = node
                 .connected_peers()

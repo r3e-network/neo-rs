@@ -177,14 +177,19 @@ impl LocalNodeService {
     // Handlers
     // -----------------------------------------------------------------
 
-    async fn handle_start(&mut self, bind_addr: SocketAddr) -> NetworkResult<()> {
+    async fn handle_start(&mut self, bind_addr: SocketAddr) -> NetworkResult<SocketAddr> {
         if self.started {
             return Err(NetworkError::Protocol(
                 "local node already started".to_string(),
             ));
         }
         let listener = TcpListener::bind(bind_addr).await?;
-        info!(target: "neo_network", %bind_addr, "local node tcp listener bound");
+        // Resolve the *actual* bound address: when the caller requested
+        // port `0` the kernel picks an ephemeral port, and both the
+        // reply (handle-side `getversion` port reporting) and the
+        // recorded `bind_addr` must reflect the real listener endpoint.
+        let local_addr = listener.local_addr()?;
+        info!(target: "neo_network", %local_addr, "local node tcp listener bound");
 
         // Spawn the accept loop on a fresh task. The task captures
         // its own clones of the shared state so the command loop
@@ -202,8 +207,8 @@ impl LocalNodeService {
         ));
 
         self.started = true;
-        self.bind_addr = Some(bind_addr);
-        Ok(())
+        self.bind_addr = Some(local_addr);
+        Ok(local_addr)
     }
 
     async fn handle_connect_peer(&mut self, addr: SocketAddr) -> NetworkResult<PeerId> {
@@ -226,9 +231,13 @@ impl LocalNodeService {
         );
         tokio::spawn(service.run());
         self.remote_nodes.insert(peer_id, handle);
+        // The dialed endpoint *is* the peer's listener, so the event
+        // carries the same address/port pair C# reports for outbound
+        // remotes (`Remote.Address` / `ListenerTcpPort`).
         self.event_tx
             .send(RuntimeNetworkEvent::PeerConnected {
                 peer_id: peer_id.to_string(),
+                address: Some(addr),
             })
             .ok();
         Ok(peer_id)
@@ -331,7 +340,7 @@ async fn accept_loop(
     listener: TcpListener,
     settings: Arc<ProtocolSettings>,
     event_tx: broadcast::Sender<NetworkEvent>,
-    _remote_nodes: Arc<parking_lot::Mutex<HashMap<PeerId, RemoteNodeHandle>>>,
+    remote_nodes: Arc<parking_lot::Mutex<HashMap<PeerId, RemoteNodeHandle>>>,
     shutdown: CancellationToken,
 ) {
     info!(target: "neo_network", "accept loop started");
@@ -351,7 +360,7 @@ async fn accept_loop(
                             %remote_addr,
                             "inbound connection accepted"
                         );
-                        let (service, _handle) = RemoteNodeService::new(
+                        let (service, handle) = RemoteNodeService::new(
                             stream,
                             peer_id,
                             remote_addr,
@@ -359,8 +368,25 @@ async fn accept_loop(
                             event_tx.clone(),
                             RemoteNodeState::Handshake,
                         );
+                        // Retain the per-peer handle: dropping it would
+                        // close the per-peer command channel and make the
+                        // freshly spawned service exit (publishing a
+                        // spurious `PeerDisconnected`) before the peer
+                        // exchanged a single byte. Dropping the map on
+                        // accept-loop shutdown tears the per-peer tasks
+                        // down with it.
+                        remote_nodes.lock().insert(peer_id, handle);
+                        // C# reports a peer's LISTENER port (from its
+                        // version payload's TcpServer capability), never
+                        // the remote's ephemeral source port, and encodes
+                        // an unknown listener as port 0 (RemoteNode.cs:54
+                        // initializes ListenerTcpPort = 0). The version
+                        // handshake is not ported yet, so publish the
+                        // C#-faithful unknown form: (remote_ip, 0).
+                        let reported = std::net::SocketAddr::new(remote_addr.ip(), 0);
                         let _ = event_tx.send(RuntimeNetworkEvent::PeerConnected {
                             peer_id: peer_id.to_string(),
+                            address: Some(reported),
                         });
                         tokio::spawn(service.run());
                     }

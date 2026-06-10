@@ -15,6 +15,8 @@
 //! fields with the canonical network-event types from `neo-wire` /
 //! `neo-payloads`.
 
+use std::net::SocketAddr;
+
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
@@ -121,6 +123,23 @@ pub enum NetworkEvent {
         /// Stable identifier for the peer (currently a placeholder string
         /// until `neo-wire` defines a peer-id type).
         peer_id: String,
+        /// Remote socket address of the peer as observed at the
+        /// transport layer: the accepted connection's peer address for
+        /// inbound peers, the dialed endpoint for outbound peers.
+        ///
+        /// For outbound peers the dialed endpoint *is* the peer's
+        /// listener, matching the `Remote.Address` / `ListenerTcpPort`
+        /// pair C#'s `LocalNode.GetRemoteNodes` reports. For inbound
+        /// peers the port is the remote's *ephemeral* source port — C#
+        /// instead reports the listener port the peer advertises in its
+        /// version payload (`RemoteNode.ListenerTcpPort`, set from the
+        /// `TcpServer` capability in
+        /// `RemoteNode.ProtocolHandler.OnVersionMessageReceived`); the
+        /// Rust per-peer service does not parse version payloads yet,
+        /// so the transport address is the most faithful value
+        /// available. `None` when the publisher does not know the
+        /// transport address.
+        address: Option<SocketAddr>,
     },
     /// A previously connected peer has dropped.
     PeerDisconnected {
@@ -172,5 +191,27 @@ mod tests {
         let a = NetworkEvent::BlockReceived { block_hash: hash };
         let b = NetworkEvent::TransactionReceived { tx_hash: hash };
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn peer_connected_carries_optional_address() {
+        let addr: SocketAddr = "203.0.113.7:20333".parse().expect("socket address");
+        let with_addr = NetworkEvent::PeerConnected {
+            peer_id: "peer:1".to_string(),
+            address: Some(addr),
+        };
+        let without_addr = NetworkEvent::PeerConnected {
+            peer_id: "peer:1".to_string(),
+            address: None,
+        };
+        assert_ne!(with_addr, without_addr);
+
+        match with_addr {
+            NetworkEvent::PeerConnected { peer_id, address } => {
+                assert_eq!(peer_id, "peer:1");
+                assert_eq!(address, Some(addr));
+            }
+            other => panic!("unexpected variant: {other:?}"),
+        }
     }
 }

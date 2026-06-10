@@ -24,13 +24,15 @@ use crate::remote_node::RemoteNodeHandle;
 #[derive(Debug)]
 pub enum NetworkCommand {
     /// Start the TCP listener on the given address. The reply
-    /// resolves once the listener is bound and the accept loop has
-    /// been spawned, or with [`NetworkError::Io`] if the bind failed.
+    /// resolves with the *actual* bound address (which differs from
+    /// `bind_addr` when port `0` was requested) once the listener is
+    /// bound and the accept loop has been spawned, or with
+    /// [`NetworkError::Io`] if the bind failed.
     Start {
         /// Address to bind the TCP listener to.
         bind_addr: SocketAddr,
-        /// Reply channel.
-        reply: oneshot::Sender<NetworkResult<()>>,
+        /// Reply channel carrying the resolved listener address.
+        reply: oneshot::Sender<NetworkResult<SocketAddr>>,
     },
 
     /// Connect to a remote peer. The reply resolves with the new

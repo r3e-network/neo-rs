@@ -33,14 +33,21 @@ pub struct ConnectedPeer {
     /// Remote socket address of the peer, when known at the handle
     /// seam.
     ///
-    /// The lifecycle events carry only the opaque peer id, so the
-    /// address is attached out-of-band: [`NetworkHandle::connect_peer`]
-    /// records the dialed address on a successful outbound dial (the
-    /// dialed endpoint *is* the peer's listener, so address + port
-    /// match the `Remote.Address` / `ListenerTcpPort` pair C#'s
-    /// `LocalNode.GetRemoteNodes` reports). Peers whose address was
-    /// never recorded — e.g. inbound connections accepted by the
-    /// service's TCP listener — fold with `None` here.
+    /// Folded from the `PeerConnected` event's `address` field: the
+    /// service publishes the dialed endpoint for outbound peers and
+    /// the accepted connection's source endpoint for inbound peers.
+    ///
+    /// For outbound peers the dialed endpoint *is* the peer's
+    /// listener, so address + port match the `Remote.Address` /
+    /// `ListenerTcpPort` pair C#'s `LocalNode.GetRemoteNodes` reports.
+    /// For inbound peers the port is the remote's *ephemeral* source
+    /// port: C# reports the listener port the peer advertised in its
+    /// version payload (`RemoteNode.ListenerTcpPort`), which the Rust
+    /// per-peer service does not capture yet because the version
+    /// handshake is not ported — see
+    /// [`neo_runtime::NetworkEvent::PeerConnected`]. Folds with `None`
+    /// when the event carried no address and none was recorded via
+    /// [`NetworkHandle::record_peer_address`].
     pub address: Option<SocketAddr>,
 }
 
@@ -128,11 +135,15 @@ impl PeerTracker {
     fn fold_pending_events(&mut self) {
         loop {
             match self.events.try_recv() {
-                Ok(NetworkEvent::PeerConnected { peer_id }) => {
-                    // `or_insert` keeps an address already attached via
-                    // `record_peer_address` when the lifecycle event
-                    // drains after the dial reply resolved.
-                    self.connected.entry(peer_id).or_insert(None);
+                Ok(NetworkEvent::PeerConnected { peer_id, address }) => {
+                    // A known address always wins over `None`: a
+                    // duplicate event without an address must not erase
+                    // one learned from an earlier event or recorded via
+                    // `record_peer_address`.
+                    let slot = self.connected.entry(peer_id).or_insert(None);
+                    if address.is_some() {
+                        *slot = address;
+                    }
                 }
                 Ok(NetworkEvent::PeerDisconnected { peer_id }) => {
                     self.connected.remove(&peer_id);
@@ -187,17 +198,22 @@ impl LocalNodeState {
         tracker.snapshot()
     }
 
-    /// Attach `addr` to the tracker entry for `peer_id`.
+    /// Attach `addr` to the tracker entry for `peer_id`, if — and only
+    /// if — the peer is still connected.
     ///
     /// Folds pending events first so the entry created by the peer's
-    /// own `PeerConnected` event (published by the service before the
-    /// dial reply resolves) is present, then records the address. The
-    /// insert also covers the rare case where that event was lost to
-    /// broadcast lag: the dial reply proved the peer connected.
-    fn record_peer_address(&self, peer_id: String, addr: SocketAddr) {
+    /// own `PeerConnected` event is present, and so a pending
+    /// `PeerDisconnected` removes the entry *before* the update is
+    /// attempted. Updating only an existing entry makes the call
+    /// race-free: a caller holding a stale peer id (its disconnect
+    /// already folded) cannot resurrect a phantom entry that no future
+    /// event would ever remove.
+    fn record_peer_address(&self, peer_id: &str, addr: SocketAddr) {
         let mut tracker = self.peers.lock();
         tracker.fold_pending_events();
-        tracker.connected.insert(peer_id, Some(addr));
+        if let Some(slot) = tracker.connected.get_mut(peer_id) {
+            *slot = Some(addr);
+        }
     }
 }
 
@@ -285,16 +301,19 @@ impl NetworkHandle {
         }
     }
 
-    /// Record the remote socket address of a connected peer in the
-    /// handle-side peer tracker, keyed by the peer's event-stream id.
+    /// Record the remote socket address of a *currently connected*
+    /// peer in the handle-side peer tracker, keyed by the peer's
+    /// event-stream id.
     ///
-    /// [`NetworkHandle::connect_peer`] calls this automatically for
-    /// successful outbound dials. Service-side integrations that learn
-    /// a peer's address out-of-band (the lifecycle events carry only
-    /// opaque peer ids) can record it here so the `getpeers`-style
-    /// view ([`LocalNodeInfo::connected_peers`]) reports it.
-    pub fn record_peer_address(&self, peer_id: impl Into<String>, addr: SocketAddr) {
-        self.local.record_peer_address(peer_id.into(), addr);
+    /// The `PeerConnected` events now carry the transport address, so
+    /// this is an out-of-band override for integrations that learn a
+    /// better address later (e.g. the listener endpoint advertised in
+    /// a version payload, once the handshake is ported). The call only
+    /// updates an existing tracker entry: if the peer's
+    /// `PeerDisconnected` event has already been published, the update
+    /// is a no-op rather than resurrecting a phantom entry.
+    pub fn record_peer_address(&self, peer_id: impl AsRef<str>, addr: SocketAddr) {
+        self.local.record_peer_address(peer_id.as_ref(), addr);
     }
 
     /// Subscribe to network events. Each call returns an independent
@@ -322,6 +341,10 @@ impl NetworkHandle {
     /// Start the TCP listener on the given address. Resolves once
     /// the listener is bound and the accept loop is running, or with
     /// an [`NetworkError::Io`] on failure.
+    ///
+    /// Binding to port `0` is supported: the service replies with the
+    /// kernel-assigned listener address, which
+    /// [`LocalNodeInfo::port`] then reports.
     pub async fn start(&self, bind_addr: SocketAddr) -> NetworkResult<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
@@ -334,19 +357,20 @@ impl NetworkHandle {
         let result = reply_rx
             .await
             .map_err(|_| NetworkError::LocalShuttingDown)?;
-        if result.is_ok() {
-            // Record the listen address so `local_node_info` can report
-            // the TCP port without a service round-trip.
-            *self.local.listen_addr.write() = Some(bind_addr);
-        }
-        result
+        result.map(|local_addr| {
+            // Record the *resolved* listen address so `local_node_info`
+            // can report the actual TCP port without a service
+            // round-trip (the requested port may have been `0`).
+            *self.local.listen_addr.write() = Some(local_addr);
+        })
     }
 
     /// Connect to a remote peer. Resolves with the new peer's id.
     ///
-    /// On success the dialed address is recorded against the new peer
-    /// in the handle-side peer tracker, so
-    /// [`LocalNodeInfo::connected_peers`] reports it (see
+    /// The service publishes the peer's `PeerConnected` event — which
+    /// carries the dialed address — before resolving the dial reply,
+    /// so [`LocalNodeInfo::connected_peers`] reports the address
+    /// without any out-of-band recording (see
     /// [`ConnectedPeer::address`]).
     pub async fn connect_peer(&self, addr: SocketAddr) -> NetworkResult<PeerId> {
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -357,14 +381,7 @@ impl NetworkHandle {
             })
             .await
             .map_err(|_| NetworkError::LocalShuttingDown)?;
-        let result = reply_rx.await.map_err(|_| NetworkError::LocalShuttingDown)?;
-        if let Ok(peer_id) = &result {
-            // The service publishes the peer's `PeerConnected` event
-            // before resolving the dial reply, so the tracker entry is
-            // already pending; attach the dialed address to it.
-            self.local.record_peer_address(peer_id.to_string(), addr);
-        }
-        result
+        reply_rx.await.map_err(|_| NetworkError::LocalShuttingDown)?
     }
 
     /// Disconnect a peer by id.
@@ -458,18 +475,19 @@ mod tests {
         events
             .send(NetworkEvent::PeerConnected {
                 peer_id: "peer:1".to_string(),
+                address: None,
             })
             .expect("publish");
         events
             .send(NetworkEvent::PeerConnected {
                 peer_id: "peer:2".to_string(),
+                address: None,
             })
             .expect("publish");
 
         let info = handle.local_node_info();
         assert_eq!(info.connected_peers_count(), 2);
-        // Event-only peers fold without an address: the lifecycle
-        // events carry only the opaque peer id.
+        // Events without an address fold as address-less peers.
         assert!(info
             .connected_peers()
             .iter()
@@ -487,12 +505,39 @@ mod tests {
     }
 
     #[test]
+    fn inbound_peer_connected_event_folds_with_address() {
+        // The accept loop publishes the accepted connection's source
+        // endpoint in the event itself, so inbound peers fold with
+        // their address attached — no out-of-band recording involved.
+        let (handle, _cmd_rx, events) = test_handle();
+        let remote = addr("198.51.100.23:54321");
+
+        events
+            .send(NetworkEvent::PeerConnected {
+                peer_id: "peer:8".to_string(),
+                address: Some(remote),
+            })
+            .expect("publish");
+
+        let info = handle.local_node_info();
+        assert_eq!(info.connected_peers_count(), 1);
+        assert_eq!(
+            info.connected_peers()[0],
+            ConnectedPeer {
+                peer_id: "peer:8".to_string(),
+                address: Some(remote),
+            }
+        );
+    }
+
+    #[test]
     fn duplicate_peer_connected_events_fold_once() {
         let (handle, _cmd_rx, events) = test_handle();
         for _ in 0..3 {
             events
                 .send(NetworkEvent::PeerConnected {
                     peer_id: "peer:1".to_string(),
+                    address: None,
                 })
                 .expect("publish");
         }
@@ -500,15 +545,41 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_peer_connected_without_address_keeps_known_address() {
+        let (handle, _cmd_rx, events) = test_handle();
+        let remote = addr("192.168.1.4:10333");
+
+        events
+            .send(NetworkEvent::PeerConnected {
+                peer_id: "peer:3".to_string(),
+                address: Some(remote),
+            })
+            .expect("publish");
+        // A duplicate lifecycle event with no address must not erase
+        // the address learned from the first event.
+        events
+            .send(NetworkEvent::PeerConnected {
+                peer_id: "peer:3".to_string(),
+                address: None,
+            })
+            .expect("publish");
+
+        let info = handle.local_node_info();
+        assert_eq!(info.connected_peers().len(), 1);
+        assert_eq!(info.connected_peers()[0].address, Some(remote));
+    }
+
+    #[test]
     fn record_peer_address_attaches_address_until_disconnect() {
         let (handle, _cmd_rx, events) = test_handle();
         let remote = addr("10.0.0.9:20333");
 
-        // Realistic order: the service publishes the lifecycle event
-        // first, the dial path records the address afterwards.
+        // Out-of-band recording upgrades an address-less entry created
+        // by the peer's own lifecycle event.
         events
             .send(NetworkEvent::PeerConnected {
                 peer_id: "peer:7".to_string(),
+                address: None,
             })
             .expect("publish");
         handle.record_peer_address("peer:7", remote);
@@ -532,22 +603,63 @@ mod tests {
     }
 
     #[test]
-    fn peer_connected_event_keeps_previously_recorded_address() {
+    fn record_peer_address_does_not_resurrect_after_folded_disconnect() {
+        // Phantom-resurrect race: the peer connected and disconnected,
+        // both events already folded; a straggling address record for
+        // the stale peer id must not re-create the entry (nothing
+        // would ever remove it again).
         let (handle, _cmd_rx, events) = test_handle();
-        let remote = addr("192.168.1.4:10333");
+        let remote = addr("10.0.0.9:20333");
 
-        // Reverse order: the address lands before the lifecycle event
-        // drains; the `or_insert` fold must not erase it.
-        handle.record_peer_address("peer:3", remote);
         events
             .send(NetworkEvent::PeerConnected {
-                peer_id: "peer:3".to_string(),
+                peer_id: "peer:7".to_string(),
+                address: Some(remote),
+            })
+            .expect("publish");
+        events
+            .send(NetworkEvent::PeerDisconnected {
+                peer_id: "peer:7".to_string(),
+            })
+            .expect("publish");
+        // Fold both events before the stale record arrives.
+        assert_eq!(handle.local_node_info().connected_peers_count(), 0);
+
+        handle.record_peer_address("peer:7", remote);
+        assert_eq!(handle.local_node_info().connected_peers_count(), 0);
+        assert!(handle.local_node_info().connected_peers().is_empty());
+    }
+
+    #[test]
+    fn record_peer_address_does_not_resurrect_with_pending_disconnect() {
+        // Same race, other interleaving: the disconnect event is still
+        // queued (not yet folded) when the stale record lands. The
+        // record folds pending events first, so the disconnect wins.
+        let (handle, _cmd_rx, events) = test_handle();
+        let remote = addr("10.0.0.9:20333");
+
+        events
+            .send(NetworkEvent::PeerConnected {
+                peer_id: "peer:7".to_string(),
+                address: Some(remote),
+            })
+            .expect("publish");
+        events
+            .send(NetworkEvent::PeerDisconnected {
+                peer_id: "peer:7".to_string(),
             })
             .expect("publish");
 
-        let info = handle.local_node_info();
-        assert_eq!(info.connected_peers().len(), 1);
-        assert_eq!(info.connected_peers()[0].address, Some(remote));
+        handle.record_peer_address("peer:7", remote);
+        assert_eq!(handle.local_node_info().connected_peers_count(), 0);
+        assert!(handle.local_node_info().connected_peers().is_empty());
+    }
+
+    #[test]
+    fn record_peer_address_for_unknown_peer_is_a_no_op() {
+        let (handle, _cmd_rx, _events) = test_handle();
+        handle.record_peer_address("peer:404", addr("10.0.0.1:20333"));
+        assert_eq!(handle.local_node_info().connected_peers_count(), 0);
     }
 
     #[test]
@@ -557,6 +669,7 @@ mod tests {
             events
                 .send(NetworkEvent::PeerConnected {
                     peer_id: id.to_string(),
+                    address: None,
                 })
                 .expect("publish");
         }
@@ -570,18 +683,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn connect_peer_records_dialed_address() {
+    async fn connect_peer_folds_dialed_address_from_event() {
         let (handle, mut cmd_rx, events) = test_handle();
 
         // Stand-in for the service's `handle_connect_peer`: publish
-        // the lifecycle event, then resolve the dial reply — the same
-        // order `LocalNodeService` uses.
+        // the lifecycle event carrying the dialed address, then
+        // resolve the dial reply — the same order `LocalNodeService`
+        // uses.
         tokio::spawn(async move {
             while let Some(cmd) = cmd_rx.recv().await {
-                if let NetworkCommand::ConnectPeer { addr: _, reply } = cmd {
+                if let NetworkCommand::ConnectPeer { addr, reply } = cmd {
                     let peer_id = PeerId::from_raw(42);
                     let _ = events.send(NetworkEvent::PeerConnected {
                         peer_id: peer_id.to_string(),
+                        address: Some(addr),
                     });
                     let _ = reply.send(Ok(peer_id));
                 }
