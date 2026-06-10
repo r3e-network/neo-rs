@@ -248,6 +248,19 @@ pub struct ApplicationEngine {
     entry_script_hash: Option<UInt160>,
     invocation_counter: HashMap<UInt160, u32>,
     pending_native_calls: Vec<PendingNativeCall>,
+    /// Identities of contexts loaded by `call_from_native_contract_returning`
+    /// (the `Arc` pointer of each context's `ExecutionContextState`), mirroring
+    /// the keys of C# `ApplicationEngine.contractTasks`: when such a context
+    /// unloads with an uncaught exception, the unload hook faults the whole
+    /// engine (C# throws `VMUnhandledException`) so no frame below the native
+    /// call can catch the exception.
+    native_call_boundary_contexts: Vec<usize>,
+    /// Every host syscall registered on the VM (`name`, fixed price, required
+    /// call flags). The VM's `on_syscall` takes its `InteropService` out for
+    /// the duration of a syscall handler, so nested VM execution started from
+    /// inside a native method (`call_from_native_contract_returning`) finds it
+    /// missing; this list rebuilds an equivalent registry for the nested steps.
+    host_syscall_registrations: Vec<(String, i64, CallFlags)>,
     nonce_data: [u8; 16],
     random_times: u32,
     diagnostic: Option<Box<dyn Diagnostic>>,

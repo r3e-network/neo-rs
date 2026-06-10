@@ -145,6 +145,20 @@ impl InteropHost for ApplicationEngine {
             engine.set_call_flags(CallFlags::ALL);
         }
 
+        // C# `ApplicationEngine.ContextUnloaded` tail: a context registered in
+        // `contractTasks` (here: loaded by `call_from_native_contract_returning`)
+        // unloading while `UncaughtException` is set throws `VMUnhandledException`,
+        // faulting the whole engine. Erroring out of the unload hook aborts the
+        // VM's exception unwinding before any TRY below the native frame is
+        // consulted, so — exactly like C# — a caller cannot catch an exception
+        // that escapes a contract call issued from a native contract.
+        if let Some(exception) = engine.uncaught_exception() {
+            let boundary_id = std::sync::Arc::as_ptr(&state_arc) as usize;
+            if self.native_call_boundary_contexts.contains(&boundary_id) {
+                return Err(VmError::UnhandledException(exception.clone()));
+            }
+        }
+
         Ok(())
     }
 

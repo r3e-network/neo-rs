@@ -397,6 +397,149 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Calls `method` on `contract_hash` from inside a currently-executing
+    /// native method, drives the VM until the callee frame unwinds, and returns
+    /// the callee's result.
+    ///
+    /// This is the awaitable counterpart of
+    /// [`Self::queue_contract_call_from_native`] and ports C#
+    /// `ApplicationEngine.CallFromNativeContractAsync<T>` (ApplicationEngine.cs):
+    /// C# loads the callee with `CallFlags.All` and `hasReturnValue: true`, tags
+    /// the new context with `ExecutionContextState.NativeCallingScriptHash`,
+    /// registers it in `contractTasks`, suspends the native method on an
+    /// awaiter, and resumes it with the return value when the context unloads.
+    /// Rust natives are synchronous functions holding `&mut ApplicationEngine`,
+    /// so instead of suspending, this method re-enters the VM step loop in
+    /// place (`execute_until_invocation_stack_depth`) until the callee unwinds
+    /// back to the native frame — same execution order, same observables:
+    ///
+    /// * **Fees** accrue into the same engine budget (the callee's opcode and
+    ///   syscall fees charge the shared `fee_consumed` counters, hitting the
+    ///   gas limit at exactly the same point as C#'s single engine).
+    /// * **Notifications** append to the same engine list in emission order,
+    ///   with the existing per-context rollback when an exception is caught.
+    /// * **Snapshot**: the callee writes the engine's live snapshot, so its
+    ///   effects are visible to the native afterwards exactly like a committed
+    ///   C# per-context clone.
+    /// * **Calling hash**: the callee observes `calling_script_hash ==
+    ///   calling_script_hash` (the `NativeCallingScriptHash` rule), which is
+    ///   how e.g. `PolicyContract.recoverFund` authorizes NEP-17 sweeps via the
+    ///   `from == CallingScriptHash` witness bypass.
+    /// * **Faults**: a callee fault — or an exception that crosses the native
+    ///   boundary — faults the whole engine. The callee root is registered as a
+    ///   native-call boundary; `on_context_unloaded` errors when it unloads
+    ///   with an uncaught exception (C# throws `VMUnhandledException` from
+    ///   `ContextUnloaded` for `contractTasks` members), so a TRY in any frame
+    ///   below the native call can never catch it.
+    ///
+    /// Unlike the queued variant, the callee must declare a non-`Void` return
+    /// type: C# passes `hasReturnValue: true` and `CallContractInternal` throws
+    /// "The return value type does not match." otherwise
+    /// (`call_contract_internal` enforces the identical check).
+    pub fn call_from_native_contract_returning(
+        &mut self,
+        calling_script_hash: &UInt160,
+        contract_hash: &UInt160,
+        method: &str,
+        args: Vec<StackItem>,
+    ) -> Result<StackItem> {
+        // Depth of the native frame (the context whose System.Contract.CallNative
+        // syscall is executing). The callee is loaded above it and run until the
+        // invocation stack returns to this depth.
+        let target_depth = self.vm_engine.engine().invocation_stack().len();
+        if target_depth == 0 {
+            return Err(Error::invalid_operation(
+                "A contract call from a native frame requires a live execution context",
+            ));
+        }
+
+        let contract = self.fetch_contract(contract_hash)?;
+        let method_descriptor = contract
+            .manifest
+            .abi
+            .get_method_ref(method, args.len())
+            .cloned()
+            .ok_or_else(|| {
+                Error::invalid_operation(format!(
+                    "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
+                    method,
+                    args.len(),
+                    contract_hash
+                ))
+            })?;
+
+        let context = self.call_contract_internal(
+            &contract,
+            &method_descriptor,
+            CallFlags::ALL,
+            true,
+            &args,
+        )?;
+
+        let state_arc =
+            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
+        // Refresh cached hashes so the callee observes the native caller.
+        self.refresh_context_tracking()?;
+
+        // The VM's `on_syscall` takes the `InteropService` out of the engine
+        // while a syscall handler runs (the System.Contract.CallNative frame we
+        // are inside of), so the nested steps below would find no registry.
+        // Install an equivalent one rebuilt from the recorded registrations;
+        // the outer `on_syscall` frame restores the original (overwriting this
+        // temporary) when the native method returns.
+        if self.vm_engine.engine().interop_service().is_none() {
+            let mut service = neo_vm::interop_service::InteropService::new();
+            for (name, price, flags) in &self.host_syscall_registrations {
+                service
+                    .register_host_descriptor(name, *price, *flags)
+                    .map_err(|e| {
+                        Error::invalid_operation(format!(
+                            "rebuilding the interop registry for a nested native call: {e}"
+                        ))
+                    })?;
+            }
+            self.vm_engine.engine_mut().set_interop_service(service);
+        }
+
+        // Register the callee root as a native-call boundary (the C#
+        // `contractTasks` key). `context` stays alive across the loop, so the
+        // pointer identity cannot be reused while registered.
+        let boundary_id = Arc::as_ptr(&state_arc) as usize;
+        self.native_call_boundary_contexts.push(boundary_id);
+
+        let vm_state = self.execute_until_invocation_stack_depth(target_depth);
+
+        self.native_call_boundary_contexts
+            .retain(|id| *id != boundary_id);
+
+        if vm_state == VMState::FAULT {
+            let message = self.fault_exception.clone().unwrap_or_else(|| {
+                format!("Contract call from a native frame to {contract_hash}::{method} faulted")
+            });
+            return Err(Error::invalid_operation(message));
+        }
+
+        let depth_after = self.vm_engine.engine().invocation_stack().len();
+        if depth_after != target_depth {
+            // Engine invariant: the boundary hook faults escaped exceptions, so
+            // the loop can only legitimately stop at the native frame's depth.
+            let message = format!(
+                "Contract call from a native frame to {contract_hash}::{method} unwound past the native frame"
+            );
+            self.vm_engine.engine_mut().set_uncaught_exception(Some(
+                StackItem::from_byte_string(message.clone().into_bytes()),
+            ));
+            self.vm_engine.engine_mut().set_state(VMState::FAULT);
+            self.fault_exception = Some(message.clone());
+            return Err(Error::invalid_operation(message));
+        }
+
+        // The callee returned: its RET moved exactly one item (`rvcount = 1`)
+        // onto the native frame's evaluation stack.
+        self.pop().map_err(Error::invalid_operation)
+    }
+
     /// Queues a contract call requested by a native contract.
     ///
     /// The queued call will be loaded after the current native syscall finishes,
@@ -555,6 +698,257 @@ mod tests {
         assert_eq!(
             engine.get_calling_script_hash(),
             Some(logical_contract_hash)
+        );
+    }
+
+    /// Builds a synthetic contract whose single method executes `script` from
+    /// offset 0. Used by the `call_from_native_contract_returning` tests.
+    fn build_returning_mock(
+        hash: UInt160,
+        method_name: &str,
+        return_type: ContractParameterType,
+        script: Vec<u8>,
+    ) -> ContractState {
+        let nef = NefFile::new("test".to_string(), script);
+        let method = ContractMethodDescriptor::new(
+            method_name.to_string(),
+            Vec::new(),
+            return_type,
+            0,
+            false,
+        )
+        .expect("descriptor");
+        let abi = ContractAbi::new(vec![method], Vec::new());
+        let manifest = ContractManifest {
+            name: "ReturningMock".to_string(),
+            groups: Vec::new(),
+            features: std::collections::HashMap::new(),
+            supported_standards: Vec::new(),
+            abi,
+            permissions: vec![ContractPermission::default_wildcard()],
+            trusts: WildCardContainer::default(),
+            extra: None,
+        };
+        ContractState::new(2, hash, nef, manifest)
+    }
+
+    /// Builds an engine preloaded with `contracts` and an entry context (a bare
+    /// RET script) standing in for the native frame the primitive is called
+    /// from.
+    fn engine_with_entry(contracts: HashMap<UInt160, ContractState>) -> ApplicationEngine {
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new_with_preloaded_native(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            contracts,
+            Arc::new(PlMutex::new(NativeContractsCache::default())),
+            None,
+        )
+        .expect("engine");
+        engine
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+            .expect("load entry script");
+        engine
+    }
+
+    /// The returning call yields the callee's result and the callee observes
+    /// the supplied calling script hash (C# `NativeCallingScriptHash`): the
+    /// callee script returns `System.Runtime.GetCallingScriptHash`.
+    #[test]
+    fn returning_call_yields_result_and_native_calling_hash() {
+        let target_hash = UInt160::from_bytes(&[0xCD; 20]).expect("hash");
+        let calling_hash = UInt160::from_bytes(&[0xAB; 20]).expect("hash");
+
+        let mut script = vec![OpCode::SYSCALL.byte()];
+        script.extend_from_slice(
+            &neo_vm_rs::interop_hash("System.Runtime.GetCallingScriptHash").to_le_bytes(),
+        );
+        script.push(OpCode::RET.byte());
+
+        let mut contracts = HashMap::new();
+        contracts.insert(
+            target_hash,
+            build_returning_mock(target_hash, "whoCalls", ContractParameterType::Hash160, script),
+        );
+        let mut engine = engine_with_entry(contracts);
+
+        let result = engine
+            .call_from_native_contract_returning(&calling_hash, &target_hash, "whoCalls", vec![])
+            .expect("returning call succeeds");
+
+        assert_eq!(result.as_bytes().expect("hash bytes"), calling_hash.to_bytes());
+        // The invocation stack is back at the native frame and nothing faulted.
+        assert_eq!(engine.invocation_stack().len(), 1);
+        assert_ne!(engine.state(), VMState::FAULT);
+        // The result was consumed from the native frame's evaluation stack.
+        assert_eq!(
+            engine
+                .current_context()
+                .expect("entry context")
+                .evaluation_stack()
+                .len(),
+            0
+        );
+    }
+
+    /// C# `CallFromNativeContractAsync<T>` passes `hasReturnValue: true`, so a
+    /// `Void` callee is rejected with "The return value type does not match."
+    #[test]
+    fn returning_call_rejects_void_method() {
+        let target_hash = UInt160::from_bytes(&[0xCE; 20]).expect("hash");
+        let mut contracts = HashMap::new();
+        contracts.insert(
+            target_hash,
+            build_returning_mock(
+                target_hash,
+                "voidMethod",
+                ContractParameterType::Void,
+                vec![OpCode::RET.byte()],
+            ),
+        );
+        let mut engine = engine_with_entry(contracts);
+
+        let err = engine
+            .call_from_native_contract_returning(
+                &UInt160::zero(),
+                &target_hash,
+                "voidMethod",
+                vec![],
+            )
+            .expect_err("void method must be rejected");
+        assert!(
+            err.to_string().contains("return value type does not match"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// A callee that throws (and nothing inside the callee catches) faults the
+    /// whole engine — the primitive surfaces an error and the VM is FAULTed,
+    /// mirroring C#'s `VMUnhandledException` for `contractTasks` contexts.
+    #[test]
+    fn returning_call_propagates_callee_throw_as_engine_fault() {
+        let target_hash = UInt160::from_bytes(&[0xCF; 20]).expect("hash");
+        let mut contracts = HashMap::new();
+        contracts.insert(
+            target_hash,
+            build_returning_mock(
+                target_hash,
+                "explode",
+                ContractParameterType::Integer,
+                vec![OpCode::PUSH1.byte(), OpCode::THROW.byte()],
+            ),
+        );
+        let mut engine = engine_with_entry(contracts);
+
+        let result = engine.call_from_native_contract_returning(
+            &UInt160::zero(),
+            &target_hash,
+            "explode",
+            vec![],
+        );
+        assert!(result.is_err(), "callee throw must surface as an error");
+        assert_eq!(engine.state(), VMState::FAULT);
+    }
+
+    /// Hash for the test-only interop the boundary test uses to invoke the
+    /// primitive from inside a script (standing in for a native method).
+    const BOUNDARY_TEST_SYSCALL: &str = "Test.NativeCallReturning";
+
+    fn boundary_test_handler(
+        app: &mut ApplicationEngine,
+        _engine: &mut neo_vm::ExecutionEngine,
+    ) -> neo_vm::VmResult<()> {
+        let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
+        match app.call_from_native_contract_returning(
+            &UInt160::zero(),
+            &target_hash,
+            "explode",
+            vec![],
+        ) {
+            Ok(_) => Err(neo_vm::VmError::invalid_operation_msg(
+                "boundary test: callee unexpectedly returned",
+            )),
+            Err(err) => Err(neo_vm::VmError::invalid_operation_msg(err.to_string())),
+        }
+    }
+
+    /// A TRY armed below the native frame cannot catch an exception escaping a
+    /// returning native call: C# throws `VMUnhandledException` when the
+    /// registered context unloads, before any lower TRY is consulted. The entry
+    /// script arms TRY/CATCH around the call; the engine must FAULT (a broken
+    /// boundary would run the CATCH and HALT with `2` on the result stack).
+    #[test]
+    fn returning_call_exception_cannot_be_caught_below_native_frame() {
+        let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
+        let mut contracts = HashMap::new();
+        contracts.insert(
+            target_hash,
+            build_returning_mock(
+                target_hash,
+                "explode",
+                ContractParameterType::Integer,
+                vec![OpCode::PUSH1.byte(), OpCode::THROW.byte()],
+            ),
+        );
+
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new_with_preloaded_native(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            contracts,
+            Arc::new(PlMutex::new(NativeContractsCache::default())),
+            None,
+        )
+        .expect("engine");
+        engine
+            .register_host_service(
+                BOUNDARY_TEST_SYSCALL,
+                0,
+                CallFlags::NONE,
+                boundary_test_handler,
+            )
+            .expect("register test interop");
+
+        // ip0: TRY catch=+10 (-> ip10), no finally
+        // ip3: SYSCALL Test.NativeCallReturning
+        // ip8: ENDTRY +4 (-> ip12)
+        // ip10: PUSH2; RET            <- catch handler (must NOT run)
+        // ip12: PUSH1; RET
+        let mut script = vec![OpCode::TRY.byte(), 10, 0, OpCode::SYSCALL.byte()];
+        script.extend_from_slice(
+            &neo_vm_rs::interop_hash(BOUNDARY_TEST_SYSCALL).to_le_bytes(),
+        );
+        script.extend_from_slice(&[
+            OpCode::ENDTRY.byte(),
+            4,
+            OpCode::PUSH2.byte(),
+            OpCode::RET.byte(),
+            OpCode::PUSH1.byte(),
+            OpCode::RET.byte(),
+        ]);
+
+        engine
+            .load_script(script, CallFlags::ALL, None)
+            .expect("load entry script");
+        let state = engine.execute_allow_fault();
+
+        assert_eq!(
+            state,
+            VMState::FAULT,
+            "the exception must fault the engine, not reach the CATCH"
+        );
+        assert_eq!(
+            engine.result_stack().len(),
+            0,
+            "the CATCH handler must not have produced a result"
         );
     }
 }

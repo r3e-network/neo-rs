@@ -1412,17 +1412,72 @@ impl NativeContract for PolicyContract {
                     )));
                 }
 
-                // C# now awaits CallFromNativeContractAsync(account, token,
-                // "balanceOf"/"transfer", …) — a result-returning contract call
-                // issued from inside the native frame. This engine's native calls
-                // are queued and run only after the native method returns
-                // (`queue_contract_call_from_native`), so the balance cannot be
-                // observed nor the transfer result checked from here. Fault
-                // explicitly rather than diverge silently.
-                Err(CoreError::invalid_operation(
-                    "recoverFund: result-returning contract calls from a native frame \
-                     are not supported by this engine",
-                ))
+                // C# PolicyContract.RecoverFund sweep: `await
+                // engine.CallFromNativeContractAsync<BigInteger>(account, token,
+                // "balanceOf", account)` — the callee runs through the VM with
+                // `account` as the native calling script hash, so the token's
+                // `from == CallingScriptHash` witness bypass authorizes the
+                // transfer without the account's signature.
+                let balance = engine
+                    .call_from_native_contract_returning(
+                        &account,
+                        &token,
+                        "balanceOf",
+                        vec![StackItem::from_byte_string(account.to_bytes())],
+                    )?
+                    .as_int()
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "recoverFund: balanceOf result: {e}"
+                        ))
+                    })?;
+
+                if balance > BigInt::from(0) {
+                    // C#: `await engine.CallFromNativeContractAsync<bool>(account,
+                    // token, "transfer", account, Treasury.Hash, balance,
+                    // StackItem.Null)`; a `false` result faults.
+                    let transferred = engine
+                        .call_from_native_contract_returning(
+                            &account,
+                            &token,
+                            "transfer",
+                            vec![
+                                StackItem::from_byte_string(account.to_bytes()),
+                                StackItem::from_byte_string(
+                                    crate::hashes::TREASURY_HASH.to_bytes(),
+                                ),
+                                StackItem::from_int(balance.clone()),
+                                StackItem::null(),
+                            ],
+                        )?
+                        .as_bool()
+                        .map_err(|e| {
+                            CoreError::invalid_operation(format!(
+                                "recoverFund: transfer result: {e}"
+                            ))
+                        })?;
+                    if !transferred {
+                        return Err(CoreError::invalid_operation(format!(
+                            "Transfer of {balance} from {account} to {} failed in contract {token}.",
+                            *crate::hashes::TREASURY_HASH
+                        )));
+                    }
+                    // C#: engine.SendNotification(Hash, "RecoveredFund",
+                    // [ByteString(account)]).
+                    engine
+                        .send_notification(
+                            Self::script_hash(),
+                            "RecoveredFund".to_string(),
+                            vec![StackItem::from_byte_string(account.to_bytes())],
+                        )
+                        .map_err(|e| {
+                            CoreError::invalid_operation(format!("recoverFund notify: {e}"))
+                        })?;
+                    Ok(vec![u8::from(true)])
+                } else {
+                    // C#: `return false` when the account holds no balance.
+                    Ok(vec![u8::from(false)])
+                }
             }
             other => Err(CoreError::invalid_operation(format!(
                 "PolicyContract method '{other}' is not implemented"
@@ -1941,7 +1996,6 @@ mod policy_writer_tests {
     use neo_config::ProtocolSettings;
     use neo_execution::contract_state::ContractState;
     use neo_execution::native_contract::build_native_contract_state;
-    use neo_io::{BinaryWriter, Serializable};
     use neo_payloads::signer::Signer;
     use neo_payloads::transaction::Transaction;
     use neo_payloads::witness::Witness;
@@ -2003,13 +2057,13 @@ mod policy_writer_tests {
     }
 
     fn deploy_native(cache: &DataCache, state: &ContractState) {
-        let mut writer = BinaryWriter::new();
-        state.serialize(&mut writer).expect("serialize contract state");
         let mut key = vec![CM_PREFIX_CONTRACT];
         key.extend_from_slice(&state.hash.to_bytes());
         cache.add(
             StorageKey::new(crate::ContractManagement::ID, key),
-            StorageItem::from_bytes(writer.to_bytes()),
+            StorageItem::from_bytes(
+                state.serialize_contract_record().expect("record bytes"),
+            ),
         );
     }
 
@@ -2023,8 +2077,9 @@ mod policy_writer_tests {
     /// Runs `method(args...)` on PolicyContract via System.Contract.Call,
     /// signed (Global) by `signer`, against the shared `snapshot`. The closure
     /// must push the call arguments in REVERSE order (deepest first). Returns
-    /// the final VM state and the boolean on top of the result stack (if any).
-    fn call_policy(
+    /// the final VM state and the finished engine (for result-stack and
+    /// notification assertions).
+    fn call_policy_engine(
         snapshot: Arc<DataCache>,
         signer: UInt160,
         settings: ProtocolSettings,
@@ -2032,7 +2087,7 @@ mod policy_writer_tests {
         method: &str,
         argc: i64,
         push_args_reversed: &dyn Fn(&mut ScriptBuilder),
-    ) -> (VmState, Option<bool>) {
+    ) -> (VmState, ApplicationEngine) {
         let mut tx = Transaction::new();
         tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
         tx.set_witnesses(vec![Witness::empty()]);
@@ -2063,6 +2118,29 @@ mod policy_writer_tests {
             .load_script(builder.to_array(), CallFlags::ALL, None)
             .expect("script loads");
         let state = engine.execute_allow_fault();
+        (state, engine)
+    }
+
+    /// [`call_policy_engine`] reduced to the final VM state and the boolean on
+    /// top of the result stack (if any).
+    fn call_policy(
+        snapshot: Arc<DataCache>,
+        signer: UInt160,
+        settings: ProtocolSettings,
+        block: Option<Block>,
+        method: &str,
+        argc: i64,
+        push_args_reversed: &dyn Fn(&mut ScriptBuilder),
+    ) -> (VmState, Option<bool>) {
+        let (state, engine) = call_policy_engine(
+            snapshot,
+            signer,
+            settings,
+            block,
+            method,
+            argc,
+            push_args_reversed,
+        );
         let top = engine
             .result_stack()
             .peek(0)
@@ -2499,5 +2577,271 @@ mod policy_writer_tests {
             },
         );
         assert_eq!(state2, VmState::FAULT, "recoverFund without a request must FAULT");
+    }
+
+    /// Seeds a GAS `AccountState` (`Struct[Balance]`) for `account`.
+    fn seed_gas_balance(cache: &DataCache, account: &UInt160, balance: i64) {
+        let state = StackItem::from_struct(vec![StackItem::from_int(balance)]);
+        let mut key = vec![crate::NEP17_PREFIX_ACCOUNT];
+        key.extend_from_slice(&account.to_bytes());
+        cache.add(
+            StorageKey::new(crate::GasToken::ID, key),
+            StorageItem::from_bytes(
+                BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap(),
+            ),
+        );
+    }
+
+    /// recoverFund happy path (C# `PolicyContract.RecoverFund`, lines 663-680):
+    /// exactly one year after the blocked-account request, an almost-full
+    /// committee signer sweeps the account's full GAS balance to Treasury
+    /// through the VM — `balanceOf` then `transfer` issued from the native
+    /// frame with `account` as the native calling script hash (authorizing the
+    /// transfer via the `from == CallingScriptHash` bypass), Treasury's
+    /// `onNEP17Payment` callback included — and emits `Transfer` followed by
+    /// `RecoveredFund(account)`.
+    #[test]
+    fn recover_fund_e2e_sweeps_balance_to_treasury_and_notifies() {
+        const REQUEST_TIME_MS: u64 = 1_000_000;
+        const SWEPT: i64 = 123_456_789;
+        crate::install();
+        let settings = faun_settings();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 100));
+        deploy_native(&cache, &build_native_contract_state(&crate::GasToken, &settings, 100));
+        // Treasury must be a deployed contract so the GAS transfer's
+        // onNEP17Payment callback runs (C# PostTransferAsync calls it whenever
+        // the recipient is a contract).
+        deploy_native(&cache, &build_native_contract_state(&crate::Treasury, &settings, 100));
+
+        let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
+        let treasury = *crate::hashes::TREASURY_HASH;
+        let gas_hash = *crate::hashes::GAS_TOKEN_HASH;
+        // The blocked-account entry carries the request's millisecond timestamp.
+        cache.add(
+            blocked_account_key(&account),
+            StorageItem::from_bytes(BigInt::from(REQUEST_TIME_MS).to_signed_bytes_le()),
+        );
+        seed_gas_balance(&cache, &account, SWEPT);
+        let snapshot = Arc::new(cache);
+
+        // Exactly one year elapsed: C# faults only when `elapsed < required`,
+        // so the boundary block must pass.
+        let mut header = BlockHeader::default();
+        header.set_index(100);
+        header.set_timestamp(REQUEST_TIME_MS + REQUIRED_TIME_FOR_RECOVER_FUND);
+
+        let (state, engine) = call_policy_engine(
+            Arc::clone(&snapshot),
+            committee_address(&committee),
+            settings,
+            Some(Block::from_parts(header, vec![])),
+            "recoverFund",
+            2,
+            &|b| {
+                b.emit_push(&gas_hash.to_array()); // token (arg 1, deeper)
+                b.emit_push(&account.to_array()); // account (arg 0, top)
+            },
+        );
+        assert_eq!(
+            state,
+            VmState::HALT,
+            "recoverFund sweep must HALT: {:?}",
+            engine.fault_exception()
+        );
+        assert!(
+            engine.result_stack().peek(0).unwrap().as_bool().unwrap(),
+            "recoverFund returns true after a sweep"
+        );
+
+        // The full balance moved to Treasury; the account's entry was deleted
+        // (an exact-balance NEP-17 transfer removes the from-record).
+        assert_eq!(
+            crate::read_nep17_balance(&snapshot, crate::GasToken::ID, &treasury).unwrap(),
+            BigInt::from(SWEPT)
+        );
+        assert_eq!(
+            crate::read_nep17_balance(&snapshot, crate::GasToken::ID, &account).unwrap(),
+            BigInt::from(0)
+        );
+        // recoverFund does not unblock the account.
+        assert!(snapshot.get(&blocked_account_key(&account)).is_some());
+
+        // Notification order matches C#: the GAS Transfer (emitted inside the
+        // nested transfer call) first, then Policy's RecoveredFund(account).
+        let notifications = engine.notifications();
+        assert_eq!(notifications.len(), 2, "expected Transfer + RecoveredFund");
+        assert_eq!(notifications[0].script_hash, gas_hash);
+        assert_eq!(notifications[0].event_name, "Transfer");
+        assert_eq!(
+            notifications[0].state[0].as_bytes().unwrap(),
+            account.to_bytes()
+        );
+        assert_eq!(
+            notifications[0].state[1].as_bytes().unwrap(),
+            treasury.to_bytes()
+        );
+        assert_eq!(
+            notifications[0].state[2].as_int().unwrap(),
+            BigInt::from(SWEPT)
+        );
+        assert_eq!(notifications[1].script_hash, PolicyContract::script_hash());
+        assert_eq!(notifications[1].event_name, "RecoveredFund");
+        assert_eq!(
+            notifications[1].state[0].as_bytes().unwrap(),
+            account.to_bytes()
+        );
+    }
+
+    /// recoverFund with a zero balance: C# `return false` — HALT, nothing
+    /// moves, and neither Transfer nor RecoveredFund is emitted.
+    #[test]
+    fn recover_fund_e2e_zero_balance_returns_false() {
+        const REQUEST_TIME_MS: u64 = 1_000_000;
+        crate::install();
+        let settings = faun_settings();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 100));
+        deploy_native(&cache, &build_native_contract_state(&crate::GasToken, &settings, 100));
+
+        let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
+        let gas_hash = *crate::hashes::GAS_TOKEN_HASH;
+        cache.add(
+            blocked_account_key(&account),
+            StorageItem::from_bytes(BigInt::from(REQUEST_TIME_MS).to_signed_bytes_le()),
+        );
+        let snapshot = Arc::new(cache);
+
+        let mut header = BlockHeader::default();
+        header.set_index(100);
+        header.set_timestamp(REQUEST_TIME_MS + REQUIRED_TIME_FOR_RECOVER_FUND);
+
+        let (state, engine) = call_policy_engine(
+            Arc::clone(&snapshot),
+            committee_address(&committee),
+            settings,
+            Some(Block::from_parts(header, vec![])),
+            "recoverFund",
+            2,
+            &|b| {
+                b.emit_push(&gas_hash.to_array());
+                b.emit_push(&account.to_array());
+            },
+        );
+        assert_eq!(
+            state,
+            VmState::HALT,
+            "zero-balance recoverFund must HALT: {:?}",
+            engine.fault_exception()
+        );
+        assert!(
+            !engine.result_stack().peek(0).unwrap().as_bool().unwrap(),
+            "recoverFund returns false when there is nothing to sweep"
+        );
+        assert!(
+            engine.notifications().is_empty(),
+            "no Transfer/RecoveredFund for an empty sweep"
+        );
+        assert_eq!(
+            crate::read_nep17_balance(
+                &snapshot,
+                crate::GasToken::ID,
+                &crate::hashes::TREASURY_HASH
+            )
+            .unwrap(),
+            BigInt::from(0)
+        );
+    }
+
+    /// One millisecond short of the one-year window faults (C# "Request must
+    /// be signed at least 1 year ago. Remaining time: …") and moves no funds.
+    #[test]
+    fn recover_fund_e2e_rejects_recent_request() {
+        const REQUEST_TIME_MS: u64 = 1_000_000;
+        const BALANCE: i64 = 777;
+        crate::install();
+        let settings = faun_settings();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 100));
+        deploy_native(&cache, &build_native_contract_state(&crate::GasToken, &settings, 100));
+
+        let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
+        let gas_hash = *crate::hashes::GAS_TOKEN_HASH;
+        cache.add(
+            blocked_account_key(&account),
+            StorageItem::from_bytes(BigInt::from(REQUEST_TIME_MS).to_signed_bytes_le()),
+        );
+        seed_gas_balance(&cache, &account, BALANCE);
+        let snapshot = Arc::new(cache);
+
+        let mut header = BlockHeader::default();
+        header.set_index(100);
+        header.set_timestamp(REQUEST_TIME_MS + REQUIRED_TIME_FOR_RECOVER_FUND - 1);
+
+        let (state, _) = call_policy(
+            Arc::clone(&snapshot),
+            committee_address(&committee),
+            settings,
+            Some(Block::from_parts(header, vec![])),
+            "recoverFund",
+            2,
+            &|b| {
+                b.emit_push(&gas_hash.to_array());
+                b.emit_push(&account.to_array());
+            },
+        );
+        assert_eq!(state, VmState::FAULT, "a too-recent request must FAULT");
+        assert_eq!(
+            crate::read_nep17_balance(&snapshot, crate::GasToken::ID, &account).unwrap(),
+            BigInt::from(BALANCE),
+            "the balance must be untouched"
+        );
+    }
+
+    /// A deployed token that does not declare the NEP-17 standard faults (C#
+    /// "Contract {token} does not implement NEP-17 standard."). Treasury is a
+    /// deployed non-NEP-17 contract, so it doubles as the token here.
+    #[test]
+    fn recover_fund_e2e_requires_nep17_standard() {
+        const REQUEST_TIME_MS: u64 = 1_000_000;
+        crate::install();
+        let settings = faun_settings();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        deploy_native(&cache, &build_native_contract_state(&PolicyContract, &settings, 100));
+        deploy_native(&cache, &build_native_contract_state(&crate::Treasury, &settings, 100));
+
+        let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
+        let treasury = *crate::hashes::TREASURY_HASH;
+        cache.add(
+            blocked_account_key(&account),
+            StorageItem::from_bytes(BigInt::from(REQUEST_TIME_MS).to_signed_bytes_le()),
+        );
+        let snapshot = Arc::new(cache);
+
+        let mut header = BlockHeader::default();
+        header.set_index(100);
+        header.set_timestamp(REQUEST_TIME_MS + REQUIRED_TIME_FOR_RECOVER_FUND);
+
+        let (state, _) = call_policy(
+            Arc::clone(&snapshot),
+            committee_address(&committee),
+            settings,
+            Some(Block::from_parts(header, vec![])),
+            "recoverFund",
+            2,
+            &|b| {
+                b.emit_push(&treasury.to_array());
+                b.emit_push(&account.to_array());
+            },
+        );
+        assert_eq!(state, VmState::FAULT, "a non-NEP-17 token must FAULT");
     }
 }

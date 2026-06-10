@@ -64,6 +64,8 @@ impl ApplicationEngine {
             entry_script_hash: None,
             invocation_counter: HashMap::new(),
             pending_native_calls: Vec::new(),
+            native_call_boundary_contexts: Vec::new(),
+            host_syscall_registrations: Vec::new(),
             nonce_data,
             random_times: 0,
             diagnostic,
@@ -134,6 +136,8 @@ impl ApplicationEngine {
             entry_script_hash: None,
             invocation_counter: HashMap::new(),
             pending_native_calls: Vec::new(),
+            native_call_boundary_contexts: Vec::new(),
+            host_syscall_registrations: Vec::new(),
             nonce_data,
             random_times: 0,
             diagnostic,
@@ -202,6 +206,10 @@ impl ApplicationEngine {
                 handler,
             },
         );
+        // Remember the registration so nested VM execution from a native frame
+        // can rebuild the registry while `on_syscall` holds the original.
+        self.host_syscall_registrations
+            .push((name.to_string(), price, call_flags));
         Ok(())
     }
 
