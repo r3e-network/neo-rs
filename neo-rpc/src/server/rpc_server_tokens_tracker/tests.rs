@@ -83,15 +83,16 @@ fn store_contract_state(system: &Arc<Node>, contract: &ContractState) {
         .expect("contract management")
         .id();
 
-    let mut writer = neo_io::BinaryWriter::new();
-    contract.serialize(&mut writer).expect("serialize contract");
+    let record = contract
+        .serialize_contract_record()
+        .expect("serialize contract record");
 
     let mut store_cache = system.store_cache();
     let mut key_bytes = Vec::with_capacity(1 + 20);
     key_bytes.push(PREFIX_CONTRACT);
     key_bytes.extend_from_slice(&contract.hash.to_bytes());
     let key = StorageKey::new(contract_mgmt_id, key_bytes);
-    store_cache.add(key, StorageItem::from_bytes(writer.into_bytes()));
+    store_cache.add(key, StorageItem::from_bytes(record));
 
     let mut id_bytes = Vec::with_capacity(1 + 4);
     id_bytes.push(PREFIX_CONTRACT_HASH);

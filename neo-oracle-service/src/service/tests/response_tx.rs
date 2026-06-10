@@ -55,8 +55,6 @@ fn seed_oracle_contract(snapshot: &DataCache) {
     use neo_primitives::ContractParameterType;
     use neo_native_contracts::{ContractManagement, OracleContract};
     use neo_execution::ContractState;
-    use neo_io::BinaryWriter;
-    use neo_io::Serializable as IoSerializable;
 
     let _ = ContractEventDescriptor::default();
 
@@ -94,9 +92,9 @@ fn seed_oracle_contract(snapshot: &DataCache) {
         manifest,
     );
 
-    let mut writer = BinaryWriter::new();
-    IoSerializable::serialize(&state, &mut writer).expect("serialize state");
-    let bytes = writer.into_bytes();
+    let bytes = state
+        .serialize_contract_record()
+        .expect("serialize contract record");
 
     let mut key = Vec::with_capacity(1 + 20);
     key.push(8); // PREFIX_CONTRACT

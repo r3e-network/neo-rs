@@ -106,8 +106,7 @@ impl ContractManagement {
             return Ok(None);
         }
 
-        let mut reader = MemoryReader::new(&bytes);
-        let state = ContractState::deserialize(&mut reader).map_err(|e| {
+        let state = ContractState::deserialize_contract_record(&bytes).map_err(|e| {
             CoreError::deserialization(format!("Failed to deserialize contract state: {e}"))
         })?;
         Ok(Some(state))
@@ -517,15 +516,12 @@ fn manifest_is_valid(
         .all(|group| group.verify_signature(&hash.to_bytes()).unwrap_or(false))
 }
 
-/// Serializes a `ContractState` into the per-contract record bytes — the
-/// `neo_io::Serializable` encoding that `get_contract_from_snapshot` /
-/// `build_native_contract_state` read and write.
+/// Serializes a `ContractState` into the per-contract record bytes — the C#
+/// interoperable form (`BinarySerializer.Serialize(state.ToStackItem(null))`,
+/// see `StorageItem.Value` over `IInteroperable`), the encoding that
+/// `get_contract_from_snapshot` reads.
 fn serialize_contract_record(state: &ContractState) -> CoreResult<Vec<u8>> {
-    let mut writer = BinaryWriter::new();
-    state.serialize(&mut writer).map_err(|e| {
-        CoreError::serialization(format!("ContractManagement: contract record: {e}"))
-    })?;
-    Ok(writer.to_bytes())
+    state.serialize_contract_record()
 }
 
 /// Decodes the optional trailing `data: Any` argument shared by the 3-arg
@@ -1362,11 +1358,11 @@ mod tests {
         let cache = DataCache::new(false);
         let hash = UInt160::from_bytes(&[0x42u8; 20]).unwrap();
         let state = ContractState::new_native(7, hash, "TestUserContract".to_string());
-        let mut writer = neo_io::BinaryWriter::new();
-        state.serialize(&mut writer).expect("serialize contract state");
         cache.add(
             StorageKey::new(ContractManagement::ID, contract_storage_key(&hash)),
-            StorageItem::from_bytes(writer.to_bytes()),
+            StorageItem::from_bytes(
+                state.serialize_contract_record().expect("record bytes"),
+            ),
         );
         cache.add(
             StorageKey::new(ContractManagement::ID, contract_id_storage_key(7)),
@@ -1397,11 +1393,11 @@ mod tests {
             parameters: vec![ContractParameterDefinition::default(); 4],
             ..Default::default()
         });
-        let mut writer = neo_io::BinaryWriter::new();
-        state.serialize(&mut writer).expect("serialize contract state");
         cache.add(
             StorageKey::new(ContractManagement::ID, contract_storage_key(&hash)),
-            StorageItem::from_bytes(writer.to_bytes()),
+            StorageItem::from_bytes(
+                state.serialize_contract_record().expect("record bytes"),
+            ),
         );
 
         let fetched = ContractManagement::get_contract_from_snapshot(&cache, &hash)
@@ -1749,11 +1745,11 @@ mod destroy_engine_tests {
 
     /// Writes a serialized contract record under `Prefix_Contract ++ hash`.
     fn put_contract_record(cache: &DataCache, state: &ContractState) {
-        let mut writer = BinaryWriter::new();
-        state.serialize(&mut writer).expect("serialize contract state");
         cache.add(
             StorageKey::new(ContractManagement::ID, contract_storage_key(&state.hash)),
-            StorageItem::from_bytes(writer.to_bytes()),
+            StorageItem::from_bytes(
+                state.serialize_contract_record().expect("record bytes"),
+            ),
         );
     }
 

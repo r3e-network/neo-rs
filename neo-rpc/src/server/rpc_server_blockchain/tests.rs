@@ -171,14 +171,15 @@ fn store_contract_state(store: &mut neo_storage::persistence::StoreCache, contra
         .expect("contract management")
         .id();
 
-    let mut writer = BinaryWriter::new();
-    contract.serialize(&mut writer).expect("serialize contract");
+    let record = contract
+        .serialize_contract_record()
+        .expect("serialize contract record");
 
     let mut key_bytes = Vec::with_capacity(1 + 20);
     key_bytes.push(PREFIX_CONTRACT);
     key_bytes.extend_from_slice(&contract.hash.to_bytes());
     let key = StorageKey::new(contract_mgmt_id, key_bytes);
-    store.add(key, StorageItem::from_bytes(writer.into_bytes()));
+    store.add(key, StorageItem::from_bytes(record));
 
     let mut id_bytes = Vec::with_capacity(1 + 4);
     id_bytes.push(PREFIX_CONTRACT_HASH);

@@ -141,6 +141,46 @@ impl ContractState {
             "manifest": manifest,
         }))
     }
+
+    /// Serializes this contract state into the per-contract storage record
+    /// bytes (the `Prefix_Contract(8)` value under `ContractManagement`).
+    ///
+    /// Matches C# exactly: `StorageItem.Value` for an `IInteroperable` is
+    /// `BinarySerializer.Serialize(contract.ToStackItem(null),
+    /// ExecutionEngineLimits.Default)`, and `ContractState.ToStackItem` is
+    /// `Array [Integer(Id), Integer(UpdateCounter), ByteString(Hash),
+    /// ByteString(Nef.ToArray()), Manifest.ToStackItem()]` — NOT the raw
+    /// `neo_io` field encoding (which remains available via [`Serializable`]
+    /// for non-storage purposes).
+    pub fn serialize_contract_record(&self) -> CoreResult<Vec<u8>> {
+        let item = StackItem::try_from(self.to_stack_value()).map_err(|e| {
+            CoreError::serialization(format!("ContractState record stack item: {e}"))
+        })?;
+        neo_serialization::BinarySerializer::serialize(
+            &item,
+            &neo_vm_rs::ExecutionEngineLimits::default(),
+        )
+        .map_err(|e| CoreError::serialization(format!("ContractState record: {e}")))
+    }
+
+    /// Decodes a per-contract storage record produced by
+    /// [`Self::serialize_contract_record`].
+    ///
+    /// Matches C# `StorageItem.GetInteroperable<ContractState>()`:
+    /// `BinarySerializer.Deserialize(value, ExecutionEngineLimits.Default)`
+    /// followed by `ContractState.FromStackItem`.
+    pub fn deserialize_contract_record(bytes: &[u8]) -> CoreResult<Self> {
+        let limits = neo_vm_rs::ExecutionEngineLimits::default();
+        let value = neo_serialization::BinarySerializer::deserialize_stack_value_with_limits(
+            bytes,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::deserialization(format!("ContractState record: {e}")))?;
+        let mut state = Self::default();
+        state.from_stack_value(value)?;
+        Ok(state)
+    }
 }
 
 impl Interoperable for ContractState {
@@ -343,5 +383,166 @@ mod tests {
         let expected = StackItem::try_from(state.to_stack_value()).unwrap();
 
         assert_eq!(state.to_stack_item().unwrap(), expected);
+    }
+
+    #[test]
+    fn contract_record_pins_the_interoperable_stack_item_encoding() {
+        // The stored Prefix_Contract(8) record must be the C# interoperable
+        // form: BinarySerializer.Serialize(ContractState.ToStackItem(null)),
+        // i.e. an Array of [Integer(Id), Integer(UpdateCounter),
+        // ByteString(Hash), ByteString(Nef.ToArray()), Manifest.ToStackItem()]
+        // — verified against neo_csharp ContractState.cs / StorageItem.cs.
+        let hash = UInt160::from_bytes(&[0x11u8; 20]).expect("hash");
+        let nef = NefFile::new("compiler".to_string(), vec![0x40]);
+        let mut manifest = ContractManifest::new("Fixture".to_string());
+        manifest.supported_standards = vec!["NEP-17".to_string()];
+        let mut state = ContractState::new(7, hash, nef.clone(), manifest);
+        state.update_counter = 9;
+
+        let record = state.serialize_contract_record().expect("record bytes");
+
+        // Self-consistency: the record equals the Rust BinarySerializer run
+        // over a HAND-BUILT stack tree assembled per the C# composition rules
+        // (ContractState.ToStackItem + ContractManifest.ToStackItem).
+        let expected_value = StackValue::Array(vec![
+            StackValue::Integer(7),
+            StackValue::Integer(9),
+            StackValue::ByteString(hash.to_bytes()),
+            StackValue::ByteString(nef.to_bytes()),
+            StackValue::Struct(vec![
+                StackValue::ByteString(b"Fixture".to_vec()),
+                StackValue::Array(Vec::new()), // groups
+                StackValue::Map(Vec::new()),   // features (always empty)
+                StackValue::Array(vec![StackValue::ByteString(b"NEP-17".to_vec())]),
+                StackValue::Struct(vec![
+                    StackValue::Array(Vec::new()), // abi.methods
+                    StackValue::Array(Vec::new()), // abi.events
+                ]),
+                // permissions: the default wildcard permission is
+                // Struct[Null(contract), Null(methods)].
+                StackValue::Array(vec![StackValue::Struct(vec![
+                    StackValue::Null,
+                    StackValue::Null,
+                ])]),
+                StackValue::Null,                         // trusts wildcard
+                StackValue::ByteString(b"null".to_vec()), // extra absent
+            ]),
+        ]);
+        let expected = neo_serialization::BinarySerializer::serialize(
+            &StackItem::try_from(expected_value).expect("expected stack item"),
+            &neo_vm_rs::ExecutionEngineLimits::default(),
+        )
+        .expect("expected bytes");
+        assert_eq!(record, expected);
+
+        // Structural pinning straight from the C# BinarySerializer wire rules
+        // so a regression to the raw neo_io field encoding (which would start
+        // with the little-endian Id `07 00 00 00`) cannot pass:
+        //   Array(0x40) tag + var-int element count 5,
+        //   Integer(0x21) tag + var-bytes minimal signed-LE payloads,
+        //   ByteString(0x28) tag + var-bytes payloads,
+        //   Struct(0x41) tag + var-int count 8 for the manifest.
+        assert_eq!(record[0], 0x40, "record must start with the Array type byte");
+        assert_eq!(record[1], 5, "ContractState projects exactly 5 elements");
+        assert_eq!(&record[2..5], &[0x21, 1, 7], "Id: Integer, signed-LE minimal");
+        assert_eq!(&record[5..8], &[0x21, 1, 9], "UpdateCounter: Integer");
+        assert_eq!(record[8], 0x28, "Hash is a ByteString");
+        assert_eq!(record[9], 20, "Hash payload is 20 bytes");
+        assert_eq!(&record[10..30], hash.to_bytes().as_slice());
+        let nef_bytes = nef.to_bytes();
+        assert!(nef_bytes.len() < 0xFD, "fixture NEF stays in 1-byte var-int range");
+        assert_eq!(record[30], 0x28, "NEF is a ByteString of Nef.ToArray()");
+        assert_eq!(record[31] as usize, nef_bytes.len());
+        assert_eq!(&record[32..32 + nef_bytes.len()], nef_bytes.as_slice());
+        let manifest_offset = 32 + nef_bytes.len();
+        assert_eq!(record[manifest_offset], 0x41, "manifest is a Struct");
+        assert_eq!(record[manifest_offset + 1], 8, "manifest has 8 fields");
+
+        // And the record must NOT be the legacy raw neo_io encoding.
+        let mut writer = BinaryWriter::new();
+        Serializable::serialize(&state, &mut writer).expect("legacy serialize");
+        assert_ne!(record, writer.into_bytes());
+    }
+
+    #[test]
+    fn contract_record_roundtrips_with_nested_manifest() {
+        use neo_manifest::{
+            ContractAbi, ContractEventDescriptor, ContractMethodDescriptor,
+            ContractParameterDefinition, ContractPermissionDescriptor, WildCardContainer,
+        };
+        use neo_primitives::ContractParameterType;
+
+        let hash = UInt160::from_bytes(&[0x22u8; 20]).expect("hash");
+        let nef = NefFile::new("compiler".to_string(), vec![1, 2, 3]);
+        let mut manifest = ContractManifest::new("RoundTrip".to_string());
+        manifest.supported_standards = vec!["NEP-17".to_string()];
+        manifest.abi = ContractAbi::new(
+            vec![ContractMethodDescriptor::new(
+                "transfer".to_string(),
+                vec![
+                    ContractParameterDefinition::new(
+                        "from".to_string(),
+                        ContractParameterType::Hash160,
+                    )
+                    .expect("param"),
+                    ContractParameterDefinition::new(
+                        "amount".to_string(),
+                        ContractParameterType::Integer,
+                    )
+                    .expect("param"),
+                ],
+                ContractParameterType::Boolean,
+                3,
+                false,
+            )
+            .expect("method")],
+            vec![ContractEventDescriptor::new("Transfer".to_string(), Vec::new())
+                .expect("event")],
+        );
+        manifest.trusts = WildCardContainer::create(vec![ContractPermissionDescriptor::Hash(
+            UInt160::from_bytes(&[5u8; 20]).expect("trust hash"),
+        )]);
+        // Negative ids (native range) must survive the signed-LE Integer leg.
+        let mut state = ContractState::new(-3, hash, nef, manifest);
+        state.update_counter = 2;
+
+        let record = state.serialize_contract_record().expect("record bytes");
+        let parsed = ContractState::deserialize_contract_record(&record).expect("parse record");
+
+        assert_eq!(parsed.id, -3);
+        assert_eq!(parsed.update_counter, 2);
+        assert_eq!(parsed.hash, state.hash);
+        assert_eq!(parsed.nef.script, state.nef.script);
+        assert_eq!(parsed.manifest.name, "RoundTrip");
+        assert_eq!(parsed.manifest.supported_standards, vec!["NEP-17".to_string()]);
+        assert_eq!(parsed.manifest.abi.methods.len(), 1);
+        assert_eq!(parsed.manifest.abi.methods[0].name, "transfer");
+        assert_eq!(parsed.manifest.abi.methods[0].parameters.len(), 2);
+        assert_eq!(parsed.manifest.abi.methods[0].offset, 3);
+        assert_eq!(parsed.manifest.abi.events.len(), 1);
+        assert_eq!(parsed.manifest.abi.events[0].name, "Transfer");
+        assert_eq!(parsed.manifest.trusts, state.manifest.trusts);
+
+        // Re-encoding the parsed state must reproduce identical record bytes.
+        assert_eq!(
+            parsed.serialize_contract_record().expect("re-encode"),
+            record
+        );
+    }
+
+    #[test]
+    fn contract_record_rejects_legacy_raw_encoding() {
+        // A legacy raw neo_io record (i32 id first) must NOT decode as an
+        // interoperable record: 0x07 is not a valid stack item type tag.
+        let hash = UInt160::from_bytes(&[9u8; 20]).expect("hash");
+        let nef = NefFile::new("compiler".to_string(), vec![0x40]);
+        let manifest = ContractManifest::new("Legacy".to_string());
+        let state = ContractState::new(7, hash, nef, manifest);
+
+        let mut writer = BinaryWriter::new();
+        Serializable::serialize(&state, &mut writer).expect("legacy serialize");
+        let legacy = writer.into_bytes();
+
+        assert!(ContractState::deserialize_contract_record(&legacy).is_err());
     }
 }

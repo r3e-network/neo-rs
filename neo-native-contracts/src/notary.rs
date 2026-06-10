@@ -10,7 +10,7 @@
 use std::any::Any;
 use std::sync::LazyLock;
 
-use neo_config::Hardfork;
+use neo_config::{Hardfork, ProtocolSettings};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
@@ -365,6 +365,20 @@ impl NativeContract for Notary {
 
     fn activations(&self) -> Vec<Hardfork> {
         vec![Hardfork::HfEchidna, Hardfork::HfFaun]
+    }
+
+    /// C# `Notary.OnManifestCompose` (Notary.cs:92-102): NEP-30 joins NEP-27
+    /// once HF_Faun is enabled at the height.
+    fn supported_standards(
+        &self,
+        settings: &ProtocolSettings,
+        block_height: u32,
+    ) -> Vec<String> {
+        if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
+            vec!["NEP-27".to_string(), "NEP-30".to_string()]
+        } else {
+            vec!["NEP-27".to_string()]
+        }
     }
 
     fn methods(&self) -> &[NativeMethod] {
@@ -931,13 +945,13 @@ mod verify_dispatch_tests {
     const CM_PREFIX_CONTRACT: u8 = 8;
 
     fn deploy_native(cache: &DataCache, state: &ContractState) {
-        let mut writer = BinaryWriter::new();
-        state.serialize(&mut writer).expect("serialize contract state");
         let mut key = vec![CM_PREFIX_CONTRACT];
         key.extend_from_slice(&state.hash.to_bytes());
         cache.add(
             StorageKey::new(crate::ContractManagement::ID, key),
-            StorageItem::from_bytes(writer.to_bytes()),
+            StorageItem::from_bytes(
+                state.serialize_contract_record().expect("record bytes"),
+            ),
         );
     }
 
@@ -1210,5 +1224,20 @@ mod verify_dispatch_tests {
         let (state4, ok4) = call_verify(snapshot, Some(container_single), Some(&sig_single));
         assert_eq!(state4, VmState::HALT);
         assert!(!ok4, "Sender == Notary requires exactly two signers");
+    }
+
+    /// C# `Notary.OnManifestCompose` (Notary.cs:92-102): NEP-27 alone until
+    /// HF_Faun is enabled at the height, then NEP-27 + NEP-30.
+    #[test]
+    fn manifest_standards_gain_nep30_at_faun() {
+        let echidna_only = build_native_contract_state(&Notary, &echidna_settings(), 0);
+        assert_eq!(echidna_only.manifest.supported_standards, ["NEP-27"]);
+
+        let mut settings = echidna_settings();
+        settings.hardforks.insert(Hardfork::HfFaun, 10);
+        let before = build_native_contract_state(&Notary, &settings, 9);
+        assert_eq!(before.manifest.supported_standards, ["NEP-27"]);
+        let after = build_native_contract_state(&Notary, &settings, 10);
+        assert_eq!(after.manifest.supported_standards, ["NEP-27", "NEP-30"]);
     }
 }

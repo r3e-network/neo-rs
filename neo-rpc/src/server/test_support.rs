@@ -166,17 +166,16 @@ fn seed_native_contract_records(node: &Node) {
         let Some(state) = contract.contract_state(&settings, 0) else {
             continue;
         };
-        let mut writer = neo_io::BinaryWriter::new();
-        state
-            .serialize(&mut writer)
-            .expect("serialize native contract state");
+        let record = state
+            .serialize_contract_record()
+            .expect("serialize native contract record");
 
         let mut record_key = Vec::with_capacity(1 + 20);
         record_key.push(PREFIX_CONTRACT);
         record_key.extend_from_slice(&state.hash.to_bytes());
         store.add(
             StorageKey::new(CONTRACT_MANAGEMENT_ID, record_key),
-            StorageItem::from_bytes(writer.into_bytes()),
+            StorageItem::from_bytes(record),
         );
 
         let mut id_key = Vec::with_capacity(1 + 4);

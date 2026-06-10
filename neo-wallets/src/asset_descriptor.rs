@@ -168,7 +168,6 @@ mod tests {
     use neo_data_cache::{DataCache, StorageItem, StorageKey};
     use neo_execution::native_contract::{build_native_contract_state, NativeContract};
     use neo_execution::contract_state::ContractState;
-    use neo_io::{BinaryWriter, Serializable};
     use neo_native_contracts::{GasToken, NeoToken};
 
     /// `ContractManagement.PREFIX_CONTRACT` — the per-contract storage prefix
@@ -176,11 +175,13 @@ mod tests {
     const PREFIX_CONTRACT: u8 = 8;
 
     /// Inserts a deployed `ContractState` for `state.hash` into `cache` under the
-    /// ContractManagement record key, mirroring a post-genesis snapshot so
-    /// `get_contract_from_snapshot` can resolve it.
+    /// ContractManagement record key (the C# interoperable stack-item record),
+    /// mirroring a post-genesis snapshot so `get_contract_from_snapshot` can
+    /// resolve it.
     fn deploy_contract_record(cache: &DataCache, state: &ContractState) {
-        let mut writer = BinaryWriter::new();
-        state.serialize(&mut writer).expect("serialize contract state");
+        let record = state
+            .serialize_contract_record()
+            .expect("serialize contract record");
 
         let mut key = Vec::with_capacity(1 + 20);
         key.push(PREFIX_CONTRACT);
@@ -188,7 +189,7 @@ mod tests {
 
         cache.add(
             StorageKey::new(ContractManagement::ID, key),
-            StorageItem::from_bytes(writer.to_bytes()),
+            StorageItem::from_bytes(record),
         );
     }
 
