@@ -18,8 +18,8 @@ use neo_config::{Hardfork, ProtocolSettings};
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
-use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeMethod};
-use neo_primitives::{CallFlags, ContractParameterType, UInt160};
+use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeEvent, NativeMethod};
+use neo_primitives::{CallFlags, ContractParameterType, FindOptions, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
@@ -870,10 +870,12 @@ fn neo_account_key(account: &UInt160) -> StorageKey {
 
 /// C# `GetCandidatesInternal`: scan `Prefix_Candidate` (key = prefix ++ 33-byte
 /// pubkey; value = CandidateState `Struct[Registered(bool), Votes]`), returning
-/// the `(pubkey, votes)` pairs of the registered candidates in storage-scan
-/// order, excluding candidates whose signature-contract address is blocked by
-/// `PolicyContract` (`!Policy.IsBlocked(snapshot, sigScriptHash)`).
-fn read_registered_candidates(snapshot: &DataCache) -> CoreResult<Vec<(ECPoint, BigInt)>> {
+/// the raw `(key, value)` storage entries of the registered candidates in
+/// storage-scan order, excluding candidates whose signature-contract address is
+/// blocked by `PolicyContract` (`!Policy.IsBlocked(snapshot, sigScriptHash)`).
+fn registered_candidate_entries(
+    snapshot: &DataCache,
+) -> CoreResult<Vec<(StorageKey, StorageItem)>> {
     let prefix = StorageKey::new(NeoToken::ID, vec![PREFIX_CANDIDATE]);
     let mut out = Vec::new();
     for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
@@ -884,19 +886,80 @@ fn read_registered_candidates(snapshot: &DataCache) -> CoreResult<Vec<(ECPoint, 
         let Ok(pubkey) = ECPoint::from_bytes(&key_bytes[1..34]) else {
             continue;
         };
-        let (registered, votes) = decode_candidate_state(&item.value_bytes())?;
+        let (registered, _votes) = decode_candidate_state(&item.value_bytes())?;
         if registered {
             let account =
-                UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+                UInt160::from_script(&Contract::create_signature_redeem_script(pubkey));
             if snapshot
                 .get(&crate::policy_contract::blocked_account_key(&account))
                 .is_none()
             {
-                out.push((pubkey, votes));
+                out.push((key, item));
             }
         }
     }
     Ok(out)
+}
+
+/// [`registered_candidate_entries`] projected to `(pubkey, votes)` pairs — the
+/// shape consumed by `getCandidates` and the committee recompute.
+fn read_registered_candidates(snapshot: &DataCache) -> CoreResult<Vec<(ECPoint, BigInt)>> {
+    registered_candidate_entries(snapshot)?
+        .into_iter()
+        .map(|(key, item)| {
+            let pubkey = ECPoint::from_bytes(&key.key()[1..34])
+                .map_err(|e| CoreError::invalid_data(format!("candidate key: {e}")))?;
+            let (_registered, votes) = decode_candidate_state(&item.value_bytes())?;
+            Ok((pubkey, votes))
+        })
+        .collect()
+}
+
+/// C# `RegisterInternal` (NeoToken.cs:411-423), shared by `registerCandidate`
+/// and the Echidna `onNEP17Payment` GAS-payment path: requires a witness from
+/// the candidate's signature-contract account (returning `false` without one),
+/// creates/flips the CandidateState to Registered, and emits
+/// `CandidateStateChanged` for a fresh registration (post-Echidna, matching the
+/// V1 `registerCandidate` registration's AllowNotify). `method` labels errors
+/// with the invoking ABI method.
+fn register_internal(
+    engine: &mut ApplicationEngine,
+    pubkey: &ECPoint,
+    method: &str,
+) -> CoreResult<bool> {
+    let account = UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+    let authorized = engine
+        .check_witness_hash(&account)
+        .map_err(|e| CoreError::invalid_operation(format!("NeoToken::{method}: witness: {e}")))?;
+    if !authorized {
+        return Ok(false);
+    }
+    let snapshot = engine.snapshot_cache();
+    let key = candidate_key(pubkey);
+    let (registered, votes) = match snapshot.get(&key) {
+        Some(item) => decode_candidate_state(&item.value_bytes())?,
+        None => (false, BigInt::from(0)),
+    };
+    if registered {
+        return Ok(true);
+    }
+    snapshot.update(key, StorageItem::from_bytes(encode_candidate_state(true, &votes)?));
+    if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
+        engine
+            .send_notification(
+                NeoToken::script_hash(),
+                "CandidateStateChanged".to_string(),
+                vec![
+                    StackItem::from_byte_string(pubkey.to_bytes()),
+                    StackItem::from_bool(true),
+                    StackItem::from_int(votes),
+                ],
+            )
+            .map_err(|e| {
+                CoreError::invalid_operation(format!("NeoToken::{method}: notify: {e}"))
+            })?;
+    }
+    Ok(true)
 }
 
 /// C# `GetCandidateVote`: the votes for `pubkey` if it is a registered candidate,
@@ -993,7 +1056,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash160],
             int,
-        ),
+        )
+        .with_parameter_names(["account"]),
         // NEP-17 transfer(from, to, amount, data) -> Boolean (CpuFee 1<<17,
         // States|AllowCall|AllowNotify; NEO governance runs in OnBalanceChanging).
         NativeMethod::new(
@@ -1008,7 +1072,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
                 ContractParameterType::Any,
             ],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_parameter_names(["from", "to", "amount", "data"]),
         // Governance reads.
         NativeMethod::new("getGasPerBlock".into(), 1 << 15, true, read_states, vec![], int),
         NativeMethod::new("getRegisterPrice".into(), 1 << 15, true, read_states, vec![], int),
@@ -1038,7 +1103,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash160],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["account"]),
         // unclaimedGas(account, end) -> Integer (CpuFee 1<<17, ReadStates).
         NativeMethod::new(
             "unclaimedGas".into(),
@@ -1047,7 +1113,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash160, int],
             int,
-        ),
+        )
+        .with_parameter_names(["account", "end"]),
         // getNextBlockValidators -> ECPoint[] (Array), CpuFee 1<<16 in C#.
         NativeMethod::new(
             "getNextBlockValidators".into(),
@@ -1066,7 +1133,19 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![],
             ContractParameterType::Array,
         ),
-        // getCandidateVote(pubkey) -> votes, or -1 if not a registered candidate.
+        // getAllCandidates -> iterator over the registered candidates
+        // (InteropInterface), CpuFee 1<<22, ReadStates (NeoToken.cs:537).
+        NativeMethod::new(
+            "getAllCandidates".into(),
+            1 << 22,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::InteropInterface,
+        ),
+        // getCandidateVote(pubKey) -> votes, or -1 if not a registered
+        // candidate. (C# parameter is `ECPoint pubKey` — capital K, unlike
+        // registerCandidate's `pubkey`.)
         NativeMethod::new(
             "getCandidateVote".into(),
             1 << 15,
@@ -1074,7 +1153,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::PublicKey],
             int,
-        ),
+        )
+        .with_parameter_names(["pubKey"]),
         // Governance writers (committee-gated, States, Void; C# CpuFee 1<<15).
         NativeMethod::new(
             "setRegisterPrice".into(),
@@ -1083,7 +1163,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["registerPrice"]),
         NativeMethod::new(
             "setGasPerBlock".into(),
             1 << 15,
@@ -1091,7 +1172,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["gasPerBlock"]),
         // Candidate registration (Echidna V1: States|AllowNotify). registerCandidate
         // has no manifest CpuFee (it charges GetRegisterPrice dynamically);
         // unregisterCandidate is CpuFee 1<<16. Both return Boolean.
@@ -1102,7 +1184,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits() | CallFlags::ALLOW_NOTIFY.bits(),
             vec![ContractParameterType::PublicKey],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_parameter_names(["pubkey"]),
         NativeMethod::new(
             "unregisterCandidate".into(),
             1 << 16,
@@ -1110,7 +1193,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits() | CallFlags::ALLOW_NOTIFY.bits(),
             vec![ContractParameterType::PublicKey],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_parameter_names(["pubkey"]),
         // vote(account, voteTo?) -> Boolean (Echidna V1: States|AllowNotify, CpuFee
         // 1<<16). voteTo is a nullable PublicKey (null = clear the vote).
         NativeMethod::new(
@@ -1120,7 +1204,65 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits() | CallFlags::ALLOW_NOTIFY.bits(),
             vec![ContractParameterType::Hash160, ContractParameterType::PublicKey],
             ContractParameterType::Boolean,
+        )
+        .with_parameter_names(["account", "voteTo"]),
+        // onNEP17Payment(from, amount, data) -> Void: candidate registration
+        // by paying the register price in GAS to the NEO contract. C#
+        // `[ContractMethod(Hardfork.HF_Echidna, RequiredCallFlags =
+        // CallFlags.States | CallFlags.AllowNotify)]` with no CpuFee
+        // (NeoToken.cs:374).
+        NativeMethod::new(
+            "onNEP17Payment".into(),
+            0,
+            false,
+            CallFlags::STATES.bits() | CallFlags::ALLOW_NOTIFY.bits(),
+            vec![
+                ContractParameterType::Hash160,
+                int,
+                ContractParameterType::Any,
+            ],
+            ContractParameterType::Void,
+        )
+        .with_parameter_names(["from", "amount", "data"])
+        .with_active_in(Hardfork::HfEchidna),
+    ]
+});
+
+/// NEO's `[ContractEvent]` declarations (NeoToken.cs:63-74) plus the inherited
+/// `FungibleToken.Transfer` at order 0. C# concatenates the contract
+/// constructor's attributes with the base type's and sorts by order, so the
+/// manifest lists Transfer, CandidateStateChanged, Vote, CommitteeChanged.
+static NEO_EVENTS: LazyLock<Vec<NativeEvent>> = LazyLock::new(|| {
+    vec![
+        crate::fungible_token_transfer_event(),
+        NativeEvent::new(
+            1,
+            "CandidateStateChanged",
+            &[
+                ("pubkey", ContractParameterType::PublicKey),
+                ("registered", ContractParameterType::Boolean),
+                ("votes", ContractParameterType::Integer),
+            ],
         ),
+        NativeEvent::new(
+            2,
+            "Vote",
+            &[
+                ("account", ContractParameterType::Hash160),
+                ("from", ContractParameterType::PublicKey),
+                ("to", ContractParameterType::PublicKey),
+                ("amount", ContractParameterType::Integer),
+            ],
+        ),
+        NativeEvent::new(
+            3,
+            "CommitteeChanged",
+            &[
+                ("old", ContractParameterType::Array),
+                ("new", ContractParameterType::Array),
+            ],
+        )
+        .with_active_in(Hardfork::HfCockatrice),
     ]
 });
 
@@ -1142,12 +1284,18 @@ impl NativeContract for NeoToken {
         &NEO_METHODS
     }
 
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &NEO_EVENTS
+    }
+
     /// C# `NeoToken._usedHardforks` contains `HF_Echidna` (via the
     /// Echidna-gated `[ContractMethod]` registrations, NeoToken.cs:374-457),
     /// so `IsInitializeBlock` refreshes NEO's stored manifest at the Echidna
-    /// boundary — where `OnManifestCompose` adds NEP-27. The Rust method
-    /// table does not carry those `active_in` gates yet, so the refresh
-    /// trigger is declared here.
+    /// boundary — where `OnManifestCompose` adds NEP-27. The Rust table's
+    /// `onNEP17Payment` now carries that gate, but the single-entry
+    /// registerCandidate/unregisterCandidate/vote registrations (C# dual
+    /// V0/V1 attributes) do not, so the explicit activation stays declared
+    /// here too (`used_hardforks` dedupes).
     fn activations(&self) -> Vec<Hardfork> {
         vec![Hardfork::HfEchidna]
     }
@@ -1514,42 +1662,77 @@ impl NativeContract for NeoToken {
                     .map_err(|e| {
                         CoreError::invalid_operation(format!("NeoToken::registerCandidate: fee: {e}"))
                     })?;
-                let account =
-                    UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
-                let authorized = engine.check_witness_hash(&account).map_err(|e| {
-                    CoreError::invalid_operation(format!("NeoToken::registerCandidate: witness: {e}"))
-                })?;
-                if !authorized {
-                    return Ok(vec![0u8]);
+                Ok(vec![u8::from(register_internal(engine, &pubkey, "registerCandidate")?)])
+            }
+            "getAllCandidates" => {
+                // C# GetAllCandidates (NeoToken.cs:537-545): a StorageIterator
+                // over the registered, non-blocked candidate entries with
+                // RemovePrefix | DeserializeValues | PickField1 and prefix
+                // length 1 — each element is Struct[33-byte pubkey, Votes]. The
+                // 4-byte iterator id is decoded back into an InteropInterface
+                // by the dispatcher.
+                let results = registered_candidate_entries(&engine.snapshot_cache())?;
+                let iterator_id = engine
+                    .create_storage_iterator_with_options(
+                        results,
+                        1,
+                        FindOptions::RemovePrefix
+                            | FindOptions::DeserializeValues
+                            | FindOptions::PickField1,
+                    )
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!("NeoToken::getAllCandidates: {e}"))
+                    })?;
+                Ok(iterator_id.to_le_bytes().to_vec())
+            }
+            "onNEP17Payment" => {
+                // C# NeoToken.OnNEP17Payment (NeoToken.cs:374-389, HF_Echidna):
+                // candidate registration by paying the register price in GAS to
+                // the NEO contract. The `from` argument is unused — the witness
+                // requirement is RegisterInternal's, on the candidate account
+                // derived from `data`'s public key.
+                if engine.get_calling_script_hash() != Some(crate::GasToken::script_hash()) {
+                    return Err(CoreError::invalid_operation(
+                        "NeoToken::onNEP17Payment: only the GAS contract can call this method",
+                    ));
                 }
-                let snapshot = engine.snapshot_cache();
-                let key = candidate_key(&pubkey);
-                let (registered, votes) = match snapshot.get(&key) {
-                    Some(item) => decode_candidate_state(&item.value_bytes())?,
-                    None => (false, BigInt::from(0)),
-                };
-                if registered {
-                    return Ok(vec![1u8]);
+                let amount = BigInt::from_signed_bytes_le(args.get(1).ok_or_else(|| {
+                    CoreError::invalid_operation("NeoToken::onNEP17Payment requires an amount")
+                })?);
+                let price = register_price(&engine.snapshot_cache())?;
+                if amount != BigInt::from(price) {
+                    return Err(CoreError::invalid_operation(format!(
+                        "NeoToken::onNEP17Payment: incorrect GAS amount; expected {price}, received {amount}"
+                    )));
                 }
-                snapshot.update(key, StorageItem::from_bytes(encode_candidate_state(true, &votes)?));
-                if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
-                    engine
-                        .send_notification(
-                            Self::script_hash(),
-                            "CandidateStateChanged".to_string(),
-                            vec![
-                                StackItem::from_byte_string(pubkey.to_bytes()),
-                                StackItem::from_bool(true),
-                                StackItem::from_int(votes),
-                            ],
-                        )
+                // `data` is an Any param (it arrives BinarySerialized); C#
+                // decodes its span as a secp256r1 point, faulting on anything
+                // that is not a valid public key (including Null).
+                let data = args.get(2).map(Vec::as_slice).unwrap_or(&[]);
+                let item =
+                    BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
                         .map_err(|e| {
                             CoreError::invalid_operation(format!(
-                                "NeoToken::registerCandidate: notify: {e}"
+                                "NeoToken::onNEP17Payment data: {e}"
                             ))
                         })?;
+                let pubkey_bytes = item.as_bytes().map_err(|e| {
+                    CoreError::invalid_operation(format!("NeoToken::onNEP17Payment data: {e}"))
+                })?;
+                let pubkey = ECPoint::from_bytes(&pubkey_bytes).map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "NeoToken::onNEP17Payment: bad public key: {e}"
+                    ))
+                })?;
+                if !register_internal(engine, &pubkey, "onNEP17Payment")? {
+                    return Err(CoreError::invalid_operation(
+                        "NeoToken::onNEP17Payment: failed to register candidate",
+                    ));
                 }
-                Ok(vec![1u8])
+                // C# `await GAS.Burn(engine, Hash, amount)`: burn the GAS this
+                // transfer just credited to the NEO contract's own account.
+                crate::gas_token::gas_burn(engine, &Self::script_hash(), &amount)?;
+                Ok(Vec::new())
             }
             "unregisterCandidate" => {
                 // C# UnregisterCandidate: witness on the candidate account, flip the
@@ -1736,12 +1919,14 @@ mod tests {
                 "unclaimedGas",
                 "getNextBlockValidators",
                 "getCandidates",
+                "getAllCandidates",
                 "getCandidateVote",
                 "setRegisterPrice",
                 "setGasPerBlock",
                 "registerCandidate",
                 "unregisterCandidate",
-                "vote"
+                "vote",
+                "onNEP17Payment"
             ]
         );
         // The governance writers: not safe, States, Integer -> Void, CpuFee 1<<15.
@@ -1786,6 +1971,31 @@ mod tests {
         assert_eq!(addr.cpu_fee, 1 << 16);
         assert_eq!(addr.return_type, ContractParameterType::Hash160);
         assert_eq!(addr.active_in, Some(Hardfork::HfCockatrice));
+        // getAllCandidates: safe ungated iterator reader (ReadStates, CpuFee
+        // 1<<22, no params, InteropInterface).
+        let all_cand = c.methods().iter().find(|m| m.name == "getAllCandidates").unwrap();
+        assert!(all_cand.safe);
+        assert_eq!(all_cand.cpu_fee, 1 << 22);
+        assert_eq!(all_cand.required_call_flags, CallFlags::READ_STATES.bits());
+        assert!(all_cand.parameters.is_empty());
+        assert_eq!(all_cand.return_type, ContractParameterType::InteropInterface);
+        assert!(all_cand.active_in.is_none());
+        // onNEP17Payment: Echidna-gated candidate registration via GAS payment
+        // — States|AllowNotify -> not safe, Void, no manifest CpuFee.
+        let pay = c.methods().iter().find(|m| m.name == "onNEP17Payment").unwrap();
+        assert!(!pay.safe);
+        assert_eq!(pay.cpu_fee, 0);
+        assert_eq!(pay.required_call_flags, notify_flags);
+        assert_eq!(
+            pay.parameters,
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::Integer,
+                ContractParameterType::Any
+            ]
+        );
+        assert_eq!(pay.return_type, ContractParameterType::Void);
+        assert_eq!(pay.active_in, Some(Hardfork::HfEchidna));
     }
 
     fn hex(s: &str) -> Vec<u8> {
@@ -2512,6 +2722,276 @@ mod governance_writer_tests {
             decode_candidate_state(&snapshot.get(&candidate_key(&candidate)).unwrap().value_bytes())
                 .unwrap();
         assert_eq!(cand_votes, BigInt::from(70));
+    }
+
+    /// The GAS account storage key `(GasToken.ID, [Prefix_Account, account])`.
+    fn gas_account_key(account: &UInt160) -> StorageKey {
+        let mut key = vec![crate::NEP17_PREFIX_ACCOUNT];
+        key.extend_from_slice(&account.to_bytes());
+        StorageKey::new(crate::GasToken::ID, key)
+    }
+
+    /// Seeds a GAS balance entry (`Struct[Balance]`) and a matching total supply.
+    fn seed_gas(cache: &DataCache, account: &UInt160, balance: &BigInt) {
+        let state = StackItem::from_struct(vec![StackItem::from_int(balance.clone())]);
+        let bytes =
+            BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
+        cache.add(gas_account_key(account), StorageItem::from_bytes(bytes));
+        cache.add(
+            StorageKey::new(crate::GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(balance)),
+        );
+    }
+
+    /// A second valid secp256r1 public key, byte-wise distinct from
+    /// [`candidate_pubkey`] (a Neo N3 standby validator).
+    fn other_pubkey(index: u8) -> ECPoint {
+        let keys = [
+            "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093",
+            "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
+        ];
+        ECPoint::from_bytes(&hex::decode(keys[usize::from(index)]).unwrap()).unwrap()
+    }
+
+    /// C# `GetAllCandidates`: the iterator yields `Struct[pubkey, votes]` per
+    /// registered candidate (RemovePrefix strips the 1-byte candidate prefix;
+    /// PickField1 projects the Votes field), skipping unregistered entries and
+    /// candidates whose signature-contract address PolicyContract blocks.
+    #[test]
+    fn get_all_candidates_iterator_filters_and_projects() {
+        crate::install();
+        let cache = DataCache::new(false);
+        // 02df48… : registered with 7 votes -> the only iterator element.
+        let kept = other_pubkey(0);
+        cache.add(
+            candidate_key(&kept),
+            StorageItem::from_bytes(encode_candidate_state(true, &BigInt::from(7)).unwrap()),
+        );
+        // 03b209… : present but unregistered -> filtered out.
+        cache.add(
+            candidate_key(&candidate_pubkey()),
+            StorageItem::from_bytes(encode_candidate_state(false, &BigInt::from(3)).unwrap()),
+        );
+        // 03b8d9… : registered but its signature account is blocked -> filtered out.
+        let blocked = other_pubkey(1);
+        cache.add(
+            candidate_key(&blocked),
+            StorageItem::from_bytes(encode_candidate_state(true, &BigInt::from(9)).unwrap()),
+        );
+        let blocked_account =
+            UInt160::from_script(&Contract::create_signature_redeem_script(blocked));
+        cache.add(
+            crate::policy_contract::blocked_account_key(&blocked_account),
+            StorageItem::from_bytes(Vec::new()),
+        );
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(cache),
+            None,
+            ProtocolSettings::default(),
+            10_000_000,
+            None,
+        )
+        .expect("engine builds");
+
+        let result = NativeContract::invoke(&NeoToken::new(), &mut engine, "getAllCandidates", &[])
+            .expect("getAllCandidates succeeds");
+        let iterator_id = u32::from_le_bytes(result.try_into().expect("4-byte iterator id"));
+
+        assert!(engine.iterator_next(iterator_id).expect("first next"));
+        let StackItem::Struct(element) = engine.iterator_value(iterator_id).expect("value") else {
+            panic!("iterator element must be a Struct[pubkey, votes]");
+        };
+        let items = element.items();
+        assert_eq!(items[0].as_bytes().unwrap().as_slice(), kept.to_bytes().as_slice());
+        assert_eq!(items[1].as_int().unwrap(), BigInt::from(7));
+        assert!(!engine.iterator_next(iterator_id).expect("exhausted"), "single element");
+    }
+
+    /// Full Echidna flow (C# NeoToken.OnNEP17Payment, NeoToken.cs:374-389):
+    /// `GAS.transfer(sender -> NEO, registerPrice, data = pubkey)` registers
+    /// the candidate (witnessed by its signature account) and burns the GAS
+    /// from NEO's own balance, shrinking the total supply.
+    #[test]
+    fn on_nep17_payment_registers_candidate_and_burns_gas() {
+        let pubkey = candidate_pubkey();
+        let candidate_account =
+            UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+        let sender = UInt160::from_bytes(&[0x07; 20]).unwrap();
+        let price = BigInt::from(DEFAULT_REGISTER_PRICE);
+
+        crate::install();
+        let cache = DataCache::new(false);
+        // onNEP17Payment is Echidna-gated; an unconfigured hardfork is DISABLED
+        // for method gating (C# IsHardforkEnabled), so schedule it at genesis.
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfEchidna, 0);
+        deploy_native(&cache, &build_native_contract_state(&NeoToken, &settings, 0));
+        deploy_native(&cache, &build_native_contract_state(&crate::GasToken, &settings, 0));
+        seed_gas(&cache, &sender, &price);
+        let snapshot = Arc::new(cache);
+
+        // Signed by the GAS sender (transfer witness) AND the candidate's
+        // signature account (RegisterInternal witness).
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![
+            Signer::new(sender, WitnessScope::GLOBAL),
+            Signer::new(candidate_account, WitnessScope::GLOBAL),
+        ]);
+        tx.set_witnesses(vec![Witness::empty(), Witness::empty()]);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+        // GAS.transfer(sender, NEO, price, pubkey-bytes) — args packed in reverse.
+        let mut b = ScriptBuilder::new();
+        b.emit_push(&pubkey.to_bytes()); // data (arg 3, pushed deepest)
+        b.emit_push_int(DEFAULT_REGISTER_PRICE); // amount (arg 2)
+        b.emit_push(&NeoToken::script_hash().to_array()); // to (arg 1)
+        b.emit_push(&sender.to_array()); // from (arg 0, top)
+        b.emit_push_int(4);
+        b.emit_pack();
+        b.emit_push_int(i64::from(CallFlags::ALL.bits()));
+        b.emit_push("transfer".as_bytes());
+        b.emit_push(&crate::GasToken::script_hash().to_array());
+        b.emit_syscall("System.Contract.Call").expect("call");
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            Some(container),
+            Arc::clone(&snapshot),
+            None,
+            settings,
+            2000_00000000,
+            None,
+        )
+        .expect("engine builds");
+        engine.load_script(b.to_array(), CallFlags::ALL, None).expect("loads");
+        assert_eq!(engine.execute_allow_fault(), VmState::HALT, "transfer must HALT");
+
+        // The candidate is registered with zero votes.
+        let item = snapshot.get(&candidate_key(&pubkey)).expect("candidate entry written");
+        let (registered, votes) = decode_candidate_state(&item.value_bytes()).unwrap();
+        assert!(registered, "candidate is Registered");
+        assert_eq!(votes, BigInt::from(0));
+        // The sender paid its whole balance (entry deleted by the transfer) and
+        // NEO's credited balance was burned away again (entry deleted by Burn).
+        assert!(snapshot.get(&gas_account_key(&sender)).is_none(), "sender spent all GAS");
+        assert!(
+            snapshot.get(&gas_account_key(&NeoToken::script_hash())).is_none(),
+            "NEO's received GAS is burned"
+        );
+        // The burn shrank the total supply back to zero.
+        let supply = snapshot
+            .get(&StorageKey::new(crate::GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]))
+            .expect("supply entry");
+        assert_eq!(BigInt::from_signed_bytes_le(&supply.value_bytes()), BigInt::from(0));
+    }
+
+    /// Direct-invocation engine with the calling script hash forced to `caller`
+    /// and (optionally) `signer` witnessing the container.
+    fn payment_engine(
+        snapshot: Arc<DataCache>,
+        caller: Option<UInt160>,
+        signer: Option<UInt160>,
+    ) -> ApplicationEngine {
+        let container: Option<Arc<dyn Verifiable>> = signer.map(|hash| {
+            let mut tx = Transaction::new();
+            tx.set_signers(vec![Signer::new(hash, WitnessScope::GLOBAL)]);
+            tx.set_witnesses(vec![Witness::empty()]);
+            Arc::new(tx) as Arc<dyn Verifiable>
+        });
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            container,
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            10_000_000,
+            None,
+        )
+        .expect("engine builds");
+        engine.set_calling_script_hash(caller);
+        engine
+    }
+
+    /// onNEP17Payment args `[from, amount, data]` as the dispatcher marshals
+    /// them: Hash160 raw, Integer signed-LE, Any BinarySerialized.
+    fn payment_args(from: &UInt160, amount: i64, data: &StackItem) -> Vec<Vec<u8>> {
+        vec![
+            from.to_bytes().to_vec(),
+            BigInt::from(amount).to_signed_bytes_le(),
+            BinarySerializer::serialize(data, &ExecutionEngineLimits::default()).unwrap(),
+        ]
+    }
+
+    /// C# OnNEP17Payment faults unless the caller is the GAS contract, the
+    /// amount equals the register price, `data` decodes as a secp256r1 point,
+    /// and the candidate account witnesses the transaction.
+    #[test]
+    fn on_nep17_payment_rejects_bad_caller_amount_pubkey_and_witness() {
+        crate::install();
+        let pubkey = candidate_pubkey();
+        let candidate_account =
+            UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+        let sender = UInt160::from_bytes(&[0x07; 20]).unwrap();
+        let snapshot = Arc::new(DataCache::new(false));
+        let neo = NeoToken::new();
+        let pubkey_item = StackItem::from_byte_string(pubkey.to_bytes());
+
+        // Caller is not GAS (here: unset) -> fault.
+        let mut engine =
+            payment_engine(Arc::clone(&snapshot), None, Some(candidate_account));
+        let err = NativeContract::invoke(
+            &neo,
+            &mut engine,
+            "onNEP17Payment",
+            &payment_args(&sender, DEFAULT_REGISTER_PRICE, &pubkey_item),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("only the GAS contract"), "{err}");
+
+        // Wrong amount -> fault.
+        let gas_caller = Some(crate::GasToken::script_hash());
+        let mut engine =
+            payment_engine(Arc::clone(&snapshot), gas_caller, Some(candidate_account));
+        let err = NativeContract::invoke(
+            &neo,
+            &mut engine,
+            "onNEP17Payment",
+            &payment_args(&sender, DEFAULT_REGISTER_PRICE - 1, &pubkey_item),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("incorrect GAS amount"), "{err}");
+
+        // `data` is not a public key -> fault.
+        let mut engine =
+            payment_engine(Arc::clone(&snapshot), gas_caller, Some(candidate_account));
+        let err = NativeContract::invoke(
+            &neo,
+            &mut engine,
+            "onNEP17Payment",
+            &payment_args(
+                &sender,
+                DEFAULT_REGISTER_PRICE,
+                &StackItem::from_byte_string(vec![1, 2, 3]),
+            ),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("bad public key"), "{err}");
+
+        // No witness from the candidate account -> RegisterInternal returns
+        // false -> C# throws "Failed to register candidate".
+        let mut engine = payment_engine(Arc::clone(&snapshot), gas_caller, Some(sender));
+        let err = NativeContract::invoke(
+            &neo,
+            &mut engine,
+            "onNEP17Payment",
+            &payment_args(&sender, DEFAULT_REGISTER_PRICE, &pubkey_item),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("failed to register"), "{err}");
+        assert!(snapshot.get(&candidate_key(&pubkey)).is_none(), "nothing registered");
     }
 }
 

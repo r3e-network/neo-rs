@@ -102,7 +102,7 @@ pub use interop_parameter_descriptor::InteropParameterDescriptor;
 pub use interoperable::Interoperable;
 pub use key_builder::KeyBuilder;
 pub use max_length_attribute::MaxLengthAttribute;
-pub use native_contract::{is_active_for, NativeContract, NativeMethod};
+pub use native_contract::{is_active_for, NativeContract, NativeEvent, NativeMethod};
 pub use native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
 pub use native_registry::NativeRegistry;
 pub use notify_event_args::NotifyEventArgs;

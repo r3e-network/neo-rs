@@ -8,15 +8,14 @@
 //! any `Arc<dyn NativeContract>` without depending on
 //! `neo-native-contracts` directly.
 //!
-//! The concrete `BaseNativeContract`, the `impl_native_contract!` macro,
-//! and the `build_native_contract_state` helper all live with the
-//! concrete native-contract implementations in `neo-native-contracts`.
+//! The concrete native-contract implementations live in
+//! `neo-native-contracts`; the [`build_native_contract_state`] helper that
+//! composes their on-disk `ContractState` (NEF + manifest) lives here with
+//! the trait it consumes.
 
-use neo_primitives::{UInt160, UInt256, ContractParameterType};
-use neo_data_cache::DataCache;
-use neo_block::TransactionState;
+use neo_primitives::{UInt160, ContractParameterType};
 
-use neo_error::{CoreError as Error, CoreResult as Result};
+use neo_error::CoreResult as Result;
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_manifest::{
     ContractAbi, ContractEventDescriptor, ContractMethodDescriptor, ContractParameterDefinition,
@@ -55,12 +54,20 @@ pub trait NativeContract: Any + Send + Sync {
     /// Determines whether the native contract is active under the given settings.
     fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
         match self.active_in() {
-            // C# NativeContract.IsActive checks IsHardforkEnabled(ActiveIn, height),
-            // which returns false when the hardfork is NOT configured. An unscheduled
-            // ActiveIn hardfork therefore means the contract is never active. Treating
-            // a missing activation height as 0 (the old `unwrap_or(0)`) would wrongly
-            // activate/deploy the contract from genesis and diverge the state root.
-            Some(hardfork) => settings.is_hardfork_enabled(hardfork, block_height),
+            // C# NativeContract.IsActive (NativeContract.cs:341) does NOT route
+            // through ProtocolSettings.IsHardforkEnabled (which treats an
+            // unconfigured hardfork as disabled). It reads the configured
+            // activation height itself and falls back to 0 when the ActiveIn
+            // hardfork is NOT configured: "If is not set in the configuration
+            // is treated as enabled from the genesis". Note the deliberate C#
+            // asymmetry with IsInitializeBlock (NativeContract.cs:297+), which
+            // SKIPS unconfigured hardforks ("treated as disabled"): a native
+            // whose ActiveIn hardfork is unconfigured is active from genesis
+            // (its hooks run, it passes CallNative gating) but is never
+            // deployed or hardfork-initialized.
+            Some(hardfork) => {
+                settings.hardforks.get(&hardfork).copied().unwrap_or(0) <= block_height
+            }
             None => true,
         }
     }
@@ -73,9 +80,14 @@ pub trait NativeContract: Any + Send + Sync {
         Vec::new()
     }
 
-    /// Returns the hardforks that affect this contract (methods/activations).
+    /// Returns the hardforks that affect this contract (methods/events/activations).
     ///
-    /// Mirrors C# NativeContract `_usedHardforks` (excluding event attributes).
+    /// Mirrors C# NativeContract `_usedHardforks`, which concatenates the
+    /// `ActiveIn`/`DeprecatedIn` hardforks of the method descriptors, the
+    /// event descriptors, and `Activations`. Event hardforks matter for
+    /// `is_initialize_block`: e.g. C# refreshes RoleManagement's stored
+    /// manifest at the `HF_Echidna` boundary purely because the `Designation`
+    /// event signature changes there.
     fn used_hardforks(&self) -> Vec<Hardfork> {
         let mut hardforks = Vec::new();
 
@@ -88,6 +100,15 @@ pub trait NativeContract: Any + Send + Sync {
                 hardforks.push(hardfork);
             }
             if let Some(hardfork) = method.deprecated_in {
+                hardforks.push(hardfork);
+            }
+        }
+
+        for event in self.event_descriptors() {
+            if let Some(hardfork) = event.active_in {
+                hardforks.push(hardfork);
+            }
+            if let Some(hardfork) = event.deprecated_in {
                 hardforks.push(hardfork);
             }
         }
@@ -143,13 +164,45 @@ pub trait NativeContract: Any + Send + Sync {
         Vec::new()
     }
 
+    /// Returns the full (unfiltered) event declarations of this contract.
+    ///
+    /// Mirrors C# `NativeContract._eventsDescriptors`: the `[ContractEvent]`
+    /// attributes on the contract's constructor (including the base type's,
+    /// which is how `FungibleToken.Transfer` reaches NEO and GAS). The
+    /// manifest projection ([`NativeContract::events`]) filters these by
+    /// hardfork activation and orders them by [`NativeEvent::order`].
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &[]
+    }
+
     /// Returns event descriptors for the contract manifest ABI.
+    ///
+    /// Mirrors C# `GetContractState`:
+    /// `Events = _eventsDescriptors.Where(u => IsActive(u, hfChecker, blockHeight))
+    /// .Select(p => p.Descriptor)` where `_eventsDescriptors` is pre-sorted by
+    /// `OrderBy(p => p.Order)` (a stable sort, so dual registrations sharing an
+    /// order index keep their declaration order).
     fn events(
         &self,
-        _settings: &ProtocolSettings,
-        _block_height: u32,
+        settings: &ProtocolSettings,
+        block_height: u32,
     ) -> Vec<ContractEventDescriptor> {
-        Vec::new()
+        let mut declared: Vec<&NativeEvent> = self
+            .event_descriptors()
+            .iter()
+            .filter(|event| {
+                is_active_for(
+                    *event,
+                    |hardfork, height| settings.is_hardfork_enabled(hardfork, height),
+                    block_height,
+                )
+            })
+            .collect();
+        declared.sort_by_key(|event| event.order);
+        declared
+            .into_iter()
+            .map(|event| event.descriptor.clone())
+            .collect()
     }
 
     /// Invokes a method on the native contract.
@@ -399,8 +452,17 @@ impl NativeMethod {
     }
 
     /// Sets parameter names used in the generated native manifest ABI.
-    pub fn with_parameter_names(mut self, parameter_names: Vec<String>) -> Self {
-        self.parameter_names = parameter_names;
+    ///
+    /// The names must be the C# reflection parameter names of the
+    /// corresponding `[ContractMethod]` (the signature parameters after the
+    /// leading `ApplicationEngine`/`DataCache`/`IReadOnlyStore` one); the ABI
+    /// builder falls back to `arg{index}` when unset.
+    pub fn with_parameter_names<I, S>(mut self, parameter_names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.parameter_names = parameter_names.into_iter().map(Into::into).collect();
         self
     }
 
@@ -458,6 +520,76 @@ impl HardforkActivable for NativeMethod {
     }
 }
 
+/// Represents an event declared by a native contract.
+///
+/// Mirrors C# `ContractEventAttribute`: the contract manifest's event list is
+/// the hardfork-filtered projection of these declarations, ordered by
+/// [`NativeEvent::order`] (the attribute's `order` argument). Hardfork gating
+/// uses the same `IsActive` semantics as methods, which is how dual
+/// registrations under one name work (e.g. RoleManagement's `Designation`
+/// V0/V1 across `HF_Echidna`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeEvent {
+    /// Declaration order (the C# `ContractEventAttribute.Order` value).
+    pub order: i32,
+
+    /// The manifest descriptor (event name + named, typed parameters).
+    pub descriptor: ContractEventDescriptor,
+
+    /// Hardfork that activates this event (C# `ContractEventAttribute.ActiveIn`).
+    pub active_in: Option<Hardfork>,
+
+    /// Hardfork that deprecates this event (C# `ContractEventAttribute.DeprecatedIn`).
+    pub deprecated_in: Option<Hardfork>,
+}
+
+impl NativeEvent {
+    /// Creates a new ungated event declaration from `(name, type)` parameter
+    /// pairs.
+    ///
+    /// Panics only on inputs that are statically invalid as manifest data
+    /// (empty event name or duplicate parameter names), which for the fixed
+    /// native event tables is a compile-time-style invariant.
+    pub fn new(order: i32, name: &str, parameters: &[(&str, ContractParameterType)]) -> Self {
+        let parameters = parameters
+            .iter()
+            .map(|(parameter_name, parameter_type)| {
+                ContractParameterDefinition::new((*parameter_name).to_string(), *parameter_type)
+                    .expect("native event parameter definition")
+            })
+            .collect();
+        Self {
+            order,
+            descriptor: ContractEventDescriptor::new(name.to_string(), parameters)
+                .expect("native event descriptor"),
+            active_in: None,
+            deprecated_in: None,
+        }
+    }
+
+    /// Marks the event as active starting from the given hardfork (inclusive).
+    pub fn with_active_in(mut self, hardfork: Hardfork) -> Self {
+        self.active_in = Some(hardfork);
+        self
+    }
+
+    /// Marks the event as deprecated starting from the given hardfork (inclusive).
+    pub fn with_deprecated_in(mut self, hardfork: Hardfork) -> Self {
+        self.deprecated_in = Some(hardfork);
+        self
+    }
+}
+
+impl HardforkActivable for NativeEvent {
+    fn active_in(&self) -> Option<Hardfork> {
+        self.active_in
+    }
+
+    fn deprecated_in(&self) -> Option<Hardfork> {
+        self.deprecated_in
+    }
+}
+
 /// Checks whether a hardfork-activable item is active.
 ///
 /// Mirrors C# `NativeContract.IsActive(...)` hardfork activation semantics.
@@ -483,13 +615,6 @@ pub fn build_native_contract_state<T: NativeContract + ?Sized>(
     settings: &ProtocolSettings,
     block_height: u32,
 ) -> ContractState {
-    use neo_manifest::{
-        ContractAbi, ContractEventDescriptor, ContractMethodDescriptor, ContractParameterDefinition,
-        ContractManifest, NefFile,
-    };
-    use neo_script_builder::ScriptBuilder;
-    use neo_vm_rs::OpCode;
-
     let syscall_hash = neo_vm_rs::interop_hash("System.Contract.CallNative");
 
     let mut methods: Vec<&NativeMethod> = contract
@@ -547,4 +672,204 @@ pub fn build_native_contract_state<T: NativeContract + ?Sized>(
     manifest.abi = ContractAbi::new(abi_methods, events);
 
     ContractState::new(contract.id(), contract.hash(), nef, manifest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_error::CoreError as Error;
+    use std::collections::HashMap;
+
+    /// A minimal native contract exercising the event/parameter-name plumbing:
+    /// one ungated event at order 1, a dual registration at order 0 across
+    /// `HfEchidna` (V0 deprecated / V1 active), and one method with explicit
+    /// parameter names plus one without (the `arg{N}` fallback).
+    struct MockNative {
+        methods: Vec<NativeMethod>,
+        events: Vec<NativeEvent>,
+    }
+
+    impl MockNative {
+        fn new() -> Self {
+            Self {
+                methods: vec![
+                    NativeMethod::new(
+                        "named".to_string(),
+                        0,
+                        true,
+                        0,
+                        vec![
+                            ContractParameterType::Hash160,
+                            ContractParameterType::Integer,
+                        ],
+                        ContractParameterType::Void,
+                    )
+                    .with_parameter_names(["account", "value"]),
+                    NativeMethod::new(
+                        "unnamed".to_string(),
+                        0,
+                        true,
+                        0,
+                        vec![ContractParameterType::String],
+                        ContractParameterType::Void,
+                    ),
+                ],
+                events: vec![
+                    // Declared out of order on purpose: `events()` must sort by
+                    // the order index, not the declaration index.
+                    NativeEvent::new(
+                        1,
+                        "Ungated",
+                        &[("value", ContractParameterType::Integer)],
+                    ),
+                    NativeEvent::new(0, "Dual", &[("a", ContractParameterType::Integer)])
+                        .with_deprecated_in(Hardfork::HfEchidna),
+                    NativeEvent::new(
+                        0,
+                        "Dual",
+                        &[
+                            ("a", ContractParameterType::Integer),
+                            ("b", ContractParameterType::Array),
+                        ],
+                    )
+                    .with_active_in(Hardfork::HfEchidna),
+                ],
+            }
+        }
+    }
+
+    impl NativeContract for MockNative {
+        fn id(&self) -> i32 {
+            -100
+        }
+
+        fn hash(&self) -> UInt160 {
+            UInt160::zero()
+        }
+
+        fn name(&self) -> &str {
+            "MockNative"
+        }
+
+        fn methods(&self) -> &[NativeMethod] {
+            &self.methods
+        }
+
+        fn event_descriptors(&self) -> &[NativeEvent] {
+            &self.events
+        }
+
+        fn invoke(
+            &self,
+            _engine: &mut ApplicationEngine,
+            _method: &str,
+            _args: &[Vec<u8>],
+        ) -> Result<Vec<u8>> {
+            Err(Error::invalid_operation("MockNative is metadata-only"))
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    fn settings_with_echidna_at(height: u32) -> ProtocolSettings {
+        let mut hardforks = HashMap::new();
+        hardforks.insert(Hardfork::HfEchidna, height);
+        ProtocolSettings {
+            hardforks,
+            ..ProtocolSettings::mainnet()
+        }
+    }
+
+    #[test]
+    fn events_filter_by_hardfork_and_sort_by_order() {
+        let contract = MockNative::new();
+        let settings = settings_with_echidna_at(100);
+
+        // Pre-Echidna: the deprecated V0 `Dual` is active; ordering puts
+        // order 0 before order 1 even though `Ungated` was declared first.
+        let pre = contract.events(&settings, 0);
+        assert_eq!(
+            pre.iter().map(|e| (e.name.as_str(), e.parameters.len())).collect::<Vec<_>>(),
+            vec![("Dual", 1), ("Ungated", 1)]
+        );
+
+        // Post-Echidna: V0 drops out, V1 (two parameters) replaces it.
+        let post = contract.events(&settings, 100);
+        assert_eq!(
+            post.iter().map(|e| (e.name.as_str(), e.parameters.len())).collect::<Vec<_>>(),
+            vec![("Dual", 2), ("Ungated", 1)]
+        );
+
+        // An unscheduled hardfork keeps the deprecated V0 active forever and
+        // never activates V1 (C# IsActive semantics).
+        let unscheduled = ProtocolSettings {
+            hardforks: HashMap::new(),
+            ..ProtocolSettings::mainnet()
+        };
+        let never = contract.events(&unscheduled, u32::MAX);
+        assert_eq!(
+            never.iter().map(|e| (e.name.as_str(), e.parameters.len())).collect::<Vec<_>>(),
+            vec![("Dual", 1), ("Ungated", 1)]
+        );
+    }
+
+    #[test]
+    fn used_hardforks_include_event_attributes() {
+        // C# `_usedHardforks` concatenates event ActiveIn/DeprecatedIn; the
+        // mock's methods carry no hardforks, so Echidna can only come from the
+        // events. This is what makes `is_initialize_block` refresh a manifest
+        // at a boundary that only changes an event signature.
+        let contract = MockNative::new();
+        assert_eq!(contract.used_hardforks(), vec![Hardfork::HfEchidna]);
+
+        let settings = settings_with_echidna_at(100);
+        let (initialize, hits) = contract.is_initialize_block(&settings, 100);
+        assert!(initialize);
+        assert_eq!(hits, vec![Hardfork::HfEchidna]);
+    }
+
+    #[test]
+    fn manifest_composes_parameter_names_with_argn_fallback() {
+        let contract = MockNative::new();
+        let settings = settings_with_echidna_at(100);
+        let state = build_native_contract_state(&contract, &settings, 0);
+
+        let named = state
+            .manifest
+            .abi
+            .methods
+            .iter()
+            .find(|m| m.name == "named")
+            .expect("named method");
+        assert_eq!(
+            named.parameters.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            vec!["account", "value"]
+        );
+
+        let unnamed = state
+            .manifest
+            .abi
+            .methods
+            .iter()
+            .find(|m| m.name == "unnamed")
+            .expect("unnamed method");
+        assert_eq!(
+            unnamed.parameters.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            vec!["arg0"]
+        );
+
+        // The composed manifest carries the filtered, ordered event list.
+        assert_eq!(
+            state
+                .manifest
+                .abi
+                .events
+                .iter()
+                .map(|e| (e.name.as_str(), e.parameters.len()))
+                .collect::<Vec<_>>(),
+            vec![("Dual", 1), ("Ungated", 1)]
+        );
+    }
 }

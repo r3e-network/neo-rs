@@ -14,7 +14,9 @@ use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::helper::Helper;
-use neo_execution::{ApplicationEngine, ContractState, Interoperable, NativeContract, NativeMethod};
+use neo_execution::{
+    ApplicationEngine, ContractState, Interoperable, NativeContract, NativeEvent, NativeMethod,
+};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_manifest::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use neo_manifest::{ContractAbi, ContractManifest, NefFile};
@@ -809,7 +811,8 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             read_states,
             vec![ContractParameterType::Hash160],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["hash"]),
         NativeMethod::new(
             "getContractById".to_string(),
             1 << 15,
@@ -817,7 +820,8 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             read_states,
             vec![ContractParameterType::Integer],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["id"]),
         NativeMethod::new(
             "getMinimumDeploymentFee".to_string(),
             1 << 15,
@@ -835,7 +839,8 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             vec![ContractParameterType::Hash160],
             ContractParameterType::Boolean,
         )
-        .with_active_in(Hardfork::HfEchidna),
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["hash"]),
         // HF_Echidna: hasMethod(hash, method, pcount) -> bool.
         NativeMethod::new(
             "hasMethod".to_string(),
@@ -849,7 +854,8 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             ],
             ContractParameterType::Boolean,
         )
-        .with_active_in(Hardfork::HfEchidna),
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["hash", "method", "pcount"]),
         // Committee-gated setter: not safe, States, Integer -> Void.
         NativeMethod::new(
             "setMinimumDeploymentFee".to_string(),
@@ -858,7 +864,8 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["value"]),
         // getContractHashes() -> Iterator over (id, hash) for deployed contracts.
         NativeMethod::new(
             "getContractHashes".to_string(),
@@ -892,7 +899,8 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
                 ContractParameterType::ByteArray,
             ],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["nefFile", "manifest"]),
         NativeMethod::new(
             "deploy".to_string(),
             0,
@@ -904,7 +912,8 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
                 ContractParameterType::Any,
             ],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["nefFile", "manifest", "data"]),
         // update(nefFile?, manifest?) / update(nefFile?, manifest?, data):
         // same C# attribute shape, Void return; the nullable byte-array args
         // arrive through the dispatcher's null mask.
@@ -918,7 +927,8 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
                 ContractParameterType::ByteArray,
             ],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["nefFile", "manifest"]),
         NativeMethod::new(
             "update".to_string(),
             0,
@@ -930,7 +940,19 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
                 ContractParameterType::Any,
             ],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["nefFile", "manifest", "data"]),
+    ]
+});
+
+/// ContractManagement's `[ContractEvent]` declarations
+/// (ContractManagement.cs:40-42), all ungated and all carrying a single
+/// `Hash` parameter (capital H — the C# attribute argument).
+static CONTRACT_MANAGEMENT_EVENTS: LazyLock<Vec<NativeEvent>> = LazyLock::new(|| {
+    vec![
+        NativeEvent::new(0, "Deploy", &[("Hash", ContractParameterType::Hash160)]),
+        NativeEvent::new(1, "Update", &[("Hash", ContractParameterType::Hash160)]),
+        NativeEvent::new(2, "Destroy", &[("Hash", ContractParameterType::Hash160)]),
     ]
 });
 
@@ -949,6 +971,10 @@ impl NativeContract for ContractManagement {
 
     fn methods(&self) -> &[NativeMethod] {
         &CONTRACT_MANAGEMENT_METHODS
+    }
+
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &CONTRACT_MANAGEMENT_EVENTS
     }
 
     fn as_any(&self) -> &dyn Any {

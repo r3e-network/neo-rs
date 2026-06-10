@@ -6,4 +6,6 @@
 //! module re-exports the trait and the [`NativeMethod`] metadata so
 //! callers can `use neo_native_contracts::native_contract::*;`.
 
-pub use neo_execution::native_contract::{is_active_for, NativeContract, NativeMethod};
+pub use neo_execution::native_contract::{
+    is_active_for, NativeContract, NativeEvent, NativeMethod,
+};

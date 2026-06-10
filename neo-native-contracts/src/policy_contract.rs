@@ -4,7 +4,7 @@ use crate::hashes::POLICY_CONTRACT_HASH;
 use neo_config::Hardfork;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, FindOptions, TransactionAttributeType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
@@ -739,7 +739,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["value"]),
         NativeMethod::new(
             "setStoragePrice".to_string(),
             1 << 15,
@@ -747,7 +748,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["value"]),
         // Execution fee factor: getExecFeeFactor (always present; divides out the
         // HF_Faun pico-GAS scaling), getExecPicoFeeFactor (HF_Faun; raw pico-GAS),
         // and the committee-gated setExecFeeFactor.
@@ -775,7 +777,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["value"]),
         // getAttributeFee / setAttributeFee: present from genesis (C# V0) with a
         // V1 from HF_Echidna that only differs by allowing the NotaryAssisted
         // attribute type. The ABI signature is identical across versions, so a
@@ -788,7 +791,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Integer],
             ContractParameterType::Integer,
-        ),
+        )
+        .with_parameter_names(["attributeType"]),
         NativeMethod::new(
             "setAttributeFee".to_string(),
             1 << 15,
@@ -796,7 +800,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer, ContractParameterType::Integer],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["attributeType", "value"]),
         // getBlockedAccounts() -> Iterator over blocked account hashes (HF_Faun).
         NativeMethod::new(
             "getBlockedAccounts".to_string(),
@@ -816,7 +821,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
         )
-        .with_active_in(Hardfork::HfEchidna),
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["value"]),
         // HF_Echidna chain-parameter setters with cross-value invariants (States).
         NativeMethod::new(
             "setMaxValidUntilBlockIncrement".to_string(),
@@ -826,7 +832,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
         )
-        .with_active_in(Hardfork::HfEchidna),
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["value"]),
         NativeMethod::new(
             "setMaxTraceableBlocks".to_string(),
             1 << 15,
@@ -835,7 +842,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
         )
-        .with_active_in(Hardfork::HfEchidna),
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["value"]),
         NativeMethod::new(
             "isBlocked".to_string(),
             1 << 15,
@@ -843,7 +851,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash160],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_parameter_names(["account"]),
         // Committee-gated unblock writer (not safe, States, Boolean return).
         NativeMethod::new(
             "unblockAccount".to_string(),
@@ -852,7 +861,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Hash160],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_parameter_names(["account"]),
         // HF_Echidna moved these chain parameters from ProtocolSettings into
         // PolicyContract storage; the getters default to the settings value.
         NativeMethod::new(
@@ -895,7 +905,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160],
             ContractParameterType::Boolean,
         )
-        .with_deprecated_in(Hardfork::HfFaun),
+        .with_deprecated_in(Hardfork::HfFaun)
+        .with_parameter_names(["account"]),
         NativeMethod::new(
             "blockAccount".to_string(),
             1 << 15,
@@ -904,7 +915,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160],
             ContractParameterType::Boolean,
         )
-        .with_active_in(Hardfork::HfFaun),
+        .with_active_in(Hardfork::HfFaun)
+        .with_parameter_names(["account"]),
         // Whitelisted fixed-fee contracts (HF_Faun): committee-gated writers
         // that notify WhitelistFeeChanged, plus the safe iterator reader.
         NativeMethod::new(
@@ -920,7 +932,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ],
             ContractParameterType::Void,
         )
-        .with_active_in(Hardfork::HfFaun),
+        .with_active_in(Hardfork::HfFaun)
+        .with_parameter_names(["contractHash", "method", "argCount", "fixedFee"]),
         NativeMethod::new(
             "removeWhitelistFeeContract".to_string(),
             1 << 15,
@@ -933,7 +946,8 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ],
             ContractParameterType::Void,
         )
-        .with_active_in(Hardfork::HfFaun),
+        .with_active_in(Hardfork::HfFaun)
+        .with_parameter_names(["contractHash", "method", "argCount"]),
         NativeMethod::new(
             "getWhitelistFeeContracts".to_string(),
             1 << 15,
@@ -953,7 +967,39 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160, ContractParameterType::Hash160],
             ContractParameterType::Boolean,
         )
+        .with_active_in(Hardfork::HfFaun)
+        .with_parameter_names(["account", "token"]),
+    ]
+});
+
+/// Policy's `[ContractEvent]` declarations (PolicyContract.cs:115-125), all
+/// hardfork-gated: `MillisecondsPerBlockChanged` from `HF_Echidna`,
+/// `WhitelistFeeChanged` and `RecoveredFund` from `HF_Faun`. (The C# names
+/// come from the `*EventName` constants at PolicyContract.cs:111-113.)
+static POLICY_EVENTS: LazyLock<Vec<NativeEvent>> = LazyLock::new(|| {
+    vec![
+        NativeEvent::new(
+            0,
+            "MillisecondsPerBlockChanged",
+            &[
+                ("old", ContractParameterType::Integer),
+                ("new", ContractParameterType::Integer),
+            ],
+        )
+        .with_active_in(Hardfork::HfEchidna),
+        NativeEvent::new(
+            1,
+            "WhitelistFeeChanged",
+            &[
+                ("contract", ContractParameterType::Hash160),
+                ("method", ContractParameterType::String),
+                ("argCount", ContractParameterType::Integer),
+                ("fee", ContractParameterType::Any),
+            ],
+        )
         .with_active_in(Hardfork::HfFaun),
+        NativeEvent::new(2, "RecoveredFund", &[("account", ContractParameterType::Hash160)])
+            .with_active_in(Hardfork::HfFaun),
     ]
 });
 
@@ -972,6 +1018,10 @@ impl NativeContract for PolicyContract {
 
     fn methods(&self) -> &[NativeMethod] {
         &POLICY_METHODS
+    }
+
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &POLICY_EVENTS
     }
 
     fn as_any(&self) -> &dyn Any {

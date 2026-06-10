@@ -279,7 +279,8 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash160],
             int,
-        ),
+        )
+        .with_parameter_names(["account"]),
         NativeMethod::new(
             "expirationOf".to_string(),
             1 << 15,
@@ -287,7 +288,8 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash160],
             int,
-        ),
+        )
+        .with_parameter_names(["account"]),
         // Committee-gated setter: not safe, States, Integer -> Void.
         NativeMethod::new(
             "setMaxNotValidBeforeDelta".to_string(),
@@ -296,7 +298,8 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![int],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["value"]),
         // lockDepositUntil(account, till) -> bool: account-witnessed, States.
         NativeMethod::new(
             "lockDepositUntil".to_string(),
@@ -305,7 +308,8 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Hash160, int],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_parameter_names(["account", "till"]),
         // onNEP17Payment(from, amount, data) -> Void: GAS deposit callback, States.
         NativeMethod::new(
             "onNEP17Payment".to_string(),
@@ -318,7 +322,8 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
                 ContractParameterType::Any,
             ],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["from", "amount", "data"]),
         // withdraw(from, to?) -> bool: depositor-witnessed; transfers the unlocked
         // deposit GAS from Notary to `to` (re-entrant, CallFlags.All).
         NativeMethod::new(
@@ -328,16 +333,21 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::ALL.bits(),
             vec![ContractParameterType::Hash160, ContractParameterType::Hash160],
             ContractParameterType::Boolean,
-        ),
-        // verify(signature) -> bool: notary-witness verification, ReadStates.
+        )
+        .with_parameter_names(["from", "to"]),
+        // verify(signature) -> bool: notary-witness verification. C#
+        // `[ContractMethod(CpuFee = 1 << 15, RequiredCallFlags = CallFlags.ReadStates)]`
+        // (Notary.cs Verify), and ContractMethodMetadata derives
+        // `Safe = (ReadStates & ~CallFlags.ReadOnly) == 0` -> manifest-safe.
         NativeMethod::new(
             "verify".to_string(),
             1 << 15,
-            false,
+            true,
             read_states,
             vec![ContractParameterType::ByteArray],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_parameter_names(["signature"]),
     ]
 });
 
@@ -685,9 +695,11 @@ mod tests {
                 "verify"
             ]
         );
-        // verify: not safe, ReadStates, (ByteArray) -> Boolean.
+        // verify: ReadStates, (ByteArray) -> Boolean. Manifest-SAFE: C#
+        // derives Safe = (ReadStates & ~CallFlags.ReadOnly) == 0
+        // (ContractMethodMetadata.cs:74).
         let verify = c.methods().iter().find(|m| m.name == "verify").unwrap();
-        assert!(!verify.safe);
+        assert!(verify.safe);
         assert_eq!(verify.required_call_flags, CallFlags::READ_STATES.bits());
         assert_eq!(verify.parameters, vec![ContractParameterType::ByteArray]);
         assert_eq!(verify.return_type, ContractParameterType::Boolean);

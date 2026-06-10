@@ -415,7 +415,8 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash256],
             ContractParameterType::Integer,
-        ),
+        )
+        .with_parameter_names(["hash"]),
         NativeMethod::new(
             "getTransactionVMState".to_string(),
             1 << 15,
@@ -423,7 +424,8 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash256],
             ContractParameterType::Integer,
-        ),
+        )
+        .with_parameter_names(["hash"]),
         NativeMethod::new(
             "getTransaction".to_string(),
             1 << 15,
@@ -431,7 +433,8 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash256],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["hash"]),
         NativeMethod::new(
             "getTransactionSigners".to_string(),
             1 << 15,
@@ -439,7 +442,8 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash256],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["hash"]),
         // getBlock(indexOrHash: ByteArray) -> Array (TrimmedBlock) | Null.
         NativeMethod::new(
             "getBlock".to_string(),
@@ -448,7 +452,8 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::ByteArray],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["indexOrHash"]),
         // getTransactionFromBlock(blockIndexOrHash: ByteArray, txIndex: Integer)
         // -> Array (Transaction) | Null. C# CpuFee is 1 << 16 (heavier than the
         // other ledger reads because it loads a whole trimmed block).
@@ -462,7 +467,8 @@ static LEDGER_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
                 ContractParameterType::Integer,
             ],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["blockIndexOrHash", "txIndex"]),
     ]
 });
 

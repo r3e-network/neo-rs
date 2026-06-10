@@ -509,23 +509,36 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let boolean = ContractParameterType::Boolean;
     let array = ContractParameterType::Array;
     vec![
-        NativeMethod::new("base64Encode".into(), 1 << 5, true, 0, vec![bytes], string),
-        NativeMethod::new("base64Decode".into(), 1 << 5, true, 0, vec![string], bytes),
-        NativeMethod::new("base58Encode".into(), 1 << 13, true, 0, vec![bytes], string),
-        NativeMethod::new("base58Decode".into(), 1 << 10, true, 0, vec![string], bytes),
-        NativeMethod::new("base58CheckEncode".into(), 1 << 16, true, 0, vec![bytes], string),
-        NativeMethod::new("base58CheckDecode".into(), 1 << 16, true, 0, vec![string], bytes),
+        NativeMethod::new("base64Encode".into(), 1 << 5, true, 0, vec![bytes], string)
+            .with_parameter_names(["data"]),
+        NativeMethod::new("base64Decode".into(), 1 << 5, true, 0, vec![string], bytes)
+            .with_parameter_names(["s"]),
+        NativeMethod::new("base58Encode".into(), 1 << 13, true, 0, vec![bytes], string)
+            .with_parameter_names(["data"]),
+        NativeMethod::new("base58Decode".into(), 1 << 10, true, 0, vec![string], bytes)
+            .with_parameter_names(["s"]),
+        NativeMethod::new("base58CheckEncode".into(), 1 << 16, true, 0, vec![bytes], string)
+            .with_parameter_names(["data"]),
+        NativeMethod::new("base58CheckDecode".into(), 1 << 16, true, 0, vec![string], bytes)
+            .with_parameter_names(["s"]),
         // serialize(Any) -> ByteArray; deserialize(ByteArray) -> Any.
-        NativeMethod::new("serialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes),
-        NativeMethod::new("deserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any),
+        NativeMethod::new("serialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes)
+            .with_parameter_names(["item"]),
+        NativeMethod::new("deserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any)
+            .with_parameter_names(["data"]),
         // jsonSerialize(Any) -> ByteArray; jsonDeserialize(ByteArray) -> Any
         // (C# StdLib.cs CpuFees 1<<12 / 1<<14).
-        NativeMethod::new("jsonSerialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes),
-        NativeMethod::new("jsonDeserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any),
-        NativeMethod::new("memoryCompare".into(), 1 << 5, true, 0, vec![bytes, bytes], int),
+        NativeMethod::new("jsonSerialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes)
+            .with_parameter_names(["item"]),
+        NativeMethod::new("jsonDeserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any)
+            .with_parameter_names(["json"]),
+        NativeMethod::new("memoryCompare".into(), 1 << 5, true, 0, vec![bytes, bytes], int)
+            .with_parameter_names(["str1", "str2"]),
         // memorySearch's 3 C# overloads (dispatched by argument count).
-        NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes], int),
-        NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes, int], int),
+        NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes], int)
+            .with_parameter_names(["mem", "value"]),
+        NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes, int], int)
+            .with_parameter_names(["mem", "value", "start"]),
         NativeMethod::new(
             "memorySearch".into(),
             1 << 6,
@@ -533,14 +546,21 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![bytes, bytes, int, boolean],
             int,
-        ),
+        )
+        .with_parameter_names(["mem", "value", "start", "backward"]),
         // itoa(value[, base]) -> String; atoi(value[, base]) -> Integer.
-        NativeMethod::new("itoa".into(), 1 << 12, true, 0, vec![int], string),
-        NativeMethod::new("itoa".into(), 1 << 12, true, 0, vec![int, int], string),
-        NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string], int),
-        NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string, int], int),
+        // (The C# `int @base` parameter's reflection name is "base".)
+        NativeMethod::new("itoa".into(), 1 << 12, true, 0, vec![int], string)
+            .with_parameter_names(["value"]),
+        NativeMethod::new("itoa".into(), 1 << 12, true, 0, vec![int, int], string)
+            .with_parameter_names(["value", "base"]),
+        NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string], int)
+            .with_parameter_names(["value"]),
+        NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string, int], int)
+            .with_parameter_names(["value", "base"]),
         // stringSplit(str, separator[, removeEmptyEntries]) -> Array of String.
-        NativeMethod::new("stringSplit".into(), 1 << 8, true, 0, vec![string, string], array),
+        NativeMethod::new("stringSplit".into(), 1 << 8, true, 0, vec![string, string], array)
+            .with_parameter_names(["str", "separator"]),
         NativeMethod::new(
             "stringSplit".into(),
             1 << 8,
@@ -548,20 +568,26 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![string, string, boolean],
             array,
-        ),
+        )
+        .with_parameter_names(["str", "separator", "removeEmptyEntries"]),
         // strLen(str) -> Integer (count of .NET StringInfo text elements);
         // ungated in C# StdLib.cs, CpuFee 1 << 8.
-        NativeMethod::new("strLen".into(), 1 << 8, true, 0, vec![string], int),
+        NativeMethod::new("strLen".into(), 1 << 8, true, 0, vec![string], int)
+            .with_parameter_names(["str"]),
         // base64Url* are available from the Echidna hardfork onward.
         NativeMethod::new("base64UrlEncode".into(), 1 << 5, true, 0, vec![string], string)
-            .with_active_in(Hardfork::HfEchidna),
+            .with_active_in(Hardfork::HfEchidna)
+            .with_parameter_names(["data"]),
         NativeMethod::new("base64UrlDecode".into(), 1 << 5, true, 0, vec![string], string)
-            .with_active_in(Hardfork::HfEchidna),
+            .with_active_in(Hardfork::HfEchidna)
+            .with_parameter_names(["s"]),
         // hexEncode/hexDecode are available from the Faun hardfork onward.
         NativeMethod::new("hexEncode".into(), 1 << 5, true, 0, vec![bytes], string)
-            .with_active_in(Hardfork::HfFaun),
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(["bytes"]),
         NativeMethod::new("hexDecode".into(), 1 << 5, true, 0, vec![string], bytes)
-            .with_active_in(Hardfork::HfFaun),
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(["str"]),
     ]
 });
 

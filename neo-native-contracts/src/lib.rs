@@ -25,7 +25,7 @@
 
 pub use neo_execution::{
     is_active_for, HardforkActivable, NativeContract, NativeContractsCache,
-    NativeContractsCacheEntry, NativeMethod, NativeRegistry,
+    NativeContractsCacheEntry, NativeEvent, NativeMethod, NativeRegistry,
 };
 
 pub mod contract_management;
@@ -106,6 +106,23 @@ pub(crate) fn bigint_to_storage_bytes(value: &num_bigint::BigInt) -> Vec<u8> {
     } else {
         value.to_signed_bytes_le()
     }
+}
+
+/// The `Transfer` event declared on the C# `FungibleToken` base constructor
+/// (FungibleToken.cs:59-62) and inherited — via the base-type constructor
+/// concat in `NativeContract`'s reflection — by both NEO and GAS at order 0:
+/// `Transfer(from: Hash160, to: Hash160, amount: Integer)`, ungated.
+pub(crate) fn fungible_token_transfer_event() -> NativeEvent {
+    use neo_primitives::ContractParameterType;
+    NativeEvent::new(
+        0,
+        "Transfer",
+        &[
+            ("from", ContractParameterType::Hash160),
+            ("to", ContractParameterType::Hash160),
+            ("amount", ContractParameterType::Integer),
+        ],
+    )
 }
 
 /// C# `FungibleToken.Prefix_TotalSupply`.

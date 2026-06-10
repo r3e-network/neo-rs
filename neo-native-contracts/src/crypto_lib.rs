@@ -191,7 +191,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![byte_array],
             byte_array,
-        ),
+        )
+        .with_parameter_names(["data"]),
         NativeMethod::new(
             "ripemd160".to_string(),
             CPU_FEE_HASH,
@@ -199,7 +200,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![byte_array],
             byte_array,
-        ),
+        )
+        .with_parameter_names(["data"]),
         // Activated by the Cockatrice hardfork
         // (C# `[ContractMethod(Hardfork.HF_Cockatrice, ...)]`).
         NativeMethod::new(
@@ -210,7 +212,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![byte_array],
             byte_array,
         )
-        .with_active_in(Hardfork::HfCockatrice),
+        .with_active_in(Hardfork::HfCockatrice)
+        .with_parameter_names(["data"]),
         // murmur32(data: ByteArray, seed: Integer) -> ByteArray, C# CpuFee 1<<13.
         NativeMethod::new(
             "murmur32".to_string(),
@@ -219,7 +222,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![byte_array, ContractParameterType::Integer],
             byte_array,
-        ),
+        )
+        .with_parameter_names(["data", "seed"]),
         // verifyWithEd25519(message, pubkey, signature) -> bool (HF_Echidna).
         NativeMethod::new(
             "verifyWithEd25519".to_string(),
@@ -229,12 +233,16 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![byte_array, byte_array, byte_array],
             ContractParameterType::Boolean,
         )
-        .with_active_in(Hardfork::HfEchidna),
-        // verifyWithECDsa(message, pubkey, signature, curveHash) -> bool. Present
-        // from genesis (C# V0, SHA-256 curves only); HF_Cockatrice (V1) adds the
-        // Keccak-256 curves. The ABI signature is identical across versions, so a
-        // single always-active registration is manifest-equivalent and the Keccak
-        // gate is applied in invoke via the HF_Cockatrice check.
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["message", "pubkey", "signature"]),
+        // verifyWithECDsa: dual manifest registration under one name (C# V0/V1).
+        // V0 = `[ContractMethod(true, Hardfork.HF_Cockatrice, ...)]`:
+        // genesis-active, DeprecatedIn Cockatrice, SHA-256 curves only, and its
+        // fourth C# parameter is named `curve`. V1 = ActiveIn HF_Cockatrice,
+        // adds the Keccak-256 curves, and renames the parameter `curveHash` —
+        // so the manifests differ across the boundary even though the types
+        // match. Exactly one is active at any height; the Keccak gate is
+        // applied in invoke via the HF_Cockatrice check.
         NativeMethod::new(
             "verifyWithECDsa".to_string(),
             CPU_FEE_HASH,
@@ -242,7 +250,19 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![byte_array, byte_array, byte_array, ContractParameterType::Integer],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_deprecated_in(Hardfork::HfCockatrice)
+        .with_parameter_names(["message", "pubkey", "signature", "curve"]),
+        NativeMethod::new(
+            "verifyWithECDsa".to_string(),
+            CPU_FEE_HASH,
+            true,
+            0,
+            vec![byte_array, byte_array, byte_array, ContractParameterType::Integer],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfCockatrice)
+        .with_parameter_names(["message", "pubkey", "signature", "curveHash"]),
         // recoverSecp256K1(messageHash, signature) -> ByteArray? (HF_Echidna).
         // Returns the compressed pubkey, or null on failure (signaled at runtime
         // via engine.set_native_return_null()).
@@ -254,7 +274,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![byte_array, byte_array],
             byte_array,
         )
-        .with_active_in(Hardfork::HfEchidna),
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["messageHash", "signature"]),
         // BLS12-381 operations (genesis-active; CryptoLib.BLS12_381.cs). Points
         // are passed/returned as InteropInterface objects (Bls12381Interop).
         NativeMethod::new(
@@ -264,7 +285,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![interop],
             byte_array,
-        ),
+        )
+        .with_parameter_names(["g"]),
         NativeMethod::new(
             "bls12381Deserialize".to_string(),
             CPU_FEE_BLS_SERIALIZE,
@@ -272,7 +294,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![byte_array],
             interop,
-        ),
+        )
+        .with_parameter_names(["data"]),
         NativeMethod::new(
             "bls12381Equal".to_string(),
             CPU_FEE_BLS_EQUAL,
@@ -280,7 +303,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![interop, interop],
             ContractParameterType::Boolean,
-        ),
+        )
+        .with_parameter_names(["x", "y"]),
         NativeMethod::new(
             "bls12381Add".to_string(),
             CPU_FEE_BLS_ADD,
@@ -288,7 +312,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![interop, interop],
             interop,
-        ),
+        )
+        .with_parameter_names(["x", "y"]),
         NativeMethod::new(
             "bls12381Mul".to_string(),
             CPU_FEE_BLS_MUL,
@@ -296,7 +321,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![interop, byte_array, ContractParameterType::Boolean],
             interop,
-        ),
+        )
+        .with_parameter_names(["x", "mul", "neg"]),
         NativeMethod::new(
             "bls12381Pairing".to_string(),
             CPU_FEE_BLS_PAIRING,
@@ -304,7 +330,8 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             0,
             vec![interop, interop],
             interop,
-        ),
+        )
+        .with_parameter_names(["g1", "g2"]),
     ]
 });
 
@@ -485,7 +512,8 @@ mod tests {
                 "keccak256",
                 "murmur32",
                 "verifyWithEd25519",
-                "verifyWithECDsa",
+                "verifyWithECDsa", // V0 (genesis, DeprecatedIn Cockatrice)
+                "verifyWithECDsa", // V1 (ActiveIn Cockatrice)
                 "recoverSecp256K1",
                 "bls12381Serialize",
                 "bls12381Deserialize",
@@ -505,13 +533,25 @@ mod tests {
         assert_eq!(ed.return_type, ContractParameterType::Boolean);
         assert_eq!(ed.active_in, Some(Hardfork::HfEchidna));
         assert_eq!(ed.parameters.len(), 3);
-        // verifyWithECDsa is always active (C# V0 from genesis); Boolean with
-        // (message, pubkey, signature, curveHash) parameters.
-        let ecdsa = c.methods().iter().find(|m| m.name == "verifyWithECDsa").unwrap();
-        assert_eq!(ecdsa.return_type, ContractParameterType::Boolean);
-        assert_eq!(ecdsa.active_in, None);
-        assert_eq!(ecdsa.parameters.len(), 4);
-        assert_eq!(ecdsa.parameters[3], ContractParameterType::Integer);
+        // verifyWithECDsa is a dual registration (C# V0/V1): V0 runs from
+        // genesis until DeprecatedIn HF_Cockatrice with the fourth parameter
+        // named `curve`; V1 is ActiveIn HF_Cockatrice and renames it
+        // `curveHash`. Types are identical across versions.
+        let ecdsa: Vec<&NativeMethod> =
+            c.methods().iter().filter(|m| m.name == "verifyWithECDsa").collect();
+        assert_eq!(ecdsa.len(), 2);
+        let (v0, v1) = (ecdsa[0], ecdsa[1]);
+        assert_eq!(v0.active_in, None);
+        assert_eq!(v0.deprecated_in, Some(Hardfork::HfCockatrice));
+        assert_eq!(v0.parameter_names, ["message", "pubkey", "signature", "curve"]);
+        assert_eq!(v1.active_in, Some(Hardfork::HfCockatrice));
+        assert_eq!(v1.deprecated_in, None);
+        assert_eq!(v1.parameter_names, ["message", "pubkey", "signature", "curveHash"]);
+        for m in &ecdsa {
+            assert_eq!(m.return_type, ContractParameterType::Boolean);
+            assert_eq!(m.parameters.len(), 4);
+            assert_eq!(m.parameters[3], ContractParameterType::Integer);
+        }
         // recoverSecp256K1 is HF_Echidna-gated, safe, (messageHash, signature) ->
         // ByteArray (nullable at runtime via set_native_return_null).
         let recover = c.methods().iter().find(|m| m.name == "recoverSecp256K1").unwrap();

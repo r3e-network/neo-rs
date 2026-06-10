@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 use neo_config::Hardfork;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
@@ -193,7 +193,8 @@ static ROLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::READ_STATES.bits(),
             vec![ContractParameterType::Integer, ContractParameterType::Integer],
             ContractParameterType::Array,
-        ),
+        )
+        .with_parameter_names(["role", "index"]),
         // Committee-gated writer that emits a Designation event (States|AllowNotify).
         NativeMethod::new(
             "designateAsRole".to_string(),
@@ -202,7 +203,38 @@ static ROLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
             vec![ContractParameterType::Integer, ContractParameterType::Array],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["role", "nodes"]),
+    ]
+});
+
+/// The dual `Designation` event registration (RoleManagement.cs:27-37): both
+/// share order 0 and exactly one is active at any height. V0
+/// `(Role, BlockIndex)` is genesis-active and DeprecatedIn `HF_Echidna`
+/// (the trailing ctor argument); V1 adds the `Old`/`New` node arrays and is
+/// ActiveIn `HF_Echidna`.
+static ROLE_EVENTS: LazyLock<Vec<NativeEvent>> = LazyLock::new(|| {
+    vec![
+        NativeEvent::new(
+            0,
+            "Designation",
+            &[
+                ("Role", ContractParameterType::Integer),
+                ("BlockIndex", ContractParameterType::Integer),
+            ],
+        )
+        .with_deprecated_in(Hardfork::HfEchidna),
+        NativeEvent::new(
+            0,
+            "Designation",
+            &[
+                ("Role", ContractParameterType::Integer),
+                ("BlockIndex", ContractParameterType::Integer),
+                ("Old", ContractParameterType::Array),
+                ("New", ContractParameterType::Array),
+            ],
+        )
+        .with_active_in(Hardfork::HfEchidna),
     ]
 });
 
@@ -221,6 +253,10 @@ impl NativeContract for RoleManagement {
 
     fn methods(&self) -> &[NativeMethod] {
         &ROLE_METHODS
+    }
+
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &ROLE_EVENTS
     }
 
     fn as_any(&self) -> &dyn Any {

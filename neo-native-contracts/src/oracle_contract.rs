@@ -16,7 +16,7 @@ use neo_crypto::Crypto;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::native_contract::OracleRequestDetails;
-use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeMethod};
+use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeEvent, NativeMethod};
 use neo_payloads::{OracleResponse, Transaction, TransactionAttribute};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
 use neo_serialization::BinarySerializer;
@@ -395,7 +395,8 @@ static ORACLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CallFlags::STATES.bits(),
             vec![ContractParameterType::Integer],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["price"]),
         // C# Request: CpuFee 0, States | AllowNotify, Void.
         NativeMethod::new(
             "request".to_string(),
@@ -410,7 +411,8 @@ static ORACLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
                 ContractParameterType::Integer,
             ],
             ContractParameterType::Void,
-        ),
+        )
+        .with_parameter_names(["url", "filter", "callback", "userData", "gasForResponse"]),
         // C# Finish: CpuFee 0, States | AllowCall | AllowNotify, Void.
         NativeMethod::new(
             "finish".to_string(),
@@ -433,6 +435,31 @@ static ORACLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     ]
 });
 
+/// Oracle's `[ContractEvent]` declarations (OracleContract.cs:46-53), both
+/// ungated: `OracleRequest` at order 0, `OracleResponse` at order 1.
+static ORACLE_EVENTS: LazyLock<Vec<NativeEvent>> = LazyLock::new(|| {
+    vec![
+        NativeEvent::new(
+            0,
+            "OracleRequest",
+            &[
+                ("Id", ContractParameterType::Integer),
+                ("RequestContract", ContractParameterType::Hash160),
+                ("Url", ContractParameterType::String),
+                ("Filter", ContractParameterType::String),
+            ],
+        ),
+        NativeEvent::new(
+            1,
+            "OracleResponse",
+            &[
+                ("Id", ContractParameterType::Integer),
+                ("OriginalTx", ContractParameterType::Hash256),
+            ],
+        ),
+    ]
+});
+
 impl NativeContract for OracleContract {
     fn id(&self) -> i32 {
         Self::ID
@@ -448,6 +475,10 @@ impl NativeContract for OracleContract {
 
     fn methods(&self) -> &[NativeMethod] {
         &ORACLE_METHODS
+    }
+
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &ORACLE_EVENTS
     }
 
     /// C# `OracleContract.Activations => [null, HF_Faun]` (OracleContract.cs:56):

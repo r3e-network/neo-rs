@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
@@ -233,6 +233,58 @@ fn post_mint(
     Ok(())
 }
 
+/// C# `GasToken.Burn` (`FungibleToken.Burn`): debits `amount` GAS from
+/// `account` (deleting the entry when the balance reaches zero, like C#'s
+/// `Delete` on `Balance == amount`), lowers the total supply, and emits
+/// `Transfer(account, null, amount)` — no `onNEP17Payment` callback (C# burns
+/// with `callOnPayment: false`). A zero amount is a no-op; a negative amount
+/// or an insufficient balance faults (C# throws on `Balance < amount`, and a
+/// missing account entry NREs on the null-forgiving `GetAndChange`).
+/// `pub(crate)` so NeoToken's Echidna `onNEP17Payment` can burn the
+/// register-price GAS it receives.
+pub(crate) fn gas_burn(
+    engine: &mut ApplicationEngine,
+    account: &UInt160,
+    amount: &BigInt,
+) -> CoreResult<()> {
+    if amount < &BigInt::zero() {
+        return Err(CoreError::invalid_operation("GasToken::burn: amount cannot be negative"));
+    }
+    if amount.is_zero() {
+        return Ok(());
+    }
+    let snapshot = engine.snapshot_cache();
+    let balance = read_gas_account(&snapshot, account)?.unwrap_or_else(BigInt::zero);
+    if &balance < amount {
+        return Err(CoreError::invalid_operation(format!(
+            "GasToken::burn: insufficient balance {balance} to burn {amount}"
+        )));
+    }
+    if &balance == amount {
+        delete_gas_account(&snapshot, account);
+    } else {
+        write_gas_account(&snapshot, account, &(&balance - amount))?;
+    }
+    let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+    let supply = snapshot
+        .get(&supply_key)
+        .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+        .unwrap_or_else(BigInt::zero)
+        - amount;
+    snapshot.update(supply_key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)));
+    engine
+        .send_notification(
+            *GAS_HASH,
+            "Transfer".to_string(),
+            vec![
+                StackItem::from_byte_string(account.to_bytes()),
+                StackItem::null(),
+                StackItem::from_int(amount.clone()),
+            ],
+        )
+        .map_err(|e| CoreError::invalid_operation(format!("GasToken::burn notify: {e}")))
+}
+
 /// Lazily-initialised script-hash handle for the GAS native contract.
 pub static GAS_HASH: LazyLock<UInt160> = LazyLock::new(|| *GAS_TOKEN_HASH);
 
@@ -338,7 +390,8 @@ static GAS_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             read_states,
             vec![ContractParameterType::Hash160],
             ContractParameterType::Integer,
-        ),
+        )
+        .with_parameter_names(["account"]),
         // NEP-17 transfer: CpuFee 1<<17, StorageFee 50, States|AllowCall|AllowNotify,
         // (from, to, amount, data) -> Boolean. Not safe.
         NativeMethod::new(
@@ -354,9 +407,15 @@ static GAS_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ],
             ContractParameterType::Boolean,
         )
-        .with_storage_fee(50),
+        .with_storage_fee(50)
+        .with_parameter_names(["from", "to", "amount", "data"]),
     ]
 });
+
+/// GAS declares no events of its own; the only manifest event is the
+/// `Transfer` inherited from the C# `FungibleToken` base constructor.
+static GAS_EVENTS: LazyLock<Vec<NativeEvent>> =
+    LazyLock::new(|| vec![crate::fungible_token_transfer_event()]);
 
 impl NativeContract for GasToken {
     fn id(&self) -> i32 {
@@ -374,6 +433,10 @@ impl NativeContract for GasToken {
 
     fn methods(&self) -> &[NativeMethod] {
         &GAS_METHODS
+    }
+
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &GAS_EVENTS
     }
 
     /// C# `FungibleToken.OnManifestCompose` (FungibleToken.cs:68-71): every
@@ -575,5 +638,63 @@ mod tests {
         assert_eq!(state.manifest.supported_standards, ["NEP-17"]);
         let later = build_native_contract_state(&GasToken, &ProtocolSettings::default(), u32::MAX);
         assert_eq!(later.manifest.supported_standards, ["NEP-17"]);
+    }
+
+    /// C# `FungibleToken.Burn`: a negative amount faults, zero is a no-op, an
+    /// under-funded account faults, a partial burn debits balance and supply
+    /// (emitting `Transfer(account, null, amount)`), and a full burn deletes
+    /// the account entry.
+    #[test]
+    fn gas_burn_debits_balance_and_supply() {
+        use neo_primitives::TriggerType;
+        use std::sync::Arc;
+
+        let cache = DataCache::new(false);
+        let account = UInt160::from_bytes(&[9u8; 20]).unwrap();
+        write_gas_account(&cache, &account, &BigInt::from(100)).unwrap();
+        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        cache.add(
+            supply_key.clone(),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(100))),
+        );
+        let snapshot = Arc::new(cache);
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::clone(&snapshot),
+            None,
+            ProtocolSettings::default(),
+            10_000_000,
+            None,
+        )
+        .expect("engine builds");
+
+        // Negative -> fault; zero -> no-op (no event, no state change).
+        assert!(gas_burn(&mut engine, &account, &BigInt::from(-1)).is_err());
+        gas_burn(&mut engine, &account, &BigInt::from(0)).unwrap();
+        assert!(engine.notifications().is_empty());
+        assert_eq!(read_gas_account(&snapshot, &account).unwrap(), Some(BigInt::from(100)));
+
+        // Partial burn: balance and supply shrink, Transfer(account, null, 30).
+        gas_burn(&mut engine, &account, &BigInt::from(30)).unwrap();
+        assert_eq!(read_gas_account(&snapshot, &account).unwrap(), Some(BigInt::from(70)));
+        assert_eq!(
+            BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
+            BigInt::from(70)
+        );
+        assert_eq!(engine.notifications().len(), 1);
+
+        // Over-burn -> fault, state unchanged.
+        assert!(gas_burn(&mut engine, &account, &BigInt::from(71)).is_err());
+        assert_eq!(read_gas_account(&snapshot, &account).unwrap(), Some(BigInt::from(70)));
+
+        // Full burn deletes the account entry; the supply reaches zero (stored
+        // as the canonical empty-bytes BigInteger).
+        gas_burn(&mut engine, &account, &BigInt::from(70)).unwrap();
+        assert!(read_gas_account(&snapshot, &account).unwrap().is_none());
+        assert_eq!(
+            BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
+            BigInt::from(0)
+        );
     }
 }
