@@ -9,6 +9,7 @@
 use std::any::Any;
 use std::sync::LazyLock;
 
+use neo_config::{Hardfork, ProtocolSettings};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
@@ -74,6 +75,29 @@ impl NativeContract for Treasury {
         "Treasury"
     }
 
+    // C# `Treasury.Activations => [Hardfork.HF_Faun]` (Treasury.cs:29): the
+    // contract does not exist before HF_Faun. Without this override Treasury
+    // would be genesis-active in neo-rs, diverging native deployment and
+    // manifest state below the Faun height (an unscheduled Faun means never
+    // active, matching C# `IsActive`).
+    fn active_in(&self) -> Option<Hardfork> {
+        Some(Hardfork::HfFaun)
+    }
+
+    /// C# `Treasury.OnManifestCompose` (Treasury.cs:31-34): unconditional —
+    /// the contract only exists from HF_Faun onwards.
+    fn supported_standards(
+        &self,
+        _settings: &ProtocolSettings,
+        _block_height: u32,
+    ) -> Vec<String> {
+        vec![
+            "NEP-26".to_string(),
+            "NEP-27".to_string(),
+            "NEP-30".to_string(),
+        ]
+    }
+
     fn methods(&self) -> &[NativeMethod] {
         &TREASURY_METHODS
     }
@@ -116,5 +140,30 @@ mod tests {
             .methods()
             .iter()
             .all(|m| !m.safe && m.required_call_flags == 0 && m.return_type == ContractParameterType::Void));
+    }
+
+    /// C# `Treasury.Activations => [HF_Faun]` (Treasury.cs:29) and
+    /// `OnManifestCompose` (Treasury.cs:31-34): the contract activates at
+    /// Faun and its manifest declares NEP-26/NEP-27/NEP-30 unconditionally.
+    #[test]
+    fn faun_activation_and_manifest_standards() {
+        use neo_execution::native_contract::build_native_contract_state;
+
+        let c = Treasury::new();
+        assert_eq!(NativeContract::active_in(&c), Some(Hardfork::HfFaun));
+        // Unscheduled Faun (the default mainnet/testnet config): never
+        // active, matching C# `IsActive` with an unconfigured hardfork.
+        assert!(!c.is_active(&ProtocolSettings::default(), u32::MAX));
+
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfFaun, 10);
+        assert!(!c.is_active(&settings, 9));
+        assert!(c.is_active(&settings, 10));
+
+        let state = build_native_contract_state(&c, &settings, 10);
+        assert_eq!(
+            state.manifest.supported_standards,
+            ["NEP-26", "NEP-27", "NEP-30"]
+        );
     }
 }

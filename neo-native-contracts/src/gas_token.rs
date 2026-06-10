@@ -8,6 +8,7 @@
 use std::any::Any;
 use std::sync::LazyLock;
 
+use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
@@ -370,8 +371,19 @@ impl NativeContract for GasToken {
         "GasToken"
     }
 
+
     fn methods(&self) -> &[NativeMethod] {
         &GAS_METHODS
+    }
+
+    /// C# `FungibleToken.OnManifestCompose` (FungibleToken.cs:68-71): every
+    /// fungible token declares NEP-17 unconditionally.
+    fn supported_standards(
+        &self,
+        _settings: &ProtocolSettings,
+        _block_height: u32,
+    ) -> Vec<String> {
+        vec!["NEP-17".to_string()]
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -550,5 +562,18 @@ mod tests {
             crate::read_nep17_balance(&cache, GasToken::ID, &account).unwrap(),
             BigInt::from(0)
         );
+    }
+
+    /// C# `FungibleToken.OnManifestCompose` (FungibleToken.cs:68-71): the
+    /// generated GAS manifest declares NEP-17 regardless of the hardfork
+    /// configuration or height.
+    #[test]
+    fn manifest_declares_nep17() {
+        use neo_execution::native_contract::build_native_contract_state;
+
+        let state = build_native_contract_state(&GasToken, &ProtocolSettings::default(), 0);
+        assert_eq!(state.manifest.supported_standards, ["NEP-17"]);
+        let later = build_native_contract_state(&GasToken, &ProtocolSettings::default(), u32::MAX);
+        assert_eq!(later.manifest.supported_standards, ["NEP-17"]);
     }
 }
