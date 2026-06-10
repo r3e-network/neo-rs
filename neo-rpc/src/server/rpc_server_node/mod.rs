@@ -2,22 +2,88 @@
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{
-    expect_base64_param_with_decode_message, invalid_params};
+    expect_base64_param_with_decode_message, internal_error, invalid_params};
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
+use neo_config::ProtocolSettings;
 use neo_primitives::hardfork::Hardfork;
 use neo_io::{MemoryReader, Serializable};
+use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::handle::LocalNodeInfo;
 use neo_payloads::{block::Block, transaction::Transaction};
+use neo_storage::persistence::DataCache;
+use neo_storage::StorageKey;
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use serde_json::{json, Map, Value};
-use std::net::SocketAddr;
 
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+/// C# `LedgerContract.Prefix_CurrentBlock` — the current-block pointer
+/// key (the prefix is `private` in `neo-native-contracts`, so the
+/// documented byte value is mirrored here).
+const LEDGER_PREFIX_CURRENT_BLOCK: u8 = 12;
+/// C# `PolicyContract.Prefix_MillisecondsPerBlock` (HF_Echidna).
+const POLICY_PREFIX_MILLISECONDS_PER_BLOCK: u8 = 21;
+/// C# `PolicyContract.Prefix_MaxValidUntilBlockIncrement` (HF_Echidna).
+const POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT: u8 = 22;
+/// C# `PolicyContract.Prefix_MaxTraceableBlocks` (HF_Echidna).
+const POLICY_PREFIX_MAX_TRACEABLE_BLOCKS: u8 = 23;
+
+/// Port of the C# `NeoSystemExtensions` dynamic-settings readers
+/// (`GetTimePerBlock` / `GetMaxValidUntilBlockIncrement` /
+/// `GetMaxTraceableBlocks`, `Neo/Extensions/NeoSystemExtensions.cs`):
+/// from HF_Echidna the value is the committee-adjustable Policy
+/// storage entry; before the hardfork the static `ProtocolSettings`
+/// value applies.
+///
+/// The C# methods catch `KeyNotFoundException` from both reads inside
+/// the `try` block, so two absences fall back to the static setting:
+/// the ledger current-block pointer (genesis not yet persisted) and
+/// the Policy entry itself (Echidna active from height 0 before
+/// genesis persists). Both fallbacks are reproduced here exactly.
+fn dynamic_policy_value(
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    policy_prefix: u8,
+    fallback: u32,
+) -> Result<u32, RpcException> {
+    // C# `NativeContract.Ledger.CurrentIndex(snapshot)` throws when the
+    // pointer key is absent (→ settings fallback); the Rust reader
+    // reports index 0 instead, so probe key presence first to keep the
+    // C# fallback semantics exact.
+    let pointer_key = StorageKey::new(LedgerContract::ID, vec![LEDGER_PREFIX_CURRENT_BLOCK]);
+    if snapshot.get(&pointer_key).is_none() {
+        return Ok(fallback);
+    }
+    let index = LedgerContract::new()
+        .current_index(snapshot)
+        .map_err(internal_error)?;
+    if !settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
+        return Ok(fallback);
+    }
+    let key = StorageKey::new(PolicyContract::ID, vec![policy_prefix]);
+    match snapshot.get(&key) {
+        // C# `(uint)(BigInteger)snapshot[key]`: signed little-endian
+        // BigInteger bytes, range-guarded to `uint` by the Policy
+        // setters; an out-of-range record is corrupt state and maps to
+        // an internal error like the C# `OverflowException` would.
+        Some(item) => {
+            let value = BigInt::from_signed_bytes_le(&item.value_bytes());
+            value.to_u32().ok_or_else(|| {
+                internal_error(format!(
+                    "Policy storage value under prefix {policy_prefix} is out of u32 range: {value}"
+                ))
+            })
+        }
+        None => Ok(fallback),
+    }
+}
 
 pub struct RpcServerNode;
 
@@ -37,27 +103,79 @@ impl RpcServerNode {
    }
 
     fn get_peers(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        // The reth-style network service tracks neither an unconnected
-        // address book nor per-peer socket addresses at the handle seam
-        // (its lifecycle events carry opaque peer ids only), so the
-        // unconnected and connected lists are served empty. The
-        // connected-peer COUNT is available via `getconnectioncount`.
-        Self::with_local_node(server, |_node| {
+        // C# `RpcServer.GetPeers` (RpcServer.Node.cs): three arrays of
+        // `{"address": ..., "port": ...}` objects.
+        //
+        // - `unconnected`: C# serves `LocalNode.GetUnconnectedPeers()`.
+        //   The reth-style network service keeps no unconnected address
+        //   book (no `addr`-message peer discovery yet), so the list is
+        //   served empty rather than invented.
+        // - `bad`: always an empty array in C# v3.9.1 (no bad-peer book).
+        // - `connected`: C# serves `Remote.Address` + `ListenerTcpPort`
+        //   per remote node. The handle-side tracker folds the service's
+        //   peer lifecycle events; entries carry an address only when
+        //   the handle observed one (outbound dials record the dialed
+        //   endpoint, which is the peer's listener — the same pair C#
+        //   reports). Peers whose address never became known at the
+        //   handle seam (inbound connections; the events carry only
+        //   opaque ids) are counted by `getconnectioncount` but omitted
+        //   here, since fabricating an address would corrupt the shape.
+        Self::with_local_node(server, |node| {
+            let connected: Vec<Value> = node
+                .connected_peers()
+                .iter()
+                .filter_map(|peer| {
+                    peer.address.map(|addr| {
+                        json!({
+                            "address": addr.ip().to_string(),
+                            "port": addr.port()})
+                   })
+               })
+                .collect();
             json!({
                 "unconnected": Vec::<Value>::new(),
                 "bad": Vec::<Value>::new(),
-                "connected": Vec::<Value>::new()})
+                "connected": connected})
        })
    }
 
     fn get_version(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+        // C# `GetVersion` reads msperblock / maxtraceableblocks /
+        // maxvaliduntilblockincrement through the `NeoSystemExtensions`
+        // dynamic readers (Policy storage post-Echidna, static settings
+        // before), not from `ProtocolSettings` directly.
+        let dynamic_settings = {
+            let system = server.system();
+            let protocol = system.settings();
+            let store = system.store_cache();
+            let snapshot = store.data_cache();
+            (
+                dynamic_policy_value(
+                    snapshot,
+                    &protocol,
+                    POLICY_PREFIX_MILLISECONDS_PER_BLOCK,
+                    protocol.milliseconds_per_block,
+                )?,
+                dynamic_policy_value(
+                    snapshot,
+                    &protocol,
+                    POLICY_PREFIX_MAX_TRACEABLE_BLOCKS,
+                    protocol.max_traceable_blocks,
+                )?,
+                dynamic_policy_value(
+                    snapshot,
+                    &protocol,
+                    POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
+                    protocol.max_valid_until_block_increment,
+                )?,
+            )
+       };
         Self::with_local_node(server, |node| {
             let system = server.system();
             let protocol = system.settings();
             let rpc_settings = server.settings();
-            let time_per_block_ms = system.time_per_block().as_millis() as u64;
-            let max_traceable_blocks = system.max_traceable_blocks();
-            let max_valid_until_block_increment = system.max_valid_until_block_increment();
+            let (time_per_block_ms, max_traceable_blocks, max_valid_until_block_increment) =
+                dynamic_settings;
 
             let mut rpc_info = Map::new();
             rpc_info.insert(
@@ -185,24 +303,5 @@ impl RpcServerNode {
 
     fn format_public_key(bytes: &[u8]) -> String {
         hex::encode(bytes)
-   }
-
-    #[allow(dead_code)]
-    fn format_endpoint(endpoint: &str) -> Option<Value> {
-        if let Ok(addr) = endpoint.parse::<SocketAddr>() {
-            return Some(json!({
-                "address": addr.ip().to_string(),
-                "port": addr.port()}));
-       }
-
-        if let Some((host, port)) = endpoint.rsplit_once(':') {
-            if let Ok(port) = port.parse::<u16>() {
-                return Some(json!({
-                    "address": host.to_string(),
-                    "port": port}));
-           }
-       }
-
-        None
    }
 }
