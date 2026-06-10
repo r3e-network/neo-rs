@@ -63,7 +63,18 @@ pub struct RpcUtility;
 impl RpcUtility {
     fn native_registry() -> &'static NativeRegistry {
         static REGISTRY: OnceLock<NativeRegistry> = OnceLock::new();
-        REGISTRY.get_or_init(NativeRegistry::new)
+        REGISTRY.get_or_init(|| {
+            // `NativeRegistry::new()` is empty by design; populate it
+            // with the canonical standard native-contract set.
+            use neo_execution::native_contract_provider::NativeContractProvider;
+            let mut registry = NativeRegistry::new();
+            for contract in
+                neo_native_contracts::StandardNativeProvider::new().all_native_contracts()
+            {
+                registry.register(contract);
+            }
+            registry
+        })
    }
 
     /// Converts a `JToken` to a script hash
@@ -432,8 +443,12 @@ use neo_p2p::{WitnessCondition};
 
     #[test]
     fn as_script_hash_maps_native_contract_name_and_id() {
-        let registry = NativeRegistry::new();
-        let contract = registry.get_by_name("NeoToken").expect("NeoToken contract");
+        use neo_execution::native_contract_provider::NativeContractProvider;
+        let contract = neo_native_contracts::StandardNativeProvider::new()
+            .all_native_contracts()
+            .into_iter()
+            .find(|contract| contract.name() == "NeoToken")
+            .expect("NeoToken contract");
         let expected_hash = contract.hash().to_string();
         let name = contract.name().to_string();
         let id = contract.id().to_string();
@@ -663,7 +678,7 @@ use neo_p2p::{WitnessCondition};
 
     #[test]
     fn transaction_roundtrip_with_custom_signer() {
-        use neo_payloads::witness_rule::WitnessRuleAction;
+        use neo_p2p::witness_rule::WitnessRuleAction;
 
         let mut tx = Transaction::new();
         tx.set_nonce(999);

@@ -11,7 +11,6 @@ use neo_execution::{ApplicationEngine, TriggerType};
 use neo_tokens_tracker::{
     find_prefix, Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance};
 use neo_vm::stack_item::StackItem;
-use neo_wallets::Helper as WalletHelper;
 use neo_primitives::UInt160;
 use neo_vm_rs::VmState as VMState;
 use serde_json::{json, Map, Value};
@@ -95,7 +94,7 @@ impl RpcServerTokensTracker {
            };
 
             let Some((symbol, decimals)) =
-                query_asset_metadata(snapshot.as_ref(), server.system().settings(), &asset)
+                query_asset_metadata(snapshot.as_ref(), &server.system().settings(), &asset)
             else {
                 continue;
            };
@@ -119,7 +118,7 @@ impl RpcServerTokensTracker {
        }
 
         Ok(json!({
-            "address": WalletHelper::to_address(&script_hash, address_version),
+            "address": neo_wallets::wallet_helper::to_address(&script_hash, address_version),
             "balance": results}))
    }
 
@@ -168,7 +167,7 @@ impl RpcServerTokensTracker {
         )?;
 
         Ok(json!({
-            "address": WalletHelper::to_address(&script_hash, address_version),
+            "address": neo_wallets::wallet_helper::to_address(&script_hash, address_version),
             "sent": sent,
             "received": received}))
    }
@@ -199,7 +198,7 @@ impl RpcServerTokensTracker {
             None,
             snapshot,
             None,
-            server.system().settings().clone(),
+            server.system().settings().as_ref().clone(),
             TEST_MODE_GAS,
             None,
         )
@@ -302,7 +301,7 @@ impl RpcServerTokensTracker {
 
             let Some((symbol, decimals)) = query_asset_metadata(
                 snapshot.as_ref(),
-                server.system().settings(),
+                &server.system().settings(),
                 &key.asset_script_hash,
             ) else {
                 continue;
@@ -318,7 +317,7 @@ impl RpcServerTokensTracker {
        }
 
         Ok(json!({
-            "address": WalletHelper::to_address(&script_hash, address_version),
+            "address": neo_wallets::wallet_helper::to_address(&script_hash, address_version),
             "balance": results}))
    }
 
@@ -367,7 +366,7 @@ impl RpcServerTokensTracker {
         )?;
 
         Ok(json!({
-            "address": WalletHelper::to_address(&script_hash, address_version),
+            "address": neo_wallets::wallet_helper::to_address(&script_hash, address_version),
             "sent": sent,
             "received": received}))
    }

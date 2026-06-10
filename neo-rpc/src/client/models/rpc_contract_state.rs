@@ -193,7 +193,7 @@ mod tests {
         let nef = NefFile {
             compiler: "neo".into(),
             source: "src".into(),
-            tokens: vec![neo_execution::MethodToken::default()],
+            tokens: vec![neo_manifest::MethodToken::default()],
             script: vec![1, 2, 3],
             checksum: 321};
         let manifest = ContractManifest::new("Contract".into());

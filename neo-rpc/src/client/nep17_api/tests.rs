@@ -206,8 +206,13 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
         let contract = if UInt160::parse(&contract).is_ok() {
             contract
        } else {
-            neo_native_contracts::NativeRegistry::new()
-                .get_by_name(&contract)
+            // `NativeRegistry::new()` is empty by design; resolve native
+            // contract names through the canonical provider instead.
+            use neo_execution::native_contract_provider::NativeContractProvider;
+            neo_native_contracts::StandardNativeProvider::new()
+                .all_native_contracts()
+                .into_iter()
+                .find(|native| native.name().eq_ignore_ascii_case(&contract))
                 .map(|native| native.hash().to_string())
                 .unwrap_or(contract)
        };

@@ -26,6 +26,8 @@ use std::time::Duration;
 use super::routes::{BasicAuth, build_rpc_routes, build_ws_route};
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
+use neo_services::traits::RpcService;
+use neo_system::Node;
 use neo_wallets::Wallet;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
@@ -99,7 +101,7 @@ pub static RPC_ERR_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
 });
 
 pub struct RpcServer {
-    system: Arc<NeoSystem>,
+    system: Arc<Node>,
     settings: RpcServerConfig,
     handler_lookup: Arc<RwLock<HashMap<String, Arc<RpcHandler>>>>,
     started: bool,
@@ -123,7 +125,7 @@ pub struct RpcServer {
     ws_subscription_mgr: Option<Arc<super::ws::SubscriptionManager>>}
 
 impl RpcServer {
-    pub fn new(system: Arc<NeoSystem>, settings: RpcServerConfig) -> Self {
+    pub fn new(system: Arc<Node>, settings: RpcServerConfig) -> Self {
         Self {
             system,
             settings,
@@ -151,7 +153,7 @@ impl RpcServer {
    }
 
     #[must_use]
-    pub fn system(&self) -> Arc<NeoSystem> {
+    pub fn system(&self) -> Arc<Node> {
         Arc::clone(&self.system)
    }
 

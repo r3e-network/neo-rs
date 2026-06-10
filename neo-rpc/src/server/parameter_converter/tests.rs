@@ -3,7 +3,6 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_config::ProtocolSettings;
 use neo_primitives::ContractParameterType;
-use neo_wallets::Helper as WalletHelper;
 use neo_primitives::{UInt160, UInt256};
 use neo_json::{JArray, JObject, JToken};
 
@@ -219,7 +218,7 @@ fn address_conversion_accepts_uint160_string() {
 #[test]
 fn address_conversion_accepts_base58() {
     let version = ctx().address_version;
-    let base58 = WalletHelper::to_address(&UInt160::zero(), version);
+    let base58 = neo_wallets::wallet_helper::to_address(&UInt160::zero(), version);
     let token = JToken::String(base58);
     let address = ParameterConverter::convert::<Address>(&token, &ctx()).expect("address");
     assert_eq!(address.script_hash(), &UInt160::zero());
@@ -235,7 +234,7 @@ fn address_conversion_rejects_invalid_address() {
 #[test]
 fn address_conversion_rejects_whitespace_wrapped_address() {
     let version = ctx().address_version;
-    let base58 = WalletHelper::to_address(&UInt160::zero(), version);
+    let base58 = neo_wallets::wallet_helper::to_address(&UInt160::zero(), version);
     let token = JToken::String(format!(" {base58} "));
     let err = ParameterConverter::convert::<Address>(&token, &ctx()).unwrap_err();
     assert_invalid_params(err);
@@ -269,7 +268,7 @@ fn address_array_rejects_non_array_token() {
 #[test]
 fn address_array_accepts_base58() {
     let version = ctx().address_version;
-    let base58 = WalletHelper::to_address(&UInt160::zero(), version);
+    let base58 = neo_wallets::wallet_helper::to_address(&UInt160::zero(), version);
     let token = JToken::Array(JArray::from(vec![JToken::String(base58)]));
     let addresses =
         ParameterConverter::convert::<Vec<Address>>(&token, &ctx()).expect("addresses");
@@ -559,7 +558,7 @@ fn signers_accept_flat_entry() {
 #[test]
 fn signers_accept_base58_account() {
     let version = ctx().address_version;
-    let base58 = WalletHelper::to_address(&UInt160::zero(), version);
+    let base58 = neo_wallets::wallet_helper::to_address(&UInt160::zero(), version);
     let mut entry = JObject::new();
     entry.insert("account".to_string(), JToken::String(base58));
     entry.insert(

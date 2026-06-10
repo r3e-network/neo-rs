@@ -1,6 +1,5 @@
 use serde_json::{json, Value};
 
-use neo_wallets::Helper as WalletHelper;
 
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
@@ -58,22 +57,18 @@ impl RpcServer {
         if self
             .system()
             .get_service::<ApplicationLogsService>()
-            .ok()
-            .flatten()
             .is_some()
         {
             plugins.push(plugin_entry("ApplicationLogs", &persistence_interfaces));
        }
 
-        if self.system().state_store().ok().flatten().is_some() {
+        if self.system().state_store().is_some() {
             plugins.push(plugin_entry("StateService", &persistence_interfaces));
        }
 
         if self
             .system()
             .get_service::<TokensTrackerService>()
-            .ok()
-            .flatten()
             .is_some()
         {
             let name = match compat {
@@ -82,10 +77,12 @@ impl RpcServer {
             plugins.push(plugin_entry(name, &persistence_interfaces));
        }
 
-        let store_provider = self.system().store_provider();
+        // The reth-style `Node` owns an `Arc<dyn Store>` without a named
+        // provider wrapper; storage-plugin naming follows the configured
+        // compat mode (the fixture name, or the canonical memory store).
         let store_name = match compat {
             ListPluginsCompat::Fixture => "LevelDBStore".to_string(),
-            ListPluginsCompat::Runtime => store_provider.name().to_string()};
+            ListPluginsCompat::Runtime => "memory".to_string()};
         if !store_name.eq_ignore_ascii_case("memory") {
             plugins.push(plugin_entry(&store_name, &storage_interfaces));
        }
@@ -102,7 +99,8 @@ impl RpcServer {
     #[must_use]
     pub fn validate_address(&self, address: &str) -> Value {
         let address_version = self.system().settings().address_version;
-        let is_valid = WalletHelper::to_script_hash(address, address_version).is_ok();
+        let is_valid =
+            neo_wallets::wallet_helper::to_script_hash(address, address_version).is_ok();
 
         json!({
             "address": address,
@@ -155,7 +153,7 @@ mod tests {
     use super::*;
     use crate::server::rpc_server::RpcHandler;
     use crate::server::rpc_server_settings::RpcServerConfig;
-    use neo_system::Node;
+    
     use neo_config::ProtocolSettings;
     use neo_primitives::UInt160;
 
@@ -169,7 +167,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn list_plugins_returns_empty() {
         let system =
-            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+            crate::server::test_support::test_system(ProtocolSettings::default());
         let server = RpcServer::new(system, RpcServerConfig::default());
         let handlers = RpcServerUtilities::register_handlers();
         let handler = find_handler(&handlers, "listplugins");
@@ -185,7 +183,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_address_variants() {
         let system =
-            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+            crate::server::test_support::test_system(ProtocolSettings::default());
         let server = RpcServer::new(system, RpcServerConfig::default());
         let handlers = RpcServerUtilities::register_handlers();
         let handler = find_handler(&handlers, "validateaddress");
@@ -235,7 +233,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_address_requires_param() {
         let system =
-            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+            crate::server::test_support::test_system(ProtocolSettings::default());
         let server = RpcServer::new(system, RpcServerConfig::default());
         let handlers = RpcServerUtilities::register_handlers();
         let handler = find_handler(&handlers, "validateaddress");

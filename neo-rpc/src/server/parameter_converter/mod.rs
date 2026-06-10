@@ -1,6 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_execution::contract_parameter::ContractParameter;
-use neo_wallets::Helper as WalletHelper;
 use neo_primitives::UInt160;
 use neo_json::{JArray, JObject, JToken, MAX_SAFE_INTEGER};
 use std::str::FromStr;
@@ -230,7 +229,7 @@ pub(super) fn parse_address(text: &str, address_version: u8) -> Result<Address, 
        }
    }
 
-    WalletHelper::to_script_hash(text, address_version)
+    neo_wallets::wallet_helper::to_script_hash(text, address_version)
         .map(|hash| Address::new(hash, address_version))
         .map_err(|_| invalid_params(format!("Invalid address: {text}")))
 }

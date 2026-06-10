@@ -35,7 +35,6 @@ impl RpcServerApplicationLogs {
         let service = server
             .system()
             .get_service::<ApplicationLogsService>()
-            .map_err(|e| internal_error(e.to_string()))?
             .ok_or_else(|| internal_error("ApplicationLogs service not available"))?;
 
         let mut raw = service

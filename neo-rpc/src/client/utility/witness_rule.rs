@@ -154,7 +154,7 @@ fn parse_group_bytes(value: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use neo_primitives::{UInt160};
-use neo_crypto::{KeyPair};
+use neo_wallets::KeyPair;
     use neo_json::JToken;
 
     fn assert_rule_roundtrip(rule: WitnessRule) {

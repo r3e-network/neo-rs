@@ -8,9 +8,9 @@ use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
 use neo_storage::persistence::StoreCache;
-use neo_native_contracts::GasToken;
-use neo_wallets::Helper as WalletHelper;
 use neo_wallets::{Wallet, WalletAccount, WalletError};
+
+use crate::server::wallet_compat;
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 use rand::random;
@@ -253,26 +253,32 @@ fn build_and_sign_transaction(
 
     let ledger = neo_native_contracts::LedgerContract::new();
     let valid_until = ledger
-        .current_index(snapshot)
+        .current_index(snapshot.data_cache())
         .map_err(|err| err.to_string())?
         .saturating_add(system.max_valid_until_block_increment());
     tx.set_valid_until_block(valid_until);
     tx.set_system_fee(system_fee);
 
     let data_cache = snapshot.data_cache();
-    let network_fee = WalletHelper::calculate_network_fee_with_wallet(
+    let account_script = |hash: &neo_primitives::UInt160| -> Option<Vec<u8>> {
+        wallet
+            .get_account(hash)
+            .and_then(|account| account.contract().map(|contract| contract.script.clone()))
+   };
+    let network_fee = wallet_compat::calculate_network_fee(
         &tx,
         data_cache,
-        protocol_settings,
-        Some(wallet.as_ref()),
+        &protocol_settings,
+        &account_script,
         rpc_settings.max_gas_invoke,
-    )?;
+    )
+    .map_err(|err| err.to_string())?;
     tx.set_network_fee(network_fee);
 
     let required_fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
-    let gas_token = GasToken::new();
     let sender = signers[0].account;
-    let available = gas_token.balance_of_snapshot(snapshot, &sender);
+    let available = wallet_compat::gas_balance_of(data_cache, &protocol_settings, &sender)
+        .map_err(|err| err.to_string())?;
     if available < required_fee {
         return Err("Insufficient GAS balance to pay system and network fees.".to_string());
    }
@@ -315,7 +321,7 @@ fn build_account_witness(
     let key = account
         .get_key()
         .ok_or_else(|| WalletError::Other("Account locked".to_string()).to_string())?;
-    let signature = WalletHelper::sign(tx, &key, network).map_err(|e| e.to_string())?;
+    let signature = wallet_compat::sign_transaction_with_key(tx, &key, network)?;
 
     let verification_script = if let Some(contract) = account.contract() {
         contract.script.clone()

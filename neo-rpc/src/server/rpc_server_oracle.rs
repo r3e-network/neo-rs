@@ -1,6 +1,6 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{expect_base64_param, internal_error, invalid_params};
+use crate::server::rpc_helpers::{expect_base64_param, invalid_params};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_oracle_service::{OracleService, OracleServiceError};
@@ -39,7 +39,6 @@ fn oracle_service(server: &RpcServer) -> Result<Arc<OracleService>, RpcException
     server
         .system()
         .get_service::<OracleService>()
-        .map_err(|e| internal_error(e.to_string()))?
         .ok_or_else(|| RpcException::from(RpcError::oracle_disabled()))
 }
 

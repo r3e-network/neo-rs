@@ -120,7 +120,7 @@ mod tests {
     use neo_config::ProtocolSettings;
     use neo_script_builder::ScriptBuilder;
     use neo_native_contracts::{GasToken, NativeContract};
-    use neo_crypto::KeyPair;
+    use neo_wallets::KeyPair;
 use neo_manifest::{ContractManifest};
     use neo_json::{JArray, JObject, JToken};
     use neo_primitives::UInt160;

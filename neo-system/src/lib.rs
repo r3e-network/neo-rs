@@ -65,12 +65,14 @@ pub mod back_compat;
 pub mod builder;
 pub mod error;
 pub mod node;
+pub mod service_registry;
 pub mod wallet_provider;
 
 // Public re-exports for the crate's public surface.
 pub use builder::NodeBuilder;
 pub use error::{NodeError, NodeResult};
 pub use node::Node;
+pub use service_registry::ServiceRegistry;
 pub use wallet_provider::WalletProvider;
 
 // Re-export common types from the foundation / service-layer crates

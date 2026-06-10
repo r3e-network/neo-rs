@@ -9,14 +9,13 @@ use crate::server::rpc_server_node::RpcServerNode;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_io::BinaryWriter;
-use neo_system::Node;
-use neo_network;
+use neo_payloads::get_sign_data_vec;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
 use neo_config::ProtocolSettings;
 use neo_native_contracts::LedgerContract;
-use neo_execution::{StorageItem, StorageKey};
+use neo_storage::{StorageItem, StorageKey};
 use neo_wallets::KeyPair;
 use neo_primitives::WitnessScope;
 use neo_vm_rs::OpCode;
@@ -35,7 +34,7 @@ fn build_test_routes(
 }
 
 fn build_filters_with_handlers() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());
@@ -98,7 +97,7 @@ fn rate_limit_check_result_is_handled_properly() {
 }
 
 fn build_filters_with_panic_handler() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(vec![RpcHandler::new(
@@ -121,7 +120,7 @@ fn build_filters_with_auth(
     auth: Arc<Option<BasicAuth>>,
     include_wallet: bool,
 ) -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());
@@ -334,7 +333,7 @@ async fn process_body_reports_already_exists_for_sendrawtransaction() {
     let settings = ProtocolSettings::default();
     let keypair = KeyPair::from_private_key(&[0x55u8; 32]).expect("keypair");
     let tx = build_signed_transaction(&settings, &keypair, 2, 0);
-    let mut store = server.read().system().context().store_snapshot_cache();
+    let mut store = server.read().system().store_cache();
     persist_transaction_record(&mut store, &tx, 1);
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());

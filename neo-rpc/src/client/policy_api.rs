@@ -11,7 +11,6 @@
 
 use crate::{ContractClient, RpcClient, RpcError, RpcUtility};
 use neo_native_contracts::PolicyContract;
-use neo_native_contracts::NativeContract;
 use neo_primitives::UInt160;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
@@ -182,7 +181,7 @@ mod tests {
             sb.emit_pack();
        }
 
-        sb.emit_push_int(neo_execution::CallFlags::ALL.bits() as i64);
+        sb.emit_push_int(neo_manifest::CallFlags::ALL.bits() as i64);
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&PolicyContract::new().hash().to_array());
         sb.emit_syscall("System.Contract.Call").expect("syscall");

@@ -8,7 +8,6 @@ use neo_tokens_tracker::{
     find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer,
     TokensTrackerService};
 use neo_tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
-use neo_wallets::Helper as WalletHelper;
 use neo_primitives::UInt160;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
@@ -25,7 +24,6 @@ pub(super) fn tracker_service(
     server
         .system()
         .get_service::<TokensTrackerService>()
-        .map_err(|err| internal_error(err.to_string()))?
         .ok_or_else(|| RpcException::from(RpcError::method_not_found()))
 }
 
@@ -47,7 +45,7 @@ pub(super) fn parse_address_param(
        }
    }
 
-    WalletHelper::to_script_hash(text, address_version)
+    neo_wallets::wallet_helper::to_script_hash(text, address_version)
         .map_err(|_| invalid_params(format!("Invalid address: {text}")))
 }
 
@@ -116,7 +114,7 @@ pub(super) fn collect_transfers(
         let transfer_address = if value.user_script_hash == UInt160::zero() {
             Value::Null
        } else {
-            Value::String(WalletHelper::to_address(
+            Value::String(neo_wallets::wallet_helper::to_address(
                 &value.user_script_hash,
                 address_version,
             ))
@@ -171,7 +169,7 @@ pub(super) fn collect_nep11_transfers(
         let transfer_address = if value.user_script_hash == UInt160::zero() {
             Value::Null
        } else {
-            Value::String(WalletHelper::to_address(
+            Value::String(neo_wallets::wallet_helper::to_address(
                 &value.user_script_hash,
                 address_version,
             ))

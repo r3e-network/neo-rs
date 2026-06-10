@@ -92,7 +92,7 @@ impl SessionIterator for StorageSessionIterator {
 impl Session {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        system: Arc<NeoSystem>,
+        system: Arc<Node>,
         script: Vec<u8>,
         signers: Option<Vec<Signer>>,
         witnesses: Option<Vec<Witness>>,
@@ -107,7 +107,7 @@ impl Session {
             tx.set_version(0);
             tx.set_nonce(random());
             let valid_until = LedgerContract::new()
-                .current_index(&store_cache)
+                .current_index(store_cache.data_cache())
                 .unwrap_or(0)
                 .saturating_add(system.max_valid_until_block_increment());
             tx.set_valid_until_block(valid_until);
@@ -131,7 +131,7 @@ impl Session {
             tx_container,
             Arc::clone(&snapshot_cache),
             None,
-            system.settings().clone(),
+            system.settings().as_ref().clone(),
             gas_limit,
             diagnostic_box,
         )
@@ -243,15 +243,15 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_storage::persistence::{StorageItem, StorageKey};
-    use neo_execution::FindOptions;
-    use neo_primitives::{NeoSystem, ProtocolSettings};
+    use neo_storage::{StorageItem, StorageKey};
+    use neo_primitives::FindOptions;
+    use neo_config::ProtocolSettings;
     use neo_vm_rs::OpCode;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn session_registers_and_traverses_storage_iterator() {
         let settings = ProtocolSettings::default();
-        let system = NeoSystem::new(settings, None, None).expect("system");
+        let system = crate::server::test_support::test_system(settings);
         let session = Session::new(
             system,
             vec![OpCode::RET.byte()],

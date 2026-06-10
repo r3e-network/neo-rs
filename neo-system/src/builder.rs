@@ -14,14 +14,16 @@
 use std::sync::Arc;
 use tracing::debug;
 
-use neo_blockchain::BlockchainHandle;
+use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
+use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
 use neo_runtime::{BlockExecutor, ConsensusService, NeoEngine};
 use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
 use crate::node::Node;
+use crate::service_registry::ServiceRegistry;
 use crate::wallet_provider::WalletProvider;
 
 /// Fluent builder for [`Node`].
@@ -32,6 +34,9 @@ pub struct NodeBuilder {
     wallets: Option<WalletProvider>,
     blockchain: Option<BlockchainHandle>,
     network: Option<NetworkHandle>,
+    mempool: Option<Arc<MemoryPool>>,
+    header_cache: Option<Arc<HeaderCache>>,
+    services: Option<ServiceRegistry>,
     block_executor: Option<Arc<dyn BlockExecutor>>,
     consensus: Option<Arc<dyn ConsensusService>>,
     engine: Option<Arc<dyn NeoEngine>>,
@@ -45,6 +50,9 @@ impl std::fmt::Debug for NodeBuilder {
             .field("wallets", &self.wallets.is_some())
             .field("blockchain", &self.blockchain.is_some())
             .field("network", &self.network.is_some())
+            .field("mempool", &self.mempool.is_some())
+            .field("header_cache", &self.header_cache.is_some())
+            .field("services", &self.services.is_some())
             .field("block_executor", &self.block_executor.as_ref().map(|s| s.name()))
             .field("consensus", &self.consensus.as_ref().map(|s| s.name()))
             .field("engine", &self.engine.as_ref().map(|s| s.name()))
@@ -80,6 +88,32 @@ impl NodeBuilder {
     /// Install the network service handle.
     pub fn with_network(mut self, network: NetworkHandle) -> Self {
         self.network = Some(network);
+        self
+    }
+
+    /// Install a shared memory pool. When unset, [`Self::build`]
+    /// constructs a fresh pool from the protocol settings. Pass the
+    /// same `Arc` the blockchain service admits into so RPC reads see
+    /// the live pool.
+    pub fn with_mempool(mut self, mempool: Arc<MemoryPool>) -> Self {
+        self.mempool = Some(mempool);
+        self
+    }
+
+    /// Install a shared header cache. When unset, [`Self::build`]
+    /// constructs an empty cache. Pass the same `Arc` the blockchain
+    /// service appends to so RPC header queries see the live cache.
+    pub fn with_header_cache(mut self, header_cache: Arc<HeaderCache>) -> Self {
+        self.header_cache = Some(header_cache);
+        self
+    }
+
+    /// Install a pre-populated service registry. When unset,
+    /// [`Self::build`] starts with an empty registry; services can
+    /// also be registered after `build()` via
+    /// [`Node::register_service`].
+    pub fn with_services(mut self, services: ServiceRegistry) -> Self {
+        self.services = Some(services);
         self
     }
 
@@ -122,12 +156,18 @@ impl NodeBuilder {
             .ok_or_else(|| crate::error::NodeError::missing_service("network"))?;
 
         debug!("NodeBuilder::build: composing runtime node");
+        let mempool = self
+            .mempool
+            .unwrap_or_else(|| Arc::new(MemoryPool::new(&settings)));
         Ok(Node {
             settings,
             storage,
             wallets: self.wallets.unwrap_or_default(),
             blockchain,
             network,
+            mempool,
+            header_cache: self.header_cache.unwrap_or_default(),
+            services: self.services.unwrap_or_default(),
             block_executor: self.block_executor,
             consensus: self.consensus,
             engine: self.engine,

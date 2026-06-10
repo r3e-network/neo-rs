@@ -1,14 +1,16 @@
 #![cfg(feature = "server")]
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_block::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
-use neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
+use neo_payloads::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
+use neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExtensions};
 use neo_payloads::{
     signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
 };
-use neo_native_contracts::{trimmed_block::TrimmedBlock, LedgerContract};
+use neo_native_contracts::LedgerContract;
+use neo_payloads::TrimmedBlock;
 use neo_storage::StorageKey;
-use neo_primitives::{UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
+use neo_payloads::Witness as LedgerWitness;
+use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
 use neo_vm_rs::VmState as VMState;
 use serde_json::Value;
@@ -42,7 +44,7 @@ fn make_ledger_block(
         UInt256::zero()
     } else {
         ledger
-            .get_block_hash_by_index(store, index - 1)
+            .get_block_hash(store.data_cache(), index - 1)
             .expect("previous hash lookup")
             .unwrap_or_else(UInt256::zero)
     };
@@ -74,10 +76,10 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(
         hash_key,
-        neo_execution::StorageItem::from_bytes(hash.to_bytes().to_vec()),
+        neo_storage::StorageItem::from_bytes(hash.to_bytes().to_vec()),
     );
 
-    let trimmed = TrimmedBlock::from_block(block);
+    let trimmed = TrimmedBlock::from_block(block).expect("trim block");
     let trimmed_bytes = trimmed.to_array().expect("serialize trimmed block");
     let mut block_key_bytes = Vec::with_capacity(1 + 32);
     block_key_bytes.push(PREFIX_BLOCK);
@@ -85,7 +87,7 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     let block_key = StorageKey::new(LedgerContract::ID, block_key_bytes);
     store.add(
         block_key,
-        neo_execution::StorageItem::from_bytes(trimmed_bytes),
+        neo_storage::StorageItem::from_bytes(trimmed_bytes),
     );
 
     for tx in &block.transactions {
@@ -103,7 +105,7 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
         let tx_key = StorageKey::new(LedgerContract::ID, tx_key_bytes);
         store.add(
             tx_key,
-            neo_execution::StorageItem::from_bytes(writer.into_bytes()),
+            neo_storage::StorageItem::from_bytes(writer.into_bytes()),
         );
     }
 
@@ -113,27 +115,29 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     let current_key = StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]);
     store.add(
         current_key,
-        neo_execution::StorageItem::from_bytes(current_bytes),
+        neo_storage::StorageItem::from_bytes(current_bytes),
     );
     store.commit();
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_raw_transaction_verbose_omits_vmstate() {
-    let system = neo_system::Node::new(
-        neo_config::ProtocolSettings::default(),
-        None,
-        None,
-    )
-    .expect("system to start");
+    let system = std::sync::Arc::new(
+        neo_system::Node::new(
+            std::sync::Arc::new(neo_config::ProtocolSettings::default()),
+            None,
+            None,
+        )
+        .expect("system to start"),
+    );
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getrawtransaction");
 
     let tx = make_transaction(7);
-    let block = make_ledger_block(&system.context().store_cache(), 1, vec![tx.clone()]);
+    let block = make_ledger_block(&system.store_cache(), 1, vec![tx.clone()]);
     let block_hash = block.hash();
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     store_block(&mut store, &block);
 
     let params = [Value::String(tx.hash().to_string()), Value::Bool(true)];

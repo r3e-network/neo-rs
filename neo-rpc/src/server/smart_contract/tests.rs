@@ -3,22 +3,23 @@ use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
-use neo_storage::persistence::apply_tracked_items;
-use neo_storage::StorageItemExt;
-use neo_execution::BinarySerializer;
+use neo_storage::persistence::transaction::apply_tracked_items;
+use neo_serialization::BinarySerializer;
 use neo_execution::helper::Helper as ContractHelper;
 use neo_execution::iterators::{IteratorInterop, StorageIterator};
 use neo_manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition};
 use neo_native_contracts::{ContractManagement, CryptoLib, NativeContract, NeoToken};
-use neo_execution::{
-    ApplicationEngine, ContractParameterType, ContractState, FindOptions, Interoperable,
-    NefFile, StorageItem, StorageKey, TriggerType};
+use neo_execution::{ApplicationEngine, ContractState, Interoperable, TriggerType};
+use neo_manifest::NefFile;
+use neo_primitives::{ContractParameterType, FindOptions};
+use neo_storage::{StorageItem, StorageKey};
 use neo_execution::contract::Contract;
-use neo_wallets::Helper as WalletHelper;
+use neo_wallets::wallet_helper as address_helper;
 use neo_wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_wallets::{KeyPair, StandardWalletAccount, WalletAccount};
-use neo_primitives::{NeoSystem, ProtocolSettings, UInt160, WitnessScope};
+use neo_config::ProtocolSettings;
+use neo_primitives::{UInt160, WitnessScope};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_vm::stack_item::InteropInterface as VmInteropInterface;
@@ -40,7 +41,7 @@ fn find_handler<'a>(
 }
 
 fn make_server(config: RpcServerConfig) -> crate::server::rpc_server::RpcServer {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     crate::server::rpc_server::RpcServer::new(system, config)
 }
 
@@ -172,23 +173,14 @@ fn signature_contract_for_keypair(key_pair: &KeyPair) -> Contract {
     Contract::create(vec![ContractParameterType::Signature], script)
 }
 
-fn fund_gas(system: &Arc<NeoSystem>, account: UInt160, amount: i64) {
-    let mut store = system.context().store_snapshot_cache();
-    let gas_id = neo_native_contracts::NativeRegistry::new()
-        .get_by_name("GasToken")
-        .expect("gas token")
-        .id();
-    let key = StorageKey::create_with_uint160(
-        gas_id,
-        neo_native_contracts::fungible_token::PREFIX_ACCOUNT,
-        &account,
-    );
-    store.add(key, StorageItem::from_bigint(BigInt::from(amount)));
+fn fund_gas(system: &Arc<neo_system::Node>, account: UInt160, amount: i64) {
+    let mut store = system.store_cache();
+    crate::server::test_support::seed_gas_balance(&mut store, &account, BigInt::from(amount));
     store.commit();
 }
 
-fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
-    let mut store_cache = system.context().store_snapshot_cache();
+fn deploy_verify_contract(system: &Arc<neo_system::Node>) -> UInt160 {
+    let mut store_cache = system.store_cache();
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
     let mut builder = neo_script_builder::ScriptBuilder::new();
@@ -221,7 +213,7 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         Some(Arc::new(tx)),
         Arc::clone(&snapshot),
         None,
-        system.settings().clone(),
+        system.settings().as_ref().clone(),
         50_000_000_000,
         None,
     )
@@ -231,7 +223,9 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         .call_native_contract(
             ContractManagement::new().hash(),
             "deploy",
-            &[nef.to_bytes(), manifest_bytes, Vec::new()],
+            // Two-argument overload: the optional `data` argument is
+            // `StackItem::Null` exactly as in C# `Deploy(nef, manifest)`.
+            &[nef.to_bytes(), manifest_bytes],
         )
         .expect("deploy");
 
@@ -1106,7 +1100,7 @@ async fn invokefunction_with_missing_wallet_account_sets_exception() {
 
     let missing_account = UInt160::from_bytes(&[0x42; 20]).expect("missing account hash");
     let missing_address =
-        WalletHelper::to_address(&missing_account, server.system().settings().address_version);
+        address_helper::to_address(&missing_account, server.system().settings().address_version);
 
     let signers = json!([{
         "signer": {
@@ -1154,7 +1148,7 @@ async fn get_unclaimed_gas_returns_address_string() {
     let get_unclaimed_gas = find_handler(&handlers, "getunclaimedgas");
 
     let address =
-        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
+        address_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (get_unclaimed_gas.callback())(&server, &params).expect("unclaimed gas");
 

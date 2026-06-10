@@ -2,17 +2,16 @@ use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_block::VerifyResult;
 use neo_io::BinaryWriter;
-use neo_network;
 use neo_payloads::conflicts::Conflicts;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_config::ProtocolSettings;
 use neo_execution::helper::Helper as ContractHelper;
-use neo_native_contracts::LedgerContract;
-use neo_execution::{StorageItem, StorageKey};
-use neo_primitives::Verifiable;
-use neo_system::Node;
+use neo_native_contracts::{GasToken, LedgerContract, NeoToken};
+use neo_payloads::get_sign_data_vec;
+use neo_wallets::wallet_helper;
+use neo_storage::{StorageItem, StorageKey};
 use neo_primitives::UInt256;
 use neo_payloads::Witness;
 use neo_crypto::Secp256r1Crypto;
@@ -57,7 +56,7 @@ async fn create_wallet_file(password: &str) -> (String, KeyPair, String) {
         .await
         .expect("import nep2");
     wallet.persist().expect("persist wallet");
-    let address = WalletHelper::to_address(&keypair.get_script_hash(), settings.address_version);
+    let address = wallet_helper::to_address(&keypair.get_script_hash(), settings.address_version);
     (path, keypair, address)
 }
 
@@ -82,11 +81,11 @@ fn authenticated_config_with_max_fee(max_fee: i64) -> RpcServerConfig {
 
 fn make_authenticated_server_with_max_fee(max_fee: i64) -> RpcServer {
     let system = if Handle::try_current().is_ok() {
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start")
+        crate::server::test_support::test_system(ProtocolSettings::default())
    } else {
         let rt = Runtime::new().expect("runtime");
         let system = rt.block_on(async {
-            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start")
+            crate::server::test_support::test_system(ProtocolSettings::default())
        });
         drop(rt);
         system
@@ -97,29 +96,14 @@ fn make_authenticated_server_with_max_fee(max_fee: i64) -> RpcServer {
 
 fn mint_gas(
     store: &mut neo_storage::persistence::StoreCache,
-    settings: &ProtocolSettings,
+    _settings: &ProtocolSettings,
     account: UInt160,
     amount: BigInt,
 ) {
-    let snapshot = Arc::new(store.data_cache().clone());
-    let mut container = Transaction::new();
-    container.set_signers(vec![Signer::new(account, WitnessScope::GLOBAL)]);
-    container.add_witness(Witness::new());
-    let script_container: Arc<dyn Verifiable> = Arc::new(container);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        Some(script_container),
-        snapshot,
-        None,
-        settings.clone(),
-        400_000_000,
-        None,
-    )
-    .expect("engine");
-
-    let gas = GasToken::new();
-    gas.mint(&mut engine, &account, &amount, false)
-        .expect("mint");
+    // Seeds the byte-exact NEP-17 account-state record the native
+    // `balanceOf` reads; the legacy fixture invoked `GAS.Mint` through
+    // an engine, which produces the same storage record.
+    crate::server::test_support::seed_gas_balance(store, &account, amount);
 }
 
 fn build_signed_transaction_custom(
@@ -190,7 +174,7 @@ async fn open_wallet_and_dump_priv_key_roundtrip() {
     let password = "rpc-pass";
     let (path, keypair, address) = create_wallet_file(password).await;
 
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = handlers
@@ -252,7 +236,7 @@ async fn open_wallet_rejects_invalid_password() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = handlers
@@ -274,7 +258,7 @@ async fn open_wallet_rejects_invalid_password() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn open_wallet_rejects_missing_file() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -291,7 +275,7 @@ async fn open_wallet_rejects_missing_file() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn open_wallet_rejects_invalid_wallet_format() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -316,7 +300,7 @@ fn get_new_address_adds_wallet_account() {
     let rt = Runtime::new().expect("runtime");
     let (path, _keypair, _address) = rt.block_on(create_wallet_file(password));
     let system = rt.block_on(async {
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start")
+        crate::server::test_support::test_system(ProtocolSettings::default())
    });
     drop(rt);
     let server = RpcServer::new(system, authenticated_config());
@@ -351,7 +335,7 @@ async fn get_wallet_balance_reports_balance_field() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -364,7 +348,7 @@ async fn get_wallet_balance_reports_balance_field() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset = NeoToken::new().hash().to_string();
+    let asset = NeoToken::script_hash().to_string();
     let params = [Value::String(asset)];
     let result = (balance_handler.callback())(&server, &params).expect("get wallet balance");
     let obj = result.as_object().expect("balance object");
@@ -381,7 +365,7 @@ async fn get_wallet_balance_rejects_invalid_asset_id() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -410,7 +394,7 @@ async fn get_wallet_unclaimed_gas_returns_string() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -438,7 +422,7 @@ fn import_priv_key_adds_account() {
     let rt = Runtime::new().expect("runtime");
     let (path, _keypair, _address) = rt.block_on(create_wallet_file(password));
     let system = rt.block_on(async {
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start")
+        crate::server::test_support::test_system(ProtocolSettings::default())
    });
     drop(rt);
 
@@ -457,7 +441,7 @@ fn import_priv_key_adds_account() {
 
     let new_key = KeyPair::from_private_key(&[0x22u8; 32]).expect("keypair");
     let wif = new_key.to_wif();
-    let expected_address = WalletHelper::to_address(
+    let expected_address = wallet_helper::to_address(
         &new_key.get_script_hash(),
         ProtocolSettings::default().address_version,
     );
@@ -491,7 +475,7 @@ fn import_priv_key_adds_account() {
 async fn import_priv_key_rejects_invalid_wif() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -519,7 +503,7 @@ async fn import_priv_key_rejects_invalid_wif() {
 async fn import_priv_key_returns_existing_account() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -571,7 +555,7 @@ async fn dump_priv_key_rejects_unknown_account() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -585,7 +569,7 @@ async fn dump_priv_key_rejects_unknown_account() {
     (open_handler.callback())(&server, &params).expect("open wallet");
 
     let other_key = KeyPair::from_private_key(&[0x33u8; 32]).expect("keypair");
-    let other_address = WalletHelper::to_address(
+    let other_address = wallet_helper::to_address(
         &other_key.get_script_hash(),
         ProtocolSettings::default().address_version,
     );
@@ -607,7 +591,7 @@ async fn dump_priv_key_rejects_invalid_address_format() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -638,7 +622,7 @@ fn cancel_transaction_requires_wallet() {
     let handler = find_handler(&handlers, "canceltransaction");
     let txid = UInt256::from([0x11u8; 32]).to_string();
     let address =
-        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
+        wallet_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
     let params = [
         Value::String(txid),
         Value::Array(vec![Value::String(address)]),
@@ -719,10 +703,10 @@ async fn cancel_transaction_returns_transaction_json() {
     let handler = find_handler(&handlers, "canceltransaction");
     let close_handler = find_handler(&handlers, "closewallet");
 
-    let mut store = server.system().context().store_snapshot_cache();
+    let mut store = server.system().store_cache();
     mint_gas(
         &mut store,
-        server.system().settings(),
+        &server.system().settings(),
         keypair.get_script_hash(),
         BigInt::from(50_0000_0000i64),
     );
@@ -814,14 +798,14 @@ async fn cancel_transaction_rejects_confirmed_transaction() {
     (open_handler.callback())(&server, &params).expect("open wallet");
 
     let confirmed = build_signed_transaction_custom(
-        server.system().settings(),
+        &server.system().settings(),
         &keypair,
         7,
         0,
         1,
         vec![OpCode::PUSH1.byte()],
     );
-    let mut store = server.system().context().store_snapshot_cache();
+    let mut store = server.system().store_cache();
     persist_transaction_record(&mut store, &confirmed);
 
     let params = [
@@ -848,11 +832,11 @@ async fn cancel_transaction_rejects_invalid_extra_fee() {
     let handler = find_handler(&handlers, "canceltransaction");
     let close_handler = find_handler(&handlers, "closewallet");
 
-    let mut store = server.system().context().store_snapshot_cache();
+    let mut store = server.system().store_cache();
     mint_gas(
         &mut store,
-        server.system().settings(),
-        WalletHelper::to_script_hash(&address, server.system().settings().address_version)
+        &server.system().settings(),
+        wallet_helper::to_script_hash(&address, server.system().settings().address_version)
             .expect("script hash"),
         BigInt::from(50_0000_0000i64),
     );
@@ -889,10 +873,10 @@ async fn cancel_transaction_rejects_wallet_fee_limit() {
     let handler = find_handler(&handlers, "canceltransaction");
     let close_handler = find_handler(&handlers, "closewallet");
 
-    let mut store = server.system().context().store_snapshot_cache();
+    let mut store = server.system().store_cache();
     mint_gas(
         &mut store,
-        server.system().settings(),
+        &server.system().settings(),
         keypair.get_script_hash(),
         BigInt::from(50_0000_0000i64),
     );
@@ -930,10 +914,10 @@ async fn cancel_transaction_applies_extra_fee() {
     let handler = find_handler(&handlers, "canceltransaction");
     let close_handler = find_handler(&handlers, "closewallet");
 
-    let mut store = server.system().context().store_snapshot_cache();
+    let mut store = server.system().store_cache();
     mint_gas(
         &mut store,
-        server.system().settings(),
+        &server.system().settings(),
         keypair.get_script_hash(),
         BigInt::from(50_0000_0000i64),
     );
@@ -950,15 +934,14 @@ async fn cancel_transaction_applies_extra_fee() {
     let signers = vec![Signer::new(keypair.get_script_hash(), WitnessScope::NONE)];
     let snapshot = server.system().store_cache();
     let snapshot_arc = Arc::new(snapshot.data_cache().clone());
-    let base_tx = WalletHelper::make_transaction(
+    let base_tx = crate::server::wallet_compat::make_transaction(
         server.wallet().expect("wallet").as_ref(),
         snapshot_arc.as_ref(),
+        &server.system().settings(),
         &[OpCode::RET.byte()],
         Some(signers[0].account),
-        Some(&signers),
-        Some(std::slice::from_ref(&conflict)),
-        server.system().settings(),
-        None,
+        &signers,
+        std::slice::from_ref(&conflict),
         server.settings().max_gas_invoke,
     )
     .expect("base cancel tx");
@@ -976,7 +959,7 @@ async fn cancel_transaction_applies_extra_fee() {
         .and_then(Value::as_str)
         .and_then(|value| value.parse::<i64>().ok())
         .expect("netfee");
-    let expected_extra = 10_i64.pow(GasToken::new().decimals() as u32);
+    let expected_extra = 10_i64.pow(8u32 /* GAS decimals (C# NativeContract.GAS.Decimals) */);
     assert_eq!(net_fee, base_fee + expected_extra);
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
@@ -995,17 +978,17 @@ async fn cancel_transaction_bumps_fee_for_mempool_conflict() {
     let handler = find_handler(&handlers, "canceltransaction");
     let close_handler = find_handler(&handlers, "closewallet");
 
-    let mut store = server.system().context().store_snapshot_cache();
+    let mut store = server.system().store_cache();
     mint_gas(
         &mut store,
-        server.system().settings(),
+        &server.system().settings(),
         keypair.get_script_hash(),
         BigInt::from(50_0000_0000i64),
     );
     store.commit();
 
     let conflict_tx = build_signed_transaction_custom(
-        server.system().settings(),
+        &server.system().settings(),
         &keypair,
         1,
         0,
@@ -1014,11 +997,10 @@ async fn cancel_transaction_bumps_fee_for_mempool_conflict() {
     );
     let txid = conflict_tx.hash();
     let store_cache = server.system().store_cache();
-    let verify = server.system().mempool().lock().try_add(
-        conflict_tx.clone(),
-        store_cache.data_cache(),
-        server.system().settings(),
-    );
+    let verify = server
+        .system()
+        .mempool()
+        .try_add(conflict_tx.clone(), store_cache.data_cache());
     assert_eq!(verify, VerifyResult::Succeed);
 
     let params = [
@@ -1050,8 +1032,8 @@ fn wallet_methods_require_open_wallet() {
     let server = make_authenticated_server();
     let handlers = RpcServerWallet::register_handlers();
     let address =
-        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
-    let asset = GasToken::new().hash().to_string();
+        wallet_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
+    let asset = GasToken::script_hash().to_string();
     let keypair = KeyPair::from_private_key(&[0x55u8; 32]).expect("keypair");
     let wif = keypair.to_wif();
 
@@ -1083,8 +1065,8 @@ fn send_from_requires_wallet() {
     let handlers = RpcServerWallet::register_handlers();
     let send_handler = find_handler(&handlers, "sendfrom");
     let address =
-        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
-    let asset = GasToken::new().hash().to_string();
+        wallet_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
+    let asset = GasToken::script_hash().to_string();
     let params = [
         Value::String(asset),
         Value::String(address.clone()),
@@ -1101,17 +1083,17 @@ fn send_from_requires_wallet() {
 async fn send_from_returns_transaction_json() {
     let password = "rpc-pass";
     let (path, keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
     let send_handler = find_handler(&handlers, "sendfrom");
     let close_handler = find_handler(&handlers, "closewallet");
 
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     mint_gas(
         &mut store,
-        system.settings(),
+        &system.settings(),
         keypair.get_script_hash(),
         BigInt::from(50_0000_0000i64),
     );
@@ -1123,7 +1105,7 @@ async fn send_from_returns_transaction_json() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset = GasToken::new().hash().to_string();
+    let asset = GasToken::script_hash().to_string();
     let params = [
         Value::String(asset),
         Value::String(address.clone()),
@@ -1165,7 +1147,7 @@ async fn send_from_returns_transaction_json() {
 async fn send_from_returns_invalid_request_without_funds() {
     let password = "rpc-pass";
     let (path, _keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1178,7 +1160,7 @@ async fn send_from_returns_invalid_request_without_funds() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset = GasToken::new().hash().to_string();
+    let asset = GasToken::script_hash().to_string();
     let params = [
         Value::String(asset),
         Value::String(address.clone()),
@@ -1201,8 +1183,8 @@ fn send_to_address_requires_wallet() {
     let handlers = RpcServerWallet::register_handlers();
     let handler = find_handler(&handlers, "sendtoaddress");
     let address =
-        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
-    let asset = GasToken::new().hash().to_string();
+        wallet_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
+    let asset = GasToken::script_hash().to_string();
     let params = [
         Value::String(asset),
         Value::String(address),
@@ -1218,7 +1200,7 @@ fn send_to_address_requires_wallet() {
 async fn send_to_address_rejects_invalid_asset_id() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1232,7 +1214,7 @@ async fn send_to_address_rejects_invalid_asset_id() {
     (open_handler.callback())(&server, &params).expect("open wallet");
 
     let address =
-        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
+        wallet_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
     let params = [
         Value::String("NotAnAssetId".to_string()),
         Value::String(address),
@@ -1253,7 +1235,7 @@ async fn send_to_address_rejects_invalid_asset_id() {
 async fn send_to_address_rejects_invalid_to_address() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1266,7 +1248,7 @@ async fn send_to_address_rejects_invalid_to_address() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset = GasToken::new().hash().to_string();
+    let asset = GasToken::script_hash().to_string();
     let params = [
         Value::String(asset),
         Value::String("NotAnAddress".to_string()),
@@ -1287,7 +1269,7 @@ async fn send_to_address_rejects_invalid_to_address() {
 async fn send_to_address_rejects_non_positive_amount() {
     let password = "rpc-pass";
     let (path, _keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1300,7 +1282,7 @@ async fn send_to_address_rejects_non_positive_amount() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset = GasToken::new().hash().to_string();
+    let asset = GasToken::script_hash().to_string();
     for amount in ["-1", "0"] {
         let params = [
             Value::String(asset.clone()),
@@ -1322,7 +1304,7 @@ async fn send_to_address_rejects_non_positive_amount() {
 async fn send_to_address_reports_invalid_operation_on_insufficient_funds() {
     let password = "rpc-pass";
     let (path, _keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1335,7 +1317,7 @@ async fn send_to_address_reports_invalid_operation_on_insufficient_funds() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset = GasToken::new().hash().to_string();
+    let asset = GasToken::script_hash().to_string();
     let params = [
         Value::String(asset),
         Value::String(address),
@@ -1356,8 +1338,8 @@ fn send_many_requires_wallet() {
     let handlers = RpcServerWallet::register_handlers();
     let handler = find_handler(&handlers, "sendmany");
     let address =
-        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
-    let asset = GasToken::new().hash().to_string();
+        wallet_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
+    let asset = GasToken::script_hash().to_string();
     let outputs = json!([{
         "asset": asset,
         "value": "1",
@@ -1374,7 +1356,7 @@ fn send_many_requires_wallet() {
 async fn send_many_rejects_invalid_from() {
     let password = "rpc-pass";
     let (path, _keypair, _address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1387,11 +1369,11 @@ async fn send_many_rejects_invalid_from() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset = GasToken::new().hash().to_string();
+    let asset = GasToken::script_hash().to_string();
     let outputs = json!([{
         "asset": asset,
         "value": "1",
-        "address": WalletHelper::to_address(
+        "address": wallet_helper::to_address(
             &UInt160::zero(),
             server.system().settings().address_version,
         )
@@ -1412,7 +1394,7 @@ async fn send_many_rejects_invalid_from() {
 async fn send_many_rejects_empty_outputs() {
     let password = "rpc-pass";
     let (path, _keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1448,7 +1430,7 @@ async fn send_many_rejects_empty_outputs() {
 async fn send_many_rejects_invalid_outputs_type() {
     let password = "rpc-pass";
     let (path, _keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1487,7 +1469,7 @@ async fn send_many_rejects_invalid_outputs_type() {
 async fn send_many_rejects_non_positive_amount() {
     let password = "rpc-pass";
     let (path, _keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1500,7 +1482,7 @@ async fn send_many_rejects_non_positive_amount() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset_id = GasToken::new().hash();
+    let asset_id = GasToken::script_hash();
     let asset = asset_id.to_string();
     for amount in ["-1", "0"] {
         let outputs = json!([{
@@ -1532,17 +1514,17 @@ async fn send_many_rejects_non_positive_amount() {
 async fn send_many_returns_transaction_json() {
     let password = "rpc-pass";
     let (path, keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
     let handler = find_handler(&handlers, "sendmany");
     let close_handler = find_handler(&handlers, "closewallet");
 
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     mint_gas(
         &mut store,
-        system.settings(),
+        &system.settings(),
         keypair.get_script_hash(),
         BigInt::from(50_0000_0000i64),
     );
@@ -1554,7 +1536,7 @@ async fn send_many_returns_transaction_json() {
     ];
     (open_handler.callback())(&server, &params).expect("open wallet");
 
-    let asset = GasToken::new().hash().to_string();
+    let asset = GasToken::script_hash().to_string();
     let outputs = json!([{
         "asset": asset,
         "value": "1",
@@ -1596,7 +1578,7 @@ async fn send_many_returns_transaction_json() {
 async fn send_many_reports_invalid_operation_on_insufficient_funds() {
     let password = "rpc-pass";
     let (path, _keypair, address) = create_wallet_file(password).await;
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
     let open_handler = find_handler(&handlers, "openwallet");
@@ -1610,7 +1592,7 @@ async fn send_many_reports_invalid_operation_on_insufficient_funds() {
     (open_handler.callback())(&server, &params).expect("open wallet");
 
     let outputs = json!([{
-        "asset": GasToken::new().hash().to_string(),
+        "asset": GasToken::script_hash().to_string(),
         "value": "100000000000000000",
         "address": address.clone()
    }]);

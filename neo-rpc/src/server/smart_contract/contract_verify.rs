@@ -95,7 +95,7 @@ pub(super) fn invoke_contract_verify(
         Some(tx_container),
         Arc::clone(&snapshot_cache),
         None,
-        system.settings().clone(),
+        system.settings().as_ref().clone(),
         server.settings().max_gas_invoke,
         None,
     )

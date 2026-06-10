@@ -10,7 +10,6 @@
 // modifications are permitted.
 
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
-use neo_network;
 use neo_storage::persistence::DataCache;
 use neo_native_contracts::GasToken;
 use neo_wallets::wallet_helper as WalletHelper;

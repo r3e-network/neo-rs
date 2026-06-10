@@ -2,22 +2,18 @@
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{
-    expect_base64_param_with_decode_message, internal_error, invalid_params};
+    expect_base64_param_with_decode_message, invalid_params};
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
 use neo_primitives::hardfork::Hardfork;
-use neo_blockchain::BlockchainCommand;
 use neo_io::{MemoryReader, Serializable};
-// LocalNode is in neo-network p2p layer;
+use neo_network::handle::LocalNodeInfo;
 use neo_payloads::{block::Block, transaction::Transaction};
 use serde_json::{json, Map, Value};
 use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::runtime::{Handle, Runtime};
-use tokio::task::block_in_place;
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -41,42 +37,16 @@ impl RpcServerNode {
    }
 
     fn get_peers(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        let system = server.system();
-        let unconnected_endpoints = {
-            let fut = system.unconnected_peers();
-            if let Ok(handle) = Handle::try_current() {
-                block_in_place(|| handle.block_on(fut))
-           } else {
-                let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
-                runtime.block_on(fut)
-           }
-       }
-        .map_err(|err| internal_error(err.to_string()))?;
-
-        Self::with_local_node(server, |node| {
-            let unconnected: Vec<Value> = unconnected_endpoints
-                .into_iter()
-                .map(|endpoint| {
-                    json!({
-                        "address": endpoint.ip().to_string(),
-                        "port": endpoint.port()})
-               })
-                .collect();
-
-            let connected: Vec<Value> = node
-                .remote_snapshots()
-                .into_iter()
-                .map(|snapshot| {
-                    json!({
-                        "address": snapshot.remote_address.ip().to_string(),
-                        "port": snapshot.listen_tcp_port})
-               })
-                .collect();
-
+        // The reth-style network service tracks neither an unconnected
+        // address book nor per-peer socket addresses at the handle seam
+        // (its lifecycle events carry opaque peer ids only), so the
+        // unconnected and connected lists are served empty. The
+        // connected-peer COUNT is available via `getconnectioncount`.
+        Self::with_local_node(server, |_node| {
             json!({
-                "unconnected": unconnected,
+                "unconnected": Vec::<Value>::new(),
                 "bad": Vec::<Value>::new(),
-                "connected": connected})
+                "connected": Vec::<Value>::new()})
        })
    }
 
@@ -179,13 +149,7 @@ impl RpcServerNode {
         )?;
         let transaction = Transaction::from_bytes(&raw)
             .map_err(|err| invalid_params(format!("Invalid transaction: {err}")))?;
-        let relay_result = rpc_relay::with_relay_responder(server, move |sender| {
-            server
-                .system()
-                .tx_router_actor()
-                .try_enqueue_preverify_from(transaction, true, Some(sender))
-                .map_err(|err| internal_error(err.to_string()))
-       })?;
+        let relay_result = rpc_relay::relay_transaction(server, transaction)?;
         rpc_relay::map_relay_result(relay_result)
    }
 
@@ -199,48 +163,20 @@ impl RpcServerNode {
         let mut reader = MemoryReader::new(&raw);
         let block = <Block as Serializable>::deserialize(&mut reader)
             .map_err(|err| invalid_params(format!("Invalid block: {err}")))?;
-        let relay_result = rpc_relay::with_relay_responder(server, |sender| {
-            server
-                .system()
-                .blockchain_actor()
-                .tell_from(
-                    BlockchainCommand::InventoryBlock {
-                        block: Arc::new(block),
-                        relay: true,
-                        pre_verified: false},
-                    Some(sender),
-                )
-                .map_err(|err| internal_error(err.to_string()))
-       })?;
+        let relay_result = rpc_relay::relay_block(server, block)?;
         rpc_relay::map_relay_result(relay_result)
    }
 
     fn with_local_node<F>(server: &RpcServer, func: F) -> Result<Value, RpcException>
     where
-        F: FnOnce(&Arc<LocalNode>) -> Value,
+        F: FnOnce(&LocalNodeInfo) -> Value,
     {
-        let local = Self::fetch_local_node(server)?;
+        let local = Self::fetch_local_node(server);
         Ok(func(&local))
    }
 
-    fn fetch_local_node(server: &RpcServer) -> Result<Arc<LocalNode>, RpcException> {
-        let system = server.system();
-        if let Some(local) = system
-            .context()
-            .local_node_service()
-            .map_err(|err| internal_error(err.to_string()))?
-        {
-            return Ok(local);
-       }
-
-        let fut = system.local_node_state();
-        let result = if let Ok(handle) = Handle::try_current() {
-            block_in_place(|| handle.block_on(fut))
-       } else {
-            let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
-            runtime.block_on(fut)
-       };
-        result.map_err(|err| internal_error(err.to_string()))
+    fn fetch_local_node(server: &RpcServer) -> LocalNodeInfo {
+        server.system().network().local_node_info()
    }
 
     fn format_hardfork(fork: Hardfork) -> String {
