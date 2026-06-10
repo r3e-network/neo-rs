@@ -410,9 +410,21 @@ impl neo_primitives::Verifiable for Block {
     }
 }
 
+/// Wire size of a var-int (C# `GetVarSize`).
+fn var_int_size(value: u64) -> usize {
+    match value {
+        v if v < 0xFD => 1,
+        v if v <= 0xFFFF => 3,
+        v if v <= 0xFFFF_FFFF => 5,
+        _ => 9,
+    }
+}
+
 impl Serializable for Block {
     fn size(&self) -> usize {
-        let mut size = <Header as Serializable>::size(&self.header);
+        // C# Block.Size includes the transaction var-array count bytes.
+        let mut size = <Header as Serializable>::size(&self.header)
+            + var_int_size(self.transactions.len() as u64);
         for tx in &self.transactions {
             size += <Transaction as Serializable>::size(tx);
         }

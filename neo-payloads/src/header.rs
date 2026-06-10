@@ -399,7 +399,9 @@ impl neo_primitives::Verifiable for Header {
 
 impl Serializable for Header {
     fn size(&self) -> usize {
-        4 + 32 + 32 + 8 + 8 + 4 + 1 + 20 + <Witness as Serializable>::size(&self.witness)
+        // C# Header.Size: the witness is serialized as a 1-element var-array,
+        // so the var-int count byte is part of the wire size (Header.cs:90-99).
+        4 + 32 + 32 + 8 + 8 + 4 + 1 + 20 + 1 + <Witness as Serializable>::size(&self.witness)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -411,6 +413,9 @@ impl Serializable for Header {
         writer.write_u32(self.index)?;
         writer.write_u8(self.primary_index)?;
         <UInt160 as Serializable>::serialize(&self.next_consensus, writer)?;
+        // C# Header.Serialize writes `new Witness[] { Witness }` — a var-array
+        // with its count byte (Header.cs:163-167).
+        writer.write_var_int(1)?;
         <Witness as Serializable>::serialize(&self.witness, writer)?;
         Ok(())
     }
@@ -424,6 +429,15 @@ impl Serializable for Header {
         let index = reader.read_u32()?;
         let primary_index = reader.read_u8()?;
         let next_consensus = <UInt160 as Serializable>::deserialize(reader)?;
+        // C# Header.Deserialize reads a witness array capped at 1 and requires
+        // exactly one entry (Header.cs:116-122).
+        let witness_count = reader.read_var_int(1)?;
+        if witness_count != 1 {
+            return Err(neo_io::IoError::InvalidData {
+                context: "Header.witness".to_string(),
+                value: format!("expected 1 witness in Header, got {witness_count}"),
+            });
+        }
         let witness = <Witness as Serializable>::deserialize(reader)?;
         Ok(Self {
             version,
