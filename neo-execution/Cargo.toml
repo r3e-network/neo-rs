@@ -59,5 +59,4 @@ sha3 = { workspace = true }
 ripemd = { workspace = true }
 blake2 = { workspace = true }
 bs58 = { workspace = true }
-neo-services = { workspace = true }
 neo-p2p = { workspace = true }

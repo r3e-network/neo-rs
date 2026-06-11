@@ -19,7 +19,6 @@
 use std::sync::Arc;
 
 use neo_payloads::Block;
-use neo_primitives::verify_result::VerifyResult;
 use tracing::{debug, error};
 
 use crate::service::BlockchainService;
@@ -29,14 +28,6 @@ const MAX_BLOCK_CACHE_SIZE: usize = 20_000;
 const MAX_UNVERIFIED_CACHE_SIZE: usize = 20_000;
 
 impl BlockchainService {
-    /// Verify and persist a block. The Stage B implementation
-    /// returns `Succeed` unconditionally; the full validation
-    /// pipeline is the focus of Stage C.
-    pub(crate) async fn on_new_block(&self, _block: Arc<Block>, _verify: bool) -> VerifyResult {
-        debug!(target: "neo", "block processing pipeline (stage B stub)");
-        VerifyResult::Succeed
-    }
-
     /// Persist a consecutive block sequence: run the C#
     /// `Blockchain.Persist` pipeline (native OnPersist + ledger
     /// records, per-transaction Application execution, native

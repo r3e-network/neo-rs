@@ -2402,6 +2402,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "hex",
  "neo-block",
+ "neo-chain",
  "neo-config",
  "neo-crypto",
  "neo-data-cache",
@@ -2599,7 +2600,6 @@ dependencies = [
  "neo-redeem-script",
  "neo-script-builder",
  "neo-serialization",
- "neo-services",
  "neo-storage",
  "neo-vm",
  "neo-vm-rs",
@@ -2791,7 +2791,6 @@ dependencies = [
  "neo-redeem-script",
  "neo-script-builder",
  "neo-serialization",
- "neo-services",
  "neo-storage",
  "neo-vm",
  "neo-vm-rs",
@@ -2830,7 +2829,6 @@ dependencies = [
  "neo-payloads",
  "neo-primitives",
  "neo-runtime",
- "neo-services",
  "neo-state-types",
  "neo-wire",
  "parking_lot",
@@ -3065,7 +3063,6 @@ dependencies = [
  "neo-primitives",
  "neo-script-builder",
  "neo-serialization",
- "neo-services",
  "neo-state-service",
  "neo-state-types",
  "neo-storage",
@@ -3151,13 +3148,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "zstd",
-]
-
-[[package]]
-name = "neo-services"
-version = "0.7.2"
-dependencies = [
- "parking_lot",
 ]
 
 [[package]]

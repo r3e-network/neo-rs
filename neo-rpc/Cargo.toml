@@ -105,7 +105,6 @@ neo-wallets = { workspace = true }
 neo-blockchain = { workspace = true }
 neo-mempool = { workspace = true }
 neo-serialization = { workspace = true }
-neo-services = { workspace = true, optional = true }
 
 neo-time = { workspace = true }
 neo-p2p = { workspace = true }
@@ -120,7 +119,6 @@ default = []
 server = [
     "client",  # Server uses client models for JSON serialization
     "dep:neo-config",
-    "dep:neo-services",
     "dep:neo-application-logs",
     "dep:neo-tokens-tracker",
     "dep:neo-oracle-service",

@@ -85,7 +85,6 @@ use neo_payloads::{Transaction, TransactionAttribute};
 use neo_data_cache::DataCache;
 use neo_storage::SeekDirection;
 use neo_config::ProtocolSettings;
-// use neo_services::SystemContext; // will be replaced with trait object
 use crate::application_engine_contract::register_contract_interops;
 use crate::application_engine_crypto::register_crypto_interops;
 use crate::application_engine_iterator::register_iterator_interops;

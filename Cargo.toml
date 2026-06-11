@@ -76,8 +76,6 @@ members = [
     # I/O extensions and utility traits 
     "neo-extensions",
 
-    # Service trait interfaces 
-    "neo-services",
 
     # Typed event payloads and broadcast helpers 
     "neo-events",
@@ -211,7 +209,6 @@ neo-vm = { path = "neo-vm", version = "0.7.2" }
 neo-script-builder = { path = "neo-script-builder", version = "0.7.2" }
 neo-redeem-script = { path = "neo-redeem-script", version = "0.7.2" }
 neo-extensions = { path = "neo-extensions", version = "0.7.2" }
-neo-services = { path = "neo-services", version = "0.7.2" }
 neo-events = { path = "neo-events", version = "0.7.2" }
 neo-event-handlers = { path = "neo-event-handlers", version = "0.7.2" }
 neo-state-types = { path = "neo-state-types", version = "0.7.2" }
