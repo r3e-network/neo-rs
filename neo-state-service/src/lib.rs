@@ -54,7 +54,7 @@ pub use neo_state_types::{
     Keys, MessageType, StateRootIngestStats, Vote, STATE_SERVICE_CATEGORY,
 };
 
-pub use mpt_store::{MptChange, MptStore};
+pub use mpt_store::{MptChange, MptReadSnapshot, MptStore};
 pub use root_cache::{
     StateRootCache, StateRootCacheEntry, StateRootCacheStats, StateRootCacheStatsSnapshot,
     DEFAULT_ROOT_CACHE_CAPACITY,
