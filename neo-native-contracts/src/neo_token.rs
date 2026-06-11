@@ -1181,6 +1181,21 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
         // Candidate registration (Echidna V1: States|AllowNotify). registerCandidate
         // has no manifest CpuFee (it charges GetRegisterPrice dynamically);
         // unregisterCandidate is CpuFee 1<<16. Both return Boolean.
+        // registerCandidate / unregisterCandidate / vote are each a dual
+        // registration (C# NeoToken.cs:397/431/456): V0 is genesis-active with
+        // RequiredCallFlags=States and DeprecatedIn=HF_Echidna; V1 is
+        // ActiveIn=HF_Echidna and adds AllowNotify (the candidate-state-change
+        // notification). Exactly one is active at any height.
+        NativeMethod::new(
+            "registerCandidate".into(),
+            0,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+        )
+        .with_parameter_names(["pubkey"])
+        .with_deprecated_in(Hardfork::HfEchidna),
         NativeMethod::new(
             "registerCandidate".into(),
             0,
@@ -1189,7 +1204,18 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::PublicKey],
             ContractParameterType::Boolean,
         )
-        .with_parameter_names(["pubkey"]),
+        .with_parameter_names(["pubkey"])
+        .with_active_in(Hardfork::HfEchidna),
+        NativeMethod::new(
+            "unregisterCandidate".into(),
+            1 << 16,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+        )
+        .with_parameter_names(["pubkey"])
+        .with_deprecated_in(Hardfork::HfEchidna),
         NativeMethod::new(
             "unregisterCandidate".into(),
             1 << 16,
@@ -1198,9 +1224,20 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::PublicKey],
             ContractParameterType::Boolean,
         )
-        .with_parameter_names(["pubkey"]),
-        // vote(account, voteTo?) -> Boolean (Echidna V1: States|AllowNotify, CpuFee
-        // 1<<16). voteTo is a nullable PublicKey (null = clear the vote).
+        .with_parameter_names(["pubkey"])
+        .with_active_in(Hardfork::HfEchidna),
+        // vote(account, voteTo?) -> Boolean. voteTo is a nullable PublicKey
+        // (null = clear the vote). V0 States / V1 States|AllowNotify at Echidna.
+        NativeMethod::new(
+            "vote".into(),
+            1 << 16,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Hash160, ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+        )
+        .with_parameter_names(["account", "voteTo"])
+        .with_deprecated_in(Hardfork::HfEchidna),
         NativeMethod::new(
             "vote".into(),
             1 << 16,
@@ -1209,7 +1246,8 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Hash160, ContractParameterType::PublicKey],
             ContractParameterType::Boolean,
         )
-        .with_parameter_names(["account", "voteTo"]),
+        .with_parameter_names(["account", "voteTo"])
+        .with_active_in(Hardfork::HfEchidna),
         // onNEP17Payment(from, amount, data) -> Void: candidate registration
         // by paying the register price in GAS to the NEO contract. C#
         // `[ContractMethod(Hardfork.HF_Echidna, RequiredCallFlags =
@@ -1928,9 +1966,12 @@ mod tests {
                 "getCandidateVote",
                 "setRegisterPrice",
                 "setGasPerBlock",
-                "registerCandidate",
-                "unregisterCandidate",
-                "vote",
+                "registerCandidate", // V0 (genesis, DeprecatedIn Echidna)
+                "registerCandidate", // V1 (ActiveIn Echidna, +AllowNotify)
+                "unregisterCandidate", // V0
+                "unregisterCandidate", // V1
+                "vote",              // V0
+                "vote",              // V1
                 "onNEP17Payment"
             ]
         );
@@ -1943,17 +1984,27 @@ mod tests {
             assert_eq!(w.return_type, ContractParameterType::Void);
             assert_eq!(w.cpu_fee, 1 << 15);
         }
-        // Candidate writers: not safe, States|AllowNotify, PublicKey -> Boolean;
-        // registerCandidate has no manifest CpuFee, unregisterCandidate is 1<<16.
+        // Candidate writers: dual registration (C# V0/V1). V0 is genesis-active
+        // with States + DeprecatedIn Echidna; V1 is ActiveIn Echidna and adds
+        // AllowNotify. registerCandidate has no manifest CpuFee, unregister is 1<<16.
+        let states = CallFlags::STATES.bits();
         let notify_flags = CallFlags::STATES.bits() | CallFlags::ALLOW_NOTIFY.bits();
         for (name, fee) in [("registerCandidate", 0i64), ("unregisterCandidate", 1 << 16)] {
-            let w = c.methods().iter().find(|m| m.name == name).unwrap();
-            assert!(!w.safe, "{name} is not safe");
-            assert_eq!(w.required_call_flags, notify_flags, "{name} flags");
-            assert_eq!(w.parameters, vec![ContractParameterType::PublicKey], "{name} params");
-            assert_eq!(w.return_type, ContractParameterType::Boolean, "{name} return");
-            assert_eq!(w.cpu_fee, fee, "{name} cpu_fee");
-            assert_eq!(w.active_in, None, "{name} genesis-active");
+            let versions: Vec<&NativeMethod> =
+                c.methods().iter().filter(|m| m.name == name).collect();
+            assert_eq!(versions.len(), 2, "{name} is a dual V0/V1 registration");
+            let (v0, v1) = (versions[0], versions[1]);
+            assert!(!v0.safe && !v1.safe, "{name} not safe");
+            assert_eq!(v0.parameters, vec![ContractParameterType::PublicKey], "{name} params");
+            assert_eq!(v0.return_type, ContractParameterType::Boolean, "{name} return");
+            assert_eq!(v0.cpu_fee, fee, "{name} cpu_fee");
+            // V0: genesis-active, States, deprecated at Echidna.
+            assert_eq!(v0.required_call_flags, states, "{name} V0 flags");
+            assert_eq!(v0.active_in, None, "{name} V0 genesis-active");
+            assert_eq!(v0.deprecated_in, Some(Hardfork::HfEchidna), "{name} V0 deprecated");
+            // V1: active at Echidna, States|AllowNotify.
+            assert_eq!(v1.required_call_flags, notify_flags, "{name} V1 flags");
+            assert_eq!(v1.active_in, Some(Hardfork::HfEchidna), "{name} V1 active");
         }
         let acct = c.methods().iter().find(|m| m.name == "getAccountState").unwrap();
         assert_eq!(acct.parameters, vec![ContractParameterType::Hash160]);
