@@ -227,6 +227,22 @@ impl BlockchainService {
             return Ok(());
         }
 
+        // Stateless block-integrity pre-checks before persisting a peer-relayed
+        // block (the structural half of C# `Block.Verify`): the header's merkle
+        // root must match the transactions and there must be no duplicate
+        // transactions. (neo-chain stateless validators.)
+        let tx_hashes: Vec<neo_primitives::UInt256> =
+            block.transactions.iter().map(|tx| tx.hash()).collect();
+        if let Err(error) =
+            neo_chain::block_validation::validate_merkle_root(block.header.merkle_root(), &tx_hashes)
+        {
+            return Err(format!("block {index} failed merkle-root validation: {error}"));
+        }
+        if let Err(error) = neo_chain::block_validation::validate_no_duplicate_transactions(&tx_hashes)
+        {
+            return Err(format!("block {index} has duplicate transactions: {error}"));
+        }
+
         // C# Blockchain.OnNewBlock → Persist(block): the native-contract
         // state transition runs before the block becomes the new tip.
         if !self.persist_block_sequence(Arc::clone(&block)).await {
