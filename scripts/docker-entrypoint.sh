@@ -96,15 +96,15 @@ fi
 export NEO_RPC_PORT="${RPC_PORT}"
 echo "${RPC_PORT}" > /tmp/neo_rpc_port || true
 
-ARGS=(--config "${CONFIG}" --storage "${STORAGE}")
+# The neo-node CLI accepts only --config/-c, --storage-path and --network-magic.
+# Storage backend, listener port and RPC settings come from the TOML config,
+# not CLI flags.
+ARGS=(--config "${CONFIG}")
 
-if [[ -n "${BACKEND}" ]]; then
-  ARGS+=(--backend "${BACKEND}")
-fi
-if [[ -n "${LISTEN_PORT}" ]]; then
-  ARGS+=(--listen-port "${LISTEN_PORT}")
+if [[ -n "${STORAGE}" ]]; then
+  ARGS+=(--storage-path "${STORAGE}")
 fi
 
-echo "neo-node starting with config=${CONFIG}, storage=${STORAGE}, backend=${BACKEND:-<default>}, listen_port=${LISTEN_PORT:-<config>}, plugins_dir=${PLUGINS_DIR}, rpc_port=${RPC_PORT}"
+echo "neo-node starting with config=${CONFIG}, storage_path=${STORAGE:-<config>}, plugins_dir=${PLUGINS_DIR}, rpc_port=${RPC_PORT}"
 
 exec neo-node "${ARGS[@]}" "$@"

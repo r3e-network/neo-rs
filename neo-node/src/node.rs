@@ -95,6 +95,17 @@ struct StorageSection {
     /// Database directory for the RocksDB backend.
     #[serde(default)]
     data_dir: Option<PathBuf>,
+    /// Alias for `data_dir` accepted by the shipped mainnet/production presets
+    /// (which use `[storage] path = "..."`).
+    #[serde(default)]
+    path: Option<PathBuf>,
+}
+
+impl StorageSection {
+    /// The configured RocksDB directory, accepting either `data_dir` or `path`.
+    fn data_directory(&self) -> Option<PathBuf> {
+        self.data_dir.clone().or_else(|| self.path.clone())
+    }
 }
 
 /// `[p2p]`: peer-to-peer networking.
@@ -147,6 +158,11 @@ struct ConsensusSection {
 struct DaemonContext {
     settings: Arc<ProtocolSettings>,
     snapshot: Arc<neo_storage::persistence::DataCache>,
+    /// The store-backed cache whose `DataCache` shares state with `snapshot`
+    /// (cloned from it). `commit()` flushes the block writes accumulated in the
+    /// snapshot through to the durable backing store — the write-through the
+    /// blockchain service triggers via `commit_to_store()` after each block.
+    store_cache: parking_lot::Mutex<neo_storage::persistence::StoreCache>,
 }
 
 impl std::fmt::Debug for DaemonContext {
@@ -170,6 +186,12 @@ impl neo_blockchain::service_context::SystemContext for DaemonContext {
 
     fn store_snapshot(&self) -> Option<Arc<neo_storage::persistence::DataCache>> {
         Some(Arc::clone(&self.snapshot))
+    }
+
+    fn commit_to_store(&self) {
+        // The StoreCache's DataCache shares state with `snapshot` (it was cloned
+        // from it), so its tracked block writes are flushed through to the store.
+        self.store_cache.lock().commit();
     }
 }
 
@@ -408,11 +430,11 @@ async fn build_node(
     let store: Arc<dyn Store> = if use_rocksdb {
         let path = storage_override
             .map(Path::to_path_buf)
-            .or_else(|| config.storage.data_dir.clone())
+            .or_else(|| config.storage.data_directory())
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "storage backend 'rocksdb' requires a data directory \
-                     (set [storage].data_dir or pass --storage-path)"
+                     (set [storage].data_dir or [storage].path, or pass --storage-path)"
                 )
             })?;
         info!(target: "neo", path = %path.display(), "opening RocksDB store");
@@ -449,6 +471,7 @@ async fn build_node(
     let system_ctx: Arc<dyn SystemContext> = Arc::new(DaemonContext {
         settings: Arc::clone(&settings),
         snapshot,
+        store_cache: parking_lot::Mutex::new(store_cache),
     });
     let mempool_like: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(
         neo_blockchain::service::SharedMempool(Arc::clone(&mempool)),
@@ -784,5 +807,58 @@ some_future_key = 42
         assert_eq!(default_p2p_port(0x3554_334E), 20333);
         assert_eq!(default_p2p_port(0x334F_454E), 10333);
         assert_eq!(default_p2p_port(0xDEAD_BEEF), 0);
+    }
+
+    /// The shipped mainnet/production presets use `[storage] path = "..."`;
+    /// the parser must accept it as an alias for `data_dir`.
+    #[test]
+    fn storage_section_accepts_path_alias() {
+        let toml = "[storage]\nbackend = \"rocksdb\"\npath = \"./data/mainnet\"\n";
+        let config: NodeConfig = toml::from_str(toml).expect("parses");
+        assert_eq!(config.storage.backend.as_deref(), Some("rocksdb"));
+        assert_eq!(
+            config.storage.data_directory(),
+            Some(std::path::PathBuf::from("./data/mainnet"))
+        );
+    }
+
+    /// `commit_to_store` flushes the writes accumulated in the shared snapshot
+    /// (as a block's native-persist pipeline does) through to the durable store,
+    /// so a fresh cache over the same store reads them. Without this, synced
+    /// blocks stay in-memory and the on-disk tip is stuck at genesis.
+    #[test]
+    fn commit_to_store_flushes_snapshot_writes_to_durable_store() {
+        use neo_blockchain::service_context::SystemContext;
+        use neo_storage::persistence::providers::memory_store::MemoryStore;
+        use neo_storage::persistence::{store::Store, StoreCache};
+        use neo_storage::{StorageItem, StorageKey};
+
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+        let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
+        let snapshot = Arc::new(store_cache.data_cache().clone());
+        let ctx = DaemonContext {
+            settings: Arc::new(ProtocolSettings::default()),
+            snapshot: Arc::clone(&snapshot),
+            store_cache: parking_lot::Mutex::new(store_cache),
+        };
+
+        // Stage a write into the shared snapshot (the blockchain persist path).
+        let key = StorageKey::new(-1, vec![0xAB, 0xCD]);
+        snapshot.add(key.clone(), StorageItem::from_bytes(vec![0x01, 0x02, 0x03]));
+
+        // Not durable yet: a fresh cache over the same store cannot see it.
+        let before = StoreCache::new_from_store(Arc::clone(&store), false);
+        assert!(
+            before.data_cache().get(&key).is_none(),
+            "write must not reach the store before commit_to_store"
+        );
+
+        // Flush, then a fresh cache over the same store reads the write.
+        ctx.commit_to_store();
+        let after = StoreCache::new_from_store(Arc::clone(&store), false);
+        assert!(
+            after.data_cache().get(&key).is_some(),
+            "commit_to_store must flush the snapshot write through to the store"
+        );
     }
 }

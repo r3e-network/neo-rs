@@ -42,13 +42,12 @@ COPY neo-consensus/ neo-consensus/
 COPY neo-tee/ neo-tee/
 COPY neo-hsm/ neo-hsm/
 COPY neo-telemetry/ neo-telemetry/
-COPY neo-cli/ neo-cli/
 COPY neo-node/ neo-node/
 COPY scripts/ scripts/
 COPY neo_mainnet_node.toml neo_testnet_node.toml neo_production_node.toml ./
 
-# Build release binaries (neo-node daemon + neo-cli client)
-RUN cargo build --release --locked -p neo-node -p neo-cli
+# Build the node daemon (the runnable daemon is behind the `wip` feature).
+RUN cargo build --release --locked -p neo-node --features wip
 
 # Runtime stage
 FROM debian:bullseye-slim
@@ -75,7 +74,6 @@ RUN mkdir -p /data /data/blocks /data/Logs /data/logs && chown -R neo:neo /data
 
 # Copy binaries from builder stage
 COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
-COPY --from=builder /app/target/release/neo-cli /usr/local/bin/neo-cli
 
 # Copy default configs and entrypoint
 COPY neo_mainnet_node.toml /etc/neo/neo_mainnet_node.toml

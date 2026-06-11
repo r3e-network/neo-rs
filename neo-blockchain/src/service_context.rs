@@ -47,6 +47,13 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     fn store_snapshot(&self) -> Option<Arc<neo_data_cache::DataCache>> {
         None
     }
+
+    /// Flushes the writes accumulated in [`SystemContext::store_snapshot`] (after
+    /// a block's native-persist pipeline) through to the durable backing store.
+    /// The blockchain service calls this once per successfully persisted block
+    /// (mirroring C# `snapshot.Commit()` at the end of `Blockchain.Persist`).
+    /// The default is a no-op for store-less / in-memory test contexts.
+    fn commit_to_store(&self) {}
 }
 
 /// Async variant of [`SystemContext`]; the trait object behind the
