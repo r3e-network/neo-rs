@@ -77,6 +77,9 @@ impl BlockchainService {
         }
 
         self.header_cache.remove_up_to(index);
+        // Flush the persisted state through to the durable backing store
+        // (C# snapshot.Commit() at the end of Blockchain.Persist).
+        self.system.commit_to_store();
         self.event_tx
             .send(crate::RuntimeEvent::Imported {
                 hash: _hash,
@@ -155,6 +158,9 @@ impl BlockchainService {
                 );
                 break;
             }
+
+            // Flush the block's native-persist writes to the durable store.
+            self.system.commit_to_store();
         }
     }
 
@@ -232,6 +238,11 @@ impl BlockchainService {
         if let Err(error) = self.ledger.insert_block((*block).clone()) {
             return Err(format!("ledger insert: {error}"));
         }
+
+        // Flush the block's native-persist writes through to the durable store
+        // (C# snapshot.Commit() at the end of Blockchain.Persist) so the on-disk
+        // tip advances and a restart resumes from here rather than genesis.
+        self.system.commit_to_store();
 
         self.event_tx
             .send(crate::RuntimeEvent::Imported { hash, height: index })
@@ -319,6 +330,9 @@ impl BlockchainService {
                                         "failed to record the genesis block in the ledger cache"
                                     );
                                 }
+                                // Flush genesis through to the durable store so a
+                                // fresh node persists it on disk (not just in-memory).
+                                self.system.commit_to_store();
                                 debug!(
                                     target: "neo",
                                     initialized = ?outcome.initialized,
