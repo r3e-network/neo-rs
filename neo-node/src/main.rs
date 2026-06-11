@@ -22,6 +22,8 @@
 #![warn(missing_docs)]
 
 #[cfg(feature = "wip")]
+mod consensus;
+#[cfg(feature = "wip")]
 mod node;
 
 #[cfg(not(feature = "wip"))]

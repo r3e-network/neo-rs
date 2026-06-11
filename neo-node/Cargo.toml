@@ -25,7 +25,7 @@ default = []
 # startup, services, RPC server, dBFT consensus, TEE/HSM integration).
 # Builds with `cargo build -p neo-node --features wip` (or
 # `cargo build --workspace --features wip`).
-wip = ["dep:neo-config", "dep:neo-blockchain", "dep:neo-storage", "dep:neo-system", "dep:neo-block", "dep:neo-primitives", "dep:neo-event-handlers", "dep:neo-mempool", "dep:neo-native-contracts", "dep:neo-network"]
+wip = ["dep:neo-config", "dep:neo-blockchain", "dep:neo-storage", "dep:neo-storage-rocksdb", "dep:neo-system", "dep:neo-block", "dep:neo-primitives", "dep:neo-event-handlers", "dep:neo-mempool", "dep:neo-native-contracts", "dep:neo-network", "dep:neo-p2p", "dep:neo-consensus", "dep:neo-crypto", "dep:neo-payloads", "dep:neo-execution", "dep:neo-redeem-script", "dep:hex", "neo-rpc/server"]
 # Back-compat alias: `full` was the previous feature name; it now means
 # the same thing as `wip` so historical build invocations keep working.
 full = ["wip"]
@@ -115,6 +115,8 @@ neo-wallets = { workspace = true, optional = true }
 neo-blockchain = { workspace = true, optional = true }
 neo-manifest = { workspace = true, optional = true }
 neo-vm = { workspace = true, optional = true }
+neo-redeem-script = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
 neo-mempool = { workspace = true, optional = true }
 
 [dev-dependencies]
