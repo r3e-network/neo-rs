@@ -818,10 +818,12 @@ fn committee_sorted(snapshot: &DataCache) -> CoreResult<Vec<ECPoint>> {
 }
 
 /// C# `GetNextBlockValidators`: the first `validators_count` committee members
-/// (in stored, vote-ranked order), then sorted ascending. `pub(crate)` so
+/// (in stored, vote-ranked order), then sorted ascending. Public so
 /// `GasToken::on_persist` can resolve the primary validator the block's
-/// network fees are minted to (C# GasToken.cs:55).
-pub(crate) fn next_block_validators(snapshot: &DataCache, validators_count: usize) -> CoreResult<Vec<ECPoint>> {
+/// network fees are minted to (C# GasToken.cs:55) and the blockchain service
+/// can build the extensible-witness whitelist (C# `Blockchain.
+/// UpdateExtensibleWitnessWhiteList`).
+pub fn next_block_validators(snapshot: &DataCache, validators_count: usize) -> CoreResult<Vec<ECPoint>> {
     let mut points = read_committee_points(snapshot)?;
     points.truncate(validators_count);
     points.sort();

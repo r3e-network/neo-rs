@@ -192,11 +192,19 @@ impl Inventory for ExtensiblePayload {
 
 
 impl crate::VerifiableExt for ExtensiblePayload {
-    
+    /// C# `ExtensiblePayload.GetScriptHashesForVerifying`: the single hash to
+    /// verify is the payload's `Sender`.
+    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+        vec![self.sender]
+    }
 
-    
+    fn witnesses(&self) -> Vec<&neo_ledger_types::Witness> {
+        vec![&self.witness]
+    }
 
-    
+    fn witnesses_mut(&mut self) -> Vec<&mut neo_ledger_types::Witness> {
+        vec![&mut self.witness]
+    }
 }
 
 impl Serializable for ExtensiblePayload {
