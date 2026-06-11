@@ -79,30 +79,34 @@ curl -s -X POST http://127.0.0.1:10332 \
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Application Layer                        │
-│  neo-cli (CLI Client)     │  neo-node (Node Daemon)         │
+│  Application:  neo-node (daemon)  ·  neo-rpc (JSON-RPC server)│
 ├─────────────────────────────────────────────────────────────┤
-│                    Chain Management                         │
-│  neo-chain (Blockchain)   │  neo-mempool (Transaction Pool) │
+│  Services:     neo-system · neo-network · neo-consensus (dBFT)│
+│                neo-blockchain · neo-mempool · neo-state-service│
 ├─────────────────────────────────────────────────────────────┤
-│                    Core Layer                               │
-│  neo-core (Core Logic + VM compatibility)                    │
-│  neo-consensus (dBFT)   │  neo-p2p (P2P Network)            │
-│  neo-rpc (RPC Server)                                       │
+│  Execution:    neo-execution (ApplicationEngine) · neo-vm     │
+│                neo-native-contracts · neo-chain (block checks) │
 ├─────────────────────────────────────────────────────────────┤
-│                    Foundation Layer                         │
-│  neo-primitives │ neo-crypto │ neo-storage │ neo-io │ neo-json│
+│  Protocol:     neo-payloads · neo-p2p · neo-wire · neo-config  │
+├─────────────────────────────────────────────────────────────┤
+│  Foundation:   neo-primitives · neo-crypto · neo-storage       │
+│                neo-io · neo-json · neo-error                   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> `neo-core` was dissolved into ~45 single-responsibility crates with an acyclic
+> dependency DAG (foundation → protocol → execution → services → application).
+> There is no `neo-cli` binary; query a running node over JSON-RPC.
 
 ## Compatibility
 
 | neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| 0.7.x          | 3.10.0         | [`v3.10.0`](https://github.com/neo-project/neo/releases/tag/v3.10.0) (HF_Gorgon VM gating, native activation, CryptoLib V2, VerifyResult.NotYetValid) |
 | 0.7.x          | 3.9.1          | [`v3.9.1`](https://github.com/neo-project/neo/releases/tag/v3.9.1) (execution/vector parity validated) |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
-This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.9.1) for blocks, transactions, and P2P messages. Verified with live protocol/vector parity checks against Neo v3.9.1 (C# and NeoGo reference endpoints).
+This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation for blocks, transactions, and P2P messages, and tracks consensus-affecting changes through C# v3.10.0 (the VM jump-table is hardfork-gated so pre-Gorgon blocks replay identically).
 
 ### C# v3.9.1 Feature Parity
 
@@ -151,13 +155,12 @@ All native contract hashes match the C# reference implementation:
 ### Test Coverage
 
 ```
-✅ 343 lib tests passed (neo-core)
-✅ 520+ integration tests passed
-✅ All C# UT_* equivalent tests converted to Rust
-✅ JSON manifest parity with C# reference (byte-for-byte)
-✅ Contract hash verification (all 12 native contracts)
-✅ NEP-17 Transfer/NEP-30 Oracle callbacks tested
-✅ NEP-11 NFT operations (mint, burn, transfer, enumerate)
+✅ cargo test --workspace            — 124 test binaries, 0 failures
+✅ cargo test -p neo-rpc --features server   — JSON-RPC server suite green
+✅ cargo test -p neo-node --features wip     — node daemon suite green
+✅ Native contract hash + JSON manifest parity with C# v3.9.1/3.10.0
+✅ C#-derived reference-vector tests (VM opcodes/interops, MPT state roots,
+   ledger-record encoding, dBFT block assembly)
 ```
 
 ## Prerequisites
@@ -168,7 +171,11 @@ All native contract hashes match the C# reference implementation:
 ## Build
 
 ```bash
-cargo build
+# The full node daemon (required to actually run a node)
+cargo build --release -p neo-node --features wip
+
+# Or build/test the whole workspace
+cargo build --workspace
 ```
 
 Release build for production:
