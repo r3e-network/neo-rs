@@ -33,7 +33,6 @@
 //! | [`internal`]   | Internal types: `UnverifiedBlocksList`, `ImportDisposition`, classify helpers |
 //! | [`block_processing`] | Block verification + persistence loop |
 //! | [`handlers`]   | The `impl BlockchainService` block that wires command variants to async fn handlers |
-//! | [`transaction`]| Transaction admission / mempool interactions |
 //! | [`import`], [`import_completed`], [`fill_memory_pool`], [`fill_completed`], [`persist_completed`], [`relay_result`], [`reverify`], [`inventory_payload`] | Per-message types used by the command enum |
 //! | [`ledger_context`], [`header_cache`] | The in-memory ledger caches the service uses for hot lookups |
 //!
@@ -75,7 +74,6 @@ pub mod relay_result;
 pub mod reverify;
 pub mod service;
 pub mod service_context;
-pub mod transaction;
 
 // Re-exports for the public surface of the crate.
 //

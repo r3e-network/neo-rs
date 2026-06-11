@@ -26,7 +26,6 @@ use std::time::Duration;
 use super::routes::{BasicAuth, build_rpc_routes, build_ws_route};
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
-use neo_services::traits::RpcService;
 use neo_system::Node;
 use neo_wallets::Wallet;
 use crate::server::rpc_exception::RpcException;
@@ -605,8 +604,3 @@ impl RpcServer {
    }
 }
 
-impl RpcService for RpcServer {
-    fn is_started(&self) -> bool {
-        self.started
-   }
-}

@@ -32,7 +32,6 @@ neo-runtime = { workspace = true }
 # consumers (neo-rpc, neo-node, neo-consensus). Will be removed in
 # Stage F once consumer migration is complete.
 neo-p2p = { workspace = true }
-neo-services = { workspace = true }
 neo-events = { workspace = true }
 neo-state-types = { workspace = true }
 
