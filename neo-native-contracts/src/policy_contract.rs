@@ -1048,7 +1048,9 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             "recoverFund".to_string(),
             1 << 15,
             false,
-            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            // C# v3.10.0: CallFlags.All (adds AllowCall) so the inner GAS
+            // transfer to Treasury may invoke GasToken (was States|AllowNotify).
+            CallFlags::ALL.bits(),
             vec![ContractParameterType::Hash160, ContractParameterType::Hash160],
             ContractParameterType::Boolean,
         )
@@ -1834,10 +1836,7 @@ mod tests {
         let recover = c.methods().iter().find(|m| m.name == "recoverFund").unwrap();
         assert!(!recover.safe);
         assert_eq!(recover.active_in, Some(Hardfork::HfFaun));
-        assert_eq!(
-            recover.required_call_flags,
-            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
-        );
+        assert_eq!(recover.required_call_flags, CallFlags::ALL.bits());
         assert_eq!(
             recover.parameters,
             vec![ContractParameterType::Hash160, ContractParameterType::Hash160]

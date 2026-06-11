@@ -112,6 +112,40 @@ fn verify_ecdsa_method(
     .unwrap_or(false))
 }
 
+/// Strict ECDSA verification (C# v3.10.0 `Crypto.VerifySignature`, used by
+/// `VerifyWithECDsaV2` from HF_Gorgon): an unsupported curve and a malformed
+/// signature length fault (rather than returning `false`). Keccak-256 curves are
+/// always available here (Gorgon is after Cockatrice). A valid-length signature
+/// that does not verify still returns `false`. (A right-length-but-invalid
+/// public key returns `false` here where C# would fault — a narrow divergence
+/// in this dormant Gorgon path, since the underlying verifier reports key parse
+/// failure as a non-match rather than an error.)
+fn verify_ecdsa_method_strict(
+    message: &[u8],
+    pubkey: &[u8],
+    signature: &[u8],
+    curve: u8,
+) -> CoreResult<bool> {
+    let named = NamedCurveHash::from_byte(curve).ok_or_else(|| {
+        CoreError::invalid_operation(format!(
+            "CryptoLib::verifyWithECDsa: unsupported curve {curve}"
+        ))
+    })?;
+    if signature.len() != 64 {
+        return Err(CoreError::invalid_operation(
+            "CryptoLib::verifyWithECDsa: signature size should be 64 bytes",
+        ));
+    }
+    Ok(neo_crypto::ecc::verify_signature_with_hash(
+        named.curve(),
+        pubkey,
+        message,
+        signature,
+        named.hash_algorithm(),
+    )
+    .unwrap_or(false))
+}
+
 /// Pure secp256k1 public-key recovery with C# `RecoverSecp256K1` semantics:
 /// returns the 33-byte compressed public key, or `None` when recovery fails (C#
 /// wraps `Crypto.ECRecover` in try/catch and returns `null`). Split out so the
@@ -224,7 +258,11 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             byte_array,
         )
         .with_parameter_names(["data", "seed"]),
-        // verifyWithEd25519(message, pubkey, signature) -> bool (HF_Echidna).
+        // verifyWithEd25519: dual manifest registration under one name (C#
+        // v3.10.0 V0/V1). V0 = ActiveIn HF_Echidna, DeprecatedIn HF_Gorgon
+        // (lenient: wrong-length sig/pubkey -> false). V1 = ActiveIn HF_Gorgon
+        // (strict: wrong-length sig/pubkey faults). Exactly one is active at
+        // any height; the strict gate is applied in invoke via HF_Gorgon.
         NativeMethod::new(
             "verifyWithEd25519".to_string(),
             CPU_FEE_HASH,
@@ -234,6 +272,17 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfEchidna)
+        .with_deprecated_in(Hardfork::HfGorgon)
+        .with_parameter_names(["message", "pubkey", "signature"]),
+        NativeMethod::new(
+            "verifyWithEd25519".to_string(),
+            CPU_FEE_HASH,
+            true,
+            0,
+            vec![byte_array, byte_array, byte_array],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfGorgon)
         .with_parameter_names(["message", "pubkey", "signature"]),
         // verifyWithECDsa: dual manifest registration under one name (C# V0/V1).
         // V0 = `[ContractMethod(true, Hardfork.HF_Cockatrice, ...)]`:
@@ -262,6 +311,20 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfCockatrice)
+        .with_deprecated_in(Hardfork::HfGorgon)
+        .with_parameter_names(["message", "pubkey", "signature", "curveHash"]),
+        // V2 = ActiveIn HF_Gorgon (C# VerifyWithECDsaV2): strict
+        // Crypto.VerifySignature — a malformed signature length faults instead
+        // of returning false.
+        NativeMethod::new(
+            "verifyWithECDsa".to_string(),
+            CPU_FEE_HASH,
+            true,
+            0,
+            vec![byte_array, byte_array, byte_array, ContractParameterType::Integer],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfGorgon)
         .with_parameter_names(["message", "pubkey", "signature", "curveHash"]),
         // recoverSecp256K1(messageHash, signature) -> ByteArray? (HF_Echidna).
         // Returns the compressed pubkey, or null on failure (signaled at runtime
@@ -391,6 +454,24 @@ impl NativeContract for CryptoLib {
             let message = args.first().map(Vec::as_slice).ok_or_else(arg_err)?;
             let pubkey = args.get(1).map(Vec::as_slice).ok_or_else(arg_err)?;
             let signature = args.get(2).map(Vec::as_slice).ok_or_else(arg_err)?;
+            if engine.is_hardfork_enabled(Hardfork::HfGorgon) {
+                // C# v3.10.0 VerifyWithEd25519V1 (strict): a wrong-length
+                // signature (64) or public key (32) faults (FormatException)
+                // instead of returning false.
+                if signature.len() != 64 {
+                    return Err(CoreError::invalid_operation(
+                        "CryptoLib::verifyWithEd25519: signature size should be 64",
+                    ));
+                }
+                if pubkey.len() != 32 {
+                    return Err(CoreError::invalid_operation(
+                        "CryptoLib::verifyWithEd25519: public key size should be 32",
+                    ));
+                }
+                let ok = neo_crypto::ecc::verify_ed25519(pubkey, message, signature)
+                    .unwrap_or(false);
+                return Ok(vec![u8::from(ok)]);
+            }
             return Ok(vec![u8::from(verify_ed25519_method(message, pubkey, signature))]);
         }
 
@@ -413,6 +494,13 @@ impl NativeContract for CryptoLib {
                 .ok_or_else(|| {
                     CoreError::invalid_operation("CryptoLib::verifyWithECDsa: curveHash out of range")
                 })?;
+            if engine.is_hardfork_enabled(Hardfork::HfGorgon) {
+                // C# v3.10.0 VerifyWithECDsaV2 (strict Crypto.VerifySignature):
+                // a malformed signature length faults instead of returning false.
+                return Ok(vec![u8::from(verify_ecdsa_method_strict(
+                    message, pubkey, signature, curve,
+                )?)]);
+            }
             let allow_keccak = engine.is_hardfork_enabled(Hardfork::HfCockatrice);
             return Ok(vec![u8::from(verify_ecdsa_method(
                 message, pubkey, signature, curve, allow_keccak,
@@ -511,9 +599,11 @@ mod tests {
                 "ripemd160",
                 "keccak256",
                 "murmur32",
-                "verifyWithEd25519",
-                "verifyWithECDsa", // V0 (genesis, DeprecatedIn Cockatrice)
-                "verifyWithECDsa", // V1 (ActiveIn Cockatrice)
+                "verifyWithEd25519", // V0 (ActiveIn Echidna, DeprecatedIn Gorgon)
+                "verifyWithEd25519", // V1 (ActiveIn Gorgon, strict)
+                "verifyWithECDsa",   // V0 (genesis, DeprecatedIn Cockatrice)
+                "verifyWithECDsa",   // V1 (ActiveIn Cockatrice, DeprecatedIn Gorgon)
+                "verifyWithECDsa",   // V2 (ActiveIn Gorgon, strict)
                 "recoverSecp256K1",
                 "bls12381Serialize",
                 "bls12381Deserialize",
@@ -533,20 +623,24 @@ mod tests {
         assert_eq!(ed.return_type, ContractParameterType::Boolean);
         assert_eq!(ed.active_in, Some(Hardfork::HfEchidna));
         assert_eq!(ed.parameters.len(), 3);
-        // verifyWithECDsa is a dual registration (C# V0/V1): V0 runs from
-        // genesis until DeprecatedIn HF_Cockatrice with the fourth parameter
-        // named `curve`; V1 is ActiveIn HF_Cockatrice and renames it
-        // `curveHash`. Types are identical across versions.
+        // verifyWithECDsa is a triple registration (C# v3.10.0 V0/V1/V2): V0
+        // runs from genesis until DeprecatedIn HF_Cockatrice with the fourth
+        // parameter named `curve`; V1 is ActiveIn HF_Cockatrice (renames it
+        // `curveHash`) until DeprecatedIn HF_Gorgon; V2 is ActiveIn HF_Gorgon
+        // (strict). Types are identical across versions.
         let ecdsa: Vec<&NativeMethod> =
             c.methods().iter().filter(|m| m.name == "verifyWithECDsa").collect();
-        assert_eq!(ecdsa.len(), 2);
-        let (v0, v1) = (ecdsa[0], ecdsa[1]);
+        assert_eq!(ecdsa.len(), 3);
+        let (v0, v1, v2) = (ecdsa[0], ecdsa[1], ecdsa[2]);
         assert_eq!(v0.active_in, None);
         assert_eq!(v0.deprecated_in, Some(Hardfork::HfCockatrice));
         assert_eq!(v0.parameter_names, ["message", "pubkey", "signature", "curve"]);
         assert_eq!(v1.active_in, Some(Hardfork::HfCockatrice));
-        assert_eq!(v1.deprecated_in, None);
+        assert_eq!(v1.deprecated_in, Some(Hardfork::HfGorgon));
         assert_eq!(v1.parameter_names, ["message", "pubkey", "signature", "curveHash"]);
+        assert_eq!(v2.active_in, Some(Hardfork::HfGorgon));
+        assert_eq!(v2.deprecated_in, None);
+        assert_eq!(v2.parameter_names, ["message", "pubkey", "signature", "curveHash"]);
         for m in &ecdsa {
             assert_eq!(m.return_type, ContractParameterType::Boolean);
             assert_eq!(m.parameters.len(), 4);

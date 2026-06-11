@@ -876,7 +876,9 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             ContractParameterType::InteropInterface,
         ),
         // destroy(): the calling contract destroys itself. Not safe,
-        // States|AllowNotify, Void (C# ContractManagement.Destroy).
+        // States|AllowNotify, Void. C# v3.10.0 splits this into DestroyV0
+        // (pre-Gorgon: erase then block the account) and DestroyV1 (from
+        // Gorgon: block the account before erasing) — same ABI, hardfork-gated.
         NativeMethod::new(
             "destroy".to_string(),
             1 << 15,
@@ -884,7 +886,17 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
             vec![],
             ContractParameterType::Void,
-        ),
+        )
+        .with_deprecated_in(Hardfork::HfGorgon),
+        NativeMethod::new(
+            "destroy".to_string(),
+            1 << 15,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            vec![],
+            ContractParameterType::Void,
+        )
+        .with_active_in(Hardfork::HfGorgon),
         // deploy(nefFile, manifest) / deploy(nefFile, manifest, data): C#
         // [ContractMethod(RequiredCallFlags = CallFlags.States |
         // CallFlags.AllowNotify)] — CpuFee 0 (the deployment fee is charged
@@ -1301,6 +1313,14 @@ impl NativeContract for ContractManagement {
                 let Some(contract) = Self::get_contract_from_snapshot(&snapshot, &hash)? else {
                     return Ok(Vec::new());
                 };
+                // C# v3.10.0 DestroyInternal(engine, blockBeforeErase): from
+                // HF_Gorgon the account is blocked + whitelist cleaned BEFORE the
+                // contract state/storage is erased; before Gorgon it stays after.
+                let block_before_erase = engine.is_hardfork_enabled(Hardfork::HfGorgon);
+                if block_before_erase {
+                    crate::policy_contract::block_account_internal(engine, &hash)?;
+                    policy_clean_whitelist(engine, &contract)?;
+                }
                 // Delete the per-contract record and the id -> hash index entry.
                 snapshot.delete(&StorageKey::new(Self::ID, contract_storage_key(&hash)));
                 snapshot.delete(&StorageKey::new(
@@ -1317,11 +1337,13 @@ impl NativeContract for ContractManagement {
                 for key in keys {
                     snapshot.delete(&key);
                 }
-                // C#: `await Policy.BlockAccountInternal(engine, hash)` — lock
-                // the destroyed contract (the bool result is discarded).
-                crate::policy_contract::block_account_internal(engine, &hash)?;
-                // C#: `Policy.CleanWhitelist(engine, contract)`.
-                policy_clean_whitelist(engine, &contract)?;
+                if !block_before_erase {
+                    // C#: `await Policy.BlockAccountInternal(engine, hash)` — lock
+                    // the destroyed contract (the bool result is discarded) — then
+                    // `Policy.CleanWhitelist(engine, contract)`.
+                    crate::policy_contract::block_account_internal(engine, &hash)?;
+                    policy_clean_whitelist(engine, &contract)?;
+                }
                 // Emit the Destroy event with the destroyed hash.
                 engine
                     .send_notification(
@@ -1366,6 +1388,7 @@ mod tests {
                 "hasMethod",
                 "setMinimumDeploymentFee",
                 "getContractHashes",
+                "destroy",
                 "destroy",
                 "deploy",
                 "deploy",

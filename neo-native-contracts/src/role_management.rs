@@ -345,6 +345,17 @@ impl NativeContract for RoleManagement {
                     ));
                 }
 
+                // C# v3.10.0 DesignateAsRole: reject a node list containing
+                // duplicate public keys (`nodes.Distinct().Count() != nodes.Length`).
+                let mut deduplicated = nodes.clone();
+                deduplicated.sort();
+                deduplicated.dedup();
+                if deduplicated.len() != nodes.len() {
+                    return Err(CoreError::invalid_operation(
+                        "Duplicate publickeys are not allowed",
+                    ));
+                }
+
                 // C#: index = PersistingBlock.Index + 1 (key); the event carries
                 // PersistingBlock.Index itself.
                 let block_index = engine

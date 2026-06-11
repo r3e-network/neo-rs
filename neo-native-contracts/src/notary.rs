@@ -765,15 +765,16 @@ impl NativeContract for Notary {
                             "Notary::setMaxNotValidBeforeDelta requires a uint value",
                         )
                     })?;
-                // C# bound: value must be ≤ GetMaxValidUntilBlockIncrement/2 and ≥
-                // ProtocolSettings.Default.ValidatorsCount. The default settings'
-                // ValidatorsCount is 0, so `value < 0` can never hold for a uint —
-                // the lower bound is a faithful no-op and only the upper bound
-                // (hardfork-aware MaxValidUntilBlockIncrement / 2) can fault.
+                // C# v3.10.0 bound: value must be ≤ GetMaxValidUntilBlockIncrement/2
+                // and ≥ engine.ProtocolSettings.ValidatorsCount (was the constant
+                // ProtocolSettings.Default.ValidatorsCount = 0). On a network whose
+                // ValidatorsCount > 0 this now rejects small deltas the old check
+                // let through — a tx-validity divergence.
                 let upper = crate::policy_contract::read_max_valid_until_block_increment(engine)? / 2;
-                if i64::from(value) > upper {
+                let lower = i64::from(engine.protocol_settings().validators_count);
+                if i64::from(value) > upper || i64::from(value) < lower {
                     return Err(CoreError::invalid_operation(format!(
-                        "MaxNotValidBeforeDelta cannot be more than {upper} or less than 0"
+                        "MaxNotValidBeforeDelta cannot be more than {upper} or less than {lower}"
                     )));
                 }
                 let authorized = engine.check_committee_witness().map_err(|e| {

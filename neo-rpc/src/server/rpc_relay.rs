@@ -39,6 +39,11 @@ pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcExceptio
         VerifyResult::Expired => Err(RpcException::from(
             RpcError::expired_transaction().with_data("Expired"),
         )),
+        // C# `GetRelayResult` has no explicit case for NotYetValid (added in
+        // v3.10.0), so it falls through to the default `VerificationFailed`.
+        VerifyResult::NotYetValid => Err(RpcException::from(
+            RpcError::verification_failed().with_data("NotYetValid"),
+        )),
         VerifyResult::InsufficientFunds => Err(RpcException::from(
             RpcError::insufficient_funds().with_data("InsufficientFunds"),
         )),

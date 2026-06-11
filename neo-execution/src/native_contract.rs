@@ -592,16 +592,24 @@ impl HardforkActivable for NativeEvent {
 
 /// Checks whether a hardfork-activable item is active.
 ///
-/// Mirrors C# `NativeContract.IsActive(...)` hardfork activation semantics.
+/// Mirrors C# v3.10.0 `NativeContract.IsActive(...)` (PR #4520/#4524): a
+/// method/event is active **iff** its `ActiveIn` hardfork is active (or unset)
+/// **and** its `DeprecatedIn` hardfork is NOT yet active (or unset). The earlier
+/// OR-form wrongly activated a descriptor whose `DeprecatedIn` had already
+/// passed (when `ActiveIn` also passed) and one whose `ActiveIn`+`DeprecatedIn`
+/// were both still in the future.
 pub fn is_active_for<T: HardforkActivable>(
     item: &T,
     hf_checker: impl Fn(Hardfork, u32) -> bool,
     block_height: u32,
 ) -> bool {
-    (item.active_in().is_none() && item.deprecated_in().is_none())
-        || (item.deprecated_in().is_some()
-            && !hf_checker(item.deprecated_in().unwrap(), block_height))
-        || (item.active_in().is_some() && hf_checker(item.active_in().unwrap(), block_height))
+    let active_in_ok = item
+        .active_in()
+        .is_none_or(|hf| hf_checker(hf, block_height));
+    let not_deprecated = item
+        .deprecated_in()
+        .is_none_or(|hf| !hf_checker(hf, block_height));
+    active_in_ok && not_deprecated
 }
 
 /// Builds a [`ContractState`] for a native contract at the given
@@ -679,6 +687,44 @@ mod tests {
     use super::*;
     use neo_error::CoreError as Error;
     use std::collections::HashMap;
+
+    /// Pins the C# v3.10.0 `NativeContract.IsActive` AND-form (PR #4520/#4524):
+    /// a descriptor is active iff `ActiveIn` is active (or unset) AND
+    /// `DeprecatedIn` is NOT active (or unset). The two both-set cases the old
+    /// OR-form wrongly activated must now be INACTIVE.
+    #[test]
+    fn is_active_for_matches_v3100_and_form() {
+        fn method(active: Option<Hardfork>, deprecated: Option<Hardfork>) -> NativeMethod {
+            let mut m =
+                NativeMethod::new("m".to_string(), 0, true, 0, vec![], ContractParameterType::Void);
+            if let Some(a) = active {
+                m = m.with_active_in(a);
+            }
+            if let Some(d) = deprecated {
+                m = m.with_deprecated_in(d);
+            }
+            m
+        }
+        // A hardfork is "active" iff it is in `passed`.
+        fn checker(passed: Vec<Hardfork>) -> impl Fn(Hardfork, u32) -> bool {
+            move |hf, _h| passed.contains(&hf)
+        }
+        let (c, g) = (Hardfork::HfCockatrice, Hardfork::HfGorgon);
+
+        // Neither set -> always active.
+        assert!(is_active_for(&method(None, None), checker(vec![]), 0));
+        // Active-only.
+        assert!(!is_active_for(&method(Some(g), None), checker(vec![]), 0));
+        assert!(is_active_for(&method(Some(g), None), checker(vec![g]), 0));
+        // Deprecated-only.
+        assert!(is_active_for(&method(None, Some(g)), checker(vec![]), 0));
+        assert!(!is_active_for(&method(None, Some(g)), checker(vec![g]), 0));
+        // Both set: active(c) -> deprecated(g).
+        assert!(!is_active_for(&method(Some(c), Some(g)), checker(vec![]), 0)); // divergent: neither passed
+        assert!(is_active_for(&method(Some(c), Some(g)), checker(vec![c]), 0)); // active window
+        assert!(!is_active_for(&method(Some(c), Some(g)), checker(vec![c, g]), 0)); // divergent: both passed
+        assert!(!is_active_for(&method(Some(c), Some(g)), checker(vec![g]), 0)); // deprecated, not yet active
+    }
 
     /// A minimal native contract exercising the event/parameter-name plumbing:
     /// one ungated event at order 1, a dual registration at order 0 across

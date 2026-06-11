@@ -1,7 +1,8 @@
 //! ApplicationEngine.Crypto - matches C# Neo.SmartContract.ApplicationEngine.Crypto.cs
 
 use neo_crypto::Crypto;
-use neo_crypto::{CryptoError, Secp256r1Crypto};
+use neo_crypto::{CryptoError, ECCurve, ECPoint, Secp256r1Crypto};
+use neo_primitives::Hardfork;
 use neo_vm::VmResult;
 use neo_vm::execution_engine::ExecutionEngine;
 use crate::ApplicationEngine;
@@ -139,8 +140,12 @@ impl ApplicationEngine {
 
     /// Verifies a signature using secp256r1.
     ///
-    /// Returns an error when the public key is not a valid SEC1 encoding, matching
-    /// the C# `CheckSig` semantics (invalid public key formats fault the syscall).
+    /// Mirrors C# `CheckSig`: pre-HF_Gorgon it calls `Crypto.VerifySignatureV0`
+    /// (a wrong-length signature returns `false`), and from HF_Gorgon it calls
+    /// the strict `Crypto.VerifySignature` (a wrong-length signature throws a
+    /// `FormatException` -> syscall fault). In both, the public key is decoded
+    /// (`ECPoint.DecodePoint`) *before* the signature length is examined, so an
+    /// invalid public key always faults regardless of the hardfork.
     fn verify_signature(
         &self,
         message: &[u8],
@@ -148,6 +153,14 @@ impl ApplicationEngine {
         signature: &[u8],
     ) -> Result<bool, String> {
         if signature.len() != 64 {
+            // C# decodes the public key first (argument evaluation), so an
+            // invalid key faults here before the signature length is judged.
+            if ECPoint::decode(public_key, ECCurve::secp256r1()).is_err() {
+                return Err("Invalid public key".to_string());
+            }
+            if self.is_hardfork_enabled(Hardfork::HfGorgon) {
+                return Err("Signature size should be 64 bytes".to_string());
+            }
             return Ok(false);
         }
         let signature: &[u8; 64] = signature

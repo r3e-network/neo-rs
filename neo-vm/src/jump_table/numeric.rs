@@ -211,6 +211,44 @@ fn shift(
     push_stack_value(ctx, result)
 }
 
+/// Pre-`HF_Gorgon` (neo-vm#567) vulnerable SHL. Unlike the fixed [`shift`], it
+/// does NOT pop/validate the value operand when the shift is zero — it returns
+/// with the value still on the stack (C# `ApplicationEngine.VulnerableSHL`).
+pub(crate) fn shl_vulnerable(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+    shift_vulnerable(engine, arithmetic::shl_value, "Shift amount too large")
+}
+
+/// Pre-`HF_Gorgon` (neo-vm#567) vulnerable SHR (see [`shl_vulnerable`]).
+pub(crate) fn shr_vulnerable(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+    shift_vulnerable(engine, arithmetic::shr_value, "Shift amount too large")
+}
+
+fn shift_vulnerable(
+    engine: &mut ExecutionEngine,
+    op: fn(StackValue, i64) -> Result<StackValue, String>,
+    overflow_message: &'static str,
+) -> VmResult<()> {
+    let limits = *engine.limits();
+    let ctx = require_context(engine)?;
+    // C# VulnerableSHL/SHR: pop shift, assert, and on zero shift return WITHOUT
+    // popping the value operand (so a non-primitive value is never validated and
+    // stays on the stack) — the divergence from the fixed handler.
+    let shift_i32 = ctx
+        .pop()?
+        .as_int()?
+        .to_i32()
+        .ok_or_else(|| VmError::invalid_operation_msg(overflow_message))?;
+    limits
+        .assert_shift(shift_i32)
+        .map_err(VmError::invalid_operation_msg)?;
+    if shift_i32 == 0 {
+        return Ok(());
+    }
+    let value = value_from_stack_item(ctx.pop()?)?;
+    let result = op(value, i64::from(shift_i32)).map_err(semantics_error)?;
+    push_stack_value(ctx, result)
+}
+
 fn min(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     binary_numeric(engine, arithmetic::min_values)
 }
@@ -377,6 +415,40 @@ mod tests {
         let mut engine = engine_with_stack(vec![left, right]);
         op(&mut engine, &instruction(opcode)).expect("comparison succeeds");
         pop(&mut engine).as_bool().expect("boolean result")
+    }
+
+    /// Pre-HF_Gorgon vulnerable SHL (neo-vm#567): a zero shift returns WITHOUT
+    /// popping the value operand, so the value is left on the stack untouched —
+    /// whereas the fixed handler pops the value, validates + normalizes it (e.g.
+    /// a Buffer becomes its Integer interpretation) and re-pushes it. The
+    /// observable difference (the surviving stack item) is the live divergence.
+    #[test]
+    fn vulnerable_shl_diverges_from_fixed_on_zero_shift() {
+        let buffer = || StackItem::from_buffer(vec![0x07]);
+
+        // Vulnerable: the Buffer is left untouched on the stack.
+        let mut engine = engine_with_stack(vec![buffer(), StackItem::from_i64(0)]);
+        shl_vulnerable(&mut engine, &instruction(OpCode::SHL))
+            .expect("vulnerable SHL must not fault on a zero shift");
+        assert!(
+            matches!(pop(&mut engine), StackItem::Buffer(_)),
+            "the value operand is left untouched (still a Buffer)"
+        );
+
+        // Fixed: the value is popped, normalized (Buffer -> integer), re-pushed.
+        let mut engine = engine_with_stack(vec![buffer(), StackItem::from_i64(0)]);
+        shl(&mut engine, &instruction(OpCode::SHL)).expect("fixed SHL ok");
+        let top = pop(&mut engine);
+        assert!(
+            !matches!(top, StackItem::Buffer(_)),
+            "fixed SHL normalizes the value (no longer a Buffer)"
+        );
+        assert_eq!(top.as_int().unwrap(), BigInt::from(7));
+
+        // Both agree on a zero shift over an integer (identity).
+        let mut engine = engine_with_stack(vec![StackItem::from_i64(7), StackItem::from_i64(0)]);
+        shl_vulnerable(&mut engine, &instruction(OpCode::SHL)).expect("vulnerable SHL ok");
+        assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(7));
     }
 
     #[test]
