@@ -60,9 +60,18 @@ Baseline ref = `neo_csharp/` @ v3.9.1. Gorgon already in Rust `HF_Gorgon` enum (
    Notary-bound, VerifyResult.NotYetValid + ValidUntilBlock split + RPC relay, G (recoverFund callflags). Green.
 2. **Batch-2 DONE + committed (b5152973)**: F (ContractManagement destroy V0/V1 split) + CryptoLib V2/Ed25519-V1
    registrations + strict dispatch. Green. (E's CheckSig/CheckMultisig interop moved to batch-3.)
-3. **Batch-3 NOT STARTED (verified, planned)**: A jump-table hardfork awareness + E CheckSig/CheckMultisig Gorgon
-   strict. The single remaining LIVE consensus divergence (SHL/SHR shift==0). All-or-nothing + fork-risky →
-   dedicated focused implementation with differential tests. Exact C# semantics captured above.
+3. **Batch-3 DONE + committed (28dfe84b)**: A jump-table hardfork awareness + E CheckSig/CheckMultisig Gorgon
+   gating. `ApplicationEngine::select_jump_table` picks default/not_gorgon/not_echidna by persisting-block
+   hardforks; neo-vm `JumpTable::not_gorgon()`/`not_echidna()` with vulnerable SHL/SHR + pre-543 compound;
+   CheckSig/CheckMultisig gate `VerifySignatureV0` (pre-Gorgon, wrong-len sig → false) vs strict
+   `VerifySignature` (from Gorgon → fault), pubkey decoded before the sig-length check. **CORRECTION to the
+   earlier plan**: the C# pre/post-Gorgon CheckSig difference is ONLY the signature-length handling — the
+   public key is `DecodePoint`-decoded (faults on invalid) in BOTH, so the Rust pubkey-faults behaviour was
+   already correct. SUBSTR vulnerable is a consensus no-op (documented). Tests + full gate green.
+
+**v3.10.0 alignment COMPLETE: all P0/P1 consensus items landed.** P3-none items (IReferenceCounter removals,
+exception-message text, FeeConsumed/GasLeft guards, Diagnostic.CallFromNative) intentionally skipped as
+non-consensus.
 
 Gate every batch: `cargo test --workspace` + `-p neo-rpc --features server` + `-p neo-node --features wip`.
 No AI attribution in commits.
