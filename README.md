@@ -19,61 +19,48 @@ Professional Rust implementation of the Neo N3 blockchain node and CLI tools.
 git clone https://github.com/r3e-network/neo-rs.git
 cd neo-rs
 
-# Build all components
-cargo build --release
+# Build the node daemon (the full daemon is behind the `wip` feature)
+cargo build --release -p neo-node --features wip
 ```
+
+> **Note:** the runnable daemon is gated behind the `--features wip` Cargo
+> feature. A plain `cargo build -p neo-node` produces a stub that prints a
+> message and exits — always pass `--features wip` to build the real node.
 
 ### Running a Node
 
-#### Simple Usage
 ```bash
-# MainNet node (default config)
-./target/release/neo-node --config neo_mainnet_node.toml
-
 # TestNet node
 ./target/release/neo-node --config neo_testnet_node.toml
 
-# Validate config before starting
-./target/release/neo-node --config neo_mainnet_node.toml --check-config
+# MainNet node
+./target/release/neo-node --config neo_mainnet_node.toml
+
+# Override the RocksDB data directory (also settable via [storage].data_dir
+# or [storage].path in the TOML)
+./target/release/neo-node --config neo_mainnet_node.toml --storage-path /opt/neo/data
 ```
 
-#### Advanced Usage
-```bash
-# Custom storage path
-./target/release/neo-node \
-  --config neo_mainnet_node.toml \
-  --storage /opt/neo/data
+The daemon's CLI exposes three flags: `--config/-c <FILE>`, `--storage-path
+<DIR>`, and `--network-magic <U32>`. Network/RPC/P2P settings live in the TOML
+config (`[network]`, `[storage]`, `[p2p]`, `[rpc]`, `[consensus]`).
 
-# Hardened RPC mode
-NEO_RPC_USER=neo NEO_RPC_PASS='change-this' \
-./target/release/neo-node \
-  --config neo_mainnet_node.toml \
-  --rpc-hardened
+### Querying a Running Node (JSON-RPC)
 
-# TEE strict mode (requires tee/tee-sgx build)
-./target/release/neo-node \
-  --config neo_mainnet_node.toml \
-  --tee \
-  --tee-data-path /tmp/neo-tee
-```
-
-### Using the CLI Client
+Enable the RPC server in the config (`[rpc] enabled = true`), then query it over
+HTTP — there is no separate CLI client binary:
 
 ```bash
-# Get node state
-./target/release/neo-cli state
+# Node version / network / hardforks
+curl -s --compressed -X POST http://127.0.0.1:10332 \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getversion","params":[]}'
 
-# Get current block height
-./target/release/neo-cli block-count
-
-# Get block information
-./target/release/neo-cli block 1000
-
-# Invoke smart contract (read-only)
-./target/release/neo-cli invoke 0xcontract123 balanceOf '["0xaddress123"]'
+# Current block height
+curl -s -X POST http://127.0.0.1:10332 \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
 ```
-
-📖 **See [CLI Usage Guide](docs/CLI_USAGE.md) for comprehensive documentation.**
 
 ## Documentation
 
