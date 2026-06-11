@@ -265,10 +265,15 @@ impl BlockchainService {
                     .ok()
                     .flatten()
                     .ok_or_else(|| format!("block {index}: previous block not found"))?;
+                if prev.header.index() + 1 != index {
+                    return Err(format!("block {index}: previous block index mismatch"));
+                }
                 if block.header.timestamp() <= prev.header.timestamp() {
                     return Err(format!("block {index}: timestamp not after previous block"));
                 }
-                // The single block witness must satisfy prev.NextConsensus.
+                // The single block witness must satisfy prev.NextConsensus, under
+                // the C# 3-GAS block-verification cap (Header.Verify, not the
+                // 1.5-GAS transaction cap).
                 let next_consensus = *prev.header.next_consensus();
                 if neo_execution::Helper::verify_witness(
                     &block.header,
@@ -276,7 +281,7 @@ impl BlockchainService {
                     &snapshot,
                     &next_consensus,
                     &block.header.witness,
-                    neo_execution::Helper::MAX_VERIFICATION_GAS,
+                    300_000_000,
                 )
                 .is_err()
                 {
