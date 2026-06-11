@@ -254,12 +254,17 @@ pub fn verify_state_dependent(
         return VerifyResult::UnableToVerify;
     };
 
-    // Expiry window.
+    // Validity window. C# v3.10.0 `Transaction.VerifyStateDependent` splits the
+    // two failure modes: an already-passed `ValidUntilBlock` is `Expired`, while
+    // one more than `MaxValidUntilBlockIncrement` ahead of the tip is
+    // `NotYetValid`. The accept range (`height < VUB <= height + increment`) is
+    // unchanged; only the rejection classification differs.
     let max_increment = max_valid_until_block_increment(snapshot, settings, height);
-    if tx.valid_until_block() <= height
-        || tx.valid_until_block() > height.saturating_add(max_increment)
-    {
+    if tx.valid_until_block() <= height {
         return VerifyResult::Expired;
+    }
+    if tx.valid_until_block() > height.saturating_add(max_increment) {
+        return VerifyResult::NotYetValid;
     }
 
     // Blocked accounts.
@@ -379,9 +384,22 @@ fn verify_attribute(
         }
         // C# NotValidBefore.Verify: `CurrentIndex >= Height`.
         TransactionAttribute::NotValidBefore(attr) => height >= attr.height,
-        // C# Conflicts.Verify: the conflicting hash must not be an on-chain
-        // transaction.
+        // C# v3.10.0 Conflicts.Verify: reject if the transaction carries
+        // duplicate Conflicts attributes referencing the same hash, then
+        // require the conflicting hash not be an on-chain transaction.
         TransactionAttribute::Conflicts(attr) => {
+            let mut seen = std::collections::HashSet::new();
+            let has_duplicate = tx
+                .attributes()
+                .iter()
+                .filter_map(|a| match a {
+                    TransactionAttribute::Conflicts(c) => Some(c.hash),
+                    _ => None,
+                })
+                .any(|hash| !seen.insert(hash));
+            if has_duplicate {
+                return false;
+            }
             !LedgerContract::new()
                 .contains_transaction(snapshot, &attr.hash)
                 .unwrap_or(true)
