@@ -9,11 +9,10 @@
 //! than the per-message `tell()` / `ask()` boilerplate the old actor
 //! model used.
 //!
-//! This is the *internal* command set, the one the actor's old mailbox
-//! used. The *trait-level* request/response surface (used by new code
-//! that wants a normal `async fn` API) lives in
-//! [`crate::blockchain::RuntimeBlockchainCommand`] — re-exported from
-//! [`neo_runtime`].
+//! This is the canonical command set the blockchain service loop drives.
+//! The shared cross-crate event type ([`neo_runtime::BlockchainEvent`]) and
+//! the default channel capacities live in [`neo_runtime`]; the command enum
+//! and its handle are owned here.
 
 use std::sync::Arc;
 

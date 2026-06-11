@@ -83,11 +83,12 @@ pub mod service_context;
 // home for those types is `neo-runtime`; we re-export them here so the
 // crate's public surface is self-contained.
 pub mod blockchain {
-    //! Re-exports of the runtime's blockchain service types.
+    //! Re-exports of the runtime's shared blockchain types. The command channel
+    //! and handle are owned by this crate (`BlockchainCommand` / `handle.rs`);
+    //! `neo-runtime` contributes only the broadcast event and the default
+    //! channel capacities shared by both.
     pub use neo_runtime::{
-        BlockchainCommand as RuntimeBlockchainCommand, BlockchainEvent as RuntimeBlockchainEvent,
-        BlockchainHandle as RuntimeBlockchainHandle, DEFAULT_COMMAND_CAPACITY,
-        DEFAULT_EVENT_CAPACITY,
+        BlockchainEvent as RuntimeBlockchainEvent, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
     };
 }
 
@@ -114,10 +115,7 @@ pub use reverify::{Reverify, ReverifyItem};
 pub use command::AddTransactionReply;
 pub use service::{Blockchain, BlockchainService};
 
-pub use neo_runtime::{
-    BlockchainCommand as RuntimeCommand, BlockchainEvent as RuntimeEvent,
-    BlockchainHandle as RuntimeHandle, ServiceError,
-};
+pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 
 pub use header_cache::HeaderCache;
 pub use ledger_context::LedgerContext;
