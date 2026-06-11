@@ -1,11 +1,11 @@
 use super::super::{OracleService, OracleServiceSettings};
 use neo_crypto::{ECCurve, ECPoint, Secp256r1Crypto};
-use neo_io::{BinaryWriter, Serializable};
 use neo_payloads::{
     OracleResponse, OracleResponseCode, Signer, Transaction, Witness,
 };
 use neo_storage::{StorageKey, DataCache};
 
+use neo_io::Serializable;
 use neo_config::ProtocolSettings;
 use neo_native_contracts::{LedgerContract, OracleRequest};
 use neo_storage::StorageItem;
@@ -26,21 +26,22 @@ fn seed_transaction_state(
     tx: &Transaction,
     block_index: u32,
 ) {
-    let mut writer = BinaryWriter::new();
-    writer.write_u8(0x01).expect("transaction record marker");
-    writer.write_u32(block_index).expect("block index");
-    writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
-    let mut tx_writer = BinaryWriter::new();
-    tx.serialize(&mut tx_writer).expect("serialize tx");
-    writer
-        .write_var_bytes(&tx_writer.into_bytes())
-        .expect("tx bytes");
+    // Seed through the canonical ledger codec (the C# interoperable
+    // `TransactionState` layout) so the fixture stays byte-identical
+    // to what the persist pipeline writes.
+    let record =
+        neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+            block_index,
+            VMState::NONE,
+            tx,
+        )
+        .expect("transaction state record");
 
     let mut key = Vec::with_capacity(1 + 32);
     key.push(11);
     key.extend_from_slice(&tx_hash.to_bytes());
     let storage_key = StorageKey::new(LedgerContract::ID, key);
-    snapshot.add(storage_key, StorageItem::from_bytes(writer.into_bytes()));
+    snapshot.add(storage_key, StorageItem::from_bytes(record));
 }
 
 /// Seed a minimal deployable Oracle contract into the snapshot so the
