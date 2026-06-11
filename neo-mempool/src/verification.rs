@@ -43,6 +43,8 @@ const POLICY_PREFIX_EXEC_FEE_FACTOR: u8 = 18;
 const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
 /// C# `PolicyContract.Prefix_MaxValidUntilBlockIncrement` (22, HF_Echidna).
 const POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT: u8 = 22;
+/// C# `PolicyContract.Prefix_MaxTraceableBlocks`.
+const POLICY_PREFIX_MAX_TRACEABLE_BLOCKS: u8 = 23;
 /// C# `PolicyContract.ID` (-7).
 const POLICY_CONTRACT_ID: i32 = -7;
 /// C# `PolicyContract.DefaultFeePerByte` (1000 datoshi).
@@ -93,6 +95,25 @@ fn max_valid_until_block_increment(
         i64::from(settings.max_valid_until_block_increment),
     );
     u32::try_from(stored).unwrap_or(settings.max_valid_until_block_increment)
+}
+
+/// The effective `MaxTraceableBlocks` (C# `NeoSystem.GetMaxTraceableBlocks`):
+/// the static protocol setting before `HF_Echidna`, the committee-adjustable
+/// Policy storage value (prefix 23) from `HF_Echidna` onward.
+fn max_traceable_blocks_effective(
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    height: u32,
+) -> u32 {
+    if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
+        return settings.max_traceable_blocks;
+    }
+    let stored = policy_int(
+        snapshot,
+        vec![POLICY_PREFIX_MAX_TRACEABLE_BLOCKS],
+        i64::from(settings.max_traceable_blocks),
+    );
+    u32::try_from(stored).unwrap_or(settings.max_traceable_blocks)
 }
 
 /// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: the first
@@ -275,9 +296,20 @@ pub fn verify_state_dependent(
         }
     }
 
+    // C# Blockchain.OnNewTransaction: a traceable on-chain conflict record for
+    // this hash, registered by a persisted transaction sharing at least one
+    // signer, blocks admission (`ContainsConflictHash` -> HasConflicts).
+    let mtb = max_traceable_blocks_effective(snapshot, settings, height);
+    if LedgerContract::new()
+        .contains_conflict_hash(snapshot, &tx.hash(), &hashes, mtb)
+        .unwrap_or(false)
+    {
+        return VerifyResult::HasConflicts;
+    }
+
     // Sender GAS balance (C# TransactionVerificationContext.CheckTransaction;
-    // the pooled-conflict fee rebate is not applied because pooled-conflict
-    // eviction is not implemented — see MemoryPool::try_add).
+    // `pooled_sender_fee` already carries the pooled-conflict fee rebate
+    // applied by `MemoryPool::try_add`'s CheckConflicts).
     let Some(tx_sender) = sender(tx) else {
         return VerifyResult::Invalid;
     };

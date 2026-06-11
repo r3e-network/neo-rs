@@ -88,6 +88,64 @@ impl MemoryPoolInner {
             }
         }
     }
+
+    /// C# `MemoryPool.CheckConflicts` (MemoryPool.cs:381): returns the pooled
+    /// transactions that conflict with `tx` and must be evicted if `tx` is
+    /// admitted, or `None` if `tx` does not fit — i.e. a transaction `tx`
+    /// declares as a conflict shares no signer with it, or the conflicting
+    /// pooled transactions out-fee `tx` (sum of their network fees ≥ `tx`'s).
+    fn check_conflicts(&self, tx: &Transaction) -> Option<Vec<PoolItem>> {
+        let tx_hash = tx.hash();
+        let tx_sender = tx.signers().first().map(|s| s.account);
+        let tx_accounts: HashSet<UInt160> = tx.signers().iter().map(|s| s.account).collect();
+        let mut list: Vec<PoolItem> = Vec::new();
+        let mut conflicts_fee_sum: i64 = 0;
+
+        // Step 1: pooled txs that declared `tx.hash` in their Conflicts attrs.
+        if let Some(conflicting) = self.conflicts.get(&tx_hash) {
+            for hash in conflicting {
+                if let Some(pooled) = self.verified.get(hash) {
+                    if tx_sender.is_some_and(|s| {
+                        pooled.transaction.signers().iter().any(|sig| sig.account == s)
+                    }) {
+                        conflicts_fee_sum =
+                            conflicts_fee_sum.saturating_add(pooled.transaction.network_fee());
+                    }
+                    list.push(pooled.clone());
+                }
+            }
+        }
+        // Step 2: pooled txs that `tx` declares in its own Conflicts attrs.
+        for hash in conflict_target_hashes(tx) {
+            if let Some(pooled) = self.verified.get(&hash) {
+                let pooled_accounts: HashSet<UInt160> =
+                    pooled.transaction.signers().iter().map(|s| s.account).collect();
+                // Must share at least one signer to be a real conflict.
+                if tx_accounts.is_disjoint(&pooled_accounts) {
+                    return None;
+                }
+                conflicts_fee_sum =
+                    conflicts_fee_sum.saturating_add(pooled.transaction.network_fee());
+                list.push(pooled.clone());
+            }
+        }
+        // `tx` must out-fee the sum of conflicting txs' network fees.
+        if conflicts_fee_sum != 0 && conflicts_fee_sum >= tx.network_fee() {
+            return None;
+        }
+        Some(list)
+    }
+}
+
+/// The hashes a transaction declares as conflicting via its `Conflicts` attributes.
+fn conflict_target_hashes(tx: &Transaction) -> Vec<UInt256> {
+    tx.attributes()
+        .iter()
+        .filter_map(|attr| match attr {
+            neo_payloads::TransactionAttribute::Conflicts(c) => Some(c.hash),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Returns the `OracleResponse` attribute id of `tx`, if any.
@@ -268,12 +326,14 @@ impl MemoryPool {
     /// with capacity eviction and verification-context bookkeeping
     /// (sender fees, pooled oracle-response ids).
     ///
-    /// Not implemented (documented gap): C# `CheckConflicts` pooled
-    /// `Conflicts`-attribute eviction — a conflicting pooled
-    /// transaction neither blocks admission (`HasConflicts`) nor gets
-    /// evicted, and the conflict-fee rebate in the sender-fee check is
-    /// therefore never applied. On-chain conflict records ARE checked
-    /// (the `Conflicts` attribute verification).
+    /// Pooled-conflict handling matches C# `CheckConflicts`: a transaction is
+    /// rejected (`HasConflicts`) when a conflicting pooled transaction out-fees
+    /// it or names a conflictee it shares no signer with; otherwise the
+    /// conflicting pooled transactions are evicted on admission, the
+    /// conflict-fee rebate is applied to the sender-fee balance check, and the
+    /// transaction's own `Conflicts` attributes are tracked for future
+    /// admissions. On-chain conflict records are checked separately via the
+    /// `Conflicts` attribute verification.
     pub fn try_add(
         &self,
         transaction: Transaction,
@@ -295,16 +355,40 @@ impl MemoryPool {
         // concurrent submissions cannot both verify against the same pooled
         // sender-fee state (MemoryPool.cs:353-369). Verification is serialized
         // under the lock exactly like C#'s `_txRwLock.EnterWriteLock()`.
-        let (evicted, new_tx_evicted) = {
+        let (evicted, conflict_evicted, new_tx_evicted) = {
             let mut guard = self.inner.write();
             if guard.verified.contains(&hash) || guard.unverified.contains(&hash) {
                 return VerifyResult::AlreadyExists;
             }
+
+            // C# CheckConflicts (MemoryPool.cs:330): a transaction that loses the
+            // conflict-fee comparison or names a conflictee it shares no signer
+            // with is rejected; otherwise the returned pooled txs are evicted
+            // once `tx` is admitted.
+            let conflicts_to_remove = match guard.check_conflicts(&transaction) {
+                Some(list) => list,
+                None => return VerifyResult::HasConflicts,
+            };
+
             let pooled_sender_fee = transaction
                 .signers()
                 .first()
                 .and_then(|s| guard.sender_fees.get(&s.account).cloned())
                 .unwrap_or_default();
+            // Conflict-fee rebate (C# VerifyStateDependent receives conflictsList):
+            // the conflicting txs sharing this sender will be evicted, so their
+            // fees no longer count against the sender's pooled-fee allowance.
+            let tx_sender = transaction.signers().first().map(|s| s.account);
+            let rebate: BigInt = conflicts_to_remove
+                .iter()
+                .filter(|c| {
+                    tx_sender.is_some_and(|s| {
+                        c.transaction.signers().iter().any(|sig| sig.account == s)
+                    })
+                })
+                .map(|c| BigInt::from(c.transaction.system_fee()) + BigInt::from(c.transaction.network_fee()))
+                .sum();
+            let effective_pooled_fee = &pooled_sender_fee - &rebate;
             let oracle_duplicate = oracle_response_id(&transaction)
                 .is_some_and(|id| guard.oracle_responses.contains_key(&id));
 
@@ -313,19 +397,40 @@ impl MemoryPool {
                 &transaction,
                 snapshot,
                 &self.settings,
-                &pooled_sender_fee,
+                &effective_pooled_fee,
                 oracle_duplicate,
             );
             if result != VerifyResult::Succeed {
                 return result;
             }
 
-            // C# order: add first, then RemoveOverCapacity drops the LOWEST-
-            // priority pooled item (PoolItem ascending order ⇒ `next()`), which
-            // may be the transaction just added ⇒ OutOfMemory for the caller
-            // (MemoryPool.cs:362-368, 416-433).
+            // C# order: add the tx, evict the conflicting pooled txs, record the
+            // tx's own Conflicts attributes, then RemoveOverCapacity.
             guard.verified.insert(PoolItem::new(transaction.clone()));
             guard.context_add(&transaction);
+
+            let mut conflict_evicted = Vec::new();
+            for conflict in &conflicts_to_remove {
+                let chash = conflict.hash();
+                if let Some(removed) = guard.verified.remove(&chash) {
+                    let dropped = (*removed.transaction).clone();
+                    guard.context_remove(&dropped);
+                    // Drop the evicted tx from every Conflicts tracking set.
+                    guard.conflicts.retain(|_, set| {
+                        set.remove(&chash);
+                        !set.is_empty()
+                    });
+                    conflict_evicted.push(dropped);
+                }
+            }
+            // Track this tx's declared conflicts: target hash -> {tx hash}.
+            for target in conflict_target_hashes(&transaction) {
+                guard.conflicts.entry(target).or_default().insert(hash);
+            }
+
+            // C# RemoveOverCapacity drops the LOWEST-priority pooled item
+            // (PoolItem ascending order ⇒ `next()`), which may be the just-added
+            // transaction ⇒ OutOfMemory for the caller (MemoryPool.cs:362-368).
             let mut evicted = None;
             let mut new_tx_evicted = false;
             if guard.verified.len() > guard.capacity {
@@ -341,9 +446,18 @@ impl MemoryPool {
                     }
                 }
             }
-            (evicted, new_tx_evicted)
+            (evicted, conflict_evicted, new_tx_evicted)
         };
 
+        if !conflict_evicted.is_empty() {
+            if let Some(callback) = &self.transaction_removed {
+                let args = TransactionRemovedEventArgs::new(
+                    conflict_evicted,
+                    TransactionRemovalReason::Conflict,
+                );
+                callback(self, &args);
+            }
+        }
         if let Some(dropped) = evicted {
             if let Some(callback) = &self.transaction_removed {
                 let args = TransactionRemovedEventArgs::new(

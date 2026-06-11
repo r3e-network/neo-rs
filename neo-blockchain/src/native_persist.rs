@@ -170,7 +170,7 @@ pub fn genesis_block(settings: &ProtocolSettings) -> CoreResult<Block> {
 
 /// C# `Contract.GetBFTAddress(pubkeys)`: the script hash of the
 /// `m`-of-`n` multisig over `pubkeys` with `m = n - (n - 1) / 3`.
-fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> CoreResult<UInt160> {
+pub(crate) fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> CoreResult<UInt160> {
     if pubkeys.is_empty() {
         return Err(CoreError::invalid_operation(
             "BFT address requires at least one validator",
