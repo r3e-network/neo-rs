@@ -473,6 +473,11 @@ async fn build_node(
     // The consensus driver reads the ledger tip from this startup snapshot for
     // its first round only; subsequent rounds restart off RuntimeEvent::Imported.
     let consensus_snapshot = Arc::clone(&snapshot);
+    // The durable tip at startup, read before the snapshot is moved into the
+    // service contexts; used to seed the advertised height / sync cursor.
+    let durable_tip = neo_native_contracts::LedgerContract::new()
+        .current_index(&snapshot)
+        .unwrap_or(0);
 
     let mempool = Arc::new(neo_mempool::MemoryPool::new(&settings));
     let header_cache = Arc::new(HeaderCache::default());
@@ -491,9 +496,17 @@ async fn build_node(
     let mempool_like: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(
         neo_blockchain::service::SharedMempool(Arc::clone(&mempool)),
     ));
+    // Seed the in-memory ledger tip from the durable store so a node restarted
+    // on a populated chain accepts the next block (`index == current_height + 1`)
+    // instead of parking every incoming block as "ahead of tip" (which would
+    // stall sync at the persisted height after a restart).
+    let ledger_ctx = Arc::new(LedgerContext::default());
+    if durable_tip > 0 {
+        ledger_ctx.record_tip(durable_tip);
+    }
     let (service, blockchain) = BlockchainService::with_defaults(
         system_ctx,
-        Arc::new(LedgerContext::default()),
+        Arc::clone(&ledger_ctx),
         Arc::clone(&header_cache),
         mempool_like,
     );
@@ -634,6 +647,13 @@ async fn build_node(
     }
 
     // ----- ledger height -> network advertisement -----
+    // Seed the advertised height from the DURABLE tip before P2P sync starts,
+    // so a node restarted on a populated store advertises its real height and
+    // the block-sync cursor (`local_height + 1`) resumes from the persisted tip
+    // instead of re-requesting the entire chain from block 1.
+    let _ = network.set_block_height(durable_tip).await;
+    info!(target: "neo", height = durable_tip, "advertised durable ledger tip to peers");
+
     // As the ledger persists blocks, advertise the new height to peers
     // (version + ping) so block-sync requests advance their cursor and
     // peers learn our progress (C# `LocalNode` reads `Ledger.CurrentIndex`).
