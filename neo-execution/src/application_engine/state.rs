@@ -1,6 +1,29 @@
 use super::*;
 
 impl ApplicationEngine {
+    /// Selects the VM jump table for the persisting block, mirroring C#
+    /// `ApplicationEngine.Create`: `index = persistingBlock?.Index ??
+    /// Ledger.CurrentIndex(snapshot)`; then `HF_Gorgon -> default`, else
+    /// `!HF_Echidna -> not_echidna`, else `not_gorgon`. Before HF_Gorgon the VM
+    /// uses the pre-543 compound handlers + the vulnerable SHL/SHR.
+    fn select_jump_table(
+        protocol_settings: &ProtocolSettings,
+        persisting_block: Option<&Block>,
+        snapshot: &DataCache,
+    ) -> JumpTable {
+        let index = match persisting_block {
+            Some(block) => block.header.index(),
+            None => crate::native_contract_provider::lookup_current_block_index(snapshot),
+        };
+        if protocol_settings.is_hardfork_enabled(Hardfork::HfGorgon, index) {
+            JumpTable::default()
+        } else if !protocol_settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
+            JumpTable::not_echidna()
+        } else {
+            JumpTable::not_gorgon()
+        }
+    }
+
     pub fn new(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
@@ -33,7 +56,12 @@ impl ApplicationEngine {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
-        let engine = ExecutionEngine::new(Some(JumpTable::default()));
+        let jump_table = Self::select_jump_table(
+            &protocol_settings,
+            persisting_block.as_deref(),
+            snapshot_cache.as_ref(),
+        );
+        let engine = ExecutionEngine::new(Some(jump_table));
 
         let mut app = Self {
             trigger,
@@ -105,7 +133,12 @@ impl ApplicationEngine {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
-        let engine = ExecutionEngine::new(Some(JumpTable::default()));
+        let jump_table = Self::select_jump_table(
+            &protocol_settings,
+            persisting_block.as_deref(),
+            snapshot_cache.as_ref(),
+        );
+        let engine = ExecutionEngine::new(Some(jump_table));
 
         let mut app = Self {
             trigger,
