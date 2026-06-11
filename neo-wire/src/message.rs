@@ -13,7 +13,7 @@
 
 use crate::error::{WireError, WireResult};
 use neo_extensions::compression::{
-    compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE,
+    compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,
 };
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_p2p::{MessageCommand, MessageFlags};
@@ -24,9 +24,6 @@ pub const PAYLOAD_MAX_SIZE: usize = 0x0200_0000;
 
 /// Default buffer capacity for small messages.
 const DEFAULT_MESSAGE_CAPACITY: usize = 256;
-
-/// Threshold above which LZ4 compression is attempted.
-pub const COMPRESSION_THRESHOLD: usize = COMPRESSION_MIN_SIZE;
 
 /// Neo wire-level network message (parity with `Neo.Network.P2P.Message`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,13 +75,17 @@ impl Message {
             ));
         }
 
+        // C# `Message.Create` (Message.cs:100-106): compress only when the raw
+        // payload exceeds `CompressionMinSize` (128) AND LZ4 saves more than
+        // `CompressionThreshold` (64) bytes (`compressed.Length < raw.Length -
+        // CompressionThreshold`); otherwise the payload is sent uncompressed.
         let (flags, payload_compressed) = if enable_compression
             && command.allows_compression()
-            && payload_raw.len() >= COMPRESSION_THRESHOLD
+            && payload_raw.len() > COMPRESSION_MIN_SIZE
         {
             let compressed = compress_lz4(&payload_raw)
                 .map_err(|e| WireError::Compression(e.to_string()))?;
-            if compressed.len() < payload_raw.len() {
+            if compressed.len() < payload_raw.len().saturating_sub(COMPRESSION_THRESHOLD) {
                 (MessageFlags::COMPRESSED, compressed)
             } else {
                 (MessageFlags::NONE, payload_raw.clone())
@@ -161,7 +162,7 @@ mod tests {
 
     #[test]
     fn message_compresses_large_payload_when_allowed() {
-        let payload = vec![0xABu8; COMPRESSION_THRESHOLD + 100];
+        let payload = vec![0xABu8; COMPRESSION_MIN_SIZE + 100];
         let msg = Message::from_payload_bytes(MessageCommand::FilterAdd, payload.clone(), true)
             .expect("create");
         assert_eq!(msg.flags, MessageFlags::COMPRESSED);
@@ -170,6 +171,32 @@ mod tests {
         let bytes = msg.to_bytes().expect("encode");
         let decoded = Message::from_bytes(&bytes).expect("decode");
         assert_eq!(decoded.payload_raw, payload);
+    }
+
+    /// C# `Message.Create` (Message.cs:100) gates on `> CompressionMinSize`
+    /// (strictly): a payload of exactly 128 bytes is never compressed.
+    #[test]
+    fn message_at_min_size_boundary_is_not_compressed() {
+        let payload = vec![0xABu8; COMPRESSION_MIN_SIZE];
+        let msg = Message::from_payload_bytes(MessageCommand::FilterAdd, payload.clone(), true)
+            .expect("create");
+        assert_eq!(msg.flags, MessageFlags::NONE, "len == 128 must not compress");
+        assert_eq!(msg.payload_compressed, payload);
+    }
+
+    /// C# requires LZ4 to save more than `CompressionThreshold` (64) bytes;
+    /// an incompressible payload above the min size is sent raw.
+    #[test]
+    fn message_incompressible_payload_sent_raw() {
+        // High-entropy bytes resist LZ4, so the compressed form does not beat
+        // `raw.len() - 64` and the message stays uncompressed.
+        let payload: Vec<u8> = (0..160u32)
+            .map(|i| (i.wrapping_mul(2_654_435_761) >> 8) as u8)
+            .collect();
+        let msg = Message::from_payload_bytes(MessageCommand::FilterAdd, payload.clone(), true)
+            .expect("create");
+        assert_eq!(msg.flags, MessageFlags::NONE);
+        assert_eq!(msg.payload_compressed, payload);
     }
 
     #[test]

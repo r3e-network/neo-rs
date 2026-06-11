@@ -34,17 +34,15 @@ pub struct ConnectedPeer {
     /// seam.
     ///
     /// Folded from the `PeerConnected` event's `address` field: the
-    /// service publishes the dialed endpoint for outbound peers and
-    /// the accepted connection's source endpoint for inbound peers.
-    ///
-    /// For outbound peers the dialed endpoint *is* the peer's
-    /// listener, so address + port match the `Remote.Address` /
-    /// `ListenerTcpPort` pair C#'s `LocalNode.GetRemoteNodes` reports.
-    /// For inbound peers the port is the remote's *ephemeral* source
-    /// port: C# reports the listener port the peer advertised in its
-    /// version payload (`RemoteNode.ListenerTcpPort`), which the Rust
-    /// per-peer service does not capture yet because the version
-    /// handshake is not ported — see
+    /// service publishes the dialed endpoint for outbound peers (the
+    /// peer's listener — exactly the `Remote.Address` /
+    /// `ListenerTcpPort` pair C#'s `LocalNode.GetRemoteNodes`
+    /// reports) and `(remote_ip, 0)` for freshly accepted inbound
+    /// peers (the C# unknown-listener form). Once the version
+    /// handshake completes, the per-peer service re-publishes
+    /// `PeerConnected` with the upgraded
+    /// `(remote_ip, advertised_listener_port)` endpoint, which the
+    /// fold applies as an in-place address update — see
     /// [`neo_runtime::NetworkEvent::PeerConnected`]. Folds with `None`
     /// when the event carried no address and none was recorded via
     /// [`NetworkHandle::record_peer_address`].
@@ -305,13 +303,14 @@ impl NetworkHandle {
     /// peer in the handle-side peer tracker, keyed by the peer's
     /// event-stream id.
     ///
-    /// The `PeerConnected` events now carry the transport address, so
-    /// this is an out-of-band override for integrations that learn a
-    /// better address later (e.g. the listener endpoint advertised in
-    /// a version payload, once the handshake is ported). The call only
-    /// updates an existing tracker entry: if the peer's
-    /// `PeerDisconnected` event has already been published, the update
-    /// is a no-op rather than resurrecting a phantom entry.
+    /// The `PeerConnected` events carry the transport address, and the
+    /// per-peer service publishes the version-advertised listener
+    /// endpoint itself after the handshake, so this is an out-of-band
+    /// override for integrations that learn a better address through
+    /// some other channel. The call only updates an existing tracker
+    /// entry: if the peer's `PeerDisconnected` event has already been
+    /// published, the update is a no-op rather than resurrecting a
+    /// phantom entry.
     pub fn record_peer_address(&self, peer_id: impl AsRef<str>, addr: SocketAddr) {
         self.local.record_peer_address(peer_id.as_ref(), addr);
     }
@@ -409,6 +408,47 @@ impl NetworkHandle {
     pub async fn broadcast_transaction(&self, transaction: Transaction) -> NetworkResult<()> {
         self.cmd_tx
             .send(NetworkCommand::BroadcastTransaction { transaction })
+            .await
+            .map_err(|_| NetworkError::LocalShuttingDown)
+    }
+
+    /// Update the locally advertised block height (C# ledger
+    /// `CurrentIndex`), advertised in version + ping payloads and used to
+    /// gate block-sync requests. Driven by the ledger's block-imported
+    /// events from the composition root.
+    pub async fn set_block_height(&self, height: u32) -> NetworkResult<()> {
+        self.cmd_tx
+            .send(NetworkCommand::SetBlockHeight { height })
+            .await
+            .map_err(|_| NetworkError::LocalShuttingDown)
+    }
+
+    /// Broadcast an extensible payload (dBFT consensus message / state-root
+    /// vote) to all connected peers.
+    pub async fn broadcast_extensible(
+        &self,
+        payload: neo_payloads::ExtensiblePayload,
+    ) -> NetworkResult<()> {
+        self.cmd_tx
+            .send(NetworkCommand::BroadcastExtensible { payload })
+            .await
+            .map_err(|_| NetworkError::LocalShuttingDown)
+    }
+
+    /// Announce inventory (block/transaction hashes) to all connected peers via
+    /// an `Inv` message — the C# `LocalNode.RelayDirectly` push half of gossip;
+    /// peers pull the items they lack via `GetData`. Used to re-broadcast
+    /// freshly-accepted transactions and blocks.
+    pub async fn broadcast_inv(
+        &self,
+        inventory_type: neo_p2p::InventoryType,
+        hashes: Vec<neo_primitives::UInt256>,
+    ) -> NetworkResult<()> {
+        self.cmd_tx
+            .send(NetworkCommand::BroadcastInv {
+                inventory_type,
+                hashes,
+            })
             .await
             .map_err(|_| NetworkError::LocalShuttingDown)
     }

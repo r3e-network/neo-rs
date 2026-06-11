@@ -117,8 +117,9 @@ async fn accept_loop_reports_inbound_peer_with_remote_address() {
         .expect("dial local listener");
     let client_addr = stream.local_addr().expect("client local addr");
     // C# reports a peer's advertised LISTENER port and encodes an unknown
-    // listener as port 0 (the version handshake is not ported yet), so the
-    // published endpoint is (client_ip, 0) — never the ephemeral source port.
+    // listener as port 0. This client never sends a version payload, so the
+    // published endpoint stays (client_ip, 0) — never the ephemeral source
+    // port. (The post-handshake upgrade path is covered in handshake.rs.)
     let expected = std::net::SocketAddr::new(client_addr.ip(), 0);
 
     let (peer_id, address) = next_peer_connected(&mut events).await;

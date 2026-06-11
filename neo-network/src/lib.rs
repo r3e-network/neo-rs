@@ -101,11 +101,14 @@
 #![warn(missing_docs)]
 
 pub mod command;
+pub mod connection_timeouts;
 pub mod error;
 pub mod event;
 pub mod handle;
+pub mod local_identity;
 pub mod local_node;
 pub mod peer_id;
+pub mod peer_registry;
 pub mod remote_node;
 pub mod task_manager;
 
@@ -114,15 +117,20 @@ pub mod task_manager;
 // -----------------------------------------------------------------------------
 
 pub use command::NetworkCommand;
+pub use connection_timeouts::ConnectionTimeouts;
 pub use error::{NetworkError, NetworkResult};
 pub use event::NetworkEvent;
 pub use handle::{
     NetworkHandle, SharedNetworkHandle, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
 };
+pub use local_identity::LocalIdentity;
 pub use local_node::LocalNodeService;
+pub use neo_p2p::ChannelsConfig;
 pub use peer_id::PeerId;
+pub use peer_registry::PeerRegistry;
 pub use remote_node::{
-    InventoryItem, RemoteNodeCommand, RemoteNodeHandle, RemoteNodeService, RemoteNodeState,
+    BlockSource, InboundInventory, InventoryItem, RemoteNodeCommand, RemoteNodeHandle,
+    RemoteNodeService, RemoteNodeState,
 };
 pub use task_manager::{
     SyncTask, SyncTaskKind, TaskId, TaskManagerCommand, TaskManagerHandle, TaskManagerService,

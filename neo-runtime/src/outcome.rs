@@ -123,22 +123,23 @@ pub enum NetworkEvent {
         /// Stable identifier for the peer (currently a placeholder string
         /// until `neo-wire` defines a peer-id type).
         peer_id: String,
-        /// Remote socket address of the peer as observed at the
-        /// transport layer: the accepted connection's peer address for
-        /// inbound peers, the dialed endpoint for outbound peers.
+        /// Reported endpoint of the peer, mirroring the
+        /// `Remote.Address` / `ListenerTcpPort` pair C#'s
+        /// `LocalNode.GetRemoteNodes` serves.
         ///
-        /// For outbound peers the dialed endpoint *is* the peer's
-        /// listener, matching the `Remote.Address` / `ListenerTcpPort`
-        /// pair C#'s `LocalNode.GetRemoteNodes` reports. For inbound
-        /// peers the port is the remote's *ephemeral* source port — C#
-        /// instead reports the listener port the peer advertises in its
-        /// version payload (`RemoteNode.ListenerTcpPort`, set from the
-        /// `TcpServer` capability in
-        /// `RemoteNode.ProtocolHandler.OnVersionMessageReceived`); the
-        /// Rust per-peer service does not parse version payloads yet,
-        /// so the transport address is the most faithful value
-        /// available. `None` when the publisher does not know the
-        /// transport address.
+        /// For outbound peers this is the dialed endpoint (which *is*
+        /// the peer's listener). For inbound peers the connection
+        /// initially reports `(remote_ip, 0)` — the C# unknown-listener
+        /// form (`RemoteNode.ListenerTcpPort` starts at 0) — and the
+        /// per-peer service publishes this event *again* with the
+        /// upgraded `(remote_ip, advertised_listener_port)` endpoint
+        /// once the peer's version payload advertises a `TcpServer`
+        /// capability (C# `LocalNode.AllowNewConnection` updating the
+        /// connected endpoint to `node.Listener`). Consumers keying by
+        /// `peer_id` must treat a repeated `PeerConnected` as an
+        /// address update for the existing peer, not a new peer.
+        /// `None` when the publisher does not know the transport
+        /// address.
         address: Option<SocketAddr>,
     },
     /// A previously connected peer has dropped.

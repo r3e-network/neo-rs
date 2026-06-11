@@ -54,7 +54,7 @@ pub use neo_p2p::{
 };
 
 pub use error::{WireError, WireResult};
-pub use message::{Message, COMPRESSION_THRESHOLD, PAYLOAD_MAX_SIZE};
+pub use message::{Message, PAYLOAD_MAX_SIZE};
 pub use network_message::{MessageHeader, NetworkMessage};
 pub use protocol_message::ProtocolMessage;
 

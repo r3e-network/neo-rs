@@ -9,7 +9,8 @@
 
 use std::net::SocketAddr;
 
-use neo_payloads::{Block, Transaction};
+use neo_p2p::InventoryType;
+use neo_payloads::{Block, ExtensiblePayload, Transaction};
 use neo_primitives::UInt256;
 use tokio::sync::oneshot;
 
@@ -66,10 +67,39 @@ pub enum NetworkCommand {
         transaction: Transaction,
     },
 
+    /// Broadcast an extensible payload (dBFT consensus / state-root vote) to
+    /// all connected peers (C# `LocalNode.RelayDirectly` for the consensus
+    /// `ExtensiblePayload` inventory).
+    BroadcastExtensible {
+        /// The extensible payload to relay.
+        payload: ExtensiblePayload,
+    },
+
     /// Relay an inventory item to all connected peers.
     RelayInventory {
         /// Inventory hash.
         hash: UInt256,
+    },
+
+    /// Announce inventory (block/transaction hashes) to all connected peers
+    /// via an `Inv` message (C# `LocalNode.RelayDirectly`: peers pull the full
+    /// items they lack via `GetData`). Used to re-broadcast freshly-accepted
+    /// transactions and blocks.
+    BroadcastInv {
+        /// The kind of inventory being announced.
+        inventory_type: InventoryType,
+        /// The announced hashes.
+        hashes: Vec<UInt256>,
+    },
+
+    /// Update the locally advertised block height (C# ledger
+    /// `CurrentIndex`). Advertised in the version + ping payloads and
+    /// used to gate per-peer block-sync requests (request blocks only
+    /// while a peer is ahead). Fire-and-forget; driven by the ledger's
+    /// block-imported events.
+    SetBlockHeight {
+        /// The new local block height.
+        height: u32,
     },
 
     /// Request graceful shutdown of the entire service. The local
