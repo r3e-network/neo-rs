@@ -137,8 +137,8 @@ members = [
     # Optional feature-gated integration via neo-node (`--features hsm`)
     "neo-hsm",
 
-    # Generic actor runtime (no neo-* deps)
-    # Reth-style service architecture (service traits + Node builder)
+    # Reth-style service architecture (service traits + Node builder).
+    # Depends on foundation crates: neo-primitives, neo-payloads, neo-ledger-types.
     "neo-runtime",
 
     # === Telemetry ===

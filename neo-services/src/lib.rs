@@ -14,8 +14,10 @@
 //!
 //! ## Layering
 //!
-//! Sits in **Layer 1 (utility)**. Depends only on:
-//! - `neo-primitives` (Layer 0) — for hash types.
+//! Sits in **Layer 1 (utility)**. Takes no `neo-*` dependencies: the
+//! trait signatures use only primitive Rust types (`u32`, `[u8; 32]`),
+//! so any layer can depend on these contracts without pulling in
+//! protocol or runtime crates.
 //!
 //! The stateful `SystemContext` trait (which needs `StoreCache`,
 //! `ApplicationEngine`, `ActorSystemHandle`, etc.) remains in

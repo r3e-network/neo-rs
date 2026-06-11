@@ -106,7 +106,7 @@ pub use witness_condition_type::WitnessConditionType;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // Marker traits used to decouple higher-level crates from concrete chain types.
-pub use blockchain::{BlockLike, NetworkMessage};
+pub use blockchain::BlockLike;
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use serializable_payload::SerializablePayload;
 pub use unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
