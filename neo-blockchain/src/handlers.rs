@@ -89,14 +89,37 @@ impl BlockchainService {
     }
 
     /// Handle a [`BlockchainCommand::Headers`] batch.
+    ///
+    /// C# `Blockchain.OnNewHeaders`: each header must chain onto the previous
+    /// one and verify (`Header.Verify(settings, snapshot, headerCache)`) before
+    /// it is cached; verification failure stops the batch (the C# `break`),
+    /// keeping the valid prefix. The anchor for the first header is the last
+    /// cached header, or the ledger tip when the cache is empty.
     pub(crate) fn handle_headers(&self, headers: Vec<Header>) {
         if headers.is_empty() {
             return;
         }
 
-        let mut header_height = self
-            .header_cache
-            .last()
+        let snapshot = self.system.store_snapshot();
+        let settings = self.system.settings();
+        let ledger = neo_native_contracts::LedgerContract::new();
+
+        // C# verification anchor: HeaderCache.Last, else the ledger tip block.
+        let mut prev: Option<Header> = self.header_cache.last();
+        if prev.is_none() {
+            if let Some(snap) = &snapshot {
+                if let Ok(tip_hash) = ledger.current_hash(snap) {
+                    prev = ledger
+                        .get_trimmed_block(snap, &tip_hash)
+                        .ok()
+                        .flatten()
+                        .map(|trimmed| trimmed.header);
+                }
+            }
+        }
+
+        let mut header_height = prev
+            .as_ref()
             .map(|h| h.index())
             .unwrap_or_else(|| self.ledger.current_height());
 
@@ -110,11 +133,42 @@ impl BlockchainService {
                 break;
             }
 
+            // C# Header.Verify(settings, snapshot, headerCache): primary index in
+            // range, links onto the anchor, timestamp strictly increases, and the
+            // consensus witness satisfies the anchor's NextConsensus (3-GAS cap).
+            // Skipped only when no store snapshot is available (no anchor to
+            // verify against — e.g. header-only unit fixtures).
+            if let (Some(snap), Some(prev_header)) = (&snapshot, &prev) {
+                if i32::from(header.primary_index()) >= settings.validators_count {
+                    break;
+                }
+                if header.prev_hash() != &prev_header.hash() {
+                    break;
+                }
+                if header.timestamp() <= prev_header.timestamp() {
+                    break;
+                }
+                let next_consensus = *prev_header.next_consensus();
+                if neo_execution::Helper::verify_witness(
+                    &header,
+                    settings.as_ref(),
+                    snap,
+                    &next_consensus,
+                    &header.witness,
+                    300_000_000,
+                )
+                .is_err()
+                {
+                    break;
+                }
+            }
+
             if !self.header_cache.add(header.clone()) {
                 break;
             }
 
             header_height = index;
+            prev = Some(header);
         }
     }
 
@@ -897,6 +951,58 @@ mod tests {
             .handle_extensible_inventory(payload, false)
             .await
             .expect("validly signed whitelisted extensible is accepted");
+    }
+
+    /// C# `Blockchain.OnNewHeaders`: a header signed by the network validator
+    /// (over the genesis anchor's NextConsensus) is cached; a tampered witness
+    /// stops the batch and keeps the valid prefix (here: nothing cached).
+    #[tokio::test]
+    async fn headers_verify_against_the_anchor_next_consensus() {
+        let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+        let public_key =
+            neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+        let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+        let mut settings = neo_config::ProtocolSettings::default();
+        settings.standby_committee = vec![point.clone()];
+        settings.validators_count = 1;
+        let network = settings.network;
+
+        let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
+        service.initialize().await;
+        let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_prev_hash(genesis.hash());
+        header.set_timestamp(genesis.header.timestamp() + 15_000);
+        header.set_next_consensus(*genesis.header.next_consensus());
+        let mut sign_data = Vec::with_capacity(36);
+        sign_data.extend_from_slice(&network.to_le_bytes());
+        sign_data.extend_from_slice(&header.hash().to_bytes());
+        let signature =
+            neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let verification = neo_redeem_script::multi_sig_redeem_script_from_points(1, &[point])
+            .expect("multisig script");
+        let invocation = |sig: &[u8]| {
+            let mut script = vec![0x0C, 64];
+            script.extend_from_slice(sig);
+            script
+        };
+
+        // Tampered witness -> batch stops, header not cached.
+        let mut tampered_sig = signature;
+        tampered_sig[5] ^= 0xFF;
+        let mut bad = header.clone();
+        bad.witness =
+            neo_payloads::Witness::new_with_scripts(invocation(&tampered_sig), verification.clone());
+        service.handle_headers(vec![bad]);
+        assert_eq!(service.header_cache.count(), 0, "tampered header is not cached");
+
+        // Valid witness -> cached.
+        header.witness =
+            neo_payloads::Witness::new_with_scripts(invocation(&signature), verification);
+        service.handle_headers(vec![header]);
+        assert_eq!(service.header_cache.count(), 1, "validly signed header is cached");
     }
 
     #[tokio::test]
