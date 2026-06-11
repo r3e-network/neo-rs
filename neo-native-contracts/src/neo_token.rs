@@ -724,8 +724,10 @@ fn compute_committee_members(
 /// C# `Contract.GetBFTAddress(pubkeys)`: the script hash of the
 /// `m`-of-`n` multisig over `pubkeys` with the BFT threshold
 /// `m = n - (n - 1) / 3`. (Distinct from the committee address, whose
-/// threshold is the simple majority `n - (n - 1) / 2`.)
-fn bft_address(pubkeys: &[ECPoint]) -> CoreResult<UInt160> {
+/// threshold is the simple majority `n - (n - 1) / 2`.) `pub(crate)` so
+/// `GasToken::initialize` can mint the initial GAS distribution to the
+/// standby-validator BFT address (C# GasToken.cs:33).
+pub(crate) fn bft_address(pubkeys: &[ECPoint]) -> CoreResult<UInt160> {
     if pubkeys.is_empty() {
         return Err(CoreError::invalid_operation("BFT address requires at least one key"));
     }
@@ -816,8 +818,10 @@ fn committee_sorted(snapshot: &DataCache) -> CoreResult<Vec<ECPoint>> {
 }
 
 /// C# `GetNextBlockValidators`: the first `validators_count` committee members
-/// (in stored, vote-ranked order), then sorted ascending.
-fn next_block_validators(snapshot: &DataCache, validators_count: usize) -> CoreResult<Vec<ECPoint>> {
+/// (in stored, vote-ranked order), then sorted ascending. `pub(crate)` so
+/// `GasToken::on_persist` can resolve the primary validator the block's
+/// network fees are minted to (C# GasToken.cs:55).
+pub(crate) fn next_block_validators(snapshot: &DataCache, validators_count: usize) -> CoreResult<Vec<ECPoint>> {
     let mut points = read_committee_points(snapshot)?;
     points.truncate(validators_count);
     points.sort();
@@ -1626,7 +1630,11 @@ impl NativeContract for NeoToken {
             }
             "getCandidates" => {
                 let snapshot = engine.snapshot_cache();
-                candidates_to_array_bytes(&read_registered_candidates(&snapshot)?)
+                // C# `GetCandidatesInternal().Select(...).Take(256).ToArray()`
+                // (NeoToken.cs:528): at most the first 256 registered candidates.
+                let mut candidates = read_registered_candidates(&snapshot)?;
+                candidates.truncate(256);
+                candidates_to_array_bytes(&candidates)
             }
             "getCandidateVote" => {
                 let pubkey_bytes = args.first().ok_or_else(|| {
@@ -1767,17 +1775,14 @@ impl NativeContract for NeoToken {
                 if !registered {
                     return Ok(vec![1u8]);
                 }
-                // CheckCandidate: with no remaining votes the entry is removed (the
-                // voter-reward sweep is a no-op until votes exist); otherwise it is
-                // retained as unregistered.
-                if votes == BigInt::from(0) {
-                    snapshot.delete(&key);
-                } else {
-                    snapshot.update(
-                        key,
-                        StorageItem::from_bytes(encode_candidate_state(false, &votes)?),
-                    );
-                }
+                // C# `state.Registered = false; CheckCandidate(snapshot, pubkey,
+                // state)` (NeoToken.cs:443,191): flip to unregistered, then when no
+                // votes remain delete BOTH the candidate entry and the
+                // `Prefix_VoterRewardPerCommittee` entry (otherwise a candidate that
+                // accrued committee voter rewards and then lost all votes would leave
+                // a stale reward record — a state-root divergence). Retain as
+                // unregistered when votes remain.
+                check_candidate(&snapshot, &pubkey, false, &votes)?;
                 if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
                     engine
                         .send_notification(
@@ -2552,6 +2557,44 @@ mod governance_writer_tests {
         assert!(
             snapshot.get(&candidate_key(&pubkey)).is_none(),
             "zero-vote candidate entry removed"
+        );
+    }
+
+    #[test]
+    fn unregister_candidate_deletes_stale_voter_reward_entry() {
+        // C# `CheckCandidate` (NeoToken.cs:191): unregistering a candidate with
+        // no remaining votes deletes BOTH the candidate AND the
+        // `Prefix_VoterRewardPerCommittee` entry. A candidate that accrued
+        // committee voter rewards then lost all votes must not leave a stale
+        // reward record (a state-root divergence vs C#).
+        let pubkey = candidate_pubkey();
+        let pubkey_bytes = pubkey.to_bytes();
+        let account =
+            UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+        let snapshot = seeded_snapshot();
+
+        // Registered candidate, 0 votes, with a (stale) accrued voter-reward entry.
+        snapshot.update(
+            candidate_key(&pubkey),
+            StorageItem::from_bytes(encode_candidate_state(true, &BigInt::from(0)).unwrap()),
+        );
+        let mut reward_key_bytes = vec![PREFIX_VOTER_REWARD_PER_COMMITTEE];
+        reward_key_bytes.extend_from_slice(&pubkey.to_bytes());
+        let reward_key = StorageKey::new(NeoToken::ID, reward_key_bytes);
+        snapshot.add(
+            reward_key.clone(),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(123_456))),
+        );
+
+        let state = call(Arc::clone(&snapshot), account, &pubkey_bytes, "unregisterCandidate");
+        assert_eq!(state, VmState::HALT, "unregisterCandidate must HALT");
+        assert!(
+            snapshot.get(&candidate_key(&pubkey)).is_none(),
+            "candidate entry removed"
+        );
+        assert!(
+            snapshot.get(&reward_key).is_none(),
+            "stale voter-reward entry removed"
         );
     }
 

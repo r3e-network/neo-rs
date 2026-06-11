@@ -266,6 +266,91 @@ fn put_attribute_fee(snapshot: &DataCache, attribute_type: u8, value: i64) {
     );
 }
 
+/// C# `PolicyContract.DefaultNotaryAssistedAttributeFee` (PolicyContract.cs:56):
+/// the per-key NotaryAssisted attribute fee seeded at the HF_Echidna block.
+const DEFAULT_NOTARY_ASSISTED_ATTRIBUTE_FEE: i64 = 1000_0000;
+
+/// C# `PolicyContract.InitializeAsync(engine, hardfork)` (PolicyContract.cs:
+/// 137-170) for the NON-`ActiveIn` hardfork branches — the hardfork-scheduled
+/// re-initializations that `ContractManagement.OnPersistAsync` triggers at the
+/// hardfork's activation block:
+///
+/// - `HF_Echidna`: seed the NotaryAssisted attribute fee (0.1 GAS per key) and
+///   migrate `MillisecondsPerBlock` / `MaxValidUntilBlockIncrement` /
+///   `MaxTraceableBlocks` from `ProtocolSettings` into Policy storage.
+/// - `HF_Faun`: convert the stored exec-fee factor from datoshi to pico-GAS
+///   units (`* ApplicationEngine.FeeFactor`, faulting when Policy was never
+///   initialized), and stamp every blocked account with the persisting block's
+///   timestamp (the recoverFund clock).
+///
+/// The `hardfork == ActiveIn` (genesis) branch lives in
+/// [`NativeContract::initialize`], which the persist pipeline runs at the
+/// activation block.
+pub(crate) fn initialize_for_hardfork(
+    engine: &mut ApplicationEngine,
+    hardfork: Hardfork,
+) -> CoreResult<()> {
+    if hardfork == Hardfork::HfEchidna {
+        let milliseconds_per_block = engine.protocol_settings().milliseconds_per_block;
+        let max_valid_until_block_increment =
+            engine.protocol_settings().max_valid_until_block_increment;
+        let max_traceable_blocks = engine.protocol_settings().max_traceable_blocks;
+        let snapshot = engine.snapshot_cache();
+        snapshot.add(
+            attribute_fee_key(TransactionAttributeType::NotaryAssisted.to_byte()),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_NOTARY_ASSISTED_ATTRIBUTE_FEE,
+            ))),
+        );
+        snapshot.add(
+            StorageKey::new(PolicyContract::ID, vec![PREFIX_MILLISECONDS_PER_BLOCK]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                milliseconds_per_block,
+            ))),
+        );
+        snapshot.add(
+            StorageKey::new(
+                PolicyContract::ID,
+                vec![PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT],
+            ),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                max_valid_until_block_increment,
+            ))),
+        );
+        snapshot.add(
+            StorageKey::new(PolicyContract::ID, vec![PREFIX_MAX_TRACEABLE_BLOCKS]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                max_traceable_blocks,
+            ))),
+        );
+    }
+    if hardfork == Hardfork::HfFaun {
+        // C# `GetAndChange(_execFeeFactor) ?? throw`: the factor must exist.
+        let snapshot = engine.snapshot_cache();
+        let factor_key = StorageKey::new(PolicyContract::ID, vec![PREFIX_EXEC_FEE_FACTOR]);
+        let stored = snapshot
+            .get(&factor_key)
+            .ok_or_else(|| CoreError::invalid_operation("Policy was not initialized"))?;
+        let factor = BigInt::from_signed_bytes_le(&stored.value_bytes())
+            * neo_execution::application_engine::FEE_FACTOR;
+        snapshot.update(
+            factor_key,
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&factor)),
+        );
+
+        // C# stamps every blocked account with `engine.GetTime()` (the
+        // persisting block's millisecond timestamp).
+        let time = engine
+            .current_block_timestamp()
+            .map_err(CoreError::invalid_operation)?;
+        let stamp = crate::bigint_to_storage_bytes(&BigInt::from(time));
+        for (key, _) in blocked_account_entries(&snapshot) {
+            snapshot.update(key, StorageItem::from_bytes(stamp.clone()));
+        }
+    }
+    Ok(())
+}
+
 /// C# `NativeContract.AssertCommittee`: returns an error unless the committee
 /// multisig address witnessed this call. Shared by all committee-gated setters.
 fn assert_committee(engine: &ApplicationEngine, method: &str) -> CoreResult<()> {
@@ -1026,6 +1111,36 @@ impl NativeContract for PolicyContract {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    /// C# `PolicyContract.InitializeAsync(engine, hardfork)` for `hardfork ==
+    /// ActiveIn` (PolicyContract.cs:137-143; Policy is genesis-active, so this
+    /// runs while persisting block 0): seed `Prefix_FeePerByte` (1000),
+    /// `Prefix_ExecFeeFactor` (30), and `Prefix_StoragePrice` (100000). The
+    /// HF_Echidna / HF_Faun re-initialization branches live in
+    /// [`initialize_for_hardfork`], triggered by `ContractManagement`'s
+    /// `on_persist` at those hardfork blocks.
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let snapshot = engine.snapshot_cache();
+        snapshot.add(
+            StorageKey::new(Self::ID, vec![PREFIX_FEE_PER_BYTE]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_FEE_PER_BYTE,
+            ))),
+        );
+        snapshot.add(
+            StorageKey::new(Self::ID, vec![PREFIX_EXEC_FEE_FACTOR]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_EXEC_FEE_FACTOR,
+            ))),
+        );
+        snapshot.add(
+            StorageKey::new(Self::ID, vec![PREFIX_STORAGE_PRICE]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_STORAGE_PRICE,
+            ))),
+        );
+        Ok(())
     }
 
     /// C# `PolicyContract.IsWhitelistFeeContract(snapshot, contractHash,

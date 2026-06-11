@@ -22,24 +22,24 @@
 //! `serialize_persisted_transaction_state`, `serialize_conflict_stub`)
 //! so the bytes written here are exactly the bytes its readers parse.
 //!
-//! ## Known C# byte-layout divergences (owned by the ledger crate)
+//! ## Byte layouts (C#-exact)
 //!
-//! The record *values* and one key layout intentionally follow the Rust
-//! `LedgerContract` reader rather than C#, because the reader is in a
-//! crate this pipeline cannot change and a self-consistent store is a
-//! prerequisite for everything downstream:
+//! Every key and value matches C# `LedgerContract` byte-for-byte:
 //!
-//! - `Prefix_BlockHash` keys: the Rust reader uses a **little-endian**
-//!   index (`block_hash_storage_key`), C# `CreateStorageKey(prefix,
-//!   uint bigEndianKey)` uses **big-endian**;
-//! - `Prefix_Transaction` values: the Rust codec is a tagged binary
-//!   record (kind/index/state/tx bytes), C# stores the interoperable
-//!   stack-item serialization of `TransactionState`;
-//! - `Prefix_CurrentBlock` values: raw `hash ‖ u32le`, C# stores the
-//!   interoperable `HashIndexState` stack item.
-//!
-//! Until the ledger crate's reader and this writer migrate together,
-//! the storage *state root* for these records differs from C# mainnet.
+//! - `Prefix_BlockHash (9)` keys carry a **big-endian** block index
+//!   (`CreateStorageKey(prefix, uint bigEndianKey)` →
+//!   `KeyBuilder.AddBigEndian`, NativeContract.cs:403); the value is
+//!   the raw 32-byte block hash (`PersistingBlock.Hash.ToArray()`);
+//! - `Prefix_Block (5)` values are `TrimmedBlock.ToArray()` — the
+//!   `ISerializable` header followed by the var-array of tx hashes;
+//! - `Prefix_Transaction (11)` values are the `BinarySerializer` form
+//!   of the interoperable `TransactionState` stack item:
+//!   `Struct[Integer(BlockIndex), ByteString(tx bytes),
+//!   Integer((byte)State)]` for full records and
+//!   `Struct[Integer(BlockIndex)]` for conflict stubs;
+//! - `Prefix_CurrentBlock (12)` values are the `BinarySerializer` form
+//!   of the interoperable `HashIndexState` stack item:
+//!   `Struct[ByteString(hash), Integer(index)]`.
 
 use neo_data_cache::{DataCache, StorageItem, StorageKey};
 use neo_error::{CoreError, CoreResult};
@@ -61,13 +61,13 @@ const PREFIX_TRANSACTION: u8 = 11;
 /// C# `LedgerContract.Prefix_CurrentBlock` (12).
 const PREFIX_CURRENT_BLOCK: u8 = 12;
 
-/// `Prefix_BlockHash` key. Little-endian index to match the Rust
-/// `LedgerContract::get_block_hash` reader (C# uses big-endian — see the
-/// module docs).
+/// `Prefix_BlockHash` key: prefix + **big-endian** block index, the C#
+/// `CreateStorageKey(Prefix_BlockHash, engine.PersistingBlock.Index)`
+/// overload (`KeyBuilder.AddBigEndian(uint)`, NativeContract.cs:403).
 fn block_hash_key(index: u32) -> StorageKey {
     let mut key = Vec::with_capacity(5);
     key.push(PREFIX_BLOCK_HASH);
-    key.extend_from_slice(&index.to_le_bytes());
+    key.extend_from_slice(&index.to_be_bytes());
     StorageKey::new(LedgerContract::ID, key)
 }
 
@@ -264,6 +264,96 @@ mod tests {
         // Current-block pointer.
         assert_eq!(ledger.current_index(&cache).expect("current_index"), 7);
         assert_eq!(ledger.current_hash(&cache).expect("current_hash"), block_hash);
+    }
+
+    /// Byte-level pin of the C# `LedgerContract.OnPersistAsync` /
+    /// `PostPersistAsync` write set: every key (prefix + big-endian
+    /// index / raw hash) and every value (raw hash bytes, TrimmedBlock
+    /// `ISerializable` bytes, `BinarySerializer` stack-item records)
+    /// is asserted against independently assembled C# layouts — not
+    /// just round-tripped through the Rust codec.
+    #[test]
+    fn persisted_records_pin_csharp_key_and_value_bytes() {
+        let cache = DataCache::new(false);
+
+        let mut header = Header::new();
+        header.set_index(0x0102_0304);
+        let mut tx = Transaction::new();
+        tx.set_nonce(7);
+        tx.set_script(vec![0x40]); // RET
+        tx.set_signers(vec![neo_payloads::Signer::new(
+            UInt160::from_bytes(&[0x22; 20]).unwrap(),
+            neo_primitives::WitnessScope::NONE,
+        )]);
+        tx.set_witnesses(vec![neo_payloads::Witness::empty()]);
+        let tx_hash = tx.try_hash().unwrap();
+        let block = Block::from_parts(header, vec![tx.clone()]);
+        let block_hash = block.header.try_hash().unwrap();
+
+        write_on_persist_records(&cache, &block, &block_hash).expect("on-persist records");
+        write_post_persist_record(&cache, &block_hash, 0x0102_0304).expect("post-persist");
+
+        let raw = |key: &StorageKey| {
+            cache
+                .get(key)
+                .map(|item| item.value_bytes().into_owned())
+                .expect("record present")
+        };
+
+        // --- Prefix_BlockHash (9): key = prefix ‖ BIG-ENDIAN index;
+        // value = the raw 32-byte block hash.
+        let bh_key = block_hash_key(0x0102_0304);
+        assert_eq!(bh_key.id(), LedgerContract::ID);
+        assert_eq!(bh_key.key(), &[9u8, 0x01, 0x02, 0x03, 0x04]);
+        assert_eq!(raw(&bh_key), block_hash.to_bytes());
+
+        // --- Prefix_Block (5): key = prefix ‖ hash; value =
+        // TrimmedBlock.ToArray() = header bytes ‖ var-int count ‖ hashes.
+        let b_key = block_key(&block_hash);
+        let mut expected_key = vec![5u8];
+        expected_key.extend_from_slice(&block_hash.to_bytes());
+        assert_eq!(b_key.key(), &expected_key[..]);
+        let mut header_writer = neo_io::BinaryWriter::new();
+        Serializable::serialize(&block.header, &mut header_writer).unwrap();
+        let mut expected_block = header_writer.into_bytes();
+        expected_block.push(1); // var-int tx count
+        expected_block.extend_from_slice(&tx_hash.to_bytes());
+        assert_eq!(raw(&b_key), expected_block);
+
+        // --- Prefix_Transaction (11): value = BinarySerializer bytes of
+        // Struct[Integer(BlockIndex), ByteString(tx bytes), Integer(state)]
+        // (0x41 Struct, 0x21 Integer, 0x28 ByteString; VMState.NONE = 0
+        // serializes as the empty Integer span).
+        let mut tx_writer = neo_io::BinaryWriter::new();
+        Serializable::serialize(&tx, &mut tx_writer).unwrap();
+        let tx_bytes = tx_writer.into_bytes();
+        assert!(tx_bytes.len() < 0xFD);
+        let mut expected_record = vec![
+            0x41, 0x03, 0x21, 0x04, 0x04, 0x03, 0x02, 0x01, // Integer 0x01020304 LE
+            0x28, tx_bytes.len() as u8,
+        ];
+        expected_record.extend_from_slice(&tx_bytes);
+        expected_record.extend_from_slice(&[0x21, 0x00]); // VMState::NONE
+        assert_eq!(raw(&transaction_key(&tx_hash)), expected_record);
+
+        // After execution the record is rewritten with HALT (= 1).
+        update_transaction_vm_state(&cache, 0x0102_0304, &tx, &tx_hash, VMState::HALT)
+            .unwrap();
+        let mut expected_halt = vec![
+            0x41, 0x03, 0x21, 0x04, 0x04, 0x03, 0x02, 0x01,
+            0x28, tx_bytes.len() as u8,
+        ];
+        expected_halt.extend_from_slice(&tx_bytes);
+        expected_halt.extend_from_slice(&[0x21, 0x01, 0x01]);
+        assert_eq!(raw(&transaction_key(&tx_hash)), expected_halt);
+
+        // --- Prefix_CurrentBlock (12): value = BinarySerializer bytes of
+        // Struct[ByteString(hash), Integer(index)] (HashIndexState).
+        assert_eq!(current_block_key().key(), &[12u8]);
+        let mut expected_pointer = vec![0x41, 0x02, 0x28, 0x20];
+        expected_pointer.extend_from_slice(&block_hash.to_bytes());
+        expected_pointer.extend_from_slice(&[0x21, 0x04, 0x04, 0x03, 0x02, 0x01]);
+        assert_eq!(raw(&current_block_key()), expected_pointer);
     }
 
     /// C# stores conflict stubs under the bare conflict hash and under

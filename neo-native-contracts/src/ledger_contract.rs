@@ -38,15 +38,6 @@ const PREFIX_TRANSACTION: u8 = 11;
 /// Storage prefix for the current-block (hash, index) pointer.
 const PREFIX_CURRENT_BLOCK: u8 = 12;
 
-/// Record-kind tag identifying a full persisted transaction record.
-const RECORD_KIND_TRANSACTION: u8 = 0x01;
-/// Record-kind tag identifying a conflict-stub record.
-const RECORD_KIND_CONFLICT_STUB: u8 = 0x02;
-
-/// Maximum supported transaction byte length (matches C#
-/// `Transaction.MaxTransactionSize`).
-const MAX_TRANSACTION_SIZE: usize = 102_400;
-
 /// Lazily-initialised script-hash handle for the LedgerContract.
 pub static LEDGER_HASH: LazyLock<UInt160> = LazyLock::new(|| *LEDGER_CONTRACT_HASH);
 
@@ -108,15 +99,21 @@ impl LedgerContract {
     }
 
     /// Returns the per-transaction state for the given transaction
-    /// hash, or `None` if the transaction is not in the ledger.
+    /// hash, or `None` if no record exists under the key.
     ///
-    /// The on-disk format (prefix `11` + 32-byte hash) is:
+    /// The on-disk format (prefix `11` + 32-byte hash) is the C#
+    /// `TransactionState` interoperable stack item serialized with
+    /// `BinarySerializer` (TransactionState.cs `ToStackItem`):
     /// ```text
-    /// u8  record_kind (0x01 = full transaction, 0x02 = conflict stub)
-    /// u32 block_index
-    /// u8  vm_state             (only when record_kind == 0x01)
-    /// var transaction_bytes    (only when record_kind == 0x01)
+    /// Struct[Integer(BlockIndex)]                                  — conflict stub
+    /// Struct[Integer(BlockIndex), ByteString(tx bytes), Integer((byte)State)]
     /// ```
+    ///
+    /// Like C#'s raw `item.GetInteroperable<TransactionState>()`, this
+    /// surfaces conflict stubs as `Some` with `transaction == None`;
+    /// the C# *public* `GetTransactionState` null-filter on stubs is
+    /// applied by [`Self::contains_transaction`] and by the contract
+    /// methods, which all check `transaction.is_some()`.
     pub fn get_transaction_state(
         &self,
         snapshot: &DataCache,
@@ -126,60 +123,63 @@ impl LedgerContract {
         let Some(item) = snapshot.get(&key) else {
             return Ok(None);
         };
-
         let bytes = item.value_bytes().into_owned();
-        let mut reader = MemoryReader::new(&bytes);
-        let kind = reader
-            .read_u8()
-            .map_err(|e| CoreError::invalid_data(format!("invalid record kind: {e}")))?;
-
-        match kind {
-            RECORD_KIND_TRANSACTION => {
-                let block_index = reader
-                    .read_u32()
-                    .map_err(|e| CoreError::invalid_data(format!("invalid block index: {e}")))?;
-                let vm_state_byte = reader
-                    .read_u8()
-                    .map_err(|e| CoreError::invalid_data(format!("invalid vm state: {e}")))?;
-                let tx_bytes = reader
-                    .read_var_bytes(MAX_TRANSACTION_SIZE)
-                    .map_err(|e| {
-                        CoreError::invalid_data(format!("invalid transaction bytes: {e}"))
-                    })?;
-                let mut tx_reader = MemoryReader::new(&tx_bytes);
-                let tx = Transaction::deserialize(&mut tx_reader)
-                    .map_err(|e| CoreError::serialization(e.to_string()))?;
-
-                Ok(Some(neo_block::TransactionState::new(
-                    block_index,
-                    Some(tx),
-                    VMState::from_byte(vm_state_byte),
-                )))
-            }
-            RECORD_KIND_CONFLICT_STUB => {
-                let block_index = reader
-                    .read_u32()
-                    .map_err(|e| CoreError::invalid_data(format!("invalid conflict block index: {e}")))?;
-                Ok(Some(neo_block::TransactionState::new(
-                    block_index,
-                    None,
-                    VMState::NONE,
-                )))
-            }
-            _ => Err(CoreError::invalid_data(
-                "unknown transaction state record kind",
-            )),
-        }
+        Ok(Some(decode_transaction_state(&bytes)?))
     }
 
-    /// Returns whether the given transaction is present in the ledger
-    /// (either as a full record or as a conflict stub).
+    /// C# `LedgerContract.ContainsTransaction`: whether the ledger
+    /// holds a **full** transaction record for the hash. A conflict
+    /// stub (a `TransactionState` whose `Transaction` is null) does
+    /// NOT count — C# `GetTransactionState` returns null for stubs.
     pub fn contains_transaction(
         &self,
         snapshot: &DataCache,
         tx_hash: &UInt256,
     ) -> CoreResult<bool> {
-        Ok(self.get_transaction_state(snapshot, tx_hash)?.is_some())
+        Ok(self
+            .get_transaction_state(snapshot, tx_hash)?
+            .is_some_and(|state| state.transaction.is_some()))
+    }
+
+    /// C# `LedgerContract.ContainsConflictHash` (LedgerContract.cs:211):
+    /// whether the chain contains a *traceable* conflict record for
+    /// `hash` registered by an on-chain transaction sharing at least
+    /// one of `signers`. The bare-hash stub is checked first (it must
+    /// exist, be a stub — not a full transaction — and be traceable),
+    /// then the per-signer stubs (`Prefix_Transaction + hash + signer`).
+    pub fn contains_conflict_hash(
+        &self,
+        snapshot: &DataCache,
+        hash: &UInt256,
+        signers: &[UInt160],
+        max_traceable_blocks: u32,
+    ) -> CoreResult<bool> {
+        let current = self.current_index(snapshot)?;
+
+        // C#: the dummy stub defines whether any conflict record exists.
+        match self.get_transaction_state(snapshot, hash)? {
+            Some(stub)
+                if stub.transaction.is_none()
+                    && is_within_trace_window(
+                        stub.block_index,
+                        current,
+                        max_traceable_blocks,
+                    ) => {}
+            _ => return Ok(false),
+        }
+
+        // At least one conflict record found: check signer intersection.
+        for signer in signers {
+            let key = conflict_signer_storage_key(Self::ID, hash, signer);
+            if let Some(item) = snapshot.get(&key) {
+                let bytes = item.value_bytes().into_owned();
+                let state = decode_transaction_state(&bytes)?;
+                if is_within_trace_window(state.block_index, current, max_traceable_blocks) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Returns the block hash for the given block index, or `None` if
@@ -271,11 +271,15 @@ fn current_block_storage_key(contract_id: i32) -> StorageKey {
     StorageKey::new(contract_id, vec![PREFIX_CURRENT_BLOCK])
 }
 
+/// C# `CreateStorageKey(Prefix_BlockHash, uint bigEndianKey)`
+/// (NativeContract.cs:403 → `KeyBuilder.AddBigEndian(uint)`): the
+/// block index is encoded **big-endian** so the index keys sort in
+/// block order.
 #[inline]
 fn block_hash_storage_key(contract_id: i32, index: u32) -> StorageKey {
     let mut key = Vec::with_capacity(1 + std::mem::size_of::<u32>());
     key.push(PREFIX_BLOCK_HASH);
-    key.extend_from_slice(&index.to_le_bytes());
+    key.extend_from_slice(&index.to_be_bytes());
     StorageKey::new(contract_id, key)
 }
 
@@ -284,6 +288,17 @@ fn transaction_storage_key(contract_id: i32, hash: &UInt256) -> StorageKey {
     let mut key = Vec::with_capacity(1 + 32);
     key.push(PREFIX_TRANSACTION);
     key.extend_from_slice(&hash.to_bytes());
+    StorageKey::new(contract_id, key)
+}
+
+/// C# `CreateStorageKey(Prefix_Transaction, UInt256 hash, UInt160 signer)`
+/// — the per-signer conflict-stub key.
+#[inline]
+fn conflict_signer_storage_key(contract_id: i32, hash: &UInt256, signer: &UInt160) -> StorageKey {
+    let mut key = Vec::with_capacity(1 + 32 + 20);
+    key.push(PREFIX_TRANSACTION);
+    key.extend_from_slice(&hash.to_bytes());
+    key.extend_from_slice(&signer.to_bytes());
     StorageKey::new(contract_id, key)
 }
 
@@ -299,71 +314,129 @@ fn block_storage_key(contract_id: i32, hash: &UInt256) -> StorageKey {
 // Wire-format helpers
 // ============================================================================
 
-/// Serialises a `(hash, index)` pair into the C#-compatible
-/// `HashIndexState` wire format used for the current-block pointer.
+/// Serialises a `(hash, index)` pair into the C# `HashIndexState`
+/// wire format used for the current-block pointer: the interoperable
+/// stack item `Struct[ByteString(hash), Integer(index)]`
+/// (HashIndexState.cs `ToStackItem`) serialized with `BinarySerializer`
+/// — exactly what C# `StorageItem.GetInteroperable<HashIndexState>()`
+/// round-trips.
 pub fn serialize_hash_index_state(hash: &UInt256, index: u32) -> CoreResult<Vec<u8>> {
-    let mut writer = BinaryWriter::new();
-    writer
-        .write_bytes(&hash.to_bytes())
-        .map_err(|e| CoreError::serialization(e.to_string()))?;
-    writer
-        .write_u32(index)
-        .map_err(|e| CoreError::serialization(e.to_string()))?;
-    Ok(writer.into_bytes())
+    let item = StackItem::from_struct(vec![
+        StackItem::from_byte_string(hash.to_bytes()),
+        StackItem::from_int(BigInt::from(index)),
+    ]);
+    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::serialization(format!("HashIndexState: {e}")))
 }
 
 fn deserialize_hash_index_state(bytes: &[u8]) -> CoreResult<(UInt256, u32)> {
-    if bytes.len() < 36 {
+    let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+        .map_err(|e| CoreError::invalid_data(format!("HashIndexState: {e}")))?;
+    let StackItem::Struct(fields) = item else {
         return Err(CoreError::invalid_data(
-            "HashIndexState payload is shorter than expected",
+            "HashIndexState record is not a Struct stack item",
+        ));
+    };
+    let items = fields.items();
+    if items.len() < 2 {
+        return Err(CoreError::invalid_data(
+            "HashIndexState struct is shorter than expected",
         ));
     }
-    let hash = UInt256::from_bytes(&bytes[..32])
+    let hash_bytes = items[0]
+        .as_bytes()
+        .map_err(|e| CoreError::invalid_data(format!("HashIndexState hash: {e}")))?;
+    let hash = UInt256::from_bytes(&hash_bytes)
         .map_err(|e| CoreError::invalid_data(format!("invalid HashIndexState hash: {e}")))?;
-    let mut index_bytes = [0u8; 4];
-    index_bytes.copy_from_slice(&bytes[32..36]);
-    let index = u32::from_le_bytes(index_bytes);
+    let index = items[1]
+        .as_int()
+        .map_err(|e| CoreError::invalid_data(format!("HashIndexState index: {e}")))?
+        .to_u32()
+        .ok_or_else(|| CoreError::invalid_data("HashIndexState index out of uint range"))?;
     Ok((hash, index))
 }
 
-/// Serialises a persisted transaction state into the C#-compatible
-/// wire format. Useful for tests and the persistence pipeline.
+/// Decodes a `Prefix_Transaction` record: the C# `TransactionState`
+/// interoperable stack item (TransactionState.cs `FromStackItem`).
+/// `Struct[Integer]` is a conflict stub (no transaction);
+/// `Struct[Integer, ByteString, Integer]` is a full record.
+fn decode_transaction_state(bytes: &[u8]) -> CoreResult<neo_block::TransactionState> {
+    let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+        .map_err(|e| CoreError::invalid_data(format!("TransactionState: {e}")))?;
+    let StackItem::Struct(fields) = item else {
+        return Err(CoreError::invalid_data(
+            "TransactionState record is not a Struct stack item",
+        ));
+    };
+    let items = fields.items();
+    let block_index = items
+        .first()
+        .ok_or_else(|| CoreError::invalid_data("TransactionState struct is empty"))?
+        .as_int()
+        .map_err(|e| CoreError::invalid_data(format!("TransactionState block index: {e}")))?
+        .to_u32()
+        .ok_or_else(|| CoreError::invalid_data("TransactionState block index out of range"))?;
+
+    // C#: `if (@struct.Count == 1) return;` — conflict record.
+    if items.len() == 1 {
+        return Ok(neo_block::TransactionState::new(
+            block_index,
+            None,
+            VMState::NONE,
+        ));
+    }
+    if items.len() < 3 {
+        return Err(CoreError::invalid_data(
+            "TransactionState struct has an invalid field count",
+        ));
+    }
+
+    let tx_bytes = items[1]
+        .as_bytes()
+        .map_err(|e| CoreError::invalid_data(format!("TransactionState tx bytes: {e}")))?;
+    let mut tx_reader = MemoryReader::new(&tx_bytes);
+    let tx = Transaction::deserialize(&mut tx_reader)
+        .map_err(|e| CoreError::serialization(e.to_string()))?;
+    let state_byte = items[2]
+        .as_int()
+        .map_err(|e| CoreError::invalid_data(format!("TransactionState vm state: {e}")))?
+        .to_u8()
+        .ok_or_else(|| CoreError::invalid_data("TransactionState vm state out of byte range"))?;
+    Ok(neo_block::TransactionState::new(
+        block_index,
+        Some(tx),
+        VMState::from_byte(state_byte),
+    ))
+}
+
+/// Serialises a persisted transaction state into the C# wire format:
+/// the interoperable `Struct[Integer(BlockIndex), ByteString(tx bytes),
+/// Integer((byte)State)]` (TransactionState.cs `ToStackItem`)
+/// serialized with `BinarySerializer`.
 pub fn serialize_persisted_transaction_state(
     block_index: u32,
     vm_state: VMState,
     tx: &Transaction,
 ) -> CoreResult<Vec<u8>> {
-    let mut writer = BinaryWriter::new();
-    writer
-        .write_u8(RECORD_KIND_TRANSACTION)
-        .map_err(|e| CoreError::serialization(e.to_string()))?;
-    writer
-        .write_u32(block_index)
-        .map_err(|e| CoreError::serialization(e.to_string()))?;
-    writer
-        .write_u8(vm_state.to_byte())
-        .map_err(|e| CoreError::serialization(e.to_string()))?;
-
     let mut tx_writer = BinaryWriter::new();
     tx.serialize(&mut tx_writer)
         .map_err(|e| CoreError::serialization(e.to_string()))?;
-    writer
-        .write_var_bytes(&tx_writer.into_bytes())
-        .map_err(|e| CoreError::serialization(e.to_string()))?;
-    Ok(writer.into_bytes())
+    let item = StackItem::from_struct(vec![
+        StackItem::from_int(BigInt::from(block_index)),
+        StackItem::from_byte_string(tx_writer.into_bytes()),
+        StackItem::from_int(BigInt::from(vm_state.to_byte())),
+    ]);
+    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::serialization(format!("TransactionState: {e}")))
 }
 
-/// Serialises a conflict-stub record into the C#-compatible wire
-/// format. Useful for tests and the persistence pipeline.
+/// Serialises a conflict-stub record into the C# wire format: the
+/// interoperable `Struct[Integer(BlockIndex)]` of a `TransactionState`
+/// whose `Transaction` is null (TransactionState.cs `ToStackItem`).
 pub fn serialize_conflict_stub(block_index: u32) -> CoreResult<Vec<u8>> {
-    let mut writer = BinaryWriter::new();
-    writer
-        .write_u8(RECORD_KIND_CONFLICT_STUB)
-        .map_err(|e| CoreError::serialization(e.to_string()))?;
-    writer
-        .write_u32(block_index)
-        .map_err(|e| CoreError::serialization(e.to_string()))?;
-    Ok(writer.into_bytes())
+    let item = StackItem::from_struct(vec![StackItem::from_int(BigInt::from(block_index))]);
+    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        .map_err(|e| CoreError::serialization(format!("TransactionState stub: {e}")))
 }
 
 /// Mirrors C# `LedgerContract.IsTraceableBlock(engine, index)`: resolves the
@@ -883,9 +956,11 @@ mod tests {
 
         // Absent -> None (getTransactionHeight would return -1).
         assert!(ledger.get_transaction_state(&cache, &tx_hash).unwrap().is_none());
+        assert!(!ledger.contains_transaction(&cache, &tx_hash).unwrap());
 
         // Conflict stub -> Some, but `transaction` is None, so C#
-        // `GetTransactionState` treats it as null and height is -1.
+        // `GetTransactionState` treats it as null and height is -1 —
+        // and C# `ContainsTransaction` is false for a stub.
         cache.add(
             transaction_storage_key(LedgerContract::ID, &tx_hash),
             StorageItem::from_bytes(serialize_conflict_stub(4242).unwrap()),
@@ -893,6 +968,172 @@ mod tests {
         let stub = ledger.get_transaction_state(&cache, &tx_hash).unwrap().unwrap();
         assert!(stub.transaction.is_none());
         assert_eq!(stub.block_index, 4242);
+        assert!(
+            !ledger.contains_transaction(&cache, &tx_hash).unwrap(),
+            "C# ContainsTransaction must be false for a conflict stub"
+        );
+    }
+
+    /// Byte-level pins of the C# `KeyBuilder` key layouts:
+    /// `CreateStorageKey(Prefix_BlockHash, uint)` uses `AddBigEndian`
+    /// (NativeContract.cs:403), and the transaction/conflict keys
+    /// append the raw hash (and signer) bytes.
+    #[test]
+    fn storage_key_layouts_match_csharp_keybuilder() {
+        let key = block_hash_storage_key(LedgerContract::ID, 0x0102_0304);
+        assert_eq!(key.id(), -4);
+        assert_eq!(key.key(), &[9u8, 0x01, 0x02, 0x03, 0x04]);
+        // Low indices land in the high-order byte positions.
+        assert_eq!(
+            block_hash_storage_key(LedgerContract::ID, 7).key(),
+            &[9u8, 0, 0, 0, 7]
+        );
+
+        let hash = UInt256::from_bytes(&[0xAB; 32]).unwrap();
+        let mut expected = vec![11u8];
+        expected.extend_from_slice(&[0xAB; 32]);
+        assert_eq!(
+            transaction_storage_key(LedgerContract::ID, &hash).key(),
+            &expected[..]
+        );
+
+        let signer = UInt160::from_bytes(&[0x11; 20]).unwrap();
+        expected.extend_from_slice(&[0x11; 20]);
+        assert_eq!(
+            conflict_signer_storage_key(LedgerContract::ID, &hash, &signer).key(),
+            &expected[..]
+        );
+
+        assert_eq!(current_block_storage_key(LedgerContract::ID).key(), &[12u8]);
+        assert_eq!(block_storage_key(LedgerContract::ID, &hash).key()[0], 5u8);
+    }
+
+    /// Byte-level pins of the C# `BinarySerializer` value layouts
+    /// (StackItemType: Struct = 0x41, ByteString = 0x28, Integer =
+    /// 0x21; integers are minimal signed little-endian var-bytes with
+    /// zero encoded as the empty span — Neo.VM `Integer`).
+    #[test]
+    fn value_layouts_match_csharp_binary_serializer() {
+        // HashIndexState (Prefix_CurrentBlock value):
+        // Struct{ ByteString(hash), Integer(index) }.
+        let hash = UInt256::from_bytes(&[7u8; 32]).unwrap();
+        let mut expected = vec![0x41, 0x02, 0x28, 0x20];
+        expected.extend_from_slice(&[7u8; 32]);
+        expected.extend_from_slice(&[0x21, 0x02, 0xD2, 0x04]); // 1234 LE
+        assert_eq!(serialize_hash_index_state(&hash, 1234).unwrap(), expected);
+
+        // Index zero serializes as an empty Integer span.
+        let mut expected = vec![0x41, 0x02, 0x28, 0x20];
+        expected.extend_from_slice(&[7u8; 32]);
+        expected.extend_from_slice(&[0x21, 0x00]);
+        assert_eq!(serialize_hash_index_state(&hash, 0).unwrap(), expected);
+
+        // Conflict stub: Struct{ Integer(BlockIndex) }.
+        assert_eq!(
+            serialize_conflict_stub(3).unwrap(),
+            vec![0x41, 0x01, 0x21, 0x01, 0x03]
+        );
+        assert_eq!(serialize_conflict_stub(0).unwrap(), vec![0x41, 0x01, 0x21, 0x00]);
+
+        // Full transaction record:
+        // Struct{ Integer(BlockIndex), ByteString(tx.ToArray()), Integer((byte)State) }.
+        let mut tx = Transaction::new();
+        tx.set_nonce(99);
+        tx.set_script(vec![0x40]); // RET
+        tx.set_signers(vec![neo_payloads::Signer::new(
+            UInt160::from_bytes(&[0x22; 20]).unwrap(),
+            neo_primitives::WitnessScope::NONE,
+        )]);
+        tx.set_witnesses(vec![neo_payloads::Witness::empty()]);
+        let mut writer = BinaryWriter::new();
+        tx.serialize(&mut writer).unwrap();
+        let tx_bytes = writer.into_bytes();
+        assert!(tx_bytes.len() < 0xFD, "single-byte var-int length expected");
+
+        let record = serialize_persisted_transaction_state(7, VMState::HALT, &tx).unwrap();
+        let mut expected = vec![0x41, 0x03, 0x21, 0x01, 0x07, 0x28, tx_bytes.len() as u8];
+        expected.extend_from_slice(&tx_bytes);
+        expected.extend_from_slice(&[0x21, 0x01, 0x01]); // HALT = 1
+        assert_eq!(record, expected);
+
+        // VMState::NONE (0) is the empty Integer span.
+        let record = serialize_persisted_transaction_state(7, VMState::NONE, &tx).unwrap();
+        let mut expected = vec![0x41, 0x03, 0x21, 0x01, 0x07, 0x28, tx_bytes.len() as u8];
+        expected.extend_from_slice(&tx_bytes);
+        expected.extend_from_slice(&[0x21, 0x00]);
+        assert_eq!(record, expected);
+
+        // And the reader decodes the pinned layout back.
+        let state = decode_transaction_state(&record).unwrap();
+        assert_eq!(state.block_index, 7);
+        assert_eq!(state.state, VMState::NONE);
+        let decoded_tx = state.transaction.expect("full record");
+        assert_eq!(decoded_tx.nonce(), 99);
+    }
+
+    /// C# `LedgerContract.ContainsConflictHash`: the bare stub must
+    /// exist, be a stub, and be traceable; then some signer stub must
+    /// exist and be traceable.
+    #[test]
+    fn contains_conflict_hash_matches_csharp_rules() {
+        let cache = DataCache::new(false);
+        let ledger = LedgerContract::new();
+        let hash = UInt256::from_bytes(&[0xCD; 32]).unwrap();
+        let signer = UInt160::from_bytes(&[0x44; 20]).unwrap();
+        let other = UInt160::from_bytes(&[0x55; 20]).unwrap();
+        let mtb = 10u32;
+
+        // Chain height 100 → traceable window is (90, 100].
+        cache.add(
+            current_block_storage_key(LedgerContract::ID),
+            StorageItem::from_bytes(
+                serialize_hash_index_state(&UInt256::from_bytes(&[1u8; 32]).unwrap(), 100)
+                    .unwrap(),
+            ),
+        );
+
+        // No record at all → false.
+        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[signer], mtb).unwrap());
+
+        // Bare stub (traceable) but no signer record → false.
+        cache.add(
+            transaction_storage_key(LedgerContract::ID, &hash),
+            StorageItem::from_bytes(serialize_conflict_stub(95).unwrap()),
+        );
+        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[signer], mtb).unwrap());
+
+        // Signer record for a different account → still false for ours…
+        cache.add(
+            conflict_signer_storage_key(LedgerContract::ID, &hash, &other),
+            StorageItem::from_bytes(serialize_conflict_stub(95).unwrap()),
+        );
+        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[signer], mtb).unwrap());
+        // …and true for the matching one.
+        assert!(ledger.contains_conflict_hash(&cache, &hash, &[other], mtb).unwrap());
+
+        // An untraceable signer record (95 - window) does not count.
+        cache.add(
+            conflict_signer_storage_key(LedgerContract::ID, &hash, &signer),
+            StorageItem::from_bytes(serialize_conflict_stub(80).unwrap()),
+        );
+        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[signer], mtb).unwrap());
+
+        // A full transaction record under the hash is NOT a conflict
+        // record (C#: `stub.Transaction is not null` → false).
+        let mut tx = Transaction::new();
+        tx.set_script(vec![0x40]);
+        tx.set_signers(vec![neo_payloads::Signer::new(
+            other,
+            neo_primitives::WitnessScope::NONE,
+        )]);
+        tx.set_witnesses(vec![neo_payloads::Witness::empty()]);
+        cache.update(
+            transaction_storage_key(LedgerContract::ID, &hash),
+            StorageItem::from_bytes(
+                serialize_persisted_transaction_state(95, VMState::HALT, &tx).unwrap(),
+            ),
+        );
+        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[other], mtb).unwrap());
     }
 
     #[test]

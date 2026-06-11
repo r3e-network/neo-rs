@@ -956,6 +956,36 @@ static CONTRACT_MANAGEMENT_EVENTS: LazyLock<Vec<NativeEvent>> = LazyLock::new(||
     ]
 });
 
+/// The canonical native-contract registration list (C#
+/// `NativeContract.Contracts` order: ContractManagement, StdLib, CryptoLib,
+/// Ledger, NEO, GAS, Policy, RoleManagement, Oracle, Notary, Treasury), the
+/// iteration order of `ContractManagement::on_persist`. Built from the same
+/// constructor list the provider registers, so the deployment records and
+/// `Deploy`/`Update` notifications follow C#'s contract order.
+static NATIVE_CONTRACTS: LazyLock<Vec<std::sync::Arc<dyn NativeContract>>> = LazyLock::new(|| {
+    use neo_execution::native_contract_provider::NativeContractProvider;
+    crate::provider::StandardNativeProvider::new().all_native_contracts()
+});
+
+/// C# `contract.InitializeAsync(engine, hardfork)` dispatch for a NON-`ActiveIn`
+/// hardfork scheduled at the persisting block. Audit of every C# native
+/// `InitializeAsync` override (ContractManagement.cs:53, GasToken.cs:29,
+/// NeoToken.cs:106, OracleContract.cs:73, Notary.cs:52, PolicyContract.cs:137):
+/// only `PolicyContract` carries branches for hardforks other than its
+/// `ActiveIn` (the HF_Echidna and HF_Faun re-initializations) — every other
+/// initializer is `if (hardfork == ActiveIn)`-gated, making the non-`ActiveIn`
+/// calls no-ops.
+fn initialize_native_for_hardfork(
+    engine: &mut ApplicationEngine,
+    contract: &dyn NativeContract,
+    hardfork: Hardfork,
+) -> CoreResult<()> {
+    if contract.id() == crate::PolicyContract::ID {
+        return crate::policy_contract::initialize_for_hardfork(engine, hardfork);
+    }
+    Ok(())
+}
+
 impl NativeContract for ContractManagement {
     fn id(&self) -> i32 {
         Self::ID
@@ -979,6 +1009,142 @@ impl NativeContract for ContractManagement {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    /// C# `ContractManagement.InitializeAsync(engine, hardfork)` for `hardfork
+    /// == ActiveIn` (ContractManagement.cs:53-61; the contract is
+    /// genesis-active, so this runs while persisting block 0): seed
+    /// `Prefix_MinimumDeploymentFee` (10 GAS) and `Prefix_NextAvailableId` (1).
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let snapshot = engine.snapshot_cache();
+        snapshot.add(
+            StorageKey::new(Self::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE,
+            ))),
+        );
+        snapshot.add(
+            StorageKey::new(Self::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_NEXT_AVAILABLE_ID,
+            ))),
+        );
+        Ok(())
+    }
+
+    /// C# `ContractManagement.OnPersistAsync` (ContractManagement.cs:71-118):
+    /// for every native contract whose `IsInitializeBlock` hits the persisting
+    /// block, write (or refresh) its deployment record and emit
+    /// `Deploy`/`Update`:
+    ///
+    /// - no record yet → add the `Prefix_Contract` record (the C#
+    ///   interoperable `ContractState` encoding) and the big-endian
+    ///   `Prefix_ContractHash` id→hash index entry, then notify `Deploy`;
+    /// - record exists (a hardfork refresh) → bump `UpdateCounter` and swap in
+    ///   the NEF + manifest composed for this block height (id and hash
+    ///   unchanged), then notify `Update`;
+    /// - between the record write and the notification, run
+    ///   `InitializeAsync(engine, hf)` for every hardfork scheduled at this
+    ///   block ([`initialize_native_for_hardfork`]).
+    ///
+    /// Deliberate split from C#: C#'s create-branch also calls
+    /// `InitializeAsync(engine, null)` (genesis seeds) and the `hf ==
+    /// ActiveIn` call performs the activation seeding; the Rust persist
+    /// pipeline (`neo-blockchain/src/native_persist.rs`) already runs the
+    /// equivalent `initialize()` for every native whose activation block is
+    /// this block — immediately before the OnPersist hooks — so re-running it
+    /// here would double-seed. Only the non-`ActiveIn` hardfork
+    /// re-initializations (Policy's Echidna/Faun branches) run here. The
+    /// observable storage outcome is identical; the genesis notification
+    /// ORDER diverges from C# (the initialize-pass `Transfer` mints precede
+    /// every `Deploy` instead of interleaving), which only the pipeline can
+    /// reconcile.
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let settings = engine.protocol_settings().clone();
+        let block_index = engine
+            .persisting_block()
+            .map(|block| block.index())
+            .ok_or_else(|| {
+                CoreError::invalid_operation(
+                    "ContractManagement::on_persist requires a persisting block",
+                )
+            })?;
+
+        for contract in NATIVE_CONTRACTS.iter() {
+            let (hit, hardforks) = contract.is_initialize_block(&settings, block_index);
+            if !hit {
+                continue;
+            }
+            // C# `contract.GetContractState(settings, index)`: the NEF +
+            // manifest composed for this block height.
+            let composed = neo_execution::native_contract::build_native_contract_state(
+                contract.as_ref(),
+                &settings,
+                block_index,
+            );
+            let record_key =
+                StorageKey::new(Self::ID, contract_storage_key(&contract.hash()));
+            let snapshot = engine.snapshot_cache();
+            let existing = snapshot.get(&record_key);
+            let is_create = existing.is_none();
+            match existing {
+                None => {
+                    // Create the contract record + the id → hash index entry.
+                    snapshot.add(
+                        record_key,
+                        StorageItem::from_bytes(serialize_contract_record(&composed)?),
+                    );
+                    snapshot.add(
+                        StorageKey::new(Self::ID, contract_id_storage_key(contract.id())),
+                        StorageItem::from_bytes(contract.hash().to_bytes().to_vec()),
+                    );
+                }
+                Some(item) => {
+                    // C#: UpdateCounter++ and the NEF/manifest swap on the
+                    // stored record (id, hash, and the id index unchanged).
+                    let mut stored =
+                        ContractState::deserialize_contract_record(&item.value_bytes())
+                            .map_err(|e| {
+                                CoreError::deserialization(format!(
+                                    "ContractManagement::on_persist: stored record for {}: {e}",
+                                    contract.name()
+                                ))
+                            })?;
+                    // C# `oldContract.UpdateCounter++` is unchecked ushort math.
+                    stored.update_counter = stored.update_counter.wrapping_add(1);
+                    stored.nef = composed.nef;
+                    stored.manifest = composed.manifest;
+                    snapshot.update(
+                        record_key,
+                        StorageItem::from_bytes(serialize_contract_record(&stored)?),
+                    );
+                }
+            }
+
+            // C# `foreach (var hf in hfs) await contract.InitializeAsync(engine,
+            // hf)`. The `hf == ActiveIn` activation seeding already ran as the
+            // pipeline's `initialize()` pass for this block (see above).
+            for hardfork in &hardforks {
+                if Some(*hardfork) == contract.active_in() {
+                    continue;
+                }
+                initialize_native_for_hardfork(engine, contract.as_ref(), *hardfork)?;
+            }
+
+            engine
+                .send_notification(
+                    Self::script_hash(),
+                    if is_create { "Deploy" } else { "Update" }.to_string(),
+                    vec![StackItem::from_byte_string(contract.hash().to_bytes())],
+                )
+                .map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "ContractManagement::on_persist: notify for {}: {e}",
+                        contract.name()
+                    ))
+                })?;
+        }
+        Ok(())
     }
 
     /// Resolves a deployed contract's state from storage.
@@ -2723,5 +2889,324 @@ mod deploy_update_engine_tests {
             let (state, _) = run_update(&Arc::new(cache), script, self_hash);
             assert_eq!(state, VmState::FAULT, "maxed update counter must fault");
         }
+    }
+}
+
+/// `ContractManagement::initialize` / `ContractManagement::on_persist` against
+/// the C# oracle (ContractManagement.cs:53-118): the genesis counter seeds, the
+/// native deployment records + `Deploy` notifications, the hardfork manifest
+/// refresh (`Update`), and the hardfork-parameterized re-initializations.
+#[cfg(test)]
+mod persist_tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use neo_config::ProtocolSettings;
+    use neo_payloads::{Block, Header};
+    use neo_primitives::TriggerType;
+
+    /// C# `PolicyContract.Prefix_ExecFeeFactor`.
+    const POLICY_PREFIX_EXEC_FEE_FACTOR: u8 = 18;
+    /// C# `PolicyContract.Prefix_BlockedAccount`.
+    const POLICY_PREFIX_BLOCKED_ACCOUNT: u8 = 15;
+    /// C# `PolicyContract.Prefix_AttributeFee`.
+    const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
+    /// C# `Notary.Prefix_MaxNotValidBeforeDelta`.
+    const NOTARY_PREFIX_MAX_NOT_VALID_BEFORE_DELTA: u8 = 10;
+
+    fn settings_with(hardforks: &[(Hardfork, u32)]) -> ProtocolSettings {
+        ProtocolSettings {
+            hardforks: hardforks.iter().copied().collect::<HashMap<_, _>>(),
+            ..ProtocolSettings::default()
+        }
+    }
+
+    fn on_persist_engine(
+        snapshot: &Arc<DataCache>,
+        settings: &ProtocolSettings,
+        index: u32,
+        timestamp: u64,
+    ) -> ApplicationEngine {
+        let mut header = Header::new();
+        header.set_index(index);
+        header.set_timestamp(timestamp);
+        let block = Block::from_parts(header, Vec::new());
+        ApplicationEngine::new(
+            TriggerType::OnPersist,
+            None,
+            Arc::clone(snapshot),
+            Some(block),
+            settings.clone(),
+            0,
+            None,
+        )
+        .expect("engine builds")
+    }
+
+    fn storage_int(snapshot: &DataCache, id: i32, key: Vec<u8>) -> Option<BigInt> {
+        snapshot
+            .get(&StorageKey::new(id, key))
+            .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+    }
+
+    /// C# `ContractManagement.InitializeAsync` (ContractManagement.cs:53-61):
+    /// genesis seeds MinimumDeploymentFee = 10 GAS and NextAvailableId = 1.
+    #[test]
+    fn initialize_seeds_deployment_fee_and_next_id() {
+        let settings = settings_with(&[]);
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = on_persist_engine(&snapshot, &settings, 0, 0);
+        NativeContract::initialize(&ContractManagement::new(), &mut engine).expect("initialize");
+
+        assert_eq!(
+            storage_int(&snapshot, ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            Some(BigInt::from(10_00000000i64))
+        );
+        assert_eq!(
+            storage_int(&snapshot, ContractManagement::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            Some(BigInt::from(1))
+        );
+        // The counter then hands out 1, 2, ... (C# GetNextAvailableId).
+        assert_eq!(get_next_available_id(&snapshot).unwrap(), 1);
+        assert_eq!(get_next_available_id(&snapshot).unwrap(), 2);
+    }
+
+    /// C# `ContractManagement.OnPersistAsync` at genesis: every genesis-active
+    /// native gets a `Prefix_Contract` record (UpdateCounter 0), a
+    /// `Prefix_ContractHash` id index entry, and a `Deploy` notification, in
+    /// the canonical contract order. Natives activating at an unscheduled
+    /// hardfork (Notary/Treasury here) are not deployed (C# IsInitializeBlock
+    /// skips unconfigured hardforks).
+    #[test]
+    fn on_persist_writes_genesis_records_and_deploy_notifications() {
+        let settings = settings_with(&[]);
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = on_persist_engine(&snapshot, &settings, 0, 0);
+        NativeContract::on_persist(&ContractManagement::new(), &mut engine).expect("on_persist");
+
+        let genesis_native_names = [
+            "ContractManagement",
+            "StdLib",
+            "CryptoLib",
+            "LedgerContract",
+            "NeoToken",
+            "GasToken",
+            "PolicyContract",
+            "RoleManagement",
+            "OracleContract",
+        ];
+        // Deploy notifications from the CM hash, in canonical order, carrying
+        // each contract's hash.
+        let notifications = engine.notifications();
+        assert_eq!(notifications.len(), genesis_native_names.len());
+        for (notification, contract) in notifications.iter().zip(NATIVE_CONTRACTS.iter()) {
+            assert_eq!(notification.event_name, "Deploy");
+            assert_eq!(notification.script_hash, ContractManagement::script_hash());
+            assert_eq!(
+                notification.state[0].as_bytes().unwrap(),
+                contract.hash().to_bytes(),
+                "Deploy order follows the canonical contract order"
+            );
+        }
+
+        for (contract, name) in NATIVE_CONTRACTS.iter().zip(genesis_native_names.iter()) {
+            assert_eq!(contract.name(), *name, "canonical registration order");
+            let state = ContractManagement::get_contract_from_snapshot(&snapshot, &contract.hash())
+                .unwrap()
+                .unwrap_or_else(|| panic!("{name} record missing"));
+            assert_eq!(state.id, contract.id());
+            assert_eq!(state.hash, contract.hash());
+            assert_eq!(state.update_counter, 0);
+            assert_eq!(state.manifest.name, *name);
+            // The id -> hash index dereferences back to the same record.
+            let by_id = ContractManagement::get_contract_by_id_from_snapshot(&snapshot, contract.id())
+                .unwrap()
+                .unwrap_or_else(|| panic!("{name} id index missing"));
+            assert_eq!(by_id.hash, contract.hash());
+        }
+
+        // Unscheduled ActiveIn hardforks: no record, no notification.
+        assert!(ContractManagement::get_contract_from_snapshot(&snapshot, &crate::Notary::script_hash())
+            .unwrap()
+            .is_none());
+        assert!(ContractManagement::get_contract_from_snapshot(&snapshot, &crate::Treasury::script_hash())
+            .unwrap()
+            .is_none());
+
+        // A later non-hardfork block is a complete no-op.
+        let mut engine = on_persist_engine(&snapshot, &settings, 1, 1000);
+        NativeContract::on_persist(&ContractManagement::new(), &mut engine).expect("block 1");
+        assert!(engine.notifications().is_empty());
+    }
+
+    /// The HF_Echidna activation block (ContractManagement.cs:93-115): natives
+    /// whose used hardforks include Echidna get their stored record refreshed
+    /// (UpdateCounter++ + the height-composed NEF/manifest) and an `Update`
+    /// notification; Notary (ActiveIn = Echidna) is deployed fresh; Policy's
+    /// Echidna re-initialization (PolicyContract.cs:144-152) seeds the
+    /// NotaryAssisted attribute fee and migrates the block-time settings.
+    #[test]
+    fn echidna_block_refreshes_manifests_and_runs_policy_reinitialization() {
+        let settings = settings_with(&[(Hardfork::HfEchidna, 100)]);
+        let snapshot = Arc::new(DataCache::new(false));
+        // Genesis deployment pass.
+        let mut engine = on_persist_engine(&snapshot, &settings, 0, 0);
+        NativeContract::on_persist(&ContractManagement::new(), &mut engine).expect("genesis");
+
+        // Pre-Echidna NEO manifest: NEP-17 only, no onNEP17Payment.
+        let neo_hash = crate::NeoToken::script_hash();
+        let pre = ContractManagement::get_contract_from_snapshot(&snapshot, &neo_hash)
+            .unwrap()
+            .unwrap();
+        assert_eq!(pre.manifest.supported_standards, ["NEP-17"]);
+        assert!(!abi_has_method(&pre.manifest, "onNEP17Payment", 3));
+
+        // The Echidna activation block.
+        let mut engine = on_persist_engine(&snapshot, &settings, 100, 100_000);
+        NativeContract::on_persist(&ContractManagement::new(), &mut engine).expect("echidna block");
+
+        // NEO: refreshed in place — UpdateCounter 1, NEP-27 joins, the Echidna
+        // ABI method appears, id/hash unchanged.
+        let post = ContractManagement::get_contract_from_snapshot(&snapshot, &neo_hash)
+            .unwrap()
+            .unwrap();
+        assert_eq!(post.update_counter, 1);
+        assert_eq!(post.id, crate::NeoToken::ID);
+        assert_eq!(post.manifest.supported_standards, ["NEP-17", "NEP-27"]);
+        assert!(abi_has_method(&post.manifest, "onNEP17Payment", 3));
+
+        // Notary: deployed fresh at its activation block.
+        let notary = ContractManagement::get_contract_from_snapshot(&snapshot, &crate::Notary::script_hash())
+            .unwrap()
+            .expect("Notary deploys at Echidna");
+        assert_eq!(notary.update_counter, 0);
+
+        // GAS carries no Echidna-gated metadata: untouched, no notification.
+        let gas = ContractManagement::get_contract_from_snapshot(&snapshot, &crate::GasToken::script_hash())
+            .unwrap()
+            .unwrap();
+        assert_eq!(gas.update_counter, 0);
+        let gas_hash_bytes = crate::GasToken::script_hash().to_bytes();
+        assert!(engine
+            .notifications()
+            .iter()
+            .all(|n| n.state[0].as_bytes().unwrap() != gas_hash_bytes));
+
+        // Notification kinds: Update for refreshed natives, Deploy for Notary.
+        let kinds: HashMap<Vec<u8>, String> = engine
+            .notifications()
+            .iter()
+            .map(|n| (n.state[0].as_bytes().unwrap().to_vec(), n.event_name.clone()))
+            .collect();
+        assert_eq!(kinds.get(&neo_hash.to_bytes().to_vec()), Some(&"Update".to_string()));
+        assert_eq!(
+            kinds.get(&crate::Notary::script_hash().to_bytes().to_vec()),
+            Some(&"Deploy".to_string())
+        );
+
+        // Policy Echidna re-initialization (PolicyContract.cs:144-152).
+        let policy_id = crate::PolicyContract::ID;
+        assert_eq!(
+            storage_int(
+                &snapshot,
+                policy_id,
+                vec![
+                    POLICY_PREFIX_ATTRIBUTE_FEE,
+                    neo_primitives::TransactionAttributeType::NotaryAssisted.to_byte()
+                ]
+            ),
+            Some(BigInt::from(1000_0000i64)),
+            "DefaultNotaryAssistedAttributeFee"
+        );
+        assert_eq!(
+            storage_int(&snapshot, policy_id, vec![21]),
+            Some(BigInt::from(settings.milliseconds_per_block)),
+            "MillisecondsPerBlock migrates from ProtocolSettings"
+        );
+        assert_eq!(
+            storage_int(&snapshot, policy_id, vec![22]),
+            Some(BigInt::from(settings.max_valid_until_block_increment)),
+            "MaxValidUntilBlockIncrement migrates from ProtocolSettings"
+        );
+        assert_eq!(
+            storage_int(&snapshot, policy_id, vec![23]),
+            Some(BigInt::from(settings.max_traceable_blocks)),
+            "MaxTraceableBlocks migrates from ProtocolSettings"
+        );
+
+        // Notary's own ActiveIn seeding is the persist pipeline's initialize()
+        // job, deliberately not run here (it would double-seed): C# would have
+        // written MaxNotValidBeforeDelta inside this OnPersist via
+        // InitializeAsync(HF_Echidna).
+        let notary_initialize_seed = storage_int(
+            &snapshot,
+            crate::Notary::ID,
+            vec![NOTARY_PREFIX_MAX_NOT_VALID_BEFORE_DELTA],
+        );
+        assert_eq!(notary_initialize_seed, None);
+    }
+
+    /// The HF_Faun activation block: Policy's Faun re-initialization
+    /// (PolicyContract.cs:154-168) converts the stored exec-fee factor to
+    /// pico-GAS units and stamps blocked accounts with the persisting block's
+    /// timestamp; Treasury (ActiveIn = Faun) deploys.
+    #[test]
+    fn faun_block_reinitializes_policy_and_deploys_treasury() {
+        let settings = settings_with(&[(Hardfork::HfFaun, 50)]);
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = on_persist_engine(&snapshot, &settings, 0, 0);
+        // Genesis: Policy's ActiveIn seeds (the pipeline's initialize pass) +
+        // the deployment records.
+        NativeContract::initialize(&crate::PolicyContract::new(), &mut engine).expect("policy init");
+        NativeContract::on_persist(&ContractManagement::new(), &mut engine).expect("genesis");
+        // A pre-Faun blocked account (empty-bytes record).
+        let blocked = UInt160::from_bytes(&[0x77; 20]).unwrap();
+        let mut blocked_key = vec![POLICY_PREFIX_BLOCKED_ACCOUNT];
+        blocked_key.extend_from_slice(&blocked.to_bytes());
+        snapshot.add(
+            StorageKey::new(crate::PolicyContract::ID, blocked_key.clone()),
+            StorageItem::from_bytes(Vec::new()),
+        );
+
+        let timestamp: u64 = 1_700_000_000_123;
+        let mut engine = on_persist_engine(&snapshot, &settings, 50, timestamp);
+        NativeContract::on_persist(&ContractManagement::new(), &mut engine).expect("faun block");
+
+        // ExecFeeFactor: 30 datoshi -> 300000 pico-GAS units.
+        assert_eq!(
+            storage_int(&snapshot, crate::PolicyContract::ID, vec![POLICY_PREFIX_EXEC_FEE_FACTOR]),
+            Some(BigInt::from(30i64 * 10_000))
+        );
+        // The blocked account now carries the persisting block's timestamp.
+        assert_eq!(
+            storage_int(&snapshot, crate::PolicyContract::ID, blocked_key),
+            Some(BigInt::from(timestamp))
+        );
+        // Treasury deploys at Faun.
+        let treasury = ContractManagement::get_contract_from_snapshot(&snapshot, &crate::Treasury::script_hash())
+            .unwrap()
+            .expect("Treasury deploys at Faun");
+        assert_eq!(treasury.update_counter, 0);
+        let kinds: HashMap<Vec<u8>, String> = engine
+            .notifications()
+            .iter()
+            .map(|n| (n.state[0].as_bytes().unwrap().to_vec(), n.event_name.clone()))
+            .collect();
+        assert_eq!(
+            kinds.get(&crate::Treasury::script_hash().to_bytes().to_vec()),
+            Some(&"Deploy".to_string())
+        );
+    }
+
+    /// C# PolicyContract.cs:155-157: the Faun exec-fee-factor conversion
+    /// requires Policy to have been initialized ("Policy was not initialized").
+    #[test]
+    fn faun_reinitialization_faults_when_policy_was_never_initialized() {
+        let settings = settings_with(&[(Hardfork::HfFaun, 50)]);
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = on_persist_engine(&snapshot, &settings, 50, 1);
+        let result = crate::policy_contract::initialize_for_hardfork(&mut engine, Hardfork::HfFaun);
+        assert!(result.is_err(), "missing exec-fee factor must fault");
     }
 }

@@ -755,11 +755,25 @@ mod tests {
         let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
         persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
 
-        // tx1 faults (ABORT), tx2 halts (PUSH1).
-        let signer = neo_payloads::Signer::new(
-            neo_primitives::UInt160::from_bytes(&[0x33; 20]).unwrap(),
-            neo_primitives::WitnessScope::NONE,
+        // Fund the fee-paying signer first: C# GasToken.OnPersist burns
+        // each transaction's system+network fee from its sender, so a
+        // block whose sender holds no GAS faults the OnPersist engine.
+        let signer_account = neo_primitives::UInt160::from_bytes(&[0x33; 20]).unwrap();
+        let mut gas_key = vec![NEP17_PREFIX_ACCOUNT];
+        gas_key.extend_from_slice(&signer_account.to_bytes());
+        let account_state = StackItem::from_struct(vec![StackItem::from_int(BigInt::from(
+            10_0000_0000i64,
+        ))]);
+        let account_bytes =
+            BinarySerializer::serialize(&account_state, &ExecutionEngineLimits::default())
+                .unwrap();
+        snapshot.add(
+            StorageKey::new(neo_native_contracts::GasToken::ID, gas_key),
+            neo_data_cache::StorageItem::from_bytes(account_bytes),
         );
+
+        // tx1 faults (ABORT), tx2 halts (PUSH1).
+        let signer = neo_payloads::Signer::new(signer_account, neo_primitives::WitnessScope::NONE);
         let mut tx1 = neo_payloads::Transaction::new();
         tx1.set_nonce(1);
         tx1.set_script(vec![neo_vm_rs::OpCode::ABORT.byte()]);

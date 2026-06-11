@@ -10,8 +10,9 @@ use std::sync::LazyLock;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
-use neo_primitives::{CallFlags, ContractParameterType, UInt160};
+use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeEvent, NativeMethod};
+use neo_payloads::TransactionAttribute;
+use neo_primitives::{CallFlags, ContractParameterType, TransactionAttributeType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
@@ -449,6 +450,99 @@ impl NativeContract for GasToken {
         vec!["NEP-17".to_string()]
     }
 
+    /// C# `GasToken.InitializeAsync(engine, hardfork)` for `hardfork == ActiveIn`
+    /// (GasToken.cs:29-37; GAS is genesis-active, so this runs while persisting
+    /// block 0): mint `ProtocolSettings.InitialGasDistribution` GAS to the BFT
+    /// address of the standby validators, with `callOnPayment: false`.
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let standby_validators = engine.protocol_settings().standby_validators();
+        let initial = BigInt::from(engine.protocol_settings().initial_gas_distribution);
+        let account = crate::neo_token::bft_address(&standby_validators)?;
+        gas_mint(engine, &account, &initial, false)
+    }
+
+    /// C# `GasToken.OnPersistAsync` (GasToken.cs:39-58): for every transaction
+    /// in the persisting block, burn the sender's `SystemFee + NetworkFee` and
+    /// accumulate the network fee into the block total; a `NotaryAssisted`
+    /// attribute redirects `(NKeys + 1) * AttributeFee(NotaryAssisted)` of that
+    /// total to the designated notary nodes (minted by the Notary contract in
+    /// its own `PostPersist`), so it is subtracted here. Finally mint the
+    /// remaining total to the primary validator — the signature-contract
+    /// address of `NEO.GetNextBlockValidators(...)[block.PrimaryIndex]` — with
+    /// `callOnPayment: false`.
+    ///
+    /// The NotaryAssisted branch is not hardfork-gated in C# (the attribute is
+    /// only valid in transactions once HF_Echidna verification admits it, so
+    /// the gate is implicit), and `GetAttributeFeeV1` is the plain
+    /// `Prefix_AttributeFee` storage read with the NotaryAssisted type allowed
+    /// (PolicyContract.cs:278-301).
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        // Collect the per-transaction data under the shared block borrow; the
+        // burns below need `&mut engine`.
+        let (primary_index, tx_data) = {
+            let block = engine.persisting_block().ok_or_else(|| {
+                CoreError::invalid_operation("GasToken::on_persist requires a persisting block")
+            })?;
+            let tx_data: Vec<(Option<UInt160>, i64, i64, Option<u8>)> = block
+                .transactions
+                .iter()
+                .map(|tx| {
+                    // C# `tx.GetAttribute<NotaryAssisted>()`: the first (and, by
+                    // AllowMultiple=false, only) NotaryAssisted attribute.
+                    let nkeys = tx.attributes().iter().find_map(|attr| match attr {
+                        TransactionAttribute::NotaryAssisted(na) => Some(na.nkeys),
+                        _ => None,
+                    });
+                    (tx.sender(), tx.system_fee(), tx.network_fee(), nkeys)
+                })
+                .collect();
+            (usize::from(block.primary_index()), tx_data)
+        };
+
+        let mut total_network_fee: i64 = 0;
+        for (sender, system_fee, network_fee, notary_nkeys) in tx_data {
+            // C# `tx.Sender` is `Signers[0].Account`; a signerless transaction
+            // cannot appear in a valid block (C# would throw on the indexer).
+            let sender = sender.ok_or_else(|| {
+                CoreError::invalid_operation("GasToken::on_persist: transaction has no sender")
+            })?;
+            let fee = system_fee.checked_add(network_fee).ok_or_else(|| {
+                CoreError::invalid_operation("GasToken::on_persist: fee overflow")
+            })?;
+            gas_burn(engine, &sender, &BigInt::from(fee))?;
+            total_network_fee = total_network_fee.checked_add(network_fee).ok_or_else(|| {
+                CoreError::invalid_operation("GasToken::on_persist: network fee overflow")
+            })?;
+            if let Some(nkeys) = notary_nkeys {
+                // C# `(notaryAssisted.NKeys + 1) * Policy.GetAttributeFeeV1(
+                // snapshot, (byte)notaryAssisted.Type)`.
+                let per_key = crate::policy_contract::attribute_fee(
+                    &engine.snapshot_cache(),
+                    TransactionAttributeType::NotaryAssisted.to_byte(),
+                    true,
+                )?;
+                total_network_fee -= (i64::from(nkeys) + 1) * per_key;
+            }
+        }
+
+        // C# `NEO.GetNextBlockValidators(snapshot, settings.ValidatorsCount)`,
+        // indexed by the persisting block's PrimaryIndex; an index outside the
+        // validator set faults the block (C# IndexOutOfRangeException).
+        let validators_count =
+            usize::try_from(engine.protocol_settings().validators_count).unwrap_or(0);
+        let snapshot = engine.snapshot_cache();
+        let validators = crate::neo_token::next_block_validators(&snapshot, validators_count)?;
+        let primary_key = validators.get(primary_index).ok_or_else(|| {
+            CoreError::invalid_operation(format!(
+                "GasToken::on_persist: primary index {primary_index} outside the validator set"
+            ))
+        })?;
+        let primary = UInt160::from_script(&Contract::create_signature_redeem_script(
+            primary_key.clone(),
+        ));
+        gas_mint(engine, &primary, &BigInt::from(total_network_fee), false)
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -696,5 +790,318 @@ mod tests {
             BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
             BigInt::from(0)
         );
+    }
+}
+
+/// `GasToken::initialize` and `GasToken::on_persist` against the C# oracle
+/// (GasToken.cs:29-58): the genesis InitialGasDistribution mint, the
+/// per-transaction fee burns, the network-fee mint to the primary validator,
+/// and the NotaryAssisted attribute deduction.
+#[cfg(test)]
+mod persist_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    use neo_crypto::ECPoint;
+    use neo_payloads::{Block, Header, NotaryAssisted, Signer, Transaction};
+    use neo_primitives::{TriggerType, WitnessScope};
+
+    /// C# `NeoToken.Prefix_Committee`.
+    const NEO_PREFIX_COMMITTEE: u8 = 14;
+    /// C# `PolicyContract.Prefix_AttributeFee` (PolicyContract.cs:95).
+    const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
+
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// Three valid secp256r1 public keys (Neo N3 standby validators).
+    fn sample_committee() -> Vec<ECPoint> {
+        [
+            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
+            "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093",
+            "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
+        ]
+        .iter()
+        .map(|h| ECPoint::from_bytes(&hex(h)).unwrap())
+        .collect()
+    }
+
+    /// Stores NeoToken's committee cache (Array of `Struct[pubkey, votes]`)
+    /// under `Prefix_Committee` so `next_block_validators` can resolve the
+    /// validator set, like a persisted chain would have.
+    fn seed_committee(cache: &DataCache, points: &[ECPoint]) {
+        let array = StackItem::from_array(
+            points
+                .iter()
+                .map(|p| {
+                    StackItem::from_struct(vec![
+                        StackItem::from_byte_string(p.to_bytes()),
+                        StackItem::from_int(0),
+                    ])
+                })
+                .collect::<Vec<_>>(),
+        );
+        let bytes =
+            BinarySerializer::serialize(&array, &ExecutionEngineLimits::default()).unwrap();
+        cache.add(
+            StorageKey::new(crate::NeoToken::ID, vec![NEO_PREFIX_COMMITTEE]),
+            StorageItem::from_bytes(bytes),
+        );
+    }
+
+    /// The signature-contract address of `points[primary]` after the C#
+    /// `GetNextBlockValidators` ordering (take ValidatorsCount, sort ascending).
+    fn primary_address(points: &[ECPoint], validators_count: usize, primary: usize) -> UInt160 {
+        let mut sorted: Vec<ECPoint> = points.iter().take(validators_count).cloned().collect();
+        sorted.sort();
+        UInt160::from_script(&Contract::create_signature_redeem_script(
+            sorted[primary].clone(),
+        ))
+    }
+
+    fn fee_tx(sender: UInt160, system_fee: i64, network_fee: i64) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![Signer::new(sender, WitnessScope::NONE)]);
+        tx.set_system_fee(system_fee);
+        tx.set_network_fee(network_fee);
+        tx
+    }
+
+    fn on_persist_engine(snapshot: Arc<DataCache>, block: Block) -> ApplicationEngine {
+        // C# runs the native OnPersist script with gas limit 0.
+        ApplicationEngine::new(
+            TriggerType::OnPersist,
+            None,
+            snapshot,
+            Some(block),
+            ProtocolSettings::default(),
+            0,
+            None,
+        )
+        .expect("engine builds")
+    }
+
+    fn seed_gas(cache: &DataCache, account: &UInt160, balance: i64) {
+        write_gas_account(cache, account, &BigInt::from(balance)).unwrap();
+        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply = cache
+            .get(&supply_key)
+            .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+            .unwrap_or_else(BigInt::zero)
+            + BigInt::from(balance);
+        cache.update(
+            supply_key,
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
+        );
+    }
+
+    fn balance(cache: &DataCache, account: &UInt160) -> BigInt {
+        crate::read_nep17_balance(cache, GasToken::ID, account).unwrap()
+    }
+
+    /// C# `GasToken.InitializeAsync` (GasToken.cs:29-37): the genesis pass
+    /// mints `InitialGasDistribution` (52M GAS) to the BFT address of the
+    /// standby validators and emits `Transfer(null, bft, amount)`.
+    #[test]
+    fn initialize_mints_initial_gas_distribution_to_bft_address() {
+        let settings = ProtocolSettings::default();
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new(
+            TriggerType::OnPersist,
+            None,
+            Arc::clone(&snapshot),
+            None,
+            settings.clone(),
+            0,
+            None,
+        )
+        .expect("engine builds");
+
+        NativeContract::initialize(&GasToken::new(), &mut engine).expect("initialize");
+
+        let bft = crate::neo_token::bft_address(&settings.standby_validators()).unwrap();
+        let expected = BigInt::from(settings.initial_gas_distribution);
+        assert_eq!(balance(&snapshot, &bft), expected, "52M GAS to the BFT address");
+        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        assert_eq!(
+            BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
+            expected,
+            "total supply equals the initial distribution"
+        );
+        assert_eq!(engine.notifications().len(), 1);
+        let transfer = &engine.notifications()[0];
+        assert_eq!(transfer.event_name, "Transfer");
+        assert_eq!(transfer.script_hash, GasToken::script_hash());
+        assert!(matches!(transfer.state[0], StackItem::Null), "from = null (mint)");
+        assert_eq!(transfer.state[1].as_bytes().unwrap(), bft.to_bytes());
+        assert_eq!(transfer.state[2].as_int().unwrap(), expected);
+    }
+
+    /// C# `GasToken.OnPersistAsync` (GasToken.cs:39-58): each sender is burned
+    /// `SystemFee + NetworkFee`; the summed network fees are minted to the
+    /// primary validator's signature address (validators sorted ascending,
+    /// indexed by the block's PrimaryIndex).
+    #[test]
+    fn on_persist_burns_fees_and_mints_network_fees_to_primary() {
+        let settings = ProtocolSettings::default();
+        let validators_count = usize::try_from(settings.validators_count).unwrap();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        let sender_a = UInt160::from_bytes(&[0xA1; 20]).unwrap();
+        let sender_b = UInt160::from_bytes(&[0xB2; 20]).unwrap();
+        seed_gas(&cache, &sender_a, 10_0000_0000);
+        seed_gas(&cache, &sender_b, 5_0000_0000);
+        let snapshot = Arc::new(cache);
+
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_primary_index(1);
+        let block = Block::from_parts(
+            header,
+            vec![
+                fee_tx(sender_a, 3_0000_0000, 1_0000_0000),
+                fee_tx(sender_b, 2_0000_0000, 5000_0000),
+            ],
+        );
+        let mut engine = on_persist_engine(Arc::clone(&snapshot), block);
+        NativeContract::on_persist(&GasToken::new(), &mut engine).expect("on_persist");
+
+        // Burns: sender_a 4 GAS of 10, sender_b 2.5 GAS of 5.
+        assert_eq!(balance(&snapshot, &sender_a), BigInt::from(6_0000_0000i64));
+        assert_eq!(balance(&snapshot, &sender_b), BigInt::from(2_5000_0000i64));
+        // Mint: 1.5 GAS total network fees to the primary validator
+        // (sorted validator index 1).
+        let primary = primary_address(&committee, validators_count, 1);
+        assert_eq!(balance(&snapshot, &primary), BigInt::from(1_5000_0000i64));
+        // Supply: 15 GAS seeded - 6.5 burned + 1.5 minted = 10.
+        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        assert_eq!(
+            BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
+            BigInt::from(10_0000_0000i64)
+        );
+        // Notifications: Transfer(a, null, 4), Transfer(b, null, 2.5),
+        // Transfer(null, primary, 1.5) — burn, burn, mint, in C# order.
+        let events: Vec<(bool, bool, BigInt)> = engine
+            .notifications()
+            .iter()
+            .map(|n| {
+                (
+                    matches!(n.state[0], StackItem::Null),
+                    matches!(n.state[1], StackItem::Null),
+                    n.state[2].as_int().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            events,
+            vec![
+                (false, true, BigInt::from(4_0000_0000i64)),
+                (false, true, BigInt::from(2_5000_0000i64)),
+                (true, false, BigInt::from(1_5000_0000i64)),
+            ]
+        );
+    }
+
+    /// C# `Burn` throws on an under-funded sender (`Balance < amount` ->
+    /// InvalidOperationException), faulting the whole block.
+    #[test]
+    fn on_persist_faults_when_a_sender_cannot_pay_its_fees() {
+        let cache = DataCache::new(false);
+        seed_committee(&cache, &sample_committee());
+        let sender = UInt160::from_bytes(&[0xC3; 20]).unwrap();
+        seed_gas(&cache, &sender, 100);
+        let snapshot = Arc::new(cache);
+
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_primary_index(0);
+        let block = Block::from_parts(header, vec![fee_tx(sender, 200, 0)]);
+        let mut engine = on_persist_engine(snapshot, block);
+        assert!(NativeContract::on_persist(&GasToken::new(), &mut engine).is_err());
+    }
+
+    /// C# GasToken.cs:47-53: a NotaryAssisted transaction deducts
+    /// `(NKeys + 1) * GetAttributeFeeV1(NotaryAssisted)` from the primary's
+    /// mint (the deducted share is minted to notary nodes by the Notary
+    /// contract instead).
+    #[test]
+    fn on_persist_deducts_notary_assisted_share_from_the_primary_mint() {
+        let settings = ProtocolSettings::default();
+        let validators_count = usize::try_from(settings.validators_count).unwrap();
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        // The Echidna-default NotaryAssisted attribute fee: 0.1 GAS per key.
+        cache.add(
+            StorageKey::new(
+                crate::PolicyContract::ID,
+                vec![
+                    POLICY_PREFIX_ATTRIBUTE_FEE,
+                    neo_primitives::TransactionAttributeType::NotaryAssisted.to_byte(),
+                ],
+            ),
+            StorageItem::from_bytes(BigInt::from(1000_0000i64).to_signed_bytes_le()),
+        );
+        let sender = UInt160::from_bytes(&[0xD4; 20]).unwrap();
+        seed_gas(&cache, &sender, 10_0000_0000);
+        let snapshot = Arc::new(cache);
+
+        let mut tx = fee_tx(sender, 1_0000_0000, 2_0000_0000);
+        tx.set_attributes(vec![TransactionAttribute::NotaryAssisted(
+            NotaryAssisted::new(2),
+        )]);
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_primary_index(0);
+        let block = Block::from_parts(header, vec![tx]);
+        let mut engine = on_persist_engine(Arc::clone(&snapshot), block);
+        NativeContract::on_persist(&GasToken::new(), &mut engine).expect("on_persist");
+
+        // Burn untouched by the attribute: 3 GAS off the sender.
+        assert_eq!(balance(&snapshot, &sender), BigInt::from(7_0000_0000i64));
+        // Mint: 2 GAS network fee - (2 + 1) * 0.1 GAS = 1.7 GAS.
+        let primary = primary_address(&committee, validators_count, 0);
+        assert_eq!(balance(&snapshot, &primary), BigInt::from(1_7000_0000i64));
+    }
+
+    /// An empty block burns nothing and mints nothing (C# `Mint` returns early
+    /// on a zero amount), but still resolves the validator set.
+    #[test]
+    fn on_persist_is_a_value_noop_for_an_empty_block() {
+        let cache = DataCache::new(false);
+        let committee = sample_committee();
+        seed_committee(&cache, &committee);
+        let snapshot = Arc::new(cache);
+
+        let mut header = Header::new();
+        header.set_index(2);
+        header.set_primary_index(0);
+        let block = Block::from_parts(header, Vec::new());
+        let mut engine = on_persist_engine(Arc::clone(&snapshot), block);
+        NativeContract::on_persist(&GasToken::new(), &mut engine).expect("on_persist");
+        assert!(engine.notifications().is_empty(), "no Transfer for a zero mint");
+        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        assert!(snapshot.get(&supply_key).is_none(), "supply untouched");
+    }
+
+    /// C# indexes `validators[block.PrimaryIndex]`: an index outside the
+    /// validator set is an IndexOutOfRangeException (block fault).
+    #[test]
+    fn on_persist_faults_on_a_primary_index_outside_the_validator_set() {
+        let cache = DataCache::new(false);
+        seed_committee(&cache, &sample_committee());
+        let snapshot = Arc::new(cache);
+
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_primary_index(200);
+        let block = Block::from_parts(header, Vec::new());
+        let mut engine = on_persist_engine(snapshot, block);
+        assert!(NativeContract::on_persist(&GasToken::new(), &mut engine).is_err());
     }
 }

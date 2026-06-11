@@ -13,8 +13,8 @@ use std::sync::LazyLock;
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
-use neo_payloads::{get_sign_data, Transaction};
+use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeMethod};
+use neo_payloads::{get_sign_data, Transaction, TransactionAttribute};
 use neo_primitives::{
     CallFlags, ContractParameterType, TransactionAttributeType, UInt160, WitnessScope,
 };
@@ -393,6 +393,133 @@ impl NativeContract for Notary {
 
     fn methods(&self) -> &[NativeMethod] {
         &NOTARY_METHODS
+    }
+
+    /// C# `Notary.InitializeAsync(engine, hardfork)` for `hardfork == ActiveIn`
+    /// (Notary.cs:52-59; ActiveIn is HF_Echidna, so this runs while persisting
+    /// the Echidna activation block): seed `Prefix_MaxNotValidBeforeDelta` with
+    /// `DefaultMaxNotValidBeforeDelta` (140).
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        engine.snapshot_cache().add(
+            StorageKey::new(Self::ID, vec![PREFIX_MAX_NOT_VALID_BEFORE_DELTA]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_MAX_NOT_VALID_BEFORE_DELTA,
+            ))),
+        );
+        Ok(())
+    }
+
+    /// C# `Notary.OnPersistAsync` (Notary.cs:61-90), run by the persist
+    /// pipeline only while Notary is active (`ActiveIn = HF_Echidna`, gated
+    /// by `is_active` in the dispatch loop).
+    ///
+    /// For every transaction in the persisting block carrying a
+    /// `NotaryAssisted` attribute it (a) accumulates `nKeys + 1` into the
+    /// fee count and (b) — when the transaction's sender is the Notary
+    /// account itself — debits the payer's (`Signers[1]`) deposit by
+    /// `SystemFee + NetworkFee`, removing the deposit at zero. After the
+    /// loop it mints the per-notary reward `nFees *
+    /// Policy.GetAttributeFeeV1(NotaryAssisted) / notaries.Length` (C#
+    /// `CalculateNotaryReward`) to each designated P2PNotary node's
+    /// signature-redeem-script hash. This is the reminting counterpart of
+    /// the NotaryAssisted share `GasToken::on_persist` withholds from the
+    /// primary-validator network-fee mint, so per-block GAS supply is
+    /// conserved (matching C#, including the dropped integer-division
+    /// remainder).
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let notary_hash = Self::script_hash();
+
+        // Pass 1: under the persisting-block borrow, accumulate the fee
+        // count and the Notary-paid deposit debits.
+        let (n_fees, debits) = {
+            let block = engine.persisting_block().ok_or_else(|| {
+                CoreError::invalid_operation("Notary::on_persist requires a persisting block")
+            })?;
+            let mut n_fees: i64 = 0;
+            let mut debits: Vec<(UInt160, i64)> = Vec::new();
+            for tx in &block.transactions {
+                // C# `tx.GetAttribute<NotaryAssisted>()` (AllowMultiple=false).
+                let Some(nkeys) = tx.attributes().iter().find_map(|attr| match attr {
+                    TransactionAttribute::NotaryAssisted(na) => Some(na.nkeys),
+                    _ => None,
+                }) else {
+                    continue;
+                };
+                n_fees += i64::from(nkeys) + 1;
+                // C# `if (tx.Sender == Hash)`: the Notary pays the fees, so
+                // debit the payer (`Signers[1]`) deposit.
+                if tx.sender() == Some(notary_hash) {
+                    let payer = tx.signers().get(1).ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "Notary::on_persist: notary-paid transaction has fewer than two signers",
+                        )
+                    })?;
+                    // C# `tx.SystemFee + tx.NetworkFee` (unchecked long).
+                    let fees = tx.system_fee().wrapping_add(tx.network_fee());
+                    debits.push((payer.account, fees));
+                }
+            }
+            (n_fees, debits)
+        };
+
+        // C# `if (nFees == 0) return;` — no NotaryAssisted transactions.
+        if n_fees == 0 {
+            return Ok(());
+        }
+
+        // Apply the deposit debits staged above (C# `GetAndChange(
+        // Prefix_Deposit, payer)` inside the transaction loop): subtract the
+        // fees, removing the deposit when it reaches zero.
+        {
+            let snapshot = engine.snapshot_cache();
+            for (payer, fees) in &debits {
+                if let Some((amount, till)) = read_deposit(&snapshot, payer)? {
+                    let new_amount = amount - BigInt::from(*fees);
+                    if new_amount.sign() == num_bigint::Sign::NoSign {
+                        delete_deposit(&snapshot, payer);
+                    } else {
+                        write_deposit(&snapshot, payer, &new_amount, till)?;
+                    }
+                }
+            }
+        }
+
+        // C# `GetNotaryNodes`: the P2PNotary designation effective at
+        // `Ledger.CurrentIndex + 1`.
+        let notaries = {
+            let snapshot = engine.snapshot_cache();
+            let current = LedgerContract::new().current_index(&snapshot)?;
+            RoleManagement::new().get_designated_by_role_at(
+                &snapshot,
+                Role::P2PNotary,
+                current.wrapping_add(1),
+            )?
+        };
+        // C# divides the reward by `notaries.Length`; an empty designation
+        // with NotaryAssisted fees would be a DivideByZeroException faulting
+        // the block (unreachable for a valid block — NotaryAssisted
+        // verification requires designated notaries).
+        if notaries.is_empty() {
+            return Err(CoreError::invalid_operation(
+                "Notary::on_persist: NotaryAssisted fees with no designated P2PNotary nodes",
+            ));
+        }
+
+        // C# `CalculateNotaryReward`: `nFees * GetAttributeFeeV1(
+        // NotaryAssisted) / notaries.Length`, minted to each notary with
+        // `callOnPayment = false`.
+        let per_key = crate::policy_contract::attribute_fee(
+            &engine.snapshot_cache(),
+            TransactionAttributeType::NotaryAssisted.to_byte(),
+            true,
+        )?;
+        let single_reward =
+            BigInt::from(n_fees.wrapping_mul(per_key) / notaries.len() as i64);
+        for notary in notaries {
+            let address = UInt160::from_script(&Contract::create_signature_redeem_script(notary));
+            crate::gas_token::gas_mint(engine, &address, &single_reward, false)?;
+        }
+        Ok(())
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -946,7 +1073,7 @@ mod verify_dispatch_tests {
     use neo_execution::native_contract::build_native_contract_state;
     use neo_execution::ApplicationEngine;
     use neo_io::{BinaryWriter, Serializable};
-    use neo_payloads::{NotaryAssisted, Signer, TransactionAttribute, Witness};
+    use neo_payloads::{Block, Header, NotaryAssisted, Signer, TransactionAttribute, Witness};
     use neo_primitives::{TriggerType, Verifiable};
     use neo_script_builder::ScriptBuilder;
     use neo_vm_rs::{OpCode, VmState};
@@ -1251,5 +1378,104 @@ mod verify_dispatch_tests {
         assert_eq!(before.manifest.supported_standards, ["NEP-27"]);
         let after = build_native_contract_state(&Notary, &settings, 10);
         assert_eq!(after.manifest.supported_standards, ["NEP-27", "NEP-30"]);
+    }
+
+    /// Reads the GAS balance of `account` out of the NEP-17 account record
+    /// (`Struct[Integer(balance), ...]`), returning 0 when absent.
+    fn gas_balance(snapshot: &DataCache, account: &UInt160) -> BigInt {
+        let mut key = vec![crate::NEP17_PREFIX_ACCOUNT];
+        key.extend_from_slice(&account.to_bytes());
+        match snapshot.get(&StorageKey::new(crate::GasToken::ID, key)) {
+            Some(item) => {
+                let st = BinarySerializer::deserialize(
+                    &item.value_bytes(),
+                    &ExecutionEngineLimits::default(),
+                    None,
+                )
+                .expect("decode NEP-17 account record");
+                match st {
+                    StackItem::Struct(fields) => {
+                        fields.items()[0].as_int().expect("balance integer")
+                    }
+                    _ => BigInt::from(0),
+                }
+            }
+            None => BigInt::from(0),
+        }
+    }
+
+    /// C# `Notary.OnPersistAsync` (Notary.cs:61-90): a NotaryAssisted
+    /// transaction paid by the Notary debits the payer's deposit by
+    /// `SystemFee + NetworkFee`, and the per-notary reward `(nKeys + 1) *
+    /// GetAttributeFeeV1(NotaryAssisted) / notaries.Length` is minted to each
+    /// designated P2PNotary node. This is the reminting counterpart of the
+    /// NotaryAssisted share `GasToken::on_persist` withholds from the primary
+    /// network-fee mint.
+    #[test]
+    fn on_persist_debits_payer_deposit_and_mints_notary_reward() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let pubkey = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        // Deploys Notary + designates one P2PNotary node effective from 0.
+        let snapshot = seeded_snapshot(&[pubkey]);
+
+        // Seed the Policy NotaryAssisted attribute fee (HF_Echidna default,
+        // 0.1 GAS), the value `GetAttributeFeeV1` reads.
+        const FEE: i64 = 1000_0000;
+        snapshot.add(
+            StorageKey::new(
+                crate::PolicyContract::ID,
+                vec![20u8, TransactionAttributeType::NotaryAssisted.to_byte()],
+            ),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(FEE))),
+        );
+
+        // Seed the payer's deposit (amount D, till T).
+        let payer = UInt160::from_bytes(&[0x07; 20]).unwrap();
+        let deposit_amount = BigInt::from(5_0000_0000i64); // 5 GAS
+        write_deposit(&snapshot, &payer, &deposit_amount, 1000).unwrap();
+
+        // A NotaryAssisted tx (nKeys = 1) paid by the Notary on behalf of the
+        // payer: Signers = [Notary, payer].
+        let notary_hash = Notary::script_hash();
+        let mut tx = notary_assisted_tx(vec![
+            Signer::new(notary_hash, WitnessScope::NONE),
+            Signer::new(payer, WitnessScope::NONE),
+        ]);
+        tx.set_system_fee(1_0000_0000); // 1 GAS
+        tx.set_network_fee(5000_0000); // 0.5 GAS
+        let fees = tx.system_fee().wrapping_add(tx.network_fee());
+
+        let mut header = Header::new();
+        header.set_index(1);
+        let block = Block::from_parts(header, vec![tx]);
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::OnPersist,
+            None,
+            Arc::clone(&snapshot),
+            Some(block),
+            echidna_settings(),
+            0,
+            None,
+        )
+        .expect("engine builds");
+        NativeContract::on_persist(&Notary, &mut engine).expect("notary on_persist");
+
+        // Payer deposit debited by SystemFee + NetworkFee; Till unchanged.
+        let (amount_after, till_after) = read_deposit(&snapshot, &payer)
+            .expect("deposit read")
+            .expect("deposit present");
+        assert_eq!(amount_after, &deposit_amount - BigInt::from(fees));
+        assert_eq!(till_after, 1000);
+
+        // Reward minted to the single designated notary: nFees = nKeys + 1 = 2,
+        // singleReward = 2 * FEE / 1.
+        let notaries = RoleManagement::new()
+            .get_designated_by_role_at(&snapshot, Role::P2PNotary, 1)
+            .unwrap();
+        assert_eq!(notaries.len(), 1);
+        let notary_addr =
+            UInt160::from_script(&Contract::create_signature_redeem_script(notaries[0].clone()));
+        assert_eq!(gas_balance(&snapshot, &notary_addr), BigInt::from(2 * FEE));
     }
 }
