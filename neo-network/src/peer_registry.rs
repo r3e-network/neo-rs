@@ -36,6 +36,13 @@ struct PeerEntry {
     /// Version-payload nonce, recorded once the peer's version
     /// message has been received (C# `RemoteNode.Version.Nonce`).
     version_nonce: Option<u32>,
+    /// Advertised listener endpoint (remote IP + the `TcpServer`
+    /// capability port from the peer's version), recorded once the
+    /// handshake completes. `None` until then or for peers that
+    /// advertise no listener (C# `RemoteNode.ListenerTcpPort == 0`).
+    /// Used to answer `GetAddr` (C# `OnGetAddrMessageReceived` gossips
+    /// `p.Listener`, not the ephemeral source endpoint).
+    listener_addr: Option<SocketAddr>,
 }
 
 /// Interior, lock-guarded state.
@@ -129,6 +136,7 @@ impl PeerRegistry {
                 handle,
                 remote_addr,
                 version_nonce: None,
+                listener_addr: None,
             },
         );
         true
@@ -157,6 +165,40 @@ impl PeerRegistry {
             entry.version_nonce = Some(nonce);
         }
         true
+    }
+
+    /// Record a peer's advertised listener endpoint (remote IP + its
+    /// `TcpServer` capability port), learned at handshake. A no-op for an
+    /// unknown peer.
+    pub fn record_listener_addr(&self, peer_id: PeerId, listener_addr: SocketAddr) {
+        let mut inner = self.inner.lock();
+        if let Some(entry) = inner.peers.get_mut(&peer_id) {
+            entry.listener_addr = Some(listener_addr);
+        }
+    }
+
+    /// Distinct advertised listener endpoints of currently connected peers,
+    /// excluding `exclude` (the requester) and capped at `limit`. Answers a
+    /// peer's `GetAddr` (C# `OnGetAddrMessageReceived`: connected peers with
+    /// `ListenerTcpPort > 0`, deduplicated by address).
+    pub fn listener_addresses(&self, exclude: PeerId, limit: usize) -> Vec<SocketAddr> {
+        let inner = self.inner.lock();
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for (peer_id, entry) in inner.peers.iter() {
+            if *peer_id == exclude {
+                continue;
+            }
+            if let Some(addr) = entry.listener_addr {
+                if addr.port() > 0 && seen.insert(addr) {
+                    out.push(addr);
+                    if out.len() >= limit {
+                        break;
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Remove a peer, decrementing its per-address count
@@ -228,6 +270,34 @@ mod tests {
         let remote = addr(peer);
         assert!(registry.try_admit(peer_id, remote, test_handle(peer_id, remote)));
         (peer_id, remote)
+    }
+
+    #[test]
+    fn listener_addresses_dedup_exclude_and_skip_unset() {
+        let registry = PeerRegistry::with_limits(10, 10);
+        let (a, _) = admit(&registry, "10.0.0.1:5001");
+        let (b, _) = admit(&registry, "10.0.0.2:5002");
+        let (c, _) = admit(&registry, "10.0.0.3:5003");
+
+        // a + b advertise listeners; c advertises none (stays unset).
+        registry.record_listener_addr(a, addr("10.0.0.1:20333"));
+        registry.record_listener_addr(b, addr("10.0.0.2:20333"));
+        // A duplicate listener endpoint from another peer is deduplicated.
+        let (d, _) = admit(&registry, "10.0.0.2:5004");
+        registry.record_listener_addr(d, addr("10.0.0.2:20333"));
+
+        // Excluding `a` yields b's listener (and d's, deduped to one).
+        let mut got = registry.listener_addresses(a, 100);
+        got.sort();
+        assert_eq!(got, vec![addr("10.0.0.2:20333")]);
+
+        // Excluding `c` (no listener) yields both a and b, c absent.
+        let mut got = registry.listener_addresses(c, 100);
+        got.sort();
+        assert_eq!(got, vec![addr("10.0.0.1:20333"), addr("10.0.0.2:20333")]);
+
+        // The limit caps the result.
+        assert_eq!(registry.listener_addresses(c, 1).len(), 1);
     }
 
     #[test]

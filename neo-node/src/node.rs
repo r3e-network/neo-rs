@@ -238,8 +238,23 @@ impl neo_network::BlockSource for LedgerBlockSource {
         Some(trimmed.header)
     }
 
+    fn block_hash_by_index(&self, index: u32) -> Option<neo_primitives::UInt256> {
+        neo_native_contracts::LedgerContract::new()
+            .get_block_hash(&self.snapshot, index)
+            .ok()
+            .flatten()
+    }
+
     fn block_by_hash(&self, hash: &neo_primitives::UInt256) -> Option<neo_payloads::Block> {
         self.full_block(&neo_native_contracts::LedgerContract::new(), hash)
+    }
+
+    fn block_index_by_hash(&self, hash: &neo_primitives::UInt256) -> Option<u32> {
+        neo_native_contracts::LedgerContract::new()
+            .get_trimmed_block(&self.snapshot, hash)
+            .ok()
+            .flatten()
+            .map(|trimmed| trimmed.header.index())
     }
 
     fn transaction_by_hash(
