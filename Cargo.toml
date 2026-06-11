@@ -14,8 +14,7 @@ members = [
     # Storage traits and abstractions
     "neo-storage",
 
-    # RocksDB storage backend (optional, behind neo-core's `rocksdb` feature)
-    "neo-storage-rocksdb",
+        "neo-storage-rocksdb",
 
     # IO (matches C# Neo.IO)
     "neo-io",
@@ -25,29 +24,90 @@ members = [
 
     # === VM Host Layer ===
     # Stateful NeoVM host (execution engine, stack items, jump tables) over the
-    # external pure neo-vm-rs semantics. Extracted from neo-core/src/neo_vm.
-    "neo-vm",
+        "neo-vm",
 
     # Programmatic VM script construction (C# Neo.VM.ScriptBuilder). Pure
-    # bytecode emitter on neo-vm-rs; layered below neo-core so crypto/payload
-    # layers can build redeem scripts without the stateful VM host.
-    "neo-script-builder",
+    # bytecode emitter on neo-vm-rs; layered below so crypto/payload
+        "neo-script-builder",
 
     # Redeem-script primitives (signature/multi-sig verification scripts +
-    # pattern checks). On neo-crypto + neo-script-builder; below neo-core so the
+    # pattern checks). On neo-crypto + neo-script-builder; below so the
     # chain types build account scripts without the smart-contract engine.
     "neo-redeem-script",
 
-    # === Core Layer ===
-    # Core (matches C# Neo.csproj)
-    # NOTE: the NeoVM host is the separate `neo-vm` crate above; pure VM
-    # semantics are provided by the external neo-vm-rs crate.
-    "neo-core",
+        # CoreError authority (foundation Layer 0)
+    "neo-error",
+
+    # Witness/Block/Transaction data (ledger layer)
+    "neo-ledger-types",
+
+    # Block validation + blockchain orchestration (service layer)
+    "neo-blockchain",
+    "neo-chain",
+
+    # Smart-contract execution engine 
+    "neo-execution",
+
+    # Ledger state management
+    "neo-state-service",
+
+    # Native contracts (NEP-17, governance, etc.)
+    "neo-native-contracts",
+
+    # Wallet/key management
+    "neo-wallets",
+
+    # System service layer
+    "neo-system",
+
+    # Transaction pool
+    "neo-mempool",
+
+    # TimeProvider abstraction (Layer 0)
+    "neo-time",
+
+    # RPC client + server
+
+    # Protocol interfaces
 
     # P2P networking
     "neo-p2p",
 
-    # Fluent transaction/witness/signer builders (extracted from neo-core)
+    # I/O extensions and utility traits 
+    "neo-extensions",
+
+    # Service trait interfaces 
+    "neo-services",
+
+    # Typed event payloads and broadcast helpers 
+    "neo-events",
+    "neo-event-handlers",
+
+    # Pure data types for the State Service plugin 
+    "neo-state-types",
+
+    # Foundation layer: data cache (DataCache, StorageKey, StorageItem)
+    "neo-data-cache",
+
+    # Foundation layer: serialization (compression, binary/json serializers, providers)
+    "neo-serialization",
+
+    # Foundation layer: block (Block, Genesis, ApplicationExecuted, VerifyResult)
+    "neo-block",
+
+    # Foundation layer: manifest (ABI, NEF, CallFlags, MethodToken, ValidatorAttribute)
+    "neo-manifest",
+    
+    # Canonical home for Neo P2P payload types (Block, Header, Transaction, etc.)
+    "neo-payloads",
+    
+    # Canonical home for Neo P2P wire envelope (NetworkMessage, framed transport)
+    "neo-wire",
+    
+    # Canonical home for Neo P2P network host (LocalNode, RemoteNode, connections)
+    "neo-network",
+
+    # Fluent transaction/witness/signer builders 
     "neo-tx-builder",
 
     # RPC server and client
@@ -56,8 +116,7 @@ members = [
     # dBFT consensus
     "neo-consensus",
 
-    # === Plugin Layer (leaf consumers of neo-core) ===
-    # ApplicationLogs plugin (execution-log persistence + RPC queries)
+        # ApplicationLogs plugin (execution-log persistence + RPC queries)
     "neo-application-logs",
 
     # TokensTracker plugin (NEP-11/NEP-17 balance + transfer indexing)
@@ -78,8 +137,9 @@ members = [
     # Optional feature-gated integration via neo-node (`--features hsm`)
     "neo-hsm",
 
-    # Generic actor runtime (no neo-* deps)
-    "neo-actors",
+    # Reth-style service architecture (service traits + Node builder).
+    # Depends on foundation crates: neo-primitives, neo-payloads, neo-ledger-types.
+    "neo-runtime",
 
     # === Telemetry ===
     # Observability stack
@@ -102,7 +162,6 @@ default-members = [
     "neo-storage",
     "neo-io",
     "neo-json",
-    "neo-core",
     "neo-p2p",
     "neo-rpc",
     "neo-consensus",
@@ -148,22 +207,45 @@ neo-io = { path = "neo-io", version = "0.7.2" }
 neo-json = { path = "neo-json", version = "0.7.2" }
 
 # Core layer
-neo-core = { path = "neo-core", version = "0.7.2" }
 neo-vm = { path = "neo-vm", version = "0.7.2" }
 neo-script-builder = { path = "neo-script-builder", version = "0.7.2" }
 neo-redeem-script = { path = "neo-redeem-script", version = "0.7.2" }
+neo-extensions = { path = "neo-extensions", version = "0.7.2" }
+neo-services = { path = "neo-services", version = "0.7.2" }
+neo-events = { path = "neo-events", version = "0.7.2" }
+neo-event-handlers = { path = "neo-event-handlers", version = "0.7.2" }
+neo-state-types = { path = "neo-state-types", version = "0.7.2" }
 neo-tx-builder = { path = "neo-tx-builder", version = "0.7.2" }
 neo-vm-rs = { path = "../neo-vm-rs" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }
 neo-rpc = { path = "neo-rpc", version = "0.7.2" }
 neo-consensus = { path = "neo-consensus", version = "0.7.2" }
 
+neo-error = { path = "neo-error", version = "0.7.2" }
+neo-ledger-types = { path = "neo-ledger-types", version = "0.7.2" }
+neo-chain = { path = "neo-chain", version = "0.7.2" }
+neo-blockchain = { path = "neo-blockchain", version = "0.7.2" }
+neo-state-service = { path = "neo-state-service", version = "0.7.2" }
+neo-time = { path = "neo-time", version = "0.7.2" }
+neo-execution = { path = "neo-execution", version = "0.7.2" }
+neo-system = { path = "neo-system", version = "0.7.2" }
+neo-wallets = { path = "neo-wallets", version = "0.7.2" }
+neo-mempool = { path = "neo-mempool", version = "0.7.2" }
+neo-native-contracts = { path = "neo-native-contracts", version = "0.7.2" }
+neo-data-cache = { path = "neo-data-cache", version = "0.7.2" }
+neo-serialization = { path = "neo-serialization", version = "0.7.2" }
+neo-block = { path = "neo-block", version = "0.7.2" }
+neo-manifest = { path = "neo-manifest", version = "0.7.2" }
+neo-payloads = { path = "neo-payloads", version = "0.7.2" }
+neo-wire = { path = "neo-wire", version = "0.7.2" }
+neo-network = { path = "neo-network", version = "0.7.2" }
 # Infrastructure layer
 neo-tee = { path = "neo-tee", version = "0.7.2" }
 neo-hsm = { path = "neo-hsm", version = "0.7.2" }
 
 # Actor runtime
-neo-actors = { path = "neo-actors", version = "0.7.2" }
+# Reth-style service architecture
+neo-runtime = { path = "neo-runtime", version = "0.7.2" }
 
 # Telemetry
 neo-telemetry = { path = "neo-telemetry", version = "0.7.2" }

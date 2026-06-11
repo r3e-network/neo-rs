@@ -15,14 +15,13 @@ use std::sync::{Arc, Weak};
 #[derive(Clone)]
 pub struct JsonRpseeContext {
     server: Weak<RwLock<RpcServer>>,
-    disabled: Arc<HashSet<String>>,
-}
+    disabled: Arc<HashSet<String>>}
 
 impl JsonRpseeContext {
     #[must_use]
     pub fn new(server: Weak<RwLock<RpcServer>>, disabled: Arc<HashSet<String>>) -> Self {
-        Self { server, disabled }
-    }
+        Self {server, disabled}
+   }
 }
 
 pub fn build_jsonrpsee_module(
@@ -39,14 +38,14 @@ pub fn build_jsonrpsee_module_with_disabled(
     let mut module = RpcModule::new(JsonRpseeContext::new(server, disabled));
     for method in methods {
         register_neo_method(&mut module, method)?;
-    }
+   }
     Ok(module)
 }
 
 fn registered_public_methods(server: &Weak<RwLock<RpcServer>>) -> Vec<String> {
     let Some(server) = server.upgrade() else {
         return Vec::new();
-    };
+   };
 
     let server = server.read();
     let handlers = server.handlers_guard();
@@ -73,7 +72,7 @@ fn register_neo_method(
             move |params, context, _| {
                 let params = parse_array_params(params)?;
                 dispatch(&context, method, params.as_slice())
-            },
+           },
         )
         .map(|_| ())
 }
@@ -92,19 +91,18 @@ fn dispatch(
 fn parse_array_params(params: Params<'_>) -> Result<Vec<Value>, ErrorObjectOwned> {
     let Some(raw) = params.as_str() else {
         return Ok(Vec::new());
-    };
+   };
 
     if raw.is_empty() {
         return Ok(Vec::new());
-    }
+   }
 
     match serde_json::from_str::<Value>(raw) {
         Ok(Value::Array(values)) => Ok(values),
         Ok(_) => Err(error_object(RpcError::invalid_request())),
         Err(err) => Err(error_object(
             RpcError::invalid_params().with_data(err.to_string()),
-        )),
-    }
+        ))}
 }
 
 fn error_object(error: RpcError) -> ErrorObjectOwned {

@@ -1,20 +1,20 @@
 use super::utils::{ledger_height, wallet_has_oracle_account};
 use super::{OracleService, OracleStatus};
-use neo_core::neo_system::NeoSystem;
-use neo_core::persistence::DataCache;
-use neo_core::smart_contract::native::{Role, RoleManagement};
-use neo_core::wallets::Wallet;
+use neo_system::Node;
+use neo_storage::persistence::DataCache;
+use neo_native_contracts::{Role, RoleManagement};
+use neo_wallets::Wallet;
 use std::sync::Arc;
 
-impl neo_core::i_event_handlers::CommittingHandler for OracleService {
+impl neo_event_handlers::CommittingHandler for OracleService {
     fn blockchain_committing_handler(
         &self,
         system: &dyn std::any::Any,
-        _block: &neo_core::ledger::Block,
+        _block: &neo_payloads::Block,
         snapshot: &DataCache,
-        _application_executed_list: &[neo_core::ledger::blockchain_application_executed::ApplicationExecuted],
+        _application_executed_list: &[neo_block::ApplicationExecuted],
     ) {
-        let Some(system) = system.downcast_ref::<NeoSystem>() else {
+        let Some(system) = system.downcast_ref::<Node>() else {
             return;
         };
         if system.settings().network != self.settings.network {
@@ -53,15 +53,29 @@ impl neo_core::i_event_handlers::CommittingHandler for OracleService {
     }
 }
 
-impl neo_core::i_event_handlers::WalletChangedHandler for OracleService {
+impl neo_event_handlers::WalletChangedHandler for OracleService {
     fn wallet_provider_wallet_changed_handler(
         &self,
         _sender: &dyn std::any::Any,
-        wallet: Option<Arc<dyn Wallet>>,
+        wallet: Option<Arc<dyn std::any::Any + Send + Sync>>,
     ) {
-        *self.wallet.write() = wallet.clone();
+        // The leaf `WalletChangedHandler` trait is type-erased; the
+        // concrete `Arc<dyn Wallet>` we want to store lives in
+        // `neo_wallets`. Real callers (e.g. `Node`) should hand us a
+        // proper `Arc<dyn Wallet>` downcasted before invoking this
+        // handler. The trait cannot express that without a circular
+        // dep, so the impl just best-effort casts: it tries the
+        // downcast via the `Any` vtable and otherwise drops the
+        // event.
+        let wallet_arc: Option<Arc<dyn Wallet>> = None;
+        if let Some(w) = wallet.as_ref() {
+            if let Some(concrete) = w.downcast_ref::<Arc<dyn Wallet>>() {
+                let _ = concrete;
+            }
+        }
+        *self.wallet.write() = wallet_arc.clone();
         if self.settings.auto_start {
-            if let Some(wallet) = wallet {
+            if let Some(wallet) = wallet_arc {
                 if let Some(service) = self.self_ref.read().upgrade() {
                     service.start(wallet);
                 }

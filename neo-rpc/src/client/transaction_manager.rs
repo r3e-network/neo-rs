@@ -10,14 +10,13 @@
 // modifications are permitted.
 
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::persistence::DataCache;
-use neo_core::smart_contract::native::GasToken;
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{
-    smart_contract::ContractParametersContext, Contract, ECPoint, KeyPair, NativeContract, Signer,
-    Transaction, TransactionAttribute, Verifiable, VerifiableExt, Witness,
-};
+use neo_storage::persistence::DataCache;
+use neo_native_contracts::GasToken;
+use neo_wallets::wallet_helper as WalletHelper;
+use neo_payloads::{get_sign_data_vec, Signer, Transaction, TransactionAttribute, VerifiableExt, Witness};
+use neo_crypto::ECPoint;
+use neo_wallets::KeyPair;
+use neo_execution::{Contract, ContractParametersContext, NativeContract};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 use std::sync::Arc;
@@ -28,8 +27,7 @@ struct SignItem {
     /// The contract for signing
     contract: Contract,
     /// The key pairs for signing
-    key_pairs: Vec<KeyPair>,
-}
+    key_pairs: Vec<KeyPair>}
 
 /// This class helps to create transaction with RPC API
 /// Matches C# `TransactionManager`
@@ -44,14 +42,13 @@ pub struct TransactionManager {
     sign_store: Vec<SignItem>,
 
     /// The Transaction managed by this instance
-    tx: Transaction,
-}
+    tx: Transaction}
 
 impl TransactionManager {
     /// `TransactionManager` Constructor
     /// Matches C# constructor
     pub fn new(tx: Transaction, rpc_client: Arc<RpcClient>) -> Self {
-        let snapshot = std::sync::Arc::new(neo_core::persistence::DataCache::new(true));
+        let snapshot = std::sync::Arc::new(neo_storage::persistence::DataCache::new(true));
         let context = ContractParametersContext::new(
             snapshot,
             tx.clone(),
@@ -62,14 +59,13 @@ impl TransactionManager {
             _rpc_client: rpc_client,
             context,
             sign_store: Vec::new(),
-            tx,
-        }
-    }
+            tx}
+   }
 
     /// Get the managed transaction
     pub const fn tx(&self) -> &Transaction {
         &self.tx
-    }
+   }
 
     /// Helper function for one-off `TransactionManager` creation
     /// Matches C# `MakeTransactionAsync`
@@ -83,7 +79,7 @@ impl TransactionManager {
         factory
             .make_transaction(script, &signers.unwrap_or_default())
             .await
-    }
+   }
 
     /// Helper function for one-off `TransactionManager` creation with system fee
     /// Matches C# `MakeTransactionAsync` with systemFee parameter
@@ -102,10 +98,10 @@ impl TransactionManager {
 
         if let Some(attrs) = attributes {
             manager.tx.set_attributes(attrs);
-        }
+       }
 
         Ok(manager)
-    }
+   }
 
     /// Add Signature
     /// Matches C# `AddSignature`
@@ -114,7 +110,7 @@ impl TransactionManager {
         let contract = Contract::create_signature_contract(public_point);
         self.add_sign_item(contract, key.clone())?;
         Ok(self)
-    }
+   }
 
     /// Add Multi-Signature
     /// Matches C# `AddMultiSig` with `KeyPair`
@@ -127,7 +123,7 @@ impl TransactionManager {
         let contract = Contract::create_multi_sig_contract(m, &public_keys);
         self.add_sign_item(contract, key.clone())?;
         Ok(self)
-    }
+   }
 
     /// Add Multi-Signature with multiple keys
     /// Matches C# `AddMultiSig` with `KeyPair` array
@@ -141,19 +137,19 @@ impl TransactionManager {
 
         for key in keys {
             self.add_sign_item(contract.clone(), key)?;
-        }
+       }
 
         Ok(self)
-    }
+   }
 
     /// Add witness with contract
     /// Matches C# `AddWitness`
     pub fn add_witness(&mut self, contract: Contract) -> Result<&mut Self, RpcError> {
         if !self.context.add_contract(contract) {
             return Err("AddWitness failed!".into());
-        }
+       }
         Ok(self)
-    }
+   }
 
     /// Add witness with script hash
     /// Matches C# `AddWitness` with `UInt160`.
@@ -162,7 +158,7 @@ impl TransactionManager {
     pub fn add_witness_with_hash(&mut self, script_hash: &UInt160) -> Result<&mut Self, RpcError> {
         let contract = Contract::create_with_hash(*script_hash, Vec::new());
         self.add_witness(contract)
-    }
+   }
 
     /// Adds a witness by resolving the contract over RPC (required for contract accounts).
     pub async fn add_witness_with_hash_async(
@@ -171,7 +167,7 @@ impl TransactionManager {
     ) -> Result<&mut Self, RpcError> {
         let contract = self.get_contract_async(script_hash).await?;
         self.add_witness(contract)
-    }
+   }
 
     /// Sign the transaction
     /// Matches C# `SignAsync`
@@ -183,7 +179,7 @@ impl TransactionManager {
         for hash in &script_hashes {
             let verification_script = self.get_verification_script(hash);
             witnesses.push(Witness::new_with_scripts(Vec::new(), verification_script));
-        }
+       }
         self.tx.set_witnesses(witnesses);
 
         let network_fee = self._rpc_client.calculate_network_fee(&self.tx).await?;
@@ -204,7 +200,7 @@ impl TransactionManager {
                 self._rpc_client.protocol_settings.address_version,
             );
             return Err(format!("Insufficient GAS in address: {address}").into());
-        }
+       }
 
         let sign_data = get_sign_data_vec(&self.tx, self._rpc_client.protocol_settings.network)?;
         for item in &self.sign_store {
@@ -217,13 +213,13 @@ impl TransactionManager {
                     .map_err(|err| format!("AddSignature failed: {err}"))?;
                 if !added {
                     return Err("AddSignature failed!".into());
-                }
-            }
-        }
+               }
+           }
+       }
 
         if !self.context.completed() {
             return Err("Please add signature or witness first!".into());
-        }
+       }
 
         let final_witnesses = self
             .context
@@ -232,7 +228,7 @@ impl TransactionManager {
         self.tx.set_witnesses(final_witnesses);
 
         Ok(self.tx.clone())
-    }
+   }
 
     // Helper methods
 
@@ -243,7 +239,7 @@ impl TransactionManager {
             .script_hashes_for_verifying(&DataCache::new(true));
         if !script_hashes.contains(&hash) {
             return Err(format!("Add SignItem error: Mismatch ScriptHash ({hash})").into());
-        }
+       }
         if let Some(item) = self
             .sign_store
             .iter_mut()
@@ -255,27 +251,26 @@ impl TransactionManager {
                 .any(|candidate| candidate.private_key() == key.private_key());
             if !exists {
                 item.key_pairs.push(key);
-            }
-        } else {
+           }
+       } else {
             let key_pairs = vec![key];
             self.sign_store.push(SignItem {
                 contract: contract.clone(),
-                key_pairs,
-            });
-        }
+                key_pairs});
+       }
 
         self.context.add_contract(contract);
         Ok(())
-    }
+   }
 
     fn get_verification_script(&self, hash: &UInt160) -> Vec<u8> {
         for item in &self.sign_store {
             if item.contract.script_hash() == *hash {
                 return item.contract.script.clone();
-            }
-        }
+           }
+       }
         Vec::new()
-    }
+   }
 
     async fn get_contract_async(&self, script_hash: &UInt160) -> Result<Contract, RpcError> {
         let state = self
@@ -294,7 +289,7 @@ impl TransactionManager {
             .unwrap_or_default();
 
         Ok(Contract::create_with_hash(*script_hash, parameter_list))
-    }
+   }
 }
 
 #[cfg(test)]
@@ -309,7 +304,7 @@ mod tests {
 
     fn localhost_binding_permitted() -> bool {
         TcpListener::bind("127.0.0.1:0").is_ok()
-    }
+   }
 
     fn rpc_response(result: JToken) -> String {
         let mut response = JObject::new();
@@ -317,7 +312,7 @@ mod tests {
         response.insert("id".to_string(), JToken::Number(1.0));
         response.insert("result".to_string(), result);
         JToken::Object(response).to_string()
-    }
+   }
 
     fn invoke_result_payload(gas_consumed: i64, balance: &str) -> JObject {
         let mut result = JObject::new();
@@ -334,7 +329,7 @@ mod tests {
         let stack = JArray::from(vec![JToken::Object(stack_item)]);
         result.insert("stack".to_string(), JToken::Array(stack));
         result
-    }
+   }
 
     fn mock_invokescript(server: &mut Server, response_body: &str) {
         let _m = server
@@ -345,7 +340,7 @@ mod tests {
             .with_body(response_body)
             .expect_at_least(1)
             .create();
-    }
+   }
 
     fn mock_block_count(server: &mut Server, count: u32) {
         let response = rpc_response(JToken::Number(count as f64));
@@ -357,7 +352,7 @@ mod tests {
             .with_body(response)
             .expect(1)
             .create();
-    }
+   }
 
     fn mock_calculate_network_fee(server: &mut Server, fee: i64) {
         let mut result = JObject::new();
@@ -373,7 +368,7 @@ mod tests {
             .with_body(response)
             .expect(1)
             .create();
-    }
+   }
 
     fn mock_calculate_network_fee_with_hits(server: &mut Server, fee: i64, hits: usize) {
         let mut result = JObject::new();
@@ -389,13 +384,13 @@ mod tests {
             .with_body(response)
             .expect(hits)
             .create();
-    }
+   }
 
     #[tokio::test]
     async fn make_transaction_preserves_signer_scope() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         mock_block_count(&mut server, 100);
         let invoke_result = invoke_result_payload(100, "10000000000000000");
@@ -413,13 +408,13 @@ mod tests {
             .expect("manager");
 
         assert_eq!(manager.tx().signers()[0].scopes(), WitnessScope::GLOBAL);
-    }
+   }
 
     #[tokio::test]
     async fn sign_adds_signature_and_sets_fees() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         mock_block_count(&mut server, 100);
         mock_calculate_network_fee(&mut server, 100_000_000);
@@ -455,13 +450,13 @@ mod tests {
         let sign_data =
             get_sign_data_vec(&tx, client.protocol_settings.network).expect("sign data");
         assert!(key.verify(&sign_data, signature).expect("verify signature"));
-    }
+   }
 
     #[tokio::test]
     async fn sign_rejects_mismatched_key() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         mock_block_count(&mut server, 100);
         mock_calculate_network_fee(&mut server, 100_000_000);
@@ -485,13 +480,13 @@ mod tests {
             .err()
             .expect("mismatched key");
         assert!(err.to_string().contains("Mismatch ScriptHash"));
-    }
+   }
 
     #[tokio::test]
     async fn sign_rejects_duplicate_signature() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
 
         let mut server = Server::new_async().await;
         mock_block_count(&mut server, 100);
@@ -522,13 +517,13 @@ mod tests {
         let err = manager.sign().await.expect_err("duplicate signature");
         assert!(err.to_string().contains("AddSignature failed"));
         assert!(manager.tx().witnesses().is_empty());
-    }
+   }
 
     #[tokio::test]
     async fn sign_rejects_insufficient_gas() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
 
         let mut server = Server::new_async().await;
         mock_block_count(&mut server, 100);
@@ -556,13 +551,13 @@ mod tests {
 
         let err = manager.sign().await.expect_err("insufficient gas");
         assert!(err.to_string().contains("Insufficient GAS"));
-    }
+   }
 
     #[tokio::test]
     async fn sign_multi_sig_contract() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         mock_block_count(&mut server, 100);
         mock_calculate_network_fee(&mut server, 100_000_000);
@@ -591,13 +586,13 @@ mod tests {
             .expect("add multisig b");
         let tx = manager.sign().await.expect("sign");
         assert_eq!(tx.witnesses().len(), 1);
-    }
+   }
 
     #[tokio::test]
     async fn add_witness_by_hash_adds_second_witness() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         mock_block_count(&mut server, 100);
         mock_calculate_network_fee(&mut server, 100_000_000);
@@ -626,5 +621,5 @@ mod tests {
         assert_eq!(tx.witnesses().len(), 2);
         assert_eq!(tx.witnesses()[0].verification_script().len(), 40);
         assert_eq!(tx.witnesses()[0].invocation_script().len(), 66);
-    }
+   }
 }

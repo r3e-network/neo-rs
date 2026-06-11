@@ -11,8 +11,7 @@
 
 use super::super::utility::{
     NepTransferFieldRefs, insert_nep_transfer_fields, parse_nep_transfer_fields,
-    parse_transfer_lists, transfer_lists_to_json,
-};
+    parse_transfer_lists, transfer_lists_to_json};
 use neo_config::ProtocolSettings;
 use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
@@ -27,8 +26,7 @@ pub struct RpcNep11Transfers {
     /// Sent transfers.
     pub sent: Vec<RpcNep11Transfer>,
     /// Received transfers.
-    pub received: Vec<RpcNep11Transfer>,
-}
+    pub received: Vec<RpcNep11Transfer>}
 
 impl RpcNep11Transfers {
     /// Converts to JSON.
@@ -41,7 +39,7 @@ impl RpcNep11Transfers {
             protocol_settings,
             RpcNep11Transfer::to_json,
         )
-    }
+   }
 
     /// Creates from JSON.
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
@@ -51,9 +49,8 @@ impl RpcNep11Transfers {
         Ok(Self {
             user_script_hash,
             sent,
-            received,
-        })
-    }
+            received})
+   }
 }
 
 /// Individual NEP11 transfer entry matching C# `RpcNep11Transfer`.
@@ -74,8 +71,7 @@ pub struct RpcNep11Transfer {
     /// Transfer notify index.
     pub transfer_notify_index: u16,
     /// Transaction hash.
-    pub tx_hash: UInt256,
-}
+    pub tx_hash: UInt256}
 
 impl RpcNep11Transfer {
     /// Converts to JSON.
@@ -95,12 +91,11 @@ impl RpcNep11Transfer {
                 amount: &self.amount,
                 block_index: self.block_index,
                 transfer_notify_index: self.transfer_notify_index,
-                tx_hash: self.tx_hash,
-            },
+                tx_hash: self.tx_hash},
             protocol_settings,
         );
         json
-    }
+   }
 
     /// Creates from JSON.
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
@@ -121,9 +116,8 @@ impl RpcNep11Transfer {
             amount: fields.amount,
             block_index: fields.block_index,
             transfer_notify_index: fields.transfer_notify_index,
-            tx_hash: fields.tx_hash,
-        })
-    }
+            tx_hash: fields.tx_hash})
+   }
 }
 
 #[cfg(test)]
@@ -141,8 +135,7 @@ mod tests {
             amount: BigInt::from(7),
             block_index: 9,
             transfer_notify_index: 1,
-            tx_hash: UInt256::zero(),
-        };
+            tx_hash: UInt256::zero()};
         let json = entry.to_json(&settings);
         let parsed = RpcNep11Transfer::from_json(&json, &settings).unwrap();
         assert_eq!(parsed.token_id, entry.token_id);
@@ -153,7 +146,7 @@ mod tests {
         assert_eq!(parsed.block_index, entry.block_index);
         assert_eq!(parsed.transfer_notify_index, entry.transfer_notify_index);
         assert_eq!(parsed.tx_hash, entry.tx_hash);
-    }
+   }
 
     #[test]
     fn transfers_roundtrip() {
@@ -166,13 +159,11 @@ mod tests {
             amount: BigInt::from(11),
             block_index: 2,
             transfer_notify_index: 0,
-            tx_hash: UInt256::zero(),
-        };
+            tx_hash: UInt256::zero()};
         let transfers = RpcNep11Transfers {
             user_script_hash: UInt160::zero(),
             sent: vec![entry.clone()],
-            received: vec![entry.clone()],
-        };
+            received: vec![entry.clone()]};
         let json = transfers.to_json(&settings);
         let parsed = RpcNep11Transfers::from_json(&json, &settings).unwrap();
         assert_eq!(parsed.user_script_hash, transfers.user_script_hash);
@@ -180,7 +171,7 @@ mod tests {
         assert_eq!(parsed.received.len(), 1);
         assert_eq!(parsed.sent[0].token_id, entry.token_id);
         assert_eq!(parsed.received[0].user_script_hash, entry.user_script_hash);
-    }
+   }
 
     #[test]
     fn transfer_to_json_keeps_token_id_before_shared_fields() {
@@ -192,8 +183,7 @@ mod tests {
             amount: BigInt::from(7),
             block_index: 9,
             transfer_notify_index: 1,
-            tx_hash: UInt256::zero(),
-        };
+            tx_hash: UInt256::zero()};
 
         assert_eq!(
             entry
@@ -205,5 +195,5 @@ mod tests {
                 UInt256::zero()
             )
         );
-    }
+   }
 }

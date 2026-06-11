@@ -1,8 +1,7 @@
 use super::cors::{apply_cors, verify_basic_auth};
 use super::{
     build_http_response, error_response, exceeds_max_depth, success_response, RequestOutcome,
-    RpcFilters, RpcQueryParams, MAX_PARAMS_DEPTH,
-};
+    RpcFilters, RpcQueryParams, MAX_PARAMS_DEPTH};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server::{RpcHandler, RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 use crate::server::rpc_server_settings::{RpcServerSettings, UnhandledExceptionPolicy};
@@ -40,8 +39,8 @@ pub(super) async fn handle_post_request(
             );
             apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
             return Ok(response);
-        }
-    }
+       }
+   }
 
     let (response, unauthorized) = process_body(
         &filters,
@@ -78,8 +77,8 @@ pub(super) async fn handle_get_request(
             );
             apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
             return Ok(response);
-        }
-    }
+       }
+   }
 
     let method_from_query = query_to_request_value(&raw_query)
         .and_then(|v| v.get("method").and_then(|m| m.as_str()).map(String::from));
@@ -94,21 +93,21 @@ pub(super) async fn handle_get_request(
             );
             apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
             return Ok(response);
-        }
-    }
+       }
+   }
 
     let (response, unauthorized) = if raw_query.len() as u64 > max_query_len {
         (Some(error_response(None, RpcError::bad_request())), false)
-    } else {
+   } else {
         match query_to_request_value(&raw_query) {
             Some(value) if exceeds_max_depth(&value, MAX_PARAMS_DEPTH) => {
                 (Some(error_response(None, RpcError::bad_request())), false)
-            }
+           }
             Some(Value::Object(obj)) => {
                 let outcome =
                     process_object(obj, &filters, auth_header.as_deref(), Some(client_ip));
                 (outcome.response, outcome.unauthorized)
-            }
+           }
             Some(_) => (
                 Some(error_response(None, RpcError::invalid_request())),
                 false,
@@ -116,9 +115,8 @@ pub(super) async fn handle_get_request(
             None => (
                 Some(error_response(None, RpcError::invalid_request())),
                 false,
-            ),
-        }
-    };
+            )}
+   };
 
     let challenge = unauthorized && filters.auth.as_ref().is_some();
     let mut http_response = build_http_response(response, unauthorized, challenge);
@@ -134,23 +132,21 @@ pub(super) fn process_body(
 ) -> (Option<Value>, bool) {
     let parsed: Value = match serde_json::from_slice(body) {
         Ok(value) => value,
-        Err(_) => return (Some(error_response(None, RpcError::bad_request())), false),
-    };
+        Err(_) => return (Some(error_response(None, RpcError::bad_request())), false)};
     if exceeds_max_depth(&parsed, MAX_PARAMS_DEPTH) {
         return (Some(error_response(None, RpcError::bad_request())), false);
-    }
+   }
 
     match parsed {
         Value::Array(entries) => process_array(entries, filters, auth_header, client_ip),
         Value::Object(obj) => {
             let outcome = process_object(obj, filters, auth_header, client_ip);
             (outcome.response, outcome.unauthorized)
-        }
+       }
         _ => (
             Some(error_response(None, RpcError::invalid_request())),
             false,
-        ),
-    }
+        )}
 }
 
 fn process_array(
@@ -164,7 +160,7 @@ fn process_array(
             Some(error_response(None, RpcError::invalid_request())),
             false,
         );
-    }
+   }
 
     if entries.len() > filters.max_batch_size {
         return (
@@ -182,7 +178,7 @@ fn process_array(
             )),
             false,
         );
-    }
+   }
 
     let mut responses = Vec::new();
     let mut unauthorized = false;
@@ -193,17 +189,16 @@ fn process_array(
                 unauthorized |= outcome.unauthorized;
                 if let Some(response) = outcome.response {
                     responses.push(response);
-                }
-            }
-            _ => responses.push(error_response(None, RpcError::invalid_request())),
-        }
-    }
+               }
+           }
+            _ => responses.push(error_response(None, RpcError::invalid_request()))}
+   }
 
     if responses.is_empty() {
         (None, unauthorized)
-    } else {
+   } else {
         (Some(Value::Array(responses)), unauthorized)
-    }
+   }
 }
 
 fn process_object(
@@ -218,33 +213,33 @@ fn process_object(
 
     if !has_id {
         return RequestOutcome::notification();
-    }
+   }
 
     let method_value = obj.remove("method");
     let method = if let Some(value) =
         method_value.and_then(|value| value.as_str().map(std::string::ToString::to_string))
     {
         value
-    } else {
+   } else {
         RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
-    };
+   };
 
     if let (Some(limiter), Some(ip)) = (filters.rate_limiter.as_ref(), client_ip) {
         let check_result = limiter.check_for_method(ip, &method);
         if check_result.is_blocked() {
             RPC_ERR_TOTAL.inc();
             return RequestOutcome::error(error_response(id, RpcError::too_many_requests()), false);
-        }
-    }
+       }
+   }
 
     let params_value = obj.remove("params").unwrap_or(Value::Array(Vec::new()));
     let params = if let Value::Array(values) = params_value {
         values
-    } else {
+   } else {
         RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
-    };
+   };
 
     let (server_arc, handler) =
         match resolve_rpc_handler(&filters.server, filters.disabled.as_ref(), &method) {
@@ -252,28 +247,28 @@ fn process_object(
             Err(err) => {
                 RPC_ERR_TOTAL.inc();
                 return RequestOutcome::error(error_response(id, err), false);
-            }
-        };
+           }
+       };
 
     if let Some(auth) = filters.auth.as_ref() {
         let header = auth_header.unwrap_or("").trim();
         if header.is_empty() {
             RPC_ERR_TOTAL.inc();
             return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
-        }
+       }
         if !verify_basic_auth(Some(header), auth) {
             RPC_ERR_TOTAL.inc();
             return RequestOutcome::error(error_response(id, RpcError::access_denied()), false);
-        }
-    }
+       }
+   }
 
     match invoke_rpc_handler(&server_arc, handler, &method, params.as_slice()) {
         Ok(result) => RequestOutcome::response(success_response(id, result)),
         Err(err) => {
             RPC_ERR_TOTAL.inc();
             RequestOutcome::error(error_response(id, err), false)
-        }
-    }
+       }
+   }
 }
 
 pub(in crate::server) fn resolve_rpc_handler(
@@ -284,15 +279,15 @@ pub(in crate::server) fn resolve_rpc_handler(
     let method_key = method.to_ascii_lowercase();
     if disabled.contains(&method_key) {
         return Err(RpcError::access_denied());
-    }
+   }
 
     let Some(server_arc) = server.upgrade() else {
         return Err(RpcError::internal_server_error());
-    };
+   };
 
     let Some(handler) = lookup_rpc_handler(&server_arc, &method_key) else {
         return Err(RpcError::method_not_found().with_data(method));
-    };
+   };
 
     Ok((server_arc, handler))
 }
@@ -317,7 +312,7 @@ pub(in crate::server) fn invoke_rpc_handler(
     let call_result = panic::catch_unwind(AssertUnwindSafe(|| {
         let server_guard = server_arc.read();
         (callback)(&server_guard, params)
-    }));
+   }));
 
     match call_result {
         Ok(Ok(result)) => Ok(result),
@@ -333,16 +328,16 @@ pub(in crate::server) fn invoke_rpc_handler(
                 UnhandledExceptionPolicy::StopPlugin => {
                     let mut server = server_arc.write();
                     server.stop_rpc_server();
-                }
+               }
                 UnhandledExceptionPolicy::StopNode => std::process::exit(1),
                 UnhandledExceptionPolicy::Terminate => std::process::abort(),
                 UnhandledExceptionPolicy::Ignore
                 | UnhandledExceptionPolicy::Log
                 | UnhandledExceptionPolicy::Continue => {}
-            }
+           }
             Err(RpcError::internal_server_error())
-        }
-    }
+       }
+   }
 }
 
 pub(super) fn query_to_request_value(raw_query: &str) -> Option<Value> {
@@ -356,7 +351,7 @@ pub(super) fn query_to_request_value(raw_query: &str) -> Option<Value> {
     let mut obj = Map::new();
     if let Some(jsonrpc) = query.jsonrpc {
         obj.insert("jsonrpc".to_string(), Value::String(jsonrpc));
-    }
+   }
     obj.insert("id".to_string(), Value::String(id));
     obj.insert("method".to_string(), Value::String(method));
     obj.insert("params".to_string(), params_value);
@@ -376,9 +371,9 @@ fn parse_query_params(input: &str) -> Option<Value> {
 fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         (*message).to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
+   } else if let Some(message) = payload.downcast_ref::<String>() {
         message.clone()
-    } else {
+   } else {
         "panic".to_string()
-    }
+   }
 }

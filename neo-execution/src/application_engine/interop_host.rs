@@ -1,0 +1,291 @@
+use super::*;
+
+impl InteropHost for ApplicationEngine {
+    fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
+        if let Some(entry) = self.interop_handlers.get(&hash).copied() {
+            if entry.price > 0 {
+                self.add_cpu_fee(entry.price)
+                    .map_err(map_core_error_to_vm_error)?;
+            }
+            (entry.handler)(self, engine)
+        } else {
+            Err(VmError::InteropService {
+                service: format!("0x{hash:08x}"),
+                error: "Interop handler not registered".to_string(),
+            })
+        }
+    }
+
+    fn on_context_loaded(
+        &mut self,
+        engine: &mut ExecutionEngine,
+        context: &ExecutionContext,
+    ) -> VmResult<()> {
+        let state_arc =
+            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let call_flags = state_arc.lock().call_flags;
+        engine.set_call_flags(call_flags);
+
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.context_loaded(context);
+        }
+        Ok(())
+    }
+
+    fn on_context_unloaded(
+        &mut self,
+        engine: &mut ExecutionEngine,
+        context: &ExecutionContext,
+    ) -> VmResult<()> {
+        // DEADLOCK FIX: When CALL creates a callee context via clone_with_position,
+        // caller and callee share the same `states: Arc<RwLock<HashMap>>`. Looking up
+        // the same TypeId (ExecutionContextState) returns the same Arc<Mutex<T>>.
+        // Holding the callee's lock while trying to lock the caller's state is a
+        // same-thread reentrant lock on a non-reentrant parking_lot::Mutex → deadlock.
+        //
+        // Fix: extract all needed values from the callee state, drop the lock, THEN
+        // acquire the caller state lock.
+        let state_arc =
+            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+
+        // Phase 1: Extract values under a short-lived lock. Do not reset the
+        // shared state yet: same-script unloads (for example `_initialize`
+        // frames cloned from the real contract method) reuse the same
+        // ExecutionContextState, and clearing `is_dynamic_call` here would make
+        // the later cross-contract unload lose the null placeholder it needs to
+        // push for void dynamic calls.
+        let (snapshot_cache, notification_count, is_dynamic_call, unloaded_script_hash) = {
+            let state = state_arc.lock();
+            let snapshot = state.snapshot_cache.clone();
+            let notif_count = state.notification_count;
+            let dynamic_call = state.is_dynamic_call;
+            let script_hash = state.script_hash;
+            (snapshot, notif_count, dynamic_call, script_hash)
+        };
+        // Lock is now dropped — safe to acquire caller's state lock
+
+        // Match C# semantics: only cross-contract unloads (different script)
+        // trigger child snapshot commit and dynamic-call return normalization.
+        // Compare script hashes first because this engine may materialize fresh
+        // script objects for equivalent contracts during load.
+        // Match C# `ContextUnloaded`: `context.Script != CurrentContext?.Script` uses
+        // reference equality, so a contract invoking itself via `System.Contract.Call`
+        // is treated as a cross-contract unload (each LoadContract creates a fresh Script
+        // instance). Using script_hash equality here would incorrectly skip the dynamic-call
+        // null placeholder push for self-calls, causing stack underflow at the caller's
+        // post-SYSCALL DROP.
+        let is_cross_contract_unload = engine.current_context().map_or(true, |current_ctx| {
+            !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc())
+        });
+        let _ = unloaded_script_hash;
+
+        // Phase 2: Commit snapshot and propagate state to caller (cross-contract only)
+        if is_cross_contract_unload {
+            {
+                let mut state = state_arc.lock();
+                state.notification_count = 0;
+                state.is_dynamic_call = false;
+            }
+
+            if engine.uncaught_exception().is_none() {
+                if let Some(snapshot) = snapshot_cache {
+                    snapshot.commit();
+                }
+
+                if let Some(current_ctx) = engine.current_context() {
+                    let current_state_arc = current_ctx
+                        .get_state_with_factory::<ExecutionContextState, _>(
+                            ExecutionContextState::new,
+                        );
+                    let mut current_state = current_state_arc.lock();
+                    current_state.notification_count = current_state
+                        .notification_count
+                        .saturating_add(notification_count);
+
+                    if is_dynamic_call {
+                        let return_count = context.evaluation_stack().len();
+                        match return_count {
+                            0 => {
+                                engine.push(StackItem::null())?;
+                            }
+                            1 => {
+                                // Single return value is already on the evaluation stack and will be
+                                // propagated by the VM according to the configured return count.
+                            }
+                            _ => {
+                                return Err(VmError::invalid_operation_msg(
+                                    "Multiple return values are not allowed in cross-contract calls.",
+                                ));
+                            }
+                        }
+                    }
+                }
+            } else if notification_count > 0 {
+                if notification_count >= self.notifications.len() {
+                    self.notifications.clear();
+                } else {
+                    let retain = self.notifications.len() - notification_count;
+                    self.notifications.truncate(retain);
+                }
+            }
+        }
+
+        self.refresh_context_tracking()
+            .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;
+
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.context_unloaded(context);
+        }
+
+        if let Some(current_context) = engine.current_context() {
+            let current_state_arc = current_context
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            engine.set_call_flags(current_state_arc.lock().call_flags);
+        } else {
+            engine.set_call_flags(CallFlags::ALL);
+        }
+
+        // C# `ApplicationEngine.ContextUnloaded` tail: a context registered in
+        // `contractTasks` (here: loaded by `call_from_native_contract_returning`)
+        // unloading while `UncaughtException` is set throws `VMUnhandledException`,
+        // faulting the whole engine. Erroring out of the unload hook aborts the
+        // VM's exception unwinding before any TRY below the native frame is
+        // consulted, so — exactly like C# — a caller cannot catch an exception
+        // that escapes a contract call issued from a native contract.
+        if let Some(exception) = engine.uncaught_exception() {
+            let boundary_id = std::sync::Arc::as_ptr(&state_arc) as usize;
+            if self.native_call_boundary_contexts.contains(&boundary_id) {
+                return Err(VmError::UnhandledException(exception.clone()));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn pre_execute_instruction(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        instruction: &Instruction,
+    ) -> VmResult<()> {
+        let opcode_price = Self::get_opcode_price(instruction.opcode.byte());
+        if opcode_price > 0 {
+            self.add_cpu_fee(opcode_price)
+                .map_err(map_core_error_to_vm_error)?;
+        }
+
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.pre_execute_instruction(instruction);
+        }
+        Ok(())
+    }
+
+    fn post_execute_instruction(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        instruction: &Instruction,
+    ) -> VmResult<()> {
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.post_execute_instruction(instruction);
+        }
+        Ok(())
+    }
+
+    /// Handles CALLT opcode - calls a contract method via method token.
+    ///
+    /// This implements the C# ApplicationEngine.OnCallT logic:
+    /// 1. Validates call flags (ReadStates | AllowCall)
+    /// 2. Gets the current contract's NEF tokens
+    /// 3. Looks up the method token by index
+    /// 4. Pops the required arguments from the stack
+    /// 5. Performs the cross-contract call
+    fn on_callt(&mut self, engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
+        // 1. Validate call flags - need ReadStates | AllowCall
+        let required_flags = CallFlags::READ_STATES | CallFlags::ALLOW_CALL;
+        let current_flags = self.get_current_call_flags().map_err(|e| {
+            VmError::invalid_operation_msg(format!("Failed to get call flags: {}", e))
+        })?;
+
+        if !current_flags.contains(required_flags) {
+            return Err(VmError::invalid_operation_msg(format!(
+                "CALLT requires {:?} but current context has {:?}",
+                required_flags, current_flags
+            )));
+        }
+
+        // 2. Get the current execution context and contract state
+        let context = engine
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current execution context"))?;
+
+        let state_arc =
+            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        // Clone only the (small) method-token vector instead of the whole
+        // ContractState, which carries the full NEF bytecode and manifest.
+        let tokens = {
+            let state = state_arc.lock();
+            let contract = state.contract.as_ref().ok_or_else(|| {
+                VmError::invalid_operation_msg("No contract in current execution context")
+            })?;
+            contract.nef.tokens.clone()
+        };
+
+        // 3. Validate token index and get the method token
+        let token_idx = token_id as usize;
+        if token_idx >= tokens.len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Token index {} out of range (max: {})",
+                token_idx,
+                tokens.len()
+            )));
+        }
+        let token = tokens[token_idx].clone();
+
+        // 4. Validate stack has enough parameters
+        let stack_count = context.evaluation_stack().len();
+        if (token.parameters_count as usize) > stack_count {
+            return Err(VmError::invalid_operation_msg(format!(
+                "CALLT token requires {} parameters but stack has {}",
+                token.parameters_count, stack_count
+            )));
+        }
+
+        // 5. Pop arguments from the stack (in reverse order)
+        let mut args = Vec::with_capacity(token.parameters_count as usize);
+        for _ in 0..token.parameters_count {
+            args.push(engine.pop()?);
+        }
+
+        // 6. Look up the target contract
+        let target_contract = self.fetch_contract(&token.hash).map_err(|e| {
+            VmError::invalid_operation_msg(format!(
+                "Failed to fetch contract {}: {}",
+                token.hash, e
+            ))
+        })?;
+
+        // 7. Find the method descriptor in the target contract's ABI
+        let method = target_contract
+            .manifest
+            .abi
+            .get_method_ref(&token.method, token.parameters_count as usize)
+            .cloned()
+            .ok_or_else(|| {
+                VmError::invalid_operation_msg(format!(
+                    "Method '{}' with {} parameters not found in contract {}",
+                    token.method, token.parameters_count, token.hash
+                ))
+            })?;
+
+        // 8. Execute the cross-contract call
+        self.call_contract_internal(
+            &target_contract,
+            &method,
+            token.call_flags,
+            token.has_return_value,
+            &args,
+        )
+        .map_err(|e| VmError::invalid_operation_msg(format!("CALLT failed: {}", e)))?;
+
+        Ok(())
+    }
+}

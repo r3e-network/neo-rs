@@ -4,7 +4,7 @@ use super::super::{
 };
 #[cfg(feature = "oracle")]
 use super::super::{OracleHttpsProtocol, OracleNeoFsProtocol};
-use neo_core::neo_system::NeoSystem;
+use neo_system::Node;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 #[cfg(feature = "oracle")]
@@ -15,7 +15,7 @@ use std::sync::{Arc, Weak};
 impl OracleService {
     pub fn new(
         settings: OracleServiceSettings,
-        system: Arc<NeoSystem>,
+        system: Arc<Node>,
     ) -> Result<Self, OracleServiceError> {
         let mut settings = settings;
         settings.normalize();

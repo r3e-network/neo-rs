@@ -15,17 +15,15 @@ pub struct RpcMethodDescriptor {
     /// Authentication is enforced globally when RPC basic auth is configured,
     /// matching Neo C# behavior. This flag is kept for metadata only.
     #[serde(default)]
-    pub requires_auth: bool,
-}
+    pub requires_auth: bool}
 
 impl RpcMethodDescriptor {
     /// Creates a new RPC method descriptor.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            requires_auth: false,
-        }
-    }
+            requires_auth: false}
+   }
 
     /// Creates a new RPC method descriptor marked as protected.
     ///
@@ -35,13 +33,12 @@ impl RpcMethodDescriptor {
     pub fn new_protected(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            requires_auth: true,
-        }
-    }
+            requires_auth: true}
+   }
 
     /// Returns whether this method requires authentication.
     #[must_use]
     pub const fn requires_auth(&self) -> bool {
         self.requires_auth
-    }
+   }
 }

@@ -2,9 +2,9 @@ use super::super::super::proto::neofs_v2;
 use super::super::super::{NeoFsAuth, NeoFsRange, OracleNeoFsProtocol};
 use super::super::auth::{build_neofs_meta_header, build_neofs_request_verification_header};
 use super::super::verify::validate_neofs_response;
-use neo_core::network::p2p::payloads::OracleResponseCode;
-use neo_core::wallets::KeyPair;
-use neo_core::UInt256;
+use neo_payloads::OracleResponseCode;
+use neo_wallets::KeyPair;
+use neo_primitives::UInt256;
 use tonic::transport::Channel;
 
 impl OracleNeoFsProtocol {

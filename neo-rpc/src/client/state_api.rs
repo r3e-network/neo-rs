@@ -21,8 +21,7 @@ use std::sync::Arc;
 /// Matches C# `StateAPI`
 pub struct StateApi {
     /// The RPC client instance
-    rpc_client: Arc<RpcClient>,
-}
+    rpc_client: Arc<RpcClient>}
 
 fn decode_base64_rpc_result(result: &JToken) -> Result<Vec<u8>, RpcError> {
     let value = result.as_string().ok_or("Invalid response format")?;
@@ -36,8 +35,8 @@ impl StateApi {
     /// Matches C# constructor
     #[must_use]
     pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
-        Self { rpc_client }
-    }
+        Self {rpc_client}
+   }
 
     /// Get state root by index
     /// Matches C# `GetStateRootAsync`
@@ -50,7 +49,7 @@ impl StateApi {
         let obj = result.as_object().ok_or("Invalid response format")?;
 
         RpcStateRoot::from_json(obj).map_err(std::convert::Into::into)
-    }
+   }
 
     /// Get proof for a storage key
     /// Matches C# `GetProofAsync`
@@ -73,7 +72,7 @@ impl StateApi {
             .await?;
 
         decode_base64_rpc_result(&result)
-    }
+   }
 
     /// Verify a proof
     /// Matches C# `VerifyProofAsync`
@@ -94,7 +93,7 @@ impl StateApi {
             .await?;
 
         decode_base64_rpc_result(&result)
-    }
+   }
 
     /// Get state height information
     /// Matches C# `GetStateHeightAsync`
@@ -117,7 +116,7 @@ impl StateApi {
             .map(|n| n as u32);
 
         Ok((local_root_index, validated_root_index))
-    }
+   }
 
     /// Make parameters for find states call
     /// Matches C# `MakeFindStatesParams`
@@ -138,10 +137,10 @@ impl StateApi {
 
         if let Some(c) = count {
             params.push(JToken::Number(f64::from(c)));
-        }
+       }
 
         params
-    }
+   }
 
     /// Find states with prefix
     /// Matches C# `FindStatesAsync`
@@ -160,7 +159,7 @@ impl StateApi {
         let obj = result.as_object().ok_or("Invalid response format")?;
 
         RpcFoundStates::from_json(obj).map_err(std::convert::Into::into)
-    }
+   }
 
     /// Get state value
     /// Matches C# `GetStateAsync`
@@ -183,7 +182,7 @@ impl StateApi {
             .await?;
 
         decode_base64_rpc_result(&result)
-    }
+   }
 }
 
 #[cfg(test)]
@@ -198,13 +197,13 @@ mod tests {
 
     fn localhost_binding_permitted() -> bool {
         TcpListener::bind("127.0.0.1:0").is_ok()
-    }
+   }
 
     #[tokio::test]
     async fn state_api_get_state_root_parses_response() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         let root_hash = UInt256::zero();
         let body = format!(
@@ -229,13 +228,13 @@ mod tests {
         assert_eq!(parsed.index, 1);
         assert_eq!(parsed.root_hash, root_hash);
         assert!(parsed.witness.is_none());
-    }
+   }
 
     #[tokio::test]
     async fn state_api_get_state_height_handles_nullable_indices() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         let body =
             r#"{"jsonrpc":"2.0","id":1,"result":{"localrootindex":2,"validatedrootindex":null}}"#;
@@ -256,13 +255,13 @@ mod tests {
         let (local, validated) = api.get_state_height().await.expect("state height");
         assert_eq!(local, Some(2));
         assert_eq!(validated, None);
-    }
+   }
 
     #[tokio::test]
     async fn state_api_get_state_and_proof_round_trip_bytes() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         let root_hash = UInt256::zero();
         let script_hash = UInt160::zero();
@@ -295,13 +294,13 @@ mod tests {
             .await
             .expect("state value");
         assert_eq!(parsed, value.to_vec());
-    }
+   }
 
     #[tokio::test]
     async fn state_api_get_and_verify_proof_round_trip_bytes() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         let root_hash = UInt256::zero();
         let script_hash = UInt160::zero();
@@ -356,13 +355,13 @@ mod tests {
             .await
             .expect("verified value");
         assert_eq!(parsed_value, value.to_vec());
-    }
+   }
 
     #[tokio::test]
     async fn state_api_find_states_parses_results_and_proofs() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
         let mut server = Server::new_async().await;
         let root_hash = UInt256::zero();
         let script_hash = UInt160::zero();
@@ -407,7 +406,7 @@ mod tests {
         assert_eq!(parsed.results[0].1, b"v".to_vec());
         assert_eq!(parsed.first_proof.as_deref(), Some(b"first".as_slice()));
         assert_eq!(parsed.last_proof.as_deref(), Some(b"last".as_slice()));
-    }
+   }
 
     #[test]
     fn state_api_make_find_states_params_handles_defaults() {
@@ -427,5 +426,5 @@ mod tests {
             params[3].as_string().unwrap(),
             general_purpose::STANDARD.encode(b"")
         );
-    }
+   }
 }

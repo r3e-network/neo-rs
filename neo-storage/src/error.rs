@@ -92,6 +92,22 @@ impl StorageError {
 /// Result type for storage operations.
 pub type StorageResult<T> = std::result::Result<T, StorageError>;
 
+impl From<StorageError> for neo_error::CoreError {
+    fn from(err: StorageError) -> Self {
+        neo_error::CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
+    }
+}
+
+impl From<crate::KeyBuilderError> for neo_error::CoreError {
+    fn from(err: crate::KeyBuilderError) -> Self {
+        neo_error::CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

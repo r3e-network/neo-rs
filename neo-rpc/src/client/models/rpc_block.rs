@@ -11,7 +11,7 @@
 
 use super::super::utility::insert_optional_string;
 use neo_config::ProtocolSettings;
-use neo_core::Block;
+use neo_payloads::Block;
 use neo_json::JObject;
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -26,8 +26,7 @@ pub struct RpcBlock {
     pub confirmations: u32,
 
     /// Hash of the next block
-    pub next_block_hash: Option<UInt256>,
-}
+    pub next_block_hash: Option<UInt256>}
 
 impl RpcBlock {
     /// Converts to JSON
@@ -46,7 +45,7 @@ impl RpcBlock {
             self.next_block_hash.as_ref().map(ToString::to_string),
         );
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -66,9 +65,8 @@ impl RpcBlock {
         Ok(Self {
             block,
             confirmations,
-            next_block_hash,
-        })
-    }
+            next_block_hash})
+   }
 }
 
 #[cfg(test)]
@@ -80,10 +78,10 @@ mod tests {
     fn block_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getblockasync") else {
             return;
-        };
+       };
         let settings = ProtocolSettings::default_settings();
         let parsed = RpcBlock::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 }

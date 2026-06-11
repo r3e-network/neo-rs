@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
-use neo_core::network::p2p::payloads::witness::Witness as PayloadWitness;
-use neo_core::Witness;
+use neo_payloads::witness::Witness as PayloadWitness;
+use neo_payloads::Witness;
 use neo_json::JObject;
 
 use super::parsing::parse_base64_token;
@@ -35,7 +35,7 @@ pub fn scripts_to_witness_json(invocation: &[u8], verification: &[u8]) -> neo_js
     json
 }
 
-pub fn witness_to_json(witness: &neo_core::Witness) -> neo_json::JObject {
+pub fn witness_to_json(witness: &Witness) -> neo_json::JObject {
     scripts_to_witness_json(witness.invocation_script(), witness.verification_script())
 }
 

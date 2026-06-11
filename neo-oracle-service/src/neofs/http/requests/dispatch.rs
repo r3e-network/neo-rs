@@ -1,6 +1,6 @@
 use super::super::super::{NeoFsAuth, NeoFsCommand, NeoFsRequest, OracleNeoFsProtocol};
-use neo_core::network::p2p::payloads::oracle_response::MAX_RESULT_SIZE;
-use neo_core::network::p2p::payloads::OracleResponseCode;
+use neo_payloads::oracle_response::MAX_RESULT_SIZE;
+use neo_payloads::OracleResponseCode;
 
 impl OracleNeoFsProtocol {
     pub(in super::super::super) async fn execute_request(

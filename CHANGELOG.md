@@ -1,5 +1,54 @@
 # Changelog
 
+## [Unreleased]
+
+### Breaking changes (workspace restructuring)
+
+The `neo-core` monolith has been split into four focused, single-responsibility crates. The end state mirrors the polkadot-sdk / reth convention: a thin `neo-core` compatibility facade over a layered workspace where each crate owns exactly one domain.
+
+**New crates (Layer 0 — Foundation):**
+- `neo-error` — authoritative `CoreError` / `CoreResult` for the whole workspace. Replaces the duplicate error types that previously lived inside `neo-core`.
+- `neo-time` — testable `TimeProvider` / `TimeSource`. Replaces `neo_core::time_provider::*`.
+
+**New crates (Layer 1 — Protocol):**
+- `neo-ledger-types` — pure ledger / wire data types. Owns `Witness`. The canonical home for `Block` / `Header` / `Transaction` / `Signer` in future slices.
+
+**New crates (Layer 2 — Service):**
+- `neo-chain` — pure block / chain validation (`BlockValidator`, `BlockValidationError`, `validate_merkle_root`, `validate_witness_scripts`, etc.). Has **zero** dependency on `neo-core`; the public API now takes `&[UInt256]` hashes and `&Witness` references rather than concrete `Header` / `Transaction` types.
+
+**Migration table:**
+
+| Old import path | New import path |
+|-----------------|-----------------|
+| `neo_core::CoreError` / `neo_core::error::CoreError` | `neo_error::CoreError` |
+| `neo_core::CoreResult` / `neo_core::error::CoreResult` | `neo_error::CoreResult` |
+| `neo_core::Result` | `neo_error::Result` |
+| `neo_core::TimeProvider` | `neo_time::TimeProvider` |
+| `neo_core::time_provider::*` | `neo_time::*` |
+| `neo_core::Witness` | `neo_ledger_types::Witness` |
+| `neo_core::witness::*` | `neo_ledger_types::witness::*` |
+| `neo_core::validation::*` / `BlockValidator` | `neo_chain::block_validation::*` |
+
+The old import paths are still re-exported from `neo_core::*` for one release cycle to give downstream callers a graceful migration window. New code should import from the canonical crates.
+
+### Internal cleanups
+
+- Fixed pre-existing macro bug: `impl_native_contract!` and `neo_native_contract_methods!` in `neo-core` referenced an unresolved `$neo_error::` placeholder left over from a half-finished extraction. Now correctly emits `::neo_error::` paths.
+- Moved the orphan-rule-violating `impl From<KeyBuilderError> for CoreError` out of `neo-core` and into `neo-error` (where it belongs, since `CoreError` lives there).
+- Centralized all `From<X> for CoreError` impls in `neo-error` (was previously split between `neo-core::error` and individual consumers). Documented as a TODO to move each `From` into the source crate once those crates are independently versioned.
+- Removed the now-duplicate `error.rs`, `time_provider.rs`, `witness.rs`, `validation.rs` source files from `neo-core/src/`. Replaced `pub mod xxx;` declarations with `pub use neo_xxx::*;` re-exports for backward compatibility.
+- Bulk-migrated 89 internal `crate::error::*` / `crate::time_provider::*` / `crate::witness::*` / `crate::validation::*` references in `neo-core` to the new home crates via sed.
+- Updated 42 external `neo_core::Witness` / `neo_core::error::*` / `neo_core::time_provider::*` references across the workspace (`neo-rpc`, `neo-consensus`, `neo-p2p`, `neo-node`, `neo-tx-builder`, integration tests).
+
+### Verification
+
+- `cargo check --workspace` — **green** (0 errors).
+- `cargo test --workspace --lib` — **2048 passed, 0 failed, 8 ignored** across 27 test suites.
+- `neo-error` lib + doc tests: 7 unit + 1 doc — all green.
+- `neo-time` lib + doc tests: 1 unit + 1 doc — all green.
+- `neo-ledger-types` lib + doc tests: 8 unit + 1 doc — all green.
+- `neo-chain` lib tests: 22 unit — all green.
+
 ## [0.7.2] - 2026-02-12
 
 ### Fixed

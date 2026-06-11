@@ -26,8 +26,7 @@ pub struct RpcVersion {
     pub user_agent: String,
 
     /// Protocol information
-    pub protocol: RpcProtocol,
-}
+    pub protocol: RpcProtocol}
 
 impl RpcVersion {
     /// Converts to JSON
@@ -53,7 +52,7 @@ impl RpcVersion {
             JToken::Object(self.protocol.to_json()),
         );
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -83,9 +82,8 @@ impl RpcVersion {
             tcp_port,
             nonce,
             user_agent,
-            protocol,
-        })
-    }
+            protocol})
+   }
 }
 
 /// RPC protocol information matching C# `RpcProtocol`
@@ -125,8 +123,7 @@ pub struct RpcProtocol {
     pub seed_list: Vec<String>,
 
     /// Standby committee
-    pub standby_committee: Vec<String>,
-}
+    pub standby_committee: Vec<String>}
 
 impl RpcProtocol {
     /// Converts to JSON
@@ -181,14 +178,14 @@ impl RpcProtocol {
                     JToken::Number(f64::from(*height)),
                 );
                 obj
-            })),
+           })),
         );
 
         json.insert(
             "standbycommittee".to_string(),
             token_array(&self.standby_committee, |member| {
                 JToken::String(member.clone())
-            }),
+           }),
         );
 
         json.insert(
@@ -197,7 +194,7 @@ impl RpcProtocol {
         );
 
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -260,9 +257,9 @@ impl RpcProtocol {
                         let name = obj.get("name")?.as_string()?;
                         let block_height = obj.get("blockheight")?.as_number()? as u32;
                         Some((name, block_height))
-                    })
+                   })
                     .collect::<BTreeMap<_, _>>()
-            })
+           })
             .unwrap_or_default();
 
         // Parse seed list
@@ -283,9 +280,8 @@ impl RpcProtocol {
             initial_gas_distribution,
             hardforks,
             seed_list,
-            standby_committee,
-        })
-    }
+            standby_committee})
+   }
 }
 
 #[cfg(test)]
@@ -309,9 +305,8 @@ mod tests {
             initial_gas_distribution: 5_200_000_000_000_000,
             hardforks,
             seed_list: vec!["seed1".into(), "seed2".into()],
-            standby_committee: vec!["comm1".into(), "comm2".into()],
-        }
-    }
+            standby_committee: vec!["comm1".into(), "comm2".into()]}
+   }
 
     #[test]
     fn rpc_version_roundtrip() {
@@ -319,8 +314,7 @@ mod tests {
             tcp_port: 10333,
             nonce: 42,
             user_agent: "/NEO:3.6/".into(),
-            protocol: sample_protocol(),
-        };
+            protocol: sample_protocol()};
 
         let json = version.to_json();
         let parsed = RpcVersion::from_json(&json).expect("version");
@@ -335,15 +329,15 @@ mod tests {
         );
         assert_eq!(parsed.protocol.seed_list.len(), 2);
         assert_eq!(parsed.protocol.standby_committee.len(), 2);
-    }
+   }
 
     #[test]
     fn version_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getversionasync") else {
             return;
-        };
+       };
         let parsed = RpcVersion::from_json(&expected).expect("parse");
         let actual = parsed.to_json();
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 }

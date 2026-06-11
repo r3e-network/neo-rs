@@ -1,0 +1,644 @@
+//! [`MemoryPool`] - the Neo transaction memory pool.
+//!
+//! Holds two priority queues:
+//!
+//! - `verified` — transactions whose state-dependent witness
+//!   verification has succeeded and are ready to be picked up by the
+//!   block-mining pipeline.
+//! - `unverified` — transactions whose state-dependent witness
+//!   verification has not yet been performed (or failed and is
+//!   scheduled for re-verification).
+//!
+//! Both queues are bounded by the configured `capacity` (typically
+//! `ProtocolSettings::memory_pool_max_transactions`). When the
+//! pool is full, the lowest-priority item is evicted to make room
+//! for a higher-priority one.
+
+use crate::new_transaction_event_args::NewTransactionEventArgs;
+use crate::pool_index::PoolIndex;
+use crate::pool_item::PoolItem;
+use crate::transaction_removed_event_args::TransactionRemovedEventArgs;
+use crate::transaction_verification_context::TransactionVerificationContext;
+use neo_config::ProtocolSettings;
+use neo_data_cache::DataCache;
+use neo_payloads::Transaction;
+use neo_primitives::{TransactionRemovalReason, UInt160, UInt256, VerifyResult};
+use num_bigint::BigInt;
+use parking_lot::RwLock;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+/// Callback invoked after a new transaction has been accepted into
+/// the pool.
+pub type TransactionAddedCallback = dyn Fn(&MemoryPool, &Transaction) + Send + Sync;
+/// Callback invoked after a transaction (or set of transactions) is
+/// removed from the pool.
+pub type TransactionRemovedCallback =
+    dyn Fn(&MemoryPool, &TransactionRemovedEventArgs) + Send + Sync;
+/// Callback invoked when a transaction should be rebroadcast to the
+/// network.
+pub type TransactionRelayCallback = dyn Fn(&Transaction) + Send + Sync;
+/// Callback invoked for every freshly-admitted transaction; subscribers
+/// may veto the admission by setting `cancel = true` on the event args.
+pub type NewTransactionCallback =
+    dyn Fn(&MemoryPool, &mut NewTransactionEventArgs) + Send + Sync;
+
+/// Inner, mutable state of the memory pool. Split out so the outer
+/// `MemoryPool` can hand out read-only references while still
+/// allowing the rest of the system to mutate the pool under a lock.
+struct MemoryPoolInner {
+    verified: PoolIndex,
+    unverified: PoolIndex,
+    conflicts: HashMap<UInt256, HashSet<UInt256>>,
+    verification_context: TransactionVerificationContext,
+    /// C# `TransactionVerificationContext._senderFee`: the summed
+    /// system+network fees of pooled transactions per sender, charged
+    /// against the sender's GAS balance for every new admission.
+    sender_fees: HashMap<UInt160, BigInt>,
+    /// C# `TransactionVerificationContext._oracleResponses`: pooled
+    /// `OracleResponse` ids, rejecting duplicate responses.
+    oracle_responses: HashMap<u64, UInt256>,
+    capacity: usize,
+}
+
+impl MemoryPoolInner {
+    /// C# `TransactionVerificationContext.AddTransaction`.
+    fn context_add(&mut self, tx: &Transaction) {
+        if let Some(oracle) = oracle_response_id(tx) {
+            self.oracle_responses.insert(oracle, tx.hash());
+        }
+        if let Some(sender) = tx.signers().first().map(|s| s.account) {
+            let fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
+            *self.sender_fees.entry(sender).or_default() += fee;
+        }
+    }
+
+    /// C# `TransactionVerificationContext.RemoveTransaction`.
+    fn context_remove(&mut self, tx: &Transaction) {
+        if let Some(oracle) = oracle_response_id(tx) {
+            self.oracle_responses.remove(&oracle);
+        }
+        if let Some(sender) = tx.signers().first().map(|s| s.account) {
+            let fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
+            if let Some(total) = self.sender_fees.get_mut(&sender) {
+                *total -= fee;
+                if *total <= BigInt::from(0) {
+                    self.sender_fees.remove(&sender);
+                }
+            }
+        }
+    }
+}
+
+/// Returns the `OracleResponse` attribute id of `tx`, if any.
+fn oracle_response_id(tx: &Transaction) -> Option<u64> {
+    tx.attributes().iter().find_map(|attr| match attr {
+        neo_payloads::TransactionAttribute::OracleResponse(resp) => Some(resp.id),
+        _ => None,
+    })
+}
+
+/// Neo transaction memory pool.
+pub struct MemoryPool {
+    /// Optional subscriber callback invoked to validate a new
+    /// transaction before it is admitted.
+    pub new_transaction: Option<Box<NewTransactionCallback>>,
+    /// Optional subscriber callback invoked after a transaction has
+    /// been added to the pool.
+    pub transaction_added: Option<Box<TransactionAddedCallback>>,
+    /// Optional subscriber callback invoked after a transaction has
+    /// been removed from the pool.
+    pub transaction_removed: Option<Box<TransactionRemovedCallback>>,
+    /// Optional subscriber callback invoked when a transaction should
+    /// be rebroadcast to the network.
+    pub transaction_relay: Option<Box<TransactionRelayCallback>>,
+
+    /// Protocol settings used by transaction verification (network
+    /// magic for signature checks, hardfork schedule, expiry window).
+    settings: ProtocolSettings,
+    inner: RwLock<MemoryPoolInner>,
+}
+
+impl MemoryPool {
+    /// Constructs a new memory pool using the supplied protocol
+    /// settings. The pool capacity is taken from
+    /// `settings.memory_pool_max_transactions`.
+    pub fn new(settings: &ProtocolSettings) -> Self {
+        let capacity = settings.memory_pool_max_transactions as usize;
+        Self {
+            new_transaction: None,
+            transaction_added: None,
+            transaction_removed: None,
+            transaction_relay: None,
+            settings: settings.clone(),
+            inner: RwLock::new(MemoryPoolInner {
+                verified: PoolIndex::with_capacity(capacity),
+                unverified: PoolIndex::with_capacity(capacity / 4),
+                conflicts: HashMap::with_capacity(capacity / 2),
+                verification_context: TransactionVerificationContext::new(),
+                sender_fees: HashMap::new(),
+                oracle_responses: HashMap::new(),
+                capacity,
+            }),
+        }
+    }
+
+    /// Returns the configured maximum pool capacity.
+    pub fn capacity(&self) -> usize {
+        self.inner.read().capacity
+    }
+
+    /// Returns the number of verified transactions currently in the pool.
+    pub fn verified_count(&self) -> usize {
+        self.inner.read().verified.len()
+    }
+
+    /// Returns the number of unverified transactions currently in the pool.
+    pub fn unverified_count(&self) -> usize {
+        self.inner.read().unverified.len()
+    }
+
+    /// Returns the total number of transactions currently in the pool
+    /// (verified + unverified).
+    pub fn total_count(&self) -> usize {
+        let guard = self.inner.read();
+        guard.verified.len() + guard.unverified.len()
+    }
+
+    /// Returns whether the pool contains a transaction with the
+    /// given hash (in either the verified or unverified queue).
+    pub fn contains(&self, hash: &UInt256) -> bool {
+        let guard = self.inner.read();
+        guard.verified.contains(hash) || guard.unverified.contains(hash)
+    }
+
+    /// Returns the pool item for the given hash, preferring the
+    /// verified queue over the unverified one.
+    pub fn get(&self, hash: &UInt256) -> Option<PoolItem> {
+        let guard = self.inner.read();
+        guard
+            .verified
+            .get(hash)
+            .or_else(|| guard.unverified.get(hash))
+            .cloned()
+    }
+
+    /// Returns a snapshot of the verified queue in priority order
+    /// (highest fee-per-byte first).
+    pub fn verified_snapshot(&self) -> Vec<PoolItem> {
+        self.inner.read().verified.to_sorted_vec()
+    }
+
+    /// Returns a snapshot of the unverified queue in priority order.
+    pub fn unverified_snapshot(&self) -> Vec<PoolItem> {
+        self.inner.read().unverified.to_sorted_vec()
+    }
+
+    /// Records the supplied transaction hashes as confirmed in the
+    /// current persisting block. Returns the hashes that were
+    /// previously known (i.e. present in the pool) so the caller can
+    /// remove them and emit removal events.
+    pub fn commit_block(
+        &self,
+        confirmed: &[UInt256],
+    ) -> Vec<(Transaction, TransactionRemovalReason)> {
+        let mut guard = self.inner.write();
+        let mut removed = Vec::with_capacity(confirmed.len());
+        for hash in confirmed {
+            guard.verification_context.confirm(*hash);
+            if let Some(item) = guard.verified.remove(hash) {
+                let tx = (*item.transaction).clone();
+                guard.conflicts.retain(|_, set| {
+                    set.remove(hash);
+                    !set.is_empty()
+                });
+                guard.context_remove(&tx);
+                removed.push((tx, TransactionRemovalReason::NoLongerValid));
+            }
+            if let Some(item) = guard.unverified.remove(hash) {
+                let tx = (*item.transaction).clone();
+                guard.context_remove(&tx);
+                removed.push((tx, TransactionRemovalReason::NoLongerValid));
+            }
+        }
+        removed
+    }
+
+    /// Promotes a batch of unverified transactions to verified,
+    /// running each through the supplied closure. Returns the
+    /// list of removals encountered.
+    pub fn reverify<F>(
+        &self,
+        snapshot: &DataCache,
+        verifier: F,
+    ) -> Vec<(Transaction, TransactionRemovalReason)>
+    where
+        F: Fn(&Transaction, &DataCache) -> VerifyResult,
+    {
+        let mut guard = self.inner.write();
+        let mut removals = Vec::new();
+        let to_check: Vec<PoolItem> = guard.unverified.iter().cloned().collect();
+
+        for item in to_check {
+            let tx = (*item.transaction).clone();
+            let result = verifier(&tx, snapshot);
+            if result.is_success() {
+                let hash = item.hash();
+                guard.unverified.remove(&hash);
+                guard.verified.insert(item);
+            } else {
+                let hash = item.hash();
+                guard.unverified.remove(&hash);
+                guard.context_remove(&tx);
+                removals.push((tx, TransactionRemovalReason::NoLongerValid));
+            }
+        }
+        removals
+    }
+
+    /// Attempts to admit a fresh transaction into the pool. Returns
+    /// the [`VerifyResult`] describing the outcome.
+    ///
+    /// Mirrors C# `MemoryPool.TryAdd`: containment first, then the
+    /// full transaction verification ([`crate::verification`] — in C#
+    /// the state-independent half runs in the `TransactionRouter`
+    /// preverifier and the state-dependent half inside `TryAdd`; the
+    /// combined behavior is identical for the single-threaded
+    /// admission path), then admission into the **verified** queue
+    /// with capacity eviction and verification-context bookkeeping
+    /// (sender fees, pooled oracle-response ids).
+    ///
+    /// Not implemented (documented gap): C# `CheckConflicts` pooled
+    /// `Conflicts`-attribute eviction — a conflicting pooled
+    /// transaction neither blocks admission (`HasConflicts`) nor gets
+    /// evicted, and the conflict-fee rebate in the sender-fee check is
+    /// therefore never applied. On-chain conflict records ARE checked
+    /// (the `Conflicts` attribute verification).
+    pub fn try_add(
+        &self,
+        transaction: Transaction,
+        snapshot: &DataCache,
+    ) -> VerifyResult {
+        let hash = transaction.hash();
+
+        // Subscriber veto gate.
+        if let Some(callback) = &self.new_transaction {
+            let mut args = NewTransactionEventArgs::new(transaction.clone(), snapshot.clone());
+            callback(self, &mut args);
+            if args.cancel {
+                return VerifyResult::PolicyFail;
+            }
+        }
+
+        // C# TryAdd holds the write lock across the containment check, the
+        // sender-fee-context read, verification, and admission, so two
+        // concurrent submissions cannot both verify against the same pooled
+        // sender-fee state (MemoryPool.cs:353-369). Verification is serialized
+        // under the lock exactly like C#'s `_txRwLock.EnterWriteLock()`.
+        let (evicted, new_tx_evicted) = {
+            let mut guard = self.inner.write();
+            if guard.verified.contains(&hash) || guard.unverified.contains(&hash) {
+                return VerifyResult::AlreadyExists;
+            }
+            let pooled_sender_fee = transaction
+                .signers()
+                .first()
+                .and_then(|s| guard.sender_fees.get(&s.account).cloned())
+                .unwrap_or_default();
+            let oracle_duplicate = oracle_response_id(&transaction)
+                .is_some_and(|id| guard.oracle_responses.contains_key(&id));
+
+            // Full C# Transaction.Verify against the provided snapshot.
+            let result = crate::verification::verify_transaction(
+                &transaction,
+                snapshot,
+                &self.settings,
+                &pooled_sender_fee,
+                oracle_duplicate,
+            );
+            if result != VerifyResult::Succeed {
+                return result;
+            }
+
+            // C# order: add first, then RemoveOverCapacity drops the LOWEST-
+            // priority pooled item (PoolItem ascending order ⇒ `next()`), which
+            // may be the transaction just added ⇒ OutOfMemory for the caller
+            // (MemoryPool.cs:362-368, 416-433).
+            guard.verified.insert(PoolItem::new(transaction.clone()));
+            guard.context_add(&transaction);
+            let mut evicted = None;
+            let mut new_tx_evicted = false;
+            if guard.verified.len() > guard.capacity {
+                if let Some(lowest) = guard.verified.items.iter().next().cloned() {
+                    let lowest_hash = lowest.hash();
+                    guard.verified.remove(&lowest_hash);
+                    let dropped = (*lowest.transaction).clone();
+                    guard.context_remove(&dropped);
+                    if lowest_hash == hash {
+                        new_tx_evicted = true;
+                    } else {
+                        evicted = Some(dropped);
+                    }
+                }
+            }
+            (evicted, new_tx_evicted)
+        };
+
+        if let Some(dropped) = evicted {
+            if let Some(callback) = &self.transaction_removed {
+                let args = TransactionRemovedEventArgs::new(
+                    vec![dropped],
+                    TransactionRemovalReason::CapacityExceeded,
+                );
+                callback(self, &args);
+            }
+        }
+        if new_tx_evicted {
+            return VerifyResult::OutOfMemory;
+        }
+
+        if let Some(callback) = &self.transaction_added {
+            callback(self, &transaction);
+        }
+        VerifyResult::Succeed
+    }
+
+    /// Removes the transaction with the given hash from the pool
+    /// and emits the `transaction_removed` event.
+    pub fn remove(&self, hash: &UInt256, reason: TransactionRemovalReason) {
+        let tx_opt = {
+            let mut guard = self.inner.write();
+            let removed = guard
+                .verified
+                .remove(hash)
+                .or_else(|| guard.unverified.remove(hash))
+                .map(|item| (*item.transaction).clone());
+            if let Some(tx) = &removed {
+                guard.context_remove(tx);
+            }
+            removed
+        };
+        if let Some(tx) = tx_opt {
+            if let Some(callback) = &self.transaction_removed {
+                let args = TransactionRemovedEventArgs::new(vec![tx], reason);
+                callback(self, &args);
+            }
+        }
+    }
+
+    /// Returns whether the pool holds a `verify_state_independent`-
+    /// compatible transaction for the given hash.
+    pub fn has_transaction(&self, hash: &UInt256) -> bool {
+        self.contains(hash)
+    }
+}
+
+impl std::fmt::Debug for MemoryPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let guard = self.inner.read();
+        f.debug_struct("MemoryPool")
+            .field("capacity", &guard.capacity)
+            .field("verified", &guard.verified.len())
+            .field("unverified", &guard.unverified.len())
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_crypto::signature::Secp256r1Crypto;
+    use neo_payloads::{Signer, Transaction, TransactionAttribute, Witness};
+    use neo_primitives::{UInt160, WitnessScope};
+    use neo_serialization::BinarySerializer;
+    use neo_vm::StackItem;
+    use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+
+    /// Deterministic secp256r1 keypair: (private key, SEC1 pubkey,
+    /// signature-contract script hash).
+    fn keypair(seed: u8) -> ([u8; 32], Vec<u8>, UInt160) {
+        let private = [seed; 32];
+        let public = Secp256r1Crypto::derive_public_key(&private).expect("pubkey");
+        let script = neo_redeem_script::signature_redeem_script(&public);
+        (private, public, UInt160::from_script(&script))
+    }
+
+    /// Writes a GAS NEP-17 account record (`Struct[balance]`, the C#
+    /// `FungibleToken.AccountState`) so the verification balance check
+    /// passes.
+    fn mint_gas(snapshot: &DataCache, account: &UInt160, datoshi: i64) {
+        let item = StackItem::from_struct(vec![StackItem::from_int(num_bigint::BigInt::from(
+            datoshi,
+        ))]);
+        let bytes =
+            BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
+        let mut key = vec![20u8]; // shared NEP-17 Prefix_Account
+        key.extend_from_slice(&account.to_bytes());
+        snapshot.add(
+            neo_data_cache::StorageKey::new(neo_native_contracts::GasToken::ID, key),
+            neo_data_cache::StorageItem::from_bytes(bytes),
+        );
+    }
+
+    /// Builds a properly signed standard single-signature transaction.
+    fn signed_tx(
+        settings: &ProtocolSettings,
+        private: &[u8; 32],
+        public: &[u8],
+        account: UInt160,
+        nonce: u32,
+        valid_until_block: u32,
+        attributes: Vec<TransactionAttribute>,
+    ) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_nonce(nonce);
+        tx.set_system_fee(100);
+        tx.set_network_fee(3_000_000); // covers size fee + sig-check cost
+        tx.set_valid_until_block(valid_until_block);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
+        tx.set_attributes(attributes);
+        tx.set_signers(vec![Signer::new(account, WitnessScope::NONE)]);
+
+        // Sign data = network magic (u32 LE) ‖ tx hash.
+        let hash = tx.try_hash().expect("tx hash");
+        let mut data = settings.network.to_le_bytes().to_vec();
+        data.extend_from_slice(&hash.to_bytes());
+        let signature = Secp256r1Crypto::sign(&data, private).expect("sign");
+
+        let mut invocation = vec![OpCode::PUSHDATA1.byte(), 64];
+        invocation.extend_from_slice(&signature);
+        let verification = neo_redeem_script::signature_redeem_script(public);
+        tx.set_witnesses(vec![Witness::new_with_scripts(invocation, verification)]);
+        tx
+    }
+
+    /// (settings, snapshot-with-funds, keypair) fixture.
+    fn fixture(seed: u8) -> (ProtocolSettings, DataCache, [u8; 32], Vec<u8>, UInt160) {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+        let (private, public, account) = keypair(seed);
+        mint_gas(&snapshot, &account, 100_000_000); // 1 GAS
+        (settings, snapshot, private, public, account)
+    }
+
+    #[test]
+    fn empty_pool_has_zero_counts() {
+        let pool = MemoryPool::new(&ProtocolSettings::default());
+        assert_eq!(pool.total_count(), 0);
+        assert_eq!(pool.verified_count(), 0);
+        assert_eq!(pool.unverified_count(), 0);
+    }
+
+    #[test]
+    fn valid_signed_transaction_is_admitted_verified() {
+        let (settings, snapshot, private, public, account) = fixture(0x42);
+        let pool = MemoryPool::new(&settings);
+        let tx = signed_tx(&settings, &private, &public, account, 1, 1, Vec::new());
+        let hash = tx.hash();
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+        assert_eq!(pool.verified_count(), 1, "C# TryAdd admits into the sorted pool");
+        assert_eq!(pool.unverified_count(), 0);
+        assert!(pool.contains(&hash));
+    }
+
+    #[test]
+    fn duplicate_admission_reports_already_exists() {
+        let (settings, snapshot, private, public, account) = fixture(0x43);
+        let pool = MemoryPool::new(&settings);
+        let tx = signed_tx(&settings, &private, &public, account, 2, 1, Vec::new());
+        assert_eq!(pool.try_add(tx.clone(), &snapshot), VerifyResult::Succeed);
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::AlreadyExists);
+    }
+
+    #[test]
+    fn tampered_signature_reports_invalid_signature() {
+        let (settings, snapshot, private, public, account) = fixture(0x44);
+        let pool = MemoryPool::new(&settings);
+        let mut tx = signed_tx(&settings, &private, &public, account, 3, 1, Vec::new());
+        let mut witnesses = tx.witnesses().to_vec();
+        *witnesses[0].invocation_script.last_mut().unwrap() ^= 0x01;
+        tx.set_witnesses(witnesses);
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::InvalidSignature);
+    }
+
+    #[test]
+    fn expired_transaction_reports_expired() {
+        let (settings, snapshot, private, public, account) = fixture(0x45);
+        let pool = MemoryPool::new(&settings);
+        // C# VerifyStateDependent: ValidUntilBlock <= height (0) → Expired.
+        let tx = signed_tx(&settings, &private, &public, account, 4, 0, Vec::new());
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Expired);
+    }
+
+    #[test]
+    fn bad_script_reports_invalid_script() {
+        let (settings, snapshot, private, public, account) = fixture(0x46);
+        let pool = MemoryPool::new(&settings);
+        let mut tx = signed_tx(&settings, &private, &public, account, 5, 1, Vec::new());
+        tx.set_script(vec![0xff]); // reserved opcode → strict parse failure
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::InvalidScript);
+    }
+
+    #[test]
+    fn oversize_transaction_reports_oversize() {
+        let (settings, snapshot, private, public, account) = fixture(0x47);
+        let pool = MemoryPool::new(&settings);
+        let mut tx = signed_tx(&settings, &private, &public, account, 6, 1, Vec::new());
+        tx.set_script(vec![OpCode::PUSH1.byte(); neo_payloads::MAX_TRANSACTION_SIZE]);
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::OverSize);
+    }
+
+    #[test]
+    fn blocked_sender_reports_policy_fail() {
+        let (settings, snapshot, private, public, account) = fixture(0x48);
+        // PolicyContract Prefix_BlockedAccount (15) + account.
+        let mut key = vec![15u8];
+        key.extend_from_slice(&account.to_bytes());
+        snapshot.add(
+            neo_data_cache::StorageKey::new(-7, key),
+            neo_data_cache::StorageItem::from_bytes(Vec::new()),
+        );
+        let pool = MemoryPool::new(&settings);
+        let tx = signed_tx(&settings, &private, &public, account, 7, 1, Vec::new());
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::PolicyFail);
+    }
+
+    #[test]
+    fn missing_balance_reports_insufficient_funds() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false); // no GAS minted
+        let (private, public, account) = keypair(0x49);
+        let pool = MemoryPool::new(&settings);
+        let tx = signed_tx(&settings, &private, &public, account, 8, 1, Vec::new());
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::InsufficientFunds);
+    }
+
+    #[test]
+    fn not_valid_before_reports_invalid_attribute() {
+        let (settings, snapshot, private, public, account) = fixture(0x4A);
+        let pool = MemoryPool::new(&settings);
+        // NotValidBefore(5) at height 0 → C# NotValidBefore.Verify false.
+        let attributes = vec![TransactionAttribute::not_valid_before(5)];
+        let tx = signed_tx(&settings, &private, &public, account, 9, 1, attributes);
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::InvalidAttribute);
+    }
+
+    #[test]
+    fn sender_fee_accumulates_until_balance_exhausted() {
+        let (settings, snapshot, private, public, account) = fixture(0x4B);
+        let pool = MemoryPool::new(&settings);
+        // Each tx charges 100 + 3_000_000 against the 100M-datoshi balance.
+        // Shrink the balance so only one fits: 2 × 3_000_100 > 4_000_000.
+        let mut key = vec![20u8];
+        key.extend_from_slice(&account.to_bytes());
+        snapshot.delete(&neo_data_cache::StorageKey::new(
+            neo_native_contracts::GasToken::ID,
+            key,
+        ));
+        mint_gas(&snapshot, &account, 4_000_000);
+        let first = signed_tx(&settings, &private, &public, account, 10, 1, Vec::new());
+        let second = signed_tx(&settings, &private, &public, account, 11, 1, Vec::new());
+        assert_eq!(pool.try_add(first, &snapshot), VerifyResult::Succeed);
+        assert_eq!(
+            pool.try_add(second, &snapshot),
+            VerifyResult::InsufficientFunds,
+            "pooled sender fees must count against the balance (C# senderFee)"
+        );
+    }
+
+    #[test]
+    fn commit_block_removes_confirmed_and_releases_sender_fee() {
+        let (settings, snapshot, private, public, account) = fixture(0x4C);
+        let pool = MemoryPool::new(&settings);
+        let tx = signed_tx(&settings, &private, &public, account, 12, 1, Vec::new());
+        let hash = tx.hash();
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+
+        let removed = pool.commit_block(&[hash]);
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].1, TransactionRemovalReason::NoLongerValid);
+        assert!(!pool.contains(&hash));
+
+        // The sender-fee reservation is released: a fresh tx fits again.
+        let next = signed_tx(&settings, &private, &public, account, 13, 1, Vec::new());
+        assert_eq!(pool.try_add(next, &snapshot), VerifyResult::Succeed);
+    }
+
+    #[test]
+    fn reverify_with_empty_unverified_is_noop() {
+        let (settings, snapshot, private, public, account) = fixture(0x4D);
+        let pool = MemoryPool::new(&settings);
+        let tx = signed_tx(&settings, &private, &public, account, 14, 1, Vec::new());
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+        // try_add admits straight into the verified queue (C# TryAdd), so
+        // there is nothing to promote.
+        let removals = pool.reverify(&snapshot, |_tx, _snap| VerifyResult::Succeed);
+        assert!(removals.is_empty());
+        assert_eq!(pool.verified_count(), 1);
+        assert_eq!(pool.unverified_count(), 0);
+    }
+}
+
+/// Shared handle alias for the `Arc<MemoryPool>` pattern used by
+/// services that need to share the pool across tasks.
+pub type SharedMemoryPool = Arc<MemoryPool>;

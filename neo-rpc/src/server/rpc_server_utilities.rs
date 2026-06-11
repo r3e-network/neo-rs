@@ -1,6 +1,5 @@
 use serde_json::{json, Value};
 
-use neo_core::wallets::Helper as WalletHelper;
 
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
@@ -16,11 +15,11 @@ impl RpcServerUtilities {
             "listplugins" => Self::list_plugins_handler,
             "validateaddress" => Self::validate_address_handler,
         ]
-    }
+   }
 
     fn list_plugins_handler(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         Ok(server.list_plugins())
-    }
+   }
 
     fn validate_address_handler(
         server: &RpcServer,
@@ -28,9 +27,9 @@ impl RpcServerUtilities {
     ) -> Result<Value, RpcException> {
         let address = params.first().and_then(|v| v.as_str()).ok_or_else(|| {
             RpcException::from(RpcError::invalid_params().with_data("address parameter required"))
-        })?;
+       })?;
         Ok(server.validate_address(address))
-    }
+   }
 }
 
 impl RpcServer {
@@ -49,9 +48,8 @@ impl RpcServer {
             json!({
                 "name": name,
                 "version": version,
-                "interfaces": interface_values,
-            })
-        };
+                "interfaces": interface_values})
+       };
         let mut plugins = Vec::new();
 
         plugins.push(plugin_entry("RpcServer", &[]));
@@ -59,75 +57,69 @@ impl RpcServer {
         if self
             .system()
             .get_service::<ApplicationLogsService>()
-            .ok()
-            .flatten()
             .is_some()
         {
             plugins.push(plugin_entry("ApplicationLogs", &persistence_interfaces));
-        }
+       }
 
-        if self.system().state_store().ok().flatten().is_some() {
+        if self.system().state_store().is_some() {
             plugins.push(plugin_entry("StateService", &persistence_interfaces));
-        }
+       }
 
         if self
             .system()
             .get_service::<TokensTrackerService>()
-            .ok()
-            .flatten()
             .is_some()
         {
             let name = match compat {
                 ListPluginsCompat::Fixture => "RpcNep17Tracker",
-                ListPluginsCompat::Runtime => "TokensTracker",
-            };
+                ListPluginsCompat::Runtime => "TokensTracker"};
             plugins.push(plugin_entry(name, &persistence_interfaces));
-        }
+       }
 
-        let store_provider = self.system().store_provider();
+        // The reth-style `Node` owns an `Arc<dyn Store>` without a named
+        // provider wrapper; storage-plugin naming follows the configured
+        // compat mode (the fixture name, or the canonical memory store).
         let store_name = match compat {
             ListPluginsCompat::Fixture => "LevelDBStore".to_string(),
-            ListPluginsCompat::Runtime => store_provider.name().to_string(),
-        };
+            ListPluginsCompat::Runtime => "memory".to_string()};
         if !store_name.eq_ignore_ascii_case("memory") {
             plugins.push(plugin_entry(&store_name, &storage_interfaces));
-        }
+       }
 
         plugins.sort_by(|a, b| {
             let a_name = a.get("name").and_then(Value::as_str).unwrap_or("");
             let b_name = b.get("name").and_then(Value::as_str).unwrap_or("");
             a_name.cmp(b_name)
-        });
+       });
 
         Value::Array(plugins)
-    }
+   }
 
     #[must_use]
     pub fn validate_address(&self, address: &str) -> Value {
         let address_version = self.system().settings().address_version;
-        let is_valid = WalletHelper::to_script_hash(address, address_version).is_ok();
+        let is_valid =
+            neo_wallets::wallet_helper::to_script_hash(address, address_version).is_ok();
 
         json!({
             "address": address,
-            "isvalid": is_valid,
-        })
-    }
+            "isvalid": is_valid})
+   }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ListPluginsCompat {
     Runtime,
-    Fixture,
-}
+    Fixture}
 
 fn list_plugins_compat() -> ListPluginsCompat {
     let Ok(raw) = std::env::var("NEO_LISTPLUGINS_COMPAT") else {
         return ListPluginsCompat::Runtime;
-    };
+   };
     match raw.trim().to_ascii_lowercase().as_str() {
         "fixture" | "fixtures" | "legacy" => ListPluginsCompat::Fixture,
-        _ => ListPluginsCompat::Runtime,
-    }
+        _ => ListPluginsCompat::Runtime}
 }
 
 fn plugin_version(compat: ListPluginsCompat) -> String {
@@ -135,11 +127,11 @@ fn plugin_version(compat: ListPluginsCompat) -> String {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             return normalize_version(trimmed);
-        }
-    }
+       }
+   }
     if compat == ListPluginsCompat::Fixture {
         return "3.0.0.0".to_string();
-    }
+   }
     normalize_version(env!("CARGO_PKG_VERSION"))
 }
 
@@ -152,7 +144,7 @@ fn normalize_version(version: &str) -> String {
     {
         parts.push("0");
         return parts.join(".");
-    }
+   }
     version.to_string()
 }
 
@@ -161,21 +153,21 @@ mod tests {
     use super::*;
     use crate::server::rpc_server::RpcHandler;
     use crate::server::rpc_server_settings::RpcServerConfig;
-    use neo_core::neo_system::NeoSystem;
-    use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::UInt160;
+    
+    use neo_config::ProtocolSettings;
+    use neo_primitives::UInt160;
 
     fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         handlers
             .iter()
             .find(|handler| handler.descriptor().name.eq_ignore_ascii_case(name))
             .unwrap_or_else(|| panic!("handler {} not found", name))
-    }
+   }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn list_plugins_returns_empty() {
         let system =
-            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+            crate::server::test_support::test_system(ProtocolSettings::default());
         let server = RpcServer::new(system, RpcServerConfig::default());
         let handlers = RpcServerUtilities::register_handlers();
         let handler = find_handler(&handlers, "listplugins");
@@ -186,12 +178,12 @@ mod tests {
         let entry = plugins[0].as_object().expect("plugin entry");
         assert_eq!(entry.get("name").and_then(Value::as_str), Some("RpcServer"));
         assert!(entry.get("interfaces").is_some());
-    }
+   }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_address_variants() {
         let system =
-            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+            crate::server::test_support::test_system(ProtocolSettings::default());
         let server = RpcServer::new(system, RpcServerConfig::default());
         let handlers = RpcServerUtilities::register_handlers();
         let handler = find_handler(&handlers, "validateaddress");
@@ -208,7 +200,7 @@ mod tests {
 
         let mut invalid_checksum = valid_address.clone();
         let last = invalid_checksum.pop().expect("address has last char");
-        invalid_checksum.push(if last == 'A' { 'B' } else { 'A' });
+        invalid_checksum.push(if last == 'A' {'B'} else {'A'});
 
         for invalid in [
             String::new(),
@@ -225,7 +217,7 @@ mod tests {
                 Some(invalid.as_str())
             );
             assert_eq!(obj.get("isvalid").and_then(Value::as_bool), Some(false));
-        }
+       }
 
         let spaced = format!(" {} ", valid_address);
         let params = [Value::String(spaced.clone())];
@@ -236,12 +228,12 @@ mod tests {
             Some(spaced.as_str())
         );
         assert_eq!(obj.get("isvalid").and_then(Value::as_bool), Some(false));
-    }
+   }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_address_requires_param() {
         let system =
-            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+            crate::server::test_support::test_system(ProtocolSettings::default());
         let server = RpcServer::new(system, RpcServerConfig::default());
         let handlers = RpcServerUtilities::register_handlers();
         let handler = find_handler(&handlers, "validateaddress");
@@ -249,5 +241,5 @@ mod tests {
         let err = (handler.callback())(&server, &[]).expect_err("missing param");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
-    }
+   }
 }

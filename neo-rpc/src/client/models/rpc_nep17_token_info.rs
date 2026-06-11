@@ -33,8 +33,7 @@ pub struct RpcNep17TokenInfo {
 
     /// Optional last updated block
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_updated_block: Option<u32>,
-}
+    pub last_updated_block: Option<u32>}
 
 #[cfg(test)]
 mod tests {
@@ -48,8 +47,7 @@ mod tests {
             decimals: 8,
             total_supply: BigInt::from(1_000_000),
             balance: Some(BigInt::from(42)),
-            last_updated_block: Some(123),
-        };
+            last_updated_block: Some(123)};
         let json = serde_json::to_string(&info).unwrap();
         let parsed: RpcNep17TokenInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.name, info.name);
@@ -58,5 +56,5 @@ mod tests {
         assert_eq!(parsed.total_supply, info.total_supply);
         assert_eq!(parsed.balance, info.balance);
         assert_eq!(parsed.last_updated_block, info.last_updated_block);
-    }
+   }
 }

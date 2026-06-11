@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::network::p2p::payloads::Header;
-use neo_core::Transaction;
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_payloads::Header;
+use neo_payloads::Transaction;
 
 /// Create a sample header with deterministic data for benchmarking.
 fn make_sample_header() -> Header {

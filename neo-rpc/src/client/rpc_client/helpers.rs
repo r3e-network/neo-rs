@@ -22,8 +22,7 @@ pub(super) fn token_as_string(token: JToken, context: &str) -> Result<String, Cl
         _ => Err(ClientRpcError::new(
             -32603,
             format!("{context}: expected string token"),
-        )),
-    }
+        ))}
 }
 
 pub(super) fn token_as_number(token: JToken, context: &str) -> Result<f64, ClientRpcError> {
@@ -33,15 +32,14 @@ pub(super) fn token_as_number(token: JToken, context: &str) -> Result<f64, Clien
             let trimmed = value.trim();
             if trimmed.is_empty() {
                 return Ok(0.0);
-            }
+           }
             Ok(trimmed.parse::<f64>().unwrap_or(f64::NAN))
-        }
-        JToken::Boolean(value) => Ok(if value { 1.0 } else { 0.0 }),
+       }
+        JToken::Boolean(value) => Ok(if value {1.0} else {0.0}),
         _ => Err(ClientRpcError::new(
             -32603,
             format!("{context}: expected numeric token"),
-        )),
-    }
+        ))}
 }
 
 pub(super) fn token_as_object(token: JToken, context: &str) -> Result<JObject, ClientRpcError> {
@@ -50,8 +48,7 @@ pub(super) fn token_as_object(token: JToken, context: &str) -> Result<JObject, C
         _ => Err(ClientRpcError::new(
             -32603,
             format!("{context}: expected object token"),
-        )),
-    }
+        ))}
 }
 
 pub(super) fn parse_object_field<T>(
@@ -77,8 +74,7 @@ pub(super) fn token_as_boolean(token: JToken, context: &str) -> Result<bool, Cli
         _ => Err(ClientRpcError::new(
             -32603,
             format!("{context}: expected boolean token"),
-        )),
-    }
+        ))}
 }
 
 pub(super) fn parse_i64_number_or_string_token(
@@ -90,9 +86,8 @@ pub(super) fn parse_i64_number_or_string_token(
         JToken::Number(value) => Ok(*value as i64),
         JToken::String(value) => value.parse::<i64>().map_err(|_| {
             ClientRpcError::new(-32603, format!("Invalid {value_name} value: {value}"))
-        }),
-        _ => Err(ClientRpcError::new(-32603, invalid_type_error)),
-    }
+       }),
+        _ => Err(ClientRpcError::new(-32603, invalid_type_error))}
 }
 
 pub(super) fn parse_i64_object_field(
@@ -105,7 +100,7 @@ pub(super) fn parse_i64_object_field(
 ) -> Result<i64, ClientRpcError> {
     parse_object_field(token, context, field, missing_error, |field_token| {
         parse_i64_number_or_string_token(field_token, value_name, invalid_type_error)
-    })
+   })
 }
 
 pub(super) fn parse_uint256_string_token(
@@ -134,7 +129,7 @@ pub(super) fn parse_uint256_object_field(
         missing_or_type_error,
         |field_token| {
             parse_uint256_string_token(field_token, missing_or_type_error, invalid_hash_prefix)
-        },
+       },
     )
 }
 
@@ -159,7 +154,7 @@ pub(super) fn parse_object_array_result<T>(
                 .as_object()
                 .ok_or_else(|| ClientRpcError::new(-32603, non_object_error))?;
             parse_object(obj).map_err(|err| ClientRpcError::new(-32603, err))
-        })
+       })
         .collect()
 }
 
@@ -184,7 +179,7 @@ mod tests {
         assert_eq!(value, "12");
         let value = token_as_string(JToken::Boolean(true), "ctx").expect("bool");
         assert_eq!(value, "true");
-    }
+   }
 
     #[test]
     fn token_as_number_accepts_string_and_boolean() {
@@ -196,7 +191,7 @@ mod tests {
         assert_eq!(value, 0.0);
         let value = token_as_number(JToken::String("nope".into()), "ctx").expect("nan");
         assert!(value.is_nan());
-    }
+   }
 
     #[test]
     fn token_as_boolean_accepts_string_number_and_container() {
@@ -206,7 +201,7 @@ mod tests {
         assert!(!token_as_boolean(JToken::Number(0.0), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Array(JArray::new()), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Object(JObject::new()), "ctx").unwrap());
-    }
+   }
 
     #[test]
     fn object_field_helpers_preserve_field_errors() {
@@ -223,7 +218,7 @@ mod tests {
         )
         .expect_err("missing field should fail");
         assert_eq!(err.message(), "missing field");
-    }
+   }
 
     #[test]
     fn scalar_field_parsers_preserve_rpc_errors() {
@@ -259,7 +254,7 @@ mod tests {
         )
         .expect_err("non-string hash should fail");
         assert_eq!(err.message(), "Missing hash in submitblock");
-    }
+   }
 
     #[test]
     fn object_array_result_preserves_supplied_error_messages() {
@@ -292,5 +287,5 @@ mod tests {
         )
         .expect_err("non-object entry should fail");
         assert_eq!(err.message(), "not object");
-    }
+   }
 }

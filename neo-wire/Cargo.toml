@@ -1,0 +1,43 @@
+[package]
+name = "neo-wire"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Canonical home for Neo's P2P wire envelope: MessageCommand, MessageFlags, MessageHeader, Message, NetworkMessage, ProtocolMessage, framed transport, and capabilities"
+
+[dependencies]
+neo-primitives = { workspace = true }
+neo-p2p = { workspace = true }
+neo-payloads = { workspace = true }
+neo-io = { workspace = true }
+neo-extensions = { workspace = true }
+neo-error = { workspace = true }
+neo-serialization = { workspace = true }
+
+# Optional: tokio for the framed codec (gated behind `codec` feature)
+tokio = { workspace = true, optional = true }
+tokio-util = { workspace = true, features = ["codec"], optional = true }
+bytes = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+serde = { workspace = true, features = ["derive"] }
+tracing.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+hex = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "io-util"] }
+
+[features]
+default = ["codec"]
+# The framed Tokio codec is gated behind a feature so consumers that
+# only need the wire-envelope types (no async runtime) can opt out.
+codec = ["dep:tokio", "dep:tokio-util", "dep:bytes", "dep:futures"]

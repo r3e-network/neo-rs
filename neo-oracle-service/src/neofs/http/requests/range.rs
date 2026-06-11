@@ -1,7 +1,7 @@
 use super::super::super::{NeoFsAuth, NeoFsRange, OracleNeoFsProtocol};
 use super::super::utils::{map_neofs_status, read_limited_body};
-use neo_core::network::p2p::payloads::oracle_response::MAX_RESULT_SIZE;
-use neo_core::network::p2p::payloads::OracleResponseCode;
+use neo_payloads::oracle_response::MAX_RESULT_SIZE;
+use neo_payloads::OracleResponseCode;
 
 impl OracleNeoFsProtocol {
     pub(super) async fn fetch_range(

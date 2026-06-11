@@ -2,22 +2,19 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
-use async_trait::async_trait;
-use neo_core::ledger::{RelayResult, VerifyResult};
-use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
-use parking_lot::Mutex;
+use neo_block::VerifyResult;
+use neo_blockchain::RelayResult;
+use neo_payloads::{Block, InventoryType, Transaction};
 use serde_json::{json, Value};
-use std::any::Any;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::oneshot;
+use tokio::runtime::{Handle, Runtime};
+use tokio::task::block_in_place;
 
 pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcException> {
     match result.result {
         // C# GetRelayResult attaches WithData(reason.ToString()) to EVERY non-success
         // case, so both the error message suffix and the `data` field carry the
         // VerifyResult name. Mirror that for sendrawtransaction/submitblock parity.
-        VerifyResult::Succeed => Ok(json!({ "hash": result.hash.to_string() })),
+        VerifyResult::Succeed => Ok(json!({"hash": result.hash.to_string()})),
         VerifyResult::AlreadyExists => Err(RpcException::from(
             RpcError::already_exists().with_data("AlreadyExists"),
         )),
@@ -59,70 +56,104 @@ pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcExceptio
         )),
         VerifyResult::Unknown => Err(RpcException::from(
             RpcError::verification_failed().with_data("Unknown"),
-        )),
-    }
+        ))}
 }
 
-pub(super) fn with_relay_responder<F>(
-    server: &RpcServer,
-    send: F,
-) -> Result<RelayResult, RpcException>
+/// Drives an async service round-trip to completion from a synchronous
+/// RPC handler. Uses the ambient multi-thread runtime when one exists
+/// (the warp server path), and a throwaway runtime otherwise (direct
+/// handler invocation in tests).
+pub(super) fn block_on_service<F, T>(future: F) -> Result<T, RpcException>
 where
-    F: FnOnce(ActorRef) -> Result<(), RpcException>,
+    F: std::future::Future<Output = T>,
 {
-    let system = server.system();
-    let actor_system = system.actor_system();
-    let (responder, rx) = spawn_relay_responder(actor_system)?;
-    if let Err(err) = send(responder.clone()) {
-        let _ = actor_system.stop(&responder);
-        return Err(err);
+    if let Ok(handle) = Handle::try_current() {
+        Ok(block_in_place(|| handle.block_on(future)))
+    } else {
+        let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
+        Ok(runtime.block_on(future))
     }
-    let result = rx
-        .blocking_recv()
-        .map_err(|_| internal_error("relay result channel closed"))?;
-    let _ = actor_system.stop(&responder);
-    Ok(result)
 }
 
-fn spawn_relay_responder(
-    actor_system: &ActorSystem,
-) -> Result<(ActorRef, oneshot::Receiver<RelayResult>), RpcException> {
-    let (tx, rx) = oneshot::channel();
-    let completion = Arc::new(Mutex::new(Some(tx)));
-    let props = {
-        let completion = completion;
-        Props::new(move || RelayResultResponder {
-            completion: completion.clone(),
-        })
-    };
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let actor = actor_system
-        .actor_of(props, format!("rpc-relay-{unique}"))
+/// Relays a transaction through the blockchain service's mempool
+/// admission path and returns the verify outcome as a [`RelayResult`].
+///
+/// The legacy actor flow ferried a `RelayResult` message back through a
+/// responder actor; in the reth-style service world the same outcome is
+/// the `AddTransactionReply` of [`neo_blockchain::BlockchainHandle::add_transaction`].
+pub(super) fn relay_transaction(
+    server: &RpcServer,
+    transaction: Transaction,
+) -> Result<RelayResult, RpcException> {
+    let blockchain = server.system().blockchain();
+    let reply = block_on_service(blockchain.add_transaction(transaction))?
         .map_err(|err| internal_error(err.to_string()))?;
-    Ok((actor, rx))
+    Ok(RelayResult {
+        hash: reply.hash,
+        inventory_type: InventoryType::Transaction,
+        block_index: None,
+        result: reply.result,
+    })
 }
 
-struct RelayResultResponder {
-    completion: Arc<Mutex<Option<oneshot::Sender<RelayResult>>>>,
-}
+/// Relays a block through the blockchain service's import path and
+/// returns the outcome as a [`RelayResult`].
+pub(super) fn relay_block(server: &RpcServer, block: Block) -> Result<RelayResult, RpcException> {
+    let hash = block
+        .header
+        .clone()
+        .try_hash()
+        .map_err(|err| internal_error(err.to_string()))?;
+    let index = block.header.index();
+    let system = server.system();
 
-#[async_trait]
-impl Actor for RelayResultResponder {
-    async fn handle(
-        &mut self,
-        message: Box<dyn Any + Send>,
-        ctx: &mut ActorContext,
-    ) -> ActorResult {
-        if let Ok(result) = message.downcast::<RelayResult>() {
-            let mut guard = self.completion.lock();
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(*result);
-            }
-            let _ = ctx.stop_self();
-        }
-        Ok(())
+    // C# `Blockchain.OnNewBlock` height pre-classification (v3.9.1):
+    // a block at or below the persisted height already exists, and a
+    // block more than one past the best known header cannot be
+    // verified yet. (C# additionally stashes the too-far-ahead block
+    // in an actor-internal unverified-block cache for later sync; that
+    // cache has no RPC-visible effect, so the adapter only reports the
+    // verdict.)
+    let store = system.store_cache();
+    let current_height = neo_native_contracts::LedgerContract::new()
+        .current_index(store.data_cache())
+        .map_err(|err| internal_error(err.to_string()))?;
+    let header_height = system
+        .header_cache()
+        .last()
+        .map(|header| header.index())
+        .unwrap_or(current_height);
+    if index <= current_height {
+        return Ok(RelayResult {
+            hash,
+            inventory_type: InventoryType::Block,
+            block_index: Some(index),
+            result: VerifyResult::AlreadyExists,
+        });
     }
+    if index.saturating_sub(1) > header_height {
+        return Ok(RelayResult {
+            hash,
+            inventory_type: InventoryType::Block,
+            block_index: Some(index),
+            result: VerifyResult::UnableToVerify,
+        });
+    }
+
+    let blockchain = system.blockchain();
+    let imported = block_on_service(blockchain.import_block(block))?
+        .map_err(|err| internal_error(err.to_string()))?;
+    Ok(RelayResult {
+        hash,
+        inventory_type: InventoryType::Block,
+        block_index: Some(index),
+        result: if imported {
+            VerifyResult::Succeed
+        } else {
+            // The import path rejected a height-plausible block — the
+            // C# `OnNewBlock` verification branches return `Invalid`
+            // for these.
+            VerifyResult::Invalid
+        },
+    })
 }

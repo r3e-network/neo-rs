@@ -11,10 +11,13 @@
 
 use super::models::RpcTransaction;
 use crate::{Nep17Api, RpcClient, RpcError, RpcUtility};
-use neo_core::BigDecimal;
-use neo_core::smart_contract::native::{GasToken, NeoToken};
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{Contract, ECPoint, KeyPair, NativeContract, Transaction};
+use neo_primitives::BigDecimal;
+use neo_native_contracts::{GasToken, NeoToken};
+use neo_wallets::wallet_helper as WalletHelper;
+use neo_payloads::{Transaction};
+use neo_crypto::ECPoint;
+use neo_wallets::KeyPair;
+use neo_execution::{Contract, NativeContract};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
@@ -26,8 +29,7 @@ pub struct WalletApi {
     /// The RPC client instance
     rpc_client: Arc<RpcClient>,
     /// NEP17 API for token operations
-    nep17_api: Nep17Api,
-}
+    nep17_api: Nep17Api}
 
 impl WalletApi {
     /// `WalletAPI` Constructor
@@ -36,9 +38,8 @@ impl WalletApi {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             nep17_api: Nep17Api::new(rpc_client.clone()),
-            rpc_client,
-        }
-    }
+            rpc_client}
+   }
 
     /// Get unclaimed gas with address, scripthash or public key string
     /// Matches C# `GetUnclaimedGasAsync` with string parameter
@@ -46,7 +47,7 @@ impl WalletApi {
         let account_hash =
             RpcUtility::get_script_hash(account, &self.rpc_client.protocol_settings)?;
         self.get_unclaimed_gas_from_hash(&account_hash).await
-    }
+   }
 
     /// Get unclaimed gas
     /// Matches C# `GetUnclaimedGasAsync` with `UInt160` parameter
@@ -73,7 +74,7 @@ impl WalletApi {
         let gas_factor = gas_factor();
 
         Ok(balance.to_f64().unwrap_or(0.0) / gas_factor as f64)
-    }
+   }
 
     /// Get Neo Balance
     /// Matches C# `GetNeoBalanceAsync`
@@ -82,7 +83,7 @@ impl WalletApi {
             .get_token_balance(&neo_hash().to_string(), account)
             .await?;
         Ok(balance.to_u32().ok_or("Invalid NEO balance")?)
-    }
+   }
 
     /// Get Gas Balance
     /// Matches C# `GetGasBalanceAsync`
@@ -92,7 +93,7 @@ impl WalletApi {
             .await?;
         let gas_factor = gas_factor();
         Ok(balance.to_f64().unwrap_or(0.0) / gas_factor as f64)
-    }
+   }
 
     /// Get token balance with string parameters
     /// Matches C# `GetTokenBalanceAsync`
@@ -109,19 +110,19 @@ impl WalletApi {
         self.nep17_api
             .balance_of(&token_script_hash, &account_hash)
             .await
-    }
+   }
 
     /// Claim GAS from NEO
     /// Matches C# `ClaimGasAsync`
     pub async fn claim_gas(&self, key: &KeyPair) -> Result<Transaction, RpcError> {
         self.claim_gas_with_assert(key, true).await
-    }
+   }
 
     /// Claim GAS using WIF or private key string.
     /// Matches C# ClaimGasAsync(string)
     pub async fn claim_gas_from_key(&self, key: &str) -> Result<Transaction, RpcError> {
         self.claim_gas_from_key_with_assert(key, true).await
-    }
+   }
 
     /// Claim GAS using WIF or private key string with optional assert emission.
     pub async fn claim_gas_from_key_with_assert(
@@ -131,7 +132,7 @@ impl WalletApi {
     ) -> Result<Transaction, RpcError> {
         let key_pair = RpcUtility::key_pair(key).map_err(|e| RpcError::Other(e.to_string()))?;
         self.claim_gas_with_assert(&key_pair, add_assert).await
-    }
+   }
 
     /// Claim GAS with optional assert emission.
     pub async fn claim_gas_with_assert(
@@ -144,7 +145,7 @@ impl WalletApi {
 
         self.claim_gas_from_account_with_assert(&sender, key, add_assert)
             .await
-    }
+   }
 
     /// Claim GAS from specific account
     /// Matches C# `ClaimGasAsync` with account parameter
@@ -155,7 +156,7 @@ impl WalletApi {
     ) -> Result<Transaction, RpcError> {
         self.claim_gas_from_account_with_assert(account, key, true)
             .await
-    }
+   }
 
     /// Claim GAS from specific account with optional assert emission.
     pub async fn claim_gas_from_account_with_assert(
@@ -168,7 +169,7 @@ impl WalletApi {
 
         if neo_balance == BigInt::from(0) {
             return Err("No NEO balance to claim GAS from".into());
-        }
+       }
 
         // Transfer NEO to self to trigger GAS claim
         let tx = self
@@ -186,7 +187,7 @@ impl WalletApi {
 
         let _hash = self.rpc_client.send_raw_transaction(&tx).await?;
         Ok(tx)
-    }
+   }
 
     /// Transfer NEP17 token
     /// Matches C# `TransferAsync`
@@ -200,7 +201,7 @@ impl WalletApi {
     ) -> Result<(Transaction, String), RpcError> {
         self.transfer_with_assert(token_hash, key, to_address, amount, data, true)
             .await
-    }
+   }
 
     /// Transfer NEP17 token with optional assert emission.
     pub async fn transfer_with_assert(
@@ -223,7 +224,7 @@ impl WalletApi {
 
         let hash = self.rpc_client.send_raw_transaction(&tx).await?;
         Ok((tx, hash.to_string()))
-    }
+   }
 
     /// Transfer NEP17 token using decimal amount and WIF/private key string.
     /// Matches C# TransferAsync(string tokenHash, string fromKey, string toAddress, decimal amount).
@@ -239,7 +240,7 @@ impl WalletApi {
             token_hash, from_key, to_address, amount, data, true,
         )
         .await
-    }
+   }
 
     /// Transfer NEP17 token using decimal amount and WIF/private key string with optional assert.
     pub async fn transfer_decimal_from_key_with_assert(
@@ -257,7 +258,7 @@ impl WalletApi {
             token_hash, &key_pair, to_address, amount, data, add_assert,
         )
         .await
-    }
+   }
 
     /// Transfer NEP17 token using decimal amount.
     /// Matches C# TransferAsync(string tokenHash, string fromKey, string toAddress, decimal amount)
@@ -272,7 +273,7 @@ impl WalletApi {
     ) -> Result<(Transaction, String), RpcError> {
         self.transfer_decimal_with_assert(token_hash, key, to_address, amount, data, true)
             .await
-    }
+   }
 
     /// Transfer NEP17 token using decimal amount with optional assert emission.
     pub async fn transfer_decimal_with_assert(
@@ -306,7 +307,7 @@ impl WalletApi {
 
         let hash = self.rpc_client.send_raw_transaction(&tx).await?;
         Ok((tx, hash.to_string()))
-    }
+   }
 
     #[allow(clippy::too_many_arguments)]
     /// Transfer NEP17 token from multi-sig account.
@@ -341,13 +342,13 @@ impl WalletApi {
 
         let hash = self.rpc_client.send_raw_transaction(&tx).await?;
         Ok((tx, hash.to_string()))
-    }
+   }
 
     /// Wait for a transaction to be confirmed.
     /// Matches C# `WaitTransactionAsync`
     pub async fn wait_transaction(&self, tx: &Transaction) -> Result<RpcTransaction, RpcError> {
         self.wait_transaction_with_timeout(tx, 60).await
-    }
+   }
 
     /// Wait for a transaction to be confirmed with timeout in seconds.
     pub async fn wait_transaction_with_timeout(
@@ -368,18 +369,18 @@ impl WalletApi {
             if let Ok(rpc_tx) = self.rpc_client.get_transaction(&tx_hash.to_string()).await {
                 if rpc_tx.confirmations.is_some() {
                     return Ok(rpc_tx);
-                }
-            } else {
+               }
+           } else {
                 // Transaction not found yet, continue waiting
-            }
+           }
 
             tokio::time::sleep(poll_duration).await;
-        }
+       }
 
         Err(RpcError::Other(
             "Timeout while waiting for transaction confirmation".to_string(),
         ))
-    }
+   }
 
     /// Get account state including balances
     /// Matches C# `GetAccountStateAsync`
@@ -407,9 +408,8 @@ impl WalletApi {
             ),
             neo_balance: neo_balance.to_u32().unwrap_or(0),
             gas_balance: gas_balance.to_f64().unwrap_or(0.0) / gas_factor() as f64,
-            unclaimed_gas,
-        })
-    }
+            unclaimed_gas})
+   }
 }
 
 fn neo_hash() -> UInt160 {
@@ -421,7 +421,9 @@ fn gas_hash() -> UInt160 {
 }
 
 fn gas_factor() -> u64 {
-    10u64.saturating_pow(u32::from(GasToken::new().decimals()))
+    // GAS is a NEP-17 token with a fixed 8 decimals (C# `GasToken.Decimals => 8`).
+    const GAS_DECIMALS: u8 = 8;
+    10u64.saturating_pow(u32::from(GAS_DECIMALS))
 }
 
 /// Lightweight account snapshot returned by wallet RPC helpers
@@ -434,8 +436,7 @@ pub struct WalletAccountState {
     /// GAS balance
     pub gas_balance: f64,
     /// Unclaimed GAS
-    pub unclaimed_gas: f64,
-}
+    pub unclaimed_gas: f64}
 
 #[cfg(test)]
 mod tests;

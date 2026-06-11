@@ -5,20 +5,20 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use neo_core::neo_system::NeoSystem;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::StoreCache;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::iterators::iterator::StorageIterator as _;
-use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
-use neo_core::smart_contract::native::ledger_contract::LedgerContract;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::ApplicationEngine;
-use neo_core::vm_runtime::{InteropInterface as VmInteropInterface, StackItem};
-use neo_core::Verifiable;
+use neo_system::Node;
+use neo_payloads::signer::Signer;
+use neo_payloads::transaction::Transaction;
+use neo_payloads::transaction_attribute::TransactionAttribute;
+use neo_payloads::witness::Witness;
+use neo_storage::persistence::StoreCache;
+use neo_manifest::CallFlags;
+use neo_execution::iterators::iterator::StorageIterator as _;
+use neo_execution::iterators::{IteratorInterop, StorageIterator};
+use neo_native_contracts::ledger_contract::LedgerContract;
+use neo_primitives::TriggerType;
+use neo_execution::ApplicationEngine;
+use neo_vm::stack_item::{InteropInterface as VmInteropInterface, StackItem};
+use neo_primitives::Verifiable;
 use rand::random;
 use uuid::Uuid;
 
@@ -33,27 +33,26 @@ pub trait SessionIterator: Send {
 
 /// Wrapper storing iterator instances with automatic disposal.
 struct IteratorEntry {
-    inner: Box<dyn SessionIterator>,
-}
+    inner: Box<dyn SessionIterator>}
 
 impl IteratorEntry {
     fn next(&mut self) -> bool {
         self.inner.next()
-    }
+   }
 
     fn value(&self) -> StackItem {
         self.inner.value()
-    }
+   }
 
     fn dispose(&mut self) {
         self.inner.dispose();
-    }
+   }
 }
 
 impl Drop for IteratorEntry {
     fn drop(&mut self) {
         self.dispose();
-    }
+   }
 }
 
 /// Represents an invocation session that can retain iterators between RPC calls.
@@ -64,38 +63,36 @@ pub struct Session {
     diagnostic: Mutex<Option<Diagnostic>>,
     iterators: Mutex<HashMap<Uuid, IteratorEntry>>,
     iterator_lookup: Mutex<HashMap<u32, Uuid>>,
-    start_time: Mutex<Instant>,
-}
+    start_time: Mutex<Instant>}
 
 #[derive(Debug)]
 struct StorageSessionIterator {
-    iterator: StorageIterator,
-}
+    iterator: StorageIterator}
 
 impl StorageSessionIterator {
     const fn new(iterator: StorageIterator) -> Self {
-        Self { iterator }
-    }
+        Self {iterator}
+   }
 }
 
 impl SessionIterator for StorageSessionIterator {
     fn next(&mut self) -> bool {
         self.iterator.next()
-    }
+   }
 
     fn value(&self) -> StackItem {
         self.iterator.value()
-    }
+   }
 
     fn dispose(&mut self) {
         self.iterator.dispose();
-    }
+   }
 }
 
 impl Session {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        system: Arc<NeoSystem>,
+        system: Arc<Node>,
         script: Vec<u8>,
         signers: Option<Vec<Signer>>,
         witnesses: Option<Vec<Witness>>,
@@ -110,7 +107,7 @@ impl Session {
             tx.set_version(0);
             tx.set_nonce(random());
             let valid_until = LedgerContract::new()
-                .current_index(&store_cache)
+                .current_index(store_cache.data_cache())
                 .unwrap_or(0)
                 .saturating_add(system.max_valid_until_block_increment());
             tx.set_valid_until_block(valid_until);
@@ -119,22 +116,22 @@ impl Session {
             tx.set_script(script.clone());
             if let Some(ws) = &witnesses {
                 tx.set_witnesses(ws.clone());
-            } else {
+           } else {
                 tx.set_witnesses(vec![Witness::new(); signer_list.len()]);
-            }
+           }
             Arc::new(tx) as Arc<dyn Verifiable>
-        });
+       });
 
         let diagnostic_box = diagnostic.clone().map(|diag| {
-            Box::new(diag) as Box<dyn neo_core::smart_contract::diagnostic::Diagnostic>
-        });
+            Box::new(diag) as Box<dyn neo_execution::diagnostic::Diagnostic>
+       });
 
         let mut engine = ApplicationEngine::new(
             TriggerType::Application,
             tx_container,
             Arc::clone(&snapshot_cache),
             None,
-            system.settings().clone(),
+            system.settings().as_ref().clone(),
             gas_limit,
             diagnostic_box,
         )
@@ -152,33 +149,32 @@ impl Session {
             diagnostic: Mutex::new(diagnostic),
             iterators: Mutex::new(HashMap::new()),
             iterator_lookup: Mutex::new(HashMap::new()),
-            start_time: Mutex::new(Instant::now()),
-        })
-    }
+            start_time: Mutex::new(Instant::now())})
+   }
 
     pub fn script(&self) -> &[u8] {
         &self.script
-    }
+   }
 
     pub fn engine(&self) -> MutexGuard<'_, ApplicationEngine> {
         self.engine.lock()
-    }
+   }
 
     pub fn engine_mut(&self) -> MutexGuard<'_, ApplicationEngine> {
         self.engine()
-    }
+   }
 
     pub fn diagnostic(&self) -> Option<Diagnostic> {
         self.diagnostic.lock().clone()
-    }
+   }
 
     pub const fn snapshot(&self) -> &StoreCache {
         &self.snapshot
-    }
+   }
 
     pub fn has_iterators(&self) -> bool {
         !self.iterators.lock().is_empty()
-    }
+   }
 
     pub fn register_iterator_interface(
         &self,
@@ -189,24 +185,23 @@ impl Session {
 
         if let Some(existing) = self.iterator_lookup.lock().get(&iterator_id).copied() {
             return Some(existing);
-        }
+       }
 
         let iterator = {
             let mut engine_guard = self.engine.lock();
             engine_guard.take_storage_iterator(iterator_id)?
-        };
+       };
 
         let uuid = Uuid::new_v4();
         self.iterators.lock().insert(
             uuid,
             IteratorEntry {
-                inner: Box::new(StorageSessionIterator::new(iterator)),
-            },
+                inner: Box::new(StorageSessionIterator::new(iterator))},
         );
         self.iterator_lookup.lock().insert(iterator_id, uuid);
 
         Some(uuid)
-    }
+   }
 
     pub fn traverse_iterator(
         &self,
@@ -216,25 +211,25 @@ impl Session {
         let mut iterators = self.iterators.lock();
         let Some(entry) = iterators.get_mut(iterator_id) else {
             return Err("Unknown iterator".to_string());
-        };
+       };
 
         let mut remaining = count;
         let mut values = Vec::new();
         while remaining > 0 && entry.next() {
             values.push(entry.value());
             remaining -= 1;
-        }
+       }
         Ok(values)
-    }
+   }
 
     pub fn reset_expiration(&self) {
         let mut start_time = self.start_time.lock();
         *start_time = Instant::now();
-    }
+   }
 
     pub fn is_expired(&self, expiration: Duration) -> bool {
         self.start_time.lock().elapsed() >= expiration
-    }
+   }
 }
 
 // THREAD SAFETY
@@ -248,15 +243,15 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::persistence::{StorageItem, StorageKey};
-    use neo_core::smart_contract::FindOptions;
-    use neo_core::{NeoSystem, ProtocolSettings};
+    use neo_storage::{StorageItem, StorageKey};
+    use neo_primitives::FindOptions;
+    use neo_config::ProtocolSettings;
     use neo_vm_rs::OpCode;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn session_registers_and_traverses_storage_iterator() {
         let settings = ProtocolSettings::default();
-        let system = NeoSystem::new(settings, None, None).expect("system");
+        let system = crate::server::test_support::test_system(settings);
         let session = Session::new(
             system,
             vec![OpCode::RET.byte()],
@@ -283,7 +278,7 @@ mod tests {
             engine
                 .store_storage_iterator(iterator)
                 .expect("store iterator")
-        };
+       };
 
         let interop = Arc::new(IteratorInterop::new(iterator_id)) as Arc<dyn VmInteropInterface>;
         let uuid_first = session
@@ -305,5 +300,5 @@ mod tests {
             .traverse_iterator(&uuid_first, 10)
             .expect("traverse iterator exhausted");
         assert!(tail.is_empty());
-    }
+   }
 }

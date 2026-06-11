@@ -20,8 +20,7 @@ pub struct RpcUnclaimedGas {
     pub unclaimed: i64,
 
     /// Address
-    pub address: String,
-}
+    pub address: String}
 
 impl RpcUnclaimedGas {
     /// Converts to JSON
@@ -35,7 +34,7 @@ impl RpcUnclaimedGas {
         );
         json.insert("address".to_string(), JToken::String(self.address.clone()));
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -55,8 +54,8 @@ impl RpcUnclaimedGas {
             .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'address' field")?;
 
-        Ok(Self { unclaimed, address })
-    }
+        Ok(Self {unclaimed, address})
+   }
 }
 
 #[cfg(test)]
@@ -68,13 +67,12 @@ mod tests {
     fn rpc_unclaimed_gas_roundtrip() {
         let gas = RpcUnclaimedGas {
             unclaimed: 1234,
-            address: "NQ7cbaBqX1p5quJDQr6b1qnBZBHae3mJzA".to_string(),
-        };
+            address: "NQ7cbaBqX1p5quJDQr6b1qnBZBHae3mJzA".to_string()};
         let json = gas.to_json();
         let parsed = RpcUnclaimedGas::from_json(&json).expect("unclaimed");
         assert_eq!(parsed.unclaimed, gas.unclaimed);
         assert_eq!(parsed.address, gas.address);
-    }
+   }
 
     #[test]
     fn rpc_unclaimed_gas_rejects_invalid_value() {
@@ -88,7 +86,7 @@ mod tests {
             JToken::String("NQ7cbaBqX1p5quJDQr6b1qnBZBHae3mJzA".into()),
         );
         assert!(RpcUnclaimedGas::from_json(&json).is_err());
-    }
+   }
 
     #[test]
     fn rpc_unclaimed_gas_accepts_numeric_value() {
@@ -100,15 +98,15 @@ mod tests {
         );
         let parsed = RpcUnclaimedGas::from_json(&json).expect("unclaimed");
         assert_eq!(parsed.unclaimed, 5);
-    }
+   }
 
     #[test]
     fn unclaimed_gas_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getunclaimedgasasync") else {
             return;
-        };
+       };
         let parsed = RpcUnclaimedGas::from_json(&expected).expect("parse");
         let actual = parsed.to_json();
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 }

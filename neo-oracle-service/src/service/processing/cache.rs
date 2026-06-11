@@ -1,17 +1,16 @@
 use super::super::{ExpiryBoundary, OracleService};
-use neo_core::persistence::{DataCache, StoreCache};
-use neo_core::smart_contract::native::OracleContract;
+use neo_storage::persistence::{DataCache, StoreCache};
+use neo_native_contracts::OracleContract;
 use std::collections::HashSet;
 use std::time::SystemTime;
 
 impl OracleService {
     pub(in super::super) fn sync_pending_queue(&self, snapshot: &DataCache) {
-        let offchain = OracleContract::new()
+        let offchain: HashSet<u64> = OracleContract::new()
             .get_requests(snapshot)
-            .unwrap_or_default()
             .into_iter()
             .map(|(id, _)| id)
-            .collect::<HashSet<_>>();
+            .collect();
 
         let mut queue = self.pending_queue.lock();
         queue.retain(|id, _| offchain.contains(id));
@@ -28,7 +27,7 @@ impl OracleService {
     }
 
     pub(in super::super) fn snapshot_cache(&self) -> DataCache {
-        let snapshot = self.system.store().snapshot();
+        let snapshot = self.system.storage().snapshot();
         let store_cache = StoreCache::new_from_snapshot(snapshot);
         store_cache.data_cache().clone()
     }

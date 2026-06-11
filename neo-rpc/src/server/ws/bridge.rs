@@ -15,8 +15,7 @@ use tracing::debug;
 /// events to `WsEvent` for WebSocket clients.
 pub struct WsEventBridge {
     /// Sender for WebSocket events
-    ws_sender: broadcast::Sender<WsEvent>,
-}
+    ws_sender: broadcast::Sender<WsEvent>}
 
 impl WsEventBridge {
     /// Create a new event bridge
@@ -26,44 +25,44 @@ impl WsEventBridge {
     #[must_use]
     pub fn new(capacity: usize) -> Self {
         let (ws_sender, _) = broadcast::channel(capacity);
-        Self { ws_sender }
-    }
+        Self {ws_sender}
+   }
 
     /// Get a receiver for WebSocket events
     #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<WsEvent> {
         self.ws_sender.subscribe()
-    }
+   }
 
     /// Get the sender for direct event publishing
     #[must_use]
     pub fn sender(&self) -> broadcast::Sender<WsEvent> {
         self.ws_sender.clone()
-    }
+   }
 
     /// Publish a block added event
     pub fn notify_block_added(&self, hash: &UInt256, height: u32) {
         let event = WsEvent::block_added(hash, height);
         if let Err(e) = self.ws_sender.send(event) {
             debug!("No WebSocket subscribers for block event: {}", e);
-        }
-    }
+       }
+   }
 
     /// Publish a transaction added event
     pub fn notify_transaction_added(&self, hash: &UInt256) {
         let event = WsEvent::transaction_added(hash);
         if let Err(e) = self.ws_sender.send(event) {
             debug!("No WebSocket subscribers for tx event: {}", e);
-        }
-    }
+       }
+   }
 
     /// Publish a transaction removed event
     pub fn notify_transaction_removed(&self, hashes: &[UInt256], reason: &str) {
         let event = WsEvent::transaction_removed(hashes, reason);
         if let Err(e) = self.ws_sender.send(event) {
             debug!("No WebSocket subscribers for tx removal event: {}", e);
-        }
-    }
+       }
+   }
 
     /// Publish a contract notification event
     pub fn notify_contract_event(
@@ -75,20 +74,20 @@ impl WsEventBridge {
         let event = WsEvent::notification(contract, event_name, state);
         if let Err(e) = self.ws_sender.send(event) {
             debug!("No WebSocket subscribers for notification event: {}", e);
-        }
-    }
+       }
+   }
 
     /// Get the number of active WebSocket receivers
     #[must_use]
     pub fn receiver_count(&self) -> usize {
         self.ws_sender.receiver_count()
-    }
+   }
 }
 
 impl Default for WsEventBridge {
     fn default() -> Self {
         Self::new(1024)
-    }
+   }
 }
 
 /// Shared event bridge wrapped in Arc
@@ -108,12 +107,11 @@ mod tests {
 
         let event = rx.recv().await.unwrap();
         match event {
-            WsEvent::BlockAdded { height, .. } => {
+            WsEvent::BlockAdded {height, ..} => {
                 assert_eq!(height, 12345);
-            }
-            _ => panic!("Expected BlockAdded event"),
-        }
-    }
+           }
+            _ => panic!("Expected BlockAdded event")}
+   }
 
     #[tokio::test]
     async fn test_bridge_transaction_notification() {
@@ -124,8 +122,8 @@ mod tests {
         bridge.notify_transaction_added(&hash);
 
         let event = rx.recv().await.unwrap();
-        assert!(matches!(event, WsEvent::TransactionAdded { .. }));
-    }
+        assert!(matches!(event, WsEvent::TransactionAdded {..}));
+   }
 
     #[test]
     fn test_bridge_receiver_count() {
@@ -137,5 +135,5 @@ mod tests {
 
         let _rx2 = bridge.subscribe();
         assert_eq!(bridge.receiver_count(), 2);
-    }
+   }
 }

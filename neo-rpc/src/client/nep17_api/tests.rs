@@ -2,9 +2,9 @@ use super::*;
 use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
 use base64::{engine::general_purpose, Engine as _};
 use mockito::{Matcher, Server};
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::native::GasToken;
-use neo_core::NativeContract;
+use neo_script_builder::ScriptBuilder;
+use neo_native_contracts::GasToken;
+use neo_native_contracts::NativeContract;
 use neo_json::{JArray, JObject, JToken};
 use neo_vm_rs::OpCode;
 use regex::escape;
@@ -42,36 +42,35 @@ fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), 
         serde_json::Value::Null => {
             sb.emit_opcode(OpCode::PUSHNULL);
             Ok(())
-        }
+       }
         serde_json::Value::Bool(b) => {
             sb.emit_push_bool(*b);
             Ok(())
-        }
+       }
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 sb.emit_push_int(i);
                 Ok(())
-            } else if let Some(u) = n.as_u64() {
+           } else if let Some(u) = n.as_u64() {
                 sb.emit_push_int(u as i64);
                 Ok(())
-            } else {
+           } else {
                 Err("Invalid number format".into())
-            }
-        }
+           }
+       }
         serde_json::Value::String(s) => {
             sb.emit_push(s.as_bytes());
             Ok(())
-        }
+       }
         serde_json::Value::Array(arr) => {
             for item in arr.iter().rev() {
                 emit_argument(sb, item)?;
-            }
+           }
             sb.emit_push_int(arr.len() as i64);
             sb.emit_pack();
             Ok(())
-        }
-        _ => Err("Unsupported argument type".into()),
-    }
+       }
+        _ => Err("Unsupported argument type".into())}
 }
 
 fn build_dynamic_call_script(
@@ -83,13 +82,13 @@ fn build_dynamic_call_script(
 
     if args.is_empty() {
         sb.emit_opcode(OpCode::NEWARRAY0);
-    } else {
+   } else {
         for arg in args.iter().rev() {
             emit_argument(&mut sb, arg).expect("emit argument");
-        }
+       }
         sb.emit_push_int(args.len() as i64);
         sb.emit_pack();
-    }
+   }
 
     sb.emit_push_int(CallFlags::ALL.bits() as i64);
     sb.emit_push(operation.as_bytes());
@@ -154,7 +153,7 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
             path.display()
         );
         return None;
-    }
+   }
     let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
     let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
     let cases = token
@@ -169,7 +168,7 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
             .unwrap_or_default();
         if !case_name.eq_ignore_ascii_case("getcontractstateasync") {
             continue;
-        }
+       }
 
         let response = obj
             .get("Response")
@@ -189,7 +188,7 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
             .unwrap_or_default();
         if !name.eq_ignore_ascii_case(manifest_name) {
             continue;
-        }
+       }
 
         let request = obj
             .get("Request")
@@ -206,15 +205,20 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
             .to_string();
         let contract = if UInt160::parse(&contract).is_ok() {
             contract
-        } else {
-            neo_core::smart_contract::native::NativeRegistry::new()
-                .get_by_name(&contract)
+       } else {
+            // `NativeRegistry::new()` is empty by design; resolve native
+            // contract names through the canonical provider instead.
+            use neo_execution::native_contract_provider::NativeContractProvider;
+            neo_native_contracts::StandardNativeProvider::new()
+                .all_native_contracts()
+                .into_iter()
+                .find(|native| native.name().eq_ignore_ascii_case(&contract))
                 .map(|native| native.hash().to_string())
                 .unwrap_or(contract)
-        };
+       };
 
         return Some((contract, response.to_string()));
-    }
+   }
 
     eprintln!("SKIP: RpcTestCases.json missing contract state for {manifest_name}");
     None
@@ -224,12 +228,12 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
 async fn token_info_uses_contract_state_name() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some((contract_hash, contract_state_response)) = load_contract_state_case("GasToken")
     else {
         return;
-    };
+   };
     let symbol = "GAS";
     let symbol_b64 = general_purpose::STANDARD.encode(symbol.as_bytes());
 
@@ -272,12 +276,12 @@ async fn token_info_uses_contract_state_name() {
 async fn token_info_by_contract_accepts_name() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some((_contract_hash, contract_state_response)) = load_contract_state_case("GasToken")
     else {
         return;
-    };
+   };
     let symbol_b64 = general_purpose::STANDARD.encode("GAS".as_bytes());
 
     let invoke_response = format!(
@@ -321,14 +325,14 @@ async fn token_info_by_contract_accepts_name() {
 async fn token_info_with_balance_fetches_balance() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
-    let settings = neo_core::ProtocolSettings::default_settings();
+    let settings = neo_config::ProtocolSettings::default_settings();
     let address = WalletHelper::to_address(&UInt160::zero(), settings.address_version);
     let Some((contract_hash, contract_state_response)) = load_contract_state_case("GasToken")
     else {
         return;
-    };
+   };
     let symbol_b64 = general_purpose::STANDARD.encode("GAS".as_bytes());
 
     let invoke_info_response = format!(
@@ -387,7 +391,7 @@ async fn token_info_with_balance_fetches_balance() {
 async fn balance_of_reads_integer_stack_value() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let invoke_response = r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"42"}]}}"#;
 
@@ -417,7 +421,7 @@ async fn balance_of_reads_integer_stack_value() {
 async fn symbol_reads_string_stack_value() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let symbol_b64 = general_purpose::STANDARD.encode("GAS".as_bytes());
     let invoke_response = format!(
@@ -446,7 +450,7 @@ async fn symbol_reads_string_stack_value() {
 async fn decimals_reads_integer_stack_value() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let invoke_response = r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"8"}]}}"#;
 
@@ -472,7 +476,7 @@ async fn decimals_reads_integer_stack_value() {
 async fn total_supply_reads_integer_stack_value() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let invoke_response = r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"100000000"}]}}"#;
 
@@ -498,7 +502,7 @@ async fn total_supply_reads_integer_stack_value() {
 async fn create_transfer_tx_with_from_builds_transaction() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
         .expect("key pair");
@@ -558,7 +562,7 @@ async fn create_transfer_tx_with_from_builds_transaction() {
 async fn create_transfer_tx_multi_sig_builds_transaction() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let key1 = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
         .expect("key pair 1");

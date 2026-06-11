@@ -1,15 +1,16 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
-use neo_core::i_event_handlers::{CommittedHandler, CommittingHandler};
-use neo_core::ledger::Block as LedgerBlock;
-use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
-use neo_core::neo_system::NeoSystem;
-use neo_core::persistence::{DataCache, Store, StoreSnapshot};
-use neo_core::smart_contract::{NotifyEventArgs, TriggerType};
-use neo_core::panic_message;
-use neo_core::neo_vm::StackItem;
-use neo_core::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
-use neo_core::UInt256;
+use neo_event_handlers::{CommittedHandler, CommittingHandler};
+use neo_payloads::Block as LedgerBlock;
+use neo_block::ApplicationExecuted;
+use neo_system::Node;
+use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
+use neo_execution::NotifyEventArgs;
+use neo_primitives::TriggerType;
+use neo_primitives::panic_message;
+use neo_vm::StackItem;
+use neo_vm::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
+use neo_primitives::UInt256;
 use neo_vm_rs::VmState as VMState;
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
@@ -225,7 +226,7 @@ impl CommittingHandler for ApplicationLogsService {
         if self.disabled.load(Ordering::Relaxed) {
             return;
         }
-        let Some(system) = system.downcast_ref::<NeoSystem>() else {
+        let Some(system) = system.downcast_ref::<Node>() else {
             return;
         };
         if system.settings().network != self.settings.network {
@@ -261,7 +262,7 @@ impl CommittedHandler for ApplicationLogsService {
         if self.disabled.load(Ordering::Relaxed) {
             return;
         }
-        let Some(system) = system.downcast_ref::<NeoSystem>() else {
+        let Some(system) = system.downcast_ref::<Node>() else {
             return;
         };
         if system.settings().network != self.settings.network {
@@ -337,15 +338,15 @@ fn notification_to_json(event: &NotifyEventArgs) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::persistence::{
+    use neo_storage::persistence::{
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         storage::StorageError,
         store::OnNewSnapshotDelegate,
         write_store::WriteStore,
         SeekDirection,
     };
-    use neo_core::smart_contract::{StorageItem, StorageKey};
-    use neo_core::UnhandledExceptionPolicy;
+    use neo_storage::{StorageItem, StorageKey};
+    use neo_primitives::UnhandledExceptionPolicy;
 
     #[derive(Clone)]
     struct FailingStore;
@@ -439,7 +440,7 @@ mod tests {
             Arc::clone(&self.store)
         }
 
-        fn try_commit(&mut self) -> neo_core::persistence::store_snapshot::SnapshotCommitResult {
+        fn try_commit(&mut self) -> neo_storage::persistence::store_snapshot::SnapshotCommitResult {
             Err(StorageError::CommitFailed(
                 "injected application logs commit failure".to_string(),
             ))

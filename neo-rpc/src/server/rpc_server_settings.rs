@@ -4,7 +4,7 @@
 // RpcServersSettings. Provides JSON configuration deserialisation for the RPC
 // server plugin.
 
-use neo_core::CoreResult;
+use neo_error::CoreResult;
 use std::sync::LazyLock;
 use parking_lot::RwLock;
 use serde::de::{self, Deserializer};
@@ -29,8 +29,7 @@ pub enum UnhandledExceptionPolicy {
     /// Continue after logging
     Continue,
     /// Terminate the process
-    Terminate,
-}
+    Terminate}
 
 /// Represents a single RPC server configuration block (`RpcServersSettings`).
 ///
@@ -137,8 +136,7 @@ pub struct RpcServerConfig {
         default = "RpcServerConfig::default_max_batch_size",
         alias = "MaxBatchSize"
     )]
-    pub max_batch_size: usize,
-}
+    pub max_batch_size: usize}
 
 impl std::fmt::Debug for RpcServerConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -169,95 +167,95 @@ impl std::fmt::Debug for RpcServerConfig {
             .field("find_storage_page_size", &self.find_storage_page_size)
             .field("max_batch_size", &self.max_batch_size)
             .finish()
-    }
+   }
 }
 
 impl RpcServerConfig {
     const fn default_network() -> u32 {
         5_195_086
-    }
+   }
 
     const fn default_bind_address() -> IpAddr {
         IpAddr::V4(Ipv4Addr::LOCALHOST)
-    }
+   }
 
     const fn default_port() -> u16 {
         10332
-    }
+   }
 
     const fn default_max_concurrent_connections() -> usize {
         100
-    }
+   }
 
     const fn default_max_request_body_size() -> usize {
         5 * 1024 * 1024
-    }
+   }
 
     const fn default_max_requests_per_second() -> u32 {
         100
-    }
+   }
 
     const fn default_rate_limit_burst() -> u32 {
         200
-    }
+   }
 
     const fn default_enable_cors() -> bool {
         true
-    }
+   }
 
     const fn default_keep_alive_timeout() -> i32 {
         60
-    }
+   }
 
     const fn default_request_headers_timeout() -> u64 {
         15
-    }
+   }
 
     const fn gas_datoshi_factor() -> i64 {
         100_000_000
-    }
+   }
 
     const fn default_max_gas_invocation() -> i64 {
         10 * Self::gas_datoshi_factor()
-    }
+   }
 
     const fn default_max_fee() -> i64 {
         (Self::gas_datoshi_factor() as f64 * 0.1) as i64
-    }
+   }
 
     const fn default_max_iterator_result_items() -> usize {
         100
-    }
+   }
 
     const fn default_max_stack_size() -> usize {
         u16::MAX as usize
-    }
+   }
 
     const fn default_session_expiration_seconds() -> u64 {
         60
-    }
+   }
 
     const fn default_find_storage_page_size() -> usize {
         50
-    }
+   }
 
     const fn default_max_batch_size() -> usize {
         1024
-    }
+   }
 
     #[must_use]
     pub const fn request_headers_timeout_duration(&self) -> Duration {
         Duration::from_secs(self.request_headers_timeout)
-    }
+   }
 
     #[must_use]
     pub const fn keep_alive_timeout_duration(&self) -> Option<Duration> {
         if self.keep_alive_timeout < 0 {
             None
-        } else {
+       } else {
             Some(Duration::from_secs(self.keep_alive_timeout as u64))
-        }
-    }
+       }
+   }
 }
 
 const GAS_UNIT_THRESHOLD: i64 = 1_000;
@@ -283,19 +281,18 @@ fn parse_gas_value(value: Value) -> Result<i64, String> {
         Value::Number(number) => parse_gas_number(&number),
         Value::String(text) => parse_gas_string(&text),
         Value::Null => Err("gas value cannot be null".to_string()),
-        _ => Err("gas value must be a number or string".to_string()),
-    }
+        _ => Err("gas value must be a number or string".to_string())}
 }
 
 fn parse_gas_number(number: &serde_json::Number) -> Result<i64, String> {
     if let Some(int_value) = number.as_i64() {
         return apply_gas_threshold(int_value);
-    }
+   }
     if let Some(uint_value) = number.as_u64() {
         let int_value =
             i64::try_from(uint_value).map_err(|_| "gas value exceeds i64".to_string())?;
         return apply_gas_threshold(int_value);
-    }
+   }
     let float_value = number
         .as_f64()
         .ok_or_else(|| "gas value must be numeric".to_string())?;
@@ -306,10 +303,10 @@ fn parse_gas_string(text: &str) -> Result<i64, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("gas value cannot be empty".to_string());
-    }
+   }
     if let Ok(int_value) = trimmed.parse::<i64>() {
         return apply_gas_threshold(int_value);
-    }
+   }
     let float_value = trimmed
         .parse::<f64>()
         .map_err(|_| "gas value must be numeric".to_string())?;
@@ -321,19 +318,19 @@ fn apply_gas_threshold(value: i64) -> Result<i64, String> {
         value
             .checked_mul(RpcServerConfig::gas_datoshi_factor())
             .ok_or_else(|| "gas value overflow".to_string())
-    } else {
+   } else {
         Ok(value)
-    }
+   }
 }
 
 fn convert_gas_units(value: f64) -> Result<i64, String> {
     if !value.is_finite() {
         return Err("gas value must be finite".to_string());
-    }
+   }
     let scaled = value * RpcServerConfig::gas_datoshi_factor() as f64;
     if scaled > i64::MAX as f64 || scaled < i64::MIN as f64 {
         return Err("gas value overflow".to_string());
-    }
+   }
     Ok(scaled.round() as i64)
 }
 
@@ -341,14 +338,12 @@ fn convert_gas_units(value: f64) -> Result<i64, String> {
 #[derive(Debug, Clone)]
 pub struct RpcServerSettings {
     servers: Vec<RpcServerConfig>,
-    exception_policy: UnhandledExceptionPolicy,
-}
+    exception_policy: UnhandledExceptionPolicy}
 
 static CURRENT_SETTINGS: LazyLock<RwLock<RpcServerSettings>> = LazyLock::new(|| {
     RwLock::new(RpcServerSettings {
         servers: vec![RpcServerConfig::default()],
-        exception_policy: UnhandledExceptionPolicy::Ignore,
-    })
+        exception_policy: UnhandledExceptionPolicy::Ignore})
 });
 
 impl Default for RpcServerConfig {
@@ -378,9 +373,8 @@ impl Default for RpcServerConfig {
             session_enabled: false,
             session_expiration_time: Self::default_session_expiration_seconds(),
             find_storage_page_size: Self::default_find_storage_page_size(),
-            max_batch_size: Self::default_max_batch_size(),
-        }
-    }
+            max_batch_size: Self::default_max_batch_size()}
+   }
 }
 
 impl RpcServerSettings {
@@ -400,21 +394,20 @@ impl RpcServerSettings {
             Self {
                 servers: if servers.is_empty() {
                     vec![RpcServerConfig::default()]
-                } else {
+               } else {
                     servers
-                },
-                exception_policy,
-            }
-        } else {
+               },
+                exception_policy}
+       } else {
             Self::default()
-        };
+       };
 
         // Validate settings early to fail fast on unsupported or insecure combos.
         settings.validate()?;
 
         *CURRENT_SETTINGS.write() = settings;
         Ok(())
-    }
+   }
 
     fn validate(&self) -> CoreResult<()> {
         for server in &self.servers {
@@ -428,24 +421,24 @@ impl RpcServerSettings {
                     "RPC rate limiting is disabled (MaxRequestsPerSecond=0) on a non-localhost \
                      bind address; this exposes the node to denial-of-service attacks"
                 );
-            }
-        }
+           }
+       }
         Ok(())
-    }
+   }
 
     pub fn current() -> Self {
         CURRENT_SETTINGS.read().clone()
-    }
+   }
 
     #[must_use]
     pub fn servers(&self) -> &[RpcServerConfig] {
         &self.servers
-    }
+   }
 
     #[must_use]
     pub const fn exception_policy(&self) -> UnhandledExceptionPolicy {
         self.exception_policy
-    }
+   }
 
     #[must_use]
     pub fn server_for_network(&self, network: u32) -> Option<RpcServerConfig> {
@@ -453,16 +446,15 @@ impl RpcServerSettings {
             .iter()
             .find(|cfg| cfg.network == network)
             .cloned()
-    }
+   }
 }
 
 impl Default for RpcServerSettings {
     fn default() -> Self {
         Self {
             servers: vec![RpcServerConfig::default()],
-            exception_policy: UnhandledExceptionPolicy::Ignore,
-        }
-    }
+            exception_policy: UnhandledExceptionPolicy::Ignore}
+   }
 }
 
 #[cfg(test)]
@@ -482,7 +474,7 @@ mod tests {
                 config_path.display()
             );
             return;
-        }
+       }
         let raw = fs::read_to_string(&config_path).expect("read rpc server config");
         let json: Value = serde_json::from_str(&raw).expect("parse rpc server config");
         let servers = json["PluginConfiguration"]["Servers"]
@@ -515,5 +507,5 @@ mod tests {
         assert!(!config.session_enabled);
         assert_eq!(config.session_expiration_time, 60);
         assert_eq!(config.find_storage_page_size, 50);
-    }
+   }
 }

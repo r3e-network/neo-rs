@@ -3,7 +3,7 @@
 //! Represents a user's balance for a specific token.
 
 use super::super::extensions::bigint_var_size;
-use neo_core::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 

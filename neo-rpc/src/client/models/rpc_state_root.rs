@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::Witness;
+use neo_payloads::Witness;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -27,8 +27,7 @@ pub struct RpcStateRoot {
     pub root_hash: UInt256,
 
     /// Witness
-    pub witness: Option<Witness>,
-}
+    pub witness: Option<Witness>}
 
 impl RpcStateRoot {
     /// Creates from JSON
@@ -62,9 +61,8 @@ impl RpcStateRoot {
             version,
             index,
             root_hash,
-            witness,
-        })
-    }
+            witness})
+   }
 
     /// Converts to JSON
     /// Matches C# `ToJson`
@@ -86,10 +84,10 @@ impl RpcStateRoot {
                 "witnesses".to_string(),
                 JToken::Array(JArray::from(vec![JToken::Object(witness_json)])),
             );
-        }
+       }
 
         json
-    }
+   }
 }
 
 #[cfg(test)]
@@ -129,7 +127,7 @@ mod tests {
         let witness = parsed.witness.expect("witness");
         assert_eq!(witness.invocation_script(), b"i");
         assert_eq!(witness.verification_script(), b"v");
-    }
+   }
 
     #[test]
     fn rpc_state_root_allows_missing_witness() {
@@ -143,7 +141,7 @@ mod tests {
 
         let parsed = RpcStateRoot::from_json(&json).expect("state root");
         assert!(parsed.witness.is_none());
-    }
+   }
 
     #[test]
     fn rpc_state_root_roundtrip() {
@@ -151,13 +149,12 @@ mod tests {
             version: 1,
             index: 10,
             root_hash: UInt256::zero(),
-            witness: None,
-        };
+            witness: None};
         let json = root.to_json();
         let parsed = RpcStateRoot::from_json(&json).expect("state root");
         assert_eq!(parsed.version, 1);
         assert_eq!(parsed.index, 10);
-    }
+   }
 
     #[test]
     fn rpc_state_root_roundtrip_with_witness_json() {
@@ -172,20 +169,19 @@ mod tests {
                 JToken::String(general_purpose::STANDARD.encode(b"v")),
             );
             obj
-        })
+       })
         .unwrap();
 
         let root = RpcStateRoot {
             version: 2,
             index: 11,
             root_hash: UInt256::zero(),
-            witness: Some(witness),
-        };
+            witness: Some(witness)};
         let json = root.to_json();
         let parsed = RpcStateRoot::from_json(&json).expect("state root");
         assert!(parsed.witness.is_some());
         let parsed_witness = parsed.witness.unwrap();
         assert_eq!(parsed_witness.invocation_script(), b"i");
         assert_eq!(parsed_witness.verification_script(), b"v");
-    }
+   }
 }

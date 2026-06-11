@@ -1,6 +1,6 @@
 use neo_crypto::Secp256r1Crypto;
-use neo_core::neo_io::BinaryWriter;
-use neo_core::wallets::KeyPair;
+use neo_io::BinaryWriter;
+use neo_wallets::KeyPair;
 use base64::Engine as _;
 use rand::RngCore;
 use rand::rngs::OsRng;

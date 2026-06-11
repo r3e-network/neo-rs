@@ -106,10 +106,26 @@ pub use witness_condition_type::WitnessConditionType;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // Marker traits used to decouple higher-level crates from concrete chain types.
-pub use blockchain::{BlockLike, NetworkMessage};
+pub use blockchain::BlockLike;
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use serializable_payload::SerializablePayload;
 pub use unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
 pub use verification::{
     BlockchainSnapshot, VerificationContext, Witness, VerificationError, VerificationResult,
 };
+
+
+/// Implements `Default` by returning `Self::new()`.
+///
+/// Mirrors the C# `Neo.IO.Helper` `impl_default_via_new!` macro that
+/// the original `neo-core` used to derive `Default` for value types.
+#[macro_export]
+macro_rules! impl_default_via_new {
+    ($name:ident) => {
+        impl Default for $name {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+}

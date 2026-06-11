@@ -11,8 +11,8 @@
 
 use super::super::utility::{RpcUtility, object_array, witness_to_json};
 use neo_config::ProtocolSettings;
-use neo_core::BlockHeader;
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_payloads::BlockHeader;
+use neo_wallets::wallet_helper as WalletHelper;
 use neo_io::Serializable;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
@@ -28,8 +28,7 @@ pub struct RpcBlockHeader {
     pub confirmations: u32,
 
     /// Hash of the next block
-    pub next_block_hash: Option<UInt256>,
-}
+    pub next_block_hash: Option<UInt256>}
 
 impl RpcBlockHeader {
     /// Creates from JSON
@@ -92,7 +91,7 @@ impl RpcBlockHeader {
                 .as_object()
                 .ok_or("Invalid witness entry: expected object")?;
             parsed_witnesses.push(RpcUtility::witness_from_json(witness_obj)?);
-        }
+       }
 
         let header = BlockHeader::new_with_witnesses(
             version,
@@ -119,9 +118,8 @@ impl RpcBlockHeader {
         Ok(Self {
             header,
             confirmations,
-            next_block_hash,
-        })
-    }
+            next_block_hash})
+   }
 
     /// Converts to JSON
     /// Matches C# `ToJson`
@@ -176,9 +174,9 @@ impl RpcBlockHeader {
                 "nextblockhash".to_string(),
                 JToken::String(next_block_hash.to_string()),
             );
-        }
+       }
         json
-    }
+   }
 }
 
 #[cfg(test)]
@@ -199,7 +197,7 @@ mod tests {
             JToken::String(BASE64.encode(verification)),
         );
         obj
-    }
+   }
 
     #[test]
     fn parses_block_header_from_json() {
@@ -246,16 +244,16 @@ mod tests {
         assert_eq!(rpc_header.confirmations, 8);
         assert!(rpc_header.next_block_hash.is_some());
         // header carries exactly one witness by type (single `witness` field)
-    }
+   }
 
     #[test]
     fn block_header_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getblockheaderasync") else {
             return;
-        };
+       };
         let settings = ProtocolSettings::default_settings();
         let parsed = RpcBlockHeader::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 }

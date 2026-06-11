@@ -1,24 +1,27 @@
 use super::super::{OracleService, OracleServiceError};
 use neo_crypto::ECPoint;
-use neo_core::neo_io::serializable::helper::{
+use neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
-use neo_core::neo_io::Serializable;
-use neo_core::network::p2p::payloads::{
+use neo_io::Serializable;
+use neo_payloads::{
     oracle_response::MAX_RESULT_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction,
     TransactionAttribute, Witness, HEADER_SIZE,
 };
-use neo_core::persistence::DataCache;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::contract_basic_method::ContractBasicMethod;
-use neo_core::smart_contract::native::native_contract::NativeContract;
-use neo_core::smart_contract::native::{
+use neo_storage::persistence::DataCache;
+use neo_config::ProtocolSettings;
+use neo_manifest::CallFlags;
+use neo_execution::Contract;
+use neo_execution::ApplicationEngine;
+use neo_execution::TriggerType;
+use neo_native_contracts::native_contract::NativeContract;
+use neo_native_contracts::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract,
 };
-use neo_core::smart_contract::{ApplicationEngine, Contract, TriggerType};
-use neo_core::{Verifiable, VerifiableExt};
-use neo_core::{UInt160, WitnessScope};
+use neo_primitives::Verifiable;
+use neo_payloads::VerifiableExt;
+use neo_primitives::ContractBasicMethod;
+use neo_primitives::{UInt160, WitnessScope};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -26,7 +29,7 @@ impl OracleService {
     pub(in super::super) fn create_response_tx(
         &self,
         snapshot: &DataCache,
-        request: &neo_core::smart_contract::native::OracleRequest,
+        request: &neo_native_contracts::OracleRequest,
         response: &mut OracleResponse,
         oracle_nodes: &[ECPoint],
         settings: &ProtocolSettings,
@@ -102,7 +105,7 @@ impl OracleService {
             Arc::new(snapshot.clone()),
             None,
             settings.clone(),
-            neo_core::smart_contract::helper::Helper::MAX_VERIFICATION_GAS,
+            neo_execution::helper::Helper::MAX_VERIFICATION_GAS,
             None,
         )
         .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
@@ -137,7 +140,7 @@ impl OracleService {
             .get_exec_fee_factor_snapshot(snapshot, settings, height)
             .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
             as i64;
-        let multi_sig_cost = neo_core::smart_contract::helper::Helper::multi_signature_contract_cost(
+        let multi_sig_cost = neo_execution::helper::Helper::multi_signature_contract_cost(
             m as i32, n as i32,
         );
         let comp2 = exec_fee_factor * multi_sig_cost;
@@ -155,9 +158,9 @@ impl OracleService {
             + get_var_size(oracle_sign_contract.script.len() as u64)
             + oracle_sign_contract.script.len();
 
-        let fee_per_byte = PolicyContract::new()
+        let fee_per_byte: i64 = PolicyContract::new()
             .get_fee_per_byte_snapshot(snapshot)
-            .unwrap_or(PolicyContract::DEFAULT_FEE_PER_BYTE as i64);
+            .unwrap_or(PolicyContract::DEFAULT_FEE_PER_BYTE) as i64;
 
         if response.result.len() > MAX_RESULT_SIZE {
             response.code = OracleResponseCode::ResponseTooLarge;
@@ -173,7 +176,7 @@ impl OracleService {
         }
 
         size += get_var_size_serializable_slice(tx.attributes());
-        let comp3 = size as i64 * fee_per_byte;
+        let comp3 = size as i64 * fee_per_byte as i64;
         let final_network_fee = tx.network_fee().saturating_add(comp3);
         tx.set_network_fee(final_network_fee);
         tx.set_system_fee(request.gas_for_response - final_network_fee);

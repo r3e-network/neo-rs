@@ -13,8 +13,8 @@ mod proto;
 mod tests;
 
 use super::OracleServiceSettings;
-use neo_core::network::p2p::payloads::OracleResponseCode;
-use neo_core::wallets::KeyPair;
+use neo_payloads::OracleResponseCode;
+use neo_wallets::KeyPair;
 use auth::build_neofs_auth;
 use http::normalize_neofs_endpoint;
 use parse::parse_neofs_request;

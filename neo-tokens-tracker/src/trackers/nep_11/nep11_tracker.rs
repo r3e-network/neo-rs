@@ -7,16 +7,18 @@ use super::super::token_transfer::TokenTransfer;
 use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
 use super::nep11_balance_key::Nep11BalanceKey;
 use super::nep11_transfer_key::Nep11TransferKey;
-use neo_core::extensions::log_level::LogLevel;
-use neo_core::neo_ledger::{ApplicationExecuted, Block};
-use neo_core::persistence::DataCache;
-use neo_core::script_builder::ScriptBuilder;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::native::contract_management::ContractManagement;
-use neo_core::smart_contract::ApplicationEngine;
-use neo_core::smart_contract::TriggerType;
-use neo_core::neo_vm::StackItem;
-use neo_core::{NeoSystem, UInt160};
+use neo_extensions::log_level::LogLevel;
+use neo_block::ApplicationExecuted;
+use neo_payloads::Block;
+use neo_storage::persistence::DataCache;
+use neo_script_builder::ScriptBuilder;
+use neo_manifest::CallFlags;
+use neo_native_contracts::contract_management::ContractManagement;
+use neo_execution::ApplicationEngine;
+use neo_primitives::TriggerType;
+use neo_vm::StackItem;
+use neo_primitives::UInt160;
+use neo_system::Node;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
@@ -38,10 +40,10 @@ pub struct Nep11Tracker {
 impl Nep11Tracker {
     /// Creates a new NEP-11 tracker.
     pub fn new(
-        db: Arc<dyn neo_core::persistence::Store>,
+        db: Arc<dyn neo_storage::persistence::Store>,
         max_results: u32,
         should_track_history: bool,
-        neo_system: Arc<NeoSystem>,
+        neo_system: Arc<Node>,
     ) -> Self {
         Self {
             base: TrackerBase::new(db, max_results, should_track_history, neo_system),
@@ -52,7 +54,7 @@ impl Nep11Tracker {
 
     fn handle_notification(
         &mut self,
-        container: Option<&Arc<dyn neo_core::Verifiable>>,
+        container: Option<&Arc<dyn neo_primitives::Verifiable>>,
         asset: &UInt160,
         state_items: &[StackItem],
         transfers: &mut Vec<TransferRecord>,
@@ -70,7 +72,7 @@ impl Nep11Tracker {
 
         transfers.push(record.clone());
         if let Some(container) = container {
-            if let Some(tx) = container.as_any().downcast_ref::<neo_core::network::p2p::payloads::Transaction>() {
+            if let Some(tx) = container.as_any().downcast_ref::<neo_payloads::Transaction>() {
                 self.record_transfer_history(&record, &token_id, &tx.hash(), transfer_index);
             }
         }
@@ -80,7 +82,7 @@ impl Nep11Tracker {
         &mut self,
         record: &TransferRecord,
         token_id: &[u8],
-        tx_hash: &neo_core::UInt256,
+        tx_hash: &neo_primitives::UInt256,
         transfer_index: &mut u32,
     ) {
         if !self.base.should_track_history {
@@ -167,7 +169,7 @@ impl Nep11Tracker {
             None,
             Arc::new(snapshot.clone()),
             self.current_block.clone(),
-            self.base.neo_system.settings().clone(),
+            self.base.neo_system.settings().as_ref().clone(),
             34_000_000,
             None,
         ) {
@@ -268,7 +270,7 @@ impl Tracker for Nep11Tracker {
 
     fn on_persist(
         &mut self,
-        _system: &NeoSystem,
+        _system: &Node,
         block: &Block,
         snapshot: &DataCache,
         executed_list: &[ApplicationExecuted],

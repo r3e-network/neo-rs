@@ -1,5 +1,5 @@
-use neo_core::network::p2p::payloads::{WitnessCondition, WitnessRule, WitnessRuleAction};
-use neo_core::UInt160;
+use neo_payloads::{WitnessCondition, WitnessRule, WitnessRuleAction};
+use neo_primitives::UInt160;
 use neo_crypto::ECPoint;
 
 macro_rules! impl_witness_condition_builder_methods {
@@ -66,7 +66,7 @@ pub struct WitnessConditionBuilder {
     condition: Option<WitnessCondition>,
 }
 
-neo_core::impl_default_via_new!(WitnessConditionBuilder);
+neo_primitives::impl_default_via_new!(WitnessConditionBuilder);
 
 impl WitnessConditionBuilder {
     /// Creates a new empty witness condition builder.
@@ -146,7 +146,7 @@ pub struct AndConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
 
-neo_core::impl_default_via_new!(AndConditionBuilder);
+neo_primitives::impl_default_via_new!(AndConditionBuilder);
 
 impl AndConditionBuilder {
     /// Creates a new empty AND condition builder.
@@ -177,7 +177,7 @@ pub struct OrConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
 
-neo_core::impl_default_via_new!(OrConditionBuilder);
+neo_primitives::impl_default_via_new!(OrConditionBuilder);
 
 impl OrConditionBuilder {
     /// Creates a new empty OR condition builder.

@@ -41,6 +41,8 @@ pub mod bip32;
 pub mod bloom_filter;
 /// BLS12-381 signature helpers for Neo.
 pub mod bls12381;
+/// BLS12-381 curve-point operations backing the CryptoLib native methods.
+pub mod bls12381_point;
 /// Compatibility re-exports for cryptographic utility types.
 /// Elliptic curve point and curve helpers.
 pub mod ecc;
@@ -61,6 +63,7 @@ pub mod signature;
 pub use bip32::Bip32Crypto;
 pub use bloom_filter::BloomFilter;
 pub use bls12381::Bls12381Crypto;
+pub use bls12381_point::Bls12381Point;
 pub use ecc::{ECCurve, ECPoint};
 pub use encoding::{Base58, Base64, Hex};
 pub use error::{CryptoError, CryptoResult};

@@ -3,8 +3,8 @@
 //! Storage key for NEP-11 (NFT) balances.
 
 use super::token_id_integer;
-use neo_core::neo_io::impl_serializable;
-use neo_core::UInt160;
+use neo_io::impl_serializable;
+use neo_primitives::UInt160;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;

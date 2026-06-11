@@ -2,35 +2,27 @@ use super::*;
 use crate::client::models::RpcPeers;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::extensions::SerializableExtensions;
-use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
-use neo_core::neo_io::BinaryWriter;
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
-use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::network::p2p::payloads::{Block, Header, TransactionAttribute};
-use neo_core::persistence::apply_tracked_items;
-use neo_core::persistence::StoreCache;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::native::helpers::NativeHelpers;
-use neo_core::smart_contract::native::GasToken;
-use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::native::NativeContract;
-use neo_core::smart_contract::native::PolicyContract;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::Contract;
-use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::wallets::KeyPair;
-use neo_core::{Verifiable, VerifiableExt, NeoSystem, UInt160, UInt256, WitnessScope};
+use neo_extensions::io::SerializableExtensions;
+use neo_block::VerifyResult;
+use neo_payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
+use neo_payloads::OracleResponseCode;
+use neo_payloads::signer::Signer;
+use neo_payloads::transaction::Transaction;
+use neo_payloads::witness::Witness;
+use neo_payloads::{get_sign_data_vec, Block, Header, TransactionAttribute};
+use neo_storage::persistence::StoreCache;
+use neo_config::ProtocolSettings;
+use neo_native_contracts::LedgerContract;
+use neo_native_contracts::NativeContract;
+use neo_native_contracts::PolicyContract;
+use neo_execution::Contract;
+use neo_storage::{StorageItem, StorageKey};
+use neo_wallets::KeyPair;
+use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_json::JToken;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
-use std::sync::Arc;
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
     handlers
@@ -158,7 +150,12 @@ fn build_signed_block(
     let prev_timestamp = prev_trimmed.header.timestamp();
 
     let validators = settings.standby_validators();
-    let next_consensus = NativeHelpers::get_bft_address(&validators);
+    // C# Contract.GetBFTAddress: multisig contract with m = n - (n-1)/3.
+    let m = validators.len() - (validators.len() - 1) / 3;
+    let next_consensus = neo_execution::Helper::to_script_hash(&Contract::create(
+        vec![],
+        Contract::create_multi_sig_redeem_script(m, &validators),
+    ));
 
     let mut header = Header::new();
     header.set_prev_hash(prev_hash);
@@ -186,64 +183,45 @@ fn build_signed_block(
 }
 
 fn mint_gas(
-    store: &mut neo_core::persistence::StoreCache,
-    settings: &ProtocolSettings,
+    store: &mut neo_storage::persistence::StoreCache,
+    _settings: &ProtocolSettings,
     account: UInt160,
     amount: BigInt,
 ) {
-    let snapshot = Arc::new(store.data_cache().clone());
-    let mut container = Transaction::new();
-    container.set_signers(vec![Signer::new(account, WitnessScope::GLOBAL)]);
-    container.add_witness(Witness::new());
-    let script_container: Arc<dyn Verifiable> = Arc::new(container);
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        Some(script_container),
-        snapshot,
-        None,
-        settings.clone(),
-        400_000_000,
-        None,
-    )
-    .expect("engine");
-
-    let gas = GasToken::new();
-    gas.mint(&mut engine, &account, &amount, false)
-        .expect("mint");
-    let tracked = engine.snapshot_cache().tracked_items();
-    apply_tracked_items(store, tracked);
+    // Seeds the byte-exact NEP-17 account-state record the native
+    // `balanceOf` reads; the legacy fixture invoked `GAS.Mint` through
+    // an engine, which produces the same storage record.
+    crate::server::test_support::seed_gas_balance(store, &account, amount);
 }
 
 fn persist_transaction_record(store: &mut StoreCache, tx: &Transaction, block_index: u32) {
     const PREFIX_TRANSACTION: u8 = 0x0b;
-    const RECORD_KIND_TRANSACTION: u8 = 0x01;
 
-    let mut writer = BinaryWriter::new();
-    writer
-        .write_u8(RECORD_KIND_TRANSACTION)
-        .expect("record kind");
-    writer.write_u32(block_index).expect("block index");
-    writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
-    let tx_bytes = tx.to_bytes();
-    writer.write_var_bytes(&tx_bytes).expect("tx bytes");
+    // `Prefix_Transaction` value: the C# `TransactionState` interoperable
+    // stack item serialized with `BinarySerializer`, matching the reader.
+    let record = neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+        block_index,
+        VMState::NONE,
+        tx,
+    )
+    .expect("serialize TransactionState record");
 
     let mut key_bytes = Vec::with_capacity(1 + 32);
     key_bytes.push(PREFIX_TRANSACTION);
     key_bytes.extend_from_slice(&tx.hash().to_bytes());
     let key = StorageKey::new(LedgerContract::ID, key_bytes);
-    store.add(key, StorageItem::from_bytes(writer.to_bytes()));
+    store.add(key, StorageItem::from_bytes(record));
     store.commit();
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn get_peers_reports_unconnected_queue() {
+async fn get_peers_serves_empty_arrays_without_peers() {
+    // With no peer lifecycle events folded, all three arrays are
+    // empty. `unconnected` stays empty by design (the reth-style
+    // network service keeps no unconnected address book) and `bad` is
+    // always empty, matching C# v3.9.1.
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-    let endpoint: SocketAddr = "127.0.0.1:25000".parse().unwrap();
-
-    system
-        .add_unconnected_peers(vec![endpoint])
-        .expect("enqueue peers");
+        crate::server::test_support::test_system(ProtocolSettings::default());
 
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
@@ -254,7 +232,7 @@ async fn get_peers_reports_unconnected_queue() {
         .get("unconnected")
         .and_then(|v| v.as_array())
         .expect("unconnected array");
-    assert_eq!(unconnected.len(), 1);
+    assert!(unconnected.is_empty());
 
     let bad = result
         .get("bad")
@@ -270,9 +248,115 @@ async fn get_peers_reports_unconnected_queue() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn get_peers_folds_connect_and_disconnect_events() {
+    let system =
+        crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerNode::register_handlers();
+    let peers_handler = find_handler(&handlers, "getpeers");
+    let count_handler = find_handler(&handlers, "getconnectioncount");
+
+    let network = system.network();
+    let events = network.event_sender();
+
+    // Outbound-style peer: the dial path publishes the lifecycle
+    // event carrying the dialed endpoint (the peer's listener — the
+    // `Remote.Address` / `ListenerTcpPort` pair C# reports).
+    events
+        .send(neo_network::event::NetworkEvent::PeerConnected {
+            peer_id: "peer:11".to_string(),
+            address: Some("10.1.2.3:20333".parse().expect("addr")),
+        })
+        .expect("publish connect");
+    // Inbound-style peer: the accept loop publishes the accepted
+    // connection's source endpoint (remote IP + ephemeral source
+    // port; C# would report the listener port advertised in the
+    // peer's version payload, which the Rust per-peer service does
+    // not capture yet).
+    events
+        .send(neo_network::event::NetworkEvent::PeerConnected {
+            peer_id: "peer:12".to_string(),
+            address: Some("198.51.100.7:54321".parse().expect("addr")),
+        })
+        .expect("publish connect");
+    // Address-less peer: folds into the connection count but is
+    // omitted from the connected array (no address to report).
+    events
+        .send(neo_network::event::NetworkEvent::PeerConnected {
+            peer_id: "peer:13".to_string(),
+            address: None,
+        })
+        .expect("publish connect");
+
+    let result = (peers_handler.callback())(&server, &[]).expect("get peers");
+    let connected = result
+        .get("connected")
+        .and_then(|v| v.as_array())
+        .expect("connected array");
+    assert_eq!(connected.len(), 2);
+    // Deterministic peer-id order: "peer:11" < "peer:12".
+    assert_eq!(
+        connected[0].get("address").and_then(Value::as_str),
+        Some("10.1.2.3")
+    );
+    // C# emits the port as a JSON number, not a string.
+    assert_eq!(connected[0].get("port").and_then(Value::as_u64), Some(20333));
+    // The inbound peer appears with its remote address.
+    assert_eq!(
+        connected[1].get("address").and_then(Value::as_str),
+        Some("198.51.100.7")
+    );
+    assert_eq!(connected[1].get("port").and_then(Value::as_u64), Some(54321));
+    let count = (count_handler.callback())(&server, &[]).expect("count");
+    assert_eq!(count.as_u64(), Some(3));
+
+    // The C#-shaped payload roundtrips through the client model.
+    let parsed = RpcPeers::from_json(&parse_object(&result)).expect("parse peers");
+    assert!(parsed.unconnected.is_empty());
+    assert!(parsed.bad.is_empty());
+    assert_eq!(parsed.connected.len(), 2);
+    assert_eq!(parsed.connected[0].address, "10.1.2.3");
+    assert_eq!(parsed.connected[0].port, 20333);
+    assert_eq!(parsed.connected[1].address, "198.51.100.7");
+    assert_eq!(parsed.connected[1].port, 54321);
+
+    // Disconnects remove the peers from the folded view.
+    events
+        .send(neo_network::event::NetworkEvent::PeerDisconnected {
+            peer_id: "peer:11".to_string(),
+        })
+        .expect("publish disconnect");
+    events
+        .send(neo_network::event::NetworkEvent::PeerDisconnected {
+            peer_id: "peer:12".to_string(),
+        })
+        .expect("publish disconnect");
+    let result = (peers_handler.callback())(&server, &[]).expect("get peers");
+    let connected = result
+        .get("connected")
+        .and_then(|v| v.as_array())
+        .expect("connected array");
+    assert!(connected.is_empty());
+    let count = (count_handler.callback())(&server, &[]).expect("count");
+    assert_eq!(count.as_u64(), Some(1));
+
+    // A stale address record for an already-disconnected peer must
+    // not resurrect it in either view.
+    network.record_peer_address("peer:11", "10.1.2.3:20333".parse().expect("addr"));
+    let result = (peers_handler.callback())(&server, &[]).expect("get peers");
+    let connected = result
+        .get("connected")
+        .and_then(|v| v.as_array())
+        .expect("connected array");
+    assert!(connected.is_empty());
+    let count = (count_handler.callback())(&server, &[]).expect("count");
+    assert_eq!(count.as_u64(), Some(1));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn get_peers_empty_when_no_queue() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let peers_handler = find_handler(&handlers, "getpeers");
@@ -300,11 +384,7 @@ async fn get_peers_empty_when_no_queue() {
 #[tokio::test(flavor = "multi_thread")]
 async fn get_peers_roundtrips_into_client_model() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-    let endpoint: SocketAddr = "127.0.0.1:25001".parse().unwrap();
-    system
-        .add_unconnected_peers(vec![endpoint])
-        .expect("enqueue peers");
+        crate::server::test_support::test_system(ProtocolSettings::default());
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
@@ -312,14 +392,14 @@ async fn get_peers_roundtrips_into_client_model() {
 
     let result = (peers_handler.callback())(&server, &[]).expect("get peers");
     let parsed = RpcPeers::from_json(&parse_object(&result)).expect("parse peers");
-    assert_eq!(parsed.unconnected.len(), 1);
+    assert!(parsed.unconnected.is_empty());
     assert!(parsed.connected.is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_version_contains_expected_fields() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "getversion");
@@ -361,13 +441,13 @@ async fn get_version_contains_expected_fields() {
             "missing protocol field {}",
             key
         );
-    }
+   }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_version_hardforks_structure() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "getversion");
@@ -395,7 +475,7 @@ async fn get_version_hardforks_structure() {
             .expect("hardfork blockheight");
         assert!(!name.starts_with("HF_"));
         let _ = blockheight;
-    }
+   }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -403,9 +483,9 @@ async fn get_version_includes_zero_height_hardforks() {
     let mut settings = ProtocolSettings::default();
     for height in settings.hardforks.values_mut() {
         *height = 0;
-    }
+   }
     let expected = settings.hardforks.len();
-    let system = NeoSystem::new(settings, None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings);
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "getversion");
@@ -426,13 +506,158 @@ async fn get_version_includes_zero_height_hardforks() {
             .and_then(|obj| obj.get("blockheight"))
             .and_then(Value::as_u64)
             == Some(0)
-    }));
+   }));
+}
+
+/// Settings with every hardfork (including HF_Echidna) active from
+/// height 0, so the genesis-seeded fixture (current index 0) takes the
+/// dynamic post-Echidna read path.
+fn echidna_at_zero_settings() -> ProtocolSettings {
+    let mut settings = ProtocolSettings::default();
+    for height in settings.hardforks.values_mut() {
+        *height = 0;
+   }
+    settings
+}
+
+/// Writes the three committee-adjustable Policy values the dynamic
+/// getversion path reads, in the storage encoding the Policy setters
+/// use (signed little-endian `BigInteger` bytes).
+fn seed_policy_dynamic_values(
+    system: &std::sync::Arc<neo_system::Node>,
+    msperblock: u32,
+    max_traceable: u32,
+    max_vub_increment: u32,
+) {
+    let mut store = system.store_cache();
+    for (prefix, value) in [
+        (POLICY_PREFIX_MILLISECONDS_PER_BLOCK, msperblock),
+        (POLICY_PREFIX_MAX_TRACEABLE_BLOCKS, max_traceable),
+        (
+            POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
+            max_vub_increment,
+        ),
+    ] {
+        store.update(
+            StorageKey::new(PolicyContract::ID, vec![prefix]),
+            StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()),
+        );
+   }
+    store.commit();
+}
+
+/// Reads the (msperblock, maxtraceableblocks, maxvaliduntilblockincrement)
+/// triple from a getversion result.
+fn version_dynamic_triple(result: &Value) -> (u64, u64, u64) {
+    let protocol = result
+        .get("protocol")
+        .and_then(Value::as_object)
+        .expect("protocol object");
+    let read = |key: &str| {
+        protocol
+            .get(key)
+            .and_then(Value::as_u64)
+            .unwrap_or_else(|| panic!("numeric protocol field {key}"))
+   };
+    (
+        read("msperblock"),
+        read("maxtraceableblocks"),
+        read("maxvaliduntilblockincrement"),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_version_reads_policy_storage_when_echidna_active() {
+    // C# NeoSystemExtensions: with HF_Echidna enabled at the current
+    // height, the values come from native Policy storage.
+    let settings = echidna_at_zero_settings();
+    let system = crate::server::test_support::test_system(settings);
+    seed_policy_dynamic_values(&system, 3_000, 1_000_000, 1_024);
+
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerNode::register_handlers();
+    let handler = find_handler(&handlers, "getversion");
+
+    let result = (handler.callback())(&server, &[]).expect("get version");
+    assert_eq!(version_dynamic_triple(&result), (3_000, 1_000_000, 1_024));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_version_falls_back_to_settings_when_policy_storage_absent() {
+    // C# NeoSystemExtensions: Policy.Get* throws KeyNotFoundException
+    // when the Echidna-era keys were never written (e.g. Echidna active
+    // from height 0 before its activation migration ran); the catch
+    // block falls back to the static ProtocolSettings values.
+    let settings = echidna_at_zero_settings();
+    let expected = (
+        u64::from(settings.milliseconds_per_block),
+        u64::from(settings.max_traceable_blocks),
+        u64::from(settings.max_valid_until_block_increment),
+    );
+    let system = crate::server::test_support::test_system(settings);
+
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerNode::register_handlers();
+    let handler = find_handler(&handlers, "getversion");
+
+    let result = (handler.callback())(&server, &[]).expect("get version");
+    assert_eq!(version_dynamic_triple(&result), expected);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_version_reports_static_settings_before_echidna() {
+    // C# NeoSystemExtensions: before HF_Echidna the static settings
+    // win even if Policy storage carries (stale/foreign) values.
+    let settings = ProtocolSettings::default(); // mainnet Echidna height >> 0
+    let expected = (
+        u64::from(settings.milliseconds_per_block),
+        u64::from(settings.max_traceable_blocks),
+        u64::from(settings.max_valid_until_block_increment),
+    );
+    let system = crate::server::test_support::test_system(settings);
+    seed_policy_dynamic_values(&system, 3_000, 1_000_000, 1_024);
+
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerNode::register_handlers();
+    let handler = find_handler(&handlers, "getversion");
+
+    let result = (handler.callback())(&server, &[]).expect("get version");
+    assert_eq!(version_dynamic_triple(&result), expected);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_version_falls_back_to_settings_when_ledger_pointer_absent() {
+    // C# NeoSystemExtensions: Ledger.CurrentIndex throws
+    // KeyNotFoundException while genesis is not yet persisted, and the
+    // catch block falls back to settings — even with Echidna at 0 and
+    // Policy values present.
+    let settings = echidna_at_zero_settings();
+    let expected = (
+        u64::from(settings.milliseconds_per_block),
+        u64::from(settings.max_traceable_blocks),
+        u64::from(settings.max_valid_until_block_increment),
+    );
+    let system = crate::server::test_support::test_system(settings);
+    seed_policy_dynamic_values(&system, 3_000, 1_000_000, 1_024);
+    let mut store = system.store_cache();
+    store.delete(StorageKey::new(
+        LedgerContract::ID,
+        vec![LEDGER_PREFIX_CURRENT_BLOCK],
+    ));
+    store.commit();
+
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerNode::register_handlers();
+    let handler = find_handler(&handlers, "getversion");
+
+    let result = (handler.callback())(&server, &[]).expect("get version");
+    assert_eq!(version_dynamic_triple(&result), expected);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_rejects_null_input() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -446,7 +671,7 @@ async fn send_raw_transaction_rejects_null_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_rejects_empty_input() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -460,7 +685,7 @@ async fn send_raw_transaction_rejects_empty_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_rejects_invalid_base64() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -474,7 +699,7 @@ async fn send_raw_transaction_rejects_invalid_base64() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_rejects_invalid_transaction_bytes() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -493,14 +718,14 @@ async fn send_raw_transaction_rejects_invalid_transaction_bytes() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_accepts_valid_transaction() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x44u8; 32]).expect("keypair");
     let account = keypair.get_script_hash();
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     mint_gas(
         &mut store,
         &settings,
@@ -521,7 +746,7 @@ async fn send_raw_transaction_accepts_valid_transaction() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_insufficient_funds() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -540,14 +765,14 @@ async fn send_raw_transaction_reports_insufficient_funds() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_invalid_signature() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x77u8; 32]).expect("keypair");
     let account = keypair.get_script_hash();
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     mint_gas(
         &mut store,
         &settings,
@@ -557,11 +782,13 @@ async fn send_raw_transaction_reports_invalid_signature() {
     store.commit();
 
     let mut tx = build_signed_transaction(&settings, &keypair, 4, 0);
-    if let Some(witness) = tx.witnesses_mut().get_mut(0) {
+    let mut witnesses = tx.witnesses().to_vec();
+    if let Some(witness) = witnesses.get_mut(0) {
         if let Some(last) = witness.invocation_script.last_mut() {
             *last ^= 0x01;
-        }
-    }
+       }
+   }
+    tx.set_witnesses(witnesses);
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
     let params = [Value::String(payload)];
@@ -574,7 +801,7 @@ async fn send_raw_transaction_reports_invalid_signature() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_invalid_size() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -606,7 +833,7 @@ async fn send_raw_transaction_reports_invalid_size() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_invalid_script() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -633,14 +860,14 @@ async fn send_raw_transaction_reports_invalid_script() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_invalid_attribute() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x22u8; 32]).expect("keypair");
     let account = keypair.get_script_hash();
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     mint_gas(
         &mut store,
         &settings,
@@ -671,7 +898,7 @@ async fn send_raw_transaction_reports_invalid_attribute() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_expired_transaction() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -698,7 +925,7 @@ async fn send_raw_transaction_reports_expired_transaction() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_policy_failed() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -706,7 +933,7 @@ async fn send_raw_transaction_reports_policy_failed() {
     let keypair = KeyPair::from_private_key(&[0x44u8; 32]).expect("keypair");
     let account = keypair.get_script_hash();
     let policy = PolicyContract::new();
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     let key = StorageKey::create_with_uint160(policy.id(), 15, &account);
     store.add(key, StorageItem::from_bytes(Vec::new()));
     store.commit();
@@ -732,14 +959,14 @@ async fn send_raw_transaction_reports_policy_failed() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_already_in_pool() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x55u8; 32]).expect("keypair");
     let account = keypair.get_script_hash();
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     mint_gas(
         &mut store,
         &settings,
@@ -750,10 +977,8 @@ async fn send_raw_transaction_reports_already_in_pool() {
 
     let tx = build_signed_transaction(&settings, &keypair, 12, 0);
     let mempool = system.mempool();
-    let mut pool = mempool.lock();
-    let result = pool.try_add(tx.clone(), store.data_cache(), &settings);
+    let result = mempool.try_add(tx.clone(), store.data_cache());
     assert_eq!(result, VerifyResult::Succeed);
-    drop(pool);
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
     let params = [Value::String(payload)];
@@ -766,14 +991,14 @@ async fn send_raw_transaction_reports_already_in_pool() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_reports_already_exists() {
     let settings = ProtocolSettings::default();
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x55u8; 32]).expect("keypair");
     let tx = build_signed_transaction(&settings, &keypair, 2, 0);
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     persist_transaction_record(&mut store, &tx, 1);
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -790,7 +1015,7 @@ async fn send_raw_transaction_reports_already_exists() {
 #[tokio::test(flavor = "multi_thread")]
 async fn submit_block_rejects_invalid_base64() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
@@ -804,7 +1029,7 @@ async fn submit_block_rejects_invalid_base64() {
 #[tokio::test(flavor = "multi_thread")]
 async fn submit_block_rejects_invalid_block_bytes() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
@@ -824,12 +1049,12 @@ async fn submit_block_rejects_invalid_block_bytes() {
 async fn submit_block_accepts_valid_block() {
     let validator = KeyPair::from_private_key(&[0x10u8; 32]).expect("validator key");
     let settings = single_validator_settings(&validator);
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
 
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     let account = validator.get_script_hash();
     mint_gas(
         &mut store,
@@ -847,17 +1072,12 @@ async fn submit_block_accepts_valid_block() {
         1_0000_0000,
         vec![OpCode::PUSH1.byte()],
     );
-    let snapshot = store.data_cache();
-    let verification = tx.verify(
-        &settings,
-        snapshot,
-        Some(&TransactionVerificationContext::new()),
-        &[],
-    );
-    assert_eq!(verification, VerifyResult::Succeed);
-    let store = system.context().store_cache();
-    let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
-    let expected_hash = Block::hash(&mut block);
+    // State-dependent transaction verification lived on the legacy
+    // neo-core Transaction; the service's admission path is what the
+    // handler below exercises.
+    let store = system.store_cache();
+    let block = build_signed_block(&settings, &store, &validator, vec![tx]);
+    let expected_hash = Block::hash(&block);
 
     let payload = BASE64_STANDARD.encode(block.to_array().expect("serialize block"));
     let params = [Value::String(payload)];
@@ -871,12 +1091,12 @@ async fn submit_block_accepts_valid_block() {
 async fn submit_block_reports_already_exists() {
     let validator = KeyPair::from_private_key(&[0x11u8; 32]).expect("validator key");
     let settings = single_validator_settings(&validator);
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
 
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     let account = validator.get_script_hash();
     mint_gas(
         &mut store,
@@ -894,7 +1114,7 @@ async fn submit_block_reports_already_exists() {
         1_0000_0000,
         vec![OpCode::PUSH1.byte()],
     );
-    let store = system.context().store_cache();
+    let store = system.store_cache();
     let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
     block.header.set_index(0);
 
@@ -911,12 +1131,12 @@ async fn submit_block_reports_already_exists() {
 async fn submit_block_reports_invalid_block() {
     let validator = KeyPair::from_private_key(&[0x12u8; 32]).expect("validator key");
     let settings = single_validator_settings(&validator);
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
 
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     let account = validator.get_script_hash();
     mint_gas(
         &mut store,
@@ -934,7 +1154,7 @@ async fn submit_block_reports_invalid_block() {
         1_0000_0000,
         vec![OpCode::PUSH1.byte()],
     );
-    let store = system.context().store_cache();
+    let store = system.store_cache();
     let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
     block.header.witness = Witness::new();
 
@@ -951,12 +1171,12 @@ async fn submit_block_reports_invalid_block() {
 async fn submit_block_reports_invalid_prev_hash() {
     let validator = KeyPair::from_private_key(&[0x13u8; 32]).expect("validator key");
     let settings = single_validator_settings(&validator);
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
 
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     let account = validator.get_script_hash();
     mint_gas(
         &mut store,
@@ -974,7 +1194,7 @@ async fn submit_block_reports_invalid_prev_hash() {
         1_0000_0000,
         vec![OpCode::PUSH1.byte()],
     );
-    let store = system.context().store_cache();
+    let store = system.store_cache();
     let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
     block.header.set_prev_hash(UInt256::from([0xABu8; 32]));
 
@@ -990,12 +1210,12 @@ async fn submit_block_reports_invalid_prev_hash() {
 async fn submit_block_reports_invalid_index() {
     let validator = KeyPair::from_private_key(&[0x14u8; 32]).expect("validator key");
     let settings = single_validator_settings(&validator);
-    let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
 
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     let account = validator.get_script_hash();
     mint_gas(
         &mut store,
@@ -1013,7 +1233,7 @@ async fn submit_block_reports_invalid_index() {
         1_0000_0000,
         vec![OpCode::PUSH1.byte()],
     );
-    let store = system.context().store_cache();
+    let store = system.store_cache();
     let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
     block.header.set_index(block.header.index() + 10);
 
@@ -1028,7 +1248,7 @@ async fn submit_block_reports_invalid_index() {
 #[tokio::test(flavor = "multi_thread")]
 async fn submit_block_rejects_null_input() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
@@ -1042,7 +1262,7 @@ async fn submit_block_rejects_null_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn submit_block_rejects_empty_input() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
@@ -1056,7 +1276,7 @@ async fn submit_block_rejects_empty_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn get_connection_count_defaults_to_zero() {
     let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "getconnectioncount");

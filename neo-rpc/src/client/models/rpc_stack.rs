@@ -9,8 +9,7 @@ pub struct RpcStack {
     pub item_type: String,
 
     /// Stack item value
-    pub value: JToken,
-}
+    pub value: JToken}
 
 impl RpcStack {
     /// Creates from JSON
@@ -23,8 +22,8 @@ impl RpcStack {
 
         let value = json.get("value").ok_or("Missing 'value' field")?.clone();
 
-        Ok(Self { item_type, value })
-    }
+        Ok(Self {item_type, value})
+   }
 
     /// Converts to JSON
     /// Matches C# `ToJson`
@@ -34,5 +33,5 @@ impl RpcStack {
         json.insert("type".to_string(), JToken::String(self.item_type.clone()));
         json.insert("value".to_string(), self.value.clone());
         json
-    }
+   }
 }

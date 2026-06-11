@@ -105,7 +105,7 @@
 //! use neo_rpc::{
 //!     RpcClient, RpcClientBuilder,
 //!     client::{Nep17Api, WalletApi},
-//! };
+//!};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Build a client with retry and timeout
@@ -130,7 +130,7 @@
 //!     None,
 //! ).await?;
 //! # Ok(())
-//! # }
+//! #}
 //! ```
 //!
 //! ## Error Handling
@@ -162,12 +162,12 @@
 //!     bind: "127.0.0.1".to_string(),
 //!     port: 10332,
 //!     ..Default::default()
-//! };
+//!};
 //!
 //! let server = RpcServer::new(neo_system, config);
 //! server.start().await?;
 //! # Ok(())
-//! # }
+//! #}
 //! ```
 //!
 //! ## Example: Client Usage with High-Level APIs
@@ -186,7 +186,7 @@
 //! let contract = client.contract(&contract_hash);
 //! let result = contract.call("transfer", params).await?;
 //! # Ok(())
-//! # }
+//! #}
 //! ```
 //!
 //! ## Security Considerations
@@ -236,5 +236,4 @@ pub use server::{RpcServer, RpcServerConfig, RpcServerSettings};
 pub use client::{
     ClientRpcError, ContractClient, Nep17Api, PolicyApi, RpcClient, RpcClientBuilder,
     RpcClientHooks, RpcRequestOutcome, RpcUtility, StateApi, TransactionManager,
-    TransactionManagerFactory, WalletApi,
-};
+    TransactionManagerFactory, WalletApi};

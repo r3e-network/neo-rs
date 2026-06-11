@@ -36,8 +36,7 @@ struct RpcFilters {
     auth: Arc<Option<BasicAuth>>,
     rate_limiter: Option<Arc<GovernorRateLimiter>>,
     cors: Option<CorsConfig>,
-    max_batch_size: usize,
-}
+    max_batch_size: usize}
 
 #[derive(Debug, Default, Deserialize)]
 struct RpcQueryParams {
@@ -48,8 +47,7 @@ struct RpcQueryParams {
     #[serde(default)]
     method: Option<String>,
     #[serde(default)]
-    params: Option<String>,
-}
+    params: Option<String>}
 
 pub fn build_rpc_routes(
     handle: Weak<RwLock<RpcServer>>,
@@ -63,13 +61,12 @@ pub fn build_rpc_routes(
             max_rps: settings.max_requests_per_second,
             burst: if settings.rate_limit_burst == 0 {
                 settings.max_requests_per_second
-            } else {
+           } else {
                 settings.rate_limit_burst
-            },
-        })))
-    } else {
+           }})))
+   } else {
         None
-    };
+   };
     let max_batch = settings.max_batch_size;
     let filters = RpcFilters {
         server: handle,
@@ -77,8 +74,7 @@ pub fn build_rpc_routes(
         auth,
         rate_limiter,
         cors: CorsConfig::from_settings(&settings, has_auth),
-        max_batch_size: max_batch,
-    };
+        max_batch_size: max_batch};
 
     let max_body = settings.max_request_body_size as u64;
     let post_route = warp::path::end()
@@ -101,7 +97,7 @@ pub fn build_rpc_routes(
         .and(warp::query::raw())
         .and_then(move |filters, remote, origin, auth, raw_query: String| {
             handlers::handle_get_request(filters, remote, origin, auth, raw_query, max_query)
-        });
+       });
 
     let options_route = warp::path::end()
         .and(warp::options())
@@ -112,7 +108,7 @@ pub fn build_rpc_routes(
             *response.status_mut() = StatusCode::NO_CONTENT;
             apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
             response
-        });
+       });
 
     post_route.or(get_route).unify().or(options_route).unify()
 }
@@ -129,7 +125,7 @@ pub fn build_ws_route(
             let event_rx = event_tx.subscribe();
             let mgr = subscription_mgr.clone();
             ws.on_upgrade(move |socket| super::ws::ws_handler(socket, event_rx, mgr))
-        })
+       })
         .map(warp::reply::Reply::into_response)
 }
 
@@ -157,7 +153,7 @@ pub(super) fn error_response(id: Option<Value>, error: RpcError) -> Value {
     error_obj.insert("message".to_string(), Value::String(error.error_message()));
     if let Some(data) = error.data() {
         error_obj.insert("data".to_string(), Value::String(data.to_string()));
-    }
+   }
 
     response.insert("error".to_string(), Value::Object(error_obj));
     Value::Object(response)
@@ -180,42 +176,40 @@ pub(super) fn build_http_response(
             .headers_mut()
             .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         (response, true)
-    } else {
+   } else {
         (HttpResponse::new(Vec::new().into()), false)
-    };
+   };
 
     *response.status_mut() = if unauthorized {
         StatusCode::UNAUTHORIZED
-    } else {
+   } else {
         StatusCode::OK
-    };
+   };
 
     if challenge {
         response.headers_mut().insert(
             WWW_AUTHENTICATE,
             HeaderValue::from_static("Basic realm=\"Restricted\""),
         );
-    }
+   }
 
     response
 }
 
 pub(super) struct RequestOutcome {
     pub(super) response: Option<Value>,
-    pub(super) unauthorized: bool,
-}
+    pub(super) unauthorized: bool}
 
 pub(super) fn exceeds_max_depth(value: &Value, max_depth: usize) -> bool {
     fn walk(value: &Value, depth: usize, max_depth: usize) -> bool {
         if depth > max_depth {
             return true;
-        }
+       }
         match value {
             Value::Array(values) => values.iter().any(|value| walk(value, depth + 1, max_depth)),
             Value::Object(map) => map.values().any(|value| walk(value, depth + 1, max_depth)),
-            _ => false,
-        }
-    }
+            _ => false}
+   }
 
     walk(value, 1, max_depth)
 }
@@ -224,21 +218,18 @@ impl RequestOutcome {
     pub(super) const fn response(value: Value) -> Self {
         Self {
             response: Some(value),
-            unauthorized: false,
-        }
-    }
+            unauthorized: false}
+   }
 
     pub(super) const fn error(value: Value, unauthorized: bool) -> Self {
         Self {
             response: Some(value),
-            unauthorized,
-        }
-    }
+            unauthorized}
+   }
 
     pub(super) const fn notification() -> Self {
         Self {
             response: None,
-            unauthorized: false,
-        }
-    }
+            unauthorized: false}
+   }
 }

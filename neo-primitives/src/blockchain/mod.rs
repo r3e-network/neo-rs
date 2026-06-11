@@ -2,7 +2,6 @@
 //!
 //! These decouple higher-level crates from concrete chain types:
 //!
-//! - `NetworkMessage`: command name + serialization for a wire message
 //! - `BlockLike`: common block accessors without exposing internal structure
 
 pub use marker_traits::*;

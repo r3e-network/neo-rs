@@ -19,8 +19,7 @@ pub struct RpcOracleResponse {
     /// Oracle response code.
     pub code: i32,
     /// Result payload encoded as base64.
-    pub result: String,
-}
+    pub result: String}
 
 #[cfg(test)]
 mod tests {
@@ -31,12 +30,11 @@ mod tests {
         let resp = RpcOracleResponse {
             id: 42,
             code: 0x16,
-            result: "aGVsbG8=".to_string(),
-        };
+            result: "aGVsbG8=".to_string()};
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: RpcOracleResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, resp.id);
         assert_eq!(parsed.code, resp.code);
         assert_eq!(parsed.result, resp.result);
-    }
+   }
 }

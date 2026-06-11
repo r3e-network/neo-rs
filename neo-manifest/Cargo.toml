@@ -1,0 +1,36 @@
+[package]
+name = "neo-manifest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Canonical home for Neo smart-contract manifest / ABI / NEF / CallFlags / MethodToken / ValidatorAttribute data types"
+
+[dependencies]
+# Foundation layer
+neo-primitives = { workspace = true }
+neo-error = { workspace = true }
+neo-io = { workspace = true }
+neo-crypto = { workspace = true }
+neo-vm-rs = { workspace = true }
+neo-vm = { workspace = true }
+# External
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+neo-serialization = { workspace = true }
+hex = { workspace = true }
+
+[features]
+default = []

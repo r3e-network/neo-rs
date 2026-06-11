@@ -16,8 +16,7 @@ struct WsRequest {
     id: Option<serde_json::Value>,
     method: String,
     #[serde(default)]
-    params: Option<Vec<serde_json::Value>>,
-}
+    params: Option<Vec<serde_json::Value>>}
 
 /// JSON-RPC 2.0 WebSocket response
 #[derive(Debug, Serialize)]
@@ -28,14 +27,12 @@ struct WsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<WsError>,
-}
+    error: Option<WsError>}
 
 #[derive(Debug, Serialize)]
 struct WsError {
     code: i32,
-    message: String,
-}
+    message: String}
 
 impl WsResponse {
     const fn success(id: Option<serde_json::Value>, result: serde_json::Value) -> Self {
@@ -43,9 +40,8 @@ impl WsResponse {
             jsonrpc: "2.0",
             id,
             result: Some(result),
-            error: None,
-        }
-    }
+            error: None}
+   }
 
     fn error(id: Option<serde_json::Value>, code: i32, message: &str) -> Self {
         Self {
@@ -54,14 +50,12 @@ impl WsResponse {
             result: None,
             error: Some(WsError {
                 code,
-                message: message.to_string(),
-            }),
-        }
-    }
+                message: message.to_string()})}
+   }
 
     fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
-    }
+   }
 }
 
 /// Handle a WebSocket connection
@@ -88,8 +82,7 @@ pub async fn ws_handler(
                     Some(Ok(msg)) if msg.is_text() => {
                         let text = match msg.to_str() {
                             Ok(t) => t,
-                            Err(()) => continue,
-                        };
+                            Err(()) => continue};
 
                         match serde_json::from_str::<WsRequest>(text) {
                             Ok(req) => {
@@ -97,38 +90,38 @@ pub async fn ws_handler(
                                 if let Err(e) = tx.send(Message::text(response.to_json())).await {
                                     warn!("Failed to send WebSocket response: {}", e);
                                     break;
-                                }
-                            }
+                               }
+                           }
                             Err(e) => {
                                 let response = WsResponse::error(None, -32700, &format!("Parse error: {e}"));
                                 if let Err(e) = tx.send(Message::text(response.to_json())).await {
                                     warn!("Failed to send WebSocket error: {}", e);
                                     break;
-                                }
-                            }
-                        }
-                    }
+                               }
+                           }
+                       }
+                   }
                     Some(Ok(msg)) if msg.is_close() => {
                         debug!("WebSocket client sent close");
                         break;
-                    }
+                   }
                     Some(Ok(msg)) if msg.is_ping() => {
                         if let Err(e) = tx.send(Message::pong(msg.into_bytes())).await {
                             warn!("Failed to send pong: {}", e);
                             break;
-                        }
-                    }
+                       }
+                   }
                     Some(Err(e)) => {
                         warn!("WebSocket error: {}", e);
                         break;
-                    }
+                   }
                     None => {
                         debug!("WebSocket stream ended");
                         break;
-                    }
+                   }
                     _ => {}
-                }
-            }
+               }
+           }
 
             // Forward matching blockchain events
             event = event_rx.recv() => {
@@ -140,26 +133,26 @@ pub async fn ws_handler(
                                 if let Err(e) = tx.send(Message::text(notification.to_json())).await {
                                     warn!("Failed to send event notification: {}", e);
                                     break;
-                                }
-                            }
-                        }
-                    }
+                               }
+                           }
+                       }
+                   }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         warn!("WebSocket client lagged by {} events", n);
                         // Continue anyway, just log the lag
-                    }
+                   }
                     Err(broadcast::error::RecvError::Closed) => {
                         info!("Event channel closed");
                         break;
-                    }
-                }
-            }
-        }
-    }
+                   }
+               }
+           }
+       }
+   }
 
     if let Some(subscription) = subscription {
         debug!("Dropped subscription {} on disconnect", subscription.id());
-    }
+   }
 
     info!("WebSocket client disconnected");
 }
@@ -172,7 +165,7 @@ fn handle_request(
 ) -> WsResponse {
     if req.jsonrpc != "2.0" {
         return WsResponse::error(req.id.clone(), -32600, "Invalid JSON-RPC version");
-    }
+   }
 
     match req.method.as_str() {
         "subscribe" => handle_subscribe(req, subscription_mgr, current_subscription),
@@ -181,8 +174,7 @@ fn handle_request(
             req.id.clone(),
             -32601,
             &format!("Method not found: {}", req.method),
-        ),
-    }
+        )}
 }
 
 fn event_type_names(event_types: impl IntoIterator<Item = WsEventType>) -> Vec<String> {
@@ -222,7 +214,7 @@ fn handle_subscribe(
             -32602,
             "Invalid params: no valid event types provided. Valid types: block_added, transaction_added, transaction_removed, notification",
         );
-    }
+   }
 
     // If already subscribed, add to existing subscription
     if let Some(subscription) = current_subscription.as_mut() {
@@ -232,10 +224,9 @@ fn handle_subscribe(
             req.id.clone(),
             serde_json::json!({
                 "subscription_id": subscription.id(),
-                "subscribed": subscribed,
-            }),
+                "subscribed": subscribed}),
         );
-    }
+   }
 
     // Create new subscription
     let subscribed = event_type_names(event_types.iter().copied());
@@ -247,8 +238,7 @@ fn handle_subscribe(
         req.id.clone(),
         serde_json::json!({
             "subscription_id": id,
-            "subscribed": subscribed,
-        }),
+            "subscribed": subscribed}),
     )
 }
 
@@ -258,7 +248,7 @@ fn handle_unsubscribe(
 ) -> WsResponse {
     let Some(subscription) = current_subscription.as_mut() else {
         return WsResponse::error(req.id.clone(), -32602, "No active subscription");
-    };
+   };
 
     // Check if specific event types to unsubscribe from
     if let Some(params) = req.params.as_deref() {
@@ -269,17 +259,17 @@ fn handle_unsubscribe(
                         *current_subscription = None;
                         return WsResponse::success(
                             req.id.clone(),
-                            serde_json::json!({ "unsubscribed": true }),
+                            serde_json::json!({"unsubscribed": true}),
                         );
-                    }
+                   }
 
                     return WsResponse::error(
                         req.id.clone(),
                         -32602,
                         "Invalid params: subscription id does not match active subscription",
                     );
-                }
-            }
+               }
+           }
 
             let event_types = parse_event_types(params);
 
@@ -291,32 +281,31 @@ fn handle_unsubscribe(
                     *current_subscription = None;
                     return WsResponse::success(
                         req.id.clone(),
-                        serde_json::json!({ "unsubscribed": true }),
+                        serde_json::json!({"unsubscribed": true}),
                     );
-                }
+               }
 
                 let remaining_names = event_type_names(subscription.subscribed_events());
                 return WsResponse::success(
                     req.id.clone(),
                     serde_json::json!({
                         "unsubscribed": event_type_names(event_types),
-                        "remaining": remaining_names,
-                    }),
+                        "remaining": remaining_names}),
                 );
-            }
+           }
 
             return WsResponse::error(
                 req.id.clone(),
                 -32602,
                 "Invalid params: no valid event types or subscription id provided",
             );
-        }
-    }
+       }
+   }
 
     // Unsubscribe from everything
     *current_subscription = None;
 
-    WsResponse::success(req.id.clone(), serde_json::json!({ "unsubscribed": true }))
+    WsResponse::success(req.id.clone(), serde_json::json!({"unsubscribed": true}))
 }
 
 #[cfg(test)]
@@ -332,13 +321,12 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(1)),
             method: "subscribe".to_string(),
-            params: Some(vec![serde_json::json!("block_added")]),
-        };
+            params: Some(vec![serde_json::json!("block_added")])};
 
         let response = handle_request(&req, &mgr, &mut sub_id);
         assert!(response.result.is_some());
         assert!(sub_id.is_some());
-    }
+   }
 
     #[test]
     fn test_handle_invalid_method() {
@@ -349,12 +337,11 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(1)),
             method: "invalid".to_string(),
-            params: None,
-        };
+            params: None};
 
         let response = handle_request(&req, &mgr, &mut sub_id);
         assert!(response.error.is_some());
-    }
+   }
 
     #[test]
     fn repeated_subscribe_keeps_id_and_merges_events() {
@@ -365,8 +352,7 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(1)),
             method: "subscribe".to_string(),
-            params: Some(vec![serde_json::json!("block_added")]),
-        };
+            params: Some(vec![serde_json::json!("block_added")])};
         let block_response = handle_request(&block_req, &mgr, &mut subscription);
         let block_result = block_response.result.expect("subscribe result");
         let subscription_id = block_result["subscription_id"]
@@ -382,8 +368,7 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(2)),
             method: "subscribe".to_string(),
-            params: Some(vec![serde_json::json!("transaction_added")]),
-        };
+            params: Some(vec![serde_json::json!("transaction_added")])};
         let tx_response = handle_request(&tx_req, &mgr, &mut subscription);
         let tx_result = tx_response.result.expect("merged subscribe result");
 
@@ -395,7 +380,7 @@ mod tests {
         let subscription = subscription.as_ref().expect("active subscription");
         assert!(subscription.is_subscribed(WsEventType::BlockAdded));
         assert!(subscription.is_subscribed(WsEventType::TransactionAdded));
-    }
+   }
 
     #[test]
     fn partial_unsubscribe_keeps_remaining_events() {
@@ -409,16 +394,14 @@ mod tests {
             params: Some(vec![
                 serde_json::json!("block_added"),
                 serde_json::json!("transaction_added"),
-            ]),
-        };
+            ])};
         handle_request(&subscribe_req, &mgr, &mut subscription);
 
         let remove_block_req = WsRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(2)),
             method: "unsubscribe".to_string(),
-            params: Some(vec![serde_json::json!("block_added")]),
-        };
+            params: Some(vec![serde_json::json!("block_added")])};
         let remove_block_response = handle_request(&remove_block_req, &mgr, &mut subscription);
         let remove_block_result = remove_block_response.result.expect("partial unsubscribe");
 
@@ -438,15 +421,14 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(3)),
             method: "unsubscribe".to_string(),
-            params: Some(vec![serde_json::json!("transaction_added")]),
-        };
+            params: Some(vec![serde_json::json!("transaction_added")])};
         let remove_tx_response = handle_request(&remove_tx_req, &mgr, &mut subscription);
         assert_eq!(
             remove_tx_response.result,
-            Some(serde_json::json!({ "unsubscribed": true }))
+            Some(serde_json::json!({"unsubscribed": true}))
         );
         assert!(subscription.is_none());
-    }
+   }
 
     #[test]
     fn unsubscribe_accepts_subscription_id() {
@@ -457,8 +439,7 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(1)),
             method: "subscribe".to_string(),
-            params: Some(vec![serde_json::json!("block_added")]),
-        };
+            params: Some(vec![serde_json::json!("block_added")])};
         let subscribe_response = handle_request(&subscribe_req, &mgr, &mut subscription);
         let subscription_id =
             subscribe_response.result.expect("subscribe result")["subscription_id"]
@@ -469,16 +450,15 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(2)),
             method: "unsubscribe".to_string(),
-            params: Some(vec![serde_json::json!(subscription_id)]),
-        };
+            params: Some(vec![serde_json::json!(subscription_id)])};
         let unsubscribe_response = handle_request(&unsubscribe_req, &mgr, &mut subscription);
 
         assert_eq!(
             unsubscribe_response.result,
-            Some(serde_json::json!({ "unsubscribed": true }))
+            Some(serde_json::json!({"unsubscribed": true}))
         );
         assert!(subscription.is_none());
-    }
+   }
 
     #[test]
     fn invalid_unsubscribe_params_do_not_clear_subscription() {
@@ -489,16 +469,14 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(1)),
             method: "subscribe".to_string(),
-            params: Some(vec![serde_json::json!("block_added")]),
-        };
+            params: Some(vec![serde_json::json!("block_added")])};
         handle_request(&subscribe_req, &mgr, &mut subscription);
 
         let unsubscribe_req = WsRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::json!(2)),
             method: "unsubscribe".to_string(),
-            params: Some(vec![serde_json::json!("block_aded")]),
-        };
+            params: Some(vec![serde_json::json!("block_aded")])};
         let unsubscribe_response = handle_request(&unsubscribe_req, &mgr, &mut subscription);
 
         assert!(unsubscribe_response.error.is_some());
@@ -508,5 +486,5 @@ mod tests {
                 .expect("subscription remains active")
                 .is_subscribed(WsEventType::BlockAdded)
         );
-    }
+   }
 }

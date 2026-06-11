@@ -1,4 +1,4 @@
-pub use neo_core::RpcException;
+pub use neo_primitives::RpcException;
 
 use super::rpc_error::RpcError;
 
@@ -9,7 +9,7 @@ impl From<RpcError> for RpcException {
             error.message().to_string(),
             error.data().map(std::string::ToString::to_string),
         )
-    }
+   }
 }
 
 impl From<RpcException> for RpcError {
@@ -19,5 +19,5 @@ impl From<RpcException> for RpcError {
             err.message().to_string(),
             err.data().map(std::string::ToString::to_string),
         )
-    }
+   }
 }

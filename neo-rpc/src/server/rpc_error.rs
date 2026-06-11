@@ -13,8 +13,7 @@ use std::fmt::{self, Display};
 pub struct RpcError {
     code: i32,
     message: String,
-    data: Option<String>,
-}
+    data: Option<String>}
 
 macro_rules! rpc_error_constructors {
     (
@@ -28,17 +27,17 @@ macro_rules! rpc_error_constructors {
             #[must_use]
             pub fn $name() -> Self {
                 Self::new($code, $message, rpc_error_constructors!(@data $($data)?))
-            }
+           }
         )+
-    };
+   };
 
     (@data) => {
         None
-    };
+   };
 
     (@data $data:expr_2021) => {
         Some($data.to_string())
-    };
+   };
 }
 
 impl RpcError {
@@ -49,34 +48,33 @@ impl RpcError {
             let trimmed = value.trim().to_string();
             if trimmed.is_empty() {
                 None
-            } else {
+           } else {
                 Some(trimmed)
-            }
-        });
+           }
+       });
         Self {
             code,
             message,
-            data,
-        }
-    }
+            data}
+   }
 
     /// Returns the JSON-RPC error code.
     #[must_use]
     pub const fn code(&self) -> i32 {
         self.code
-    }
+   }
 
     /// Returns the human readable error message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
-    }
+   }
 
     /// Returns any additional error data when available.
     #[must_use]
     pub fn data(&self) -> Option<&str> {
         self.data.as_deref()
-    }
+   }
 
     /// Creates a copy of the error carrying an additional data payload.
     pub fn with_data(&self, data: impl Into<String>) -> Self {
@@ -87,21 +85,19 @@ impl RpcError {
                 let value = data.into();
                 if value.trim().is_empty() {
                     None
-                } else {
+               } else {
                     Some(value)
-                }
-            },
-        }
-    }
+               }
+           }}
+   }
 
     /// Returns the formatted error message used for exceptions/logging.
     #[must_use]
     pub fn error_message(&self) -> String {
         match &self.data {
             Some(data) => format!("{} - {}", self.message, data),
-            None => self.message.clone(),
-        }
-    }
+            None => self.message.clone()}
+   }
 
     /// Serialises the error into a Neo JSON token (matches C# `ToJson`).
     #[must_use]
@@ -117,9 +113,9 @@ impl RpcError {
         );
         if let Some(data) = &self.data {
             obj.set("data".to_string(), Some(JToken::String(data.clone())));
-        }
+       }
         JToken::Object(obj)
-    }
+   }
 
     rpc_error_constructors! {
         /// Invalid JSON-RPC request (spec defined).
@@ -214,16 +210,15 @@ impl RpcError {
         invalid_proof => (-607, "Invalid state proof");
         /// Contract execution failed.
         execution_failed => (-608, "Contract execution failed");
-    }
+   }
 }
 
 impl Display for RpcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.data {
             Some(data) => write!(f, "{} ({}) - {}", self.message, self.code, data),
-            None => write!(f, "{} ({})", self.message, self.code),
-        }
-    }
+            None => write!(f, "{} ({})", self.message, self.code)}
+   }
 }
 
 impl std::error::Error for RpcError {}
@@ -231,7 +226,7 @@ impl std::error::Error for RpcError {}
 impl From<RpcError> for JToken {
     fn from(error: RpcError) -> Self {
         error.to_json()
-    }
+   }
 }
 
 #[cfg(test)]
@@ -248,7 +243,7 @@ mod tests {
             parsed.get("message").and_then(|v| v.as_str()),
             Some("Access denied")
         );
-    }
+   }
 
     #[test]
     fn rpc_error_data_only_on_wallet_fee_limit() {
@@ -301,11 +296,11 @@ mod tests {
         for error in errors.iter() {
             if error.code() == RpcError::wallet_fee_limit().code() {
                 assert!(error.data().is_some());
-            } else {
+           } else {
                 assert!(error.data().is_none());
-            }
-        }
-    }
+           }
+       }
+   }
 
     #[test]
     fn rpc_error_wallet_fee_limit_json_includes_data() {
@@ -320,7 +315,7 @@ mod tests {
             .expect("message");
         assert!(message.contains(error.message()));
         assert!(message.contains(data));
-    }
+   }
 
     #[test]
     fn rpc_error_strings_are_unique() {
@@ -374,6 +369,6 @@ mod tests {
         for error in errors {
             let key = error.to_string();
             assert!(seen.insert(key));
-        }
-    }
+       }
+   }
 }

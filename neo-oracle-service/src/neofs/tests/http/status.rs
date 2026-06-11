@@ -1,5 +1,5 @@
 use super::super::super::http::map_neofs_status;
-use neo_core::network::p2p::payloads::OracleResponseCode;
+use neo_payloads::OracleResponseCode;
 use reqwest::StatusCode;
 
 #[test]

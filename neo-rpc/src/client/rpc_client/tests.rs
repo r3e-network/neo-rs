@@ -1,18 +1,17 @@
 use super::*;
 use crate::client::models::{
     RpcAccount, RpcContractState, RpcPlugin, RpcRawMemPool, RpcRequest, RpcTransferOut,
-    RpcValidator,
-};
+    RpcValidator};
 use base64::{Engine as _, engine::general_purpose};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Response, Server as HyperServer};
 use mockito::{Matcher, Mock, Server, ServerGuard};
 use neo_config::ProtocolSettings;
-use neo_core::Transaction;
-use neo_core::BigDecimal;
-use neo_core::extensions::SerializableExtensions;
-use neo_core::neo_io::{MemoryReader, Serializable};
-use neo_core::network::p2p::payloads::block::Block;
+use neo_payloads::Transaction;
+use neo_primitives::BigDecimal;
+use neo_extensions::io::SerializableExtensions;
+use neo_io::{MemoryReader, Serializable};
+use neo_payloads::block::Block;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
 use num_bigint::BigInt;
@@ -35,7 +34,7 @@ fn load_rpc_case(name: &str) -> Option<JObject> {
     let result = cases.into_iter().next();
     if result.is_none() {
         eprintln!("SKIP: RpcTestCases.json missing case: {name}");
-    }
+   }
     result
 }
 
@@ -53,7 +52,7 @@ fn load_rpc_cases(name: &str) -> Option<Vec<JObject>> {
             path.display()
         );
         return None;
-    }
+   }
     let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
     let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
     let cases = token
@@ -69,27 +68,25 @@ fn load_rpc_cases(name: &str) -> Option<Vec<JObject>> {
             .unwrap_or_default();
         if case_name.eq_ignore_ascii_case(name) {
             matches.push(obj.clone());
-        }
-    }
+       }
+   }
     Some(matches)
 }
 
 enum ContractStateRequest {
     Hash(String),
-    Id(i32),
-}
+    Id(i32)}
 
 struct RpcFixture {
     client: RpcClient,
     response: JObject,
     _mock: Mock,
-    _server: ServerGuard,
-}
+    _server: ServerGuard}
 
 async fn mock_no_param_fixture(case_name: &str, method: &str) -> Option<RpcFixture> {
     if !localhost_binding_permitted() {
         return None;
-    }
+   }
 
     let case = load_rpc_case(case_name)?;
     let response = case
@@ -116,8 +113,7 @@ async fn mock_no_param_fixture(case_name: &str, method: &str) -> Option<RpcFixtu
         client,
         response,
         _mock: mock,
-        _server: server,
-    })
+        _server: server})
 }
 
 async fn start_slow_server(
@@ -141,14 +137,14 @@ async fn start_slow_server(
                     async move {
                         tokio::time::sleep(delay).await;
                         Ok::<_, Infallible>(Response::new(Body::from(body.clone())))
-                    }
-                }))
-            }
-        }));
+                   }
+               }))
+           }
+       }));
 
     let graceful = server.with_graceful_shutdown(async {
         let _ = shutdown_rx.await;
-    });
+   });
     tokio::spawn(graceful);
 
     (addr, shutdown_tx)
@@ -158,7 +154,7 @@ async fn start_slow_server(
 async fn request_hooks_fire_on_successful_call() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
     let mut server = Server::new_async().await;
     let _m = server
         .mock("POST", "/")
@@ -177,8 +173,8 @@ async fn request_hooks_fire_on_successful_call() {
             successful.store(outcome.success, Ordering::SeqCst);
             assert_eq!(outcome.method, "getblockcount");
             assert!(outcome.elapsed > Duration::from_millis(0));
-        }
-    });
+       }
+   });
 
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).hooks(hooks).build().unwrap();
@@ -192,7 +188,7 @@ async fn request_hooks_fire_on_successful_call() {
 async fn request_hooks_fire_on_failed_call() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
     let mut server = Server::new_async().await;
     let _m = server
         .mock("POST", "/")
@@ -212,8 +208,8 @@ async fn request_hooks_fire_on_failed_call() {
             assert_eq!(outcome.method, "getblockcount");
             assert!(!outcome.success);
             assert_eq!(outcome.error_code, Some(-1));
-        }
-    });
+       }
+   });
 
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).hooks(hooks).build().unwrap();
@@ -227,7 +223,7 @@ async fn request_hooks_fire_on_failed_call() {
 async fn rpc_client_respects_timeout_and_notifies_hooks() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
     let (addr, shutdown_tx) = start_slow_server(
         Duration::from_millis(200),
         r#"{"jsonrpc":"2.0","id":1,"result":1}"#,
@@ -244,8 +240,8 @@ async fn rpc_client_respects_timeout_and_notifies_hooks() {
             assert!(!outcome.success);
             assert!(outcome.elapsed >= Duration::from_millis(50));
             assert!(outcome.error_code.is_some());
-        }
-    });
+       }
+   });
 
     let client = RpcClient::builder(url)
         .timeout(Duration::from_millis(50))
@@ -290,7 +286,7 @@ fn rpc_client_new_constructs_and_drops() {
 async fn rpc_send_by_hash_or_index_parses_negative_index() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let mut server = Server::new_async().await;
     let body_re = r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*-1\s*\]"#;
@@ -315,7 +311,7 @@ async fn rpc_send_by_hash_or_index_parses_negative_index() {
 async fn rpc_send_by_hash_or_index_trims_numeric_input() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let mut server = Server::new_async().await;
     let body_re = r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*7\s*\]"#;
@@ -344,7 +340,7 @@ fn parse_plugins_errors_on_non_object() {
 async fn get_plugins_parses_listplugins_response_over_rpc() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
     let mut server = Server::new_async().await;
     let _m = server
         .mock("POST", "/")
@@ -357,7 +353,7 @@ async fn get_plugins_parses_listplugins_response_over_rpc() {
                     "result":[
                         {"name":"RpcServer","version":"1.2.3","interfaces":[]}
                     ]
-                }"#,
+               }"#,
         )
         .create();
 
@@ -374,11 +370,11 @@ async fn get_plugins_parses_listplugins_response_over_rpc() {
 async fn send_raw_transaction_uses_base64_and_returns_hash() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("sendrawtransactionasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -442,11 +438,11 @@ async fn send_raw_transaction_uses_base64_and_returns_hash() {
 async fn send_raw_transaction_propagates_error_response() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("sendrawtransactionasyncerror") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -496,11 +492,11 @@ async fn send_raw_transaction_propagates_error_response() {
 async fn send_async_returns_error_when_throw_is_false() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("sendrawtransactionasyncerror") else {
         return;
-    };
+   };
     let request_obj = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -541,7 +537,7 @@ async fn send_async_returns_error_when_throw_is_false() {
 async fn rpc_client_with_basic_auth_sends_authorization_header() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let user = "krain";
     let pass = "123456";
@@ -575,7 +571,7 @@ async fn rpc_client_with_basic_auth_sends_authorization_header() {
 async fn rpc_client_new_with_basic_auth_sends_authorization_header() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let user = "krain";
     let pass = "123456";
@@ -607,7 +603,7 @@ async fn rpc_client_new_with_basic_auth_sends_authorization_header() {
 async fn submit_block_uses_base64_and_returns_hash() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let mut block = Block::new();
     block.rebuild_merkle_root();
@@ -642,11 +638,11 @@ async fn submit_block_uses_base64_and_returns_hash() {
 async fn invoke_script_uses_base64_and_parses_result() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(cases) = load_rpc_cases("invokescriptasync") else {
         return;
-    };
+   };
     for case in cases {
         let request = case
             .get("Request")
@@ -701,14 +697,14 @@ async fn invoke_script_uses_base64_and_parses_result() {
         let actual = client.invoke_script(&bytes).await.expect("invoke script");
         assert_eq!(actual.script, expected_script);
         assert_eq!(actual.gas_consumed, expected_gas);
-    }
+   }
 }
 
 #[tokio::test]
 async fn get_block_count_matches_fixture() {
     let Some(fixture) = mock_no_param_fixture("getblockcountasync", "getblockcount").await else {
         return;
-    };
+   };
     let expected = fixture
         .response
         .get("result")
@@ -723,11 +719,11 @@ async fn get_block_count_matches_fixture() {
 async fn get_block_hash_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getblockhashasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -772,7 +768,7 @@ async fn get_block_header_count_matches_fixture() {
         mock_no_param_fixture("getblockheadercountasync", "getblockheadercount").await
     else {
         return;
-    };
+   };
     let expected = fixture
         .response
         .get("result")
@@ -791,11 +787,11 @@ async fn get_block_header_count_matches_fixture() {
 async fn get_block_sys_fee_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getblocksysfeeasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -815,11 +811,11 @@ async fn get_block_sys_fee_matches_fixture() {
     let expected_token = response.get("result").expect("result token");
     let expected = if let Some(text) = expected_token.as_string() {
         BigInt::from_str(&text).expect("parse sysfee")
-    } else if let Some(number) = expected_token.as_number() {
+   } else if let Some(number) = expected_token.as_number() {
         BigInt::from(number as i64)
-    } else {
+   } else {
         panic!("invalid sysfee token");
-    };
+   };
 
     let mut server = Server::new_async().await;
     let body_re = format!(r#""method"\s*:\s*"getblocksysfee".*"params"\s*:\s*\[\s*{height}\s*\]"#);
@@ -845,11 +841,11 @@ async fn get_block_sys_fee_matches_fixture() {
 async fn get_block_header_hex_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(cases) = load_rpc_cases("getblockheaderhexasync") else {
         return;
-    };
+   };
     for case in cases {
         let request = case
             .get("Request")
@@ -866,15 +862,15 @@ async fn get_block_header_hex_matches_fixture() {
                 index.to_string(),
                 format!(r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*{index}\s*\]"#),
             )
-        } else if let Some(hash) = param.as_string() {
+       } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
                 hash.to_string(),
                 format!(r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#),
             )
-        } else {
+       } else {
             panic!("invalid getblockheader param");
-        };
+       };
 
         let response = case
             .get("Response")
@@ -902,18 +898,18 @@ async fn get_block_header_hex_matches_fixture() {
             .await
             .expect("block header hex");
         assert_eq!(actual, expected);
-    }
+   }
 }
 
 #[tokio::test]
 async fn get_block_hex_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(cases) = load_rpc_cases("getblockhexasync") else {
         return;
-    };
+   };
     for case in cases {
         let request = case
             .get("Request")
@@ -930,15 +926,15 @@ async fn get_block_hex_matches_fixture() {
                 index.to_string(),
                 format!(r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*{index}\s*\]"#),
             )
-        } else if let Some(hash) = param.as_string() {
+       } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
                 hash.to_string(),
                 format!(r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#),
             )
-        } else {
+       } else {
             panic!("invalid getblock param");
-        };
+       };
 
         let response = case
             .get("Response")
@@ -966,18 +962,18 @@ async fn get_block_hex_matches_fixture() {
             .await
             .expect("block hex");
         assert_eq!(actual, expected);
-    }
+   }
 }
 
 #[tokio::test]
 async fn get_raw_mempool_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getrawmempoolasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1012,11 +1008,11 @@ async fn get_raw_mempool_matches_fixture() {
 async fn get_raw_mempool_both_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getrawmempoolbothasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1053,11 +1049,11 @@ async fn get_raw_mempool_both_matches_fixture() {
 async fn get_raw_transaction_hex_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getrawtransactionhexasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -1105,7 +1101,7 @@ async fn get_raw_transaction_hex_matches_fixture() {
 async fn get_nep17_balances_parses_rpc_payload() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
     let mut server = Server::new_async().await;
     let address = neo_primitives::UInt160::zero().to_address();
     let body = format!(
@@ -1134,7 +1130,7 @@ async fn get_nep17_balances_parses_rpc_payload() {
 async fn get_nep17_transfers_parses_rpc_payload() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
     let mut server = Server::new_async().await;
     let address = neo_primitives::UInt160::zero().to_address();
     let tx_hash = neo_primitives::UInt256::zero();
@@ -1165,11 +1161,11 @@ async fn get_nep17_transfers_parses_rpc_payload() {
 async fn get_storage_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(cases) = load_rpc_cases("getstorageasync") else {
         return;
-    };
+   };
     for case in cases {
         let request = case
             .get("Request")
@@ -1200,7 +1196,7 @@ async fn get_storage_matches_fixture() {
                 r#""method"\s*:\s*"getstorage".*"params"\s*:\s*\[\s*"{escaped_hash}"\s*,\s*"{escaped_key}"\s*\]"#
             );
             (body_re, hash.to_string())
-        } else if let Some(id) = hash_or_id.as_number() {
+       } else if let Some(id) = hash_or_id.as_number() {
             let id = id as i32;
             let id_string = id.to_string();
             let escaped_key = escape(&key);
@@ -1208,9 +1204,9 @@ async fn get_storage_matches_fixture() {
                 r#""method"\s*:\s*"getstorage".*"params"\s*:\s*\[\s*{id}\s*,\s*"{escaped_key}"\s*\]"#
             );
             (body_re, id_string)
-        } else {
+       } else {
             panic!("invalid getstorage hash");
-        };
+       };
 
         let mut server = Server::new_async().await;
         let response_body = JToken::Object(response.clone()).to_string();
@@ -1229,7 +1225,7 @@ async fn get_storage_matches_fixture() {
             .await
             .expect("storage value");
         assert_eq!(actual, expected);
-    }
+   }
 }
 
 #[tokio::test]
@@ -1238,7 +1234,7 @@ async fn get_connection_count_matches_fixture() {
         mock_no_param_fixture("getconnectioncountasync", "getconnectioncount").await
     else {
         return;
-    };
+   };
     let expected = fixture
         .response
         .get("result")
@@ -1257,11 +1253,11 @@ async fn get_connection_count_matches_fixture() {
 async fn get_committee_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getcommitteeasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1296,11 +1292,11 @@ async fn get_committee_matches_fixture() {
 async fn get_next_block_validators_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getnextblockvalidatorsasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1342,11 +1338,11 @@ async fn get_next_block_validators_matches_fixture() {
 async fn get_transaction_height_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("gettransactionheightasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -1394,11 +1390,11 @@ async fn get_transaction_height_matches_fixture() {
 async fn get_native_contracts_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getnativecontractsasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1434,18 +1430,18 @@ async fn get_native_contracts_matches_fixture() {
     assert_eq!(actual.len(), expected.len());
     for (left, right) in actual.iter().zip(expected.iter()) {
         assert_eq!(left.contract_state, right.contract_state);
-    }
+   }
 }
 
 #[tokio::test]
 async fn list_plugins_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("listpluginsasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1481,18 +1477,18 @@ async fn list_plugins_matches_fixture() {
         assert_eq!(left.version, right.version);
         assert_eq!(left.interfaces, right.interfaces);
         assert_eq!(left.category, right.category);
-    }
+   }
 }
 
 #[tokio::test]
 async fn close_wallet_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("closewalletasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1523,11 +1519,11 @@ async fn close_wallet_matches_fixture() {
 async fn open_wallet_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("openwalletasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -1585,11 +1581,11 @@ async fn open_wallet_matches_fixture() {
 async fn get_new_address_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getnewaddressasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1620,11 +1616,11 @@ async fn get_new_address_matches_fixture() {
 async fn dump_priv_key_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("dumpprivkeyasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -1668,11 +1664,11 @@ async fn dump_priv_key_matches_fixture() {
 async fn list_address_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("listaddressasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1708,18 +1704,18 @@ async fn list_address_matches_fixture() {
         assert_eq!(left.has_key, right.has_key);
         assert_eq!(left.label, right.label);
         assert_eq!(left.watch_only, right.watch_only);
-    }
+   }
 }
 
 #[tokio::test]
 async fn get_wallet_balance_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getwalletbalanceasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -1781,11 +1777,11 @@ async fn get_wallet_balance_matches_fixture() {
 async fn get_wallet_unclaimed_gas_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getwalletunclaimedgasasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1822,11 +1818,11 @@ async fn get_wallet_unclaimed_gas_matches_fixture() {
 async fn send_from_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("sendfromasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -1896,11 +1892,11 @@ async fn send_from_matches_fixture() {
 async fn get_best_block_hash_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getbestblockhashasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -1931,11 +1927,11 @@ async fn get_best_block_hash_matches_fixture() {
 async fn get_block_verbose_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(cases) = load_rpc_cases("getblockasync") else {
         return;
-    };
+   };
     for case in cases {
         let request = case
             .get("Request")
@@ -1954,7 +1950,7 @@ async fn get_block_verbose_matches_fixture() {
                     r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*{index}\s*,\s*true\s*\]"#
                 ),
             )
-        } else if let Some(hash) = param.as_string() {
+       } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
                 hash.to_string(),
@@ -1963,9 +1959,9 @@ async fn get_block_verbose_matches_fixture() {
                     escaped = escaped
                 ),
             )
-        } else {
+       } else {
             panic!("invalid getblock param");
-        };
+       };
 
         let response = case
             .get("Response")
@@ -1994,18 +1990,18 @@ async fn get_block_verbose_matches_fixture() {
             .expect("block");
         let settings = ProtocolSettings::default_settings();
         assert_eq!(actual.to_json(&settings), expected.clone());
-    }
+   }
 }
 
 #[tokio::test]
 async fn get_block_header_verbose_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(cases) = load_rpc_cases("getblockheaderasync") else {
         return;
-    };
+   };
     for case in cases {
         let request = case
             .get("Request")
@@ -2024,7 +2020,7 @@ async fn get_block_header_verbose_matches_fixture() {
                     r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*{index}\s*,\s*true\s*\]"#
                 ),
             )
-        } else if let Some(hash) = param.as_string() {
+       } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
                 hash.to_string(),
@@ -2033,9 +2029,9 @@ async fn get_block_header_verbose_matches_fixture() {
                     escaped = escaped
                 ),
             )
-        } else {
+       } else {
             panic!("invalid getblockheader param");
-        };
+       };
 
         let response = case
             .get("Response")
@@ -2064,18 +2060,18 @@ async fn get_block_header_verbose_matches_fixture() {
             .expect("block header");
         let settings = ProtocolSettings::default_settings();
         assert_eq!(actual.to_json(&settings), expected.clone());
-    }
+   }
 }
 
 #[tokio::test]
 async fn get_transaction_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getrawtransactionasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2123,11 +2119,11 @@ async fn get_transaction_matches_fixture() {
 async fn invoke_function_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("invokefunctionasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2191,11 +2187,11 @@ async fn invoke_function_matches_fixture() {
 async fn get_contract_state_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(cases) = load_rpc_cases("getcontractstateasync") else {
         return;
-    };
+   };
     for case in cases {
         let request = case
             .get("Request")
@@ -2222,14 +2218,14 @@ async fn get_contract_state_matches_fixture() {
                 contract = escape(&name)
             );
             (body_re, ContractStateRequest::Hash(name.to_string()))
-        } else if let Some(id) = contract.as_number() {
+       } else if let Some(id) = contract.as_number() {
             let id = id as i32;
             let body_re =
                 format!(r#""method"\s*:\s*"getcontractstate".*"params"\s*:\s*\[\s*{id}\s*\]"#);
             (body_re, ContractStateRequest::Id(id))
-        } else {
+       } else {
             panic!("invalid getcontractstate param");
-        };
+       };
 
         let mut server = Server::new_async().await;
         let response_body = JToken::Object(response.clone()).to_string();
@@ -2245,22 +2241,21 @@ async fn get_contract_state_matches_fixture() {
         let client = RpcClient::builder(url).build().unwrap();
         let actual = match request {
             ContractStateRequest::Hash(hash) => client.get_contract_state(&hash).await,
-            ContractStateRequest::Id(id) => client.get_contract_state_by_id(id).await,
-        }
+            ContractStateRequest::Id(id) => client.get_contract_state_by_id(id).await}
         .expect("contract state");
         assert_eq!(actual.to_json().expect("to json"), expected.clone());
-    }
+   }
 }
 
 #[tokio::test]
 async fn get_peers_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getpeersasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -2291,11 +2286,11 @@ async fn get_peers_matches_fixture() {
 async fn get_version_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getversionasync") else {
         return;
-    };
+   };
     let response = case
         .get("Response")
         .and_then(|value| value.as_object())
@@ -2326,11 +2321,11 @@ async fn get_version_matches_fixture() {
 async fn get_application_log_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getapplicationlogasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2380,11 +2375,11 @@ async fn get_application_log_matches_fixture() {
 async fn get_application_log_with_trigger_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getapplicationlogasync_triggertype") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2439,11 +2434,11 @@ async fn get_application_log_with_trigger_matches_fixture() {
 async fn validate_address_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("validateaddressasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2493,11 +2488,11 @@ async fn validate_address_matches_fixture() {
 async fn import_priv_key_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("importprivkeyasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2544,11 +2539,11 @@ async fn import_priv_key_matches_fixture() {
 async fn get_unclaimed_gas_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getunclaimedgasasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2598,11 +2593,11 @@ async fn get_unclaimed_gas_matches_fixture() {
 async fn get_nep17_transfers_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getnep17transfersasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2661,11 +2656,11 @@ async fn get_nep17_transfers_matches_fixture() {
 async fn get_nep17_transfers_accepts_null_transfer_address() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getnep17transfersasync_with_null_transferaddress") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2724,11 +2719,11 @@ async fn get_nep17_transfers_accepts_null_transfer_address() {
 async fn get_nep17_balances_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("getnep17balancesasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2779,11 +2774,11 @@ async fn get_nep17_balances_matches_fixture() {
 async fn send_to_address_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("sendtoaddressasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())
@@ -2848,11 +2843,11 @@ async fn send_to_address_matches_fixture() {
 async fn send_many_matches_fixture() {
     if !localhost_binding_permitted() {
         return;
-    }
+   }
 
     let Some(case) = load_rpc_case("sendmanyasync") else {
         return;
-    };
+   };
     let request = case
         .get("Request")
         .and_then(|value| value.as_object())

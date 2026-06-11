@@ -82,7 +82,7 @@ mod tests {
     use super::{neofs_v2, verify_neofs_signature_bytes};
     use neo_crypto::Secp256r1Crypto;
     use crate::neofs::auth::sign_neofs_sha512;
-    use neo_core::wallets::KeyPair;
+    use neo_wallets::KeyPair;
 
     #[test]
     fn verifies_neofs_signature_from_core_signing_path() {

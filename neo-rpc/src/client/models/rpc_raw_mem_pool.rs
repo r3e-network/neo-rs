@@ -10,8 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    parse_number_or_string_token, parse_uint256_array_lossy, token_array,
-};
+    parse_number_or_string_token, parse_uint256_array_lossy, token_array};
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -26,8 +25,7 @@ pub struct RpcRawMemPool {
     pub verified: Vec<UInt256>,
 
     /// List of unverified transaction hashes
-    pub unverified: Vec<UInt256>,
-}
+    pub unverified: Vec<UInt256>}
 
 impl RpcRawMemPool {
     /// Converts to JSON
@@ -48,7 +46,7 @@ impl RpcRawMemPool {
         );
 
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -67,9 +65,8 @@ impl RpcRawMemPool {
         Ok(Self {
             height,
             verified,
-            unverified,
-        })
-    }
+            unverified})
+   }
 }
 
 #[cfg(test)]
@@ -84,14 +81,13 @@ mod tests {
         let pool = RpcRawMemPool {
             height: 10,
             verified: vec![UInt256::zero()],
-            unverified: vec![UInt256::zero()],
-        };
+            unverified: vec![UInt256::zero()]};
         let json = pool.to_json();
         let parsed = RpcRawMemPool::from_json(&json).unwrap();
         assert_eq!(parsed.height, pool.height);
         assert_eq!(parsed.verified.len(), 1);
         assert_eq!(parsed.unverified.len(), 1);
-    }
+   }
 
     #[test]
     fn raw_mempool_accepts_numeric_height() {
@@ -102,7 +98,7 @@ mod tests {
 
         let parsed = RpcRawMemPool::from_json(&json).unwrap();
         assert_eq!(parsed.height, 5);
-    }
+   }
 
     #[test]
     fn raw_mempool_accepts_string_height() {
@@ -113,15 +109,15 @@ mod tests {
 
         let parsed = RpcRawMemPool::from_json(&json).unwrap();
         assert_eq!(parsed.height, 7);
-    }
+   }
 
     #[test]
     fn raw_mempool_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getrawmempoolbothasync") else {
             return;
-        };
+       };
         let parsed = RpcRawMemPool::from_json(&expected).expect("parse");
         let actual = parsed.to_json();
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 }

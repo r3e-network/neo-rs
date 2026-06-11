@@ -12,10 +12,13 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
 use crate::{ContractClient, RpcClient, RpcError, RpcUtility, TransactionManagerFactory};
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::CallFlags;
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{Contract, ECPoint, KeyPair, Signer, Transaction};
+use neo_script_builder::ScriptBuilder;
+use neo_manifest::CallFlags;
+use neo_wallets::wallet_helper as WalletHelper;
+use neo_payloads::{Signer, Transaction};
+use neo_crypto::ECPoint;
+use neo_wallets::KeyPair;
+use neo_execution::{Contract};
 use neo_primitives::{UInt160, WitnessScope};
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
@@ -28,8 +31,7 @@ pub struct Nep17Api {
     /// Base contract client functionality
     contract_client: ContractClient,
     /// Direct access to RPC client
-    rpc_client: Arc<RpcClient>,
-}
+    rpc_client: Arc<RpcClient>}
 
 impl Nep17Api {
     /// `Nep17API` Constructor
@@ -38,15 +40,14 @@ impl Nep17Api {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client.clone()),
-            rpc_client,
-        }
-    }
+            rpc_client}
+   }
 
     /// Exposes the underlying contract client for advanced scenarios.
     #[must_use]
     pub const fn contract_client(&self) -> &ContractClient {
         &self.contract_client
-    }
+   }
 
     /// Get balance of NEP17 token
     /// Matches C# `BalanceOfAsync`
@@ -68,7 +69,7 @@ impl Nep17Api {
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
         Ok(RpcUtility::stack_value_to_bigint(stack_item)?)
-    }
+   }
 
     /// Get symbol of NEP17 token
     /// Matches C# `SymbolAsync`
@@ -81,7 +82,7 @@ impl Nep17Api {
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
         Ok(RpcUtility::stack_value_to_string(stack_item)?)
-    }
+   }
 
     /// Get decimals of NEP17 token
     /// Matches C# `DecimalsAsync`
@@ -95,7 +96,7 @@ impl Nep17Api {
 
         let value = RpcUtility::stack_value_to_bigint(stack_item)?;
         Ok(value.to_u8().ok_or("Invalid decimals value")?)
-    }
+   }
 
     /// Get total supply of NEP17 token
     /// Matches C# `TotalSupplyAsync`
@@ -108,7 +109,7 @@ impl Nep17Api {
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
         Ok(RpcUtility::stack_value_to_bigint(stack_item)?)
-    }
+   }
 
     /// Get token information in one rpc call
     /// Matches C# `GetTokenInfoAsync`
@@ -122,7 +123,7 @@ impl Nep17Api {
             .await?;
 
         self.token_info_from_state(contract_state).await
-    }
+   }
 
     /// Get token information for a contract hash or name.
     /// Matches C# GetTokenInfoAsync(string contractHash)
@@ -133,7 +134,7 @@ impl Nep17Api {
         let contract_state = self.rpc_client.get_contract_state(contract).await?;
 
         self.token_info_from_state(contract_state).await
-    }
+   }
 
     /// Get token information in one rpc call, including address info
     /// Matches C# `GetTokenInfoAsync` with address parameter
@@ -147,17 +148,17 @@ impl Nep17Api {
         // Parse address to UInt160 using the client's address version.
         let account = if let Ok(hash) = UInt160::parse(address) {
             hash
-        } else {
+       } else {
             WalletHelper::to_script_hash(address, self.rpc_client.protocol_settings.address_version)
                 .map_err(|e| RpcError::Other(e.to_string()))?
-        };
+       };
 
         // Get balance for the address
         let balance = self.balance_of(script_hash, &account).await?;
         token_info.balance = Some(balance);
 
         Ok(token_info)
-    }
+   }
 
     /// Create NEP17 token transfer transaction
     /// Matches C# `CreateTransferTxAsync`
@@ -171,7 +172,7 @@ impl Nep17Api {
     ) -> Result<Transaction, RpcError> {
         self.create_transfer_tx_with_assert(script_hash, key, to, amount, data, true)
             .await
-    }
+   }
 
     /// Create NEP17 token transfer transaction with specific from address
     /// Matches C# `CreateTransferTxAsync` with from parameter
@@ -194,7 +195,7 @@ impl Nep17Api {
             true,
         )
         .await
-    }
+   }
 
     /// Create NEP17 token transfer transaction with optional assert emission.
     pub async fn create_transfer_tx_with_assert(
@@ -218,7 +219,7 @@ impl Nep17Api {
             add_assert,
         )
         .await
-    }
+   }
 
     #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction with explicit from and optional assert.
@@ -241,8 +242,7 @@ impl Nep17Api {
             scopes: WitnessScope::CALLED_BY_ENTRY,
             allowed_contracts: vec![],
             allowed_groups: vec![],
-            rules: vec![],
-        }];
+            rules: vec![]}];
 
         // Create and sign transaction
         let factory = TransactionManagerFactory::new(self.rpc_client.clone());
@@ -251,7 +251,7 @@ impl Nep17Api {
         let transaction = manager.sign().await?;
 
         Ok(transaction)
-    }
+   }
 
     #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction from multi-sig account.
@@ -277,7 +277,7 @@ impl Nep17Api {
             true,
         )
         .await
-    }
+   }
 
     #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction from multi-sig account with optional assert.
@@ -294,7 +294,7 @@ impl Nep17Api {
     ) -> Result<Transaction, RpcError> {
         if m > from_keys.len() {
             return Err(format!("Need at least {m} KeyPairs for signing!").into());
-        }
+       }
 
         let sender = Contract::create_multi_sig_contract(m, &public_keys).script_hash();
         let script =
@@ -305,8 +305,7 @@ impl Nep17Api {
             scopes: WitnessScope::CALLED_BY_ENTRY,
             allowed_contracts: vec![],
             allowed_groups: vec![],
-            rules: vec![],
-        }];
+            rules: vec![]}];
 
         let factory = TransactionManagerFactory::new(self.rpc_client.clone());
         let mut manager = factory.make_transaction(&script, &signers).await?;
@@ -314,7 +313,7 @@ impl Nep17Api {
         let transaction = manager.sign().await?;
 
         Ok(transaction)
-    }
+   }
 
     /// Get NEP17 token transfers
     /// Matches C# `GetNep17TransfersAsync`
@@ -328,7 +327,7 @@ impl Nep17Api {
             .rpc_client
             .get_nep17_transfers(address, start_time, end_time)
             .await?)
-    }
+   }
 
     /// Get NEP17 token balances for an address
     /// Matches C# `GetNep17BalancesAsync`
@@ -345,10 +344,10 @@ impl Nep17Api {
             info.balance = Some(balance.amount);
             info.last_updated_block = Some(balance.last_updated_block);
             token_infos.push(info);
-        }
+       }
 
         Ok(token_infos)
-    }
+   }
 
     // Helper methods
     fn build_transfer_script(
@@ -365,9 +364,9 @@ impl Nep17Api {
         // Emit transfer parameters in reverse order.
         if let Some(d) = data {
             self.emit_argument(&mut sb, &d)?;
-        } else {
+       } else {
             sb.emit_opcode(OpCode::PUSHNULL);
-        }
+       }
         sb.emit_push_int(amount.to_i64().ok_or("Amount too large")?);
         sb.emit_push(&to.to_array());
         sb.emit_push(&from.to_array());
@@ -375,10 +374,10 @@ impl Nep17Api {
         emit_contract_call(&mut sb, script_hash, "transfer", CallFlags::ALL)?;
         if add_assert {
             sb.emit_opcode(OpCode::ASSERT);
-        }
+       }
 
         Ok(sb.to_array())
-    }
+   }
 
     async fn token_info_from_state(
         &self,
@@ -412,9 +411,8 @@ impl Nep17Api {
                 .and_then(|s| RpcUtility::stack_value_to_bigint(s).ok())
                 .unwrap_or_else(|| BigInt::from(0)),
             balance: None,
-            last_updated_block: None,
-        })
-    }
+            last_updated_block: None})
+   }
 
     fn make_script(
         &self,
@@ -423,7 +421,7 @@ impl Nep17Api {
         args: Vec<serde_json::Value>,
     ) -> Result<Vec<u8>, RpcError> {
         build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)
-    }
+   }
 
     fn emit_argument(
         &self,
@@ -434,34 +432,33 @@ impl Nep17Api {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);
                 Ok(())
-            }
+           }
             serde_json::Value::Bool(b) => {
                 sb.emit_push_bool(*b);
                 Ok(())
-            }
+           }
             serde_json::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     sb.emit_push_int(i);
                     Ok(())
-                } else {
+               } else {
                     Err("Invalid number format".into())
-                }
-            }
+               }
+           }
             serde_json::Value::String(s) => {
                 sb.emit_push(s.as_bytes());
                 Ok(())
-            }
+           }
             serde_json::Value::Array(arr) => {
                 for item in arr.iter().rev() {
                     self.emit_argument(sb, item)?;
-                }
+               }
                 sb.emit_push_int(arr.len() as i64);
                 sb.emit_pack();
                 Ok(())
-            }
-            _ => Err("Unsupported argument type".into()),
-        }
-    }
+           }
+            _ => Err("Unsupported argument type".into())}
+   }
 }
 
 #[cfg(test)]

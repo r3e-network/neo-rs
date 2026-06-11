@@ -1,0 +1,35 @@
+[package]
+name = "neo-data-cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Canonical home for DataCache, StorageKey, StorageItem, and the persistence cache facade for the Neo blockchain"
+
+[dependencies]
+# Foundation layer
+neo-storage = { workspace = true }
+neo-primitives = { workspace = true }
+neo-error = { workspace = true }
+
+# Concurrency + collections
+parking_lot = { workspace = true }
+hashbrown = { workspace = true }
+dashmap = { workspace = true }
+lru = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+[features]
+default = []

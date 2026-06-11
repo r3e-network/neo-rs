@@ -1,6 +1,6 @@
 use super::super::super::{NeoFsAuth, NeoFsRange, OracleNeoFsProtocol};
 use super::super::utils::{hash_response_body, map_neofs_status};
-use neo_core::network::p2p::payloads::OracleResponseCode;
+use neo_payloads::OracleResponseCode;
 
 impl OracleNeoFsProtocol {
     pub(super) async fn fetch_hash(

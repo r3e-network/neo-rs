@@ -63,7 +63,7 @@ fn rpc_case(name: &str) -> Option<JObject> {
             path.display()
         );
         return None;
-    }
+   }
 
     let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
     let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
@@ -80,8 +80,8 @@ fn rpc_case(name: &str) -> Option<JObject> {
             .unwrap_or_default();
         if case_name.eq_ignore_ascii_case(name) {
             return Some(obj.clone());
-        }
-    }
+       }
+   }
 
     eprintln!("SKIP: RpcTestCases.json missing case: {name}");
     None

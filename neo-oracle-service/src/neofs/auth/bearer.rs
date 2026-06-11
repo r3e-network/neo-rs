@@ -1,6 +1,6 @@
 use super::super::{NeoFsAuth, OracleServiceSettings};
 use super::signing::sign_neofs_bearer;
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 
 pub(crate) fn build_neofs_auth(
     settings: &OracleServiceSettings,

@@ -23,5 +23,5 @@ impl RpcServerSmartContract {
             "terminatesession" => iterators::terminate_session,
             "getunclaimedgas" => unclaimed_gas::get_unclaimed_gas,
         ]
-    }
+   }
 }

@@ -11,9 +11,8 @@
 
 use super::super::utility::{
     NepBalanceFieldRefs, balance_list_to_json, insert_nep_balance_fields, parse_balance_list,
-    parse_nep_balance_fields, required_script_hash_or_address,
-};
-use neo_core::config::ProtocolSettings;
+    parse_nep_balance_fields, required_script_hash_or_address};
+use neo_config::ProtocolSettings;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
@@ -26,8 +25,7 @@ pub struct RpcNep17Balances {
     pub user_script_hash: UInt160,
 
     /// List of token balances
-    pub balances: Vec<RpcNep17Balance>,
-}
+    pub balances: Vec<RpcNep17Balance>}
 
 impl RpcNep17Balances {
     /// Converts to JSON
@@ -40,20 +38,19 @@ impl RpcNep17Balances {
             protocol_settings,
             RpcNep17Balance::to_json,
         )
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let (balances, user_script_hash) = parse_balance_list(json, protocol_settings, |obj| {
             RpcNep17Balance::from_json(obj, protocol_settings)
-        })?;
+       })?;
 
         Ok(Self {
             user_script_hash,
-            balances,
-        })
-    }
+            balances})
+   }
 }
 
 /// Individual NEP17 balance entry matching C# `RpcNep17Balance`
@@ -66,8 +63,7 @@ pub struct RpcNep17Balance {
     pub amount: BigInt,
 
     /// Last updated block height
-    pub last_updated_block: u32,
-}
+    pub last_updated_block: u32}
 
 impl RpcNep17Balance {
     /// Converts to JSON
@@ -83,11 +79,10 @@ impl RpcNep17Balance {
             &mut json,
             NepBalanceFieldRefs {
                 amount: &self.amount,
-                last_updated_block: self.last_updated_block,
-            },
+                last_updated_block: self.last_updated_block},
         );
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -102,9 +97,8 @@ impl RpcNep17Balance {
         Ok(Self {
             asset_hash,
             amount: fields.amount,
-            last_updated_block: fields.last_updated_block,
-        })
-    }
+            last_updated_block: fields.last_updated_block})
+   }
 }
 
 #[cfg(test)]
@@ -112,7 +106,7 @@ mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
     use neo_config::ProtocolSettings;
-    use neo_core::wallets::helper::Helper as WalletHelper;
+    use neo_wallets::wallet_helper as WalletHelper;
     use neo_json::{JArray, JToken};
 
     #[test]
@@ -120,27 +114,24 @@ mod tests {
         let entry = RpcNep17Balance {
             asset_hash: UInt160::zero(),
             amount: BigInt::from(42),
-            last_updated_block: 10,
-        };
+            last_updated_block: 10};
         let json = entry.to_json();
         let parsed =
             RpcNep17Balance::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
         assert_eq!(parsed.asset_hash, entry.asset_hash);
         assert_eq!(parsed.amount, entry.amount);
         assert_eq!(parsed.last_updated_block, entry.last_updated_block);
-    }
+   }
 
     #[test]
     fn balances_roundtrip() {
         let entry = RpcNep17Balance {
             asset_hash: UInt160::zero(),
             amount: BigInt::from(5),
-            last_updated_block: 3,
-        };
+            last_updated_block: 3};
         let balances = RpcNep17Balances {
             user_script_hash: UInt160::zero(),
-            balances: vec![entry.clone()],
-        };
+            balances: vec![entry.clone()]};
         let json = balances.to_json(&ProtocolSettings::default_settings());
         let parsed =
             RpcNep17Balances::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
@@ -148,7 +139,7 @@ mod tests {
         assert_eq!(parsed.user_script_hash, balances.user_script_hash);
         assert_eq!(parsed.balances.len(), 1);
         assert_eq!(parsed.balances[0].amount, entry.amount);
-    }
+   }
 
     #[test]
     fn balances_array_keeps_lossy_parse_behavior() {
@@ -156,8 +147,7 @@ mod tests {
         let valid = RpcNep17Balance {
             asset_hash: UInt160::zero(),
             amount: BigInt::from(5),
-            last_updated_block: 3,
-        }
+            last_updated_block: 3}
         .to_json();
 
         let mut malformed = JObject::new();
@@ -185,16 +175,16 @@ mod tests {
         let parsed = RpcNep17Balances::from_json(&root, &settings).unwrap();
         assert_eq!(parsed.balances.len(), 1);
         assert_eq!(parsed.balances[0].amount, BigInt::from(5));
-    }
+   }
 
     #[test]
     fn nep17_balances_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getnep17balancesasync") else {
             return;
-        };
+       };
         let settings = ProtocolSettings::default_settings();
         let parsed = RpcNep17Balances::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 }

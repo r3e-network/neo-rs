@@ -1,1343 +1,476 @@
-//! dBFT consensus wiring for neo-node.
+//! Node-level dBFT consensus driver.
+//!
+//! Wires the verified `neo-consensus` `ConsensusService` state machine into a
+//! running node: it instantiates the service from the validator configuration,
+//! converts the service's outbound `ConsensusEvent`s into network/mempool/ledger
+//! actions, decodes inbound dBFT `ExtensiblePayload`s from peers back into
+//! `ConsensusPayload`s, and drives the per-block round lifecycle.
+//!
+//! The block-production primitives this builds on (the dBFT state machine,
+//! `BlockData::assemble_block`) are verified in neo-consensus; the end-to-end
+//! multi-node consensus behaviour is exercised only in a real deployment.
+//!
+//! Behind the `wip` feature.
 
-use crate::config::DbftSettings;
-use neo_consensus::{
-    BlockData, ChangeViewReason, ConsensusContext, ConsensusEvent, ConsensusMessageType,
-    ConsensusPayload, ConsensusService, ConsensusSigner, ValidatorInfo,
-};
-use neo_crypto::MerkleTree;
-use neo_core::i_event_handlers::MessageReceivedHandler;
-use neo_core::ledger::{
-    PersistCompleted, RelayResult, TransactionVerificationContext, VerifyResult,
-};
-use neo_core::neo_io::MemoryReader;
-use neo_core::network::p2p::local_node::RelayInventory;
-use neo_core::network::p2p::payloads::{
-    Block, ExtensiblePayload, Header, InvPayload, InventoryType, Transaction, TransactionAttribute,
-    Witness,
-};
-use neo_core::network::p2p::{
-    Message, MessageCommand, MessageHandlerSubscription, register_message_received_handler,
-};
-use neo_core::persistence::Store;
-use neo_core::prelude::Serializable;
-use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::ContractParametersContext;
-use neo_core::smart_contract::contract::Contract;
-use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
-use neo_core::smart_contract::native::{LedgerContract, NeoToken, helpers::NativeHelpers};
-use neo_core::time_provider::TimeProvider;
-use neo_core::wallets::Wallet;
-use neo_core::{ContainsTransactionType, UInt160, UInt256};
-use neo_vm_rs::OpCode;
-use parking_lot::Mutex;
-use std::any::Any;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use neo_blockchain::{BlockchainCommand, BlockchainHandle, RuntimeEvent};
+use neo_config::ProtocolSettings;
+use neo_consensus::messages::ConsensusPayload;
+use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
+use neo_crypto::{ECPoint, Secp256r1Crypto};
+use neo_mempool::MemoryPool;
+use neo_native_contracts::LedgerContract;
+use neo_network::NetworkHandle;
+use neo_payloads::{ExtensiblePayload, Transaction, Witness};
+use neo_primitives::{UInt160, UInt256};
+use neo_redeem_script::signature_redeem_script;
+use neo_storage::persistence::DataCache;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
-use tracing::{debug, warn};
+use tracing::{error, info, warn};
 
-const CONSENSUS_STATE_KEY: [u8; 1] = [0xf4];
+/// dBFT extensible category (C# `ConsensusContext.CreatePayload`: `Category = "dBFT"`).
+const DBFT_CATEGORY: &str = "dBFT";
+/// Block version dBFT produces (C# Header default; consensus never sets a non-zero version).
+const BLOCK_VERSION: u32 = 0;
 
-/// Wallet-changed handler that starts/stops the consensus actor.
-pub struct DbftConsensusController {
-    system: Arc<neo_core::neo_system::NeoSystem>,
-    settings: DbftSettings,
-    actor: Mutex<Option<ActorRef>>,
-    _message_subscription: MessageHandlerSubscription,
+/// Milliseconds since the Unix epoch — the same clock the consensus crate uses
+/// for view-timeout accounting.
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
-impl DbftConsensusController {
-    pub fn new(system: Arc<neo_core::neo_system::NeoSystem>, settings: DbftSettings) -> Self {
-        let filter = Arc::new(DbftMessageFilter::new(settings.max_block_system_fee));
-        let subscription = register_message_received_handler(filter);
-        install_mempool_filter(&system, settings.max_block_system_fee);
-        Self {
-            system,
-            settings,
-            actor: Mutex::new(None),
-            _message_subscription: subscription,
-        }
-    }
+// ===================== Extensible <-> ConsensusPayload codec =====================
 
-    pub fn start_with_wallet(&self, wallet: Arc<dyn Wallet>) -> bool {
-        let mut guard = self.actor.lock();
-        if guard.is_some() {
-            return false;
-        }
-
-        let props =
-            ConsensusActor::props(self.system.clone(), self.settings.clone(), wallet.clone());
-        match self.system.actor_system().actor_of(props, "dbft-consensus") {
-            Ok(actor) => {
-                if !self.settings.auto_start {
-                    let _ = actor.tell(ConsensusActorMessage::ManualStart);
-                }
-                *guard = Some(actor);
-                true
-            }
-            Err(err) => {
-                warn!(target: "neo", %err, "failed to start dBFT consensus actor");
-                false
-            }
-        }
-    }
-
-    pub fn stop(&self) -> bool {
-        let mut guard = self.actor.lock();
-        if let Some(actor) = guard.take() {
-            if let Err(err) = self.system.actor_system().stop(&actor) {
-                warn!(target: "neo", %err, "failed to stop dBFT consensus actor");
-                return false;
-            }
-            return true;
-        }
-        false
-    }
-
-    pub fn is_running(&self) -> bool {
-        self.actor.lock().is_some()
-    }
+/// `PUSHDATA1 0x40 <64-byte sig>` — a single-signature invocation script.
+fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
+    let mut script = Vec::with_capacity(2 + signature.len());
+    script.push(neo_vm_rs::OpCode::PUSHDATA1.byte());
+    script.push(signature.len() as u8);
+    script.extend_from_slice(signature);
+    script
 }
 
-impl neo_core::i_event_handlers::WalletChangedHandler for DbftConsensusController {
-    fn wallet_provider_wallet_changed_handler(
-        &self,
-        _sender: &dyn std::any::Any,
-        wallet: Option<Arc<dyn Wallet>>,
-    ) {
-        if !self.settings.auto_start {
-            return;
-        }
-
-        self.stop();
-        if let Some(wallet) = wallet {
-            self.start_with_wallet(wallet);
-        }
-    }
-}
-
-struct DbftMessageFilter {
-    max_block_system_fee: i64,
-}
-
-impl DbftMessageFilter {
-    fn new(max_block_system_fee: i64) -> Self {
-        Self {
-            max_block_system_fee,
-        }
-    }
-}
-
-impl MessageReceivedHandler for DbftMessageFilter {
-    fn remote_node_message_received_handler(&self, _system: &dyn Any, message: &Message) -> bool {
-        if message.command != MessageCommand::Transaction {
-            return true;
-        }
-
-        let mut reader = MemoryReader::new(&message.payload_raw);
-        let Ok(tx) = Transaction::deserialize(&mut reader) else {
-            return true;
-        };
-
-        tx.system_fee() <= self.max_block_system_fee
-    }
-}
-
-fn install_mempool_filter(
-    system: &Arc<neo_core::neo_system::NeoSystem>,
-    max_block_system_fee: i64,
-) {
-    let mempool = system.mempool();
-    let mut guard = mempool.lock();
-    let existing = guard.new_transaction.take();
-    guard.new_transaction = Some(Box::new(move |pool, args| {
-        if let Some(handler) = &existing {
-            handler(pool, args);
-        }
-        if !args.cancel && args.transaction.system_fee() > max_block_system_fee {
-            args.cancel = true;
-        }
-    }));
-}
-
-struct WalletConsensusSigner {
-    wallet: Arc<dyn Wallet>,
-}
-
-impl WalletConsensusSigner {
-    fn new(wallet: Arc<dyn Wallet>) -> Self {
-        Self { wallet }
-    }
-}
-
-impl ConsensusSigner for WalletConsensusSigner {
-    fn can_sign(&self, script_hash: &UInt160) -> bool {
-        self.wallet
-            .get_account(script_hash)
-            .is_some_and(|account| !account.is_locked() && account.has_key())
-    }
-
-    fn sign(&self, data: &[u8], script_hash: &UInt160) -> neo_consensus::ConsensusResult<Vec<u8>> {
-        // Use block_in_place to avoid blocking the async runtime.
-        // SAFETY: This is safe because block_in_place moves the task to a blocking thread pool.
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.wallet.sign(data, script_hash))
-        })
-        .map_err(|err| {
-            neo_consensus::ConsensusError::state_error(format!("Wallet signing failed: {err}"))
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-enum ConsensusActorMessage {
-    ServiceEvent(ConsensusEvent),
-    TimerTick,
-    ManualStart,
-}
-
-struct ConsensusActor {
-    system: Arc<neo_core::neo_system::NeoSystem>,
-    settings: DbftSettings,
-    wallet: Arc<dyn Wallet>,
-    service: Option<ConsensusService>,
-    event_task: Option<JoinHandle<()>>,
-    timer: Option<ScheduleHandle>,
-    proposal_transactions: HashMap<UInt256, Transaction>,
-    pending_block: Option<BlockData>,
-    missing_transactions: Option<HashSet<UInt256>>,
-    current_block_index: Option<u32>,
-    current_prev_hash: Option<UInt256>,
-    prev_timestamp: Option<u64>,
-    validators: Vec<neo_crypto::ECPoint>,
-    validator_infos: Vec<ValidatorInfo>,
-    my_index: Option<u8>,
-    recovery_path: PathBuf,
-    recovery_store: Option<Arc<dyn Store>>,
-    recovery_requested: bool,
-}
-
-impl ConsensusActor {
-    fn new(
-        system: Arc<neo_core::neo_system::NeoSystem>,
-        settings: DbftSettings,
-        wallet: Arc<dyn Wallet>,
-    ) -> Self {
-        let recovery_path = resolve_recovery_path(&settings.recovery_logs);
-        let recovery_store = open_recovery_store(&system, &settings);
-        Self {
-            system,
-            settings,
-            wallet,
-            service: None,
-            event_task: None,
-            timer: None,
-            proposal_transactions: HashMap::new(),
-            pending_block: None,
-            missing_transactions: None,
-            current_block_index: None,
-            current_prev_hash: None,
-            prev_timestamp: None,
-            validators: Vec::new(),
-            validator_infos: Vec::new(),
-            my_index: None,
-            recovery_path,
-            recovery_store,
-            recovery_requested: false,
-        }
-    }
-
-    fn props(
-        system: Arc<neo_core::neo_system::NeoSystem>,
-        settings: DbftSettings,
-        wallet: Arc<dyn Wallet>,
-    ) -> Props {
-        Props::new(move || Self::new(system.clone(), settings.clone(), wallet.clone()))
-    }
-
-    fn current_time_ms() -> u64 {
-        let millis = TimeProvider::current().utc_now_timestamp_millis();
-        if millis < 0 {
-            0
-        } else {
-            millis as u64
-        }
-    }
-
-    fn start_timer(&mut self, ctx: &ActorContext) {
-        // Fixed 1-second interval matching C# `new System.Timers.Timer(1000)`.
-        // The previous `block_ms / 5` (3s on MainNet) delayed timeout detection
-        // and view-change initiation, hurting consensus liveness.
-        let interval = Duration::from_secs(1);
-        self.timer = Some(ctx.schedule_repeatedly(
-            interval,
-            interval,
-            &ctx.self_ref(),
-            ConsensusActorMessage::TimerTick,
-        ));
-    }
-
-    fn stop_timer(&mut self) {
-        if let Some(timer) = self.timer.take() {
-            timer.cancel();
-        }
-    }
-
-    fn reset_round_state(&mut self) {
-        self.proposal_transactions.clear();
-        self.pending_block = None;
-        self.missing_transactions = None;
-    }
-
-    /// The round's signing validators. C# ConsensusContext.Reset always sets the
-    /// round Validators to NEO.GetNextBlockValidators (the previously-elected set);
-    /// the committee-refresh choice (ComputeNextBlockValidators) applies ONLY to the
-    /// announced NextConsensus, never to who signs the current block. Applying the
-    /// refresh here would let the freshly-elected committee both sign and be
-    /// announced at a rotation boundary, diverging from C# consensus.
-    fn load_validators(&self) -> Vec<neo_crypto::ECPoint> {
-        let store_cache = self.system.store_cache();
-        let snapshot = store_cache.data_cache();
-        let settings = self.system.settings();
-        let validators_count = settings.validators_count.max(0) as usize;
-
-        NeoToken::new()
-            .get_next_block_validators_snapshot(snapshot, validators_count, settings)
-            .unwrap_or_else(|_| settings.standby_validators())
-    }
-
-    /// The validator set announced in the new block's `NextConsensus`. C#
-    /// ConsensusContext.Reset(0) sets NextConsensus = GetBFTAddress(
-    /// ShouldRefreshCommittee(blockIndex) ? ComputeNextBlockValidators
-    /// : GetNextBlockValidators) — i.e. the set that will sign the NEXT block.
-    fn next_consensus_validators(&self, block_index: u32) -> Vec<neo_crypto::ECPoint> {
-        let store_cache = self.system.store_cache();
-        let snapshot = store_cache.data_cache();
-        let settings = self.system.settings();
-        let validators_count = settings.validators_count.max(0) as usize;
-
-        let result = if NativeHelpers::should_refresh_committee(
-            block_index,
-            settings.committee_members_count(),
-        ) {
-            NeoToken::new().compute_next_block_validators_snapshot(snapshot, settings)
-        } else {
-            NeoToken::new().get_next_block_validators_snapshot(snapshot, validators_count, settings)
-        };
-
-        result.unwrap_or_else(|_| settings.standby_validators())
-    }
-
-    fn build_validator_infos(validators: &[neo_crypto::ECPoint]) -> Vec<ValidatorInfo> {
-        validators
-            .iter()
-            .enumerate()
-            .map(|(idx, pubkey)| ValidatorInfo {
-                index: idx as u8,
-                public_key: pubkey.clone(),
-                script_hash: Contract::create_signature_contract(pubkey.clone()).script_hash(),
-            })
-            .collect()
-    }
-
-    fn find_signing_key(
-        &self,
-        validators: &[neo_crypto::ECPoint],
-    ) -> (Option<u8>, Option<Vec<u8>>) {
-        for (idx, pubkey) in validators.iter().enumerate() {
-            let contract = Contract::create_signature_contract(pubkey.clone());
-            let script_hash = contract.script_hash();
-            let Some(account) = self.wallet.get_account(&script_hash) else {
-                continue;
-            };
-            if account.is_locked() || !account.has_key() {
-                continue;
-            }
-            let private_key = account
-                .get_key()
-                .map(|key_pair| key_pair.private_key().to_vec());
-            return (Some(idx as u8), private_key);
-        }
-        (None, None)
-    }
-
-    fn install_service(
-        &mut self,
-        service: ConsensusService,
-        mut event_rx: mpsc::Receiver<ConsensusEvent>,
-        ctx: &ActorContext,
-    ) {
-        if let Some(handle) = self.event_task.take() {
-            handle.abort();
-        }
-
-        let actor_ref = ctx.self_ref();
-        let handle = tokio::spawn(async move {
-            while let Some(event) = event_rx.recv().await {
-                let _ = actor_ref.tell(ConsensusActorMessage::ServiceEvent(event));
-            }
-        });
-
-        self.event_task = Some(handle);
-        self.service = Some(service);
-    }
-
-    fn start_round(
-        &mut self,
-        block_index: u32,
-        prev_hash: UInt256,
-        prev_timestamp: u64,
-        ctx: &ActorContext,
-    ) {
-        self.reset_round_state();
-        self.current_block_index = Some(block_index);
-        self.current_prev_hash = Some(prev_hash);
-        self.prev_timestamp = Some(prev_timestamp);
-
-        let validators = self.load_validators();
-        let validator_infos = Self::build_validator_infos(&validators);
-        let (my_index, private_key) = self.find_signing_key(&validators);
-        let signer = Arc::new(WalletConsensusSigner::new(self.wallet.clone()));
-
-        self.validators = validators;
-        self.validator_infos = validator_infos.clone();
-        self.my_index = my_index;
-
-        let Some(my_index) = my_index else {
-            warn!(
-                target: "neo",
-                "dBFT wallet has no signable validator account; consensus disabled"
-            );
-            self.service = None;
-            if let Some(handle) = self.event_task.take() {
-                handle.abort();
-            }
-            return;
-        };
-        let private_key = private_key.unwrap_or_default();
-
-        let network = self.system.settings().network;
-        let expected_block_time = self.system.time_per_block().as_millis() as u64;
-        let now = Self::current_time_ms();
-
-        let mut use_recovery = None;
-        if !self.settings.ignore_recovery_logs {
-            if let Some(context) =
-                self.load_recovery_from_store(validator_infos.clone(), Some(my_index))
-            {
-                if context.block_index == block_index {
-                    use_recovery = Some(context);
-                } else {
-                    warn!(target: "neo", "recovery log does not match current height; ignoring");
-                }
-            } else if self.recovery_path.exists() {
-                match ConsensusContext::load(
-                    &self.recovery_path,
-                    validator_infos.clone(),
-                    Some(my_index),
-                ) {
-                    Ok(context) if context.block_index == block_index => {
-                        use_recovery = Some(context);
-                    }
-                    Ok(_) => {
-                        warn!(
-                            target: "neo",
-                            "recovery log does not match current height; ignoring"
-                        );
-                    }
-                    Err(err) => {
-                        warn!(target: "neo", %err, "failed to load consensus recovery log");
-                    }
-                }
-            }
-        }
-
-        if let Some(context) = use_recovery {
-            let (event_tx, event_rx) = mpsc::channel(256);
-            let mut service =
-                ConsensusService::with_context(network, context, private_key.clone(), event_tx);
-            service.set_signer(Some(signer.clone()));
-            service.set_expected_block_time(expected_block_time);
-            if let Err(err) = service.resume(now, prev_hash, 0) {
-                warn!(target: "neo", %err, "failed to resume consensus from recovery log");
-            }
-            self.install_service(service, event_rx, ctx);
-            return;
-        }
-
-        if let Some(service) = self.service.as_mut() {
-            service.update_validators(validator_infos, Some(my_index));
-            service.set_private_key(private_key.clone());
-            service.set_signer(Some(signer.clone()));
-            service.set_expected_block_time(expected_block_time);
-            if let Err(err) = service.start(block_index, now, prev_hash, 0) {
-                warn!(target: "neo", %err, "failed to start consensus round");
-            }
-            return;
-        }
-
-        let (event_tx, event_rx) = mpsc::channel(256);
-        let mut service = ConsensusService::new(
-            network,
-            validator_infos,
-            Some(my_index),
-            private_key,
-            event_tx,
-        );
-        service.set_signer(Some(signer));
-        service.set_expected_block_time(expected_block_time);
-        if let Err(err) = service.start(block_index, now, prev_hash, 0) {
-            warn!(target: "neo", %err, "failed to start consensus round");
-        }
-        self.install_service(service, event_rx, ctx);
-    }
-
-    fn start_from_chain(&mut self, ctx: &ActorContext) {
-        let current_height = self.system.current_block_index();
-        let prev_hash = self
-            .system
-            .block_hash_at(current_height)
-            .unwrap_or_default();
-        let prev_timestamp = fetch_block_timestamp(&self.system, current_height).unwrap_or(0);
-        self.start_round(current_height + 1, prev_hash, prev_timestamp, ctx);
-        self.request_recovery_on_start();
-    }
-
-    fn request_recovery_on_start(&mut self) {
-        if self.recovery_requested {
-            return;
-        }
-
-        let Some(service) = self.service.as_mut() else {
-            return;
-        };
-
-        let commit_sent = service
-            .context()
-            .my_index
-            .and_then(|idx| service.context().commits.get(&idx))
-            .is_some();
-        if commit_sent {
-            self.recovery_requested = true;
-            return;
-        }
-
-        if let Err(err) = service.request_recovery() {
-            warn!(target: "neo", %err, "failed to request consensus recovery");
-        }
-        self.recovery_requested = true;
-    }
-
-    fn on_persist_completed(&mut self, mut block: Block, ctx: &ActorContext) {
-        let next_index = block.index().saturating_add(1);
-        let hash = block.hash();
-        self.start_round(next_index, hash, block.timestamp(), ctx);
-    }
-
-    fn on_timer_tick(&mut self) {
-        let now = Self::current_time_ms();
-        self.try_prepare_response(now);
-        self.try_finalize_pending_block(now);
-
-        let Some(service) = self.service.as_mut() else {
-            return;
-        };
-        if service.context().is_timed_out(now) {
-            let reason = if self
-                .missing_transactions
-                .as_ref()
-                .map(|missing| !missing.is_empty())
-                .unwrap_or(false)
-            {
-                ChangeViewReason::TxNotFound
-            } else {
-                ChangeViewReason::Timeout
-            };
-
-            if let Err(err) = service.request_change_view(reason, now) {
-                warn!(target: "neo", %err, "failed to request view change");
-            }
-        }
-    }
-
-    async fn on_service_event(&mut self, event: ConsensusEvent) {
-        match event {
-            ConsensusEvent::BroadcastMessage(payload) => {
-                self.broadcast_consensus_message(payload).await;
-            }
-            ConsensusEvent::RequestTransactions { max_count, .. } => {
-                self.propose_transactions(max_count);
-            }
-            ConsensusEvent::BlockCommitted { block_data, .. } => {
-                self.pending_block = Some(block_data);
-                self.try_finalize_pending_block(Self::current_time_ms());
-            }
-            ConsensusEvent::ViewChanged { .. } => {
-                self.reset_round_state();
-            }
-        }
-    }
-
-    async fn broadcast_consensus_message(&mut self, payload: ConsensusPayload) {
-        let Some(service) = self.service.as_ref() else {
-            return;
-        };
-
-        if payload.message_type == ConsensusMessageType::Commit
-            && !self.settings.ignore_recovery_logs
-        {
-            let mut saved = self.save_recovery_to_store(service);
-            if !saved {
-                if let Some(parent) = self.recovery_path.parent() {
-                    let _ = tokio::fs::create_dir_all(parent).await;
-                }
-                if let Err(err) = service.save_context(&self.recovery_path) {
-                    warn!(target: "neo", %err, "failed to persist consensus recovery log");
-                } else {
-                    saved = true;
-                }
-            }
-            if !saved {
-                warn!(target: "neo", "failed to persist consensus recovery log");
-            }
-        }
-
-        let Some(extensible) = self.build_extensible_payload(&payload) else {
-            return;
-        };
-
-        if let Err(err) = self
-            .system
-            .local_node_handle()
-            .send_directly(RelayInventory::Extensible(extensible), None)
-        {
-            warn!(target: "neo", %err, "failed to broadcast consensus payload");
-        }
-    }
-
-    fn build_extensible_payload(&self, payload: &ConsensusPayload) -> Option<ExtensiblePayload> {
-        let validator = self
-            .validators
-            .get(payload.validator_index as usize)?
-            .clone();
-        let sender = Contract::create_signature_contract(validator.clone()).script_hash();
-        let signature = payload.witness.clone();
-        let mut builder = ScriptBuilder::new();
-        builder.emit_push(&signature);
-        let invocation = builder.to_array();
-        let verification = Contract::create_signature_redeem_script(validator);
-        let witness = Witness::new_with_scripts(invocation, verification);
-
-        let mut extensible = ExtensiblePayload::new();
-        extensible.category = "dBFT".to_string();
-        extensible.valid_block_start = 0;
-        extensible.valid_block_end = payload.block_index;
-        extensible.sender = sender;
-        extensible.data = payload.to_message_bytes();
-        extensible.witness = witness;
-        Some(extensible)
-    }
-
-    fn propose_transactions(&mut self, max_count: usize) {
-        if self.service.is_none() {
-            return;
-        }
-
-        let settings = self.system.settings();
-        let max_tx = settings.max_transactions_per_block as usize;
-        let limit = std::cmp::min(max_count, max_tx);
-
-        let mut selected = Vec::new();
-        let mut total_size = 0usize;
-        let mut total_system_fee = 0i64;
-
-        let required_signatures = consensus_m_threshold(self.validators.len());
-        let header_size = estimate_header_size(&self.validators, required_signatures);
-
-        let candidates = self.proposal_candidates(limit);
-        for tx in candidates {
-            let candidate_count = selected.len() + 1;
-            let size_with_count =
-                header_size + var_size(candidate_count as u64) + total_size + tx.size();
-            if size_with_count > self.settings.max_block_size as usize {
-                break;
-            }
-
-            let fee_with_tx = total_system_fee.saturating_add(tx.system_fee());
-            if fee_with_tx > self.settings.max_block_system_fee {
-                break;
-            }
-
-            total_size += tx.size();
-            total_system_fee = fee_with_tx;
-            selected.push(tx);
-        }
-
-        // Convert Arc<Transaction> to Transaction for proposal
-        self.proposal_transactions = selected
-            .iter()
-            .map(|arc_tx| (arc_tx.hash(), (**arc_tx).clone()))
-            .collect();
-
-        let hashes = selected.into_iter().map(|tx| tx.hash()).collect();
-        if let Some(service) = self.service.as_mut() {
-            if let Err(err) = service.on_transactions_received(hashes) {
-                warn!(target: "neo", %err, "failed to submit proposal transactions");
-            }
-        }
-    }
-
-    fn proposal_candidates(&self, limit: usize) -> Vec<Arc<Transaction>> {
-        if limit == 0 {
-            return Vec::new();
-        }
-
-        let pool = self.system.mempool();
-
-        #[cfg(feature = "tee")]
-        if let Some(runtime) = crate::tee_integration::active_runtime() {
-            // Obtain TEE ordering first, then resolve hashes against the canonical verified
-            // mempool to keep dBFT proposal selection in sync with TEE ordering policy.
-            let tee_hashes = runtime
-                .mempool
-                .get_ordered_hashes(limit.saturating_mul(4).max(limit));
-            let pool_guard = pool.lock();
-
-            let mut verified_by_hash = HashMap::new();
-            for tx in pool_guard.verified_transactions_vec() {
-                verified_by_hash.insert(tx.hash(), tx);
-            }
-
-            let mut candidates = Vec::with_capacity(limit);
-            let mut seen = HashSet::with_capacity(limit.saturating_mul(2));
-
-            for hash_bytes in tee_hashes {
-                if candidates.len() >= limit {
-                    break;
-                }
-
-                let Ok(hash) = UInt256::from_bytes(&hash_bytes) else {
-                    continue;
-                };
-                let Some(tx) = verified_by_hash.get(&hash) else {
-                    continue;
-                };
-
-                let tx_hash = tx.hash();
-                if seen.insert(tx_hash) {
-                    candidates.push(Arc::clone(tx));
-                }
-            }
-
-            if candidates.len() < limit {
-                for tx in pool_guard.get_sorted_verified_transactions(limit) {
-                    let tx_hash = tx.hash();
-                    if seen.insert(tx_hash) {
-                        candidates.push(tx);
-                    }
-                    if candidates.len() >= limit {
-                        break;
-                    }
-                }
-            }
-
-            return candidates;
-        }
-
-        let fallback = pool.lock().get_sorted_verified_transactions(limit);
-        fallback
-    }
-
-    fn try_prepare_response(&mut self, now: u64) {
-        let Some(service) = self.service.as_mut() else {
-            return;
-        };
-
-        if service.context().is_primary() {
-            return;
-        }
-
-        let my_index = match self.my_index {
-            Some(index) => index,
-            None => return,
-        };
-
-        if service.context().prepare_responses.contains_key(&my_index) {
-            return;
-        }
-
-        if !service.context().prepare_request_received {
-            return;
-        }
-
-        let proposed_hashes = service.context().proposed_tx_hashes.clone();
-        if proposed_hashes.is_empty() {
-            let _ = service.on_transactions_received(Vec::new());
-            return;
-        }
-
-        let settings = self.system.settings();
-        let store_cache = self.system.store_cache();
-        let snapshot = store_cache.data_cache();
-        let pool = self.system.mempool();
-        let pool_guard = pool.lock();
-        let verified_map: HashMap<UInt256, Transaction> = pool_guard
-            .verified_transactions_vec()
-            .into_iter()
-            .map(|arc_tx| ((*arc_tx).clone().hash(), (*arc_tx).clone()))
-            .collect();
-        let unverified_map: HashMap<UInt256, Transaction> = pool_guard
-            .unverified_transactions_vec()
-            .into_iter()
-            .map(|arc_tx| ((*arc_tx).clone().hash(), (*arc_tx).clone()))
-            .collect();
-        drop(pool_guard);
-
-        let mut verification_context = TransactionVerificationContext::new();
-        let mut transactions = HashMap::new();
-        let mut missing = HashSet::new();
-
-        for hash in &proposed_hashes {
-            if self.system.context().contains_transaction(hash)
-                == ContainsTransactionType::ExistsInLedger
-            {
-                warn!(
-                    target: "neo",
-                    tx_hash = %hash,
-                    "prepare request includes on-chain transaction"
-                );
-                let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                return;
-            }
-
-            if let Some(tx) = verified_map.get(hash) {
-                let signer_accounts = signer_accounts(tx);
-                if self
-                    .system
-                    .context()
-                    .contains_conflict_hash(hash, &signer_accounts)
-                {
-                    warn!(
-                        target: "neo",
-                        tx_hash = %hash,
-                        "prepare request contains conflicting transaction"
-                    );
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-                transactions.insert(*hash, tx.clone());
-                verification_context.add_transaction(tx);
-                continue;
-            }
-
-            if let Some(tx) = unverified_map.get(hash) {
-                let signer_accounts = signer_accounts(tx);
-                if self
-                    .system
-                    .context()
-                    .contains_conflict_hash(hash, &signer_accounts)
-                {
-                    warn!(
-                        target: "neo",
-                        tx_hash = %hash,
-                        "prepare request contains conflicting transaction"
-                    );
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-
-                if tx.system_fee() > self.settings.max_block_system_fee {
-                    warn!(
-                        target: "neo",
-                        tx_hash = %hash,
-                        "transaction system fee exceeds max_block_system_fee"
-                    );
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-
-                if conflicts_with_context(tx, &transactions) {
-                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
-                    return;
-                }
-
-                let result = tx.verify(settings, snapshot, Some(&verification_context), &[]);
-                if result != VerifyResult::Succeed {
-                    let reason = if result == VerifyResult::PolicyFail {
-                        ChangeViewReason::TxRejectedByPolicy
-                    } else {
-                        ChangeViewReason::TxInvalid
-                    };
-                    let _ = service.request_change_view(reason, now);
-                    return;
-                }
-
-                transactions.insert(*hash, tx.clone());
-                verification_context.add_transaction(tx);
-                continue;
-            }
-
-            missing.insert(*hash);
-        }
-
-        if !missing.is_empty() {
-            let should_request = match self.missing_transactions.as_ref() {
-                Some(prev) => prev != &missing,
-                None => true,
-            };
-            if should_request {
-                let hashes: Vec<UInt256> = missing.iter().copied().collect();
-                let inv = InvPayload::create(InventoryType::Transaction, &hashes);
-                if let Err(err) = self
-                    .system
-                    .task_manager_handle()
-                    .broadcast_restart_tasks(inv)
-                {
-                    debug!(target: "neo", %err, "failed to request missing transactions");
-                }
-                self.missing_transactions = Some(missing);
-            }
-            return;
-        }
-
-        let total_system_fee = transactions.values().map(|tx| tx.system_fee()).sum::<i64>();
-        if total_system_fee > self.settings.max_block_system_fee {
-            let _ = service.request_change_view(ChangeViewReason::BlockRejectedByPolicy, now);
-            return;
-        }
-
-        let required_signatures = consensus_m_threshold(self.validators.len());
-        let header_size = estimate_header_size(&self.validators, required_signatures);
-        let total_tx_size = transactions.values().map(|tx| tx.size()).sum::<usize>();
-        let block_size = header_size + var_size(transactions.len() as u64) + total_tx_size;
-        if block_size > self.settings.max_block_size as usize {
-            let _ = service.request_change_view(ChangeViewReason::BlockRejectedByPolicy, now);
-            return;
-        }
-
-        self.proposal_transactions = transactions;
-        self.missing_transactions = None;
-        let _ = service.on_transactions_received(proposed_hashes);
-    }
-
-    fn try_finalize_pending_block(&mut self, _now: u64) {
-        let Some(block_data) = self.pending_block.clone() else {
-            return;
-        };
-
-        let current_index = self.current_block_index.unwrap_or_default();
-        if block_data.block_index != current_index {
-            self.pending_block = None;
-            return;
-        }
-
-        let mut missing = Vec::new();
-        let mut transactions = Vec::with_capacity(block_data.transaction_hashes.len());
-
-        for hash in &block_data.transaction_hashes {
-            if let Some(tx) = self.proposal_transactions.get(hash) {
-                transactions.push(tx.clone());
-                continue;
-            }
-            if let Some(tx) = self.system.context().try_get_transaction_from_mempool(hash) {
-                transactions.push(tx);
-                continue;
-            }
-            missing.push(*hash);
-        }
-
-        if !missing.is_empty() {
-            let inv = InvPayload::create(InventoryType::Transaction, &missing);
-            if let Err(err) = self
-                .system
-                .task_manager_handle()
-                .broadcast_restart_tasks(inv)
-            {
-                debug!(target: "neo", %err, "failed to request block transactions");
-            }
-            return;
-        }
-
-        let Some(prev_hash) = self.current_prev_hash else {
-            warn!(target: "neo", "missing prev_hash for consensus block");
-            return;
-        };
-
-        let merkle_root =
-            MerkleTree::compute_root(&block_data.transaction_hashes).unwrap_or_default();
-        // NextConsensus is the BFT address of the NEXT block's validator set
-        // (refresh-conditional), NOT the current round's signing set. At a
-        // committee-refresh boundary these differ; using the signing set here
-        // would diverge the header (and its signed hash) from C#.
-        let next_consensus_validators =
-            self.next_consensus_validators(block_data.block_index);
-        let next_consensus = NativeHelpers::get_bft_address(&next_consensus_validators);
-
-        let mut header = Header::new();
-        header.set_version(0);
-        header.set_prev_hash(prev_hash);
-        header.set_merkle_root(merkle_root);
-        header.set_timestamp(block_data.timestamp);
-        header.set_nonce(block_data.nonce);
-        header.set_index(block_data.block_index);
-        header.set_primary_index(block_data.primary_index);
-        header.set_next_consensus(next_consensus);
-
-        let store_cache = self.system.store_cache();
-        let snapshot = Arc::new(store_cache.data_cache().clone());
-        let contract = Contract::create_multi_sig_contract(
-            block_data.required_signatures,
-            &block_data.validator_pubkeys,
-        );
-        let mut context = ContractParametersContext::new(
-            snapshot,
-            header.clone(),
-            self.system.settings().network,
-        );
-        for (validator_index, signature) in &block_data.signatures {
-            if let Some(pubkey) = block_data.validator_pubkeys.get(*validator_index as usize) {
-                let _ = context.add_signature(contract.clone(), pubkey.clone(), signature.clone());
-            }
-        }
-
-        let Some(witnesses) = context.witnesses() else {
-            warn!(target: "neo", "failed to build block witness from commits");
-            return;
-        };
-        header.witness = witnesses.into_iter().next().unwrap_or_else(Witness::new);
-
-        let mut block = Block {
-            header,
-            transactions,
-        };
-        block.rebuild_merkle_root();
-
-        if let Err(err) = self.system.blockchain_actor().tell(
-            neo_core::ledger::BlockchainCommand::InventoryBlock {
-                block: std::sync::Arc::new(block),
-                relay: true,
-                pre_verified: false,
-            },
-        ) {
-            warn!(target: "neo", %err, "failed to submit consensus block");
-            return;
-        }
-
-        self.pending_block = None;
-    }
-
-    fn on_relay_result(&mut self, result: RelayResult) {
-        if result.result != VerifyResult::Succeed {
-            return;
-        }
-
-        if result.inventory_type != InventoryType::Extensible {
-            return;
-        }
-
-        let context = self.system.context();
-        let payload = context
-            .try_get_relay_extensible(&result.hash)
-            .or_else(|| context.try_get_extensible(&result.hash));
-        let Some(payload) = payload else {
-            return;
-        };
-
-        if payload.category != "dBFT" || payload.data.is_empty() {
-            return;
-        }
-
-        let Some(signature) = extract_signature(&payload.witness) else {
-            return;
-        };
-
-        let network = self.system.settings().network;
-        let consensus_payload =
-            match ConsensusPayload::from_message_bytes(network, &payload.data, signature) {
-                Ok(value) => value,
-                Err(err) => {
-                    debug!(target: "neo", %err, "failed to parse consensus payload");
-                    return;
-                }
-            };
-
-        if !self.precheck_prepare_request(&consensus_payload) {
-            return;
-        }
-
-        let Some(service) = self.service.as_mut() else {
-            return;
-        };
-
-        if let Err(err) = service.process_message(consensus_payload) {
-            debug!(target: "neo", %err, "consensus message rejected");
-            return;
-        }
-
-        self.try_prepare_response(Self::current_time_ms());
-    }
-
-    fn precheck_prepare_request(&self, payload: &ConsensusPayload) -> bool {
-        if payload.message_type != ConsensusMessageType::PrepareRequest {
-            return true;
-        }
-
-        let Some(current_index) = self.current_block_index else {
-            return false;
-        };
-
-        if payload.block_index != current_index {
-            return false;
-        }
-
-        let Ok(message) = neo_consensus::messages::PrepareRequestMessage::deserialize_body(
-            &payload.data,
-            payload.block_index,
-            payload.view_number,
-            payload.validator_index,
-        ) else {
-            return false;
-        };
-
-        if message.transaction_hashes.len()
-            > self.system.settings().max_transactions_per_block as usize
-        {
-            return false;
-        }
-
-        if let Some(prev_hash) = self.current_prev_hash {
-            if message.prev_hash != prev_hash {
-                return false;
-            }
-        }
-
-        let prev_timestamp = self.prev_timestamp.unwrap_or(0);
-        if message.timestamp <= prev_timestamp {
-            return false;
-        }
-
-        let now = Self::current_time_ms();
-        let max_future = self.system.time_per_block().as_millis() as u64 * 8;
-        if message.timestamp > now.saturating_add(max_future) {
-            return false;
-        }
-
-        true
-    }
-
-    fn load_recovery_from_store(
-        &self,
-        validator_infos: Vec<ValidatorInfo>,
-        my_index: Option<u8>,
-    ) -> Option<ConsensusContext> {
-        let store = self.recovery_store.as_ref()?;
-        let snapshot = store.snapshot();
-        let key = CONSENSUS_STATE_KEY.to_vec();
-        let data = snapshot.try_get(&key)?;
-        match ConsensusContext::from_bytes(&data, validator_infos, my_index) {
-            Ok(context) => Some(context),
-            Err(err) => {
-                warn!(target: "neo", %err, "failed to decode consensus recovery log");
-                None
-            }
-        }
-    }
-
-    fn save_recovery_to_store(&self, service: &ConsensusService) -> bool {
-        let store = match self.recovery_store.as_ref() {
-            Some(store) => store,
-            None => return false,
-        };
-
-        let Ok(data) = service.context().to_bytes() else {
-            return false;
-        };
-
-        let mut snapshot = store.snapshot();
-        let Some(snap) = Arc::get_mut(&mut snapshot) else {
-            return false;
-        };
-        if let Err(err) = snap.put_sync(CONSENSUS_STATE_KEY.to_vec(), data) {
-            warn!(target: "neo", %err, "failed to write consensus recovery log");
-            return false;
-        }
-        if let Err(err) = snap.try_commit() {
-            warn!(target: "neo", %err, "failed to commit consensus recovery log");
-            return false;
-        }
-
-        true
-    }
-}
-
-#[async_trait::async_trait]
-impl Actor for ConsensusActor {
-    async fn pre_start(&mut self, ctx: &mut ActorContext) -> ActorResult {
-        let stream = self.system.event_stream();
-        stream.subscribe::<PersistCompleted>(ctx.self_ref());
-        stream.subscribe::<RelayResult>(ctx.self_ref());
-        self.start_timer(ctx);
-        if self.settings.auto_start {
-            self.start_from_chain(ctx);
-        }
-        Ok(())
-    }
-
-    async fn post_stop(&mut self, ctx: &mut ActorContext) -> ActorResult {
-        self.stop_timer();
-        self.system.event_stream().unsubscribe_all(&ctx.self_ref());
-        if let Some(handle) = self.event_task.take() {
-            handle.abort();
-        }
-        Ok(())
-    }
-
-    async fn handle(
-        &mut self,
-        envelope: Box<dyn std::any::Any + Send>,
-        _ctx: &mut ActorContext,
-    ) -> ActorResult {
-        let envelope = match envelope.downcast::<PersistCompleted>() {
-            Ok(message) => {
-                let block =
-                    std::sync::Arc::try_unwrap(message.block).unwrap_or_else(|arc| (*arc).clone());
-                self.on_persist_completed(block, _ctx);
-                return Ok(());
-            }
-            Err(envelope) => envelope,
-        };
-
-        let envelope = match envelope.downcast::<RelayResult>() {
-            Ok(message) => {
-                self.on_relay_result(*message);
-                return Ok(());
-            }
-            Err(envelope) => envelope,
-        };
-
-        if let Ok(message) = envelope.downcast::<ConsensusActorMessage>() {
-            match *message {
-                ConsensusActorMessage::ServiceEvent(event) => self.on_service_event(event).await,
-                ConsensusActorMessage::TimerTick => self.on_timer_tick(),
-                ConsensusActorMessage::ManualStart => {
-                    if self.service.is_none() {
-                        self.start_from_chain(_ctx);
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-fn resolve_recovery_path(value: &str) -> PathBuf {
-    // Return the path as-is - PathBuf handles both absolute and relative paths
-    PathBuf::from(value)
-}
-
-fn open_recovery_store(
-    system: &neo_core::neo_system::NeoSystem,
-    settings: &DbftSettings,
-) -> Option<Arc<dyn Store>> {
-    if settings.ignore_recovery_logs {
+/// Extracts the raw 64-byte signature from a single-sig invocation script.
+fn signature_from_invocation_script(invocation: &[u8]) -> Option<&[u8]> {
+    if invocation.len() != 66
+        || invocation[0] != neo_vm_rs::OpCode::PUSHDATA1.byte()
+        || invocation[1] != 0x40
+    {
         return None;
     }
-    let path = settings.recovery_logs.trim();
-    if path.is_empty() {
+    Some(&invocation[2..66])
+}
+
+/// Builds the outbound dBFT [`ExtensiblePayload`] for a `ConsensusPayload` the
+/// service produced (its `witness` is the raw 64-byte signature). Mirrors C#
+/// `ConsensusContext.CreatePayload`.
+fn consensus_to_extensible(
+    payload: &ConsensusPayload,
+    validators: &[ValidatorInfo],
+) -> Option<ExtensiblePayload> {
+    let validator = validators.get(payload.validator_index as usize)?;
+    let mut ext = ExtensiblePayload::new();
+    ext.category = DBFT_CATEGORY.to_string();
+    ext.valid_block_start = 0;
+    ext.valid_block_end = payload.block_index;
+    ext.sender = validator.script_hash;
+    ext.data = payload.to_message_bytes();
+    ext.witness = Witness::new_with_scripts(
+        invocation_script_from_signature(&payload.witness),
+        signature_redeem_script(&validator.public_key.encoded()),
+    );
+    Some(ext)
+}
+
+/// Decodes an inbound dBFT [`ExtensiblePayload`] into a [`ConsensusPayload`].
+/// Returns `None` for non-dBFT, malformed, or spoofed payloads (the in-body
+/// `validator_index` must map to the validator whose script hash is the
+/// extensible's `sender`).
+pub fn extensible_to_consensus(
+    ext: &ExtensiblePayload,
+    network: u32,
+    validators: &[ValidatorInfo],
+) -> Option<ConsensusPayload> {
+    if ext.category != DBFT_CATEGORY {
         return None;
     }
-    match system.store_provider().get_store(path) {
-        Ok(store) => Some(store),
-        Err(err) => {
-            warn!(target: "neo", %err, "failed to open consensus recovery store");
-            None
-        }
-    }
-}
-
-fn fetch_block_timestamp(system: &neo_core::neo_system::NeoSystem, index: u32) -> Option<u64> {
-    let store_cache = system.store_cache();
-    let ledger = LedgerContract::new();
-    ledger
-        .get_block(&store_cache, HashOrIndex::Index(index))
-        .ok()
-        .flatten()
-        .map(|block| block.header.timestamp())
-}
-
-fn extract_signature(witness: &Witness) -> Option<Vec<u8>> {
-    let invocation = &witness.invocation_script;
-    if invocation.len() != 66 {
+    let signature = signature_from_invocation_script(&ext.witness.invocation_script)?;
+    let payload = ConsensusPayload::from_message_bytes(network, &ext.data, signature.to_vec()).ok()?;
+    let validator = validators.get(payload.validator_index as usize)?;
+    if validator.script_hash != ext.sender {
         return None;
     }
-    if invocation[0] != OpCode::PUSHDATA1.byte() || invocation[1] != 0x40 {
-        return None;
-    }
-    Some(invocation[2..66].to_vec())
+    Some(payload)
 }
 
-fn consensus_m_threshold(n: usize) -> usize {
-    if n == 0 {
-        return 0;
-    }
-    let f = (n - 1) / 3;
-    n - f
-}
+// ===================== validator-set + key derivation =====================
 
-fn estimate_header_size(validators: &[neo_crypto::ECPoint], m: usize) -> usize {
-    if validators.is_empty() || m == 0 {
-        return 0;
-    }
-
-    let dummy_sig = vec![0u8; 64];
-    let mut builder = ScriptBuilder::new();
-    for _ in 0..m {
-        builder.emit_push(&dummy_sig);
-    }
-    let invocation = builder.to_array();
-    let verification = Contract::create_multi_sig_redeem_script(m, validators);
-    let witness = Witness::new_with_scripts(invocation, verification);
-    let mut header = Header::new();
-    header.witness = witness;
-    header.size()
-}
-
-fn var_size(count: u64) -> usize {
-    neo_core::neo_io::serializable::helper::get_var_size(count)
-}
-
-fn conflicts_with_context(tx: &Transaction, existing: &HashMap<UInt256, Transaction>) -> bool {
-    let new_conflicts = conflict_hashes(tx);
-    if new_conflicts.iter().any(|hash| existing.contains_key(hash)) {
-        warn!(target: "neo", tx_hash = %tx.hash(), "transaction conflicts with existing set");
-        return true;
-    }
-
-    for other in existing.values() {
-        if conflict_hashes(other).iter().any(|hash| *hash == tx.hash()) {
-            warn!(target: "neo", tx_hash = %tx.hash(), "existing transaction conflicts with new tx");
-            return true;
-        }
-    }
-    false
-}
-
-fn conflict_hashes(tx: &Transaction) -> Vec<UInt256> {
-    tx.attributes()
-        .iter()
-        .filter_map(|attr| match attr {
-            TransactionAttribute::Conflicts(conflicts) => Some(conflicts.hash),
-            _ => None,
+/// Builds the ordered dBFT validator set from the protocol settings.
+///
+/// C# dBFT uses `NEO.GetNextBlockValidators(...).OrderBy(p => p)`, which at
+/// genesis reduces to `StandbyCommittee.Take(ValidatorsCount).OrderBy(p => p)`.
+/// `standby_validators()` does the `Take(N)` but NOT the sort; the validator
+/// **index** (and thus primary selection + `NextConsensus`) depends on the
+/// sorted order, so the keys are sorted here.
+pub fn build_consensus_validators(settings: &ProtocolSettings) -> Vec<ValidatorInfo> {
+    let mut keys: Vec<ECPoint> = settings.standby_validators();
+    keys.sort();
+    keys.into_iter()
+        .enumerate()
+        .map(|(index, public_key)| {
+            let script_hash = UInt160::from_script(&signature_redeem_script(public_key.as_bytes()));
+            ValidatorInfo {
+                index: index as u8,
+                public_key,
+                script_hash,
+            }
         })
         .collect()
 }
 
-fn signer_accounts(tx: &Transaction) -> Vec<neo_core::UInt160> {
-    tx.signers().iter().map(|signer| signer.account).collect()
+/// Finds this node's validator index by deriving its public key from the
+/// private key and matching it against the (sorted) validator set. `None` when
+/// this node is not a consensus validator (it then only relays).
+pub fn resolve_my_index(private_key: &[u8; 32], validators: &[ValidatorInfo]) -> Option<u8> {
+    let pub_bytes = Secp256r1Crypto::derive_public_key(private_key).ok()?;
+    let my_pubkey = ECPoint::from_bytes(&pub_bytes).ok()?;
+    validators
+        .iter()
+        .find(|v| v.public_key == my_pubkey)
+        .map(|v| v.index)
+}
+
+/// Resolved consensus configuration: the validator set and this node's key/index.
+pub struct ConsensusSetup {
+    /// The ordered dBFT validator set.
+    pub validators: Vec<ValidatorInfo>,
+    /// This node's validator index, or `None` (observer; relay-only).
+    pub my_index: Option<u8>,
+    /// This node's 32-byte secp256r1 private key.
+    pub private_key: [u8; 32],
+    /// Network magic.
+    pub network: u32,
+    /// Target block time (ms) — the view-timeout base.
+    pub ms_per_block: u64,
+}
+
+/// Builds the consensus setup from the protocol settings and the `[consensus]`
+/// configuration. Returns `Ok(None)` when consensus is disabled. Returns an
+/// error when consensus is enabled but the validator key is missing/malformed.
+pub fn build_consensus_setup(
+    settings: &ProtocolSettings,
+    enabled: bool,
+    private_key_hex: Option<&str>,
+) -> anyhow::Result<Option<ConsensusSetup>> {
+    if !enabled {
+        return Ok(None);
+    }
+    let hex_key = private_key_hex.ok_or_else(|| {
+        anyhow::anyhow!("[consensus].enabled = true requires [consensus].private_key_hex")
+    })?;
+    let raw = hex::decode(hex_key.trim())
+        .map_err(|e| anyhow::anyhow!("invalid [consensus].private_key_hex: {e}"))?;
+    let private_key: [u8; 32] = raw
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("[consensus].private_key_hex must be 32 bytes"))?;
+
+    let validators = build_consensus_validators(settings);
+    let my_index = resolve_my_index(&private_key, &validators);
+    Ok(Some(ConsensusSetup {
+        validators,
+        my_index,
+        private_key,
+        network: settings.network,
+        ms_per_block: u64::from(settings.milliseconds_per_block),
+    }))
+}
+
+// ===================== the driver =====================
+
+/// Resolves the full transactions for `hashes`, in block order, from the
+/// proposal cache then the live mempool. Returns `None` if any is missing.
+fn resolve_transactions(
+    hashes: &[UInt256],
+    cache: &HashMap<UInt256, Arc<Transaction>>,
+    mempool: &MemoryPool,
+) -> Option<Vec<Transaction>> {
+    let mut out = Vec::with_capacity(hashes.len());
+    for hash in hashes {
+        if let Some(tx) = cache.get(hash) {
+            out.push((**tx).clone());
+        } else if let Some(item) = mempool.get(hash) {
+            out.push((*item.transaction).clone());
+        } else {
+            return None;
+        }
+    }
+    Some(out)
+}
+
+/// Reads the current ledger tip from `snapshot` → `(next_block_index, prev_hash)`.
+fn ledger_tip(snapshot: &DataCache) -> (u32, UInt256) {
+    let ledger = LedgerContract::new();
+    let height = ledger.current_index(snapshot).unwrap_or(0);
+    let prev_hash = ledger.current_hash(snapshot).unwrap_or_default();
+    (height + 1, prev_hash)
+}
+
+/// The single-task consensus driver: owns the `ConsensusService` (so no lock is
+/// needed) and routes its events to the network/mempool/ledger.
+struct ConsensusDriver {
+    service: ConsensusService,
+    event_rx: mpsc::Receiver<ConsensusEvent>,
+    inbound_rx: mpsc::Receiver<ConsensusPayload>,
+    blockchain: BlockchainHandle,
+    mempool: Arc<MemoryPool>,
+    network: NetworkHandle,
+    validators: Vec<ValidatorInfo>,
+    /// The `prev_hash` of the round currently being driven (carried into
+    /// `assemble_block` — the stored snapshot does not advance, so the tip is
+    /// tracked from `start`/`Imported` rather than re-read).
+    current_prev_hash: UInt256,
+    /// Full transactions cached at proposal time, for commit-time assembly.
+    proposal_txs: HashMap<UInt256, Arc<Transaction>>,
+}
+
+impl ConsensusDriver {
+    async fn run(mut self, startup_snapshot: Arc<DataCache>) {
+        // C# `ConsensusContext.Reset`: first round is height+1 over the tip.
+        let (block_index, prev_hash) = ledger_tip(&startup_snapshot);
+        self.current_prev_hash = prev_hash;
+        match self.service.start(block_index, now_millis(), prev_hash, BLOCK_VERSION) {
+            Ok(()) => info!(target: "neo", block_index, "consensus started"),
+            Err(err) => {
+                info!(target: "neo", %err, "consensus not started (not a validator); driver idle");
+                return;
+            }
+        }
+
+        let mut persist_rx = self.blockchain.subscribe();
+        let mut ticker = tokio::time::interval(Duration::from_millis(1_000));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        loop {
+            tokio::select! {
+                // Outbound work from the state machine.
+                maybe_event = self.event_rx.recv() => {
+                    let Some(event) = maybe_event else { break };
+                    self.on_consensus_event(event).await;
+                }
+                // Inbound consensus payloads from peers.
+                maybe_msg = self.inbound_rx.recv() => {
+                    let Some(payload) = maybe_msg else { break };
+                    if let Err(err) = self.service.process_message(payload) {
+                        warn!(target: "neo", %err, "consensus rejected inbound payload");
+                    }
+                }
+                // A block persisted (locally committed or peer-synced) → next round.
+                ev = persist_rx.recv() => {
+                    match ev {
+                        Ok(RuntimeEvent::Imported { hash, height }) => {
+                            self.current_prev_hash = hash;
+                            self.proposal_txs.clear();
+                            match self.service.start(height + 1, now_millis(), hash, BLOCK_VERSION) {
+                                Ok(()) => info!(target: "neo", block_index = height + 1, "consensus restarted"),
+                                Err(err) => info!(target: "neo", %err, "consensus next round not started"),
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+                // View-timeout tick (the real deadline lives inside the context).
+                _ = ticker.tick() => {
+                    if let Err(err) = self.service.on_timer_tick(now_millis()) {
+                        warn!(target: "neo", %err, "consensus timer tick failed");
+                    }
+                }
+            }
+        }
+        info!(target: "neo", "consensus driver loop exited");
+    }
+
+    async fn on_consensus_event(&mut self, event: ConsensusEvent) {
+        match event {
+            ConsensusEvent::BroadcastMessage(payload) => {
+                if let Some(ext) = consensus_to_extensible(&payload, &self.validators) {
+                    let _ = self.network.broadcast_extensible(ext).await;
+                }
+            }
+            ConsensusEvent::RequestTransactions { max_count, .. } => {
+                let mut hashes = Vec::new();
+                for item in self.mempool.verified_snapshot().into_iter().take(max_count) {
+                    let hash = item.hash();
+                    self.proposal_txs.insert(hash, Arc::clone(&item.transaction));
+                    hashes.push(hash);
+                }
+                if let Err(err) = self.service.on_transactions_received(hashes) {
+                    warn!(target: "neo", %err, "consensus on_transactions_received failed");
+                }
+            }
+            ConsensusEvent::BlockCommitted { block_index, block_data, .. } => {
+                let txs = match resolve_transactions(
+                    &block_data.transaction_hashes,
+                    &self.proposal_txs,
+                    &self.mempool,
+                ) {
+                    Some(txs) => txs,
+                    None => {
+                        error!(target: "neo", block_index, "missing transaction for committed block; cannot assemble");
+                        return;
+                    }
+                };
+                match block_data.assemble_block(BLOCK_VERSION, self.current_prev_hash, txs) {
+                    Ok(block) => {
+                        let block = Arc::new(block);
+                        // Persist through the C# Blockchain.Persist pipeline; the
+                        // validators already signed, so it is pre-verified.
+                        let _ = self
+                            .blockchain
+                            .tell(BlockchainCommand::InventoryBlock {
+                                block: Arc::clone(&block),
+                                relay: true,
+                                pre_verified: true,
+                            })
+                            .await;
+                        // The InventoryBlock handler does not relay, so broadcast
+                        // the new block to peers explicitly.
+                        let _ = self.network.broadcast_block((*block).clone()).await;
+                        info!(target: "neo", block_index, "consensus produced + submitted block");
+                        // The next round restarts off the RuntimeEvent::Imported.
+                    }
+                    Err(err) => error!(target: "neo", block_index, %err, "consensus block assembly failed"),
+                }
+            }
+            ConsensusEvent::ViewChanged { block_index, old_view, new_view } => {
+                info!(target: "neo", block_index, old_view, new_view, "consensus view changed");
+            }
+        }
+    }
+}
+
+/// Spawns the consensus driver for a validator node, consuming the caller-owned
+/// `inbound_rx` (its matching sender is wired into the network forwarder before
+/// this is called — the network, and thus this driver, is built after the
+/// forwarder). Returns the driver task handle, or `None` when this node is not
+/// a consensus validator (relay-only).
+pub fn spawn_consensus_driver(
+    setup: ConsensusSetup,
+    blockchain: BlockchainHandle,
+    mempool: Arc<MemoryPool>,
+    network: NetworkHandle,
+    startup_snapshot: Arc<DataCache>,
+    inbound_rx: mpsc::Receiver<ConsensusPayload>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    setup.my_index?;
+
+    // Generously sized: a commit emits BroadcastMessage(Commit) + BlockCommitted
+    // back-to-back via the consensus crate's non-blocking try_send.
+    let (event_tx, event_rx) = mpsc::channel::<ConsensusEvent>(1024);
+
+    let mut service = ConsensusService::new(
+        setup.network,
+        setup.validators.clone(),
+        setup.my_index,
+        setup.private_key.to_vec(),
+        event_tx,
+    );
+    service.set_expected_block_time(setup.ms_per_block);
+
+    let driver = ConsensusDriver {
+        service,
+        event_rx,
+        inbound_rx,
+        blockchain,
+        mempool,
+        network,
+        validators: setup.validators,
+        current_prev_hash: UInt256::default(),
+        proposal_txs: HashMap::new(),
+    };
+
+    Some(tokio::spawn(driver.run(startup_snapshot)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The dBFT extensible codec round-trips a consensus payload: encode a
+    /// signed `ConsensusPayload` to an `ExtensiblePayload`, then decode it back
+    /// to the same fields (the inbound path authenticates the sender).
+    #[test]
+    fn extensible_codec_round_trips() {
+        let settings = ProtocolSettings::default();
+        let validators = build_consensus_validators(&settings);
+        assert!(!validators.is_empty(), "default settings carry a committee");
+
+        let validator_index = 0u8;
+        let signature = vec![0xABu8; 64];
+        let mut original = ConsensusPayload::new(
+            settings.network,
+            7,             // block_index
+            validator_index,
+            0,             // view_number
+            neo_consensus::ConsensusMessageType::Commit,
+            vec![0x01, 0x02, 0x03], // body
+        );
+        original.witness = signature.clone();
+
+        let ext = consensus_to_extensible(&original, &validators).expect("encode");
+        assert_eq!(ext.category, DBFT_CATEGORY);
+        assert_eq!(ext.valid_block_end, 7);
+        assert_eq!(ext.sender, validators[validator_index as usize].script_hash);
+
+        let decoded =
+            extensible_to_consensus(&ext, settings.network, &validators).expect("decode");
+        assert_eq!(decoded.block_index, 7);
+        assert_eq!(decoded.validator_index, validator_index);
+        assert_eq!(decoded.message_type, neo_consensus::ConsensusMessageType::Commit);
+        assert_eq!(decoded.data, vec![0x01, 0x02, 0x03]);
+        assert_eq!(decoded.witness, signature);
+    }
+
+    /// A non-dBFT extensible is ignored by the consensus decoder.
+    #[test]
+    fn extensible_codec_rejects_non_dbft() {
+        let settings = ProtocolSettings::default();
+        let validators = build_consensus_validators(&settings);
+        let mut ext = ExtensiblePayload::new();
+        ext.category = "StateService".to_string();
+        ext.valid_block_end = 1;
+        assert!(extensible_to_consensus(&ext, settings.network, &validators).is_none());
+    }
+
+    /// The validator set is sorted ascending by public key (consensus-critical:
+    /// the index order drives primary selection + NextConsensus).
+    #[test]
+    fn validators_are_sorted_by_pubkey() {
+        let settings = ProtocolSettings::default();
+        let validators = build_consensus_validators(&settings);
+        for pair in validators.windows(2) {
+            assert!(pair[0].public_key <= pair[1].public_key, "validators must be sorted");
+        }
+        for (i, v) in validators.iter().enumerate() {
+            assert_eq!(v.index as usize, i);
+        }
+    }
+
+    /// `build_consensus_setup` is a no-op when disabled and errors when enabled
+    /// without a key.
+    #[test]
+    fn setup_gating() {
+        let settings = ProtocolSettings::default();
+        assert!(build_consensus_setup(&settings, false, None).unwrap().is_none());
+        assert!(build_consensus_setup(&settings, true, None).is_err());
+        assert!(build_consensus_setup(&settings, true, Some("zz")).is_err());
+    }
 }

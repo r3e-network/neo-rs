@@ -1,8 +1,8 @@
 #![cfg(feature = "server")]
 
-use neo_core::neo_system::NeoSystem;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::UInt160;
+use neo_system::Node;
+use neo_config::ProtocolSettings;
+use neo_primitives::UInt160;
 use neo_rpc::{RpcServer, RpcServerConfig};
 use serde_json::Value;
 
@@ -15,7 +15,9 @@ fn is_valid(result: &Value) -> bool {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn validate_address_uses_wallet_base58_check() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system");
+    let system = std::sync::Arc::new(
+        Node::new(std::sync::Arc::new(ProtocolSettings::default()), None, None).expect("system"),
+    );
     let server = RpcServer::new(system, RpcServerConfig::default());
 
     let valid_address = UInt160::zero().to_address();

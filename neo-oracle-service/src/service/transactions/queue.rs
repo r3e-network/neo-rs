@@ -1,12 +1,14 @@
 use super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::{OracleService, OracleServiceError, OracleTask};
-use neo_core::{Verifiable, VerifiableExt};
+use neo_primitives::Verifiable;
+use neo_payloads::VerifiableExt;
 use neo_crypto::ECPoint;
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::Transaction;
-use neo_core::persistence::DataCache;
-use neo_core::smart_contract::Contract;
-use neo_core::smart_contract::native::{LedgerContract, OracleContract, Role, RoleManagement};
+use neo_network;
+use neo_payloads::Transaction;
+use neo_payloads::helper::get_sign_data_vec;
+use neo_storage::persistence::DataCache;
+use neo_execution::Contract;
+use neo_native_contracts::{LedgerContract, OracleContract, Role, RoleManagement};
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 use tracing::{debug, warn};
@@ -166,7 +168,7 @@ impl OracleService {
         }
 
         let contract = Contract::create_multi_sig_contract(needed_threshold, &oracle_nodes);
-        let mut builder = neo_core::script_builder::ScriptBuilder::new();
+        let mut builder = neo_script_builder::ScriptBuilder::new();
         let mut remaining = needed_threshold;
         for (_key, sign) in signs.iter() {
             builder.emit_push(sign.as_slice());

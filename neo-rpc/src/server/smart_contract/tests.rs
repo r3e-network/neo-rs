@@ -1,28 +1,28 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::apply_tracked_items;
-use neo_core::smart_contract::StorageItemExt;
-use neo_core::smart_contract::BinarySerializer;
-use neo_core::smart_contract::helper::Helper as ContractHelper;
-use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
-use neo_core::smart_contract::manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
-};
-use neo_core::smart_contract::native::{ContractManagement, CryptoLib, NativeContract, NeoToken};
-use neo_core::smart_contract::{
-    ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, Interoperable,
-    NefFile, StorageItem, StorageKey, TriggerType,
-};
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::wallets::wallet::{Wallet, WalletError, WalletResult};
-use neo_core::wallets::{KeyPair, StandardWalletAccount, WalletAccount};
-use neo_core::{NeoSystem, ProtocolSettings, UInt160, WitnessScope};
+use neo_payloads::signer::Signer;
+use neo_payloads::transaction::Transaction;
+use neo_payloads::witness::Witness;
+use neo_storage::persistence::transaction::apply_tracked_items;
+use neo_serialization::BinarySerializer;
+use neo_execution::helper::Helper as ContractHelper;
+use neo_execution::iterators::{IteratorInterop, StorageIterator};
+use neo_manifest::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition};
+use neo_native_contracts::{ContractManagement, CryptoLib, NativeContract, NeoToken};
+use neo_execution::{ApplicationEngine, ContractState, Interoperable, TriggerType};
+use neo_manifest::NefFile;
+use neo_primitives::{ContractParameterType, FindOptions};
+use neo_storage::{StorageItem, StorageKey};
+use neo_execution::contract::Contract;
+use neo_wallets::wallet_helper as address_helper;
+use neo_wallets::wallet::{Wallet, WalletError, WalletResult};
+use neo_wallets::{KeyPair, StandardWalletAccount, WalletAccount};
+use neo_config::ProtocolSettings;
+use neo_primitives::{UInt160, WitnessScope};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::vm_runtime::InteropInterface as VmInteropInterface;
+use neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode};
 use num_bigint::BigInt;
 use serde_json::{json, Value};
@@ -41,7 +41,7 @@ fn find_handler<'a>(
 }
 
 fn make_server(config: RpcServerConfig) -> crate::server::rpc_server::RpcServer {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     crate::server::rpc_server::RpcServer::new(system, config)
 }
 
@@ -53,35 +53,34 @@ fn assert_invalid_params_data(err: &crate::server::rpc_exception::RpcException, 
 
 struct TestWallet {
     name: String,
-    account: Arc<dyn WalletAccount>,
-}
+    account: Arc<dyn WalletAccount>}
 
 #[async_trait::async_trait]
 impl Wallet for TestWallet {
     fn name(&self) -> &str {
         &self.name
-    }
+   }
 
     fn path(&self) -> Option<&str> {
         None
-    }
+   }
 
-    fn version(&self) -> &neo_core::wallets::Version {
-        static VERSION: neo_core::wallets::Version = neo_core::wallets::Version::new(1, 0, 0);
+    fn version(&self) -> &neo_wallets::Version {
+        static VERSION: neo_wallets::Version = neo_wallets::Version::new(1, 0, 0);
         &VERSION
-    }
+   }
 
     async fn change_password(&self, _old: &str, _new: &str) -> WalletResult<bool> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     fn contains(&self, script_hash: &UInt160) -> bool {
         &self.account.script_hash() == script_hash
-    }
+   }
 
     async fn create_account(&self, _private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn create_account_with_contract(
         &self,
@@ -89,46 +88,46 @@ impl Wallet for TestWallet {
         _key_pair: Option<KeyPair>,
     ) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn create_account_watch_only(
         &self,
         _script_hash: UInt160,
     ) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn delete_account(&self, _script_hash: &UInt160) -> WalletResult<bool> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn export(&self, _path: &str, _password: &str) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>> {
         if &self.account.script_hash() == script_hash {
             Some(Arc::clone(&self.account))
-        } else {
+       } else {
             None
-        }
-    }
+       }
+   }
 
     fn get_accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
         vec![Arc::clone(&self.account)]
-    }
+   }
 
-    async fn get_available_balance(&self, _asset_id: &neo_core::UInt256) -> WalletResult<i64> {
+    async fn get_available_balance(&self, _asset_id: &neo_primitives::UInt256) -> WalletResult<i64> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn import_wif(&self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn import_nep2(
         &self,
@@ -136,37 +135,37 @@ impl Wallet for TestWallet {
         _password: &str,
     ) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> WalletResult<Vec<u8>> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
-    async fn sign_transaction(&self, _transaction: &mut neo_core::Transaction) -> WalletResult<()> {
+    async fn sign_transaction(&self, _transaction: &mut neo_payloads::Transaction) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     async fn unlock(&self, _password: &str) -> WalletResult<bool> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     fn lock(&self) {}
 
     async fn verify_password(&self, _password: &str) -> WalletResult<bool> {
         Ok(false)
-    }
+   }
 
     async fn save(&self) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 
     fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
         Some(Arc::clone(&self.account))
-    }
+   }
 
     async fn set_default_account(&self, _script_hash: &UInt160) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
-    }
+   }
 }
 
 fn signature_contract_for_keypair(key_pair: &KeyPair) -> Contract {
@@ -174,26 +173,17 @@ fn signature_contract_for_keypair(key_pair: &KeyPair) -> Contract {
     Contract::create(vec![ContractParameterType::Signature], script)
 }
 
-fn fund_gas(system: &Arc<NeoSystem>, account: UInt160, amount: i64) {
-    let mut store = system.context().store_snapshot_cache();
-    let gas_id = neo_core::smart_contract::native::NativeRegistry::new()
-        .get_by_name("GasToken")
-        .expect("gas token")
-        .id();
-    let key = StorageKey::create_with_uint160(
-        gas_id,
-        neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT,
-        &account,
-    );
-    store.add(key, StorageItem::from_bigint(BigInt::from(amount)));
+fn fund_gas(system: &Arc<neo_system::Node>, account: UInt160, amount: i64) {
+    let mut store = system.store_cache();
+    crate::server::test_support::seed_gas_balance(&mut store, &account, BigInt::from(amount));
     store.commit();
 }
 
-fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
-    let mut store_cache = system.context().store_snapshot_cache();
+fn deploy_verify_contract(system: &Arc<neo_system::Node>) -> UInt160 {
+    let mut store_cache = system.store_cache();
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
-    let mut builder = neo_core::ScriptBuilder::new();
+    let mut builder = neo_script_builder::ScriptBuilder::new();
     builder.emit_push_bool(true);
     builder.emit_opcode(OpCode::RET);
     let nef = NefFile::new("test".to_string(), builder.to_array());
@@ -223,7 +213,7 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         Some(Arc::new(tx)),
         Arc::clone(&snapshot),
         None,
-        system.settings().clone(),
+        system.settings().as_ref().clone(),
         50_000_000_000,
         None,
     )
@@ -233,7 +223,9 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         .call_native_contract(
             ContractManagement::new().hash(),
             "deploy",
-            &[nef.to_bytes(), manifest_bytes, Vec::new()],
+            // Two-argument overload: the optional `data` argument is
+            // `StackItem::Null` exactly as in C# `Deploy(nef, manifest)`.
+            &[nef.to_bytes(), manifest_bytes],
         )
         .expect("deploy");
 
@@ -554,16 +546,16 @@ async fn invokescript_with_diagnostics_includes_invoked_contract() {
     fn collect_hashes(node: &Value, output: &mut Vec<String>) {
         let Some(obj) = node.as_object() else {
             return;
-        };
+       };
         if let Some(hash) = obj.get("hash").and_then(Value::as_str) {
             output.push(hash.to_string());
-        }
+       }
         if let Some(children) = obj.get("call").and_then(Value::as_array) {
             for child in children {
                 collect_hashes(child, output);
-            }
-        }
-    }
+           }
+       }
+   }
 
     let mut hashes = Vec::new();
     collect_hashes(invoked, &mut hashes);
@@ -598,13 +590,13 @@ async fn invokescript_faults_when_gas_limit_exceeded() {
     let config = RpcServerConfig {
         max_gas_invoke: 1_000_000,
         ..Default::default()
-    };
+   };
     let max_gas = config.max_gas_invoke;
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let invokescript = find_handler(&handlers, "invokescript");
 
-    let mut builder = neo_core::ScriptBuilder::new();
+    let mut builder = neo_script_builder::ScriptBuilder::new();
     builder.emit_jump(OpCode::JMP_L, 0).expect("jump loop");
     let script = builder.to_array();
 
@@ -672,8 +664,8 @@ async fn invokefunction_rejects_invalid_signer_scope() {
         "signer": {
             "account": UInt160::zero().to_string(),
             "scopes": "InvalidScopeValue"
-        }
-    }]);
+       }
+   }]);
     let params = [
         Value::String(UInt160::zero().to_string()),
         Value::String("symbol".to_string()),
@@ -694,8 +686,8 @@ async fn invokefunction_rejects_invalid_signer_account() {
         "signer": {
             "account": "NotAValidHash160",
             "scopes": "CalledByEntry"
-        }
-    }]);
+       }
+   }]);
     let params = [
         Value::String(NeoToken::new().hash().to_string()),
         Value::String("symbol".to_string()),
@@ -716,12 +708,12 @@ async fn invokefunction_rejects_invalid_witness_invocation() {
         "signer": {
             "account": UInt160::zero().to_string(),
             "scopes": "CalledByEntry"
-        },
+       },
         "witness": {
             "invocation": "!@#$",
             "verification": BASE64_STANDARD.encode([0x01])
-        }
-    }]);
+       }
+   }]);
     let params = [
         Value::String(NeoToken::new().hash().to_string()),
         Value::String("symbol".to_string()),
@@ -742,12 +734,12 @@ async fn invokefunction_rejects_invalid_witness_verification() {
         "signer": {
             "account": UInt160::zero().to_string(),
             "scopes": "CalledByEntry"
-        },
+       },
         "witness": {
             "invocation": BASE64_STANDARD.encode([0x01]),
             "verification": "!@#$"
-        }
-    }]);
+       }
+   }]);
     let params = [
         Value::String(NeoToken::new().hash().to_string()),
         Value::String("symbol".to_string()),
@@ -823,7 +815,7 @@ async fn traverse_iterator_rejects_unknown_session() {
     let config = RpcServerConfig {
         session_enabled: true,
         ..Default::default()
-    };
+   };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -843,7 +835,7 @@ async fn traverse_iterator_rejects_expired_session() {
         session_enabled: true,
         session_expiration_time: 0,
         ..Default::default()
-    };
+   };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -873,7 +865,7 @@ async fn terminate_session_returns_false_for_unknown_session() {
     let config = RpcServerConfig {
         session_enabled: true,
         ..Default::default()
-    };
+   };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let terminate = find_handler(&handlers, "terminatesession");
@@ -889,7 +881,7 @@ async fn traverse_iterator_rejects_count_limit_exceeded() {
         session_enabled: true,
         max_iterator_result_items: 1,
         ..Default::default()
-    };
+   };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -908,7 +900,7 @@ async fn traverse_iterator_rejects_invalid_count_params_with_stable_messages() {
     let config = RpcServerConfig {
         session_enabled: true,
         ..Default::default()
-    };
+   };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -923,7 +915,7 @@ async fn traverse_iterator_rejects_invalid_count_params_with_stable_messages() {
         let params = [session_id.clone(), iterator_id.clone(), count];
         let err = (traverse.callback())(&server, &params).expect_err("invalid count");
         assert_invalid_params_data(&err, "traverseiterator expects integer parameter 3");
-    }
+   }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -932,7 +924,7 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
         session_enabled: true,
         max_iterator_result_items: 10,
         ..Default::default()
-    };
+   };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -964,7 +956,7 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
         engine
             .store_storage_iterator(iterator)
             .expect("store iterator")
-    };
+   };
     let interop = Arc::new(IteratorInterop::new(iterator_id)) as Arc<dyn VmInteropInterface>;
     let iterator_uuid = session
         .register_iterator_interface(&interop)
@@ -1004,7 +996,7 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
             .expect("value bytes");
         assert_eq!(key_bytes, expected_key);
         assert_eq!(value_bytes, expected_value);
-    }
+   }
 
     let tail = (traverse.callback())(&server, &params).expect("traverse tail");
     assert!(tail.as_array().expect("array").is_empty());
@@ -1032,15 +1024,14 @@ async fn invokefunction_with_wallet_returns_signed_tx() {
     fund_gas(&server.system(), account_hash, 100_000_000);
     server.set_wallet(Some(Arc::new(TestWallet {
         name: "test".to_string(),
-        account: Arc::new(account),
-    })));
+        account: Arc::new(account)})));
 
     let signers = json!([{
         "signer": {
             "account": account_hash.to_string(),
             "scopes": "CalledByEntry"
-        }
-    }]);
+       }
+   }]);
     let params = [
         Value::String(NeoToken::new().hash().to_string()),
         Value::String("totalSupply".to_string()),
@@ -1066,15 +1057,14 @@ async fn invokefunction_with_watch_only_wallet_returns_pending_signature() {
     fund_gas(&server.system(), account_hash, 100_000_000);
     server.set_wallet(Some(Arc::new(TestWallet {
         name: "test".to_string(),
-        account: Arc::new(account),
-    })));
+        account: Arc::new(account)})));
 
     let signers = json!([{
         "signer": {
             "account": account_hash.to_string(),
             "scopes": "CalledByEntry"
-        }
-    }]);
+       }
+   }]);
     let params = [
         Value::String(NeoToken::new().hash().to_string()),
         Value::String("totalSupply".to_string()),
@@ -1106,19 +1096,18 @@ async fn invokefunction_with_missing_wallet_account_sets_exception() {
     let account = StandardWalletAccount::new_with_key(key_pair, Some(contract), settings, None);
     server.set_wallet(Some(Arc::new(TestWallet {
         name: "test".to_string(),
-        account: Arc::new(account),
-    })));
+        account: Arc::new(account)})));
 
     let missing_account = UInt160::from_bytes(&[0x42; 20]).expect("missing account hash");
     let missing_address =
-        WalletHelper::to_address(&missing_account, server.system().settings().address_version);
+        address_helper::to_address(&missing_account, server.system().settings().address_version);
 
     let signers = json!([{
         "signer": {
             "account": missing_account.to_string(),
             "scopes": "CalledByEntry"
-        }
-    }]);
+       }
+   }]);
     let params = [
         Value::String(NeoToken::new().hash().to_string()),
         Value::String("totalSupply".to_string()),
@@ -1159,7 +1148,7 @@ async fn get_unclaimed_gas_returns_address_string() {
     let get_unclaimed_gas = find_handler(&handlers, "getunclaimedgas");
 
     let address =
-        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
+        address_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (get_unclaimed_gas.callback())(&server, &params).expect("unclaimed gas");
 

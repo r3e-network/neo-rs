@@ -1,6 +1,7 @@
 use super::super::{DEDUP_CACHE_TTL, FINISHED_CACHE_TTL, OracleService, OracleServiceSettings};
-use neo_core::protocol_settings::ProtocolSettings;
+use neo_config::ProtocolSettings;
 use std::time::{Duration, SystemTime};
+use std::sync::Arc;
 
 fn oracle_service(enable_deduplication: bool) -> OracleService {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -8,16 +9,16 @@ fn oracle_service(enable_deduplication: bool) -> OracleService {
         .build()
         .expect("tokio runtime");
     let _guard = runtime.enter();
-    let settings = ProtocolSettings::testnet();
+    let settings = Arc::new(ProtocolSettings::testnet());
     let system =
-        neo_core::neo_system::NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        neo_system::Node::new(Arc::clone(&settings), None, None).expect("neo system");
     let oracle_settings = OracleServiceSettings {
         network: settings.network,
         enable_deduplication,
         ..Default::default()
     };
 
-    OracleService::new(oracle_settings, system).expect("oracle service")
+    OracleService::new(oracle_settings, Arc::new(system)).expect("oracle service")
 }
 
 #[test]

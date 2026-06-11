@@ -42,5 +42,4 @@ pub use wallet_api::WalletApi;
 
 // Re-export commonly used types
 pub use models::{
-    RpcBlock, RpcBlockHeader, RpcRequest, RpcResponse, RpcResponseError, RpcTransaction,
-};
+    RpcBlock, RpcBlockHeader, RpcRequest, RpcResponse, RpcResponseError, RpcTransaction};

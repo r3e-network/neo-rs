@@ -1,8 +1,9 @@
 use super::super::super::utils::{filter_json, ledger_height, select_oracle_key, sign_transaction};
 use super::super::super::{OracleService, OracleServiceError};
-use neo_core::network::p2p::payloads::{OracleResponse, OracleResponseCode};
-use neo_core::persistence::DataCache;
-use neo_core::smart_contract::native::{OracleContract, Role, RoleManagement};
+use neo_payloads::helper::get_sign_data_vec;
+use neo_payloads::{OracleResponse, OracleResponseCode};
+use neo_storage::persistence::DataCache;
+use neo_native_contracts::{OracleContract, Role, RoleManagement};
 use tracing::{debug, warn};
 
 impl OracleService {
@@ -10,7 +11,7 @@ impl OracleService {
         &self,
         snapshot: &DataCache,
         request_id: u64,
-        request: neo_core::smart_contract::native::OracleRequest,
+        request: neo_native_contracts::OracleRequest,
     ) -> Result<(), OracleServiceError> {
         debug!(
             target: "neo::oracle",
@@ -65,7 +66,7 @@ impl OracleService {
                 &pending_request,
                 &mut response,
                 &oracle_nodes,
-                self.system.settings(),
+                &self.system.settings(),
                 false,
             )?;
 
@@ -79,7 +80,7 @@ impl OracleService {
                 &pending_request,
                 &mut backup_response,
                 &oracle_nodes,
-                self.system.settings(),
+                &self.system.settings(),
                 true,
             )?;
 

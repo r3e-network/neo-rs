@@ -1,6 +1,6 @@
 //! Oracle service settings (matches Neo.Plugins.OracleService configuration).
 
-use neo_core::unhandled_exception_policy::UnhandledExceptionPolicy;
+use neo_primitives::unhandled_exception_policy::UnhandledExceptionPolicy;
 use std::time::Duration;
 
 /// Maximum response size for oracle requests (64KB).

@@ -8,17 +8,15 @@ use crate::server::rpc_server_blockchain::RpcServerBlockchain;
 use crate::server::rpc_server_node::RpcServerNode;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::neo_io::BinaryWriter;
-use neo_core::neo_system::NeoSystem;
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::wallets::KeyPair;
-use neo_core::WitnessScope;
+use neo_payloads::get_sign_data_vec;
+use neo_payloads::signer::Signer;
+use neo_payloads::transaction::Transaction;
+use neo_payloads::witness::Witness;
+use neo_config::ProtocolSettings;
+use neo_native_contracts::LedgerContract;
+use neo_storage::{StorageItem, StorageKey};
+use neo_wallets::KeyPair;
+use neo_primitives::WitnessScope;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use parking_lot::RwLock;
@@ -35,7 +33,7 @@ fn build_test_routes(
 }
 
 fn build_filters_with_handlers() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());
@@ -47,8 +45,7 @@ fn build_filters_with_handlers() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
         auth: Arc::new(None),
         rate_limiter: None,
         cors: None,
-        max_batch_size: 1024,
-    };
+        max_batch_size: 1024};
     (server, filters)
 }
 
@@ -58,8 +55,7 @@ fn per_method_rate_limiting_blocks_expensive_methods() {
 
     let config = RateLimitConfig {
         max_rps: 100,
-        burst: 100,
-    };
+        burst: 100};
     let limiter = Arc::new(GovernorRateLimiter::new(config.clone()));
     let ip: IpAddr = "127.0.0.1".parse().unwrap();
 
@@ -100,7 +96,7 @@ fn rate_limit_check_result_is_handled_properly() {
 }
 
 fn build_filters_with_panic_handler() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(vec![RpcHandler::new(
@@ -115,8 +111,7 @@ fn build_filters_with_panic_handler() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
         auth: Arc::new(None),
         rate_limiter: None,
         cors: None,
-        max_batch_size: 1024,
-    };
+        max_batch_size: 1024};
     (server, filters)
 }
 
@@ -124,7 +119,7 @@ fn build_filters_with_auth(
     auth: Arc<Option<BasicAuth>>,
     include_wallet: bool,
 ) -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());
@@ -132,7 +127,7 @@ fn build_filters_with_auth(
         server.register_handlers(
             crate::server::rpc_server_wallet::RpcServerWallet::register_handlers(),
         );
-    }
+   }
 
     let server = Arc::new(RwLock::new(server));
     let filters = RpcFilters {
@@ -141,8 +136,7 @@ fn build_filters_with_auth(
         auth,
         rate_limiter: None,
         cors: None,
-        max_batch_size: 1024,
-    };
+        max_batch_size: 1024};
     (server, filters)
 }
 
@@ -150,8 +144,7 @@ fn build_filters_with_auth(
 fn verify_basic_auth_accepts_valid_credentials() {
     let auth = BasicAuth {
         user: b"testuser".to_vec(),
-        pass: b"testpass".to_vec(),
-    };
+        pass: b"testpass".to_vec()};
     let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:testpass"));
     assert!(verify_basic_auth(Some(&header), &auth));
 }
@@ -160,8 +153,7 @@ fn verify_basic_auth_accepts_valid_credentials() {
 fn verify_basic_auth_rejects_invalid_credentials() {
     let auth = BasicAuth {
         user: b"testuser".to_vec(),
-        pass: b"testpass".to_vec(),
-    };
+        pass: b"testpass".to_vec()};
     let wrong_user = format!("Basic {}", BASE64_STANDARD.encode("wrong:testpass"));
     let wrong_pass = format!("Basic {}", BASE64_STANDARD.encode("testuser:wrong"));
     let wrong_scheme = format!("Bearer {}", BASE64_STANDARD.encode("testuser:testpass"));
@@ -178,7 +170,7 @@ async fn cors_echoes_matching_origin_from_allowlist() {
         enable_cors: true,
         allow_origins: vec!["https://a.example".into(), "https://b.example".into()],
         ..Default::default()
-    };
+   };
 
     let routes = build_test_routes(settings);
 
@@ -208,7 +200,7 @@ async fn cors_omits_allow_origin_for_disallowed_origin() {
         enable_cors: true,
         allow_origins: vec!["https://a.example".into()],
         ..Default::default()
-    };
+   };
 
     let routes = build_test_routes(settings);
 
@@ -233,7 +225,7 @@ async fn cors_wildcard_allows_any_origin() {
         enable_cors: true,
         allow_origins: Vec::new(),
         ..Default::default()
-    };
+   };
 
     let routes = build_test_routes(settings);
 
@@ -257,7 +249,7 @@ async fn cors_wildcard_allows_any_origin() {
 #[tokio::test(flavor = "multi_thread")]
 async fn process_body_rejects_malformed_json() {
     let (_server, filters) = build_filters_with_handlers();
-    let (response, unauthorized) = process_body(&filters, None, b"{ invalid json", None);
+    let (response, unauthorized) = process_body(&filters, None, b"{invalid json", None);
     assert!(!unauthorized);
 
     let response = response.expect("response");
@@ -340,7 +332,7 @@ async fn process_body_reports_already_exists_for_sendrawtransaction() {
     let settings = ProtocolSettings::default();
     let keypair = KeyPair::from_private_key(&[0x55u8; 32]).expect("keypair");
     let tx = build_signed_transaction(&settings, &keypair, 2, 0);
-    let mut store = server.read().system().context().store_snapshot_cache();
+    let mut store = server.read().system().store_cache();
     persist_transaction_record(&mut store, &tx, 1);
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -348,8 +340,7 @@ async fn process_body_reports_already_exists_for_sendrawtransaction() {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "sendrawtransaction",
-        "params": [payload],
-    });
+        "params": [payload]});
     let body = serde_json::to_vec(&request).expect("serialize body");
     let (response, unauthorized) =
         tokio::task::block_in_place(|| process_body(&filters, None, &body, None));
@@ -403,27 +394,26 @@ fn build_signed_transaction(
 }
 
 fn persist_transaction_record(
-    store: &mut neo_core::persistence::StoreCache,
+    store: &mut neo_storage::persistence::StoreCache,
     tx: &Transaction,
     block_index: u32,
 ) {
     const PREFIX_TRANSACTION: u8 = 0x0b;
-    const RECORD_KIND_TRANSACTION: u8 = 0x01;
 
-    let mut writer = BinaryWriter::new();
-    writer
-        .write_u8(RECORD_KIND_TRANSACTION)
-        .expect("record kind");
-    writer.write_u32(block_index).expect("block index");
-    writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
-    let tx_bytes = tx.to_bytes();
-    writer.write_var_bytes(&tx_bytes).expect("tx bytes");
+    // `Prefix_Transaction` value: the C# `TransactionState` interoperable
+    // stack item serialized with `BinarySerializer`, matching the reader.
+    let record = neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+        block_index,
+        VMState::NONE,
+        tx,
+    )
+    .expect("serialize TransactionState record");
 
     let mut key_bytes = Vec::with_capacity(1 + 32);
     key_bytes.push(PREFIX_TRANSACTION);
     key_bytes.extend_from_slice(&tx.hash().to_bytes());
     let key = StorageKey::new(LedgerContract::ID, key_bytes);
-    store.add(key, StorageItem::from_bytes(writer.to_bytes()));
+    store.add(key, StorageItem::from_bytes(record));
     store.commit();
 }
 
@@ -450,8 +440,7 @@ async fn process_body_allows_wallet_method_without_auth_config() {
 async fn process_body_rejects_invalid_auth_header() {
     let auth = Arc::new(Some(BasicAuth {
         user: b"testuser".to_vec(),
-        pass: b"testpass".to_vec(),
-    }));
+        pass: b"testpass".to_vec()}));
     let (_server, filters) = build_filters_with_auth(auth, false);
     let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
 
@@ -474,8 +463,7 @@ async fn process_body_rejects_invalid_auth_header() {
 async fn process_body_rejects_missing_auth_header() {
     let auth = Arc::new(Some(BasicAuth {
         user: b"testuser".to_vec(),
-        pass: b"testpass".to_vec(),
-    }));
+        pass: b"testpass".to_vec()}));
     let (_server, filters) = build_filters_with_auth(auth, false);
     let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
 
@@ -497,8 +485,7 @@ async fn process_body_rejects_missing_auth_header() {
 async fn process_body_accepts_valid_auth_header() {
     let auth = Arc::new(Some(BasicAuth {
         user: b"testuser".to_vec(),
-        pass: b"testpass".to_vec(),
-    }));
+        pass: b"testpass".to_vec()}));
     let (_server, filters) = build_filters_with_auth(auth, false);
     let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
 

@@ -1,16 +1,14 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
-use neo_core::smart_contract::CallFlags;
+use neo_script_builder::ScriptBuilder;
+use neo_execution::application_engine::TEST_MODE_GAS;
+use neo_manifest::CallFlags;
 use neo_tokens_tracker::{
     find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer,
-    TokensTrackerService,
-};
+    TokensTrackerService};
 use neo_tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::UInt160;
+use neo_primitives::UInt160;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
@@ -26,7 +24,6 @@ pub(super) fn tracker_service(
     server
         .system()
         .get_service::<TokensTrackerService>()
-        .map_err(|err| internal_error(err.to_string()))?
         .ok_or_else(|| RpcException::from(RpcError::method_not_found()))
 }
 
@@ -45,17 +42,17 @@ pub(super) fn parse_address_param(
     if UInt160::try_parse(text, &mut parsed) {
         if let Some(value) = parsed {
             return Ok(value);
-        }
-    }
+       }
+   }
 
-    WalletHelper::to_script_hash(text, address_version)
+    neo_wallets::wallet_helper::to_script_hash(text, address_version)
         .map_err(|_| invalid_params(format!("Invalid address: {text}")))
 }
 
 pub(super) fn parse_optional_u64(value: Option<&Value>) -> Result<u64, RpcException> {
     let Some(value) = value else {
         return Ok(0);
-    };
+   };
     match value {
         Value::Null => Ok(0),
         Value::Number(num) => num
@@ -65,8 +62,7 @@ pub(super) fn parse_optional_u64(value: Option<&Value>) -> Result<u64, RpcExcept
             .trim()
             .parse::<u64>()
             .map_err(|_| invalid_params("Expected unsigned integer")),
-        _ => Err(invalid_params("Expected unsigned integer")),
-    }
+        _ => Err(invalid_params("Expected unsigned integer"))}
 }
 
 pub(super) fn parse_token_id_param(
@@ -82,7 +78,7 @@ pub(super) fn parse_token_id_param(
 }
 
 pub(super) fn collect_transfers(
-    store: &dyn neo_core::persistence::Store,
+    store: &dyn neo_storage::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -111,18 +107,18 @@ pub(super) fn collect_transfers(
         right_ts
             .cmp(&left_ts)
             .then_with(|| left_index.cmp(right_index))
-    });
+   });
 
     let mut entries = Vec::new();
     for (_, (key, value)) in limited {
         let transfer_address = if value.user_script_hash == UInt160::zero() {
             Value::Null
-        } else {
-            Value::String(WalletHelper::to_address(
+       } else {
+            Value::String(neo_wallets::wallet_helper::to_address(
                 &value.user_script_hash,
                 address_version,
             ))
-        };
+       };
         entries.push(json!({
             "timestamp": key.timestamp_ms(),
             "assethash": key.asset_script_hash().to_string(),
@@ -130,15 +126,14 @@ pub(super) fn collect_transfers(
             "amount": value.amount.to_string(),
             "blockindex": value.block_index,
             "transfernotifyindex": key.block_xfer_notification_index(),
-            "txhash": value.tx_hash.to_string(),
-        }));
-    }
+            "txhash": value.tx_hash.to_string()}));
+   }
 
     Ok(Value::Array(entries))
 }
 
 pub(super) fn collect_nep11_transfers(
-    store: &dyn neo_core::persistence::Store,
+    store: &dyn neo_storage::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -167,18 +162,18 @@ pub(super) fn collect_nep11_transfers(
         right_ts
             .cmp(&left_ts)
             .then_with(|| left_index.cmp(right_index))
-    });
+   });
 
     let mut entries = Vec::new();
     for (_, (key, value)) in limited {
         let transfer_address = if value.user_script_hash == UInt160::zero() {
             Value::Null
-        } else {
-            Value::String(WalletHelper::to_address(
+       } else {
+            Value::String(neo_wallets::wallet_helper::to_address(
                 &value.user_script_hash,
                 address_version,
             ))
-        };
+       };
         entries.push(json!({
             "timestamp": key.timestamp_ms(),
             "assethash": key.asset_script_hash().to_string(),
@@ -187,24 +182,23 @@ pub(super) fn collect_nep11_transfers(
             "blockindex": value.block_index,
             "transfernotifyindex": key.block_xfer_notification_index(),
             "txhash": value.tx_hash.to_string(),
-            "tokenid": hex::encode(&key.token),
-        }));
-    }
+            "tokenid": hex::encode(&key.token)}));
+   }
 
     Ok(Value::Array(entries))
 }
 
 pub(super) fn query_asset_metadata(
-    snapshot: &neo_core::persistence::DataCache,
-    settings: &neo_core::protocol_settings::ProtocolSettings,
+    snapshot: &neo_storage::persistence::DataCache,
+    settings: &neo_config::ProtocolSettings,
     asset: &UInt160,
 ) -> Option<(String, u32)> {
     let mut script = ScriptBuilder::new();
     emit_contract_call(&mut script, asset, "decimals").ok()?;
     emit_contract_call(&mut script, asset, "symbol").ok()?;
 
-    let mut engine = neo_core::smart_contract::ApplicationEngine::new(
-        neo_core::smart_contract::TriggerType::Application,
+    let mut engine = neo_execution::ApplicationEngine::new(
+        neo_primitives::TriggerType::Application,
         None,
         Arc::new(snapshot.clone()),
         None,
@@ -219,7 +213,7 @@ pub(super) fn query_asset_metadata(
     engine.execute().ok()?;
     if engine.state() != VMState::HALT {
         return None;
-    }
+   }
 
     let result_stack = engine.result_stack();
     let symbol_item = result_stack.peek(0).ok()?;

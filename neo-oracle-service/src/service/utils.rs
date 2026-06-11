@@ -1,11 +1,12 @@
 use super::{OracleServiceError, FILTER_MAX_NEST};
 use neo_crypto::ECPoint;
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::Transaction;
-use neo_core::persistence::DataCache;
-use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::Contract;
-use neo_core::wallets::{KeyPair, Wallet};
+use neo_network;
+use neo_payloads::Transaction;
+use neo_payloads::helper::get_sign_data_vec;
+use neo_storage::persistence::DataCache;
+use neo_native_contracts::LedgerContract;
+use neo_execution::Contract;
+use neo_wallets::{KeyPair, Wallet};
 use neo_json::JToken;
 
 pub(super) fn sign_transaction(tx: &Transaction, key: &KeyPair, network: u32) -> Vec<u8> {

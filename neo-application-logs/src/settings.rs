@@ -1,6 +1,6 @@
 //! Settings for the ApplicationLogs plugin (mirrors Neo.Plugins.ApplicationLogs).
 
-use neo_core::UnhandledExceptionPolicy;
+use neo_primitives::UnhandledExceptionPolicy;
 
 /// Configuration for application log storage.
 #[derive(Debug, Clone)]

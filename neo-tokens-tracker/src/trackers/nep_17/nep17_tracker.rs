@@ -7,15 +7,17 @@ use super::super::token_transfer::TokenTransfer;
 use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
 use super::nep17_balance_key::Nep17BalanceKey;
 use super::nep17_transfer_key::Nep17TransferKey;
-use neo_core::extensions::log_level::LogLevel;
-use neo_core::neo_ledger::{ApplicationExecuted, Block};
-use neo_core::persistence::DataCache;
-use neo_core::script_builder::ScriptBuilder;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::native::contract_management::ContractManagement;
-use neo_core::smart_contract::ApplicationEngine;
-use neo_core::neo_vm::StackItem;
-use neo_core::{NeoSystem, UInt160};
+use neo_extensions::log_level::LogLevel;
+use neo_block::ApplicationExecuted;
+use neo_payloads::Block;
+use neo_storage::persistence::DataCache;
+use neo_script_builder::ScriptBuilder;
+use neo_manifest::CallFlags;
+use neo_native_contracts::contract_management::ContractManagement;
+use neo_execution::ApplicationEngine;
+use neo_vm::StackItem;
+use neo_primitives::UInt160;
+use neo_system::Node;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_traits::Zero;
@@ -42,10 +44,10 @@ pub struct Nep17Tracker {
 impl Nep17Tracker {
     /// Creates a new NEP-17 tracker.
     pub fn new(
-        db: Arc<dyn neo_core::persistence::Store>,
+        db: Arc<dyn neo_storage::persistence::Store>,
         max_results: u32,
         should_track_history: bool,
-        neo_system: Arc<NeoSystem>,
+        neo_system: Arc<Node>,
     ) -> Self {
         Self {
             base: TrackerBase::new(db, max_results, should_track_history, neo_system),
@@ -56,7 +58,7 @@ impl Nep17Tracker {
 
     fn handle_notification(
         &mut self,
-        container: Option<&Arc<dyn neo_core::Verifiable>>,
+        container: Option<&Arc<dyn neo_primitives::Verifiable>>,
         asset: &UInt160,
         state_items: &[StackItem],
         balance_records: &mut HashSet<BalanceChangeRecord>,
@@ -83,7 +85,7 @@ impl Nep17Tracker {
         }
 
         if let Some(container) = container {
-            if let Some(tx) = container.as_any().downcast_ref::<neo_core::network::p2p::payloads::Transaction>() {
+            if let Some(tx) = container.as_any().downcast_ref::<neo_payloads::Transaction>() {
                 self.record_transfer_history(&record, &tx.hash(), transfer_index);
             }
         }
@@ -92,7 +94,7 @@ impl Nep17Tracker {
     fn record_transfer_history(
         &mut self,
         record: &TransferRecord,
-        tx_hash: &neo_core::UInt256,
+        tx_hash: &neo_primitives::UInt256,
         transfer_index: &mut u32,
     ) {
         if !self.base.should_track_history {
@@ -152,11 +154,11 @@ impl Nep17Tracker {
         }
 
         let mut engine = match ApplicationEngine::new(
-            neo_core::smart_contract::TriggerType::Application,
+            neo_primitives::TriggerType::Application,
             None,
             Arc::new(snapshot.clone()),
             self.current_block.clone(),
-            self.base.neo_system.settings().clone(),
+            self.base.neo_system.settings().as_ref().clone(),
             17_000_000,
             None,
         ) {
@@ -212,7 +214,7 @@ impl Tracker for Nep17Tracker {
 
     fn on_persist(
         &mut self,
-        _system: &NeoSystem,
+        _system: &Node,
         block: &Block,
         snapshot: &DataCache,
         executed_list: &[ApplicationExecuted],

@@ -1,5 +1,5 @@
 use super::super::OracleService;
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use tokio::task::JoinHandle;
 
 #[cfg(feature = "oracle")]

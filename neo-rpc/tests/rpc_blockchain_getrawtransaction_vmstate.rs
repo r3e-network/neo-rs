@@ -1,14 +1,16 @@
 #![cfg(feature = "server")]
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::ledger::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
-use neo_core::network::p2p::payloads::{
+use neo_payloads::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
+use neo_io::{MemoryReader, Serializable, SerializableExtensions};
+use neo_payloads::{
     signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
 };
-use neo_core::smart_contract::native::{trimmed_block::TrimmedBlock, LedgerContract};
-use neo_core::smart_contract::StorageKey;
-use neo_core::{UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
+use neo_native_contracts::LedgerContract;
+use neo_payloads::TrimmedBlock;
+use neo_storage::StorageKey;
+use neo_payloads::Witness as LedgerWitness;
+use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
 use neo_vm_rs::VmState as VMState;
 use serde_json::Value;
@@ -33,7 +35,7 @@ fn make_transaction(nonce: u32) -> Transaction {
 }
 
 fn make_ledger_block(
-    store: &neo_core::persistence::StoreCache,
+    store: &neo_storage::persistence::StoreCache,
     index: u32,
     transactions: Vec<Transaction>,
 ) -> LedgerBlock {
@@ -42,7 +44,7 @@ fn make_ledger_block(
         UInt256::zero()
     } else {
         ledger
-            .get_block_hash_by_index(store, index - 1)
+            .get_block_hash(store.data_cache(), index - 1)
             .expect("previous hash lookup")
             .unwrap_or_else(UInt256::zero)
     };
@@ -58,26 +60,27 @@ fn make_ledger_block(
     LedgerBlock::from_parts(header, transactions)
 }
 
-fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBlock) {
+fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerBlock) {
     const PREFIX_BLOCK: u8 = 0x05;
     const PREFIX_BLOCK_HASH: u8 = 0x09;
     const PREFIX_TRANSACTION: u8 = 0x0b;
     const PREFIX_CURRENT_BLOCK: u8 = 0x0c;
-    const RECORD_KIND_TRANSACTION: u8 = 0x01;
 
     let hash = block.hash();
     let index = block.index();
 
+    // C# `CreateStorageKey(Prefix_BlockHash, uint)` uses `KeyBuilder.AddBigEndian`
+    // — the index is stored big-endian so the server's lookup matches.
     let mut hash_key_bytes = Vec::with_capacity(1 + 4);
     hash_key_bytes.push(PREFIX_BLOCK_HASH);
-    hash_key_bytes.extend_from_slice(&index.to_le_bytes());
+    hash_key_bytes.extend_from_slice(&index.to_be_bytes());
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(
         hash_key,
-        neo_core::smart_contract::StorageItem::from_bytes(hash.to_bytes().to_vec()),
+        neo_storage::StorageItem::from_bytes(hash.to_bytes().to_vec()),
     );
 
-    let trimmed = TrimmedBlock::from_block(block);
+    let trimmed = TrimmedBlock::from_block(block).expect("trim block");
     let trimmed_bytes = trimmed.to_array().expect("serialize trimmed block");
     let mut block_key_bytes = Vec::with_capacity(1 + 32);
     block_key_bytes.push(PREFIX_BLOCK);
@@ -85,17 +88,22 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
     let block_key = StorageKey::new(LedgerContract::ID, block_key_bytes);
     store.add(
         block_key,
-        neo_core::smart_contract::StorageItem::from_bytes(trimmed_bytes),
+        neo_storage::StorageItem::from_bytes(trimmed_bytes),
     );
 
     for tx in &block.transactions {
-        let mut writer = BinaryWriter::new();
-        writer
-            .write_u8(RECORD_KIND_TRANSACTION)
-            .expect("record kind");
-        writer.write_u32(index).expect("block index");
-        writer.write_u8(VMState::HALT.to_byte()).expect("vm state");
-        writer.write_var_bytes(&tx.to_bytes()).expect("tx bytes");
+        // C# `TransactionState.ToStackItem`: the persisted record is the
+        // interoperable `Struct[Integer(BlockIndex), ByteString(tx),
+        // Integer((byte)State)]` serialized with `BinarySerializer` — NOT a
+        // hand-rolled `kind/index/state/varbytes` layout. Use the canonical
+        // writer so the fixture matches what the server's reader expects.
+        let record =
+            neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+                index,
+                VMState::HALT,
+                tx,
+            )
+            .expect("serialize transaction state");
 
         let mut tx_key_bytes = Vec::with_capacity(1 + 32);
         tx_key_bytes.push(PREFIX_TRANSACTION);
@@ -103,37 +111,43 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
         let tx_key = StorageKey::new(LedgerContract::ID, tx_key_bytes);
         store.add(
             tx_key,
-            neo_core::smart_contract::StorageItem::from_bytes(writer.into_bytes()),
+            neo_storage::StorageItem::from_bytes(record),
         );
     }
 
-    let mut current_bytes = Vec::with_capacity(36);
-    current_bytes.extend_from_slice(&hash.to_bytes());
-    current_bytes.extend_from_slice(&index.to_le_bytes());
+    // C# `HashIndexState.ToStackItem`: the Prefix_CurrentBlock value is the
+    // interoperable `Struct[ByteString(hash), Integer(index)]` serialized with
+    // `BinarySerializer`, not a raw 32+4-byte concatenation.
+    let current_bytes = neo_native_contracts::ledger_contract::serialize_hash_index_state(
+        &hash, index,
+    )
+    .expect("serialize hash index state");
     let current_key = StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]);
     store.add(
         current_key,
-        neo_core::smart_contract::StorageItem::from_bytes(current_bytes),
+        neo_storage::StorageItem::from_bytes(current_bytes),
     );
     store.commit();
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_raw_transaction_verbose_omits_vmstate() {
-    let system = neo_core::neo_system::NeoSystem::new(
-        neo_core::protocol_settings::ProtocolSettings::default(),
-        None,
-        None,
-    )
-    .expect("system to start");
+    let system = std::sync::Arc::new(
+        neo_system::Node::new(
+            std::sync::Arc::new(neo_config::ProtocolSettings::default()),
+            None,
+            None,
+        )
+        .expect("system to start"),
+    );
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getrawtransaction");
 
     let tx = make_transaction(7);
-    let block = make_ledger_block(&system.context().store_cache(), 1, vec![tx.clone()]);
+    let block = make_ledger_block(&system.store_cache(), 1, vec![tx.clone()]);
     let block_hash = block.hash();
-    let mut store = system.context().store_snapshot_cache();
+    let mut store = system.store_cache();
     store_block(&mut store, &block);
 
     let params = [Value::String(tx.hash().to_string()), Value::Bool(true)];

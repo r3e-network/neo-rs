@@ -662,4 +662,48 @@ mod tests {
         )
         .unwrap());
     }
+
+    #[test]
+    fn recover_public_key_round_trips_and_rejects_bad_input() {
+        use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&[0x11u8; 32]).unwrap();
+        let expected = PublicKey::from_secret_key(&secp, &sk).serialize().to_vec(); // 33B compressed
+        let message_hash = [0x42u8; 32];
+        let msg = Message::from_digest_slice(&message_hash).unwrap();
+
+        let (rec_id, compact) = secp.sign_ecdsa_recoverable(&msg, &sk).serialize_compact();
+        let v = rec_id.to_i32() as u8;
+
+        // 65-byte r||s||v with raw recovery id (0..3) recovers the signer key.
+        let mut sig = compact.to_vec();
+        sig.push(v);
+        assert_eq!(
+            Secp256k1Crypto::recover_public_key(&message_hash, &sig).unwrap(),
+            expected
+        );
+
+        // Ethereum-style v (27/28) is normalized to the same recovery id.
+        let mut sig_eth = compact.to_vec();
+        sig_eth.push(v + 27);
+        assert_eq!(
+            Secp256k1Crypto::recover_public_key(&message_hash, &sig_eth).unwrap(),
+            expected
+        );
+
+        // 64-byte EIP-2098 compact form (yParity fused into s) also recovers.
+        let mut sig_compact = compact.to_vec();
+        if v & 1 == 1 {
+            sig_compact[32] |= 0x80;
+        }
+        assert_eq!(
+            Secp256k1Crypto::recover_public_key(&message_hash, &sig_compact).unwrap(),
+            expected
+        );
+
+        // Wrong-length hash or signature is an error (C# RecoverSecp256K1 -> null).
+        assert!(Secp256k1Crypto::recover_public_key(&[0u8; 31], &sig).is_err());
+        assert!(Secp256k1Crypto::recover_public_key(&message_hash, &sig[..63]).is_err());
+    }
 }

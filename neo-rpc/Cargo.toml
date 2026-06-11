@@ -25,11 +25,11 @@ neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-config = { workspace = true, optional = true }
-neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
 neo-application-logs = { path = "../neo-application-logs", optional = true }
 neo-tokens-tracker = { path = "../neo-tokens-tracker", optional = true }
 neo-oracle-service = { path = "../neo-oracle-service", optional = true }
-neo-actors = { workspace = true, optional = true }
+neo-execution = { workspace = true, optional = true }
+neo-payloads = { workspace = true, optional = true }
 neo-json = { path = "../neo-json", optional = true }
 neo-vm-rs = { workspace = true, optional = true }
 # neo-config merged into neo-core
@@ -89,6 +89,28 @@ rand = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 subtle = { version = "2.5", optional = true }
 
+neo-block = { workspace = true }
+neo-error = { workspace = true }
+neo-extensions = { workspace = true }
+neo-manifest = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-network = { workspace = true }
+neo-script-builder = { workspace = true }
+neo-state-service = { workspace = true }
+neo-storage = { workspace = true }
+neo-system = { workspace = true }
+neo-vm = { workspace = true }
+neo-wallets = { workspace = true }
+
+neo-blockchain = { workspace = true }
+neo-mempool = { workspace = true }
+neo-serialization = { workspace = true }
+neo-services = { workspace = true, optional = true }
+
+neo-time = { workspace = true }
+neo-p2p = { workspace = true }
+neo-state-types = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 mockito = "1.0"
@@ -98,13 +120,14 @@ default = []
 server = [
     "client",  # Server uses client models for JSON serialization
     "dep:neo-config",
-    "dep:neo-core",
+    "dep:neo-services",
     "dep:neo-application-logs",
     "dep:neo-tokens-tracker",
     "dep:neo-oracle-service",
     "dep:neo-json",
     "dep:neo-vm-rs",
-    "dep:neo-actors",
+    "dep:neo-execution",
+    "dep:neo-payloads",
     "dep:warp",
     "dep:hyper",
     "dep:uuid",
@@ -131,9 +154,10 @@ server = [
 ]
 client = [
     "dep:neo-config",
-    "dep:neo-core",
     "dep:neo-json",
     "dep:neo-vm-rs",
+    "dep:neo-payloads",
+    "dep:neo-execution",
     "dep:reqwest",
     "dep:hyper",
     "dep:anyhow",

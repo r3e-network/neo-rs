@@ -2,17 +2,6 @@ use crate::UInt256;
 
 // ============ Marker Traits ============
 
-/// Trait for network messages.
-///
-/// Implementations should provide serialization for network transmission.
-pub trait NetworkMessage: Send + Sync {
-    /// Returns the command name for this message type.
-    fn command(&self) -> &str;
-
-    /// Serializes the message to bytes.
-    fn serialize(&self) -> Vec<u8>;
-}
-
 /// Trait for block data.
 ///
 /// Provides common operations on blocks without exposing internal structure.

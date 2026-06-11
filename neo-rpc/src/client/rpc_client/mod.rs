@@ -40,5 +40,4 @@ pub struct RpcClient {
     http_client: Client,
     pub(crate) protocol_settings: Arc<ProtocolSettings>,
     request_timeout: Duration,
-    hooks: RpcClientHooks,
-}
+    hooks: RpcClientHooks}

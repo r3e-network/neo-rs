@@ -19,7 +19,6 @@ neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 # ScriptBuilder + VM host live in neo-core/src/neo_vm; pure semantics in neo-vm-rs
-neo-core = { workspace = true }
 neo-vm-rs = { workspace = true }
 
 # Async runtime
@@ -40,6 +39,16 @@ thiserror = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+
+neo-script-builder = { workspace = true }
+
+
+
+neo-network = { workspace = true }
+neo-block = { workspace = true }
+neo-event-handlers = { workspace = true }
+neo-payloads = { workspace = true }
+neo-system = { workspace = true }
 
 [dev-dependencies]
 

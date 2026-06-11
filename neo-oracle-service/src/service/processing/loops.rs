@@ -1,5 +1,5 @@
 use super::super::{OracleService, OracleStatus, REFRESH_INTERVAL};
-use neo_core::smart_contract::native::OracleContract;
+use neo_native_contracts::OracleContract;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -11,8 +11,7 @@ impl OracleService {
             self.sync_pending_queue(&snapshot);
 
             let requests = OracleContract::new()
-                .get_requests(&snapshot)
-                .unwrap_or_default();
+                .get_requests(&snapshot);
 
             for (request_id, request) in requests {
                 if self.cancel.load(Ordering::SeqCst) {

@@ -7,11 +7,12 @@ use super::settings::TokensTrackerSettings;
 use super::trackers::nep_11::Nep11Tracker;
 use super::trackers::nep_17::Nep17Tracker;
 use super::trackers::tracker_base::Tracker;
-use neo_core::i_event_handlers::{CommittedHandler, CommittingHandler};
-use neo_core::neo_ledger::{ApplicationExecuted, Block};
-use neo_core::persistence::{DataCache, Store};
-use neo_core::unhandled_exception_policy::panic_message;
-use neo_core::NeoSystem;
+use neo_event_handlers::{CommittedHandler, CommittingHandler};
+use neo_block::ApplicationExecuted;
+use neo_payloads::Block;
+use neo_storage::persistence::{DataCache, Store};
+use neo_primitives::panic_message;
+use neo_system::Node;
 use parking_lot::RwLock;
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
@@ -40,7 +41,7 @@ impl TokensTracker {
     pub fn new(
         settings: TokensTrackerSettings,
         db: Arc<dyn Store>,
-        neo_system: Arc<NeoSystem>,
+        neo_system: Arc<Node>,
     ) -> Self {
         let mut trackers: Vec<Box<dyn Tracker>> = Vec::new();
 
@@ -91,7 +92,7 @@ impl TokensTracker {
         error_message: String,
     ) -> bool {
         match self.settings.exception_policy {
-            neo_core::unhandled_exception_policy::UnhandledExceptionPolicy::Ignore => return true,
+            neo_primitives::unhandled_exception_policy::UnhandledExceptionPolicy::Ignore => return true,
             _ => {
                 error!(
                     target: "neo::tokens_tracker",
@@ -142,7 +143,7 @@ impl CommittingHandler for TokensTracker {
         snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     ) {
-        let Some(system) = system.downcast_ref::<NeoSystem>() else {
+        let Some(system) = system.downcast_ref::<Node>() else {
             return;
         };
         if system.settings().network != self.settings.network {
@@ -173,7 +174,7 @@ impl CommittingHandler for TokensTracker {
 
 impl CommittedHandler for TokensTracker {
     fn blockchain_committed_handler(&self, system: &dyn Any, _block: &Block) {
-        let Some(system) = system.downcast_ref::<NeoSystem>() else {
+        let Some(system) = system.downcast_ref::<Node>() else {
             return;
         };
         if system.settings().network != self.settings.network {
@@ -200,7 +201,7 @@ impl CommittedHandler for TokensTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::unhandled_exception_policy::UnhandledExceptionPolicy;
+    use neo_primitives::unhandled_exception_policy::UnhandledExceptionPolicy;
 
     fn tracker_with_policy(exception_policy: UnhandledExceptionPolicy) -> TokensTracker {
         TokensTracker {

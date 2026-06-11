@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use neo_config::ProtocolSettings;
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::wallet_helper as WalletHelper;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use serde::{Deserialize, Serialize};
@@ -25,8 +25,7 @@ pub struct RpcTransferOut {
     pub script_hash: UInt160,
 
     /// Transfer value
-    pub value: String,
-}
+    pub value: String}
 
 impl RpcTransferOut {
     /// Converts to JSON
@@ -44,7 +43,7 @@ impl RpcTransferOut {
             )),
         );
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -56,10 +55,10 @@ impl RpcTransferOut {
 
         let asset = if asset_str.starts_with("0x") || asset_str.len() == 40 {
             UInt160::parse(&asset_str).map_err(|_| format!("Invalid asset: {asset_str}"))?
-        } else {
+       } else {
             WalletHelper::to_script_hash(&asset_str, protocol_settings.address_version)
                 .map_err(|_| format!("Invalid asset: {asset_str}"))?
-        };
+       };
 
         let value = json
             .get("value")
@@ -75,17 +74,16 @@ impl RpcTransferOut {
         let script_hash = if address.len() == 40 || address.starts_with("0x") {
             UInt160::parse(&address)
                 .map_err(|_| format!("Invalid address or scripthash: {address}"))?
-        } else {
+       } else {
             WalletHelper::to_script_hash(&address, protocol_settings.address_version)
                 .map_err(|_| format!("Invalid address or scripthash: {address}"))?
-        };
+       };
 
         Ok(Self {
             asset,
             script_hash,
-            value,
-        })
-    }
+            value})
+   }
 }
 
 #[cfg(test)]
@@ -103,8 +101,7 @@ mod tests {
         let transfer = RpcTransferOut {
             asset,
             script_hash,
-            value: "42".to_string(),
-        };
+            value: "42".to_string()};
 
         let json = transfer.to_json(&settings);
         let parsed = RpcTransferOut::from_json(&json, &settings).expect("parse");
@@ -116,7 +113,7 @@ mod tests {
             json.get("address").and_then(|t| t.as_string()).unwrap(),
             WalletHelper::to_address(&transfer.script_hash, settings.address_version)
         );
-    }
+   }
 
     #[test]
     fn rpc_transfer_out_accepts_address_for_asset() {
@@ -140,7 +137,7 @@ mod tests {
             WalletHelper::to_script_hash(&asset_address, settings.address_version).unwrap()
         );
         assert_eq!(parsed.script_hash, script_hash);
-    }
+   }
 
     #[test]
     fn rpc_transfer_out_accepts_scripthash_field() {
@@ -158,14 +155,14 @@ mod tests {
         let parsed =
             RpcTransferOut::from_json(&json, &ProtocolSettings::default_settings()).expect("parse");
         assert_eq!(parsed.script_hash, script_hash);
-    }
+   }
 
     #[test]
     fn transfer_out_to_json_matches_rpc_test_case() {
         let settings = ProtocolSettings::default_settings();
         let Some(params) = rpc_case_params("sendmanyasync") else {
             return;
-        };
+       };
         let transfers = params
             .get(1)
             .and_then(|value| value.as_array())
@@ -184,5 +181,5 @@ mod tests {
                 .collect::<Vec<_>>(),
         );
         assert_eq!(transfers.to_string(), actual.to_string());
-    }
+   }
 }

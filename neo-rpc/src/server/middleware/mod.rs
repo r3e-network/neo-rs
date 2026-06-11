@@ -5,5 +5,4 @@
 mod rate_limiter;
 
 pub use rate_limiter::{
-    GovernorRateLimiter, RateLimitCheckResult, RateLimitConfig, RateLimitTier, RateLimiterBuilder,
-};
+    GovernorRateLimiter, RateLimitCheckResult, RateLimitConfig, RateLimitTier, RateLimiterBuilder};

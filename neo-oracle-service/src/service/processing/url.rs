@@ -1,6 +1,6 @@
 use super::super::OracleService;
-use neo_core::network::p2p::payloads::OracleResponseCode;
-use neo_core::wallets::KeyPair;
+use neo_payloads::OracleResponseCode;
+use neo_wallets::KeyPair;
 
 /// Maximum URL length allowed.
 const MAX_URL_LENGTH: usize = 2048;

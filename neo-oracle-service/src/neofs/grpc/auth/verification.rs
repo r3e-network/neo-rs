@@ -1,6 +1,6 @@
 use super::super::super::auth::sign_neofs_sha512;
 use super::super::super::proto::neofs_v2;
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use prost::Message;
 
 pub(crate) fn build_neofs_request_verification_header<B: Message>(

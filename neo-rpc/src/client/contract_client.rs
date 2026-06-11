@@ -12,12 +12,12 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::RpcInvokeResult;
 use crate::{RpcClient, RpcError};
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::native::ContractManagement;
-use neo_core::{
-    smart_contract::call_flags::CallFlags, ContractManifest, KeyPair, Signer, Transaction,
-    WitnessScope,
-};
+use neo_script_builder::ScriptBuilder;
+use neo_native_contracts::ContractManagement;
+use neo_payloads::{Signer, Transaction};
+use neo_primitives::{CallFlags, WitnessScope};
+use neo_wallets::KeyPair;
+use neo_manifest::{ContractManifest};
 use neo_primitives::UInt160;
 use std::sync::Arc;
 
@@ -25,16 +25,15 @@ use std::sync::Arc;
 /// Matches C# `ContractClient`
 pub struct ContractClient {
     /// The RPC client instance
-    rpc_client: Arc<RpcClient>,
-}
+    rpc_client: Arc<RpcClient>}
 
 impl ContractClient {
     /// `ContractClient` Constructor
     /// Matches C# constructor
     #[must_use]
     pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
-        Self { rpc_client }
-    }
+        Self {rpc_client}
+   }
 
     /// Use RPC method to test invoke operation
     /// Matches C# `TestInvokeAsync`
@@ -52,7 +51,7 @@ impl ContractClient {
             .invoke_script(&script)
             .await
             .map_err(Into::into)
-    }
+   }
 
     /// Deploy Contract, return signed transaction
     /// Matches C# `CreateDeployContractTxAsync`
@@ -72,7 +71,7 @@ impl ContractClient {
             .await?;
         manager.add_signature(key)?;
         manager.sign().await
-    }
+   }
 
     #[cfg(test)]
     fn build_dynamic_call_script(
@@ -82,7 +81,7 @@ impl ContractClient {
         call_flags: CallFlags,
     ) -> Result<Vec<u8>, RpcError> {
         build_dynamic_call_script(script_hash, method, args, call_flags)
-    }
+   }
 
     fn build_deploy_contract_script(
         nef_file: &[u8],
@@ -99,13 +98,13 @@ impl ContractClient {
         sb.emit_pack();
         emit_contract_call(
             &mut sb,
-            &ContractManagement::contract_hash(),
+            &ContractManagement::script_hash(),
             "deploy",
             call_flags,
         )?;
 
         Ok(sb.to_array())
-    }
+   }
 }
 
 // NOTE: Script byte layout parity tests live with the VM compatibility module
@@ -119,9 +118,10 @@ mod tests {
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
     use neo_config::ProtocolSettings;
-    use neo_core::ScriptBuilder;
-    use neo_core::smart_contract::native::{GasToken, NativeContract};
-    use neo_core::{ContractManifest, KeyPair};
+    use neo_script_builder::ScriptBuilder;
+    use neo_native_contracts::{GasToken, NativeContract};
+    use neo_wallets::KeyPair;
+use neo_manifest::{ContractManifest};
     use neo_json::{JArray, JObject, JToken};
     use neo_primitives::UInt160;
     use neo_vm_rs::{OpCode, StackValue};
@@ -141,25 +141,25 @@ mod tests {
         result.insert("stack".to_string(), JToken::Array(JArray::from(stack)));
 
         rpc_response(JToken::Object(result))
-    }
+   }
 
     fn invoke_response_integer(value: i64) -> String {
         let mut item = JObject::new();
         item.insert("type".to_string(), JToken::String("Integer".to_string()));
         item.insert("value".to_string(), JToken::String(value.to_string()));
         invoke_response(vec![JToken::Object(item)], 0)
-    }
+   }
 
     fn invoke_response_bytestring(value_b64: &str) -> String {
         let mut item = JObject::new();
         item.insert("type".to_string(), JToken::String("ByteString".to_string()));
         item.insert("value".to_string(), JToken::String(value_b64.to_string()));
         invoke_response(vec![JToken::Object(item)], 0)
-    }
+   }
 
     fn invoke_response_empty(gas_consumed: i64) -> String {
         invoke_response(Vec::new(), gas_consumed)
-    }
+   }
 
     fn mock_invokescript(server: &mut Server, script_b64: &str, response_body: &str) {
         let pattern = format!(
@@ -174,7 +174,7 @@ mod tests {
             .with_body(response_body)
             .expect_at_least(1)
             .create();
-    }
+   }
 
     fn mock_block_count(server: &mut Server, count: u32) {
         let _m = server
@@ -185,7 +185,7 @@ mod tests {
             .with_body(rpc_response(JToken::Number(count as f64)))
             .expect(1)
             .create();
-    }
+   }
 
     fn mock_calculate_network_fee(server: &mut Server, fee: i64) {
         let mut result = JObject::new();
@@ -200,7 +200,7 @@ mod tests {
             .with_body(rpc_response(JToken::Object(result)))
             .expect_at_least(1)
             .create();
-    }
+   }
 
     #[test]
     fn dynamic_call_script_matches_emit_dynamic_call_shape() {
@@ -223,7 +223,7 @@ mod tests {
             .expect("syscall");
 
         assert_eq!(script, expected.to_array());
-    }
+   }
 
     #[test]
     fn dynamic_call_script_packs_arguments() {
@@ -250,13 +250,13 @@ mod tests {
             .expect("syscall");
 
         assert_eq!(script, expected.to_array());
-    }
+   }
 
     #[tokio::test]
     async fn test_invoke_reads_integer_from_bytestring_stack_item() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
 
         let script_hash = GasToken::new().hash();
         let account = UInt160::zero();
@@ -290,13 +290,13 @@ mod tests {
             crate::RpcUtility::stack_value_to_bigint(result.stack.first().expect("stack item"))
                 .expect("integer");
         assert_eq!(value, BigInt::from(30_000_000_000_000i64));
-    }
+   }
 
     #[tokio::test]
     async fn test_invoke_parses_map_and_struct_stack_items() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
 
         let script_hash = UInt160::zero();
         let args = vec![serde_json::json!(1)];
@@ -360,7 +360,7 @@ mod tests {
 
         let StackValue::Map(map) = &result.stack[0] else {
             panic!("expected map");
-        };
+       };
         assert_eq!(map.len(), 1);
         let (key, value) = map.first().expect("entry");
         assert_eq!(key.as_bytes().expect("key bytes"), b"key");
@@ -371,7 +371,7 @@ mod tests {
 
         let StackValue::Struct(structure) = &result.stack[1] else {
             panic!("expected struct");
-        };
+       };
         assert_eq!(structure.len(), 2);
         assert_eq!(
             crate::RpcUtility::stack_value_to_bigint(&structure[0]).unwrap(),
@@ -381,13 +381,13 @@ mod tests {
             crate::RpcUtility::stack_value_to_bigint(&structure[1]).unwrap(),
             BigInt::from(2)
         );
-    }
+   }
 
     #[tokio::test]
     async fn create_deploy_contract_tx_builds_signed_transaction() {
         if !localhost_binding_permitted() {
             return;
-        }
+       }
 
         let settings = ProtocolSettings::default_settings();
         let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
@@ -438,5 +438,5 @@ mod tests {
         assert_eq!(tx.signers()[0].account, sender);
         assert_eq!(tx.signers()[0].scopes, WitnessScope::CALLED_BY_ENTRY);
         assert!(!tx.witnesses().is_empty());
-    }
+   }
 }

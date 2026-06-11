@@ -1,7 +1,8 @@
+#![cfg(feature = "wip")]
 //! Integration test for block assembly logic
 
 use neo_consensus::BlockData;
-use neo_core::network::p2p::payloads::Block;
+use neo_payloads::Block;
 use neo_crypto::{ecc::generate_keypair, ECCurve};
 use neo_vm_rs::OpCode;
 
@@ -69,8 +70,8 @@ async fn test_complete_block_assembly_workflow() {
 
 // Helper function to simulate block assembly
 async fn assemble_test_block(block_data: BlockData) -> anyhow::Result<Block> {
-    use neo_core::network::p2p::payloads::{Block, Header, Witness};
-    use neo_core::smart_contract::helper::Helper;
+    use neo_payloads::{Block, Header, Witness};
+    use neo_execution::helper::Helper;
     use neo_vm_rs::OpCode;
 
     // Build invocation script

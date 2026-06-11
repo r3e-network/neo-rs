@@ -11,42 +11,41 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Neo N3 blockchain node daemon"
+description = "Neo N3 blockchain node daemon (WIP: full implementation gated behind the `wip` Cargo feature)"
 
 [[bin]]
 name = "neo-node"
 path = "src/main.rs"
 
 [features]
-default = ["full"]
-full = ["neo-core/full"]
-# Enable TEE (Trusted Execution Environment) support
+# Default: stub `main` that exits with a clear message pointing at the
+# `wip` feature. This keeps `cargo build --workspace` green.
+default = []
+# `wip` enables the in-progress full implementation (CLI, config,
+# startup, services, RPC server, dBFT consensus, TEE/HSM integration).
+# Builds with `cargo build -p neo-node --features wip` (or
+# `cargo build --workspace --features wip`).
+wip = ["dep:neo-config", "dep:neo-blockchain", "dep:neo-storage", "dep:neo-storage-rocksdb", "dep:neo-system", "dep:neo-block", "dep:neo-primitives", "dep:neo-event-handlers", "dep:neo-mempool", "dep:neo-native-contracts", "dep:neo-network", "dep:neo-p2p", "dep:neo-consensus", "dep:neo-crypto", "dep:neo-payloads", "dep:neo-execution", "dep:neo-redeem-script", "dep:hex", "neo-rpc/server"]
+# Back-compat alias: `full` was the previous feature name; it now means
+# the same thing as `wip` so historical build invocations keep working.
+full = ["wip"]
+# Enable TEE (Trusted Execution Environment) support (requires `wip`)
 tee = ["neo-tee"]
-# Enable TEE with SGX hardware
+# Enable TEE with SGX hardware (requires `tee`)
 tee-sgx = ["tee", "neo-tee/sgx-hw"]
-# Enable HSM (Hardware Security Module) support
+# Enable HSM (Hardware Security Module) support (requires `wip`)
 hsm = ["dep:neo-hsm", "dep:rpassword"]
-# Enable HSM with Ledger hardware wallet
+# Enable HSM with Ledger hardware wallet (requires `hsm`)
 hsm-ledger = ["hsm", "neo-hsm/ledger"]
-# Enable HSM with PKCS#11 interface
+# Enable HSM with PKCS#11 interface (requires `hsm`)
 hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
-# Enable full neo-core features for production node (rocksdb, upnp, monitoring, parallel)
-neo-core = { path = "../neo-core", features = ["runtime"] }
-neo-application-logs = { path = "../neo-application-logs" }
-neo-tokens-tracker = { path = "../neo-tokens-tracker" }
-neo-oracle-service = { path = "../neo-oracle-service" }
-neo-actors = { workspace = true }
-neo-consensus = { path = "../neo-consensus" }
-neo-p2p = { path = "../neo-p2p" }
-neo-crypto = { path = "../neo-crypto" }
+neo-time = { workspace = true }
 neo-vm-rs = { workspace = true }
-neo-rpc = { path = "../neo-rpc", features = ["server"] }
 neo-telemetry = { workspace = true }
 
-# TEMPORARILY DISABLED: neo-plugins being refactored
-# neo-plugins = { path = "../neo-plugins" }
+# TEE/HSM integrations (feature-gated)
 neo-tee = { path = "../neo-tee", optional = true }
 neo-hsm = { path = "../neo-hsm", optional = true }
 
@@ -87,6 +86,38 @@ rand = { workspace = true }
 url = { workspace = true }
 num_cpus = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
+
+# The WIP full implementation depends on every workspace crate. All of
+# these are `optional` so the default stub build (no features) doesn't
+# pull in the heavy dependency tree.
+neo-application-logs = { path = "../neo-application-logs", optional = true }
+neo-tokens-tracker = { path = "../neo-tokens-tracker", optional = true }
+neo-oracle-service = { path = "../neo-oracle-service", optional = true }
+neo-consensus = { path = "../neo-consensus", optional = true }
+neo-p2p = { path = "../neo-p2p", optional = true }
+neo-crypto = { path = "../neo-crypto", optional = true }
+neo-rpc = { path = "../neo-rpc", optional = true }
+neo-storage-rocksdb = { path = "../neo-storage-rocksdb", optional = true }
+neo-block = { workspace = true, optional = true }
+neo-config = { workspace = true, optional = true }
+neo-event-handlers = { workspace = true, optional = true }
+neo-execution = { workspace = true, optional = true }
+neo-io = { workspace = true, optional = true }
+neo-native-contracts = { workspace = true, optional = true }
+neo-network = { workspace = true, optional = true }
+neo-payloads = { workspace = true, optional = true }
+neo-primitives = { workspace = true, optional = true }
+neo-script-builder = { workspace = true, optional = true }
+neo-state-service = { workspace = true, optional = true }
+neo-storage = { workspace = true, optional = true }
+neo-system = { workspace = true, optional = true }
+neo-wallets = { workspace = true, optional = true }
+neo-blockchain = { workspace = true, optional = true }
+neo-manifest = { workspace = true, optional = true }
+neo-vm = { workspace = true, optional = true }
+neo-redeem-script = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+neo-mempool = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

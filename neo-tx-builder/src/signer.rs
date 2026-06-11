@@ -1,5 +1,5 @@
-use neo_core::network::p2p::payloads::{Signer, WitnessRule, WitnessRuleAction};
-use neo_core::{UInt160, WitnessScope};
+use neo_payloads::{Signer, WitnessRule, WitnessRuleAction};
+use neo_primitives::{UInt160, WitnessScope};
 use neo_crypto::ECPoint;
 
 use super::WitnessRuleBuilder;
@@ -16,7 +16,7 @@ pub struct SignerBuilder {
     rules: Vec<WitnessRule>,
 }
 
-neo_core::impl_default_via_new!(SignerBuilder);
+neo_primitives::impl_default_via_new!(SignerBuilder);
 
 impl SignerBuilder {
     /// Creates a builder with default signer settings (zero account,
@@ -89,5 +89,51 @@ impl SignerBuilder {
         signer.allowed_groups = self.allowed_groups.clone();
         signer.rules = self.rules.clone();
         signer
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_signer_is_zero_account_none_scope() {
+        let s = SignerBuilder::new().build();
+        assert_eq!(s.account, UInt160::zero());
+        assert_eq!(s.scopes, WitnessScope::NONE);
+        assert!(s.allowed_contracts.is_empty());
+        assert!(s.allowed_groups.is_empty());
+    }
+
+    #[test]
+    fn account_and_scope_are_applied() {
+        let acct = UInt160::from_bytes(&[7u8; 20]).unwrap();
+        let mut b = SignerBuilder::new();
+        b.account(acct).scope(WitnessScope::CALLED_BY_ENTRY);
+        let s = b.build();
+        assert_eq!(s.account, acct);
+        assert_eq!(s.scopes, WitnessScope::CALLED_BY_ENTRY);
+    }
+
+    #[test]
+    fn add_witness_scope_combines_flags() {
+        let mut b = SignerBuilder::new();
+        b.scope(WitnessScope::CALLED_BY_ENTRY)
+            .add_witness_scope(WitnessScope::CUSTOM_CONTRACTS);
+        let s = b.build();
+        assert!(s.scopes.contains(WitnessScope::CALLED_BY_ENTRY));
+        assert!(s.scopes.contains(WitnessScope::CUSTOM_CONTRACTS));
+    }
+
+    #[test]
+    fn allowed_contracts_are_collected_in_order() {
+        let c1 = UInt160::from_bytes(&[1u8; 20]).unwrap();
+        let c2 = UInt160::from_bytes(&[2u8; 20]).unwrap();
+        let mut b = SignerBuilder::new();
+        b.scope(WitnessScope::CUSTOM_CONTRACTS)
+            .with_allowed_contract(c1)
+            .allow_contract(c2); // alias for with_allowed_contract
+        let s = b.build();
+        assert_eq!(s.allowed_contracts, vec![c1, c2]);
     }
 }

@@ -10,14 +10,14 @@
 // modifications are permitted.
 
 use super::super::utility::parse_number_or_string_token;
-use neo_core::smart_contract::{CallFlags, MethodToken};
+use neo_primitives::CallFlags;
+use neo_manifest::MethodToken;
 use neo_json::JObject;
 use neo_primitives::UInt160;
 /// RPC method token helper matching C# `RpcMethodToken`
 pub struct RpcMethodToken {
     /// The method token
-    pub method_token: MethodToken,
-}
+    pub method_token: MethodToken}
 
 impl RpcMethodToken {
     /// Creates from JSON
@@ -46,12 +46,12 @@ impl RpcMethodToken {
             .ok_or("Missing or invalid 'callflags' field")?;
         let call_flags = if let Some(text) = call_flags_token.as_string() {
             parse_call_flags(&text).ok_or_else(|| format!("Invalid call flags: {text}"))?
-        } else if let Some(number) = call_flags_token.as_number() {
+       } else if let Some(number) = call_flags_token.as_number() {
             CallFlags::from_bits(number as u8)
                 .ok_or_else(|| format!("Invalid call flags bits: {}", number as u8))?
-        } else {
+       } else {
             return Err("Invalid 'callflags' field".to_string());
-        };
+       };
 
         Ok(Self {
             method_token: MethodToken {
@@ -59,10 +59,8 @@ impl RpcMethodToken {
                 method,
                 parameters_count,
                 has_return_value,
-                call_flags,
-            },
-        })
-    }
+                call_flags}})
+   }
 
     /// Converts to JSON
     /// Matches C# `ToJson`
@@ -90,55 +88,55 @@ impl RpcMethodToken {
             neo_json::JToken::String(call_flags_to_string(self.method_token.call_flags)),
         );
         json
-    }
+   }
 }
 
 fn call_flags_to_string(flags: CallFlags) -> String {
     if flags.is_empty() {
         return "None".to_string();
-    }
+   }
     if flags == CallFlags::READ_STATES {
         return "ReadStates".to_string();
-    }
+   }
     if flags == CallFlags::WRITE_STATES {
         return "WriteStates".to_string();
-    }
+   }
     if flags == CallFlags::ALLOW_CALL {
         return "AllowCall".to_string();
-    }
+   }
     if flags == CallFlags::ALLOW_NOTIFY {
         return "AllowNotify".to_string();
-    }
+   }
     if flags == CallFlags::STATES {
         return "States".to_string();
-    }
+   }
     if flags == CallFlags::READ_ONLY {
         return "ReadOnly".to_string();
-    }
+   }
     if flags == CallFlags::ALL {
         return "All".to_string();
-    }
+   }
 
     let mut parts = Vec::new();
     if flags.contains(CallFlags::READ_STATES) {
         parts.push("ReadStates");
-    }
+   }
     if flags.contains(CallFlags::WRITE_STATES) {
         parts.push("WriteStates");
-    }
+   }
     if flags.contains(CallFlags::ALLOW_CALL) {
         parts.push("AllowCall");
-    }
+   }
     if flags.contains(CallFlags::ALLOW_NOTIFY) {
         parts.push("AllowNotify");
-    }
+   }
     parts.join(", ")
 }
 
 fn parse_call_flags(value: &str) -> Option<CallFlags> {
     if let Ok(bits) = value.parse::<u8>() {
         return CallFlags::from_bits(bits);
-    }
+   }
 
     let cleaned = value.replace('_', "");
     let mut result = CallFlags::empty();
@@ -158,16 +156,15 @@ fn parse_call_flags(value: &str) -> Option<CallFlags> {
             "STATES" => CallFlags::STATES,
             "READONLY" => CallFlags::READ_ONLY,
             "ALL" => CallFlags::ALL,
-            _other => return None,
-        };
+            _other => return None};
         result |= flag;
-    }
+   }
 
     if matched {
         Some(result)
-    } else {
+   } else {
         None
-    }
+   }
 }
 
 fn parse_u16_field(json: &JObject, field: &str) -> Result<u16, String> {
@@ -176,7 +173,7 @@ fn parse_u16_field(json: &JObject, field: &str) -> Result<u16, String> {
         .ok_or_else(|| format!("Missing '{field}' field"))?;
     parse_number_or_string_token(token, field, &format!("Invalid '{field}' field"), |value| {
         value as u16
-    })
+   })
 }
 
 #[cfg(test)]
@@ -210,7 +207,7 @@ mod tests {
             .method_token
             .call_flags
             .contains(CallFlags::READ_ONLY));
-    }
+   }
 
     #[test]
     fn parses_numeric_flags_and_paramcount_strings() {
@@ -234,7 +231,7 @@ mod tests {
             .method_token
             .call_flags
             .contains(CallFlags::WRITE_STATES));
-    }
+   }
 
     #[test]
     fn method_token_roundtrip_json() {
@@ -244,14 +241,12 @@ mod tests {
                 method: "transfer".into(),
                 parameters_count: 2,
                 has_return_value: true,
-                call_flags: CallFlags::ALL,
-            },
-        };
+                call_flags: CallFlags::ALL}};
         let json = token.to_json();
         let parsed = RpcMethodToken::from_json(&json).expect("method token");
         assert_eq!(parsed.method_token.method, token.method_token.method);
         assert_eq!(parsed.method_token.call_flags, CallFlags::ALL);
-    }
+   }
 
     #[test]
     fn method_token_to_json_uses_named_flags() {
@@ -264,9 +259,7 @@ mod tests {
                 method: "test".into(),
                 parameters_count: 1,
                 has_return_value: true,
-                call_flags: CallFlags::ALL,
-            },
-        };
+                call_flags: CallFlags::ALL}};
 
         let json = token.to_json();
         assert_eq!(
@@ -275,5 +268,5 @@ mod tests {
                 .unwrap_or_default(),
             "All"
         );
-    }
+   }
 }

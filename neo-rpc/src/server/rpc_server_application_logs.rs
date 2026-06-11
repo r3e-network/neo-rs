@@ -5,8 +5,8 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use neo_application_logs::ApplicationLogsService;
-use neo_core::smart_contract::TriggerType;
-use neo_core::UInt256;
+use neo_primitives::TriggerType;
+use neo_primitives::UInt256;
 use serde_json::Value;
 use std::str::FromStr;
 
@@ -17,7 +17,7 @@ impl RpcServerApplicationLogs {
         super::rpc_handlers![
             "getapplicationlog" => Self::get_application_log,
         ]
-    }
+   }
 
     fn get_application_log(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let hash = Self::expect_hash_param(params, 0)?;
@@ -29,13 +29,12 @@ impl RpcServerApplicationLogs {
                 return Err(invalid_params(
                     "getapplicationlog expects string parameter 2",
                 ))
-            }
-        };
+           }
+       };
 
         let service = server
             .system()
             .get_service::<ApplicationLogsService>()
-            .map_err(|e| internal_error(e.to_string()))?
             .ok_or_else(|| internal_error("ApplicationLogs service not available"))?;
 
         let mut raw = service
@@ -45,7 +44,7 @@ impl RpcServerApplicationLogs {
                 RpcException::from(
                     RpcError::invalid_params().with_data("Unknown transaction/blockhash"),
                 )
-            })?;
+           })?;
 
         if let Some(filter) = trigger_filter {
             if TriggerType::from_str(&filter).is_ok() {
@@ -55,13 +54,13 @@ impl RpcServerApplicationLogs {
                             e.get("trigger")
                                 .and_then(Value::as_str)
                                 .is_some_and(|v| v.eq_ignore_ascii_case(&filter))
-                        });
-                    }
-                }
-            }
-        }
+                       });
+                   }
+               }
+           }
+       }
         Ok(raw)
-    }
+   }
 
     #[inline]
     fn expect_hash_param(params: &[Value], index: usize) -> Result<UInt256, RpcException> {
@@ -73,10 +72,10 @@ impl RpcServerApplicationLogs {
                     "getapplicationlog expects string parameter {}",
                     index + 1
                 ))
-            })
+           })
             .and_then(|text| {
                 UInt256::from_str(text)
                     .map_err(|e| invalid_params(format!("invalid hash '{}': {}", text, e)))
-            })
-    }
+           })
+   }
 }

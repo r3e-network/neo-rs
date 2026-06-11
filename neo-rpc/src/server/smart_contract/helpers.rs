@@ -1,13 +1,13 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
-use neo_core::smart_contract::NotifyEventArgs;
-use neo_core::smart_contract::ApplicationEngine;
-use neo_core::vm_runtime::rpc_json::stack_item_rpc_json_deferred_size_check;
-use neo_core::vm_runtime::StackItem;
-use neo_core::UInt160;
+use neo_payloads::signer::Signer;
+use neo_payloads::witness::Witness;
+use neo_manifest::CallFlags;
+use neo_execution::contract_parameter::{ContractParameter, ContractParameterValue};
+use neo_block::NotifyEventArgs;
+use neo_execution::ApplicationEngine;
+use neo_vm::rpc_json::stack_item_rpc_json_deferred_size_check;
+use neo_vm::stack_item::StackItem;
+use neo_primitives::UInt160;
 use neo_json::JToken;
 use neo_vm_rs::{StackValue, VmState};
 use num_traits::ToPrimitive;
@@ -19,8 +19,7 @@ use crate::server::model::signers_and_witnesses::SignersAndWitnesses;
 use crate::server::parameter_converter::{ConversionContext, ParameterConverter};
 use crate::server::rpc_exception::RpcException;
 pub(super) use crate::server::rpc_helpers::{
-    expect_string_param, expect_u32_param, internal_error, invalid_params,
-};
+    expect_string_param, expect_u32_param, internal_error, invalid_params};
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
 
@@ -35,8 +34,7 @@ pub(super) fn parse_contract_parameters(
             .iter()
             .map(|value| ContractParameter::from_json(value).map_err(invalid_params))
             .collect(),
-        Some(_) => Err(invalid_params("args must be an array")),
-    }
+        Some(_) => Err(invalid_params("args must be an array"))}
 }
 
 pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
@@ -53,21 +51,21 @@ pub(super) fn parse_signers_and_witnesses(
 ) -> Result<(Option<Vec<Signer>>, Option<Vec<Witness>>), RpcException> {
     let Some(token_value) = value else {
         return Ok((None, None));
-    };
+   };
     let jtoken: JToken = serde_json::from_value(token_value.clone())
         .map_err(|err| invalid_params(err.to_string()))?;
     let ctx = ConversionContext::new(server.system().settings().address_version);
     let parsed = ParameterConverter::convert::<SignersAndWitnesses>(&jtoken, &ctx)?;
     let signers = if parsed.signers().is_empty() {
         None
-    } else {
+   } else {
         Some(parsed.signers().to_vec())
-    };
+   };
     let witnesses = if parsed.witnesses().is_empty() {
         None
-    } else {
+   } else {
         Some(parsed.witnesses().to_vec())
-    };
+   };
     Ok((signers, witnesses))
 }
 
@@ -80,19 +78,19 @@ pub(super) fn build_dynamic_call_script(
         .iter()
         .map(contract_parameter_to_stack_value)
         .collect::<Result<Vec<_>, _>>()?;
-    let mut builder = neo_core::ScriptBuilder::new();
+    let mut builder = neo_script_builder::ScriptBuilder::new();
 
     if args.is_empty() {
         builder.emit_opcode(neo_vm_rs::OpCode::NEWARRAY0);
-    } else {
+   } else {
         for item in args.iter().rev() {
             builder
                 .emit_push_stack_value(item)
                 .map_err(|err| internal_error(err.to_string()))?;
-        }
+       }
         builder.emit_push_int(args.len() as i64);
         builder.emit_opcode(neo_vm_rs::OpCode::PACK);
-    }
+   }
 
     builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
     builder.emit_push(operation.as_bytes());
@@ -112,27 +110,27 @@ pub(super) fn contract_parameter_to_stack_value(
         ContractParameterValue::Boolean(value) => Ok(StackValue::Boolean(*value)),
         ContractParameterValue::Integer(value) => Ok(if let Some(value) = value.to_i64() {
             StackValue::Integer(value)
-        } else {
+       } else {
             StackValue::BigInteger(value.to_signed_bytes_le())
-        }),
+       }),
         ContractParameterValue::Hash160(value) => Ok(StackValue::ByteString(value.to_bytes())),
         ContractParameterValue::Hash256(value) => {
             Ok(StackValue::ByteString(value.to_array().to_vec()))
-        }
+       }
         ContractParameterValue::ByteArray(bytes) | ContractParameterValue::Signature(bytes) => {
             Ok(StackValue::ByteString(bytes.clone()))
-        }
+       }
         ContractParameterValue::PublicKey(point) => Ok(StackValue::ByteString(point.encoded())),
         ContractParameterValue::String(value) => {
             Ok(StackValue::ByteString(value.as_bytes().to_vec()))
-        }
+       }
         ContractParameterValue::Array(items) => {
             let converted = items
                 .iter()
                 .map(contract_parameter_to_stack_value)
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(StackValue::Array(converted))
-        }
+       }
         ContractParameterValue::Map(entries) => {
             let mut map = Vec::with_capacity(entries.len());
             for (key, value) in entries {
@@ -140,13 +138,12 @@ pub(super) fn contract_parameter_to_stack_value(
                     contract_parameter_to_stack_value(key)?,
                     contract_parameter_to_stack_value(value)?,
                 ));
-            }
+           }
             Ok(StackValue::Map(map))
-        }
+       }
         ContractParameterValue::InteropInterface => Err(invalid_params(
             "InteropInterface parameters are not supported in invoke RPCs",
-        )),
-    }
+        ))}
 }
 
 pub(super) fn stack_item_to_json(
@@ -180,10 +177,10 @@ fn stack_item_to_json_with_budget(
                         Value::String("StorageIterator".to_string()),
                     );
                     obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
-                }
-            }
-        }
-    }
+               }
+           }
+       }
+   }
     Ok(value)
 }
 
@@ -198,12 +195,11 @@ pub(super) fn notification_to_json(
     let mut state = Vec::new();
     for entry in &notification.state {
         state.push(stack_item_to_json(entry, session.as_deref_mut())?);
-    }
+   }
     Ok(json!({
         "eventname": notification.event_name,
         "contract": notification.script_hash.to_string(),
-        "state": state,
-    }))
+        "state": state}))
 }
 
 pub(super) fn diagnostic_invocation_to_json(diagnostic: &Diagnostic) -> Value {
@@ -217,14 +213,13 @@ pub(super) fn diagnostic_invocation_to_json(diagnostic: &Diagnostic) -> Value {
                 .map(to_json_node)
                 .collect::<Vec<_>>();
             obj.insert("call".to_string(), Value::Array(children));
-        }
+       }
         Value::Object(obj)
-    }
+   }
 
     match diagnostic.invocation_root() {
         Some(root) => to_json_node(root),
-        None => Value::Null,
-    }
+        None => Value::Null}
 }
 
 pub(super) fn diagnostic_storage_changes(engine: &ApplicationEngine) -> Value {
@@ -235,9 +230,8 @@ pub(super) fn diagnostic_storage_changes(engine: &ApplicationEngine) -> Value {
             json!({
                 "state": format!("{:?}", trackable.state),
                 "key": BASE64_STANDARD.encode(key.to_array()),
-                "value": BASE64_STANDARD.encode(&*trackable.item.value_bytes()),
-            })
-        })
+                "value": BASE64_STANDARD.encode(&*trackable.item.value_bytes())})
+       })
         .collect::<Vec<_>>();
     Value::Array(entries)
 }

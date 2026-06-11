@@ -1,11 +1,9 @@
 use super::parsing::{
-    parse_base64_token, parse_oracle_response_code, parse_u32_token, parse_u64_token,
-};
-use neo_core::network::p2p::payloads::{
+    parse_base64_token, parse_oracle_response_code, parse_u32_token, parse_u64_token};
+use neo_payloads::{
     conflicts::Conflicts, not_valid_before::NotValidBefore, notary_assisted::NotaryAssisted,
-    oracle_response::OracleResponse,
-};
-use neo_core::TransactionAttribute;
+    oracle_response::OracleResponse};
+use neo_payloads::TransactionAttribute;
 use neo_json::JObject;
 use neo_primitives::UInt256;
 
@@ -26,7 +24,7 @@ pub fn attribute_from_json(json: &JObject) -> Result<TransactionAttribute, Strin
             Ok(TransactionAttribute::NotValidBefore(NotValidBefore::new(
                 height,
             )))
-        }
+       }
         "Conflicts" => {
             let hash_str = json
                 .get("hash")
@@ -35,7 +33,7 @@ pub fn attribute_from_json(json: &JObject) -> Result<TransactionAttribute, Strin
             let hash = UInt256::parse(&hash_str)
                 .map_err(|err| format!("Invalid conflicts hash: {err}"))?;
             Ok(TransactionAttribute::Conflicts(Conflicts::new(hash)))
-        }
+       }
         "NotaryAssisted" => {
             let nkeys_token = json
                 .get("nkeys")
@@ -44,7 +42,7 @@ pub fn attribute_from_json(json: &JObject) -> Result<TransactionAttribute, Strin
             Ok(TransactionAttribute::NotaryAssisted(NotaryAssisted::new(
                 nkeys as u8,
             )))
-        }
+       }
         "OracleResponse" => {
             let id_token = json
                 .get("id")
@@ -61,9 +59,8 @@ pub fn attribute_from_json(json: &JObject) -> Result<TransactionAttribute, Strin
             Ok(TransactionAttribute::OracleResponse(OracleResponse::new(
                 id, code, result,
             )))
-        }
+       }
         other => Err(format!(
             "Unsupported transaction attribute type '{other}' in RPC payload"
-        )),
-    }
+        ))}
 }

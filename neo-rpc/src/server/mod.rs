@@ -6,8 +6,10 @@
 mod diagnostic;
 #[cfg(feature = "jsonrpsee-server")]
 mod jsonrpsee_adapter;
+mod ledger_queries;
 pub mod middleware;
 pub mod model;
+mod native_queries;
 mod parameter_converter;
 mod routes;
 mod rpc_error;
@@ -31,6 +33,9 @@ mod rpc_server_wallet;
 mod rpc_tls;
 mod rpc_transport;
 mod session;
+#[cfg(test)]
+pub(crate) mod test_support;
+mod wallet_compat;
 pub mod smart_contract;
 pub mod ws;
 
@@ -55,8 +60,7 @@ pub use session::Session;
 
 #[cfg(feature = "jsonrpsee-server")]
 pub use jsonrpsee_adapter::{
-    build_jsonrpsee_module, build_jsonrpsee_module_with_disabled, JsonRpseeContext,
-};
+    build_jsonrpsee_module, build_jsonrpsee_module_with_disabled, JsonRpseeContext};
 
 // Re-export smart contract handlers
 pub use smart_contract::RpcServerSmartContract;

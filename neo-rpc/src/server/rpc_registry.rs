@@ -11,7 +11,7 @@ pub static SERVERS: LazyLock<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
 pub fn remove_server(network: u32) {
     if SERVERS.write().remove(&network).is_some() {
         info!("Removed RPC server for network {}", network);
-    }
+   }
 }
 
 pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {
@@ -23,8 +23,8 @@ pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {
         );
         if let Some(mut previous_guard) = previous.try_write() {
             previous_guard.dispose();
-        }
-    }
+       }
+   }
 }
 
 pub fn get_server(network: u32) -> Option<Arc<RwLock<RpcServer>>> {

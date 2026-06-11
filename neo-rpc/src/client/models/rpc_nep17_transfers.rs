@@ -11,9 +11,8 @@
 
 use super::super::utility::{
     NepTransferFieldRefs, insert_nep_transfer_fields, parse_nep_transfer_fields,
-    parse_transfer_lists, transfer_lists_to_json,
-};
-use neo_core::config::ProtocolSettings;
+    parse_transfer_lists, transfer_lists_to_json};
+use neo_config::ProtocolSettings;
 use neo_json::JObject;
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
@@ -29,8 +28,7 @@ pub struct RpcNep17Transfers {
     pub sent: Vec<RpcNep17Transfer>,
 
     /// List of received transfers
-    pub received: Vec<RpcNep17Transfer>,
-}
+    pub received: Vec<RpcNep17Transfer>}
 
 impl RpcNep17Transfers {
     /// Converts to JSON
@@ -44,7 +42,7 @@ impl RpcNep17Transfers {
             protocol_settings,
             RpcNep17Transfer::to_json,
         )
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -55,9 +53,8 @@ impl RpcNep17Transfers {
         Ok(Self {
             user_script_hash,
             sent,
-            received,
-        })
-    }
+            received})
+   }
 }
 
 /// Individual NEP17 transfer entry matching C# `RpcNep17Transfer`
@@ -82,8 +79,7 @@ pub struct RpcNep17Transfer {
     pub transfer_notify_index: u16,
 
     /// Transaction hash
-    pub tx_hash: UInt256,
-}
+    pub tx_hash: UInt256}
 
 impl RpcNep17Transfer {
     /// Converts to JSON
@@ -100,12 +96,11 @@ impl RpcNep17Transfer {
                 amount: &self.amount,
                 block_index: self.block_index,
                 transfer_notify_index: self.transfer_notify_index,
-                tx_hash: self.tx_hash,
-            },
+                tx_hash: self.tx_hash},
             protocol_settings,
         );
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -119,9 +114,8 @@ impl RpcNep17Transfer {
             amount: fields.amount,
             block_index: fields.block_index,
             transfer_notify_index: fields.transfer_notify_index,
-            tx_hash: fields.tx_hash,
-        })
-    }
+            tx_hash: fields.tx_hash})
+   }
 }
 
 #[cfg(test)]
@@ -139,8 +133,7 @@ mod tests {
             amount: BigInt::from(7),
             block_index: 9,
             transfer_notify_index: 1,
-            tx_hash: UInt256::zero(),
-        };
+            tx_hash: UInt256::zero()};
         let json = entry.to_json(&ProtocolSettings::default_settings());
         let parsed =
             RpcNep17Transfer::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
@@ -151,7 +144,7 @@ mod tests {
         assert_eq!(parsed.block_index, entry.block_index);
         assert_eq!(parsed.transfer_notify_index, entry.transfer_notify_index);
         assert_eq!(parsed.tx_hash, entry.tx_hash);
-    }
+   }
 
     #[test]
     fn transfers_roundtrip() {
@@ -162,13 +155,11 @@ mod tests {
             amount: BigInt::from(11),
             block_index: 2,
             transfer_notify_index: 0,
-            tx_hash: UInt256::zero(),
-        };
+            tx_hash: UInt256::zero()};
         let transfers = RpcNep17Transfers {
             user_script_hash: UInt160::zero(),
             sent: vec![entry.clone()],
-            received: vec![entry.clone()],
-        };
+            received: vec![entry.clone()]};
         let json = transfers.to_json(&ProtocolSettings::default_settings());
         let parsed =
             RpcNep17Transfers::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
@@ -178,28 +169,28 @@ mod tests {
         assert_eq!(parsed.received.len(), 1);
         assert_eq!(parsed.sent[0].amount, entry.amount);
         assert_eq!(parsed.received[0].user_script_hash, entry.user_script_hash);
-    }
+   }
 
     #[test]
     fn nep17_transfers_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getnep17transfersasync") else {
             return;
-        };
+       };
         let settings = ProtocolSettings::default_settings();
         let parsed = RpcNep17Transfers::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 
     #[test]
     fn nep17_transfers_null_address_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getnep17transfersasync_with_null_transferaddress")
         else {
             return;
-        };
+       };
         let settings = ProtocolSettings::default_settings();
         let parsed = RpcNep17Transfers::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 }

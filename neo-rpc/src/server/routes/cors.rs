@@ -3,40 +3,36 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use subtle::ConstantTimeEq;
 use warp::http::header::{
     HeaderValue, ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
-    ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, VARY,
-};
+    ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, VARY};
 use warp::reply::Response as HttpResponse;
 
 #[derive(Clone)]
 pub struct BasicAuth {
     pub(super) user: Vec<u8>,
-    pub(super) pass: Vec<u8>,
-}
+    pub(super) pass: Vec<u8>}
 
 impl BasicAuth {
     pub fn from_settings(settings: &RpcServerConfig) -> Option<Self> {
         if settings.rpc_user.trim().is_empty() {
             return None;
-        }
+       }
 
         Some(Self {
             user: settings.rpc_user.as_bytes().to_vec(),
-            pass: settings.rpc_pass.as_bytes().to_vec(),
-        })
-    }
+            pass: settings.rpc_pass.as_bytes().to_vec()})
+   }
 }
 
 #[derive(Clone)]
 pub(super) struct CorsConfig {
     allow_any: bool,
-    origins: Vec<HeaderValue>,
-}
+    origins: Vec<HeaderValue>}
 
 impl CorsConfig {
     pub(super) fn from_settings(settings: &RpcServerConfig, has_auth: bool) -> Option<Self> {
         if !settings.enable_cors {
             return None;
-        }
+       }
 
         let allow_any = settings.allow_origins.is_empty();
         let mut invalid_origins = 0usize;
@@ -46,11 +42,11 @@ impl CorsConfig {
             .filter_map(|origin| {
                 if let Ok(value) = HeaderValue::from_str(origin) {
                     Some(value)
-                } else {
+               } else {
                     invalid_origins += 1;
                     None
-                }
-            })
+               }
+           })
             .collect::<Vec<_>>();
 
         if invalid_origins > 0 {
@@ -58,13 +54,13 @@ impl CorsConfig {
                 invalid_origins,
                 "Ignoring invalid CORS origin entries in allow_origins"
             );
-        }
+       }
         if !allow_any && origins.is_empty() {
             tracing::warn!(
                 "CORS is enabled but allow_origins contains no valid entries; CORS will be \
                  effectively disabled"
             );
-        }
+       }
 
         if allow_any && has_auth {
             tracing::warn!(
@@ -73,10 +69,10 @@ impl CorsConfig {
                 your RPC server to CSRF attacks. Consider specifying explicit allowed \
                 origins in the 'allow_origins' configuration."
             );
-        }
+       }
 
-        Some(Self { allow_any, origins })
-    }
+        Some(Self {allow_any, origins})
+   }
 
     pub(super) fn origin_header(
         &self,
@@ -84,15 +80,15 @@ impl CorsConfig {
     ) -> Option<HeaderValue> {
         if self.allow_any {
             Some(HeaderValue::from_static("*"))
-        } else if let Some(origin) = request_origin {
+       } else if let Some(origin) = request_origin {
             self.origins
                 .iter()
                 .find(|allowed| *allowed == origin)
                 .cloned()
-        } else {
+       } else {
             None
-        }
-    }
+       }
+   }
 }
 
 pub(super) fn apply_cors(
@@ -105,7 +101,7 @@ pub(super) fn apply_cors(
             response
                 .headers_mut()
                 .insert(ACCESS_CONTROL_ALLOW_ORIGIN, origin);
-        }
+       }
         if !cors.allow_any {
             response
                 .headers_mut()
@@ -114,7 +110,7 @@ pub(super) fn apply_cors(
                 ACCESS_CONTROL_ALLOW_CREDENTIALS,
                 HeaderValue::from_static("true"),
             );
-        }
+       }
         response.headers_mut().insert(
             ACCESS_CONTROL_ALLOW_METHODS,
             HeaderValue::from_static("POST, GET, OPTIONS"),
@@ -123,31 +119,29 @@ pub(super) fn apply_cors(
             ACCESS_CONTROL_ALLOW_HEADERS,
             HeaderValue::from_static("content-type"),
         );
-    }
+   }
 }
 
 pub fn verify_basic_auth(header: Option<&str>, auth: &BasicAuth) -> bool {
     let header = match header {
         Some(value) => value.trim(),
-        None => return false,
-    };
+        None => return false};
 
     let mut parts = header.splitn(2, ' ');
     let scheme = parts.next().unwrap_or("");
     if !scheme.eq_ignore_ascii_case("basic") {
         return false;
-    }
+   }
 
     let value = parts.next().unwrap_or("").trim();
 
     let decoded = match BASE64_STANDARD.decode(value) {
         Ok(bytes) => bytes,
-        Err(_) => return false,
-    };
+        Err(_) => return false};
 
     let Some(index) = decoded.iter().position(|byte| *byte == b':') else {
         return false;
-    };
+   };
 
     let (user, pass) = decoded.split_at(index);
     let pass = &pass[1..];

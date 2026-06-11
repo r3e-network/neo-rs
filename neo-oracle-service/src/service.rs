@@ -10,9 +10,9 @@ mod utils;
 mod tests;
 
 use neo_crypto::ECPoint;
-use neo_core::neo_system::NeoSystem;
-use neo_core::network::p2p::payloads::Transaction;
-use neo_core::wallets::Wallet;
+use neo_system::Node;
+use neo_payloads::Transaction;
+use neo_wallets::Wallet;
 use parking_lot::{Mutex, RwLock};
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -206,7 +206,7 @@ impl OracleDedupState {
 /// Oracle service runtime.
 pub struct OracleService {
     settings: OracleServiceSettings,
-    system: Arc<NeoSystem>,
+    system: Arc<Node>,
     status: AtomicU8,
     self_ref: RwLock<Weak<OracleService>>,
     wallet: RwLock<Option<Arc<dyn Wallet>>>,

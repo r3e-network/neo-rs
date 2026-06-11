@@ -1,7 +1,7 @@
 use super::super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::super::{OracleService, OracleServiceError};
 use neo_crypto::ECPoint;
-use neo_core::smart_contract::native::{OracleContract, Role, RoleManagement};
+use neo_native_contracts::{OracleContract, Role, RoleManagement};
 
 impl OracleService {
     pub fn submit_oracle_response(

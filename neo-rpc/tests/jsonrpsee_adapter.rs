@@ -1,7 +1,7 @@
 #![cfg(feature = "jsonrpsee-server")]
 
-use neo_core::neo_system::NeoSystem;
-use neo_core::protocol_settings::ProtocolSettings;
+use neo_system::Node;
+use neo_config::ProtocolSettings;
 use neo_rpc::server::{
     build_jsonrpsee_module, build_jsonrpsee_module_with_disabled, RpcException, RpcHandler,
     RpcMethodDescriptor, RpcServer, RpcServerBlockchain, RpcServerConfig, RpcServerNode,

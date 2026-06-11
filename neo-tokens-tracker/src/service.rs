@@ -1,6 +1,6 @@
 //! Tokens tracker service handle for RPC queries.
 
-use neo_core::persistence::store::Store;
+use neo_storage::persistence::store::Store;
 use std::sync::Arc;
 
 use super::TokensTrackerSettings;

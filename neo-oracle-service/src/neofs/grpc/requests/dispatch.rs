@@ -1,9 +1,9 @@
 use super::super::super::{NeoFsAuth, NeoFsCommand, NeoFsRequest, OracleNeoFsProtocol};
 use super::super::auth::build_neofs_grpc_address;
 use super::super::client::neofs_grpc_client;
-use neo_core::network::p2p::payloads::oracle_response::MAX_RESULT_SIZE;
-use neo_core::network::p2p::payloads::OracleResponseCode;
-use neo_core::wallets::KeyPair;
+use neo_payloads::oracle_response::MAX_RESULT_SIZE;
+use neo_payloads::OracleResponseCode;
+use neo_wallets::KeyPair;
 
 impl OracleNeoFsProtocol {
     pub(in super::super::super) async fn execute_grpc_request(

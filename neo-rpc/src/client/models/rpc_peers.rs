@@ -10,8 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    object_array, parse_number_or_string_token, parse_optional_present_token_array_strict,
-};
+    object_array, parse_number_or_string_token, parse_optional_present_token_array_strict};
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -25,8 +24,7 @@ pub struct RpcPeers {
     pub bad: Vec<RpcPeer>,
 
     /// Connected peers
-    pub connected: Vec<RpcPeer>,
-}
+    pub connected: Vec<RpcPeer>}
 
 impl RpcPeers {
     /// Converts to JSON
@@ -48,7 +46,7 @@ impl RpcPeers {
         );
 
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -60,9 +58,8 @@ impl RpcPeers {
         Ok(Self {
             unconnected,
             bad,
-            connected,
-        })
-    }
+            connected})
+   }
 }
 
 /// Individual peer information matching C# `RpcPeer`
@@ -72,8 +69,7 @@ pub struct RpcPeer {
     pub address: String,
 
     /// Peer port
-    pub port: i32,
-}
+    pub port: i32}
 
 impl RpcPeer {
     /// Converts to JSON
@@ -84,7 +80,7 @@ impl RpcPeer {
         json.insert("address".to_string(), JToken::String(self.address.clone()));
         json.insert("port".to_string(), JToken::Number(f64::from(self.port)));
         json
-    }
+   }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -102,8 +98,8 @@ impl RpcPeer {
             |value| value as i32,
         )?;
 
-        Ok(Self { address, port })
-    }
+        Ok(Self {address, port})
+   }
 }
 
 fn parse_peer_list(json: &JObject, field: &str) -> Result<Vec<RpcPeer>, String> {
@@ -112,7 +108,7 @@ fn parse_peer_list(json: &JObject, field: &str) -> Result<Vec<RpcPeer>, String> 
             .as_object()
             .ok_or_else(|| format!("{field} entry must be an object"))
             .and_then(RpcPeer::from_json)
-    })
+   })
 }
 
 #[cfg(test)]
@@ -125,15 +121,14 @@ mod tests {
     fn rpc_peer_roundtrip_accepts_numeric_port() {
         let peer = RpcPeer {
             address: "127.0.0.1".to_string(),
-            port: 20333,
-        };
+            port: 20333};
         let json = peer.to_json();
         assert_eq!(json.get("port").and_then(|v| v.as_number()), Some(20333.0));
 
         let parsed = RpcPeer::from_json(&json).expect("peer");
         assert_eq!(parsed.address, peer.address);
         assert_eq!(parsed.port, peer.port);
-    }
+   }
 
     #[test]
     fn rpc_peer_accepts_string_port() {
@@ -147,21 +142,18 @@ mod tests {
         let parsed = RpcPeer::from_json(&json).expect("peer");
         assert_eq!(parsed.address, "10.0.0.1");
         assert_eq!(parsed.port, 20334);
-    }
+   }
 
     #[test]
     fn rpc_peers_roundtrip() {
         let peers = RpcPeers {
             unconnected: vec![RpcPeer {
                 address: "1.1.1.1".into(),
-                port: 1,
-            }],
+                port: 1}],
             bad: vec![],
             connected: vec![RpcPeer {
                 address: "2.2.2.2".into(),
-                port: 2,
-            }],
-        };
+                port: 2}]};
 
         let json = peers.to_json();
         let parsed = RpcPeers::from_json(&json).expect("peers");
@@ -170,7 +162,7 @@ mod tests {
         assert_eq!(parsed.connected.len(), 1);
         assert_eq!(parsed.unconnected[0].address, "1.1.1.1");
         assert_eq!(parsed.connected[0].port, 2);
-    }
+   }
 
     #[test]
     fn parse_peer_list_fails_on_bad_entry_type() {
@@ -201,7 +193,7 @@ mod tests {
             parsed.expect_err("peer parse error propagates"),
             "Missing or invalid 'port' field"
         );
-    }
+   }
 
     #[test]
     fn parse_peer_list_skips_empty_array_slots() {
@@ -222,15 +214,15 @@ mod tests {
         let parsed = RpcPeers::from_json(&json).expect("peers");
         assert_eq!(parsed.connected.len(), 1);
         assert_eq!(parsed.connected[0].address, "127.0.0.1");
-    }
+   }
 
     #[test]
     fn peers_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getpeersasync") else {
             return;
-        };
+       };
         let parsed = RpcPeers::from_json(&expected).expect("parse");
         let actual = parsed.to_json();
         assert_eq!(expected.to_string(), actual.to_string());
-    }
+   }
 }

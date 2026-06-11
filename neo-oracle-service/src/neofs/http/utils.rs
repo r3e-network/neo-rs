@@ -1,6 +1,6 @@
-use neo_core::UInt256;
+use neo_primitives::UInt256;
 use neo_crypto::Sha256Hasher;
-use neo_core::network::p2p::payloads::OracleResponseCode;
+use neo_payloads::OracleResponseCode;
 use futures::StreamExt;
 use reqwest::StatusCode;
 

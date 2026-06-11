@@ -4,12 +4,15 @@
 //! database operations and transfer record extraction.
 
 use super::token_transfer_key::TokenTransferKey;
-use neo_core::extensions::log_level::LogLevel;
-use neo_core::neo_io::{MemoryReader, Serializable, SerializableExt};
-use neo_core::neo_ledger::{ApplicationExecuted, Block};
-use neo_core::persistence::{DataCache, Store, SeekDirection, StoreSnapshot};
-use neo_core::neo_vm::StackItem;
-use neo_core::{NeoSystem, UInt160};
+use neo_extensions::log_level::LogLevel;
+use neo_io::extensions::serializable::SerializableExtensions;
+use neo_io::{MemoryReader, Serializable};
+use neo_block::ApplicationExecuted;
+use neo_payloads::Block;
+use neo_storage::persistence::{DataCache, Store, SeekDirection, StoreSnapshot};
+use neo_vm::StackItem;
+use neo_primitives::UInt160;
+use neo_system::Node;
 use num_bigint::BigInt;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -71,7 +74,7 @@ pub trait Tracker: Send + Sync {
     /// Called when a block is being persisted.
     fn on_persist(
         &mut self,
-        system: &NeoSystem,
+        system: &Node,
         block: &Block,
         snapshot: &DataCache,
         executed_list: &[ApplicationExecuted],
@@ -95,7 +98,7 @@ pub struct TrackerBase {
     /// Current snapshot for batch operations.
     snapshot: Option<Arc<dyn StoreSnapshot>>,
     /// Reference to the Neo system.
-    pub neo_system: Arc<NeoSystem>,
+    pub neo_system: Arc<Node>,
 }
 
 impl TrackerBase {
@@ -104,7 +107,7 @@ impl TrackerBase {
         db: Arc<dyn Store>,
         max_results: u32,
         should_track_history: bool,
-        neo_system: Arc<NeoSystem>,
+        neo_system: Arc<Node>,
     ) -> Self {
         Self {
             should_track_history,
@@ -337,14 +340,14 @@ impl TrackerBase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::persistence::{
+    use neo_storage::persistence::{
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         storage::StorageError,
         store::OnNewSnapshotDelegate,
         write_store::WriteStore,
     };
-    use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::smart_contract::{StorageItem, StorageKey};
+    use neo_config::ProtocolSettings;
+    use neo_storage::{StorageItem, StorageKey};
     use std::any::Any;
 
     #[derive(Clone)]
@@ -437,7 +440,7 @@ mod tests {
             Arc::clone(&self.store)
         }
 
-        fn try_commit(&mut self) -> neo_core::persistence::store_snapshot::SnapshotCommitResult {
+        fn try_commit(&mut self) -> neo_storage::persistence::store_snapshot::SnapshotCommitResult {
             Err(StorageError::CommitFailed(
                 "injected tracker commit failure".to_string(),
             ))
@@ -446,8 +449,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn tracker_base_commit_propagates_snapshot_try_commit_failure() {
-        let system = NeoSystem::new(ProtocolSettings::mainnet(), None, None).expect("neo system");
-        let mut tracker = TrackerBase::new(Arc::new(FailingStore), 100, true, system);
+        let system = Node::new(Arc::new(ProtocolSettings::mainnet()), None, None).expect("neo system");
+        let mut tracker = TrackerBase::new(Arc::new(FailingStore), 100, true, Arc::new(system));
         tracker.reset_batch();
 
         let err = tracker

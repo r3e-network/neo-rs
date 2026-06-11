@@ -14,7 +14,6 @@ readme.workspace = true
 description = "TokensTracker plugin for the Neo blockchain (NEP-11/NEP-17 balance and transfer indexing)"
 
 [dependencies]
-neo-core = { path = "../neo-core", features = ["runtime"] }
 neo-vm-rs = { workspace = true }
 neo-storage = { path = "../neo-storage" }
 serde = { workspace = true }
@@ -24,6 +23,39 @@ num-traits = { workspace = true }
 base64 = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
+
+neo-block = { workspace = true }
+
+neo-config = { workspace = true }
+
+neo-event-handlers = { workspace = true }
+
+neo-execution = { workspace = true }
+
+neo-extensions = { workspace = true }
+
+neo-io = { workspace = true }
+
+neo-native-contracts = { workspace = true }
+
+neo-payloads = { workspace = true }
+
+neo-primitives = { workspace = true }
+
+neo-script-builder = { workspace = true }
+
+neo-system = { workspace = true }
+
+
+neo-vm = { workspace = true }
+
+neo-blockchain = { workspace = true }
+neo-manifest = { workspace = true }
+neo-network = { workspace = true }
+
+neo-time = { workspace = true }
+neo-crypto = { workspace = true }
+neo-mempool = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

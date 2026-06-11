@@ -1,26 +1,24 @@
 use super::*;
 use crate::server::rpc_server::RpcHandler;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::neo_io::{Serializable, SerializableExt};
-use neo_core::neo_system::NeoSystem;
-use neo_core::persistence::providers::MemoryStoreProvider;
-use neo_core::persistence::Store;
-use neo_core::persistence::StoreProvider;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
-};
-use neo_core::smart_contract::native::GasToken;
-use neo_core::smart_contract::native::NativeRegistry;
-use neo_core::smart_contract::{
-    ContractParameterType, ContractState, NefFile, StorageItem, StorageKey,
-};
+use neo_io::{Serializable, SerializableExtensions};
+use neo_system::Node;
+use neo_storage::persistence::providers::MemoryStoreProvider;
+use neo_storage::persistence::Store;
+use neo_storage::persistence::StoreProvider;
+use neo_config::ProtocolSettings;
+use neo_manifest::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition};
+use neo_native_contracts::GasToken;
+use neo_execution::ContractState;
+use neo_manifest::NefFile;
+use neo_primitives::ContractParameterType;
+use neo_storage::{StorageItem, StorageKey};
 use neo_tokens_tracker::{
     find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService,
-    TokensTrackerSettings,
-};
-use neo_core::NativeContract;
-use neo_core::UInt256;
+    TokensTrackerSettings};
+use neo_native_contracts::NativeContract;
+use neo_primitives::UInt256;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
@@ -62,7 +60,7 @@ where
 }
 
 fn attach_tokens_tracker(
-    system: &Arc<NeoSystem>,
+    system: &Arc<Node>,
     store: Arc<dyn Store>,
     enabled_trackers: Vec<String>,
     track_history: bool,
@@ -73,29 +71,28 @@ fn attach_tokens_tracker(
     settings.network = system.settings().network;
 
     let service = Arc::new(TokensTrackerService::new(settings, store));
-    system
-        .add_service::<TokensTrackerService, _>(Arc::clone(&service))
-        .expect("register tokens tracker service");
+    system.register_service(Arc::clone(&service));
 }
 
-fn store_contract_state(system: &Arc<NeoSystem>, contract: &ContractState) {
+fn store_contract_state(system: &Arc<Node>, contract: &ContractState) {
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
-    let contract_mgmt_id = NativeRegistry::new()
+    let contract_mgmt_id = crate::server::native_queries::native_registry()
         .get_by_name("ContractManagement")
         .expect("contract management")
         .id();
 
-    let mut writer = neo_core::neo_io::BinaryWriter::new();
-    contract.serialize(&mut writer).expect("serialize contract");
+    let record = contract
+        .serialize_contract_record()
+        .expect("serialize contract record");
 
-    let mut store_cache = system.context().store_snapshot_cache();
+    let mut store_cache = system.store_cache();
     let mut key_bytes = Vec::with_capacity(1 + 20);
     key_bytes.push(PREFIX_CONTRACT);
     key_bytes.extend_from_slice(&contract.hash.to_bytes());
     let key = StorageKey::new(contract_mgmt_id, key_bytes);
-    store_cache.add(key, StorageItem::from_bytes(writer.into_bytes()));
+    store_cache.add(key, StorageItem::from_bytes(record));
 
     let mut id_bytes = Vec::with_capacity(1 + 4);
     id_bytes.push(PREFIX_CONTRACT_HASH);
@@ -171,7 +168,7 @@ fn build_nep11_properties_contract() -> ContractState {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep17_balances_reports_asset_metadata() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
     attach_tokens_tracker(
         &system,
@@ -183,7 +180,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let gas_token = GasToken::new();
     let asset = gas_token.hash();
     let contract = gas_token
-        .contract_state(system.settings(), 0)
+        .contract_state(&system.settings(), 0)
         .expect("gas contract");
     store_contract_state(&system, &contract);
     let store_cache = system.store_cache();
@@ -199,7 +196,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
         None,
         snapshot.clone(),
         None,
-        system.settings().clone(),
+        system.settings().as_ref().clone(),
         TEST_MODE_GAS,
         None,
     )
@@ -226,12 +223,11 @@ async fn get_nep17_balances_reports_asset_metadata() {
         .expect("decimals u32");
     assert_eq!(symbol, "GAS");
     assert_eq!(decimals, 8);
-    assert!(query_asset_metadata(snapshot.as_ref(), system.settings(), &asset).is_some());
+    assert!(query_asset_metadata(snapshot.as_ref(), &system.settings(), &asset).is_some());
     let user = UInt160::from_bytes(&[1u8; 20]).expect("user hash");
     let balance = TokenBalance {
         balance: BigInt::from(42),
-        last_updated_block: 7,
-    };
+        last_updated_block: 7};
     let key = Nep17BalanceKey::new(user, asset);
     let (balance_prefix, _, _) = Nep17Tracker::rpc_prefixes();
     write_tracker_entry(&store, balance_prefix, &key, &balance);
@@ -246,7 +242,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep17balances");
 
-    let address = WalletHelper::to_address(&user, server.system().settings().address_version);
+    let address = neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (handler.callback())(&server, &params).expect("getnep17balances");
     let obj = result.as_object().expect("result object");
@@ -277,7 +273,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep11_balances_groups_tokens_by_asset() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
     attach_tokens_tracker(
         &system,
@@ -289,7 +285,7 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
     let gas_token = GasToken::new();
     let asset = gas_token.hash();
     let contract = gas_token
-        .contract_state(system.settings(), 0)
+        .contract_state(&system.settings(), 0)
         .expect("gas contract");
     store_contract_state(&system, &contract);
 
@@ -306,8 +302,7 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
         &key_a,
         &TokenBalance {
             balance: BigInt::from(5),
-            last_updated_block: 10,
-        },
+            last_updated_block: 10},
     );
     write_tracker_entry(
         &store,
@@ -315,15 +310,14 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
         &key_b,
         &TokenBalance {
             balance: BigInt::from(7),
-            last_updated_block: 11,
-        },
+            last_updated_block: 11},
     );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep11balances");
 
-    let address = WalletHelper::to_address(&user, server.system().settings().address_version);
+    let address = neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (handler.callback())(&server, &params).expect("getnep11balances");
     let obj = result.as_object().expect("result object");
@@ -369,7 +363,7 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
             .and_then(Value::as_u64)
             .expect("lastupdatedblock");
         token_map.insert(token_id, (amount, last));
-    }
+   }
 
     let token_a_key = hex::encode(&token_a);
     let token_b_key = hex::encode(&token_b);
@@ -379,7 +373,7 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep11_transfers_orders_by_timestamp_descending() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
     attach_tokens_tracker(
         &system,
@@ -415,8 +409,7 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
             user_script_hash: other,
             block_index: 1,
             tx_hash: tx1,
-            amount: BigInt::from(5),
-        },
+            amount: BigInt::from(5)},
     );
     write_tracker_entry(
         &store,
@@ -426,8 +419,7 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
             user_script_hash: other,
             block_index: 2,
             tx_hash: tx2,
-            amount: BigInt::from(7),
-        },
+            amount: BigInt::from(7)},
     );
 
     let received_key = Nep11TransferKey::new(user, t1, asset, token_a.clone(), 0);
@@ -439,15 +431,14 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
             user_script_hash: UInt160::zero(),
             block_index: 3,
             tx_hash: tx1,
-            amount: BigInt::from(11),
-        },
+            amount: BigInt::from(11)},
     );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep11transfers");
 
-    let address = WalletHelper::to_address(&user, server.system().settings().address_version);
+    let address = neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
     let params = [
         Value::String(address.clone()),
         json!(t1 - 1),
@@ -489,7 +480,7 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "NFT properties test needs system context - pre-existing issue"]
 async fn get_nep11_properties_returns_expected_fields() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
     attach_tokens_tracker(&system, store, vec!["NEP-11".to_string()], true);
 
@@ -502,7 +493,7 @@ async fn get_nep11_properties_returns_expected_fields() {
     let handler = find_handler(&handlers, "getnep11properties");
 
     let address =
-        WalletHelper::to_address(&contract_hash, server.system().settings().address_version);
+        neo_wallets::wallet_helper::to_address(&contract_hash, server.system().settings().address_version);
     let params = [Value::String(address), Value::String("0x0102".to_string())];
     let result = (handler.callback())(&server, &params).expect("getnep11properties");
     let obj = result.as_object().expect("properties object");
@@ -521,7 +512,7 @@ async fn get_nep11_properties_returns_expected_fields() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep17_transfers_orders_by_timestamp_descending() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
     attach_tokens_tracker(
         &system,
@@ -533,7 +524,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     let gas_token = GasToken::new();
     let asset = gas_token.hash();
     let contract = gas_token
-        .contract_state(system.settings(), 0)
+        .contract_state(&system.settings(), 0)
         .expect("gas contract");
     store_contract_state(&system, &contract);
     let user = UInt160::from_bytes(&[2u8; 20]).expect("user hash");
@@ -559,8 +550,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
             user_script_hash: other,
             block_index: 1,
             tx_hash: tx1,
-            amount: BigInt::from(5),
-        },
+            amount: BigInt::from(5)},
     );
     write_tracker_entry(
         &store,
@@ -570,8 +560,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
             user_script_hash: other,
             block_index: 2,
             tx_hash: tx2,
-            amount: BigInt::from(7),
-        },
+            amount: BigInt::from(7)},
     );
 
     let received_key = Nep17TransferKey::new(user, t1, asset, 0);
@@ -583,8 +572,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
             user_script_hash: UInt160::zero(),
             block_index: 3,
             tx_hash: tx1,
-            amount: BigInt::from(11),
-        },
+            amount: BigInt::from(11)},
     );
     let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
     prefix.push(sent_prefix);
@@ -600,7 +588,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep17transfers");
 
-    let address = WalletHelper::to_address(&user, server.system().settings().address_version);
+    let address = neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
     let params = [
         Value::String(address.clone()),
         json!(t1 - 1),
@@ -622,7 +610,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     assert_eq!(sent[1].get("timestamp").and_then(Value::as_u64), Some(t1));
     assert_eq!(
         sent[0].get("transferaddress").and_then(Value::as_str),
-        Some(WalletHelper::to_address(&other, server.system().settings().address_version).as_str())
+        Some(neo_wallets::wallet_helper::to_address(&other, server.system().settings().address_version).as_str())
     );
 
     let received = obj
@@ -635,7 +623,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep17_balances_requires_enabled_tracker() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
     attach_tokens_tracker(&system, store, Vec::new(), true);
 
