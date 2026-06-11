@@ -667,8 +667,9 @@ fn start_rpc_server(
     network_magic: u32,
 ) -> anyhow::Result<Arc<parking_lot::RwLock<neo_rpc::server::RpcServer>>> {
     use neo_rpc::server::{
-        RpcServer, RpcServerBlockchain, RpcServerConfig, RpcServerNode, RpcServerSmartContract,
-        RpcServerState, RpcServerUtilities, RpcServerWallet,
+        RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerConfig, RpcServerNode,
+        RpcServerOracle, RpcServerSmartContract, RpcServerState, RpcServerTokensTracker,
+        RpcServerUtilities, RpcServerWallet,
     };
 
     let bind_address: std::net::IpAddr = config
@@ -694,6 +695,12 @@ fn start_rpc_server(
     server.register_handlers(RpcServerWallet::register_handlers());
     server.register_handlers(RpcServerUtilities::register_handlers());
     server.register_handlers(RpcServerSmartContract::register_handlers());
+    // C#-optional plugin method groups (ApplicationLogs, TokensTracker,
+    // OracleService): registered by default so the daemon serves the full
+    // 55-method C# RPC surface RPC operators expect.
+    server.register_handlers(RpcServerApplicationLogs::register_handlers());
+    server.register_handlers(RpcServerTokensTracker::register_handlers());
+    server.register_handlers(RpcServerOracle::register_handlers());
 
     let server = Arc::new(parking_lot::RwLock::new(server));
     let weak = Arc::downgrade(&server);
