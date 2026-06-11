@@ -56,7 +56,7 @@
 //! ```no_run
 //! use std::sync::Arc;
 //! use async_trait::async_trait;
-//! use neo_runtime::{BlockExecutor, BlockchainHandle, ExecutionOutcome, Service, ServiceError};
+//! use neo_runtime::{BlockExecutor, ExecutionOutcome, Service, ServiceError};
 //! use neo_payloads::Block;
 //!
 //! #[derive(Debug)]
@@ -76,9 +76,6 @@
 //! // Services are stored and called as trait objects — no ActorRef, no mailbox.
 //! let executor: Arc<dyn BlockExecutor> = Arc::new(StubExecutor);
 //! let _outcome = executor.execute(&Block::new()).await?;
-//!
-//! // The blockchain orchestrator is exposed as a command/event channel handle.
-//! let (_blockchain, _rx) = BlockchainHandle::with_capacity();
 //! # Ok(()) }
 //! ```
 
@@ -96,10 +93,7 @@ pub mod services;
 // Everything the spec promises at the top level of `neo_runtime` is
 // exported here so the docstring "use neo_runtime::BlockExecutor"
 // import path resolves.
-pub use blockchain::{
-    BlockchainCommand, BlockchainEvent, BlockchainHandle, DEFAULT_COMMAND_CAPACITY,
-    DEFAULT_EVENT_CAPACITY,
-};
+pub use blockchain::{BlockchainEvent, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY};
 pub use errors::{ServiceError, ServiceResult};
 pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
 pub use services::{

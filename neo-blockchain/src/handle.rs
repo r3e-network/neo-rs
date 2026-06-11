@@ -214,8 +214,8 @@ impl BlockchainHandle {
 // The request/response methods above surface failures through the canonical
 // `neo_runtime::ServiceError` (imported at the top of this module) rather than
 // a duplicated local subset — `neo_runtime` is already part of this crate's
-// public surface (see the `RuntimeEvent` / `RuntimeCommand` re-exports), so the
-// single shared error vocabulary keeps the runtime layer overlap-free.
+// public surface (see the `RuntimeEvent` re-export), so the single shared
+// error vocabulary keeps the runtime layer overlap-free.
 
 // =============================================================================
 // Legacy actor-style back-compat shims
