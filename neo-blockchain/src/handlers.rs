@@ -201,7 +201,7 @@ impl BlockchainService {
         &self,
         block: Arc<Block>,
         relay: bool,
-        _pre_verified: bool,
+        pre_verified: bool,
     ) -> Result<(), String> {
         let index = block.index();
         let hash = Self::try_block_hash(block.as_ref())?;
@@ -241,6 +241,42 @@ impl BlockchainService {
         if let Err(error) = neo_chain::block_validation::validate_no_duplicate_transactions(&tx_hashes)
         {
             return Err(format!("block {index} has duplicate transactions: {error}"));
+        }
+
+        // C# Header.Verify (Blockchain.OnNewBlock runs block.Verify before
+        // Persist): a peer-relayed block must pass the structural header checks
+        // and carry a consensus witness that satisfies the PREVIOUS block's
+        // NextConsensus (the committee/validators multisig address). Locally
+        // produced (pre-verified) blocks from the consensus driver skip this.
+        if !pre_verified {
+            if let Some(snapshot) = self.system.store_snapshot() {
+                let settings = self.system.settings();
+                if i32::from(block.header.primary_index()) >= settings.validators_count {
+                    return Err(format!("block {index}: primary index out of range"));
+                }
+                let prev = neo_native_contracts::LedgerContract::new()
+                    .get_trimmed_block(&snapshot, block.header.prev_hash())
+                    .ok()
+                    .flatten()
+                    .ok_or_else(|| format!("block {index}: previous block not found"))?;
+                if block.header.timestamp() <= prev.header.timestamp() {
+                    return Err(format!("block {index}: timestamp not after previous block"));
+                }
+                // The single block witness must satisfy prev.NextConsensus.
+                let next_consensus = *prev.header.next_consensus();
+                if neo_execution::Helper::verify_witness(
+                    &block.header,
+                    settings.as_ref(),
+                    &snapshot,
+                    &next_consensus,
+                    &block.header.witness,
+                    neo_execution::Helper::MAX_VERIFICATION_GAS,
+                )
+                .is_err()
+                {
+                    return Err(format!("block {index}: consensus witness verification failed"));
+                }
+            }
         }
 
         // C# Blockchain.OnNewBlock → Persist(block): the native-contract
@@ -523,6 +559,7 @@ mod tests {
     /// native persistence pipeline actually runs.
     struct StoreContext {
         snapshot: Arc<neo_data_cache::DataCache>,
+        settings: Arc<neo_config::ProtocolSettings>,
     }
     impl std::fmt::Debug for StoreContext {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -531,7 +568,7 @@ mod tests {
     }
     impl SystemContext for StoreContext {
         fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-            Arc::new(neo_config::ProtocolSettings::default())
+            Arc::clone(&self.settings)
         }
         fn current_height(&self) -> u32 {
             0
@@ -542,10 +579,17 @@ mod tests {
     }
 
     fn store_fixture() -> (BlockchainService, BlockchainHandle, Arc<neo_data_cache::DataCache>) {
+        store_fixture_with(neo_config::ProtocolSettings::default())
+    }
+
+    fn store_fixture_with(
+        settings: neo_config::ProtocolSettings,
+    ) -> (BlockchainService, BlockchainHandle, Arc<neo_data_cache::DataCache>) {
         neo_native_contracts::install();
         let snapshot = Arc::new(neo_data_cache::DataCache::new(false));
         let system: Arc<dyn SystemContext> = Arc::new(StoreContext {
             snapshot: Arc::clone(&snapshot),
+            settings: Arc::new(settings),
         });
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::default());
@@ -589,11 +633,14 @@ mod tests {
         // An inventory block at the next height runs the OnPersist /
         // PostPersist native hooks over the same store: block 1 mints
         // the 0.5-GAS committee reward to standby_committee[1 % 21].
+        // The synthetic header carries no real consensus witness, so it goes
+        // through the pre-verified path (the consensus-driver submission route);
+        // witness verification of peer-relayed blocks has its own tests below.
         let mut header = Header::new();
         header.set_index(1);
         let block = Arc::new(Block::from_parts(header, vec![]));
         service
-            .handle_block_inventory(block, false, false)
+            .handle_block_inventory(block, false, true)
             .await
             .expect("inventory block persists");
         assert_eq!(service.ledger.current_height(), 1);
@@ -613,6 +660,75 @@ mod tests {
                 .is_some(),
             "block-1 PostPersist minted the rotating committee reward"
         );
+    }
+
+    /// End-to-end consensus-witness verification of a peer-relayed block: a
+    /// block signed by the network's validator (1-of-1 multisig over the C#
+    /// sign data = network magic LE + header hash) is accepted, and the same
+    /// block with a tampered signature is rejected. Proves the whole
+    /// `Header.Verify` path (prev-block lookup, timestamp/primary checks,
+    /// script-hash match against prev `NextConsensus`, CheckMultisig over the
+    /// header sign data) so live sync cannot be stalled by a broken verifier.
+    #[tokio::test]
+    async fn peer_block_witness_verification_accepts_valid_and_rejects_tampered() {
+        let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+        let public_key =
+            neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+        let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+        let mut settings = neo_config::ProtocolSettings::default();
+        settings.standby_committee = vec![point.clone()];
+        settings.validators_count = 1;
+        let network = settings.network;
+
+        let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
+        service.initialize().await;
+        let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+        // Block 1 over genesis (no transactions; merkle root stays zero).
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_prev_hash(genesis.hash());
+        header.set_timestamp(genesis.header.timestamp() + 15_000);
+        header.set_primary_index(0);
+        header.set_next_consensus(*genesis.header.next_consensus());
+
+        // C# sign data: network magic (LE) + header hash (witness excluded).
+        let mut sign_data = Vec::with_capacity(36);
+        sign_data.extend_from_slice(&network.to_le_bytes());
+        sign_data.extend_from_slice(&header.hash().to_bytes());
+        let signature =
+            neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let verification = neo_redeem_script::multi_sig_redeem_script_from_points(1, &[point])
+            .expect("multisig script");
+        let invocation = |sig: &[u8]| {
+            let mut script = vec![0x0C, 64]; // PUSHDATA1 64
+            script.extend_from_slice(sig);
+            script
+        };
+
+        // Tampered signature -> rejected, nothing persisted.
+        let mut tampered_sig = signature;
+        tampered_sig[10] ^= 0xFF;
+        let mut tampered = header.clone();
+        tampered.witness = neo_payloads::Witness::new_with_scripts(
+            invocation(&tampered_sig),
+            verification.clone(),
+        );
+        let err = service
+            .handle_block_inventory(Arc::new(Block::from_parts(tampered, vec![])), false, false)
+            .await
+            .expect_err("tampered consensus witness must be rejected");
+        assert!(err.contains("witness"), "rejection names the witness: {err}");
+        assert_eq!(service.ledger.current_height(), 0);
+
+        // Valid signature -> accepted and persisted.
+        header.witness =
+            neo_payloads::Witness::new_with_scripts(invocation(&signature), verification);
+        service
+            .handle_block_inventory(Arc::new(Block::from_parts(header, vec![])), false, false)
+            .await
+            .expect("validly signed peer block is accepted");
+        assert_eq!(service.ledger.current_height(), 1);
     }
 
     #[tokio::test]
