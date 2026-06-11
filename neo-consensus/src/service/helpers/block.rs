@@ -5,31 +5,49 @@ pub(in crate::service) fn compute_merkle_root(hashes: &[UInt256]) -> UInt256 {
     neo_crypto::MerkleTree::compute_root(hashes).unwrap_or_else(UInt256::zero)
 }
 
-pub(in crate::service) fn compute_next_consensus_address(validators: &[ValidatorInfo]) -> UInt160 {
-    use neo_script_builder::ScriptBuilder;
-    use neo_crypto::ECPoint;
-
-    if validators.is_empty() {
-        return UInt160::zero();
+/// The BFT threshold `M = N - (N-1)/3` for `n` validators (`0` for an
+/// empty set).
+pub(in crate::service) fn bft_threshold(n: usize) -> usize {
+    if n == 0 {
+        0
+    } else {
+        n - (n - 1) / 3
     }
+}
 
-    let n = validators.len();
-    let f = (n - 1) / 3;
-    let m = n - f;
+/// The `M`-of-`N` multi-sig verification script over the validator public
+/// keys (C# `Contract.CreateMultiSigRedeemScript` with the canonically
+/// sorted keys): `PUSH(m) · {PUSH(key)}* · PUSH(n) · System.Crypto.CheckMultisig`.
+/// This is the block witness's verification script, and its hash is the
+/// `NextConsensus` address.
+pub(in crate::service) fn multisig_verification_script(keys: &[neo_crypto::ECPoint]) -> Vec<u8> {
+    use neo_script_builder::ScriptBuilder;
 
-    let mut keys: Vec<ECPoint> = validators.iter().map(|v| v.public_key.clone()).collect();
-    keys.sort();
+    let n = keys.len();
+    let m = bft_threshold(n);
+
+    let mut sorted = keys.to_vec();
+    sorted.sort();
 
     let mut builder = ScriptBuilder::new();
     builder.emit_push_int(m as i64);
-    for key in &keys {
+    for key in &sorted {
         builder.emit_push(key.as_bytes());
     }
     builder.emit_push_int(n as i64);
     builder
         .emit_syscall("System.Crypto.CheckMultisig")
         .expect("infallible: in-memory emit");
-    UInt160::from_script(&builder.to_array())
+    builder.to_array()
+}
+
+pub(in crate::service) fn compute_next_consensus_address(validators: &[ValidatorInfo]) -> UInt160 {
+    if validators.is_empty() {
+        return UInt160::zero();
+    }
+    let keys: Vec<neo_crypto::ECPoint> =
+        validators.iter().map(|v| v.public_key.clone()).collect();
+    UInt160::from_script(&multisig_verification_script(&keys))
 }
 
 #[allow(clippy::too_many_arguments)]
