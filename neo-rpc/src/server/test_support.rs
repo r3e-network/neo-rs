@@ -378,21 +378,26 @@ fn seed_genesis_state(node: &Node) {
         StorageItem::from_bytes(writer.into_bytes()),
     );
 
-    // Index -> hash record (`Prefix_BlockHash` + little-endian index).
+    // Index -> hash record (`Prefix_BlockHash` + big-endian index, the
+    // C# `CreateStorageKey(prefix, uint)` / `KeyBuilder.AddBigEndian`
+    // layout the `LedgerContract` reader expects).
     let mut hash_key = Vec::with_capacity(1 + 4);
     hash_key.push(LEDGER_PREFIX_BLOCK_HASH);
-    hash_key.extend_from_slice(&0u32.to_le_bytes());
+    hash_key.extend_from_slice(&0u32.to_be_bytes());
     store.update(
         StorageKey::new(ledger_id, hash_key),
         StorageItem::from_bytes(genesis_hash.to_bytes().to_vec()),
     );
 
-    // Current-block pointer (`Prefix_CurrentBlock`): 32-byte hash plus
-    // little-endian index (the `HashIndexState` layout the reader
-    // expects).
-    let mut pointer = Vec::with_capacity(36);
-    pointer.extend_from_slice(&genesis_hash.to_bytes());
-    pointer.extend_from_slice(&0u32.to_le_bytes());
+    // Current-block pointer (`Prefix_CurrentBlock`): the C# `HashIndexState`
+    // interoperable stack item (`Struct[ByteString(hash), Integer(index)]`)
+    // serialized with `BinarySerializer` — exactly what the `LedgerContract`
+    // reader (`current_index` / `current_hash`) decodes.
+    let pointer = neo_native_contracts::ledger_contract::serialize_hash_index_state(
+        &genesis_hash,
+        0,
+    )
+    .expect("serialize genesis HashIndexState pointer");
     store.update(
         StorageKey::new(ledger_id, vec![LEDGER_PREFIX_CURRENT_BLOCK]),
         StorageItem::from_bytes(pointer),

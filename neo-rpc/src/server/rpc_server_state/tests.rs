@@ -579,6 +579,129 @@ async fn state_queries_gate_on_current_root_without_full_state() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn unsupported_state_data_uses_csharp_bool_casing() {
+    // C# interpolates `bool.ToString()` into the -606 data string, so
+    // the flag must read `True`/`False`, not Rust's `true`/`false`.
+    let fixture = make_server_with_mpt(false);
+    let err = call(
+        &fixture.server,
+        "getstate",
+        &[
+            json!(fixture.root1.to_string()),
+            json!(fixture.contract_hash.to_string()),
+            json!(b64(&[0x0A, 0x01])),
+        ],
+    )
+    .expect_err("historical root rejected without FullState");
+    let rpc_error: RpcError = err.into();
+    assert_eq!(rpc_error.code(), RpcError::unsupported_state().code());
+    assert_eq!(
+        rpc_error.data(),
+        Some(
+            format!(
+                "fullState:False,current:{},rootHash:{}",
+                fixture.root2, fixture.root1
+            )
+            .as_str()
+        )
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn find_states_count_accepts_csharp_numeric_tokens() {
+    // C# binds `count` through `ParameterConverter.ToNumeric<int>`:
+    // JSON strings, float-integral numbers, and booleans all convert.
+    let fixture = make_server_with_mpt(true);
+    let root = json!(fixture.root2.to_string());
+    let contract = json!(fixture.contract_hash.to_string());
+    let prefix = json!(b64(&[0x0A]));
+
+    let page_len = |count: Value| {
+        let result = call(
+            &fixture.server,
+            "findstates",
+            &[
+                root.clone(),
+                contract.clone(),
+                prefix.clone(),
+                Value::Null,
+                count,
+            ],
+        )
+        .expect("findstates accepts the count token");
+        let len = result
+            .get("results")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .expect("results array");
+        let truncated = result
+            .get("truncated")
+            .and_then(Value::as_bool)
+            .expect("truncated flag");
+        (len, truncated)
+    };
+
+    // String-encoded integer (JString.AsNumber).
+    assert_eq!(page_len(json!("2")), (2, true));
+    // Whitespace is allowed by the C# invariant float parse.
+    assert_eq!(page_len(json!(" 2 ")), (2, true));
+    // Float-integral number.
+    assert_eq!(page_len(json!(2.0)), (2, true));
+    // String-encoded float-integral (exponent form allowed).
+    assert_eq!(page_len(json!("3e0")), (3, false));
+    // Boolean true converts to 1 (JBoolean.AsNumber).
+    assert_eq!(page_len(json!(true)), (1, true));
+    // Empty string converts to 0, i.e. the default page size.
+    assert_eq!(page_len(json!("")), (3, false));
+    // Negative counts select the default page size.
+    assert_eq!(page_len(json!(-5)), (3, false));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn find_states_count_rejects_non_integral_tokens() {
+    let fixture = make_server_with_mpt(true);
+    let root = json!(fixture.root2.to_string());
+    let contract = json!(fixture.contract_hash.to_string());
+    let prefix = json!(b64(&[0x0A]));
+
+    for (count, rendered) in [
+        (json!(2.5), "2.5"),
+        (json!("2.5"), "\"2.5\""),
+        (json!("abc"), "\"abc\""),
+        // Whitespace-only is not the empty string: the C# float parse
+        // fails and yields NaN.
+        (json!(" "), "\" \""),
+        // Exceeds int.MaxValue.
+        (json!(2_147_483_648i64), "2147483648"),
+        (json!([1]), "[1]"),
+    ] {
+        let err = call(
+            &fixture.server,
+            "findstates",
+            &[
+                root.clone(),
+                contract.clone(),
+                prefix.clone(),
+                Value::Null,
+                count,
+            ],
+        )
+        .expect_err("non-integral count tokens are rejected");
+        let rpc_error: RpcError = err.into();
+        assert_eq!(
+            rpc_error.code(),
+            RpcError::invalid_params().code(),
+            "count {rendered} must be rejected"
+        );
+        assert_eq!(
+            rpc_error.data(),
+            Some(format!("Invalid System.Int32 value: {rendered}").as_str()),
+            "count {rendered} must carry the C# data string"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn state_queries_report_resolution_failure_for_unknown_root() {
     let fixture = make_server_with_mpt(true);
     let unknown_root = neo_primitives::UInt256::from([0x77u8; 32]);

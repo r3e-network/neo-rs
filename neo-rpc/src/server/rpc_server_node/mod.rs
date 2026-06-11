@@ -113,13 +113,14 @@ impl RpcServerNode {
         // - `bad`: always an empty array in C# v3.9.1 (no bad-peer book).
         // - `connected`: C# serves `Remote.Address` + `ListenerTcpPort`
         //   per remote node. The handle-side tracker folds the service's
-        //   `PeerConnected` events, which carry the transport address:
+        //   `PeerConnected` events, which carry exactly that pair:
         //   outbound dials publish the dialed endpoint (the peer's
-        //   listener — exactly the pair C# reports); inbound accepts
-        //   publish the remote IP + *ephemeral* source port, because
-        //   the per-peer service does not parse version payloads yet
-        //   and so cannot learn the advertised `ListenerTcpPort`
-        //   (divergence documented on
+        //   listener); inbound accepts publish `(remote_ip, 0)` — the
+        //   C# unknown-listener form — and the per-peer service
+        //   re-publishes the upgraded
+        //   `(remote_ip, advertised_listener_port)` endpoint once the
+        //   version handshake captures the peer's `TcpServer`
+        //   capability (see
         //   `neo_runtime::NetworkEvent::PeerConnected`). Peers whose
         //   address never became known at the handle seam are counted
         //   by `getconnectioncount` but omitted here, since fabricating

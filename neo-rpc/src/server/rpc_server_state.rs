@@ -26,7 +26,7 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Trie};
 use neo_execution::contract_state::ContractState;
 use neo_io::MemoryReader;
-use neo_state_service::mpt_store::MptStore;
+use neo_state_service::mpt_store::{MptReadSnapshot, MptStore};
 use neo_state_service::state_store::StateStoreLookup;
 use neo_state_service::{StateRoot, StateStore};
 use neo_primitives::{UInt160, UInt256};
@@ -136,8 +136,12 @@ impl RpcServerState {
         let script_hash = Self::parse_uint160(params, 1, "getproof")?;
         let key = Self::parse_base64(params, 2, "getproof", "Base64 storage key")?;
 
-        Self::check_root_hash(&mpt, &root_hash)?;
-        let mut trie = mpt.open_trie(Some(root_hash));
+        // One frozen view per request (C# `GetStoreSnapshot()`): the
+        // root gate and the trie walk read the same generation, so a
+        // concurrent block commit cannot prune nodes mid-walk.
+        let snapshot = mpt.snapshot();
+        Self::check_root_hash(&snapshot, &root_hash)?;
+        let mut trie = snapshot.open_trie(Some(root_hash));
         let contract_id = Self::historical_contract_id(&mut trie, &script_hash)?;
         let payload = Self::proof_payload(&mut trie, contract_id, &key)?;
         Ok(Value::String(payload))
@@ -174,8 +178,9 @@ impl RpcServerState {
         let script_hash = Self::parse_uint160(params, 1, "getstate")?;
         let key = Self::parse_base64(params, 2, "getstate", "Base64 storage key")?;
 
-        Self::check_root_hash(&mpt, &root_hash)?;
-        let mut trie = mpt.open_trie(Some(root_hash));
+        let snapshot = mpt.snapshot();
+        Self::check_root_hash(&snapshot, &root_hash)?;
+        let mut trie = snapshot.open_trie(Some(root_hash));
         let contract_id = Self::historical_contract_id(&mut trie, &script_hash)?;
         let storage_key = Self::storage_key_bytes(contract_id, &key);
         let value = trie
@@ -200,8 +205,9 @@ impl RpcServerState {
         let from_key = Self::parse_optional_base64(params, 3, "findstates", "Base64 from-key")?;
         let count = Self::parse_find_count(params, 4)?;
 
-        Self::check_root_hash(&mpt, &root_hash)?;
-        let mut trie = mpt.open_trie(Some(root_hash));
+        let snapshot = mpt.snapshot();
+        Self::check_root_hash(&snapshot, &root_hash)?;
+        let mut trie = snapshot.open_trie(Some(root_hash));
         let contract_id = Self::historical_contract_id(&mut trie, &script_hash)?;
 
         let prefix_key = Self::storage_key_bytes(contract_id, &prefix);
@@ -210,25 +216,24 @@ impl RpcServerState {
             .filter(|from| !from.is_empty())
             .map(|from| Self::storage_key_bytes(contract_id, from));
 
-        let entries = trie
-            .find(&prefix_key, from_storage_key.as_deref())
+        // C# consumes the lazy `Trie.Find` enumerator and breaks once
+        // it has seen `count` results plus one probe entry, so the
+        // trie traversal never materializes the whole prefix range.
+        // `find_limited` is that early break: request exactly
+        // `count + 1` entries — the probe's only job is to tell us
+        // whether the page is truncated.
+        let mut entries = trie
+            .find_limited(&prefix_key, from_storage_key.as_deref(), count + 1)
             .map_err(Self::find_error)?;
-
-        // C# loop shape: emit up to `count` results, then peek one
-        // further entry purely to learn whether the page is truncated.
-        let mut results = Vec::new();
-        let mut seen = 0usize;
-        for entry in &entries {
-            if count < seen {
-                break;
-            }
-            if seen < count {
+        let truncated = entries.len() > count;
+        entries.truncate(count);
+        let results: Vec<(Vec<u8>, Vec<u8>)> = entries
+            .into_iter()
+            .map(|entry| {
                 let key_suffix = entry.key.get(std::mem::size_of::<i32>()..).unwrap_or(&[]);
-                results.push((key_suffix.to_vec(), entry.value.clone()));
-            }
-            seen += 1;
-        }
-        let truncated = count < seen;
+                (key_suffix.to_vec(), entry.value)
+            })
+            .collect();
 
         let mut response = Map::new();
         if let Some((first_key, _)) = results.first() {
@@ -265,14 +270,25 @@ impl RpcServerState {
 
     /// C# `StatePlugin.CheckRootHash`: without `FullState`, only the
     /// current local root may be queried (`UnsupportedState`
-    /// otherwise, with the same diagnostic data string).
-    fn check_root_hash(mpt: &MptStore, root_hash: &UInt256) -> Result<(), RpcException> {
-        let full_state = mpt.full_state();
-        let current = mpt.current_local_root_hash();
+    /// otherwise, with the same diagnostic data string — C#
+    /// interpolates `bool.ToString()`, so the flag reads
+    /// `True`/`False`).
+    ///
+    /// The check runs against the request's own store snapshot (C#
+    /// reads the live `CurrentLocalRootHash` just before opening the
+    /// snapshot; gating on the snapshot's value closes that race
+    /// window without changing the accepted set).
+    fn check_root_hash(
+        snapshot: &MptReadSnapshot,
+        root_hash: &UInt256,
+    ) -> Result<(), RpcException> {
+        let full_state = snapshot.full_state();
+        let current = snapshot.current_local_root_hash();
         if !full_state && current.as_ref() != Some(root_hash) {
+            let full_state_text = if full_state { "True" } else { "False" };
             let current_text = current.map(|hash| hash.to_string()).unwrap_or_default();
             return Err(RpcException::from(RpcError::unsupported_state().with_data(
-                format!("fullState:{full_state},current:{current_text},rootHash:{root_hash}"),
+                format!("fullState:{full_state_text},current:{current_text},rootHash:{root_hash}"),
             )));
         }
         Ok(())
@@ -284,7 +300,7 @@ impl RpcServerState {
     /// trie and decodes the interoperable `ContractState` to obtain
     /// the contract id (`UnknownContract` when absent).
     fn historical_contract_id(
-        trie: &mut Trie<MptStore>,
+        trie: &mut Trie<MptReadSnapshot>,
         script_hash: &UInt160,
     ) -> Result<i32, RpcException> {
         let mut key = Vec::with_capacity(std::mem::size_of::<i32>() + 1 + UInt160::LENGTH);
@@ -309,7 +325,7 @@ impl RpcServerState {
     /// for `(contract_id, key)` and serializes the payload
     /// (`UnknownStorageItem` when the key is not in the trie).
     fn proof_payload(
-        trie: &mut Trie<MptStore>,
+        trie: &mut Trie<MptReadSnapshot>,
         contract_id: i32,
         key: &[u8],
     ) -> Result<String, RpcException> {
@@ -448,26 +464,76 @@ impl RpcServerState {
         }
    }
 
-    /// Parses the optional `findstates` count: absent, `null`, or
-    /// non-positive falls back to the C# default
-    /// (`MaxFindResultItems`); explicit values are capped at the same
-    /// maximum.
+    /// Parses the optional `findstates` count with the C# binder's
+    /// accepting behaviour: absent or `null` falls back to the C#
+    /// parameter default (`int count = 0`, i.e. `MaxFindResultItems`);
+    /// present tokens go through the `ParameterConverter.ToNumeric<int>`
+    /// conversion; non-positive results select the default page size
+    /// and explicit values are capped at [`MAX_FIND_RESULT_ITEMS`].
     fn parse_find_count(params: &[Value], idx: usize) -> Result<usize, RpcException> {
         let requested = match params.get(idx) {
-            None | Some(Value::Null) => 0i64,
-            Some(value) => value.as_i64().ok_or_else(|| {
-                RpcException::from(
-                    RpcError::invalid_params()
-                        .with_data(format!("findstates expects integer count at index {idx}")),
-                )
-           })?,
+            None | Some(Value::Null) => 0i32,
+            Some(value) => Self::to_numeric_i32(value)?,
         };
         if requested <= 0 {
             return Ok(MAX_FIND_RESULT_ITEMS);
         }
-        Ok(usize::try_from(requested)
-            .unwrap_or(MAX_FIND_RESULT_ITEMS)
-            .min(MAX_FIND_RESULT_ITEMS))
+        Ok((requested as usize).min(MAX_FIND_RESULT_ITEMS))
+   }
+
+    /// C# `ParameterConverter.ToNumeric<int>` (ParameterConverter.cs):
+    /// funnels the token through `JToken.AsNumber()` and requires the
+    /// result to be an integral value within `i32` range — so JSON
+    /// strings ("2"), float-integral numbers (2.0), and booleans are
+    /// accepted exactly as the C# binder accepts them, while
+    /// fractional, out-of-range, and non-numeric tokens are rejected
+    /// with the C# `InvalidParams` data string.
+    fn to_numeric_i32(value: &Value) -> Result<i32, RpcException> {
+        let number = Self::token_as_number(value);
+        // C# checks the `int` range first and then
+        // `IsValidInteger` (an exact integral remainder; NaN fails
+        // it). Infinity fails the range check; both reject the same
+        // way here.
+        if !(number >= f64::from(i32::MIN) && number <= f64::from(i32::MAX))
+            || number % 1.0 != 0.0
+        {
+            return Err(RpcException::from(
+                RpcError::invalid_params()
+                    .with_data(format!("Invalid System.Int32 value: {value}")),
+            ));
+        }
+        Ok(number as i32)
+   }
+
+    /// Neo.Json `JToken.AsNumber()`: numbers pass through, strings
+    /// parse as invariant floating-point text (`JString.AsNumber` —
+    /// the empty string is `0`, surrounding whitespace is allowed,
+    /// unparseable text is NaN), booleans map to `1`/`0`
+    /// (`JBoolean.AsNumber`), and every other token is NaN
+    /// (`JToken.AsNumber` base).
+    fn token_as_number(value: &Value) -> f64 {
+        match value {
+            Value::Number(number) => number.as_f64().unwrap_or(f64::NAN),
+            Value::String(text) => {
+                if text.is_empty() {
+                    return 0.0;
+                }
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    f64::NAN
+                } else {
+                    trimmed.parse::<f64>().unwrap_or(f64::NAN)
+                }
+            }
+            Value::Bool(flag) => {
+                if *flag {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            _ => f64::NAN,
+        }
    }
 
     fn expect_u32(params: &[Value], idx: usize, method: &str) -> Result<u32, RpcException> {

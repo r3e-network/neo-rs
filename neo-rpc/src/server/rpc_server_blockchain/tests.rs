@@ -5,7 +5,7 @@ use neo_extensions::io::SerializableExtensions;
 use neo_payloads::Block as LedgerBlock;
 use neo_payloads::BlockHeader as LedgerBlockHeader;
 use neo_block::VerifyResult;
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_io::{MemoryReader, Serializable};
 use neo_payloads::block::Block;
 use neo_payloads::get_sign_data_vec;
 use neo_payloads::signer::Signer;
@@ -119,14 +119,15 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     const PREFIX_BLOCK_HASH: u8 = 0x09;
     const PREFIX_TRANSACTION: u8 = 0x0b;
     const PREFIX_CURRENT_BLOCK: u8 = 0x0c;
-    const RECORD_KIND_TRANSACTION: u8 = 0x01;
 
     let hash = block.hash();
     let index = block.index();
 
+    // `Prefix_BlockHash` key: prefix + big-endian index (C#
+    // `KeyBuilder.AddBigEndian`), matching the `LedgerContract` reader.
     let mut hash_key_bytes = Vec::with_capacity(1 + 4);
     hash_key_bytes.push(PREFIX_BLOCK_HASH);
-    hash_key_bytes.extend_from_slice(&index.to_le_bytes());
+    hash_key_bytes.extend_from_slice(&index.to_be_bytes());
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(hash_key, StorageItem::from_bytes(hash.to_bytes().to_vec()));
 
@@ -139,24 +140,28 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     store.add(block_key, StorageItem::from_bytes(trimmed_bytes));
 
     for tx in &block.transactions {
-        let mut writer = BinaryWriter::new();
-        writer
-            .write_u8(RECORD_KIND_TRANSACTION)
-            .expect("record kind");
-        writer.write_u32(index).expect("block index");
-        writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
-        writer.write_var_bytes(&tx.to_bytes()).expect("tx bytes");
+        // `Prefix_Transaction` value: the C# `TransactionState` interoperable
+        // stack item (`Struct[Integer(index), ByteString(tx), Integer(state)]`)
+        // serialized with `BinarySerializer`, matching the reader.
+        let record = neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+            index,
+            VMState::NONE,
+            tx,
+        )
+        .expect("serialize TransactionState record");
 
         let mut tx_key_bytes = Vec::with_capacity(1 + 32);
         tx_key_bytes.push(PREFIX_TRANSACTION);
         tx_key_bytes.extend_from_slice(&tx.hash().to_bytes());
         let tx_key = StorageKey::new(LedgerContract::ID, tx_key_bytes);
-        store.add(tx_key, StorageItem::from_bytes(writer.into_bytes()));
+        store.add(tx_key, StorageItem::from_bytes(record));
    }
 
-    let mut current_bytes = Vec::with_capacity(36);
-    current_bytes.extend_from_slice(&hash.to_bytes());
-    current_bytes.extend_from_slice(&index.to_le_bytes());
+    // `Prefix_CurrentBlock` value: the C# `HashIndexState` interoperable
+    // stack item (`Struct[ByteString(hash), Integer(index)]`).
+    let current_bytes =
+        neo_native_contracts::ledger_contract::serialize_hash_index_state(&hash, index)
+            .expect("serialize HashIndexState pointer");
     let current_key = StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]);
     store.add(current_key, StorageItem::from_bytes(current_bytes));
     store.commit();
@@ -401,9 +406,10 @@ async fn get_best_block_hash_reflects_current_state() {
     let mut store = system.store_cache();
     let hash = UInt256::zero();
     let index = 100u32;
-    let mut current_bytes = Vec::with_capacity(36);
-    current_bytes.extend_from_slice(&hash.to_bytes());
-    current_bytes.extend_from_slice(&index.to_le_bytes());
+    // C# `HashIndexState` interoperable stack item, matching the reader.
+    let current_bytes =
+        neo_native_contracts::ledger_contract::serialize_hash_index_state(&hash, index)
+            .expect("serialize HashIndexState pointer");
     let key = StorageKey::new(LedgerContract::ID, vec![0x0c]);
     store.add(key, StorageItem::from_bytes(current_bytes));
     store.commit();
@@ -479,7 +485,6 @@ async fn get_block_sys_fee_reports_unknown_height() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "Store isolation issue - snapshot cache commits not visible to store_cache reads"]
 async fn get_block_hash_reports_hash_for_height() {
     let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());

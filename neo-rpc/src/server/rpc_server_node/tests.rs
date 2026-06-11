@@ -4,7 +4,6 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_extensions::io::SerializableExtensions;
 use neo_block::VerifyResult;
-use neo_io::BinaryWriter;
 use neo_payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
 use neo_payloads::OracleResponseCode;
 use neo_payloads::signer::Signer;
@@ -197,22 +196,21 @@ fn mint_gas(
 
 fn persist_transaction_record(store: &mut StoreCache, tx: &Transaction, block_index: u32) {
     const PREFIX_TRANSACTION: u8 = 0x0b;
-    const RECORD_KIND_TRANSACTION: u8 = 0x01;
 
-    let mut writer = BinaryWriter::new();
-    writer
-        .write_u8(RECORD_KIND_TRANSACTION)
-        .expect("record kind");
-    writer.write_u32(block_index).expect("block index");
-    writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
-    let tx_bytes = tx.to_bytes();
-    writer.write_var_bytes(&tx_bytes).expect("tx bytes");
+    // `Prefix_Transaction` value: the C# `TransactionState` interoperable
+    // stack item serialized with `BinarySerializer`, matching the reader.
+    let record = neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+        block_index,
+        VMState::NONE,
+        tx,
+    )
+    .expect("serialize TransactionState record");
 
     let mut key_bytes = Vec::with_capacity(1 + 32);
     key_bytes.push(PREFIX_TRANSACTION);
     key_bytes.extend_from_slice(&tx.hash().to_bytes());
     let key = StorageKey::new(LedgerContract::ID, key_bytes);
-    store.add(key, StorageItem::from_bytes(writer.to_bytes()));
+    store.add(key, StorageItem::from_bytes(record));
     store.commit();
 }
 

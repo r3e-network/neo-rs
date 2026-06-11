@@ -2,7 +2,7 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_payloads::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
-use neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExtensions};
+use neo_io::{MemoryReader, Serializable, SerializableExtensions};
 use neo_payloads::{
     signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
 };
@@ -65,14 +65,15 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     const PREFIX_BLOCK_HASH: u8 = 0x09;
     const PREFIX_TRANSACTION: u8 = 0x0b;
     const PREFIX_CURRENT_BLOCK: u8 = 0x0c;
-    const RECORD_KIND_TRANSACTION: u8 = 0x01;
 
     let hash = block.hash();
     let index = block.index();
 
+    // C# `CreateStorageKey(Prefix_BlockHash, uint)` uses `KeyBuilder.AddBigEndian`
+    // — the index is stored big-endian so the server's lookup matches.
     let mut hash_key_bytes = Vec::with_capacity(1 + 4);
     hash_key_bytes.push(PREFIX_BLOCK_HASH);
-    hash_key_bytes.extend_from_slice(&index.to_le_bytes());
+    hash_key_bytes.extend_from_slice(&index.to_be_bytes());
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(
         hash_key,
@@ -91,13 +92,18 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     );
 
     for tx in &block.transactions {
-        let mut writer = BinaryWriter::new();
-        writer
-            .write_u8(RECORD_KIND_TRANSACTION)
-            .expect("record kind");
-        writer.write_u32(index).expect("block index");
-        writer.write_u8(VMState::HALT.to_byte()).expect("vm state");
-        writer.write_var_bytes(&tx.to_bytes()).expect("tx bytes");
+        // C# `TransactionState.ToStackItem`: the persisted record is the
+        // interoperable `Struct[Integer(BlockIndex), ByteString(tx),
+        // Integer((byte)State)]` serialized with `BinarySerializer` — NOT a
+        // hand-rolled `kind/index/state/varbytes` layout. Use the canonical
+        // writer so the fixture matches what the server's reader expects.
+        let record =
+            neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+                index,
+                VMState::HALT,
+                tx,
+            )
+            .expect("serialize transaction state");
 
         let mut tx_key_bytes = Vec::with_capacity(1 + 32);
         tx_key_bytes.push(PREFIX_TRANSACTION);
@@ -105,13 +111,17 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
         let tx_key = StorageKey::new(LedgerContract::ID, tx_key_bytes);
         store.add(
             tx_key,
-            neo_storage::StorageItem::from_bytes(writer.into_bytes()),
+            neo_storage::StorageItem::from_bytes(record),
         );
     }
 
-    let mut current_bytes = Vec::with_capacity(36);
-    current_bytes.extend_from_slice(&hash.to_bytes());
-    current_bytes.extend_from_slice(&index.to_le_bytes());
+    // C# `HashIndexState.ToStackItem`: the Prefix_CurrentBlock value is the
+    // interoperable `Struct[ByteString(hash), Integer(index)]` serialized with
+    // `BinarySerializer`, not a raw 32+4-byte concatenation.
+    let current_bytes = neo_native_contracts::ledger_contract::serialize_hash_index_state(
+        &hash, index,
+    )
+    .expect("serialize hash index state");
     let current_key = StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]);
     store.add(
         current_key,
