@@ -56,7 +56,8 @@ use tracing::{debug, info, trace, warn};
 
 use neo_io::{MemoryReader, Serializable};
 use neo_p2p::payloads::{
-    GetBlockByIndexPayload, InvPayload, NodeCapability, PingPayload, VersionPayload,
+    AddrPayload, GetBlockByIndexPayload, GetBlocksPayload, InvPayload, NetworkAddressWithTime,
+    NodeCapability, PingPayload, VersionPayload,
 };
 use neo_p2p::MessageCommand;
 use neo_payloads::{Block, ExtensiblePayload, Header, HeadersPayload, Transaction};
@@ -104,10 +105,24 @@ pub trait BlockSource: Send + Sync {
         self.block_by_index(index).map(|block| block.header)
     }
 
+    /// Returns the block hash at `index` (used to serve the legacy `GetBlocks`
+    /// inventory response). Defaults to deriving it from
+    /// [`BlockSource::block_by_index`].
+    fn block_hash_by_index(&self, index: u32) -> Option<UInt256> {
+        self.block_by_index(index).map(|block| block.hash())
+    }
+
     /// Returns the full block with `hash` (used to serve `GetData` block
     /// items). Defaults to `None`.
     fn block_by_hash(&self, _hash: &UInt256) -> Option<Block> {
         None
+    }
+
+    /// Returns the index of the block with `hash` (used by `GetBlocks` to
+    /// resolve the starting point without loading the full block). Defaults to
+    /// [`BlockSource::block_by_hash`]`.map(|b| b.index())`.
+    fn block_index_by_hash(&self, hash: &UInt256) -> Option<u32> {
+        self.block_by_hash(hash).map(|block| block.index())
     }
 
     /// Returns the transaction with `hash` (used to serve `GetData`
@@ -844,6 +859,48 @@ impl PeerSession {
                 }
                 Ok(())
             }
+            // C# `OnGetBlocksMessageReceived`: starting just after the block
+            // named by `hash_start`, reply with an `Inv` of up to `count`
+            // (default/-1 => MaxHashesCount 500) subsequent block hashes from
+            // the local chain. The legacy hash-based sync request, kept for
+            // compatibility alongside `GetBlockByIndex`.
+            MessageCommand::GetBlocks => {
+                let mut reader = MemoryReader::new(&message.payload_raw);
+                let payload = GetBlocksPayload::deserialize(&mut reader).map_err(|err| {
+                    CloseReason::ProtocolViolation(format!("invalid getblocks payload: {err}"))
+                })?;
+                if let Some(source) = self.block_source.clone() {
+                    if let Some(start_index) = source.block_index_by_hash(&payload.hash_start) {
+                        let count = if payload.count < 0 {
+                            neo_p2p::payloads::inv_payload::MAX_HASHES_COUNT as u32
+                        } else {
+                            (payload.count as u32)
+                                .min(neo_p2p::payloads::inv_payload::MAX_HASHES_COUNT as u32)
+                        };
+                        let mut hashes = Vec::new();
+                        for offset in 1..=count {
+                            match source.block_hash_by_index(start_index.saturating_add(offset)) {
+                                Some(hash) => hashes.push(hash),
+                                None => break,
+                            }
+                        }
+                        for group in InvPayload::create_group(InventoryType::Block, hashes) {
+                            let inv = Message::create(
+                                MessageCommand::Inv,
+                                Some(&group),
+                                self.peer_allows_compression,
+                            )
+                            .map_err(|err| {
+                                CloseReason::Transport(format!("encode getblocks inv: {err}"))
+                            })?;
+                            framed.send(inv).await.map_err(|err| {
+                                CloseReason::Transport(format!("send getblocks inv: {err}"))
+                            })?;
+                        }
+                    }
+                }
+                Ok(())
+            }
             // C# `OnGetHeadersMessageReceived`: serve up to 2000 headers from
             // `IndexStart` as a single `headers` frame (HeadersPayload).
             MessageCommand::GetHeaders => {
@@ -1009,10 +1066,48 @@ impl PeerSession {
                 }
                 Ok(())
             }
+            // C# `OnGetAddrMessageReceived`: gossip up to `MAX_COUNT_TO_SEND`
+            // connected peers' advertised listener endpoints (deduplicated,
+            // excluding the requester) as a single `Addr` frame.
+            MessageCommand::GetAddr => {
+                let addrs = self
+                    .registry
+                    .listener_addresses(self.peer_id, neo_p2p::payloads::addr_payload::MAX_COUNT_TO_SEND);
+                if !addrs.is_empty() {
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as u32)
+                        .unwrap_or(0);
+                    let entries: Vec<NetworkAddressWithTime> = addrs
+                        .into_iter()
+                        .map(|addr| {
+                            NetworkAddressWithTime::new(
+                                timestamp,
+                                addr.ip(),
+                                vec![NodeCapability::TcpServer { port: addr.port() }],
+                            )
+                        })
+                        .collect();
+                    let payload = AddrPayload::create(entries);
+                    let served = Message::create(
+                        MessageCommand::Addr,
+                        Some(&payload),
+                        self.peer_allows_compression,
+                    )
+                    .map_err(|err| CloseReason::Transport(format!("encode addr: {err}")))?;
+                    framed
+                        .send(served)
+                        .await
+                        .map_err(|err| CloseReason::Transport(format!("send addr: {err}")))?;
+                }
+                Ok(())
+            }
             other => {
-                // Genuine no-ops for this node profile: Alert/MerkleBlock/
-                // NotFound/Reject (C# default arm) plus Addr/GetAddr (peer
-                // discovery is handled by the seed-list dialer, not gossip).
+                // Genuine no-ops for this node profile. C# default arm:
+                // Alert/MerkleBlock/NotFound/Reject/FilterAdd/FilterClear/
+                // FilterLoad. `Addr` is also ignored here, matching C#
+                // `OnAddrMessageReceived` (`if (!sent) return;`): this node
+                // never sends `GetAddr`, so unsolicited `Addr` is dropped.
                 trace!(
                     target: "neo_network",
                     peer_id = %self.peer_id,
@@ -1091,6 +1186,15 @@ impl PeerSession {
                 peer_id: self.peer_id.to_string(),
                 address: Some(upgraded),
             });
+        }
+
+        // Record the advertised listener endpoint so this peer can be gossiped
+        // in `GetAddr` responses (C# `RemoteNode.Listener`).
+        if self.listener_port != 0 {
+            self.registry.record_listener_addr(
+                self.peer_id,
+                SocketAddr::new(self.remote_addr.ip(), self.listener_port),
+            );
         }
 
         info!(
