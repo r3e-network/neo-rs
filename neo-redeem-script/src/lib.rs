@@ -70,24 +70,12 @@ pub fn is_signature_contract(script: &[u8]) -> bool {
     script[36..40] == check_sig_hash()
 }
 
-/// Checks whether `script` is a multi-signature verification script.
+/// Checks whether `script` is a multi-signature verification script (C#
+/// `Helper.IsMultiSigContract`). Delegates to [`parse_multi_sig_contract`] so
+/// the same `PUSHINT8`/`PUSHINT16`/`PUSH1..16` `m`/`n` decode and `1 <= m <= n
+/// <= 1024` bounds apply (committee-sized multisigs are recognized).
 pub fn is_multi_sig_contract(script: &[u8]) -> bool {
-    if script.len() < 42 {
-        return false;
-    }
-
-    // Check basic pattern for multi-sig
-    let _m = match script[0] {
-        value if (OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&value) => {
-            value - OpCode::PUSH0.byte()
-        }
-        _ => return false,
-    };
-
-    // Verify ending with SYSCALL CheckMultisig
-    let len = script.len();
-    script[len - 5] == OpCode::SYSCALL.byte()
-        && script[len - 4..] == check_multisig_hash()
+    parse_multi_sig_contract(script).is_some()
 }
 
 /// Creates a multi-sig redeem script from already-parsed public-key points.
@@ -142,25 +130,18 @@ pub fn multi_sig_redeem_script_from_points(
 
 /// Creates a multi-sig redeem script from raw (compressed) public-key bytes.
 ///
-/// Standard-account wrapper: limits `m` and `n` to `1..=16`, parses each key to
-/// an [`ECPoint`], then delegates to [`multi_sig_redeem_script_from_points`].
+/// Raw-bytes wrapper: parses each key to an [`ECPoint`], then delegates to
+/// [`multi_sig_redeem_script_from_points`], which enforces C#
+/// `Contract.CreateMultiSigRedeemScript`'s bounds (`1 <= m <= n <= 1024`).
 ///
 /// # Errors
 ///
-/// Returns [`RedeemScriptError`] if `m` is not in range `1..=16`, more than 16
-/// keys are supplied, `m` exceeds the key count, or any key fails to parse.
+/// Returns [`RedeemScriptError`] if `m`/`n` are out of range (`1 <= m <= n <=
+/// 1024`) or any key fails to parse.
 pub fn multi_sig_redeem_script_from_keys(
     m: usize,
     public_keys: &[Vec<u8>],
 ) -> Result<Vec<u8>, RedeemScriptError> {
-    if !(1..=16).contains(&m) || public_keys.len() > 16 || m > public_keys.len() {
-        return Err(RedeemScriptError::invalid_operation(format!(
-            "Invalid multi-sig parameters: m={}, n={}",
-            m,
-            public_keys.len()
-        )));
-    }
-
     let mut points = Vec::with_capacity(public_keys.len());
     for key in public_keys {
         let point = ECPoint::from_bytes(key)
@@ -171,61 +152,68 @@ pub fn multi_sig_redeem_script_from_keys(
     multi_sig_redeem_script_from_points(m, &points)
 }
 
+/// Decodes an `m`/`n` count from a multi-sig script at `offset`, mirroring C#
+/// `Helper.IsMultiSigContract`: the value may be a `PUSHINT8`, `PUSHINT16`, or a
+/// `PUSH1..PUSH16` opcode. Returns `(value, bytes_consumed)`.
+fn read_multisig_count(script: &[u8], offset: usize) -> Option<(usize, usize)> {
+    let op = *script.get(offset)?;
+    if op == OpCode::PUSHINT8.byte() {
+        Some((*script.get(offset + 1)? as usize, 2))
+    } else if op == OpCode::PUSHINT16.byte() {
+        let bytes = script.get(offset + 1..offset + 3)?;
+        Some((u16::from_le_bytes([bytes[0], bytes[1]]) as usize, 3))
+    } else if (OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&op) {
+        Some(((op - OpCode::PUSH0.byte()) as usize, 1))
+    } else {
+        None
+    }
+}
+
 /// Parses a multi-signature verification script, returning `(m, ordered public
 /// keys)` when the script matches the canonical Neo multi-sig format. The
 /// inverse of [`multi_sig_redeem_script_from_keys`] / [`is_multi_sig_contract`].
+///
+/// Mirrors C# `Helper.IsMultiSigContract`: `m` and `n` are decoded as integer
+/// pushes (`PUSHINT8`/`PUSHINT16`/`PUSH1..16`) and bounded by `1 <= m <= n <=
+/// 1024`, so committee-sized multisigs (e.g. 21 keys, encoded via `PUSHINT8`)
+/// are recognized — not just `n <= 16`.
 pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
     if script.len() < 42 {
         return None;
     }
 
-    let mut offset = 0usize;
-    let first = script[offset];
-    if !(OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&first) {
+    let (m, m_size) = read_multisig_count(script, 0)?;
+    if !(1..=1024).contains(&m) {
         return None;
     }
-    let m = (first - OpCode::PUSH0.byte()) as usize;
-    offset += 1;
+    let mut offset = m_size;
 
     let mut public_keys = Vec::new();
-    while offset < script.len() {
-        if script[offset] != OpCode::PUSHDATA1.byte() {
-            break;
-        }
-        offset += 1;
-        if offset >= script.len() {
+    while script.get(offset) == Some(&OpCode::PUSHDATA1.byte()) {
+        // PUSHDATA1 (1) + length byte (1) + 33-byte key = 35 bytes; require at
+        // least one trailing byte for the `n` push (C#: len <= i + 35).
+        if script.len() <= offset + 35 || script[offset + 1] != 33 {
             return None;
         }
-        let key_len = script[offset] as usize;
-        offset += 1;
-        if key_len != 33 || offset + key_len > script.len() {
-            return None;
-        }
-        public_keys.push(script[offset..offset + key_len].to_vec());
-        offset += key_len;
+        public_keys.push(script[offset + 2..offset + 35].to_vec());
+        offset += 35;
     }
 
-    if public_keys.is_empty() {
-        return None;
-    }
     let n = public_keys.len();
-
-    if offset >= script.len() || script[offset] != OpCode::PUSH0.byte().wrapping_add(n as u8) {
-        return None;
-    }
-    offset += 1;
-
-    if script.len() != offset + 5 {
-        return None;
-    }
-    if script[offset] != OpCode::SYSCALL.byte() {
-        return None;
-    }
-    if script[offset + 1..offset + 5] != check_multisig_hash() {
+    if n < m || n > 1024 {
         return None;
     }
 
-    if m == 0 || m > n {
+    let (n_decoded, n_size) = read_multisig_count(script, offset)?;
+    if n_decoded != n {
+        return None;
+    }
+    offset += n_size;
+
+    if script.len() != offset + 5
+        || script[offset] != OpCode::SYSCALL.byte()
+        || script[offset + 1..offset + 5] != check_multisig_hash()
+    {
         return None;
     }
 
@@ -351,5 +339,32 @@ mod tests {
         assert!(multi_sig_redeem_script_from_keys(0, &[key_a()]).is_err());
         assert!(multi_sig_redeem_script_from_keys(3, &[key_a(), key_b()]).is_err());
         assert!(multi_sig_redeem_script_from_points(1, &[]).is_err());
+    }
+
+    /// C# `Contract.CreateMultiSigRedeemScript` allows up to 1024 keys; the
+    /// raw-bytes builder must too (the `CreateMultisigAccount` interop and large
+    /// committee multisigs use it). Previously it capped at 16, faulting where C#
+    /// succeeds. A >16-key script is accepted and the from_keys path matches the
+    /// from_points path (which the genesis 21-key committee hash already pins).
+    #[test]
+    fn multisig_from_keys_allows_more_than_16_keys() {
+        // 17 deterministic distinct keys (derive from small scalars).
+        use neo_crypto::Secp256r1Crypto;
+        let keys: Vec<Vec<u8>> = (1u8..=17)
+            .map(|i| {
+                let mut sk = [0u8; 32];
+                sk[31] = i;
+                Secp256r1Crypto::derive_public_key(&sk).unwrap().to_vec()
+            })
+            .collect();
+        let script = multi_sig_redeem_script_from_keys(11, &keys)
+            .expect("17-key multisig must build (C# allows up to 1024)");
+        let points: Vec<ECPoint> = keys.iter().map(|k| ECPoint::from_bytes(k).unwrap()).collect();
+        let from_points = multi_sig_redeem_script_from_points(11, &points).unwrap();
+        assert_eq!(script, from_points, "from_keys must equal from_points");
+        // The recognizer must round-trip a >16-of-n script (m and n via PUSHINT8).
+        let (m, parsed) = parse_multi_sig_contract(&script).expect("recognize 11-of-17");
+        assert_eq!(m, 11);
+        assert_eq!(parsed.len(), 17);
     }
 }

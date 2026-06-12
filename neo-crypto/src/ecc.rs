@@ -632,6 +632,11 @@ pub fn verify_signature_secp256k1(
         .or_else(|_| K256Signature::from_slice(signature))
         .map_err(|e| CryptoError::invalid_signature(format!("Invalid secp256k1 signature: {e}")))?;
 
+    // C# (.NET ECDsa / BouncyCastle) accepts both low-s and high-s signatures,
+    // but RustCrypto's k256 verifier enforces low-s. Normalize to low-s so a
+    // high-s signature that C# verifies also verifies here (malleability parity);
+    // a no-op for an already-low-s signature.
+    let sig = sig.normalize_s().unwrap_or(sig);
     Ok(verifying_key.verify(message, &sig).is_ok())
 }
 
@@ -690,6 +695,8 @@ pub fn verify_signature_with_hash(
             else {
                 return Ok(false);
             };
+            // Accept high-s like C# (k256 enforces low-s; normalize for parity).
+            let sig = sig.normalize_s().unwrap_or(sig);
             Ok(K256PrehashVerifier::verify_prehash(&verifying_key, &digest, &sig).is_ok())
         }
         ECCurve::Ed25519 => Err(CryptoError::invalid_argument(
@@ -756,6 +763,42 @@ mod tests {
         let mut bytes = [0u8; 32];
         bytes[31] = value;
         bytes
+    }
+
+    /// C# `Crypto.VerifySignature` (and thus `CryptoLib.verifyWithECDsa`) accepts
+    /// both low-s and high-s secp256k1 signatures. RustCrypto's k256 verifier
+    /// enforces low-s, so the raw verify paths must normalize first to keep
+    /// contract-execution parity (a high-s signature must not fault where C#
+    /// returns true). secp256r1/p256 already accepts high-s, so only k256 needs it.
+    #[test]
+    fn secp256k1_verify_paths_accept_high_s_like_csharp() {
+        use crate::Secp256k1Crypto;
+        let private_key = [9u8; 32];
+        let public_key = Secp256k1Crypto::derive_public_key(&private_key).unwrap();
+        let message = b"high-s parity";
+        let low_sig = Secp256k1Crypto::sign(message, &private_key).unwrap();
+        // s' = n - s (secp256k1 order) yields the malleable high-s twin.
+        let n = num_bigint::BigUint::parse_bytes(
+            b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
+            16,
+        )
+        .unwrap();
+        let s = num_bigint::BigUint::from_bytes_be(&low_sig[32..]);
+        let high_s = (&n - &s).to_bytes_be();
+        let mut high_sig = low_sig;
+        let mut padded = [0u8; 32];
+        padded[32 - high_s.len()..].copy_from_slice(&high_s);
+        high_sig[32..].copy_from_slice(&padded);
+
+        assert!(verify_signature_secp256k1(&public_key, message, &high_sig).unwrap());
+        assert!(verify_signature_with_hash(
+            ECCurve::Secp256k1,
+            &public_key,
+            message,
+            &high_sig,
+            HashAlgorithm::Sha256,
+        )
+        .unwrap());
     }
 
     fn p256_signing_key() -> P256SigningKey {
