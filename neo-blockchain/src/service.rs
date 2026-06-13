@@ -231,12 +231,57 @@ impl BlockchainService {
                 let _ = reply.send(self.ledger.current_height());
             }
             BlockchainCommand::GetBlock { hash, reply } => {
-                let _ = reply.send(self.ledger.get_block(&hash));
+                let block = self
+                    .ledger
+                    .get_block(&hash)
+                    .or_else(|| self.full_block_from_store(&hash));
+                let _ = reply.send(block);
             }
             BlockchainCommand::GetBlockByHeight { height, reply } => {
-                let _ = reply.send(self.ledger.get_block_by_height(height));
+                let block = self.ledger.get_block_by_height(height).or_else(|| {
+                    self.block_hash_from_store(height)
+                        .and_then(|hash| self.full_block_from_store(&hash))
+                });
+                let _ = reply.send(block);
             }
         }
+    }
+
+    /// Resolve a block hash from the durable store for a height, when a
+    /// store snapshot is available (cold read after LRU eviction).
+    fn block_hash_from_store(&self, height: u32) -> Option<neo_primitives::UInt256> {
+        let snapshot = self.system.store_snapshot()?;
+        neo_native_contracts::LedgerContract::new()
+            .get_block_hash(&snapshot, height)
+            .ok()
+            .flatten()
+    }
+
+    /// Reconstruct a full block from the durable `LedgerContract` trimmed
+    /// block plus its per-transaction records (C# `LedgerContract.GetBlock`),
+    /// used when the in-memory LRU has evicted the body. Returns `None` when
+    /// there is no store, no trimmed block, or any referenced transaction is
+    /// missing.
+    fn full_block_from_store(
+        &self,
+        hash: &neo_primitives::UInt256,
+    ) -> Option<neo_payloads::block::Block> {
+        let snapshot = self.system.store_snapshot()?;
+        let ledger = neo_native_contracts::LedgerContract::new();
+        let trimmed = ledger.get_trimmed_block(&snapshot, hash).ok().flatten()?;
+        let mut transactions = Vec::with_capacity(trimmed.hashes.len());
+        for tx_hash in &trimmed.hashes {
+            let tx = ledger
+                .get_transaction_state(&snapshot, tx_hash)
+                .ok()
+                .flatten()
+                .and_then(|state| state.transaction)?;
+            transactions.push(tx);
+        }
+        Some(neo_payloads::block::Block {
+            header: trimmed.header,
+            transactions,
+        })
     }
 }
 
