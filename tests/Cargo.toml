@@ -1,7 +1,8 @@
 [package]
 name = "neo-tests"
-version = "0.7.2"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 publish = false
 description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"
 

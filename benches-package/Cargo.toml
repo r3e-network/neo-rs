@@ -1,7 +1,10 @@
 [package]
 name = "neo-benches"
-version = "0.7.2"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Criterion benchmarks for the neo-rs workspace"
 
 [dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
