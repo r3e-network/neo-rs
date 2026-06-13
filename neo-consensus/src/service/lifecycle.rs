@@ -133,9 +133,6 @@ impl ConsensusService {
             return Ok(());
         }
 
-        // Mark message as seen before processing
-        self.context.mark_message_seen(&msg_hash);
-
         // Validate block index
         if payload.block_index != self.context.block_index {
             // Message for a future block - queue or ignore per dBFT spec
@@ -192,6 +189,13 @@ impl ConsensusService {
                 self.on_recovery_message(&payload)?;
             }
         }
+
+        // Record the payload as seen ONLY after its witness/signature has been
+        // verified by the per-type handler above. C# reaches OnConsensusPayload
+        // only for relay-verified payloads (ExtensiblePayload.VerifyWitnesses);
+        // a forged-witness payload must not poison the dedup cache and silence
+        // the genuine signed message (same unsigned bytes -> same hash).
+        self.context.mark_message_seen(&msg_hash);
 
         Ok(())
     }

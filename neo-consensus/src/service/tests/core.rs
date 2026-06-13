@@ -139,15 +139,17 @@ async fn test_replay_attack_prevention() {
 
     assert!(!service.context().has_seen_message(&msg_hash));
 
-    let _ = service.process_message(payload.clone());
-
-    assert!(service.context().has_seen_message(&msg_hash));
-
+    // The payload carries an invalid (empty) witness, so the ChangeView handler
+    // rejects it and it is NOT recorded as seen. This is the anti-cache-poison
+    // property: a forged-witness payload must not silence a later genuine signed
+    // message that hashes to the same value. (Valid-message dedup is covered by
+    // `test_message_deduplication`.)
     let result = service.process_message(payload);
-
-    assert!(result.is_ok());
-
-    assert!(service.context().has_seen_message(&msg_hash));
+    assert!(matches!(
+        result,
+        Err(ConsensusError::SignatureVerificationFailed { .. })
+    ));
+    assert!(!service.context().has_seen_message(&msg_hash));
 }
 
 #[tokio::test]

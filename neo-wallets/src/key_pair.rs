@@ -11,7 +11,6 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::Helper;
 use neo_primitives::HASH_SIZE;
 use neo_primitives::UInt160;
-use neo_vm_rs::OpCode;
 use scrypt::Params;
 use std::fmt;
 use subtle::ConstantTimeEq;
@@ -374,13 +373,13 @@ impl KeyPair {
                 message: format!("Failed to compress public key: {}", e),
             })?;
 
-        let mut script = Vec::new();
-        script.push(OpCode::PUSHDATA1.byte());
-        script.push(compressed.len() as u8);
-        script.extend_from_slice(&compressed);
-        script.push(OpCode::SYSCALL.byte());
-        script.extend_from_slice(b"System.Crypto.CheckWitness");
-        Ok(script)
+        // Canonical CheckSig verification script (PUSHDATA1 + 33-byte pubkey +
+        // SYSCALL + 4-byte LE hash of "System.Crypto.CheckSig"), matching C#
+        // Contract.CreateSignatureRedeemScript. The previous hand-rolled script
+        // used the wrong interop ("System.Crypto.CheckWitness") embedded as raw
+        // ASCII, so the NEP-2 scrypt salt (address) diverged and '6P…' keys were
+        // not interoperable with standard wallets.
+        Ok(Helper::signature_redeem_script(&compressed))
     }
 }
 
@@ -425,6 +424,26 @@ mod tests {
         assert_eq!(key_pair.private_key().len(), HASH_SIZE);
         assert!(!key_pair.public_key().is_empty());
         assert!(!key_pair.compressed_public_key().is_empty());
+    }
+
+    #[test]
+    fn nep2_uses_canonical_checksig_verification_script() {
+        // Regression: the NEP-2 salt script must be the canonical CheckSig
+        // verification script (PUSHDATA1 + 33-byte pubkey + SYSCALL + CheckSig
+        // hash = 40 bytes), matching C# Contract.CreateSignatureRedeemScript —
+        // not the old 62-byte raw-ASCII "System.Crypto.CheckWitness" form that
+        // made '6P…' keys non-interoperable with standard wallets.
+        let pk = [1u8; HASH_SIZE];
+        let kp = KeyPair::from_private_key(&pk).unwrap();
+        let script = KeyPair::try_get_verification_script_for_key(&pk).unwrap();
+        assert_eq!(script, kp.get_verification_script());
+        assert_eq!(script.len(), 40, "canonical CheckSig script is 40 bytes");
+
+        // A standard '6P…' NEP-2 string round-trips at the N3 address version.
+        let nep2 = kp.to_nep2("Satoshi", 0x35).unwrap();
+        assert!(nep2.starts_with("6P"));
+        let restored = KeyPair::from_nep2_string(&nep2, "Satoshi", 0x35).unwrap();
+        assert_eq!(restored.private_key(), &pk);
     }
 
     #[test]

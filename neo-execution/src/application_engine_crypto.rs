@@ -156,6 +156,9 @@ impl ApplicationEngine {
             // C# decodes the public key first (argument evaluation), so an
             // invalid key faults here before the signature length is judged.
             if ECPoint::decode(public_key, ECCurve::secp256r1()).is_err() {
+                if pubkey_coord_out_of_field(public_key) {
+                    return Ok(false);
+                }
                 return Err("Invalid public key".to_string());
             }
             if self.is_hardfork_enabled(Hardfork::HfGorgon) {
@@ -175,10 +178,46 @@ impl ApplicationEngine {
             Ok(verified) => Ok(verified),
             Err(CryptoError::InvalidSignature { .. }) => Ok(false),
             Err(CryptoError::InvalidKey { .. } | CryptoError::InvalidPoint { .. }) => {
-                Err("Invalid public key".to_string())
+                // C# ECFieldElement throws ArgumentException for a coordinate
+                // >= Q, which CheckSig/CheckMultisig catch and return false; all
+                // other decode failures (bad prefix/length, off-curve) fault.
+                if pubkey_coord_out_of_field(public_key) {
+                    Ok(false)
+                } else {
+                    Err("Invalid public key".to_string())
+                }
             }
             Err(err) => Err(err.to_string()),
         }
+    }
+}
+
+/// secp256r1 field prime Q (big-endian, 32 bytes).
+const SECP256R1_Q: [u8; 32] = [
+    0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+];
+
+/// Returns true iff `pk` has a correct length+prefix but a coordinate `>= Q`.
+///
+/// This is exactly the C# `ECPoint.DecodePoint` case that raises
+/// `ArgumentException` (caught by `CheckSig`/`CheckMultisig` → `false`).
+/// Wrong prefix/length is a C# `FormatException`/`IndexOutOfRange` (fault), and
+/// an in-field-but-off-curve point is an `Arithmetic`/`Cryptographic` exception
+/// (fault) — both keep returning `Err` so the syscall faults, matching C#.
+fn pubkey_coord_out_of_field(pk: &[u8]) -> bool {
+    fn ge_q(coord: &[u8]) -> bool {
+        for i in 0..32 {
+            if coord[i] != SECP256R1_Q[i] {
+                return coord[i] > SECP256R1_Q[i];
+            }
+        }
+        true
+    }
+    match pk.first() {
+        Some(0x02 | 0x03) if pk.len() == 33 => ge_q(&pk[1..33]),
+        Some(0x04) if pk.len() == 65 => ge_q(&pk[1..33]) || ge_q(&pk[33..65]),
+        _ => false,
     }
 }
 

@@ -222,6 +222,7 @@ impl Serializable for NefFile {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let start_position = reader.position();
         let magic = reader.read_u32()?;
         if magic != Self::MAGIC {
             return Err(IoError::invalid_data(format!(
@@ -245,7 +246,13 @@ impl Serializable for NefFile {
             .read_serializable_array(Self::MAX_TOKENS)
             .map_err(|e| IoError::invalid_data(e.to_string()))?;
         let _reserved2 = reader.read_u16()?;
-        let script = reader.read_var_bytes(u32::MAX as usize)?;
+        // C# NefFile.Deserialize reads the script capped at MaxItemSize and
+        // rejects an empty script.
+        let max_item_size = neo_vm_rs::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
+        let script = reader.read_var_bytes(max_item_size)?;
+        if script.is_empty() {
+            return Err(IoError::invalid_data("Script cannot be empty."));
+        }
         let checksum = reader.read_u32()?;
 
         let nef = NefFile {
@@ -263,6 +270,13 @@ impl Serializable for NefFile {
                 "Bad checksum: {:#x}, expected {:#x}",
                 nef.checksum, expected
             )));
+        }
+
+        // C# NefFile.Deserialize verify: total deserialized size must not
+        // exceed MaxItemSize.
+        let consumed = reader.position().saturating_sub(start_position);
+        if consumed > max_item_size {
+            return Err(IoError::invalid_data("Max vm item size exceed"));
         }
 
         Ok(nef)

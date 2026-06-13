@@ -35,19 +35,26 @@ impl ContractAbi {
         }
     }
 
-    /// Gets the method with the specified name
+    /// Gets the method with the specified name and parameter count.
+    ///
+    /// Mirrors C# `ContractAbi.GetMethod`: `pcount < 0` returns the FIRST
+    /// method with a matching name (`Methods.FirstOrDefault`), regardless of
+    /// parameter count — used for `verify` resolution. For `pcount >= 0` the
+    /// lookup is keyed by `(name, parameter_count)`.
     pub fn get_method(&mut self, name: &str, pcount: i32) -> Option<&ContractMethodDescriptor> {
-        // Build dictionary if not already built
+        if pcount < 0 {
+            return self.methods.iter().find(|method| method.name == name);
+        }
+
+        // Build the (name, parameter_count) dictionary on demand.
         if self.method_dictionary.is_none() {
             let mut dict = HashMap::new();
             for (i, method) in self.methods.iter().enumerate() {
                 dict.insert((method.name.clone(), method.parameters.len() as i32), i);
-                dict.insert((method.name.clone(), -1), i);
             }
             self.method_dictionary = Some(dict);
         }
 
-        // Look up method
         if let Some(dict) = &self.method_dictionary {
             if let Some(&index) = dict.get(&(name.to_string(), pcount)) {
                 return self.methods.get(index);

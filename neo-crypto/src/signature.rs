@@ -196,6 +196,18 @@ impl Secp256r1Crypto {
         Ok(signature.to_bytes().into())
     }
 
+    /// Normalizes a 64-byte secp256r1 `r||s` signature to canonical low-s
+    /// (`s <= n/2`). A high-s `s` is replaced by `n - s`; an already-low-s
+    /// signature is returned unchanged. Both forms verify, but emitting low-s
+    /// matches the bytes C# `Crypto.Sign` (ECDsa.SignData) produces — used to
+    /// canonicalize signatures from external signers (e.g. PKCS#11 tokens).
+    pub fn normalize_low_s(signature: &[u8; 64]) -> CryptoResult<[u8; 64]> {
+        let sig = Signature::try_from(signature.as_slice())
+            .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
+        let normalized = sig.normalize_s().unwrap_or(sig);
+        Ok(normalized.to_bytes().into())
+    }
+
     /// Verifies a secp256r1 signature.
     pub fn verify(message: &[u8], signature: &[u8; 64], public_key: &[u8]) -> CryptoResult<bool> {
         let public_key = P256PublicKey::from_sec1_bytes(public_key)

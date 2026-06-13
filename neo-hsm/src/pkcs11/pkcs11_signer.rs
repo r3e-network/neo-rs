@@ -14,7 +14,7 @@ use cryptoki::{
     session::{Session, UserType},
     types::AuthPin,
 };
-use neo_crypto::Crypto;
+use neo_crypto::{Crypto, Secp256r1Crypto};
 
 /// PKCS#11 HSM signer
 pub struct Pkcs11Signer {
@@ -398,7 +398,17 @@ impl HsmSigner for Pkcs11Signer {
             .sign(&mechanism, key_handle, &digest)
             .map_err(|e| HsmError::SigningFailed(e.to_string()))?;
 
-        Ok(signature)
+        // PKCS#11 ECDSA (CKM_ECDSA) returns raw r||s; some tokens emit high-s.
+        // Canonicalize to low-s for byte-parity with C# Crypto.Sign output.
+        let raw: [u8; 64] = signature.as_slice().try_into().map_err(|_| {
+            HsmError::SigningFailed(format!(
+                "expected 64-byte secp256r1 signature, got {}",
+                signature.len()
+            ))
+        })?;
+        let normalized = Secp256r1Crypto::normalize_low_s(&raw)
+            .map_err(|e| HsmError::SigningFailed(e.to_string()))?;
+        Ok(normalized.to_vec())
     }
 
     async fn get_public_key(&self, key_id: &str) -> HsmResult<Vec<u8>> {

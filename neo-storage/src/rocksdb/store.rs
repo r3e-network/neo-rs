@@ -275,10 +275,15 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
 impl Store for RocksDbStore {
     fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
         let store_arc = Arc::new(self.clone());
+        // A point-in-time snapshot must NOT share the live store's read cache:
+        // serving snapshot reads from it would leak newer values into the PIT
+        // view, and writing the snapshot's PIT reads into it would serve stale
+        // values to later live reads. Each snapshot gets no read cache (mirrors
+        // C# RocksDBStore snapshots reading with FillCache(false)).
         let snapshot = Arc::new(RocksDbSnapshot::new(
             self.db.clone(),
             store_arc,
-            self.read_cache.clone(),
+            None,
             self.read_ahead_config,
         ));
 
