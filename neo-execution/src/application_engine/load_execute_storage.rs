@@ -143,15 +143,6 @@ impl ApplicationEngine {
         Ok(())
     }
 
-    /// Adds gas to the consumed amount
-    pub fn add_gas(&mut self, amount: i64) -> CoreResult<()> {
-        self.gas_consumed = self.gas_consumed.saturating_add(amount);
-        if self.gas_consumed > self.gas_limit {
-            return Err(CoreError::invalid_operation("Gas limit exceeded"));
-        }
-        Ok(())
-    }
-
     /// Emit a notification event
     pub fn emit_notification(
         &mut self,

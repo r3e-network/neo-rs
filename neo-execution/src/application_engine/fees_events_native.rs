@@ -174,18 +174,6 @@ impl ApplicationEngine {
         self.calling_script_hash.unwrap_or_else(UInt160::zero)
     }
 
-    /// Checks if enough gas is available for an operation.
-    pub fn check_gas(&self, required_gas: i64) -> CoreResult<()> {
-        let required_pico = required_gas
-            .checked_mul(FEE_FACTOR)
-            .ok_or_else(|| CoreError::invalid_operation("Gas multiplication overflow"))?;
-
-        if self.gas_consumed + required_pico > self.gas_limit {
-            return Err(CoreError::invalid_operation("Out of gas"));
-        }
-        Ok(())
-    }
-
     /// Calls a native contract method.
     pub fn call_native_contract(
         &mut self,
@@ -380,39 +368,6 @@ impl ApplicationEngine {
             contract.post_persist(self)?;
         }
 
-        Ok(())
-    }
-
-    pub fn consume_gas(&mut self, gas: i64) -> CoreResult<()> {
-        if gas < 0 {
-            return Err(CoreError::invalid_operation(
-                "Negative gas consumption".to_string(),
-            ));
-        }
-
-        let pico_gas = gas
-            .checked_mul(FEE_FACTOR)
-            .ok_or_else(|| CoreError::invalid_operation("Gas multiplication overflow"))?;
-
-        let Some(total) = self.fee_consumed.checked_add(pico_gas) else {
-            return Err(CoreError::invalid_operation(
-                "Gas addition overflow".to_string(),
-            ));
-        };
-
-        if total > self.fee_amount {
-            return Err(CoreError::invalid_operation("Out of gas"));
-        }
-
-        self.fee_consumed = total;
-        self.gas_consumed = total;
-
-        self.vm_engine
-            .engine_mut()
-            .add_gas_consumed(gas)
-            .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
-
-        self.update_vm_gas_counter(gas)?;
         Ok(())
     }
 

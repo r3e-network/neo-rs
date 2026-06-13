@@ -33,7 +33,6 @@ pub use bitflags;
 
 pub mod base58_check;
 pub mod big_decimal;
-mod big_decimal_bigdecimal;
 pub mod blockchain;
 pub mod call_flags;
 pub mod constants;

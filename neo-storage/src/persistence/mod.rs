@@ -1,5 +1,4 @@
 pub mod data_cache;
-pub mod index;
 pub mod providers;
 pub mod read_cache;
 pub mod read_only_store;

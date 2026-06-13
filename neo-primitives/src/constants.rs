@@ -139,12 +139,6 @@ pub const MAX_STACK_SIZE: usize = 2048;
 /// Maximum depth of invocation stack.
 pub const MAX_INVOCATION_STACK_SIZE: usize = 1024;
 
-/// Maximum size of an array in the VM.
-pub const MAX_ARRAY_SIZE: usize = MAX_BLOCK_SIZE;
-
-/// Maximum size of a single item in the VM.
-pub const MAX_ITEM_SIZE: usize = MAX_BLOCK_SIZE;
-
 // === RPC Constants ===
 
 /// Maximum size of an RPC request in bytes (10 MB).
