@@ -27,7 +27,6 @@
 //! | `NetworkManager`        | [`NetworkService`]            | `Arc<dyn NetworkService>` |
 //! | `Consensus`             | [`ConsensusService`]          | `Arc<dyn ConsensusService>` |
 //! | `Engine`                | [`NeoEngine`]                 | `Arc<dyn NeoEngine>`     |
-//! | `Blockchain` (command)  | [`crate::blockchain::BlockchainHandle`] | `mpsc::Sender<BlockchainCommand>` |
 
 use crate::errors::ServiceError;
 use crate::outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};

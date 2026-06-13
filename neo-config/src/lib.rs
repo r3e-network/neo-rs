@@ -14,13 +14,11 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use neo_config::{Settings, NetworkType};
+//! use neo_config::{NetworkType, ProtocolSettings};
 //!
-//! // Load from file
-//! let settings = Settings::from_file("config.toml")?;
-//!
-//! // Or use defaults for a network
-//! let settings = Settings::default_for_network(NetworkType::MainNet);
+//! // Use the built-in defaults, or load from a config file / JSON value.
+//! let settings = ProtocolSettings::default();
+//! let network = NetworkType::MainNet;
 //! ```
 
 mod error;

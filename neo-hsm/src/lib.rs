@@ -21,20 +21,16 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use neo_hsm::{HsmConfig, HsmRuntime, HsmDeviceType};
+//! use neo_hsm::{HsmConfig, HsmDeviceType, HsmSigner, LedgerSigner};
 //!
-//! // Create HSM runtime with Ledger
+//! // Build a backend signer (LedgerSigner / Pkcs11Signer / SimulationSigner)
+//! // from an HsmConfig, then sign through the HsmSigner trait.
 //! let config = HsmConfig {
 //!     device_type: HsmDeviceType::Ledger,
-//!     slot: 0,
 //!     ..Default::default()
 //! };
-//!
-//! let runtime = HsmRuntime::new(config).await?;
-//! runtime.unlock("1234").await?;
-//!
-//! // Sign data
-//! let signature = runtime.sign("m/44'/888'/0'/0/0", &data).await?;
+//! let signer = LedgerSigner::new(config)?;
+//! let signature = signer.sign_hash(&key_info, &hash)?;
 //! ```
 
 pub mod config;

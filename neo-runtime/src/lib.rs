@@ -24,7 +24,7 @@
 //! Concrete service implementations live in their respective domain
 //! crates (e.g. `neo-blockchain` owns the blockchain service
 //! implementing [`BlockExecutor`]). This crate owns the service
-//! *traits*, the [`BlockchainHandle`] command/event channel, and the
+//! *traits*, the [`BlockchainEvent`] broadcast type, and the
 //! [`ServiceError`] vocabulary. The concrete node **composition root**
 //! — the single owner of all wired services that the `neo-node` binary
 //! constructs at startup — lives in `neo-system` (`neo_system::Node`),
@@ -40,8 +40,6 @@
 //! | Consensus | [`ConsensusService`] | dBFT loop |
 //! | Engine | [`NeoEngine`] | Engine API |
 //! | Tx hash | [`TxHash`] | `UInt256` alias |
-//! | Blockchain handle | [`BlockchainHandle`] | Command / event channel |
-//! | Blockchain command | [`BlockchainCommand`] | Per-request command enum |
 //! | Blockchain event | [`BlockchainEvent`] | Per-event broadcast enum |
 //! | Service error | [`ServiceError`] | Cross-service error vocabulary |
 //! | Service result | [`ServiceResult`] | `Result<T, ServiceError>` alias |
