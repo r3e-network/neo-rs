@@ -257,11 +257,50 @@ impl RpcServer {
             }
         };
 
-        // jsonrpsee's `build_from_listener` accepts the pre-bound
-        // `std::net::TcpListener` and constructs the HTTP+WS server on
-        // top of it. This replaces the ~225 lines of warp/hyper glue
-        // that previously lived in this method.
-        let server = match jsonrpsee::server::Server::builder().build_from_tcp(std_listener) {
+        // Apply the configured DoS limits to the jsonrpsee builder. These are
+        // native builder knobs (no extra HTTP middleware): the request-body
+        // cap, the concurrent-connection cap, the batch-request cap, and WS
+        // keep-alive pings close the principal amplification / resource
+        // exhaustion vectors. Without these the server ran on jsonrpsee
+        // defaults (10 MiB bodies, unlimited batches, no idle reaping) and the
+        // configured `RpcServerConfig` limits were silently ignored.
+        //
+        // CORS and per-IP rate limiting are intentionally NOT wired here:
+        // jsonrpsee 0.24's `build_from_tcp` cannot expose the client IP to the
+        // HTTP middleware layer (so the existing `GovernorRateLimiter` cannot
+        // be keyed per-IP without replacing the accept loop), and the CORS
+        // tower layer carries a fragile response-body type bound. Both are
+        // tracked as follow-ups in docs/RPC_HARDENING.md.
+        let max_body = u32::try_from(self.settings.max_request_body_size).unwrap_or(u32::MAX);
+        let max_conns =
+            u32::try_from(self.settings.max_concurrent_connections).unwrap_or(u32::MAX);
+        let batch_cfg = match u32::try_from(self.settings.max_batch_size).unwrap_or(u32::MAX) {
+            0 => jsonrpsee::server::BatchRequestConfig::Disabled,
+            n => jsonrpsee::server::BatchRequestConfig::Limit(n),
+        };
+
+        // Ping at the request-headers interval and drop connections idle beyond
+        // keep_alive_timeout (a negative timeout disables idle reaping).
+        let mut ping_cfg = jsonrpsee::server::PingConfig::new().ping_interval(
+            self.settings
+                .request_headers_timeout_duration()
+                .max(Duration::from_secs(1)),
+        );
+        if let Some(keep_alive) = self.settings.keep_alive_timeout_duration() {
+            ping_cfg = ping_cfg.inactive_limit(keep_alive);
+        }
+
+        // jsonrpsee's `build_from_tcp` accepts the pre-bound
+        // `std::net::TcpListener` and constructs the HTTP+WS server on top of
+        // it. This replaces the ~225 lines of warp/hyper glue that previously
+        // lived in this method.
+        let server = match jsonrpsee::server::Server::builder()
+            .max_request_body_size(max_body)
+            .max_connections(max_conns)
+            .set_batch_request_config(batch_cfg)
+            .enable_ws_ping(ping_cfg)
+            .build_from_tcp(std_listener)
+        {
             Ok(s) => s,
             Err(err) => {
                 error!("error building jsonrpsee server: {}", err);

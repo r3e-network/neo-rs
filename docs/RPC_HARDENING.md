@@ -9,6 +9,27 @@ TOML node config. Deeper `neo-rpc` settings such as basic auth, CORS allowlists,
 disabled methods, and request limits are present in the RPC crate but are not yet
 wired through `neo-node` startup.
 
+## Server-enforced limits
+
+The jsonrpsee server now applies these `RpcServerConfig` knobs natively at the
+transport layer (previously they were parsed but ignored, leaving jsonrpsee
+defaults of 10 MiB bodies and unlimited batches):
+
+- `max_request_body_size` — caps the HTTP request body (default 5 MiB, C# parity).
+- `max_concurrent_connections` — caps simultaneous connections.
+- `max_batch_size` — caps JSON-RPC batch length (`0` disables batching).
+- `keep_alive_timeout` / `request_headers_timeout` — drive WS keep-alive pings
+  and idle-connection reaping (a negative `keep_alive_timeout` disables reaping).
+
+Still enforced only at a reverse proxy (jsonrpsee 0.24's `build_from_tcp` cannot
+key the in-tree `GovernorRateLimiter` per client IP, and the CORS tower layer has
+a fragile response-body type bound):
+
+- **Per-IP rate limiting** — needs a manual accept loop that injects the remote
+  IP into request extensions; tracked as a follow-up.
+- **CORS** — `enable_cors`/`allow_origins` are parsed but not emitted by the
+  server; apply CORS at the proxy.
+
 ## Recommendations
 - Bind to loopback (`127.0.0.1`) and front RPC with a reverse proxy (TLS/auth/rate limits) if exposing beyond localhost.
 - Terminate TLS at the reverse proxy or tunnel.
