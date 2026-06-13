@@ -36,7 +36,7 @@ impl BlockchainService {
     pub(crate) async fn handle_persist_completed(&self, persist: PersistCompleted) {
         let PersistCompleted { block } = persist;
         let index = block.index();
-        let _hash = match Self::try_block_hash(block.as_ref()) {
+        let hash = match Self::try_block_hash(block.as_ref()) {
             Ok(hash) => hash,
             Err(error) => {
                 warn!(
@@ -76,7 +76,7 @@ impl BlockchainService {
         self.system.commit_to_store();
         self.event_tx
             .send(crate::RuntimeEvent::Imported {
-                hash: _hash,
+                hash,
                 height: index,
                 timestamp: block.header.timestamp(),
             })

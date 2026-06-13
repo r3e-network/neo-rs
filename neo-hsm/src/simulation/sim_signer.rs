@@ -134,7 +134,6 @@ impl SimulationSigner {
     pub fn set_pin(&self, pin: &str) {
         *self.pin.write() = Some(pin.to_string());
         *self.is_locked.write() = true;
-        let _ = &self.device_info; // Silence unused field warning
     }
 }
 

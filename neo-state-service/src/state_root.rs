@@ -23,7 +23,7 @@ pub struct StateRoot {
     pub index: u32,
     /// Root hash of the state Merkle Patricia trie.
     pub root_hash: UInt256,
-    /// Cached double-SHA256 hash of the unsigned state root.
+    /// Cached SHA-256 hash of the unsigned state root.
     #[serde(skip)]
     cached_hash: Option<UInt256>,
 }
@@ -60,7 +60,7 @@ impl StateRoot {
         &self.root_hash
     }
 
-    /// Computes (and caches) the double-SHA256 hash of the unsigned
+    /// Computes (and caches) the SHA-256 hash of the unsigned
     /// state root bytes.
     pub fn hash(&mut self) -> UInt256 {
         if let Some(hash) = &self.cached_hash {
