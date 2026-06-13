@@ -420,62 +420,6 @@ impl WriteBatchBuffer {
     }
 }
 
-/// Auto-flushing write batch buffer with background timer.
-pub struct AutoFlushBatchBuffer {
-    inner: Arc<WriteBatchBuffer>,
-}
-
-impl AutoFlushBatchBuffer {
-    /// Creates a new auto-flushing batch buffer.
-    pub fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
-        let inner = Arc::new(WriteBatchBuffer::new(db, config));
-
-        // Start background flush task
-        let inner_clone = Arc::clone(&inner);
-        std::thread::spawn(move || {
-            Self::flush_loop(inner_clone, config.max_delay_ms);
-        });
-
-        Self { inner }
-    }
-
-    /// Background flush loop.
-    fn flush_loop(inner: Arc<WriteBatchBuffer>, interval_ms: u64) {
-        let interval = Duration::from_millis(interval_ms);
-
-        loop {
-            std::thread::sleep(interval);
-
-            // Check if we should flush based on time
-            if inner.has_pending() && inner.time_since_flush() >= interval {
-                if let Err(e) = inner.flush() {
-                    error!(target: "neo", error = %e, "auto flush failed");
-                }
-            }
-        }
-    }
-
-    /// Gets the inner batch buffer.
-    pub fn inner(&self) -> &WriteBatchBuffer {
-        &self.inner
-    }
-
-    /// Adds a put operation.
-    pub fn put(&self, key: &[u8], value: &[u8]) {
-        self.inner.put(key, value);
-    }
-
-    /// Adds a delete operation.
-    pub fn delete(&self, key: &[u8]) {
-        self.inner.delete(key);
-    }
-
-    /// Forces a flush.
-    pub fn flush(&self) -> StorageResult<()> {
-        self.inner.force_flush()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -34,7 +34,7 @@
 
 pub mod error;
 
-pub use error::{CoreError, CoreResult, Result, ToNativeError};
+pub use error::{CoreError, CoreResult, Result};
 
 // Re-export the `impl_error_from!` macro from `neo-io` so consumers of
 // `CoreError` (and `IoError`-adjacent error types) can use the same

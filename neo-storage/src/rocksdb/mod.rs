@@ -17,6 +17,6 @@ pub use provider::{
 };
 pub use store::{RocksDbSnapshot, RocksDbStore};
 pub use write_batch_buffer::{
-    AutoFlushBatchBuffer, WriteBatchBuffer, WriteBatchConfig, WriteBatchStats,
+    WriteBatchBuffer, WriteBatchConfig, WriteBatchStats,
     WriteBatchStatsSnapshot,
 };

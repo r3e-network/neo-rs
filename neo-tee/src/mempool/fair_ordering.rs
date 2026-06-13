@@ -156,7 +156,7 @@ pub fn compute_ordering_key(
         FairOrderingPolicy::FcfsWithGasCap { max_gas_multiplier } => {
             // FCFS but transactions paying excessive fees get deprioritized
             // This prevents gas wars while still allowing normal fee bidding
-            let capped_fee = network_fee.min(network_fee * max_gas_multiplier as i64);
+            let capped_fee = network_fee.min(network_fee.saturating_mul(max_gas_multiplier as i64));
             OrderingKey {
                 primary: timing.sequence_number,
                 secondary: capped_fee as u64,
