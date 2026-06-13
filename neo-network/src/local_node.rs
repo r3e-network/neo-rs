@@ -363,15 +363,14 @@ impl LocalNodeService {
 
     async fn handle_broadcast_block(&self, block: &Block) {
         for (peer_id, handle) in self.registry.handles() {
-            if let Err(err) = handle
-                .send_inventory(crate::remote_node::InventoryItem::Block(block.clone()))
-                .await
+            if let Err(err) =
+                handle.try_send_inventory(crate::remote_node::InventoryItem::Block(block.clone()))
             {
                 warn!(
                     target: "neo_network",
                     %peer_id,
                     %err,
-                    "failed to send block inventory to peer"
+                    "dropping block inventory to peer (channel full or closed)"
                 );
             }
         }
@@ -396,12 +395,12 @@ impl LocalNodeService {
             }
         };
         for (peer_id, handle) in self.registry.handles() {
-            if let Err(err) = handle.send_raw(frame.clone()).await {
+            if let Err(err) = handle.try_send_raw(frame.clone()) {
                 warn!(
                     target: "neo_network",
                     %peer_id,
                     %err,
-                    "failed to send extensible payload to peer"
+                    "dropping extensible payload to peer (channel full or closed)"
                 );
             }
         }
@@ -433,12 +432,12 @@ impl LocalNodeService {
                 }
             };
             for (peer_id, handle) in self.registry.handles() {
-                if let Err(err) = handle.send_raw(frame.clone()).await {
+                if let Err(err) = handle.try_send_raw(frame.clone()) {
                     warn!(
                         target: "neo_network",
                         %peer_id,
                         %err,
-                        "failed to send inv announcement to peer"
+                        "dropping inv announcement to peer (channel full or closed)"
                     );
                 }
             }
@@ -448,14 +447,13 @@ impl LocalNodeService {
     async fn handle_broadcast_transaction(&self, tx: &Transaction) {
         for (peer_id, handle) in self.registry.handles() {
             if let Err(err) = handle
-                .send_inventory(crate::remote_node::InventoryItem::Transaction(tx.clone()))
-                .await
+                .try_send_inventory(crate::remote_node::InventoryItem::Transaction(tx.clone()))
             {
                 warn!(
                     target: "neo_network",
                     %peer_id,
                     %err,
-                    "failed to send transaction inventory to peer"
+                    "dropping transaction inventory to peer (channel full or closed)"
                 );
             }
         }

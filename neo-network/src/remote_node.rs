@@ -273,6 +273,37 @@ impl RemoteNodeHandle {
             .map_err(|_| crate::error::NetworkError::LocalShuttingDown)
     }
 
+    /// Non-blocking [`send_inventory`]: drops the item (returning an error)
+    /// instead of awaiting when the peer's command channel is full, so one slow
+    /// peer cannot stall the shared broadcast loop. Best-effort gossip — a
+    /// dropped item is re-acquired by the peer via `GetData`/the next sync.
+    pub fn try_send_inventory(&self, item: InventoryItem) -> NetworkResult<()> {
+        use tokio::sync::mpsc::error::TrySendError;
+        self.cmd_tx
+            .try_send(RemoteNodeCommand::SendInventory(item))
+            .map_err(|err| match err {
+                TrySendError::Full(_) => crate::error::NetworkError::RemoteUnavailable {
+                    peer_id: format!("{:?}", self.peer_id),
+                    detail: "send channel full (slow peer)".to_string(),
+                },
+                TrySendError::Closed(_) => crate::error::NetworkError::LocalShuttingDown,
+            })
+    }
+
+    /// Non-blocking [`send_raw`] (see [`try_send_inventory`]).
+    pub fn try_send_raw(&self, bytes: Vec<u8>) -> NetworkResult<()> {
+        use tokio::sync::mpsc::error::TrySendError;
+        self.cmd_tx
+            .try_send(RemoteNodeCommand::SendRaw(bytes))
+            .map_err(|err| match err {
+                TrySendError::Full(_) => crate::error::NetworkError::RemoteUnavailable {
+                    peer_id: format!("{:?}", self.peer_id),
+                    detail: "send channel full (slow peer)".to_string(),
+                },
+                TrySendError::Closed(_) => crate::error::NetworkError::LocalShuttingDown,
+            })
+    }
+
     /// Request graceful shutdown of the service task.
     pub async fn shutdown(&self) -> NetworkResult<()> {
         self.cmd_tx
@@ -1370,5 +1401,28 @@ impl PeerSession {
             self.pending_outbound.push(message);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod broadcast_tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn try_send_raw_drops_on_full_channel_without_blocking() {
+        let (tx, _rx) = mpsc::channel::<RemoteNodeCommand>(2);
+        let addr = "10.0.0.2:1002".parse().expect("addr");
+        let handle = RemoteNodeHandle::from_parts(tx, PeerId::new(), addr);
+        assert!(handle.try_send_raw(vec![1]).is_ok());
+        assert!(handle.try_send_raw(vec![2]).is_ok());
+        // The channel is full and `_rx` is never polled: try_send must return
+        // Err immediately rather than parking the shared broadcast loop.
+        let res = tokio::time::timeout(std::time::Duration::from_millis(200), async {
+            handle.try_send_raw(vec![3])
+        })
+        .await
+        .expect("try_send must not block on a full channel");
+        assert!(res.is_err(), "a full peer channel must drop, not block");
     }
 }
