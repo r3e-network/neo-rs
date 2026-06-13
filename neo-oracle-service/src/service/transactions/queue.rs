@@ -194,7 +194,7 @@ impl OracleService {
         if let Err(error) = self
             .system
             .tx_router_actor()
-            .try_enqueue_preverify(tx_mut, true)
+            .try_enqueue_preverify(tx_mut, true, snapshot)
         {
             warn!(target: "neo::oracle", %error, "failed to relay oracle response tx");
             return false;

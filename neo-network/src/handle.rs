@@ -416,6 +416,24 @@ impl NetworkHandle {
             .map_err(|_| NetworkError::LocalShuttingDown)
     }
 
+    /// Synchronous, non-blocking transaction broadcast for callers that cannot
+    /// `.await` (e.g. a plugin under a non-async lock). Fire-and-forget: the
+    /// command is dropped (returning `Err` so the caller can log) if the
+    /// channel is full or the service has shut down. Delivery is best-effort,
+    /// mirroring C# `LocalNode` relay under a saturated send queue.
+    pub fn try_broadcast_transaction(&self, transaction: Transaction) -> NetworkResult<()> {
+        use tokio::sync::mpsc::error::TrySendError;
+        match self
+            .cmd_tx
+            .try_send(NetworkCommand::BroadcastTransaction { transaction })
+        {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_) | TrySendError::Closed(_)) => {
+                Err(NetworkError::LocalShuttingDown)
+            }
+        }
+    }
+
     /// Update the locally advertised block height (C# ledger
     /// `CurrentIndex`), advertised in version + ping payloads and used to
     /// gate block-sync requests. Driven by the ledger's block-imported

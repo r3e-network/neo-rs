@@ -25,7 +25,9 @@ use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
+use neo_payloads::{Transaction, VerifyResult};
 use neo_runtime::{BlockExecutor, ConsensusService, NeoEngine};
+use neo_storage::DataCache;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
@@ -267,31 +269,48 @@ impl Node {
     /// stub here is a marker that lets plugins compile against the
     /// orchestrator without taking a hard dependency on those crates.
     pub fn tx_router_actor(&self) -> TxRouterHandle {
-        TxRouterHandle::new()
+        TxRouterHandle::new(Arc::clone(&self.mempool), self.network.clone())
     }
 }
 
-/// Opaque handle returned by [`Node::tx_router_actor`]. A real
-/// executor wires this to the live transaction router actor; the
-/// stub is a no-op so plugins can compile and the orchestrator can
-/// be built up incrementally.
-#[derive(Debug, Default, Clone)]
-pub struct TxRouterHandle;
+/// Handle returned by [`Node::tx_router_actor`]. Wires outbound transactions
+/// (e.g. oracle responses) into the shared memory pool and broadcasts admitted
+/// ones to peers — the reth-style stand-in for C# `system.Blockchain.Tell(tx)`
+/// admit-then-relay.
+#[derive(Clone)]
+pub struct TxRouterHandle {
+    mempool: Arc<MemoryPool>,
+    network: NetworkHandle,
+}
 
 impl TxRouterHandle {
-    /// Construct a new `TxRouterHandle`.
-    pub fn new() -> Self {
-        Self
+    /// Construct a `TxRouterHandle` over the node's shared mempool + network.
+    pub fn new(mempool: Arc<MemoryPool>, network: NetworkHandle) -> Self {
+        Self { mempool, network }
     }
 
-    /// Try to enqueue a transaction for pre-verification + broadcast.
-    /// The stub always succeeds; a real implementation forwards to
-    /// the mempool / network actor.
+    /// Admit `tx` into the shared memory pool against `snapshot`, and — when
+    /// `relay` is set and admission succeeded — best-effort broadcast it to
+    /// peers. Synchronous and non-blocking, so it is safe to call from a plugin
+    /// holding a non-async lock. Returns `Ok(())` only when the mempool accepts
+    /// the transaction (`VerifyResult::Succeed`); any other verdict is surfaced
+    /// as `Err(verdict)` so the caller can log and retain the work.
     pub fn try_enqueue_preverify(
         &self,
-        _tx: neo_payloads::Transaction,
-        _relay: bool,
+        tx: Transaction,
+        relay: bool,
+        snapshot: &DataCache,
     ) -> Result<(), String> {
+        let result = self.mempool.try_add(tx.clone(), snapshot);
+        if result != VerifyResult::Succeed {
+            return Err(format!("{result:?}"));
+        }
+        if relay {
+            // Best-effort relay; a dropped broadcast must not undo a successful
+            // admission — the tx is in the pool and will be announced via inv
+            // on the next gossip cycle.
+            let _ = self.network.try_broadcast_transaction(tx);
+        }
         Ok(())
     }
 }
