@@ -23,7 +23,6 @@ neo-vm-rs = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
-async-trait = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -44,9 +43,7 @@ neo-vm = { workspace = true }
 
 
 
-neo-network = { workspace = true }
 neo-payloads = { workspace = true }
-neo-system = { workspace = true }
 
 [dev-dependencies]
 

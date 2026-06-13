@@ -21,8 +21,6 @@
 //! The historical `wip` and `full` features are preserved as compatibility
 //! names for the default daemon feature set.
 
-#![warn(missing_docs)]
-
 #[cfg(feature = "wip")]
 mod consensus;
 #[cfg(feature = "wip")]

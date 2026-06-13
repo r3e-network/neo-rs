@@ -246,12 +246,6 @@ bytes = "1.5"
 hashbrown = { version = "0.14", features = ["serde"] }
 indexmap = { version = "=2.8.0", features = ["serde"] }
 lru = "0.12"
-# Mature arbitrary-precision decimal arithmetic. Used by neo-primitives
-# for the optional `bigdecimal`-backed variant of the `BigDecimal`
-# type introduced in the 2026-06-13-comprehensive-refactoring
-# change (Phase C3). The Neo 8-decimal fixed-point semantics are
-# preserved via a thin wrapper (see `neo_primitives::big_decimal_bigdecimal`).
-bigdecimal = { version = "0.4", features = ["serde"] }
 fastbloom = { version = "0.17", default-features = false }
 bitflags = "2.4"
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }

@@ -25,7 +25,6 @@ attestation = ["sgx-hw"]
 [dependencies]
 # Core dependencies
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
