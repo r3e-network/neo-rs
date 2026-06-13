@@ -4,7 +4,7 @@
 //!
 //! - `BlockLike`: common block accessors without exposing internal structure
 
-pub use marker_traits::*;
-
 /// Minimal marker traits used to decouple higher-level crates.
 pub mod marker_traits;
+
+pub use marker_traits::BlockLike;
