@@ -13,7 +13,10 @@ impl Transaction {
             "hash".to_string(),
             serde_json::json!(self.hash().to_string()),
         );
-        json.insert("size".to_string(), serde_json::json!(self.size()));
+        json.insert(
+            "size".to_string(),
+            serde_json::json!(<Transaction as neo_io::Serializable>::size(self)),
+        );
         json.insert("version".to_string(), serde_json::json!(self.version));
         json.insert("nonce".to_string(), serde_json::json!(self.nonce));
 

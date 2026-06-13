@@ -488,7 +488,7 @@ fn find_paying_accounts(
         }
         break;
     }
-    if result.is_empty() {
+    if result.is_empty() && !ordered_accounts.is_empty() {
         let mut i = ordered_accounts.len() - 1;
         while ordered_accounts[i].1 <= amount {
             let (account, value) = ordered_accounts.remove(i);

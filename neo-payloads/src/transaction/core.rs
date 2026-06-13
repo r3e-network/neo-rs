@@ -243,7 +243,7 @@ impl Transaction {
 
     /// Gets the fee per byte.
     pub fn fee_per_byte(&self) -> i64 {
-        let size = self.size();
+        let size = <Self as neo_io::Serializable>::size(self);
         if size == 0 {
             0
         } else {

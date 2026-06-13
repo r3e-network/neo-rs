@@ -66,8 +66,6 @@ impl ExecutionEngine {
 
     /// Called when an exception causes the VM to enter the FAULT state.
     pub(crate) fn on_fault(&mut self, err: VmError) {
-        #[cfg(debug_assertions)]
-        println!("ExecutionEngine fault: {err:?}");
         if self.uncaught_exception.is_none() {
             let message = match &err {
                 VmError::CatchableException { message } => message.clone(),

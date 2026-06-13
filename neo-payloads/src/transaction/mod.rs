@@ -18,7 +18,7 @@ use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;
 use neo_error::CoreResult;
 use neo_io::serializable::helper::{
-    deserialize_array_with, deserialize_exact_array, get_var_size, get_var_size_bytes,
+    deserialize_array_with, deserialize_exact_array, get_var_size_bytes,
     get_var_size_serializable_slice, serialize_array,
 };
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
@@ -104,22 +104,12 @@ mod traits;
 // ============================================================================
 // ============================================================================
 
-impl Transaction {
-    fn size(&self) -> usize {
-        let attr_bytes_size: usize = self.attributes.iter().map(|a| a.size()).sum();
-        let signers_size: usize = self.signers.iter().map(|s| s.size()).sum();
-        4 + 4
-            + 8
-            + 8
-            + 4
-            + 4
-            + self.script.len()
-            + get_var_size(attr_bytes_size as u64)
-            + attr_bytes_size
-            + get_var_size(signers_size as u64)
-            + signers_size
-    }
-}
+// The transaction wire size is provided by the canonical `Serializable::size`
+// impl (see `serialization.rs`), which includes the version (1 byte), the
+// script var-int length prefix, and the witnesses var-array. A previous
+// inherent `Transaction::size` shadowed it with an undersized value (version
+// as 4 bytes, no script prefix, witnesses omitted), corrupting `fee_per_byte`
+// (mempool ordering) and the RPC `size` field — callers now use the trait.
 
 impl neo_primitives::Verifiable for Transaction {
     fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {

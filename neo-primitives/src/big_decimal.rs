@@ -201,8 +201,12 @@ impl BigDecimal {
             decimal_places = s.len() - index - 1;
             s = s.replace('.', "");
 
-            // Trim trailing zeros
-            while s.ends_with('0') {
+            // Trim trailing zeros of the FRACTIONAL part only. Guarding on
+            // `decimal_places > 0` both prevents a usize underflow on all-zero
+            // fractions ("0.0", "10.0", "0.000") and avoids eating integer-part
+            // zeros (which would change the value). Matches C# BigDecimal.TryParse,
+            // which trims fractional zeros before removing the decimal point.
+            while decimal_places > 0 && s.ends_with('0') {
                 s.pop();
                 decimal_places -= 1;
             }
@@ -384,6 +388,23 @@ mod tests {
         let bd = BigDecimal::new(BigInt::from(1234), 3);
         let result = bd.change_decimals(2);
         assert!(result.is_err());
+    }
+    #[test]
+    fn test_big_decimal_parse_trailing_zero_amounts() {
+        // Regression: trailing-zero fractional amounts ("0.0", "10.0", "100.0",
+        // "0.000", "1.230") used to underflow the usize decimal-place counter
+        // (panic under overflow-checks, garbage scale in release).
+        for (input, expected) in [
+            ("0.0", 0i64),
+            ("10.0", 10 * 100_000_000),
+            ("100.0", 100 * 100_000_000),
+            ("0.000", 0),
+            ("1.230", 123_000_000),
+        ] {
+            let bd = BigDecimal::parse(input, 8).unwrap();
+            assert_eq!(bd.value(), &BigInt::from(expected), "parse({input})");
+            assert_eq!(bd.decimals(), 8);
+        }
     }
     #[test]
     fn test_big_decimal_parse() {
