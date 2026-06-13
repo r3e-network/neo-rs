@@ -639,9 +639,6 @@ impl VmError {
 /// Result type for VM operations
 pub type VmResult<T> = std::result::Result<T, VmError>;
 
-/// Alias for compatibility with existing code
-pub type Result<T, E = VmError> = std::result::Result<T, E>;
-
 // Standard library error conversions
 impl From<std::io::Error> for VmError {
     fn from(_error: std::io::Error) -> Self {
