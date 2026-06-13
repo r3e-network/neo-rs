@@ -330,6 +330,14 @@ impl GasToken {
         *GAS_TOKEN_HASH
     }
 
+    /// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: reads the `Balance`
+    /// field of the NEP-17 `AccountState` stored under `Prefix_Account + account`
+    /// (zero when absent). The single canonical GAS-balance decode, shared by
+    /// the mempool fee check and RPC wallet helpers.
+    pub fn balance_of(snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt> {
+        crate::read_nep17_balance(snapshot, Self::ID, account)
+    }
+
     /// Core NEP-17 transfer (C# `FungibleToken.Transfer`), shared by the `transfer`
     /// ABI method and by native-to-native callers (e.g. `Notary.withdraw`).
     ///

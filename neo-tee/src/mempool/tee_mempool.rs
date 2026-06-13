@@ -342,17 +342,15 @@ impl TeeMempool {
             let mut next_level = Vec::new();
 
             for chunk in current_level.chunks(2) {
-                let mut hasher = Sha256::new();
-                hasher.update(chunk[0]);
-                if chunk.len() > 1 {
-                    hasher.update(chunk[1]);
-                } else {
-                    hasher.update(chunk[0]); // Duplicate if odd
-                }
-                let hash = hasher.finalize();
-                let mut result = [0u8; 32];
-                result.copy_from_slice(&hash);
-                next_level.push(result);
+                // SHA-256(left || right), duplicating the left leaf on an odd
+                // node. This is an internal TEE ordering-proof digest (NOT a Neo
+                // block merkle root, which is double-SHA-256); route it through
+                // the central neo-crypto hasher rather than reimplementing sha2.
+                let right = if chunk.len() > 1 { &chunk[1] } else { &chunk[0] };
+                let mut data = [0u8; 64];
+                data[..32].copy_from_slice(&chunk[0]);
+                data[32..].copy_from_slice(right);
+                next_level.push(neo_crypto::Crypto::sha256(&data));
             }
 
             current_level = next_level;

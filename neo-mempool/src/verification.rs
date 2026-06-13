@@ -27,9 +27,7 @@ use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_native_contracts::{GasToken, NeoToken, Notary, OracleContract, RoleManagement};
 use neo_payloads::{MAX_TRANSACTION_SIZE, OracleResponse, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
-use neo_serialization::BinarySerializer;
 use neo_storage::DataCache;
-use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -116,29 +114,14 @@ fn max_traceable_blocks_effective(
     u32::try_from(stored).unwrap_or(settings.max_traceable_blocks)
 }
 
-/// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: the first
-/// field of the interoperable NEP-17 `AccountState` struct stored
-/// under `Prefix_Account + account`; an absent record is zero.
+/// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: the first field of the
+/// interoperable NEP-17 `AccountState` struct stored under
+/// `Prefix_Account + account`; an absent or undecodable record is zero.
+///
+/// Delegates to the single canonical decode in `neo-native-contracts` so the
+/// mempool fee check cannot drift from the contract's own balance reader.
 pub fn gas_balance_of(snapshot: &DataCache, account: &UInt160) -> BigInt {
-    let mut key = vec![NEP17_PREFIX_ACCOUNT];
-    key.extend_from_slice(&account.to_bytes());
-    let Some(item) = snapshot.get(&neo_storage::StorageKey::new(GasToken::ID, key)) else {
-        return BigInt::from(0);
-    };
-    let bytes = item.value_bytes().into_owned();
-    let Ok(decoded) =
-        BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
-    else {
-        return BigInt::from(0);
-    };
-    let neo_vm::StackItem::Struct(fields) = decoded else {
-        return BigInt::from(0);
-    };
-    fields
-        .items()
-        .first()
-        .and_then(|item| item.as_int().ok())
-        .unwrap_or_else(|| BigInt::from(0))
+    GasToken::balance_of(snapshot, account).unwrap_or_else(|_| BigInt::from(0))
 }
 
 /// C# `Transaction.Sender` — `Signers[0].Account`.
