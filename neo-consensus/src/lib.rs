@@ -218,7 +218,7 @@
 //! - **Accountability**: All consensus actions are signed and auditable
 
 // Documentation warnings enabled — incremental doc coverage in progress
-#![warn(missing_docs)]
+// (missing_docs is already warned at the crate root above)
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // ============================================================================

@@ -200,8 +200,7 @@ mod tests {
     async fn dummy_executor_runs() {
         let exec: Arc<dyn BlockExecutor> = Arc::new(DummyExecutor);
         let block = Block::new();
-        let outcome = exec.execute(&block).await.expect("execute");
-        assert!(outcome.ok || !outcome.ok); // trivial; ensures trait is callable
+        exec.execute(&block).await.expect("execute");
         exec.validate(&block).await.expect("validate");
     }
 }

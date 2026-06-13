@@ -36,44 +36,6 @@ macro_rules! impl_error_from {
     };
 }
 
-/// Implements `From<Vec<u8>>` and `From<&[u8]>` for types with a `from_bytes` method.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// impl_from_bytes!(StorageKey);
-/// impl_from_bytes!(StorageItem, from_bytes_vec); // custom method name for Vec
-/// ```
-#[macro_export]
-macro_rules! impl_from_bytes {
-    ($type:ty) => {
-        impl From<Vec<u8>> for $type {
-            fn from(value: Vec<u8>) -> Self {
-                Self::from_bytes(&value)
-            }
-        }
-
-        impl From<&[u8]> for $type {
-            fn from(value: &[u8]) -> Self {
-                Self::from_bytes(value)
-            }
-        }
-    };
-    ($type:ty, owned: $owned_method:ident) => {
-        impl From<Vec<u8>> for $type {
-            fn from(value: Vec<u8>) -> Self {
-                Self::$owned_method(value)
-            }
-        }
-
-        impl From<&[u8]> for $type {
-            fn from(value: &[u8]) -> Self {
-                Self::$owned_method(value.to_vec())
-            }
-        }
-    };
-}
-
 /// Implements ordering traits (`PartialOrd`, `Ord`) based on field comparison order.
 ///
 /// # Example

@@ -21,8 +21,10 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![allow(dead_code)]
+// Several module-level imports are consumed only by the `#[cfg(test)]` modules
+// (via `use super::*`); they read as unused in the non-test build, so this
+// keeps the crate warning-clean without scattering `#[cfg(test)]` on imports.
 #![allow(unused_imports)]
-#![allow(deprecated)]
 
 pub use neo_execution::{
     HardforkActivable, NativeContract, NativeContractsCache, NativeContractsCacheEntry,
