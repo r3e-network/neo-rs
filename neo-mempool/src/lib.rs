@@ -37,8 +37,6 @@
 //! (Layer 2), or any stateful runtime crate.
 
 #![doc(html_root_url = "https://docs.rs/neo-mempool/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod memory_pool;
 pub mod new_transaction_event_args;

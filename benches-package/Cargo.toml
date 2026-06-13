@@ -28,3 +28,6 @@ harness = false
 [[bench]]
 name = "vm_execution"
 harness = false
+
+[lints]
+workspace = true

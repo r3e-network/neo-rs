@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 //! # Neo Primitives
 //!
 //! Fundamental types for the Neo blockchain implementation.

@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 // Copyright (c) 2024 R3E Network
 // This file is part of the neo-rs project

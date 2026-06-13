@@ -18,8 +18,6 @@
 //! the role `parity-scale-codec` and `ssz` play in their respective stacks.
 
 #![doc(html_root_url = "https://docs.rs/neo-serialization/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod binary_serializer;
 pub mod compression;

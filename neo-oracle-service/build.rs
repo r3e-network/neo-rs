@@ -31,7 +31,7 @@ fn main() {
 fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, value: V) {
     // SAFETY: Build scripts run as short-lived single-purpose processes. This
     // mutation happens before invoking prost/tonic code that reads PROTOC.
-    #[allow(unused_unsafe)]
+    #[allow(unused_unsafe, unsafe_code)]
     unsafe {
         env::set_var(key, value);
     }

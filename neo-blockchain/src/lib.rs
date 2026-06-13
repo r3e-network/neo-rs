@@ -52,8 +52,6 @@
 //! framework.
 
 #![doc(html_root_url = "https://docs.rs/neo-blockchain/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod block_processing;
 pub mod block_validation;

@@ -97,8 +97,6 @@
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/neo-network/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod command;
 pub mod connection_timeouts;

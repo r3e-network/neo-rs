@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 //! Oracle service module (parity with Neo.Plugins.OracleService).
 //!

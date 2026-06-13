@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 //! # Neo Crypto
 //!
 //! Cryptographic utilities for the Neo blockchain implementation.

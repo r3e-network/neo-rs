@@ -29,8 +29,6 @@
 //! on `neo-error` and so cannot add their own.
 
 #![doc(html_root_url = "https://docs.rs/neo-error/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod error;
 

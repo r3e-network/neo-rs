@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 //! Neo.IO - matches C# Neo.IO exactly
 //! This crate provides IO functionality matching C# Neo.IO namespace
 

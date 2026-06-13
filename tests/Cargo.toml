@@ -86,3 +86,6 @@ path = "tests/csharp_compatibility_tests.rs"
 name = "performance_benchmarks"
 path = "benches/performance_benchmarks.rs"
 harness = false
+
+[lints]
+workspace = true

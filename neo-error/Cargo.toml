@@ -17,3 +17,6 @@ description = "Authoritative error type for the Neo workspace (CoreError + CoreR
 neo-primitives = { workspace = true }
 neo-io = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

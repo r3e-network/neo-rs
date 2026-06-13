@@ -23,3 +23,6 @@ neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 hex = { workspace = true }
 parking_lot = { workspace = true }
+
+[lints]
+workspace = true

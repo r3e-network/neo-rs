@@ -43,3 +43,6 @@ tokio = { workspace = true }
 [features]
 default = []
 rocksdb = ["neo-storage/rocksdb"]
+
+[lints]
+workspace = true

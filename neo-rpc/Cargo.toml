@@ -151,3 +151,6 @@ client = [
     "dep:rand",
     "dep:zeroize",
 ]
+
+[lints]
+workspace = true

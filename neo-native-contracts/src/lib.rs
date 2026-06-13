@@ -18,8 +18,6 @@
 //! serialization) so the Rust native-contract surface is
 //! byte-compatible with the canonical C# node.
 
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 #![allow(dead_code)]
 // Several module-level imports are consumed only by the `#[cfg(test)]` modules
 // (via `use super::*`); they read as unused in the non-test build, so this

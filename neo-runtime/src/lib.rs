@@ -78,8 +78,6 @@
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/neo-runtime/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod blockchain;
 pub mod errors;

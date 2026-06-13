@@ -53,3 +53,6 @@ tempfile = { workspace = true }
 [features]
 default = []
 rocksdb = ["dep:rocksdb"]
+
+[lints]
+workspace = true

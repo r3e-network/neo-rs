@@ -58,8 +58,6 @@
 //! | Back-compat re-exports | [`legacy`] | Common type aliases for incremental migration |
 
 #![doc(html_root_url = "https://docs.rs/neo-system/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod back_compat;
 pub mod builder;

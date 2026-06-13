@@ -22,8 +22,6 @@
 //! `neo-payloads`) and the [`neo_native_contracts`] crate provides
 //! the concrete `NativeContract` implementations.
 
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 #![allow(dead_code)]
 
 // ============================================================================

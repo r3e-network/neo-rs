@@ -35,8 +35,6 @@
 //! Must **not** depend on `neo-core` (deleted).
 
 #![doc(html_root_url = "https://docs.rs/neo-state-service/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod commit_handlers;
 pub mod keys;

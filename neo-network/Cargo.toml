@@ -50,3 +50,6 @@ hex = { workspace = true }
 [features]
 default = []
 upnp = []
+
+[lints]
+workspace = true

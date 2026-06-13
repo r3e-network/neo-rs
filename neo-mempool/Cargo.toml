@@ -38,3 +38,6 @@ tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 
 [dev-dependencies]
 hex = { workspace = true }
+
+[lints]
+workspace = true

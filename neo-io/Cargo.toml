@@ -45,3 +45,6 @@ tracing = ["dep:tracing"]
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
+
+[lints]
+workspace = true

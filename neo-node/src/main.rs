@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 //! Neo Node - Neo N3 node daemon (server).
 //!

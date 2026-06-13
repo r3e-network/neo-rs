@@ -67,3 +67,6 @@ neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

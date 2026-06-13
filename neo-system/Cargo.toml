@@ -47,3 +47,6 @@ parking_lot = { workspace = true }
 
 [[example]]
 name = "migrate_from_neosystem"
+
+[lints]
+workspace = true

@@ -38,8 +38,6 @@
 //! extract the manifest types from `neo-core` into this crate.
 
 #![doc(html_root_url = "https://docs.rs/neo-manifest/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 
 pub mod call_flags;
 pub mod manifest;

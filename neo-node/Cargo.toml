@@ -104,3 +104,6 @@ neo-mempool = { workspace = true, optional = true }
 neo-io = { workspace = true }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
+
+[lints]
+workspace = true

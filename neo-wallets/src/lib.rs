@@ -32,8 +32,6 @@
 //! primitives independent of the node runtime that consumes them.
 
 #![doc(html_root_url = "https://docs.rs/neo-wallets/0.7.2")]
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
 

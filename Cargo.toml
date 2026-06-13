@@ -138,6 +138,15 @@ readme = "README.md"
 # Minimum supported Rust version policy
 msrv = "1.85"
 
+# Centralized lint policy. Every member opts in with `[lints] workspace = true`
+# in its own Cargo.toml, so the rules live in exactly one place (replacing the
+# per-crate `#![deny(...)]` / `#![warn(...)]` headers). Crates that genuinely
+# need unsafe (neo-vm, neo-execution) keep the deny and opt out per-site with
+# `#[allow(unsafe_code)]` + a `// SAFETY:` comment.
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer

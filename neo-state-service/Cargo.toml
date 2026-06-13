@@ -31,3 +31,6 @@ lru = { workspace = true }
 [dev-dependencies]
 hex = { workspace = true }
 neo-vm-rs = { workspace = true }
+
+[lints]
+workspace = true
