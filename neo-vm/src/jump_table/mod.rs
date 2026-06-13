@@ -43,11 +43,7 @@ pub struct JumpTable {
     pub(crate) handlers: [Option<InstructionHandler>; 256],
 }
 
-impl Default for JumpTable {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+neo_io::impl_default_via_new!(JumpTable);
 
 use std::sync::OnceLock;
 

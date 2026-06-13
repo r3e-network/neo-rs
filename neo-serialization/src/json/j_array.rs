@@ -154,11 +154,7 @@ impl JArray {
     }
 }
 
-impl Default for JArray {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+neo_io::impl_default_via_new!(JArray);
 
 impl FromIterator<Option<JToken>> for JArray {
     fn from_iter<T: IntoIterator<Item = Option<JToken>>>(iter: T) -> Self {

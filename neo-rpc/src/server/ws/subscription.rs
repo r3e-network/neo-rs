@@ -29,11 +29,7 @@ impl SubscriptionManager {
     }
 }
 
-impl Default for SubscriptionManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+neo_io::impl_default_via_new!(SubscriptionManager);
 
 /// Event subscriptions owned by one WebSocket connection.
 pub(super) struct ConnectionSubscription {

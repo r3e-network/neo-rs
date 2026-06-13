@@ -35,11 +35,7 @@ impl StandardNativeProvider {
     }
 }
 
-impl Default for StandardNativeProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+neo_io::impl_default_via_new!(StandardNativeProvider);
 
 impl NativeContractProvider for StandardNativeProvider {
     fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {

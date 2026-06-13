@@ -322,11 +322,7 @@ impl ReferenceCounter {
     }
 }
 
-impl Default for ReferenceCounter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+neo_io::impl_default_via_new!(ReferenceCounter);
 
 /// Identifies a tracked parent compound item.
 #[derive(Clone, Copy, Debug)]

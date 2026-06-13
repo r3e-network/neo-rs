@@ -106,11 +106,7 @@ impl NativeRegistry {
     }
 }
 
-impl Default for NativeRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+neo_io::impl_default_via_new!(NativeRegistry);
 
 #[cfg(test)]
 #[allow(dead_code)]

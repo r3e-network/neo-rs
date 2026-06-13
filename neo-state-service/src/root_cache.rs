@@ -152,11 +152,7 @@ impl StateRootCache {
     }
 }
 
-impl Default for StateRootCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+neo_io::impl_default_via_new!(StateRootCache);
 
 #[cfg(test)]
 mod tests {
