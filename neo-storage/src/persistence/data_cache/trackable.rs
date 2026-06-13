@@ -1,4 +1,3 @@
-use crate::persistence::read_cache::ReadCacheConfig;
 use crate::types::{StorageItem, StorageKey, TrackState};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -105,16 +104,6 @@ pub struct DataCacheConfig {
     pub max_entries: usize,
     /// Whether reads should be mirrored into the write cache dictionary.
     pub track_reads_in_write_cache: bool,
-    /// Enable read caching with LRU
-    pub enable_read_cache: bool,
-    /// Read cache configuration
-    pub read_cache_config: ReadCacheConfig,
-    /// Enable intelligent prefetching based on access patterns
-    pub enable_prefetching: bool,
-    /// Number of items to prefetch when pattern detected
-    pub prefetch_count: usize,
-    /// Minimum confidence threshold for prefetching (0-100)
-    pub prefetch_confidence_threshold: u8,
 }
 
 impl Default for DataCacheConfig {
@@ -122,11 +111,6 @@ impl Default for DataCacheConfig {
         Self {
             max_entries: 100000,
             track_reads_in_write_cache: true,
-            enable_read_cache: true,
-            read_cache_config: ReadCacheConfig::default(),
-            enable_prefetching: true,
-            prefetch_count: 10,
-            prefetch_confidence_threshold: 30,
         }
     }
 }

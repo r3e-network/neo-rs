@@ -1,7 +1,6 @@
 #![allow(unsafe_code)]
 
 use crate::persistence::{
-    read_cache::{ReadCacheConfig, StorageReadCache},
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     storage::StorageConfig,
@@ -25,7 +24,6 @@ pub struct RocksDbStore {
     pub(crate) on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
     pub(crate) batch_committer: Arc<BatchCommitter>,
     pub(crate) batch_config: RwLock<WriteBatchConfig>,
-    pub(crate) read_cache: Option<Arc<StorageReadCache>>,
     pub(crate) read_ahead_config: ReadAheadConfig,
 }
 
@@ -33,7 +31,6 @@ impl RocksDbStore {
     pub(crate) fn open(
         config: &StorageConfig,
         batch_config: WriteBatchConfig,
-        read_cache_config: &Option<ReadCacheConfig>,
         enable_bloom_filters: bool,
         enable_read_ahead: bool,
     ) -> Result<Self, rocksdb::Error> {
@@ -59,10 +56,6 @@ impl RocksDbStore {
 
         let batch_committer = Arc::new(BatchCommitter::new(Arc::clone(&db), batch_config));
 
-        let read_cache = read_cache_config
-            .as_ref()
-            .map(|cfg| Arc::new(StorageReadCache::new(*cfg)));
-
         let read_ahead_config = ReadAheadConfig {
             enabled: enable_read_ahead,
             ..Default::default()
@@ -73,7 +66,6 @@ impl RocksDbStore {
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer,
             batch_config: RwLock::new(batch_config),
-            read_cache,
             read_ahead_config,
         })
     }
@@ -95,8 +87,6 @@ impl RocksDbStore {
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        // Check read cache first
-        // Note: Vec<u8> doesn't implement StorageKey, so we skip caching for raw bytes
         match self.db.get(key) {
             Ok(value) => value,
             Err(err) => {
@@ -137,23 +127,8 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
-        // Check read cache first (bloom filter will be checked inside)
-        if let Some(ref cache) = self.read_cache {
-            if let Some(item) = cache.get(key) {
-                return Some(item);
-            }
-        }
-
         let raw = key.to_array();
-        let result = self.db.get(raw).ok().flatten().map(StorageItem::from_bytes);
-
-        // Cache the result if found
-        if let (Some(cache), Some(item)) = (&self.read_cache, &result) {
-            let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-            cache.put(key.clone(), item.clone(), size);
-        }
-
-        result
+        self.db.get(raw).ok().flatten().map(StorageItem::from_bytes)
     }
 
     fn find(
@@ -171,7 +146,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                     prefix.as_slice(),
                     &self.read_ahead_config,
                 );
-                let read_cache = self.read_cache.clone();
                 return Box::new(iter.filter_map(move |res| {
                     let (key, value) = match res {
                         Ok(entry) => entry,
@@ -183,11 +157,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                     let key_vec: Vec<u8> = key.into();
                     let storage_key = StorageKey::from_bytes(&key_vec);
                     let storage_item = StorageItem::from_bytes(value.into());
-                    if let Some(ref cache) = read_cache {
-                        let size =
-                            storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                        cache.put(storage_key.clone(), storage_item.clone(), size);
-                    }
                     Some((storage_key, storage_item))
                 }));
             }
@@ -195,9 +164,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
 
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
-
-        // Create an iterator that also caches results
-        let read_cache = self.read_cache.clone();
 
         Box::new(iter.filter_map(move |res| {
             let (key, value) = match res {
@@ -215,13 +181,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
             }
             let storage_key = StorageKey::from_bytes(&key_vec);
             let storage_item = StorageItem::from_bytes(value.into());
-
-            // Cache the result
-            if let Some(ref cache) = read_cache {
-                let size = storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                cache.put(storage_key.clone(), storage_item.clone(), size);
-            }
-
             Some((storage_key, storage_item))
         }))
     }
@@ -237,9 +196,6 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
                 message: format!("RocksDB delete failed: {}", err),
             }
         })?;
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
         Ok(())
     }
 
@@ -250,9 +206,6 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
                 message: format!("RocksDB put failed: {}", err),
             }
         })?;
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
         Ok(())
     }
 
@@ -265,9 +218,6 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
                 message: format!("RocksDB put_sync failed: {}", err),
             }
         })?;
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
         Ok(())
     }
 }
@@ -275,16 +225,9 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
 impl Store for RocksDbStore {
     fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
         let store_arc = Arc::new(self.clone());
-        // NOTE: the snapshot currently shares the live store's read cache. A
-        // point-in-time snapshot ideally gets its own (or no) cache for strict
-        // isolation, but the shared cache is also the commit-invalidation
-        // mechanism that keeps a freshly-built StoreCache coherent after a write
-        // (see snapshot_commit_invalidates_read_cache_for_updated_keys); fixing
-        // the isolation without breaking that coherency is a dedicated change.
         let snapshot = Arc::new(RocksDbSnapshot::new(
             self.db.clone(),
             store_arc,
-            self.read_cache.clone(),
             self.read_ahead_config,
         ));
 
@@ -327,7 +270,6 @@ impl Clone for RocksDbStore {
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer: Arc::clone(&self.batch_committer),
             batch_config: RwLock::new(*self.batch_config.read()),
-            read_cache: self.read_cache.clone(),
             read_ahead_config: self.read_ahead_config,
         }
     }
@@ -351,8 +293,6 @@ pub struct RocksDbSnapshot {
     snapshot: DbSnapshot<'static>,
     write_batch: Mutex<WriteBatch>,
     pending_changes: Mutex<BTreeMap<Vec<u8>, Option<Vec<u8>>>>,
-    /// Optional read cache for this snapshot
-    read_cache: Option<Arc<StorageReadCache>>,
     /// Read-ahead configuration
     read_ahead_config: ReadAheadConfig,
 }
@@ -361,7 +301,6 @@ impl RocksDbSnapshot {
     fn new(
         db: Arc<DB>,
         store: Arc<RocksDbStore>,
-        read_cache: Option<Arc<StorageReadCache>>,
         read_ahead_config: ReadAheadConfig,
     ) -> Self {
         let snapshot = Self::create_snapshot(&db);
@@ -372,7 +311,6 @@ impl RocksDbSnapshot {
             snapshot,
             write_batch: Mutex::new(WriteBatch::default()),
             pending_changes: Mutex::new(BTreeMap::new()),
-            read_cache,
             read_ahead_config,
         }
     }
@@ -525,35 +463,14 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw = key.to_array();
         if let Some(change) = self.pending_change(raw.as_slice()) {
-            let result = change.map(StorageItem::from_bytes);
-            if let (Some(cache), Some(item)) = (&self.read_cache, &result) {
-                let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                cache.put(key.clone(), item.clone(), size);
-            }
-            return result;
+            return change.map(StorageItem::from_bytes);
         }
 
-        // Check read cache first (bloom filter will be checked inside)
-        if let Some(ref cache) = self.read_cache {
-            if let Some(item) = cache.get(key) {
-                return Some(item);
-            }
-        }
-
-        let result = self
-            .db
+        self.db
             .get_opt(&raw, &self.read_options())
             .ok()
             .flatten()
-            .map(StorageItem::from_bytes);
-
-        // Cache the result if found and cache is configured
-        if let (Some(cache), Some(item)) = (&self.read_cache, &result) {
-            let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-            cache.put(key.clone(), item.clone(), size);
-        }
-
-        result
+            .map(StorageItem::from_bytes)
     }
 
     fn find(
@@ -564,14 +481,9 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
 
         if let Some(items) = self.merged_entries(prefix_bytes.as_deref(), direction) {
-            let read_cache = self.read_cache.clone();
-            return Box::new(items.into_iter().map(move |(key_vec, value)| {
+            return Box::new(items.into_iter().map(|(key_vec, value)| {
                 let storage_key = StorageKey::from_bytes(&key_vec);
                 let storage_item = StorageItem::from_bytes(value);
-                if let Some(ref cache) = read_cache {
-                    let size = storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                    cache.put(storage_key.clone(), storage_item.clone(), size);
-                }
                 (storage_key, storage_item)
             }));
         }
@@ -584,7 +496,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
                     prefix.as_slice(),
                     &self.read_ahead_config,
                 );
-                let read_cache = self.read_cache.clone();
                 return Box::new(iter.filter_map(move |res| {
                     let (key, value) = match res {
                         Ok(entry) => entry,
@@ -596,11 +507,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
                     let key_vec: Vec<u8> = key.into();
                     let storage_key = StorageKey::from_bytes(&key_vec);
                     let storage_item = StorageItem::from_bytes(value.into());
-                    if let Some(ref cache) = read_cache {
-                        let size =
-                            storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                        cache.put(storage_key.clone(), storage_item.clone(), size);
-                    }
                     Some((storage_key, storage_item))
                 }));
             }
@@ -608,9 +514,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
 
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
-
-        // Create an iterator that also caches results
-        let read_cache = self.read_cache.clone();
 
         Box::new(iter.filter_map(move |res| {
             let (key, value) = match res {
@@ -628,13 +531,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
             }
             let storage_key = StorageKey::from_bytes(&key_vec);
             let storage_item = StorageItem::from_bytes(value.into());
-
-            // Cache the result
-            if let Some(ref cache) = read_cache {
-                let size = storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                cache.put(storage_key.clone(), storage_item.clone(), size);
-            }
-
             Some((storage_key, storage_item))
         }))
     }
@@ -645,21 +541,13 @@ impl ReadOnlyStore for RocksDbSnapshot {}
 impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn delete(&mut self, key: Vec<u8>) -> StorageResult<()> {
         self.write_batch.lock().delete(key.clone());
-        self.pending_changes.lock().insert(key.clone(), None);
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
+        self.pending_changes.lock().insert(key, None);
         Ok(())
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> StorageResult<()> {
         self.write_batch.lock().put(key.clone(), value.clone());
-        self.pending_changes
-            .lock()
-            .insert(key.clone(), Some(value.clone()));
-        if let Some(ref cache) = self.read_cache {
-            cache.remove(&StorageKey::from_bytes(&key));
-        }
+        self.pending_changes.lock().insert(key, Some(value));
         Ok(())
     }
 }
@@ -710,18 +598,13 @@ impl StoreSnapshot for RocksDbSnapshot {
             )));
         }
 
-        // Point-invalidation is already performed in put() and delete(), so a full
-        // cache.clear() is unnecessary here. Each mutated key was removed from the
-        // read cache at mutation time, ensuring no stale entries survive the commit.
-
         Ok(())
     }
 }
 
-// These methods form the operational API for RocksDbStore (fast-sync, cache
-// management, diagnostics).  The struct is crate-private so the compiler flags
-// them as dead code, but they are intentionally kept for use by higher-level
-// subsystems that will be wired up during node integration.
+// These methods form the operational API for RocksDbStore (fast-sync, diagnostics).
+// The struct is crate-private so the compiler flags them as dead code, but they are
+// intentionally kept for use by higher-level subsystems.
 #[allow(dead_code)]
 impl RocksDbStore {
     /// Enables fast sync mode optimizations (disable WAL, reduce fsync).
@@ -774,33 +657,6 @@ impl RocksDbStore {
                     .unwrap_or(0);
                 (active, total)
             })
-    }
-
-    /// Enables read caching with the specified configuration.
-    pub fn enable_read_cache(&mut self, config: ReadCacheConfig) {
-        self.read_cache = Some(Arc::new(StorageReadCache::new(config)));
-        debug!(target: "neo", "enabled read cache");
-    }
-
-    /// Disables read caching.
-    pub fn disable_read_cache(&mut self) {
-        self.read_cache = None;
-        debug!(target: "neo", "disabled read cache");
-    }
-
-    /// Gets read cache statistics if caching is enabled.
-    pub fn read_cache_stats(
-        &self,
-    ) -> Option<crate::persistence::read_cache::ReadCacheStatsSnapshot> {
-        self.read_cache.as_ref().map(|c| c.stats())
-    }
-
-    /// Clears the read cache.
-    pub fn clear_read_cache(&self) {
-        if let Some(ref cache) = self.read_cache {
-            cache.clear();
-            debug!(target: "neo", "read cache cleared");
-        }
     }
 
     /// Returns batch commit statistics.

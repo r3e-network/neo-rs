@@ -193,7 +193,7 @@ fn backward_raw_prefix_find_uses_rocksdb_prefix_bounds() {
         ..Default::default()
     };
 
-    let mut store = RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), &None, true, true)
+    let mut store = RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), true, true)
         .expect("rocksdb store");
 
     for (key, value) in [

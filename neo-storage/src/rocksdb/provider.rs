@@ -1,5 +1,4 @@
 use crate::persistence::{
-    read_cache::ReadCacheConfig,
     storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
     store::Store,
     store_provider::StoreProvider,
@@ -36,8 +35,6 @@ pub struct RocksDBStoreProvider {
     base_config: StorageConfig,
     batch_config: BatchCommitConfig,
     batch_stats: Arc<BatchCommitStats>,
-    /// Read cache configuration
-    read_cache_config: Option<ReadCacheConfig>,
     /// Enable bloom filters for SST files
     enable_bloom_filters: bool,
     /// Enable read-ahead for sequential scans
@@ -50,7 +47,6 @@ impl RocksDBStoreProvider {
             base_config,
             batch_config: BatchCommitConfig::balanced(),
             batch_stats: Arc::new(BatchCommitStats::new()),
-            read_cache_config: Some(ReadCacheConfig::default()),
             enable_bloom_filters: true,
             enable_read_ahead: true,
         }
@@ -58,16 +54,6 @@ impl RocksDBStoreProvider {
 
     pub fn with_batch_config(mut self, config: BatchCommitConfig) -> Self {
         self.batch_config = config;
-        self
-    }
-
-    pub fn with_read_cache(mut self, config: ReadCacheConfig) -> Self {
-        self.read_cache_config = Some(config);
-        self
-    }
-
-    pub fn without_read_cache(mut self) -> Self {
-        self.read_cache_config = None;
         self
     }
 
@@ -108,7 +94,6 @@ impl StoreProvider for RocksDBStoreProvider {
         let store = RocksDbStore::open(
             &config,
             self.batch_config,
-            &self.read_cache_config,
             self.enable_bloom_filters,
             self.enable_read_ahead,
         )
