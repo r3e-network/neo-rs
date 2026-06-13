@@ -194,6 +194,7 @@ impl ApplicationEngine {
         Ok(app)
     }
 
+    #[allow(unsafe_code)]
     pub(super) fn attach_host(&mut self) {
         let host: &mut dyn InteropHost = self;
         let host_ptr = host as *mut dyn InteropHost;

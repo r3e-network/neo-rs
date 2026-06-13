@@ -90,6 +90,7 @@ impl Slot {
 
     /// Sets the item at the specified index in the slot.
     /// public `StackItem` this[int index] { internal set }
+    #[allow(unsafe_code)]
     #[inline]
     pub fn set(&mut self, index: usize, value: StackItem) -> VmResult<()> {
         if index >= self.items.len() {

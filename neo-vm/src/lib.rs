@@ -3,6 +3,7 @@
 // Licensed under the MIT License
 // See LICENSE file for details
 
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 //! # Neo Virtual Machine (`NeoVM`)
 //!

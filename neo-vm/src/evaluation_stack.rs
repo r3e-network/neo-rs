@@ -66,6 +66,7 @@ impl EvaluationStack {
 
     /// Returns the item at the specified index counting from the top of the
     /// stack (0-based) without removing it.
+    #[allow(unsafe_code)]
     #[inline(always)]
     pub fn peek(&self, index_from_top: usize) -> VmResult<&StackItem> {
         // Fast path: bounds check and index calculation
@@ -81,6 +82,7 @@ impl EvaluationStack {
     }
 
     /// Mutable version of [`Self::peek`].
+    #[allow(unsafe_code)]
     #[inline(always)]
     pub fn peek_mut(&mut self, index_from_top: usize) -> VmResult<&mut StackItem> {
         // Fast path: bounds check and index calculation

@@ -117,6 +117,7 @@ impl JumpTable {
 
     /// Gets the handler for an opcode.
     /// This matches the C# implementation's indexer get accessor.
+    #[allow(unsafe_code)]
     #[inline(always)]
     #[must_use]
     pub fn get_handler(&self, opcode: OpCode) -> Option<InstructionHandler> {
@@ -131,6 +132,7 @@ impl JumpTable {
     /// This is used in the hot execution loop where the opcode is already a `u8`.
     /// The `debug_assert` catches out-of-bounds access in debug builds while
     /// maintaining zero overhead in release builds.
+    #[allow(unsafe_code)]
     #[inline(always)]
     #[must_use]
     pub fn get_handler_by_u8(&self, opcode_byte: u8) -> Option<InstructionHandler> {
@@ -143,6 +145,7 @@ impl JumpTable {
 
     /// Sets the handler for an opcode.
     /// This matches the C# implementation's indexer set accessor.
+    #[allow(unsafe_code)]
     #[inline]
     pub fn set_handler(&mut self, opcode: OpCode, handler: InstructionHandler) {
         let idx = usize::from(opcode.byte());
@@ -218,6 +221,7 @@ impl std::ops::Index<OpCode> for JumpTable {
     ///
     /// Panics if no handler is registered for `opcode`. Production code should
     /// use [`JumpTable::execute`] instead, which returns a `VmResult`.
+    #[allow(unsafe_code)]
     #[inline]
     fn index(&self, opcode: OpCode) -> &Self::Output {
         let idx = usize::from(opcode.byte());
@@ -235,6 +239,7 @@ impl std::ops::Index<OpCode> for JumpTable {
 }
 
 impl std::ops::IndexMut<OpCode> for JumpTable {
+    #[allow(unsafe_code)]
     #[inline]
     fn index_mut(&mut self, opcode: OpCode) -> &mut Self::Output {
         let idx = usize::from(opcode.byte());

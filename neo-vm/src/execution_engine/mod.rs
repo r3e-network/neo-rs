@@ -112,6 +112,7 @@ pub(crate) struct HostPtr(
 // because the pointed-to host moves with it (the host is the parent struct
 // that owns the engine). All mutable access is serialized through
 // `&mut ExecutionEngine`.
+#[allow(unsafe_code)]
 unsafe impl Send for HostPtr {}
 
 impl HostPtr {
@@ -121,6 +122,7 @@ impl HostPtr {
     ///
     /// The caller must guarantee that `ptr` is valid for the lifetime of this `HostPtr`
     /// and that no aliasing `&mut` references exist during method calls.
+    #[allow(unsafe_code)]
     pub(crate) unsafe fn new(ptr: *mut dyn InteropHost) -> Self {
         Self(ptr, std::marker::PhantomData)
     }
@@ -137,6 +139,7 @@ impl HostPtr {
     /// # Safety (internal)
     ///
     /// Safe to call as long as the `HostPtr` invariants documented on the type are upheld.
+    #[allow(unsafe_code)]
     pub(crate) fn on_context_loaded(
         &self,
         engine: &mut ExecutionEngine,
@@ -148,39 +151,54 @@ impl HostPtr {
     }
 
     /// Calls [`InteropHost::on_context_unloaded`] on the wrapped host.
+    #[allow(unsafe_code)]
     pub(crate) fn on_context_unloaded(
         &self,
         engine: &mut ExecutionEngine,
         context: &ExecutionContext,
     ) -> VmResult<()> {
+        // SAFETY: Invariant maintained by constructor contract — the pointer is valid
+        // and exclusively accessible for the duration of this call.
         unsafe { (*self.0).on_context_unloaded(engine, context) }
     }
 
     /// Calls [`InteropHost::pre_execute_instruction`] on the wrapped host.
+    #[allow(unsafe_code)]
     pub(crate) fn pre_execute_instruction(
         &self,
         engine: &mut ExecutionEngine,
         instruction: &Instruction,
     ) -> VmResult<()> {
+        // SAFETY: Invariant maintained by constructor contract — the pointer is valid
+        // and exclusively accessible for the duration of this call.
         unsafe { (*self.0).pre_execute_instruction(engine, instruction) }
     }
 
     /// Calls [`InteropHost::post_execute_instruction`] on the wrapped host.
+    #[allow(unsafe_code)]
     pub(crate) fn post_execute_instruction(
         &self,
         engine: &mut ExecutionEngine,
         instruction: &Instruction,
     ) -> VmResult<()> {
+        // SAFETY: Invariant maintained by constructor contract — the pointer is valid
+        // and exclusively accessible for the duration of this call.
         unsafe { (*self.0).post_execute_instruction(engine, instruction) }
     }
 
     /// Calls [`InteropHost::invoke_syscall`] on the wrapped host.
+    #[allow(unsafe_code)]
     pub(crate) fn invoke_syscall(&self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
+        // SAFETY: Invariant maintained by constructor contract — the pointer is valid
+        // and exclusively accessible for the duration of this call.
         unsafe { (*self.0).invoke_syscall(engine, hash) }
     }
 
     /// Calls [`InteropHost::on_callt`] on the wrapped host.
+    #[allow(unsafe_code)]
     pub(crate) fn on_callt(&self, engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
+        // SAFETY: Invariant maintained by constructor contract — the pointer is valid
+        // and exclusively accessible for the duration of this call.
         unsafe { (*self.0).on_callt(engine, token_id) }
     }
 }
