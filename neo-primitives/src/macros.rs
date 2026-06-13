@@ -30,14 +30,17 @@ macro_rules! uint_type {
 
             #[inline]
             #[must_use]
+            /// Returns the default zero value.
             pub fn new() -> Self { Self::default() }
 
             #[inline]
             #[must_use]
+            /// Returns the all-zero value.
             pub const fn zero() -> Self { Self { $($field: 0),+ } }
 
             #[inline]
             #[must_use]
+            /// Returns whether every byte of the value is zero.
             pub const fn is_zero(&self) -> bool { $(self.$field == 0)&&+ }
 
             /// Returns `true` when `other` is `Some` and equal to `self`.
@@ -53,10 +56,12 @@ macro_rules! uint_type {
 
             #[inline]
             #[must_use]
+            /// Returns the little-endian fixed-width byte array.
             pub fn as_bytes(&self) -> [u8; $size] { self.to_array() }
 
             #[inline]
             #[must_use]
+            /// Returns the little-endian fixed-width bytes as a vector.
             pub fn to_bytes(&self) -> Vec<u8> {
                 let mut bytes = Vec::with_capacity($size);
                 $(bytes.extend_from_slice(&self.$field.to_le_bytes());)+
@@ -64,6 +69,7 @@ macro_rules! uint_type {
             }
 
             #[inline]
+            /// Parses the value from its little-endian fixed-width bytes.
             pub fn from_bytes(value: &[u8]) -> $crate::PrimitiveResult<Self> {
                 if value.len() != $size {
                     return Err($crate::PrimitiveError::InvalidFormat {
@@ -85,11 +91,13 @@ macro_rules! uint_type {
                 Ok(result)
             }
 
+            /// Parses the value from a byte span.
             pub fn try_from_span(value: &[u8]) -> $crate::PrimitiveResult<Self> {
                 Self::from_bytes(value)
             }
 
             #[deprecated(since = "0.7.1", note = "Use try_from_span() or from_bytes() instead")]
+            /// Parses from a byte span, returning zero and logging on failure.
             pub fn from_span(value: &[u8]) -> Self {
                 match Self::from_bytes(value) {
                     Ok(result) => result,
@@ -102,6 +110,7 @@ macro_rules! uint_type {
 
             #[inline]
             #[must_use]
+            /// Returns the little-endian fixed-width byte array.
             pub fn to_array(&self) -> [u8; $size] {
                 let mut result = [0u8; $size];
                 let mut offset = 0usize;
@@ -118,9 +127,11 @@ macro_rules! uint_type {
 
             #[inline]
             #[must_use]
+            /// Returns the little-endian fixed-width byte array.
             pub fn get_span(&self) -> [u8; $size] { self.to_array() }
 
             #[inline]
+            /// Parses the reversed-hex string representation used by Neo.
             pub fn parse(s: &str) -> $crate::PrimitiveResult<Self> {
                 let mut result = None;
                 if !Self::try_parse(s, &mut result) {
@@ -136,6 +147,7 @@ macro_rules! uint_type {
                 }
             }
 
+            /// Attempts to parse the reversed-hex string representation used by Neo.
             pub fn try_parse(s: &str, result: &mut Option<Self>) -> bool {
                 match $crate::uint_hex::parse_reversed_hex::<$size>(s)
                     .and_then(|bytes| Self::from_bytes(&bytes))
@@ -146,6 +158,7 @@ macro_rules! uint_type {
             }
 
             #[must_use]
+            /// Formats the value as Neo's reversed-hex string representation.
             pub fn to_hex_string(&self) -> String {
                 $crate::uint_hex::format_reversed_hex(self.to_array())
             }
@@ -206,6 +219,7 @@ macro_rules! __uint_type_as_ref {
     (true; $name:ident, $size:expr_2021, $($field:ident),+) => {
         impl AsRef<[u8; $size]> for $name {
             #[inline]
+            #[allow(unsafe_code)]
             fn as_ref(&self) -> &[u8; $size] {
                 const _: () = assert!(
                     std::mem::size_of::<$name>() == $size,

@@ -1,11 +1,11 @@
 //! Contract - matches C# Neo.SmartContract.Contract exactly
 
-use neo_primitives::UInt160;
 use neo_crypto::{Crypto, ECPoint};
 use neo_error::CoreError;
-use neo_script_builder::ScriptBuilder;
 use neo_primitives::ContractParameterType;
+use neo_primitives::UInt160;
 use neo_primitives::base58_check;
+use neo_vm::script_builder::ScriptBuilder;
 use std::sync::OnceLock;
 
 /// Represents a contract that can be invoked (matches C# Contract)
@@ -74,9 +74,9 @@ impl Contract {
         public_keys: &[ECPoint],
     ) -> Result<Vec<u8>, CoreError> {
         // The redeem-script byte construction was hoisted into the
-        // `neo-redeem-script` crate (below neo-core); kept here for the
+        // `neo-script-builder` crate (below neo-core); kept here for the
         // historical `Contract::try_create_multi_sig_redeem_script` path.
-        neo_redeem_script::multi_sig_redeem_script_from_points(m, public_keys).map_err(Into::into)
+        neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, public_keys).map_err(Into::into)
     }
 
     /// Creates the script of a multi-sig contract (panics on invalid input).

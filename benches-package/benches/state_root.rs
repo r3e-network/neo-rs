@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_crypto::Crypto;
 
 /// Benchmark SHA-256 hashing with various input sizes.

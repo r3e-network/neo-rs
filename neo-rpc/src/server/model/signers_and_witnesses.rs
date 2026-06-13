@@ -5,21 +5,22 @@ use neo_payloads::{Signer, Witness};
 #[derive(Clone, Debug)]
 pub struct SignersAndWitnesses {
     pub signers: Vec<Signer>,
-    pub witnesses: Vec<Witness>}
+    pub witnesses: Vec<Witness>,
+}
 
 impl SignersAndWitnesses {
     #[must_use]
     pub const fn new(signers: Vec<Signer>, witnesses: Vec<Witness>) -> Self {
-        Self {signers, witnesses}
-   }
+        Self { signers, witnesses }
+    }
 
     #[must_use]
     pub fn signers(&self) -> &[Signer] {
         &self.signers
-   }
+    }
 
     #[must_use]
     pub fn witnesses(&self) -> &[Witness] {
         &self.witnesses
-   }
+    }
 }

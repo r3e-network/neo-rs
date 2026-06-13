@@ -10,15 +10,13 @@
 // modifications are permitted.
 
 use super::{
-    TransactionAttributeType, conflicts::Conflicts, high_priority_attribute::HighPriorityAttribute,
+    OracleResponseCode, TransactionAttributeType, conflicts::Conflicts,
     not_valid_before::NotValidBefore, notary_assisted::NotaryAssisted,
-    oracle_response::OracleResponse, OracleResponseCode,
-    transaction::Transaction,
+    oracle_response::OracleResponse, transaction::Transaction,
 };
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_data_cache::DataCache;
-use neo_config::ProtocolSettings;
 use base64::{Engine as _, engine::general_purpose};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_storage::DataCache;
 use serde::{Deserialize, Serialize};
 
 /// Represents an attribute of a transaction.
@@ -152,10 +150,11 @@ impl TransactionAttribute {
     /// Verify the attribute.
     /// Matches C# Verify method.
 
-
     /// Calculate the network fee for this attribute.
     /// Matches C# CalculateNetworkFee method.
-    pub fn calculate_network_fee(&self, snapshot: &DataCache, tx: &Transaction) -> i64 { 0 }
+    pub fn calculate_network_fee(&self, _snapshot: &DataCache, _tx: &Transaction) -> i64 {
+        0
+    }
 
     /// Converts the attribute to a JSON object.
     /// Matches C# ToJson method.

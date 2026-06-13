@@ -27,7 +27,7 @@
 //!
 //! - `neo-runtime` (Layer 0 / 1) — `NetworkService` trait, `Service`
 //!   marker, `ServiceError`, `NetworkEvent`.
-//! - `neo-payloads` / `neo-ledger-types` / `neo-primitives` (Layer 1)
+//! - `neo-payloads` / `neo-primitives` (Layer 1)
 //!   — `Block`, `Transaction`, `UInt256`.
 //! - `neo-config` — `ProtocolSettings`.
 //! - `neo-blockchain` / `neo-mempool` (Layer 2) — the services the
@@ -111,6 +111,7 @@ pub mod peer_id;
 pub mod peer_registry;
 pub mod remote_node;
 pub mod task_manager;
+pub mod wire;
 
 // -----------------------------------------------------------------------------
 // Public re-exports
@@ -121,7 +122,7 @@ pub use connection_timeouts::ConnectionTimeouts;
 pub use error::{NetworkError, NetworkResult};
 pub use event::NetworkEvent;
 pub use handle::{
-    NetworkHandle, SharedNetworkHandle, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
+    DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, NetworkHandle, SharedNetworkHandle,
 };
 pub use local_identity::LocalIdentity;
 pub use local_node::LocalNodeService;
@@ -134,4 +135,8 @@ pub use remote_node::{
 };
 pub use task_manager::{
     SyncTask, SyncTaskKind, TaskId, TaskManagerCommand, TaskManagerHandle, TaskManagerService,
+};
+pub use wire::{
+    Message, MessageCodec, MessageHeader, NetworkMessage, PAYLOAD_MAX_SIZE, ProtocolMessage,
+    WireError, WireResult,
 };

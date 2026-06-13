@@ -277,6 +277,7 @@ impl Transaction {
 mod tests {
     use super::*;
     use neo_primitives::WitnessScope;
+    use neo_vm_rs::OpCode;
 
     fn transaction_with_script(script: Vec<u8>) -> Transaction {
         let mut tx = Transaction::new();

@@ -24,7 +24,7 @@
 //! | `neo_core::Block` | [`neo_payloads::Block`] |
 //! | `neo_core::BlockHeader` | [`neo_payloads::Header`] (renamed) |
 //! | `neo_core::Transaction` | [`neo_payloads::Transaction`] |
-//! | `neo_core::Witness` | [`neo_ledger_types::Witness`] |
+//! | `neo_core::Witness` | [`neo_payloads::Witness`] |
 //! | `neo_core::Signer` | [`neo_payloads::Signer`] |
 //! | `neo_core::ProtocolSettings` | [`neo_config::ProtocolSettings`] |
 //! | `neo_core::CoreError` | [`neo_error::CoreError`] |

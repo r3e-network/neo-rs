@@ -361,7 +361,10 @@ mod tests {
             OpCode::REMOVE,
         ];
         for opcode in OpCode::ALL {
-            assert!(not_gorgon.get(opcode).is_some(), "missing handler: {opcode:?}");
+            assert!(
+                not_gorgon.get(opcode).is_some(),
+                "missing handler: {opcode:?}"
+            );
             let same = not_gorgon.get(opcode).map(|h| h as usize)
                 == default.get(opcode).map(|h| h as usize);
             if overridden.contains(&opcode) {

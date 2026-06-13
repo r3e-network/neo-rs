@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+
 // Copyright (c) 2024 R3E Network
 // This file is part of the neo-rs project
 // Licensed under the MIT License
@@ -235,8 +238,8 @@ pub use oracle_response_code::OracleResponseCode;
 pub use transaction_removal_reason::TransactionRemovalReason;
 pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
-pub use witness_rule_action::WitnessRuleAction;
 pub use witness_rule::{ToStackItem, WitnessCondition, WitnessRule};
+pub use witness_rule_action::WitnessRuleAction;
 
 // Re-exports from neo-primitives
 pub use neo_primitives::{InvalidWitnessScopeError, TransactionAttributeType, WitnessScope};

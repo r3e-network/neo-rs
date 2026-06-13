@@ -21,5 +21,4 @@ impl ApplicationEngine {
     pub fn get_opcode_price(opcode: u8) -> i64 {
         Self::OPCODE_PRICE_TABLE[opcode as usize]
     }
-
 }

@@ -45,7 +45,8 @@ pub struct RpcResponse<T> {
     /// VM execution state as string (for transactions)
     /// Stored as string since `VMState` doesn't implement Serialize
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vm_state: Option<String>}
+    pub vm_state: Option<String>,
+}
 
 impl<T> RpcResponse<T> {
     /// Create a new unconfirmed response (just the data)
@@ -55,8 +56,9 @@ impl<T> RpcResponse<T> {
             block_hash: None,
             confirmations: None,
             block_time: None,
-            vm_state: None}
-   }
+            vm_state: None,
+        }
+    }
 
     /// Create a confirmed response with full context
     pub const fn confirmed(
@@ -70,24 +72,25 @@ impl<T> RpcResponse<T> {
             block_hash: Some(block_hash),
             confirmations: Some(confirmations),
             block_time: Some(block_time),
-            vm_state: None}
-   }
+            vm_state: None,
+        }
+    }
 
     /// Set the VM state (for transactions)
     pub fn with_vm_state(mut self, state: impl Into<String>) -> Self {
         self.vm_state = Some(state.into());
         self
-   }
+    }
 
     /// Check if the item is confirmed
     pub const fn is_confirmed(&self) -> bool {
         self.confirmations.is_some()
-   }
+    }
 
     /// Get confirmations or 0 if unconfirmed
     pub fn confirmations(&self) -> u32 {
         self.confirmations.unwrap_or(0)
-   }
+    }
 
     /// Map the inner data to a different type
     pub fn map<U, F>(self, f: F) -> RpcResponse<U>
@@ -99,24 +102,25 @@ impl<T> RpcResponse<T> {
             block_hash: self.block_hash,
             confirmations: self.confirmations,
             block_time: self.block_time,
-            vm_state: self.vm_state}
-   }
+            vm_state: self.vm_state,
+        }
+    }
 
     /// Convert to the inner data, discarding context
     pub fn into_data(self) -> T {
         self.data
-   }
+    }
 
     /// Get a reference to the inner data
     pub const fn data(&self) -> &T {
         &self.data
-   }
+    }
 }
 
 impl<T> AsRef<T> for RpcResponse<T> {
     fn as_ref(&self) -> &T {
         &self.data
-   }
+    }
 }
 
 impl<T> std::ops::Deref for RpcResponse<T> {
@@ -124,7 +128,7 @@ impl<T> std::ops::Deref for RpcResponse<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.data
-   }
+    }
 }
 
 // Type aliases for common RPC responses can be added here as needed
@@ -144,7 +148,7 @@ mod tests {
         assert!(!response.is_confirmed());
         assert_eq!(response.confirmations(), 0);
         assert!(response.block_hash.is_none());
-   }
+    }
 
     #[test]
     fn test_confirmed_response() {
@@ -155,7 +159,7 @@ mod tests {
         assert!(response.is_confirmed());
         assert_eq!(response.confirmations(), 10);
         assert_eq!(response.block_time, Some(1234567890));
-   }
+    }
 
     #[test]
     fn test_with_vm_state() {
@@ -163,7 +167,7 @@ mod tests {
         let response = RpcResponse::unconfirmed(data).with_vm_state("HALT".to_string());
 
         assert_eq!(response.vm_state, Some("HALT".to_string()));
-   }
+    }
 
     #[test]
     fn test_map() {
@@ -172,7 +176,7 @@ mod tests {
         let mapped = response.map(|n| n.to_string());
 
         assert_eq!(mapped.data, "42");
-   }
+    }
 
     #[test]
     fn test_deref() {
@@ -181,5 +185,5 @@ mod tests {
 
         assert_eq!(response.len(), 3); // Uses Deref to access Vec methods
         assert_eq!(response[0], 1);
-   }
+    }
 }

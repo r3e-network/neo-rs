@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+
 //! NEO TEE (Trusted Execution Environment) Support
 //!
 //! This crate provides TEE/SGX support for the Neo N3 blockchain, enabling:

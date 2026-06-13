@@ -1,20 +1,20 @@
 //! Helper - matches C# Neo.SmartContract.Helper exactly
 
-use neo_error::{CoreError, CoreResult};
-use neo_payloads::Witness;
-use neo_data_cache::DataCache;
-use neo_config::ProtocolSettings;
-use neo_script_builder::ScriptBuilder;
-use crate::application_engine::ApplicationEngine;
-use neo_manifest::CallFlags;
-use crate::contract::Contract;
-use neo_primitives::ContractBasicMethod;
 use crate::NativeRegistry;
-use neo_primitives::TriggerType;
-use neo_primitives::ContractParameterType;
-use neo_primitives::{UInt160, UInt256};
-use neo_primitives::Verifiable;
+use crate::application_engine::ApplicationEngine;
+use crate::contract::Contract;
+use neo_config::ProtocolSettings;
+use neo_error::{CoreError, CoreResult};
+use neo_manifest::CallFlags;
 use neo_payloads::VerifiableExt;
+use neo_payloads::Witness;
+use neo_primitives::ContractBasicMethod;
+use neo_primitives::ContractParameterType;
+use neo_primitives::TriggerType;
+use neo_primitives::Verifiable;
+use neo_primitives::{UInt160, UInt256};
+use neo_vm::script_builder::ScriptBuilder;
+use neo_storage::DataCache;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use std::any::Any;
@@ -69,16 +69,16 @@ impl Helper {
 
     /// Checks if a script is a signature contract.
     ///
-    /// Delegates to the `neo-redeem-script` crate (the redeem-script primitives
+    /// Delegates to the `neo-script-builder` crate (the redeem-script primitives
     /// were hoisted below neo-core); kept here for the historical
     /// `Helper::is_signature_contract` path.
     pub fn is_signature_contract(script: &[u8]) -> bool {
-        neo_redeem_script::is_signature_contract(script)
+        neo_vm::script_builder::redeem_script::is_signature_contract(script)
     }
 
-    /// Checks if a script is a multi-sig contract. Delegates to `neo-redeem-script`.
+    /// Checks if a script is a multi-sig contract. Delegates to `neo-script-builder`.
     pub fn is_multi_sig_contract(script: &[u8]) -> bool {
-        neo_redeem_script::is_multi_sig_contract(script)
+        neo_vm::script_builder::redeem_script::is_multi_sig_contract(script)
     }
 
     /// Gets the script hash from a contract
@@ -86,22 +86,22 @@ impl Helper {
         contract.script_hash()
     }
 
-    /// Creates a signature redeem script. Delegates to `neo-redeem-script`.
+    /// Creates a signature redeem script. Delegates to `neo-script-builder`.
     pub fn signature_redeem_script(public_key: &[u8]) -> Vec<u8> {
-        neo_redeem_script::signature_redeem_script(public_key)
+        neo_vm::script_builder::redeem_script::signature_redeem_script(public_key)
     }
 
-    /// Creates a multi-sig redeem script. Delegates to `neo-redeem-script`.
+    /// Creates a multi-sig redeem script. Delegates to `neo-script-builder`.
     ///
     /// # Errors
     ///
     /// Returns `CoreError` if:
-    /// - `m` is not in range `1..=16`
-    /// - `public_keys.len()` exceeds 16
+    /// - `m` is not in range `1..=n`
+    /// - `public_keys.len()` exceeds 1024
     /// - `m` exceeds `public_keys.len()`
     /// - any public key fails to parse
     pub fn try_multi_sig_redeem_script(m: usize, public_keys: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        neo_redeem_script::multi_sig_redeem_script_from_keys(m, public_keys).map_err(Into::into)
+        neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_keys(m, public_keys).map_err(Into::into)
     }
 
     /// Creates a multi-sig redeem script (panics on invalid input).
@@ -124,18 +124,18 @@ impl Helper {
     }
 
     /// Parses a multi-signature contract script, returning the required signature count and
-    /// the ordered public keys. Delegates to `neo-redeem-script` (recognizer primitives were
+    /// the ordered public keys. Delegates to `neo-script-builder` (recognizer primitives were
     /// hoisted below neo-core); kept here for the historical `Helper::parse_multi_sig_contract` path.
     pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
-        neo_redeem_script::parse_multi_sig_contract(script)
+        neo_vm::script_builder::redeem_script::parse_multi_sig_contract(script)
     }
 
-    /// Parses a multi-signature invocation script. Delegates to `neo-redeem-script`.
+    /// Parses a multi-signature invocation script. Delegates to `neo-script-builder`.
     pub fn parse_multi_sig_invocation(
         invocation: &[u8],
         required_signatures: usize,
     ) -> Option<Vec<Vec<u8>>> {
-        neo_redeem_script::parse_multi_sig_invocation(invocation, required_signatures)
+        neo_vm::script_builder::redeem_script::parse_multi_sig_invocation(invocation, required_signatures)
     }
 
     /// Verifies all witnesses for a verifiable object.
@@ -226,7 +226,9 @@ impl Helper {
 
         // Create verification engine
         let cloned_snapshot = Arc::new(snapshot.clone_cache());
-        let container_hash = verifiable.hash().map_err(|e| CoreError::invalid_operation(e.to_string()))?;
+        let container_hash = verifiable
+            .hash()
+            .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
         let container: Arc<dyn Verifiable> = if let Some(transaction) = verifiable.as_transaction()
         {
             Arc::new(transaction.clone())
@@ -249,10 +251,14 @@ impl Helper {
         // Check if witness has empty verification script (contract verification)
         if witness.verification_script.is_empty() {
             // Contract verification: load the contract's Verify method
-            let mut contract = crate::native_contract_provider::lookup_contract_management(snapshot, hash)?
-                .ok_or_else(|| {
-                    CoreError::invalid_operation(format!("Contract not found for hash {}", hash))
-                })?;
+            let mut contract =
+                crate::native_contract_provider::lookup_contract_management(snapshot, hash)?
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(format!(
+                            "Contract not found for hash {}",
+                            hash
+                        ))
+                    })?;
 
             // Resolve the Verify method using C# semantics (pcount = -1 matches any signature).
             let verify_method = contract

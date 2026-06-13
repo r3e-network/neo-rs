@@ -10,11 +10,13 @@
 // modifications are permitted.
 
 use super::super::utility::{
-    optional_string, required_string, stack_items_from_json_field, stack_items_to_json};
+    optional_string, required_string, stack_items_from_json_field, stack_items_to_json,
+};
 use super::vm_state_utils::{
     insert_gas_consumed_field, insert_vm_state_field, parse_gas_consumed_field,
-    parse_vm_state_field};
-use neo_json::{JObject, JToken};
+    parse_vm_state_field,
+};
+use neo_serialization::json::{JObject, JToken};
 use neo_vm_rs::StackValue;
 use neo_vm_rs::VmState;
 
@@ -40,7 +42,8 @@ pub struct RpcInvokeResult {
     pub exception: Option<String>,
 
     /// Session ID if available
-    pub session: Option<String>}
+    pub session: Option<String>,
+}
 
 impl RpcInvokeResult {
     /// Creates from JSON
@@ -66,8 +69,9 @@ impl RpcInvokeResult {
             stack,
             tx,
             exception,
-            session})
-   }
+            session,
+        })
+    }
 
     /// Converts to JSON
     /// Matches C# `ToJson`
@@ -80,8 +84,8 @@ impl RpcInvokeResult {
         if let Some(exception) = &self.exception {
             if !exception.is_empty() {
                 json.insert("exception".to_string(), JToken::String(exception.clone()));
-           }
-       }
+            }
+        }
 
         let stack_json = stack_items_to_json(&self.stack)
             .unwrap_or_else(|_| JToken::String("error: recursive reference".to_string()));
@@ -90,20 +94,20 @@ impl RpcInvokeResult {
         if let Some(tx) = &self.tx {
             if !tx.is_empty() {
                 json.insert("tx".to_string(), JToken::String(tx.clone()));
-           }
-       }
+            }
+        }
 
         json
-   }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::rpc_stack::RpcStack;
     use super::super::test_fixtures::rpc_case_result;
-    use neo_json::{JArray, JToken};
-    use neo_vm_rs::{stack_value_as_bytes, StackValue, VmState};
+    use super::*;
+    use neo_serialization::json::{JArray, JToken};
+    use neo_vm_rs::{StackValue, VmState, stack_value_as_bytes};
 
     #[test]
     fn invoke_result_roundtrip() {
@@ -126,7 +130,7 @@ mod tests {
         assert_eq!(parsed.gas_consumed, 1);
         assert_eq!(parsed.stack.len(), 1);
         assert_eq!(parsed.stack[0], StackValue::Boolean(true));
-   }
+    }
 
     #[test]
     fn invoke_result_parses_unknown_stack_item_type() {
@@ -146,7 +150,7 @@ mod tests {
         let parsed = RpcInvokeResult::from_json(&json).unwrap();
         assert_eq!(parsed.stack.len(), 1);
         assert_eq!(stack_value_as_bytes(&parsed.stack[0]).unwrap(), b"hello");
-   }
+    }
 
     #[test]
     fn invoke_result_stack_array_keeps_lossy_parse_behavior() {
@@ -175,7 +179,7 @@ mod tests {
 
         let parsed = RpcInvokeResult::from_json(&json).unwrap();
         assert_eq!(parsed.stack, vec![StackValue::Boolean(true)]);
-   }
+    }
 
     #[test]
     fn rpc_stack_parses() {
@@ -185,18 +189,19 @@ mod tests {
         let parsed = RpcStack::from_json(&obj).unwrap();
         assert_eq!(parsed.item_type, "Integer");
         assert_eq!(parsed.value.as_string().unwrap(), "123");
-   }
+    }
 
     #[test]
     fn rpc_stack_to_json_matches_shape() {
         let stack = RpcStack {
             item_type: "Boolean".to_string(),
-            value: JToken::Boolean(true)};
+            value: JToken::Boolean(true),
+        };
         assert_eq!(
             stack.to_json().to_string(),
             "{\"type\":\"Boolean\",\"value\":true}"
         );
-   }
+    }
 
     #[test]
     fn invoke_result_to_json_emits_stack_items() {
@@ -207,7 +212,8 @@ mod tests {
             stack: vec![StackValue::Boolean(true)],
             tx: None,
             exception: None,
-            session: None};
+            session: None,
+        };
         let json = result.to_json();
         assert_eq!(
             json.get("state")
@@ -220,7 +226,7 @@ mod tests {
             .and_then(|token| token.as_array())
             .expect("stack array");
         assert_eq!(stack.len(), 1);
-   }
+    }
 
     #[test]
     fn invoke_result_to_json_handles_circular_stack() {
@@ -231,22 +237,24 @@ mod tests {
             stack: vec![StackValue::Array(vec![StackValue::Boolean(true)])],
             tx: None,
             exception: None,
-            session: None};
+            session: None,
+        };
 
         let json = result.to_json();
-        assert!(json
-            .get("stack")
-            .and_then(|token| token.as_array())
-            .is_some());
-   }
+        assert!(
+            json.get("stack")
+                .and_then(|token| token.as_array())
+                .is_some()
+        );
+    }
 
     #[test]
     fn invoke_result_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("invokefunctionasync") else {
             return;
-       };
+        };
         let parsed = RpcInvokeResult::from_json(&expected).expect("parse");
         let actual = parsed.to_json();
         assert_eq!(expected.to_string(), actual.to_string());
-   }
+    }
 }

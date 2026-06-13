@@ -1,6 +1,6 @@
-use super::helpers::{create_test_validators, create_validators_with_keys};
-use crate::messages::{ConsensusPayload, PrepareRequestMessage};
+use super::helpers::{create_test_validators, create_validators_with_keys, sign_payload};
 use crate::ConsensusService;
+use crate::messages::{ConsensusPayload, PrepareRequestMessage};
 use crate::{ConsensusError, ConsensusMessageType};
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
@@ -51,16 +51,15 @@ async fn test_primary_calculation() {
 }
 
 #[tokio::test]
-#[ignore = "Requires valid witness/signatures on ConsensusPayload — needs test helper that signs payloads with validator keys (see create_validators_with_keys)"]
 async fn test_message_deduplication() {
     let (tx, mut rx) = mpsc::channel(100);
-    let validators = create_test_validators(7);
-    let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
+    let (validators, keys) = create_validators_with_keys(7);
+    let mut service = ConsensusService::new(0x4E454F, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(100, 1000, UInt256::zero(), 0).unwrap();
 
     let msg = PrepareRequestMessage::new(100, 0, 2, 0, UInt256::zero(), 1234, 5678, vec![]);
-    let payload = ConsensusPayload::new(
+    let mut payload = ConsensusPayload::new(
         0x4E454F,
         100,
         2,
@@ -68,20 +67,30 @@ async fn test_message_deduplication() {
         ConsensusMessageType::PrepareRequest,
         msg.serialize(),
     );
+    sign_payload(&service, &mut payload, &keys[2]);
+    let msg_hash = service.dbft_payload_hash(&payload).unwrap();
 
-    let result1 = service.process_message(payload.clone());
-    if let Err(ref e) = result1 {
-        eprintln!("First message processing failed: {:?}", e);
-    }
+    service.process_message(payload.clone()).unwrap();
+    assert!(service.context().has_seen_message(&msg_hash));
+    assert!(service.context().prepare_request_received);
 
-    let _result2 = service.process_message(payload.clone());
+    service.process_message(payload).unwrap();
 
     drop(service);
-    let mut event_count = 0;
-    while rx.try_recv().is_ok() {
-        event_count += 1;
+    let mut events = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
     }
-    assert!(event_count >= 1);
+    assert_eq!(
+        events.len(),
+        1,
+        "duplicate payload must not emit a second event"
+    );
+    assert!(matches!(
+        events.first(),
+        Some(crate::ConsensusEvent::BroadcastMessage(payload))
+            if payload.message_type == ConsensusMessageType::PrepareResponse
+    ));
 }
 
 #[tokio::test]

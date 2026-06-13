@@ -2,8 +2,8 @@
 //! Integration test for block assembly logic
 
 use neo_consensus::BlockData;
+use neo_crypto::{ECCurve, ecc::generate_keypair};
 use neo_payloads::Block;
-use neo_crypto::{ecc::generate_keypair, ECCurve};
 use neo_vm_rs::OpCode;
 
 #[tokio::test]
@@ -34,6 +34,7 @@ async fn test_complete_block_assembly_workflow() {
         signatures,
         validator_pubkeys,
         required_signatures: 3,
+        next_consensus: neo_primitives::UInt160::zero(),
     };
 
     // Assemble block (simulating validator service logic)
@@ -70,8 +71,8 @@ async fn test_complete_block_assembly_workflow() {
 
 // Helper function to simulate block assembly
 async fn assemble_test_block(block_data: BlockData) -> anyhow::Result<Block> {
-    use neo_payloads::{Block, Header, Witness};
     use neo_execution::helper::Helper;
+    use neo_payloads::{Block, Header, Witness};
     use neo_vm_rs::OpCode;
 
     // Build invocation script

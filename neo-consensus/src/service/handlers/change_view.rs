@@ -105,6 +105,10 @@ impl ConsensusService {
         reason: ChangeViewReason,
         timestamp: u64,
     ) -> ConsensusResult<()> {
+        let new_view = self.context.view_number + 1;
+        self.context.change_view_retry_at =
+            Some(timestamp.saturating_add(self.context.change_view_retry_delay()));
+
         // Check if we should request recovery instead of change view
         // This matches C# DBFTPlugin's RequestChangeView logic
         if self.context.more_than_f_nodes_committed_or_lost() {
@@ -118,8 +122,6 @@ impl ConsensusService {
             );
             return self.request_recovery();
         }
-
-        let new_view = self.context.view_number + 1;
 
         warn!(
             block_index = self.context.block_index,
@@ -207,11 +209,6 @@ impl ConsensusService {
             old_view,
             new_view,
         })?;
-
-        // If we're now the primary, initiate proposal
-        if self.context.is_primary() {
-            self.initiate_proposal(timestamp)?;
-        }
 
         Ok(())
     }

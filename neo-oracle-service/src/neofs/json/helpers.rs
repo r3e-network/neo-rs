@@ -32,7 +32,7 @@ pub(crate) fn base64_from_base58(value: &str, expected_len: Option<usize>) -> Op
 
 pub(crate) fn normalize_neofs_hex_header(value: &str) -> String {
     let trimmed = value.trim();
-    let normalized = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    let normalized = neo_primitives::strip_hex_prefix(trimmed);
     if is_hex(normalized) {
         return normalized.to_string();
     }

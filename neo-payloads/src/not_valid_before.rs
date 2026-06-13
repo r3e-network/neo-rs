@@ -9,9 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_io::{impl_serializable, BinaryWriter, IoResult, Serializable};
-use neo_data_cache::DataCache;
-use neo_config::ProtocolSettings;
+use neo_io::{BinaryWriter, IoResult, Serializable, impl_serializable};
 use serde::{Deserialize, Serialize};
 
 /// Represents a not-valid-before transaction attribute.
@@ -28,7 +26,6 @@ impl NotValidBefore {
     }
 
     /// Verify the not-valid-before attribute.
-
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {

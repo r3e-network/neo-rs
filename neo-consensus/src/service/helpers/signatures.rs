@@ -1,7 +1,7 @@
 use super::super::ConsensusService;
 use crate::{ConsensusError, ConsensusResult};
-use neo_script_builder::ScriptBuilder;
 use neo_primitives::{UInt160, UInt256};
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use tracing::{debug, warn};
 

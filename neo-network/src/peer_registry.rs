@@ -222,7 +222,11 @@ impl PeerRegistry {
 
     /// Command handle for a connected peer, if registered.
     pub fn handle(&self, peer_id: PeerId) -> Option<RemoteNodeHandle> {
-        self.inner.lock().peers.get(&peer_id).map(|e| e.handle.clone())
+        self.inner
+            .lock()
+            .peers
+            .get(&peer_id)
+            .map(|e| e.handle.clone())
     }
 
     /// Snapshot of all connected peers' `(id, handle)` pairs, for

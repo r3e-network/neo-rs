@@ -3,16 +3,16 @@
 //! This module provides the ContractState struct which represents the state
 //! of a deployed smart contract in the Neo blockchain.
 
-use neo_error::{CoreError, CoreResult};
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::helper::Helper;
 use crate::interoperable::Interoperable;
+use neo_error::{CoreError, CoreResult};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_manifest::{ContractManifest, NefFile};
-use neo_vm::StackItem;
 use neo_primitives::UInt160;
+use neo_vm::StackItem;
 use neo_vm_rs::{OpCode, StackValue};
 use num_traits::ToPrimitive;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Represents the state of a deployed smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -190,7 +190,8 @@ impl Interoperable for ContractState {
                 "ContractState expects Array/Struct stack item: {error}"
             ))
         })?;
-        self.from_stack_value(sv).map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+        self.from_stack_value(sv)
+            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {
@@ -442,15 +443,25 @@ mod tests {
         //   Integer(0x21) tag + var-bytes minimal signed-LE payloads,
         //   ByteString(0x28) tag + var-bytes payloads,
         //   Struct(0x41) tag + var-int count 8 for the manifest.
-        assert_eq!(record[0], 0x40, "record must start with the Array type byte");
+        assert_eq!(
+            record[0], 0x40,
+            "record must start with the Array type byte"
+        );
         assert_eq!(record[1], 5, "ContractState projects exactly 5 elements");
-        assert_eq!(&record[2..5], &[0x21, 1, 7], "Id: Integer, signed-LE minimal");
+        assert_eq!(
+            &record[2..5],
+            &[0x21, 1, 7],
+            "Id: Integer, signed-LE minimal"
+        );
         assert_eq!(&record[5..8], &[0x21, 1, 9], "UpdateCounter: Integer");
         assert_eq!(record[8], 0x28, "Hash is a ByteString");
         assert_eq!(record[9], 20, "Hash payload is 20 bytes");
         assert_eq!(&record[10..30], hash.to_bytes().as_slice());
         let nef_bytes = nef.to_bytes();
-        assert!(nef_bytes.len() < 0xFD, "fixture NEF stays in 1-byte var-int range");
+        assert!(
+            nef_bytes.len() < 0xFD,
+            "fixture NEF stays in 1-byte var-int range"
+        );
         assert_eq!(record[30], 0x28, "NEF is a ByteString of Nef.ToArray()");
         assert_eq!(record[31] as usize, nef_bytes.len());
         assert_eq!(&record[32..32 + nef_bytes.len()], nef_bytes.as_slice());
@@ -477,27 +488,28 @@ mod tests {
         let mut manifest = ContractManifest::new("RoundTrip".to_string());
         manifest.supported_standards = vec!["NEP-17".to_string()];
         manifest.abi = ContractAbi::new(
-            vec![ContractMethodDescriptor::new(
-                "transfer".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "from".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("param"),
-                    ContractParameterDefinition::new(
-                        "amount".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("param"),
-                ],
-                ContractParameterType::Boolean,
-                3,
-                false,
-            )
-            .expect("method")],
-            vec![ContractEventDescriptor::new("Transfer".to_string(), Vec::new())
-                .expect("event")],
+            vec![
+                ContractMethodDescriptor::new(
+                    "transfer".to_string(),
+                    vec![
+                        ContractParameterDefinition::new(
+                            "from".to_string(),
+                            ContractParameterType::Hash160,
+                        )
+                        .expect("param"),
+                        ContractParameterDefinition::new(
+                            "amount".to_string(),
+                            ContractParameterType::Integer,
+                        )
+                        .expect("param"),
+                    ],
+                    ContractParameterType::Boolean,
+                    3,
+                    false,
+                )
+                .expect("method"),
+            ],
+            vec![ContractEventDescriptor::new("Transfer".to_string(), Vec::new()).expect("event")],
         );
         manifest.trusts = WildCardContainer::create(vec![ContractPermissionDescriptor::Hash(
             UInt160::from_bytes(&[5u8; 20]).expect("trust hash"),
@@ -514,7 +526,10 @@ mod tests {
         assert_eq!(parsed.hash, state.hash);
         assert_eq!(parsed.nef.script, state.nef.script);
         assert_eq!(parsed.manifest.name, "RoundTrip");
-        assert_eq!(parsed.manifest.supported_standards, vec!["NEP-17".to_string()]);
+        assert_eq!(
+            parsed.manifest.supported_standards,
+            vec!["NEP-17".to_string()]
+        );
         assert_eq!(parsed.manifest.abi.methods.len(), 1);
         assert_eq!(parsed.manifest.abi.methods[0].name, "transfer");
         assert_eq!(parsed.manifest.abi.methods[0].parameters.len(), 2);

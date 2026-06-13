@@ -10,9 +10,9 @@
 // modifications are permitted.
 
 use super::hooks::RpcClientHooks;
-use super::{RpcClient, DEFAULT_HTTP_TIMEOUT};
+use super::{DEFAULT_HTTP_TIMEOUT, RpcClient};
 use crate::RpcError;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use reqwest::{Client, Url};
 use std::sync::Arc;
@@ -30,7 +30,8 @@ pub struct RpcClientBuilder {
     rpc_pass: Option<Zeroizing<String>>,
     protocol_settings: Option<ProtocolSettings>,
     timeout: Duration,
-    hooks: RpcClientHooks}
+    hooks: RpcClientHooks,
+}
 
 impl RpcClientBuilder {
     #[must_use]
@@ -41,8 +42,9 @@ impl RpcClientBuilder {
             rpc_pass: None,
             protocol_settings: None,
             timeout: DEFAULT_HTTP_TIMEOUT,
-            hooks: RpcClientHooks::default()}
-   }
+            hooks: RpcClientHooks::default(),
+        }
+    }
 
     /// Applies basic-auth credentials.
     ///
@@ -52,35 +54,35 @@ impl RpcClientBuilder {
         self.rpc_user = Some(Zeroizing::new(user.into()));
         self.rpc_pass = Some(Zeroizing::new(pass.into()));
         self
-   }
+    }
 
     /// Applies optional basic-auth credentials (helper for matching legacy constructor).
     pub fn with_optional_auth(mut self, user: Option<String>, pass: Option<String>) -> Self {
         self.rpc_user = user.map(Zeroizing::new);
         self.rpc_pass = pass.map(Zeroizing::new);
         self
-   }
+    }
 
     /// Overrides the protocol settings used for serialisation.
     #[must_use]
     pub fn protocol_settings(mut self, settings: ProtocolSettings) -> Self {
         self.protocol_settings = Some(settings);
         self
-   }
+    }
 
     /// Configures the HTTP client timeout.
     #[must_use]
     pub const fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
-   }
+    }
 
     /// Registers hooks for logging/metrics.
     #[must_use]
     pub fn hooks(mut self, hooks: RpcClientHooks) -> Self {
         self.hooks = hooks;
         self
-   }
+    }
 
     pub fn build(self) -> Result<RpcClient, RpcError> {
         let mut client_builder = Client::builder().no_proxy().timeout(self.timeout);
@@ -96,9 +98,9 @@ impl RpcClientBuilder {
                     format!("Basic {encoded}").parse()?,
                 );
                 headers
-           });
+            });
             // user, pass, and auth are dropped here, triggering Zeroizing cleanup
-       }
+        }
 
         let http_client = client_builder.build()?;
 
@@ -107,6 +109,7 @@ impl RpcClientBuilder {
             http_client,
             protocol_settings: Arc::new(self.protocol_settings.unwrap_or_default()),
             request_timeout: self.timeout,
-            hooks: self.hooks})
-   }
+            hooks: self.hooks,
+        })
+    }
 }

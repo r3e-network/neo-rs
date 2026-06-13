@@ -12,8 +12,8 @@
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use neo_config::ProtocolSettings;
 use neo_payloads::Transaction;
-use neo_json::JObject;
 use neo_primitives::UInt256;
+use neo_serialization::json::JObject;
 use neo_vm_rs::VmState;
 
 /// RPC transaction information matching C# `RpcTransaction`
@@ -32,7 +32,8 @@ pub struct RpcTransaction {
     pub block_time: Option<u64>,
 
     /// VM execution state
-    pub vm_state: Option<VmState>}
+    pub vm_state: Option<VmState>,
+}
 
 impl RpcTransaction {
     /// Converts to JSON
@@ -45,31 +46,31 @@ impl RpcTransaction {
             if let Some(ref block_hash) = self.block_hash {
                 json.insert(
                     "blockhash".to_string(),
-                    neo_json::JToken::String(block_hash.to_string()),
+                    neo_serialization::json::JToken::String(block_hash.to_string()),
                 );
-           }
+            }
             json.insert(
                 "confirmations".to_string(),
-                neo_json::JToken::Number(f64::from(confirmations)),
+                neo_serialization::json::JToken::Number(f64::from(confirmations)),
             );
 
             if let Some(block_time) = self.block_time {
                 json.insert(
                     "blocktime".to_string(),
-                    neo_json::JToken::Number(block_time as f64),
+                    neo_serialization::json::JToken::Number(block_time as f64),
                 );
-           }
+            }
 
             if let Some(ref vm_state) = self.vm_state {
                 json.insert(
                     "vmstate".to_string(),
-                    neo_json::JToken::String(vm_state_to_string(*vm_state)),
+                    neo_serialization::json::JToken::String(vm_state_to_string(*vm_state)),
                 );
-           }
-       }
+            }
+        }
 
         json
-   }
+    }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
@@ -80,36 +81,37 @@ impl RpcTransaction {
             if json.get("confirmations").is_some() {
                 let block_hash = json
                     .get("blockhash")
-                    .and_then(neo_json::JToken::as_string)
+                    .and_then(neo_serialization::json::JToken::as_string)
                     .and_then(|s| UInt256::parse(&s).ok());
 
                 let confirmations = json
                     .get("confirmations")
-                    .and_then(neo_json::JToken::as_number)
+                    .and_then(neo_serialization::json::JToken::as_number)
                     .map(|n| n as u32);
 
                 let block_time = json
                     .get("blocktime")
-                    .and_then(neo_json::JToken::as_number)
+                    .and_then(neo_serialization::json::JToken::as_number)
                     .map(|n| n as u64);
 
                 let vm_state = json
                     .get("vmstate")
-                    .and_then(neo_json::JToken::as_string)
+                    .and_then(neo_serialization::json::JToken::as_string)
                     .and_then(|s| vm_state_from_str(&s));
 
                 (block_hash, confirmations, block_time, vm_state)
-           } else {
+            } else {
                 (None, None, None, None)
-           };
+            };
 
         Ok(Self {
             transaction,
             block_hash,
             confirmations,
             block_time,
-            vm_state})
-   }
+            vm_state,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -121,10 +123,10 @@ mod tests {
     fn transaction_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getrawtransactionasync") else {
             return;
-       };
+        };
         let settings = ProtocolSettings::default_settings();
         let parsed = RpcTransaction::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
         assert_eq!(expected.to_string(), actual.to_string());
-   }
+    }
 }

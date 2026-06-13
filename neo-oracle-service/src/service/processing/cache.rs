@@ -1,6 +1,6 @@
 use super::super::{ExpiryBoundary, OracleService};
-use neo_storage::persistence::{DataCache, StoreCache};
 use neo_native_contracts::OracleContract;
+use neo_storage::persistence::{DataCache, StoreCache};
 use std::collections::HashSet;
 use std::time::SystemTime;
 

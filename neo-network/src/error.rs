@@ -59,9 +59,12 @@ impl From<NetworkError> for neo_runtime::ServiceError {
             NetworkError::NotStarted => {
                 neo_runtime::ServiceError::InvalidState("local node not started".to_string())
             }
-            NetworkError::Protocol(msg) => neo_runtime::ServiceError::Internal(format!("protocol: {msg}")),
+            NetworkError::Protocol(msg) => {
+                neo_runtime::ServiceError::Internal(format!("protocol: {msg}"))
+            }
         }
     }
 }
 
+/// Result alias for network-layer operations.
 pub type NetworkResult<T> = Result<T, NetworkError>;

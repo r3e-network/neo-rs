@@ -4,6 +4,7 @@ use neo_primitives::protocol_enum;
 
 protocol_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[allow(missing_docs)]
     /// Consensus message type enum matching C# `ConsensusMessageType` exactly
     pub ConsensusMessageType {
         ChangeView = 0x00,

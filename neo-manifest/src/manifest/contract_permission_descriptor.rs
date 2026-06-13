@@ -2,8 +2,8 @@
 
 use super::contract_group::ContractGroup;
 use neo_crypto::ECPoint;
-use neo_vm::StackItem;
 use neo_primitives::UInt160;
+use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -190,26 +190,36 @@ impl<'de> Deserialize<'de> for ContractPermissionDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_crypto::{ECCurve, ECPoint};
-    // Local minimal stub to avoid neo-wallets -> neo-execution -> neo-block cycle
-    struct KeyPair;
-    impl KeyPair { fn new(_private_key: Vec<u8>) -> Result<Self, ()> { Ok(KeyPair) } fn get_public_key_point(&self) -> Result<ECPoint, ()> { Err(()) } }
+    use neo_crypto::{ECPoint, Secp256r1Crypto};
     use neo_vm_rs::StackValue;
 
     fn group_key() -> ECPoint {
-        // Stub - KeyPair requires neo-wallets which can't be a dep here (cycle).
-        let _ = KeyPair::new(vec![1u8; 32]);
-        // Return a default ECPoint; tests are marked #[ignore] so this is unused
-        ECPoint::new(ECCurve::Secp256r1, vec![2u8; 33]).unwrap()
+        let private_key = [1u8; 32];
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+        ECPoint::from_bytes(&public_key).expect("group public key")
     }
 
     #[test]
-    #[ignore = "needs neo-wallets to be cycle-free"]
-    #[ignore = "needs neo-wallets - cycle"]
-    fn permission_descriptor_projects_to_neo_vm_rs_stack_value() { /* removed - needs neo-wallets to be cycle-free */ }
+    fn permission_descriptor_projects_to_neo_vm_rs_stack_value() {
+        let hash = UInt160::from_bytes(&[0x11; 20]).expect("hash");
+        let group = group_key();
+        let group_bytes = group.encode_point(true).expect("compressed key");
+
+        assert_eq!(
+            ContractPermissionDescriptor::create_wildcard().to_stack_value(),
+            StackValue::Null
+        );
+        assert_eq!(
+            ContractPermissionDescriptor::create_hash(hash).to_stack_value(),
+            StackValue::ByteString(hash.to_bytes())
+        );
+        assert_eq!(
+            ContractPermissionDescriptor::create_group(group).to_stack_value(),
+            StackValue::ByteString(group_bytes)
+        );
+    }
 
     #[test]
-    #[ignore = "needs neo-wallets to be cycle-free"]
     fn permission_descriptor_stack_item_projection_matches_stack_value_projection() {
         let descriptor =
             ContractPermissionDescriptor::create_hash(UInt160::from_bytes(&[0x22; 20]).unwrap());
@@ -219,7 +229,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs neo-wallets to be cycle-free"]
     fn permission_descriptor_reads_from_neo_vm_rs_stack_value() {
         let hash = UInt160::from_bytes(&[0x33; 20]).expect("hash");
         let group = group_key();

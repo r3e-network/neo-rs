@@ -238,16 +238,14 @@ mod tests {
     fn test_read_float_compatibility() {
         // Test f32
         let f32_data = 1.23f32.to_le_bytes();
-        let _reader = MemoryReader::new(&f32_data);
-        // MemoryReader doesn't have read_f32, skip this test
-        // let result = reader.read_f32().unwrap();
-        // assert!((result - 1.23f32).abs() < f32::EPSILON);
+        let mut reader = MemoryReader::new(&f32_data);
+        let result = reader.read_f32().unwrap();
+        assert_eq!(result.to_le_bytes(), f32_data);
 
         // Test f64
         let f64_data = 1.23456789f64.to_le_bytes();
-        let _reader = MemoryReader::new(&f64_data);
-        // MemoryReader doesn't have read_f64, skip this test
-        // let result = reader.read_f64().unwrap();
-        // assert!((result - 1.23456789f64).abs() < f64::EPSILON);
+        let mut reader = MemoryReader::new(&f64_data);
+        let result = reader.read_f64().unwrap();
+        assert_eq!(result.to_le_bytes(), f64_data);
     }
 }

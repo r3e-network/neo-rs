@@ -2,23 +2,24 @@
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{
-    expect_base64_param_with_decode_message, internal_error, invalid_params};
+    expect_base64_param_with_decode_message, internal_error, invalid_params,
+};
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
 use neo_config::ProtocolSettings;
-use neo_primitives::hardfork::Hardfork;
 use neo_io::{MemoryReader, Serializable};
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::handle::LocalNodeInfo;
 use neo_payloads::{block::Block, transaction::Transaction};
-use neo_storage::persistence::DataCache;
+use neo_primitives::hardfork::Hardfork;
 use neo_storage::StorageKey;
+use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -96,11 +97,11 @@ impl RpcServerNode {
             "sendrawtransaction" => Self::send_raw_transaction,
             "submitblock" => Self::submit_block,
         ]
-   }
+    }
 
     fn get_connection_count(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         Self::with_local_node(server, |node| json!(node.connected_peers_count()))
-   }
+    }
 
     fn get_peers(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         // C# `RpcServer.GetPeers` (RpcServer.Node.cs): three arrays of
@@ -134,15 +135,15 @@ impl RpcServerNode {
                         json!({
                             "address": addr.ip().to_string(),
                             "port": addr.port()})
-                   })
-               })
+                    })
+                })
                 .collect();
             json!({
                 "unconnected": Vec::<Value>::new(),
                 "bad": Vec::<Value>::new(),
                 "connected": connected})
-       })
-   }
+        })
+    }
 
     fn get_version(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         // C# `GetVersion` reads msperblock / maxtraceableblocks /
@@ -174,7 +175,7 @@ impl RpcServerNode {
                     protocol.max_valid_until_block_increment,
                 )?,
             )
-       };
+        };
         Self::with_local_node(server, |node| {
             let system = server.system();
             let protocol = system.settings();
@@ -231,8 +232,8 @@ impl RpcServerNode {
                         json!({
                             "name": Self::format_hardfork(*fork),
                             "blockheight": height})
-                   })
-               })
+                    })
+                })
                 .collect();
             protocol_info.insert("hardforks".to_string(), Value::Array(hardforks));
 
@@ -260,8 +261,8 @@ impl RpcServerNode {
             json.insert("rpc".to_string(), Value::Object(rpc_info));
             json.insert("protocol".to_string(), Value::Object(protocol_info));
             Value::Object(json)
-       })
-   }
+        })
+    }
 
     fn send_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let raw = expect_base64_param_with_decode_message(
@@ -274,7 +275,7 @@ impl RpcServerNode {
             .map_err(|err| invalid_params(format!("Invalid transaction: {err}")))?;
         let relay_result = rpc_relay::relay_transaction(server, transaction)?;
         rpc_relay::map_relay_result(relay_result)
-   }
+    }
 
     fn submit_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let raw = expect_base64_param_with_decode_message(
@@ -288,7 +289,7 @@ impl RpcServerNode {
             .map_err(|err| invalid_params(format!("Invalid block: {err}")))?;
         let relay_result = rpc_relay::relay_block(server, block)?;
         rpc_relay::map_relay_result(relay_result)
-   }
+    }
 
     fn with_local_node<F>(server: &RpcServer, func: F) -> Result<Value, RpcException>
     where
@@ -296,17 +297,17 @@ impl RpcServerNode {
     {
         let local = Self::fetch_local_node(server);
         Ok(func(&local))
-   }
+    }
 
     fn fetch_local_node(server: &RpcServer) -> LocalNodeInfo {
         server.system().network().local_node_info()
-   }
+    }
 
     fn format_hardfork(fork: Hardfork) -> String {
         format!("{fork:?}").trim_start_matches("Hf").to_string()
-   }
+    }
 
     fn format_public_key(bytes: &[u8]) -> String {
         hex::encode(bytes)
-   }
+    }
 }

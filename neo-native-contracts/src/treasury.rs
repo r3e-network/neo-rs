@@ -17,9 +17,6 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 
 use crate::hashes::TREASURY_HASH;
 
-/// Lazily-initialised script-hash handle for the Treasury contract.
-pub static TREASURY_HASH_REF: LazyLock<UInt160> = LazyLock::new(|| *TREASURY_HASH);
-
 /// The Treasury native contract.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Treasury;
@@ -27,6 +24,8 @@ pub struct Treasury;
 impl Treasury {
     /// Stable native contract id (matches C# `Treasury`).
     pub const ID: i32 = -11;
+    /// Stable native contract name (matches C# `Treasury.Name`).
+    pub const NAME: &'static str = "Treasury";
 
     /// Construct a new `Treasury` handle.
     pub fn new() -> Self {
@@ -34,8 +33,13 @@ impl Treasury {
     }
 
     /// Returns the Treasury script hash.
+    pub fn hash(&self) -> UInt160 {
+        Self::script_hash()
+    }
+
+    /// Returns the Treasury script hash.
     pub fn script_hash() -> UInt160 {
-        *TREASURY_HASH_REF
+        *TREASURY_HASH
     }
 }
 
@@ -84,29 +88,26 @@ impl NativeContract for Treasury {
     }
 
     fn hash(&self) -> UInt160 {
-        *TREASURY_HASH_REF
+        Self::script_hash()
     }
 
     fn name(&self) -> &str {
-        "Treasury"
+        Self::NAME
     }
 
     // C# `Treasury.Activations => [Hardfork.HF_Faun]` (Treasury.cs:29): the
     // contract does not exist before HF_Faun. Without this override Treasury
     // would be genesis-active in neo-rs, diverging native deployment and
-    // manifest state below the Faun height (an unscheduled Faun means never
-    // active, matching C# `IsActive`).
+    // manifest state below the configured Faun height. If a custom/private
+    // config omits Faun, C# `IsActive` treats ActiveIn as genesis-active, while
+    // `IsInitializeBlock` skips the missing hardfork initialization block.
     fn active_in(&self) -> Option<Hardfork> {
         Some(Hardfork::HfFaun)
     }
 
     /// C# `Treasury.OnManifestCompose` (Treasury.cs:31-34): unconditional —
     /// the contract only exists from HF_Faun onwards.
-    fn supported_standards(
-        &self,
-        _settings: &ProtocolSettings,
-        _block_height: u32,
-    ) -> Vec<String> {
+    fn supported_standards(&self, _settings: &ProtocolSettings, _block_height: u32) -> Vec<String> {
         vec![
             "NEP-26".to_string(),
             "NEP-27".to_string(),
@@ -136,9 +137,8 @@ impl NativeContract for Treasury {
             // true iff the committee multi-sig address witnesses the current
             // container — the witness seam for Treasury-signed transactions.
             "verify" => {
-                let authorized = engine.check_committee_witness().map_err(|e| {
-                    CoreError::invalid_operation(format!("Treasury::verify committee check: {e}"))
-                })?;
+                let authorized =
+                    crate::committee::is_committee_witness(engine, "Treasury::verify")?;
                 Ok(vec![u8::from(authorized)])
             }
             other => Err(CoreError::invalid_operation(format!(
@@ -155,19 +155,19 @@ mod tests {
     #[test]
     fn native_contract_surface() {
         let c = Treasury::new();
-        assert_eq!(NativeContract::id(&c), -11);
-        assert_eq!(NativeContract::name(&c), "Treasury");
-        assert_eq!(NativeContract::hash(&c), *TREASURY_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(names, ["onNEP17Payment", "onNEP11Payment", "verify"]);
         // Payment callbacks: RequiredCallFlags None, Void return, and
         // manifest-SAFE — C# derives Safe = (None & ~CallFlags.ReadOnly) == 0
         // (ContractMethodMetadata.cs:74).
-        assert!(c
-            .methods()
-            .iter()
-            .filter(|m| m.name != "verify")
-            .all(|m| m.safe && m.required_call_flags == 0 && m.return_type == ContractParameterType::Void));
+        assert!(
+            c.methods()
+                .iter()
+                .filter(|m| m.name != "verify")
+                .all(|m| m.safe
+                    && m.required_call_flags == 0
+                    && m.return_type == ContractParameterType::Void)
+        );
         // verify (Treasury.cs:41-42): CpuFee 1<<5, ReadStates (⊆ ReadOnly ->
         // safe), no parameters, Boolean return.
         let verify = c.methods().iter().find(|m| m.name == "verify").unwrap();
@@ -187,21 +187,26 @@ mod tests {
 
         let c = Treasury::new();
         assert_eq!(NativeContract::active_in(&c), Some(Hardfork::HfFaun));
-        // Unscheduled Faun (the default mainnet/testnet config): ACTIVE from
-        // genesis. C# `IsActive` (NativeContract.cs:341) falls back to
-        // `activeIn = 0` for an unconfigured ActiveIn hardfork ("treated as
-        // enabled from the genesis") — only `IsInitializeBlock` treats the
-        // unconfigured hardfork as disabled, so the contract is active but
-        // never deployed/initialized.
-        assert!(c.is_active(&ProtocolSettings::default(), 0));
-        assert!(c.is_active(&ProtocolSettings::default(), u32::MAX));
+        // Neo N3 v3.10.0 MainNet schedules Faun at 8,800,000, so default
+        // settings must not expose Treasury before that block.
+        let settings = ProtocolSettings::default();
+        assert!(!c.is_active(&settings, 8_799_999));
+        assert!(c.is_active(&settings, 8_800_000));
+        assert!(c.is_active(&settings, u32::MAX));
 
-        let mut settings = ProtocolSettings::default();
-        settings.hardforks.insert(Hardfork::HfFaun, 10);
-        assert!(!c.is_active(&settings, 9));
-        assert!(c.is_active(&settings, 10));
+        // C# `IsActive` (NativeContract.cs) falls back to `activeIn = 0` for an
+        // unconfigured ActiveIn hardfork, which keeps custom/private configs
+        // that omit Faun genesis-active.
+        let mut omitted = ProtocolSettings::default();
+        omitted.hardforks.remove(&Hardfork::HfFaun);
+        assert!(c.is_active(&omitted, 0));
 
-        let state = build_native_contract_state(&c, &settings, 10);
+        let mut custom = ProtocolSettings::default();
+        custom.hardforks.insert(Hardfork::HfFaun, 10);
+        assert!(!c.is_active(&custom, 9));
+        assert!(c.is_active(&custom, 10));
+
+        let state = build_native_contract_state(&c, &custom, 10);
         assert_eq!(
             state.manifest.supported_standards,
             ["NEP-26", "NEP-27", "NEP-30"]
@@ -224,79 +229,24 @@ mod verify_witness_tests {
     use neo_payloads::signer::Signer;
     use neo_payloads::transaction::Transaction;
     use neo_payloads::witness::Witness;
+    use neo_payloads::{Block, Header};
     use neo_primitives::{TriggerType, Verifiable, WitnessScope};
-    use neo_script_builder::ScriptBuilder;
-    use neo_serialization::BinarySerializer;
+    use neo_vm::script_builder::ScriptBuilder;
     use neo_storage::persistence::DataCache;
-    use neo_storage::{StorageItem, StorageKey};
-    use neo_vm::StackItem;
-    use neo_vm_rs::{ExecutionEngineLimits, VmState};
-
-    /// ContractManagement per-contract storage prefix.
-    const CM_PREFIX_CONTRACT: u8 = 8;
-    /// C# `NeoToken.Prefix_Committee`.
-    const NEO_PREFIX_COMMITTEE: u8 = 14;
-
-    fn hex(s: &str) -> Vec<u8> {
-        (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect()
-    }
-
-    fn sample_committee() -> Vec<ECPoint> {
-        // Three valid secp256r1 public keys (Neo N3 standby validators).
-        [
-            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
-            "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093",
-            "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
-        ]
-        .iter()
-        .map(|h| ECPoint::from_bytes(&hex(h)).unwrap())
-        .collect()
-    }
-
-    /// Stores NeoToken's committee cache (Array of `Struct[pubkey, votes]`)
-    /// under `Prefix_Committee` so `check_committee_witness` can compute the
-    /// committee address.
-    fn seed_committee(cache: &DataCache, points: &[ECPoint]) {
-        let array = StackItem::from_array(
-            points
-                .iter()
-                .map(|p| {
-                    StackItem::from_struct(vec![
-                        StackItem::from_byte_string(p.to_bytes()),
-                        StackItem::from_int(0),
-                    ])
-                })
-                .collect::<Vec<_>>(),
-        );
-        let bytes =
-            BinarySerializer::serialize(&array, &ExecutionEngineLimits::default()).unwrap();
-        cache.add(
-            StorageKey::new(crate::NeoToken::ID, vec![NEO_PREFIX_COMMITTEE]),
-            StorageItem::from_bytes(bytes),
-        );
-    }
-
-    /// The `m = n - (n - 1) / 2` committee multisig address (2-of-3 here).
-    fn committee_address(points: &[ECPoint]) -> UInt160 {
-        let script = neo_redeem_script::multi_sig_redeem_script_from_points(2, points).unwrap();
-        UInt160::from_script(&script)
-    }
-
-    fn deploy_native(cache: &DataCache, state: &ContractState) {
-        let mut key = vec![CM_PREFIX_CONTRACT];
-        key.extend_from_slice(&state.hash.to_bytes());
-        cache.add(
-            StorageKey::new(crate::ContractManagement::ID, key),
-            StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
-        );
-    }
+    use neo_vm_rs::VmState;
+    use crate::test_support::{
+        committee_address, deploy_native, hex, sample_committee, seed_committee,
+        CM_PREFIX_CONTRACT, NEO_PREFIX_COMMITTEE,
+    };
 
     /// Runs `Treasury::verify()` via System.Contract.Call, signed (Global) by
     /// `signer`. Returns the final VM state and the boolean result.
-    fn call_verify(snapshot: Arc<DataCache>, signer: UInt160) -> (VmState, Option<bool>) {
+    fn call_verify(
+        snapshot: Arc<DataCache>,
+        signer: UInt160,
+        settings: ProtocolSettings,
+        block_height: u32,
+    ) -> (VmState, Option<bool>) {
         let mut tx = Transaction::new();
         tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
         tx.set_witnesses(vec![Witness::empty()]);
@@ -310,12 +260,16 @@ mod verify_witness_tests {
         builder.emit_push(&Treasury::script_hash().to_array());
         builder.emit_syscall("System.Contract.Call").expect("call");
 
+        let mut header = Header::new();
+        header.set_index(block_height);
+        let block = Block::from_parts(header, Vec::new());
+
         let mut engine = ApplicationEngine::new(
             TriggerType::Application,
             Some(container),
             snapshot,
-            None,
-            ProtocolSettings::default(),
+            Some(block),
+            settings,
             10_000_000,
             None,
         )
@@ -324,7 +278,11 @@ mod verify_witness_tests {
             .load_script(builder.to_array(), CallFlags::ALL, None)
             .expect("script loads");
         let state = engine.execute_allow_fault();
-        let top = engine.result_stack().peek(0).ok().and_then(|item| item.as_bool().ok());
+        let top = engine
+            .result_stack()
+            .peek(0)
+            .ok()
+            .and_then(|item| item.as_bool().ok());
         (state, top)
     }
 
@@ -334,19 +292,38 @@ mod verify_witness_tests {
         let cache = DataCache::new(false);
         let committee = sample_committee();
         seed_committee(&cache, &committee);
-        // HF_Faun unscheduled (default settings) -> Treasury active from genesis.
+        // Deploy Treasury directly so this test can focus on verify witness
+        // behavior; activation boundaries are covered separately.
         let settings = ProtocolSettings::default();
-        deploy_native(&cache, &build_native_contract_state(&Treasury, &settings, 0));
+        let faun_height = settings
+            .hardforks
+            .get(&Hardfork::HfFaun)
+            .copied()
+            .expect("default settings schedule Faun");
+        deploy_native(
+            &cache,
+            &build_native_contract_state(&Treasury, &settings, faun_height),
+        );
         let snapshot = Arc::new(cache);
 
         // Signed by the committee multisig address -> true.
-        let (state, result) = call_verify(Arc::clone(&snapshot), committee_address(&committee));
+        let (state, result) = call_verify(
+            Arc::clone(&snapshot),
+            committee_address(&committee),
+            settings.clone(),
+            faun_height,
+        );
         assert_eq!(state, VmState::HALT, "verify must HALT");
         assert_eq!(result, Some(true), "the committee witness verifies");
 
         // Signed by an unrelated account -> false (a clean HALT, no fault).
         let stranger = UInt160::from_bytes(&[0x21; 20]).unwrap();
-        let (state, result) = call_verify(Arc::clone(&snapshot), stranger);
+        let (state, result) = call_verify(
+            Arc::clone(&snapshot),
+            stranger,
+            settings.clone(),
+            faun_height,
+        );
         assert_eq!(state, VmState::HALT, "verify must HALT");
         assert_eq!(result, Some(false), "a non-committee witness fails");
     }

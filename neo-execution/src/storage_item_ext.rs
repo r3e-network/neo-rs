@@ -6,12 +6,12 @@
 //! `Interoperable`). Keeping it here — rather than in `persistence` — means the
 //! storage/persistence layer carries no edge back into the smart-contract layer.
 
+use crate::interoperable::Interoperable;
 use neo_io::serializable::helper::get_var_size_bytes;
 use neo_io::{IoResult, MemoryReader};
-use crate::interoperable::Interoperable;
 use neo_serialization::BinarySerializer;
-use neo_storage::types::storage_item::CacheProvider;
 use neo_storage::StorageItem;
+use neo_storage::types::storage_item::CacheProvider;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::any::Any;
@@ -47,10 +47,8 @@ impl CacheProvider for StorageCache {
                 bytes
             }
             StorageCache::Interoperable(interoperable) => match interoperable.to_stack_item() {
-                Ok(item) => {
-                    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                        .unwrap_or_default()
-                }
+                Ok(item) => BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+                    .unwrap_or_default(),
                 Err(_) => Vec::new(),
             },
         }

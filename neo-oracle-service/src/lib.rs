@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+
 //! Oracle service module (parity with Neo.Plugins.OracleService).
 //!
 //! This module implements oracle request processing, signature aggregation,

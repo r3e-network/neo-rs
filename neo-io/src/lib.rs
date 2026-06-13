@@ -1,9 +1,11 @@
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 //! Neo.IO - matches C# Neo.IO exactly
 //! This crate provides IO functionality matching C# Neo.IO namespace
 
 pub mod caching;
 pub mod compression;
+/// Extension traits that mirror the C# `Neo.Extensions.IO` helpers.
 pub mod extensions;
 
 mod binary_writer;
@@ -31,7 +33,7 @@ pub use extensions::{
 };
 
 // Re-export compression types
-pub use compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD};
+pub use compression::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, compress_lz4, decompress_lz4};
 
 // Re-export caching types
 pub use caching::{

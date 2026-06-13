@@ -99,18 +99,12 @@ impl MethodToken {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing method".to_string())?
             .to_string();
-        let parameters_count = obj
-            .get("paramcount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u16;
+        let parameters_count = obj.get("paramcount").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
         let has_return_value = obj
             .get("hasreturnvalue")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let call_flags_bits = obj
-            .get("callflags")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u8;
+        let call_flags_bits = obj.get("callflags").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
         let call_flags = CallFlags::from_bits(call_flags_bits)
             .ok_or_else(|| "Invalid call flags".to_string())?;
         Self::new(hash, method, parameters_count, has_return_value, call_flags)
@@ -146,8 +140,8 @@ impl Serializable for MethodToken {
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let hash_bytes = reader.read_bytes(UInt160::LENGTH)?;
-        let hash = UInt160::from_bytes(&hash_bytes)
-            .map_err(|e| IoError::invalid_data(e.to_string()))?;
+        let hash =
+            UInt160::from_bytes(&hash_bytes).map_err(|e| IoError::invalid_data(e.to_string()))?;
         let method = reader.read_var_string(Self::MAX_METHOD_LENGTH)?;
         if method.starts_with('_') {
             return Err(IoError::invalid_data(

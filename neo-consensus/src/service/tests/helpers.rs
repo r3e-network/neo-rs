@@ -107,6 +107,32 @@ impl PersistCompletedHarness {
         std::mem::take(&mut self.events)
     }
 
+    pub(super) fn fire_primary_prepare_timers(&mut self) -> ConsensusResult<()> {
+        for service in &mut self.services {
+            let deadline = {
+                let context = service.context();
+                if context.is_primary()
+                    && !context.prepare_request_received
+                    && !context.transaction_request_sent
+                {
+                    Some(
+                        context
+                            .view_start_time
+                            .saturating_add(context.prepare_request_delay()),
+                    )
+                } else {
+                    None
+                }
+            };
+
+            if let Some(deadline) = deadline {
+                service.on_timer_tick(deadline)?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub(super) async fn drive_until_idle(&mut self, max_iters: usize) -> ConsensusResult<()> {
         for _ in 0..max_iters {
             if !self.drive_once()? {
@@ -135,6 +161,11 @@ impl PersistCompletedHarness {
         match &event {
             ConsensusEvent::RequestTransactions { .. } => {
                 self.services[sender_index].on_transactions_received(Vec::new())?;
+            }
+            ConsensusEvent::RequestProposalTransactions {
+                transaction_hashes, ..
+            } => {
+                self.services[sender_index].on_transactions_received(transaction_hashes.clone())?;
             }
             ConsensusEvent::BroadcastMessage(payload) => {
                 let maybe_prepare = if payload.message_type == ConsensusMessageType::PrepareRequest

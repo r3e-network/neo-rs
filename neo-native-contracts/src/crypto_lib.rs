@@ -15,7 +15,7 @@ use std::any::Any;
 use std::sync::LazyLock;
 
 use neo_config::Hardfork;
-use neo_crypto::{murmur32, Bls12381Point, Crypto, HashAlgorithm, NamedCurveHash, Secp256k1Crypto};
+use neo_crypto::{Bls12381Point, Crypto, HashAlgorithm, NamedCurveHash, Secp256k1Crypto, murmur32};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
@@ -24,9 +24,6 @@ use num_traits::ToPrimitive;
 
 use crate::hashes::CRYPTO_LIB_HASH;
 
-/// Lazily-initialised script-hash handle for the CryptoLib contract.
-pub static CRYPTO_LIB_HASH_REF: LazyLock<UInt160> = LazyLock::new(|| *CRYPTO_LIB_HASH);
-
 /// The CryptoLib native contract.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CryptoLib;
@@ -34,6 +31,8 @@ pub struct CryptoLib;
 impl CryptoLib {
     /// Stable native contract id (matches C# `CryptoLib`).
     pub const ID: i32 = -3;
+    /// Stable native contract name (matches C# `CryptoLib.Name`).
+    pub const NAME: &'static str = "CryptoLib";
 
     /// Construct a new `CryptoLib` handle.
     pub fn new() -> Self {
@@ -41,8 +40,13 @@ impl CryptoLib {
     }
 
     /// Returns the CryptoLib script hash.
+    pub fn hash(&self) -> UInt160 {
+        Self::script_hash()
+    }
+
+    /// Returns the CryptoLib script hash.
     pub fn script_hash() -> UInt160 {
-        *CRYPTO_LIB_HASH_REF
+        *CRYPTO_LIB_HASH
     }
 }
 
@@ -95,7 +99,9 @@ fn verify_ecdsa_method(
     allow_keccak: bool,
 ) -> CoreResult<bool> {
     let named = NamedCurveHash::from_byte(curve).ok_or_else(|| {
-        CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: unsupported curve {curve}"))
+        CoreError::invalid_operation(format!(
+            "CryptoLib::verifyWithECDsa: unsupported curve {curve}"
+        ))
     })?;
     if !allow_keccak && matches!(named.hash_algorithm(), HashAlgorithm::Keccak256) {
         return Err(CoreError::invalid_operation(
@@ -297,7 +303,12 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CPU_FEE_HASH,
             true,
             0,
-            vec![byte_array, byte_array, byte_array, ContractParameterType::Integer],
+            vec![
+                byte_array,
+                byte_array,
+                byte_array,
+                ContractParameterType::Integer,
+            ],
             ContractParameterType::Boolean,
         )
         .with_deprecated_in(Hardfork::HfCockatrice)
@@ -307,7 +318,12 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CPU_FEE_HASH,
             true,
             0,
-            vec![byte_array, byte_array, byte_array, ContractParameterType::Integer],
+            vec![
+                byte_array,
+                byte_array,
+                byte_array,
+                ContractParameterType::Integer,
+            ],
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfCockatrice)
@@ -321,7 +337,12 @@ static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             CPU_FEE_HASH,
             true,
             0,
-            vec![byte_array, byte_array, byte_array, ContractParameterType::Integer],
+            vec![
+                byte_array,
+                byte_array,
+                byte_array,
+                ContractParameterType::Integer,
+            ],
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfGorgon)
@@ -404,11 +425,11 @@ impl NativeContract for CryptoLib {
     }
 
     fn hash(&self) -> UInt160 {
-        *CRYPTO_LIB_HASH_REF
+        Self::script_hash()
     }
 
     fn name(&self) -> &str {
-        "CryptoLib"
+        Self::NAME
     }
 
     fn methods(&self) -> &[NativeMethod] {
@@ -468,11 +489,13 @@ impl NativeContract for CryptoLib {
                         "CryptoLib::verifyWithEd25519: public key size should be 32",
                     ));
                 }
-                let ok = neo_crypto::ecc::verify_ed25519(pubkey, message, signature)
-                    .unwrap_or(false);
+                let ok =
+                    neo_crypto::ecc::verify_ed25519(pubkey, message, signature).unwrap_or(false);
                 return Ok(vec![u8::from(ok)]);
             }
-            return Ok(vec![u8::from(verify_ed25519_method(message, pubkey, signature))]);
+            return Ok(vec![u8::from(verify_ed25519_method(
+                message, pubkey, signature,
+            ))]);
         }
 
         if method == "verifyWithECDsa" {
@@ -492,7 +515,9 @@ impl NativeContract for CryptoLib {
                 .map(|b| BigInt::from_signed_bytes_le(b))
                 .and_then(|b| b.to_u8())
                 .ok_or_else(|| {
-                    CoreError::invalid_operation("CryptoLib::verifyWithECDsa: curveHash out of range")
+                    CoreError::invalid_operation(
+                        "CryptoLib::verifyWithECDsa: curveHash out of range",
+                    )
                 })?;
             if engine.is_hardfork_enabled(Hardfork::HfGorgon) {
                 // C# v3.10.0 VerifyWithECDsaV2 (strict Crypto.VerifySignature):
@@ -503,7 +528,11 @@ impl NativeContract for CryptoLib {
             }
             let allow_keccak = engine.is_hardfork_enabled(Hardfork::HfCockatrice);
             return Ok(vec![u8::from(verify_ecdsa_method(
-                message, pubkey, signature, curve, allow_keccak,
+                message,
+                pubkey,
+                signature,
+                curve,
+                allow_keccak,
             )?)]);
         }
 
@@ -587,10 +616,6 @@ mod tests {
     #[test]
     fn native_contract_surface_is_consistent() {
         let c = CryptoLib::new();
-        assert_eq!(NativeContract::id(&c), -3);
-        assert_eq!(NativeContract::name(&c), "CryptoLib");
-        assert_eq!(NativeContract::hash(&c), *CRYPTO_LIB_HASH);
-
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(
             names,
@@ -619,7 +644,11 @@ mod tests {
         assert!(c.methods().iter().all(|m| m.safe));
         // The hashes/murmur return ByteArray; verifyWithEd25519 is an Echidna
         // Boolean with three byte-array parameters.
-        let ed = c.methods().iter().find(|m| m.name == "verifyWithEd25519").unwrap();
+        let ed = c
+            .methods()
+            .iter()
+            .find(|m| m.name == "verifyWithEd25519")
+            .unwrap();
         assert_eq!(ed.return_type, ContractParameterType::Boolean);
         assert_eq!(ed.active_in, Some(Hardfork::HfEchidna));
         assert_eq!(ed.parameters.len(), 3);
@@ -628,19 +657,31 @@ mod tests {
         // parameter named `curve`; V1 is ActiveIn HF_Cockatrice (renames it
         // `curveHash`) until DeprecatedIn HF_Gorgon; V2 is ActiveIn HF_Gorgon
         // (strict). Types are identical across versions.
-        let ecdsa: Vec<&NativeMethod> =
-            c.methods().iter().filter(|m| m.name == "verifyWithECDsa").collect();
+        let ecdsa: Vec<&NativeMethod> = c
+            .methods()
+            .iter()
+            .filter(|m| m.name == "verifyWithECDsa")
+            .collect();
         assert_eq!(ecdsa.len(), 3);
         let (v0, v1, v2) = (ecdsa[0], ecdsa[1], ecdsa[2]);
         assert_eq!(v0.active_in, None);
         assert_eq!(v0.deprecated_in, Some(Hardfork::HfCockatrice));
-        assert_eq!(v0.parameter_names, ["message", "pubkey", "signature", "curve"]);
+        assert_eq!(
+            v0.parameter_names,
+            ["message", "pubkey", "signature", "curve"]
+        );
         assert_eq!(v1.active_in, Some(Hardfork::HfCockatrice));
         assert_eq!(v1.deprecated_in, Some(Hardfork::HfGorgon));
-        assert_eq!(v1.parameter_names, ["message", "pubkey", "signature", "curveHash"]);
+        assert_eq!(
+            v1.parameter_names,
+            ["message", "pubkey", "signature", "curveHash"]
+        );
         assert_eq!(v2.active_in, Some(Hardfork::HfGorgon));
         assert_eq!(v2.deprecated_in, None);
-        assert_eq!(v2.parameter_names, ["message", "pubkey", "signature", "curveHash"]);
+        assert_eq!(
+            v2.parameter_names,
+            ["message", "pubkey", "signature", "curveHash"]
+        );
         for m in &ecdsa {
             assert_eq!(m.return_type, ContractParameterType::Boolean);
             assert_eq!(m.parameters.len(), 4);
@@ -648,15 +689,28 @@ mod tests {
         }
         // recoverSecp256K1 is HF_Echidna-gated, safe, (messageHash, signature) ->
         // ByteArray (nullable at runtime via set_native_return_null).
-        let recover = c.methods().iter().find(|m| m.name == "recoverSecp256K1").unwrap();
+        let recover = c
+            .methods()
+            .iter()
+            .find(|m| m.name == "recoverSecp256K1")
+            .unwrap();
         assert_eq!(recover.active_in, Some(Hardfork::HfEchidna));
         assert_eq!(recover.return_type, ContractParameterType::ByteArray);
-        assert_eq!(recover.parameters, vec![ContractParameterType::ByteArray; 2]);
+        assert_eq!(
+            recover.parameters,
+            vec![ContractParameterType::ByteArray; 2]
+        );
         assert!(recover.safe);
 
         // BLS12-381 ABI (genesis-active, all safe; CryptoLib.BLS12_381.cs fees).
         let interop = ContractParameterType::InteropInterface;
-        let bls = |name: &str| c.methods().iter().find(|m| m.name == name).cloned().unwrap();
+        let bls = |name: &str| {
+            c.methods()
+                .iter()
+                .find(|m| m.name == name)
+                .cloned()
+                .unwrap()
+        };
         let ser = bls("bls12381Serialize");
         assert_eq!(ser.cpu_fee, 1 << 19);
         assert_eq!(ser.parameters, vec![interop]);
@@ -677,7 +731,11 @@ mod tests {
         assert_eq!(mul.cpu_fee, 1 << 21);
         assert_eq!(
             mul.parameters,
-            vec![interop, ContractParameterType::ByteArray, ContractParameterType::Boolean]
+            vec![
+                interop,
+                ContractParameterType::ByteArray,
+                ContractParameterType::Boolean
+            ]
         );
         assert_eq!(mul.return_type, interop);
         let pairing = bls("bls12381Pairing");
@@ -740,7 +798,13 @@ mod tests {
         let pos = call("bls12381Mul", &[gt.clone(), scalar(3), vec![0]]);
         let neg = call("bls12381Mul", &[gt.clone(), scalar(3), vec![1]]);
         let identity = call("bls12381Mul", &[gt.clone(), scalar(0), vec![0]]);
-        assert_eq!(call("bls12381Equal", &[call("bls12381Add", &[pos, neg]), identity]), vec![1u8]);
+        assert_eq!(
+            call(
+                "bls12381Equal",
+                &[call("bls12381Add", &[pos, neg]), identity]
+            ),
+            vec![1u8]
+        );
 
         // Equal: same point true, cross-group false.
         assert_eq!(call("bls12381Equal", &[g1.clone(), g1.clone()]), vec![1u8]);
@@ -748,9 +812,21 @@ mod tests {
 
         // Faults (Err → VM fault): malformed point, swapped pairing operands,
         // wrong scalar length.
-        assert!(bls12381_method("bls12381Deserialize", &[vec![0u8; 47]]).unwrap().is_err());
-        assert!(bls12381_method("bls12381Pairing", &[g2.clone(), g1.clone()]).unwrap().is_err());
-        assert!(bls12381_method("bls12381Mul", &[gt.clone(), vec![0u8; 31], vec![0]]).unwrap().is_err());
+        assert!(
+            bls12381_method("bls12381Deserialize", &[vec![0u8; 47]])
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            bls12381_method("bls12381Pairing", &[g2.clone(), g1.clone()])
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            bls12381_method("bls12381Mul", &[gt.clone(), vec![0u8; 31], vec![0]])
+                .unwrap()
+                .is_err()
+        );
 
         // A non-BLS method is not handled here (falls through to hash dispatch).
         assert!(bls12381_method("sha256", &[]).is_none());
@@ -801,8 +877,7 @@ mod tests {
     #[test]
     fn verify_ed25519_matches_rfc8032_test1() {
         // RFC 8032 Section 7.1, Test 1 (empty message).
-        let pubkey =
-            hex_bytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+        let pubkey = hex_bytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
         let signature = hex_bytes(
             "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
         );

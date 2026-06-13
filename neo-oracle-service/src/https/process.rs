@@ -1,8 +1,8 @@
-use super::security::{is_internal_host, validate_url_for_ssrf};
 use super::OracleHttpsProtocol;
-use neo_payloads::OracleResponseCode;
+use super::security::{is_internal_host, validate_url_for_ssrf};
 use crate::settings::MAX_ORACLE_RESPONSE_SIZE;
 use futures::StreamExt;
+use neo_payloads::OracleResponseCode;
 
 use super::super::OracleServiceSettings;
 

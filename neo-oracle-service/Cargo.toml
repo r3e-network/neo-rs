@@ -14,10 +14,10 @@ readme.workspace = true
 description = "Oracle plugin for the Neo blockchain (HTTPS + NeoFS oracle request fulfilment)"
 
 [dependencies]
+neo-vm = { workspace = true }
 neo-vm-rs = { workspace = true }
-neo-storage = { path = "../neo-storage" }
-neo-crypto = { path = "../neo-crypto" }
-neo-json = { path = "../neo-json" }
+neo-storage = { workspace = true }
+neo-crypto = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
@@ -40,21 +40,17 @@ prost = { version = "0.12", optional = true }
 neo-config = { workspace = true }
 neo-execution = { workspace = true }
 neo-io = { workspace = true }
+neo-serialization = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-network = { workspace = true }
 neo-payloads = { workspace = true }
 neo-primitives = { workspace = true }
 neo-system = { workspace = true }
 neo-wallets = { workspace = true }
-neo-event-handlers = { workspace = true }
-neo-block = { workspace = true }
-neo-script-builder = { workspace = true }
 
 
 neo-blockchain = { workspace = true }
 neo-manifest = { workspace = true }
-
-neo-time = { workspace = true }
 
 [build-dependencies]
 # Only used when the neofs-grpc feature is enabled (build.rs checks

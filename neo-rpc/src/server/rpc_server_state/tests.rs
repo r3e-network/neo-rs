@@ -135,16 +135,21 @@ async fn proof_handlers_report_unsupported_state() {
     for (method, params) in [
         (
             "getproof",
-            vec![json!(root.clone()), json!(contract.clone()), json!(key.clone())],
+            vec![
+                json!(root.clone()),
+                json!(contract.clone()),
+                json!(key.clone()),
+            ],
         ),
         (
             "getstate",
-            vec![json!(root.clone()), json!(contract.clone()), json!(key.clone())],
+            vec![
+                json!(root.clone()),
+                json!(contract.clone()),
+                json!(key.clone()),
+            ],
         ),
-        (
-            "findstates",
-            vec![json!(root), json!(contract), json!(key)],
-        ),
+        ("findstates", vec![json!(root), json!(contract), json!(key)]),
     ] {
         let err = call(&server, method, &params).expect_err("proofs unsupported");
         let rpc_error: RpcError = err.into();
@@ -343,7 +348,11 @@ async fn get_state_serves_current_and_historical_roots() {
     let current = call(
         &fixture.server,
         "getstate",
-        &[json!(fixture.root2.to_string()), contract.clone(), key.clone()],
+        &[
+            json!(fixture.root2.to_string()),
+            contract.clone(),
+            key.clone(),
+        ],
     )
     .expect("getstate at current root");
     assert_eq!(decode_b64_value(&current), b"alpha-v2".to_vec());
@@ -441,11 +450,7 @@ async fn find_states_returns_full_page_with_proofs() {
         .collect();
     assert_eq!(
         keys,
-        vec![
-            vec![0x0A, 0x01],
-            vec![0x0A, 0x03],
-            vec![0x0A, 0x04],
-        ],
+        vec![vec![0x0A, 0x01], vec![0x0A, 0x03], vec![0x0A, 0x04],],
         "result keys must strip the contract id and come in trie order"
     );
     assert_eq!(
@@ -454,7 +459,10 @@ async fn find_states_returns_full_page_with_proofs() {
     );
 
     // firstProof verifies to the first returned value.
-    let first_proof = result.get("firstProof").expect("firstProof present").clone();
+    let first_proof = result
+        .get("firstProof")
+        .expect("firstProof present")
+        .clone();
     let value = call(
         &fixture.server,
         "verifyproof",
@@ -462,7 +470,10 @@ async fn find_states_returns_full_page_with_proofs() {
     )
     .expect("first proof verifies");
     assert_eq!(decode_b64_value(&value), b"alpha-v2".to_vec());
-    assert!(result.get("lastProof").is_some(), "lastProof for >1 results");
+    assert!(
+        result.get("lastProof").is_some(),
+        "lastProof for >1 results"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -476,7 +487,13 @@ async fn find_states_truncates_and_resumes() {
     let page1 = call(
         &fixture.server,
         "findstates",
-        &[root.clone(), contract.clone(), prefix.clone(), Value::Null, json!(2)],
+        &[
+            root.clone(),
+            contract.clone(),
+            prefix.clone(),
+            Value::Null,
+            json!(2),
+        ],
     )
     .expect("findstates page 1");
     assert_eq!(page1.get("truncated"), Some(&Value::Bool(true)));
@@ -505,7 +522,10 @@ async fn find_states_truncates_and_resumes() {
         decode_b64_value(results2[0].get("key").expect("key")),
         vec![0x0A, 0x04]
     );
-    assert!(page2.get("firstProof").is_some(), "single result still proves first");
+    assert!(
+        page2.get("firstProof").is_some(),
+        "single result still proves first"
+    );
     assert!(
         page2.get("lastProof").is_none(),
         "lastProof omitted for a single-entry page"
@@ -520,10 +540,7 @@ async fn find_states_truncates_and_resumes() {
     .expect("findstates exact count");
     assert_eq!(exact.get("truncated"), Some(&Value::Bool(false)));
     assert_eq!(
-        exact
-            .get("results")
-            .and_then(Value::as_array)
-            .map(Vec::len),
+        exact.get("results").and_then(Value::as_array).map(Vec::len),
         Some(3)
     );
 }
@@ -556,7 +573,11 @@ async fn state_queries_gate_on_current_root_without_full_state() {
     let current = call(
         &fixture.server,
         "getstate",
-        &[json!(fixture.root2.to_string()), contract.clone(), key.clone()],
+        &[
+            json!(fixture.root2.to_string()),
+            contract.clone(),
+            key.clone(),
+        ],
     )
     .expect("current root passes the gate");
     assert_eq!(decode_b64_value(&current), b"alpha-v2".to_vec());
@@ -566,7 +587,11 @@ async fn state_queries_gate_on_current_root_without_full_state() {
         let err = call(
             &fixture.server,
             method,
-            &[json!(fixture.root1.to_string()), contract.clone(), key.clone()],
+            &[
+                json!(fixture.root1.to_string()),
+                contract.clone(),
+                key.clone(),
+            ],
         )
         .expect_err("historical root must be rejected without FullState");
         let rpc_error: RpcError = err.into();
@@ -735,8 +760,12 @@ async fn verify_proof_rejects_wrong_root() {
 
     let (_system, _state_store, server) = make_server_with_state();
     let wrong_root = neo_primitives::UInt256::from([0x33u8; 32]).to_string();
-    let err = call(&server, "verifyproof", &[json!(wrong_root), json!(payload_b64)])
-        .expect_err("proof must not verify against a foreign root");
+    let err = call(
+        &server,
+        "verifyproof",
+        &[json!(wrong_root), json!(payload_b64)],
+    )
+    .expect_err("proof must not verify against a foreign root");
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::verification_failed().code());
 }

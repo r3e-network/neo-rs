@@ -1,4 +1,4 @@
-use super::helpers::{read_group_bytes, ECPOINT_COMPRESSED_SIZE};
+use super::helpers::{ECPOINT_COMPRESSED_SIZE, read_group_bytes};
 use super::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 use neo_io::serializable::helper::{deserialize_array_with, serialize_array};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};

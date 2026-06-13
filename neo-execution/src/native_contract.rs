@@ -13,22 +13,22 @@
 //! composes their on-disk `ContractState` (NEF + manifest) lives here with
 //! the trait it consumes.
 
-use neo_primitives::{UInt160, ContractParameterType};
+use neo_primitives::{ContractParameterType, UInt160};
 
-use neo_error::CoreResult as Result;
 use neo_config::{Hardfork, ProtocolSettings};
+use neo_error::CoreResult;
 use neo_manifest::{
-    ContractAbi, ContractEventDescriptor, ContractMethodDescriptor, ContractParameterDefinition,
-    ContractManifest, NefFile,
+    ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor,
+    ContractParameterDefinition, NefFile,
 };
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
-use neo_script_builder::ScriptBuilder;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
-use crate::hardfork_activable::HardforkActivable;
 use crate::application_engine::ApplicationEngine;
 use crate::contract_state::ContractState;
+use crate::hardfork_activable::HardforkActivable;
 
 pub use crate::native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
 
@@ -211,20 +211,20 @@ pub trait NativeContract: Any + Send + Sync {
         engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
-    ) -> Result<Vec<u8>>;
+    ) -> CoreResult<Vec<u8>>;
 
     /// Called when the contract is initialized.
-    fn initialize(&self, _engine: &mut ApplicationEngine) -> Result<()> {
+    fn initialize(&self, _engine: &mut ApplicationEngine) -> CoreResult<()> {
         Ok(())
     }
 
     /// Called on each block persistence.
-    fn on_persist(&self, _engine: &mut ApplicationEngine) -> Result<()> {
+    fn on_persist(&self, _engine: &mut ApplicationEngine) -> CoreResult<()> {
         Ok(())
     }
 
     /// Called after block persistence.
-    fn post_persist(&self, _engine: &mut ApplicationEngine) -> Result<()> {
+    fn post_persist(&self, _engine: &mut ApplicationEngine) -> CoreResult<()> {
         Ok(())
     }
 
@@ -235,9 +235,9 @@ pub trait NativeContract: Any + Send + Sync {
     /// `ContractManagement` overrides this to query the storage.
     fn lookup_contract_state(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _hash: &neo_primitives::UInt160,
-    ) -> Result<Option<crate::ContractState>> {
+    ) -> CoreResult<Option<crate::ContractState>> {
         Ok(None)
     }
 
@@ -248,9 +248,9 @@ pub trait NativeContract: Any + Send + Sync {
     /// `LedgerContract` overrides this.
     fn lookup_transaction_state(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _tx_hash: &neo_primitives::UInt256,
-    ) -> Result<Option<neo_block::TransactionState>> {
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
         Ok(None)
     }
 
@@ -261,9 +261,9 @@ pub trait NativeContract: Any + Send + Sync {
     /// `PolicyContract` overrides this.
     fn is_contract_blocked(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _contract_hash: &neo_primitives::UInt160,
-    ) -> Result<bool> {
+    ) -> CoreResult<bool> {
         Ok(false)
     }
 
@@ -274,8 +274,8 @@ pub trait NativeContract: Any + Send + Sync {
     /// owns the committee cache) overrides this.
     fn committee_address(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
-    ) -> Result<Option<neo_primitives::UInt160>> {
+        _snapshot: &neo_storage::DataCache,
+    ) -> CoreResult<Option<neo_primitives::UInt160>> {
         Ok(None)
     }
 
@@ -286,11 +286,11 @@ pub trait NativeContract: Any + Send + Sync {
     /// `PolicyContract` overrides this.
     fn whitelisted_fee(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _contract_hash: &neo_primitives::UInt160,
         _method: &str,
         _param_count: u32,
-    ) -> Result<Option<i64>> {
+    ) -> CoreResult<Option<i64>> {
         Ok(None)
     }
 
@@ -300,35 +300,35 @@ pub trait NativeContract: Any + Send + Sync {
     /// `OracleContract` overrides this.
     fn oracle_request_url(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _id: u64,
-    ) -> Result<Option<String>> {
+    ) -> CoreResult<Option<String>> {
         Ok(None)
     }
 
     fn oracle_request_original_tx(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _id: u64,
-    ) -> Result<Option<neo_primitives::UInt256>> {
+    ) -> CoreResult<Option<neo_primitives::UInt256>> {
         Ok(None)
     }
 
     /// Returns the URL of the oracle request, if any.
     fn oracle_request_url_full(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _id: u64,
-    ) -> Result<Option<OracleRequestDetails>> {
+    ) -> CoreResult<Option<OracleRequestDetails>> {
         Ok(None)
     }
 
     /// Returns the transaction state for a given transaction hash.
     fn transaction_state(
         &self,
-        _snapshot: &neo_data_cache::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _tx_hash: &neo_primitives::UInt256,
-    ) -> Result<Option<neo_block::TransactionState>> {
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
         Ok(None)
     }
 
@@ -360,7 +360,10 @@ pub struct OracleRequestDetails {
 impl OracleRequestDetails {
     /// Creates a new request detail.
     pub fn new(url: impl Into<String>, original_tx_id: neo_primitives::UInt256) -> Self {
-        Self { url: url.into(), original_tx_id }
+        Self {
+            url: url.into(),
+            original_tx_id,
+        }
     }
 }
 
@@ -443,10 +446,7 @@ impl NativeMethod {
     }
 
     /// Overrides the required call flags for this method.
-    pub fn with_required_call_flags(
-        mut self,
-        flags: neo_manifest::CallFlags,
-    ) -> Self {
+    pub fn with_required_call_flags(mut self, flags: neo_manifest::CallFlags) -> Self {
         self.required_call_flags = flags.bits();
         self
     }
@@ -685,7 +685,7 @@ pub fn build_native_contract_state<T: NativeContract + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_error::CoreError as Error;
+    use neo_error::CoreError;
     use std::collections::HashMap;
 
     /// Pins the C# v3.10.0 `NativeContract.IsActive` AND-form (PR #4520/#4524):
@@ -695,8 +695,14 @@ mod tests {
     #[test]
     fn is_active_for_matches_v3100_and_form() {
         fn method(active: Option<Hardfork>, deprecated: Option<Hardfork>) -> NativeMethod {
-            let mut m =
-                NativeMethod::new("m".to_string(), 0, true, 0, vec![], ContractParameterType::Void);
+            let mut m = NativeMethod::new(
+                "m".to_string(),
+                0,
+                true,
+                0,
+                vec![],
+                ContractParameterType::Void,
+            );
             if let Some(a) = active {
                 m = m.with_active_in(a);
             }
@@ -720,10 +726,26 @@ mod tests {
         assert!(is_active_for(&method(None, Some(g)), checker(vec![]), 0));
         assert!(!is_active_for(&method(None, Some(g)), checker(vec![g]), 0));
         // Both set: active(c) -> deprecated(g).
-        assert!(!is_active_for(&method(Some(c), Some(g)), checker(vec![]), 0)); // divergent: neither passed
-        assert!(is_active_for(&method(Some(c), Some(g)), checker(vec![c]), 0)); // active window
-        assert!(!is_active_for(&method(Some(c), Some(g)), checker(vec![c, g]), 0)); // divergent: both passed
-        assert!(!is_active_for(&method(Some(c), Some(g)), checker(vec![g]), 0)); // deprecated, not yet active
+        assert!(!is_active_for(
+            &method(Some(c), Some(g)),
+            checker(vec![]),
+            0
+        )); // divergent: neither passed
+        assert!(is_active_for(
+            &method(Some(c), Some(g)),
+            checker(vec![c]),
+            0
+        )); // active window
+        assert!(!is_active_for(
+            &method(Some(c), Some(g)),
+            checker(vec![c, g]),
+            0
+        )); // divergent: both passed
+        assert!(!is_active_for(
+            &method(Some(c), Some(g)),
+            checker(vec![g]),
+            0
+        )); // deprecated, not yet active
     }
 
     /// A minimal native contract exercising the event/parameter-name plumbing:
@@ -763,11 +785,7 @@ mod tests {
                 events: vec![
                     // Declared out of order on purpose: `events()` must sort by
                     // the order index, not the declaration index.
-                    NativeEvent::new(
-                        1,
-                        "Ungated",
-                        &[("value", ContractParameterType::Integer)],
-                    ),
+                    NativeEvent::new(1, "Ungated", &[("value", ContractParameterType::Integer)]),
                     NativeEvent::new(0, "Dual", &[("a", ContractParameterType::Integer)])
                         .with_deprecated_in(Hardfork::HfEchidna),
                     NativeEvent::new(
@@ -810,8 +828,8 @@ mod tests {
             _engine: &mut ApplicationEngine,
             _method: &str,
             _args: &[Vec<u8>],
-        ) -> Result<Vec<u8>> {
-            Err(Error::invalid_operation("MockNative is metadata-only"))
+        ) -> CoreResult<Vec<u8>> {
+            Err(CoreError::invalid_operation("MockNative is metadata-only"))
         }
 
         fn as_any(&self) -> &dyn Any {
@@ -837,14 +855,18 @@ mod tests {
         // order 0 before order 1 even though `Ungated` was declared first.
         let pre = contract.events(&settings, 0);
         assert_eq!(
-            pre.iter().map(|e| (e.name.as_str(), e.parameters.len())).collect::<Vec<_>>(),
+            pre.iter()
+                .map(|e| (e.name.as_str(), e.parameters.len()))
+                .collect::<Vec<_>>(),
             vec![("Dual", 1), ("Ungated", 1)]
         );
 
         // Post-Echidna: V0 drops out, V1 (two parameters) replaces it.
         let post = contract.events(&settings, 100);
         assert_eq!(
-            post.iter().map(|e| (e.name.as_str(), e.parameters.len())).collect::<Vec<_>>(),
+            post.iter()
+                .map(|e| (e.name.as_str(), e.parameters.len()))
+                .collect::<Vec<_>>(),
             vec![("Dual", 2), ("Ungated", 1)]
         );
 
@@ -856,7 +878,10 @@ mod tests {
         };
         let never = contract.events(&unscheduled, u32::MAX);
         assert_eq!(
-            never.iter().map(|e| (e.name.as_str(), e.parameters.len())).collect::<Vec<_>>(),
+            never
+                .iter()
+                .map(|e| (e.name.as_str(), e.parameters.len()))
+                .collect::<Vec<_>>(),
             vec![("Dual", 1), ("Ungated", 1)]
         );
     }
@@ -890,7 +915,11 @@ mod tests {
             .find(|m| m.name == "named")
             .expect("named method");
         assert_eq!(
-            named.parameters.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            named
+                .parameters
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["account", "value"]
         );
 
@@ -902,7 +931,11 @@ mod tests {
             .find(|m| m.name == "unnamed")
             .expect("unnamed method");
         assert_eq!(
-            unnamed.parameters.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            unnamed
+                .parameters
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["arg0"]
         );
 

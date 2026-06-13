@@ -3,11 +3,11 @@
 //! This module provides the base wallet trait and functionality,
 //! converted from the C# Neo Wallet class (@neo-sharp/src/Neo/Wallets/Wallet.cs).
 
-use neo_execution::Contract;
 use crate::{key_pair::KeyPair, version::Version, wallet_account::WalletAccount};
+use async_trait::async_trait;
+use neo_execution::Contract;
 use neo_payloads::Transaction;
 use neo_primitives::{UInt160, UInt256};
-use async_trait::async_trait;
 use std::sync::Arc;
 
 /// Result type for wallet operations
@@ -140,4 +140,3 @@ pub trait Wallet: Send + Sync {
     /// Sets the default account.
     async fn set_default_account(&self, script_hash: &UInt160) -> WalletResult<()>;
 }
-

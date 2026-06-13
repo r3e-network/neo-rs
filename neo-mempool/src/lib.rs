@@ -27,7 +27,7 @@
 //! Sits in **Layer 2 (service)**. Depends on:
 //!
 //! - `neo-payloads` (Layer 1) — for the `Transaction` data type.
-//! - `neo-data-cache` (Layer 1) — for the `DataCache` used during
+//! - `neo-storage` (Layer 1) — for the `DataCache` used during
 //!   state-dependent verification.
 //! - `neo-execution` (Layer 1) — for `ApplicationEngine` used during
 //!   witness verification (via the mempool's reverify path).

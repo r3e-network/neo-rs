@@ -10,7 +10,6 @@ impl From<InventoryType> for MessageCommand {
         match inv_type {
             InventoryType::Transaction => MessageCommand::Transaction,
             InventoryType::Block => MessageCommand::Block,
-            InventoryType::Consensus => MessageCommand::Extensible,
             InventoryType::Extensible => MessageCommand::Extensible,
         }
     }

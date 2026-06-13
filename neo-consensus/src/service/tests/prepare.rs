@@ -9,7 +9,7 @@ use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 
 use super::super::helpers::{
-    compute_header_hash, compute_merkle_root, compute_next_consensus_address,
+    compute_header_hash, compute_merkle_root, compute_next_consensus_address, current_timestamp,
 };
 
 #[test]
@@ -30,6 +30,41 @@ fn consensus_merkle_root_matches_core_merkle_tree() {
             MerkleTree::compute_root(&hashes).expect("non-empty merkle root")
         );
     }
+}
+
+#[tokio::test]
+async fn backup_prepare_request_with_transactions_requests_exact_hashes() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let tx_hashes = vec![UInt256::from([0x31; 32]), UInt256::from([0x32; 32])];
+    let prepare =
+        PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), 1_001, 99, tx_hashes.clone());
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        0,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        prepare.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[0]);
+
+    service.process_message(payload).unwrap();
+
+    let event = rx.try_recv().expect("proposal transaction request");
+    assert!(matches!(
+        event,
+        ConsensusEvent::RequestProposalTransactions {
+            block_index: 0,
+            transaction_hashes
+        } if transaction_hashes == tx_hashes
+    ));
+    assert!(rx.try_recv().is_err());
 }
 
 #[tokio::test]
@@ -123,6 +158,47 @@ async fn prepare_request_with_wrong_primary_rejected() {
 
     let result = service.process_message(payload);
     assert!(matches!(result, Err(ConsensusError::InvalidPrimary { .. })));
+}
+
+#[tokio::test]
+async fn primary_prepare_request_timestamp_is_after_previous_header() {
+    let network = 0x4E454F;
+    let (validators, keys) = create_validators_with_keys(4);
+    let (tx, mut rx) = mpsc::channel(100);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    let previous_timestamp = current_timestamp() + 60_000;
+    service
+        .start_with_previous_timestamp(0, 1_000, UInt256::zero(), previous_timestamp, 0)
+        .unwrap();
+    while rx.try_recv().is_ok() {}
+
+    service.on_transactions_received(Vec::new()).unwrap();
+
+    let mut prepare_payload = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event {
+            if payload.message_type == ConsensusMessageType::PrepareRequest {
+                prepare_payload = Some(payload);
+                break;
+            }
+        }
+    }
+    let payload = prepare_payload.expect("prepare request payload");
+    let msg = PrepareRequestMessage::deserialize_body(
+        &payload.data,
+        payload.block_index,
+        payload.view_number,
+        payload.validator_index,
+    )
+    .expect("prepare request message");
+
+    assert_eq!(
+        msg.timestamp,
+        previous_timestamp + 1,
+        "C# v3.10.0 clamps PrepareRequest timestamp to max(now, PrevHeader.Timestamp + 1)"
+    );
+    assert_eq!(service.context().proposed_timestamp, msg.timestamp);
 }
 
 #[tokio::test]
@@ -596,7 +672,10 @@ async fn committed_round_assembles_into_the_agreed_block() {
             }
         }
     }
-    let preparation_hash = service.context().preparation_hash.expect("preparation hash");
+    let preparation_hash = service
+        .context()
+        .preparation_hash
+        .expect("preparation hash");
 
     // PrepareResponses from validators 1..=2 (with the primary's prepare → M=3).
     for validator_index in 1..=2 {
@@ -613,7 +692,10 @@ async fn committed_round_assembles_into_the_agreed_block() {
         service.process_message(payload).unwrap();
     }
 
-    let block_hash = service.context().proposed_block_hash.expect("proposed block hash");
+    let block_hash = service
+        .context()
+        .proposed_block_hash
+        .expect("proposed block hash");
 
     // Commits from validators 1..=2 (with the primary's own commit → M=3 → committed).
     for validator_index in 1..=2 {
@@ -633,7 +715,10 @@ async fn committed_round_assembles_into_the_agreed_block() {
 
     let mut block_data = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BlockCommitted { block_data: data, .. } = event {
+        if let ConsensusEvent::BlockCommitted {
+            block_data: data, ..
+        } = event
+        {
             block_data = Some(data);
             break;
         }

@@ -90,9 +90,9 @@ pub mod legacy {
     //! `use neo_system::legacy::X;` as a first step. The eventual
     //! goal is to import directly from the canonical crate
     //! (`use neo_primitives::X;`, `use neo_payloads::X;`, …).
-    pub use neo_primitives::{BigDecimal, UInt160, UInt256};
-    pub use neo_payloads::{Block, Header, Signer, Transaction};
-    pub use neo_ledger_types::Witness;
     pub use neo_config::ProtocolSettings;
     pub use neo_error::{CoreError, CoreResult};
+    pub use neo_payloads::Witness;
+    pub use neo_payloads::{Block, Header, Signer, Transaction};
+    pub use neo_primitives::{BigDecimal, UInt160, UInt256};
 }

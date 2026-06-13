@@ -1,12 +1,12 @@
 //! Consensus service - the main dBFT state machine.
 
 mod accessors;
-mod core;
-mod handlers;
-mod helpers;
 mod block_data;
 mod consensus_command;
 mod consensus_event;
+mod core;
+mod handlers;
+mod helpers;
 mod lifecycle;
 mod proposal;
 

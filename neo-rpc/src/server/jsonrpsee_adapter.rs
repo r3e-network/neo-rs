@@ -1,27 +1,33 @@
-//! Optional jsonrpsee adapter for Neo JSON-RPC handlers.
+//! Canonical JSON-RPC transport for the Neo RPC server (jsonrpsee-based).
+//!
+//! Replaces the previous `warp`-based glue in `routes/`. The dispatch
+//! logic (`resolve_rpc_handler` / `invoke_rpc_handler`) now lives in
+//! `super::dispatch`, so the same panic-safe handler invocation is
+//! reused by both this jsonrpsee module and any future transport.
 
-use super::routes::{invoke_rpc_handler, resolve_rpc_handler};
+use super::dispatch::{invoke_rpc_handler, resolve_rpc_handler};
 use super::rpc_error::RpcError;
 use super::rpc_server::RpcServer;
+use jsonrpsee::RpcModule;
 use jsonrpsee::core::RegisterMethodError;
 use jsonrpsee::types::{ErrorObjectOwned, Params};
-use jsonrpsee::RpcModule;
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 
-/// Shared context used by the optional jsonrpsee RPC module.
+/// Shared context used by the jsonrpsee RPC module.
 #[derive(Clone)]
 pub struct JsonRpseeContext {
     server: Weak<RwLock<RpcServer>>,
-    disabled: Arc<HashSet<String>>}
+    disabled: Arc<HashSet<String>>,
+}
 
 impl JsonRpseeContext {
     #[must_use]
     pub fn new(server: Weak<RwLock<RpcServer>>, disabled: Arc<HashSet<String>>) -> Self {
-        Self {server, disabled}
-   }
+        Self { server, disabled }
+    }
 }
 
 pub fn build_jsonrpsee_module(
@@ -35,19 +41,43 @@ pub fn build_jsonrpsee_module_with_disabled(
     disabled: Arc<HashSet<String>>,
 ) -> Result<RpcModule<JsonRpseeContext>, RegisterMethodError> {
     let methods = registered_public_methods(&server);
+    build_jsonrpsee_module_with_methods(server, disabled, methods)
+}
+
+/// Builds the jsonrpsee module from a **precomputed** public-method list.
+///
+/// `RpcServer::start_rpc_server` runs under the server's own write lock (it is
+/// invoked as `server.write().start_rpc_server(...)`), so it must NOT upgrade +
+/// read the `Weak<RwLock<RpcServer>>` to collect method names — that re-locks
+/// the same non-reentrant `parking_lot::RwLock` on the same thread and
+/// deadlocks RPC startup. It collects the names from `&self` via
+/// [`public_method_names`] and passes them in here instead.
+pub fn build_jsonrpsee_module_with_methods(
+    server: Weak<RwLock<RpcServer>>,
+    disabled: Arc<HashSet<String>>,
+    methods: Vec<String>,
+) -> Result<RpcModule<JsonRpseeContext>, RegisterMethodError> {
     let mut module = RpcModule::new(JsonRpseeContext::new(server, disabled));
     for method in methods {
         register_neo_method(&mut module, method)?;
-   }
+    }
     Ok(module)
 }
 
 fn registered_public_methods(server: &Weak<RwLock<RpcServer>>) -> Vec<String> {
     let Some(server) = server.upgrade() else {
         return Vec::new();
-   };
+    };
+    public_method_names(&server.read())
+}
 
-    let server = server.read();
+/// Collects the sorted, deduplicated names of the public (non-auth) handlers
+/// directly from a `&RpcServer`, taking only the inner handler-map lock.
+///
+/// Used both by [`registered_public_methods`] (after acquiring an outer read
+/// lock) and by `RpcServer::start_rpc_server` (which already holds the outer
+/// write lock and therefore cannot acquire the outer read lock).
+pub fn public_method_names(server: &RpcServer) -> Vec<String> {
     let handlers = server.handlers_guard();
     let mut methods = handlers
         .values()
@@ -72,7 +102,7 @@ fn register_neo_method(
             move |params, context, _| {
                 let params = parse_array_params(params)?;
                 dispatch(&context, method, params.as_slice())
-           },
+            },
         )
         .map(|_| ())
 }
@@ -91,18 +121,19 @@ fn dispatch(
 fn parse_array_params(params: Params<'_>) -> Result<Vec<Value>, ErrorObjectOwned> {
     let Some(raw) = params.as_str() else {
         return Ok(Vec::new());
-   };
+    };
 
     if raw.is_empty() {
         return Ok(Vec::new());
-   }
+    }
 
     match serde_json::from_str::<Value>(raw) {
         Ok(Value::Array(values)) => Ok(values),
         Ok(_) => Err(error_object(RpcError::invalid_request())),
         Err(err) => Err(error_object(
             RpcError::invalid_params().with_data(err.to_string()),
-        ))}
+        )),
+    }
 }
 
 fn error_object(error: RpcError) -> ErrorObjectOwned {

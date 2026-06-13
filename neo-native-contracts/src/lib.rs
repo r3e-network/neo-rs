@@ -18,16 +18,18 @@
 //! serialization) so the Rust native-contract surface is
 //! byte-compatible with the canonical C# node.
 
-#![allow(missing_docs)]
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(deprecated)]
 
 pub use neo_execution::{
-    is_active_for, HardforkActivable, NativeContract, NativeContractsCache,
-    NativeContractsCacheEntry, NativeEvent, NativeMethod, NativeRegistry,
+    HardforkActivable, NativeContract, NativeContractsCache, NativeContractsCacheEntry,
+    NativeEvent, NativeMethod, NativeRegistry, is_active_for,
 };
 
+mod catalog;
 pub mod contract_management;
 pub mod crypto_lib;
 mod dotnet_graphemes;
@@ -40,13 +42,20 @@ pub mod neo_token;
 pub mod notary;
 pub mod oracle_contract;
 pub mod policy_contract;
-pub mod role;
 pub mod provider;
+
+pub(crate) mod args;
+pub(crate) mod committee;
+pub(crate) mod keys;
+
+#[cfg(test)]
+pub(crate) mod test_support;
+pub mod role;
 pub mod role_management;
 pub mod std_lib;
 pub mod treasury;
 
-pub use provider::{install, StandardNativeProvider};
+pub use catalog::{StandardNativeContractSpec, standard_native_contract_specs};
 pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
 pub use gas_token::GasToken;
@@ -55,15 +64,11 @@ pub use neo_token::NeoToken;
 pub use notary::Notary;
 pub use oracle_contract::{OracleContract, OracleRequest};
 pub use policy_contract::PolicyContract;
+pub use provider::{StandardNativeProvider, install};
 pub use role::Role;
 pub use role_management::RoleManagement;
 pub use std_lib::StdLib;
 pub use treasury::Treasury;
-
-// Helper module
-pub mod helpers {
-    pub use neo_execution::native_registry::NativeRegistry as NativeHelpers;
-}
 
 /// Reads a native-contract integer setting from `snapshot` under
 /// `(contract_id, prefix)`, returning `default` when the key is absent.

@@ -9,20 +9,20 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use hex::{decode as hex_decode, encode as hex_encode};
+use neo_crypto::{ECCurve, ECPoint};
 use neo_io::macros::{OptionExt, ValidateLength};
 use neo_io::serializable::helper::{
     deserialize_array, deserialize_array_with, get_var_size_for_slice,
     get_var_size_serializable_slice, serialize_array, serialize_array_with,
 };
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_vm::Interoperable;
-use neo_vm::StackItem;
+use neo_p2p::witness_rule::WitnessCondition;
 use neo_p2p::witness_rule::{WitnessRule, WitnessRuleAction};
 use neo_primitives::WitnessScope;
-use neo_p2p::witness_rule::WitnessCondition;
-use neo_crypto::{ECCurve, ECPoint};
-use hex::{decode as hex_decode, encode as hex_encode};
-use neo_primitives::{UInt160, UINT160_SIZE};
+use neo_primitives::{UINT160_SIZE, UInt160};
+use neo_vm::Interoperable;
+use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 // Hash and Hasher now provided by impl_hash_for_fields macro

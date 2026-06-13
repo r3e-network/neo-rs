@@ -9,18 +9,14 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::{inventory::Inventory, witness::Witness, InventoryType};
+use super::{InventoryType, inventory::Inventory, witness::Witness};
+use neo_error::CoreResult;
 use neo_io::macros::ValidateLength;
 use neo_io::serializable::helper::{get_var_size, get_var_size_bytes, get_var_size_str};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_data_cache::DataCache;
-use neo_config::ProtocolSettings;
-use neo_error::CoreResult;
 use neo_primitives::{UInt160, UInt256};
-use neo_primitives::error::PrimitiveResult;
+use neo_storage::DataCache;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
-use std::collections::HashSet;
 
 const MAX_CATEGORY_LENGTH: usize = 32;
 const MAX_DATA_LENGTH: usize = 0x0100_0000; // 16 MB, matches C# ReadVarMemory upper bound
@@ -65,7 +61,6 @@ impl ExtensiblePayload {
     }
 
     /// Verify the payload against protocol settings and snapshot.
-
 
     /// Returns the cached hash of the payload, computing it if necessary.
     pub fn ensure_hash(&mut self) -> UInt256 {
@@ -189,8 +184,6 @@ impl Inventory for ExtensiblePayload {
     }
 }
 
-
-
 impl crate::VerifiableExt for ExtensiblePayload {
     /// C# `ExtensiblePayload.GetScriptHashesForVerifying`: the single hash to
     /// verify is the payload's `Sender`.
@@ -198,11 +191,11 @@ impl crate::VerifiableExt for ExtensiblePayload {
         vec![self.sender]
     }
 
-    fn witnesses(&self) -> Vec<&neo_ledger_types::Witness> {
+    fn witnesses(&self) -> Vec<&crate::Witness> {
         vec![&self.witness]
     }
 
-    fn witnesses_mut(&mut self) -> Vec<&mut neo_ledger_types::Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut crate::Witness> {
         vec![&mut self.witness]
     }
 }
@@ -279,18 +272,23 @@ mod tests {
 
         let expected = payload.try_hash().expect("try hash");
 
-        assert_eq!(neo_primitives::Verifiable::hash(&payload).unwrap(), expected);
+        assert_eq!(
+            neo_primitives::Verifiable::hash(&payload).unwrap(),
+            expected
+        );
     }
 }
 
-
-
-
 impl neo_primitives::Verifiable for ExtensiblePayload {
     fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
-        let data = self.try_get_hash_data()
-            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(format!("extensible payload serialization failed: {e}")))?;
-        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(&data)))
+        let data = self.try_get_hash_data().map_err(|e| {
+            neo_primitives::error::PrimitiveError::invalid_data(format!(
+                "extensible payload serialization failed: {e}"
+            ))
+        })?;
+        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
+            &data,
+        )))
     }
     fn hash_data(&self) -> Vec<u8> {
         let mut writer = neo_io::BinaryWriter::new();

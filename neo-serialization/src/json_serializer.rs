@@ -2,8 +2,8 @@
 
 //! JsonSerializer - mirrors `Neo.SmartContract.JsonSerializer`.
 
-use neo_vm::stack_item::{Array, Map as MapItem, Struct};
 use neo_vm::StackItem;
+use neo_vm::stack_item::{Array, Map as MapItem, Struct};
 use neo_vm_rs::StackItemType;
 use num_bigint::BigInt;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
@@ -15,6 +15,7 @@ pub struct JsonSerializer;
 impl JsonSerializer {
     /// Maximum safe integer representable without loss in JSON.
     pub const MAX_SAFE_INTEGER: i64 = 9007199254740991;
+    /// Minimum safe integer representable without loss in JSON.
     pub const MIN_SAFE_INTEGER: i64 = -9007199254740991;
 
     /// Serializes a [`StackItem`] to a UTF-8 JSON byte vector, matching C# Neo's
@@ -38,7 +39,7 @@ impl JsonSerializer {
     /// Encodes a `serde_json::Value` to UTF-8 JSON bytes byte-identically with
     /// C# Neo's `System.Text.Json` default output (`JavaScriptEncoder.Default`).
     ///
-    /// Delegates to [`neo_json::escape`], whose `CSharpEscapeFormatter` reproduces
+    /// Delegates to [`crate::json::escape`], whose `CSharpEscapeFormatter` reproduces
     /// the default encoder exactly: the quote is emitted as `"` (not `\"`),
     /// `\`/`\b`/`\f`/`\n`/`\r`/`\t` use their short forms, `/` is left unescaped,
     /// and `<` `>` `&` `'` `+` `` ` `` plus every non-ASCII code point are emitted
@@ -49,7 +50,7 @@ impl JsonSerializer {
         // serde_json::Value serialization writes only to the in-memory buffer and
         // cannot fail, so the (impossible) error is surfaced as a panic guarding
         // the invariant rather than silently corrupting output.
-        neo_json::escape::to_vec(value, false)
+        crate::json::escape::to_vec(value, false)
             .expect("serde_json::Value serializes to an in-memory buffer infallibly")
     }
 
@@ -161,7 +162,11 @@ impl JsonSerializer {
     /// bounds the total produced item count (C# `JsonSerializer.Deserialize`
     /// decrements `engine.Limits.MaxStackSize`, default 2048, once per item and
     /// once per map entry, faulting when exhausted). Both faults match C#.
-    pub fn deserialize(json: &[u8], max_depth: usize, max_items: usize) -> Result<StackItem, String> {
+    pub fn deserialize(
+        json: &[u8],
+        max_depth: usize,
+        max_items: usize,
+    ) -> Result<StackItem, String> {
         let value: JsonValue = serde_json::from_slice(json).map_err(|e| e.to_string())?;
         Self::deserialize_from_json(&value, max_depth, max_items)
     }
@@ -230,7 +235,12 @@ impl JsonSerializer {
             JsonValue::Array(arr) => {
                 let mut items = Vec::with_capacity(arr.len());
                 for element in arr {
-                    items.push(Self::deserialize_internal(element, depth + 1, max_depth, remaining)?);
+                    items.push(Self::deserialize_internal(
+                        element,
+                        depth + 1,
+                        max_depth,
+                        remaining,
+                    )?);
                 }
                 Ok(StackItem::from_array(items))
             }
@@ -278,30 +288,48 @@ mod tests {
         // C# UT_StdLib.Json_Serialize.
         assert_eq!(ser(&StackItem::from_int(BigInt::from(5))), "5");
         assert_eq!(ser(&StackItem::from_bool(true)), "true");
-        assert_eq!(ser(&StackItem::from_byte_string(b"test".to_vec())), "\"test\"");
+        assert_eq!(
+            ser(&StackItem::from_byte_string(b"test".to_vec())),
+            "\"test\""
+        );
         assert_eq!(ser(&StackItem::null()), "null");
         // Map{"key":"value"} (built via deserialize) round-trips compactly.
-        assert_eq!(ser(&de(r#"{"key":"value"}"#).unwrap()), r#"{"key":"value"}"#);
+        assert_eq!(
+            ser(&de(r#"{"key":"value"}"#).unwrap()),
+            r#"{"key":"value"}"#
+        );
     }
 
     #[test]
     fn serialize_escapes_like_system_text_json() {
         // JavaScriptEncoder.Default: quote -> ", '<'/'>' -> </>,
         // all non-ASCII -> \uXXXX (uppercase), but short forms for \n \t \\.
-        assert_eq!(ser(&StackItem::from_byte_string(b"a\"b".to_vec())), "\"a\\u0022b\"");
+        assert_eq!(
+            ser(&StackItem::from_byte_string(b"a\"b".to_vec())),
+            "\"a\\u0022b\""
+        );
         assert_eq!(
             ser(&StackItem::from_byte_string("<x>".as_bytes().to_vec())),
             "\"\\u003Cx\\u003E\""
         );
-        assert_eq!(ser(&StackItem::from_byte_string("中".as_bytes().to_vec())), "\"\\u4E2D\"");
-        assert_eq!(ser(&StackItem::from_byte_string(b"\n\t\\".to_vec())), r#""\n\t\\""#);
+        assert_eq!(
+            ser(&StackItem::from_byte_string("中".as_bytes().to_vec())),
+            "\"\\u4E2D\""
+        );
+        assert_eq!(
+            ser(&StackItem::from_byte_string(b"\n\t\\".to_vec())),
+            r#""\n\t\\""#
+        );
     }
 
     #[test]
     fn serialize_rejects_out_of_safe_range_integer() {
         // C# throws when the integer leaves the JS safe-integer range.
         let too_big = BigInt::from(JsonSerializer::MAX_SAFE_INTEGER) + 1;
-        assert!(JsonSerializer::serialize_to_byte_array(&StackItem::from_int(too_big), 1 << 20).is_err());
+        assert!(
+            JsonSerializer::serialize_to_byte_array(&StackItem::from_int(too_big), 1 << 20)
+                .is_err()
+        );
     }
 
     #[test]

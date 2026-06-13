@@ -22,9 +22,12 @@ pub use attributes::attribute_from_json;
 pub(crate) use nep::{
     NepBalanceFieldRefs, NepTransferFieldRefs, balance_list_to_json, insert_nep_balance_fields,
     insert_nep_transfer_fields, parse_balance_list, parse_nep_balance_fields,
-    parse_nep_transfer_fields, parse_transfer_lists, transfer_lists_to_json};
-pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
+    parse_nep_transfer_fields, parse_transfer_lists, transfer_lists_to_json,
+};
 pub use parsing::optional_string;
+pub use parsing::JsonParseError;
+pub use stack::StackParseError;
+pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 #[allow(unused_imports)]
 pub use parsing::{
     cloned_token_array, empty_array, insert_optional_string, jtoken_to_serde, object_array,
@@ -35,24 +38,26 @@ pub use parsing::{
     parse_oracle_response_code, parse_script_hash_or_address, parse_string_array_lossy,
     parse_u32_token, parse_u64_token, parse_uint256_array_lossy, required_address_script_hash,
     required_bigint_string, required_script_hash_or_address, required_string, required_u16_number,
-    required_u32_number, required_u64_number, required_uint256, token_array};
+    required_u32_number, required_u64_number, required_uint256, token_array,
+};
 pub use stack::{stack_items_from_json_field, stack_items_to_json};
 #[allow(unused_imports)]
 pub use witness::{
-    payload_witness_from_json, payload_witness_to_json, scripts_to_witness_json, witness_to_json};
+    payload_witness_from_json, payload_witness_to_json, scripts_to_witness_json, witness_to_json,
+};
 #[allow(unused_imports)]
 pub use witness_rule::rule_from_json;
 
 use neo_config::ProtocolSettings;
-use neo_native_contracts::NativeRegistry;
-use neo_wallets::wallet_helper as WalletHelper;
-use neo_payloads::{Block, BlockHeader, Transaction, Witness};
 use neo_crypto::{ECCurve, ECPoint};
-use neo_wallets::KeyPair;
-use neo_execution::{Contract};
-use neo_json::{JObject, JToken};
+use neo_execution::Contract;
+use neo_native_contracts::NativeRegistry;
+use neo_payloads::{Block, BlockHeader, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256};
+use neo_serialization::json::{JObject, JToken};
 use neo_vm_rs::StackValue;
+use neo_wallets::KeyPair;
+use neo_wallets::wallet_helper as WalletHelper;
 use num_bigint::BigInt;
 use std::sync::OnceLock;
 
@@ -75,7 +80,7 @@ impl RpcUtility {
             }
             registry
         })
-   }
+    }
 
     /// Converts a `JToken` to a script hash
     /// Matches C# `ToScriptHash` extension
@@ -87,10 +92,10 @@ impl RpcUtility {
 
         if address_or_script_hash.len() < 40 && !address_or_script_hash.starts_with("0x") {
             WalletHelper::to_script_hash(&address_or_script_hash, protocol_settings.address_version)
-       } else {
+        } else {
             UInt160::parse(&address_or_script_hash).map_err(|e| e.to_string())
-       }
-   }
+        }
+    }
 
     /// Converts an address or script hash string to script hash string
     /// Matches C# `AsScriptHash` extension
@@ -101,24 +106,25 @@ impl RpcUtility {
                 || address_or_script_hash == contract.id().to_string()
             {
                 return contract.hash().to_string();
-           }
-       }
+            }
+        }
 
         if address_or_script_hash.len() < 40 {
             address_or_script_hash.to_string()
-       } else {
+        } else {
             match UInt160::parse(address_or_script_hash) {
                 Ok(hash) => hash.to_string(),
-                Err(_) => address_or_script_hash.to_string()}
-       }
-   }
+                Err(_) => address_or_script_hash.to_string(),
+            }
+        }
+    }
 
     /// Parse WIF or private key hex string to `KeyPair`
     /// Matches C# `GetKeyPair`
     pub fn key_pair(key: &str) -> Result<KeyPair, String> {
         if key.is_empty() {
             return Err("Key cannot be empty".to_string());
-       }
+        }
 
         let key = key.strip_prefix("0x").unwrap_or(key);
 
@@ -126,14 +132,15 @@ impl RpcUtility {
             52 => {
                 // WIF format
                 KeyPair::from_wif(key).map_err(|e| e.to_string())
-           }
+            }
             64 => {
                 // Hex private key
                 let bytes = hex::decode(key).map_err(|e| e.to_string())?;
                 KeyPair::from_private_key(&bytes).map_err(|e| e.to_string())
-           }
-            _ => Err("Invalid key format".to_string())}
-   }
+            }
+            _ => Err("Invalid key format".to_string()),
+        }
+    }
 
     /// Parse address, scripthash or public key string to `UInt160`
     /// Matches C# `GetScriptHash`
@@ -143,7 +150,7 @@ impl RpcUtility {
     ) -> Result<UInt160, String> {
         if account.is_empty() {
             return Err("Account cannot be empty".to_string());
-       }
+        }
 
         let account = account.strip_prefix("0x").unwrap_or(account);
 
@@ -151,11 +158,11 @@ impl RpcUtility {
             34 => {
                 // Address
                 WalletHelper::to_script_hash(account, protocol_settings.address_version)
-           }
+            }
             40 => {
                 // Script hash
                 UInt160::parse(account).map_err(|e| e.to_string())
-           }
+            }
             66 => {
                 // Public key - Neo N3 uses secp256r1 (NIST P-256) curve
                 let key_bytes =
@@ -164,15 +171,16 @@ impl RpcUtility {
                     .map_err(|err| err.to_string())?;
                 let script = Contract::create_signature_redeem_script(point);
                 Ok(UInt160::from_script(&script))
-           }
-            _ => Err("Invalid account format".to_string())}
-   }
+            }
+            _ => Err("Invalid account format".to_string()),
+        }
+    }
 
     /// Converts a block to JSON representation.
     #[must_use]
     pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JObject {
         tx_json::block_to_json(block, protocol_settings)
-   }
+    }
 
     /// Parses a block header from JSON
     pub fn header_from_json(
@@ -181,24 +189,24 @@ impl RpcUtility {
     ) -> Result<BlockHeader, String> {
         let version = json
             .get("version")
-            .and_then(neo_json::JToken::as_number)
+            .and_then(neo_serialization::json::JToken::as_number)
             .ok_or("Missing or invalid 'version' field")? as u32;
 
         let previous_hash = json
             .get("previousblockhash")
-            .and_then(neo_json::JToken::as_string)
+            .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|value| UInt256::parse(&value).ok())
             .ok_or("Missing or invalid 'previousblockhash' field")?;
 
         let merkle_root = json
             .get("merkleroot")
-            .and_then(neo_json::JToken::as_string)
+            .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|value| UInt256::parse(&value).ok())
             .ok_or("Missing or invalid 'merkleroot' field")?;
 
         let timestamp = json
             .get("time")
-            .and_then(neo_json::JToken::as_number)
+            .and_then(neo_serialization::json::JToken::as_number)
             .ok_or("Missing or invalid 'time' field")? as u64;
 
         let nonce_token = json
@@ -208,17 +216,17 @@ impl RpcUtility {
 
         let index = json
             .get("index")
-            .and_then(neo_json::JToken::as_number)
+            .and_then(neo_serialization::json::JToken::as_number)
             .ok_or("Missing or invalid 'index' field")? as u32;
 
         let primary_index = json
             .get("primary")
-            .and_then(neo_json::JToken::as_number)
+            .and_then(neo_serialization::json::JToken::as_number)
             .ok_or("Missing or invalid 'primary' field")? as u8;
 
         let next_consensus_text = json
             .get("nextconsensus")
-            .and_then(neo_json::JToken::as_string)
+            .and_then(neo_serialization::json::JToken::as_string)
             .ok_or("Missing or invalid 'nextconsensus' field")?;
         let next_consensus = Self::get_script_hash(&next_consensus_text, protocol_settings)
             .map_err(|err| format!("Invalid 'nextconsensus' field in block header: {err}"))?;
@@ -232,7 +240,7 @@ impl RpcUtility {
                     .as_object()
                     .ok_or_else(|| "Witness entry must be an object".to_string())?;
                 Self::witness_from_json(obj)
-           },
+            },
         )?;
 
         Ok(BlockHeader::new_with_witnesses(
@@ -246,7 +254,7 @@ impl RpcUtility {
             next_consensus,
             witnesses,
         ))
-   }
+    }
 
     /// Converts JSON to a block
     /// Matches C# `BlockFromJson`
@@ -255,13 +263,13 @@ impl RpcUtility {
         protocol_settings: &ProtocolSettings,
     ) -> Result<Block, String> {
         tx_json::block_from_json(json, protocol_settings, Self::header_from_json)
-   }
+    }
 
     /// Converts a transaction to JSON
     /// Matches C# `TransactionToJson`
     pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSettings) -> JObject {
         tx_json::transaction_to_json(tx, protocol_settings)
-   }
+    }
 
     /// Converts JSON to a transaction
     /// Matches C# `TransactionFromJson`
@@ -270,38 +278,38 @@ impl RpcUtility {
         protocol_settings: &ProtocolSettings,
     ) -> Result<Transaction, String> {
         tx_json::transaction_from_json(json, protocol_settings)
-   }
+    }
 
-    /// Converts a `neo-json` representation of a stack item into `neo-vm-rs`.
+    /// Converts a `neo-serialization::json` representation of a stack item into `neo-vm-rs`.
     pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
-        stack::stack_item_from_json(json)
-   }
+        stack::stack_item_from_json(json).map_err(|e| e.to_string())
+    }
 
-    /// Converts a `neo-vm-rs` stack value into a `neo-json` representation.
+    /// Converts a `neo-vm-rs` stack value into a `neo-serialization::json` representation.
     pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
         stack::stack_item_to_json(item)
-   }
+    }
 
     /// Converts an RPC stack value using the same integer rules as local VM clients.
     pub fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
         stack::stack_value_to_bigint(value)
-   }
+    }
 
     /// Converts an RPC stack value using NeoVM truthiness rules.
     #[must_use]
     pub fn stack_value_to_bool(value: &StackValue) -> bool {
         stack::stack_value_to_bool(value)
-   }
+    }
 
     /// Converts an RPC stack value to a display/API string.
     pub fn stack_value_to_string(value: &StackValue) -> Result<String, String> {
         stack::stack_value_to_string(value)
-   }
+    }
 
     /// Creates a witness from JSON (invocation/verification scripts encoded as base64).
     pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
         witness::witness_from_json(json)
-   }
+    }
 
     /// Parses a witness rule from JSON (RPC utility parity).
     pub fn rule_from_json(
@@ -309,7 +317,7 @@ impl RpcUtility {
         protocol_settings: &ProtocolSettings,
     ) -> Result<neo_payloads::WitnessRule, String> {
         witness_rule::rule_from_json(json, protocol_settings)
-   }
+    }
 }
 
 /// Public wrappers matching the historical `crate::utility::function` style.
@@ -350,13 +358,13 @@ pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::engine::general_purpose::STANDARD as BASE64;
     use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use neo_p2p::WitnessCondition;
     use neo_payloads::OracleResponseCode;
     use neo_payloads::{Signer, TransactionAttribute};
-use neo_p2p::{WitnessCondition};
-    use neo_json::JArray;
-    use neo_primitives::{UInt256, WitnessScope, ADDRESS_SIZE};
+    use neo_primitives::{ADDRESS_SIZE, UInt256, WitnessScope};
+    use neo_serialization::json::JArray;
 
     #[test]
     fn to_script_hash_accepts_address() {
@@ -371,7 +379,7 @@ use neo_p2p::{WitnessCondition};
                 .unwrap(),
             hash
         );
-   }
+    }
 
     #[test]
     fn get_script_hash_accepts_public_key_hex() {
@@ -389,7 +397,7 @@ use neo_p2p::{WitnessCondition};
             RpcUtility::get_script_hash(&pubkey_hex, &ProtocolSettings::default_settings())
                 .unwrap();
         assert_eq!(parsed, expected_hash);
-   }
+    }
 
     #[test]
     fn get_key_pair_accepts_wif_and_hex() {
@@ -406,7 +414,7 @@ use neo_p2p::{WitnessCondition};
         let hex_prefixed = format!("0x{hex_key}");
         let parsed = RpcUtility::key_pair(&hex_prefixed).expect("hex parse");
         assert_eq!(parsed, expected);
-   }
+    }
 
     #[test]
     fn get_key_pair_rejects_invalid_input() {
@@ -415,7 +423,7 @@ use neo_p2p::{WitnessCondition};
 
         let err = RpcUtility::key_pair("00").expect_err("invalid");
         assert_eq!(err, "Invalid key format");
-   }
+    }
 
     #[test]
     fn get_script_hash_accepts_hash_and_rejects_invalid() {
@@ -439,7 +447,7 @@ use neo_p2p::{WitnessCondition};
         let err = RpcUtility::get_script_hash("00", &ProtocolSettings::default_settings())
             .expect_err("invalid");
         assert_eq!(err, "Invalid account format");
-   }
+    }
 
     #[test]
     fn as_script_hash_maps_native_contract_name_and_id() {
@@ -455,7 +463,7 @@ use neo_p2p::{WitnessCondition};
 
         assert_eq!(RpcUtility::as_script_hash(&name), expected_hash);
         assert_eq!(RpcUtility::as_script_hash(&id), expected_hash);
-   }
+    }
 
     #[test]
     fn witness_roundtrip_from_json() {
@@ -474,7 +482,7 @@ use neo_p2p::{WitnessCondition};
         let witness = RpcUtility::witness_from_json(&obj).expect("witness");
         assert_eq!(witness.invocation_script(), invocation);
         assert_eq!(witness.verification_script(), verification);
-   }
+    }
 
     #[test]
     fn stack_item_parses_boolean() {
@@ -484,7 +492,7 @@ use neo_p2p::{WitnessCondition};
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
         assert!(matches!(item, StackValue::Boolean(true)));
-   }
+    }
 
     #[test]
     fn stack_item_parses_interop_interface_without_value() {
@@ -497,7 +505,7 @@ use neo_p2p::{WitnessCondition};
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
         assert!(matches!(item, StackValue::Interop(0)));
-   }
+    }
 
     #[test]
     fn stack_item_parses_bytestring_and_buffer() {
@@ -515,7 +523,7 @@ use neo_p2p::{WitnessCondition};
         buffer.insert("value".to_string(), JToken::String(encoded));
         let item = RpcUtility::stack_item_from_json(&buffer).expect("buffer");
         assert_eq!(item.as_bytes().expect("buffer bytes"), bytes);
-   }
+    }
 
     #[test]
     fn stack_item_parses_pointer_and_any() {
@@ -530,7 +538,7 @@ use neo_p2p::{WitnessCondition};
         any.insert("type".to_string(), JToken::String("Any".to_string()));
         let item = RpcUtility::stack_item_from_json(&any).expect("any");
         assert!(matches!(item, StackValue::Null));
-   }
+    }
 
     #[test]
     fn stack_item_parses_any_with_value() {
@@ -539,7 +547,7 @@ use neo_p2p::{WitnessCondition};
         any.insert("value".to_string(), JToken::String("data".to_string()));
         let item = RpcUtility::stack_item_from_json(&any).expect("any");
         assert_eq!(item.as_bytes().expect("bytes"), b"data");
-   }
+    }
 
     #[test]
     fn stack_item_fallbacks_for_unknown_type() {
@@ -554,7 +562,7 @@ use neo_p2p::{WitnessCondition};
         empty.insert("type".to_string(), JToken::String("Unknown".to_string()));
         let item = RpcUtility::stack_item_from_json(&empty).expect("fallback null");
         assert!(matches!(item, StackValue::Null));
-   }
+    }
 
     #[test]
     fn transaction_roundtrip_json() {
@@ -589,7 +597,7 @@ use neo_p2p::{WitnessCondition};
         assert_eq!(parsed.signers().len(), 1);
         assert_eq!(parsed.signers()[0].account, signer.account);
         assert_eq!(parsed.witnesses().len(), 1);
-   }
+    }
 
     #[test]
     fn transaction_from_json_rejects_empty_optional_array_entries() {
@@ -603,14 +611,12 @@ use neo_p2p::{WitnessCondition};
             let mut json = JObject::new();
             json.insert(field.to_string(), JToken::Array(entries));
 
-            let err = RpcUtility::transaction_from_json(
-                &json,
-                &ProtocolSettings::default_settings(),
-            )
-            .expect_err("empty array slot should fail");
+            let err =
+                RpcUtility::transaction_from_json(&json, &ProtocolSettings::default_settings())
+                    .expect_err("empty array slot should fail");
             assert_eq!(err, expected);
-       }
-   }
+        }
+    }
 
     #[test]
     fn block_roundtrip_json() {
@@ -644,7 +650,7 @@ use neo_p2p::{WitnessCondition};
             parsed.header.witness.invocation_script(),
             witness.invocation_script()
         );
-   }
+    }
 
     #[test]
     fn header_from_json_rejects_empty_witness_entry() {
@@ -662,7 +668,10 @@ use neo_p2p::{WitnessCondition};
             JToken::String(UInt256::zero().to_string()),
         );
         json.insert("time".to_string(), JToken::Number(123.0));
-        json.insert("nonce".to_string(), JToken::String(format!("{:016X}", 42u64)));
+        json.insert(
+            "nonce".to_string(),
+            JToken::String(format!("{:016X}", 42u64)),
+        );
         json.insert("index".to_string(), JToken::Number(5.0));
         json.insert("primary".to_string(), JToken::Number(0.0));
         json.insert(
@@ -674,7 +683,7 @@ use neo_p2p::{WitnessCondition};
         let err = RpcUtility::header_from_json(&json, &ProtocolSettings::default_settings())
             .expect_err("empty witness slot should fail");
         assert_eq!(err, "Witness entry must be an object");
-   }
+    }
 
     #[test]
     fn transaction_roundtrip_with_custom_signer() {
@@ -708,21 +717,23 @@ use neo_p2p::{WitnessCondition};
         assert_eq!(parsed.signers().len(), 1);
         let parsed_signer = &parsed.signers()[0];
         assert_eq!(parsed_signer.account, signer.account);
-        assert!(parsed_signer
-            .scopes
-            .contains(WitnessScope::CUSTOM_CONTRACTS));
+        assert!(
+            parsed_signer
+                .scopes
+                .contains(WitnessScope::CUSTOM_CONTRACTS)
+        );
         assert_eq!(parsed_signer.allowed_contracts, signer.allowed_contracts);
         assert_eq!(parsed_signer.allowed_groups.len(), 1);
         assert_eq!(parsed_signer.rules.len(), 1);
-   }
+    }
 
     #[test]
     fn transaction_roundtrip_preserves_attributes() {
+        use neo_payloads::OracleResponseCode;
         use neo_payloads::conflicts::Conflicts;
         use neo_payloads::not_valid_before::NotValidBefore;
         use neo_payloads::notary_assisted::NotaryAssisted;
         use neo_payloads::oracle_response::OracleResponse;
-        use neo_payloads::OracleResponseCode;
 
         let mut tx = Transaction::new();
         tx.set_nonce(1);
@@ -754,27 +765,27 @@ use neo_p2p::{WitnessCondition};
         ));
         if let TransactionAttribute::NotValidBefore(nvb) = &parsed.attributes()[1] {
             assert_eq!(nvb.height, 42);
-       } else {
+        } else {
             panic!("expected NotValidBefore");
-       }
+        }
         if let TransactionAttribute::Conflicts(conflicts) = &parsed.attributes()[2] {
             assert_eq!(conflicts.hash, UInt256::zero());
-       } else {
+        } else {
             panic!("expected Conflicts");
-       }
+        }
         if let TransactionAttribute::NotaryAssisted(notary) = &parsed.attributes()[3] {
             assert_eq!(notary.nkeys, 3);
-       } else {
+        } else {
             panic!("expected NotaryAssisted");
-       }
+        }
         if let TransactionAttribute::OracleResponse(resp) = &parsed.attributes()[4] {
             assert_eq!(resp.id, 7);
             assert_eq!(resp.code, OracleResponseCode::Timeout);
             assert_eq!(resp.result, b"result");
-       } else {
+        } else {
             panic!("expected OracleResponse");
-       }
-   }
+        }
+    }
 
     #[test]
     fn parses_core_attributes_from_json() {
@@ -784,7 +795,7 @@ use neo_p2p::{WitnessCondition};
             obj.insert("type".to_string(), JToken::String("Conflicts".to_string()));
             obj.insert("hash".to_string(), JToken::String(conflicts_hash));
             obj
-       };
+        };
         let conflicts = attribute_from_json(&conflicts_json).unwrap();
         assert!(matches!(conflicts, TransactionAttribute::Conflicts(_)));
 
@@ -825,7 +836,7 @@ use neo_p2p::{WitnessCondition};
             oracle_attr,
             TransactionAttribute::OracleResponse(_)
         ));
-   }
+    }
 
     #[test]
     fn stack_item_parses_array_and_struct() {
@@ -841,7 +852,7 @@ use neo_p2p::{WitnessCondition};
         let item_array = RpcUtility::stack_item_from_json(&array_obj).unwrap();
         let StackValue::Array(array_items) = item_array else {
             panic!("expected array");
-       };
+        };
         assert_eq!(array_items.len(), 1);
 
         let mut struct_obj = JObject::new();
@@ -850,9 +861,9 @@ use neo_p2p::{WitnessCondition};
         let item_struct = RpcUtility::stack_item_from_json(&struct_obj).unwrap();
         let StackValue::Struct(struct_items) = item_struct else {
             panic!("expected struct");
-       };
+        };
         assert_eq!(struct_items.len(), 1);
-   }
+    }
 
     #[test]
     fn stack_item_parses_map() {
@@ -879,9 +890,9 @@ use neo_p2p::{WitnessCondition};
         let item_map = RpcUtility::stack_item_from_json(&map_obj).unwrap();
         let StackValue::Map(map) = item_map else {
             panic!("expected map");
-       };
+        };
         assert_eq!(map.len(), 1);
-   }
+    }
 
     #[test]
     fn stack_item_to_json_emits_array_and_map_shapes() {
@@ -903,7 +914,7 @@ use neo_p2p::{WitnessCondition};
             RpcUtility::stack_item_to_json(&map).unwrap().to_string(),
             expected_map
         );
-   }
+    }
 
     #[test]
     fn parses_oracle_response_code_variants() {
@@ -926,5 +937,5 @@ use neo_p2p::{WitnessCondition};
             super::parsing::oracle_response_code_to_str(OracleResponseCode::Timeout),
             "Timeout"
         );
-   }
+    }
 }

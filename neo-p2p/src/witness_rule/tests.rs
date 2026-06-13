@@ -1,8 +1,8 @@
 use super::helpers::{encode_hex, parse_group_bytes};
 use super::*;
 use neo_primitives::ADDRESS_SIZE;
-use neo_vm::StackItem;
 use neo_primitives::UInt160;
+use neo_vm::StackItem;
 
 #[test]
 fn test_witness_rule_action_values() {
@@ -117,8 +117,7 @@ fn group_condition_accepts_uncompressed_ecpoint_and_normalizes_to_compressed() {
     wire.extend_from_slice(&uncompressed);
 
     let mut reader = neo_io::MemoryReader::new(&wire);
-    let condition =
-        <WitnessCondition as neo_io::Serializable>::deserialize(&mut reader).unwrap();
+    let condition = <WitnessCondition as neo_io::Serializable>::deserialize(&mut reader).unwrap();
     match condition {
         WitnessCondition::Group { group } => assert_eq!(group, compressed),
         other => panic!("expected Group, got {other:?}"),

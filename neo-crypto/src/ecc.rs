@@ -14,6 +14,7 @@ use crate::error::{CryptoError, CryptoResult};
 use crate::hash::HashAlgorithm;
 use ed25519_dalek::{Signature as Ed25519Signature, SigningKey as Ed25519SigningKey, VerifyingKey};
 use k256::{
+    AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
     ecdsa::signature::hazmat::PrehashVerifier as K256PrehashVerifier,
     ecdsa::{
         Signature as K256Signature, SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey,
@@ -22,16 +23,15 @@ use k256::{
     elliptic_curve::sec1::{
         FromEncodedPoint as K256FromEncodedPoint, ToEncodedPoint as K256ToEncodedPoint,
     },
-    AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
 };
 use p256::{
-    ecdsa::signature::hazmat::PrehashVerifier as P256PrehashVerifier,
+    AffinePoint as P256AffinePoint, EncodedPoint as P256EncodedPoint,
     ecdsa::signature::Verifier,
+    ecdsa::signature::hazmat::PrehashVerifier as P256PrehashVerifier,
     ecdsa::{
         Signature as P256Signature, SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey,
     },
     elliptic_curve::rand_core::OsRng,
-    AffinePoint as P256AffinePoint, EncodedPoint as P256EncodedPoint,
 };
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -670,7 +670,7 @@ pub fn verify_signature_with_hash(
         other => {
             return Err(CryptoError::invalid_argument(format!(
                 "ECDSA verification does not support hash algorithm {other:?}"
-            )))
+            )));
         }
     };
 
@@ -791,14 +791,16 @@ mod tests {
         high_sig[32..].copy_from_slice(&padded);
 
         assert!(verify_signature_secp256k1(&public_key, message, &high_sig).unwrap());
-        assert!(verify_signature_with_hash(
-            ECCurve::Secp256k1,
-            &public_key,
-            message,
-            &high_sig,
-            HashAlgorithm::Sha256,
-        )
-        .unwrap());
+        assert!(
+            verify_signature_with_hash(
+                ECCurve::Secp256k1,
+                &public_key,
+                message,
+                &high_sig,
+                HashAlgorithm::Sha256,
+            )
+            .unwrap()
+        );
     }
 
     fn p256_signing_key() -> P256SigningKey {
@@ -952,34 +954,40 @@ mod tests {
         let signature: P256Signature = signing_key.sign(message);
         let sig_bytes = signature.to_bytes();
 
-        assert!(verify_signature_with_hash(
-            ECCurve::Secp256r1,
-            &pub_bytes,
-            message,
-            sig_bytes.as_slice(),
-            HashAlgorithm::Sha256,
-        )
-        .unwrap());
+        assert!(
+            verify_signature_with_hash(
+                ECCurve::Secp256r1,
+                &pub_bytes,
+                message,
+                sig_bytes.as_slice(),
+                HashAlgorithm::Sha256,
+            )
+            .unwrap()
+        );
         assert!(verify_signature_secp256r1(&pub_bytes, message, sig_bytes.as_slice()).unwrap());
 
         // A Keccak-256 verification of a SHA-256 signature must fail (the digest
         // differs), and a malformed key yields false (not an error).
-        assert!(!verify_signature_with_hash(
-            ECCurve::Secp256r1,
-            &pub_bytes,
-            message,
-            sig_bytes.as_slice(),
-            HashAlgorithm::Keccak256,
-        )
-        .unwrap());
-        assert!(!verify_signature_with_hash(
-            ECCurve::Secp256r1,
-            &[0u8; 33],
-            message,
-            sig_bytes.as_slice(),
-            HashAlgorithm::Sha256,
-        )
-        .unwrap());
+        assert!(
+            !verify_signature_with_hash(
+                ECCurve::Secp256r1,
+                &pub_bytes,
+                message,
+                sig_bytes.as_slice(),
+                HashAlgorithm::Keccak256,
+            )
+            .unwrap()
+        );
+        assert!(
+            !verify_signature_with_hash(
+                ECCurve::Secp256r1,
+                &[0u8; 33],
+                message,
+                sig_bytes.as_slice(),
+                HashAlgorithm::Sha256,
+            )
+            .unwrap()
+        );
     }
 
     #[test]
@@ -999,23 +1007,27 @@ mod tests {
             .as_bytes()
             .to_vec();
         let p256_sig: P256Signature = p256_key.sign_prehash(&digest).unwrap();
-        assert!(verify_signature_with_hash(
-            ECCurve::Secp256r1,
-            &p256_pub,
-            message,
-            p256_sig.to_bytes().as_slice(),
-            HashAlgorithm::Keccak256,
-        )
-        .unwrap());
+        assert!(
+            verify_signature_with_hash(
+                ECCurve::Secp256r1,
+                &p256_pub,
+                message,
+                p256_sig.to_bytes().as_slice(),
+                HashAlgorithm::Keccak256,
+            )
+            .unwrap()
+        );
         // The same signature must NOT verify under SHA-256 (wrong digest).
-        assert!(!verify_signature_with_hash(
-            ECCurve::Secp256r1,
-            &p256_pub,
-            message,
-            p256_sig.to_bytes().as_slice(),
-            HashAlgorithm::Sha256,
-        )
-        .unwrap());
+        assert!(
+            !verify_signature_with_hash(
+                ECCurve::Secp256r1,
+                &p256_pub,
+                message,
+                p256_sig.to_bytes().as_slice(),
+                HashAlgorithm::Sha256,
+            )
+            .unwrap()
+        );
 
         // secp256k1 + Keccak-256.
         let k256_key = k256_signing_key();
@@ -1025,14 +1037,16 @@ mod tests {
             .as_bytes()
             .to_vec();
         let k256_sig: K256Signature = k256_key.sign_prehash(&digest).unwrap();
-        assert!(verify_signature_with_hash(
-            ECCurve::Secp256k1,
-            &k256_pub,
-            message,
-            k256_sig.to_bytes().as_slice(),
-            HashAlgorithm::Keccak256,
-        )
-        .unwrap());
+        assert!(
+            verify_signature_with_hash(
+                ECCurve::Secp256k1,
+                &k256_pub,
+                message,
+                k256_sig.to_bytes().as_slice(),
+                HashAlgorithm::Keccak256,
+            )
+            .unwrap()
+        );
     }
 
     #[test]
@@ -1085,12 +1099,14 @@ mod tests {
         let signature: P256Signature = signing_key.sign(message);
         let signature_bytes = signature.to_bytes();
 
-        assert!(verify_signature(
-            ECCurve::Secp256r1,
-            public_point.as_bytes(),
-            message,
-            signature_bytes.as_slice()
-        )
-        .unwrap());
+        assert!(
+            verify_signature(
+                ECCurve::Secp256r1,
+                public_point.as_bytes(),
+                message,
+                signature_bytes.as_slice()
+            )
+            .unwrap()
+        );
     }
 }

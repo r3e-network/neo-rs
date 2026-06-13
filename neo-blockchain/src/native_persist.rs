@@ -67,17 +67,17 @@
 
 use std::sync::Arc;
 
-use neo_block::ApplicationExecuted;
 use neo_config::ProtocolSettings;
-use neo_data_cache::DataCache;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::native_contract_provider::native_contract_provider;
 use neo_execution::ApplicationEngine;
+use neo_execution::native_contract_provider::native_contract_provider;
 use neo_manifest::CallFlags;
+use neo_payloads::ApplicationExecuted;
 use neo_payloads::{Block, Header, Witness};
 use neo_primitives::{TriggerType, UInt160, UInt256, Verifiable};
-use neo_storage::persistence::SeekDirection;
+use neo_storage::DataCache;
 use neo_storage::StorageKey;
+use neo_storage::persistence::SeekDirection;
 use neo_vm::StackItem;
 use neo_vm_rs::VmState as VMState;
 
@@ -144,7 +144,10 @@ pub fn chain_state_initialized(snapshot: &DataCache) -> bool {
         return true;
     }
     snapshot
-        .get(&StorageKey::new(NEO_TOKEN_ID, vec![NEO_PREFIX_COMMITTEE_KEY]))
+        .get(&StorageKey::new(
+            NEO_TOKEN_ID,
+            vec![NEO_PREFIX_COMMITTEE_KEY],
+        ))
         .is_some()
 }
 
@@ -163,8 +166,7 @@ pub fn genesis_block(settings: &ProtocolSettings) -> CoreResult<Block> {
     header.set_index(0);
     header.set_primary_index(0);
     header.set_next_consensus(bft_address(&settings.standby_validators())?);
-    header.witness =
-        Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    header.witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()]);
     Ok(Block::from_parts(header, Vec::new()))
 }
 
@@ -177,7 +179,7 @@ pub(crate) fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> CoreResult<UInt160
         ));
     }
     let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-    let script = neo_redeem_script::multi_sig_redeem_script_from_points(m, pubkeys)
+    let script = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, pubkeys)
         .map_err(|e| CoreError::invalid_operation(format!("BFT multisig script: {e}")))?;
     Ok(UInt160::from_script(&script))
 }
@@ -210,7 +212,7 @@ fn run_native_persist_hooks(
             other => {
                 return Err(CoreError::invalid_operation(format!(
                     "native persist hooks require an OnPersist/PostPersist engine, got {other:?}"
-                )))
+                )));
             }
         };
         result.map_err(|e| {
@@ -251,9 +253,10 @@ pub fn persist_block_natives(
         )
     })?;
     let block_index = block.index();
-    let block_hash = block.header.try_hash().map_err(|e| {
-        CoreError::invalid_operation(format!("persist: block hash: {e}"))
-    })?;
+    let block_hash = block
+        .header
+        .try_hash()
+        .map_err(|e| CoreError::invalid_operation(format!("persist: block hash: {e}")))?;
     let contracts = provider.all_native_contracts();
     let mut outcome = NativePersistOutcome::default();
 
@@ -332,9 +335,9 @@ pub fn persist_block_natives(
     // transaction's ledger record is rewritten with the final VM state
     // (C# mutates the TransactionState stored by Ledger.OnPersist).
     for tx in &block.transactions {
-        let tx_hash = tx.try_hash().map_err(|e| {
-            CoreError::invalid_operation(format!("persist: tx hash: {e}"))
-        })?;
+        let tx_hash = tx
+            .try_hash()
+            .map_err(|e| CoreError::invalid_operation(format!("persist: tx hash: {e}")))?;
         let tx_cache = Arc::new(block_cache.clone_cache());
         let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
         let mut engine = ApplicationEngine::new_with_shared_block(
@@ -483,8 +486,11 @@ mod tests {
         let validators = settings.standby_validators();
         let m = validators.len() - (validators.len() - 1) / 3;
         let script =
-            neo_redeem_script::multi_sig_redeem_script_from_points(m, &validators).unwrap();
-        assert_eq!(*block.header.next_consensus(), UInt160::from_script(&script));
+            neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, &validators).unwrap();
+        assert_eq!(
+            *block.header.next_consensus(),
+            UInt160::from_script(&script)
+        );
         // Witness: empty invocation, PUSH1 verification.
         assert!(block.header.witness.invocation_script().is_empty());
         assert_eq!(
@@ -500,8 +506,8 @@ mod tests {
         let snapshot = Arc::new(DataCache::new(false));
         let block = Arc::new(genesis_block(&settings).expect("genesis block"));
 
-        let outcome =
-            persist_block_natives(Arc::clone(&snapshot), block, &settings).expect("genesis persist");
+        let outcome = persist_block_natives(Arc::clone(&snapshot), block, &settings)
+            .expect("genesis persist");
 
         // Genesis-active natives initialized (NeoToken + OracleContract among them).
         assert!(outcome.initialized.iter().any(|n| n == "NeoToken"));
@@ -540,7 +546,10 @@ mod tests {
             Some(expected_committee_bytes)
         );
         // Voters count: BigInteger zero = empty bytes.
-        assert_eq!(get(&snapshot, neo_id(), vec![NEO_PREFIX_VOTERS_COUNT]), Some(Vec::new()));
+        assert_eq!(
+            get(&snapshot, neo_id(), vec![NEO_PREFIX_VOTERS_COUNT]),
+            Some(Vec::new())
+        );
         // gasPerBlock record at big-endian index 0 = 5 GAS.
         let mut gpb_key = vec![NEO_PREFIX_GAS_PER_BLOCK];
         gpb_key.extend_from_slice(&0u32.to_be_bytes());
@@ -567,7 +576,10 @@ mod tests {
         let expected_account_bytes =
             BinarySerializer::serialize(&expected_account, &ExecutionEngineLimits::default())
                 .unwrap();
-        assert_eq!(get(&snapshot, neo_id(), account_key), Some(expected_account_bytes));
+        assert_eq!(
+            get(&snapshot, neo_id(), account_key),
+            Some(expected_account_bytes)
+        );
         assert_eq!(
             get(&snapshot, neo_id(), vec![NEP17_PREFIX_TOTAL_SUPPLY]),
             Some(BigInt::from(100_000_000).to_signed_bytes_le())
@@ -583,7 +595,10 @@ mod tests {
             neo_native_contracts::NeoToken::script_hash(),
             "the genesis mint Transfer is emitted by the NEO contract"
         );
-        assert!(matches!(transfer.state[0], StackItem::Null), "from = null (mint)");
+        assert!(
+            matches!(transfer.state[0], StackItem::Null),
+            "from = null (mint)"
+        );
         assert_eq!(
             transfer.state[1].as_bytes().expect("to address bytes"),
             bft.to_bytes(),
@@ -621,18 +636,15 @@ mod tests {
         // gasPerBlock(5 GAS) * CommitteeRewardRatio(10) / 100 = 0.5 GAS to the
         // signature address of committee[0 % m] = standby_committee[0].
         let member = &settings.standby_committee[0];
-        let script = neo_redeem_script::signature_redeem_script(&member.to_bytes());
+        let script = neo_vm::script_builder::redeem_script::signature_redeem_script(&member.to_bytes());
         let reward_account = UInt160::from_script(&script);
         let mut gas_key = vec![NEP17_PREFIX_ACCOUNT];
         gas_key.extend_from_slice(&reward_account.to_bytes());
         let gas_account = get(&snapshot, neo_native_contracts::GasToken::ID, gas_key)
             .expect("committee reward GAS account");
-        let decoded = BinarySerializer::deserialize(
-            &gas_account,
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .unwrap();
+        let decoded =
+            BinarySerializer::deserialize(&gas_account, &ExecutionEngineLimits::default(), None)
+                .unwrap();
         let StackItem::Struct(fields) = decoded else {
             panic!("GAS account is not a struct");
         };
@@ -663,26 +675,29 @@ mod tests {
         let block = Arc::new(Block::from_parts(header, Vec::new()));
         let outcome = persist_block_natives(Arc::clone(&snapshot), block, &settings)
             .expect("block 1 persist");
-        assert!(outcome.initialized.is_empty(), "no native initializes after genesis");
+        assert!(
+            outcome.initialized.is_empty(),
+            "no native initializes after genesis"
+        );
 
         // committee[1 % 21] = standby_committee[1] earns 0.5 GAS.
         let member = &settings.standby_committee[1];
-        let script = neo_redeem_script::signature_redeem_script(&member.to_bytes());
+        let script = neo_vm::script_builder::redeem_script::signature_redeem_script(&member.to_bytes());
         let reward_account = UInt160::from_script(&script);
         let mut gas_key = vec![NEP17_PREFIX_ACCOUNT];
         gas_key.extend_from_slice(&reward_account.to_bytes());
         let gas_account = get(&snapshot, neo_native_contracts::GasToken::ID, gas_key)
             .expect("committee reward GAS account for member 1");
-        let decoded = BinarySerializer::deserialize(
-            &gas_account,
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .unwrap();
+        let decoded =
+            BinarySerializer::deserialize(&gas_account, &ExecutionEngineLimits::default(), None)
+                .unwrap();
         let StackItem::Struct(fields) = decoded else {
             panic!("GAS account is not a struct");
         };
-        assert_eq!(fields.items().first().unwrap().as_int().unwrap(), BigInt::from(50_000_000i64));
+        assert_eq!(
+            fields.items().first().unwrap().as_int().unwrap(),
+            BigInt::from(50_000_000i64)
+        );
     }
 
     #[test]
@@ -700,11 +715,17 @@ mod tests {
         neo_native_contracts::install();
         let settings = ProtocolSettings::default();
         let snapshot = Arc::new(DataCache::new(false));
-        assert!(!chain_state_initialized(&snapshot), "fresh store is uninitialized");
+        assert!(
+            !chain_state_initialized(&snapshot),
+            "fresh store is uninitialized"
+        );
 
         let block = Arc::new(genesis_block(&settings).expect("genesis block"));
         persist_block_natives(Arc::clone(&snapshot), block, &settings).expect("genesis persist");
-        assert!(chain_state_initialized(&snapshot), "genesis persist initializes the chain");
+        assert!(
+            chain_state_initialized(&snapshot),
+            "genesis persist initializes the chain"
+        );
 
         // The C#-faithful leg of the probe: a LedgerContract Prefix_Block
         // record alone also reports initialized.
@@ -713,7 +734,7 @@ mod tests {
         key.extend_from_slice(&[0u8; 32]);
         ledger_only.add(
             StorageKey::new(LEDGER_CONTRACT_ID, key),
-            neo_data_cache::StorageItem::from_bytes(vec![1]),
+            neo_storage::StorageItem::from_bytes(vec![1]),
         );
         assert!(chain_state_initialized(&ledger_only));
     }
@@ -761,15 +782,13 @@ mod tests {
         let signer_account = neo_primitives::UInt160::from_bytes(&[0x33; 20]).unwrap();
         let mut gas_key = vec![NEP17_PREFIX_ACCOUNT];
         gas_key.extend_from_slice(&signer_account.to_bytes());
-        let account_state = StackItem::from_struct(vec![StackItem::from_int(BigInt::from(
-            10_0000_0000i64,
-        ))]);
+        let account_state =
+            StackItem::from_struct(vec![StackItem::from_int(BigInt::from(10_0000_0000i64))]);
         let account_bytes =
-            BinarySerializer::serialize(&account_state, &ExecutionEngineLimits::default())
-                .unwrap();
+            BinarySerializer::serialize(&account_state, &ExecutionEngineLimits::default()).unwrap();
         snapshot.add(
             StorageKey::new(neo_native_contracts::GasToken::ID, gas_key),
-            neo_data_cache::StorageItem::from_bytes(account_bytes),
+            neo_storage::StorageItem::from_bytes(account_bytes),
         );
 
         // tx1 faults (ABORT), tx2 halts (PUSH1).
@@ -826,7 +845,10 @@ mod tests {
             .unwrap()
             .expect("tx2 record");
         assert_eq!(s2.state, neo_vm_rs::VmState::HALT);
-        assert_eq!(ledger.get_block_hash(&snapshot, 1).unwrap(), Some(block_hash));
+        assert_eq!(
+            ledger.get_block_hash(&snapshot, 1).unwrap(),
+            Some(block_hash)
+        );
         let trimmed = ledger
             .get_trimmed_block(&snapshot, &block_hash)
             .unwrap()
@@ -850,13 +872,19 @@ mod tests {
         persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
 
         let ledger = neo_native_contracts::LedgerContract::new();
-        assert_eq!(ledger.get_block_hash(&snapshot, 0).unwrap(), Some(genesis_hash));
+        assert_eq!(
+            ledger.get_block_hash(&snapshot, 0).unwrap(),
+            Some(genesis_hash)
+        );
         assert_eq!(ledger.current_index(&snapshot).unwrap(), 0);
         assert_eq!(ledger.current_hash(&snapshot).unwrap(), genesis_hash);
         let block_prefix = StorageKey::new(LEDGER_CONTRACT_ID, vec![LEDGER_PREFIX_BLOCK]);
         assert!(
             snapshot
-                .find(Some(&block_prefix), neo_storage::persistence::SeekDirection::Forward)
+                .find(
+                    Some(&block_prefix),
+                    neo_storage::persistence::SeekDirection::Forward
+                )
                 .next()
                 .is_some(),
             "the C# Ledger.Initialized probe (any Prefix_Block record) must hit"
@@ -877,7 +905,7 @@ mod tests {
         // Discard leg: child writes never reach the parent.
         {
             let child = parent.clone_cache();
-            child.add(key.clone(), neo_data_cache::StorageItem::from_bytes(vec![1]));
+            child.add(key.clone(), neo_storage::StorageItem::from_bytes(vec![1]));
             assert!(child.get(&key).is_some());
             assert!(parent.get(&key).is_none(), "uncommitted child write leaked");
         }
@@ -885,7 +913,7 @@ mod tests {
 
         // Commit leg: the child write lands atomically on commit.
         let child = parent.clone_cache();
-        child.add(key.clone(), neo_data_cache::StorageItem::from_bytes(vec![2]));
+        child.add(key.clone(), neo_storage::StorageItem::from_bytes(vec![2]));
         assert!(parent.get(&key).is_none());
         child.commit();
         assert_eq!(

@@ -25,7 +25,7 @@ BUT C# DOES give the right structural split to follow:
 - **`VerifyStateIndependent(settings)`** (Transaction.cs:371) is **engine-free**: size check, script
   parse, and the standard-signature fast path (`IsSignatureContract` + `Crypto.VerifySignature`,
   `IsMultiSigContract` + multisig) — i.e. only crypto + the redeem-script recognizers (already in
-  neo-redeem-script). `GetScriptHashesForVerifying` for Transaction is just `Signers.Select(Account)`
+  neo-script-builder). `GetScriptHashesForVerifying` for Transaction is just `Signers.Select(Account)`
   — also engine-free.
 - **`VerifyStateDependent`** (native queries) + **`VerifyWitness`** (`ApplicationEngine.Create`, in
   the `Helper.VerifyWitness` static extension, Helper.cs:321/333) need the engine/natives.
@@ -89,14 +89,14 @@ Do NOT make `verify_witness` a `Verifiable` trait method — that re-introduces 
    `multi_signature_contract_cost` → `ApplicationEngine::get_opcode_price`. C# keeps these
    separate (VerifyStateIndependent does the signature CHECK without cost; cost is computed in
    VerifyStateDependent). So before relocation: split `verify_standard_witness` into
-   (i) an engine-free signature check (crypto + `neo_redeem_script::is_signature_contract` +
+   (i) an engine-free signature check (crypto + `neo_script_builder::is_signature_contract` +
    the `Helper::parse_multi_sig_contract`/`parse_multi_sig_invocation` parsers — which should
-   themselves move to neo-redeem-script as recognizers), returning Standard/NonStandard; and
+   themselves move to neo-script-builder as recognizers), returning Standard/NonStandard; and
    (ii) the cost computation (engine pricing) which stays in the state-dependent path. Verify
    green (consensus suites) as its own commit. THEN:
 1. **Create a neo-core `verification/` module** (free functions). KEEP `verify_state_independent`
    (now engine-free) + `get_script_hashes_for_verifying` ON the types (they only need neo-crypto +
-   neo-redeem-script, both below neo-p2p). Relocate ONLY the engine/native parts —
+   neo-script-builder, both below neo-p2p). Relocate ONLY the engine/native parts —
    `verify` (entry), `verify_state_dependent`/`_at_height`, `verify_standard_witness`,
    `verify_witness`/`verify_witness_against_hash` — out of `impl Transaction`/`impl Header` into
    `fn verify_transaction*(tx: &Transaction, snapshot, settings, …)` / `fn verify_header*(…)`.

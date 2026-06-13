@@ -196,6 +196,8 @@ impl<'a> MemoryReader<'a> {
         (read_int64_big_endian, i64, 8, get_i64);
         (read_uint64, u64, 8, get_u64_le);
         (read_uint64_big_endian, u64, 8, get_u64);
+        (read_f32, f32, 4, get_f32_le);
+        (read_f64, f64, 8, get_f64_le);
     }
 
     /// Alias for `read_byte` (C# `ReadByte` vs `ReadUInt8` naming differences).

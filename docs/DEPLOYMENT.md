@@ -2,7 +2,7 @@
 
 > **Version**: 0.7.0  
 > **Last Updated**: 2026-01-28  
-> **Target Compatibility**: Neo N3 v3.9.1
+> **Target Compatibility**: Neo N3 v3.10.0
 
 Comprehensive deployment documentation for the Neo N3 Rust node implementation.
 
@@ -113,7 +113,6 @@ cargo build --release
 
 # Binaries will be available at:
 # - target/release/neo-node  (node daemon)
-# - target/release/neo-cli   (CLI client)
 ```
 
 Use `cargo build --release --workspace` for explicit full-workspace validation,
@@ -125,11 +124,10 @@ For maximum performance, use the custom production profile:
 
 ```bash
 # Build with production optimizations
-cargo build --profile production -p neo-node -p neo-cli
+cargo build --profile production -p neo-node
 
 # Binaries will be at:
 # - target/production/neo-node
-# - target/production/neo-cli
 ```
 
 The production profile enables:
@@ -150,92 +148,17 @@ Optional features for specialized deployments:
 | `hsm-ledger` | HSM with Ledger hardware wallet | `--features hsm-ledger` |
 | `hsm-pkcs11` | HSM with PKCS#11 interface | `--features hsm-pkcs11` |
 
-Example with TEE support:
-```bash
-cargo build --release -p neo-node --features tee-sgx
-```
-
-`tee-sgx` runs in strict fail-closed mode:
-- Requires SGX devices (`/dev/sgx_enclave`, `/dev/sgx_provision`) and DCAP verification library.
-- Requires SGX quote evidence and sealing key material at startup.
-- Default evidence paths are under `--tee-data-path`:
-  `sgx.quote` and `sgx.sealing_key`.
-- You can override paths via:
-  `NEO_TEE_SGX_QUOTE_PATH`, `NEO_TEE_SGX_SEALING_KEY_PATH`, `NEO_TEE_SGX_SEALING_KEY_HEX`.
-- Quote `report_data[0..32]` must match:
-  `SHA256("neo-tee-sgx-sealing-key-v1" || sealing_key)`.
-
-Generate evidence from this repo:
-```bash
-./scripts/generate-sgx-evidence.sh /tmp/neo-tee-strict-test
-```
-
-Run node in strict SGX mode:
-```bash
-target/debug/neo-node \
-  --config neo_mainnet_node.toml \
-  --tee \
-  --tee-data-path /tmp/neo-tee-strict-test \
-  --tee-ordering-policy batched
-```
-
-Run node in opportunistic mode (use TEE when available, otherwise continue as ordinary node):
-```bash
-target/debug/neo-node \
-  --config neo_mainnet_node.toml \
-  --tee-auto \
-  --tee-data-path /tmp/neo-tee-strict-test \
-  --tee-ordering-policy batched
-```
-
-Run node in ordinary mode (no TEE):
-```bash
-target/debug/neo-node \
-  --config neo_mainnet_node.toml
-```
-
-Optional (not recommended for production):
-- `NEO_TEE_SGX_ALLOW_NON_TERMINAL_QV=1`
-- `NEO_TEE_SGX_ALLOW_EXPIRED_COLLATERAL=1`
-
-Consensus compatibility note:
-- `NEO_NATIVE_STRICT_SECURITY` defaults to disabled (compatibility-first native execution).
-- Set `NEO_NATIVE_STRICT_SECURITY=1` only when you explicitly want stricter native guard/invariant checks and have validated full chain parity.
-
-Real-hardware note:
-- If DCAP returns a non-terminal result such as `0xA008` (`configuration and software hardening needed`),
-  strict `--tee` mode will fail closed by default.
-- Use `--allow-non-terminal-qv` only as an explicit operator override while remediation is in progress.
-
-Automated strict SGX runtime validation:
-```bash
-scripts/validate-tee-sgx-runtime.sh \
-  --config neo_testnet_node.toml \
-  --rpc-url http://127.0.0.1:20332 \
-  --listen-port 20333 \
-  --rpc-port 20332 \
-  --tee-data-path /tmp/neo-tee-strict-test \
-  --storage /tmp/neo-tee-validate-storage \
-  --allow-non-terminal-qv \
-  --iterations 100 \
-  --require-block-progress
-```
-
-Notes:
-- The validator asserts SGX log lines, RPC readiness, TEE wallet export denial, and repeated contract execution checks.
-- Use `--block-progress-timeout <sec>` to control how long strict block-progress validation waits before failing.
-- Use `--listen-port` / `--rpc-port` when default local ports are occupied by another node/process.
-- Prefer an isolated `--storage` path for deterministic block-progress checks (avoids stale local chain state affecting timing).
-- `--tee` is strict (fail-closed on TEE errors). `--tee-auto` is optional (falls back to ordinary mode).
-- To validate opportunistic fallback, run `neo-node --tee-auto --tee-data-path <invalid-path>` and assert log line `TEE auto mode: runtime initialization failed; continuing without TEE`, plus healthy RPC/P2P progression.
-- Node startup also validates persisted `ContractManagement` state integrity (malformed payloads/duplicate non-native IDs). If corruption is detected, startup fails and the operator should restore from backup or resync.
+TEE/HSM crates are present behind Cargo features for future integration work, but
+the current `neo-node` binary does not expose runtime `--tee`, `--tee-auto`, or
+HSM CLI flags. Build and operate the standard daemon with `cargo build --release
+-p neo-node`, then configure node behavior through TOML and the supported CLI
+flags shown by `neo-node --help`.
 
 ### Build Verification
 
 ```bash
 # Verify binary versions
 ./target/release/neo-node --version
-./target/release/neo-cli --version
 
 # Run preflight checks
 make preflight
@@ -329,32 +252,17 @@ max_transactions_per_sender = 200
 
 ### Environment Variables
 
-All configuration options can be overridden via environment variables:
+The native `neo-node` binary is configured with CLI flags plus TOML. Docker and
+compose add a small entrypoint layer that recognizes these environment
+variables:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `NEO_CONFIG` | Path to TOML config file | `/etc/neo/config.toml` |
-| `NEO_NETWORK` | Network selection | `mainnet`, `testnet` |
-| `NEO_STORAGE` | Data directory path | `/var/neo/data` |
-| `NEO_BACKEND` | Storage backend | `rocksdb`, `memory` |
-| `NEO_PLUGINS_DIR` | Plugin configuration directory | `/var/neo/Plugins` |
-| `NEO_NETWORK_MAGIC` | Override network magic | `860833102` |
-| `NEO_LISTEN_PORT` | P2P listen port | `10333` |
-| `NEO_RPC_PORT` | RPC server port | `10332` |
-| `NEO_RPC_BIND` | RPC bind address | `127.0.0.1` |
-| `NEO_RPC_USER` | RPC basic auth username | `admin` |
-| `NEO_RPC_PASS` | RPC basic auth password | `secret` |
-| `NEO_RPC_TLS_CERT` | Path to TLS certificate | `/etc/neo/cert.pem` |
-| `NEO_RPC_TLS_PASS` | TLS certificate password | - |
-| `NEO_MAX_CONNECTIONS` | Maximum P2P connections | `100` |
-| `NEO_MIN_CONNECTIONS` | Minimum P2P connections | `10` |
-| `NEO_BLOCK_TIME` | Block time in milliseconds | `15000` |
-| `NEO_LOG_LEVEL` | Log level | `info` |
-| `NEO_LOG_PATH` | Log file path | `/var/log/neo/node.log` |
-| `NEO_HEALTH_PORT` | Health check endpoint port | `8080` |
-| `NEO_HEALTH_MAX_HEADER_LAG` | Max header lag for healthy status | `20` |
-| `NEO_STATE_ROOT` | Enable state root calculation | `1` |
-| `NEO_STATE_ROOT_PATH` | State root DB path | `/var/neo/stateroot` |
+| `NEO_NETWORK` | Docker config selection | `mainnet`, `testnet` |
+| `NEO_CONFIG` | Docker custom TOML path | `/config/custom.toml` |
+| `NEO_STORAGE` | Docker RocksDB directory passed as `--storage-path` | `/data/mainnet` |
+| `NEO_PLUGINS_DIR` | Docker plugin configuration directory | `/data/Plugins` |
+| `NEO_RPC_PORT` | Docker health-check port override only | `10332` |
 | `RUST_LOG` | Rust logging directive | `info,neo_p2p=debug` |
 
 ### Network Selection (MainNet/TestNet)
@@ -369,13 +277,8 @@ All configuration options can be overridden via environment variables:
 ./target/release/neo-node --config neo_testnet_node.toml
 ```
 
-#### Using Environment Variables
-
-```bash
-# The NEO_NETWORK variable auto-selects bundled configs
-NEO_NETWORK=mainnet ./target/release/neo-node
-NEO_NETWORK=testnet ./target/release/neo-node
-```
+Docker uses `NEO_NETWORK=mainnet|testnet` to select a bundled config. For bare
+metal, pass the config path explicitly.
 
 #### Using CLI Flags
 
@@ -383,9 +286,10 @@ NEO_NETWORK=testnet ./target/release/neo-node
 # Override specific settings
 ./target/release/neo-node \
     --config neo_mainnet_node.toml \
-    --network-magic 860833102 \
-    --listen-port 10333
+    --network-magic 860833102
 ```
+
+Set P2P port, seed nodes, storage backend, RPC port, and RPC hardening in TOML.
 
 ### Configuration Validation
 
@@ -469,9 +373,6 @@ docker compose down
 # Network selection: mainnet or testnet
 NEO_NETWORK=testnet
 
-# Storage backend
-NEO_BACKEND=rocksdb
-
 # Plugin directory
 NEO_PLUGINS_DIR=/data/Plugins
 
@@ -481,9 +382,8 @@ NEO_PLUGINS_DIR=/data/Plugins
 # Custom storage path (optional)
 # NEO_STORAGE=/data/blockchain
 
-# Port overrides (optional)
+# RPC health-check port override (optional; node RPC port comes from TOML)
 # NEO_RPC_PORT=20332
-# NEO_LISTEN_PORT=20333
 
 # Logging
 RUST_LOG=info
@@ -530,10 +430,8 @@ volumes:
 | `NEO_NETWORK` | `testnet` | Network selection |
 | `NEO_CONFIG` | - | Custom config path |
 | `NEO_STORAGE` | `/data/{network}` | Data directory |
-| `NEO_BACKEND` | `rocksdb` | Storage backend |
 | `NEO_PLUGINS_DIR` | `/data/Plugins` | Plugin directory |
-| `NEO_RPC_PORT` | auto | RPC port override |
-| `NEO_LISTEN_PORT` | - | P2P port override |
+| `NEO_RPC_PORT` | auto | Health-check port override |
 | `RUST_LOG` | `info` | Log level |
 
 ### Monitoring Profile (Grafana)
@@ -629,53 +527,41 @@ sudo systemctl start neo-node
 # With custom data directory
 ./target/release/neo-node \
     --config neo_mainnet_node.toml \
-    --storage /var/neo/data
+    --storage-path /var/neo/data
 
 # With logging options
 RUST_LOG=info,neo_p2p=debug ./target/release/neo-node \
     --config neo_mainnet_node.toml
 
-# Hardened RPC mode
-NEO_RPC_USER=admin NEO_RPC_PASS=$(openssl rand -hex 16) \
-    ./target/release/neo-node \
-    --config neo_mainnet_node.toml \
-    --rpc-hardened
+# Hardened RPC settings are configured in the TOML [rpc] section.
 ```
 
 ### Monitoring
 
-#### Health Check Endpoints
-
-Enable health endpoints with `--health-port`:
+#### Health Checks
 
 ```bash
-./target/release/neo-node \
-    --config neo_mainnet_node.toml \
-    --health-port 8080 \
-    --health-max-header-lag 20
+curl -sf -X POST \
+    -H 'Content-Type: application/json' \
+    --data '{"jsonrpc":"2.0","id":1,"method":"getversion","params":[]}' \
+    http://localhost:10332
 ```
 
-Available endpoints:
-- `GET /healthz` - Liveness probe (returns 200 if node is running)
-- `GET /readyz` - Readiness probe (returns 200 if synced)
-- `GET /metrics` - Prometheus metrics
+Docker health checks use the same `getversion` RPC probe.
 
-#### CLI Status Commands
+#### RPC Status Commands
 
 ```bash
-# Node status
-./target/release/neo-cli state
-
 # Blockchain height
-./target/release/neo-cli block-count
-
-# Peer information
-./target/release/neo-cli peers
-
-# Check sync status
 curl -s -X POST \
     -H 'Content-Type: application/json' \
     --data '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}' \
+    http://localhost:10332
+
+# Peer count
+curl -s -X POST \
+    -H 'Content-Type: application/json' \
+    --data '{"jsonrpc":"2.0","id":1,"method":"getconnectioncount","params":[]}' \
     http://localhost:10332
 ```
 
@@ -799,7 +685,7 @@ git fetch origin
 git checkout v0.7.1  # or latest tag
 
 # Build new version
-cargo build --release -p neo-node -p neo-cli
+cargo build --release -p neo-node
 
 # Run preflight checks
 make preflight

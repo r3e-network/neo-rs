@@ -1214,8 +1214,7 @@ mod mpt_tests {
 
     impl MptStoreSnapshot for CountingStore {
         fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
-            self.gets
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.gets.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(self.data.lock().get(key).cloned())
         }
 

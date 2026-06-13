@@ -25,10 +25,12 @@
 use std::collections::HashMap;
 
 use neo_config::{Hardfork, ProtocolSettings};
-use neo_execution::native_contract::{build_native_contract_state, NativeContract};
+use neo_execution::native_contract::{NativeContract, build_native_contract_state};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::{
     ContractManagement, CryptoLib, GasToken, LedgerContract, NeoToken, Notary, OracleContract,
-    PolicyContract, RoleManagement, StdLib, Treasury,
+    PolicyContract, RoleManagement, StandardNativeProvider, StdLib, Treasury,
+    standard_native_contract_specs,
 };
 use neo_primitives::{CallFlags, ContractParameterType};
 
@@ -146,14 +148,112 @@ fn e(
 ) -> (String, Vec<(String, ContractParameterType)>) {
     (
         name.to_string(),
-        params
-            .iter()
-            .map(|(p, t)| ((*p).to_string(), *t))
-            .collect(),
+        params.iter().map(|(p, t)| ((*p).to_string(), *t)).collect(),
     )
 }
 
-use ContractParameterType::{Any, Array, Boolean, Hash160, Hash256, Integer, PublicKey, String as StringT};
+use ContractParameterType::{
+    Any, Array, Boolean, Hash160, Hash256, Integer, PublicKey, String as StringT,
+};
+
+#[test]
+fn native_contract_handle_names_are_uniform_constants() {
+    let contracts: Vec<(&'static str, Box<dyn NativeContract>)> = vec![
+        (
+            ContractManagement::NAME,
+            Box::new(ContractManagement::new()),
+        ),
+        (StdLib::NAME, Box::new(StdLib::new())),
+        (CryptoLib::NAME, Box::new(CryptoLib::new())),
+        (LedgerContract::NAME, Box::new(LedgerContract::new())),
+        (NeoToken::NAME, Box::new(NeoToken::new())),
+        (GasToken::NAME, Box::new(GasToken::new())),
+        (PolicyContract::NAME, Box::new(PolicyContract::new())),
+        (RoleManagement::NAME, Box::new(RoleManagement::new())),
+        (OracleContract::NAME, Box::new(OracleContract::new())),
+        (Notary::NAME, Box::new(Notary::new())),
+        (Treasury::NAME, Box::new(Treasury::new())),
+    ];
+
+    assert_eq!(
+        contracts.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
+        vec![
+            "ContractManagement",
+            "StdLib",
+            "CryptoLib",
+            "LedgerContract",
+            "NeoToken",
+            "GasToken",
+            "PolicyContract",
+            "RoleManagement",
+            "OracleContract",
+            "Notary",
+            "Treasury",
+        ]
+    );
+
+    for (name, contract) in contracts {
+        assert_eq!(contract.name(), name);
+    }
+}
+
+mod native_handle_api {
+    use neo_native_contracts::{
+        ContractManagement, CryptoLib, GasToken, LedgerContract, NeoToken, Notary, OracleContract,
+        PolicyContract, RoleManagement, StdLib, Treasury,
+    };
+
+    #[test]
+    fn native_contract_handle_hash_accessors_are_uniform() {
+        assert_eq!(
+            ContractManagement::new().hash(),
+            ContractManagement::script_hash()
+        );
+        assert_eq!(StdLib::new().hash(), StdLib::script_hash());
+        assert_eq!(CryptoLib::new().hash(), CryptoLib::script_hash());
+        assert_eq!(LedgerContract::new().hash(), LedgerContract::script_hash());
+        assert_eq!(NeoToken::new().hash(), NeoToken::script_hash());
+        assert_eq!(GasToken::new().hash(), GasToken::script_hash());
+        assert_eq!(PolicyContract::new().hash(), PolicyContract::script_hash());
+        assert_eq!(RoleManagement::new().hash(), RoleManagement::script_hash());
+        assert_eq!(OracleContract::new().hash(), OracleContract::script_hash());
+        assert_eq!(Notary::new().hash(), Notary::script_hash());
+        assert_eq!(Treasury::new().hash(), Treasury::script_hash());
+    }
+}
+
+#[test]
+fn standard_native_contract_catalog_matches_provider_order_and_metadata() {
+    let specs = standard_native_contract_specs();
+    let provider = StandardNativeProvider::new();
+    let contracts = provider.all_native_contracts();
+
+    assert_eq!(contracts.len(), specs.len());
+    assert_eq!(
+        specs.iter().map(|spec| spec.id).collect::<Vec<_>>(),
+        (-11..=-1).rev().collect::<Vec<_>>()
+    );
+
+    for (contract, spec) in contracts.iter().zip(specs.iter()) {
+        assert_eq!(contract.id(), spec.id);
+        assert_eq!(contract.name(), spec.name);
+        assert_eq!(contract.hash(), spec.hash);
+        assert_eq!(
+            provider
+                .get_native_contract(&spec.hash)
+                .expect("hash resolves")
+                .name(),
+            spec.name
+        );
+        assert_eq!(
+            provider
+                .get_native_contract_by_name(spec.name)
+                .expect("name resolves")
+                .hash(),
+            spec.hash
+        );
+    }
+}
 
 #[test]
 fn gas_token_manifest_pins_csharp_metadata() {
@@ -181,7 +281,10 @@ fn gas_token_manifest_pins_csharp_metadata() {
         manifest_events(&contract, &settings, ALL_ACTIVE),
         vec![transfer.clone()]
     );
-    assert_eq!(manifest_events(&contract, &settings, GENESIS), vec![transfer]);
+    assert_eq!(
+        manifest_events(&contract, &settings, GENESIS),
+        vec![transfer]
+    );
 }
 
 #[test]
@@ -223,16 +326,22 @@ fn neo_token_manifest_pins_csharp_metadata() {
 
     // onNEP17Payment is `[ContractMethod(Hardfork.HF_Echidna, …)]`
     // (NeoToken.cs:374): absent just below the boundary, present at it.
-    assert!(!manifest_methods(&contract, &settings, 49)
-        .iter()
-        .any(|(name, _)| name == "onNEP17Payment"));
-    assert!(manifest_methods(&contract, &settings, 50)
-        .iter()
-        .any(|(name, _)| name == "onNEP17Payment"));
+    assert!(
+        !manifest_methods(&contract, &settings, 49)
+            .iter()
+            .any(|(name, _)| name == "onNEP17Payment")
+    );
+    assert!(
+        manifest_methods(&contract, &settings, 50)
+            .iter()
+            .any(|(name, _)| name == "onNEP17Payment")
+    );
     // getAllCandidates is ungated (genesis-active).
-    assert!(manifest_methods(&contract, &settings, GENESIS)
-        .iter()
-        .any(|(name, _)| name == "getAllCandidates"));
+    assert!(
+        manifest_methods(&contract, &settings, GENESIS)
+            .iter()
+            .any(|(name, _)| name == "getAllCandidates")
+    );
 
     // NeoToken.cs:63-74 + the inherited Transfer: orders 0..3, with
     // CommitteeChanged ActiveIn HF_Cockatrice.
@@ -304,7 +413,10 @@ fn policy_contract_manifest_pins_csharp_metadata() {
             m("getWhitelistFeeContracts", &[]),
             m("isBlocked", &["account"]),
             m("recoverFund", &["account", "token"]),
-            m("removeWhitelistFeeContract", &["contractHash", "method", "argCount"]),
+            m(
+                "removeWhitelistFeeContract",
+                &["contractHash", "method", "argCount"]
+            ),
             m("setAttributeFee", &["attributeType", "value"]),
             m("setExecFeeFactor", &["value"]),
             m("setFeePerByte", &["value"]),
@@ -312,7 +424,10 @@ fn policy_contract_manifest_pins_csharp_metadata() {
             m("setMaxValidUntilBlockIncrement", &["value"]),
             m("setMillisecondsPerBlock", &["value"]),
             m("setStoragePrice", &["value"]),
-            m("setWhitelistFeeContract", &["contractHash", "method", "argCount", "fixedFee"]),
+            m(
+                "setWhitelistFeeContract",
+                &["contractHash", "method", "argCount", "fixedFee"]
+            ),
             m("unblockAccount", &["account"]),
         ]
     );
@@ -393,7 +508,10 @@ fn oracle_contract_manifest_pins_csharp_metadata() {
         vec![
             m("finish", &[]),
             m("getPrice", &[]),
-            m("request", &["url", "filter", "callback", "userData", "gasForResponse"]),
+            m(
+                "request",
+                &["url", "filter", "callback", "userData", "gasForResponse"]
+            ),
             m("setPrice", &["price"]),
             m("verify", &[]),
         ]
@@ -411,7 +529,10 @@ fn oracle_contract_manifest_pins_csharp_metadata() {
                 ("Filter", StringT),
             ],
         ),
-        e("OracleResponse", &[("Id", Integer), ("OriginalTx", Hash256)]),
+        e(
+            "OracleResponse",
+            &[("Id", Integer), ("OriginalTx", Hash256)],
+        ),
     ];
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), expected);
     assert_eq!(manifest_events(&contract, &settings, GENESIS), expected);
@@ -433,10 +554,7 @@ fn role_management_manifest_pins_csharp_metadata() {
     // RoleManagement.cs:27-37 — the DUAL Designation registration, both at
     // order 0: V0 (Role, BlockIndex) is DeprecatedIn HF_Echidna; V1 adds
     // (Old, New) and is ActiveIn HF_Echidna. Exactly one per height.
-    let v0 = e(
-        "Designation",
-        &[("Role", Integer), ("BlockIndex", Integer)],
-    );
+    let v0 = e("Designation", &[("Role", Integer), ("BlockIndex", Integer)]);
     let v1 = e(
         "Designation",
         &[
@@ -446,7 +564,10 @@ fn role_management_manifest_pins_csharp_metadata() {
             ("New", Array),
         ],
     );
-    assert_eq!(manifest_events(&contract, &settings, GENESIS), vec![v0.clone()]);
+    assert_eq!(
+        manifest_events(&contract, &settings, GENESIS),
+        vec![v0.clone()]
+    );
     // Just below the Echidna boundary (height 49): still V0.
     assert_eq!(manifest_events(&contract, &settings, 49), vec![v0]);
     // At and beyond Echidna (height 50): V1 replaces it.
@@ -571,7 +692,10 @@ fn crypto_lib_manifest_pins_csharp_metadata() {
             m("recoverSecp256K1", &["messageHash", "signature"]),
             m("ripemd160", &["data"]),
             m("sha256", &["data"]),
-            m("verifyWithECDsa", &["message", "pubkey", "signature", "curveHash"]),
+            m(
+                "verifyWithECDsa",
+                &["message", "pubkey", "signature", "curveHash"]
+            ),
             m("verifyWithEd25519", &["message", "pubkey", "signature"]),
         ]
     );
@@ -590,7 +714,10 @@ fn crypto_lib_manifest_pins_csharp_metadata() {
             m("murmur32", &["data", "seed"]),
             m("ripemd160", &["data"]),
             m("sha256", &["data"]),
-            m("verifyWithECDsa", &["message", "pubkey", "signature", "curve"]),
+            m(
+                "verifyWithECDsa",
+                &["message", "pubkey", "signature", "curve"]
+            ),
         ]
     );
 
@@ -626,23 +753,10 @@ fn treasury_manifest_pins_csharp_metadata() {
 /// freedom in the hand-maintained Rust tables.
 #[test]
 fn native_method_safe_flags_follow_csharp_derivation() {
-    let contracts: Vec<Box<dyn NativeContract>> = vec![
-        Box::new(ContractManagement::new()),
-        Box::new(CryptoLib::new()),
-        Box::new(GasToken::new()),
-        Box::new(LedgerContract::new()),
-        Box::new(NeoToken::new()),
-        Box::new(Notary::new()),
-        Box::new(OracleContract::new()),
-        Box::new(PolicyContract::new()),
-        Box::new(RoleManagement::new()),
-        Box::new(StdLib::new()),
-        Box::new(Treasury::new()),
-    ];
+    let contracts = StandardNativeProvider::new().all_native_contracts();
     for contract in &contracts {
         for method in contract.methods() {
-            let derived =
-                method.required_call_flags & !CallFlags::READ_ONLY.bits() == 0;
+            let derived = method.required_call_flags & !CallFlags::READ_ONLY.bits() == 0;
             assert_eq!(
                 method.safe,
                 derived,
@@ -842,6 +956,10 @@ fn native_manifest_safe_flags_pin_csharp_attributes() {
     // verify is `CallFlags.ReadStates` (Treasury.cs:41) -> also SAFE.
     assert_eq!(
         manifest_safe_methods(&Treasury::new(), &settings, ALL_ACTIVE),
-        vec![s("onNEP11Payment", 4), s("onNEP17Payment", 3), s("verify", 0)]
+        vec![
+            s("onNEP11Payment", 4),
+            s("onNEP17Payment", 3),
+            s("verify", 0)
+        ]
     );
 }

@@ -211,6 +211,7 @@ impl ConsensusService {
             signatures,
             validator_pubkeys,
             required_signatures: m,
+            next_consensus: self.context.next_consensus,
         })
     }
 }

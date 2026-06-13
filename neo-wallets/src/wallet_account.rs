@@ -4,14 +4,14 @@
 //! hierarchy, providing the core primitives used by NEP-6 wallets and other
 //! account containers within the runtime.
 
-use neo_payloads::Transaction;
-use neo_payloads::Witness;
-use neo_config::ProtocolSettings;
-use neo_execution::Contract;
-use neo_execution::{Helper};
-use crate::wallet_helper::{to_address, to_script_hash};
 use crate::key_pair::KeyPair;
 use crate::wallet::{WalletError, WalletResult};
+use crate::wallet_helper::{to_address, to_script_hash};
+use neo_config::ProtocolSettings;
+use neo_execution::Contract;
+use neo_execution::Helper;
+use neo_payloads::Transaction;
+use neo_payloads::Witness;
 use neo_primitives::UInt160;
 use neo_vm_rs::OpCode;
 use std::sync::Arc;
@@ -271,11 +271,9 @@ impl WalletAccount for StandardWalletAccount {
 
     fn create_witness(&self, transaction: &Transaction) -> WalletResult<Witness> {
         let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
-        let sign_data = neo_payloads::get_sign_data_vec(
-            transaction,
-            self.protocol_settings.network,
-        )
-        .map_err(|e| WalletError::SigningFailed(e.to_string()))?;
+        let sign_data =
+            neo_payloads::get_sign_data_vec(transaction, self.protocol_settings.network)
+                .map_err(|e| WalletError::SigningFailed(e.to_string()))?;
         let signature = key
             .sign(&sign_data)
             .map_err(|e| WalletError::SigningFailed(e.to_string()))?;

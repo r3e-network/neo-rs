@@ -22,9 +22,9 @@ async fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<Serve
                 "RPC TLS settings provided without SslCert; TLS remains disabled (network {}).",
                 settings.network
             );
-       }
+        }
         return Ok(None);
-   }
+    }
 
     let cert_bytes = tokio::fs::read(cert_path)
         .await
@@ -33,14 +33,14 @@ async fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<Serve
         PFX::parse(&cert_bytes).map_err(|err| format!("invalid PKCS#12 {cert_path}: {err:?}"))?;
     if !pfx.verify_mac(settings.ssl_cert_password.as_str()) {
         return Err(format!("invalid TLS certificate password for {cert_path}"));
-   }
+    }
 
     let certs_der = pfx
         .cert_x509_bags(settings.ssl_cert_password.as_str())
         .map_err(|err| format!("failed to read TLS certificate chain from {cert_path}: {err:?}"))?;
     if certs_der.is_empty() {
         return Err(format!("no TLS certificates found in {cert_path}"));
-   }
+    }
     let certs = certs_der.into_iter().map(Certificate).collect::<Vec<_>>();
 
     let mut keys = pfx
@@ -54,10 +54,10 @@ async fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<Serve
     let builder = ServerConfig::builder().with_safe_defaults();
     let builder = if settings.trusted_authorities.is_empty() {
         builder.with_no_client_auth()
-   } else {
+    } else {
         let roots = load_trusted_authorities(&settings.trusted_authorities)?;
         builder.with_client_cert_verifier(Arc::new(AllowAnyAuthenticatedClient::new(roots)))
-   };
+    };
     let config = builder
         .with_single_cert(certs, key)
         .map_err(|err| format!("failed to configure TLS for {cert_path}: {err}"))?;
@@ -85,12 +85,12 @@ fn load_trusted_authorities(thumbprints: &[String]) -> Result<RootCertStore, Str
                 .add(&rustls_cert)
                 .map_err(|err| format!("failed to add trusted authority {thumbprint}: {err}"))?;
             matched += 1;
-       }
-   }
+        }
+    }
 
     if matched == 0 {
         warn!("RPC TLS configured with TrustedAuthorities, but no matching roots were found.");
-   }
+    }
 
     Ok(roots)
 }

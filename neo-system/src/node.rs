@@ -102,7 +102,10 @@ impl std::fmt::Debug for Node {
             .field("mempool", &self.mempool.total_count())
             .field("header_cache", &self.header_cache.count())
             .field("services", &self.services)
-            .field("block_executor", &self.block_executor.as_ref().map(|s| s.name()))
+            .field(
+                "block_executor",
+                &self.block_executor.as_ref().map(|s| s.name()),
+            )
             .field("consensus", &self.consensus.as_ref().map(|s| s.name()))
             .field("engine", &self.engine.as_ref().map(|s| s.name()))
             .finish()
@@ -124,6 +127,10 @@ impl Node {
         _blockchain: Option<()>,
         _network: Option<()>,
     ) -> Result<Self, crate::error::NodeError> {
+        // Keep this direct constructor aligned with NodeBuilder::build().
+        // Services created from a headless node still need native dispatch.
+        neo_native_contracts::install();
+
         let storage: Arc<dyn neo_storage::persistence::store::Store> =
             Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new());
         let wallets = WalletProvider::default();

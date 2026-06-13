@@ -5,7 +5,7 @@
 //! daemon, so any wallet implementation (software, HSM, TEE) can reuse them.
 
 use crate::{WalletError, WalletResult};
-use neo_script_builder::ScriptBuilder;
+use neo_vm::script_builder::ScriptBuilder;
 
 /// Builds the witness invocation script for a single 64-byte signature
 /// (`PUSHDATA1 0x40 <signature>`), matching the C# wallet signing path.

@@ -31,9 +31,6 @@ use crate::hashes::STDLIB_HASH;
 /// C# `StdLib.MaxInputLength` — the `[MaxLength]` cap on string/byte inputs.
 const MAX_INPUT_LENGTH: usize = 1024;
 
-/// Lazily-initialised script-hash handle for the StdLib contract.
-pub static STDLIB_HASH_REF: LazyLock<UInt160> = LazyLock::new(|| *STDLIB_HASH);
-
 /// The StdLib native contract.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct StdLib;
@@ -41,6 +38,8 @@ pub struct StdLib;
 impl StdLib {
     /// Stable native contract id (matches C# `StdLib`).
     pub const ID: i32 = -2;
+    /// Stable native contract name (matches C# `StdLib.Name`).
+    pub const NAME: &'static str = "StdLib";
 
     /// Construct a new `StdLib` handle.
     pub fn new() -> Self {
@@ -48,8 +47,13 @@ impl StdLib {
     }
 
     /// Returns the StdLib script hash.
+    pub fn hash(&self) -> UInt160 {
+        Self::script_hash()
+    }
+
+    /// Returns the StdLib script hash.
     pub fn script_hash() -> UInt160 {
-        *STDLIB_HASH_REF
+        *STDLIB_HASH
     }
 }
 
@@ -153,9 +157,8 @@ fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
                 .map_err(|e| {
                     CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
                 })?;
-            BinarySerializer::serialize(&item, &limits).map_err(|e| {
-                CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
-            })
+            BinarySerializer::serialize(&item, &limits)
+                .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}")))
         }),
         _ => return None,
     };
@@ -184,7 +187,10 @@ fn memory_search_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
             "StdLib::memorySearch: start out of range",
         ));
     }
-    let backward = args.get(3).map(|b| b.iter().any(|x| *x != 0)).unwrap_or(false);
+    let backward = args
+        .get(3)
+        .map(|b| b.iter().any(|x| *x != 0))
+        .unwrap_or(false);
     Ok(BigInt::from(memory_search(mem, value, start, backward)).to_signed_bytes_le())
 }
 
@@ -249,7 +255,9 @@ fn base64_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         )));
     }
     let value = std::str::from_utf8(raw).map_err(|_| {
-        CoreError::invalid_operation("StdLib::base64Decode: argument is not valid UTF-8".to_string())
+        CoreError::invalid_operation(
+            "StdLib::base64Decode: argument is not valid UTF-8".to_string(),
+        )
     })?;
     let stripped: String = value
         .chars()
@@ -307,7 +315,7 @@ fn itoa_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         other => {
             return Err(CoreError::invalid_argument(format!(
                 "StdLib::itoa: invalid base: {other}"
-            )))
+            )));
         }
     };
     Ok(text.into_bytes())
@@ -332,7 +340,7 @@ fn atoi_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         other => {
             return Err(CoreError::invalid_argument(format!(
                 "StdLib::atoi: invalid base: {other}"
-            )))
+            )));
         }
     };
     Ok(parsed.to_signed_bytes_le())
@@ -391,10 +399,13 @@ fn string_split_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         None => {
             return Err(CoreError::invalid_operation(
                 "StdLib::stringSplit requires (str, separator)".to_string(),
-            ))
+            ));
         }
     };
-    let remove_empty = args.get(2).map(|b| b.iter().any(|x| *x != 0)).unwrap_or(false);
+    let remove_empty = args
+        .get(2)
+        .map(|b| b.iter().any(|x| *x != 0))
+        .unwrap_or(false);
 
     let parts: Vec<&str> = if separator.is_empty() {
         // .NET `string.Split("")` returns the whole string as a single element.
@@ -408,8 +419,11 @@ fn string_split_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         .map(|part| StackItem::from_byte_string(part.as_bytes().to_vec()))
         .collect();
 
-    BinarySerializer::serialize(&StackItem::from_array(items), &ExecutionEngineLimits::default())
-        .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
+    BinarySerializer::serialize(
+        &StackItem::from_array(items),
+        &ExecutionEngineLimits::default(),
+    )
+    .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
 }
 
 /// C# `StdLib.StrLen(str)`: the number of text elements in the string, i.e.
@@ -517,28 +531,91 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             .with_parameter_names(["data"]),
         NativeMethod::new("base58Decode".into(), 1 << 10, true, 0, vec![string], bytes)
             .with_parameter_names(["s"]),
-        NativeMethod::new("base58CheckEncode".into(), 1 << 16, true, 0, vec![bytes], string)
-            .with_parameter_names(["data"]),
-        NativeMethod::new("base58CheckDecode".into(), 1 << 16, true, 0, vec![string], bytes)
-            .with_parameter_names(["s"]),
+        NativeMethod::new(
+            "base58CheckEncode".into(),
+            1 << 16,
+            true,
+            0,
+            vec![bytes],
+            string,
+        )
+        .with_parameter_names(["data"]),
+        NativeMethod::new(
+            "base58CheckDecode".into(),
+            1 << 16,
+            true,
+            0,
+            vec![string],
+            bytes,
+        )
+        .with_parameter_names(["s"]),
         // serialize(Any) -> ByteArray; deserialize(ByteArray) -> Any.
-        NativeMethod::new("serialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes)
-            .with_parameter_names(["item"]),
-        NativeMethod::new("deserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any)
-            .with_parameter_names(["data"]),
+        NativeMethod::new(
+            "serialize".into(),
+            1 << 12,
+            true,
+            0,
+            vec![ContractParameterType::Any],
+            bytes,
+        )
+        .with_parameter_names(["item"]),
+        NativeMethod::new(
+            "deserialize".into(),
+            1 << 14,
+            true,
+            0,
+            vec![bytes],
+            ContractParameterType::Any,
+        )
+        .with_parameter_names(["data"]),
         // jsonSerialize(Any) -> ByteArray; jsonDeserialize(ByteArray) -> Any
         // (C# StdLib.cs CpuFees 1<<12 / 1<<14).
-        NativeMethod::new("jsonSerialize".into(), 1 << 12, true, 0, vec![ContractParameterType::Any], bytes)
-            .with_parameter_names(["item"]),
-        NativeMethod::new("jsonDeserialize".into(), 1 << 14, true, 0, vec![bytes], ContractParameterType::Any)
-            .with_parameter_names(["json"]),
-        NativeMethod::new("memoryCompare".into(), 1 << 5, true, 0, vec![bytes, bytes], int)
-            .with_parameter_names(["str1", "str2"]),
+        NativeMethod::new(
+            "jsonSerialize".into(),
+            1 << 12,
+            true,
+            0,
+            vec![ContractParameterType::Any],
+            bytes,
+        )
+        .with_parameter_names(["item"]),
+        NativeMethod::new(
+            "jsonDeserialize".into(),
+            1 << 14,
+            true,
+            0,
+            vec![bytes],
+            ContractParameterType::Any,
+        )
+        .with_parameter_names(["json"]),
+        NativeMethod::new(
+            "memoryCompare".into(),
+            1 << 5,
+            true,
+            0,
+            vec![bytes, bytes],
+            int,
+        )
+        .with_parameter_names(["str1", "str2"]),
         // memorySearch's 3 C# overloads (dispatched by argument count).
-        NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes], int)
-            .with_parameter_names(["mem", "value"]),
-        NativeMethod::new("memorySearch".into(), 1 << 6, true, 0, vec![bytes, bytes, int], int)
-            .with_parameter_names(["mem", "value", "start"]),
+        NativeMethod::new(
+            "memorySearch".into(),
+            1 << 6,
+            true,
+            0,
+            vec![bytes, bytes],
+            int,
+        )
+        .with_parameter_names(["mem", "value"]),
+        NativeMethod::new(
+            "memorySearch".into(),
+            1 << 6,
+            true,
+            0,
+            vec![bytes, bytes, int],
+            int,
+        )
+        .with_parameter_names(["mem", "value", "start"]),
         NativeMethod::new(
             "memorySearch".into(),
             1 << 6,
@@ -559,8 +636,15 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
         NativeMethod::new("atoi".into(), 1 << 6, true, 0, vec![string, int], int)
             .with_parameter_names(["value", "base"]),
         // stringSplit(str, separator[, removeEmptyEntries]) -> Array of String.
-        NativeMethod::new("stringSplit".into(), 1 << 8, true, 0, vec![string, string], array)
-            .with_parameter_names(["str", "separator"]),
+        NativeMethod::new(
+            "stringSplit".into(),
+            1 << 8,
+            true,
+            0,
+            vec![string, string],
+            array,
+        )
+        .with_parameter_names(["str", "separator"]),
         NativeMethod::new(
             "stringSplit".into(),
             1 << 8,
@@ -575,12 +659,26 @@ static STDLIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
         NativeMethod::new("strLen".into(), 1 << 8, true, 0, vec![string], int)
             .with_parameter_names(["str"]),
         // base64Url* are available from the Echidna hardfork onward.
-        NativeMethod::new("base64UrlEncode".into(), 1 << 5, true, 0, vec![string], string)
-            .with_active_in(Hardfork::HfEchidna)
-            .with_parameter_names(["data"]),
-        NativeMethod::new("base64UrlDecode".into(), 1 << 5, true, 0, vec![string], string)
-            .with_active_in(Hardfork::HfEchidna)
-            .with_parameter_names(["s"]),
+        NativeMethod::new(
+            "base64UrlEncode".into(),
+            1 << 5,
+            true,
+            0,
+            vec![string],
+            string,
+        )
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["data"]),
+        NativeMethod::new(
+            "base64UrlDecode".into(),
+            1 << 5,
+            true,
+            0,
+            vec![string],
+            string,
+        )
+        .with_active_in(Hardfork::HfEchidna)
+        .with_parameter_names(["s"]),
         // hexEncode/hexDecode are available from the Faun hardfork onward.
         NativeMethod::new("hexEncode".into(), 1 << 5, true, 0, vec![bytes], string)
             .with_active_in(Hardfork::HfFaun)
@@ -597,11 +695,11 @@ impl NativeContract for StdLib {
     }
 
     fn hash(&self) -> UInt160 {
-        *STDLIB_HASH_REF
+        Self::script_hash()
     }
 
     fn name(&self) -> &str {
-        "StdLib"
+        Self::NAME
     }
 
     fn methods(&self) -> &[NativeMethod] {
@@ -650,7 +748,10 @@ mod tests {
         let enc3 = call("base64Encode", &[1, 2, 3]).unwrap();
         assert_eq!(call("base64Decode", &enc3).unwrap(), vec![1, 2, 3]);
         // Whitespace {space, \r, \t, \n} is stripped before decoding.
-        assert_eq!(call("base64Decode", b"A \r Q \t I \n D").unwrap(), vec![1, 2, 3]);
+        assert_eq!(
+            call("base64Decode", b"A \r Q \t I \n D").unwrap(),
+            vec![1, 2, 3]
+        );
         assert_eq!(call("base64Decode", b"AQIDBA==").unwrap(), vec![1, 2, 3, 4]);
     }
 
@@ -670,9 +771,17 @@ mod tests {
         // 1024 bytes ok ("QQ==" padded chunks stay valid); 1025 faults pre-decode.
         let ok = "A".repeat(MAX_INPUT_LENGTH - 4) + "QQ==";
         assert_eq!(ok.len(), MAX_INPUT_LENGTH);
-        assert!(dispatch("base64Decode", &[ok.into_bytes()]).unwrap().is_ok());
+        assert!(
+            dispatch("base64Decode", &[ok.into_bytes()])
+                .unwrap()
+                .is_ok()
+        );
         let too_long = "A".repeat(MAX_INPUT_LENGTH + 1);
-        assert!(dispatch("base64Decode", &[too_long.into_bytes()]).unwrap().is_err());
+        assert!(
+            dispatch("base64Decode", &[too_long.into_bytes()])
+                .unwrap()
+                .is_err()
+        );
     }
 
     #[test]
@@ -691,7 +800,8 @@ mod tests {
             plain
         );
         // The four whitespace chars .NET ignores are stripped before decoding.
-        let spaced = "U 3 \t V \n \riamVjdD10ZXN0QGV4YW1wbGUuY29tJklzc3Vlcj1odHRwczovL2V4YW1wbGUuY29t";
+        let spaced =
+            "U 3 \t V \n \riamVjdD10ZXN0QGV4YW1wbGUuY29tJklzc3Vlcj1odHRwczovL2V4YW1wbGUuY29t";
         assert_eq!(
             String::from_utf8(call("base64UrlDecode", spaced.as_bytes()).unwrap()).unwrap(),
             plain
@@ -711,7 +821,11 @@ mod tests {
         let c = StdLib::new();
         for name in ["base64UrlEncode", "base64UrlDecode"] {
             let m = c.methods().iter().find(|m| m.name == name).unwrap();
-            assert_eq!(m.active_in, Some(Hardfork::HfEchidna), "{name} must gate on Echidna");
+            assert_eq!(
+                m.active_in,
+                Some(Hardfork::HfEchidna),
+                "{name} must gate on Echidna"
+            );
         }
     }
 
@@ -739,7 +853,11 @@ mod tests {
         let c = StdLib::new();
         for name in ["hexEncode", "hexDecode"] {
             let m = c.methods().iter().find(|m| m.name == name).unwrap();
-            assert_eq!(m.active_in, Some(Hardfork::HfFaun), "{name} must gate on Faun");
+            assert_eq!(
+                m.active_in,
+                Some(Hardfork::HfFaun),
+                "{name} must gate on Faun"
+            );
         }
     }
 
@@ -916,7 +1034,9 @@ mod tests {
     #[test]
     fn itoa_atoi_round_trip_hex() {
         // atoi(itoa(v, 16), 16) == v across the sign boundary.
-        for v in [-300i64, -256, -129, -128, -1, 0, 1, 127, 128, 255, 256, 65535] {
+        for v in [
+            -300i64, -256, -129, -128, -1, 0, 1, 127, 128, 255, 256, 65535,
+        ] {
             let hex = itoa(v, Some(16)).unwrap();
             assert_eq!(atoi(&hex, Some(16)).unwrap(), BigInt::from(v), "hex={hex}");
         }
@@ -934,9 +1054,6 @@ mod tests {
     #[test]
     fn native_contract_surface() {
         let c = StdLib::new();
-        assert_eq!(NativeContract::id(&c), -2);
-        assert_eq!(NativeContract::name(&c), "StdLib");
-        assert_eq!(NativeContract::hash(&c), *STDLIB_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(
             names,
@@ -1066,9 +1183,11 @@ mod tests {
     #[test]
     fn memory_search_start_out_of_range_faults() {
         // C# AsSpan(start) throws when start exceeds the length.
-        assert!(dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]])
-            .unwrap()
-            .is_err());
+        assert!(
+            dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]])
+                .unwrap()
+                .is_err()
+        );
     }
 
     #[test]
@@ -1088,12 +1207,16 @@ mod tests {
         // deserialize accepts the valid payload (returns it for the Any-return
         // decode) and faults on malformed input.
         assert_eq!(
-            dispatch("deserialize", &[payload.clone()]).unwrap().unwrap(),
+            dispatch("deserialize", &[payload.clone()])
+                .unwrap()
+                .unwrap(),
             payload
         );
-        assert!(dispatch("deserialize", &[vec![0xff, 0xff, 0xff]])
-            .unwrap()
-            .is_err());
+        assert!(
+            dispatch("deserialize", &[vec![0xff, 0xff, 0xff]])
+                .unwrap()
+                .is_err()
+        );
     }
 
     #[test]
@@ -1109,7 +1232,10 @@ mod tests {
         // C# UT_StdLib.Json_Serialize.
         assert_eq!(ser(&StackItem::from_int(BigInt::from(5))), "5");
         assert_eq!(ser(&StackItem::from_bool(true)), "true");
-        assert_eq!(ser(&StackItem::from_byte_string(b"test".to_vec())), "\"test\"");
+        assert_eq!(
+            ser(&StackItem::from_byte_string(b"test".to_vec())),
+            "\"test\""
+        );
         assert_eq!(ser(&StackItem::null()), "null");
 
         // jsonDeserialize returns the StackItem re-encoded as BinarySerializer
@@ -1119,14 +1245,26 @@ mod tests {
             let out = dispatch("jsonDeserialize", &[json.as_bytes().to_vec()])
                 .unwrap()
                 .unwrap();
-            assert_eq!(out, BinarySerializer::serialize(item, &limits).unwrap(), "{json}");
+            assert_eq!(
+                out,
+                BinarySerializer::serialize(item, &limits).unwrap(),
+                "{json}"
+            );
         };
         // C# UT_StdLib.Json_Deserialize.
         de_eq("123", &StackItem::from_int(BigInt::from(123)));
         de_eq("null", &StackItem::null());
         // Faults: invalid JSON ("***") and a fractional number ("no decimals").
-        assert!(dispatch("jsonDeserialize", &[b"***".to_vec()]).unwrap().is_err());
-        assert!(dispatch("jsonDeserialize", &[b"123.45".to_vec()]).unwrap().is_err());
+        assert!(
+            dispatch("jsonDeserialize", &[b"***".to_vec()])
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            dispatch("jsonDeserialize", &[b"123.45".to_vec()])
+                .unwrap()
+                .is_err()
+        );
 
         // Serialize -> deserialize round-trips a structured value.
         let payload = dispatch("jsonDeserialize", &[br#"{"k":[1,true,null]}"#.to_vec()])

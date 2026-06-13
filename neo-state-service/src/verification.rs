@@ -17,7 +17,7 @@
 use crate::commit_handlers::StateRootCalculator;
 use crate::state_root::StateRoot;
 use crate::state_store::StateStore;
-use neo_data_cache::DataCache;
+use neo_storage::DataCache;
 use std::sync::Arc;
 
 /// Outcome of a [`Verifier::verify`] call.
@@ -51,11 +51,7 @@ impl Verifier {
 
     /// Verifies the supplied candidate state root against the
     /// supplied snapshot.
-    pub fn verify(
-        &self,
-        candidate: StateRoot,
-        snapshot: &DataCache,
-    ) -> VerifyOutcome {
+    pub fn verify(&self, candidate: StateRoot, snapshot: &DataCache) -> VerifyOutcome {
         let index = candidate.index();
         match self.calculator.compute(index, snapshot) {
             Ok(recomputed) => {
@@ -86,7 +82,10 @@ mod tests {
     fn accepted_when_claimed_matches_recomputed() {
         let store = Arc::new(StateStore::new());
         let calc = Arc::new(SyntheticStateRootCalculator);
-        let verifier = Verifier::new(Arc::clone(&store), Arc::clone(&calc) as Arc<dyn StateRootCalculator>);
+        let verifier = Verifier::new(
+            Arc::clone(&store),
+            Arc::clone(&calc) as Arc<dyn StateRootCalculator>,
+        );
         let snapshot = DataCache::new(false);
         let claimed = calc.compute(1, &snapshot).expect("calc");
         let outcome = verifier.verify(claimed, &snapshot);

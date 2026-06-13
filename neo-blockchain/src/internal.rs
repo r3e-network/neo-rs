@@ -6,7 +6,7 @@
 //! per-type modules (`persist_completed`, `import`, `reverify`, `command`,
 //! ...).
 
-use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use neo_payloads::Block;
@@ -33,22 +33,50 @@ pub(super) fn classify_import_block(current_height: u32, block_index: u32) -> Im
     }
 }
 
-/// Per-index FIFO list of unverified blocks awaiting their parent to land.
-#[allow(dead_code)]
+/// One block parked because its parent has not landed yet.
 #[derive(Debug, Clone)]
+pub(super) struct UnverifiedBlock {
+    pub(super) block: Arc<Block>,
+    pub(super) relay: bool,
+    pub(super) pre_verified: bool,
+}
+
+impl UnverifiedBlock {
+    pub(super) fn new(block: Arc<Block>, relay: bool, pre_verified: bool) -> Self {
+        Self {
+            block,
+            relay,
+            pre_verified,
+        }
+    }
+}
+
+/// Per-index FIFO list of unverified blocks awaiting their parent to land.
+#[derive(Debug, Clone, Default)]
 pub struct UnverifiedBlocksList {
-    pub(super) blocks: Vec<Arc<Block>>,
-    nodes: HashSet<String>,
+    blocks: VecDeque<UnverifiedBlock>,
 }
 
 impl UnverifiedBlocksList {
     /// Construct an empty FIFO list.
-    #[allow(dead_code)]
     pub(super) fn new() -> Self {
-        Self {
-            blocks: Vec::new(),
-            nodes: HashSet::new(),
-        }
+        Self::default()
+    }
+
+    pub(super) fn push_back(&mut self, block: UnverifiedBlock) {
+        self.blocks.push_back(block);
+    }
+
+    pub(super) fn pop_front(&mut self) -> Option<UnverifiedBlock> {
+        self.blocks.pop_front()
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.blocks.len()
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
     }
 }
 
@@ -63,10 +91,7 @@ mod tests {
 
     #[test]
     fn classify_already_seen_for_past_height() {
-        assert_eq!(
-            classify_import_block(10, 5),
-            ImportDisposition::AlreadySeen
-        );
+        assert_eq!(classify_import_block(10, 5), ImportDisposition::AlreadySeen);
         assert_eq!(
             classify_import_block(10, 10),
             ImportDisposition::AlreadySeen

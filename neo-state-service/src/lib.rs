@@ -24,15 +24,13 @@
 //!
 //! Sits in **Layer 2 (service)**. Depends on:
 //!
-//! - `neo-state-types` (Layer 1) - for the wire-protocol enums
-//!   (`Keys`, `MessageType`, `Vote`, `StateRootIngestStats`) and the
-//!   state-service payload-category constant.
-//! - `neo-data-cache` (Layer 1) - for the `DataCache` used during
+//! - Local wire-protocol modules (`Keys`, `MessageType`, `Vote`,
+//!   `StateRootIngestStats`) for the state-service payload surface.
+//! - `neo-storage` (Layer 1) - for the `DataCache` used during
 //!   MPT computation.
 //! - `neo-payloads` (Layer 1) - for the `ExtensiblePayload` used to
 //!   transport state-root messages.
-//! - `neo-event-handlers` (Layer 1) - for the typed
-//!   `BlockCommittedHandler` / `BlockRevertedHandler` traits.
+//! - `neo-payloads` (Layer 1) - for the typed block lifecycle handler traits.
 //!
 //! Must **not** depend on `neo-core` (deleted).
 
@@ -41,23 +39,30 @@
 #![warn(missing_docs)]
 
 pub mod commit_handlers;
+pub mod keys;
+pub mod message_type;
+/// Lightweight state-root ingestion counters.
+pub mod metrics;
 pub mod mpt_store;
 pub mod root_cache;
 pub mod state_root;
 pub mod state_store;
 pub mod verification;
+pub mod vote;
 
-// Re-export the wire-protocol surface from `neo-state-types` so
-// consumers can `use neo_state_service::*` to get the full state
-// service surface (stateful + wire).
-pub use neo_state_types::{
-    Keys, MessageType, StateRootIngestStats, Vote, STATE_SERVICE_CATEGORY,
-};
+/// Extensible payload category for state service messages
+/// (matches C# `StateService.StatePayloadCategory`).
+pub const STATE_SERVICE_CATEGORY: &str = "StateService";
+
+pub use keys::Keys;
+pub use message_type::MessageType;
+pub use metrics::{StateRootIngestStats, record_ingest_result, state_root_ingest_stats};
+pub use vote::Vote;
 
 pub use mpt_store::{MptChange, MptReadSnapshot, MptStore};
 pub use root_cache::{
-    StateRootCache, StateRootCacheEntry, StateRootCacheStats, StateRootCacheStatsSnapshot,
-    DEFAULT_ROOT_CACHE_CAPACITY,
+    DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
+    StateRootCacheStatsSnapshot,
 };
-pub use state_root::{StateRoot, CURRENT_VERSION};
+pub use state_root::{CURRENT_VERSION, StateRoot};
 pub use state_store::{StateStore, StateStoreLookup, StateStoreTransaction};

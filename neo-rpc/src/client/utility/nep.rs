@@ -2,11 +2,12 @@ use super::parsing::{
     insert_optional_string, object_array, optional_script_hash_or_address_lossy,
     parse_object_array_lossy, required_address_script_hash, required_bigint_string,
     required_script_hash_or_address, required_u16_number, required_u32_number, required_u64_number,
-    required_uint256};
+    required_uint256,
+};
 use neo_config::ProtocolSettings;
-use neo_wallets::wallet_helper as WalletHelper;
-use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
+use neo_serialization::json::{JObject, JToken};
+use neo_wallets::wallet_helper as WalletHelper;
 use num_bigint::BigInt;
 
 /// Builds the shared NEP balance container shape.
@@ -48,7 +49,8 @@ pub(crate) struct NepBalanceFields {
     /// Balance amount.
     pub amount: BigInt,
     /// Last updated block height.
-    pub last_updated_block: u32}
+    pub last_updated_block: u32,
+}
 
 /// Borrowed NEP balance item fields used when building RPC JSON.
 #[derive(Debug, Clone, Copy)]
@@ -56,7 +58,8 @@ pub(crate) struct NepBalanceFieldRefs<'a> {
     /// Balance amount.
     pub amount: &'a BigInt,
     /// Last updated block height.
-    pub last_updated_block: u32}
+    pub last_updated_block: u32,
+}
 
 /// Appends shared NEP balance item fields in RPC wire order.
 pub(crate) fn insert_nep_balance_fields(json: &mut JObject, fields: NepBalanceFieldRefs<'_>) {
@@ -74,7 +77,8 @@ pub(crate) fn insert_nep_balance_fields(json: &mut JObject, fields: NepBalanceFi
 pub(crate) fn parse_nep_balance_fields(json: &JObject) -> Result<NepBalanceFields, String> {
     Ok(NepBalanceFields {
         amount: required_bigint_string(json, "amount", "amount")?,
-        last_updated_block: required_u32_number(json, "lastupdatedblock")?})
+        last_updated_block: required_u32_number(json, "lastupdatedblock")?,
+    })
 }
 
 /// Builds the shared NEP transfer container shape.
@@ -132,7 +136,8 @@ pub(crate) struct NepTransferFields {
     /// Transfer notify index.
     pub transfer_notify_index: u16,
     /// Transaction hash.
-    pub tx_hash: UInt256}
+    pub tx_hash: UInt256,
+}
 
 /// Borrowed NEP transfer entry fields used when building RPC JSON.
 #[derive(Debug, Clone, Copy)]
@@ -150,7 +155,8 @@ pub(crate) struct NepTransferFieldRefs<'a> {
     /// Transfer notify index.
     pub transfer_notify_index: u16,
     /// Transaction hash.
-    pub tx_hash: UInt256}
+    pub tx_hash: UInt256,
+}
 
 /// Appends the shared NEP transfer entry fields in RPC wire order.
 pub(crate) fn insert_nep_transfer_fields(
@@ -215,7 +221,8 @@ pub(crate) fn parse_nep_transfer_fields(
         amount: required_bigint_string(json, "amount", "amount")?,
         block_index: required_u32_number(json, "blockindex")?,
         transfer_notify_index: required_u16_number(json, "transfernotifyindex")?,
-        tx_hash: required_uint256(json, "txhash")?})
+        tx_hash: required_uint256(json, "txhash")?,
+    })
 }
 
 #[cfg(test)]
@@ -229,7 +236,7 @@ mod tests {
             let mut item = JObject::new();
             item.insert("value".to_string(), JToken::String("ok".to_string()));
             item
-       });
+        });
 
         assert_eq!(
             token.to_string(),
@@ -238,7 +245,7 @@ mod tests {
                 WalletHelper::to_address(&UInt160::zero(), settings.address_version)
             )
         );
-   }
+    }
 
     #[test]
     fn nep_balance_fields_preserve_string_amount_and_numeric_height() {
@@ -248,7 +255,8 @@ mod tests {
             &mut json,
             NepBalanceFieldRefs {
                 amount: &amount,
-                last_updated_block: 7},
+                last_updated_block: 7,
+            },
         );
 
         assert_eq!(json.to_string(), r#"{"amount":"42","lastupdatedblock":7}"#);
@@ -256,7 +264,7 @@ mod tests {
         let parsed = parse_nep_balance_fields(&json).expect("balance fields");
         assert_eq!(parsed.amount, amount);
         assert_eq!(parsed.last_updated_block, 7);
-   }
+    }
 
     #[test]
     fn nep_balance_fields_preserve_legacy_type_errors() {
@@ -299,5 +307,5 @@ mod tests {
             parse_nep_balance_fields(&invalid_amount).expect_err("invalid amount"),
             "Invalid amount: bad"
         );
-   }
+    }
 }

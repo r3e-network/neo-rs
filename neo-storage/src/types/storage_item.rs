@@ -168,7 +168,7 @@ impl PartialEq for StorageItem {
 
 impl Eq for StorageItem {}
 
-crate::impl_default_via_new!(StorageItem);
+neo_io::impl_default_via_new!(StorageItem);
 
 impl fmt::Debug for StorageItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

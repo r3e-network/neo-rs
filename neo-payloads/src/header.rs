@@ -1,6 +1,5 @@
 //! Block header.
 
-
 // Copyright (C) 2015-2025 The Neo Project.
 //
 // header.rs file belongs to the neo project and is free
@@ -13,14 +12,11 @@
 // modifications are permitted.
 
 use super::witness::Witness;
-use neo_error::CoreResult;
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_data_cache::DataCache;
 use neo_config::ProtocolSettings;
+use neo_error::CoreResult;
+use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
-use neo_primitives::error::PrimitiveResult;
 use serde::{Deserialize, Serialize};
-
 
 /// Represents the header of a block.
 #[derive(Debug, Serialize, Deserialize)]
@@ -239,8 +235,11 @@ impl Header {
     /// header wire-JSON shared by the RPC server and client; callers that serve
     /// `getblock`/`getblockheader` add the contextual `confirmations` and
     /// optional `nextblockhash` fields on top.
-    pub fn to_json(&self, settings: &ProtocolSettings) -> serde_json::Map<String, serde_json::Value> {
-        use serde_json::{json, Value};
+    pub fn to_json(
+        &self,
+        settings: &ProtocolSettings,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        use serde_json::{Value, json};
         let hash = self.hash();
         let mut json = serde_json::Map::new();
         json.insert("hash".to_string(), Value::String(hash.to_string()));
@@ -293,15 +292,7 @@ impl Header {
 // Use macro to reduce boilerplate
 neo_io::impl_default_via_new!(Header);
 
-
-
-impl crate::VerifiableExt for Header {
-    
-
-    
-
-    
-}
+impl crate::VerifiableExt for Header {}
 
 impl neo_primitives::SerializablePayload for Header {
     fn hash_data(&self) -> Vec<u8> {
@@ -370,15 +361,16 @@ impl Header {
     }
 }
 
-
-
-
-
 impl neo_primitives::Verifiable for Header {
     fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
-        let data = self.try_get_hash_data()
-            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(format!("header serialization failed: {e}")))?;
-        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(&data)))
+        let data = self.try_get_hash_data().map_err(|e| {
+            neo_primitives::error::PrimitiveError::invalid_data(format!(
+                "header serialization failed: {e}"
+            ))
+        })?;
+        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
+            &data,
+        )))
     }
     fn hash_data(&self) -> Vec<u8> {
         let mut writer = neo_io::BinaryWriter::new();

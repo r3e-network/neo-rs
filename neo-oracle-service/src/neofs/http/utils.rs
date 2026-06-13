@@ -1,7 +1,7 @@
-use neo_primitives::UInt256;
+use futures::StreamExt;
 use neo_crypto::Sha256Hasher;
 use neo_payloads::OracleResponseCode;
-use futures::StreamExt;
+use neo_primitives::UInt256;
 use reqwest::StatusCode;
 
 pub(crate) fn normalize_neofs_endpoint(endpoint: &str) -> Result<String, String> {

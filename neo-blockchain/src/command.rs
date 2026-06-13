@@ -16,14 +16,14 @@
 
 use std::sync::Arc;
 
-use neo_payloads::{extensible_payload::ExtensiblePayload, header::Header, Block, Transaction};
+use neo_payloads::{Block, Transaction, extensible_payload::ExtensiblePayload, header::Header};
 
+use crate::PreverifyCompleted;
 use crate::fill_memory_pool::FillMemoryPool;
 use crate::import::Import;
 use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
 use crate::reverify::Reverify;
-use crate::PreverifyCompleted;
 
 /// Reply payload for [`BlockchainCommand::AddTransaction`].
 #[derive(Debug, Clone, Copy)]
@@ -69,6 +69,13 @@ pub enum BlockchainCommand {
         /// Whether state-independent verification (signatures) was already performed.
         pre_verified: bool,
     },
+    /// Request/response import path for externally supplied blocks.
+    ImportBlock {
+        /// The block to verify and import.
+        block: Arc<Block>,
+        /// Reply channel; `true` means the canonical tip advanced.
+        reply: tokio::sync::oneshot::Sender<bool>,
+    },
     /// Extensible payload received.
     InventoryExtensible {
         /// The extensible payload.
@@ -87,10 +94,8 @@ pub enum BlockchainCommand {
     /// Initialize the blockchain service.
     Initialize,
     /// Check unverified cache and persist any ready consecutive blocks.
-    /// Self-scheduled by the service when blocks are parked in the
-    /// unverified cache to ensure persistence continues even when the
-    /// specific `InventoryBlock` message for the next-to-persist block
-    /// is delayed in the mailbox.
+    /// Also invoked by the service after a block/import advances the tip so
+    /// parked out-of-order blocks continue immediately once their gap closes.
     DrainUnverified,
     /// Attach a new transaction (used by the high-level service API).
     AddTransaction {

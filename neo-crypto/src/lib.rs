@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 //! # Neo Crypto
 //!
@@ -78,18 +79,6 @@ pub use signature::{
     ECC, ECDsa, Ed25519Crypto, NEOFS_ECDSA_SHA512_PREFIX, NEOFS_ECDSA_SHA512_SIGNATURE_LEN,
     Secp256k1Crypto, Secp256r1Crypto,
 };
-
-/// Implements `Default` for a struct by calling `Self::new()`.
-#[macro_export]
-macro_rules! impl_default_via_new {
-    ($type:ty) => {
-        impl Default for $type {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-    };
-}
 
 #[cfg(test)]
 mod tests {

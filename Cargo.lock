@@ -290,6 +290,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bigdecimal"
+version = "0.4.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d6867f1565b3aad85681f1015055b087fcfd840d6aeee6eee7f2da317603695"
+dependencies = [
+ "autocfg",
+ "libm",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "serde",
+]
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -901,12 +915,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "data-encoding"
-version = "2.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
-
-[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1444,30 +1452,6 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
-]
-
-[[package]]
-name = "headers"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06683b93020a07e3dbcf5f8c0f6d40080d725bea7936fc01ad345c01b97dc270"
-dependencies = [
- "base64 0.21.7",
- "bytes",
- "headers-core",
- "http 0.2.12",
- "httpdate",
- "mime",
- "sha1",
-]
-
-[[package]]
-name = "headers-core"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7f66481bfee273957b1f20485a4ff3362987f85b2c236580d81b4eb7a326429"
-dependencies = [
- "http 0.2.12",
 ]
 
 [[package]]
@@ -2222,16 +2206,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
-name = "mime_guess"
-version = "2.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
-dependencies = [
- "mime",
- "unicase",
-]
-
-[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2284,24 +2258,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "multer"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01acbdc23469fd8fe07ab135923371d5f5a422fbf9c522158677c8eb15bc51c2"
-dependencies = [
- "bytes",
- "encoding_rs",
- "futures-util",
- "http 0.2.12",
- "httparse",
- "log",
- "memchr",
- "mime",
- "spin",
- "version_check",
-]
-
-[[package]]
 name = "multimap"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2331,30 +2287,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-application-logs"
-version = "0.7.2"
-dependencies = [
- "neo-block",
- "neo-blockchain",
- "neo-crypto",
- "neo-event-handlers",
- "neo-execution",
- "neo-manifest",
- "neo-mempool",
- "neo-network",
- "neo-payloads",
- "neo-primitives",
- "neo-script-builder",
- "neo-storage",
- "neo-system",
- "neo-vm",
- "neo-vm-rs",
- "parking_lot",
- "serde_json",
- "tracing",
-]
-
-[[package]]
 name = "neo-benches"
 version = "0.7.2"
 dependencies = [
@@ -2364,32 +2296,8 @@ dependencies = [
  "neo-io",
  "neo-payloads",
  "neo-primitives",
- "neo-redeem-script",
- "neo-script-builder",
- "neo-vm-rs",
-]
-
-[[package]]
-name = "neo-block"
-version = "0.7.2"
-dependencies = [
- "hex",
- "neo-config",
- "neo-crypto",
- "neo-data-cache",
- "neo-error",
- "neo-events",
- "neo-io",
- "neo-ledger-types",
- "neo-payloads",
- "neo-primitives",
- "neo-serialization",
  "neo-vm",
  "neo-vm-rs",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]
@@ -2401,29 +2309,20 @@ dependencies = [
  "futures",
  "hashbrown 0.14.5",
  "hex",
- "neo-block",
- "neo-chain",
  "neo-config",
  "neo-crypto",
- "neo-data-cache",
  "neo-error",
- "neo-events",
  "neo-execution",
  "neo-io",
- "neo-ledger-types",
  "neo-manifest",
  "neo-mempool",
  "neo-native-contracts",
  "neo-payloads",
  "neo-primitives",
- "neo-redeem-script",
  "neo-runtime",
- "neo-script-builder",
  "neo-serialization",
  "neo-state-service",
  "neo-storage",
- "neo-telemetry",
- "neo-time",
  "neo-vm",
  "neo-vm-rs",
  "num-bigint",
@@ -2433,18 +2332,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "neo-chain"
-version = "0.7.2"
-dependencies = [
- "neo-crypto",
- "neo-error",
- "neo-ledger-types",
- "neo-primitives",
- "neo-time",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2470,15 +2357,13 @@ dependencies = [
  "async-trait",
  "bincode",
  "lru",
- "neo-block",
  "neo-crypto",
- "neo-event-handlers",
  "neo-io",
  "neo-network",
  "neo-payloads",
  "neo-primitives",
- "neo-script-builder",
  "neo-system",
+ "neo-vm",
  "neo-vm-rs",
  "rand 0.8.6",
  "serde",
@@ -2525,47 +2410,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-data-cache"
-version = "0.7.2"
-dependencies = [
- "dashmap",
- "hashbrown 0.14.5",
- "lru",
- "neo-error",
- "neo-primitives",
- "neo-storage",
- "parking_lot",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "neo-error"
 version = "0.7.2"
 dependencies = [
  "neo-io",
  "neo-primitives",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "neo-event-handlers"
-version = "0.7.2"
-dependencies = [
- "neo-block",
- "neo-ledger-types",
- "neo-payloads",
- "neo-primitives",
- "neo-storage",
-]
-
-[[package]]
-name = "neo-events"
-version = "0.7.2"
-dependencies = [
- "neo-ledger-types",
- "neo-primitives",
- "tracing",
 ]
 
 [[package]]
@@ -2586,19 +2436,14 @@ dependencies = [
  "indexmap 2.8.0",
  "k256",
  "lru",
- "neo-block",
  "neo-config",
  "neo-crypto",
- "neo-data-cache",
  "neo-error",
  "neo-io",
- "neo-ledger-types",
  "neo-manifest",
  "neo-p2p",
  "neo-payloads",
  "neo-primitives",
- "neo-redeem-script",
- "neo-script-builder",
  "neo-serialization",
  "neo-storage",
  "neo-vm",
@@ -2606,7 +2451,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "once_cell",
  "parking_lot",
  "rand 0.8.6",
  "ripemd",
@@ -2620,17 +2464,6 @@ dependencies = [
  "toml",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "neo-extensions"
-version = "0.7.2"
-dependencies = [
- "neo-crypto",
- "neo-error",
- "neo-io",
- "neo-primitives",
- "parking_lot",
 ]
 
 [[package]]
@@ -2679,37 +2512,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-json"
-version = "0.7.2"
-dependencies = [
- "hashbrown 0.14.5",
- "indexmap 2.8.0",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "neo-ledger-types"
-version = "0.7.2"
-dependencies = [
- "base64 0.22.1",
- "hex",
- "neo-config",
- "neo-crypto",
- "neo-error",
- "neo-io",
- "neo-primitives",
- "neo-redeem-script",
- "neo-vm-rs",
- "parking_lot",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
 name = "neo-manifest"
 version = "0.7.2"
 dependencies = [
@@ -2737,15 +2539,12 @@ dependencies = [
  "hex",
  "neo-config",
  "neo-crypto",
- "neo-data-cache",
  "neo-error",
  "neo-execution",
  "neo-io",
  "neo-native-contracts",
  "neo-payloads",
  "neo-primitives",
- "neo-redeem-script",
- "neo-script-builder",
  "neo-serialization",
  "neo-storage",
  "neo-vm",
@@ -2762,55 +2561,22 @@ dependencies = [
 name = "neo-native-contracts"
 version = "0.7.2"
 dependencies = [
- "async-trait",
- "base64 0.22.1",
- "bip39",
- "bitflags 2.13.0",
- "bitvec",
- "blake2",
- "blst",
- "bs58",
- "chrono",
- "dashmap",
- "hashbrown 0.14.5",
  "hex",
- "indexmap 2.8.0",
- "k256",
- "lru",
- "neo-block",
  "neo-config",
  "neo-crypto",
- "neo-data-cache",
  "neo-error",
  "neo-execution",
  "neo-io",
- "neo-ledger-types",
  "neo-manifest",
  "neo-payloads",
  "neo-primitives",
- "neo-redeem-script",
- "neo-script-builder",
  "neo-serialization",
  "neo-storage",
  "neo-vm",
  "neo-vm-rs",
  "num-bigint",
- "num-integer",
  "num-traits",
- "once_cell",
- "parking_lot",
- "rand 0.8.6",
- "ripemd",
- "secp256k1",
  "serde",
- "serde_json",
- "sha2 0.10.9",
- "sha3",
- "smallvec",
- "thiserror 2.0.18",
- "toml",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -2818,20 +2584,18 @@ name = "neo-network"
 version = "0.7.2"
 dependencies = [
  "async-trait",
+ "bytes",
  "futures",
  "hex",
  "neo-config",
  "neo-error",
- "neo-events",
  "neo-io",
- "neo-ledger-types",
  "neo-p2p",
  "neo-payloads",
  "neo-primitives",
  "neo-runtime",
- "neo-state-types",
- "neo-wire",
  "parking_lot",
+ "serde",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -2850,13 +2614,10 @@ dependencies = [
  "hex",
  "hyper 0.14.32",
  "mimalloc",
- "neo-application-logs",
- "neo-block",
  "neo-blockchain",
  "neo-config",
  "neo-consensus",
  "neo-crypto",
- "neo-event-handlers",
  "neo-execution",
  "neo-hsm",
  "neo-io",
@@ -2868,17 +2629,11 @@ dependencies = [
  "neo-p2p",
  "neo-payloads",
  "neo-primitives",
- "neo-redeem-script",
  "neo-rpc",
- "neo-script-builder",
  "neo-state-service",
  "neo-storage",
- "neo-storage-rocksdb",
  "neo-system",
  "neo-tee",
- "neo-telemetry",
- "neo-time",
- "neo-tokens-tracker",
  "neo-vm",
  "neo-vm-rs",
  "neo-wallets",
@@ -2886,6 +2641,7 @@ dependencies = [
  "parking_lot",
  "prometheus",
  "rand 0.8.6",
+ "reqwest",
  "rpassword",
  "serde",
  "serde_json",
@@ -2910,23 +2666,20 @@ dependencies = [
  "base64 0.22.1",
  "futures",
  "hex",
- "neo-block",
  "neo-blockchain",
  "neo-config",
  "neo-crypto",
- "neo-event-handlers",
  "neo-execution",
  "neo-io",
- "neo-json",
  "neo-manifest",
  "neo-native-contracts",
  "neo-network",
  "neo-payloads",
  "neo-primitives",
- "neo-script-builder",
+ "neo-serialization",
  "neo-storage",
  "neo-system",
- "neo-time",
+ "neo-vm",
  "neo-vm-rs",
  "neo-wallets",
  "parking_lot",
@@ -2974,17 +2727,13 @@ dependencies = [
  "hex",
  "neo-config",
  "neo-crypto",
- "neo-data-cache",
  "neo-error",
  "neo-io",
- "neo-ledger-types",
  "neo-manifest",
  "neo-p2p",
  "neo-primitives",
- "neo-redeem-script",
- "neo-script-builder",
  "neo-serialization",
- "neo-time",
+ "neo-storage",
  "neo-vm",
  "neo-vm-rs",
  "num-bigint",
@@ -3002,12 +2751,15 @@ dependencies = [
 name = "neo-primitives"
 version = "0.7.2"
 dependencies = [
+ "bigdecimal",
  "bitflags 2.13.0",
  "bs58",
+ "chrono",
  "hex",
  "num-bigint",
  "num-integer",
  "num-traits",
+ "parking_lot",
  "proptest",
  "ripemd",
  "serde",
@@ -3015,17 +2767,6 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.18",
  "tracing",
-]
-
-[[package]]
-name = "neo-redeem-script"
-version = "0.7.2"
-dependencies = [
- "neo-crypto",
- "neo-error",
- "neo-script-builder",
- "neo-vm-rs",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -3040,19 +2781,14 @@ dependencies = [
  "futures",
  "governor",
  "hex",
- "hyper 0.14.32",
  "jsonrpsee",
  "mockito",
- "neo-application-logs",
- "neo-block",
  "neo-blockchain",
  "neo-config",
  "neo-crypto",
  "neo-error",
  "neo-execution",
- "neo-extensions",
  "neo-io",
- "neo-json",
  "neo-manifest",
  "neo-mempool",
  "neo-native-contracts",
@@ -3061,14 +2797,10 @@ dependencies = [
  "neo-p2p",
  "neo-payloads",
  "neo-primitives",
- "neo-script-builder",
  "neo-serialization",
  "neo-state-service",
- "neo-state-types",
  "neo-storage",
  "neo-system",
- "neo-time",
- "neo-tokens-tracker",
  "neo-vm",
  "neo-vm-rs",
  "neo-wallets",
@@ -3086,14 +2818,12 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "sha1",
- "socket2 0.5.10",
  "subtle",
  "thiserror 2.0.18",
  "tokio",
  "tokio-rustls 0.24.1",
  "tracing",
  "uuid",
- "warp",
  "zeroize",
 ]
 
@@ -3103,7 +2833,6 @@ version = "0.7.2"
 dependencies = [
  "async-trait",
  "futures",
- "neo-ledger-types",
  "neo-payloads",
  "neo-primitives",
  "parking_lot",
@@ -3114,30 +2843,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-script-builder"
-version = "0.7.2"
-dependencies = [
- "neo-error",
- "neo-vm-rs",
- "num-bigint",
- "num-traits",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "neo-serialization"
 version = "0.7.2"
 dependencies = [
  "bincode",
  "hashbrown 0.14.5",
  "hex",
+ "indexmap 2.8.0",
  "lz4_flex",
  "neo-error",
  "neo-io",
- "neo-json",
  "neo-primitives",
  "neo-storage",
- "neo-storage-rocksdb",
  "neo-vm",
  "neo-vm-rs",
  "num-bigint",
@@ -3146,6 +2863,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
  "zstd",
 ]
@@ -3156,32 +2874,19 @@ version = "0.7.2"
 dependencies = [
  "hex",
  "lru",
- "neo-block",
  "neo-config",
  "neo-crypto",
- "neo-data-cache",
  "neo-error",
- "neo-event-handlers",
  "neo-io",
  "neo-payloads",
  "neo-primitives",
- "neo-state-types",
  "neo-storage",
  "neo-vm-rs",
  "parking_lot",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tracing",
-]
-
-[[package]]
-name = "neo-state-types"
-version = "0.7.2"
-dependencies = [
- "neo-io",
- "neo-primitives",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -3192,26 +2897,18 @@ dependencies = [
  "hashbrown 0.14.5",
  "lru",
  "neo-error",
+ "neo-io",
  "neo-primitives",
  "num-bigint",
  "parking_lot",
  "rand 0.8.6",
+ "rocksdb",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tracing",
  "xxhash-rust",
-]
-
-[[package]]
-name = "neo-storage-rocksdb"
-version = "0.7.2"
-dependencies = [
- "neo-storage",
- "parking_lot",
- "rocksdb",
- "tempfile",
- "tracing",
 ]
 
 [[package]]
@@ -3220,16 +2917,12 @@ version = "0.7.2"
 dependencies = [
  "async-trait",
  "futures",
- "neo-block",
  "neo-blockchain",
  "neo-config",
  "neo-crypto",
- "neo-data-cache",
  "neo-error",
- "neo-events",
  "neo-execution",
  "neo-io",
- "neo-ledger-types",
  "neo-manifest",
  "neo-mempool",
  "neo-native-contracts",
@@ -3273,43 +2966,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-telemetry"
-version = "0.7.2"
-dependencies = [
- "anyhow",
- "chrono",
- "hyper 0.14.32",
- "prometheus",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "neo-tests"
 version = "0.7.2"
 dependencies = [
  "criterion",
  "hex",
- "neo-block",
  "neo-consensus",
  "neo-crypto",
  "neo-io",
- "neo-json",
  "neo-native-contracts",
  "neo-network",
  "neo-p2p",
  "neo-payloads",
  "neo-primitives",
  "neo-rpc",
+ "neo-serialization",
  "neo-storage",
- "neo-telemetry",
  "neo-vm-rs",
  "num-bigint",
  "serde_json",
@@ -3317,61 +2989,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "neo-time"
-version = "0.7.2"
-dependencies = [
- "chrono",
- "parking_lot",
-]
-
-[[package]]
-name = "neo-tokens-tracker"
-version = "0.7.2"
-dependencies = [
- "base64 0.22.1",
- "neo-block",
- "neo-blockchain",
- "neo-config",
- "neo-crypto",
- "neo-event-handlers",
- "neo-execution",
- "neo-extensions",
- "neo-io",
- "neo-manifest",
- "neo-mempool",
- "neo-native-contracts",
- "neo-network",
- "neo-payloads",
- "neo-primitives",
- "neo-script-builder",
- "neo-storage",
- "neo-system",
- "neo-time",
- "neo-vm",
- "neo-vm-rs",
- "num-bigint",
- "num-traits",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "neo-tx-builder"
-version = "0.7.2"
-dependencies = [
- "neo-crypto",
- "neo-error",
- "neo-ledger-types",
- "neo-payloads",
- "neo-primitives",
- "neo-script-builder",
- "neo-vm-rs",
 ]
 
 [[package]]
@@ -3414,16 +3031,15 @@ dependencies = [
  "hex",
  "neo-config",
  "neo-crypto",
- "neo-data-cache",
  "neo-error",
  "neo-execution",
  "neo-io",
- "neo-ledger-types",
  "neo-manifest",
  "neo-native-contracts",
  "neo-payloads",
  "neo-primitives",
- "neo-script-builder",
+ "neo-storage",
+ "neo-vm",
  "neo-vm-rs",
  "num-bigint",
  "num-traits",
@@ -3435,27 +3051,6 @@ dependencies = [
  "subtle",
  "thiserror 2.0.18",
  "zeroize",
-]
-
-[[package]]
-name = "neo-wire"
-version = "0.7.2"
-dependencies = [
- "bytes",
- "futures",
- "hex",
- "neo-error",
- "neo-extensions",
- "neo-io",
- "neo-p2p",
- "neo-payloads",
- "neo-primitives",
- "neo-serialization",
- "serde",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]
@@ -4534,12 +4129,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scoped-tls"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
-
-[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4873,12 +4462,6 @@ dependencies = [
  "rand 0.8.6",
  "sha1",
 ]
-
-[[package]]
-name = "spin"
-version = "0.9.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "spinning_top"
@@ -5237,18 +4820,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-tungstenite"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c83b561d025642014097b66e6c1bb422783339e0909e4429cde4749d1990bc38"
-dependencies = [
- "futures-util",
- "log",
- "tokio",
- "tungstenite",
-]
-
-[[package]]
 name = "tokio-util"
 version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5513,25 +5084,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
-name = "tungstenite"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ef1a641ea34f399a848dea702823bbecfb4c486f911735368f1f137cb8257e1"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http 1.4.2",
- "httparse",
- "log",
- "rand 0.8.6",
- "sha1",
- "thiserror 1.0.69",
- "url",
- "utf-8",
-]
-
-[[package]]
 name = "twox-hash"
 version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5609,12 +5161,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "utf-8"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
-
-[[package]]
 name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5682,36 +5228,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa7760aed19e106de2c7c0b581b509f2f25d3dacaf737cb82ac61bc6d760b0e"
 dependencies = [
  "try-lock",
-]
-
-[[package]]
-name = "warp"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4378d202ff965b011c64817db11d5829506d3404edeadb61f190d111da3f231c"
-dependencies = [
- "async-compression",
- "bytes",
- "futures-channel",
- "futures-util",
- "headers",
- "http 0.2.12",
- "hyper 0.14.32",
- "log",
- "mime",
- "mime_guess",
- "multer",
- "percent-encoding",
- "pin-project",
- "scoped-tls",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "tower-service",
- "tracing",
 ]
 
 [[package]]

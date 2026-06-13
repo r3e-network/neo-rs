@@ -8,7 +8,8 @@
 //
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
-use neo_config::ProtocolSettings; use crate::Wallet;
+use crate::Wallet;
+use neo_config::ProtocolSettings;
 
 /// Wallet factory interface matching C# WalletFactory exactly
 pub trait WalletFactory {

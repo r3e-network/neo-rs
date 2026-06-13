@@ -59,7 +59,7 @@ mempool, state-service) is unfinished and rebase pending.
 | `neo-config` | ok | 10 | 0 | 0 |
 | `neo-consensus` | ok | 101 | 0 | 1 |
 | `neo-crypto` | ok | 124 | 0 | 0 |
-| `neo-data-cache` | ok | 8 | 0 | 0 |
+| `neo-storage` | ok | 8 | 0 | 0 |
 | `neo-error` | ok | 7 | 0 | 0 |
 | `neo-event-handlers` | ok | 0 | 0 | 0 |
 | `neo-events` | ok | 2 | 0 | 0 |
@@ -77,7 +77,7 @@ mempool, state-service) is unfinished and rebase pending.
 | `neo-p2p` | ok | 27 | 0 | 0 |
 | `neo-payloads` | **FAIL** | 20 | **5** | 0 |
 | `neo-primitives` | ok | 221 | 0 | 0 |
-| `neo-redeem-script` | ok | 3 | 0 | 0 |
+| `neo-script-builder` | ok | 3 | 0 | 0 |
 | `neo-rpc` (default) | ok | 6 | 0 | 0 |
 | `neo-runtime` | ok | 14 | 0 | 0 |
 | `neo-script-builder` | ok | 7 | 0 | 0 |
@@ -475,7 +475,7 @@ level; `neo-consensus` adds 1 ignored at the lib level.)
    unresolved-after-`neo-core`-deletion imports. A
    ~10-line `neo-rpc/src/server/_compat.rs` shim module that
    re-exports `neo_system::Node as NeoSystem`,
-   `neo_data_cache::{StorageItem,StorageKey}`,
+   `neo_storage::{StorageItem,StorageKey}`,
    `neo_manifest::CallFlags`, `neo_wallets::Wallet`,
    `neo_wallets::key_pair::KeyPair`,
    `neo_payloads::helper::get_sign_data_vec`, etc. should

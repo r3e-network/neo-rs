@@ -1,8 +1,8 @@
 //! Network address descriptor with timestamp (mirrors `NetworkAddressWithTime.cs`).
 
 use super::node_capability::{
-    deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
-    NodeCapability,
+    NodeCapability, deserialize_node_capabilities, node_capabilities_size,
+    serialize_node_capabilities,
 };
 use super::version_payload::MAX_CAPABILITIES;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};

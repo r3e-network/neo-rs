@@ -380,7 +380,9 @@ impl NetworkHandle {
             })
             .await
             .map_err(|_| NetworkError::LocalShuttingDown)?;
-        reply_rx.await.map_err(|_| NetworkError::LocalShuttingDown)?
+        reply_rx
+            .await
+            .map_err(|_| NetworkError::LocalShuttingDown)?
     }
 
     /// Disconnect a peer by id.
@@ -393,7 +395,9 @@ impl NetworkHandle {
             })
             .await
             .map_err(|_| NetworkError::LocalShuttingDown)?;
-        reply_rx.await.map_err(|_| NetworkError::LocalShuttingDown)?
+        reply_rx
+            .await
+            .map_err(|_| NetworkError::LocalShuttingDown)?
     }
 
     /// Broadcast a block to all connected peers.
@@ -528,10 +532,11 @@ mod tests {
         let info = handle.local_node_info();
         assert_eq!(info.connected_peers_count(), 2);
         // Events without an address fold as address-less peers.
-        assert!(info
-            .connected_peers()
-            .iter()
-            .all(|peer| peer.address.is_none()));
+        assert!(
+            info.connected_peers()
+                .iter()
+                .all(|peer| peer.address.is_none())
+        );
 
         events
             .send(NetworkEvent::PeerDisconnected {

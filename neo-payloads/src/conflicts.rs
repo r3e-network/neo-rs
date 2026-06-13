@@ -9,12 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_io::{impl_serializable, BinaryWriter, IoResult, Serializable};
-use neo_data_cache::DataCache;
-use neo_config::ProtocolSettings;
+use neo_io::{BinaryWriter, IoResult, Serializable, impl_serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 /// Represents a conflicts transaction attribute.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,7 +27,6 @@ impl Conflicts {
     }
 
     /// Verify the conflicts attribute.
-
 
     /// Calculate network fee for this attribute.
     pub fn calculate_network_fee(

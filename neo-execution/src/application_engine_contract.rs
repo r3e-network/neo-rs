@@ -1,16 +1,16 @@
 //! ApplicationEngine.Contract - ports Neo.SmartContract.ApplicationEngine.Contract.cs
 
-use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::application_engine::ApplicationEngine;
-use neo_serialization::BinarySerializer;
-use neo_manifest::CallFlags;
-use neo_primitives::ContractParameterType;
+use crate::bls12381_interop::Bls12381Interop;
 use crate::env_flags::env_flag_enabled;
 use crate::execution_context_state::ExecutionContextState;
-use crate::bls12381_interop::Bls12381Interop;
 use crate::iterators::IteratorInterop;
 use neo_crypto::bls12381_point::{G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE};
+use neo_manifest::CallFlags;
+use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
+use neo_serialization::BinarySerializer;
+use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
@@ -449,8 +449,13 @@ fn decode_native_result(
             // as a typed interop object so a following BLS call (or
             // bls12381Serialize) accepts it while a plain byte string is
             // rejected, matching C#'s `InteropInterface` parameter binding.
-            if matches!(result.len(), G1_COMPRESSED_SIZE | G2_COMPRESSED_SIZE | GT_SIZE) {
-                return Ok(Some(StackItem::from_interface(Bls12381Interop::new(result))));
+            if matches!(
+                result.len(),
+                G1_COMPRESSED_SIZE | G2_COMPRESSED_SIZE | GT_SIZE
+            ) {
+                return Ok(Some(StackItem::from_interface(Bls12381Interop::new(
+                    result,
+                ))));
             }
 
             Ok(Some(StackItem::from_byte_string(result)))
@@ -572,7 +577,10 @@ mod tests {
 
         // An IteratorInterop operand encodes its handle id as 4 LE bytes.
         let iter = StackItem::from_interface(IteratorInterop::new(5));
-        assert_eq!(stack_item_to_interop_bytes(iter).expect("iter id"), 5u32.to_le_bytes());
+        assert_eq!(
+            stack_item_to_interop_bytes(iter).expect("iter id"),
+            5u32.to_le_bytes()
+        );
 
         // A plain ByteString is NOT a live interop object: C# faults when binding
         // an InteropInterface parameter from a non-interface item, so we must err

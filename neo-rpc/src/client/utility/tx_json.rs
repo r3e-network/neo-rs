@@ -1,15 +1,16 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
-use neo_wallets::wallet_helper as WalletHelper;
-use neo_payloads::{Block, BlockHeader, Signer, Transaction};
 use neo_io::serializable::Serializable;
 use neo_io::serializable::helper::get_var_size;
-use neo_json::{JObject, JToken};
+use neo_payloads::{Block, BlockHeader, Signer, Transaction};
+use neo_serialization::json::{JObject, JToken};
+use neo_wallets::wallet_helper as WalletHelper;
 
 use super::attributes::attribute_from_json;
 use super::parsing::{
     jtoken_to_serde, object_array, oracle_response_code_to_str, parse_i64_token,
-    parse_optional_token_array_strict, parse_u32_token, token_array};
+    parse_optional_token_array_strict, parse_u32_token, token_array,
+};
 use super::witness::{payload_witness_from_json, payload_witness_to_json, witness_to_json};
 
 /// Converts a block to JSON representation.
@@ -38,12 +39,18 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
         "merkleroot".to_string(),
         JToken::String(header.merkle_root().to_string()),
     );
-    json.insert("time".to_string(), JToken::Number(header.timestamp() as f64));
+    json.insert(
+        "time".to_string(),
+        JToken::Number(header.timestamp() as f64),
+    );
     json.insert(
         "nonce".to_string(),
         JToken::String(format!("{:016X}", header.nonce())),
     );
-    json.insert("index".to_string(), JToken::Number(f64::from(header.index())));
+    json.insert(
+        "index".to_string(),
+        JToken::Number(f64::from(header.index())),
+    );
     json.insert(
         "primary".to_string(),
         JToken::Number(f64::from(header.primary_index())),
@@ -63,7 +70,7 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
         "tx".to_string(),
         object_array(&block.transactions, |tx| {
             transaction_to_json(tx, protocol_settings)
-       }),
+        }),
     );
 
     json
@@ -87,7 +94,7 @@ pub fn block_from_json(
                 .as_object()
                 .ok_or_else(|| "Transaction entry must be an object".to_string())?;
             transaction_from_json(obj, protocol_settings)
-       },
+        },
     )?;
 
     Ok(Block::from_parts(header, transactions))
@@ -112,7 +119,7 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
                 &sender,
                 protocol_settings.address_version,
             ))
-       }),
+        }),
     );
     json.insert(
         "sysfee".to_string(),
@@ -132,7 +139,7 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
         "signers".to_string(),
         object_array(tx.signers(), |signer| {
             signer_to_json(signer, protocol_settings)
-       }),
+        }),
     );
 
     // Add attributes
@@ -164,36 +171,39 @@ pub fn transaction_from_json(
 ) -> Result<Transaction, String> {
     let mut tx = Transaction::new();
 
-    if let Some(version) = json.get("version").and_then(neo_json::JToken::as_number) {
+    if let Some(version) = json
+        .get("version")
+        .and_then(neo_serialization::json::JToken::as_number)
+    {
         tx.set_version(version as u8);
-   }
+    }
 
     if let Some(nonce_token) = json.get("nonce") {
         let nonce = if let Some(number) = nonce_token.as_number() {
             number as u32
-       } else if let Some(text) = nonce_token.as_string() {
+        } else if let Some(text) = nonce_token.as_string() {
             text.parse::<u32>()
                 .map_err(|err| format!("Invalid nonce value: {err}"))?
-       } else {
+        } else {
             return Err("Invalid 'nonce' field".to_string());
-       };
+        };
         tx.set_nonce(nonce);
-   }
+    }
 
     if let Some(sysfee_token) = json.get("sysfee") {
         let system_fee = parse_i64_token(sysfee_token, "sysfee")?;
         tx.set_system_fee(system_fee);
-   }
+    }
 
     if let Some(netfee_token) = json.get("netfee") {
         let network_fee = parse_i64_token(netfee_token, "netfee")?;
         tx.set_network_fee(network_fee);
-   }
+    }
 
     if let Some(valid_token) = json.get("validuntilblock") {
         let height = parse_u32_token(valid_token, "validuntilblock")?;
         tx.set_valid_until_block(height);
-   }
+    }
 
     let parsed_signers = parse_optional_token_array_strict(
         json,
@@ -202,11 +212,11 @@ pub fn transaction_from_json(
         |token| {
             let signer_json = jtoken_to_serde(token)?;
             Signer::from_json(&signer_json).map_err(|err| format!("Invalid signer entry: {err}"))
-       },
+        },
     )?;
     if !parsed_signers.is_empty() {
         tx.set_signers(parsed_signers);
-   }
+    }
 
     let attributes = parse_optional_token_array_strict(
         json,
@@ -217,11 +227,11 @@ pub fn transaction_from_json(
                 .as_object()
                 .ok_or_else(|| "Transaction attribute must be an object".to_string())?;
             attribute_from_json(attr_obj)
-       },
+        },
     )?;
     if !attributes.is_empty() {
         tx.set_attributes(attributes);
-   }
+    }
 
     if let Some(script_token) = json.get("script") {
         let script_str = script_token
@@ -231,7 +241,7 @@ pub fn transaction_from_json(
             .decode(script_str.as_bytes())
             .map_err(|err| format!("Invalid 'script' value: {err}"))?;
         tx.set_script(script_bytes);
-   }
+    }
 
     let witnesses = parse_optional_token_array_strict(
         json,
@@ -242,11 +252,11 @@ pub fn transaction_from_json(
                 .as_object()
                 .ok_or_else(|| "Witness entry must be an object".to_string())?;
             payload_witness_from_json(witness_obj)
-       },
+        },
     )?;
     if !witnesses.is_empty() {
         tx.set_witnesses(witnesses);
-   }
+    }
 
     Ok(tx)
 }
@@ -267,25 +277,25 @@ fn signer_to_json(signer: &neo_payloads::Signer, _protocol_settings: &ProtocolSe
             "allowedcontracts".to_string(),
             token_array(&signer.allowed_contracts, |contract| {
                 JToken::String(contract.to_string())
-           }),
+            }),
         );
-   }
+    }
 
     if !signer.allowed_groups.is_empty() {
         json.insert(
             "allowedgroups".to_string(),
             token_array(&signer.allowed_groups, |group| {
                 JToken::String(hex::encode(group.to_bytes()))
-           }),
+            }),
         );
-   }
+    }
 
     if !signer.rules.is_empty() {
         json.insert(
             "rules".to_string(),
             object_array(&signer.rules, rule_to_json),
         );
-   }
+    }
 
     json
 }
@@ -305,16 +315,16 @@ fn attribute_to_json(attr: &neo_payloads::TransactionAttribute) -> JObject {
                 "height".to_string(),
                 JToken::Number(f64::from(not_valid_before.height)),
             );
-       }
+        }
         TA::Conflicts(conflicts) => {
             json.insert(
                 "hash".to_string(),
                 JToken::String(conflicts.hash.to_string()),
             );
-       }
+        }
         TA::NotaryAssisted(notary) => {
             json.insert("nkeys".to_string(), JToken::Number(f64::from(notary.nkeys)));
-       }
+        }
         TA::OracleResponse(response) => {
             json.insert("id".to_string(), JToken::Number(response.id as f64));
             json.insert(
@@ -325,8 +335,8 @@ fn attribute_to_json(attr: &neo_payloads::TransactionAttribute) -> JObject {
                 "result".to_string(),
                 JToken::String(general_purpose::STANDARD.encode(&response.result)),
             );
-       }
-   }
+        }
+    }
     json
 }
 
@@ -353,29 +363,29 @@ fn condition_to_json(condition: &neo_payloads::WitnessCondition) -> JObject {
     );
 
     match condition {
-        WC::Boolean {value} => {
+        WC::Boolean { value } => {
             json.insert("expression".to_string(), JToken::Boolean(*value));
-       }
-        WC::Not {condition} => {
+        }
+        WC::Not { condition } => {
             json.insert(
                 "expression".to_string(),
                 JToken::Object(condition_to_json(condition)),
             );
-       }
-        WC::And {conditions} | WC::Or {conditions} => {
+        }
+        WC::And { conditions } | WC::Or { conditions } => {
             json.insert(
                 "expressions".to_string(),
                 object_array(conditions, |condition| condition_to_json(condition)),
             );
-       }
-        WC::ScriptHash {hash} | WC::CalledByContract {hash} => {
+        }
+        WC::ScriptHash { hash } | WC::CalledByContract { hash } => {
             json.insert("hash".to_string(), JToken::String(hash.to_string()));
-       }
-        WC::Group {group} | WC::CalledByGroup {group} => {
+        }
+        WC::Group { group } | WC::CalledByGroup { group } => {
             json.insert("group".to_string(), JToken::String(hex::encode(group)));
-       }
-        WC::CalledByEntry => {/* no additional properties */}
-   }
+        }
+        WC::CalledByEntry => { /* no additional properties */ }
+    }
 
     json
 }

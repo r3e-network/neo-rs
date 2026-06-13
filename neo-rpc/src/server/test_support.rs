@@ -16,20 +16,29 @@ use neo_blockchain::{HeaderCache, LedgerContext};
 use neo_config::ProtocolSettings;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
-use neo_primitives::verify_result::VerifyResult;
 use neo_primitives::UInt160;
+use neo_primitives::verify_result::VerifyResult;
+use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;
-use neo_storage::persistence::StoreCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_system::Node;
 use num_bigint::BigInt;
 use parking_lot::Mutex;
 
 /// Minimal [`SystemContext`] for the fixture blockchain service.
-#[derive(Debug)]
 struct FixtureContext {
     settings: Arc<ProtocolSettings>,
+    snapshot: Arc<neo_storage::persistence::DataCache>,
+    store_cache: Mutex<StoreCache>,
+}
+
+impl std::fmt::Debug for FixtureContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FixtureContext")
+            .field("network", &self.settings.network)
+            .finish_non_exhaustive()
+    }
 }
 
 impl SystemContext for FixtureContext {
@@ -38,7 +47,17 @@ impl SystemContext for FixtureContext {
     }
 
     fn current_height(&self) -> u32 {
-        0
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&self.snapshot)
+            .unwrap_or(0)
+    }
+
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::persistence::DataCache>> {
+        Some(Arc::clone(&self.snapshot))
+    }
+
+    fn commit_to_store(&self) {
+        self.store_cache.lock().commit();
     }
 }
 
@@ -48,13 +67,12 @@ impl SystemContext for FixtureContext {
 ///
 /// Beyond pool admission, the adapter performs the C#
 /// `NeoSystem.ContainsTransaction` pre-checks of
-/// `Blockchain.OnNewTransaction` (v3.9.1): a hash already in the
+/// `Blockchain.OnNewTransaction` (v3.10.0): a hash already in the
 /// memory pool reports `AlreadyInPool`, a hash already persisted in
 /// the ledger reports `AlreadyExists`. The blockchain service hands
-/// `MempoolLike::try_add` an *empty* placeholder snapshot (see the
-/// Stage B note in `neo-blockchain/src/handlers.rs`), so the adapter
-/// holds the node's store and builds its own read view for the ledger
-/// lookup, exactly as the C# actor consulted `system.StoreView`.
+/// `MempoolLike::try_add` the same store-backed snapshot used for block
+/// verification, while this adapter keeps the C# pre-check ordering
+/// local to the node's shared pool/store view.
 struct NodeMempoolAdapter {
     pool: Arc<MemoryPool>,
     store: Arc<dyn Store>,
@@ -105,9 +123,13 @@ pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<Node> {
     let storage: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let mempool = Arc::new(MemoryPool::new(&settings));
     let header_cache = Arc::new(HeaderCache::default());
+    let store_cache = StoreCache::new_from_store(Arc::clone(&storage), false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
 
     let system_ctx: Arc<dyn SystemContext> = Arc::new(FixtureContext {
         settings: Arc::clone(&settings),
+        snapshot,
+        store_cache: Mutex::new(store_cache),
     });
     let mempool_like: Arc<Mutex<dyn MempoolLike + Send + Sync>> =
         Arc::new(Mutex::new(NodeMempoolAdapter {
@@ -160,9 +182,7 @@ fn seed_native_contract_records(node: &Node) {
 
     let settings = node.settings();
     let mut store = node.store_cache();
-    for contract in
-        neo_native_contracts::StandardNativeProvider::new().all_native_contracts()
-    {
+    for contract in neo_native_contracts::StandardNativeProvider::new().all_native_contracts() {
         let Some(state) = contract.contract_state(&settings, 0) else {
             continue;
         };
@@ -245,7 +265,7 @@ fn bft_address(validators: &[neo_crypto::ECPoint]) -> UInt160 {
 }
 
 /// C# `NeoSystem.CreateGenesisBlock(settings)` (verified against the
-/// in-tree v3.9.1 reference): version 0, zero previous/merkle hashes,
+/// in-tree v3.10.0 reference): version 0, zero previous/merkle hashes,
 /// the 2016-07-15T15:08:21Z timestamp, the Bitcoin-genesis nonce, and
 /// a `PUSH1` witness, with `NextConsensus` set to the BFT address of
 /// the standby validators.
@@ -280,7 +300,7 @@ fn seed_genesis_state(node: &Node) {
 
     let signed_le = |value: i64| BigInt::from(value).to_signed_bytes_le();
 
-    // --- NeoToken.Initialize (C# v3.9.1) ---
+    // --- NeoToken.Initialize (C# v3.10.0) ---
     // Committee cache: Array of Struct[pubkey, votes = 0] in standby
     // order (C# `CachedCommittee` of `StandbyCommittee.Select(p => (p, 0))`).
     let committee_items: Vec<StackItem> = settings
@@ -342,8 +362,7 @@ fn seed_genesis_state(node: &Node) {
     // --- GasToken.Initialize: mint InitialGasDistribution to the BFT
     // address (plain NEP-17 account state: Struct[balance]).
     let initial_gas = BigInt::from(settings.initial_gas_distribution);
-    let gas_account_state =
-        StackItem::from_struct(vec![StackItem::from_int(initial_gas.clone())]);
+    let gas_account_state = StackItem::from_struct(vec![StackItem::from_int(initial_gas.clone())]);
     let mut gas_account_key = Vec::with_capacity(1 + 20);
     gas_account_key.push(NEP17_PREFIX_ACCOUNT);
     gas_account_key.extend_from_slice(&bft.to_bytes());
@@ -393,11 +412,9 @@ fn seed_genesis_state(node: &Node) {
     // interoperable stack item (`Struct[ByteString(hash), Integer(index)]`)
     // serialized with `BinarySerializer` — exactly what the `LedgerContract`
     // reader (`current_index` / `current_hash`) decodes.
-    let pointer = neo_native_contracts::ledger_contract::serialize_hash_index_state(
-        &genesis_hash,
-        0,
-    )
-    .expect("serialize genesis HashIndexState pointer");
+    let pointer =
+        neo_native_contracts::ledger_contract::serialize_hash_index_state(&genesis_hash, 0)
+            .expect("serialize genesis HashIndexState pointer");
     store.update(
         StorageKey::new(ledger_id, vec![LEDGER_PREFIX_CURRENT_BLOCK]),
         StorageItem::from_bytes(pointer),

@@ -106,7 +106,10 @@ impl BlockchainHandle {
     /// the legacy actor-style API; new code should prefer the typed
     /// request/response methods ([`Self::import_block`],
     /// [`Self::get_block`], …).
-    pub async fn tell(&self, command: BlockchainCommand) -> Result<(), mpsc::error::SendError<BlockchainCommand>> {
+    pub async fn tell(
+        &self,
+        command: BlockchainCommand,
+    ) -> Result<(), mpsc::error::SendError<BlockchainCommand>> {
         self.cmd_tx.send(command).await
     }
 
@@ -119,21 +122,24 @@ impl BlockchainHandle {
         self.cmd_tx.try_send(command)
     }
 
-    /// Import a block. Resolves to `Ok(true)` when the import changed
-    /// the canonical tip.
+    /// Import an externally supplied block. Resolves to `Ok(true)` when
+    /// verification/persistence advanced the canonical tip, and `Ok(false)`
+    /// when the service rejected the block or parked it without changing the
+    /// tip.
     pub async fn import_block(&self, block: Block) -> Result<bool, ServiceError> {
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
         self.cmd_tx
-            .send(BlockchainCommand::InventoryBlock {
+            .send(BlockchainCommand::ImportBlock {
                 block: Arc::new(block),
-                relay: false,
-                pre_verified: true,
+                reply: reply_tx,
             })
             .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command channel closed".to_string()))?;
-        // For the moment, report success unconditionally; full
-        // verify-result reporting will land in Stage C when the
-        // blockchain's verify pipeline is moved onto the service.
-        Ok(true)
+            .map_err(|_| {
+                ServiceError::ServiceUnavailable("blockchain command channel closed".to_string())
+            })?;
+        reply_rx.await.map_err(|_| {
+            ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string())
+        })
     }
 
     /// Fetch a block by hash.
@@ -145,10 +151,12 @@ impl BlockchainHandle {
                 reply: reply_tx,
             })
             .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command channel closed".to_string()))?;
-        reply_rx
-            .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string()))
+            .map_err(|_| {
+                ServiceError::ServiceUnavailable("blockchain command channel closed".to_string())
+            })?;
+        reply_rx.await.map_err(|_| {
+            ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string())
+        })
     }
 
     /// Fetch a block by canonical height.
@@ -160,10 +168,12 @@ impl BlockchainHandle {
                 reply: reply_tx,
             })
             .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command channel closed".to_string()))?;
-        reply_rx
-            .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string()))
+            .map_err(|_| {
+                ServiceError::ServiceUnavailable("blockchain command channel closed".to_string())
+            })?;
+        reply_rx.await.map_err(|_| {
+            ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string())
+        })
     }
 
     /// Current canonical tip height.
@@ -172,10 +182,12 @@ impl BlockchainHandle {
         self.cmd_tx
             .send(BlockchainCommand::GetHeight { reply: reply_tx })
             .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command channel closed".to_string()))?;
-        reply_rx
-            .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string()))
+            .map_err(|_| {
+                ServiceError::ServiceUnavailable("blockchain command channel closed".to_string())
+            })?;
+        reply_rx.await.map_err(|_| {
+            ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string())
+        })
     }
 
     /// Add a transaction to the mempool.
@@ -190,10 +202,12 @@ impl BlockchainHandle {
                 reply: reply_tx,
             })
             .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command channel closed".to_string()))?;
-        reply_rx
-            .await
-            .map_err(|_| ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string()))
+            .map_err(|_| {
+                ServiceError::ServiceUnavailable("blockchain command channel closed".to_string())
+            })?;
+        reply_rx.await.map_err(|_| {
+            ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string())
+        })
     }
 
     /// Request graceful shutdown of the service loop. The command
@@ -265,7 +279,8 @@ impl BlockchainHandle {
     pub fn tell_async(
         &self,
         command: BlockchainCommand,
-    ) -> impl std::future::Future<Output = Result<(), mpsc::error::SendError<BlockchainCommand>>> {
+    ) -> impl std::future::Future<Output = Result<(), mpsc::error::SendError<BlockchainCommand>>>
+    {
         self.tell(command)
     }
 

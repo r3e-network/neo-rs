@@ -10,8 +10,6 @@
 // modifications are permitted.
 
 use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
-use neo_data_cache::DataCache;
-use neo_config::ProtocolSettings;
 use serde::{Deserialize, Serialize};
 
 /// Indicates that the transaction is of high priority.
@@ -25,7 +23,6 @@ impl HighPriorityAttribute {
     }
 
     /// Verify the high priority attribute.
-
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {

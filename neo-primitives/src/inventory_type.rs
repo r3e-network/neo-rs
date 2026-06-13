@@ -11,8 +11,6 @@ protocol_enum_repr! {
         Transaction = 0x2b => "TX",
         /// Indicates that the inventory is a Block.
         Block = 0x2c,
-        /// Indicates that the inventory is a consensus payload.
-        Consensus = 0x2d,
         /// Indicates that the inventory is an `ExtensiblePayload`.
         Extensible = 0x2e,
     }
@@ -26,7 +24,6 @@ mod tests {
     fn test_inventory_type_values() {
         assert_eq!(InventoryType::Transaction.to_byte(), 0x2b);
         assert_eq!(InventoryType::Block.to_byte(), 0x2c);
-        assert_eq!(InventoryType::Consensus.to_byte(), 0x2d);
         assert_eq!(InventoryType::Extensible.to_byte(), 0x2e);
     }
 
@@ -37,10 +34,7 @@ mod tests {
             Some(InventoryType::Transaction)
         );
         assert_eq!(InventoryType::from_byte(0x2c), Some(InventoryType::Block));
-        assert_eq!(
-            InventoryType::from_byte(0x2d),
-            Some(InventoryType::Consensus)
-        );
+        assert_eq!(InventoryType::from_byte(0x2d), None);
         assert_eq!(
             InventoryType::from_byte(0x2e),
             Some(InventoryType::Extensible)

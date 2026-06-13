@@ -12,10 +12,10 @@
 
 use std::sync::Arc;
 
-use neo_manifest::CallFlags;
 use neo_execution::ApplicationEngine;
+use neo_manifest::CallFlags;
 use neo_primitives::{TriggerType, UInt160};
-use neo_script_builder::ScriptBuilder;
+use neo_vm::script_builder::ScriptBuilder;
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
 use neo_vm_rs::VmState as VMState;

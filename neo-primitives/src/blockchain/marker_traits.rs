@@ -30,4 +30,3 @@ pub trait BlockLike: Send + Sync {
     /// Returns the serialized size of the block in bytes.
     fn size(&self) -> usize;
 }
-

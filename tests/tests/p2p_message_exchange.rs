@@ -4,7 +4,7 @@
 //!
 //! These tests validate the public surface of the reth-style P2P host
 //! services in `neo_network` and the canonical wire-envelope enums
-//! (`MessageCommand`, `MessageFlags`) in `neo_p2p` / `neo_wire`. The
+//! (`MessageCommand`, `MessageFlags`) in `neo_p2p` / `neo_network::wire`. The
 //! historical `Message::create(...)` constructor (which produced a
 //! per-message envelope with command + flags + payload) is part of the
 //! Stage 3 wire-envelope extraction — until then the tests focus on

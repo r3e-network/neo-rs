@@ -23,7 +23,12 @@ responsibility crates. Leftovers from the neo-core dissolution:
 **Zero** `unimplemented!`/`todo!`/`not implemented` in non-test code across all 45
 crates. Duplicate-named types examined and judged deliberate-layering (KeyBuilder
 wrapper, layered NetworkError) or coincidental (Node). Real items:
-- **neo-mempool**: C# `CheckConflicts` pooled-conflict eviction + conflict-fee rebate not implemented (memory_pool.rs:271). → port (medium/high: mempool policy parity).
+- ✅ **neo-mempool**: C# `CheckConflicts` pooled-conflict eviction + conflict-fee
+  rebate is implemented. The 2026-06-12 pass also pinned C# v3.10.0
+  `TryAdd` event semantics: conflicts evicted during admission are reported
+  in the `CapacityExceeded` removal batch, and a self-evicted admitted
+  transaction fires `TransactionAdded` before `TransactionRemoved` /
+  `OutOfMemory`.
 - neo-blockchain dead stub methods (on_new_block→Succeed, transaction_exists_on_chain→false, conflict_exists_on_chain, validate_transaction) never called. → delete or wire (note: InventoryBlock persists without stateless witness/state-root pre-checks).
 - Inert no-op handlers (FillMemoryPool/Idle/DrainUnverified) with no producer → wire or document as intentionally-unwired.
 - UnhandledExceptionPolicy duplicated (neo-primitives vs neo-rpc), neither matches C# exactly (cosmetic).
@@ -45,10 +50,15 @@ HF_Gorgon VM gating. Re-run a dedicated protocol-coverage pass to close the audi
   accepted as an alias for `data_dir` (was aborting). Tested.
 - ✅ **README/Dockerfile/entrypoint** corrected: build with `--features wip`,
   real CLI flags, JSON-RPC-over-curl (the documented `neo-cli` binary does not exist).
-- REMAINING: fast-sync cursor should read the durable tip post-persist to avoid
-  re-fetching already-applied blocks (the "inventory block already persisted"
-  spam); add an integration test that syncs to height N and asserts a single
-  forward pass + a restart resumes from the on-disk tip.
+- ✅ **Network-side restart cursor is pinned**: `neo-node` seeds the
+  network-advertised height from the durable ledger tip before P2P starts, and
+  `neo-network` now has an integration test proving a pre-seeded local height
+  is advertised in `version` and makes the first `GetBlockByIndex` request start
+  at `tip + 1` rather than genesis + 1.
+- ✅ **Full daemon restart smoke test added**: `neo-node` now seeds a temporary
+  RocksDB store through the native persist pipeline, rebuilds the daemon over the
+  same path, and proves the restarted node advertises the on-disk
+  `Ledger.CurrentIndex` and requests blocks from `tip + 1`.
 
 ## 5. Best practices — (see overlap findings; no blockers surfaced)
 Error handling via thiserror/anyhow + Result; consensus/state code stub-free.
@@ -65,8 +75,6 @@ DEPLOYMENT.md production commands reference nonexistent flags/neo-cli; no system
 unit ships. Sweep these to match the real crate layout + CLI.
 
 ## Prioritized remaining roadmap
-1. (high) fast-sync cursor vs durable tip + sync integration test (completes runnability).
-2. (high) neo-mempool CheckConflicts eviction (protocol parity).
-3. (med) crate cleanup: delete/ wire neo-chain; remove neo-services + dead stub methods; dedupe neo-runtime BlockchainHandle.
-4. (med) doc sweep: README diagram/coverage, Makefile, DEPLOYMENT.md, neo-core comments, systemd unit.
-5. (low) UnhandledExceptionPolicy dedup; neo-block rename.
+1. (med) crate cleanup: delete/ wire neo-chain; remove neo-services + dead stub methods; dedupe neo-runtime BlockchainHandle.
+2. (med) doc sweep: README diagram/coverage, Makefile, DEPLOYMENT.md, neo-core comments, systemd unit.
+3. (low) UnhandledExceptionPolicy dedup; neo-block rename.

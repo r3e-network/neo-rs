@@ -40,13 +40,11 @@ thiserror = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
-neo-script-builder = { workspace = true }
+neo-vm = { workspace = true }
 
 
 
 neo-network = { workspace = true }
-neo-block = { workspace = true }
-neo-event-handlers = { workspace = true }
 neo-payloads = { workspace = true }
 neo-system = { workspace = true }
 

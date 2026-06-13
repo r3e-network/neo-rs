@@ -53,7 +53,10 @@ impl std::fmt::Debug for NodeBuilder {
             .field("mempool", &self.mempool.is_some())
             .field("header_cache", &self.header_cache.is_some())
             .field("services", &self.services.is_some())
-            .field("block_executor", &self.block_executor.as_ref().map(|s| s.name()))
+            .field(
+                "block_executor",
+                &self.block_executor.as_ref().map(|s| s.name()),
+            )
             .field("consensus", &self.consensus.as_ref().map(|s| s.name()))
             .field("engine", &self.engine.as_ref().map(|s| s.name()))
             .finish()

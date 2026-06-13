@@ -10,8 +10,8 @@ mod utils;
 mod tests;
 
 use neo_crypto::ECPoint;
-use neo_system::Node;
 use neo_payloads::Transaction;
+use neo_system::Node;
 use neo_wallets::Wallet;
 use parking_lot::{Mutex, RwLock};
 use std::borrow::Borrow;

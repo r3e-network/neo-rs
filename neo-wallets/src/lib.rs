@@ -22,8 +22,8 @@
 //! Sits in **Layer 1 (protocol)**. Depends on:
 //!
 //! - `neo-primitives`, `neo-error`, `neo-io`, `neo-crypto` (Layer 0)
-//! - `neo-config`, `neo-script-builder`, `neo-data-cache`,
-//!   `neo-ledger-types`, `neo-payloads`, `neo-execution`,
+//! - `neo-config`, `neo-script-builder`, `neo-storage`,
+//!   `neo-payloads`, `neo-execution`,
 //!   `neo-manifest` (Layer 1)
 //!
 //! Must **not** depend on `neo-core` (Layer 2 runtime) or any Layer 2+
@@ -32,10 +32,10 @@
 //! primitives independent of the node runtime that consumes them.
 
 #![doc(html_root_url = "https://docs.rs/neo-wallets/0.7.2")]
-#![allow(missing_docs)]
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
-#![allow(unsafe_code)]  // TRANSITIONAL: neo-wallet uses `std::mem::transmute_copy` to convert between layout-identical duplicate types (neo_execution::ContractState ↔ neo_execution::ContractState) during the native-contract migration.
 
 // ============================================================================
 // Wallet data model
@@ -44,14 +44,14 @@
 /// Wallet account abstraction and the standard in-memory implementation.
 pub mod wallet_account;
 
-/// Address / script-hash conversion helpers used by the wallet layer.
-pub mod wallet_helper;
 /// NEP-6 wallet standard.
 pub mod nep6;
 /// Base `Wallet` trait and shared error type.
 pub mod wallet;
 /// Wallet factory trait.
 pub mod wallet_factory;
+/// Address / script-hash conversion helpers used by the wallet layer.
+pub mod wallet_helper;
 /// Wallet manager (factory registry + lifecycle).
 pub mod wallet_manager;
 /// Wallet provider (lifecycle notifications).
@@ -61,20 +61,20 @@ pub mod wallet_provider;
 // Wallet crypto + scripting
 // ============================================================================
 
-/// ECDSA key pair (private + public key, encryption round-trips).
-pub mod key_pair;
-/// Witness-script helpers (signature invocation script, etc.).
-pub mod scripts;
+/// NEP-17 asset descriptor (name / symbol / decimals lookup).
+pub mod asset_descriptor;
 /// BIP-32 extended keys and derivation paths.
 pub mod bip32;
 /// BIP-39 mnemonics.
 pub mod bip39;
-/// Three-component wallet `Version`.
-pub mod version;
+/// ECDSA key pair (private + public key, encryption round-trips).
+pub mod key_pair;
+/// Witness-script helpers (signature invocation script, etc.).
+pub mod scripts;
 /// NEP-17 transfer output descriptor.
 pub mod transfer_output;
-/// NEP-17 asset descriptor (name / symbol / decimals lookup).
-pub mod asset_descriptor;
+/// Three-component wallet `Version`.
+pub mod version;
 
 // ============================================================================
 // Public re-exports

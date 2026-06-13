@@ -1,7 +1,6 @@
 use super::memory_store::MemoryStore;
 use crate::error::StorageResult;
 use crate::persistence::{store::Store, store_provider::StoreProvider};
-use crate::impl_default_via_new;
 use std::sync::Arc;
 
 /// A provider for creating MemoryStore instances.
@@ -14,7 +13,7 @@ impl MemoryStoreProvider {
     }
 }
 
-impl_default_via_new!(MemoryStoreProvider);
+neo_io::impl_default_via_new!(MemoryStoreProvider);
 
 impl StoreProvider for MemoryStoreProvider {
     fn name(&self) -> &str {

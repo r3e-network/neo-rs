@@ -2,7 +2,7 @@
 
 use crate::device::{HsmDeviceInfo, HsmDeviceType};
 use crate::error::{HsmError, HsmResult};
-use crate::signer::{normalize_public_key, script_hash_from_public_key, HsmKeyInfo, HsmSigner};
+use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 
@@ -77,14 +77,8 @@ impl LedgerSigner {
 
         Ok(HsmDeviceInfo {
             device_type: HsmDeviceType::Ledger,
-            manufacturer: device
-                .manufacturer_string()
-                .unwrap_or("Ledger")
-                .to_string(),
-            model: device
-                .product_string()
-                .unwrap_or("Unknown")
-                .to_string(),
+            manufacturer: device.manufacturer_string().unwrap_or("Ledger").to_string(),
+            model: device.product_string().unwrap_or("Unknown").to_string(),
             serial_number: device.serial_number().map(|s| s.to_string()),
             firmware_version: None,
             is_connected: true,

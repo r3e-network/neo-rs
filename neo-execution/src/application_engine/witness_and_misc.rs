@@ -1,12 +1,13 @@
 use super::*;
-use crate::native_contract_provider::{lookup_oracle_contract, lookup_ledger_contract, lookup_contract_management};
+use crate::native_contract_provider::{
+    lookup_contract_management, lookup_ledger_contract, lookup_oracle_contract,
+};
 use neo_payloads::VerifiableExt;
-use neo_payloads::VerifiableExt as PayloadVerifiableExt;
 
 impl ApplicationEngine {
     /// Validates that the provided hash has a matching witness in the current transaction.
     /// This matches C# ApplicationEngine.CheckWitnessInternal exactly, including witness rules.
-    fn check_witness_internal(&self, hash: &UInt160) -> Result<bool> {
+    fn check_witness_internal(&self, hash: &UInt160) -> CoreResult<bool> {
         // 1. Calling script hash always succeeds.
         if self.get_calling_script_hash() == Some(*hash) {
             return Ok(true);
@@ -17,7 +18,10 @@ impl ApplicationEngine {
         };
 
         // 2. Transaction container path (witness rules and scopes).
-        if let Some(tx) = container.as_any().downcast_ref::<neo_payloads::Transaction>() {
+        if let Some(tx) = container
+            .as_any()
+            .downcast_ref::<neo_payloads::Transaction>()
+        {
             let mut signers: Vec<_> = tx.signers().to_vec();
 
             // OracleResponse transactions inherit signers from the original request.
@@ -26,16 +30,20 @@ impl ApplicationEngine {
                 _ => None,
             }) {
                 let oracle = lookup_oracle_contract();
-                let Some(request) = oracle
-                    .and_then(|o| o.oracle_request_url_full(self.snapshot_cache.as_ref(), oracle_id).ok().flatten())
-                else {
+                let Some(request) = oracle.and_then(|o| {
+                    o.oracle_request_url_full(self.snapshot_cache.as_ref(), oracle_id)
+                        .ok()
+                        .flatten()
+                }) else {
                     return Ok(false);
                 };
 
                 let ledger = lookup_ledger_contract();
-                let Some(state) = ledger
-                    .and_then(|l| l.transaction_state(self.snapshot_cache.as_ref(), &request.original_tx_id).ok().flatten())
-                else {
+                let Some(state) = ledger.and_then(|l| {
+                    l.transaction_state(self.snapshot_cache.as_ref(), &request.original_tx_id)
+                        .ok()
+                        .flatten()
+                }) else {
                     return Ok(false);
                 };
 
@@ -59,31 +67,32 @@ impl ApplicationEngine {
 
         // 3. Non-transaction containers require ReadStates and use verifying script hashes.
         if !self.has_call_flags(CallFlags::READ_STATES) {
-            return Err(Error::invalid_operation(
+            return Err(CoreError::invalid_operation(
                 "Read states not allowed".to_string(),
             ));
         }
 
         // Downcast to concrete types to call VerifiableExt::script_hashes_for_verifying
-        let hashes = script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
+        let hashes =
+            script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
         Ok(hashes.contains(hash))
     }
 
     /// Checks whether the specified hash has witnessed the current execution.
     ///
     /// Public wrapper for C# `CheckWitness(UInt160)` semantics.
-    pub fn check_witness(&self, hash: &UInt160) -> Result<bool> {
+    pub fn check_witness(&self, hash: &UInt160) -> CoreResult<bool> {
         self.check_witness_internal(hash)
     }
 
     /// Backwards-compatible alias mirroring `check_witness`.
-    pub fn check_witness_hash(&self, hash: &UInt160) -> Result<bool> {
+    pub fn check_witness_hash(&self, hash: &UInt160) -> CoreResult<bool> {
         self.check_witness_internal(hash)
     }
 
     /// Evaluates a witness condition in the current execution context.
     /// Matches all Neo N3 witness condition types.
-    fn match_witness_condition(&self, condition: &WitnessCondition) -> Result<bool> {
+    fn match_witness_condition(&self, condition: &WitnessCondition) -> CoreResult<bool> {
         match condition {
             WitnessCondition::Boolean { value } => Ok(*value),
             WitnessCondition::Not { condition } => {
@@ -113,7 +122,7 @@ impl ApplicationEngine {
                 let calling_context = {
                     let state_arc = self
                         .current_execution_state()
-                        .map_err(|e| Error::invalid_operation(e.to_string()))?;
+                        .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
                     let state = state_arc.lock();
                     state.calling_context.clone()
                 };
@@ -130,7 +139,7 @@ impl ApplicationEngine {
             WitnessCondition::Group { group } => {
                 let current_hash = self
                     .current_script_hash()
-                    .ok_or_else(|| Error::invalid_operation("No current script hash"))?;
+                    .ok_or_else(|| CoreError::invalid_operation("No current script hash"))?;
                 self.contract_matches_group(&current_hash, group)
             }
             WitnessCondition::CalledByGroup { group } => {
@@ -142,20 +151,21 @@ impl ApplicationEngine {
         }
     }
 
-    fn contract_matches_group(&self, contract_hash: &UInt160, group: &[u8]) -> Result<bool> {
+    fn contract_matches_group(&self, contract_hash: &UInt160, group: &[u8]) -> CoreResult<bool> {
         if !self.has_call_flags(CallFlags::READ_STATES) {
-            return Err(Error::invalid_operation(
+            return Err(CoreError::invalid_operation(
                 "Read states not allowed".to_string(),
             ));
         }
 
-        let Some(contract) = lookup_contract_management(self.snapshot_cache.as_ref(), contract_hash)?
+        let Some(contract) =
+            lookup_contract_management(self.snapshot_cache.as_ref(), contract_hash)?
         else {
             return Ok(false);
         };
 
         let group_point = neo_crypto::ECPoint::from_bytes(group)
-            .map_err(|e| Error::invalid_data(format!("Invalid witness group: {e}")))?;
+            .map_err(|e| CoreError::invalid_data(format!("Invalid witness group: {e}")))?;
         Ok(contract
             .manifest
             .groups
@@ -171,7 +181,7 @@ impl ApplicationEngine {
     }
 
     /// Deletes storage items by prefix.
-    pub fn delete_storage_by_prefix(&mut self, prefix: &[u8]) -> Result<()> {
+    pub fn delete_storage_by_prefix(&mut self, prefix: &[u8]) -> CoreResult<()> {
         let keys: Vec<_> = self
             .snapshot_cache
             .find(None, SeekDirection::Forward)
@@ -225,7 +235,7 @@ impl ApplicationEngine {
     pub fn create_storage_iterator(
         &mut self,
         results: Vec<(StorageKey, StorageItem)>,
-    ) -> Result<u32> {
+    ) -> CoreResult<u32> {
         let iterator_id = self.allocate_iterator_id()?;
 
         let iterator = StorageIterator::new(results, 0, FindOptions::None);
@@ -241,7 +251,7 @@ impl ApplicationEngine {
         results: Vec<(StorageKey, StorageItem)>,
         prefix_length: usize,
         options: FindOptions,
-    ) -> Result<u32> {
+    ) -> CoreResult<u32> {
         let iterator_id = self.allocate_iterator_id()?;
         let iterator = StorageIterator::new(results, prefix_length, options);
         self.storage_iterators.insert(iterator_id, iterator);
@@ -276,10 +286,10 @@ impl ApplicationEngine {
 
     /// Advances a storage iterator to the next element.
     /// Returns true if successful, false if at the end.
-    pub fn iterator_next(&mut self, iterator_id: u32) -> Result<bool> {
+    pub fn iterator_next(&mut self, iterator_id: u32) -> CoreResult<bool> {
         match self.storage_iterators.get_mut(&iterator_id) {
             Some(iterator) => Ok(iterator.next()),
-            None => Err(Error::not_found(format!(
+            None => Err(CoreError::not_found(format!(
                 "Iterator {} not found",
                 iterator_id
             ))),
@@ -287,10 +297,10 @@ impl ApplicationEngine {
     }
 
     /// Gets the current value from a storage iterator.
-    pub fn iterator_value(&self, iterator_id: u32) -> Result<StackItem> {
+    pub fn iterator_value(&self, iterator_id: u32) -> CoreResult<StackItem> {
         match self.storage_iterators.get(&iterator_id) {
             Some(iterator) => Ok(iterator.value()),
-            None => Err(Error::not_found(format!(
+            None => Err(CoreError::not_found(format!(
                 "Iterator {} not found",
                 iterator_id
             ))),
@@ -298,7 +308,7 @@ impl ApplicationEngine {
     }
 
     /// Removes a storage iterator (cleanup).
-    pub fn dispose_iterator(&mut self, iterator_id: u32) -> Result<()> {
+    pub fn dispose_iterator(&mut self, iterator_id: u32) -> CoreResult<()> {
         self.storage_iterators.remove(&iterator_id);
         Ok(())
     }
@@ -331,12 +341,12 @@ impl ApplicationEngine {
         self.native_calling_override = hash;
     }
 
-    fn allocate_iterator_id(&mut self) -> Result<u32> {
+    fn allocate_iterator_id(&mut self) -> CoreResult<u32> {
         let id = self.next_iterator_id;
         self.next_iterator_id = self
             .next_iterator_id
             .checked_add(1)
-            .ok_or_else(|| Error::invalid_operation("Iterator identifier overflow"))?;
+            .ok_or_else(|| CoreError::invalid_operation("Iterator identifier overflow"))?;
         Ok(id)
     }
 
@@ -349,7 +359,7 @@ impl ApplicationEngine {
     }
 
     /// Sets a storage item directly (for testing and internal use).
-    pub fn set_storage(&mut self, key: StorageKey, item: StorageItem) -> Result<()> {
+    pub fn set_storage(&mut self, key: StorageKey, item: StorageItem) -> CoreResult<()> {
         if self.snapshot_cache.get(&key).is_some() {
             self.snapshot_cache.update(key, item);
         } else {
@@ -364,13 +374,13 @@ impl ApplicationEngine {
     }
 
     /// Deletes a storage item directly (for testing and internal use).
-    pub fn delete_storage(&mut self, key: &StorageKey) -> Result<()> {
+    pub fn delete_storage(&mut self, key: &StorageKey) -> CoreResult<()> {
         self.snapshot_cache.delete(key);
         Ok(())
     }
 
     /// Gets the storage context for a native contract.
-    pub fn get_native_storage_context(&self, contract_hash: &UInt160) -> Result<StorageContext> {
+    pub fn get_native_storage_context(&self, contract_hash: &UInt160) -> CoreResult<StorageContext> {
         // Create storage context for native contracts using the best available source:
         // preloaded contract metadata first, then native registry fallback.
         let contract_id = self
@@ -382,7 +392,7 @@ impl ApplicationEngine {
                     .map(|native| native.id())
             })
             .ok_or_else(|| {
-                Error::not_found(format!("Native contract not found: {}", contract_hash))
+                CoreError::not_found(format!("Native contract not found: {}", contract_hash))
             })?;
 
         Ok(StorageContext {
@@ -402,19 +412,19 @@ impl ApplicationEngine {
     }
 
     /// Puts a storage item (legacy API for native contracts).
-    pub fn put_storage_item_legacy(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
+    pub fn put_storage_item_legacy(&mut self, key: &[u8], value: &[u8]) -> CoreResult<()> {
         if let Some(current_hash) = &self.current_script_hash {
             let context = self.get_native_storage_context(current_hash)?;
             return self.put_storage_item(&context, key, value);
         }
-        Err(Error::invalid_operation(
+        Err(CoreError::invalid_operation(
             "No current contract context".to_string(),
         ))
     }
 
-    pub fn create_standard_account(&mut self, public_key: &[u8]) -> Result<UInt160> {
+    pub fn create_standard_account(&mut self, public_key: &[u8]) -> CoreResult<UInt160> {
         if public_key.len() != 33 {
-            return Err(Error::invalid_operation(
+            return Err(CoreError::invalid_operation(
                 "Public key must be 33 bytes".to_string(),
             ));
         }
@@ -429,7 +439,7 @@ impl ApplicationEngine {
 
         let script = Helper::signature_redeem_script(public_key);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
-            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {}", e)))?;
+            .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {}", e)))?;
 
         Ok(hash)
     }
@@ -438,9 +448,9 @@ impl ApplicationEngine {
         &mut self,
         required_signatures: i32,
         public_keys_items: Vec<StackItem>,
-    ) -> Result<UInt160> {
+    ) -> CoreResult<UInt160> {
         if required_signatures <= 0 {
-            return Err(Error::invalid_operation(
+            return Err(CoreError::invalid_operation(
                 "Multisig threshold must be positive".to_string(),
             ));
         }
@@ -451,7 +461,7 @@ impl ApplicationEngine {
             || public_keys_items.len() > 1024
             || m > public_keys_items.len()
         {
-            return Err(Error::invalid_operation(
+            return Err(CoreError::invalid_operation(
                 "Invalid multisig public key count".to_string(),
             ));
         }
@@ -460,9 +470,9 @@ impl ApplicationEngine {
         for item in public_keys_items {
             let bytes = item
                 .as_bytes()
-                .map_err(|_| Error::invalid_operation("Cannot convert to bytes".to_string()))?;
+                .map_err(|_| CoreError::invalid_operation("Cannot convert to bytes".to_string()))?;
             if bytes.len() != 33 {
-                return Err(Error::invalid_operation(
+                return Err(CoreError::invalid_operation(
                     "Each multisig public key must be 33 bytes".to_string(),
                 ));
             }
@@ -472,7 +482,7 @@ impl ApplicationEngine {
         let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
             CHECK_SIG_PRICE
                 .checked_mul(public_keys.len() as i64)
-                .ok_or_else(|| Error::invalid_operation("Multisig fee overflow"))?
+                .ok_or_else(|| CoreError::invalid_operation("Multisig fee overflow"))?
         } else {
             1 << 8
         };
@@ -481,25 +491,25 @@ impl ApplicationEngine {
 
         let script = Helper::multi_sig_redeem_script(m, &public_keys);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
-            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {}", e)))?;
+            .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {}", e)))?;
 
         Ok(hash)
     }
 
     /// Deletes a storage item (legacy API for native contracts).
-    pub fn delete_storage_item_legacy(&mut self, key: &[u8]) -> Result<()> {
+    pub fn delete_storage_item_legacy(&mut self, key: &[u8]) -> CoreResult<()> {
         if let Some(current_hash) = &self.current_script_hash {
             let context = self.get_native_storage_context(current_hash)?;
             return self.delete_storage_item(&context, key);
         }
-        Err(Error::invalid_operation(
+        Err(CoreError::invalid_operation(
             "No current contract context".to_string(),
         ))
     }
-    pub(crate) fn refresh_context_tracking(&mut self) -> Result<()> {
+    pub(crate) fn refresh_context_tracking(&mut self) -> CoreResult<()> {
         if let Some(current_context) = self.vm_engine.engine().current_context() {
             let fallback_hash = UInt160::from_bytes(&current_context.script_hash())
-                .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
+                .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = current_context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             let (current_hash, call_flags, calling_script_hash, context_snapshot) = {
@@ -681,7 +691,7 @@ impl ApplicationEngine {
 /// downcasting to known concrete types that implement `VerifiableExt`.
 fn script_hashes_for_verifying_dyn(
     verifiable: &dyn Verifiable,
-    snapshot: &neo_data_cache::DataCache,
+    snapshot: &neo_storage::DataCache,
 ) -> Vec<UInt160> {
     use neo_payloads::block::Block as PayloadBlock;
     use neo_payloads::extensible_payload::ExtensiblePayload;

@@ -1,5 +1,5 @@
 use super::super::proto::neofs_v2;
-use neo_crypto::{Secp256r1Crypto, NEOFS_ECDSA_SHA512_SIGNATURE_LEN};
+use neo_crypto::{NEOFS_ECDSA_SHA512_SIGNATURE_LEN, Secp256r1Crypto};
 use prost::Message;
 
 pub(super) fn validate_neofs_response<B: Message>(
@@ -80,8 +80,8 @@ fn is_neofs_status_success(status: &neofs_v2::status::Status) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{neofs_v2, verify_neofs_signature_bytes};
-    use neo_crypto::Secp256r1Crypto;
     use crate::neofs::auth::sign_neofs_sha512;
+    use neo_crypto::Secp256r1Crypto;
     use neo_wallets::KeyPair;
 
     #[test]

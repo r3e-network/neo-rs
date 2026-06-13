@@ -70,7 +70,10 @@ impl ServiceError {
     /// retryable; the `InvalidInput` / `NotFound` / `InvalidState` arms are
     /// not.
     pub fn is_retryable(&self) -> bool {
-        matches!(self, ServiceError::ServiceUnavailable(_) | ServiceError::Timeout(_))
+        matches!(
+            self,
+            ServiceError::ServiceUnavailable(_) | ServiceError::Timeout(_)
+        )
     }
 
     /// Returns the [`ServiceError`] category as a stable lowercase string.
@@ -138,7 +141,10 @@ mod tests {
 
     #[test]
     fn category_is_stable() {
-        assert_eq!(ServiceError::unavailable("x").category(), "service_unavailable");
+        assert_eq!(
+            ServiceError::unavailable("x").category(),
+            "service_unavailable"
+        );
         assert_eq!(ServiceError::invalid_input("x").category(), "invalid_input");
         assert_eq!(ServiceError::not_found("x").category(), "not_found");
         assert_eq!(ServiceError::invalid_state("x").category(), "invalid_state");

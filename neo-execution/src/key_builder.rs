@@ -128,8 +128,8 @@ mod tests {
 
     #[test]
     fn test_add_ecpoint() {
-        use neo_crypto::ECCurve;
         use hex::decode;
+        use neo_crypto::ECCurve;
 
         let point_bytes =
             decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
@@ -137,6 +137,9 @@ mod tests {
         let point = ECPoint::decode(&point_bytes, ECCurve::secp256r1()).expect("valid point");
         let mut builder = KeyBuilder::new_with_default(1, 0x01);
         builder.add_ecpoint(&point);
-        assert_eq!(builder.len(), KeyBuilder::PREFIX_LENGTH + point.as_bytes().len());
+        assert_eq!(
+            builder.len(),
+            KeyBuilder::PREFIX_LENGTH + point.as_bytes().len()
+        );
     }
 }

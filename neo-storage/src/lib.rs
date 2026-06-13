@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+
 //! # Neo Storage
 //!
 //! Storage traits and types for the Neo blockchain.
@@ -44,28 +47,18 @@ pub mod error;
 pub mod hash_utils;
 pub mod key_builder;
 pub mod persistence;
+#[cfg(feature = "rocksdb")]
+pub mod rocksdb;
 pub mod types;
 
 // Canonical cache types live in `persistence::data_cache`; re-export the common
 // surface at the crate root for ergonomic access.
+pub use error::{StorageError, StorageResult};
+pub use hash_utils::{
+    DEFAULT_XX_HASH3_SEED, default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32,
+};
+pub use key_builder::{KeyBuilder, KeyBuilderError};
 pub use persistence::data_cache::{
     DataCache, DataCacheError, DataCacheResult, Trackable, TrackableEntry,
 };
-pub use error::{StorageError, StorageResult};
-pub use hash_utils::{
-    default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32, DEFAULT_XX_HASH3_SEED,
-};
-pub use key_builder::{KeyBuilder, KeyBuilderError};
 pub use types::{SeekDirection, StorageItem, StorageKey, TrackState};
-
-/// Implements `Default` for a struct by calling `Self::new()`.
-#[macro_export]
-macro_rules! impl_default_via_new {
-    ($type:ty) => {
-        impl Default for $type {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-    };
-}

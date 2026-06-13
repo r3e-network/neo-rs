@@ -1,8 +1,8 @@
 //! Result of a relay operation.
 
 use neo_payloads::InventoryType;
-use neo_primitives::verify_result::VerifyResult;
 use neo_primitives::UInt256;
+use neo_primitives::verify_result::VerifyResult;
 use serde::{Deserialize, Serialize};
 
 /// Result of a relay operation.

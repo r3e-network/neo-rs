@@ -10,17 +10,18 @@
 // modifications are permitted.
 
 use super::RpcNefFile;
-use neo_execution::{ContractState};
-use neo_manifest::{ContractManifest};
-use neo_json::{JObject, JToken};
+use neo_execution::ContractState;
+use neo_manifest::ContractManifest;
 use neo_primitives::UInt160;
+use neo_serialization::json::{JObject, JToken};
 use serde_json::{Number as JsonNumber, Value as JsonValue};
 
 /// RPC contract state information matching C# `RpcContractState`
 #[derive(Debug, Clone)]
 pub struct RpcContractState {
     /// The contract state
-    pub contract_state: ContractState}
+    pub contract_state: ContractState,
+}
 
 impl RpcContractState {
     /// Creates from JSON
@@ -28,17 +29,17 @@ impl RpcContractState {
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let id = json
             .get("id")
-            .and_then(neo_json::JToken::as_number)
+            .and_then(neo_serialization::json::JToken::as_number)
             .ok_or("Missing or invalid 'id' field")? as i32;
 
         let update_counter = json
             .get("updatecounter")
-            .and_then(neo_json::JToken::as_number)
+            .and_then(neo_serialization::json::JToken::as_number)
             .ok_or("Missing or invalid 'updatecounter' field")? as u16;
 
         let hash = json
             .get("hash")
-            .and_then(neo_json::JToken::as_string)
+            .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|s| UInt160::parse(&s).ok())
             .ok_or("Missing or invalid 'hash' field")?;
 
@@ -64,8 +65,10 @@ impl RpcContractState {
                 update_counter,
                 hash,
                 nef: nef.nef_file,
-                manifest}})
-   }
+                manifest,
+            },
+        })
+    }
 
     /// Converts to JSON
     /// Matches C# `ToJson`
@@ -87,7 +90,8 @@ impl RpcContractState {
             "nef".to_string(),
             JToken::Object(
                 RpcNefFile {
-                    nef_file: self.contract_state.nef.clone()}
+                    nef_file: self.contract_state.nef.clone(),
+                }
                 .to_json(),
             ),
         );
@@ -97,19 +101,20 @@ impl RpcContractState {
             .manifest
             .to_json()
             .map_err(|err| err.to_string())?;
-        let manifest_jtoken = neo_json::JToken::parse(&manifest_json_value.to_string(), 128)
-            .map_err(|err| err.to_string())?;
+        let manifest_jtoken =
+            neo_serialization::json::JToken::parse(&manifest_json_value.to_string(), 128)
+                .map_err(|err| err.to_string())?;
         json.insert("manifest".to_string(), manifest_jtoken);
 
         Ok(json)
-   }
+    }
 }
 
 fn normalize_numeric_json(value: JsonValue) -> JsonValue {
     match value {
         JsonValue::Array(entries) => {
             JsonValue::Array(entries.into_iter().map(normalize_numeric_json).collect())
-       }
+        }
         JsonValue::Object(entries) => JsonValue::Object(
             entries
                 .into_iter()
@@ -122,17 +127,18 @@ fn normalize_numeric_json(value: JsonValue) -> JsonValue {
                     if float >= 0.0 && float <= u64::MAX as f64 {
                         if float <= i64::MAX as f64 {
                             return JsonValue::Number(JsonNumber::from(float as i64));
-                       }
+                        }
                         return JsonValue::Number(JsonNumber::from(float as u64));
-                   }
+                    }
                     if float >= i64::MIN as f64 {
                         return JsonValue::Number(JsonNumber::from(float as i64));
-                   }
-               }
-           }
+                    }
+                }
+            }
             JsonValue::Number(number)
-       }
-        other => other}
+        }
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -140,9 +146,9 @@ mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
     use base64::{Engine as _, engine::general_purpose};
-    use neo_manifest::NefFile;
     use neo_manifest::ContractManifest;
-    use neo_json::{JArray, JToken};
+    use neo_manifest::NefFile;
+    use neo_serialization::json::{JArray, JToken};
 
     #[test]
     fn rpc_contract_state_parses_minimal_contract() {
@@ -159,7 +165,8 @@ mod tests {
             source: "".into(),
             tokens: Vec::new(),
             script: vec![1, 2, 3],
-            checksum: 123};
+            checksum: 123,
+        };
         let mut nef_json = JObject::new();
         nef_json.insert("compiler".to_string(), JToken::String(nef.compiler.clone()));
         nef_json.insert("source".to_string(), JToken::String(nef.source.clone()));
@@ -174,7 +181,7 @@ mod tests {
         let manifest = ContractManifest::new("TestContract".into());
         let manifest_value = manifest.to_json().expect("manifest json");
         let manifest_token =
-            JToken::parse(&manifest_value.to_string(), 128).expect("neo-json parse");
+            JToken::parse(&manifest_value.to_string(), 128).expect("neo-serialization::json parse");
         json.insert(
             "manifest".to_string(),
             JToken::Object(manifest_token.as_object().unwrap().clone()),
@@ -186,7 +193,7 @@ mod tests {
         assert_eq!(parsed.contract_state.hash, UInt160::zero());
         assert_eq!(parsed.contract_state.nef.checksum, 123);
         assert_eq!(parsed.contract_state.manifest.name, "TestContract");
-   }
+    }
 
     #[test]
     fn rpc_contract_state_roundtrip_json() {
@@ -195,7 +202,8 @@ mod tests {
             source: "src".into(),
             tokens: vec![neo_manifest::MethodToken::default()],
             script: vec![1, 2, 3],
-            checksum: 321};
+            checksum: 321,
+        };
         let manifest = ContractManifest::new("Contract".into());
         let state = RpcContractState {
             contract_state: ContractState {
@@ -203,7 +211,9 @@ mod tests {
                 update_counter: 6,
                 hash: UInt160::zero(),
                 nef,
-                manifest}};
+                manifest,
+            },
+        };
 
         let json = state.to_json().expect("to_json");
         let parsed = RpcContractState::from_json(&json).expect("from_json");
@@ -211,15 +221,15 @@ mod tests {
         assert_eq!(parsed.contract_state.update_counter, 6);
         assert_eq!(parsed.contract_state.nef.checksum, 321);
         assert_eq!(parsed.contract_state.manifest.name, "Contract");
-   }
+    }
 
     #[test]
     fn contract_state_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result("getcontractstateasync") else {
             return;
-       };
+        };
         let parsed = RpcContractState::from_json(&expected).expect("parse");
         let actual = parsed.to_json().expect("to_json");
         assert_eq!(expected.to_string(), actual.to_string());
-   }
+    }
 }

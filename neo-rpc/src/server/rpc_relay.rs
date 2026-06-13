@@ -2,10 +2,10 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
-use neo_block::VerifyResult;
 use neo_blockchain::RelayResult;
+use neo_payloads::VerifyResult;
 use neo_payloads::{Block, InventoryType, Transaction};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::runtime::{Handle, Runtime};
 use tokio::task::block_in_place;
 
@@ -61,12 +61,13 @@ pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcExceptio
         )),
         VerifyResult::Unknown => Err(RpcException::from(
             RpcError::verification_failed().with_data("Unknown"),
-        ))}
+        )),
+    }
 }
 
 /// Drives an async service round-trip to completion from a synchronous
 /// RPC handler. Uses the ambient multi-thread runtime when one exists
-/// (the warp server path), and a throwaway runtime otherwise (direct
+/// (the jsonrpsee server path), and a throwaway runtime otherwise (direct
 /// handler invocation in tests).
 pub(super) fn block_on_service<F, T>(future: F) -> Result<T, RpcException>
 where

@@ -1,7 +1,7 @@
 //! Complete port of `Neo.SmartContract.Interoperable` from the C# reference implementation.
 
-use crate::error::VmError;
 use crate::StackItem;
+use crate::error::VmError;
 
 /// Represents the object that can be converted to and from [`StackItem`].
 ///

@@ -3,7 +3,7 @@
 use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{register_jump_handlers, JumpTable};
+use crate::jump_table::{JumpTable, register_jump_handlers};
 use crate::stack_item::StackItem;
 use neo_vm_rs::semantics::{arithmetic, comparison};
 use neo_vm_rs::{Instruction, OpCode, StackValue};

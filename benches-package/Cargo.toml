@@ -8,12 +8,11 @@ criterion = { workspace = true, features = ["html_reports"] }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-primitives = { workspace = true }
+neo-vm = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-payloads = { workspace = true }
 hex = { workspace = true }
 
-neo-redeem-script = { workspace = true }
-neo-script-builder = { workspace = true }
 
 [[bench]]
 name = "block_processing"

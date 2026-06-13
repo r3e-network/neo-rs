@@ -43,7 +43,7 @@ impl ApplicationEngine {
         context: &StorageContext,
         key: &[u8],
         value: &[u8],
-    ) -> Result<()> {
+    ) -> CoreResult<()> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         let existing = self.snapshot_cache.get(&storage_key);
         let value_len = value.len();
@@ -84,7 +84,7 @@ impl ApplicationEngine {
         Ok(())
     }
 
-    pub fn delete_storage_item(&mut self, context: &StorageContext, key: &[u8]) -> Result<()> {
+    pub fn delete_storage_item(&mut self, context: &StorageContext, key: &[u8]) -> CoreResult<()> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         self.snapshot_cache.delete(&storage_key);
         Ok(())
@@ -131,7 +131,7 @@ impl ApplicationEngine {
         rvcount: i32,
         initial_position: usize,
         configure: F,
-    ) -> Result<ExecutionContext>
+    ) -> CoreResult<ExecutionContext>
     where
         F: FnOnce(&mut ExecutionContextState),
     {
@@ -139,14 +139,14 @@ impl ApplicationEngine {
         self.attach_host();
 
         let script = Script::from(script_bytes)
-            .map_err(|e| Error::invalid_operation(format!("Invalid script: {e}")))?;
+            .map_err(|e| CoreError::invalid_operation(format!("Invalid script: {e}")))?;
 
         {
             let engine = self.vm_engine.engine_mut();
             let context = engine.create_context(script, rvcount, initial_position);
 
             let script_hash = UInt160::from_bytes(&context.script_hash())
-                .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
+                .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             let call_flags = {
@@ -163,7 +163,7 @@ impl ApplicationEngine {
 
             engine
                 .load_context(context)
-                .map_err(|e| Error::invalid_operation(e.to_string()))?;
+                .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
 
             engine.set_call_flags(call_flags);
         }
@@ -173,7 +173,7 @@ impl ApplicationEngine {
             .engine()
             .current_context()
             .cloned()
-            .ok_or_else(|| Error::invalid_operation("Failed to load execution context"))?;
+            .ok_or_else(|| CoreError::invalid_operation("Failed to load execution context"))?;
 
         self.refresh_context_tracking()?;
 

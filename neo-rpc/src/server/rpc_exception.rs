@@ -9,7 +9,7 @@ impl From<RpcError> for RpcException {
             error.message().to_string(),
             error.data().map(std::string::ToString::to_string),
         )
-   }
+    }
 }
 
 impl From<RpcException> for RpcError {
@@ -19,5 +19,5 @@ impl From<RpcException> for RpcError {
             err.message().to_string(),
             err.data().map(std::string::ToString::to_string),
         )
-   }
+    }
 }

@@ -50,7 +50,11 @@ impl TransactionRouter {
     /// Runs state-independent transaction verification.
     pub fn preverify(&self, transaction: Transaction, relay: bool) -> PreverifyCompleted {
         let succeeded = Verifiable::verify(&transaction);
-        let result = if succeeded { VerifyResult::Succeed } else { VerifyResult::Invalid };
+        let result = if succeeded {
+            VerifyResult::Succeed
+        } else {
+            VerifyResult::Invalid
+        };
         PreverifyCompleted {
             transaction,
             relay,

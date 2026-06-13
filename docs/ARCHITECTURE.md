@@ -2,7 +2,7 @@
 
 > **Version**: 0.7.0  
 > **Last Updated**: 2026-01-28  
-> **Target Compatibility**: Neo N3 v3.9.1
+> **Target Compatibility**: Neo N3 v3.10.0
 
 This document provides comprehensive architecture documentation for the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
 
@@ -28,8 +28,8 @@ This document provides comprehensive architecture documentation for the neo-rs p
 │                                    APPLICATION LAYER                                        │
 │                                                                                             │
 │   ┌─────────────────────────────────┐    ┌─────────────────────────────────┐                │
-│   │           neo-cli               │    │           neo-node              │                │
-│   │        (CLI Client)             │    │       (Node Daemon)             │                │
+│   │      JSON-RPC clients           │    │           neo-node              │                │
+│   │     (external clients)          │    │       (Node Daemon)             │                │
 │   │                                 │    │                                 │                │
 │   │  • Wallet management            │    │  • P2P networking               │                │
 │   │  • Contract invocation          │    │  • RPC server                   │                │
@@ -491,7 +491,7 @@ Phase 1: Creation
 Phase 2: Submission                                       │
 ─────────────────                                         ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   neo-cli or    │◀────│  Signed TX      │◀────│   Witness       │
+│  JSON-RPC or    │◀────│  Signed TX      │◀────│   Witness       │
 │   Wallet SDK    │     │  (serialized)   │     │  (Script +      │
 │                 │     │                 │     │  Invocation)    │
 └────────┬────────┘     └─────────────────┘     └─────────────────┘
@@ -814,9 +814,7 @@ neo-rs/
 │       ├── health.rs             # Health check endpoints
 │       └── metrics.rs            # Prometheus metrics
 │
-└── neo-cli/                      # Application Layer
-    └── src/
-        └── main.rs               # CLI client entry
+└── external JSON-RPC clients      # Application Layer clients
 ```
 
 ### 4.2 Dependency Graph
@@ -831,7 +829,7 @@ neo-rs/
 Layer 3 (Application)
 ┌─────────────────────────────────────────────────────────────────┐
 │  ┌──────────┐      ┌──────────┐                                  │
-│  │neo-cli   │      │neo-node  │                                  │
+│  │clients  │      │neo-node  │                                  │
 │  └────┬─────┘      └────┬─────┘                                  │
 └───────┼────────────────┼────────────────────────────────────────┘
         │                │
@@ -876,7 +874,7 @@ Layer 0 (Foundation)
 └─────────────────────────────────────────────────────────────────┘
 
 Key Dependencies:
-• neo-cli ──▶ neo-core, neo-rpc(client)
+• external clients ──▶ neo-rpc(JSON-RPC surface)
 • neo-node ──▶ neo-core, neo-chain, neo-mempool, neo-consensus, neo-rpc(server)
 • neo-core ──▶ neo-primitives, neo-crypto, neo-storage, neo-io, neo-json, neo-vm-rs
 • neo-consensus ──▶ neo-primitives, neo-crypto
@@ -1150,7 +1148,7 @@ pub enum WitnessCondition {
 │                    Error Type Hierarchy                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  Application Layer                                               │
-│  ├── CliError (neo-cli)                                         │
+│  ├── ClientError (external JSON-RPC clients)                    │
 │  └── NodeError (neo-node)                                       │
 │                                                                  │
 │  Service Layer                                                   │

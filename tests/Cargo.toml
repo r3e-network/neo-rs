@@ -12,7 +12,7 @@ description = "Integration tests for neo-rs workspace layer boundaries and end-t
 # Layer 0 - Foundation
 neo-primitives = { workspace = true }
 neo-io = { workspace = true }
-neo-json = { workspace = true }
+neo-serialization = { workspace = true }
 neo-storage = { workspace = true }
 
 # Layer 1 - Crypto
@@ -25,7 +25,6 @@ neo-payloads = { workspace = true }
 
 # Layer 4 - Services
 neo-rpc = { workspace = true }
-neo-telemetry = { workspace = true }
 neo-vm-rs = { workspace = true }
 
 # Utilities
@@ -39,8 +38,6 @@ tempfile = { workspace = true }
 
 neo-network = { workspace = true }
 neo-native-contracts = { workspace = true }
-neo-block = { workspace = true }
-
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 

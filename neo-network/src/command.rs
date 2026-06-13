@@ -16,7 +16,6 @@ use tokio::sync::oneshot;
 
 use crate::error::NetworkResult;
 use crate::peer_id::PeerId;
-use crate::remote_node::RemoteNodeHandle;
 
 /// Top-level command accepted by [`crate::local_node::LocalNodeService`].
 ///
@@ -111,35 +110,3 @@ pub enum NetworkCommand {
     /// 3. Drop its command receiver, causing `run()` to return.
     Shutdown,
 }
-
-/// Helper to send a `NetworkCommand` over an `mpsc::Sender` and
-/// translate the `SendError` into a [`crate::error::NetworkError`].
-pub(crate) async fn send(
-    tx: &tokio::sync::mpsc::Sender<NetworkCommand>,
-    cmd: NetworkCommand,
-) -> NetworkResult<()> {
-    tx.send(cmd)
-        .await
-        .map_err(|_| crate::error::NetworkError::LocalShuttingDown)
-}
-
-/// Helper to send a `NetworkCommand` with a `oneshot` reply and
-/// await the reply. The reply channel is constructed by the caller
-/// (via `build(reply_tx)`) so the same pattern works for every
-/// request/response command.
-pub(crate) async fn ask<T>(
-    tx: &tokio::sync::mpsc::Sender<NetworkCommand>,
-    build: impl FnOnce(oneshot::Sender<NetworkResult<T>>) -> NetworkCommand,
-) -> NetworkResult<T> {
-    let (reply_tx, reply_rx) = oneshot::channel();
-    send(tx, build(reply_tx)).await?;
-    reply_rx
-        .await
-        .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?
-}
-
-/// Suppress the unused-import warning that `RemoteNodeHandle` would
-/// otherwise trigger when it is only used by future variants of
-/// `NetworkCommand`.
-#[allow(dead_code)]
-fn _force_remote_handle_link(_h: &RemoteNodeHandle) {}

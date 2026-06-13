@@ -1,11 +1,9 @@
 //! ContractEventDescriptor - matches C# Neo.SmartContract.Manifest.ContractEventDescriptor exactly
 
+use crate::manifest::ContractParameterDefinition;
+use crate::manifest::stack_value_helpers::{decode_stack_value_objects, required_struct_fields};
 use neo_error::CoreError;
 use neo_vm::Interoperable;
-use crate::manifest::stack_value_helpers::{
-    decode_stack_value_objects, required_struct_fields,
-};
-use crate::manifest::ContractParameterDefinition;
 use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
@@ -116,7 +114,8 @@ impl Interoperable for ContractEventDescriptor {
                 "Failed to convert ContractEventDescriptor StackItem to StackValue: {error}"
             ))
         })?;
-        self.from_stack_value(sv).map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+        self.from_stack_value(sv)
+            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {

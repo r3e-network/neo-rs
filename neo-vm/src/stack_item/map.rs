@@ -7,9 +7,9 @@
 use crate::error::{VmError, VmResult};
 use crate::reference_counter::{CompoundParent, ReferenceCounter};
 use crate::stack_item::StackItem;
-use neo_vm_rs::next_stack_item_id;
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::VmOrderedDictionary;
+use neo_vm_rs::next_stack_item_id;
 use parking_lot::Mutex;
 use std::sync::Arc;
 

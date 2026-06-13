@@ -187,9 +187,11 @@ impl BigDecimal {
 
         if let Some(index) = s.find(['e', 'E']) {
             let e_str = &s[(index + 1)..];
-            e = e_str.parse::<i32>().map_err(|_| PrimitiveError::InvalidFormat {
-                message: "Invalid exponent".to_string(),
-            })?;
+            e = e_str
+                .parse::<i32>()
+                .map_err(|_| PrimitiveError::InvalidFormat {
+                    message: "Invalid exponent".to_string(),
+                })?;
             s = s[..index].to_string();
         }
 

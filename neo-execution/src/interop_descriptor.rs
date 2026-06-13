@@ -1,8 +1,8 @@
 //! InteropDescriptor - matches C# Neo.SmartContract.InteropDescriptor exactly
 
+use crate::interop_parameter_descriptor::InteropParameterDescriptor;
 use neo_config::hardfork::Hardfork;
 use neo_manifest::CallFlags;
-use crate::interop_parameter_descriptor::InteropParameterDescriptor;
 use std::sync::OnceLock;
 
 /// Represents a descriptor of an interoperable service (matches C# InteropDescriptor)
@@ -83,10 +83,7 @@ impl InteropDescriptor {
     }
 
     /// Invokes the handler
-    pub fn invoke(
-        &self,
-        engine: &mut crate::ApplicationEngine,
-    ) -> Result<(), String> {
+    pub fn invoke(&self, engine: &mut crate::ApplicationEngine) -> Result<(), String> {
         // Check call flags
         if !engine.has_call_flags(self.required_call_flags) {
             return Err(format!(

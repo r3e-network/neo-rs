@@ -25,40 +25,31 @@ neo-node --config neo_mainnet_node.toml
 # Start with testnet configuration
 neo-node --config neo_testnet_node.toml
 
-# Run in daemon mode (minimal console output)
-neo-node --config neo_mainnet_node.toml --daemon
-
 # Override storage path
-neo-node --config neo_mainnet_node.toml --storage ./data/chain
+neo-node --config neo_mainnet_node.toml --storage-path ./data/chain
 
-# Use RocksDB backend
-neo-node --config neo_mainnet_node.toml --backend rocksdb --storage ./data/chain
+# Validate configuration and storage without starting P2P/RPC
+neo-node --config neo_mainnet_node.toml --check-all
 
-# Enable state root calculation/validation (alias: --stateroot)
-neo-node --config neo_mainnet_node.toml --stateroot
+# Override network magic for a private network
+neo-node --config custom.toml --network-magic 123456
 ```
 
 Notes:
-- When `--state-root-full-state` is disabled, `getproof`/`getstate`/`findstates` only support the current local root hash (older roots return RPC error `-606`, matching Neo's `StateService` plugin).
-- Validated state roots are only accepted when `RoleManagement` has designated `StateValidator` keys at the given index (also matches Neo's `StateService` rules).
-- When dBFT `auto_start` is disabled, open a wallet and call RPC `startconsensus` to begin consensus.
+- Storage backend, P2P, RPC, and consensus settings live in TOML.
+- `--storage-path` implies the RocksDB backend and overrides `[storage].data_dir` / `[storage].path`.
+- When dBFT is enabled, the validator key comes from the `[consensus]` configuration.
 
 ## Command-line Options
 
 | Option | Description | Default |
 |--------|-------------|--------|
-| `-c, --config <PATH>` | Path to TOML configuration file | `neo_mainnet_node.toml` |
-| `--storage <PATH>` | Override storage path | (from config) |
-| `--backend <NAME>` | Storage backend (memory, rocksdb) | (from config) |
+| `-c, --config <PATH>` | Path to TOML configuration file | `neo_testnet_node.toml` |
+| `--storage-path <PATH>` | Override storage path and use RocksDB | (from config) |
 | `--network-magic <N>` | Override network magic | (from config) |
-| `--listen-port <PORT>` | P2P listening port | (from config) |
-| `--seed <HOST:PORT>` | Seed nodes (comma separated) | (from config) |
-| `--max-connections <N>` | Maximum connections | (from config) |
-| `--min-connections <N>` | Minimum desired peers | (from config) |
-| `-d, --daemon` | Daemon mode (no console output) | false |
-| `--state-root` / `--stateroot` | Enable state root calculation & validation | false |
-| `--state-root-path <PATH>` | StateRoot DB path (defaults to `<storage>/StateRoot`) | (derived) |
-| `--state-root-full-state` | Keep full historical state (enables old-root proofs; larger DB) | false |
+| `--check-config` | Validate configuration and exit | false |
+| `--check-storage` | Validate storage can be opened and exit | false |
+| `--check-all` | Run all preflight checks and exit | false |
 
 ## Configuration
 
@@ -69,7 +60,7 @@ See `neo_mainnet_node.toml` for a full configuration example. Key sections:
 network_type = "mainnet"  # or "testnet", "privatenet"
 
 [p2p]
-listen_port = 10333
+port = 10333
 max_connections = 40
 seed_nodes = ["seed1.neo.org:10333", "seed2.neo.org:10333"]
 
@@ -110,9 +101,9 @@ console_output = true
                            │
                            │ JSON-RPC
                            ▼
-                    ┌─────────────┐
-                    │   neo-cli   │
-                    └─────────────┘
+                    ┌──────────────────┐
+                    │ JSON-RPC clients │
+                    └──────────────────┘
 ```
 
 ## License

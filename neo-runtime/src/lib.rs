@@ -16,7 +16,7 @@
 //!
 //! - `neo-primitives` (Layer 0) — for `UInt256`.
 //! - `neo-payloads` (Layer 1) — for `Block` and `Transaction`.
-//! - `neo-ledger-types` (Layer 1) — placeholder for future protocol
+//! - `neo-payloads` (Layer 1) — protocol payload data types
 //!   types carried in events.
 //! - `tokio`, `async-trait`, `futures`, `parking_lot`, `thiserror`,
 //!   `tracing` — external async / utility crates.
@@ -96,6 +96,4 @@ pub mod services;
 pub use blockchain::{BlockchainEvent, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY};
 pub use errors::{ServiceError, ServiceResult};
 pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
-pub use services::{
-    BlockExecutor, ConsensusService, NeoEngine, NetworkService, Service, TxHash,
-};
+pub use services::{BlockExecutor, ConsensusService, NeoEngine, NetworkService, Service, TxHash};

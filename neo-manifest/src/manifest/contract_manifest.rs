@@ -5,17 +5,17 @@
 //! Represents the manifest of a smart contract which declares the features
 //! and permissions it will use when deployed.
 
-use neo_error::CoreError as Error;
-use neo_error::CoreResult as Result;
-use neo_primitives::constants::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
-use neo_io::serializable::helper::{get_var_size, get_var_size_str};
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_vm::Interoperable;
 use crate::manifest::{
     ContractAbi, ContractGroup, ContractPermission, ContractPermissionDescriptor, WildCardContainer,
 };
-use neo_vm::StackItem;
+use neo_error::CoreError;
+use neo_error::CoreResult;
+use neo_io::serializable::helper::{get_var_size, get_var_size_str};
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt160;
+use neo_primitives::constants::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
+use neo_vm::Interoperable;
+use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
@@ -157,52 +157,52 @@ impl ContractManifest {
     }
 
     /// Converts the manifest to JSON.
-    pub fn to_json(&self) -> Result<Value> {
-        serde_json::to_value(self).map_err(|e| Error::serialization(e.to_string()))
+    pub fn to_json(&self) -> CoreResult<Value> {
+        serde_json::to_value(self).map_err(|e| CoreError::serialization(e.to_string()))
     }
 
     /// Creates a manifest from a JSON string.
-    pub fn from_json_str(json: &str) -> Result<Self> {
-        serde_json::from_str(json).map_err(|e| Error::serialization(e.to_string()))
+    pub fn from_json_str(json: &str) -> CoreResult<Self> {
+        serde_json::from_str(json).map_err(|e| CoreError::serialization(e.to_string()))
     }
 
     /// Alias to maintain backwards compatibility with older code paths.
-    pub fn from_json(json: &str) -> Result<Self> {
+    pub fn from_json(json: &str) -> CoreResult<Self> {
         Self::from_json_str(json)
     }
 
     /// Parses a contract manifest from JSON.
     /// This is an alias for `from_json_str` to match C# `ContractManifest.Parse` exactly.
-    pub fn parse(json: &str) -> Result<Self> {
+    pub fn parse(json: &str) -> CoreResult<Self> {
         Self::from_json_str(json)
     }
 
     /// Validates the manifest.
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> CoreResult<()> {
         // Validate name
         if self.name.is_empty() {
-            return Err(Error::invalid_data("Contract name cannot be empty"));
+            return Err(CoreError::invalid_data("Contract name cannot be empty"));
         }
 
         if !self.features.is_empty() {
-            return Err(Error::invalid_data("Features field must be empty"));
+            return Err(CoreError::invalid_data("Features field must be empty"));
         }
 
         let mut seen_standards = HashSet::new();
         for standard in &self.supported_standards {
             if standard.is_empty() {
-                return Err(Error::invalid_data(
+                return Err(CoreError::invalid_data(
                     "Supported standards cannot include empty strings",
                 ));
             }
             if !seen_standards.insert(standard) {
-                return Err(Error::invalid_data("Supported standards must be unique"));
+                return Err(CoreError::invalid_data("Supported standards must be unique"));
             }
         }
 
         // Validate manifest size
         if self.size() > MAX_MANIFEST_LENGTH {
-            return Err(Error::invalid_data(
+            return Err(CoreError::invalid_data(
                 "Manifest exceeds maximum allowed length",
             ));
         }
@@ -212,7 +212,7 @@ impl ContractManifest {
         for group in &self.groups {
             group.validate()?;
             if group_keys.iter().any(|key| key == &group.pub_key) {
-                return Err(Error::invalid_data(
+                return Err(CoreError::invalid_data(
                     "Duplicate group public key in manifest",
                 ));
             }
@@ -228,7 +228,7 @@ impl ContractManifest {
                 .iter()
                 .any(|contract| contract == &permission.contract)
             {
-                return Err(Error::invalid_data(
+                return Err(CoreError::invalid_data(
                     "Duplicate permission contract in manifest",
                 ));
             }
@@ -239,19 +239,19 @@ impl ContractManifest {
             let mut seen_trusts = Vec::new();
             for trust in trusts {
                 if seen_trusts.iter().any(|existing| existing == trust) {
-                    return Err(Error::invalid_data("Duplicate trust entry in manifest"));
+                    return Err(CoreError::invalid_data("Duplicate trust entry in manifest"));
                 }
                 seen_trusts.push(trust.clone());
                 if let ContractPermissionDescriptor::Group(pub_key) = trust {
                     if !pub_key.is_valid() {
-                        return Err(Error::invalid_data("Invalid group public key in trusts"));
+                        return Err(CoreError::invalid_data("Invalid group public key in trusts"));
                     }
                 }
             }
         }
 
         // Validate ABI
-        self.abi.validate().map_err(Error::invalid_data)?;
+        self.abi.validate().map_err(CoreError::invalid_data)?;
 
         Ok(())
     }
@@ -280,12 +280,7 @@ impl ContractManifest {
     }
 
     /// Gets a method from the ABI by name.
-    pub fn get_method(
-        &self,
-        name: &str,
-    ) -> Option<
-        &crate::ContractMethodDescriptor,
-    > {
+    pub fn get_method(&self, name: &str) -> Option<&crate::ContractMethodDescriptor> {
         self.abi.methods.iter().find(|m| m.name == name)
     }
 
@@ -295,9 +290,9 @@ impl ContractManifest {
     }
 
     /// Serializes the contract manifest to bytes.
-    pub fn serialize(&self, writer: &mut BinaryWriter) -> Result<()> {
+    pub fn serialize(&self, writer: &mut BinaryWriter) -> CoreResult<()> {
         self.serialize_io(writer)
-            .map_err(|e| Error::serialization(e.to_string()))
+            .map_err(|e| CoreError::serialization(e.to_string()))
     }
 
     fn serialize_io(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -344,8 +339,8 @@ impl ContractManifest {
     }
 
     /// Deserializes the contract manifest from bytes.
-    pub fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
-        Self::deserialize_io(reader).map_err(|e| Error::serialization(e.to_string()))
+    pub fn deserialize(reader: &mut MemoryReader) -> CoreResult<Self> {
+        Self::deserialize_io(reader).map_err(|e| CoreError::serialization(e.to_string()))
     }
 
     fn deserialize_io(reader: &mut MemoryReader) -> IoResult<Self> {
@@ -465,13 +460,17 @@ impl Serializable for ContractManifest {
 }
 
 impl Interoperable for ContractManifest {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), neo_vm::VmError> {
+    fn from_stack_item(
+        &mut self,
+        stack_item: StackItem,
+    ) -> std::result::Result<(), neo_vm::VmError> {
         let sv = StackValue::try_from(stack_item).map_err(|error| {
             neo_vm::VmError::invalid_operation_msg(format!(
                 "ContractManifest expects Struct stack item: {error}"
             ))
         })?;
-        self.from_stack_value(sv).map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+        self.from_stack_value(sv)
+            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn to_stack_item(&self) -> std::result::Result<StackItem, neo_vm::VmError> {
@@ -488,6 +487,7 @@ impl Interoperable for ContractManifest {
 }
 
 impl ContractManifest {
+    /// Converts the manifest to the VM stack-value shape used by native interop.
     pub fn to_stack_value(&self) -> StackValue {
         let group_items = self
             .groups
@@ -498,9 +498,7 @@ impl ContractManifest {
         let mut feature_entries = Vec::with_capacity(self.features.len());
         for (key, value) in &self.features {
             let json_bytes =
-                neo_serialization::JsonSerializer::encode_value_csharp_compatible(
-                    value,
-                );
+                neo_serialization::JsonSerializer::encode_value_csharp_compatible(value);
             feature_entries.push((
                 StackValue::ByteString(key.as_bytes().to_vec()),
                 StackValue::ByteString(json_bytes),
@@ -534,11 +532,7 @@ impl ContractManifest {
         };
 
         let extra_bytes = match &self.extra {
-            Some(extra) => {
-                neo_serialization::JsonSerializer::encode_value_csharp_compatible(
-                    extra,
-                )
-            }
+            Some(extra) => neo_serialization::JsonSerializer::encode_value_csharp_compatible(extra),
             None => b"null".to_vec(),
         };
 
@@ -554,15 +548,16 @@ impl ContractManifest {
         ])
     }
 
-    pub fn from_stack_value(&mut self, stack_value: StackValue) -> std::result::Result<(), Error> {
+    /// Populates the manifest from the VM stack-value shape used by native interop.
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> std::result::Result<(), CoreError> {
         let StackValue::Struct(items) = stack_value else {
-            return Err(Error::invalid_format(
+            return Err(CoreError::invalid_format(
                 "ContractManifest expects Struct stack value",
             ));
         };
 
         if items.len() < 8 {
-            return Err(Error::invalid_format(format!(
+            return Err(CoreError::invalid_format(format!(
                 "ContractManifest stack value must contain 8 elements, found {}",
                 items.len()
             )));
@@ -570,9 +565,9 @@ impl ContractManifest {
 
         let name_bytes = items[0]
             .to_byte_string_bytes()
-            .ok_or_else(|| Error::invalid_format("ContractManifest name must be ByteString"))?;
+            .ok_or_else(|| CoreError::invalid_format("ContractManifest name must be ByteString"))?;
         self.name = String::from_utf8(name_bytes)
-            .map_err(|_| Error::invalid_format("ContractManifest name must be valid UTF-8"))?;
+            .map_err(|_| CoreError::invalid_format("ContractManifest name must be valid UTF-8"))?;
 
         self.groups = match &items[1] {
             StackValue::Array(groups) => groups
@@ -580,7 +575,7 @@ impl ContractManifest {
                 .filter_map(|item| ContractGroup::try_from_stack_value(item.clone()).ok())
                 .collect(),
             _ => {
-                return Err(Error::invalid_format(
+                return Err(CoreError::invalid_format(
                     "ContractManifest groups must be an Array",
                 ));
             }
@@ -591,7 +586,7 @@ impl ContractManifest {
                 tracing::warn!("ContractManifest features map is not empty, ignoring");
             }
         } else {
-            return Err(Error::invalid_format(
+            return Err(CoreError::invalid_format(
                 "ContractManifest features must be a Map",
             ));
         }
@@ -606,7 +601,7 @@ impl ContractManifest {
                 })
                 .collect(),
             _ => {
-                return Err(Error::invalid_format(
+                return Err(CoreError::invalid_format(
                     "ContractManifest supported standards must be an Array",
                 ));
             }
@@ -627,7 +622,7 @@ impl ContractManifest {
                 values
             }
             _ => {
-                return Err(Error::invalid_format(
+                return Err(CoreError::invalid_format(
                     "ContractManifest permissions must be an Array",
                 ));
             }
@@ -644,7 +639,7 @@ impl ContractManifest {
                     .collect(),
             ),
             _ => {
-                return Err(Error::invalid_format(
+                return Err(CoreError::invalid_format(
                     "ContractManifest trusts must be Null or Array",
                 ));
             }

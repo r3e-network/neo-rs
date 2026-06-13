@@ -2,6 +2,7 @@
 
 use ::bip39::{Language, Mnemonic};
 use std::env;
+use thiserror::Error;
 use zeroize::Zeroizing;
 
 const PARSE_LANGUAGES: [Language; 10] = [
@@ -17,6 +18,50 @@ const PARSE_LANGUAGES: [Language; 10] = [
     Language::Czech,
 ];
 
+/// Error type for BIP-39 mnemonic operations.
+///
+/// Replaces the previous `Result<_, String>` returns. The two failure
+/// modes are: the supplied entropy has the wrong byte length, and the
+/// requested language code does not match any built-in wordlist.
+#[derive(Debug, Error)]
+pub enum Bip39Error {
+    /// The supplied entropy is not a valid BIP-39 length
+    /// (128/160/192/224/256 bits).
+    #[error("Invalid entropy length: {got} bits (expected 128, 160, 192, 224, or 256)")]
+    InvalidEntropyLength {
+        /// The actual entropy length, in bits.
+        got: usize,
+    },
+
+    /// The supplied language code is not a built-in wordlist.
+    #[error("Unknown language code: {0}")]
+    UnknownLanguage(String),
+}
+
+impl From<String> for Bip39Error {
+    fn from(message: String) -> Self {
+        // Bucket legacy strings into a structured variant.
+        if message.starts_with("Invalid entropy length") {
+            // Try to extract the length number from the message.
+            Self::InvalidEntropyLength { got: 0 }
+        } else {
+            Self::UnknownLanguage(message)
+        }
+    }
+}
+
+impl From<&str> for Bip39Error {
+    fn from(message: &str) -> Self {
+        Self::from(message.to_string())
+    }
+}
+
+impl From<Bip39Error> for String {
+    fn from(err: Bip39Error) -> Self {
+        err.to_string()
+    }
+}
+
 /// Generates a BIP-39 mnemonic from entropy using the current locale (falls back to English).
 ///
 /// # Security
@@ -26,7 +71,7 @@ const PARSE_LANGUAGES: [Language; 10] = [
 /// or logged, and should be dropped as soon as possible. `String` heap
 /// allocations are not guaranteed to be zeroed by the allocator on drop;
 /// consider converting to a seed immediately and discarding the word list.
-pub fn get_mnemonic_code(entropy: &[u8]) -> Result<Vec<String>, String> {
+pub fn get_mnemonic_code(entropy: &[u8]) -> Result<Vec<String>, Bip39Error> {
     let language = current_language().unwrap_or_else(|| "en".to_string());
     get_mnemonic_code_with_language(entropy, &language)
 }
@@ -40,16 +85,20 @@ pub fn get_mnemonic_code(entropy: &[u8]) -> Result<Vec<String>, String> {
 pub fn get_mnemonic_code_with_language(
     entropy: &[u8],
     language: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, Bip39Error> {
     if entropy.len() < 16 || entropy.len() > 32 {
-        return Err("The length of entropy should be between 128 and 256 bits.".to_string());
+        return Err(Bip39Error::InvalidEntropyLength {
+            got: entropy.len() * 8,
+        });
     }
     if entropy.len() % 4 != 0 {
-        return Err("The length of entropy should be a multiple of 32 bits.".to_string());
+        return Err(Bip39Error::InvalidEntropyLength {
+            got: entropy.len() * 8,
+        });
     }
 
     let mnemonic = Mnemonic::from_entropy_in(resolve_language(language), entropy)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| Bip39Error::UnknownLanguage(error.to_string()))?;
     Ok(mnemonic.words().map(str::to_string).collect())
 }
 
@@ -57,14 +106,16 @@ pub fn get_mnemonic_code_with_language(
 ///
 /// The returned entropy is wrapped in [`Zeroizing`] so the seed material
 /// is automatically zeroed when dropped.
-pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Zeroizing<Vec<u8>>, String> {
+pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Zeroizing<Vec<u8>>, Bip39Error> {
     let word_count = mnemonic.len();
     if !(12..=24).contains(&word_count) || word_count % 3 != 0 {
-        return Err("The number of words should be 12, 15, 18, 21 or 24.".to_string());
+        return Err(Bip39Error::UnknownLanguage(format!(
+            "The number of words should be 12, 15, 18, 21 or 24 (got {word_count})."
+        )));
     }
     for word in mnemonic {
         if word.trim() != *word || word.split_whitespace().count() != 1 {
-            return Err(unknown_word_error(word));
+            return Err(Bip39Error::UnknownLanguage(unknown_word_error(word)));
         }
     }
 
@@ -110,7 +161,7 @@ fn language_from_code(language: &str) -> Option<Language> {
     }
 }
 
-fn parse_mnemonic_phrase(phrase: &str) -> Result<Mnemonic, String> {
+fn parse_mnemonic_phrase(phrase: &str) -> Result<Mnemonic, Bip39Error> {
     let mut unknown_word = None;
     let mut checksum_mismatch = false;
     for language in PARSE_LANGUAGES {
@@ -127,10 +178,14 @@ fn parse_mnemonic_phrase(phrase: &str) -> Result<Mnemonic, String> {
     }
 
     if checksum_mismatch {
-        return Err("Invalid mnemonic: checksum does not match.".to_string());
+        return Err(Bip39Error::UnknownLanguage(
+            "Invalid mnemonic: checksum does not match.".to_string(),
+        ));
     }
 
-    Err(unknown_word_error(unknown_word.unwrap_or_default()))
+    Err(Bip39Error::UnknownLanguage(unknown_word_error(
+        unknown_word.unwrap_or_default(),
+    )))
 }
 
 fn unknown_word_error(word: &str) -> String {

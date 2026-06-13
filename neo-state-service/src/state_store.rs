@@ -240,7 +240,11 @@ mod tests {
         assert_eq!(store.candidate_count(), 1);
         store.commit_validated_state_roots(&[r]);
         assert_eq!(store.candidate_count(), 0);
-        assert!(store.get_state_root(StateStoreLookup::ByBlockIndex(1)).is_some());
+        assert!(
+            store
+                .get_state_root(StateStoreLookup::ByBlockIndex(1))
+                .is_some()
+        );
     }
 
     #[test]
@@ -250,7 +254,11 @@ mod tests {
         assert!(store.try_add_state_root(r.clone()));
         let removed = store.discard(r.root_hash());
         assert!(removed.is_some());
-        assert!(store.get_state_root(StateStoreLookup::ByBlockIndex(1)).is_none());
+        assert!(
+            store
+                .get_state_root(StateStoreLookup::ByBlockIndex(1))
+                .is_none()
+        );
     }
 
     #[test]

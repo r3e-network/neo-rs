@@ -75,7 +75,10 @@ impl PoolItem {
             return ret;
         }
 
-        let ret = self.transaction.fee_per_byte().cmp(&other_tx.fee_per_byte());
+        let ret = self
+            .transaction
+            .fee_per_byte()
+            .cmp(&other_tx.fee_per_byte());
         if ret != Ordering::Equal {
             return ret;
         }

@@ -23,14 +23,17 @@
 
 pub mod binary_serializer;
 pub mod compression;
+/// C#-compatible JSON token model and JSONPath support.
+pub mod json;
 pub mod json_serializer;
+/// In-memory storage provider implementations used by serialization tests and fixtures.
 pub mod providers;
 pub mod serialization;
 
 pub use binary_serializer::BinarySerializer;
 pub use compression::{
-    compress, compress_lz4, decompress, decompress_lz4, estimate_compressed_size,
-    get_compression_ratio, CompressionAlgorithm, CompressionResult,
+    CompressionAlgorithm, CompressionResult, compress, compress_lz4, decompress, decompress_lz4,
+    estimate_compressed_size, get_compression_ratio,
 };
 pub use json_serializer::JsonSerializer;
 pub use providers::{MemorySnapshot, MemoryStore, MemoryStoreProvider};

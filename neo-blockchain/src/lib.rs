@@ -56,6 +56,7 @@
 #![warn(missing_docs)]
 
 pub mod block_processing;
+pub mod block_validation;
 pub mod command;
 pub mod fill_completed;
 pub mod fill_memory_pool;
@@ -93,7 +94,6 @@ pub mod blockchain {
 }
 
 pub use command::BlockchainCommand;
-pub use neo_runtime::BlockchainEvent;
 pub use fill_completed::FillCompleted;
 pub use fill_memory_pool::FillMemoryPool;
 pub use handle::BlockchainHandle;
@@ -102,17 +102,18 @@ pub use import_completed::ImportCompleted;
 pub use internal::{ImportDisposition, UnverifiedBlocksList};
 pub use inventory_payload::InventoryPayload;
 pub use native_persist::{
-    chain_state_initialized, genesis_block, persist_block_natives, NativePersistNotification,
-    NativePersistOutcome,
+    NativePersistNotification, NativePersistOutcome, chain_state_initialized, genesis_block,
+    persist_block_natives,
 };
+pub use neo_runtime::BlockchainEvent;
 pub use persist_completed::PersistCompleted;
 // `PreverifyCompleted` is produced by `neo-mempool`'s transaction router and
 // only consumed here; re-export the single canonical definition rather than
 // duplicating the record. (neo-blockchain depends on neo-mempool.)
+pub use command::AddTransactionReply;
 pub use neo_mempool::PreverifyCompleted;
 pub use relay_result::RelayResult;
 pub use reverify::{Reverify, ReverifyItem};
-pub use command::AddTransactionReply;
 pub use service::{Blockchain, BlockchainService};
 
 pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};

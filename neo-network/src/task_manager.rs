@@ -63,13 +63,31 @@ pub enum SyncTaskKind {
 #[derive(Clone, Debug)]
 pub enum SyncTask {
     /// Fetch a single block by hash.
-    FetchBlock { hash: UInt256, kind: SyncTaskKind },
+    FetchBlock {
+        /// Block hash to request.
+        hash: UInt256,
+        /// Kind of block-oriented request.
+        kind: SyncTaskKind,
+    },
     /// Fetch a single transaction by hash.
-    FetchTransaction { hash: UInt256 },
+    FetchTransaction {
+        /// Transaction hash to request.
+        hash: UInt256,
+    },
     /// Fetch headers in `[start, start + count)`.
-    FetchHeaders { start: u32, count: u16 },
+    FetchHeaders {
+        /// First header index to request.
+        start: u32,
+        /// Number of headers to request.
+        count: u16,
+    },
     /// Fetch blocks by index range.
-    FetchBlocksByIndex { start: u32, count: u32 },
+    FetchBlocksByIndex {
+        /// First block index to request.
+        start: u32,
+        /// Number of blocks to request.
+        count: u32,
+    },
 }
 
 /// Per-task command enum sent down the
@@ -133,7 +151,9 @@ impl TaskManagerHandle {
             })
             .await
             .map_err(|_| NetworkError::LocalShuttingDown)?;
-        let reply = reply_rx.await.map_err(|_| NetworkError::LocalShuttingDown)??;
+        let reply = reply_rx
+            .await
+            .map_err(|_| NetworkError::LocalShuttingDown)??;
         Ok(reply)
     }
 

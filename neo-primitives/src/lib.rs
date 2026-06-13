@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 //! # Neo Primitives
 //!
@@ -32,36 +33,44 @@ pub use bitflags;
 
 pub mod base58_check;
 pub mod big_decimal;
+mod big_decimal_bigdecimal;
 pub mod blockchain;
 pub mod call_flags;
 pub mod constants;
 pub mod contains_transaction_type;
 pub mod contract_basic_method;
-pub mod contract_task;
-pub mod find_options;
 pub mod contract_parameter_type;
+pub mod contract_task;
 pub mod error;
+pub mod find_options;
 pub mod hardfork;
 pub mod inventory;
 pub mod inventory_type;
 pub mod log_event_args;
+/// Log-level primitives used by Neo diagnostics and extension utilities.
 pub mod log_level;
 /// Macro helpers for compact protocol enum declarations.
 pub mod macros;
 pub mod network_error;
 pub mod node_capability_type;
 pub mod oracle_response_code;
+/// JSON-RPC exception codes and helpers shared by RPC-facing crates.
 pub mod rpc_exception;
+/// Data-only serialization and hashing interface for blockchain payloads.
+pub mod serializable_payload;
 pub mod storage;
+/// Testable process-wide time provider.
+pub mod time;
 pub mod transaction_attribute_type;
 pub mod transaction_removal_reason;
 pub mod trigger_type;
-pub mod verifiable;
 pub mod uint160;
 pub mod uint256;
 mod uint_hex;
-pub mod serializable_payload;
+
+pub use uint_hex::strip_hex_prefix;
 pub mod unhandled_exception_policy;
+pub mod verifiable;
 pub mod verification;
 pub mod verify_result;
 pub mod witness_condition_type;
@@ -78,14 +87,14 @@ mod tests;
 pub use tests::*;
 
 // Re-exports
-pub use constants::*;
 pub use call_flags::CallFlags;
+pub use constants::*;
 pub use contains_transaction_type::ContainsTransactionType;
 pub use contract_basic_method::ContractBasicMethod;
-pub use contract_task::ContractTask;
-pub use find_options::FindOptions;
 pub use contract_parameter_type::ContractParameterType;
+pub use contract_task::ContractTask;
 pub use error::{PrimitiveError, PrimitiveResult};
+pub use find_options::FindOptions;
 pub use hardfork::{Hardfork, HardforkParseError};
 pub use inventory::Inventory;
 pub use inventory_type::InventoryType;
@@ -98,34 +107,19 @@ pub use rpc_exception::RpcException;
 pub use transaction_attribute_type::TransactionAttributeType;
 pub use transaction_removal_reason::TransactionRemovalReason;
 pub use trigger_type::TriggerType;
+pub use uint160::{UINT160_SIZE, UInt160};
+pub use uint256::{UINT256_SIZE, UInt256};
 pub use verifiable::Verifiable;
-pub use uint160::{UInt160, UINT160_SIZE};
-pub use uint256::{UInt256, UINT256_SIZE};
 pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // Marker traits used to decouple higher-level crates from concrete chain types.
 pub use blockchain::BlockLike;
-pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use serializable_payload::SerializablePayload;
-pub use unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
+pub use storage::{StorageValue, StorageValueError, StorageValueResult};
+pub use time::{TimeProvider, TimeSource};
+pub use unhandled_exception_policy::{UnhandledExceptionPolicy, panic_message};
 pub use verification::{
-    BlockchainSnapshot, VerificationContext, Witness, VerificationError, VerificationResult,
+    BlockchainSnapshot, VerificationContext, VerificationError, VerificationResult, Witness,
 };
-
-
-/// Implements `Default` by returning `Self::new()`.
-///
-/// Mirrors the C# `Neo.IO.Helper` `impl_default_via_new!` macro that
-/// the original `neo-core` used to derive `Default` for value types.
-#[macro_export]
-macro_rules! impl_default_via_new {
-    ($name:ident) => {
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-    };
-}

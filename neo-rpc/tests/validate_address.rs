@@ -1,9 +1,9 @@
 #![cfg(feature = "server")]
 
-use neo_system::Node;
 use neo_config::ProtocolSettings;
 use neo_primitives::UInt160;
 use neo_rpc::{RpcServer, RpcServerConfig};
+use neo_system::Node;
 use serde_json::Value;
 
 fn is_valid(result: &Value) -> bool {

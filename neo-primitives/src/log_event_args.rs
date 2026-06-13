@@ -1,6 +1,6 @@
 //! LogEventArgs - matches C# Neo.SmartContract.LogEventArgs exactly
 
-use crate::{Verifiable, UInt160};
+use crate::{UInt160, Verifiable};
 use std::fmt;
 use std::sync::Arc;
 

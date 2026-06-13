@@ -17,10 +17,10 @@ pub mod get_block_by_index_payload;
 pub mod get_blocks_payload;
 /// Inventory payload for announcements.
 pub mod inv_payload;
-/// Node capability descriptors.
-pub mod node_capability;
 /// Network address with timestamp.
 pub mod network_address_with_time;
+/// Node capability descriptors.
+pub mod node_capability;
 /// Ping/pong payload for keepalive.
 pub mod ping_payload;
 /// Version payload for handshake.

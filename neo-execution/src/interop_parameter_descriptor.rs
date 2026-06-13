@@ -189,7 +189,8 @@ impl InteropParameterDescriptor {
                 StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() == 20 => {
                     let mut arr = [0u8; 20];
                     arr.copy_from_slice(bytes);
-                    let value = neo_primitives::UInt160::from_bytes(&arr).map_err(|e| e.to_string())?;
+                    let value =
+                        neo_primitives::UInt160::from_bytes(&arr).map_err(|e| e.to_string())?;
                     Ok(ConvertedValue::UInt160(value))
                 }
                 _ => Err("Expected UInt160".to_string()),
@@ -199,7 +200,8 @@ impl InteropParameterDescriptor {
                 StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() == 32 => {
                     let mut arr = [0u8; 32];
                     arr.copy_from_slice(bytes);
-                    let value = neo_primitives::UInt256::from_bytes(&arr).map_err(|e| e.to_string())?;
+                    let value =
+                        neo_primitives::UInt256::from_bytes(&arr).map_err(|e| e.to_string())?;
                     Ok(ConvertedValue::UInt256(value))
                 }
                 _ => Err("Expected UInt256".to_string()),

@@ -2,7 +2,7 @@
 // stack.rs - Stack operations (peek, pop, push) and gas tracking
 //
 
-use super::{ExecutionEngine, StackItem, VmError, VmResult, DEFAULT_GAS_LIMIT};
+use super::{DEFAULT_GAS_LIMIT, ExecutionEngine, StackItem, VmError, VmResult};
 
 impl ExecutionEngine {
     /// Returns the item at the specified index from the top of the current stack without removing it.

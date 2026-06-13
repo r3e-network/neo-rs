@@ -12,14 +12,12 @@
 
 use std::sync::Arc;
 
-use neo_execution::native_contract_provider::{install_provider, NativeContractProvider};
 use neo_execution::NativeContract;
+use neo_execution::native_contract_provider::{NativeContractProvider, install_provider};
 use neo_primitives::UInt160;
 
-use crate::{
-    ContractManagement, CryptoLib, GasToken, LedgerContract, NeoToken, Notary, OracleContract,
-    PolicyContract, RoleManagement, StdLib, Treasury,
-};
+use crate::LedgerContract;
+use crate::catalog::standard_native_contracts;
 
 /// Provider over the implemented standard native contracts, in canonical
 /// (ascending-id-magnitude) registration order.
@@ -31,21 +29,9 @@ impl StandardNativeProvider {
     /// Builds the provider with every native contract that currently
     /// implements the [`NativeContract`] trait.
     pub fn new() -> Self {
-        // Canonical registration order (matches C# native-contract ids).
-        let contracts: Vec<Arc<dyn NativeContract>> = vec![
-            Arc::new(ContractManagement::new()),
-            Arc::new(StdLib::new()),
-            Arc::new(CryptoLib::new()),
-            Arc::new(LedgerContract::new()),
-            Arc::new(NeoToken::new()),
-            Arc::new(GasToken::new()),
-            Arc::new(PolicyContract::new()),
-            Arc::new(RoleManagement::new()),
-            Arc::new(OracleContract::new()),
-            Arc::new(Notary::new()),
-            Arc::new(Treasury::new()),
-        ];
-        Self { contracts }
+        Self {
+            contracts: standard_native_contracts(),
+        }
     }
 }
 
@@ -73,6 +59,10 @@ impl NativeContractProvider for StandardNativeProvider {
 
     fn all_native_contract_hashes(&self) -> Vec<UInt160> {
         self.contracts.iter().map(|c| c.hash()).collect()
+    }
+
+    fn current_block_index(&self, snapshot: &neo_storage::DataCache) -> neo_error::CoreResult<u32> {
+        LedgerContract::new().current_index(snapshot)
     }
 }
 
@@ -115,8 +105,45 @@ mod tests {
     #[test]
     fn install_wires_global_provider() {
         install();
-        let resolved = neo_execution::native_contract_provider::get_native_contract(&CRYPTO_LIB_HASH);
-        assert!(resolved.is_some(), "global provider resolves CryptoLib after install()");
+        let resolved =
+            neo_execution::native_contract_provider::get_native_contract(&CRYPTO_LIB_HASH);
+        assert!(
+            resolved.is_some(),
+            "global provider resolves CryptoLib after install()"
+        );
         assert_eq!(resolved.unwrap().name(), "CryptoLib");
+    }
+
+    #[test]
+    fn provider_current_block_index_feeds_engine_without_persisting_block() {
+        use crate::ledger_contract::serialize_hash_index_state;
+        use neo_config::ProtocolSettings;
+        use neo_execution::ApplicationEngine;
+        use neo_payloads::Block;
+        use neo_primitives::{TriggerType, UInt256};
+        use neo_storage::persistence::DataCache;
+        use neo_storage::{StorageItem, StorageKey};
+        use std::sync::Arc;
+
+        install();
+        let cache = Arc::new(DataCache::new(false));
+        let current_hash = UInt256::from_bytes(&[0x34; 32]).unwrap();
+        cache.add(
+            StorageKey::new(LedgerContract::ID, vec![12]),
+            StorageItem::from_bytes(serialize_hash_index_state(&current_hash, 1234).unwrap()),
+        );
+
+        let engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::clone(&cache),
+            None::<Block>,
+            ProtocolSettings::default(),
+            1_000_000,
+            None,
+        )
+        .expect("engine builds");
+
+        assert_eq!(engine.current_block_index(), 1234);
     }
 }

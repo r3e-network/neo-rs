@@ -9,15 +9,15 @@
 //! too because the on-wire encoding is a pure data concern.
 
 use crate::method_token::MethodToken;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use neo_crypto::Crypto;
 use neo_io::extensions::memory_reader::MemoryReaderExtensions;
 use neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
 };
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_crypto::Crypto;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Represents a NEF (Neo Executable Format) file.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -146,9 +146,7 @@ impl NefFile {
 
     /// Parses a NEF file from base64-encoded bytes.
     pub fn from_base64(base64: &str) -> Result<Self, String> {
-        let bytes = BASE64_STANDARD
-            .decode(base64)
-            .map_err(|e| e.to_string())?;
+        let bytes = BASE64_STANDARD.decode(base64).map_err(|e| e.to_string())?;
         Self::from_bytes(&bytes)
     }
 
@@ -237,10 +235,8 @@ impl Serializable for NefFile {
             .iter()
             .position(|&b| b == 0)
             .unwrap_or(compiler_bytes.len());
-        let compiler =
-            String::from_utf8(compiler_bytes[..compiler_end].to_vec()).map_err(|e| {
-                IoError::invalid_data(format!("Invalid compiler UTF-8: {e}"))
-            })?;
+        let compiler = String::from_utf8(compiler_bytes[..compiler_end].to_vec())
+            .map_err(|e| IoError::invalid_data(format!("Invalid compiler UTF-8: {e}")))?;
 
         let source = reader.read_var_string(Self::MAX_SOURCE_LENGTH)?;
 
@@ -265,8 +261,7 @@ impl Serializable for NefFile {
         if expected != nef.checksum {
             return Err(IoError::invalid_data(format!(
                 "Bad checksum: {:#x}, expected {:#x}",
-                nef.checksum,
-                expected
+                nef.checksum, expected
             )));
         }
 

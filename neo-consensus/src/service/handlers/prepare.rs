@@ -1,8 +1,6 @@
 use super::super::helpers::invocation_script_from_signature;
-use super::super::helpers::{
-    compute_header_hash, compute_merkle_root, compute_next_consensus_address,
-};
-use super::super::ConsensusService;
+use super::super::helpers::{compute_header_hash, compute_merkle_root};
+use super::super::{ConsensusEvent, ConsensusService};
 use crate::context::ConsensusState;
 use crate::messages::{
     CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
@@ -84,6 +82,7 @@ impl ConsensusService {
         self.context.proposed_timestamp = prepare_request.timestamp;
         self.context.nonce = prepare_request.nonce;
         self.context.proposed_tx_hashes = prepare_request.transaction_hashes;
+        self.context.available_tx_hashes.clear();
 
         // Cache PrepareRequest payload hash (ExtensiblePayload.Hash) for PrepareResponse.
         self.context.preparation_hash = Some(self.dbft_payload_hash(payload)?);
@@ -98,7 +97,6 @@ impl ConsensusService {
 
         // Calculate block header hash from proposal data (for commit signatures).
         let merkle_root = compute_merkle_root(&self.context.proposed_tx_hashes);
-        let next_consensus = compute_next_consensus_address(&self.context.validators);
         let block_hash = compute_header_hash(
             self.context.version,
             self.context.prev_hash,
@@ -107,13 +105,18 @@ impl ConsensusService {
             self.context.nonce,
             self.context.block_index,
             self.context.primary_index(),
-            next_consensus,
+            self.context.next_consensus,
         );
         self.context.proposed_block_hash = Some(block_hash);
 
         // If there are no transactions, respond immediately.
         if self.context.proposed_tx_hashes.is_empty() {
             self.send_prepare_response()?;
+        } else if self.context.is_backup() {
+            self.send_event(ConsensusEvent::RequestProposalTransactions {
+                block_index: self.context.block_index,
+                transaction_hashes: self.context.proposed_tx_hashes.clone(),
+            })?;
         }
 
         Ok(())

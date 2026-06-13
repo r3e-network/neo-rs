@@ -10,17 +10,13 @@
 // modifications are permitted.
 
 use super::{
-    header::Header, inventory::Inventory, transaction::Transaction, witness::Witness, InventoryType,
+    InventoryType, header::Header, inventory::Inventory, transaction::Transaction, witness::Witness,
 };
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_data_cache::DataCache;
 use neo_error::CoreResult;
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
-use neo_primitives::error::PrimitiveResult;
-use neo_primitives::constants::BLOCK_MAX_TX_WIRE_LIMIT;
+use neo_storage::DataCache;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
-
 
 /// Represents a block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,6 +68,7 @@ impl Block {
         <Header as Serializable>::serialize(&self.header, writer)
     }
 
+    /// Creates an empty block with a default header.
     pub fn new() -> Self {
         Self {
             header: Header::new(),
@@ -185,7 +182,6 @@ impl Block {
         Ok(())
     }
 
-
     /// Returns the hashes of all transactions in the block, propagating any
     /// transaction-hash serialization failures.
     pub fn transaction_hashes(&self) -> CoreResult<Vec<UInt256>> {
@@ -196,7 +192,7 @@ impl neo_primitives::BlockLike for Block {
     type Transaction = Transaction;
 
     fn hash(&self) -> UInt256 {
-        let mut clone = self.clone();
+        let clone = self.clone();
         clone.try_hash().unwrap_or_default()
     }
 
@@ -231,15 +227,7 @@ impl Inventory for Block {
     }
 }
 
-
-
-impl crate::VerifiableExt for Block {
-    
-
-    
-
-    
-}
+impl crate::VerifiableExt for Block {}
 
 impl neo_primitives::SerializablePayload for Block {
     fn hash_data(&self) -> Vec<u8> {
@@ -248,7 +236,11 @@ impl neo_primitives::SerializablePayload for Block {
 
     fn witness_count(&self) -> usize {
         // Header witness + all transaction witnesses
-        1 + self.transactions.iter().map(|t| t.witness_count()).sum::<usize>()
+        1 + self
+            .transactions
+            .iter()
+            .map(|t| t.witness_count())
+            .sum::<usize>()
     }
 
     fn invocation_script(&self, index: usize) -> &[u8] {
@@ -329,8 +321,8 @@ mod tests {
 
     #[test]
     fn block_try_hash_delegates_to_header() {
-        let mut block = sample_block();
-        let mut header = block.header.clone();
+        let block = sample_block();
+        let header = block.header.clone();
 
         assert_eq!(
             block.try_hash().expect("block hash"),
@@ -341,7 +333,7 @@ mod tests {
     #[test]
     fn iverifiable_block_hash_uses_try_hash() {
         let block = sample_block();
-        let mut expected_source = block.clone();
+        let expected_source = block.clone();
         let expected = expected_source.try_hash().expect("try hash");
 
         assert_eq!(
@@ -386,12 +378,16 @@ mod tests {
     }
 }
 
-
 impl neo_primitives::Verifiable for Block {
     fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
-        let data = self.header.try_get_hash_data()
-            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(format!("block header serialization failed: {e}")))?;
-        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(&data)))
+        let data = self.header.try_get_hash_data().map_err(|e| {
+            neo_primitives::error::PrimitiveError::invalid_data(format!(
+                "block header serialization failed: {e}"
+            ))
+        })?;
+        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
+            &data,
+        )))
     }
     fn hash_data(&self) -> Vec<u8> {
         let mut writer = neo_io::BinaryWriter::new();
@@ -450,6 +446,9 @@ impl Serializable for Block {
         for _ in 0..tx_count {
             transactions.push(<Transaction as neo_io::Serializable>::deserialize(reader)?);
         }
-        Ok(Self { header, transactions })
+        Ok(Self {
+            header,
+            transactions,
+        })
     }
 }

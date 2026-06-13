@@ -5,7 +5,7 @@
 //! This enables the P2P networking layer to serialize/deserialize messages
 //! without depending on the smart contract execution engine.
 
-use crate::{UInt256, Witness};
+use crate::UInt256;
 
 /// Trait for blockchain payloads that can be serialized and hashed.
 ///

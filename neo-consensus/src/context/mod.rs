@@ -2,13 +2,11 @@
 
 use crate::{ChangeViewReason, ConsensusError, ConsensusResult};
 use lru::LruCache;
-use neo_primitives::UInt256;
 #[cfg(test)]
 use neo_crypto::ECPoint;
-#[cfg(test)]
-use neo_primitives::UInt160;
+use neo_primitives::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -104,6 +102,10 @@ pub struct ConsensusContext {
     pub version: u32,
     /// Previous block hash for the proposed block.
     pub prev_hash: UInt256,
+    /// Previous block timestamp in milliseconds.
+    pub previous_block_timestamp: u64,
+    /// Header `NextConsensus` address for the proposed block.
+    pub next_consensus: UInt160,
     /// Proposed block hash (from `PrepareRequest`)
     pub proposed_block_hash: Option<UInt256>,
     /// Hash of the primary's `PrepareRequest` extensible payload (ExtensiblePayload.Hash).
@@ -114,12 +116,22 @@ pub struct ConsensusContext {
     pub proposed_timestamp: u64,
     /// Proposed transaction hashes
     pub proposed_tx_hashes: Vec<UInt256>,
+    /// Proposed transaction hashes that are locally available for this view.
+    pub available_tx_hashes: HashSet<UInt256>,
     /// Nonce for the block
     pub nonce: u64,
 
     // Signature tracking
     /// `PrepareRequest` received from primary
     pub prepare_request_received: bool,
+    /// Primary has asked the node/mempool for transactions for this view.
+    pub transaction_request_sent: bool,
+    /// Timestamp when the primary transaction request timer fired.
+    pub transaction_request_sent_at: Option<u64>,
+    /// Timestamp when commit recovery was last resent after local commit.
+    pub commit_recovery_sent_at: Option<u64>,
+    /// Earliest timestamp when this node may resend a ChangeView for the current view.
+    pub change_view_retry_at: Option<u64>,
     /// `PrepareResponse` signatures (`validator_index` -> signature)
     pub prepare_responses: HashMap<u8, Vec<u8>>,
     /// `PrepareResponse` hashes (`validator_index` -> `preparation_hash`)
@@ -174,12 +186,19 @@ impl ConsensusContext {
             expected_block_time: effective_block_time,
             version: 0,
             prev_hash: UInt256::zero(),
+            previous_block_timestamp: 0,
+            next_consensus: UInt160::zero(),
             proposed_block_hash: None,
             preparation_hash: None,
             proposed_timestamp: 0,
             proposed_tx_hashes: Vec::new(),
+            available_tx_hashes: HashSet::new(),
             nonce: 0,
             prepare_request_received: false,
+            transaction_request_sent: false,
+            transaction_request_sent_at: None,
+            commit_recovery_sent_at: None,
+            change_view_retry_at: None,
             prepare_responses: HashMap::new(),
             prepare_response_hashes: HashMap::new(),
             commits: HashMap::new(),
@@ -299,10 +318,15 @@ impl ConsensusContext {
         self.preparation_hash = None;
         self.proposed_timestamp = 0;
         self.proposed_tx_hashes.clear();
+        self.available_tx_hashes.clear();
         self.nonce = 0;
 
         // Clear signatures
         self.prepare_request_received = false;
+        self.transaction_request_sent = false;
+        self.transaction_request_sent_at = None;
+        self.commit_recovery_sent_at = None;
+        self.change_view_retry_at = None;
         self.prepare_responses.clear();
         self.prepare_response_hashes.clear();
         self.prepare_request_invocation = None;
@@ -323,12 +347,19 @@ impl ConsensusContext {
         // Clear all data
         self.version = 0;
         self.prev_hash = UInt256::zero();
+        self.previous_block_timestamp = 0;
+        self.next_consensus = UInt160::zero();
         self.proposed_block_hash = None;
         self.preparation_hash = None;
         self.proposed_timestamp = 0;
         self.proposed_tx_hashes.clear();
+        self.available_tx_hashes.clear();
         self.nonce = 0;
         self.prepare_request_received = false;
+        self.transaction_request_sent = false;
+        self.transaction_request_sent_at = None;
+        self.commit_recovery_sent_at = None;
+        self.change_view_retry_at = None;
         self.prepare_responses.clear();
         self.prepare_response_hashes.clear();
         self.commits.clear();
@@ -338,7 +369,19 @@ impl ConsensusContext {
         self.change_view_invocations.clear();
         self.commit_invocations.clear();
         self.last_change_view_timestamps.clear();
-        self.last_seen_messages.clear();
+        let previous_last_seen_messages = std::mem::take(&mut self.last_seen_messages);
+        let previous_height = block_index.saturating_sub(1);
+        for validator in &self.validators {
+            let last_seen_message = previous_last_seen_messages
+                .get(&validator.index)
+                .copied()
+                .unwrap_or(previous_height);
+            self.last_seen_messages
+                .insert(validator.index, last_seen_message);
+        }
+        if let Some(my_index) = self.my_index {
+            self.last_seen_messages.insert(my_index, block_index);
+        }
 
         // Clear message hash cache to prevent memory growth
         self.seen_message_hashes.clear();
@@ -396,23 +439,91 @@ impl ConsensusContext {
         Ok(())
     }
 
+    /// Records which proposed transactions are locally available.
+    pub fn mark_available_transactions<I>(&mut self, tx_hashes: I)
+    where
+        I: IntoIterator<Item = UInt256>,
+    {
+        self.available_tx_hashes.clear();
+        for hash in tx_hashes {
+            if self.proposed_tx_hashes.contains(&hash) {
+                self.available_tx_hashes.insert(hash);
+            }
+        }
+    }
+
+    /// Returns true when a proposal references transactions this node has not received.
+    #[must_use]
+    pub fn has_missing_proposed_transactions(&self) -> bool {
+        !self.proposed_tx_hashes.is_empty()
+            && self.proposed_tx_hashes.len() > self.available_tx_hashes.len()
+    }
+
     /// Gets the timeout duration for the current view
     #[must_use]
     pub fn get_timeout(&self) -> u64 {
         // Base timeout + exponential backoff for view changes.
         // Use configured expected_block_time when provided (mirrors C# TimePerBlock overrides).
-        let base = if self.expected_block_time > 0 {
+        self.base_block_time() << (self.view_number + 1).min(5)
+    }
+
+    /// Non-recovering primary delay before sending a `PrepareRequest`.
+    ///
+    /// Neo's C# DBFT primary schedules `SendPrepareRequest` after `TimePerBlock`
+    /// for normal rounds, including higher views. Recovery paths can extend this
+    /// before re-entering the timer loop.
+    #[must_use]
+    pub fn prepare_request_delay(&self) -> u64 {
+        self.base_block_time()
+    }
+
+    /// Primary delay after a `PrepareRequest` before requesting a view change.
+    ///
+    /// Matches C# `SendPrepareRequest`, which schedules
+    /// `(TimePerBlock << (ViewNumber + 1)) - TimePerBlock` for view 0, and the
+    /// full shifted delay for higher views.
+    #[must_use]
+    pub fn prepare_request_follow_up_delay(&self) -> u64 {
+        let timeout = self.get_timeout();
+        if self.view_number == 0 {
+            timeout.saturating_sub(self.base_block_time())
+        } else {
+            timeout
+        }
+    }
+
+    /// Total primary delay from view start to the post-prepare timeout.
+    #[must_use]
+    pub fn primary_timeout_delay(&self) -> u64 {
+        self.prepare_request_delay()
+            .saturating_add(self.prepare_request_follow_up_delay())
+    }
+
+    /// Delay between periodic recovery-message resends after local commit.
+    #[must_use]
+    pub fn commit_recovery_resend_delay(&self) -> u64 {
+        self.base_block_time() << 1
+    }
+
+    /// Delay before retrying a ChangeView request for the expected next view.
+    #[must_use]
+    pub fn change_view_retry_delay(&self) -> u64 {
+        let expected_view = self.view_number.saturating_add(1);
+        self.base_block_time() << (expected_view + 1).min(5)
+    }
+
+    fn base_block_time(&self) -> u64 {
+        if self.expected_block_time > 0 {
             self.expected_block_time
         } else {
             DEFAULT_BLOCK_TIME_MS
-        };
-        base << (self.view_number + 1).min(5)
+        }
     }
 
     /// Checks if the current view has timed out
     #[must_use]
     pub fn is_timed_out(&self, current_time: u64) -> bool {
-        current_time > self.view_start_time + self.get_timeout()
+        current_time >= self.view_start_time + self.get_timeout()
     }
 
     /// Collects all commit signatures for block finalization
@@ -678,12 +789,19 @@ impl ConsensusContext {
             expected_block_time: 0,         // Caller should update
             version: 0,
             prev_hash: UInt256::zero(),
+            previous_block_timestamp: 0,
+            next_consensus: UInt160::zero(),
             proposed_block_hash: state.proposed_block_hash,
             preparation_hash: state.preparation_hash,
             proposed_timestamp: state.proposed_timestamp,
             proposed_tx_hashes: state.proposed_tx_hashes,
+            available_tx_hashes: HashSet::new(),
             nonce: state.nonce,
             prepare_request_received: state.prepare_request_received,
+            transaction_request_sent: false,
+            transaction_request_sent_at: None,
+            commit_recovery_sent_at: None,
+            change_view_retry_at: None,
             prepare_responses: state.prepare_responses,
             prepare_response_hashes: state.prepare_response_hashes,
             commits: state.commits,

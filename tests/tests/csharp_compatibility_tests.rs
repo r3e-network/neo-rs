@@ -15,9 +15,9 @@
 //!   Murmur32) for well-known inputs.
 //! - The Block serialization round-trip (synthesised block) so we
 //!   exercise the writer path end-to-end.
-//! - A read-only smoke test that loads the C# mainnet block 1000
-//!   bytes and asserts the script hashes embedded in the consensus
-//!   data match our constant values.
+//! - A read-only C# mainnet block 1000 fixture that deserializes
+//!   through the Rust payload code and hashes to the known mainnet
+//!   block hash.
 
 use neo_crypto::Crypto;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
@@ -132,16 +132,23 @@ fn sha256_abc_matches_csharp() {
 }
 
 #[test]
-fn mainnet_block_1000_fixture_loads() {
-    // The fixture file is the byte-exact C# mainnet block 1000 wire
-    // payload. The current Rust `Header` struct has a pre-existing
-    // nonce-size mismatch (u64 vs the C# uint), so we cannot fully
-    // decode it; this test asserts the fixture loads and the expected
-    // hash is constant, providing a regression guard.
+fn mainnet_block_1000_fixture_deserializes_and_hashes_like_csharp() {
+    // The fixture file is the byte-exact C# mainnet block 1000 wire payload.
+    // This is a real compatibility check: it must decode through the Rust
+    // `Block` payload implementation, consume every byte, and hash to the
+    // known C# mainnet block hash.
     let bytes = load_mainnet_block_1000();
     assert_eq!(bytes.len(), 697);
     let expected = UInt256::parse(MAINNET_BLOCK_1000_HASH).expect("valid hash");
-    assert_eq!(expected.to_string(), MAINNET_BLOCK_1000_HASH);
+    let mut reader = MemoryReader::new(&bytes);
+    let block = Block::deserialize(&mut reader).expect("mainnet block 1000 deserializes");
+
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!(block.index(), 1000);
+    assert_eq!(block.transactions.len(), 0);
+    assert_eq!(block.hash(), expected);
+    assert_eq!(block.hash().to_string(), MAINNET_BLOCK_1000_HASH);
+    assert!(block.verify_merkle_root());
 }
 
 #[test]
@@ -165,4 +172,3 @@ fn block_serialize_roundtrip_synthesised() {
     <Block as Serializable>::serialize(&read, &mut writer2).expect("serialise 2");
     assert_eq!(writer2.into_bytes(), bytes);
 }
-

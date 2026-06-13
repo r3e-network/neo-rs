@@ -1,10 +1,10 @@
 use super::*;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_config::ProtocolSettings;
+use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
-use neo_json::{JArray, JObject, JToken};
+use neo_serialization::json::{JArray, JObject, JToken};
 
 fn ctx() -> ConversionContext {
     ConversionContext::new(ProtocolSettings::default().address_version)
@@ -20,7 +20,7 @@ fn signer_entry(account: &str, scopes: &str, extra: Option<(&str, JToken)>) -> J
     signer.insert("scopes".to_string(), JToken::String(scopes.to_string()));
     if let Some((key, value)) = extra {
         signer.insert(key.to_string(), value);
-   }
+    }
 
     let mut entry = JObject::new();
     entry.insert("signer".to_string(), JToken::Object(signer));
@@ -270,8 +270,7 @@ fn address_array_accepts_base58() {
     let version = ctx().address_version;
     let base58 = neo_wallets::wallet_helper::to_address(&UInt160::zero(), version);
     let token = JToken::Array(JArray::from(vec![JToken::String(base58)]));
-    let addresses =
-        ParameterConverter::convert::<Vec<Address>>(&token, &ctx()).expect("addresses");
+    let addresses = ParameterConverter::convert::<Vec<Address>>(&token, &ctx()).expect("addresses");
     assert_eq!(addresses.len(), 1);
     assert_eq!(addresses[0].script_hash(), &UInt160::zero());
 }
@@ -332,16 +331,14 @@ fn block_hash_or_index_rejects_negative() {
 #[test]
 fn contract_identifier_rejects_empty_string() {
     let token = JToken::String(String::new());
-    let err =
-        ParameterConverter::convert::<ContractNameOrHashOrId>(&token, &ctx()).unwrap_err();
+    let err = ParameterConverter::convert::<ContractNameOrHashOrId>(&token, &ctx()).unwrap_err();
     assert_invalid_params(err);
 }
 
 #[test]
 fn contract_identifier_accepts_numeric() {
     let token = JToken::Number(7.0);
-    let value =
-        ParameterConverter::convert::<ContractNameOrHashOrId>(&token, &ctx()).expect("id");
+    let value = ParameterConverter::convert::<ContractNameOrHashOrId>(&token, &ctx()).expect("id");
     assert!(value.is_id());
     assert_eq!(value.as_id().expect("id"), 7);
 }
@@ -349,8 +346,7 @@ fn contract_identifier_accepts_numeric() {
 #[test]
 fn contract_identifier_accepts_numeric_string() {
     let token = JToken::String("1".to_string());
-    let value =
-        ParameterConverter::convert::<ContractNameOrHashOrId>(&token, &ctx()).expect("id");
+    let value = ParameterConverter::convert::<ContractNameOrHashOrId>(&token, &ctx()).expect("id");
     assert!(value.is_id());
     assert_eq!(value.as_id().expect("id"), 1);
 }
@@ -667,7 +663,6 @@ fn contract_parameters_accept_valid_array() {
 #[test]
 fn contract_parameters_reject_null_entry() {
     let token = JToken::Array(JArray::from(vec![JToken::Null]));
-    let err =
-        ParameterConverter::convert::<Vec<ContractParameter>>(&token, &ctx()).unwrap_err();
+    let err = ParameterConverter::convert::<Vec<ContractParameter>>(&token, &ctx()).unwrap_err();
     assert_invalid_params(err);
 }

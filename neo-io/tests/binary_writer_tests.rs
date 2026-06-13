@@ -167,19 +167,18 @@ mod tests {
 
     /// Test writing floating point numbers (matches C# BinaryWriter float operations exactly)
     #[test]
-    #[ignore = "BinaryWriter doesn't have write_f32/write_f64 methods"]
     fn test_write_float_compatibility() {
         // Test f32
-        let writer = BinaryWriter::new();
-        // writer.write_f32(1.23f32).unwrap();
-        let _ = writer.to_bytes();
-        // assert_eq!(result, 1.23f32.to_le_bytes().to_vec());
+        let mut writer = BinaryWriter::new();
+        writer.write_f32(1.23f32).unwrap();
+        let result = writer.to_bytes();
+        assert_eq!(result, 1.23f32.to_le_bytes().to_vec());
 
         // Test f64
-        let writer = BinaryWriter::new();
-        // writer.write_f64(1.23456789f64).unwrap();
-        let _ = writer.to_bytes();
-        // assert_eq!(result, 1.23456789f64.to_le_bytes().to_vec());
+        let mut writer = BinaryWriter::new();
+        writer.write_f64(1.23456789f64).unwrap();
+        let result = writer.to_bytes();
+        assert_eq!(result, 1.23456789f64.to_le_bytes().to_vec());
     }
 
     /// Test round-trip compatibility with BinaryReader (matches C# round-trip behavior exactly)
@@ -190,7 +189,7 @@ mod tests {
         writer.write_i32(12345).unwrap();
         writer.write_var_string("Hello Neo").unwrap();
         writer.write_bool(true).unwrap();
-        // writer.write_f64(3.14159).unwrap();
+        writer.write_f64(3.14159).unwrap();
 
         let data = writer.to_bytes();
 
@@ -199,12 +198,12 @@ mod tests {
         let int_val = reader.read_int32().unwrap();
         let string_val = reader.read_var_string(1000).unwrap();
         let bool_val = reader.read_boolean().unwrap();
-        // let float_val = reader.read_f64().unwrap();
+        let float_val = reader.read_f64().unwrap();
 
         assert_eq!(int_val, 12345);
         assert_eq!(string_val, "Hello Neo");
         assert!(bool_val);
-        // assert!((float_val - 3.14159).abs() < f64::EPSILON);
+        assert_eq!(float_val.to_le_bytes(), 3.14159f64.to_le_bytes());
     }
 
     /// Test writing large amounts of data (matches C# BinaryWriter performance characteristics)

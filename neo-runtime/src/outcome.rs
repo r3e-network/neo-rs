@@ -12,7 +12,7 @@
 //! `NetworkEvent` is a sealed-style sum type covering the events a
 //! `NetworkService` is expected to broadcast on its `broadcast::Sender`.
 //! Concrete `neo-network` work in a later stage will replace the inner
-//! fields with the canonical network-event types from `neo-wire` /
+//! fields with the canonical network-event types from `neo-network::wire` /
 //! `neo-payloads`.
 
 use std::net::SocketAddr;
@@ -115,13 +115,13 @@ impl ValidationResult {
 /// The variant set mirrors the small set of "lifecycle" events a
 /// network service is expected to publish: peer changes, blocks
 /// received, transactions received. Future stages will swap the inner
-/// types for the canonical `neo-wire` / `neo-payloads` representations.
+/// types for the canonical `neo-network::wire` / `neo-payloads` representations.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NetworkEvent {
     /// A new peer has joined the connected set.
     PeerConnected {
         /// Stable identifier for the peer (currently a placeholder string
-        /// until `neo-wire` defines a peer-id type).
+        /// until `neo-network::wire` defines a peer-id type).
         peer_id: String,
         /// Reported endpoint of the peer, mirroring the
         /// `Remote.Address` / `ListenerTcpPort` pair C#'s

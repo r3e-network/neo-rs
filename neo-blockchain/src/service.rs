@@ -16,6 +16,7 @@
 //! cheap-to-clone facade the rest of the node uses to talk to the
 //! loop.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -26,6 +27,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::command::BlockchainCommand;
 use crate::handle::BlockchainHandle;
 use crate::header_cache::HeaderCache;
+use crate::internal::UnverifiedBlocksList;
 use crate::ledger_context::LedgerContext;
 use crate::service_context::SystemContext;
 
@@ -72,6 +74,8 @@ pub struct BlockchainService {
     pub(crate) event_tx: broadcast::Sender<crate::RuntimeEvent>,
     /// Mempool access (used by the high-level `add_transaction` API).
     pub(crate) mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>>,
+    /// Future blocks grouped by index until their parent is persisted.
+    pub(crate) unverified_blocks: Arc<Mutex<BTreeMap<u32, UnverifiedBlocksList>>>,
 }
 
 impl fmt::Debug for BlockchainService {
@@ -79,6 +83,7 @@ impl fmt::Debug for BlockchainService {
         f.debug_struct("BlockchainService")
             .field("ledger_height", &self.ledger.current_height())
             .field("header_cache_count", &self.header_cache.count())
+            .field("unverified_block_count", &self.unverified_block_count())
             .field("cmd_capacity", &self.cmd_rx.capacity())
             .field("event_receivers", &self.event_tx.receiver_count())
             .finish()
@@ -114,8 +119,17 @@ impl BlockchainService {
             cmd_rx,
             event_tx,
             mempool,
+            unverified_blocks: Arc::new(Mutex::new(BTreeMap::new())),
         };
         (service, handle)
+    }
+
+    pub(crate) fn unverified_block_count(&self) -> usize {
+        self.unverified_blocks
+            .lock()
+            .values()
+            .map(UnverifiedBlocksList::len)
+            .sum()
     }
 
     /// Convenience constructor that uses the default channel
@@ -173,9 +187,21 @@ impl BlockchainService {
                 relay,
                 pre_verified,
             } => {
-                let _ = self
+                if let Err(error) = self
                     .handle_block_inventory(block, relay, pre_verified)
-                    .await;
+                    .await
+                {
+                    tracing::warn!(target: "neo", %error, "inventory block rejected");
+                }
+            }
+            BlockchainCommand::ImportBlock { block, reply } => {
+                let before_height = self.ledger.current_height();
+                let result = self.handle_block_inventory(block, false, false).await;
+                let imported = result.is_ok() && self.ledger.current_height() > before_height;
+                if let Err(error) = result {
+                    tracing::warn!(target: "neo", %error, "import block rejected");
+                }
+                let _ = reply.send(imported);
             }
             BlockchainCommand::InventoryExtensible { payload, relay } => {
                 let _ = self.handle_extensible_inventory(payload, relay).await;
@@ -217,9 +243,8 @@ impl BlockchainService {
 /// Minimal mempool facade used by the high-level service API.
 ///
 /// The trait exists so the blockchain service can be unit-tested
-/// with a mock mempool; concrete implementations in `neo-core`
-/// forward to the real `MemoryPool` type. The shape is intentionally
-/// tiny — the full mempool surface (verification context,
+/// with a mock mempool; the production implementation forwards to the real
+/// `MemoryPool` type. The shape is intentionally tiny — the full mempool surface (verification context,
 /// conflict attribute detection, reverify queue) lives in
 /// `neo-mempool` and is exposed by the [`SystemContext`] trait.
 pub trait MempoolLike: std::fmt::Debug + Send + Sync {
@@ -228,9 +253,15 @@ pub trait MempoolLike: std::fmt::Debug + Send + Sync {
     fn try_add(
         &self,
         tx: &neo_payloads::Transaction,
-        snapshot: &neo_data_cache::DataCache,
+        snapshot: &neo_storage::DataCache,
         settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult;
+
+    /// Update the pool after `block` is persisted (C# `MemoryPool.
+    /// UpdatePoolForBlockPersisted`): remove the block's transactions and evict
+    /// pooled transactions that conflict with the persisted ones. Default no-op
+    /// for test mocks without a real pool.
+    fn block_persisted(&self, _block: &neo_payloads::Block) {}
 }
 
 /// Production [`MempoolLike`] over the real [`neo_mempool::MemoryPool`]:
@@ -242,10 +273,14 @@ impl MempoolLike for neo_mempool::MemoryPool {
     fn try_add(
         &self,
         tx: &neo_payloads::Transaction,
-        snapshot: &neo_data_cache::DataCache,
+        snapshot: &neo_storage::DataCache,
         _settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult {
         neo_mempool::MemoryPool::try_add(self, tx.clone(), snapshot)
+    }
+
+    fn block_persisted(&self, block: &neo_payloads::Block) {
+        let _ = self.update_pool_for_block_persisted(&block.transactions);
     }
 }
 
@@ -262,10 +297,14 @@ impl MempoolLike for SharedMempool {
     fn try_add(
         &self,
         tx: &neo_payloads::Transaction,
-        snapshot: &neo_data_cache::DataCache,
+        snapshot: &neo_storage::DataCache,
         _settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult {
         neo_mempool::MemoryPool::try_add(&self.0, tx.clone(), snapshot)
+    }
+
+    fn block_persisted(&self, block: &neo_payloads::Block) {
+        let _ = self.0.update_pool_for_block_persisted(&block.transactions);
     }
 }
 
@@ -283,7 +322,7 @@ mod tests {
         fn try_add(
             &self,
             _tx: &neo_payloads::Transaction,
-            _snapshot: &neo_data_cache::DataCache,
+            _snapshot: &neo_storage::DataCache,
             _settings: &neo_config::ProtocolSettings,
         ) -> VerifyResult {
             VerifyResult::Succeed
@@ -310,7 +349,8 @@ mod tests {
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::default());
         let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
-        let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+        let (service, handle) =
+            BlockchainService::with_defaults(system, ledger, header_cache, mempool);
 
         let task = tokio::spawn(service.run());
 
@@ -341,7 +381,8 @@ mod tests {
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::default());
         let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
-        let (service, _handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+        let (service, _handle) =
+            BlockchainService::with_defaults(system, ledger, header_cache, mempool);
         let s = format!("{:?}", service);
         assert!(s.contains("BlockchainService"));
     }

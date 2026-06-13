@@ -1,7 +1,8 @@
 # Neo N3 Protocol Correctness Verification Report
 
 **Date:** 2026-06-08
-**Workspace Commit:** b16e16e (`refactor(workspace): complete kill-neo-core + reth-style service architecture`)
+**Targeted update:** 2026-06-12
+**Workspace Commit:** b16e16e base plus local verification/refactor changes
 **Node:** neo-rs v0.7.2
 **Platform:** darwin
 
@@ -11,18 +12,18 @@
 
 | Metric | Value |
 |---|---|
-| Crates in workspace | 46 |
-| `lib` tests, pass / fail / ignored | **1,110 / 0 / 6** |
+| Crates in workspace | 32 (from `cargo metadata --no-deps`, 2026-06-12) |
+| `lib` tests, pass / fail / ignored | **1,122 / 0 / 6** |
 | Integration tests, pass / fail / ignored | **90 / 0 / 2** |
-| C# interop test suite | **None** (`csharp_compatibility_tests.rs` does not exist; `mainnet_block_1000.hex` fixture is 65 NUL bytes and is not referenced from any test) |
+| C# interop test suite | **Partial** (`tests/tests/csharp_compatibility_tests.rs` covers native-contract hashes / ids and real mainnet block 1,000 decode + hash) |
 | Reference C# test corpus in tree | 1 file (`neo_csharp/node/tests/Neo.Network.RPC.Tests/RpcTestCases.json`, 46 RPC cases, **0 used by Rust tests**) |
-| `neo-node` binary built | **Yes**, with `--features wip`; **No** by default (the daemon `main` is gated behind the `wip` Cargo feature and prints an error + `exit(1)` otherwise) |
+| `neo-node` binary built | **Yes by default** (default features include the daemon); `--no-default-features` intentionally builds the tiny dependency-check stub |
 
-**Bottom line:** the workspace contains 1,200 passing tests across well-factored crates (VM, execution, crypto, consensus, p2p, wire, storage, blockchain, payloads, mempool, primitives, state). Every test exercises the Rust code in isolation **against itself** — there is no test that round-trips a payload, block, MPT root, or RPC response against the C# `neo` node, the live network, or a known mainnet block (other than the synthetic `block #1000 hash` claim in `MAINNET-STATUS.md`, which is **not** reproducible from the fixture in this tree).
+**Bottom line:** the workspace contains 1,212 passing tests across well-factored crates (VM, execution, crypto, consensus, p2p, wire, storage, blockchain, payloads, mempool, primitives, state). Most tests exercise the Rust code in isolation **against itself**. A small compatibility suite now proves that a real C# mainnet block 1,000 fixture deserializes through `neo_payloads::Block`, consumes all bytes, and hashes to `0xe31ad93809a2ac112b066e50a72ad4883cf9f94a155a7dea2f05e69417b2b9aa`. This is still not proof of state-root, transaction, RPC, or live-node parity.
 
-The codebase is a real implementation of the Neo N3 wire/disk/protocol surface (not stubs), **except for the eleven `neo-native-contracts` handles (NeoToken / GasToken / PolicyContract / OracleContract / StdLib / CryptoLib / Notary / RoleManagement / Treasury / ContractManagement / hashes)**, of which 10 are documented stubs (their own doc comments say "stub", their methods return zero/empty) and have **0 tests**. `LedgerContract` is the only real native-contract handle (read-only).
+The codebase is a real implementation of the Neo N3 wire/disk/protocol surface (not stubs). The previous native-contract finding is now obsolete: `neo-native-contracts` has real implementations for the standard native contracts and `cargo test -p neo-native-contracts -- --nocapture` passed **221 unit tests + 16 manifest-pinning integration tests** on 2026-06-12. This is still not proof of 100% C# parity because the workspace still lacks a live C# node corpus and mainnet/state-root replay fixtures.
 
-The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node`, and waits for `Ctrl-C`, but on a non-trivial path (e.g. a real network or persistent storage) it falls back to an in-memory store and panics with `integrate neo-storage-rocksdb for production use` if `--storage-path` is supplied.
+The full `neo-node` daemon is the default build. It parses CLI/config, builds a `neo_system::Node`, opens RocksDB via `neo_storage::rocksdb::RocksDBStoreProvider` when `[storage].backend = "rocksdb"` or `--storage-path` is supplied, and retains `--no-default-features` only for a tiny dependency-check stub.
 
 ---
 
@@ -30,14 +31,14 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 
 | Area | Tests | Pass | Fail | Ignored |
 |---|---:|---:|---:|---:|
-| Wire Protocol (`neo-wire`) | 11 | 11 | 0 | 0 |
+| Wire Protocol (`neo-network::wire`) | 13 | 13 | 0 | 0 |
 | P2P envelope (`neo-p2p`) | 27 | 27 | 0 | 0 |
 | VM (`neo-vm`) | 78 | 78 | 0 | 0 |
 | Execution engine (`neo-execution`) | 23 | 23 | 0 | 0 |
 | Crypto + MPT (`neo-crypto`) | 124 | 124 | 0 | 0 |
 | Consensus dBFT (`neo-consensus`) | 101 | 101 | 0 | 1 |
 | Blockchain service (`neo-blockchain`) | 21 | 21 | 0 | 0 |
-| Mempool (`neo-mempool`) | 12 | 12 | 0 | 0 |
+| Mempool (`neo-mempool`) | 24 | 24 | 0 | 0 |
 | State service (`neo-state-service`) | 14 | 14 | 0 | 0 |
 | Storage (`neo-storage`) | 124 | 124 | 0 | 0 |
 | Primitives (`neo-primitives`) | 221 | 221 | 0 | 0 |
@@ -56,9 +57,9 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 | Contract execution | 12 | 11 | 0 | 1 |
 | Chaos | 7 | 7 | 0 | 0 |
 | Block persistence | 0 | 0 | 0 | 0 |
-| **Workspace lib total** | **1,110** | **1,110** | **0** | **6** |
+| **Workspace lib total** | **1,122** | **1,122** | **0** | **6** |
 | **Integration total** | **90** | **90** | **0** | **2** |
-| **Combined** | **1,200** | **1,200** | **0** | **8** |
+| **Combined** | **1,212** | **1,212** | **0** | **8** |
 
 ---
 
@@ -66,22 +67,22 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 
 ### 1.1 MessageHeader Format
 **Status:** REAL, PARTIAL
-- **Code:** `neo-wire/src/codec.rs` (`MessageCodec`, 166 LoC), `neo-wire/src/message.rs` (182 LoC).
+- **Code:** `neo-network/src/wire/codec.rs`, `neo-network/src/wire/message.rs`.
 - **Tests:** `codec::tests` (5 tests: partial-frame rejection, encode/decode ping, two-frames-in-one-buffer, oversized-payload rejection).
-- **Evidence:** `cargo test -p neo-wire --lib` -> 11 / 0 / 0.
+- **Evidence:** `cargo test -p neo-network wire -- --nocapture` -> 13 / 0 / 0.
 - **Gap:** No test against a known C#-emitted `Message` byte stream.
 
 ### 1.2 NetworkMessage Envelope
 **Status:** REAL, PARTIAL
-- **Code:** `neo-wire/src/network_message.rs` (126 LoC), `neo-wire/src/protocol_message.rs` (263 LoC).
+- **Code:** `neo-network/src/wire/network_message.rs`, `neo-network/src/wire/protocol_message.rs`.
 - **Tests:** `network_message_round_trip_verack`, `network_message_round_trip_ping`, `protocol_message_command_matches_variant`, `empty_command_round_trip`, `ping_round_trip`.
 - **Gap:** No C#-interop vector; `VersionPayload`/`AddrPayload`/`InvPayload`/`HeadersPayload`/`GetBlocksPayload`/`GetBlockByIndexPayload`/`MerkleBlockPayload`/`FilterAddPayload`/`FilterLoadPayload` round-trips exist only against themselves.
 
 ### 1.3 Block Serialization
-**Status:** REAL, UNVERIFIED AGAINST C#
+**Status:** REAL, PARTIALLY VERIFIED AGAINST C#
 - **Code:** `neo-payloads::Block` (covered by 221 `neo-primitives` lib tests + 25 `neo-payloads` lib tests).
-- **Tests:** `tests/tests/e2e_transaction_flow.rs::test_transaction_serialization_roundtrip` (tx, not block).
-- **Gap:** No test serializes a real mainnet block through `Block::deserialize` and compares the hash. The single fixture (`tests/fixtures/mainnet_block_1000.hex`) is 65 NUL bytes (`0000…`) and is **not** imported by any `.rs` test.
+- **Tests:** `tests/tests/csharp_compatibility_tests.rs::mainnet_block_1000_fixture_deserializes_and_hashes_like_csharp` loads `tests/fixtures/mainnet_block_1000.hex` (697 decoded bytes), deserializes it as `Block`, asserts full byte consumption, index `1000`, zero transactions, a valid merkle root, and C# mainnet hash `0xe31ad93809a2ac112b066e50a72ad4883cf9f94a155a7dea2f05e69417b2b9aa`.
+- **Gap:** Only one historic empty mainnet block is covered. There is still no C# vector for a transaction-bearing block, witness verification, state-root replay, or block bytes emitted by Rust being accepted by a C# node.
 
 ### 1.4 Transaction Serialization
 **Status:** REAL, UNVERIFIED AGAINST C#
@@ -105,7 +106,7 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 
 ### 2.3 Witness Validation
 **Status:** PARTIAL
-- **Code:** `neo-p2p/src/witness_rule.rs` (in 27 p2p tests) and `neo-redeem-script` (4 tests).
+- **Code:** `neo-p2p/src/witness_rule.rs` (in 27 p2p tests) and `neo-script-builder` (4 tests).
 - **Tests:** `witness_rule_projects_to_neo_vm_rs_stack_value`, `group_condition_accepts_uncompressed_ecpoint_and_normalizes_to_compressed`, `boolean_condition_json_matches_csharp_structure`, `protocol_enum_guard_rejects_unknown_witness_condition_type_bytes`, `protocol_enum_guard_rejects_unknown_witness_rule_action_bytes`.
 - **Gap:** `boolean_condition_json_matches_csharp_structure` is the only test that names C# in its assertion message. No test signs a real transaction and checks the witness is accepted.
 
@@ -117,7 +118,7 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 **Status:** REAL, PARTIAL
 - **Code:** `neo-execution/src/application_engine_{runtime,storage,contract,helper,iterator,op_code_prices}.rs` (2,481 LoC) plus `application_engine/` subdir, `native_registry.rs` (538 LoC), `native_contract_cache.rs`, `native_contract_provider.rs`.
 - **Tests:** 23 lib tests: `application_engine::contracts::tests::call_contract_uses_execution_state_script_hash_for_caller`, `application_engine_contract::tests::decode_native_result_*`, `contract_state::tests::contract_state_{read,project,stack_item_projection}_*`, `native_registry::tests::test_native_registry_starts_empty`.
-- **Gap:** Native contracts are stubs (see §3.3). `ApplicationEngine::execute` cannot run a real NEO/GAS transfer end-to-end through the production native contract paths.
+- **Gap:** Native contracts are no longer documented stubs; targeted tests cover the native surfaces and selected C# parity vectors. Remaining gap: no full C# node corpus or real mainnet state-root replay proves end-to-end state equivalence.
 
 ### 3.2 Opcodes
 **Status:** REAL
@@ -126,24 +127,24 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 - **Gap:** No C# VM corpus used as a fixture. Coverage of opcodes is by in-tree unit tests only.
 
 ### 3.3 Native Contracts
-**Status:** STUBS, 0 TESTS
+**Status:** REAL IMPLEMENTATIONS, TARGETED TESTED
 
 | Native | File | LoC | Test count | Real? |
 |---|---|---:|---:|---|
-| `NEO_TOKEN` (NeoToken) | `neo-native-contracts/src/neo_token.rs` | 44 | 0 | **Stub** (file doc: "NeoToken (NEO) native contract stub … returns empty/zero values from every storage query") |
-| `GAS_TOKEN` (GasToken) | `gas_token.rs` | 32 | 0 | **Stub** |
-| `PolicyContract` | `policy_contract.rs` | 77 | 0 | **Stub** (only constants + hash accessor) |
-| `OracleContract` | `oracle_contract.rs` | 108 | 0 | **Stub** + `OracleRequest` struct |
-| `LedgerContract` | `ledger_contract.rs` | 294 | 0 | **Real (read-only)** — file doc: "Concrete (non-stub) implementation … query surface" |
-| `ContractManagement` | `contract_management.rs` | 141 | 0 | **Stub** |
-| `CryptoLib` | `crypto_lib.rs` | 32 | 0 | **Stub** |
-| `Notary` | `notary.rs` | 32 | 0 | **Stub** |
-| `RoleManagement` | `role_management.rs` | 50 | 0 | **Stub** |
-| `StdLib` | `std_lib.rs` | 32 | 0 | **Stub** |
-| `Treasury` | `treasury.rs` | 32 | 0 | **Stub** |
-| `hashes` | `hashes.rs` | 85 | 0 | Constants only |
+| `NEO_TOKEN` (NeoToken) | `neo-native-contracts/src/neo_token.rs` | ~4,016 | covered by package tests | **Real** — NEP-17, governance reads/writes, voting, candidate registration, committee recompute hooks |
+| `GAS_TOKEN` (GasToken) | `gas_token.rs` | ~1,157 | covered by package tests | **Real** — NEP-17 balances/transfer, fee burn/mint persist hooks |
+| `PolicyContract` | `policy_contract.rs` | ~3,302 | covered by package tests | **Real** — fee settings, blocked accounts, whitelist fee contracts, committee-gated writers |
+| `OracleContract` | `oracle_contract.rs` | ~1,863 | covered by package tests | **Real** — request/finish/verify/post-persist pipeline |
+| `LedgerContract` | `ledger_contract.rs` | ~1,197 | covered by package tests | **Real** — read-side ledger query surface |
+| `ContractManagement` | `contract_management.rs` | ~3,391 | covered by package tests | **Real** — deploy/update/destroy/read/index surface |
+| `CryptoLib` | `crypto_lib.rs` | ~896 | covered by package tests | **Real** — hashes, signature verification, BLS12-381 operations |
+| `Notary` | `notary.rs` | ~1,532 | covered by package tests | **Real** — deposit lifecycle and notary verification |
+| `RoleManagement` | `role_management.rs` | ~554 | covered by package tests | **Real** — designated-role queries and designation writer surface |
+| `StdLib` | `std_lib.rs` | ~1,275 | covered by package tests | **Real** — encoding, memory/string, binary/JSON serialization |
+| `Treasury` | `treasury.rs` | ~390 | covered by package tests | **Real** — payment callbacks and committee verification |
+| `hashes` | `hashes.rs` | ~178 | covered by package tests | **Real constants/derivation** |
 
-**This is the largest single gap in the workspace.** A `cargo test -p neo-native-contracts --lib` returns **0 tests, 0 failures, 0 ignored**.
+Fresh evidence: `cargo test -p neo-native-contracts -- --nocapture` passed **221 unit tests**, plus `tests/native_manifest_pinning.rs` passed **16 integration tests** on 2026-06-12. Remaining gap: these are in-tree parity tests, not a full live C# node/state-root replay.
 
 ---
 
@@ -169,7 +170,7 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 
 ### 5.1 Handshake
 **Status:** REAL, NOT EXERCISED
-- **Code:** `neo-p2p/src/payloads/version_payload.rs`, `neo-wire/src/protocol_message.rs::ProtocolMessage::Version`.
+- **Code:** `neo-p2p/src/payloads/version_payload.rs`, `neo-network/src/wire/protocol_message.rs::ProtocolMessage::Version`.
 - **Tests:** Round-trip only. No test negotiates `Version` / `Verack` between two endpoints.
 
 ### 5.2 Message Encoding
@@ -178,9 +179,9 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 - **Tests:** `p2p_message_exchange::message_command_byte_conversion_round_trips`, `verify_result_variants_round_trip`, `message_flags_compression_predicate` (3/3 in integration).
 
 ### 5.3 Block Sync
-**Status:** NOT EXERCISED
-- **Code:** `neo-blockchain/src/handlers.rs` (290 LoC, `dispatch_command_variants_is_exhaustive` test exists), `neo-blockchain/src/import.rs` (22 LoC), `neo-blockchain/src/header_cache.rs` (149 LoC), `neo-network/src/remote_node.rs` (312 LoC, **0 tests**).
-- **Gap:** `neo-network` has 0 lib tests. `import.rs` / `persist_completed.rs` / `preverify_completed.rs` are 7–25 LoC stubs.
+**Status:** PARTIALLY EXERCISED
+- **Code:** `neo-blockchain/src/handlers.rs` (real command dispatch and block admission), `neo-blockchain/src/block_processing.rs` + `native_persist.rs` (native `OnPersist` / `PostPersist` pipeline when `SystemContext::store_snapshot()` is available), `neo-blockchain/src/header_cache.rs`, `neo-network/src/remote_node.rs` (312 LoC, **0 tests**).
+- **Gap:** `neo-node::DaemonContext` exposes the production store snapshot and commit hook, so blockchain persistence is no longer a production stub. Remaining gaps are network-facing: `neo-network` has 0 lib tests, no local test binds a listener and completes `Version` / `Verack`, and no test syncs blocks from a C# node or live network.
 
 ---
 
@@ -256,11 +257,11 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 ## 9. Network Formation
 
 ### 9.1 Can the node start?
-**Status:** PARTIAL
-- `cargo build -p neo-node` (default) produces a stub `main` that prints an error and `exit(1)`.
-- `cargo build -p neo-node --features wip` (or `--features full`) succeeds in 0.35 s.
-- `target/debug/neo-node --help` prints the help message.
-- **Default behaviour is intentional:** the default `main` exists solely to keep `cargo build --workspace` green while the full daemon is in flight. The full `node::run()` parses CLI, loads `ProtocolSettings` (JSON, falls back to `ProtocolSettings::default()` if the file is missing), builds a `neo_system::Node`, spawns services, and waits for `Ctrl-C`.
+**Status:** REAL BUILD, RUNTIME NOT LIVE-NET VERIFIED
+- `cargo check -p neo-node` passes with default features; default features include the runnable daemon.
+- `cargo check -p neo-node --no-default-features` passes for the intentionally tiny dependency-check stub.
+- `node::run()` parses CLI/TOML config, loads `ProtocolSettings`, opens memory or RocksDB storage, builds a `neo_system::Node`, spawns services, and waits for `Ctrl-C`.
+- The previous `--storage-path` panic finding is obsolete: storage is opened through `neo_storage::rocksdb::RocksDBStoreProvider`.
 
 ### 9.2 Can it accept incoming connections?
 **Status:** NOT VERIFIED
@@ -268,7 +269,7 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 
 ### 9.3 Can it sync from a C# node?
 **Status:** NOT VERIFIED LOCALLY
-- `MAINNET-STATUS.md` claims a deployed node at `89.167.120.122` reached block 21,373 with 10 active peers and that block #1000 hash `0xe31ad93809a2ac112b066e50a72ad4883cf9f94a155a7dea2f05e69417b2b9aa` was verified — **but** the only fixture in the tree (`tests/fixtures/mainnet_block_1000.hex`) is 65 NUL bytes, no test in the tree computes or asserts that hash, and the production server is unreachable from this sandbox. The C# node tree in `neo_csharp/` contains only an `RpcServer.json` config and a `RpcTestCases.json` fixture — no buildable C# solution.
+- `MAINNET-STATUS.md` claims a deployed node at `89.167.120.122` reached block 21,373 with 10 active peers. The tree now contains a real mainnet block 1,000 fixture and `csharp_compatibility_tests.rs` asserts its known C# hash. That proves local payload decode/hash compatibility for one empty historic block, but not live peer sync, persisted state progression, or state-root equality. The C# node tree in `neo_csharp/` contains only an `RpcServer.json` config and a `RpcTestCases.json` fixture — no buildable C# solution.
 
 ---
 
@@ -279,19 +280,19 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 | Area | Real? | Tested vs. C#? | Known gap |
 |---|---|---|---|
 | Wire envelope | Real | No | No real payload byte streams |
-| Block / tx payloads | Real | No | No real mainnet block round-trip |
-| Headers / blockchain | Real | No | `import.rs` / `persist_completed.rs` / `preverify_completed.rs` are 7–25 LoC stubs |
+| Block / tx payloads | Real | Partial | Real mainnet block 1,000 decodes and hashes; no transaction-bearing block or Rust-to-C# acceptance vector |
+| Headers / blockchain | Real | No | Persistence path is real with a store snapshot; no C# block-sync or live-network replay |
 | Mempool | Real | No | No live tx traffic |
 | dBFT consensus | Real (messages, recovery, view-change) | No | No end-to-end round producing a `Block` |
 | VM | Real (3,556 LoC + jump tables 3,342) | No | No C# VM corpus |
-| Execution engine | Real surface (6,276 LoC) | No | Native contracts are stubs (§3.3) |
-| Native contracts | **10 of 11 are documented stubs** | No | Largest single gap |
+| Execution engine | Real surface | No full C# replay | Native contracts are implemented, but no full C# state-root replay |
+| Native contracts | Real, targeted tested | Partial in-tree parity only | No live C# node/state-root corpus |
 | MPT | Real (2,822 LoC) | No | No C# MPT root vectors |
 | Crypto (BLS, ECC, hashes) | Real | No | No RFC / Wycheproof vectors |
 | RPC server | Real (handlers, registry, jsonrpsee adapter) | **No** | 6 integration files have 0 tests; 46 C# test cases unused |
 | RPC client | Real (nep17, policy, state, wallet, models) | No | Same |
 | P2P network service | Real (`local_node.rs` 383, `remote_node.rs` 312, `task_manager.rs` 295) | No | 0 lib tests in `neo-network` |
-| Node daemon | Real but gated behind `wip` | No | `--storage-path` panics; only in-memory store is wired |
+| Node daemon | Real default build; no-default-features stub remains for dependency checks | No | Live-network sync not verified |
 
 ### What the workspace genuinely proves
 
@@ -305,7 +306,7 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 ### What the workspace does **not** prove
 
 1. That any byte produced by `neo-rs` would be accepted by a C# `neo` node.
-2. That the block / transaction / state hash for any real mainnet block round-trips.
+2. That transaction-bearing block bytes or any state root round-trip against a real mainnet fixture.
 3. That a single NEP-17 transfer (GAS, NEO) executes to the same state root under both implementations.
 4. That a multi-sig witness verifies under either implementation's `CheckMultisig` syscall.
 5. That the RPC interface returns the same shape / value as the C# `RpcServer` for any of the 46 known `RpcTestCases.json` cases.
@@ -315,25 +316,25 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 
 ## Recommendations (work needed to reach 100% protocol compliance)
 
-1. **Implement the 10 native-contract stubs** (`NeoToken`, `GasToken`, `PolicyContract`, `OracleContract`, `ContractManagement`, `CryptoLib`, `Notary`, `RoleManagement`, `StdLib`, `Treasury`) and add at least one transfer / mint / policy test per contract.
-2. **Add a `csharp_compatibility_tests.rs` integration test** that loads `tests/fixtures/mainnet_block_1000.hex` (currently 65 NUL bytes — replace with a real mainnet block 1,000 hex), `Block::deserialize`s it, asserts the header hash matches `0xe31ad…b2b9aa`, and asserts the MPT root matches the C# node's reported root.
+1. **Add full native-contract replay vectors**: run NEO/GAS/native-contract state transitions against known C# Neo v3.10.0 fixtures and assert resulting storage/state roots.
+2. **Expand the C# block fixture suite** beyond the now-covered empty mainnet block 1,000: add a transaction-bearing block, assert transaction hashes / witnesses, and add the corresponding C# state-root proof where available.
 3. **Add a JSON-driven `RpcTestCases` harness** that consumes `neo_csharp/node/tests/Neo.Network.RPC.Tests/RpcTestCases.json` and asserts Rust responses match the C# responses.
-4. **Promote the `wip` feature to default** and add a smoke test that spawns `neo-node` in-process, hits `getblockcount` over JSON-RPC, and asserts a response.
+4. **Add a JSON-RPC node smoke test** that spawns `neo-node` in-process, hits `getblockcount`, and asserts a response with a temporary RocksDB path. The P2P restart/resume side now has a daemon-level smoke test.
 5. **Add network tests for `neo-network`** (LocalNode bind + accept; RemoteNode handshake with a fake peer emitting `Version`/`Verack`).
 6. **Add a C#-compatible MPT vector** to `neo-crypto/src/mpt_trie/tests.rs`.
 7. **Add BLS12-381 draft-04 test vectors** and **RFC 6979 / BIP-32 vectors** to `neo-crypto`.
-8. **Promote `block_persistence.rs` from empty** (currently a 7-line doc-comment) and `import.rs` / `persist_completed.rs` from stubs.
+8. **Expand durable persistence smoke coverage**: the daemon now has a RocksDB restart/resume test that recovers the native Ledger tip and resumes P2P sync at `tip + 1`; remaining coverage should assert JSON-RPC height and native-contract storage after daemon-imported blocks.
 
 ### Estimated effort to reach "production-grade protocol compliance"
 
 | Item | Effort | Confidence |
 |---|---|---|
 | Wire round-trip with C# `Message` byte stream (1 vector) | 1–2 days | High |
-| Mainnet block 1,000 round-trip + MPT root | 2–3 days | High |
-| Implement 10 native contracts (real, not stub) | 4–6 weeks | Medium |
+| Transaction-bearing mainnet block round-trip + MPT root | 2–3 days | High |
+| Add C# native-contract replay vectors | 1–2 weeks | Medium |
 | `RpcTestCases.json` conformance harness | 2 weeks | Medium |
 | 4-validator dBFT end-to-end producing a `Block` | 1 week | High |
-| Persistent storage path (RocksDB) + restart/resume | 1–2 weeks | High |
+| Persistent storage path (RocksDB) + restart/resume | Partially covered; add RPC/import variants | High |
 | BLS12-381 / RFC 6979 / BIP-32 test vectors | 1 week | High |
 | **`TOTAL` to 100% C# wire/ledger parity (no native contracts)** | **6–10 weeks** | |
 | **To production-ready (incl. native contracts + mainnet sync)** | **3–6 months** | |
@@ -342,18 +343,17 @@ The full `neo-node` daemon compiles, prints `--help`, builds a `neo_system::Node
 
 ## Files Created / Modified
 
-This verification run created exactly one new file:
-
-- `PROTOCOL_VERIFICATION_REPORT.md` (this file, at workspace root)
-
-No code or test was modified.
+This verification report was initially created during the protocol audit and
+has since been updated as implementation and workspace refactors landed. The
+current tree includes code, crate-graph, and documentation changes; use
+`git diff` for the exact working-tree delta.
 
 ### Artifacts inspected (read-only)
 
 - `Cargo.toml` (workspace + 46 sub-crates)
 - `tests/Cargo.toml`, `tests/src/lib.rs`, `tests/tests/*.rs` (9 files, 2,070 LoC)
 - `neo-csharp/` (2 JSON fixtures, 0 source)
-- `tests/fixtures/mainnet_block_1000.hex` (65 NUL bytes)
+- `tests/fixtures/mainnet_block_1000.hex` (697 decoded bytes)
 - `MAINNET-STATUS.md` (94 lines)
 - Every `Cargo.toml` in the 46 sub-crates
-- Source trees of `neo-vm`, `neo-execution`, `neo-crypto`, `neo-consensus`, `neo-blockchain`, `neo-mempool`, `neo-p2p`, `neo-wire`, `neo-storage`, `neo-state-service`, `neo-network`, `neo-rpc`, `neo-native-contracts`, `neo-node`, `neo-system`
+- Source trees of `neo-vm`, `neo-execution`, `neo-crypto`, `neo-consensus`, `neo-blockchain`, `neo-mempool`, `neo-p2p`, `neo-network::wire`, `neo-storage`, `neo-state-service`, `neo-network`, `neo-rpc`, `neo-native-contracts`, `neo-node`, `neo-system`

@@ -7,7 +7,7 @@ impl ApplicationEngine {
         script: Vec<u8>,
         call_flags: CallFlags,
         script_hash: Option<UInt160>,
-    ) -> Result<()> {
+    ) -> CoreResult<()> {
         // Match Neo N3/C# semantics: scripts loaded by the host return all
         // evaluation stack items (`rvcount = -1`) so that witness invocation
         // scripts can pass parameters to verification scripts and invocation
@@ -20,7 +20,7 @@ impl ApplicationEngine {
         })?;
 
         let script_hash = UInt160::from_bytes(&context.script_hash())
-            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
+            .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
         self.increment_invocation_counter(&script_hash);
         Ok(())
     }
@@ -31,7 +31,7 @@ impl ApplicationEngine {
         contract: ContractState,
         method: ContractMethodDescriptor,
         call_flags: CallFlags,
-    ) -> Result<()> {
+    ) -> CoreResult<()> {
         let has_return_value = method.return_type != ContractParameterType::Void;
         let previous_context = self.vm_engine.engine().current_context().cloned();
         let previous_hash = if let Some(ref ctx) = previous_context {
@@ -42,7 +42,7 @@ impl ApplicationEngine {
                 hash_from_state
                     .or_else(|| UInt160::from_bytes(&ctx.script_hash()).ok())
                     .ok_or_else(|| {
-                        Error::invalid_operation("Invalid script hash in execution context")
+                        CoreError::invalid_operation("Invalid script hash in execution context")
                     })?,
             )
         } else {
@@ -132,22 +132,22 @@ impl ApplicationEngine {
     }
 
     /// Executes the loaded scripts until the VM halts or faults.
-    pub fn execute(&mut self) -> Result<()> {
+    pub fn execute(&mut self) -> CoreResult<()> {
         let state = self.execute_allow_fault();
         if state == VMState::FAULT {
             let message = self
                 .fault_exception()
                 .unwrap_or("VM execution faulted during script verification");
-            return Err(Error::invalid_operation(message.to_string()));
+            return Err(CoreError::invalid_operation(message.to_string()));
         }
         Ok(())
     }
 
     /// Adds gas to the consumed amount
-    pub fn add_gas(&mut self, amount: i64) -> Result<()> {
+    pub fn add_gas(&mut self, amount: i64) -> CoreResult<()> {
         self.gas_consumed = self.gas_consumed.saturating_add(amount);
         if self.gas_consumed > self.gas_limit {
-            return Err(Error::invalid_operation("Gas limit exceeded"));
+            return Err(CoreError::invalid_operation("Gas limit exceeded"));
         }
         Ok(())
     }
@@ -158,7 +158,7 @@ impl ApplicationEngine {
         script_hash: &UInt160,
         event_name: &str,
         state: &[Vec<u8>],
-    ) -> Result<()> {
+    ) -> CoreResult<()> {
         if let Some(container) = &self.script_container {
             let state_items = state
                 .iter()
@@ -188,7 +188,7 @@ impl ApplicationEngine {
     /// The committee address is computed from the current committee members
     /// (or standby committee if not yet initialized) using a multi-signature
     /// script requiring majority approval.
-    pub fn check_committee_witness(&self) -> Result<bool> {
+    pub fn check_committee_witness(&self) -> CoreResult<bool> {
         // Mirrors C# `NativeContract.CheckCommittee`: verify a witness from the
         // committee multisig address. That address is `NEO.GetCommitteeAddress`,
         // computed by NeoToken (which owns the committee cache) and reached here
@@ -199,7 +199,7 @@ impl ApplicationEngine {
         let committee_address = match crate::native_contract_provider::lookup_committee_address(
             self.snapshot_cache.as_ref(),
         )
-        .map_err(|e| Error::invalid_operation(format!("committee address lookup failed: {e}")))?
+        .map_err(|e| CoreError::invalid_operation(format!("committee address lookup failed: {e}")))?
         {
             Some(address) => address,
             None => return Ok(false),
@@ -208,7 +208,7 @@ impl ApplicationEngine {
     }
 
     /// Clear all storage for a contract
-    pub fn clear_contract_storage(&mut self, contract_hash: &UInt160) -> Result<()> {
+    pub fn clear_contract_storage(&mut self, contract_hash: &UInt160) -> CoreResult<()> {
         let Some(contract_id) = self.get_contract_id_by_hash(contract_hash) else {
             return Ok(());
         };
@@ -225,18 +225,18 @@ impl ApplicationEngine {
     }
 
     /// Gets the storage context for the current contract (matches C# GetStorageContext exactly).
-    pub fn get_storage_context(&self) -> Result<StorageContext> {
+    pub fn get_storage_context(&self) -> CoreResult<StorageContext> {
         // 1. Get current contract hash
         let contract_hash = self
             .current_script_hash
-            .ok_or_else(|| Error::invalid_operation("No current contract"))?;
+            .ok_or_else(|| CoreError::invalid_operation("No current contract"))?;
 
         // 2. Get contract state to get the ID (matches C# snapshot lookup)
         let contract = crate::native_contract_provider::lookup_contract_management(
             self.snapshot_cache.as_ref(),
             &contract_hash,
         )?
-        .ok_or_else(|| Error::not_found(format!("Contract not found: {}", contract_hash)))?;
+        .ok_or_else(|| CoreError::not_found(format!("Contract not found: {}", contract_hash)))?;
 
         // 3. Create storage context (matches C# StorageContext creation)
         Ok(StorageContext {
@@ -246,7 +246,7 @@ impl ApplicationEngine {
     }
 
     /// Gets a read-only storage context (matches C# GetReadOnlyContext exactly).
-    pub fn get_read_only_storage_context(&self) -> Result<StorageContext> {
+    pub fn get_read_only_storage_context(&self) -> CoreResult<StorageContext> {
         let mut context = self.get_storage_context()?;
         context.is_read_only = true;
         Ok(context)

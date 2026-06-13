@@ -132,8 +132,6 @@
 //! }
 //! ```
 
-// Documentation warnings deferred — tracked for incremental doc coverage
-#![allow(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // ============================================================================
@@ -142,6 +140,9 @@
 
 /// VM error types and result handling.
 pub mod error;
+
+/// Script builder for programmatic VM script construction.
+pub mod script_builder;
 
 /// Type-safe evaluation stack implementation.
 ///
@@ -215,11 +216,13 @@ pub use error::{VmError, VmResult};
 pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
-pub use interoperable::Interoperable;
 pub use interop_service::InteropService;
+pub use interoperable::Interoperable;
 pub use jump_table::JumpTable;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
-pub use rpc_json::{stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item};
+pub use rpc_json::{
+    stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item,
+};
 pub use script::Script;
 pub use slot::Slot;
 pub use stack_item::{InteropInterface, StackItem};
@@ -229,4 +232,4 @@ pub use stack_item::{InteropInterface, StackItem};
 // ============================================================================
 
 /// Production I/O implementation.
-pub use neo_io_crate as io;
+pub use neo_io as io;

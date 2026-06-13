@@ -25,13 +25,9 @@ use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
+use crate::LedgerContract;
 use crate::hashes::ROLE_MANAGEMENT_HASH;
 use crate::role::Role;
-use crate::LedgerContract;
-
-/// Lazily-initialised script-hash handle for the RoleManagement contract.
-pub static ROLE_MANAGEMENT_HASH_REF: LazyLock<UInt160> =
-    LazyLock::new(|| *ROLE_MANAGEMENT_HASH);
 
 /// The RoleManagement native contract.
 #[derive(Debug, Default, Clone, Copy)]
@@ -40,6 +36,8 @@ pub struct RoleManagement;
 impl RoleManagement {
     /// Stable native contract id (matches C# `RoleManagement`).
     pub const ID: i32 = -8;
+    /// Stable native contract name (matches C# `RoleManagement.Name`).
+    pub const NAME: &'static str = "RoleManagement";
 
     /// Construct a new `RoleManagement` handle.
     pub fn new() -> Self {
@@ -47,8 +45,13 @@ impl RoleManagement {
     }
 
     /// Returns the RoleManagement script hash.
+    pub fn hash(&self) -> UInt160 {
+        Self::script_hash()
+    }
+
+    /// Returns the RoleManagement script hash.
     pub fn script_hash() -> UInt160 {
-        *ROLE_MANAGEMENT_HASH_REF
+        *ROLE_MANAGEMENT_HASH
     }
 
     /// Looks up the public keys designated for `role`, effective at block
@@ -104,8 +107,9 @@ fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
             .as_bytes()
             .map_err(|e| CoreError::invalid_data(format!("RoleManagement node bytes: {e}")))?;
         points.push(
-            ECPoint::from_bytes(&bytes)
-                .map_err(|e| CoreError::invalid_data(format!("RoleManagement node EC point: {e}")))?,
+            ECPoint::from_bytes(&bytes).map_err(|e| {
+                CoreError::invalid_data(format!("RoleManagement node EC point: {e}"))
+            })?,
         );
     }
     Ok(points)
@@ -114,16 +118,19 @@ fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
 /// Serializes an empty node list (C# returns an empty `ECPoint[]`, not `null`,
 /// when no designation exists).
 fn empty_node_list() -> CoreResult<Vec<u8>> {
-    BinarySerializer::serialize(&StackItem::from_array(Vec::new()), &ExecutionEngineLimits::default())
-        .map_err(|e| CoreError::invalid_operation(format!("RoleManagement empty list: {e}")))
+    BinarySerializer::serialize(
+        &StackItem::from_array(Vec::new()),
+        &ExecutionEngineLimits::default(),
+    )
+    .map_err(|e| CoreError::invalid_operation(format!("RoleManagement empty list: {e}")))
 }
 
 /// The designation storage key `(RoleManagement.ID, [role_byte, index_be])`.
 fn designation_key(role_byte: u8, index: u32) -> StorageKey {
-    let mut key = Vec::with_capacity(5);
-    key.push(role_byte);
-    key.extend_from_slice(&index.to_be_bytes());
-    StorageKey::new(RoleManagement::ID, key)
+    StorageKey::new(
+        RoleManagement::ID,
+        crate::keys::prefixed_with_u32_be(role_byte, index),
+    )
 }
 
 /// Builds a `StackItem::Array` of compressed EC-point byte strings, preserving
@@ -191,7 +198,10 @@ static ROLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             1 << 15,
             true,
             CallFlags::READ_STATES.bits(),
-            vec![ContractParameterType::Integer, ContractParameterType::Integer],
+            vec![
+                ContractParameterType::Integer,
+                ContractParameterType::Integer,
+            ],
             ContractParameterType::Array,
         )
         .with_parameter_names(["role", "index"]),
@@ -244,11 +254,11 @@ impl NativeContract for RoleManagement {
     }
 
     fn hash(&self) -> UInt160 {
-        *ROLE_MANAGEMENT_HASH_REF
+        Self::script_hash()
     }
 
     fn name(&self) -> &str {
-        "RoleManagement"
+        Self::NAME
     }
 
     fn methods(&self) -> &[NativeMethod] {
@@ -284,7 +294,7 @@ impl NativeContract for RoleManagement {
                     _ => {
                         return Err(CoreError::invalid_operation(format!(
                             "RoleManagement: role {role_value} is not valid"
-                        )))
+                        )));
                     }
                 };
                 let index = args
@@ -332,18 +342,12 @@ impl NativeContract for RoleManagement {
                     _ => {
                         return Err(CoreError::invalid_operation(format!(
                             "RoleManagement: role {role_value} is not valid"
-                        )))
+                        )));
                     }
                 };
 
                 // C# AssertCommittee.
-                if !engine.check_committee_witness().map_err(|e| {
-                    CoreError::invalid_operation(format!("designateAsRole committee check: {e}"))
-                })? {
-                    return Err(CoreError::invalid_operation(
-                        "designateAsRole requires committee authorization",
-                    ));
-                }
+                crate::committee::assert_committee(engine, "designateAsRole")?;
 
                 // C# v3.10.0 DesignateAsRole: reject a node list containing
                 // duplicate public keys (`nodes.Distinct().Count() != nodes.Length`).
@@ -411,9 +415,9 @@ mod tests {
 
     fn sample_point() -> ECPoint {
         // A genesis-validator public key (valid compressed EC point).
-        ECPoint::from_bytes(
-            &hex_to_bytes("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c"),
-        )
+        ECPoint::from_bytes(&hex_to_bytes(
+            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
+        ))
         .unwrap()
     }
 
@@ -427,13 +431,14 @@ mod tests {
     #[test]
     fn native_contract_surface() {
         let c = RoleManagement::new();
-        assert_eq!(NativeContract::id(&c), -8);
-        assert_eq!(NativeContract::name(&c), "RoleManagement");
-        assert_eq!(NativeContract::hash(&c), *ROLE_MANAGEMENT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(names, ["getDesignatedByRole", "designateAsRole"]);
         // The writer is non-safe with write + notify flags and a Void return.
-        let d = c.methods().iter().find(|m| m.name == "designateAsRole").unwrap();
+        let d = c
+            .methods()
+            .iter()
+            .find(|m| m.name == "designateAsRole")
+            .unwrap();
         assert!(!d.safe);
         assert_eq!(
             d.required_call_flags,
@@ -503,10 +508,12 @@ mod tests {
         let point = sample_point();
 
         // No designation yet -> empty.
-        assert!(RoleManagement::new()
-            .get_designated_by_role_at(&cache, Role::Oracle, 100)
-            .unwrap()
-            .is_empty());
+        assert!(
+            RoleManagement::new()
+                .get_designated_by_role_at(&cache, Role::Oracle, 100)
+                .unwrap()
+                .is_empty()
+        );
 
         // Designate the Oracle role at index 10 (a 1-element node list).
         let list = BinarySerializer::serialize(
@@ -520,19 +527,23 @@ mod tests {
         );
 
         // Before the designation -> still empty; at/after -> the designated key.
-        assert!(RoleManagement::new()
-            .get_designated_by_role_at(&cache, Role::Oracle, 9)
-            .unwrap()
-            .is_empty());
+        assert!(
+            RoleManagement::new()
+                .get_designated_by_role_at(&cache, Role::Oracle, 9)
+                .unwrap()
+                .is_empty()
+        );
         let got = RoleManagement::new()
             .get_designated_by_role_at(&cache, Role::Oracle, 25)
             .unwrap();
         assert_eq!(got, vec![point.clone()]);
 
         // A different role is unaffected.
-        assert!(RoleManagement::new()
-            .get_designated_by_role_at(&cache, Role::StateValidator, 25)
-            .unwrap()
-            .is_empty());
+        assert!(
+            RoleManagement::new()
+                .get_designated_by_role_at(&cache, Role::StateValidator, 25)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

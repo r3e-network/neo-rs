@@ -668,15 +668,15 @@ impl From<std::num::ParseFloatError> for VmError {
 }
 
 // Neo-specific error conversions
-impl From<neo_io_crate::IoError> for VmError {
-    fn from(error: neo_io_crate::IoError) -> Self {
+impl From<neo_io::IoError> for VmError {
+    fn from(error: neo_io::IoError) -> Self {
         match error {
-            neo_io_crate::IoError::Format => Self::parse("format error"),
-            neo_io_crate::IoError::InvalidUtf8 => Self::parse("invalid utf-8 data"),
-            neo_io_crate::IoError::InvalidData { context, value } => {
+            neo_io::IoError::Format => Self::parse("format error"),
+            neo_io::IoError::InvalidUtf8 => Self::parse("invalid utf-8 data"),
+            neo_io::IoError::InvalidData { context, value } => {
                 Self::parse(format!("{context}: {value}"))
             }
-            neo_io_crate::IoError::Io(inner) => Self::io(inner.to_string()),
+            neo_io::IoError::Io(inner) => Self::io(inner.to_string()),
         }
     }
 }

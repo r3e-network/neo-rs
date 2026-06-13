@@ -1,27 +1,22 @@
 use super::super::{OracleService, OracleServiceError};
+use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
+use neo_execution::ApplicationEngine;
+use neo_execution::Contract;
+use neo_execution::TriggerType;
 use neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
-use neo_io::Serializable;
-use neo_payloads::{
-    oracle_response::MAX_RESULT_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction,
-    TransactionAttribute, Witness, HEADER_SIZE,
-};
-use neo_storage::persistence::DataCache;
-use neo_config::ProtocolSettings;
 use neo_manifest::CallFlags;
-use neo_execution::Contract;
-use neo_execution::ApplicationEngine;
-use neo_execution::TriggerType;
-use neo_native_contracts::native_contract::NativeContract;
-use neo_native_contracts::{
-    ContractManagement, LedgerContract, OracleContract, PolicyContract,
-};
-use neo_primitives::Verifiable;
+use neo_native_contracts::{ContractManagement, LedgerContract, OracleContract, PolicyContract};
 use neo_payloads::VerifiableExt;
+use neo_payloads::{
+    HEADER_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction, TransactionAttribute,
+    Witness, oracle_response::MAX_RESULT_SIZE,
+};
 use neo_primitives::ContractBasicMethod;
 use neo_primitives::{UInt160, WitnessScope};
+use neo_storage::persistence::DataCache;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -138,11 +133,10 @@ impl OracleService {
 
         let exec_fee_factor = PolicyContract::new()
             .get_exec_fee_factor_snapshot(snapshot, settings, height)
-            .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
+            .unwrap_or(neo_native_contracts::policy_contract::DEFAULT_EXEC_FEE_FACTOR)
             as i64;
-        let multi_sig_cost = neo_execution::helper::Helper::multi_signature_contract_cost(
-            m as i32, n as i32,
-        );
+        let multi_sig_cost =
+            neo_execution::helper::Helper::multi_signature_contract_cost(m as i32, n as i32);
         let comp2 = exec_fee_factor * multi_sig_cost;
         tx.set_network_fee(tx.network_fee().saturating_add(comp2));
 
@@ -160,7 +154,7 @@ impl OracleService {
 
         let fee_per_byte: i64 = PolicyContract::new()
             .get_fee_per_byte_snapshot(snapshot)
-            .unwrap_or(PolicyContract::DEFAULT_FEE_PER_BYTE) as i64;
+            .unwrap_or(neo_native_contracts::policy_contract::DEFAULT_FEE_PER_BYTE) as i64;
 
         if response.result.len() > MAX_RESULT_SIZE {
             response.code = OracleResponseCode::ResponseTooLarge;

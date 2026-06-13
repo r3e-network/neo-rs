@@ -1,18 +1,18 @@
 use super::utils::{ledger_height, wallet_has_oracle_account};
 use super::{OracleService, OracleStatus};
-use neo_system::Node;
-use neo_storage::persistence::DataCache;
 use neo_native_contracts::{Role, RoleManagement};
+use neo_storage::persistence::DataCache;
+use neo_system::Node;
 use neo_wallets::Wallet;
 use std::sync::Arc;
 
-impl neo_event_handlers::CommittingHandler for OracleService {
+impl neo_payloads::CommittingHandler for OracleService {
     fn blockchain_committing_handler(
         &self,
         system: &dyn std::any::Any,
         _block: &neo_payloads::Block,
         snapshot: &DataCache,
-        _application_executed_list: &[neo_block::ApplicationExecuted],
+        _application_executed_list: &[neo_payloads::ApplicationExecuted],
     ) {
         let Some(system) = system.downcast_ref::<Node>() else {
             return;
@@ -53,7 +53,7 @@ impl neo_event_handlers::CommittingHandler for OracleService {
     }
 }
 
-impl neo_event_handlers::WalletChangedHandler for OracleService {
+impl neo_payloads::WalletChangedHandler for OracleService {
     fn wallet_provider_wallet_changed_handler(
         &self,
         _sender: &dyn std::any::Any,

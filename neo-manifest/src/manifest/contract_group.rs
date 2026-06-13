@@ -2,13 +2,13 @@
 //! Represents a set of mutually trusted contracts identified by a public key
 //! and accompanied by a signature for the contract hash.
 
-use neo_error::CoreError as Error;
-use neo_error::CoreResult as Result;
+use base64::{Engine as _, engine::general_purpose};
+use neo_crypto::{ECCurve, ECPoint};
+use neo_error::CoreError;
+use neo_error::CoreResult;
 use neo_primitives::constants::ADDRESS_SIZE;
 use neo_vm::Interoperable;
 use neo_vm::StackItem;
-use neo_crypto::{ECCurve, ECPoint};
-use base64::{engine::general_purpose, Engine as _};
 use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm_rs::StackValue;
@@ -36,36 +36,36 @@ impl ContractGroup {
     }
 
     /// Validates the contract group.
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> CoreResult<()> {
         if !self.pub_key.is_valid() {
-            return Err(Error::invalid_data("Invalid public key in group"));
+            return Err(CoreError::invalid_data("Invalid public key in group"));
         }
 
         if self.signature.len() != 64 {
-            return Err(Error::invalid_data("Invalid signature length in group"));
+            return Err(CoreError::invalid_data("Invalid signature length in group"));
         }
 
         Ok(())
     }
 
     /// Verifies the group signature for a given contract hash.
-    pub fn verify_signature(&self, contract_hash: &[u8]) -> Result<bool> {
+    pub fn verify_signature(&self, contract_hash: &[u8]) -> CoreResult<bool> {
         if contract_hash.len() != ADDRESS_SIZE {
-            return Err(Error::invalid_data("Invalid contract hash length"));
+            return Err(CoreError::invalid_data("Invalid contract hash length"));
         }
 
         if self.signature.len() != 64 {
-            return Err(Error::invalid_data("Invalid signature length"));
+            return Err(CoreError::invalid_data("Invalid signature length"));
         }
 
         let public_key_bytes = self
             .pub_key
             .encode_compressed()
-            .map_err(|e| Error::invalid_data(format!("Failed to encode public key: {}", e)))?;
+            .map_err(|e| CoreError::invalid_data(format!("Failed to encode public key: {}", e)))?;
 
         // Convert signature to array format
         let signature_array: [u8; 64] = <[u8; 64]>::try_from(self.signature.as_slice())
-            .map_err(|_| Error::invalid_data("Invalid signature length"))?;
+            .map_err(|_| CoreError::invalid_data("Invalid signature length"))?;
 
         match neo_crypto::Secp256r1Crypto::verify(
             contract_hash,
@@ -85,11 +85,11 @@ impl ContractGroup {
     /// # Errors
     ///
     /// Returns `Error` if the stack value is not a valid struct with two elements.
-    pub fn try_from_stack_value(stack_value: StackValue) -> Result<Self> {
+    pub fn try_from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         let items = match stack_value {
             StackValue::Struct(items) => items,
             other => {
-                return Err(Error::invalid_data(format!(
+                return Err(CoreError::invalid_data(format!(
                     "ContractGroup expects struct stack value, found {:?}",
                     other.compact_type_tag()
                 )));
@@ -97,20 +97,20 @@ impl ContractGroup {
         };
 
         if items.len() < 2 {
-            return Err(Error::invalid_data(
+            return Err(CoreError::invalid_data(
                 "ContractGroup stack value must contain two elements",
             ));
         }
 
         let pub_key_bytes = items[0]
             .to_byte_string_bytes()
-            .ok_or_else(|| Error::invalid_data("ContractGroup public key must be byte string"))?;
+            .ok_or_else(|| CoreError::invalid_data("ContractGroup public key must be byte string"))?;
         let signature_bytes = items[1]
             .to_byte_string_bytes()
-            .ok_or_else(|| Error::invalid_data("ContractGroup signature must be byte string"))?;
+            .ok_or_else(|| CoreError::invalid_data("ContractGroup signature must be byte string"))?;
 
         let pub_key = ECPoint::from_bytes(&pub_key_bytes)
-            .map_err(|e| Error::invalid_data(format!("Failed to decode ECPoint: {}", e)))?;
+            .map_err(|e| CoreError::invalid_data(format!("Failed to decode ECPoint: {}", e)))?;
 
         Ok(Self {
             pub_key,
@@ -136,9 +136,9 @@ impl ContractGroup {
     /// # Errors
     ///
     /// Returns `Error` if the stack item is not a valid struct with two elements.
-    pub fn try_from_stack_item_value(stack_item: &StackItem) -> Result<Self> {
+    pub fn try_from_stack_item_value(stack_item: &StackItem) -> CoreResult<Self> {
         Self::try_from_stack_value(StackValue::try_from(stack_item.clone()).map_err(|error| {
-            Error::invalid_data(format!(
+            CoreError::invalid_data(format!(
                 "Failed to convert ContractGroup StackItem to StackValue: {error}"
             ))
         })?)
@@ -175,15 +175,20 @@ impl Serialize for ContractGroup {
 }
 
 impl Interoperable for ContractGroup {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), neo_vm::VmError> {
+    fn from_stack_item(
+        &mut self,
+        stack_item: StackItem,
+    ) -> std::result::Result<(), neo_vm::VmError> {
         match StackValue::try_from(stack_item)
             .map_err(|error| {
                 neo_vm::VmError::invalid_operation_msg(format!(
                     "Failed to convert ContractGroup StackItem to StackValue: {error}"
                 ))
             })
-            .and_then(|sv| Self::try_from_stack_value(sv).map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string())))
-        {
+            .and_then(|sv| {
+                Self::try_from_stack_value(sv)
+                    .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+            }) {
             Ok(group) => *self = group,
             Err(e) => {
                 tracing::error!("Failed to parse ContractGroup from stack item: {}", e);

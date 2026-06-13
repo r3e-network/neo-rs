@@ -19,13 +19,12 @@ Professional Rust implementation of the Neo N3 blockchain node and CLI tools.
 git clone https://github.com/r3e-network/neo-rs.git
 cd neo-rs
 
-# Build the node daemon (the full daemon is behind the `wip` feature)
-cargo build --release -p neo-node --features wip
+# Build the node daemon
+cargo build --release -p neo-node
 ```
 
-> **Note:** the runnable daemon is gated behind the `--features wip` Cargo
-> feature. A plain `cargo build -p neo-node` produces a stub that prints a
-> message and exits — always pass `--features wip` to build the real node.
+> **Note:** `neo-node` builds the runnable daemon by default. Use
+> `--no-default-features` only for the tiny dependency-check stub.
 
 ### Running a Node
 
@@ -41,9 +40,10 @@ cargo build --release -p neo-node --features wip
 ./target/release/neo-node --config neo_mainnet_node.toml --storage-path /opt/neo/data
 ```
 
-The daemon's CLI exposes three flags: `--config/-c <FILE>`, `--storage-path
-<DIR>`, and `--network-magic <U32>`. Network/RPC/P2P settings live in the TOML
-config (`[network]`, `[storage]`, `[p2p]`, `[rpc]`, `[consensus]`).
+The daemon CLI exposes `--config/-c <FILE>`, `--storage-path <DIR>`,
+`--network-magic <U32>`, and the preflight flags `--check-config`,
+`--check-storage`, and `--check-all`. Network/RPC/P2P settings live in the
+TOML config (`[network]`, `[storage]`, `[p2p]`, `[rpc]`, `[consensus]`).
 
 ### Querying a Running Node (JSON-RPC)
 
@@ -85,17 +85,18 @@ curl -s -X POST http://127.0.0.1:10332 \
 │                neo-blockchain · neo-mempool · neo-state-service│
 ├─────────────────────────────────────────────────────────────┤
 │  Execution:    neo-execution (ApplicationEngine) · neo-vm     │
-│                neo-native-contracts · neo-chain (block checks) │
+│                neo-native-contracts · neo-blockchain checks    │
 ├─────────────────────────────────────────────────────────────┤
-│  Protocol:     neo-payloads · neo-p2p · neo-wire · neo-config  │
+│  Protocol:     neo-payloads · neo-p2p · neo-config · net wire  │
 ├─────────────────────────────────────────────────────────────┤
 │  Foundation:   neo-primitives · neo-crypto · neo-storage       │
-│                neo-io · neo-json · neo-error                   │
+│                neo-io · neo-serialization::json · neo-error                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-> `neo-core` was dissolved into ~45 single-responsibility crates with an acyclic
-> dependency DAG (foundation → protocol → execution → services → application).
+> The historical `neo-core` crate was dissolved into the current 32-package
+> workspace with an acyclic dependency DAG (foundation → protocol → execution
+> → services → application).
 > There is no `neo-cli` binary; query a running node over JSON-RPC.
 
 ## Compatibility
@@ -108,9 +109,10 @@ curl -s -X POST http://127.0.0.1:10332 \
 
 This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation for blocks, transactions, and P2P messages, and tracks consensus-affecting changes through C# v3.10.0 (the VM jump-table is hardfork-gated so pre-Gorgon blocks replay identically).
 
-### C# v3.9.1 Feature Parity
+### C# v3.10.0 Feature Parity
 
-The following C# Neo v3.9.1 features are fully implemented:
+The following Neo N3 protocol features are implemented and checked against the
+C# reference line through v3.10.0:
 
 | Feature | Status | Description |
 |---------|--------|-------------|
@@ -157,7 +159,7 @@ All native contract hashes match the C# reference implementation:
 ```
 ✅ cargo test --workspace            — 124 test binaries, 0 failures
 ✅ cargo test -p neo-rpc --features server   — JSON-RPC server suite green
-✅ cargo test -p neo-node --features wip     — node daemon suite green
+✅ cargo test -p neo-node          — node daemon suite green
 ✅ Native contract hash + JSON manifest parity with C# v3.9.1/3.10.0
 ✅ C#-derived reference-vector tests (VM opcodes/interops, MPT state roots,
    ledger-record encoding, dBFT block assembly)
@@ -171,8 +173,8 @@ All native contract hashes match the C# reference implementation:
 ## Build
 
 ```bash
-# The full node daemon (required to actually run a node)
-cargo build --release -p neo-node --features wip
+# The full node daemon
+cargo build --release -p neo-node
 
 # Or build/test the whole workspace
 cargo build --workspace
@@ -189,7 +191,8 @@ TEE/HSM integrations, telemetry, tests, and benchmarks.
 
 ## Run the node
 
-`neo-node` is the daemon (P2P sync + optional JSON-RPC server). `neo-cli` is a JSON-RPC client.
+`neo-node` is the daemon (P2P sync + optional JSON-RPC server). Query it over
+JSON-RPC.
 
 ```bash
 cargo run -p neo-node --release -- --config neo_mainnet_node.toml
@@ -197,16 +200,18 @@ cargo run -p neo-node --release -- --config neo_mainnet_node.toml
 
 Common overrides:
 
-- `--storage <path>`: custom RocksDB path
-- `--backend <memory|rocksdb>`: storage backend
-- `--network-magic <u32>` / `--listen-port <u16>`: network parameters
+- `--storage-path <path>`: custom RocksDB path
+- `--network-magic <u32>`: override the protocol network magic
+- Edit `[storage].backend`, `[p2p].port`, seed nodes, and RPC settings in TOML.
 
 Use `cargo run -p neo-node -- --help` for the full daemon flag list.
 
 Query a running node:
 
 ```bash
-cargo run -p neo-cli --release -- --rpc-url http://localhost:10332 state
+curl -s --compressed -X POST http://localhost:10332 \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
 ```
 
 Validate a node config without starting the daemon:
@@ -233,35 +238,13 @@ Preflight both bundled configs:
 make preflight
 ```
 
-Environment overrides:
+Configuration is CLI plus TOML. The native daemon reads `RUST_LOG` for logging
+filters; Docker adds a small entrypoint layer for selecting the bundled config
+and storage directory.
 
-- `NEO_CONFIG` (path to TOML), `NEO_STORAGE` (data path), `NEO_BACKEND` (storage backend)
-- `NEO_STORAGE_READONLY` (open storage read-only; use with `--check-*` only)
-- `NEO_NETWORK_MAGIC`, `NEO_LISTEN_PORT`, `NEO_SEED_NODES`
-- `NEO_MAX_CONNECTIONS`, `NEO_MIN_CONNECTIONS`, `NEO_MAX_CONNECTIONS_PER_ADDRESS`, `NEO_BROADCAST_HISTORY_LIMIT`
-- `NEO_BLOCK_TIME`, `NEO_DISABLE_COMPRESSION`, `NEO_DAEMON`
-- `NEO_RPC_BIND`, `NEO_RPC_PORT`, `NEO_RPC_DISABLE_CORS`, `NEO_RPC_USER`, `NEO_RPC_PASS`, `NEO_RPC_TLS_CERT`, `NEO_RPC_TLS_PASS`
-- `NEO_RPC_ALLOW_ORIGINS`, `NEO_RPC_DISABLED_METHODS`
-- `NEO_LOG_PATH`, `NEO_LOG_LEVEL`, `NEO_LOG_FORMAT`
-- `NEO_STATE_ROOT` to enable state root calculation/validation (`--state-root`/`--stateroot`)
-- `NEO_STATE_ROOT_PATH` to choose the StateRoot DB path (defaults to `<storage>/StateRoot`)
-- `NEO_STATE_ROOT_FULL_STATE` to keep full historical state (enables old-root proofs; larger DB)
-- `NEO_HEALTH_PORT` to expose `/healthz` on localhost
-- `NEO_HEALTH_MAX_HEADER_LAG` to fail `/healthz` if header lag exceeds the threshold (defaults to 20; set to 0 to disable)
-- `/metrics` is available when the health server is enabled; scrape it with Prometheus.
-- `/readyz` is available when the health server is enabled (same contract as `/healthz`).
-
-Hardened RPC preset:
-
-- Use `--rpc-hardened` (or set via CLI) to disable CORS, require auth, and disable `openwallet`/`listplugins` by default; combine with `NEO_RPC_USER/NEO_RPC_PASS`.
-
-Example hardened run:
-
-```bash
-NEO_RPC_USER=admin NEO_RPC_PASS="$(openssl rand -hex 16)" \
-NEO_RPC_BIND=127.0.0.1 NEO_RPC_PORT=10332 \
-cargo run -p neo-node -- --config neo_mainnet_node.toml --rpc-hardened --check-all
-```
+For hardened RPC, set the `[rpc]` section in TOML: bind to loopback, disable
+CORS, enable authentication, and disable wallet-mutating methods before exposing
+the endpoint through a reverse proxy.
 
 ## Docker
 
@@ -276,15 +259,13 @@ docker run -d --name neo-node \
   neo-rs
 ```
 
-Key environment knobs:
+Key Docker environment knobs:
 
 - `NEO_NETWORK`: `testnet` (default) or `mainnet` to pick the bundled TOML config.
 - `NEO_STORAGE`: RocksDB path inside the container (defaults to `/data/testnet` or `/data/mainnet` based on `NEO_NETWORK`).
 - `NEO_CONFIG`: custom config path if you bind-mount your own TOML.
 - `NEO_PLUGINS_DIR`: where plugin configs (e.g., RpcServer.json) are written; defaults to `/data/Plugins`.
-- `NEO_BACKEND`: storage backend passed to `--backend` (default `rocksdb` in Docker/compose).
-- `NEO_RPC_PORT`: if set, forces the RPC port (used by the health check). Otherwise the entrypoint will try to read the port from the TOML `[rpc]` section and fall back to network defaults.
-- `NEO_LISTEN_PORT`: override the P2P listen port without editing the TOML.
+- `NEO_RPC_PORT`: optional health-check port override. The node's actual RPC port still comes from the TOML `[rpc]` section.
 - Containers run as an unprivileged `neo` user with home at `/home/neo`; mount data under `/data` for persistence.
 
 Health checks hit `getversion` on the detected RPC port (parsed from the config when possible; otherwise 20332 for TestNet or 10332 for MainNet). See `docker-compose.yml` for a compose-based setup.
@@ -318,7 +299,11 @@ docker compose --profile monitoring up -d neo-monitor
 make compose-monitor  # equivalent
 ```
 
-Adjust `.env` or environment variables to switch to mainnet (`NEO_NETWORK=mainnet`), mount your own config (`NEO_CONFIG`), pick a backend (`NEO_BACKEND`), tweak ports, or change the storage location. The compose file also raises `nofile`/`nproc` limits for better production defaults.
+Adjust `.env` or environment variables to switch to mainnet
+(`NEO_NETWORK=mainnet`), mount your own config (`NEO_CONFIG`), or change the
+storage location (`NEO_STORAGE`). Edit the TOML to change backend, P2P, and RPC
+ports. The compose file also raises `nofile`/`nproc` limits for better
+production defaults.
 
 ## Tests
 
@@ -331,12 +316,13 @@ cargo test --workspace
 For faster iterations you can target a specific crate or test:
 
 ```bash
-cargo test -p neo-core
+cargo test -p neo-native-contracts
 ```
 
-## Neo v3.9.1 Consistency Validation
+## Legacy Neo v3.9.1 Consistency Validation
 
-Run continuous protocol/vector compatibility checks locally:
+The repository still includes the historical v3.9.1 compatibility workflow used
+before the v3.10.0 alignment work. Run it only when checking that legacy target:
 
 ```bash
 bash scripts/validate-v391-consistency.sh --network all
@@ -366,9 +352,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 - `neo_mainnet_node.toml`: default mainnet settings.
 - `neo_production_node.toml`: production template you can adjust for your environment.
 - `NEO_PLUGINS_DIR`: set this env var to move plugin state/config (like `Plugins/RpcServer.json`) to a writable, persistent path.
-- Config files are strict: unknown keys/tables fail parsing. Supported sections are `[network]`, `[p2p]`, `[storage]`, `[blockchain]`, `[rpc]`, `[logging]`, `[unlock_wallet]`, `[contracts]`, `[plugins]`.
+- Config files are tolerant of unknown future keys/tables. Consumed sections include `[network]`, `[p2p]`, `[storage]`, `[blockchain]`, `[mempool]`, `[rpc]`, and `[consensus]`/`[dbft]`.
 - Validate configs without starting the node via `neo-node --check-config --config <path>`.
-- Logging defaults to `/data/Logs/neo-cli.log` in Docker and can be moved via the config `logging.path`.
+- Logging defaults to `/data/Logs/neo-node.log` in Docker and can be moved via the config `logging.path`.
 - If you use the bundled production TOML outside Docker, create the configured log directory (or override `logging.path`).
 - See `docs/RPC_HARDENING.md` for a hardened `RpcServer.json` example and reverse-proxy guidance.
 - See `docs/MONITORING.md` for signal/alert suggestions.
@@ -380,8 +366,7 @@ Logs and data directories default to `Logs/` and `data/` in the repository root;
 
 - Build with `--release` and ensure `librocksdb` is available on the host.
 - Data directories carry `NETWORK_MAGIC` and `VERSION` markers; start a node only with matching binaries/configs for that path.
-- Read-only storage mode is available for offline checks (`NEO_STORAGE_READONLY=1` + `--check-storage/--check-all`); the node will refuse to start in read-only mode.
-- Point `--storage` and `--config` to durable volumes; back up RocksDB data regularly.
+- Point `--storage-path` and `--config` to durable volumes; back up RocksDB data regularly.
 - RPC security: CORS is disabled by default in the production TOML; expose RPC through a reverse proxy with TLS/auth and rate limits if publishing it beyond localhost.
 - Ensure the log directory exists and is writable for the configured path (default `/data/Logs` in the production TOML).
 - Keep plugin configs on persistent storage; set `NEO_PLUGINS_DIR` when running from a read-only prefix (containers, packages).

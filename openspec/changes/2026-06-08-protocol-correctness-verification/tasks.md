@@ -265,7 +265,7 @@
         `neo-wallets`).
       - `neo_execution::StorageItem` / `StorageKey` (4
         occurrences) — should be
-        `neo_data_cache::{StorageItem, StorageKey}`.
+        `neo_storage::{StorageItem, StorageKey}`.
       - `Wallet` trait (4 occurrences) — should be
         `neo_wallets::Wallet` or similar.
       - `AssetDescriptor` (2 occurrences) — find canonical home

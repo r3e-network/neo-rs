@@ -285,7 +285,10 @@ mod tests {
     #[test]
     fn no_gb9c_indic_conjuncts_stay_split() {
         assert_eq!(text_element_count("\u{0915}\u{094D}\u{0915}"), 2);
-        assert_eq!(text_element_count("\u{0915}\u{094D}\u{0915}\u{094D}\u{0915}"), 3);
+        assert_eq!(
+            text_element_count("\u{0915}\u{094D}\u{0915}\u{094D}\u{0915}"),
+            3
+        );
         // Bengali RA + virama + MA.
         assert_eq!(text_element_count("\u{09B0}\u{09CD}\u{09AE}"), 2);
         // Khmer with coeng.
@@ -324,14 +327,15 @@ mod tests {
         // GB12/GB13: regional indicators pair up.
         assert_eq!(text_element_count("\u{1F1FA}\u{1F1F8}"), 1);
         assert_eq!(text_element_count("\u{1F1E6}\u{1F1E7}\u{1F1E8}"), 2);
-        assert_eq!(text_element_count("\u{1F1E6}\u{1F1E7}\u{1F1E8}\u{1F1E9}"), 2);
+        assert_eq!(
+            text_element_count("\u{1F1E6}\u{1F1E7}\u{1F1E8}\u{1F1E9}"),
+            2
+        );
         // Keycap: digit + VS16 + COMBINING ENCLOSING KEYCAP.
         assert_eq!(text_element_count("1\u{FE0F}\u{20E3}"), 1);
         // Tag sequence (flag of Scotland).
         assert_eq!(
-            text_element_count(
-                "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}"
-            ),
+            text_element_count("\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}"),
             1
         );
         // Empty string.

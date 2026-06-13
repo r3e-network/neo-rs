@@ -5,7 +5,7 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{register_jump_handlers, JumpTable};
+use crate::jump_table::{JumpTable, register_jump_handlers};
 use crate::stack_item::{Array, Map, StackItem, Struct};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
@@ -220,7 +220,7 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",
-            ))
+            ));
         }
     }
 
@@ -732,7 +732,10 @@ fn before543_checked_index(type_name: &str, key: &StackItem, length: usize) -> V
 
 /// REMOVE, pre-543 (C# `Remove_Before543`): array/struct out-of-range is an
 /// uncatchable `InvalidOperationException`.
-pub(crate) fn remove_before543(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+pub(crate) fn remove_before543(
+    engine: &mut ExecutionEngine,
+    _instruction: &Instruction,
+) -> VmResult<()> {
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -773,7 +776,10 @@ pub(crate) fn remove_before543(engine: &mut ExecutionEngine, _instruction: &Inst
 
 /// HASKEY, pre-543 (C# `HasKey_Before543`): a negative index is an uncatchable
 /// `InvalidOperationException`; an in-range index pushes the membership bool.
-pub(crate) fn has_key_before543(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+pub(crate) fn has_key_before543(
+    engine: &mut ExecutionEngine,
+    instruction: &Instruction,
+) -> VmResult<()> {
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -828,7 +834,10 @@ pub(crate) fn has_key_before543(engine: &mut ExecutionEngine, instruction: &Inst
 
 /// PICKITEM, pre-543 (C# `PickItem_Before543`): out-of-range is a
 /// `CatchableException`, but an `i32`-overflowing index faults uncatchably.
-pub(crate) fn pick_item_before543(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+pub(crate) fn pick_item_before543(
+    engine: &mut ExecutionEngine,
+    _instruction: &Instruction,
+) -> VmResult<()> {
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -878,7 +887,10 @@ pub(crate) fn pick_item_before543(engine: &mut ExecutionEngine, _instruction: &I
 
 /// SETITEM, pre-543 (C# `SetItem_Before543`): out-of-range is a
 /// `CatchableException`, but an `i32`-overflowing index faults uncatchably.
-pub(crate) fn set_item_before543(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+pub(crate) fn set_item_before543(
+    engine: &mut ExecutionEngine,
+    instruction: &Instruction,
+) -> VmResult<()> {
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;

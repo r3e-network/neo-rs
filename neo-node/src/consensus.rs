@@ -10,7 +10,7 @@
 //! `BlockData::assemble_block`) are verified in neo-consensus; the end-to-end
 //! multi-node consensus behaviour is exercised only in a real deployment.
 //!
-//! Behind the `wip` feature.
+//! Compiled as part of the default daemon feature set.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,12 +22,13 @@ use neo_consensus::messages::ConsensusPayload;
 use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
 use neo_crypto::{ECPoint, Secp256r1Crypto};
 use neo_mempool::MemoryPool;
-use neo_native_contracts::LedgerContract;
+use neo_native_contracts::{LedgerContract, neo_token};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256};
-use neo_redeem_script::signature_redeem_script;
+use neo_vm::script_builder::signature_redeem_script;
 use neo_storage::persistence::DataCache;
+use parking_lot::RwLock;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -101,7 +102,8 @@ pub fn extensible_to_consensus(
         return None;
     }
     let signature = signature_from_invocation_script(&ext.witness.invocation_script)?;
-    let payload = ConsensusPayload::from_message_bytes(network, &ext.data, signature.to_vec()).ok()?;
+    let payload =
+        ConsensusPayload::from_message_bytes(network, &ext.data, signature.to_vec()).ok()?;
     let validator = validators.get(payload.validator_index as usize)?;
     if validator.script_hash != ext.sender {
         return None;
@@ -111,16 +113,7 @@ pub fn extensible_to_consensus(
 
 // ===================== validator-set + key derivation =====================
 
-/// Builds the ordered dBFT validator set from the protocol settings.
-///
-/// C# dBFT uses `NEO.GetNextBlockValidators(...).OrderBy(p => p)`, which at
-/// genesis reduces to `StandbyCommittee.Take(ValidatorsCount).OrderBy(p => p)`.
-/// `standby_validators()` does the `Take(N)` but NOT the sort; the validator
-/// **index** (and thus primary selection + `NextConsensus`) depends on the
-/// sorted order, so the keys are sorted here.
-pub fn build_consensus_validators(settings: &ProtocolSettings) -> Vec<ValidatorInfo> {
-    let mut keys: Vec<ECPoint> = settings.standby_validators();
-    keys.sort();
+fn validator_infos_from_keys(keys: Vec<ECPoint>) -> Vec<ValidatorInfo> {
     keys.into_iter()
         .enumerate()
         .map(|(index, public_key)| {
@@ -134,15 +127,32 @@ pub fn build_consensus_validators(settings: &ProtocolSettings) -> Vec<ValidatorI
         .collect()
 }
 
+/// Builds the ordered dBFT validator set from the protocol settings.
+///
+/// C# dBFT uses `NEO.GetNextBlockValidators(...).OrderBy(p => p)`, which at
+/// genesis reduces to `StandbyCommittee.Take(ValidatorsCount).OrderBy(p => p)`.
+/// `standby_validators()` does the `Take(N)` but NOT the sort; the validator
+/// **index** (and thus primary selection) depends on the sorted order, so the
+/// keys are sorted here.
+pub fn build_consensus_validators(settings: &ProtocolSettings) -> Vec<ValidatorInfo> {
+    let mut keys: Vec<ECPoint> = settings.standby_validators();
+    keys.sort();
+    validator_infos_from_keys(keys)
+}
+
 /// Finds this node's validator index by deriving its public key from the
 /// private key and matching it against the (sorted) validator set. `None` when
 /// this node is not a consensus validator (it then only relays).
 pub fn resolve_my_index(private_key: &[u8; 32], validators: &[ValidatorInfo]) -> Option<u8> {
     let pub_bytes = Secp256r1Crypto::derive_public_key(private_key).ok()?;
     let my_pubkey = ECPoint::from_bytes(&pub_bytes).ok()?;
+    resolve_public_key_index(&my_pubkey, validators)
+}
+
+fn resolve_public_key_index(public_key: &ECPoint, validators: &[ValidatorInfo]) -> Option<u8> {
     validators
         .iter()
-        .find(|v| v.public_key == my_pubkey)
+        .find(|v| &v.public_key == public_key)
         .map(|v| v.index)
 }
 
@@ -150,6 +160,8 @@ pub fn resolve_my_index(private_key: &[u8; 32], validators: &[ValidatorInfo]) ->
 pub struct ConsensusSetup {
     /// The ordered dBFT validator set.
     pub validators: Vec<ValidatorInfo>,
+    /// This node's public key, derived from `private_key`.
+    pub public_key: ECPoint,
     /// This node's validator index, or `None` (observer; relay-only).
     pub my_index: Option<u8>,
     /// This node's 32-byte secp256r1 private key.
@@ -180,11 +192,17 @@ pub fn build_consensus_setup(
         .as_slice()
         .try_into()
         .map_err(|_| anyhow::anyhow!("[consensus].private_key_hex must be 32 bytes"))?;
+    let public_key = ECPoint::from_bytes(
+        &Secp256r1Crypto::derive_public_key(&private_key)
+            .map_err(|e| anyhow::anyhow!("failed to derive consensus public key: {e}"))?,
+    )
+    .map_err(|e| anyhow::anyhow!("failed to decode consensus public key: {e}"))?;
 
     let validators = build_consensus_validators(settings);
     let my_index = resolve_my_index(&private_key, &validators);
     Ok(Some(ConsensusSetup {
         validators,
+        public_key,
         my_index,
         private_key,
         network: settings.network,
@@ -214,12 +232,34 @@ fn resolve_transactions(
     Some(out)
 }
 
-/// Reads the current ledger tip from `snapshot` → `(next_block_index, prev_hash)`.
-fn ledger_tip(snapshot: &DataCache) -> (u32, UInt256) {
+/// Reads the current ledger tip from `snapshot` →
+/// `(next_block_index, prev_hash, prev_timestamp)`.
+fn ledger_tip(snapshot: &DataCache) -> (u32, UInt256, u64) {
     let ledger = LedgerContract::new();
     let height = ledger.current_index(snapshot).unwrap_or(0);
     let prev_hash = ledger.current_hash(snapshot).unwrap_or_default();
-    (height + 1, prev_hash)
+    let prev_timestamp = ledger
+        .get_trimmed_block(snapshot, &prev_hash)
+        .ok()
+        .flatten()
+        .map(|block| block.header.timestamp())
+        .unwrap_or(0);
+    (height + 1, prev_hash, prev_timestamp)
+}
+
+fn round_validator_context(
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    block_index: u32,
+) -> anyhow::Result<(Vec<ValidatorInfo>, UInt160)> {
+    let validators_count = usize::try_from(settings.validators_count).unwrap_or(0);
+    let validators = validator_infos_from_keys(neo_token::next_block_validators(
+        snapshot,
+        validators_count,
+    )?);
+    let next_consensus =
+        neo_token::next_consensus_address_for_block(snapshot, settings, block_index)?;
+    Ok((validators, next_consensus))
 }
 
 /// The single-task consensus driver: owns the `ConsensusService` (so no lock is
@@ -231,7 +271,9 @@ struct ConsensusDriver {
     blockchain: BlockchainHandle,
     mempool: Arc<MemoryPool>,
     network: NetworkHandle,
-    validators: Vec<ValidatorInfo>,
+    settings: Arc<ProtocolSettings>,
+    validators: Arc<RwLock<Vec<ValidatorInfo>>>,
+    public_key: ECPoint,
     /// The `prev_hash` of the round currently being driven (carried into
     /// `assemble_block` — the stored snapshot does not advance, so the tip is
     /// tracked from `start`/`Imported` rather than re-read).
@@ -241,15 +283,41 @@ struct ConsensusDriver {
 }
 
 impl ConsensusDriver {
+    fn configure_round(
+        &mut self,
+        snapshot: &DataCache,
+        block_index: u32,
+    ) -> anyhow::Result<UInt160> {
+        let (validators, next_consensus) =
+            round_validator_context(snapshot, &self.settings, block_index)?;
+        let my_index = resolve_public_key_index(&self.public_key, &validators);
+        self.service.update_validators(validators.clone(), my_index);
+        *self.validators.write() = validators;
+        Ok(next_consensus)
+    }
+
     async fn run(mut self, startup_snapshot: Arc<DataCache>) {
         // C# `ConsensusContext.Reset`: first round is height+1 over the tip.
-        let (block_index, prev_hash) = ledger_tip(&startup_snapshot);
+        let (block_index, prev_hash, prev_timestamp) = ledger_tip(&startup_snapshot);
+        let next_consensus = match self.configure_round(&startup_snapshot, block_index) {
+            Ok(next_consensus) => next_consensus,
+            Err(err) => {
+                warn!(target: "neo", %err, "consensus round context unavailable");
+                return;
+            }
+        };
         self.current_prev_hash = prev_hash;
-        match self.service.start(block_index, now_millis(), prev_hash, BLOCK_VERSION) {
+        match self.service.start_with_block_context(
+            block_index,
+            now_millis(),
+            prev_hash,
+            prev_timestamp,
+            next_consensus,
+            BLOCK_VERSION,
+        ) {
             Ok(()) => info!(target: "neo", block_index, "consensus started"),
             Err(err) => {
-                info!(target: "neo", %err, "consensus not started (not a validator); driver idle");
-                return;
+                info!(target: "neo", %err, block_index, "consensus not started; driver idle");
             }
         }
 
@@ -274,11 +342,26 @@ impl ConsensusDriver {
                 // A block persisted (locally committed or peer-synced) → next round.
                 ev = persist_rx.recv() => {
                     match ev {
-                        Ok(RuntimeEvent::Imported { hash, height }) => {
+                        Ok(RuntimeEvent::Imported { hash, height, timestamp }) => {
+                            let block_index = height + 1;
+                            let next_consensus = match self.configure_round(&startup_snapshot, block_index) {
+                                Ok(next_consensus) => next_consensus,
+                                Err(err) => {
+                                    warn!(target: "neo", %err, block_index, "consensus round context unavailable");
+                                    continue;
+                                }
+                            };
                             self.current_prev_hash = hash;
                             self.proposal_txs.clear();
-                            match self.service.start(height + 1, now_millis(), hash, BLOCK_VERSION) {
-                                Ok(()) => info!(target: "neo", block_index = height + 1, "consensus restarted"),
+                            match self.service.start_with_block_context(
+                                block_index,
+                                now_millis(),
+                                hash,
+                                timestamp,
+                                next_consensus,
+                                BLOCK_VERSION,
+                            ) {
+                                Ok(()) => info!(target: "neo", block_index, "consensus restarted"),
                                 Err(err) => info!(target: "neo", %err, "consensus next round not started"),
                             }
                         }
@@ -301,7 +384,11 @@ impl ConsensusDriver {
     async fn on_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
             ConsensusEvent::BroadcastMessage(payload) => {
-                if let Some(ext) = consensus_to_extensible(&payload, &self.validators) {
+                let ext = {
+                    let validators = self.validators.read();
+                    consensus_to_extensible(&payload, &validators)
+                };
+                if let Some(ext) = ext {
                     let _ = self.network.broadcast_extensible(ext).await;
                 }
             }
@@ -309,14 +396,34 @@ impl ConsensusDriver {
                 let mut hashes = Vec::new();
                 for item in self.mempool.verified_snapshot().into_iter().take(max_count) {
                     let hash = item.hash();
-                    self.proposal_txs.insert(hash, Arc::clone(&item.transaction));
+                    self.proposal_txs
+                        .insert(hash, Arc::clone(&item.transaction));
                     hashes.push(hash);
                 }
                 if let Err(err) = self.service.on_transactions_received(hashes) {
                     warn!(target: "neo", %err, "consensus on_transactions_received failed");
                 }
             }
-            ConsensusEvent::BlockCommitted { block_index, block_data, .. } => {
+            ConsensusEvent::RequestProposalTransactions {
+                transaction_hashes, ..
+            } => {
+                let mut available = Vec::new();
+                for hash in transaction_hashes {
+                    if let Some(item) = self.mempool.get_verified(&hash) {
+                        self.proposal_txs
+                            .insert(hash, Arc::clone(&item.transaction));
+                        available.push(hash);
+                    }
+                }
+                if let Err(err) = self.service.on_transactions_received(available) {
+                    warn!(target: "neo", %err, "consensus on_transactions_received failed");
+                }
+            }
+            ConsensusEvent::BlockCommitted {
+                block_index,
+                block_data,
+                ..
+            } => {
                 let txs = match resolve_transactions(
                     &block_data.transaction_hashes,
                     &self.proposal_txs,
@@ -330,6 +437,7 @@ impl ConsensusDriver {
                 };
                 match block_data.assemble_block(BLOCK_VERSION, self.current_prev_hash, txs) {
                     Ok(block) => {
+                        self.current_prev_hash = block.header.hash();
                         let block = Arc::new(block);
                         // Persist through the C# Blockchain.Persist pipeline; the
                         // validators already signed, so it is pre-verified.
@@ -347,10 +455,16 @@ impl ConsensusDriver {
                         info!(target: "neo", block_index, "consensus produced + submitted block");
                         // The next round restarts off the RuntimeEvent::Imported.
                     }
-                    Err(err) => error!(target: "neo", block_index, %err, "consensus block assembly failed"),
+                    Err(err) => {
+                        error!(target: "neo", block_index, %err, "consensus block assembly failed")
+                    }
                 }
             }
-            ConsensusEvent::ViewChanged { block_index, old_view, new_view } => {
+            ConsensusEvent::ViewChanged {
+                block_index,
+                old_view,
+                new_view,
+            } => {
                 info!(target: "neo", block_index, old_view, new_view, "consensus view changed");
             }
         }
@@ -367,11 +481,11 @@ pub fn spawn_consensus_driver(
     blockchain: BlockchainHandle,
     mempool: Arc<MemoryPool>,
     network: NetworkHandle,
+    settings: Arc<ProtocolSettings>,
+    validators: Arc<RwLock<Vec<ValidatorInfo>>>,
     startup_snapshot: Arc<DataCache>,
     inbound_rx: mpsc::Receiver<ConsensusPayload>,
 ) -> Option<tokio::task::JoinHandle<()>> {
-    setup.my_index?;
-
     // Generously sized: a commit emits BroadcastMessage(Commit) + BlockCommitted
     // back-to-back via the consensus crate's non-blocking try_send.
     let (event_tx, event_rx) = mpsc::channel::<ConsensusEvent>(1024);
@@ -392,7 +506,9 @@ pub fn spawn_consensus_driver(
         blockchain,
         mempool,
         network,
-        validators: setup.validators,
+        settings,
+        validators,
+        public_key: setup.public_key,
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };
@@ -417,9 +533,9 @@ mod tests {
         let signature = vec![0xABu8; 64];
         let mut original = ConsensusPayload::new(
             settings.network,
-            7,             // block_index
+            7, // block_index
             validator_index,
-            0,             // view_number
+            0, // view_number
             neo_consensus::ConsensusMessageType::Commit,
             vec![0x01, 0x02, 0x03], // body
         );
@@ -430,11 +546,13 @@ mod tests {
         assert_eq!(ext.valid_block_end, 7);
         assert_eq!(ext.sender, validators[validator_index as usize].script_hash);
 
-        let decoded =
-            extensible_to_consensus(&ext, settings.network, &validators).expect("decode");
+        let decoded = extensible_to_consensus(&ext, settings.network, &validators).expect("decode");
         assert_eq!(decoded.block_index, 7);
         assert_eq!(decoded.validator_index, validator_index);
-        assert_eq!(decoded.message_type, neo_consensus::ConsensusMessageType::Commit);
+        assert_eq!(
+            decoded.message_type,
+            neo_consensus::ConsensusMessageType::Commit
+        );
         assert_eq!(decoded.data, vec![0x01, 0x02, 0x03]);
         assert_eq!(decoded.witness, signature);
     }
@@ -457,7 +575,10 @@ mod tests {
         let settings = ProtocolSettings::default();
         let validators = build_consensus_validators(&settings);
         for pair in validators.windows(2) {
-            assert!(pair[0].public_key <= pair[1].public_key, "validators must be sorted");
+            assert!(
+                pair[0].public_key <= pair[1].public_key,
+                "validators must be sorted"
+            );
         }
         for (i, v) in validators.iter().enumerate() {
             assert_eq!(v.index as usize, i);
@@ -469,8 +590,22 @@ mod tests {
     #[test]
     fn setup_gating() {
         let settings = ProtocolSettings::default();
-        assert!(build_consensus_setup(&settings, false, None).unwrap().is_none());
+        assert!(
+            build_consensus_setup(&settings, false, None)
+                .unwrap()
+                .is_none()
+        );
         assert!(build_consensus_setup(&settings, true, None).is_err());
         assert!(build_consensus_setup(&settings, true, Some("zz")).is_err());
+
+        let non_validator_key = hex::encode([0x11u8; 32]);
+        let setup = build_consensus_setup(&settings, true, Some(&non_validator_key))
+            .unwrap()
+            .expect("consensus configured");
+        assert!(
+            setup.my_index.is_none(),
+            "key is not in the startup validator set"
+        );
+        assert!(!setup.validators.is_empty());
     }
 }

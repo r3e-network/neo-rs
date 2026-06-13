@@ -41,15 +41,15 @@
 //!   of the interoperable `HashIndexState` stack item:
 //!   `Struct[ByteString(hash), Integer(index)]`.
 
-use neo_data_cache::{DataCache, StorageItem, StorageKey};
 use neo_error::{CoreError, CoreResult};
 use neo_io::Serializable;
+use neo_native_contracts::LedgerContract;
 use neo_native_contracts::ledger_contract::{
     serialize_conflict_stub, serialize_hash_index_state, serialize_persisted_transaction_state,
 };
-use neo_native_contracts::LedgerContract;
 use neo_payloads::{Block, Transaction, TransactionAttribute, TrimmedBlock};
 use neo_primitives::{UInt160, UInt256};
+use neo_storage::{DataCache, StorageItem, StorageKey};
 use neo_vm_rs::VmState as VMState;
 
 /// C# `LedgerContract.Prefix_BlockHash` (9).
@@ -134,16 +134,21 @@ pub(crate) fn write_on_persist_records(
     // Prefix_Block: hash → TrimmedBlock.Create(block).ToArray().
     let mut tx_hashes = Vec::with_capacity(block.transactions.len());
     for tx in &block.transactions {
-        tx_hashes.push(tx.try_hash().map_err(|e| {
-            CoreError::invalid_operation(format!("ledger records: tx hash: {e}"))
-        })?);
+        tx_hashes.push(
+            tx.try_hash().map_err(|e| {
+                CoreError::invalid_operation(format!("ledger records: tx hash: {e}"))
+            })?,
+        );
     }
     let trimmed = TrimmedBlock::new(block.header.clone(), tx_hashes.clone());
     let mut writer = neo_io::BinaryWriter::new();
     trimmed
         .serialize(&mut writer)
         .map_err(|e| CoreError::serialization(format!("ledger records: trimmed block: {e}")))?;
-    cache.add(block_key(block_hash), StorageItem::from_bytes(writer.into_bytes()));
+    cache.add(
+        block_key(block_hash),
+        StorageItem::from_bytes(writer.into_bytes()),
+    );
 
     // Per-transaction records + conflict stubs, in block order (later
     // writes overwrite earlier ones, exactly like the C# loop).
@@ -167,7 +172,11 @@ pub(crate) fn write_on_persist_records(
         for conflict_hash in &conflict_hashes {
             upsert(cache, transaction_key(conflict_hash), stub.clone());
             for signer in &signers {
-                upsert(cache, conflict_signer_key(conflict_hash, signer), stub.clone());
+                upsert(
+                    cache,
+                    conflict_signer_key(conflict_hash, signer),
+                    stub.clone(),
+                );
             }
         }
     }
@@ -263,7 +272,10 @@ mod tests {
 
         // Current-block pointer.
         assert_eq!(ledger.current_index(&cache).expect("current_index"), 7);
-        assert_eq!(ledger.current_hash(&cache).expect("current_hash"), block_hash);
+        assert_eq!(
+            ledger.current_hash(&cache).expect("current_hash"),
+            block_hash
+        );
     }
 
     /// Byte-level pin of the C# `LedgerContract.OnPersistAsync` /
@@ -329,19 +341,34 @@ mod tests {
         let tx_bytes = tx_writer.into_bytes();
         assert!(tx_bytes.len() < 0xFD);
         let mut expected_record = vec![
-            0x41, 0x03, 0x21, 0x04, 0x04, 0x03, 0x02, 0x01, // Integer 0x01020304 LE
-            0x28, tx_bytes.len() as u8,
+            0x41,
+            0x03,
+            0x21,
+            0x04,
+            0x04,
+            0x03,
+            0x02,
+            0x01, // Integer 0x01020304 LE
+            0x28,
+            tx_bytes.len() as u8,
         ];
         expected_record.extend_from_slice(&tx_bytes);
         expected_record.extend_from_slice(&[0x21, 0x00]); // VMState::NONE
         assert_eq!(raw(&transaction_key(&tx_hash)), expected_record);
 
         // After execution the record is rewritten with HALT (= 1).
-        update_transaction_vm_state(&cache, 0x0102_0304, &tx, &tx_hash, VMState::HALT)
-            .unwrap();
+        update_transaction_vm_state(&cache, 0x0102_0304, &tx, &tx_hash, VMState::HALT).unwrap();
         let mut expected_halt = vec![
-            0x41, 0x03, 0x21, 0x04, 0x04, 0x03, 0x02, 0x01,
-            0x28, tx_bytes.len() as u8,
+            0x41,
+            0x03,
+            0x21,
+            0x04,
+            0x04,
+            0x03,
+            0x02,
+            0x01,
+            0x28,
+            tx_bytes.len() as u8,
         ];
         expected_halt.extend_from_slice(&tx_bytes);
         expected_halt.extend_from_slice(&[0x21, 0x01, 0x01]);
@@ -387,7 +414,10 @@ mod tests {
             .get_transaction_state(&cache, &conflict_hash)
             .expect("read stub")
             .expect("stub present");
-        assert!(stub.transaction.is_none(), "conflict stub has no transaction");
+        assert!(
+            stub.transaction.is_none(),
+            "conflict stub has no transaction"
+        );
         assert_eq!(stub.block_index, 3);
 
         // The signer-suffixed stub exists with the same payload.

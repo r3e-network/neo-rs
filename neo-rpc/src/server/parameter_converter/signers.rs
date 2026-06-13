@@ -1,18 +1,19 @@
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
 use neo_crypto::{ECCurve, ECPoint};
+use neo_p2p::witness_rule::WitnessRule;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_payloads::witness::Witness;
-use neo_primitives::{WitnessScope};
-use neo_p2p::witness_rule::WitnessRule;
-use neo_json::JToken;
+use neo_primitives::WitnessScope;
+use neo_serialization::json::JToken;
 
 use super::super::model::SignersAndWitnesses;
 use super::super::rpc_exception::RpcException;
 use super::{
-    expect_array, expect_object, expect_string, invalid_params, jtoken_to_serde, parse_address,
-    parse_uint160, ConversionContext};
+    ConversionContext, expect_array, expect_object, expect_string, invalid_params, jtoken_to_serde,
+    parse_address, parse_uint160,
+};
 
 pub(super) fn parse_signers_and_witnesses(
     token: &JToken,
@@ -21,7 +22,7 @@ pub(super) fn parse_signers_and_witnesses(
     let array = expect_array(token)?;
     if array.count() > MAX_TRANSACTION_ATTRIBUTES {
         return Err(invalid_params("Max allowed signers exceeded"));
-   }
+    }
 
     let mut signers = Vec::with_capacity(array.count());
     let mut witnesses = Vec::new();
@@ -40,12 +41,12 @@ pub(super) fn parse_signers_and_witnesses(
             if !matches!(witness_token, JToken::Null) {
                 let witness = parse_witness(witness_token)?;
                 witnesses.push(witness);
-           }
-       } else if obj.contains_property("invocation") || obj.contains_property("verification") {
+            }
+        } else if obj.contains_property("invocation") || obj.contains_property("verification") {
             let witness = parse_witness(token)?;
             witnesses.push(witness);
-       }
-   }
+        }
+    }
 
     Ok(SignersAndWitnesses::new(signers, witnesses))
 }
@@ -70,7 +71,8 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
         scopes,
         allowed_contracts: Vec::new(),
         allowed_groups: Vec::new(),
-        rules: Vec::new()};
+        rules: Vec::new(),
+    };
 
     if scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
         if let Some(contracts_token) = obj.get("allowedcontracts") {
@@ -82,13 +84,12 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                     let contract = item
                         .as_ref()
                         .ok_or_else(|| invalid_params("Null contract entry"))?;
-                    let text =
-                        expect_string(contract, "Allowed contract entries must be strings")?;
+                    let text = expect_string(contract, "Allowed contract entries must be strings")?;
                     parse_uint160(&text)
-               })
+                })
                 .collect::<Result<Vec<_>, _>>()?;
-       }
-   }
+        }
+    }
 
     if scopes.contains(WitnessScope::CUSTOM_GROUPS) {
         if let Some(groups_token) = obj.get("allowedgroups") {
@@ -105,10 +106,10 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                         .map_err(|_| invalid_params("Invalid ECPoint"))?;
                     ECPoint::new(ECCurve::Secp256r1, bytes)
                         .map_err(|e| invalid_params(format!("Invalid ECPoint: {e}")))
-               })
+                })
                 .collect::<Result<Vec<_>, _>>()?;
-       }
-   }
+        }
+    }
 
     if scopes.contains(WitnessScope::WITNESS_RULES) {
         if let Some(rules_token) = obj.get("rules") {
@@ -123,10 +124,10 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                     let json = jtoken_to_serde(value);
                     WitnessRule::from_json(&json)
                         .map_err(|e| invalid_params(format!("Invalid witness rule: {e}")))
-               })
+                })
                 .collect::<Result<Vec<_>, _>>()?;
-       }
-   }
+        }
+    }
 
     Ok(signer)
 }
@@ -140,7 +141,7 @@ fn parse_witness(token: &JToken) -> Result<Witness, RpcException> {
             BASE64_STANDARD
                 .decode(text.trim())
                 .map_err(|_| invalid_params("Invalid invocation script"))
-       })
+        })
         .transpose()?
         .unwrap_or_default();
 
@@ -151,7 +152,7 @@ fn parse_witness(token: &JToken) -> Result<Witness, RpcException> {
             BASE64_STANDARD
                 .decode(text.trim())
                 .map_err(|_| invalid_params("Invalid verification script"))
-       })
+        })
         .transpose()?
         .unwrap_or_default();
 
@@ -162,14 +163,14 @@ pub(super) fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcExcepti
     let cleaned = text.replace(' ', "");
     if cleaned.is_empty() {
         return Ok(WitnessScope::NONE);
-   }
+    }
 
     let mut value: u8 = 0;
     for part in cleaned.split(['|', ',']) {
         let part = part.trim();
         if part.is_empty() {
             continue;
-       }
+        }
         let flag = match part {
             "None" => 0x00,
             "CalledByEntry" => WitnessScope::CALLED_BY_ENTRY.bits(),
@@ -177,15 +178,16 @@ pub(super) fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcExcepti
             "CustomGroups" => WitnessScope::CUSTOM_GROUPS.bits(),
             "WitnessRules" => WitnessScope::WITNESS_RULES.bits(),
             "Global" => WitnessScope::GLOBAL.bits(),
-            other => return Err(invalid_params(format!("Unknown witness scope: {other}")))};
+            other => return Err(invalid_params(format!("Unknown witness scope: {other}"))),
+        };
 
         if flag == WitnessScope::GLOBAL.bits() && value != 0 {
             return Err(invalid_params(
                 "Global scope cannot be combined with other scopes",
             ));
-       }
+        }
         value |= flag;
-   }
+    }
 
     WitnessScope::from_byte(value)
         .ok_or_else(|| invalid_params(format!("Invalid witness scope combination: {text}")))

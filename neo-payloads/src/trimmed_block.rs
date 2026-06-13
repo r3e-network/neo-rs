@@ -205,16 +205,31 @@ mod tests {
         let fields = item.as_array().unwrap();
         assert_eq!(fields.len(), 10, "C# ToStackItem produces a 10-field Array");
 
-        assert_eq!(fields[0].as_bytes().unwrap(), block.header.hash().to_bytes());
+        assert_eq!(
+            fields[0].as_bytes().unwrap(),
+            block.header.hash().to_bytes()
+        );
         assert_eq!(fields[1].as_int().unwrap(), BigInt::from(7));
-        assert_eq!(fields[2].as_bytes().unwrap(), block.header.prev_hash().to_bytes());
-        assert_eq!(fields[3].as_bytes().unwrap(), block.header.merkle_root().to_bytes());
-        assert_eq!(fields[4].as_int().unwrap(), BigInt::from(0x0123_4567_89AB_CDEFu64));
+        assert_eq!(
+            fields[2].as_bytes().unwrap(),
+            block.header.prev_hash().to_bytes()
+        );
+        assert_eq!(
+            fields[3].as_bytes().unwrap(),
+            block.header.merkle_root().to_bytes()
+        );
+        assert_eq!(
+            fields[4].as_int().unwrap(),
+            BigInt::from(0x0123_4567_89AB_CDEFu64)
+        );
         // Nonce is u64::MAX: must stay a positive BigInteger, not wrap to -1.
         assert_eq!(fields[5].as_int().unwrap(), BigInt::from(u64::MAX));
         assert_eq!(fields[6].as_int().unwrap(), BigInt::from(123_456));
         assert_eq!(fields[7].as_int().unwrap(), BigInt::from(3));
-        assert_eq!(fields[8].as_bytes().unwrap(), block.header.next_consensus().to_bytes());
+        assert_eq!(
+            fields[8].as_bytes().unwrap(),
+            block.header.next_consensus().to_bytes()
+        );
         assert_eq!(fields[9].as_int().unwrap(), BigInt::from(2));
     }
 

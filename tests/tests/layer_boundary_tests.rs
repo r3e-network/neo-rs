@@ -3,10 +3,10 @@
 //! Validates the architectural layering of the neo-rs workspace:
 //!
 //! ```text
-//! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-json, neo-storage, neo-io, neo-config
+//! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-serialization, neo-storage, neo-io, neo-config
 //! Layer 1 (Crypto): neo-crypto (depends on Layer 0)
 //! Layer 2 (Protocol): neo-core, neo-p2p, neo-consensus
-//! Layer 3 (Services): neo-rpc, neo-telemetry, neo-tee
+//! Layer 3 (Services): neo-rpc, neo-tee
 //! Layer 4 (Application): neo-node, neo-cli
 //! ```
 
@@ -18,7 +18,6 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Layer {
     Foundation = 0,
-    Crypto = 1,
     Protocol = 2,
     Services = 3,
     Application = 4,
@@ -28,7 +27,9 @@ impl Layer {
     fn from_crate_name(name: &str) -> Option<Self> {
         match name {
             // Layer 0: Foundation (no neo-* dependencies allowed)
-            "neo-primitives" | "neo-json" | "neo-storage" | "neo-config" => Some(Layer::Foundation),
+            "neo-primitives" | "neo-serialization" | "neo-storage" | "neo-config" => {
+                Some(Layer::Foundation)
+            }
             // neo-io is special: can depend on neo-primitives only
             "neo-io" => Some(Layer::Foundation),
             // Layer 1: Crypto (depends on Layer 0 only).
@@ -42,7 +43,7 @@ impl Layer {
             // Layer 2: Protocol (includes extracted sub-crates)
             "neo-p2p" | "neo-consensus" | "neo-core" => Some(Layer::Protocol),
             // Layer 3: Services
-            "neo-rpc" | "neo-telemetry" | "neo-tee" => Some(Layer::Services),
+            "neo-rpc" | "neo-tee" => Some(Layer::Services),
             // Layer 5: Application
             "neo-node" | "neo-cli" => Some(Layer::Application),
             _ => None,
@@ -124,8 +125,8 @@ fn test_layer_0_has_no_neo_dependencies() {
 
     // These Layer 0 crates should have NO neo-* dependencies (strict foundation)
     // neo-primitives: absolute foundation, no neo-* deps
-    // neo-json: JSON handling, no neo-* deps
-    let strict_layer_0 = ["neo-primitives", "neo-json"];
+    // neo-serialization: JSON handling, no neo-* deps
+    let strict_layer_0 = ["neo-primitives", "neo-serialization"];
 
     for crate_name in &strict_layer_0 {
         let cargo_toml = workspace_root.join(crate_name).join("Cargo.toml");
@@ -395,7 +396,7 @@ fn test_storage_key_builder() {
 
 #[test]
 fn test_json_object_creation() {
-    use neo_json::{JObject, JToken};
+    use neo_serialization::json::{JObject, JToken};
 
     // Test JObject creation and property access
     let mut obj = JObject::new();

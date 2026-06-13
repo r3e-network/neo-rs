@@ -33,6 +33,8 @@ pub enum BlockchainEvent {
         hash: UInt256,
         /// Height the block was assigned in the canonical chain.
         height: u32,
+        /// Imported block timestamp in milliseconds since Unix epoch.
+        timestamp: u64,
     },
     /// A previously imported block was reverted (re-org, rollback, …).
     Reverted {
@@ -63,10 +65,12 @@ mod tests {
         let a = BlockchainEvent::Imported {
             hash: UInt256::default(),
             height: 7,
+            timestamp: 1_000,
         };
         let b = BlockchainEvent::Imported {
             hash: UInt256::default(),
             height: 7,
+            timestamp: 1_000,
         };
         assert_eq!(a, b);
         assert_ne!(
@@ -74,6 +78,7 @@ mod tests {
             BlockchainEvent::Imported {
                 hash: UInt256::default(),
                 height: 8,
+                timestamp: 1_000,
             }
         );
         assert_ne!(a, BlockchainEvent::Shutdown);

@@ -16,7 +16,6 @@ description = "Canonical home for the Neo transaction memory pool, PoolItem, tra
 [dependencies]
 neo-primitives = { workspace = true }
 neo-payloads = { workspace = true }
-neo-data-cache = { workspace = true }
 neo-config = { workspace = true }
 neo-error = { workspace = true }
 neo-storage = { workspace = true }
@@ -26,8 +25,6 @@ neo-crypto = { workspace = true }
 # readers, redeem-script recognizers, strict script validation, the
 # oracle fixed script, and the NEP-17 account-state codec.
 neo-native-contracts = { workspace = true }
-neo-redeem-script = { workspace = true }
-neo-script-builder = { workspace = true }
 neo-serialization = { workspace = true }
 neo-vm = { workspace = true }
 neo-vm-rs = { workspace = true }

@@ -1,4 +1,4 @@
-use crate::{serializable::Serializable, var_int, IoResult};
+use crate::{IoResult, serializable::Serializable, var_int};
 use bytes::BufMut;
 
 /// A sequential binary writer for serializing Neo protocol data in little-endian format.
@@ -96,6 +96,18 @@ impl BinaryWriter {
     /// Writes a `u64` in little-endian byte order.
     pub fn write_u64(&mut self, value: u64) -> IoResult<()> {
         self.buffer.put_u64_le(value);
+        Ok(())
+    }
+
+    /// Writes an `f32` in little-endian byte order.
+    pub fn write_f32(&mut self, value: f32) -> IoResult<()> {
+        self.buffer.put_f32_le(value);
+        Ok(())
+    }
+
+    /// Writes an `f64` in little-endian byte order.
+    pub fn write_f64(&mut self, value: f64) -> IoResult<()> {
+        self.buffer.put_f64_le(value);
         Ok(())
     }
 

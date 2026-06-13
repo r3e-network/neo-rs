@@ -1,15 +1,13 @@
 use super::super::{OracleService, OracleServiceSettings};
 use neo_crypto::{ECCurve, ECPoint, Secp256r1Crypto};
-use neo_payloads::{
-    OracleResponse, OracleResponseCode, Signer, Transaction, Witness,
-};
-use neo_storage::{StorageKey, DataCache};
+use neo_payloads::{OracleResponse, OracleResponseCode, Signer, Transaction, Witness};
+use neo_storage::{DataCache, StorageKey};
 
-use neo_io::Serializable;
 use neo_config::ProtocolSettings;
+use neo_io::Serializable;
 use neo_native_contracts::{LedgerContract, OracleRequest};
-use neo_storage::StorageItem;
 use neo_primitives::{UInt160, UInt256, WitnessScope};
+use neo_storage::StorageItem;
 use neo_vm_rs::VmState as VMState;
 
 fn sample_point(byte: u8) -> ECPoint {
@@ -29,13 +27,12 @@ fn seed_transaction_state(
     // Seed through the canonical ledger codec (the C# interoperable
     // `TransactionState` layout) so the fixture stays byte-identical
     // to what the persist pipeline writes.
-    let record =
-        neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
-            block_index,
-            VMState::NONE,
-            tx,
-        )
-        .expect("transaction state record");
+    let record = neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+        block_index,
+        VMState::NONE,
+        tx,
+    )
+    .expect("transaction state record");
 
     let mut key = Vec::with_capacity(1 + 32);
     key.push(11);
@@ -44,54 +41,14 @@ fn seed_transaction_state(
     snapshot.add(storage_key, StorageItem::from_bytes(record));
 }
 
-/// Seed a minimal deployable Oracle contract into the snapshot so the
-/// fee-computation path (which loads the contract from
-/// ContractManagement) can find it. The contract has a single
-/// `verify` method that immediately returns true (`PUSH1 RET`).
-fn seed_oracle_contract(snapshot: &DataCache) {
-    use neo_manifest::{
-        ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor,
-        ContractParameterDefinition, ContractPermission, NefFile, WildCardContainer,
-    };
-    use neo_primitives::ContractParameterType;
+/// Seed the persisted native Oracle contract record into the snapshot so
+/// `verify` executes through `System.Contract.CallNative`, including the
+/// C# `[ContractMethod(CpuFee = 1 << 15)]` charge.
+fn seed_oracle_contract(snapshot: &DataCache, settings: &ProtocolSettings) {
+    use neo_execution::native_contract::build_native_contract_state;
     use neo_native_contracts::{ContractManagement, OracleContract};
-    use neo_execution::ContractState;
 
-    let _ = ContractEventDescriptor::default();
-
-    let nef = NefFile::new(
-        "native".to_string(),
-        vec![neo_vm_rs::OpCode::PUSH1.byte(), neo_vm_rs::OpCode::RET.byte()],
-    );
-
-    let verify_method = ContractMethodDescriptor::new(
-        "verify".to_string(),
-        Vec::<ContractParameterDefinition>::new(),
-        ContractParameterType::Boolean,
-        0,
-        false,
-    )
-    .expect("verify method");
-
-    let abi = ContractAbi::new(vec![verify_method], Vec::new());
-
-    let manifest = ContractManifest {
-        name: "OracleContract".to_string(),
-        groups: Vec::new(),
-        features: std::collections::HashMap::new(),
-        supported_standards: Vec::new(),
-        abi,
-        permissions: vec![ContractPermission::default_wildcard()],
-        trusts: WildCardContainer::default(),
-        extra: None,
-    };
-
-    let state = ContractState::new(
-        OracleContract::ID,
-        OracleContract::new().hash(),
-        nef,
-        manifest,
-    );
+    let state = build_native_contract_state(&OracleContract::new(), settings, 0);
 
     let bytes = state
         .serialize_contract_record()
@@ -104,14 +61,6 @@ fn seed_oracle_contract(snapshot: &DataCache) {
     snapshot.add(storage_key, StorageItem::from_bytes(bytes));
 }
 
-
-#[test]
-#[ignore = "exact C# fee-math parity requires the full native OracleContract \
-           implementation (verify script + manifest size) which is provided by \
-           neo-blockchain's persistence pipeline rather than the read-only \
-           native-contract surface this crate exposes; the storage-seeding path \
-           validated by this test does work end-to-end (the test now reaches \
-           the fee-assertion stage rather than the contract-lookup stage)."]
 #[test]
 fn create_response_tx_matches_csharp_fee_math() {
     let settings = std::sync::Arc::new(ProtocolSettings::testnet());
@@ -142,11 +91,12 @@ fn create_response_tx_matches_csharp_fee_math() {
         network: settings.network,
         ..Default::default()
     };
-    let service = OracleService::new(oracle_settings, std::sync::Arc::new(system)).expect("oracle service");
+    let service =
+        OracleService::new(oracle_settings, std::sync::Arc::new(system)).expect("oracle service");
     let snapshot = service.snapshot_cache();
 
     seed_transaction_state(&snapshot, &request.original_tx_id, &origin_tx, 1);
-    seed_oracle_contract(&snapshot);
+    seed_oracle_contract(&snapshot, settings.as_ref());
 
     let oracle_nodes = vec![sample_point(0x01)];
     let mut response = OracleResponse::new(1, OracleResponseCode::Success, vec![0x00]);
@@ -162,7 +112,7 @@ fn create_response_tx_matches_csharp_fee_math() {
         .expect("response tx");
 
     assert_eq!(166, tx.size());
-    // Post-fix values (commit 4f599eb2 corrected 30Ã— cpu_fee undercharge to match C#).
+    // Native Oracle verify contributes `(1 << 15) * ExecFeeFactor`, matching C#.
     assert_eq!(2_198_650, tx.network_fee());
     assert_eq!(97_801_350, tx.system_fee());
 

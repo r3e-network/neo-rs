@@ -6,33 +6,27 @@
 //! there is no actor framework, no `Box<dyn Any>` downcasting, no
 //! per-message `Handle<T>` impls.
 //!
-//! Stage B keeps the implementations minimal: full handler logic
-//! (block validation, transaction admission, …) will be ported in
-//! later stages as the dependencies on the rest of the workspace
-//! (native contracts, the state service, the mempool) are
-//! progressively re-anchored on the new service abstractions.
+//! The handlers own the service-side Neo protocol decisions: block/header
+//! sequencing, native persistence, transaction admission, extensible payload
+//! verification, and cache maintenance.
 
 use std::sync::Arc;
 
 use neo_payloads::{
-    block::Block, extensible_payload::ExtensiblePayload, header::Header, Block as PayloadBlock,
-    InventoryType, Transaction,
+    Transaction, block::Block, extensible_payload::ExtensiblePayload, header::Header,
 };
 use neo_primitives::verify_result::VerifyResult;
-use parking_lot::Mutex;
-use tokio::sync::oneshot;
 use tracing::{debug, warn};
 
-use crate::command::BlockchainCommand;
+use crate::PreverifyCompleted;
+use crate::command::AddTransactionReply;
 use crate::fill_memory_pool::FillMemoryPool;
 use crate::import::Import;
-use crate::internal::{classify_import_block, ImportDisposition};
+use crate::internal::{ImportDisposition, classify_import_block};
 use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
 use crate::reverify::Reverify;
-use crate::command::AddTransactionReply;
-use crate::service::{BlockchainService, MempoolLike};
-use crate::PreverifyCompleted;
+use crate::service::BlockchainService;
 
 impl BlockchainService {
     /// Handle a [`BlockchainCommand::PersistCompleted`]. The actor's
@@ -84,6 +78,7 @@ impl BlockchainService {
             .send(crate::RuntimeEvent::Imported {
                 hash: _hash,
                 height: index,
+                timestamp: block.header.timestamp(),
             })
             .ok();
     }
@@ -215,14 +210,35 @@ impl BlockchainService {
 
             // Flush the block's native-persist writes to the durable store.
             self.system.commit_to_store();
+
+            // Drop the block's transactions from the pool + evict conflicts
+            // (C# MemPool.UpdatePoolForBlockPersisted).
+            self.mempool.lock().block_persisted(block.as_ref());
+
+            let drained = self.handle_drain_unverified_blocks().await;
+            if drained > 0 {
+                debug!(target: "neo", drained, "drained parked unverified blocks after import");
+            }
         }
     }
 
     /// Handle a [`BlockchainCommand::FillMemoryPool`] request.
-    pub(crate) async fn handle_fill_memory_pool(&self, _fill: FillMemoryPool) {
-        // Stage B: the actual mempool ingestion logic is the next
-        // stage. The handler is a no-op for now so the command loop
-        // stays round-trip-able.
+    pub(crate) async fn handle_fill_memory_pool(&self, fill: FillMemoryPool) {
+        let mut accepted = 0usize;
+        let mut rejected = 0usize;
+        for transaction in fill.transactions {
+            if self.on_new_transaction(&transaction).is_success() {
+                accepted += 1;
+            } else {
+                rejected += 1;
+            }
+        }
+        debug!(
+            target: "neo",
+            accepted,
+            rejected,
+            "fill memory pool completed"
+        );
     }
 
     /// Handle a [`BlockchainCommand::Reverify`] request.
@@ -258,7 +274,6 @@ impl BlockchainService {
         pre_verified: bool,
     ) -> Result<(), String> {
         let index = block.index();
-        let hash = Self::try_block_hash(block.as_ref())?;
         let current_height = self.ledger.current_height();
 
         if index <= current_height {
@@ -278,27 +293,65 @@ impl BlockchainService {
                 current_height,
                 "inventory block is ahead of the chain tip; parking"
             );
+            self.park_unverified_block(block, relay, pre_verified);
             return Ok(());
+        }
+
+        self.persist_next_expected_block(block, relay, pre_verified)
+            .await?;
+        let drained = self.handle_drain_unverified_blocks().await;
+        if drained > 0 {
+            debug!(target: "neo", drained, "drained parked unverified blocks");
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn persist_next_expected_block(
+        &self,
+        block: Arc<Block>,
+        relay: bool,
+        pre_verified: bool,
+    ) -> Result<(), String> {
+        let index = block.index();
+        let hash = Self::try_block_hash(block.as_ref())?;
+        let current_height = self.ledger.current_height();
+
+        if index <= current_height {
+            return Ok(());
+        }
+
+        if index != current_height + 1 {
+            return Err(format!(
+                "block {index} is not the next expected height {}",
+                current_height + 1
+            ));
         }
 
         // Stateless block-integrity pre-checks before persisting a peer-relayed
         // block (the structural half of C# `Block.Verify`): version, transaction
-        // count, merkle root, and duplicate transactions. (neo-chain validators.)
-        if let Err(error) = neo_chain::block_validation::validate_block_version(block.version()) {
+        // count, merkle root, and duplicate transactions.
+        if let Err(error) = crate::block_validation::validate_block_version(block.version()) {
             return Err(format!("block {index} has an invalid version: {error}"));
         }
-        if let Err(error) = neo_chain::block_validation::validate_transaction_count(block.as_ref())
-        {
-            return Err(format!("block {index} exceeds the transaction limit: {error}"));
+        let settings = self.system.settings();
+        if let Err(error) = crate::block_validation::validate_transaction_count_raw_with_limit(
+            block.transactions.len(),
+            settings.max_transactions_per_block as usize,
+        ) {
+            return Err(format!(
+                "block {index} exceeds the transaction limit: {error}"
+            ));
         }
         let tx_hashes: Vec<neo_primitives::UInt256> =
             block.transactions.iter().map(|tx| tx.hash()).collect();
         if let Err(error) =
-            neo_chain::block_validation::validate_merkle_root(block.header.merkle_root(), &tx_hashes)
+            crate::block_validation::validate_merkle_root(block.header.merkle_root(), &tx_hashes)
         {
-            return Err(format!("block {index} failed merkle-root validation: {error}"));
+            return Err(format!(
+                "block {index} failed merkle-root validation: {error}"
+            ));
         }
-        if let Err(error) = neo_chain::block_validation::validate_no_duplicate_transactions(&tx_hashes)
+        if let Err(error) = crate::block_validation::validate_no_duplicate_transactions(&tx_hashes)
         {
             return Err(format!("block {index} has duplicate transactions: {error}"));
         }
@@ -310,7 +363,6 @@ impl BlockchainService {
         // produced (pre-verified) blocks from the consensus driver skip this.
         if !pre_verified {
             if let Some(snapshot) = self.system.store_snapshot() {
-                let settings = self.system.settings();
                 if i32::from(block.header.primary_index()) >= settings.validators_count {
                     return Err(format!("block {index}: primary index out of range"));
                 }
@@ -339,7 +391,9 @@ impl BlockchainService {
                 )
                 .is_err()
                 {
-                    return Err(format!("block {index}: consensus witness verification failed"));
+                    return Err(format!(
+                        "block {index}: consensus witness verification failed"
+                    ));
                 }
             }
         }
@@ -361,8 +415,17 @@ impl BlockchainService {
         // tip advances and a restart resumes from here rather than genesis.
         self.system.commit_to_store();
 
+        // C# Blockchain.Persist → MemPool.UpdatePoolForBlockPersisted: drop the
+        // block's transactions from the pool and evict pooled conflicts, so
+        // mined txs are no longer served to peers or re-proposed by consensus.
+        self.mempool.lock().block_persisted(block.as_ref());
+
         self.event_tx
-            .send(crate::RuntimeEvent::Imported { hash, height: index })
+            .send(crate::RuntimeEvent::Imported {
+                hash,
+                height: index,
+                timestamp: block.header.timestamp(),
+            })
             .ok();
 
         let _ = relay; // relay broadcast is handled by the network service
@@ -401,7 +464,7 @@ impl BlockchainService {
     fn verify_extensible(
         payload: &ExtensiblePayload,
         settings: &neo_config::ProtocolSettings,
-        snapshot: &neo_data_cache::DataCache,
+        snapshot: &neo_storage::DataCache,
     ) -> Result<(), String> {
         use neo_payloads::VerifiableExt;
 
@@ -433,7 +496,7 @@ impl BlockchainService {
             );
             for validator in &validators {
                 whitelist.insert(neo_primitives::UInt160::from_script(
-                    &neo_redeem_script::signature_redeem_script(validator.as_bytes()),
+                    &neo_vm::script_builder::redeem_script::signature_redeem_script(validator.as_bytes()),
                 ));
             }
         }
@@ -446,7 +509,7 @@ impl BlockchainService {
             );
             for validator in &state_validators {
                 whitelist.insert(neo_primitives::UInt160::from_script(
-                    &neo_redeem_script::signature_redeem_script(validator.as_bytes()),
+                    &neo_vm::script_builder::redeem_script::signature_redeem_script(validator.as_bytes()),
                 ));
             }
         }
@@ -493,9 +556,17 @@ impl BlockchainService {
             }
         };
         if task.result == VerifyResult::Succeed {
-            self.ledger.insert_transaction(task.transaction).ok();
+            let result = self.on_new_transaction(&task.transaction);
+            debug!(
+                target: "neo",
+                %hash,
+                ?result,
+                relay = task.relay,
+                "preverified transaction admitted through mempool"
+            );
+            return;
         }
-        debug!(target: "neo", %hash, ?task.result, "preverify completed");
+        debug!(target: "neo", %hash, ?task.result, relay = task.relay, "preverify rejected transaction");
     }
 
     /// Handle a [`BlockchainCommand::Idle`] tick.
@@ -506,9 +577,10 @@ impl BlockchainService {
 
     /// Handle a [`BlockchainCommand::DrainUnverified`] tick.
     pub(crate) async fn handle_drain_unverified(&self) {
-        // Stage B: the unverified cache is owned by the actor's old
-        // struct. The new service does not own it yet; the handler
-        // is a no-op.
+        let drained = self.handle_drain_unverified_blocks().await;
+        if drained > 0 {
+            debug!(target: "neo", drained, "drained parked unverified blocks");
+        }
     }
 
     /// Handle a [`BlockchainCommand::RelayResult`] notification.
@@ -580,10 +652,7 @@ impl BlockchainService {
 
     /// Try to insert a transaction into the mempool. Used by the
     /// high-level `add_transaction` API.
-    pub(crate) async fn add_transaction(
-        &self,
-        transaction: Transaction,
-    ) -> AddTransactionReply {
+    pub(crate) async fn add_transaction(&self, transaction: Transaction) -> AddTransactionReply {
         let hash = match transaction.try_hash() {
             Ok(hash) => hash,
             Err(error) => {
@@ -610,7 +679,7 @@ impl BlockchainService {
             match self.system.store_snapshot() {
                 Some(snapshot) => pool.try_add(&transaction, snapshot.as_ref(), &settings),
                 None => {
-                    let snapshot = neo_data_cache::DataCache::new(false);
+                    let snapshot = neo_storage::DataCache::new(false);
                     pool.try_add(&transaction, &snapshot, &settings)
                 }
             }
@@ -618,9 +687,6 @@ impl BlockchainService {
 
         if result == VerifyResult::Succeed {
             self.ledger.insert_transaction(transaction.clone()).ok();
-            self.event_tx
-                .send(crate::RuntimeEvent::Imported { hash, height: 0 })
-                .ok();
         }
 
         AddTransactionReply { result, hash }
@@ -650,7 +716,7 @@ impl BlockchainService {
         let result = match self.system.store_snapshot() {
             Some(snapshot) => pool.try_add(transaction, snapshot.as_ref(), &settings),
             None => {
-                let snapshot = neo_data_cache::DataCache::new(false);
+                let snapshot = neo_storage::DataCache::new(false);
                 pool.try_add(transaction, &snapshot, &settings)
             }
         };
@@ -665,7 +731,7 @@ impl BlockchainService {
     /// Compute the hash of a block. Returns an error string when the
     /// header cannot be hashed (e.g. because it is missing).
     pub(crate) fn try_block_hash(block: &Block) -> Result<neo_primitives::UInt256, String> {
-        let mut header = block.header.clone();
+        let header = block.header.clone();
         header
             .try_hash()
             .map_err(|err| format!("hash computation failed: {err}"))
@@ -678,11 +744,15 @@ impl BlockchainService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::BlockchainCommand;
     use crate::handle::BlockchainHandle;
     use crate::header_cache::HeaderCache;
     use crate::ledger_context::LedgerContext;
+    use crate::service::MempoolLike;
     use crate::service_context::SystemContext;
     use neo_primitives::UInt256;
+    use parking_lot::Mutex;
+    use tokio::sync::oneshot;
 
     #[derive(Debug)]
     struct TestContext;
@@ -695,16 +765,44 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct ConfiguredTestContext {
+        settings: Arc<neo_config::ProtocolSettings>,
+    }
+    impl SystemContext for ConfiguredTestContext {
+        fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+            Arc::clone(&self.settings)
+        }
+        fn current_height(&self) -> u32 {
+            0
+        }
+    }
+
     #[derive(Debug, Default)]
     struct TestMempool;
     impl MempoolLike for TestMempool {
         fn try_add(
             &self,
             _tx: &Transaction,
-            _snapshot: &neo_data_cache::DataCache,
+            _snapshot: &neo_storage::DataCache,
             _settings: &neo_config::ProtocolSettings,
         ) -> VerifyResult {
             VerifyResult::Succeed
+        }
+    }
+
+    #[derive(Debug)]
+    struct FixedResultMempool {
+        result: VerifyResult,
+    }
+    impl MempoolLike for FixedResultMempool {
+        fn try_add(
+            &self,
+            _tx: &Transaction,
+            _snapshot: &neo_storage::DataCache,
+            _settings: &neo_config::ProtocolSettings,
+        ) -> VerifyResult {
+            self.result
         }
     }
 
@@ -716,10 +814,31 @@ mod tests {
         BlockchainService::with_defaults(system, ledger, header_cache, mempool)
     }
 
+    fn fixture_with_mempool_result(result: VerifyResult) -> (BlockchainService, BlockchainHandle) {
+        let system: Arc<dyn SystemContext> = Arc::new(TestContext);
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::default());
+        let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> =
+            Arc::new(Mutex::new(FixedResultMempool { result }));
+        BlockchainService::with_defaults(system, ledger, header_cache, mempool)
+    }
+
+    fn fixture_with_protocol_settings(
+        settings: neo_config::ProtocolSettings,
+    ) -> (BlockchainService, BlockchainHandle) {
+        let system: Arc<dyn SystemContext> = Arc::new(ConfiguredTestContext {
+            settings: Arc::new(settings),
+        });
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::default());
+        let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
+        BlockchainService::with_defaults(system, ledger, header_cache, mempool)
+    }
+
     /// [`SystemContext`] over a shared in-memory store snapshot, so the
     /// native persistence pipeline actually runs.
     struct StoreContext {
-        snapshot: Arc<neo_data_cache::DataCache>,
+        snapshot: Arc<neo_storage::DataCache>,
         settings: Arc<neo_config::ProtocolSettings>,
     }
     impl std::fmt::Debug for StoreContext {
@@ -734,20 +853,28 @@ mod tests {
         fn current_height(&self) -> u32 {
             0
         }
-        fn store_snapshot(&self) -> Option<Arc<neo_data_cache::DataCache>> {
+        fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
             Some(Arc::clone(&self.snapshot))
         }
     }
 
-    fn store_fixture() -> (BlockchainService, BlockchainHandle, Arc<neo_data_cache::DataCache>) {
+    fn store_fixture() -> (
+        BlockchainService,
+        BlockchainHandle,
+        Arc<neo_storage::DataCache>,
+    ) {
         store_fixture_with(neo_config::ProtocolSettings::default())
     }
 
     fn store_fixture_with(
         settings: neo_config::ProtocolSettings,
-    ) -> (BlockchainService, BlockchainHandle, Arc<neo_data_cache::DataCache>) {
+    ) -> (
+        BlockchainService,
+        BlockchainHandle,
+        Arc<neo_storage::DataCache>,
+    ) {
         neo_native_contracts::install();
-        let snapshot = Arc::new(neo_data_cache::DataCache::new(false));
+        let snapshot = Arc::new(neo_storage::DataCache::new(false));
         let system: Arc<dyn SystemContext> = Arc::new(StoreContext {
             snapshot: Arc::clone(&snapshot),
             settings: Arc::new(settings),
@@ -761,13 +888,95 @@ mod tests {
     }
 
     /// NEO total supply read (NEP-17 `Prefix_TotalSupply` = 11).
-    fn neo_total_supply(snapshot: &neo_data_cache::DataCache) -> Option<num_bigint::BigInt> {
+    fn neo_total_supply(snapshot: &neo_storage::DataCache) -> Option<num_bigint::BigInt> {
         snapshot
-            .get(&neo_data_cache::StorageKey::new(
+            .get(&neo_storage::StorageKey::new(
                 neo_native_contracts::NeoToken::ID,
                 vec![11],
             ))
             .map(|item| num_bigint::BigInt::from_signed_bytes_le(&item.value_bytes()))
+    }
+
+    fn transaction_with_nonce(nonce: u32) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_nonce(nonce);
+        tx.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+        tx
+    }
+
+    #[tokio::test]
+    async fn fill_memory_pool_admits_transactions_through_mempool() {
+        let (service, _handle) = fixture();
+        let tx1 = transaction_with_nonce(101);
+        let tx2 = transaction_with_nonce(102);
+        let hash1 = tx1.try_hash().expect("tx1 hash");
+        let hash2 = tx2.try_hash().expect("tx2 hash");
+
+        service
+            .handle_fill_memory_pool(FillMemoryPool {
+                transactions: vec![tx1, tx2],
+            })
+            .await;
+
+        assert!(service.ledger.get_transaction(&hash1).is_some());
+        assert!(service.ledger.get_transaction(&hash2).is_some());
+    }
+
+    #[tokio::test]
+    async fn preverify_completed_uses_mempool_verdict_before_caching() {
+        let (rejecting, _handle) = fixture_with_mempool_result(VerifyResult::PolicyFail);
+        let rejected = transaction_with_nonce(201);
+        let rejected_hash = rejected.try_hash().expect("rejected hash");
+        rejecting
+            .handle_preverify_completed(crate::PreverifyCompleted {
+                transaction: rejected,
+                relay: true,
+                result: VerifyResult::Succeed,
+            })
+            .await;
+        assert!(
+            rejecting.ledger.get_transaction(&rejected_hash).is_none(),
+            "state-dependent mempool rejection must not populate the ledger tx cache"
+        );
+
+        let (accepting, _handle) = fixture_with_mempool_result(VerifyResult::Succeed);
+        let accepted = transaction_with_nonce(202);
+        let accepted_hash = accepted.try_hash().expect("accepted hash");
+        accepting
+            .handle_preverify_completed(crate::PreverifyCompleted {
+                transaction: accepted,
+                relay: true,
+                result: VerifyResult::Succeed,
+            })
+            .await;
+        assert!(accepting.ledger.get_transaction(&accepted_hash).is_some());
+    }
+
+    #[tokio::test]
+    async fn inventory_block_respects_effective_protocol_transaction_limit() {
+        let mut settings = neo_config::ProtocolSettings::default();
+        settings.max_transactions_per_block = 1;
+        let (service, _handle) = fixture_with_protocol_settings(settings);
+
+        let mut tx_a = Transaction::new();
+        tx_a.set_nonce(1);
+        tx_a.set_script(vec![0x51]);
+        let mut tx_b = Transaction::new();
+        tx_b.set_nonce(2);
+        tx_b.set_script(vec![0x51]);
+
+        let mut header = Header::new();
+        header.set_index(1);
+        let mut block = Block::from_parts(header, vec![tx_a, tx_b]);
+        block.try_rebuild_merkle_root().expect("valid merkle root");
+
+        let error = service
+            .handle_block_inventory(Arc::new(block), false, true)
+            .await
+            .expect_err("block above the effective protocol transaction cap is rejected");
+
+        assert!(error.contains("exceeds the transaction limit"), "{error}");
+        assert!(error.contains("maximum 1"), "{error}");
     }
 
     #[tokio::test]
@@ -783,13 +992,19 @@ mod tests {
             Some(num_bigint::BigInt::from(100_000_000)),
             "genesis minted the NEO total supply"
         );
-        assert!(service.ledger.block_hash_at(0).is_some(), "genesis cached in the ledger");
+        assert!(
+            service.ledger.block_hash_at(0).is_some(),
+            "genesis cached in the ledger"
+        );
 
         // Re-initializing must NOT re-persist (the initialized probe
         // guards the C# `Ledger.Initialized` branch): the supply stays
         // 100M instead of doubling.
         service.initialize().await;
-        assert_eq!(neo_total_supply(&snapshot), Some(num_bigint::BigInt::from(100_000_000)));
+        assert_eq!(
+            neo_total_supply(&snapshot),
+            Some(num_bigint::BigInt::from(100_000_000))
+        );
 
         // An inventory block at the next height runs the OnPersist /
         // PostPersist native hooks over the same store: block 1 mints
@@ -808,18 +1023,66 @@ mod tests {
 
         let settings = neo_config::ProtocolSettings::default();
         let member = &settings.standby_committee[1];
-        let script = neo_redeem_script::signature_redeem_script(&member.to_bytes());
+        let script = neo_vm::script_builder::redeem_script::signature_redeem_script(&member.to_bytes());
         let account = neo_primitives::UInt160::from_script(&script);
         let mut key = vec![20u8]; // shared NEP-17 Prefix_Account
         key.extend_from_slice(&account.to_bytes());
         assert!(
             snapshot
-                .get(&neo_data_cache::StorageKey::new(
+                .get(&neo_storage::StorageKey::new(
                     neo_native_contracts::GasToken::ID,
                     key
                 ))
                 .is_some(),
             "block-1 PostPersist minted the rotating committee reward"
+        );
+    }
+
+    #[tokio::test]
+    async fn future_inventory_block_is_parked_then_drained_after_parent_persists() {
+        let (service, _handle, snapshot) = store_fixture();
+        service.initialize().await;
+
+        let settings = neo_config::ProtocolSettings::default();
+        let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+        let mut header1 = Header::new();
+        header1.set_index(1);
+        header1.set_prev_hash(genesis.hash());
+        header1.set_timestamp(genesis.header.timestamp() + 15_000);
+        header1.set_next_consensus(*genesis.header.next_consensus());
+        let block1 = Arc::new(Block::from_parts(header1, vec![]));
+        let block1_hash = BlockchainService::try_block_hash(block1.as_ref()).expect("block1 hash");
+
+        let mut header2 = Header::new();
+        header2.set_index(2);
+        header2.set_prev_hash(block1_hash);
+        header2.set_timestamp(genesis.header.timestamp() + 30_000);
+        header2.set_next_consensus(*genesis.header.next_consensus());
+        let block2 = Arc::new(Block::from_parts(header2, vec![]));
+
+        service
+            .handle_block_inventory(Arc::clone(&block2), false, true)
+            .await
+            .expect("future block is parked, not rejected");
+        assert_eq!(service.ledger.current_height(), 0);
+        assert_eq!(service.unverified_block_count(), 1);
+        assert!(service.ledger.block_hash_at(2).is_none());
+
+        service
+            .handle_block_inventory(block1, false, true)
+            .await
+            .expect("parent block persists and drains child");
+
+        assert_eq!(service.ledger.current_height(), 2);
+        assert_eq!(service.unverified_block_count(), 0);
+        assert!(service.ledger.block_hash_at(1).is_some());
+        assert!(service.ledger.block_hash_at(2).is_some());
+        assert_eq!(
+            neo_native_contracts::LedgerContract::new()
+                .current_index(&snapshot)
+                .expect("ledger current index"),
+            2
         );
     }
 
@@ -857,9 +1120,8 @@ mod tests {
         let mut sign_data = Vec::with_capacity(36);
         sign_data.extend_from_slice(&network.to_le_bytes());
         sign_data.extend_from_slice(&header.hash().to_bytes());
-        let signature =
-            neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
-        let verification = neo_redeem_script::multi_sig_redeem_script_from_points(1, &[point])
+        let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let verification = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(1, &[point])
             .expect("multisig script");
         let invocation = |sig: &[u8]| {
             let mut script = vec![0x0C, 64]; // PUSHDATA1 64
@@ -879,7 +1141,10 @@ mod tests {
             .handle_block_inventory(Arc::new(Block::from_parts(tampered, vec![])), false, false)
             .await
             .expect_err("tampered consensus witness must be rejected");
-        assert!(err.contains("witness"), "rejection names the witness: {err}");
+        assert!(
+            err.contains("witness"),
+            "rejection names the witness: {err}"
+        );
         assert_eq!(service.ledger.current_height(), 0);
 
         // Valid signature -> accepted and persisted.
@@ -890,6 +1155,79 @@ mod tests {
             .await
             .expect("validly signed peer block is accepted");
         assert_eq!(service.ledger.current_height(), 1);
+    }
+
+    /// Public `BlockchainHandle::import_block` is the RPC/user-submitted block
+    /// path, so it must wait for the service verdict and verify the consensus
+    /// witness instead of reporting success after merely queueing the command.
+    #[tokio::test]
+    async fn handle_import_block_reports_rejection_and_verifies_witness() {
+        let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+        let public_key =
+            neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+        let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+        let mut settings = neo_config::ProtocolSettings::default();
+        settings.standby_committee = vec![point.clone()];
+        settings.validators_count = 1;
+        let network = settings.network;
+
+        let (service, handle, _snapshot) = store_fixture_with(settings.clone());
+        service.initialize().await;
+        let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_prev_hash(genesis.hash());
+        header.set_timestamp(genesis.header.timestamp() + 15_000);
+        header.set_primary_index(0);
+        header.set_next_consensus(*genesis.header.next_consensus());
+
+        let mut sign_data = Vec::with_capacity(36);
+        sign_data.extend_from_slice(&network.to_le_bytes());
+        sign_data.extend_from_slice(&header.hash().to_bytes());
+        let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let verification = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(1, &[point])
+            .expect("multisig script");
+        let invocation = |sig: &[u8]| {
+            let mut script = vec![0x0C, 64];
+            script.extend_from_slice(sig);
+            script
+        };
+
+        let mut tampered_signature = signature.clone();
+        tampered_signature[10] ^= 0xFF;
+        let mut tampered_header = header.clone();
+        tampered_header.witness = neo_payloads::Witness::new_with_scripts(
+            invocation(&tampered_signature),
+            verification.clone(),
+        );
+
+        header.witness =
+            neo_payloads::Witness::new_with_scripts(invocation(&signature), verification);
+
+        let runner = tokio::spawn(service.run());
+
+        let rejected = handle
+            .import_block(Block::from_parts(tampered_header, vec![]))
+            .await
+            .expect("import command reply");
+        assert!(
+            !rejected,
+            "tampered witness must not be reported as imported"
+        );
+        assert_eq!(handle.get_height().await.expect("height reply"), 0);
+
+        let imported = handle
+            .import_block(Block::from_parts(header, vec![]))
+            .await
+            .expect("import command reply");
+        assert!(imported, "validly signed block advances the tip");
+        assert_eq!(handle.get_height().await.expect("height reply"), 1);
+
+        drop(handle);
+        runner
+            .await
+            .expect("service exits after command channel closes");
     }
 
     /// C# `Blockchain.OnNewExtensiblePayload`: an extensible payload signed by
@@ -909,7 +1247,7 @@ mod tests {
         let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
         service.initialize().await;
 
-        let verification = neo_redeem_script::signature_redeem_script(&public_key);
+        let verification = neo_vm::script_builder::redeem_script::signature_redeem_script(&public_key);
         let sender = neo_primitives::UInt160::from_script(&verification);
 
         let mut payload = ExtensiblePayload::new();
@@ -921,12 +1259,10 @@ mod tests {
         let mut sign_data = Vec::with_capacity(36);
         sign_data.extend_from_slice(&network.to_le_bytes());
         sign_data.extend_from_slice(&payload.hash().to_bytes());
-        let signature =
-            neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
         let mut invocation = vec![0x0C, 64];
         invocation.extend_from_slice(&signature);
-        payload.witness =
-            neo_payloads::Witness::new_with_scripts(invocation, verification.clone());
+        payload.witness = neo_payloads::Witness::new_with_scripts(invocation, verification.clone());
 
         // Out-of-range: height 0 is not inside [5, 10) -> rejected.
         let mut stale = payload.clone();
@@ -979,9 +1315,8 @@ mod tests {
         let mut sign_data = Vec::with_capacity(36);
         sign_data.extend_from_slice(&network.to_le_bytes());
         sign_data.extend_from_slice(&header.hash().to_bytes());
-        let signature =
-            neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
-        let verification = neo_redeem_script::multi_sig_redeem_script_from_points(1, &[point])
+        let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let verification = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(1, &[point])
             .expect("multisig script");
         let invocation = |sig: &[u8]| {
             let mut script = vec![0x0C, 64];
@@ -993,16 +1328,26 @@ mod tests {
         let mut tampered_sig = signature;
         tampered_sig[5] ^= 0xFF;
         let mut bad = header.clone();
-        bad.witness =
-            neo_payloads::Witness::new_with_scripts(invocation(&tampered_sig), verification.clone());
+        bad.witness = neo_payloads::Witness::new_with_scripts(
+            invocation(&tampered_sig),
+            verification.clone(),
+        );
         service.handle_headers(vec![bad]);
-        assert_eq!(service.header_cache.count(), 0, "tampered header is not cached");
+        assert_eq!(
+            service.header_cache.count(),
+            0,
+            "tampered header is not cached"
+        );
 
         // Valid witness -> cached.
         header.witness =
             neo_payloads::Witness::new_with_scripts(invocation(&signature), verification);
         service.handle_headers(vec![header]);
-        assert_eq!(service.header_cache.count(), 1, "validly signed header is cached");
+        assert_eq!(
+            service.header_cache.count(),
+            1,
+            "validly signed header is cached"
+        );
     }
 
     #[tokio::test]
@@ -1052,6 +1397,7 @@ mod tests {
                 BlockchainCommand::FillCompleted => unreachable!(),
                 BlockchainCommand::Reverify(_) => unreachable!(),
                 BlockchainCommand::InventoryBlock { .. } => unreachable!(),
+                BlockchainCommand::ImportBlock { .. } => unreachable!(),
                 BlockchainCommand::InventoryExtensible { .. } => unreachable!(),
                 BlockchainCommand::PreverifyCompleted(_) => unreachable!(),
                 BlockchainCommand::Headers(_) => unreachable!(),
@@ -1076,6 +1422,11 @@ mod tests {
             transaction: neo_payloads::Transaction::new(),
             reply: tx,
         };
+        let (ibtx, _ibrx) = oneshot::channel();
+        let _import_block = BlockchainCommand::ImportBlock {
+            block: Arc::new(Block::from_parts(Header::new(), vec![])),
+            reply: ibtx,
+        };
         let (htx, _hrx) = oneshot::channel();
         let _get_height = BlockchainCommand::GetHeight { reply: htx };
         let (bhx, _bhx_rx) = oneshot::channel();
@@ -1093,7 +1444,13 @@ mod tests {
         // discriminant — a regression test against accidental
         // discriminator reuse.
         let mut seen = std::collections::HashSet::new();
-        for cmd in [&_add_tx, &_get_height, &_get_block, &_get_block_h] {
+        for cmd in [
+            &_add_tx,
+            &_import_block,
+            &_get_height,
+            &_get_block,
+            &_get_block_h,
+        ] {
             assert!(seen.insert(mem::discriminant(cmd)));
         }
 
@@ -1101,7 +1458,7 @@ mod tests {
         // count above. Bump this when adding a new variant and
         // add a corresponding arm in both `exhaustive_dispatch` and
         // `BlockchainService::dispatch` in `service.rs`.
-        const EXPECTED_VARIANTS: usize = 17;
+        const EXPECTED_VARIANTS: usize = 18;
         assert!(seen.len() <= EXPECTED_VARIANTS);
 
         // Keep the helper symbol alive so the dispatch table is not

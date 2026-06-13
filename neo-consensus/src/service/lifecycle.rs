@@ -1,7 +1,8 @@
 use super::ConsensusService;
 use crate::messages::ConsensusPayload;
+use crate::service::helpers::compute_next_consensus_address;
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use tracing::{debug, info};
 
 impl ConsensusService {
@@ -13,6 +14,46 @@ impl ConsensusService {
         prev_hash: UInt256,
         version: u32,
     ) -> ConsensusResult<()> {
+        self.start_with_previous_timestamp(block_index, timestamp, prev_hash, 0, version)
+    }
+
+    /// Starts consensus for a new block with the previous header timestamp.
+    ///
+    /// The previous timestamp is required for C# Neo v3.10.0 parity:
+    /// `MakePrepareRequest` clamps the proposal timestamp to at least
+    /// `PrevHeader.Timestamp + 1`.
+    pub fn start_with_previous_timestamp(
+        &mut self,
+        block_index: u32,
+        timestamp: u64,
+        prev_hash: UInt256,
+        previous_block_timestamp: u64,
+        version: u32,
+    ) -> ConsensusResult<()> {
+        let next_consensus = compute_next_consensus_address(&self.context.validators);
+        self.start_with_block_context(
+            block_index,
+            timestamp,
+            prev_hash,
+            previous_block_timestamp,
+            next_consensus,
+            version,
+        )
+    }
+
+    /// Starts consensus for a new block with the full header context.
+    ///
+    /// `next_consensus` is the C# `ConsensusContext.Block.Header.NextConsensus`
+    /// value computed during `Reset(0)`.
+    pub fn start_with_block_context(
+        &mut self,
+        block_index: u32,
+        timestamp: u64,
+        prev_hash: UInt256,
+        previous_block_timestamp: u64,
+        next_consensus: UInt160,
+        version: u32,
+    ) -> ConsensusResult<()> {
         if self.context.my_index.is_none() {
             return Err(ConsensusError::NotValidator);
         }
@@ -20,13 +61,10 @@ impl ConsensusService {
         info!(block_index, "Starting consensus");
         self.context.reset_for_new_block(block_index, timestamp);
         self.context.prev_hash = prev_hash;
+        self.context.previous_block_timestamp = previous_block_timestamp;
+        self.context.next_consensus = next_consensus;
         self.context.version = version;
         self.running = true;
-
-        // If we're the primary, initiate block proposal
-        if self.context.is_primary() {
-            self.initiate_proposal(timestamp)?;
-        }
 
         Ok(())
     }
@@ -40,11 +78,25 @@ impl ConsensusService {
         prev_hash: UInt256,
         version: u32,
     ) -> ConsensusResult<()> {
+        let next_consensus = compute_next_consensus_address(&self.context.validators);
+        self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version)
+    }
+
+    /// Resumes consensus from a recovered context with the header `NextConsensus`
+    /// supplied by the caller.
+    pub fn resume_with_next_consensus(
+        &mut self,
+        timestamp: u64,
+        prev_hash: UInt256,
+        next_consensus: UInt160,
+        version: u32,
+    ) -> ConsensusResult<()> {
         if self.context.my_index.is_none() {
             return Err(ConsensusError::NotValidator);
         }
 
         self.context.prev_hash = prev_hash;
+        self.context.next_consensus = next_consensus;
         self.context.version = version;
         self.context.view_start_time = timestamp;
         self.context.state = if self.context.is_primary() {
@@ -54,12 +106,8 @@ impl ConsensusService {
         };
         self.running = true;
 
-        if self.context.is_primary() && !self.context.prepare_request_received {
-            self.initiate_proposal(timestamp)?;
-        } else {
-            self.check_prepare_responses()?;
-            self.check_commits()?;
-        }
+        self.check_prepare_responses()?;
+        self.check_commits()?;
 
         Ok(())
     }
@@ -154,8 +202,64 @@ impl ConsensusService {
             return Ok(());
         }
 
+        if self
+            .context
+            .my_index
+            .is_some_and(|idx| self.context.commits.contains_key(&idx))
+        {
+            let should_resend = self.context.commit_recovery_sent_at.map_or(
+                self.context.is_timed_out(timestamp),
+                |sent_at| {
+                    timestamp >= sent_at.saturating_add(self.context.commit_recovery_resend_delay())
+                },
+            );
+
+            if should_resend {
+                self.resend_recovery_message()?;
+                self.context.commit_recovery_sent_at = Some(timestamp);
+            }
+            return Ok(());
+        }
+
+        if self.context.is_primary() {
+            let prepare_deadline = self
+                .context
+                .view_start_time
+                .saturating_add(self.context.prepare_request_delay());
+            let primary_timeout = self
+                .context
+                .transaction_request_sent_at
+                .unwrap_or(prepare_deadline)
+                .saturating_add(self.context.prepare_request_follow_up_delay());
+
+            if !self.context.prepare_request_received {
+                if timestamp >= prepare_deadline && !self.context.transaction_request_sent {
+                    self.initiate_proposal(timestamp)?;
+                    return Ok(());
+                }
+                if timestamp < primary_timeout {
+                    return Ok(());
+                }
+            } else if timestamp < primary_timeout {
+                return Ok(());
+            }
+        }
+
         if self.context.is_timed_out(timestamp) {
-            self.request_change_view(ChangeViewReason::Timeout, timestamp)?;
+            if self
+                .context
+                .change_view_retry_at
+                .is_some_and(|retry_at| timestamp < retry_at)
+            {
+                return Ok(());
+            }
+
+            let reason = if self.context.has_missing_proposed_transactions() {
+                ChangeViewReason::TxNotFound
+            } else {
+                ChangeViewReason::Timeout
+            };
+            self.request_change_view(reason, timestamp)?;
         }
 
         Ok(())

@@ -2,8 +2,8 @@ use super::super::utils::{ledger_height, wallet_has_oracle_account};
 use super::super::{OracleService, OracleStatus};
 use neo_native_contracts::{Role, RoleManagement};
 use neo_wallets::Wallet;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tracing::{info, warn};
 
 impl OracleService {

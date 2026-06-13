@@ -38,6 +38,15 @@ thiserror = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+# Testable time source
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+
+# Mature arbitrary-precision decimal arithmetic (used by the
+# `big_decimal_bigdecimal` wrapper introduced in the
+# 2026-06-13-comprehensive-refactoring change, Phase C3).
+bigdecimal = { workspace = true }
+
 # NOTE: neo-primitives is a Layer 0 crate with NO neo-* dependencies
 # Serializable implementations for UInt160/UInt256 are in neo-io::serializable::primitives
 

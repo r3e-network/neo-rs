@@ -105,24 +105,12 @@ mod parity_tests {
     #[test]
     fn native_contract_hashes_match_csharp_derivation() {
         let zero = UInt160::default();
-        let cases: [(&str, UInt160); 11] = [
-            ("ContractManagement", *CONTRACT_MANAGEMENT_HASH),
-            ("StdLib", *STDLIB_HASH),
-            ("CryptoLib", *CRYPTO_LIB_HASH),
-            ("LedgerContract", *LEDGER_CONTRACT_HASH),
-            ("NeoToken", *NEO_TOKEN_HASH),
-            ("GasToken", *GAS_TOKEN_HASH),
-            ("PolicyContract", *POLICY_CONTRACT_HASH),
-            ("RoleManagement", *ROLE_MANAGEMENT_HASH),
-            ("OracleContract", *ORACLE_CONTRACT_HASH),
-            ("Notary", *NOTARY_HASH),
-            ("Treasury", *TREASURY_HASH),
-        ];
-        for (name, expected) in cases {
-            let derived = Helper::get_contract_hash(&zero, 0, name);
+        for spec in crate::standard_native_contract_specs() {
+            let derived = Helper::get_contract_hash(&zero, 0, spec.name);
             assert_eq!(
-                derived, expected,
-                "get_contract_hash(0, 0, {name:?}) diverged from the canonical Neo N3 hash"
+                derived, spec.hash,
+                "get_contract_hash(0, 0, {:?}) diverged from the canonical Neo N3 hash",
+                spec.name
             );
         }
     }
@@ -131,24 +119,13 @@ mod parity_tests {
     /// native contracts share storage and break consensus).
     #[test]
     fn native_contract_hashes_are_distinct() {
-        let all = [
-            *CONTRACT_MANAGEMENT_HASH,
-            *STDLIB_HASH,
-            *CRYPTO_LIB_HASH,
-            *LEDGER_CONTRACT_HASH,
-            *NEO_TOKEN_HASH,
-            *GAS_TOKEN_HASH,
-            *POLICY_CONTRACT_HASH,
-            *ROLE_MANAGEMENT_HASH,
-            *ORACLE_CONTRACT_HASH,
-            *NOTARY_HASH,
-            *TREASURY_HASH,
-        ];
+        let all = crate::standard_native_contract_specs();
         for i in 0..all.len() {
             for j in (i + 1)..all.len() {
                 assert_ne!(
-                    all[i], all[j],
-                    "duplicate native contract hash at indices {i}/{j}"
+                    all[i].hash, all[j].hash,
+                    "duplicate native contract hash for {} / {}",
+                    all[i].name, all[j].name
                 );
             }
         }
@@ -159,20 +136,24 @@ mod parity_tests {
     /// consensus. Pinned against the C# v3.9.1 reference (UT_NativeContract.cs).
     #[test]
     fn native_contract_ids_match_csharp() {
-        use crate::{
-            ContractManagement, CryptoLib, GasToken, LedgerContract, NeoToken, Notary,
-            OracleContract, PolicyContract, RoleManagement, StdLib, Treasury,
-        };
-        assert_eq!(ContractManagement::ID, -1);
-        assert_eq!(StdLib::ID, -2);
-        assert_eq!(CryptoLib::ID, -3);
-        assert_eq!(LedgerContract::ID, -4);
-        assert_eq!(NeoToken::ID, -5);
-        assert_eq!(GasToken::ID, -6);
-        assert_eq!(PolicyContract::ID, -7);
-        assert_eq!(RoleManagement::ID, -8);
-        assert_eq!(OracleContract::ID, -9);
-        assert_eq!(Notary::ID, -10);
-        assert_eq!(Treasury::ID, -11);
+        assert_eq!(
+            crate::standard_native_contract_specs()
+                .iter()
+                .map(|spec| (spec.name, spec.id))
+                .collect::<Vec<_>>(),
+            vec![
+                ("ContractManagement", -1),
+                ("StdLib", -2),
+                ("CryptoLib", -3),
+                ("LedgerContract", -4),
+                ("NeoToken", -5),
+                ("GasToken", -6),
+                ("PolicyContract", -7),
+                ("RoleManagement", -8),
+                ("OracleContract", -9),
+                ("Notary", -10),
+                ("Treasury", -11),
+            ]
+        );
     }
 }

@@ -1,7 +1,7 @@
 use super::memory_store::MemoryStore;
 use crate::persistence::{
-    read_only_store::ReadOnlyStoreGeneric, store::Store, store_snapshot::StoreSnapshot,
-    write_store::WriteStore, seek_direction::SeekDirection,
+    read_only_store::ReadOnlyStoreGeneric, seek_direction::SeekDirection, store::Store,
+    store_snapshot::StoreSnapshot, write_store::WriteStore,
 };
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
@@ -18,10 +18,7 @@ pub struct MemorySnapshot {
 
 impl MemorySnapshot {
     /// Creates a new MemorySnapshot.
-    pub fn new(
-        store: Arc<dyn Store>,
-        inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
-    ) -> Self {
+    pub fn new(store: Arc<dyn Store>, inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>) -> Self {
         let immutable_data = inner_data.read().clone();
         Self {
             store,

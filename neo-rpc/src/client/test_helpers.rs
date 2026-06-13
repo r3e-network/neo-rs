@@ -1,4 +1,4 @@
-use neo_json::{JObject, JToken};
+use neo_serialization::json::{JObject, JToken};
 use std::net::TcpListener;
 
 pub(super) fn localhost_binding_permitted() -> bool {

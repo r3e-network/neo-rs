@@ -2,30 +2,31 @@
 
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_primitives::BigDecimal;
 use neo_crypto::{ECCurve, ECPoint};
+use neo_execution::application_engine::ApplicationEngine;
+use neo_execution::contract::Contract;
+use neo_execution::contract_parameters_context::ContractParametersContext;
+use neo_execution::helper::Helper as ContractHelper;
+use neo_io::Serializable;
+use neo_manifest::CallFlags;
+use neo_native_contracts::{LedgerContract, NeoToken, PolicyContract};
 use neo_payloads::conflicts::Conflicts;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
-use neo_storage::persistence::DataCache;
-use neo_io::Serializable;
-use neo_script_builder::ScriptBuilder;
-use neo_execution::application_engine::ApplicationEngine;
-use neo_manifest::CallFlags;
-use neo_execution::helper::Helper as ContractHelper;
-use neo_native_contracts::{LedgerContract, NeoToken, PolicyContract};
+use neo_primitives::BigDecimal;
 use neo_primitives::TriggerType;
+use neo_primitives::{UInt160, WitnessScope};
+use neo_vm::script_builder::ScriptBuilder;
+use neo_storage::persistence::DataCache;
+use neo_vm_rs::OpCode;
+use neo_vm_rs::VmState as VMState;
 use neo_wallets::AssetDescriptor;
 use neo_wallets::wallet_helper as address_helper;
 use neo_wallets::{
-    KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet,
-    WalletAccount, WalletError, WalletResult};
-use neo_execution::contract::Contract;
-use neo_execution::contract_parameters_context::ContractParametersContext;
-use neo_primitives::{UInt160, WitnessScope};
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+    KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet, WalletAccount, WalletError,
+    WalletResult,
+};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use serde_json::{Map, Value, json};
@@ -42,7 +43,8 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{
     expect_base64_param_with_decode_message, expect_string_param, internal_error, invalid_params,
-    parse_uint160, parse_uint256};
+    parse_uint160, parse_uint256,
+};
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use crate::server::wallet_compat;
@@ -75,12 +77,12 @@ impl RpcServerWallet {
             "sendmany" => Self::send_many,
             "canceltransaction" => Self::cancel_transaction,
         ]
-   }
+    }
 
     fn close_wallet(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         server.set_wallet(None);
         Ok(Value::Bool(true))
-   }
+    }
 
     fn dump_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let address = expect_string_param(params, 0, "dumpprivkey")?;
@@ -88,31 +90,31 @@ impl RpcServerWallet {
         let wallet = Self::require_wallet(server)?;
         let account = wallet.get_account(&script_hash).ok_or_else(|| {
             RpcException::from(RpcError::unknown_account().with_data(script_hash.to_string()))
-       })?;
+        })?;
         if !account.has_key() {
             return Err(RpcException::from(
                 RpcError::unknown_account().with_data(format!("{script_hash} is watch-only")),
             ));
-       }
+        }
         let wif = account.export_wif().map_err(|err| {
             RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-       })?;
+        })?;
         Ok(Value::String(wif))
-   }
+    }
 
     fn get_new_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
         let key_pair = KeyPair::generate().map_err(|err| {
             RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-       })?;
+        })?;
         let wallet_clone = Arc::clone(&wallet);
         let key_bytes = Zeroizing::new(*key_pair.private_key());
         let account = Self::await_wallet_future(Box::pin(async move {
             wallet_clone.create_account(key_bytes.as_ref()).await
-       }))?;
+        }))?;
         Self::save_wallet(&wallet)?;
         Ok(Value::String(account.address()))
-   }
+    }
 
     fn get_wallet_balance(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let asset = parse_uint160(params, 0, "getwalletbalance")?;
@@ -123,7 +125,7 @@ impl RpcServerWallet {
         // asset, NEO and GAS included.
         let balance = Self::calculate_nep17_balance(server, &wallet, &asset)?;
         Ok(json!({"balance": balance.to_string()}))
-   }
+    }
 
     fn get_wallet_unclaimed_gas(
         server: &RpcServer,
@@ -136,7 +138,7 @@ impl RpcServerWallet {
             .current_index(store.data_cache())
             .map_err(|err| {
                 RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-           })?
+            })?
             .saturating_add(1);
         let neo_hash = NeoToken::script_hash();
         let snapshot = Arc::new(store.data_cache().clone());
@@ -154,9 +156,9 @@ impl RpcServerWallet {
             )
             .map_err(internal_error)?;
             total += gas;
-       }
+        }
         Ok(Value::String(total.to_string()))
-   }
+    }
 
     fn import_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let privkey = expect_string_param(params, 0, "importprivkey")?;
@@ -166,26 +168,26 @@ impl RpcServerWallet {
         let privkey_value = privkey;
         let account = Self::await_wallet_future(Box::pin(async move {
             wallet_clone.import_wif(&privkey_value).await
-       }))?;
+        }))?;
         Self::save_wallet(&wallet)?;
         Ok(Self::account_to_json(&account))
-   }
+    }
 
     fn list_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
         let mut entries = Vec::new();
         for account in wallet.get_accounts() {
             entries.push(Self::account_to_json(&account));
-       }
+        }
         Ok(Value::Array(entries))
-   }
+    }
 
     fn open_wallet(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let path = expect_string_param(params, 0, "openwallet")?;
         let password = expect_string_param(params, 1, "openwallet")?;
         if !Path::new(&path).exists() {
             return Err(RpcException::from(RpcError::wallet_not_found()));
-       }
+        }
         let system = server.system();
         let settings = system.settings();
         let wallet = Nep6Wallet::from_file(&path, &password, settings);
@@ -195,23 +197,23 @@ impl RpcServerWallet {
                 return Err(RpcException::from(
                     RpcError::wallet_not_supported().with_data("Invalid password."),
                 ));
-           }
+            }
             Err(WalletError::WalletFileNotFound(_)) => {
                 return Err(RpcException::from(RpcError::wallet_not_found()));
-           }
+            }
             Err(WalletError::Io(ref err)) if err.kind() == ErrorKind::NotFound => {
                 return Err(RpcException::from(RpcError::wallet_not_found()));
-           }
+            }
             Err(err) => {
                 return Err(RpcException::from(
                     RpcError::wallet_not_supported().with_data(err.to_string()),
                 ));
-           }
-       };
+            }
+        };
         let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
         server.set_wallet(Some(wallet_arc));
         Ok(Value::Bool(true))
-   }
+    }
 
     fn calculate_network_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let raw = expect_base64_param_with_decode_message(
@@ -224,7 +226,7 @@ impl RpcServerWallet {
             RpcException::from(
                 RpcError::invalid_params().with_data(format!("Invalid transaction: {err}")),
             )
-       })?;
+        })?;
         let system = server.system();
         let store = system.store_cache();
         let settings = system.settings();
@@ -234,8 +236,8 @@ impl RpcServerWallet {
                 wallet
                     .get_account(hash)
                     .and_then(|account| account.contract().map(|contract| contract.script.clone()))
-           })
-       };
+            })
+        };
         let fee = wallet_compat::calculate_network_fee(
             &transaction,
             store.data_cache(),
@@ -245,7 +247,7 @@ impl RpcServerWallet {
         )
         .map_err(|err| invalid_params(err.to_string()))?;
         Ok(json!({"networkfee": fee.to_string()}))
-   }
+    }
 
     fn send_from(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let _ = Self::require_wallet(server)?;
@@ -265,7 +267,7 @@ impl RpcServerWallet {
             signers.as_deref(),
         )
         .map_err(Self::send_from_transfer_error)
-   }
+    }
 
     fn send_to_address(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let _ = Self::require_wallet(server)?;
@@ -283,13 +285,13 @@ impl RpcServerWallet {
             signers.as_deref(),
         )
         .map_err(Self::invalid_operation_transfer_error)
-   }
+    }
 
     fn send_many(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
         if params.is_empty() {
             return Err(invalid_params("sendmany requires at least one argument"));
-       }
+        }
         let mut from: Option<UInt160> = None;
         let mut index = 0;
         if params[0].is_string() {
@@ -298,7 +300,7 @@ impl RpcServerWallet {
                 &expect_string_param(params, 0, "sendmany")?,
             )?);
             index = 1;
-       }
+        }
 
         let outputs_value = params.get(index).cloned().unwrap_or(Value::Null);
         let outputs_array = outputs_value
@@ -306,7 +308,7 @@ impl RpcServerWallet {
             .ok_or_else(|| invalid_params(format!("Invalid 'to' parameter: {outputs_value}")))?;
         if outputs_array.is_empty() {
             return Err(invalid_params("Argument 'to' can't be empty."));
-       }
+        }
 
         let signers = Self::parse_optional_signers(server, params, index + 1)?;
 
@@ -319,7 +321,7 @@ impl RpcServerWallet {
                 *asset,
             )
             .map_err(|err| err.to_string())
-       };
+        };
 
         let transfers = outputs_array
             .iter()
@@ -329,7 +331,7 @@ impl RpcServerWallet {
 
         Self::build_and_relay(server, &wallet, &transfers, from, signers.as_deref())
             .map_err(Self::invalid_operation_transfer_error)
-   }
+    }
 
     fn cancel_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let txid = parse_uint256(params, 0, "canceltransaction")?;
@@ -343,7 +345,7 @@ impl RpcServerWallet {
             return Err(RpcException::from(
                 RpcError::bad_request().with_data("No signer."),
             ));
-       }
+        }
 
         let mut signers = Vec::with_capacity(signers_array.len());
         for entry in signers_array {
@@ -352,7 +354,7 @@ impl RpcServerWallet {
                 .ok_or_else(|| invalid_params("canceltransaction signers must be strings"))?;
             let hash = Self::parse_script_hash(server, address)?;
             signers.push(Signer::new(hash, WitnessScope::NONE));
-       }
+        }
 
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
@@ -367,7 +369,7 @@ impl RpcServerWallet {
                 RpcError::already_exists()
                     .with_data("This tx is already confirmed, can't be cancelled."),
             ));
-       }
+        }
 
         let conflict_attr = TransactionAttribute::Conflicts(Conflicts::new(txid));
         let script = vec![OpCode::RET.byte()];
@@ -391,7 +393,7 @@ impl RpcServerWallet {
                 .max(conflict_tx.transaction.network_fee())
                 .saturating_add(1);
             tx.set_network_fee(bumped);
-       } else if let Some(extra_fee) = params.get(2).and_then(Value::as_str) {
+        } else if let Some(extra_fee) = params.get(2).and_then(Value::as_str) {
             // GAS has a fixed 8-decimal precision (C# NativeContract.GAS.Decimals).
             let decimals = 8u8;
             let (ok, fee) = BigDecimal::try_parse(extra_fee, decimals);
@@ -401,20 +403,20 @@ impl RpcServerWallet {
                 .ok_or_else(|| invalid_params("Incorrect amount format."))?;
             if !ok || fee.sign() <= 0 {
                 return Err(invalid_params("Incorrect amount format."));
-           }
+            }
             tx.set_network_fee(tx.network_fee().saturating_add(fee_amount));
-       }
+        }
 
         Self::sign_and_relay(server, &wallet, tx, snapshot_arc)
-   }
+    }
 
     fn parse_script_hash(server: &RpcServer, value: &str) -> Result<UInt160, RpcException> {
         if let Ok(hash) = UInt160::from_str(value) {
             return Ok(hash);
-       }
+        }
         let version = server.system().settings().address_version;
         address_helper::to_script_hash(value, version).map_err(invalid_params)
-   }
+    }
 
     fn parse_signers(server: &RpcServer, value: &Value) -> Result<Vec<Signer>, RpcException> {
         let array = value
@@ -427,9 +429,9 @@ impl RpcServerWallet {
                 .ok_or_else(|| invalid_params("signer entries must be strings"))?;
             let hash = Self::parse_script_hash(server, addr)?;
             signers.push(Signer::new(hash, WitnessScope::CALLED_BY_ENTRY));
-       }
+        }
         Ok(signers)
-   }
+    }
 
     fn parse_optional_signers(
         server: &RpcServer,
@@ -440,7 +442,7 @@ impl RpcServerWallet {
             .get(index)
             .map(|value| Self::parse_signers(server, value))
             .transpose()
-   }
+    }
 
     fn parse_send_many_output(
         server: &RpcServer,
@@ -467,12 +469,12 @@ impl RpcServerWallet {
             return Err(invalid_params(format!(
                 "Invalid 'to' parameter at {index}."
             )));
-       }
+        }
         if value.sign() <= 0 {
             return Err(invalid_params(format!(
                 "Amount of '{asset}' can't be negative."
             )));
-       }
+        }
         let address_str = obj
             .get("address")
             .and_then(|value| value.as_str())
@@ -482,22 +484,23 @@ impl RpcServerWallet {
             asset_id: asset,
             value,
             script_hash: to_hash,
-            data: None})
-   }
+            data: None,
+        })
+    }
 
     fn send_from_transfer_error(err: RpcException) -> RpcException {
         Self::map_insufficient_funds(err, |_| {
             RpcException::from(
                 RpcError::invalid_request().with_data("Can not process this request."),
             )
-       })
-   }
+        })
+    }
 
     fn invalid_operation_transfer_error(err: RpcException) -> RpcException {
         Self::map_insufficient_funds(err, |rpc_error| {
             RpcException::new(INVALID_OPERATION_HRESULT, rpc_error.error_message())
-       })
-   }
+        })
+    }
 
     fn map_insufficient_funds(
         err: RpcException,
@@ -506,10 +509,10 @@ impl RpcServerWallet {
         let rpc_error: RpcError = err.into();
         if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
             map_insufficient(rpc_error)
-       } else {
+        } else {
             RpcException::from(rpc_error)
-       }
-   }
+        }
+    }
 
     fn await_wallet_future<T: Send + 'static>(
         future: Pin<Box<dyn Future<Output = WalletResult<T>> + Send>>,
@@ -522,68 +525,69 @@ impl RpcServerWallet {
                         .build()
                         .map_err(|err| WalletError::Other(err.to_string()))?
                         .block_on(future)
-               })
+                })
                 .join()
                 .map_err(|_| {
                     RpcException::from(
                         RpcError::internal_server_error()
                             .with_data("wallet runtime thread panicked"),
                     )
-               })?,
+                })?,
                 RuntimeFlavor::MultiThread => {
                     tokio::task::block_in_place(move || handle.block_on(future))
-               }
-                _ => tokio::task::block_in_place(move || handle.block_on(future))}
-       } else {
+                }
+                _ => tokio::task::block_in_place(move || handle.block_on(future)),
+            }
+        } else {
             RuntimeBuilder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|err| {
                     RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-               })?
+                })?
                 .block_on(future)
-       };
+        };
         result.map_err(Self::wallet_failure)
-   }
+    }
 
     fn save_wallet(wallet: &Arc<dyn CoreWallet>) -> Result<(), RpcException> {
         let wallet_clone = Arc::clone(wallet);
-        Self::await_wallet_future(Box::pin(async move {wallet_clone.save().await}))
-   }
+        Self::await_wallet_future(Box::pin(async move { wallet_clone.save().await }))
+    }
 
     fn wallet_compat_failure(err: wallet_compat::WalletCompatError) -> RpcException {
         match err {
             wallet_compat::WalletCompatError::InsufficientFunds(_) => {
                 RpcException::from(RpcError::insufficient_funds_wallet())
-           }
+            }
             wallet_compat::WalletCompatError::Other(message) => {
                 RpcException::from(RpcError::wallet_not_supported().with_data(message))
-           }
-       }
-   }
+            }
+        }
+    }
 
     fn wallet_failure(err: WalletError) -> RpcException {
         match err {
             WalletError::InvalidPassword => {
                 RpcException::from(RpcError::wallet_not_supported().with_data("Invalid password."))
-           }
+            }
             WalletError::WalletFileNotFound(path) => {
                 RpcException::from(RpcError::wallet_not_found().with_data(path))
-           }
+            }
             WalletError::AccountNotFound(hash) => {
                 RpcException::from(RpcError::unknown_account().with_data(format!("{hash}")))
-           }
+            }
             WalletError::InsufficientFunds => {
                 RpcException::from(RpcError::insufficient_funds_wallet())
-           }
+            }
             WalletError::Io(err) => {
                 RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-           }
+            }
             other => {
                 RpcException::from(RpcError::wallet_not_supported().with_data(other.to_string()))
-           }
-       }
-   }
+            }
+        }
+    }
 
     fn account_to_json(account: &Arc<dyn WalletAccount>) -> Value {
         let has_key = account.has_key();
@@ -598,7 +602,7 @@ impl RpcServerWallet {
         );
         map.insert("watchonly".to_string(), Value::Bool(!has_key));
         Value::Object(map)
-   }
+    }
 
     fn calculate_nep17_balance(
         server: &RpcServer,
@@ -613,7 +617,7 @@ impl RpcServerWallet {
             .collect();
         if accounts.is_empty() {
             return Ok(Self::zero_balance());
-       }
+        }
 
         let script = Self::build_balance_script(asset, &accounts)?;
         let store = server.system().store_cache();
@@ -637,7 +641,7 @@ impl RpcServerWallet {
         // on top, then the summed amount).
         if engine.execute_allow_fault() == VMState::FAULT {
             return Ok(Self::zero_balance());
-       }
+        }
         let decimals_value = engine
             .result_stack()
             .peek(0)
@@ -654,7 +658,7 @@ impl RpcServerWallet {
             .as_int()
             .map_err(|err| internal_error(err.to_string()))?;
         Ok(BigDecimal::new(amount_value, decimals))
-   }
+    }
 
     fn build_balance_script(
         asset: &UInt160,
@@ -672,10 +676,10 @@ impl RpcServerWallet {
                 CallFlags::READ_ONLY,
             )?;
             builder.emit_opcode(OpCode::ADD);
-       }
+        }
         Self::emit_contract_call(&mut builder, asset, "decimals", &[], CallFlags::READ_ONLY)?;
         Ok(builder.to_array())
-   }
+    }
 
     fn emit_contract_call(
         builder: &mut ScriptBuilder,
@@ -686,13 +690,13 @@ impl RpcServerWallet {
     ) -> Result<(), RpcException> {
         if args.is_empty() {
             builder.emit_opcode(OpCode::NEWARRAY0);
-       } else {
+        } else {
             for arg in args.iter().rev() {
                 builder.emit_push(arg);
-           }
+            }
             builder.emit_push_int(args.len() as i64);
             builder.emit_opcode(OpCode::PACK);
-       }
+        }
 
         builder.emit_push_int(i64::from(flags.bits()));
         builder.emit_push(method.as_bytes());
@@ -702,17 +706,17 @@ impl RpcServerWallet {
             .emit_syscall("System.Contract.Call")
             .map_err(|err| internal_error(err.to_string()))?;
         Ok(())
-   }
+    }
 
     fn zero_balance() -> BigDecimal {
         BigDecimal::new(BigInt::zero(), 0)
-   }
+    }
 
     fn require_wallet(server: &RpcServer) -> Result<Arc<dyn CoreWallet>, RpcException> {
         server
             .wallet()
             .ok_or_else(|| RpcException::from(RpcError::no_opened_wallet()))
-   }
+    }
 
     fn process_transfer(
         server: &RpcServer,
@@ -733,17 +737,18 @@ impl RpcServerWallet {
         let (ok, value) = BigDecimal::try_parse(&amount, descriptor.decimals);
         if !ok || value.sign() <= 0 {
             return Err(invalid_params("Amount can't be negative."));
-       }
+        }
 
         let transfer = TransferOutput {
             asset_id: asset,
             value,
             script_hash: to,
-            data: None};
+            data: None,
+        };
 
         let tx_json = Self::build_and_relay(server, &wallet, &[transfer], from, signers)?;
         Ok(tx_json)
-   }
+    }
 
     fn build_and_relay(
         server: &RpcServer,
@@ -767,7 +772,7 @@ impl RpcServerWallet {
         .map_err(Self::wallet_compat_failure)?;
 
         Self::sign_and_relay(server, wallet, tx, snapshot_arc)
-   }
+    }
 
     fn sign_and_relay(
         server: &RpcServer,
@@ -801,9 +806,9 @@ impl RpcServerWallet {
                             .and_then(|p| ECPoint::from_bytes(&p.to_bytes()).ok());
                         if let Some(point) = pub_point {
                             contract_opt = Some(Contract::create_signature_contract(point));
-                       }
-                   }
-               }
+                        }
+                    }
+                }
 
                 if let Some(contract) = contract_opt {
                     context.add_contract(contract.clone());
@@ -820,11 +825,11 @@ impl RpcServerWallet {
                                 ECPoint::new(ECCurve::Secp256r1, key.compressed_public_key())
                                     .map_err(|e| internal_error(e.to_string()))?;
                             let _ = context.add_signature(contract.clone(), pub_key, signature);
-                       }
-                   } else if account.has_key() && !account.is_locked() {
+                        }
+                    } else if account.has_key() && !account.is_locked() {
                         let sign_data = if let Some(data) = sign_data.as_ref() {
                             data.clone()
-                       } else {
+                        } else {
                             let data = neo_payloads::get_sign_data_vec(
                                 &tx,
                                 server.system().settings().network,
@@ -832,32 +837,32 @@ impl RpcServerWallet {
                             .map_err(|err| internal_error(err.to_string()))?;
                             sign_data = Some(data.clone());
                             data
-                       };
+                        };
                         let wallet_clone = Arc::clone(wallet);
                         let signature = Self::await_wallet_future(Box::pin(async move {
                             wallet_clone.sign(&sign_data, &signer_account).await
-                       }))?;
+                        }))?;
                         if signature.len() != 64 {
                             return Err(internal_error(
                                 "Invalid signature length from wallet".to_string(),
                             ));
-                       }
+                        }
                         let pub_key_bytes = signature_contract_pubkey(&contract.script)?;
                         let pub_key = ECPoint::new(ECCurve::Secp256r1, pub_key_bytes)
                             .map_err(|e| internal_error(e.to_string()))?;
                         let _ = context.add_signature(contract.clone(), pub_key, signature);
-                   }
-               }
-           }
-       }
+                    }
+                }
+            }
+        }
 
         if !context.completed() {
             return Ok(context.to_json());
-       }
+        }
 
         if let Some(witnesses) = context.witnesses() {
             tx.set_witnesses(witnesses);
-       }
+        }
 
         // Adjust network fee if necessary (parity with C# min fee calculation)
         if tx.size() > 1024 {
@@ -865,22 +870,24 @@ impl RpcServerWallet {
             let fee_per_byte = policy
                 .get_fee_per_byte_snapshot(snapshot_arc.as_ref())
                 .map(i64::from)
-                .unwrap_or_else(|_| i64::from(PolicyContract::DEFAULT_FEE_PER_BYTE));
+                .unwrap_or_else(|_| {
+                    i64::from(neo_native_contracts::policy_contract::DEFAULT_FEE_PER_BYTE)
+                });
             let cal_fee = tx.size() as i64 * fee_per_byte + 100_000;
             if tx.network_fee() < cal_fee {
                 tx.set_network_fee(cal_fee);
-           }
-       }
+            }
+        }
         if tx.network_fee() > server.settings().max_fee {
             return Err(RpcException::from(RpcError::wallet_fee_limit()));
-       }
+        }
 
         match rpc_relay::relay_transaction(server, tx.clone()) {
             Ok(relay_result) => {
                 rpc_relay::map_relay_result(relay_result)?;
                 let settings = server.system().settings();
                 Ok(tx.to_json(&settings))
-           }
+            }
             Err(err) => {
                 // Preverify failure: surface unsigned context
                 let mut context = ContractParametersContext::new_with_type(
@@ -896,18 +903,18 @@ impl RpcServerWallet {
                                 contract.parameter_list.clone(),
                                 contract.script.clone(),
                             ));
-                       }
-                   }
-               }
+                        }
+                    }
+                }
                 let mut json = context.to_json();
                 // Attach reason
                 if let Some(obj) = json.as_object_mut() {
                     obj.insert("preverifyFail".to_string(), Value::String(err.to_string()));
-               }
+                }
                 Ok(json)
-           }
-       }
-   }
+            }
+        }
+    }
 }
 
 fn signature_contract_pubkey(script: &[u8]) -> Result<Vec<u8>, RpcException> {
@@ -915,13 +922,13 @@ fn signature_contract_pubkey(script: &[u8]) -> Result<Vec<u8>, RpcException> {
         return Err(RpcException::from(
             RpcError::invalid_params().with_data("Unsupported contract script for signing"),
         ));
-   }
+    }
 
     if script.len() < 35 {
         return Err(RpcException::from(
             RpcError::invalid_params().with_data("Invalid signature contract script"),
         ));
-   }
+    }
 
     Ok(script[2..35].to_vec())
 }

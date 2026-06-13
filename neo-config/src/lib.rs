@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+
 //! # Neo Config
 //!
 //! Configuration management for Neo N3 blockchain node.
@@ -28,7 +31,7 @@ mod protocol;
 
 pub use error::{ConfigError, ConfigResult};
 pub use genesis::{GenesisConfig, GenesisValidator};
-pub use hardfork::{is_hardfork_enabled, Hardfork, HardforkManager, HardforkParseError};
+pub use hardfork::{Hardfork, HardforkManager, HardforkParseError, is_hardfork_enabled};
 pub use network_type::NetworkType;
 pub use protocol::ProtocolSettings;
 

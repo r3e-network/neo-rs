@@ -19,7 +19,9 @@
 
 use neo_primitives::UInt160;
 
-use neo_primitives::base58_check::{decode_address_payload, encode_address_payload, AddressDecodeError, Base58CheckDecodeError};
+use neo_primitives::base58_check::{
+    AddressDecodeError, Base58CheckDecodeError, decode_address_payload, encode_address_payload,
+};
 
 /// Convert a script hash + address version byte to a base58 address string.
 pub fn to_address(script_hash: &UInt160, version: u8) -> String {
@@ -47,6 +49,5 @@ pub fn to_script_hash(address: &str, version: u8) -> Result<UInt160, String> {
                 format!("Invalid address version: expected version {expected}, but got {actual}. The address may be for a different network.")
             }
         })?;
-    UInt160::from_bytes(&script_hash)
-        .map_err(|e| format!("Invalid script hash bytes: {e}"))
+    UInt160::from_bytes(&script_hash).map_err(|e| format!("Invalid script hash bytes: {e}"))
 }

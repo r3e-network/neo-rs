@@ -1,6 +1,6 @@
 use super::helpers::{
-    compute_header_hash, compute_merkle_root, compute_next_consensus_address, current_timestamp,
-    generate_nonce,
+    compute_header_hash, compute_merkle_root, current_timestamp, generate_nonce,
+    prepare_request_timestamp,
 };
 use super::{ConsensusEvent, ConsensusService};
 use crate::messages::PrepareRequestMessage;
@@ -9,15 +9,21 @@ use neo_primitives::UInt256;
 use tracing::info;
 
 impl ConsensusService {
-    /// Initiates a block proposal (called when we're the primary)
-    pub(super) fn initiate_proposal(&mut self, _timestamp: u64) -> ConsensusResult<()> {
+    /// Asks the node/mempool for the transactions to include in the primary's
+    /// delayed `PrepareRequest`.
+    pub(super) fn initiate_proposal(&mut self, timestamp: u64) -> ConsensusResult<()> {
+        if self.context.transaction_request_sent {
+            return Ok(());
+        }
         info!(
             block_index = self.context.block_index,
             view = self.context.view_number,
-            "Initiating block proposal as primary"
+            "Requesting transactions for primary proposal"
         );
 
         // Request transactions from mempool
+        self.context.transaction_request_sent = true;
+        self.context.transaction_request_sent_at = Some(timestamp);
         self.send_event(ConsensusEvent::RequestTransactions {
             block_index: self.context.block_index,
             max_count: 500, // Max transactions per block
@@ -36,12 +42,19 @@ impl ConsensusService {
         }
 
         if self.context.is_primary() {
-            let timestamp = current_timestamp();
+            let now = current_timestamp();
+            self.context.transaction_request_sent = true;
+            if self.context.transaction_request_sent_at.is_none() {
+                self.context.transaction_request_sent_at = Some(now);
+            }
+
+            let timestamp = prepare_request_timestamp(now, self.context.previous_block_timestamp);
             let nonce = generate_nonce();
 
             // Store proposal data
             self.context.proposed_timestamp = timestamp;
             self.context.proposed_tx_hashes = tx_hashes.clone();
+            self.context.mark_available_transactions(tx_hashes.clone());
             self.context.nonce = nonce;
 
             // Create and broadcast PrepareRequest
@@ -73,7 +86,6 @@ impl ConsensusService {
 
             // Compute block header hash for commit signatures.
             let merkle_root = compute_merkle_root(&self.context.proposed_tx_hashes);
-            let next_consensus = compute_next_consensus_address(&self.context.validators);
             self.context.proposed_block_hash = Some(compute_header_hash(
                 self.context.version,
                 self.context.prev_hash,
@@ -82,7 +94,7 @@ impl ConsensusService {
                 nonce,
                 self.context.block_index,
                 self.context.primary_index(),
-                next_consensus,
+                self.context.next_consensus,
             ));
 
             self.broadcast(payload)?;
@@ -102,6 +114,8 @@ impl ConsensusService {
             return Ok(());
         }
 
+        self.context
+            .mark_available_transactions(tx_hashes.iter().copied());
         let available: std::collections::HashSet<UInt256> = tx_hashes.into_iter().collect();
         let all_present = self
             .context

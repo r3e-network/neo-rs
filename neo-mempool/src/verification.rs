@@ -22,13 +22,13 @@
 //! each such constant is pinned to its C# `PolicyContract` definition.
 
 use neo_config::{Hardfork, ProtocolSettings};
-use neo_data_cache::DataCache;
 use neo_execution::helper::Helper;
 use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_native_contracts::{GasToken, NeoToken, Notary, OracleContract, RoleManagement};
-use neo_payloads::{Transaction, TransactionAttribute, MAX_TRANSACTION_SIZE};
+use neo_payloads::{MAX_TRANSACTION_SIZE, OracleResponse, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
 use neo_serialization::BinarySerializer;
+use neo_storage::DataCache;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -61,7 +61,7 @@ const NEP17_PREFIX_ACCOUNT: u8 = 20;
 /// `snapshot.TryGet(key, out item) ? (long)(BigInteger)item : default`).
 fn policy_int(snapshot: &DataCache, key: Vec<u8>, default: i64) -> i64 {
     snapshot
-        .get(&neo_data_cache::StorageKey::new(POLICY_CONTRACT_ID, key))
+        .get(&neo_storage::StorageKey::new(POLICY_CONTRACT_ID, key))
         .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
         .and_then(|v| v.to_i64())
         .unwrap_or(default)
@@ -73,7 +73,7 @@ fn policy_is_blocked(snapshot: &DataCache, account: &UInt160) -> bool {
     let mut key = vec![POLICY_PREFIX_BLOCKED_ACCOUNT];
     key.extend_from_slice(&account.to_bytes());
     snapshot
-        .get(&neo_data_cache::StorageKey::new(POLICY_CONTRACT_ID, key))
+        .get(&neo_storage::StorageKey::new(POLICY_CONTRACT_ID, key))
         .is_some()
 }
 
@@ -122,7 +122,7 @@ fn max_traceable_blocks_effective(
 pub fn gas_balance_of(snapshot: &DataCache, account: &UInt160) -> BigInt {
     let mut key = vec![NEP17_PREFIX_ACCOUNT];
     key.extend_from_slice(&account.to_bytes());
-    let Some(item) = snapshot.get(&neo_data_cache::StorageKey::new(GasToken::ID, key)) else {
+    let Some(item) = snapshot.get(&neo_storage::StorageKey::new(GasToken::ID, key)) else {
         return BigInt::from(0);
     };
     let bytes = item.value_bytes().into_owned();
@@ -216,7 +216,7 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
     for (hash, witness) in hashes.iter().zip(witnesses.iter()) {
         let verification = witness.verification_script();
         let invocation = witness.invocation_script();
-        if neo_redeem_script::is_signature_contract(verification) {
+        if neo_vm::script_builder::redeem_script::is_signature_contract(verification) {
             let Some(signature) = single_signature_invocation(invocation) else {
                 continue; // not the fast-path shape: verified state-dependently
             };
@@ -229,9 +229,9 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
                 Ok(false) => return VerifyResult::InvalidSignature,
                 Err(_) => return VerifyResult::Invalid,
             }
-        } else if let Some((m, points)) = neo_redeem_script::parse_multi_sig_contract(verification)
+        } else if let Some((m, points)) = neo_vm::script_builder::redeem_script::parse_multi_sig_contract(verification)
         {
-            let Some(signatures) = neo_redeem_script::parse_multi_sig_invocation(invocation, m)
+            let Some(signatures) = neo_vm::script_builder::redeem_script::parse_multi_sig_invocation(invocation, m)
             else {
                 continue;
             };
@@ -333,9 +333,8 @@ pub fn verify_state_dependent(
         if !verify_attribute(snapshot, tx, attribute, height) {
             return VerifyResult::InvalidAttribute;
         }
-        attributes_fee = attributes_fee.saturating_add(attribute_network_fee(
-            snapshot, tx, attribute,
-        ));
+        attributes_fee =
+            attributes_fee.saturating_add(attribute_network_fee(snapshot, tx, attribute));
     }
 
     // Net fee left for witness verification.
@@ -364,14 +363,13 @@ pub fn verify_state_dependent(
     for (hash, witness) in hashes.iter().zip(witnesses.iter()) {
         let verification = witness.verification_script();
         let invocation = witness.invocation_script();
-        let is_single = neo_redeem_script::is_signature_contract(verification)
+        let is_single = neo_vm::script_builder::redeem_script::is_signature_contract(verification)
             && single_signature_invocation(invocation).is_some();
-        let multi = neo_redeem_script::parse_multi_sig_contract(verification).and_then(
-            |(m, points)| {
-                neo_redeem_script::parse_multi_sig_invocation(invocation, m)
+        let multi =
+            neo_vm::script_builder::redeem_script::parse_multi_sig_contract(verification).and_then(|(m, points)| {
+                neo_vm::script_builder::redeem_script::parse_multi_sig_invocation(invocation, m)
                     .map(|_| (m, points.len()))
-            },
-        );
+            });
         if is_single {
             // `Helper::signature_contract_cost` returns C# OpCodePrices
             // execution units (PUSHDATA1×2 + SYSCALL + CheckSigPrice);
@@ -379,8 +377,7 @@ pub fn verify_state_dependent(
             // datoshi cost.
             net_fee -= exec_fee_factor * Helper::signature_contract_cost();
         } else if let Some((m, n)) = multi {
-            net_fee -=
-                exec_fee_factor * Helper::multi_signature_contract_cost(m as i32, n as i32);
+            net_fee -= exec_fee_factor * Helper::multi_signature_contract_cost(m as i32, n as i32);
         } else {
             match Helper::verify_witness(tx, settings, snapshot, hash, witness, net_fee) {
                 Ok(fee) => net_fee -= fee,
@@ -405,10 +402,8 @@ fn verify_attribute(
         // C# HighPriorityAttribute.Verify: a signer must be the committee
         // multisig address.
         TransactionAttribute::HighPriority => {
-            let committee = neo_execution::NativeContract::committee_address(
-                &NeoToken::new(),
-                snapshot,
-            );
+            let committee =
+                neo_execution::NativeContract::committee_address(&NeoToken::new(), snapshot);
             match committee {
                 Ok(Some(committee)) => tx.signers().iter().any(|s| s.account == committee),
                 _ => false,
@@ -445,7 +440,8 @@ fn verify_attribute(
             {
                 return false;
             }
-            if tx.script() != oracle_response_fixed_script() {
+            let fixed_script = OracleResponse::get_fixed_script();
+            if tx.script() != fixed_script.as_slice() {
                 return false;
             }
             let Ok(Some(request)) = OracleContract::new().get_request(snapshot, attr.id) else {
@@ -488,7 +484,10 @@ fn attribute_network_fee(
 ) -> i64 {
     let base = policy_int(
         snapshot,
-        vec![POLICY_PREFIX_ATTRIBUTE_FEE, attribute.attribute_type() as u8],
+        vec![
+            POLICY_PREFIX_ATTRIBUTE_FEE,
+            attribute.attribute_type() as u8,
+        ],
         DEFAULT_ATTRIBUTE_FEE,
     );
     match attribute {
@@ -500,21 +499,6 @@ fn attribute_network_fee(
     }
 }
 
-/// C# `OracleResponse.FixedScript`:
-/// `EmitDynamicCall(NativeContract.Oracle.Hash, "finish")` =
-/// `NEWARRAY0 ‖ PUSH(CallFlags.All) ‖ PUSH("finish") ‖ PUSH(hash) ‖
-/// SYSCALL(System.Contract.Call)`
-/// (`neo_csharp/src/Neo/Extensions/VM/ScriptBuilderExtensions.cs:145`).
-fn oracle_response_fixed_script() -> Vec<u8> {
-    let mut sb = neo_script_builder::ScriptBuilder::new();
-    sb.emit_opcode(neo_vm_rs::OpCode::NEWARRAY0);
-    sb.emit_push_int(0x0F); // CallFlags.All
-    sb.emit_push_string("finish");
-    sb.emit_push(&OracleContract::script_hash().to_bytes());
-    sb.emit_syscall_hash(neo_vm_rs::interop_hash("System.Contract.Call"));
-    sb.to_array()
-}
-
 /// C# `Contract.GetBFTAddress(pubkeys)` — `m = n - (n - 1) / 3` multisig
 /// script hash; `None` for an empty designation.
 fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> Option<UInt160> {
@@ -522,6 +506,6 @@ fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> Option<UInt160> {
         return None;
     }
     let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-    let script = neo_redeem_script::multi_sig_redeem_script_from_points(m, pubkeys).ok()?;
+    let script = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, pubkeys).ok()?;
     Some(UInt160::from_script(&script))
 }

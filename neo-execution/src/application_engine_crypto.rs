@@ -1,12 +1,12 @@
 //! ApplicationEngine.Crypto - matches C# Neo.SmartContract.ApplicationEngine.Crypto.cs
 
+use crate::ApplicationEngine;
 use neo_crypto::Crypto;
 use neo_crypto::{CryptoError, ECCurve, ECPoint, Secp256r1Crypto};
+use neo_manifest::CallFlags;
 use neo_primitives::Hardfork;
 use neo_vm::VmResult;
 use neo_vm::execution_engine::ExecutionEngine;
-use crate::ApplicationEngine;
-use neo_manifest::CallFlags;
 
 /// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040)
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
@@ -188,13 +188,12 @@ fn crypto_check_sig_handler(
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     match app.crypto_check_sig() {
-        Ok(result) => {
-            app.push_boolean(result)
-                .map_err(|e| neo_vm::VmError::InteropService {
-                    service: "System.Crypto.CheckSig".to_string(),
-                    error: e,
-                })
-        }
+        Ok(result) => app
+            .push_boolean(result)
+            .map_err(|e| neo_vm::VmError::InteropService {
+                service: "System.Crypto.CheckSig".to_string(),
+                error: e,
+            }),
         Err(e) => Err(neo_vm::VmError::InteropService {
             service: "System.Crypto.CheckSig".to_string(),
             error: e,
@@ -207,13 +206,12 @@ fn crypto_check_multisig_handler(
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     match app.crypto_check_multisig() {
-        Ok(result) => {
-            app.push_boolean(result)
-                .map_err(|e| neo_vm::VmError::InteropService {
-                    service: "System.Crypto.CheckMultisig".to_string(),
-                    error: e,
-                })
-        }
+        Ok(result) => app
+            .push_boolean(result)
+            .map_err(|e| neo_vm::VmError::InteropService {
+                service: "System.Crypto.CheckMultisig".to_string(),
+                error: e,
+            }),
         Err(e) => Err(neo_vm::VmError::InteropService {
             service: "System.Crypto.CheckMultisig".to_string(),
             error: e,

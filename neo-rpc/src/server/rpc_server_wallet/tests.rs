@@ -1,20 +1,20 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_block::VerifyResult;
+use neo_config::ProtocolSettings;
+use neo_crypto::Secp256r1Crypto;
+use neo_execution::helper::Helper as ContractHelper;
+use neo_native_contracts::{GasToken, LedgerContract, NeoToken};
+use neo_payloads::VerifyResult;
+use neo_payloads::Witness;
 use neo_payloads::conflicts::Conflicts;
+use neo_payloads::get_sign_data_vec;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
-use neo_config::ProtocolSettings;
-use neo_execution::helper::Helper as ContractHelper;
-use neo_native_contracts::{GasToken, LedgerContract, NeoToken};
-use neo_payloads::get_sign_data_vec;
-use neo_wallets::wallet_helper;
-use neo_storage::{StorageItem, StorageKey};
 use neo_primitives::UInt256;
-use neo_payloads::Witness;
-use neo_crypto::Secp256r1Crypto;
+use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::VmState as VMState;
+use neo_wallets::wallet_helper;
 use num_bigint::BigInt;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -68,27 +68,27 @@ fn authenticated_config() -> RpcServerConfig {
         rpc_user: "user".to_string(),
         rpc_pass: "pass".to_string(),
         ..Default::default()
-   }
+    }
 }
 
 fn authenticated_config_with_max_fee(max_fee: i64) -> RpcServerConfig {
     RpcServerConfig {
         max_fee,
         ..authenticated_config()
-   }
+    }
 }
 
 fn make_authenticated_server_with_max_fee(max_fee: i64) -> RpcServer {
     let system = if Handle::try_current().is_ok() {
         crate::server::test_support::test_system(ProtocolSettings::default())
-   } else {
+    } else {
         let rt = Runtime::new().expect("runtime");
         let system = rt.block_on(async {
             crate::server::test_support::test_system(ProtocolSettings::default())
-       });
+        });
         drop(rt);
         system
-   };
+    };
     let config = authenticated_config_with_max_fee(max_fee);
     RpcServer::new(system, config)
 }
@@ -186,7 +186,7 @@ async fn open_wallet_and_dump_priv_key_roundtrip() {
                 .descriptor()
                 .name
                 .eq_ignore_ascii_case("dumpprivkey")
-       })
+        })
         .expect("dumpprivkey handler");
     let close_handler = handlers
         .iter()
@@ -195,7 +195,7 @@ async fn open_wallet_and_dump_priv_key_roundtrip() {
                 .descriptor()
                 .name
                 .eq_ignore_ascii_case("closewallet")
-       })
+        })
         .expect("closewallet handler");
 
     let params = [
@@ -297,9 +297,8 @@ fn get_new_address_adds_wallet_account() {
     let password = "rpc-pass";
     let rt = Runtime::new().expect("runtime");
     let (path, _keypair, _address) = rt.block_on(create_wallet_file(password));
-    let system = rt.block_on(async {
-        crate::server::test_support::test_system(ProtocolSettings::default())
-   });
+    let system = rt
+        .block_on(async { crate::server::test_support::test_system(ProtocolSettings::default()) });
     drop(rt);
     let server = RpcServer::new(system, authenticated_config());
     let handlers = RpcServerWallet::register_handlers();
@@ -318,9 +317,11 @@ fn get_new_address_adds_wallet_account() {
     let new_address = result.as_str().expect("address");
     let wallet = server.wallet().expect("wallet");
     let accounts = wallet.get_accounts();
-    assert!(accounts
-        .iter()
-        .any(|account| account.address() == new_address));
+    assert!(
+        accounts
+            .iter()
+            .any(|account| account.address() == new_address)
+    );
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
     assert_eq!(result.as_bool(), Some(true));
@@ -419,9 +420,8 @@ fn import_priv_key_adds_account() {
     let password = "rpc-pass";
     let rt = Runtime::new().expect("runtime");
     let (path, _keypair, _address) = rt.block_on(create_wallet_file(password));
-    let system = rt.block_on(async {
-        crate::server::test_support::test_system(ProtocolSettings::default())
-   });
+    let system = rt
+        .block_on(async { crate::server::test_support::test_system(ProtocolSettings::default()) });
     drop(rt);
 
     let server = RpcServer::new(system, authenticated_config());
@@ -456,12 +456,13 @@ fn import_priv_key_adds_account() {
 
     let result = (list_handler.callback())(&server, &[]).expect("listaddress");
     let accounts = result.as_array().expect("account list");
-    assert!(accounts
-        .iter()
-        .filter_map(|entry| entry.as_object())
-        .any(
-            |entry| entry.get("address").and_then(Value::as_str) == Some(expected_address.as_str())
-        ));
+    assert!(
+        accounts
+            .iter()
+            .filter_map(|entry| entry.as_object())
+            .any(|entry| entry.get("address").and_then(Value::as_str)
+                == Some(expected_address.as_str()))
+    );
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
     assert_eq!(result.as_bool(), Some(true));
@@ -535,9 +536,9 @@ async fn import_priv_key_returns_existing_account() {
     assert_eq!(obj.get("watchonly").and_then(Value::as_bool), Some(false));
     if let Some(label) = existing.label() {
         assert_eq!(obj.get("label").and_then(Value::as_str), Some(label));
-   } else {
+    } else {
         assert!(obj.get("label").is_some_and(Value::is_null));
-   }
+    }
 
     let current_count = wallet.get_accounts().len();
     assert_eq!(current_count, initial_count);
@@ -957,7 +958,9 @@ async fn cancel_transaction_applies_extra_fee() {
         .and_then(Value::as_str)
         .and_then(|value| value.parse::<i64>().ok())
         .expect("netfee");
-    let expected_extra = 10_i64.pow(8u32 /* GAS decimals (C# NativeContract.GAS.Decimals) */);
+    let expected_extra = 10_i64.pow(
+        8u32, /* GAS decimals (C# NativeContract.GAS.Decimals) */
+    );
     assert_eq!(net_fee, base_fee + expected_extra);
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
@@ -1054,7 +1057,7 @@ fn wallet_methods_require_open_wallet() {
             "{} should require a wallet",
             name
         );
-   }
+    }
 }
 
 #[test]
@@ -1290,7 +1293,7 @@ async fn send_to_address_rejects_non_positive_amount() {
         let err = (handler.callback())(&server, &params).expect_err("invalid amount");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
-   }
+    }
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
     assert_eq!(result.as_bool(), Some(true));
@@ -1339,10 +1342,10 @@ fn send_many_requires_wallet() {
         wallet_helper::to_address(&UInt160::zero(), server.system().settings().address_version);
     let asset = GasToken::script_hash().to_string();
     let outputs = json!([{
-        "asset": asset,
-        "value": "1",
-        "address": address.clone()
-   }]);
+         "asset": asset,
+         "value": "1",
+         "address": address.clone()
+    }]);
     let params = [Value::String(address), outputs];
 
     let err = (handler.callback())(&server, &params).expect_err("no wallet");
@@ -1369,13 +1372,13 @@ async fn send_many_rejects_invalid_from() {
 
     let asset = GasToken::script_hash().to_string();
     let outputs = json!([{
-        "asset": asset,
-        "value": "1",
-        "address": wallet_helper::to_address(
-            &UInt160::zero(),
-            server.system().settings().address_version,
-        )
-   }]);
+         "asset": asset,
+         "value": "1",
+         "address": wallet_helper::to_address(
+             &UInt160::zero(),
+             server.system().settings().address_version,
+         )
+    }]);
     let params = [Value::String("NotAnAddress".to_string()), outputs];
 
     let err = (handler.callback())(&server, &params).expect_err("invalid from");
@@ -1484,10 +1487,10 @@ async fn send_many_rejects_non_positive_amount() {
     let asset = asset_id.to_string();
     for amount in ["-1", "0"] {
         let outputs = json!([{
-            "asset": asset.clone(),
-            "value": amount,
-            "address": address.clone()
-       }]);
+             "asset": asset.clone(),
+             "value": amount,
+             "address": address.clone()
+        }]);
         let params = [Value::String(address.clone()), outputs];
         let err = (handler.callback())(&server, &params).expect_err("invalid amount");
         let rpc_error: RpcError = err.into();
@@ -1500,7 +1503,7 @@ async fn send_many_rejects_non_positive_amount() {
             "unexpected error message: {:?}",
             rpc_error.data()
         );
-   }
+    }
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
     assert_eq!(result.as_bool(), Some(true));
@@ -1536,10 +1539,10 @@ async fn send_many_returns_transaction_json() {
 
     let asset = GasToken::script_hash().to_string();
     let outputs = json!([{
-        "asset": asset,
-        "value": "1",
-        "address": address.clone()
-   }]);
+         "asset": asset,
+         "value": "1",
+         "address": address.clone()
+    }]);
     let params = [Value::String(address.clone()), outputs];
     let result =
         tokio::task::block_in_place(|| (handler.callback())(&server, &params)).expect("sendmany");
@@ -1590,10 +1593,10 @@ async fn send_many_reports_invalid_operation_on_insufficient_funds() {
     (open_handler.callback())(&server, &params).expect("open wallet");
 
     let outputs = json!([{
-        "asset": GasToken::script_hash().to_string(),
-        "value": "100000000000000000",
-        "address": address.clone()
-   }]);
+         "asset": GasToken::script_hash().to_string(),
+         "value": "100000000000000000",
+         "address": address.clone()
+    }]);
     let params = [Value::String(address), outputs];
     let err = (handler.callback())(&server, &params).expect_err("insufficient funds");
     assert_eq!(err.code(), INVALID_OPERATION_HRESULT);
@@ -1623,8 +1626,8 @@ fn await_wallet_future_supports_current_thread_runtime() {
         .expect("current-thread runtime");
 
     let result = runtime.block_on(async {
-        RpcServerWallet::await_wallet_future(Box::pin(async {Ok::<i32, WalletError>(7)}))
-   });
+        RpcServerWallet::await_wallet_future(Box::pin(async { Ok::<i32, WalletError>(7) }))
+    });
 
     assert_eq!(result.expect("await_wallet_future result"), 7);
 }

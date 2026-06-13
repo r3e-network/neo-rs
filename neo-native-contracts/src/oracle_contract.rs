@@ -71,17 +71,19 @@ fn request_id_key() -> StorageKey {
 /// The request record key `(Oracle.ID, [Prefix_Request, id_be8])` — C#
 /// `CreateStorageKey(Prefix_Request, ulong)` appends the id big-endian.
 fn request_key(id: u64) -> StorageKey {
-    let mut key_bytes = vec![PREFIX_REQUEST];
-    key_bytes.extend_from_slice(&id.to_be_bytes());
-    StorageKey::new(OracleContract::ID, key_bytes)
+    StorageKey::new(
+        OracleContract::ID,
+        crate::keys::prefixed_with_u64_be(PREFIX_REQUEST, id),
+    )
 }
 
 /// The per-url id-list key `(Oracle.ID, [Prefix_IdList] ++ Hash160(url))` —
 /// C# `GetUrlHash` is `Crypto.Hash160(url.ToStrictUtf8Bytes())`.
 fn id_list_key(url: &str) -> StorageKey {
-    let mut key_bytes = vec![PREFIX_ID_LIST];
-    key_bytes.extend_from_slice(&Crypto::hash160(url.as_bytes()));
-    StorageKey::new(OracleContract::ID, key_bytes)
+    StorageKey::new(
+        OracleContract::ID,
+        crate::keys::prefixed(PREFIX_ID_LIST, &Crypto::hash160(url.as_bytes())),
+    )
 }
 
 /// Reads the request-id counter (`Prefix_RequestId`). The C# genesis
@@ -159,8 +161,10 @@ fn decode_oracle_request(bytes: &[u8]) -> CoreResult<OracleRequest> {
     } else {
         Some(field_string(3, "Filter")?)
     };
-    let callback_contract = UInt160::from_bytes(&field_bytes(4, "CallbackContract")?)
-        .map_err(|e| CoreError::invalid_data(format!("OracleRequest CallbackContract: {e}")))?;
+    let callback_contract = crate::args::bytes_to_hash160(
+        &field_bytes(4, "CallbackContract")?,
+        "OracleRequest CallbackContract",
+    )?;
     let callback_method = field_string(5, "CallbackMethod")?;
     let user_data = field_bytes(6, "UserData")?;
     Ok(OracleRequest {
@@ -181,8 +185,11 @@ fn encode_id_list(ids: &[u64]) -> CoreResult<Vec<u8>> {
         .iter()
         .map(|id| StackItem::from_int(BigInt::from(*id)))
         .collect();
-    BinarySerializer::serialize(&StackItem::from_array(items), &ExecutionEngineLimits::default())
-        .map_err(|e| CoreError::serialization(format!("Oracle IdList serialize: {e}")))
+    BinarySerializer::serialize(
+        &StackItem::from_array(items),
+        &ExecutionEngineLimits::default(),
+    )
+    .map_err(|e| CoreError::serialization(format!("Oracle IdList serialize: {e}")))
 }
 
 /// Decodes the per-url id-list (C# `IdList.FromStackItem`, `(ulong)item.GetInteger()`).
@@ -216,10 +223,12 @@ fn read_request(snapshot: &DataCache, id: u64) -> CoreResult<Option<OracleReques
 /// Returns the first `OracleResponse` transaction attribute (C#
 /// `tx.GetAttribute<OracleResponse>()`).
 fn oracle_response_attribute(tx: &Transaction) -> Option<&OracleResponse> {
-    tx.attributes().iter().find_map(|attribute| match attribute {
-        TransactionAttribute::OracleResponse(response) => Some(response),
-        _ => None,
-    })
+    tx.attributes()
+        .iter()
+        .find_map(|attribute| match attribute {
+            TransactionAttribute::OracleResponse(response) => Some(response),
+            _ => None,
+        })
 }
 
 /// C# `GetOriginalTxid`: the script container must be a transaction; when it
@@ -234,9 +243,7 @@ fn get_original_txid(engine: &ApplicationEngine, snapshot: &DataCache) -> CoreRe
         .as_any()
         .downcast_ref::<Transaction>()
         .ok_or_else(|| {
-            CoreError::invalid_operation(
-                "OracleContract: script container is not a transaction",
-            )
+            CoreError::invalid_operation("OracleContract: script container is not a transaction")
         })?;
     match oracle_response_attribute(tx) {
         None => Ok(tx.hash()),
@@ -244,17 +251,12 @@ fn get_original_txid(engine: &ApplicationEngine, snapshot: &DataCache) -> CoreRe
             // C# uses the null-forgiving `GetRequest(...)!`: a missing record
             // dereferences null and faults.
             let request = read_request(snapshot, response.id)?.ok_or_else(|| {
-                CoreError::invalid_operation(
-                    "OracleContract: original oracle request not found",
-                )
+                CoreError::invalid_operation("OracleContract: original oracle request not found")
             })?;
             Ok(request.original_tx_id)
         }
     }
 }
-
-/// Lazily-initialised script-hash handle for the OracleContract.
-pub static ORACLE_HASH: LazyLock<UInt160> = LazyLock::new(|| *ORACLE_CONTRACT_HASH);
 
 /// Static accessor for the OracleContract native contract.
 #[derive(Debug, Default, Clone, Copy)]
@@ -263,6 +265,8 @@ pub struct OracleContract;
 impl OracleContract {
     /// Stable native contract id (-9 in C# Oracle contract).
     pub const ID: i32 = -9;
+    /// Stable native contract name (matches C# `OracleContract.Name`).
+    pub const NAME: &'static str = "OracleContract";
 
     /// Construct a new `OracleContract` handle.
     pub fn new() -> Self {
@@ -271,20 +275,16 @@ impl OracleContract {
 
     /// Returns the script hash of the Oracle native contract.
     pub fn hash(&self) -> UInt160 {
-        *ORACLE_HASH
+        Self::script_hash()
     }
 
     /// Returns the script hash of the Oracle native contract (static).
     pub fn script_hash() -> UInt160 {
-        *ORACLE_HASH
+        *ORACLE_CONTRACT_HASH
     }
 
     /// Look up a single oracle request by its id (C# `GetRequest`).
-    pub fn get_request(
-        &self,
-        snapshot: &DataCache,
-        id: u64,
-    ) -> CoreResult<Option<OracleRequest>> {
+    pub fn get_request(&self, snapshot: &DataCache, id: u64) -> CoreResult<Option<OracleRequest>> {
         read_request(snapshot, id)
     }
 
@@ -466,11 +466,11 @@ impl NativeContract for OracleContract {
     }
 
     fn hash(&self) -> UInt160 {
-        *ORACLE_HASH
+        Self::script_hash()
     }
 
     fn name(&self) -> &str {
-        "OracleContract"
+        Self::NAME
     }
 
     fn methods(&self) -> &[NativeMethod] {
@@ -490,11 +490,7 @@ impl NativeContract for OracleContract {
 
     /// C# `OracleContract.OnManifestCompose` (OracleContract.cs:58-64): NEP-30
     /// once HF_Faun is enabled at the height; no standards before it.
-    fn supported_standards(
-        &self,
-        settings: &ProtocolSettings,
-        block_height: u32,
-    ) -> Vec<String> {
+    fn supported_standards(&self, settings: &ProtocolSettings, block_height: u32) -> Vec<String> {
         if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
             vec!["NEP-30".to_string()]
         } else {
@@ -655,8 +651,12 @@ impl NativeContract for OracleContract {
         let snapshot = engine.snapshot_cache();
         match method {
             "getPrice" => {
-                let price =
-                    crate::read_storage_int(&snapshot, Self::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)?;
+                let price = crate::read_storage_int(
+                    &snapshot,
+                    Self::ID,
+                    PREFIX_PRICE,
+                    DEFAULT_ORACLE_PRICE,
+                )?;
                 Ok(BigInt::from(price).to_signed_bytes_le())
             }
             "setPrice" => {
@@ -673,14 +673,7 @@ impl NativeContract for OracleContract {
                         "Oracle price must be positive, got {price}"
                     )));
                 }
-                let authorized = engine.check_committee_witness().map_err(|e| {
-                    CoreError::invalid_operation(format!("setPrice committee check: {e}"))
-                })?;
-                if !authorized {
-                    return Err(CoreError::invalid_operation(
-                        "setPrice requires committee authorization",
-                    ));
-                }
+                crate::committee::assert_committee(engine, "setPrice")?;
                 put_price(&engine.snapshot_cache(), price);
                 Ok(Vec::new())
             }
@@ -691,9 +684,7 @@ impl NativeContract for OracleContract {
                 let url = String::from_utf8(
                     args.first()
                         .ok_or_else(|| {
-                            CoreError::invalid_operation(
-                                "OracleContract::request requires a url",
-                            )
+                            CoreError::invalid_operation("OracleContract::request requires a url")
                         })?
                         .clone(),
                 )
@@ -716,14 +707,10 @@ impl NativeContract for OracleContract {
                     None
                 } else {
                     let bytes = args.get(1).ok_or_else(|| {
-                        CoreError::invalid_operation(
-                            "OracleContract::request requires a filter",
-                        )
+                        CoreError::invalid_operation("OracleContract::request requires a filter")
                     })?;
                     Some(String::from_utf8(bytes.clone()).map_err(|e| {
-                        CoreError::invalid_operation(format!(
-                            "OracleContract::request filter: {e}"
-                        ))
+                        CoreError::invalid_operation(format!("OracleContract::request filter: {e}"))
                     })?)
                 };
                 let filter_size = filter.as_ref().map_or(0, String::len);
@@ -743,9 +730,7 @@ impl NativeContract for OracleContract {
                         .clone(),
                 )
                 .map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "OracleContract::request callback: {e}"
-                    ))
+                    CoreError::invalid_operation(format!("OracleContract::request callback: {e}"))
                 })?;
                 if callback.len() > MAX_CALLBACK_LENGTH {
                     return Err(CoreError::invalid_operation(format!(
@@ -779,8 +764,12 @@ impl NativeContract for OracleContract {
                 // engine.AddFee(GetPrice * FeeFactor) — the request price, in
                 // datoshi — then AddFee(gasForResponse * FeeFactor) and the
                 // response-GAS mint to the oracle account.
-                let price =
-                    crate::read_storage_int(&snapshot, Self::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)?;
+                let price = crate::read_storage_int(
+                    &snapshot,
+                    Self::ID,
+                    PREFIX_PRICE,
+                    DEFAULT_ORACLE_PRICE,
+                )?;
                 engine
                     .charge_execution_fee(u64::try_from(price).unwrap_or(0))
                     .map_err(|e| {
@@ -828,9 +817,7 @@ impl NativeContract for OracleContract {
                     None,
                 )
                 .map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "OracleContract::request userData: {e}"
-                    ))
+                    CoreError::invalid_operation(format!("OracleContract::request userData: {e}"))
                 })?;
                 let user_data = BinarySerializer::serialize_with_limits(
                     &user_data_item,
@@ -838,9 +825,7 @@ impl NativeContract for OracleContract {
                     ExecutionEngineLimits::default().max_stack_size as usize,
                 )
                 .map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "OracleContract::request userData: {e}"
-                    ))
+                    CoreError::invalid_operation(format!("OracleContract::request userData: {e}"))
                 })?;
 
                 let request = OracleRequest {
@@ -887,9 +872,7 @@ impl NativeContract for OracleContract {
                         ],
                     )
                     .map_err(|e| {
-                        CoreError::invalid_operation(format!(
-                            "OracleContract::request notify: {e}"
-                        ))
+                        CoreError::invalid_operation(format!("OracleContract::request notify: {e}"))
                     })?;
                 Ok(Vec::new())
             }
@@ -923,14 +906,12 @@ impl NativeContract for OracleContract {
                                 "OracleContract::finish: script container is not a transaction",
                             )
                         })?;
-                    let response = oracle_response_attribute(tx).ok_or_else(|| {
-                        CoreError::invalid_operation("Oracle response not found")
-                    })?;
+                    let response = oracle_response_attribute(tx)
+                        .ok_or_else(|| CoreError::invalid_operation("Oracle response not found"))?;
                     (response.id, response.code as u8, response.result.clone())
                 };
-                let request = read_request(&snapshot, id)?.ok_or_else(|| {
-                    CoreError::invalid_operation("Oracle request not found")
-                })?;
+                let request = read_request(&snapshot, id)?
+                    .ok_or_else(|| CoreError::invalid_operation("Oracle request not found"))?;
                 engine
                     .send_notification(
                         Self::script_hash(),
@@ -941,9 +922,7 @@ impl NativeContract for OracleContract {
                         ],
                     )
                     .map_err(|e| {
-                        CoreError::invalid_operation(format!(
-                            "OracleContract::finish notify: {e}"
-                        ))
+                        CoreError::invalid_operation(format!("OracleContract::finish notify: {e}"))
                     })?;
                 let user_data = BinarySerializer::deserialize(
                     &request.user_data,
@@ -1003,11 +982,11 @@ mod oracle_native_tests {
     #[test]
     fn native_contract_surface() {
         let c = OracleContract::new();
-        assert_eq!(NativeContract::id(&c), -9);
-        assert_eq!(NativeContract::name(&c), "OracleContract");
-        assert_eq!(NativeContract::hash(&c), *ORACLE_CONTRACT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["getPrice", "setPrice", "request", "finish", "verify"]);
+        assert_eq!(
+            names,
+            ["getPrice", "setPrice", "request", "finish", "verify"]
+        );
 
         let setter = c.methods().iter().find(|m| m.name == "setPrice").unwrap();
         assert!(!setter.safe);
@@ -1061,8 +1040,13 @@ mod oracle_native_tests {
         // the getter's reader.
         put_price(&cache, 7_5000000); // 0.75 GAS
         assert_eq!(
-            crate::read_storage_int(&cache, OracleContract::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)
-                .unwrap(),
+            crate::read_storage_int(
+                &cache,
+                OracleContract::ID,
+                PREFIX_PRICE,
+                DEFAULT_ORACLE_PRICE
+            )
+            .unwrap(),
             7_5000000
         );
     }
@@ -1071,15 +1055,28 @@ mod oracle_native_tests {
     fn price_reads_storage_with_default() {
         let cache = DataCache::new(false);
         assert_eq!(
-            crate::read_storage_int(&cache, OracleContract::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)
-                .unwrap(),
+            crate::read_storage_int(
+                &cache,
+                OracleContract::ID,
+                PREFIX_PRICE,
+                DEFAULT_ORACLE_PRICE
+            )
+            .unwrap(),
             DEFAULT_ORACLE_PRICE
         );
         let key = StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]);
-        cache.add(key, StorageItem::from_bytes(BigInt::from(12345678).to_signed_bytes_le()));
+        cache.add(
+            key,
+            StorageItem::from_bytes(BigInt::from(12345678).to_signed_bytes_le()),
+        );
         assert_eq!(
-            crate::read_storage_int(&cache, OracleContract::ID, PREFIX_PRICE, DEFAULT_ORACLE_PRICE)
-                .unwrap(),
+            crate::read_storage_int(
+                &cache,
+                OracleContract::ID,
+                PREFIX_PRICE,
+                DEFAULT_ORACLE_PRICE
+            )
+            .unwrap(),
             12345678
         );
     }
@@ -1125,7 +1122,10 @@ mod oracle_native_tests {
         assert_eq!(items.len(), 7);
         assert_eq!(items[0].as_bytes().unwrap(), vec![0xAA; 32]);
         assert_eq!(items[1].as_int().unwrap(), BigInt::from(1_0000000));
-        assert_eq!(items[2].as_bytes().unwrap(), b"https://example.org/data".to_vec());
+        assert_eq!(
+            items[2].as_bytes().unwrap(),
+            b"https://example.org/data".to_vec()
+        );
         assert_eq!(items[3].as_bytes().unwrap(), b"$.x".to_vec());
         assert_eq!(items[4].as_bytes().unwrap(), vec![0xCB; 20]);
         assert_eq!(items[5].as_bytes().unwrap(), b"oracleCallback".to_vec());
@@ -1198,10 +1198,12 @@ mod oracle_native_tests {
         let contract = OracleContract::new();
         assert!(contract.get_request(&cache, 1).unwrap().is_none());
         assert!(contract.get_requests(&cache).is_empty());
-        assert!(contract
-            .get_requests_by_url(&cache, "https://example.org/data")
-            .unwrap()
-            .is_empty());
+        assert!(
+            contract
+                .get_requests_by_url(&cache, "https://example.org/data")
+                .unwrap()
+                .is_empty()
+        );
 
         let request = sample_request(None);
         cache.add(
@@ -1213,7 +1215,10 @@ mod oracle_native_tests {
             StorageItem::from_bytes(encode_id_list(&[3]).unwrap()),
         );
 
-        assert_eq!(contract.get_request(&cache, 3).unwrap(), Some(request.clone()));
+        assert_eq!(
+            contract.get_request(&cache, 3).unwrap(),
+            Some(request.clone())
+        );
         assert_eq!(contract.get_requests(&cache), vec![(3, request.clone())]);
         assert_eq!(
             contract.get_requests_by_url(&cache, &request.url).unwrap(),
@@ -1256,7 +1261,10 @@ mod oracle_native_tests {
         let after = build_native_contract_state(&OracleContract, &settings, 10);
         assert_eq!(after.manifest.supported_standards, ["NEP-30"]);
 
-        assert_eq!(NativeContract::activations(&OracleContract), [Hardfork::HfFaun]);
+        assert_eq!(
+            NativeContract::activations(&OracleContract),
+            [Hardfork::HfFaun]
+        );
     }
 }
 
@@ -1275,23 +1283,10 @@ mod oracle_request_finish_tests {
     use neo_payloads::witness::Witness;
     use neo_payloads::{Block, BlockHeader, OracleResponse};
     use neo_primitives::{OracleResponseCode, TriggerType, Verifiable, WitnessScope};
-    use neo_script_builder::ScriptBuilder;
+    use neo_vm::script_builder::ScriptBuilder;
     use neo_vm_rs::{OpCode, VmState};
     use std::sync::Arc;
-
-    /// ContractManagement per-contract storage prefix (mirrors neo_token tests).
-    const CM_PREFIX_CONTRACT: u8 = 8;
-
-    fn deploy_contract(cache: &DataCache, state: &ContractState) {
-        let mut key = vec![CM_PREFIX_CONTRACT];
-        key.extend_from_slice(&state.hash.to_bytes());
-        cache.add(
-            StorageKey::new(crate::ContractManagement::ID, key),
-            StorageItem::from_bytes(
-                state.serialize_contract_record().expect("record bytes"),
-            ),
-        );
-    }
+    use crate::test_support::deploy_native as deploy_contract;
 
     /// Builds a tiny deployed contract with one `method(params)` descriptor,
     /// so `ContractManagement.IsContract` passes and the queued `finish`
@@ -1452,7 +1447,11 @@ mod oracle_request_finish_tests {
         engine
             .load_script(script, CallFlags::ALL, None)
             .expect("script loads");
-        assert_eq!(engine.execute_allow_fault(), VmState::HALT, "request must HALT");
+        assert_eq!(
+            engine.execute_allow_fault(),
+            VmState::HALT,
+            "request must HALT"
+        );
 
         // Request-id counter incremented to 1.
         assert_eq!(read_request_id(&snapshot).unwrap(), 1);
@@ -1495,10 +1494,7 @@ mod oracle_request_finish_tests {
         let StackItem::Struct(fields) = decoded else {
             panic!("GAS account state must be a struct");
         };
-        assert_eq!(
-            fields.items()[0].as_int().unwrap(),
-            BigInt::from(1_0000000)
-        );
+        assert_eq!(fields.items()[0].as_int().unwrap(), BigInt::from(1_0000000));
 
         // The OracleRequest notification carries [id, caller, url, filter].
         let event = engine
@@ -1531,8 +1527,13 @@ mod oracle_request_finish_tests {
             assert_eq!(read_request_id(&snapshot).unwrap(), expected_counter);
         }
         // Both ids are pending for the url, and a null filter round-trips.
-        let list_item = snapshot.get(&id_list_key("https://example.org/data")).unwrap();
-        assert_eq!(decode_id_list(&list_item.value_bytes()).unwrap(), vec![0, 1]);
+        let list_item = snapshot
+            .get(&id_list_key("https://example.org/data"))
+            .unwrap();
+        assert_eq!(
+            decode_id_list(&list_item.value_bytes()).unwrap(),
+            vec![0, 1]
+        );
         assert_eq!(read_request(&snapshot, 1).unwrap().unwrap().filter, None);
     }
 
@@ -1571,7 +1572,11 @@ mod oracle_request_finish_tests {
                 Arc::clone(&snapshot),
             );
             assert_eq!(state, VmState::FAULT, "{name} must FAULT");
-            assert_eq!(read_request_id(&snapshot).unwrap(), 0, "{name}: no id allocated");
+            assert_eq!(
+                read_request_id(&snapshot).unwrap(),
+                0,
+                "{name}: no id allocated"
+            );
         }
     }
 
@@ -1650,7 +1655,11 @@ mod oracle_request_finish_tests {
         engine
             .load_script(finish_script(), CallFlags::ALL, None)
             .expect("script loads");
-        assert_eq!(engine.execute_allow_fault(), VmState::HALT, "finish must HALT");
+        assert_eq!(
+            engine.execute_allow_fault(),
+            VmState::HALT,
+            "finish must HALT"
+        );
 
         // C# Finish emits OracleResponse [id, originalTxid] before the callback.
         let event = engine
@@ -1713,8 +1722,7 @@ mod oracle_request_finish_tests {
             vec![1]
         );
 
-        let mut without_attr =
-            make_engine(signed_tx(UInt160::from_bytes(&[0x42; 20]).unwrap()));
+        let mut without_attr = make_engine(signed_tx(UInt160::from_bytes(&[0x42; 20]).unwrap()));
         assert_eq!(
             contract.invoke(&mut without_attr, "verify", &[]).unwrap(),
             vec![0]
@@ -1758,8 +1766,14 @@ mod oracle_request_finish_tests {
             post_persist_engine(Arc::clone(&snapshot), 10, vec![oracle_response_tx(7, b"")]);
         NativeContract::post_persist(&OracleContract, &mut engine).expect("post_persist");
 
-        assert!(read_request(&snapshot, 7).unwrap().is_none(), "request removed");
-        assert!(read_request(&snapshot, 8).unwrap().is_some(), "other request kept");
+        assert!(
+            read_request(&snapshot, 7).unwrap().is_none(),
+            "request removed"
+        );
+        assert!(
+            read_request(&snapshot, 8).unwrap().is_some(),
+            "other request kept"
+        );
         let list_item = snapshot.get(&id_list_key(&request.url)).expect("list kept");
         assert_eq!(decode_id_list(&list_item.value_bytes()).unwrap(), vec![8]);
 
@@ -1768,7 +1782,10 @@ mod oracle_request_finish_tests {
             post_persist_engine(Arc::clone(&snapshot), 11, vec![oracle_response_tx(8, b"")]);
         NativeContract::post_persist(&OracleContract, &mut engine).expect("post_persist");
         assert!(read_request(&snapshot, 8).unwrap().is_none());
-        assert!(snapshot.get(&id_list_key(&request.url)).is_none(), "empty list deleted");
+        assert!(
+            snapshot.get(&id_list_key(&request.url)).is_none(),
+            "empty list deleted"
+        );
 
         // A response without a stored request is skipped (no fault).
         let mut engine =
@@ -1805,8 +1822,7 @@ mod oracle_request_finish_tests {
         NativeContract::post_persist(&OracleContract, &mut engine).expect("post_persist");
 
         // The node received the default 0.5 GAS oracle price.
-        let node_account =
-            UInt160::from_script(&Contract::create_signature_redeem_script(pubkey));
+        let node_account = UInt160::from_script(&Contract::create_signature_redeem_script(pubkey));
         let mut gas_key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
         gas_key_bytes.extend_from_slice(&node_account.to_bytes());
         let gas_item = snapshot

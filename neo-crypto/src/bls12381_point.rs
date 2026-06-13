@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 //! BLS12-381 curve-point operations backing Neo's `CryptoLib` native methods
 //! (`bls12381Serialize` / `bls12381Deserialize` / `bls12381Equal` / `…Add` /
 //! `…Mul` / `…Pairing`).
@@ -26,13 +28,13 @@
 
 use crate::error::{CryptoError, CryptoResult};
 use blst::{
-    blst_bendian_from_fp, blst_final_exp, blst_fp, blst_fp12, blst_fp12_inverse, blst_fp12_is_equal,
-    blst_fp12_mul, blst_fp12_one, blst_fp12_sqr, blst_fp_from_bendian, blst_miller_loop, blst_p1,
-    blst_p1_add_or_double, blst_p1_affine, blst_p1_affine_compress, blst_p1_affine_in_g1,
-    blst_p1_affine_is_equal, blst_p1_cneg, blst_p1_from_affine, blst_p1_mult, blst_p1_to_affine,
-    blst_p1_uncompress, blst_p2, blst_p2_add_or_double, blst_p2_affine, blst_p2_affine_compress,
-    blst_p2_affine_in_g2, blst_p2_affine_is_equal, blst_p2_cneg, blst_p2_from_affine, blst_p2_mult,
-    blst_p2_to_affine, blst_p2_uncompress, BLST_ERROR,
+    BLST_ERROR, blst_bendian_from_fp, blst_final_exp, blst_fp, blst_fp_from_bendian, blst_fp12,
+    blst_fp12_inverse, blst_fp12_is_equal, blst_fp12_mul, blst_fp12_one, blst_fp12_sqr,
+    blst_miller_loop, blst_p1, blst_p1_add_or_double, blst_p1_affine, blst_p1_affine_compress,
+    blst_p1_affine_in_g1, blst_p1_affine_is_equal, blst_p1_cneg, blst_p1_from_affine, blst_p1_mult,
+    blst_p1_to_affine, blst_p1_uncompress, blst_p2, blst_p2_add_or_double, blst_p2_affine,
+    blst_p2_affine_compress, blst_p2_affine_in_g2, blst_p2_affine_is_equal, blst_p2_cneg,
+    blst_p2_from_affine, blst_p2_mult, blst_p2_to_affine, blst_p2_uncompress,
 };
 
 /// Byte length of a BLS12-381 scalar multiplier (matches C# `Scalar.FromBytes`).
@@ -359,8 +361,12 @@ impl Bls12381Point {
     pub fn equals(&self, other: &Self) -> bool {
         match (self, other) {
             // SAFETY: operands are valid (constructed via `deserialize`/`add`).
-            (Bls12381Point::G1(a), Bls12381Point::G1(b)) => unsafe { blst_p1_affine_is_equal(a, b) },
-            (Bls12381Point::G2(a), Bls12381Point::G2(b)) => unsafe { blst_p2_affine_is_equal(a, b) },
+            (Bls12381Point::G1(a), Bls12381Point::G1(b)) => unsafe {
+                blst_p1_affine_is_equal(a, b)
+            },
+            (Bls12381Point::G2(a), Bls12381Point::G2(b)) => unsafe {
+                blst_p2_affine_is_equal(a, b)
+            },
             (Bls12381Point::Gt(a), Bls12381Point::Gt(b)) => unsafe { blst_fp12_is_equal(a, b) },
             _ => false,
         }

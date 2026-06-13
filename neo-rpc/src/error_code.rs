@@ -159,13 +159,13 @@ rpc_error_codes! {
 impl fmt::Display for RpcErrorCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} ({})", self.message(), self.code())
-   }
+    }
 }
 
 impl From<RpcErrorCode> for i32 {
     fn from(code: RpcErrorCode) -> Self {
         code.code()
-   }
+    }
 }
 
 #[cfg(test)]
@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(RpcErrorCode::MethodNotFound.code(), -32601);
         assert_eq!(RpcErrorCode::InvalidParams.code(), -32602);
         assert_eq!(RpcErrorCode::InternalError.code(), -32603);
-   }
+    }
 
     #[test]
     fn test_neo_error_codes() {
@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(RpcErrorCode::InsufficientFunds.code(), -511);
         assert_eq!(RpcErrorCode::AccessDenied.code(), -600);
         assert_eq!(RpcErrorCode::ExecutionFailed.code(), -608);
-   }
+    }
 
     #[test]
     fn test_from_code() {
@@ -208,7 +208,7 @@ mod tests {
         // -100 is no longer a valid code (the group starts at -101).
         assert_eq!(RpcErrorCode::from_code(-100), None);
         assert_eq!(RpcErrorCode::from_code(-999), None);
-   }
+    }
 
     #[test]
     fn test_is_standard() {
@@ -216,17 +216,17 @@ mod tests {
         assert!(RpcErrorCode::MethodNotFound.is_standard());
         assert!(!RpcErrorCode::UnknownBlock.is_standard());
         assert!(!RpcErrorCode::AccessDenied.is_standard());
-   }
+    }
 
     #[test]
     fn test_message() {
         assert_eq!(RpcErrorCode::ParseError.message(), "Parse error");
         assert_eq!(RpcErrorCode::UnknownBlock.message(), "Unknown block");
-   }
+    }
 
     #[test]
     fn test_display() {
         let code = RpcErrorCode::MethodNotFound;
         assert_eq!(code.to_string(), "Method not found (-32601)");
-   }
+    }
 }

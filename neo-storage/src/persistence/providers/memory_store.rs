@@ -1,13 +1,12 @@
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
-    store::{Store, OnNewSnapshotDelegate},
+    seek_direction::SeekDirection,
+    store::{OnNewSnapshotDelegate, Store},
     store_snapshot::StoreSnapshot,
     write_store::WriteStore,
-    seek_direction::SeekDirection,
 };
-use crate::types::{storage_key::StorageKey, StorageItem};
-use crate::impl_default_via_new;
+use crate::types::{StorageItem, storage_key::StorageKey};
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -33,7 +32,7 @@ impl MemoryStore {
     }
 }
 
-impl_default_via_new!(MemoryStore);
+neo_io::impl_default_via_new!(MemoryStore);
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {

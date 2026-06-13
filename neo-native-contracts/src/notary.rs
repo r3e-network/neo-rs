@@ -14,7 +14,7 @@ use neo_config::{Hardfork, ProtocolSettings};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeMethod};
-use neo_payloads::{get_sign_data, Transaction, TransactionAttribute};
+use neo_payloads::{Transaction, TransactionAttribute, get_sign_data};
 use neo_primitives::{
     CallFlags, ContractParameterType, TransactionAttributeType, UInt160, WitnessScope,
 };
@@ -33,9 +33,6 @@ use crate::{GasToken, LedgerContract, Role, RoleManagement};
 /// first deposit whose `till` the depositor isn't allowed to set itself.
 const DEFAULT_DEPOSIT_DELTA_TILL: u32 = 5760;
 
-/// Lazily-initialised script-hash handle for the Notary contract.
-pub static NOTARY_HASH_REF: LazyLock<UInt160> = LazyLock::new(|| *NOTARY_HASH);
-
 /// Storage prefix for the max-NotValidBefore-delta setting (C#
 /// `Notary.Prefix_MaxNotValidBeforeDelta`).
 const PREFIX_MAX_NOT_VALID_BEFORE_DELTA: u8 = 10;
@@ -48,9 +45,8 @@ const PREFIX_DEPOSIT: u8 = 1;
 /// `Prefix_Deposit ++ account`, returning 0 when the account has no deposit.
 /// `balanceOf` reads `Amount` (index 0); `expirationOf` reads `Till` (index 1).
 fn read_deposit_field(snapshot: &DataCache, account: &UInt160, index: usize) -> CoreResult<BigInt> {
-    let mut key_bytes = vec![PREFIX_DEPOSIT];
-    key_bytes.extend_from_slice(&account.to_bytes());
-    let Some(item) = snapshot.get(&StorageKey::new(Notary::ID, key_bytes)) else {
+    let key = StorageKey::new(Notary::ID, crate::keys::prefixed_with_hash160(PREFIX_DEPOSIT, account));
+    let Some(item) = snapshot.get(&key) else {
         return Ok(BigInt::from(0));
     };
     let state =
@@ -70,9 +66,10 @@ fn read_deposit_field(snapshot: &DataCache, account: &UInt160, index: usize) -> 
 
 /// The deposit storage key `(Notary.ID, [Prefix_Deposit, account])`.
 fn deposit_key(account: &UInt160) -> StorageKey {
-    let mut key_bytes = vec![PREFIX_DEPOSIT];
-    key_bytes.extend_from_slice(&account.to_bytes());
-    StorageKey::new(Notary::ID, key_bytes)
+    StorageKey::new(
+        Notary::ID,
+        crate::keys::prefixed_with_hash160(PREFIX_DEPOSIT, account),
+    )
 }
 
 /// Reads the full `Deposit` `(Amount, Till)` for `account`, or `None` when the
@@ -110,7 +107,12 @@ fn delete_deposit(snapshot: &DataCache, account: &UInt160) {
 
 /// Writes the `Deposit` `(Amount, Till)` struct for `account` (C# `PutDepositFor`):
 /// the BinarySerialized `Struct[Amount, Till]`.
-fn write_deposit(snapshot: &DataCache, account: &UInt160, amount: &BigInt, till: u32) -> CoreResult<()> {
+fn write_deposit(
+    snapshot: &DataCache,
+    account: &UInt160,
+    amount: &BigInt,
+    till: u32,
+) -> CoreResult<()> {
     let item = StackItem::from_struct(vec![
         StackItem::from_int(amount.clone()),
         StackItem::from_int(till),
@@ -165,9 +167,7 @@ fn parse_onnep17_data(from: &UInt160, data: &[u8]) -> CoreResult<(UInt160, u32)>
         let bytes = items[0]
             .as_bytes()
             .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment to: {e}")))?;
-        UInt160::from_bytes(&bytes).map_err(|e| {
-            CoreError::invalid_operation(format!("Notary::onNEP17Payment to: bad hash: {e}"))
-        })?
+        crate::args::bytes_to_hash160(&bytes, "Notary::onNEP17Payment to: bad hash")?
     };
     let till = items[1]
         .as_int()
@@ -201,7 +201,11 @@ fn compute_deposit(
             }
             // An existing deposit only adopts the requested `till` when the GAS
             // sender is the deposit owner; otherwise the lock height is unchanged.
-            let final_till = if allowed_change_till { till } else { existing_till };
+            let final_till = if allowed_change_till {
+                till
+            } else {
+                existing_till
+            };
             Ok((existing_amount + amount, final_till))
         }
         None => {
@@ -233,11 +237,7 @@ fn put_max_not_valid_before_delta(snapshot: &DataCache, value: i64) {
 
 /// Parses the leading `Hash160` account argument for the deposit reads.
 fn parse_account(args: &[Vec<u8>], method: &str) -> CoreResult<UInt160> {
-    let bytes = args
-        .first()
-        .ok_or_else(|| CoreError::invalid_operation(format!("Notary::{method} requires an account")))?;
-    UInt160::from_bytes(bytes)
-        .map_err(|e| CoreError::invalid_operation(format!("Notary::{method}: bad account: {e}")))
+    crate::args::raw_account(args, &format!("Notary::{method}"))
 }
 
 /// The Notary native contract.
@@ -247,6 +247,8 @@ pub struct Notary;
 impl Notary {
     /// Stable native contract id (matches C# `Notary`).
     pub const ID: i32 = -10;
+    /// Stable native contract name (matches C# `Notary.Name`).
+    pub const NAME: &'static str = "Notary";
 
     /// Construct a new `Notary` handle.
     pub fn new() -> Self {
@@ -254,8 +256,13 @@ impl Notary {
     }
 
     /// Returns the Notary script hash.
+    pub fn hash(&self) -> UInt160 {
+        Self::script_hash()
+    }
+
+    /// Returns the Notary script hash.
     pub fn script_hash() -> UInt160 {
-        *NOTARY_HASH_REF
+        *NOTARY_HASH
     }
 }
 
@@ -331,7 +338,10 @@ static NOTARY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             1 << 15,
             false,
             CallFlags::ALL.bits(),
-            vec![ContractParameterType::Hash160, ContractParameterType::Hash160],
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::Hash160,
+            ],
             ContractParameterType::Boolean,
         )
         .with_parameter_names(["from", "to"]),
@@ -357,11 +367,11 @@ impl NativeContract for Notary {
     }
 
     fn hash(&self) -> UInt160 {
-        *NOTARY_HASH_REF
+        Self::script_hash()
     }
 
     fn name(&self) -> &str {
-        "Notary"
+        Self::NAME
     }
 
     // C# `Notary.Activations => [Hardfork.HF_Echidna, Hardfork.HF_Faun]`
@@ -379,11 +389,7 @@ impl NativeContract for Notary {
 
     /// C# `Notary.OnManifestCompose` (Notary.cs:92-102): NEP-30 joins NEP-27
     /// once HF_Faun is enabled at the height.
-    fn supported_standards(
-        &self,
-        settings: &ProtocolSettings,
-        block_height: u32,
-    ) -> Vec<String> {
+    fn supported_standards(&self, settings: &ProtocolSettings, block_height: u32) -> Vec<String> {
         if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
             vec!["NEP-27".to_string(), "NEP-30".to_string()]
         } else {
@@ -513,8 +519,7 @@ impl NativeContract for Notary {
             TransactionAttributeType::NotaryAssisted.to_byte(),
             true,
         )?;
-        let single_reward =
-            BigInt::from(n_fees.wrapping_mul(per_key) / notaries.len() as i64);
+        let single_reward = BigInt::from(n_fees.wrapping_mul(per_key) / notaries.len() as i64);
         for notary in notaries {
             let address = UInt160::from_script(&Contract::create_signature_redeem_script(notary));
             crate::gas_token::gas_mint(engine, &address, &single_reward, false)?;
@@ -561,7 +566,9 @@ impl NativeContract for Notary {
                     .map(|b| BigInt::from_signed_bytes_le(b))
                     .and_then(|b| b.to_u32())
                     .ok_or_else(|| {
-                        CoreError::invalid_operation("Notary::lockDepositUntil requires a uint till")
+                        CoreError::invalid_operation(
+                            "Notary::lockDepositUntil requires a uint till",
+                        )
                     })?;
                 // CheckWitnessInternal: a missing witness returns false (not a fault).
                 let witnessed = engine.check_witness(&account).map_err(|e| {
@@ -613,7 +620,14 @@ impl NativeContract for Notary {
                     true,
                 )?;
                 let existing = read_deposit(&snapshot, &to)?;
-                match compute_deposit(existing, &amount, till, allowed_change_till, current, fee_per_key) {
+                match compute_deposit(
+                    existing,
+                    &amount,
+                    till,
+                    allowed_change_till,
+                    current,
+                    fee_per_key,
+                ) {
                     Ok((new_amount, new_till)) => {
                         write_deposit(&engine.snapshot_cache(), &to, &new_amount, new_till)?;
                         Ok(Vec::new())
@@ -635,17 +649,12 @@ impl NativeContract for Notary {
                 let receive = if to_is_null {
                     from
                 } else {
-                    let bytes = args.get(1).ok_or_else(|| {
-                        CoreError::invalid_operation("Notary::withdraw requires a to account")
-                    })?;
-                    UInt160::from_bytes(bytes).map_err(|e| {
-                        CoreError::invalid_operation(format!("Notary::withdraw: bad to: {e}"))
-                    })?
+                    crate::args::raw_hash160(args, 1, "Notary::withdraw")?
                 };
 
-                let witnessed = engine.check_witness(&from).map_err(|e| {
-                    CoreError::invalid_operation(format!("withdraw witness: {e}"))
-                })?;
+                let witnessed = engine
+                    .check_witness(&from)
+                    .map_err(|e| CoreError::invalid_operation(format!("withdraw witness: {e}")))?;
                 if !witnessed {
                     return Ok(vec![0]);
                 }
@@ -770,23 +779,15 @@ impl NativeContract for Notary {
                 // ProtocolSettings.Default.ValidatorsCount = 0). On a network whose
                 // ValidatorsCount > 0 this now rejects small deltas the old check
                 // let through — a tx-validity divergence.
-                let upper = crate::policy_contract::read_max_valid_until_block_increment(engine)? / 2;
+                let upper =
+                    crate::policy_contract::read_max_valid_until_block_increment(engine)? / 2;
                 let lower = i64::from(engine.protocol_settings().validators_count);
                 if i64::from(value) > upper || i64::from(value) < lower {
                     return Err(CoreError::invalid_operation(format!(
                         "MaxNotValidBeforeDelta cannot be more than {upper} or less than {lower}"
                     )));
                 }
-                let authorized = engine.check_committee_witness().map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "setMaxNotValidBeforeDelta committee check: {e}"
-                    ))
-                })?;
-                if !authorized {
-                    return Err(CoreError::invalid_operation(
-                        "setMaxNotValidBeforeDelta requires committee authorization",
-                    ));
-                }
+                crate::committee::assert_committee(engine, "setMaxNotValidBeforeDelta")?;
                 put_max_not_valid_before_delta(&engine.snapshot_cache(), i64::from(value));
                 Ok(Vec::new())
             }
@@ -806,9 +807,6 @@ mod tests {
     #[test]
     fn native_contract_surface() {
         let c = Notary::new();
-        assert_eq!(NativeContract::id(&c), -10);
-        assert_eq!(NativeContract::name(&c), "Notary");
-        assert_eq!(NativeContract::hash(&c), *NOTARY_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(
             names,
@@ -839,11 +837,18 @@ mod tests {
         assert_eq!(withdraw.required_call_flags, CallFlags::ALL.bits());
         assert_eq!(
             withdraw.parameters,
-            vec![ContractParameterType::Hash160, ContractParameterType::Hash160]
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::Hash160
+            ]
         );
         assert_eq!(withdraw.return_type, ContractParameterType::Boolean);
         // onNEP17Payment: not safe, States, (Hash160, Integer, Any) -> Void.
-        let on_pay = c.methods().iter().find(|m| m.name == "onNEP17Payment").unwrap();
+        let on_pay = c
+            .methods()
+            .iter()
+            .find(|m| m.name == "onNEP17Payment")
+            .unwrap();
         assert!(!on_pay.safe);
         assert_eq!(on_pay.required_call_flags, CallFlags::STATES.bits());
         assert_eq!(
@@ -872,12 +877,19 @@ mod tests {
         assert_eq!(setter.return_type, ContractParameterType::Void);
         assert_eq!(setter.cpu_fee, 1 << 15);
         // lockDepositUntil: not safe, States, (Hash160, Integer) -> Boolean.
-        let lock = c.methods().iter().find(|m| m.name == "lockDepositUntil").unwrap();
+        let lock = c
+            .methods()
+            .iter()
+            .find(|m| m.name == "lockDepositUntil")
+            .unwrap();
         assert!(!lock.safe);
         assert_eq!(lock.required_call_flags, CallFlags::STATES.bits());
         assert_eq!(
             lock.parameters,
-            vec![ContractParameterType::Hash160, ContractParameterType::Integer]
+            vec![
+                ContractParameterType::Hash160,
+                ContractParameterType::Integer
+            ]
         );
         assert_eq!(lock.return_type, ContractParameterType::Boolean);
     }
@@ -976,7 +988,8 @@ mod tests {
 
         // Wrong shape (not a 2-element array) -> error.
         let bad = StackItem::from_array(vec![StackItem::from_int(1)]);
-        let bad_bytes = BinarySerializer::serialize(&bad, &ExecutionEngineLimits::default()).unwrap();
+        let bad_bytes =
+            BinarySerializer::serialize(&bad, &ExecutionEngineLimits::default()).unwrap();
         assert!(parse_onnep17_data(&from, &bad_bytes).is_err());
     }
 
@@ -1015,22 +1028,35 @@ mod tests {
         let account = UInt160::from_bytes(&[3u8; 20]).unwrap();
 
         // Absent deposit -> both reads are 0.
-        assert_eq!(read_deposit_field(&cache, &account, 0).unwrap(), BigInt::from(0));
-        assert_eq!(read_deposit_field(&cache, &account, 1).unwrap(), BigInt::from(0));
+        assert_eq!(
+            read_deposit_field(&cache, &account, 0).unwrap(),
+            BigInt::from(0)
+        );
+        assert_eq!(
+            read_deposit_field(&cache, &account, 1).unwrap(),
+            BigInt::from(0)
+        );
 
         // Store a Deposit struct [Amount=1000, Till=42] and read each field.
-        let deposit = StackItem::from_struct(vec![
-            StackItem::from_int(1000),
-            StackItem::from_int(42),
-        ]);
+        let deposit =
+            StackItem::from_struct(vec![StackItem::from_int(1000), StackItem::from_int(42)]);
         let bytes =
             BinarySerializer::serialize(&deposit, &ExecutionEngineLimits::default()).unwrap();
         let mut key_bytes = vec![PREFIX_DEPOSIT];
         key_bytes.extend_from_slice(&account.to_bytes());
-        cache.add(StorageKey::new(Notary::ID, key_bytes), StorageItem::from_bytes(bytes));
+        cache.add(
+            StorageKey::new(Notary::ID, key_bytes),
+            StorageItem::from_bytes(bytes),
+        );
 
-        assert_eq!(read_deposit_field(&cache, &account, 0).unwrap(), BigInt::from(1000)); // Amount
-        assert_eq!(read_deposit_field(&cache, &account, 1).unwrap(), BigInt::from(42)); // Till
+        assert_eq!(
+            read_deposit_field(&cache, &account, 0).unwrap(),
+            BigInt::from(1000)
+        ); // Amount
+        assert_eq!(
+            read_deposit_field(&cache, &account, 1).unwrap(),
+            BigInt::from(42)
+        ); // Till
     }
 
     #[test]
@@ -1042,7 +1068,10 @@ mod tests {
             140
         );
         let key = StorageKey::new(Notary::ID, vec![PREFIX_MAX_NOT_VALID_BEFORE_DELTA]);
-        cache.add(key, StorageItem::from_bytes(BigInt::from(200).to_signed_bytes_le()));
+        cache.add(
+            key,
+            StorageItem::from_bytes(BigInt::from(200).to_signed_bytes_le()),
+        );
         assert_eq!(
             crate::read_storage_int(&cache, Notary::ID, PREFIX_MAX_NOT_VALID_BEFORE_DELTA, 140)
                 .unwrap(),
@@ -1070,30 +1099,16 @@ mod verify_dispatch_tests {
         settings
     }
     use neo_crypto::Secp256r1Crypto;
+    use neo_execution::ApplicationEngine;
     use neo_execution::contract_state::ContractState;
     use neo_execution::native_contract::build_native_contract_state;
-    use neo_execution::ApplicationEngine;
     use neo_io::{BinaryWriter, Serializable};
     use neo_payloads::{Block, Header, NotaryAssisted, Signer, TransactionAttribute, Witness};
     use neo_primitives::{TriggerType, Verifiable};
-    use neo_script_builder::ScriptBuilder;
+    use neo_vm::script_builder::ScriptBuilder;
     use neo_vm_rs::{OpCode, VmState};
     use std::sync::Arc;
-
-    /// ContractManagement per-contract storage prefix (mirrors the neo_token
-    /// governance harness).
-    const CM_PREFIX_CONTRACT: u8 = 8;
-
-    fn deploy_native(cache: &DataCache, state: &ContractState) {
-        let mut key = vec![CM_PREFIX_CONTRACT];
-        key.extend_from_slice(&state.hash.to_bytes());
-        cache.add(
-            StorageKey::new(crate::ContractManagement::ID, key),
-            StorageItem::from_bytes(
-                state.serialize_contract_record().expect("record bytes"),
-            ),
-        );
-    }
+    use crate::test_support::deploy_native;
 
     /// Writes a P2PNotary designation effective from block `index`: the
     /// RoleManagement record `(role_byte, index_be)` -> BinarySerializer array
@@ -1182,7 +1197,9 @@ mod verify_dispatch_tests {
         tx.set_valid_until_block(100);
         tx.set_script(vec![0x40]); // RET
         tx.set_signers(signers);
-        tx.set_attributes(vec![TransactionAttribute::NotaryAssisted(NotaryAssisted::new(1))]);
+        tx.set_attributes(vec![TransactionAttribute::NotaryAssisted(
+            NotaryAssisted::new(1),
+        )]);
         tx.set_witnesses(vec![Witness::empty()]);
         tx
     }
@@ -1190,7 +1207,9 @@ mod verify_dispatch_tests {
     /// Signs the C# `tx.GetSignData(network)` payload with the secp256r1 key.
     fn sign_tx(tx: &Transaction, private_key: &[u8; 32]) -> Vec<u8> {
         let sign_data = get_sign_data(tx, echidna_settings().network).unwrap();
-        Secp256r1Crypto::sign(&sign_data, private_key).unwrap().to_vec()
+        Secp256r1Crypto::sign(&sign_data, private_key)
+            .unwrap()
+            .to_vec()
     }
 
     #[test]
@@ -1332,7 +1351,10 @@ mod verify_dispatch_tests {
             Some(&signature),
         );
         assert_eq!(state, VmState::HALT);
-        assert!(!ok, "a Notary-paid tx without a payer deposit must be false");
+        assert!(
+            !ok,
+            "a Notary-paid tx without a payer deposit must be false"
+        );
 
         // An underfunded deposit (9 < 10) -> false.
         write_deposit(&snapshot, &payer, &BigInt::from(9), 1000).unwrap();
@@ -1346,11 +1368,7 @@ mod verify_dispatch_tests {
 
         // A deposit covering the fees exactly -> true.
         write_deposit(&snapshot, &payer, &BigInt::from(10), 1000).unwrap();
-        let (state3, ok3) = call_verify(
-            Arc::clone(&snapshot),
-            Some(container),
-            Some(&signature),
-        );
+        let (state3, ok3) = call_verify(Arc::clone(&snapshot), Some(container), Some(&signature));
         assert_eq!(state3, VmState::HALT);
         assert!(ok3, "a funded deposit must verify");
 
@@ -1475,8 +1493,9 @@ mod verify_dispatch_tests {
             .get_designated_by_role_at(&snapshot, Role::P2PNotary, 1)
             .unwrap();
         assert_eq!(notaries.len(), 1);
-        let notary_addr =
-            UInt160::from_script(&Contract::create_signature_redeem_script(notaries[0].clone()));
+        let notary_addr = UInt160::from_script(&Contract::create_signature_redeem_script(
+            notaries[0].clone(),
+        ));
         assert_eq!(gas_balance(&snapshot, &notary_addr), BigInt::from(2 * FEE));
     }
 }

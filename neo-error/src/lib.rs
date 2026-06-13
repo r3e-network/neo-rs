@@ -15,7 +15,7 @@
 //!
 //! A foundation crate is the right home for the error type because every
 //! layer above it needs to talk about errors, and pulling an error enum
-//! from a service-layer crate (e.g. `neo-chain` or `neo-core`) into a
+//! from a service-layer crate (for example the blockchain service) into a
 //! primitive crate (e.g. `neo-primitives` or `neo-io`) would invert the
 //! dependency order. Putting `CoreError` in its own `neo-error` crate
 //! keeps the layering clean and matches the polkadot-sdk and reth

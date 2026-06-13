@@ -6,12 +6,11 @@ pub use memory_snapshot::MemorySnapshot;
 pub use memory_store::MemoryStore;
 pub use memory_store_provider::MemoryStoreProvider;
 
-// The RocksDB backend now lives in the standalone `neo-storage-rocksdb` crate;
-// re-export it here (under the same `providers::rocksdb` path) so existing
-// `neo_core::persistence::providers::{RocksDBStoreProvider, rocksdb::*}` callers
-// are unaffected.
+// Re-export the RocksDB backend here (under the same `providers::rocksdb` path)
+// so existing `neo_core::persistence::providers::{RocksDBStoreProvider,
+// rocksdb::*}` callers are unaffected.
 #[cfg(feature = "rocksdb")]
-pub use neo_storage_rocksdb as rocksdb;
+pub use neo_storage::rocksdb;
 
 #[cfg(feature = "rocksdb")]
-pub use neo_storage_rocksdb::RocksDBStoreProvider;
+pub use neo_storage::rocksdb::RocksDBStoreProvider;

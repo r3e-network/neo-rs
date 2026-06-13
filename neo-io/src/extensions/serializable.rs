@@ -4,6 +4,7 @@ use crate::{BinaryWriter, IoResult, Serializable};
 /// Extension helpers for [`Serializable`] values mirroring
 /// `Neo.Extensions.IO.ISerializableExtensions`.
 pub trait SerializableExtensions {
+    /// Serializes this value to a byte vector.
     fn to_array(&self) -> IoResult<Vec<u8>>;
 }
 
@@ -17,6 +18,7 @@ impl<T: Serializable> SerializableExtensions for T {
 
 /// Extensions for collections of [`Serializable`] values mirroring C# `CollectionExtensions.ToByteArray`.
 pub trait SerializableCollectionExtensions<T: Serializable> {
+    /// Serializes this collection to a byte vector.
     fn to_byte_array(&self) -> IoResult<Vec<u8>>;
 }
 

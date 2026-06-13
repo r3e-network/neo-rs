@@ -1,6 +1,6 @@
 //! Integration tests for the P2P version/verack handshake and the
 //! per-connection lifecycle, driven over real TCP with a scripted
-//! fake peer speaking the `neo-wire` frame format.
+//! fake peer speaking the `neo-network::wire` frame format.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,16 +12,16 @@ use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 
 use neo_config::ProtocolSettings;
+use neo_network::wire::{Message, MessageCodec};
 use neo_network::{
     ChannelsConfig, ConnectionTimeouts, InboundInventory, LocalIdentity, LocalNodeService,
     NetworkEvent, NetworkHandle, PeerId, PeerRegistry, RemoteNodeService, RemoteNodeState,
 };
+use neo_p2p::MessageCommand;
 use neo_p2p::payloads::{
     GetBlockByIndexPayload, InvPayload, NodeCapability, PingPayload, VersionPayload,
 };
 use neo_primitives::{InventoryType, UInt256};
-use neo_p2p::MessageCommand;
-use neo_wire::{Message, MessageCodec};
 
 /// Generous upper bound for every await in these tests; real
 /// exchanges complete in milliseconds.
@@ -67,7 +67,12 @@ fn version_message(network: u32, nonce: u32, listener_port: u16) -> Message {
     if listener_port > 0 {
         capabilities.push(NodeCapability::tcp_server(listener_port));
     }
-    let payload = VersionPayload::create(network, nonce, "/fake-peer:0.0.1/".to_string(), capabilities);
+    let payload = VersionPayload::create(
+        network,
+        nonce,
+        "/fake-peer:0.0.1/".to_string(),
+        capabilities,
+    );
     Message::create(MessageCommand::Version, Some(&payload), false).expect("encode version")
 }
 
@@ -126,6 +131,27 @@ async fn start_local_node(
     let (service, handle) = LocalNodeService::with_config(settings, config);
     tokio::spawn(service.run());
     let events = handle.subscribe();
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
+    let port = handle.local_node_info().port();
+    assert_ne!(port, 0);
+    (handle, events, port)
+}
+
+async fn start_local_node_with_seeded_height(
+    config: ChannelsConfig,
+    height: u32,
+) -> (NetworkHandle, broadcast::Receiver<NetworkEvent>, u16) {
+    let settings = Arc::new(ProtocolSettings::default());
+    let (service, handle) = LocalNodeService::with_config(settings, config);
+    tokio::spawn(service.run());
+    let events = handle.subscribe();
+    handle
+        .set_block_height(height)
+        .await
+        .expect("seed local height before listener starts");
     handle
         .start("127.0.0.1:0".parse().unwrap())
         .await
@@ -209,9 +235,9 @@ async fn inbound_handshake_upgrades_address_and_eof_disconnects() {
     // The `getpeers` view (handle-side fold) serves the upgraded
     // endpoint.
     await_info(&handle, |info| {
-        info.connected_peers().iter().any(|p| {
-            p.peer_id == peer_id && p.address.map(|a| a.port()) == Some(20333)
-        })
+        info.connected_peers()
+            .iter()
+            .any(|p| p.peer_id == peer_id && p.address.map(|a| a.port()) == Some(20333))
     })
     .await;
 
@@ -219,9 +245,10 @@ async fn inbound_handshake_upgrades_address_and_eof_disconnects() {
     // remove the peer from the connected view (the
     // inbound-peers-persist-forever blocker).
     drop(fake);
-    await_event(&mut events, |e| {
-        matches!(e, NetworkEvent::PeerDisconnected { peer_id: p } if *p == peer_id)
-    })
+    await_event(
+        &mut events,
+        |e| matches!(e, NetworkEvent::PeerDisconnected { peer_id: p } if *p == peer_id),
+    )
     .await;
     await_info(&handle, |info| info.connected_peers_count() == 0).await;
 
@@ -259,25 +286,28 @@ async fn outbound_dial_sends_version_and_completes_handshake() {
     .await;
     assert_eq!(node_version.network, network);
     assert_eq!(node_version.nonce, local.nonce);
-    assert!(node_version
-        .capabilities
-        .iter()
-        .any(|c| matches!(c, NodeCapability::TcpServer { port } if *port == local.port())));
+    assert!(
+        node_version
+            .capabilities
+            .iter()
+            .any(|c| matches!(c, NodeCapability::TcpServer { port } if *port == local.port()))
+    );
 
     // The dialed endpoint is already the listener endpoint: the
     // `getpeers` view serves it unchanged.
     await_info(&handle, |info| {
-        info.connected_peers().iter().any(|p| {
-            p.peer_id == peer_id.to_string() && p.address == Some(remote_addr)
-        })
+        info.connected_peers()
+            .iter()
+            .any(|p| p.peer_id == peer_id.to_string() && p.address == Some(remote_addr))
     })
     .await;
 
     // Remote close tears the dialed peer down too.
     drop(fake);
-    await_event(&mut events, |e| {
-        matches!(e, NetworkEvent::PeerDisconnected { peer_id: p } if *p == peer_id.to_string())
-    })
+    await_event(
+        &mut events,
+        |e| matches!(e, NetworkEvent::PeerDisconnected { peer_id: p } if *p == peer_id.to_string()),
+    )
     .await;
 
     handle.shutdown().await.expect("shutdown");
@@ -401,14 +431,19 @@ async fn max_connections_per_address_rejects_excess_inbound() {
 
     // First connection is admitted and greeted with a version.
     let mut first = fake_dial(port).await;
-    let NetworkEvent::PeerConnected { peer_id: first_id, .. } = await_event(&mut events, |e| {
+    let NetworkEvent::PeerConnected {
+        peer_id: first_id, ..
+    } = await_event(&mut events, |e| {
         matches!(e, NetworkEvent::PeerConnected { .. })
     })
     .await
     else {
         unreachable!()
     };
-    assert!(recv_frame(&mut first).await.is_some(), "admitted peer gets a version");
+    assert!(
+        recv_frame(&mut first).await.is_some(),
+        "admitted peer gets a version"
+    );
 
     // Second connection from the same address is aborted before any
     // lifecycle event or version send (C# replies Tcp.Abort without
@@ -416,8 +451,7 @@ async fn max_connections_per_address_rejects_excess_inbound() {
     let mut second = fake_dial(port).await;
     expect_closed(&mut second).await;
     await_info(&handle, |info| {
-        info.connected_peers_count() == 1
-            && info.connected_peers()[0].peer_id == first_id
+        info.connected_peers_count() == 1 && info.connected_peers()[0].peer_id == first_id
     })
     .await;
 
@@ -465,7 +499,10 @@ async fn dial_respects_connection_caps() {
         std::future::pending::<()>().await;
     });
 
-    handle.connect_peer(addr_a).await.expect("first dial admitted");
+    handle
+        .connect_peer(addr_a)
+        .await
+        .expect("first dial admitted");
     let err = handle
         .connect_peer(addr_b)
         .await
@@ -527,9 +564,10 @@ async fn silent_peer_is_disconnected_after_handshake_timeout() {
 
     // The timeout must fire, disconnecting the peer and clearing the
     // registry entry.
-    await_event(&mut events, |e| {
-        matches!(e, NetworkEvent::PeerDisconnected { peer_id: p } if *p == peer_id.to_string())
-    })
+    await_event(
+        &mut events,
+        |e| matches!(e, NetworkEvent::PeerDisconnected { peer_id: p } if *p == peer_id.to_string()),
+    )
     .await;
     assert!(registry.is_empty());
     expect_closed(&mut fake).await;
@@ -559,7 +597,10 @@ async fn ping_is_answered_with_pong_carrying_local_height() {
     let mut reader = neo_io::MemoryReader::new(&pong.payload_raw);
     let payload =
         <PingPayload as neo_io::Serializable>::deserialize(&mut reader).expect("decode pong");
-    assert_eq!(payload.last_block_index, 0, "pong reports the local genesis height");
+    assert_eq!(
+        payload.last_block_index, 0,
+        "pong reports the local genesis height"
+    );
 
     handle.shutdown().await.expect("shutdown");
 }
@@ -574,7 +615,10 @@ async fn relayed_block_is_forwarded_to_the_inventory_sink() {
     let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
     let service = service.with_inventory_sink(inv_tx);
     tokio::spawn(service.run());
-    handle.start("127.0.0.1:0".parse().unwrap()).await.expect("start");
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
     let port = handle.local_node_info().port();
 
     let network = ProtocolSettings::default().network;
@@ -615,8 +659,12 @@ async fn node_requests_blocks_when_peer_is_ahead() {
         NodeCapability::full_node(100),
         NodeCapability::tcp_server(20333),
     ];
-    let payload =
-        VersionPayload::create(network, 0xfa4e_0004, "/fake-peer:0.0.1/".to_string(), capabilities);
+    let payload = VersionPayload::create(
+        network,
+        0xfa4e_0004,
+        "/fake-peer:0.0.1/".to_string(),
+        capabilities,
+    );
     fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
         .await
         .expect("send version");
@@ -634,11 +682,67 @@ async fn node_requests_blocks_when_peer_is_ahead() {
     let mut reader = neo_io::MemoryReader::new(&request.payload_raw);
     let payload = <GetBlockByIndexPayload as neo_io::Serializable>::deserialize(&mut reader)
         .expect("decode getblockbyindex");
-    assert_eq!(payload.index_start, 1, "request starts at local genesis height + 1");
+    assert_eq!(
+        payload.index_start, 1,
+        "request starts at local genesis height + 1"
+    );
     // C# `TaskManager` requests `Math.Min(endHeight - startHeight, MaxHashesCount)`:
     // the peer advertised height 100, so the node asks for exactly 100 blocks
     // (capped to the peer's height, well under the 500 batch ceiling).
     assert_eq!(payload.count, 100);
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// Restart/resume cursor: the daemon seeds the network-advertised height from
+/// durable `Ledger.CurrentIndex` before accepting peers. A peer that is ahead
+/// must see that height in our `version` payload and the first block-sync
+/// request must start at `durable_tip + 1`, not at genesis + 1.
+#[tokio::test]
+async fn seeded_local_height_resumes_block_requests_after_durable_tip() {
+    const DURABLE_TIP: u32 = 42;
+
+    let (handle, _events, port) =
+        start_local_node_with_seeded_height(ChannelsConfig::default(), DURABLE_TIP).await;
+    let network = ProtocolSettings::default().network;
+    let mut fake = fake_dial(port).await;
+
+    let node_version = recv_frame(&mut fake).await.expect("node version");
+    let node_version = decode_version(&node_version);
+    assert!(
+        node_version.capabilities.iter().any(|capability| matches!(
+            capability,
+            NodeCapability::FullNode {
+                start_height: DURABLE_TIP
+            }
+        )),
+        "version must advertise the durable ledger tip"
+    );
+
+    let capabilities = vec![
+        NodeCapability::full_node(100),
+        NodeCapability::tcp_server(20333),
+    ];
+    let payload = VersionPayload::create(
+        network,
+        0xfa4e_000d,
+        "/fake-peer:0.0.1/".to_string(),
+        capabilities,
+    );
+    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
+        .await
+        .expect("send version");
+    let verack = recv_frame(&mut fake).await.expect("verack");
+    assert_eq!(verack.command, MessageCommand::Verack);
+    fake.send(verack_message()).await.expect("send verack");
+
+    let request = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(
+        request.index_start,
+        DURABLE_TIP + 1,
+        "sync resumes just after the durable tip"
+    );
+    assert_eq!(request.count, (100 - DURABLE_TIP) as i16);
 
     handle.shutdown().await.expect("shutdown");
 }
@@ -655,6 +759,29 @@ impl neo_network::BlockSource for StubBlockSource {
     }
 }
 
+struct ExtensibleStubSource {
+    payload: neo_payloads::ExtensiblePayload,
+    hash: UInt256,
+}
+
+impl neo_network::BlockSource for ExtensibleStubSource {
+    fn block_by_index(&self, _index: u32) -> Option<neo_payloads::Block> {
+        None
+    }
+
+    fn extensible_by_hash(&self, hash: &UInt256) -> Option<neo_payloads::ExtensiblePayload> {
+        (*hash == self.hash).then(|| self.payload.clone())
+    }
+}
+
+fn sample_extensible_payload() -> neo_payloads::ExtensiblePayload {
+    let mut payload = neo_payloads::ExtensiblePayload::new();
+    payload.category = "dBFT".to_string();
+    payload.valid_block_end = 1;
+    payload.data = vec![1, 2, 3];
+    payload
+}
+
 /// C# `RemoteNode.OnGetBlockByIndexMessageReceived`: a peer's
 /// `GetBlockByIndex` is answered by serving the requested blocks from the
 /// local ledger as `block` frames.
@@ -664,7 +791,10 @@ async fn node_serves_getblockbyindex_from_the_block_source() {
     let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
     let service = service.with_block_source(Arc::new(StubBlockSource));
     tokio::spawn(service.run());
-    handle.start("127.0.0.1:0".parse().unwrap()).await.expect("start");
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
     let port = handle.local_node_info().port();
 
     let network = ProtocolSettings::default().network;
@@ -700,7 +830,10 @@ async fn local_node_with_block_source(nonce: u32) -> (NetworkHandle, FakeFramed)
     let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
     let service = service.with_block_source(Arc::new(StubBlockSource));
     tokio::spawn(service.run());
-    handle.start("127.0.0.1:0".parse().unwrap()).await.expect("start");
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
     let port = handle.local_node_info().port();
     let network = ProtocolSettings::default().network;
     let mut fake = fake_dial(port).await;
@@ -744,9 +877,11 @@ async fn node_serves_getdata_block_from_the_block_source() {
     let (handle, mut fake) = local_node_with_block_source(0xfa4e_0008).await;
 
     let request = InvPayload::create(InventoryType::Block, &[UInt256::zero()]);
-    fake.send(Message::create(MessageCommand::GetData, Some(&request), false).expect("encode getdata"))
-        .await
-        .expect("send getdata");
+    fake.send(
+        Message::create(MessageCommand::GetData, Some(&request), false).expect("encode getdata"),
+    )
+    .await
+    .expect("send getdata");
 
     let block_frame = loop {
         let frame = recv_frame(&mut fake).await.expect("getdata block frame");
@@ -761,6 +896,53 @@ async fn node_serves_getdata_block_from_the_block_source() {
     handle.shutdown().await.expect("shutdown");
 }
 
+/// C# `OnGetDataMessageReceived`: non-block/tx inventory such as
+/// `ExtensiblePayload` is served from the relay cache as an `extensible` frame.
+#[tokio::test]
+async fn node_serves_getdata_extensible_from_the_block_source() {
+    let settings = Arc::new(ProtocolSettings::default());
+    let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
+    let mut payload = sample_extensible_payload();
+    let hash = payload.hash();
+    let service = service.with_block_source(Arc::new(ExtensibleStubSource {
+        payload: payload.clone(),
+        hash,
+    }));
+    tokio::spawn(service.run());
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
+    let port = handle.local_node_info().port();
+    let network = ProtocolSettings::default().network;
+    let mut fake = fake_dial(port).await;
+    complete_handshake(&mut fake, network, 0xfa4e_000c, 20333).await;
+
+    let request = InvPayload::create(InventoryType::Extensible, &[hash]);
+    fake.send(
+        Message::create(MessageCommand::GetData, Some(&request), false).expect("encode getdata"),
+    )
+    .await
+    .expect("send getdata");
+
+    let extensible_frame = loop {
+        let frame = recv_frame(&mut fake)
+            .await
+            .expect("getdata extensible frame");
+        if frame.command == MessageCommand::Extensible {
+            break frame;
+        }
+    };
+    let mut reader = neo_io::MemoryReader::new(&extensible_frame.payload_raw);
+    let served =
+        <neo_payloads::ExtensiblePayload as neo_io::Serializable>::deserialize(&mut reader)
+            .expect("served extensible round-trips");
+    assert_eq!(served.category, payload.category);
+    assert_eq!(served.data, payload.data);
+
+    handle.shutdown().await.expect("shutdown");
+}
+
 /// C# `OnInventoryReceived` for an `ExtensiblePayload` (dBFT consensus /
 /// state-root messages): a relayed extensible payload is decoded and
 /// forwarded over the inbound-inventory sink.
@@ -771,7 +953,10 @@ async fn relayed_extensible_is_forwarded_to_the_inventory_sink() {
     let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
     let service = service.with_inventory_sink(inv_tx);
     tokio::spawn(service.run());
-    handle.start("127.0.0.1:0".parse().unwrap()).await.expect("start");
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
     let port = handle.local_node_info().port();
 
     let network = ProtocolSettings::default().network;
@@ -852,9 +1037,37 @@ async fn node_pulls_unknown_inv_with_getdata() {
         }
     };
     let mut reader = neo_io::MemoryReader::new(&getdata.payload_raw);
-    let payload = <InvPayload as neo_io::Serializable>::deserialize(&mut reader)
-        .expect("decode getdata");
+    let payload =
+        <InvPayload as neo_io::Serializable>::deserialize(&mut reader).expect("decode getdata");
     assert_eq!(payload.inventory_type, InventoryType::Transaction);
+    assert_eq!(payload.hashes, vec![unknown]);
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// Neo N3 v3.10.0 treats extensible payload hashes as fetchable inventory:
+/// an `Inv(Extensible)` announcement is pulled with `GetData`, just like
+/// blocks and transactions.
+#[tokio::test]
+async fn node_pulls_unknown_extensible_inv_with_getdata() {
+    let (handle, mut fake) = local_node_with_block_source(0xfa4e_000b).await;
+
+    let unknown = UInt256::from_bytes(&[0x2eu8; 32]).expect("hash");
+    let inv = InvPayload::create(InventoryType::Extensible, &[unknown]);
+    fake.send(Message::create(MessageCommand::Inv, Some(&inv), false).expect("encode inv"))
+        .await
+        .expect("send inv");
+
+    let getdata = loop {
+        let frame = recv_frame(&mut fake).await.expect("getdata frame");
+        if frame.command == MessageCommand::GetData {
+            break frame;
+        }
+    };
+    let mut reader = neo_io::MemoryReader::new(&getdata.payload_raw);
+    let payload =
+        <InvPayload as neo_io::Serializable>::deserialize(&mut reader).expect("decode getdata");
+    assert_eq!(payload.inventory_type, InventoryType::Extensible);
     assert_eq!(payload.hashes, vec![unknown]);
 
     handle.shutdown().await.expect("shutdown");
@@ -880,7 +1093,10 @@ async fn node_answers_mempool_request_with_inv() {
     let mempool_hash = UInt256::from_bytes(&[0x42u8; 32]).expect("hash");
     let service = service.with_block_source(Arc::new(MempoolStubSource(mempool_hash)));
     tokio::spawn(service.run());
-    handle.start("127.0.0.1:0".parse().unwrap()).await.expect("start");
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
     let port = handle.local_node_info().port();
     let network = ProtocolSettings::default().network;
     let mut fake = fake_dial(port).await;
@@ -900,8 +1116,8 @@ async fn node_answers_mempool_request_with_inv() {
         }
     };
     let mut reader = neo_io::MemoryReader::new(&inv.payload_raw);
-    let payload = <InvPayload as neo_io::Serializable>::deserialize(&mut reader)
-        .expect("decode inv");
+    let payload =
+        <InvPayload as neo_io::Serializable>::deserialize(&mut reader).expect("decode inv");
     assert_eq!(payload.inventory_type, InventoryType::Transaction);
     assert_eq!(payload.hashes, vec![mempool_hash]);
 
@@ -931,8 +1147,8 @@ async fn broadcast_inv_reaches_connected_peers() {
         }
     };
     let mut reader = neo_io::MemoryReader::new(&frame.payload_raw);
-    let payload = <InvPayload as neo_io::Serializable>::deserialize(&mut reader)
-        .expect("decode inv");
+    let payload =
+        <InvPayload as neo_io::Serializable>::deserialize(&mut reader).expect("decode inv");
     assert_eq!(payload.inventory_type, InventoryType::Transaction);
     assert_eq!(payload.hashes, vec![announced]);
 
@@ -966,8 +1182,12 @@ async fn node_pipelines_block_requests_as_height_advances() {
         NodeCapability::full_node(5000),
         NodeCapability::tcp_server(20333),
     ];
-    let payload =
-        VersionPayload::create(network, 0xfa4e_000c, "/fake-peer:0.0.1/".to_string(), capabilities);
+    let payload = VersionPayload::create(
+        network,
+        0xfa4e_000c,
+        "/fake-peer:0.0.1/".to_string(),
+        capabilities,
+    );
     fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
         .await
         .expect("send version");

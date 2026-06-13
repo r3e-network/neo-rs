@@ -2,26 +2,26 @@ use super::*;
 use crate::client::models::RpcPeers;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_extensions::io::SerializableExtensions;
-use neo_block::VerifyResult;
-use neo_payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
-use neo_payloads::OracleResponseCode;
-use neo_payloads::signer::Signer;
-use neo_payloads::transaction::Transaction;
-use neo_payloads::witness::Witness;
-use neo_payloads::{get_sign_data_vec, Block, Header, TransactionAttribute};
-use neo_storage::persistence::StoreCache;
 use neo_config::ProtocolSettings;
+use neo_execution::Contract;
+use neo_io::extensions::serializable::SerializableExtensions;
 use neo_native_contracts::LedgerContract;
 use neo_native_contracts::NativeContract;
 use neo_native_contracts::PolicyContract;
-use neo_execution::Contract;
-use neo_storage::{StorageItem, StorageKey};
-use neo_wallets::KeyPair;
+use neo_payloads::OracleResponseCode;
+use neo_payloads::VerifyResult;
+use neo_payloads::oracle_response::{MAX_RESULT_SIZE, OracleResponse};
+use neo_payloads::signer::Signer;
+use neo_payloads::transaction::Transaction;
+use neo_payloads::witness::Witness;
+use neo_payloads::{Block, Header, TransactionAttribute, get_sign_data_vec};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
-use neo_json::JToken;
+use neo_serialization::json::JToken;
+use neo_storage::persistence::StoreCache;
+use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
+use neo_wallets::KeyPair;
 use num_bigint::BigInt;
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
@@ -31,7 +31,7 @@ fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         .expect("handler present")
 }
 
-fn parse_object(value: &Value) -> neo_json::JObject {
+fn parse_object(value: &Value) -> neo_serialization::json::JObject {
     let json = serde_json::to_string(value).expect("serialize");
     let token = JToken::parse(&json, 128).expect("parse");
     token.as_object().cloned().expect("expected JSON object")
@@ -220,8 +220,7 @@ async fn get_peers_serves_empty_arrays_without_peers() {
     // empty. `unconnected` stays empty by design (the reth-style
     // network service keeps no unconnected address book) and `bad` is
     // always empty, matching C# v3.9.1.
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
 
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
@@ -249,8 +248,7 @@ async fn get_peers_serves_empty_arrays_without_peers() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_peers_folds_connect_and_disconnect_events() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let peers_handler = find_handler(&handlers, "getpeers");
@@ -300,13 +298,19 @@ async fn get_peers_folds_connect_and_disconnect_events() {
         Some("10.1.2.3")
     );
     // C# emits the port as a JSON number, not a string.
-    assert_eq!(connected[0].get("port").and_then(Value::as_u64), Some(20333));
+    assert_eq!(
+        connected[0].get("port").and_then(Value::as_u64),
+        Some(20333)
+    );
     // The inbound peer appears with its remote address.
     assert_eq!(
         connected[1].get("address").and_then(Value::as_str),
         Some("198.51.100.7")
     );
-    assert_eq!(connected[1].get("port").and_then(Value::as_u64), Some(54321));
+    assert_eq!(
+        connected[1].get("port").and_then(Value::as_u64),
+        Some(54321)
+    );
     let count = (count_handler.callback())(&server, &[]).expect("count");
     assert_eq!(count.as_u64(), Some(3));
 
@@ -355,8 +359,7 @@ async fn get_peers_folds_connect_and_disconnect_events() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_peers_empty_when_no_queue() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let peers_handler = find_handler(&handlers, "getpeers");
@@ -383,8 +386,7 @@ async fn get_peers_empty_when_no_queue() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_peers_roundtrips_into_client_model() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
@@ -398,8 +400,7 @@ async fn get_peers_roundtrips_into_client_model() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_version_contains_expected_fields() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "getversion");
@@ -441,13 +442,12 @@ async fn get_version_contains_expected_fields() {
             "missing protocol field {}",
             key
         );
-   }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_version_hardforks_structure() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "getversion");
@@ -475,7 +475,7 @@ async fn get_version_hardforks_structure() {
             .expect("hardfork blockheight");
         assert!(!name.starts_with("HF_"));
         let _ = blockheight;
-   }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -483,7 +483,7 @@ async fn get_version_includes_zero_height_hardforks() {
     let mut settings = ProtocolSettings::default();
     for height in settings.hardforks.values_mut() {
         *height = 0;
-   }
+    }
     let expected = settings.hardforks.len();
     let system = crate::server::test_support::test_system(settings);
     let server = RpcServer::new(system, RpcServerConfig::default());
@@ -506,7 +506,7 @@ async fn get_version_includes_zero_height_hardforks() {
             .and_then(|obj| obj.get("blockheight"))
             .and_then(Value::as_u64)
             == Some(0)
-   }));
+    }));
 }
 
 /// Settings with every hardfork (including HF_Echidna) active from
@@ -516,7 +516,7 @@ fn echidna_at_zero_settings() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
     for height in settings.hardforks.values_mut() {
         *height = 0;
-   }
+    }
     settings
 }
 
@@ -542,7 +542,7 @@ fn seed_policy_dynamic_values(
             StorageKey::new(PolicyContract::ID, vec![prefix]),
             StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()),
         );
-   }
+    }
     store.commit();
 }
 
@@ -558,7 +558,7 @@ fn version_dynamic_triple(result: &Value) -> (u64, u64, u64) {
             .get(key)
             .and_then(Value::as_u64)
             .unwrap_or_else(|| panic!("numeric protocol field {key}"))
-   };
+    };
     (
         read("msperblock"),
         read("maxtraceableblocks"),
@@ -656,8 +656,7 @@ async fn get_version_falls_back_to_settings_when_ledger_pointer_absent() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_rejects_null_input() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -670,8 +669,7 @@ async fn send_raw_transaction_rejects_null_input() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_rejects_empty_input() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -684,8 +682,7 @@ async fn send_raw_transaction_rejects_empty_input() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_rejects_invalid_base64() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -698,8 +695,7 @@ async fn send_raw_transaction_rejects_invalid_base64() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_rejects_invalid_transaction_bytes() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -709,10 +705,12 @@ async fn send_raw_transaction_rejects_invalid_transaction_bytes() {
     let err = (handler.callback())(&server, &params).expect_err("invalid tx bytes");
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
-    assert!(rpc_error
-        .data()
-        .unwrap_or_default()
-        .contains("Invalid transaction"));
+    assert!(
+        rpc_error
+            .data()
+            .unwrap_or_default()
+            .contains("Invalid transaction")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -737,8 +735,8 @@ async fn send_raw_transaction_accepts_valid_transaction() {
     let tx = build_signed_transaction(&settings, &keypair, 1, 0);
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
     let params = [Value::String(payload)];
-    let result = tokio::task::block_in_place(|| (handler.callback())(&server, &params))
-        .expect("send raw");
+    let result =
+        tokio::task::block_in_place(|| (handler.callback())(&server, &params)).expect("send raw");
     let hash = result.get("hash").and_then(Value::as_str).expect("hash");
     assert_eq!(hash, tx.hash().to_string());
 }
@@ -786,8 +784,8 @@ async fn send_raw_transaction_reports_invalid_signature() {
     if let Some(witness) = witnesses.get_mut(0) {
         if let Some(last) = witness.invocation_script.last_mut() {
             *last ^= 0x01;
-       }
-   }
+        }
+    }
     tx.set_witnesses(witnesses);
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -1014,8 +1012,7 @@ async fn send_raw_transaction_reports_already_exists() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn submit_block_rejects_invalid_base64() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
@@ -1028,8 +1025,7 @@ async fn submit_block_rejects_invalid_base64() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn submit_block_rejects_invalid_block_bytes() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
@@ -1039,10 +1035,12 @@ async fn submit_block_rejects_invalid_block_bytes() {
     let err = (handler.callback())(&server, &params).expect_err("invalid block bytes");
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
-    assert!(rpc_error
-        .data()
-        .unwrap_or_default()
-        .contains("Invalid block"));
+    assert!(
+        rpc_error
+            .data()
+            .unwrap_or_default()
+            .contains("Invalid block")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1127,7 +1125,6 @@ async fn submit_block_reports_already_exists() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "Block validation test needs system context - pre-existing issue"]
 async fn submit_block_reports_invalid_block() {
     let validator = KeyPair::from_private_key(&[0x12u8; 32]).expect("validator key");
     let settings = single_validator_settings(&validator);
@@ -1167,7 +1164,6 @@ async fn submit_block_reports_invalid_block() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "Block validation test needs system context - pre-existing issue"]
 async fn submit_block_reports_invalid_prev_hash() {
     let validator = KeyPair::from_private_key(&[0x13u8; 32]).expect("validator key");
     let settings = single_validator_settings(&validator);
@@ -1247,8 +1243,7 @@ async fn submit_block_reports_invalid_index() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn submit_block_rejects_null_input() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
@@ -1261,8 +1256,7 @@ async fn submit_block_rejects_null_input() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn submit_block_rejects_empty_input() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "submitblock");
@@ -1275,8 +1269,7 @@ async fn submit_block_rejects_empty_input() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_connection_count_defaults_to_zero() {
-    let system =
-        crate::server::test_support::test_system(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "getconnectioncount");

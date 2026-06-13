@@ -2,8 +2,8 @@
 //! [`crate::MemoryPool::new_transaction`] when a fresh transaction
 //! is about to be admitted into the mempool.
 
-use neo_data_cache::DataCache;
 use neo_payloads::Transaction;
+use neo_storage::DataCache;
 
 /// Event arguments for the `MemoryPool::new_transaction` event.
 ///

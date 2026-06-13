@@ -1,11 +1,11 @@
 use super::*;
 use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use mockito::{Matcher, Server};
 use neo_config::ProtocolSettings;
-use neo_script_builder::ScriptBuilder;
-use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
+use neo_vm::script_builder::ScriptBuilder;
+use neo_serialization::json::{JObject, JToken};
 use neo_vm_rs::OpCode;
 use regex::escape;
 use reqwest::Url;
@@ -27,7 +27,7 @@ fn load_rpc_case_result(name: &str) -> Option<JObject> {
             path.display()
         );
         return None;
-   }
+    }
     let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
     let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
     let cases = token
@@ -50,8 +50,8 @@ fn load_rpc_case_result(name: &str) -> Option<JObject> {
                 .and_then(|value| value.as_object())
                 .expect("case result");
             return Some(result.clone());
-       }
-   }
+        }
+    }
     eprintln!("SKIP: RpcTestCases.json missing case: {name}");
     None
 }
@@ -67,7 +67,9 @@ fn invoke_response_integer(value: i64) -> String {
     result.insert("gasconsumed".to_string(), JToken::String("0".to_string()));
     result.insert(
         "stack".to_string(),
-        JToken::Array(neo_json::JArray::from(vec![JToken::Object(item)])),
+        JToken::Array(neo_serialization::json::JArray::from(vec![JToken::Object(
+            item,
+        )])),
     );
 
     rpc_response(JToken::Object(result))
@@ -78,35 +80,36 @@ fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), 
         serde_json::Value::Null => {
             sb.emit_opcode(OpCode::PUSHNULL);
             Ok(())
-       }
+        }
         serde_json::Value::Bool(b) => {
             sb.emit_push_bool(*b);
             Ok(())
-       }
+        }
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 sb.emit_push_int(i);
                 Ok(())
-           } else if let Some(u) = n.as_u64() {
+            } else if let Some(u) = n.as_u64() {
                 sb.emit_push_int(u as i64);
                 Ok(())
-           } else {
+            } else {
                 Err("Invalid number format".into())
-           }
-       }
+            }
+        }
         serde_json::Value::String(s) => {
             sb.emit_push(s.as_bytes());
             Ok(())
-       }
+        }
         serde_json::Value::Array(arr) => {
             for item in arr.iter().rev() {
                 emit_argument(sb, item)?;
-           }
+            }
             sb.emit_push_int(arr.len() as i64);
             sb.emit_pack();
             Ok(())
-       }
-        _ => Err("Unsupported argument type".into())}
+        }
+        _ => Err("Unsupported argument type".into()),
+    }
 }
 
 fn build_dynamic_call_script(
@@ -118,13 +121,13 @@ fn build_dynamic_call_script(
 
     if args.is_empty() {
         sb.emit_opcode(OpCode::NEWARRAY0);
-   } else {
+    } else {
         for arg in args.iter().rev() {
             emit_argument(&mut sb, arg).expect("emit argument");
-       }
+        }
         sb.emit_push_int(args.len() as i64);
         sb.emit_pack();
-   }
+    }
 
     sb.emit_push_int(neo_manifest::CallFlags::ALL.bits() as i64);
     sb.emit_push(operation.as_bytes());
@@ -146,9 +149,9 @@ fn build_transfer_script(
 
     if let Some(d) = data {
         emit_argument(&mut sb, &d).expect("emit argument");
-   } else {
+    } else {
         sb.emit_opcode(OpCode::PUSHNULL);
-   }
+    }
     sb.emit_push_int(amount.to_i64().expect("amount"));
     sb.emit_push(&to.to_array());
     sb.emit_push(&from.to_array());
@@ -159,7 +162,7 @@ fn build_transfer_script(
     sb.emit_syscall("System.Contract.Call").expect("syscall");
     if add_assert {
         sb.emit_opcode(OpCode::ASSERT);
-   }
+    }
 
     sb.to_array()
 }
@@ -235,7 +238,7 @@ fn mock_sendrawtransaction(server: &mut Server, hash: UInt256) {
 async fn wallet_api_get_unclaimed_gas_uses_block_count() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let account = UInt160::zero();
     let settings = ProtocolSettings::default_settings();
@@ -282,7 +285,7 @@ async fn wallet_api_get_unclaimed_gas_uses_block_count() {
 async fn wallet_api_get_token_balance_reads_integer() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let account = UInt160::zero();
     let settings = ProtocolSettings::default_settings();
@@ -314,7 +317,7 @@ async fn wallet_api_get_token_balance_reads_integer() {
 async fn wallet_api_get_neo_and_gas_balances() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let account = UInt160::from_bytes(&[0x22u8; 20]).expect("account hash");
     let settings = ProtocolSettings::default_settings();
@@ -356,7 +359,7 @@ async fn wallet_api_get_neo_and_gas_balances() {
 async fn wallet_api_get_account_state_combines_balances() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let account = UInt160::from_bytes(&[0x33u8; 20]).expect("account hash");
     let settings = ProtocolSettings::default_settings();
@@ -422,7 +425,7 @@ async fn wallet_api_get_account_state_combines_balances() {
 async fn wallet_api_claim_gas_sends_transaction_and_skips_assert() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let settings = ProtocolSettings::default_settings();
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
@@ -452,7 +455,7 @@ async fn wallet_api_claim_gas_sends_transaction_and_skips_assert() {
 async fn wallet_api_claim_gas_accepts_wif_string() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let settings = ProtocolSettings::default_settings();
     let wif = "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p";
@@ -481,7 +484,7 @@ async fn wallet_api_claim_gas_accepts_wif_string() {
 async fn wallet_api_transfer_sends_transaction_and_returns_hash() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let settings = ProtocolSettings::default_settings();
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
@@ -524,7 +527,7 @@ async fn wallet_api_transfer_sends_transaction_and_returns_hash() {
 async fn wallet_api_transfer_decimal_from_key_converts_amount() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let settings = ProtocolSettings::default_settings();
     let wif = "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p";
@@ -625,7 +628,7 @@ async fn wallet_api_transfer_multi_sig_requires_enough_keys() {
 async fn wallet_api_transfer_multi_sig_sends_transaction() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let settings = ProtocolSettings::default_settings();
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
@@ -671,7 +674,7 @@ async fn wallet_api_transfer_multi_sig_sends_transaction() {
 async fn wallet_api_transfer_multi_sig_with_empty_string_data() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let settings = ProtocolSettings::default_settings();
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
@@ -744,7 +747,7 @@ async fn wallet_api_transfer_multi_sig_with_empty_string_data() {
 async fn wallet_api_wait_transaction_returns_confirmed_tx() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let mut settings = ProtocolSettings::default_settings();
     settings.milliseconds_per_block = 2;
@@ -752,7 +755,7 @@ async fn wallet_api_wait_transaction_returns_confirmed_tx() {
 
     let Some(result_json) = load_rpc_case_result("getrawtransactionasync") else {
         return;
-   };
+    };
     let response_body = rpc_response(JToken::Object(result_json.clone()));
 
     let mut server = Server::new_async().await;
@@ -789,7 +792,7 @@ async fn wallet_api_wait_transaction_returns_confirmed_tx() {
 async fn wallet_api_wait_transaction_times_out() {
     if !localhost_binding_permitted() {
         return;
-   }
+    }
 
     let mut settings = ProtocolSettings::default_settings();
     settings.milliseconds_per_block = 2;
@@ -797,10 +800,10 @@ async fn wallet_api_wait_transaction_times_out() {
 
     let Some(mut unconfirmed) = load_rpc_case_result("getrawtransactionasync") else {
         return;
-   };
+    };
     for key in ["confirmations", "blockhash", "blocktime", "vmstate"] {
         unconfirmed.properties_mut().remove(&key.to_string());
-   }
+    }
     let response_body = rpc_response(JToken::Object(unconfirmed));
 
     let mut server = Server::new_async().await;

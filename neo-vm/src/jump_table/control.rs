@@ -2,7 +2,7 @@
 
 use crate::error::{VmError, VmResult};
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{register_jump_handlers, JumpTable};
+use crate::jump_table::{JumpTable, register_jump_handlers};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
@@ -10,10 +10,10 @@ use neo_vm_rs::VmState as VMState;
 /// Register all control handlers
 pub fn register_handlers(jump_table: &mut JumpTable) {
     use OpCode::{
-        ABORT, ABORTMSG, ASSERT, ASSERTMSG, CALL, CALLA, CALLT, CALL_L, ENDFINALLY, ENDTRY,
-        ENDTRY_L, JMP, JMPEQ, JMPEQ_L, JMPGE, JMPGE_L, JMPGT, JMPGT_L, JMPIF, JMPIFNOT, JMPIFNOT_L,
-        JMPIF_L, JMPLE, JMPLE_L, JMPLT, JMPLT_L, JMPNE, JMPNE_L, JMP_L, NOP, RET, SYSCALL, THROW,
-        TRY, TRY_L,
+        ABORT, ABORTMSG, ASSERT, ASSERTMSG, CALL, CALL_L, CALLA, CALLT, ENDFINALLY, ENDTRY,
+        ENDTRY_L, JMP, JMP_L, JMPEQ, JMPEQ_L, JMPGE, JMPGE_L, JMPGT, JMPGT_L, JMPIF, JMPIF_L,
+        JMPIFNOT, JMPIFNOT_L, JMPLE, JMPLE_L, JMPLT, JMPLT_L, JMPNE, JMPNE_L, NOP, RET, SYSCALL,
+        THROW, TRY, TRY_L,
     };
 
     register_jump_handlers![

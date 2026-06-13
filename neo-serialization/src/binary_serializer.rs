@@ -2,16 +2,15 @@
 
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::StackItem;
 use neo_io::var_int;
 use neo_io::{IoError, MemoryReader};
+use neo_vm::StackItem;
+use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use std::collections::{HashSet, VecDeque};
-
 /// Binary serializer helpers for VM stack items.
 pub struct BinarySerializer;
 
@@ -54,15 +53,20 @@ impl BinarySerializer {
     pub fn deserialize(
         data: &[u8],
         limits: &ExecutionEngineLimits,
-        reference_counter: Option<ReferenceCounter>,
+        _reference_counter: Option<ReferenceCounter>,
     ) -> Result<StackItem, String> {
         let mut reader = MemoryReader::new(data);
         Self::deserialize_with_limits(
             &mut reader,
             limits.max_item_size,
             limits.max_stack_size,
-            reference_counter,
+            _reference_counter,
         )
+    }
+
+    /// Deserialize a [`StackItem`] from the provided buffer using default VM limits.
+    pub fn deserialize_default(data: &[u8]) -> Result<StackItem, String> {
+        Self::deserialize(data, &ExecutionEngineLimits::default(), None)
     }
 
     /// Deserialize using explicit limits (mirrors the C# overload).
@@ -70,7 +74,7 @@ impl BinarySerializer {
         reader: &mut MemoryReader<'_>,
         max_size: u32,
         max_items: u32,
-        reference_counter: Option<ReferenceCounter>,
+        _reference_counter: Option<ReferenceCounter>,
     ) -> Result<StackItem, String> {
         let mut pending: Vec<PendingItem> = Vec::new();
         let mut remaining = 1usize;
@@ -165,7 +169,7 @@ impl BinarySerializer {
             match item {
                 PendingItem::Value(stack_item) => constructed.push(stack_item),
                 PendingItem::Container(container) => {
-                        let result =
+                    let result =
                         match container.item_type {
                             StackItemType::Array => {
                                 let mut elements = Vec::with_capacity(container.element_count);
@@ -385,6 +389,16 @@ impl BinarySerializer {
     ) -> Result<Vec<u8>, String> {
         let item = StackItem::try_from(value.clone()).map_err(|err| err.to_string())?;
         Self::serialize(&item, limits)
+    }
+
+    /// Serialize a stack item with default VM limits.
+    pub fn serialize_default(item: &StackItem) -> Result<Vec<u8>, String> {
+        Self::serialize(item, &ExecutionEngineLimits::default())
+    }
+
+    /// Serialize a shared `neo-vm-rs` stack value with default VM limits.
+    pub fn serialize_stack_value_default(value: &StackValue) -> Result<Vec<u8>, String> {
+        Self::serialize_stack_value(value, &ExecutionEngineLimits::default())
     }
 
     /// Serialize a stack item using explicit limits.

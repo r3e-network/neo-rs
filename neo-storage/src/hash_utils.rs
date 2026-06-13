@@ -3,8 +3,8 @@
 //! This module provides hash functions matching the C# Neo implementation,
 //! used for computing storage key hash codes.
 
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use std::sync::OnceLock;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 

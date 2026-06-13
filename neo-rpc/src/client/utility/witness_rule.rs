@@ -2,7 +2,7 @@ use neo_config::ProtocolSettings;
 use neo_primitives::{WitnessRuleAction};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_p2p::{WitnessCondition, WitnessRule};
-use neo_json::{JArray, JObject};
+use neo_serialization::json::{JArray, JObject};
 
 pub fn rule_from_json(
     json: &JObject,
@@ -10,7 +10,7 @@ pub fn rule_from_json(
 ) -> Result<WitnessRule, String> {
     let action_str = json
         .get("action")
-        .and_then(neo_json::JToken::as_string)
+        .and_then(neo_serialization::json::JToken::as_string)
         .ok_or_else(|| "WitnessRule missing action".to_string())?;
     let action: WitnessRuleAction = action_str.parse()?;
     let condition_token = json
@@ -36,7 +36,7 @@ fn condition_from_json(
 
     let condition_type = json
         .get("type")
-        .and_then(neo_json::JToken::as_string)
+        .and_then(neo_serialization::json::JToken::as_string)
         .ok_or_else(|| "Condition type missing".to_string())?;
 
     match condition_type.as_str() {
@@ -74,7 +74,7 @@ fn condition_from_json(
         "Group" => {
             let group = json
                 .get("group")
-                .and_then(neo_json::JToken::as_string)
+                .and_then(neo_serialization::json::JToken::as_string)
                 .ok_or_else(|| "Group condition missing group".to_string())?;
             Ok(WitnessCondition::Group {
                 group: parse_group_bytes(&group)?})
@@ -82,7 +82,7 @@ fn condition_from_json(
         "CalledByContract" => {
             let hash = json
                 .get("hash")
-                .and_then(neo_json::JToken::as_string)
+                .and_then(neo_serialization::json::JToken::as_string)
                 .ok_or_else(|| "CalledByContract missing hash".to_string())?;
             let hash = super::RpcUtility::get_script_hash(&hash, protocol_settings)?;
             Ok(WitnessCondition::CalledByContract {hash})
@@ -90,7 +90,7 @@ fn condition_from_json(
         "ScriptHash" => {
             let hash = json
                 .get("hash")
-                .and_then(neo_json::JToken::as_string)
+                .and_then(neo_serialization::json::JToken::as_string)
                 .ok_or_else(|| "ScriptHash condition missing hash".to_string())?;
             let hash = super::RpcUtility::get_script_hash(&hash, protocol_settings)?;
             Ok(WitnessCondition::ScriptHash {hash})
@@ -99,7 +99,7 @@ fn condition_from_json(
         "CalledByGroup" => {
             let group = json
                 .get("group")
-                .and_then(neo_json::JToken::as_string)
+                .and_then(neo_serialization::json::JToken::as_string)
                 .ok_or_else(|| "CalledByGroup missing group".to_string())?;
             Ok(WitnessCondition::CalledByGroup {
                 group: parse_group_bytes(&group)?})
@@ -155,7 +155,7 @@ mod tests {
     use super::*;
     use neo_primitives::{UInt160};
 use neo_wallets::KeyPair;
-    use neo_json::JToken;
+    use neo_serialization::json::JToken;
 
     fn assert_rule_roundtrip(rule: WitnessRule) {
         let json = rule.to_json();

@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use neo_payloads::Witness;
-use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
+use neo_serialization::json::{JArray, JObject, JToken};
 use serde::{Deserialize, Serialize};
 
 /// State root information matching C# `RpcStateRoot`
@@ -27,7 +27,8 @@ pub struct RpcStateRoot {
     pub root_hash: UInt256,
 
     /// Witness
-    pub witness: Option<Witness>}
+    pub witness: Option<Witness>,
+}
 
 impl RpcStateRoot {
     /// Creates from JSON
@@ -35,17 +36,17 @@ impl RpcStateRoot {
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let version = json
             .get("version")
-            .and_then(neo_json::JToken::as_number)
+            .and_then(neo_serialization::json::JToken::as_number)
             .ok_or("Missing or invalid 'version' field")? as u8;
 
         let index = json
             .get("index")
-            .and_then(neo_json::JToken::as_number)
+            .and_then(neo_serialization::json::JToken::as_number)
             .ok_or("Missing or invalid 'index' field")? as u32;
 
         let root_hash = json
             .get("roothash")
-            .and_then(neo_json::JToken::as_string)
+            .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok())
             .ok_or("Missing or invalid 'roothash' field")?;
 
@@ -61,8 +62,9 @@ impl RpcStateRoot {
             version,
             index,
             root_hash,
-            witness})
-   }
+            witness,
+        })
+    }
 
     /// Converts to JSON
     /// Matches C# `ToJson`
@@ -84,40 +86,48 @@ impl RpcStateRoot {
                 "witnesses".to_string(),
                 JToken::Array(JArray::from(vec![JToken::Object(witness_json)])),
             );
-       }
+        }
 
         json
-   }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
-    use neo_json::JArray;
+    use base64::{Engine as _, engine::general_purpose};
+    use neo_serialization::json::JArray;
 
     #[test]
     fn rpc_state_root_parses_with_witness() {
         let mut json = JObject::new();
-        json.insert("version".to_string(), neo_json::JToken::Number(0f64));
-        json.insert("index".to_string(), neo_json::JToken::Number(1f64));
+        json.insert(
+            "version".to_string(),
+            neo_serialization::json::JToken::Number(0f64),
+        );
+        json.insert(
+            "index".to_string(),
+            neo_serialization::json::JToken::Number(1f64),
+        );
         json.insert(
             "roothash".to_string(),
-            neo_json::JToken::String(UInt256::zero().to_string()),
+            neo_serialization::json::JToken::String(UInt256::zero().to_string()),
         );
 
         let mut witness_obj = JObject::new();
         witness_obj.insert(
             "invocation".to_string(),
-            neo_json::JToken::String(general_purpose::STANDARD.encode(b"i")),
+            neo_serialization::json::JToken::String(general_purpose::STANDARD.encode(b"i")),
         );
         witness_obj.insert(
             "verification".to_string(),
-            neo_json::JToken::String(general_purpose::STANDARD.encode(b"v")),
+            neo_serialization::json::JToken::String(general_purpose::STANDARD.encode(b"v")),
         );
         json.insert(
             "witnesses".to_string(),
-            neo_json::JToken::Array(JArray::from(vec![neo_json::JToken::Object(witness_obj)])),
+            neo_serialization::json::JToken::Array(JArray::from(vec![
+                neo_serialization::json::JToken::Object(witness_obj),
+            ])),
         );
 
         let parsed = RpcStateRoot::from_json(&json).expect("state root");
@@ -127,21 +137,27 @@ mod tests {
         let witness = parsed.witness.expect("witness");
         assert_eq!(witness.invocation_script(), b"i");
         assert_eq!(witness.verification_script(), b"v");
-   }
+    }
 
     #[test]
     fn rpc_state_root_allows_missing_witness() {
         let mut json = JObject::new();
-        json.insert("version".to_string(), neo_json::JToken::Number(0f64));
-        json.insert("index".to_string(), neo_json::JToken::Number(1f64));
+        json.insert(
+            "version".to_string(),
+            neo_serialization::json::JToken::Number(0f64),
+        );
+        json.insert(
+            "index".to_string(),
+            neo_serialization::json::JToken::Number(1f64),
+        );
         json.insert(
             "roothash".to_string(),
-            neo_json::JToken::String(UInt256::zero().to_string()),
+            neo_serialization::json::JToken::String(UInt256::zero().to_string()),
         );
 
         let parsed = RpcStateRoot::from_json(&json).expect("state root");
         assert!(parsed.witness.is_none());
-   }
+    }
 
     #[test]
     fn rpc_state_root_roundtrip() {
@@ -149,12 +165,13 @@ mod tests {
             version: 1,
             index: 10,
             root_hash: UInt256::zero(),
-            witness: None};
+            witness: None,
+        };
         let json = root.to_json();
         let parsed = RpcStateRoot::from_json(&json).expect("state root");
         assert_eq!(parsed.version, 1);
         assert_eq!(parsed.index, 10);
-   }
+    }
 
     #[test]
     fn rpc_state_root_roundtrip_with_witness_json() {
@@ -169,19 +186,20 @@ mod tests {
                 JToken::String(general_purpose::STANDARD.encode(b"v")),
             );
             obj
-       })
+        })
         .unwrap();
 
         let root = RpcStateRoot {
             version: 2,
             index: 11,
             root_hash: UInt256::zero(),
-            witness: Some(witness)};
+            witness: Some(witness),
+        };
         let json = root.to_json();
         let parsed = RpcStateRoot::from_json(&json).expect("state root");
         assert!(parsed.witness.is_some());
         let parsed_witness = parsed.witness.unwrap();
         assert_eq!(parsed_witness.invocation_script(), b"i");
         assert_eq!(parsed_witness.verification_script(), b"v");
-   }
+    }
 }

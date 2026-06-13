@@ -44,14 +44,13 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         APPLICATION LAYER (Layer 3)                         │
 │                                                                             │
-│   ┌─────────────────────┐         ┌─────────────────────┐                   │
-│   │     neo-cli         │         │     neo-node        │                   │
-│   │  (CLI Client)       │         │  (Node Daemon)      │                   │
-│   │                     │         │                     │                   │
-│   │  • Wallet commands  │         │  • P2P networking   │                   │
-│   │  • Contract invoke  │         │  • RPC server       │                   │
-│   │  • Query blockchain │         │  • Consensus        │                   │
-│   └─────────────────────┘         └─────────────────────┘                   │
+│   ┌─────────────────────┐                                                   │
+│   │     neo-node        │                                                   │
+│   │  (Node Daemon)      │                                                   │
+│   │  • P2P networking   │                                                   │
+│   │  • RPC server       │                                                   │
+│   │  • Consensus        │                                                   │
+│   └─────────────────────┘                                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -59,7 +58,7 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 │                         SERVICE LAYER (Layer 2)                             │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│   │  neo-chain   │  │  neo-mempool │  │  neo-state   │  │ neo-config   │    │
+│   │neo-blockchain│  │  neo-mempool │  │neo-state-svc │  │ neo-config   │    │
 │   │              │  │              │  │              │  │              │    │
 │   │ Chain mgmt   │  │ Tx pool      │  │ World state  │  │ Configuration│    │
 │   │ Fork choice  │  │ Validation   │  │ Snapshots    │  │ Protocol     │    │
@@ -73,23 +72,22 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CORE LAYER (Layer 1)                                │
+│                       PROTOCOL LAYER (Layer 1)                              │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│   │   neo-core   │  │  VM module   │  │   neo-p2p    │  │  neo-consensus│   │
+│   │neo-payloads  │  │    neo-vm    │  │neo-network   │  │neo-consensus │    │
 │   │              │  │              │  │              │  │              │    │
-│   │ • Protocol   │  │ • Stack VM   │  │ • Messages   │  │ • dBFT 2.0   │    │
-│   │ • Ledger     │  │ • OpCodes    │  │ • Handshake  │  │ • Consensus  │    │
-│   │ • Contracts  │  │ • Debugging  │  │ • Peers      │  │   state      │    │
-│   │ • Wallets    │  │ • Interop    │  │              │  │              │    │
+│   │ • Blocks     │  │ • Stack VM   │  │ • Wire codec │  │ • dBFT 2.0   │    │
+│   │ • Txs        │  │ • OpCodes    │  │ • Handshake  │  │ • Consensus  │    │
+│   │ • Witnesses  │  │ • Interop    │  │ • Peers      │  │   state      │    │
 │   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐                                         │
-│   │   neo-rpc    │  │  neo-state   │                                         │
+│   │   neo-rpc    │  │neo-execution │                                         │
 │   │              │  │              │                                         │
-│   │ • JSON-RPC   │  │ • State root │                                         │
+│   │ • JSON-RPC   │  │ • AppEngine  │                                         │
 │   │ • Client/    │  │ • Proofs     │                                         │
-│   │   Server     │  │ • Snapshots  │                                         │
+│   │   Server     │  │ • Native     │                                         │
 │   └──────────────┘  └──────────────┘                                         │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -107,14 +105,12 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 │   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                       │
-│   │  neo-json    │  │  neo-error   │  │  neo-time    │                       │
+│   │ neo-serializ.│  │  neo-error   │  │neo-primitives│                       │
 │   │              │  │              │  │              │                       │
-│   │ • JToken     │  │ • CoreError  │  │ • Time-      │                       │
-│   │ • JObject    │  │ • CoreResult │  │   Provider   │                       │
-│   │ • JPath      │  │ (single      │  │ • Time-      │                       │
-│   │              │  │  authority   │  │   Source     │                       │
-│   │              │  │  for whole   │  │ (testable    │                       │
-│   │              │  │  workspace)  │  │  clock)      │                       │
+│   │ • Binary/JSON│  │ • CoreError  │  │ • TimeSource │                       │
+│   │ • JToken     │  │ • CoreResult │  │ • UInt types │                       │
+│   │ • JObject    │  │ (single      │  │ • Hardfork   │                       │
+│   │              │  │  authority)  │  │              │                       │
 │   └──────────────┘  └──────────────┘  └──────────────┘                       │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -129,13 +125,12 @@ The foundation layer contains **zero dependencies** on other neo-* crates. These
 
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
-| `neo-primitives` | Core types | `UInt160`, `UInt256`, `BigDecimal`, `Hardfork` |
+| `neo-primitives` | Core types | `UInt160`, `UInt256`, `BigDecimal`, `Hardfork`, `TimeProvider`, `TimeSource` |
 | `neo-crypto` | Cryptography | `Crypto`, `ECPoint`, `HashAlgorithm`, `MPT Trie` |
 | `neo-storage` | Storage traits | `IReadOnlyStore`, `IWriteStore`, `IStore`, `StorageKey` |
 | `neo-io` | Serialization | `BinaryReader`, `BinaryWriter`, `Serializable` |
-| `neo-json` | JSON handling | `JToken`, `JObject`, `JArray`, `JPath` |
+| `neo-serialization::json` | JSON handling | `JToken`, `JObject`, `JArray`, `JPath` |
 | `neo-error` | **Authoritative error type** (single source of truth for the whole workspace) | `CoreError`, `CoreResult`, `ToNativeError` |
-| `neo-time` | **Testable time source** | `TimeProvider`, `TimeSource` |
 
 ### Layer 1: Protocol Layer
 
@@ -143,11 +138,10 @@ The protocol layer holds **pure ledger / wire data types** and the **pure block 
 
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
-| `neo-ledger-types` | Pure ledger / wire data types | `Witness` (canonical home; future: `Block`, `Header`, `Transaction`, `Signer`, `WitnessRule`, transaction attributes) |
+| `neo-payloads` | Pure ledger / wire data types | `Witness`, `Block`, `Header`, `Transaction`, `Signer`, `WitnessRule`, transaction attributes |
 | `neo-vm` | Stateful NeoVM host | `ExecutionEngine`, `StackItem`, `Script`, jump table, evaluation stack, interop service |
 | `neo-vm-rs` | Pure low-level VM primitives | `OpCode`, `interop_hash`, `encode_integer` |
-| `neo-script-builder` | Script bytecode emitter | `ScriptBuilder` (programmatic VM script construction) |
-| `neo-redeem-script` | Standard signature / multi-sig verification scripts | `signature_redeem_script`, `multi_sig_redeem_script`, `is_signature_contract` |
+| `neo-script-builder` | Script bytecode emitter and standard signature / multi-sig verification scripts | `ScriptBuilder`, `signature_redeem_script`, `multi_sig_redeem_script`, `is_signature_contract` |
 | `neo-p2p` | P2P networking (wire / message / remote-node) | `MessageCommand`, `MessageHeader`, `NetworkMessage` |
 | `neo-consensus` | dBFT consensus | `ConsensusService`, `ConsensusContext`, `ConsensusMessage` |
 
@@ -157,16 +151,15 @@ The service layer provides higher-level blockchain services and orchestration. I
 
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
-| `neo-chain` | **Pure block / chain validation** | `BlockValidator`, `BlockValidationError`, `validate_merkle_root`, `validate_witness_scripts` |
-| `neo-state` | State service / MPT | `StateStore`, `StateRoot`, `MerklePatriciaTrie` |
+| `neo-blockchain` | **Pure block / chain validation and orchestration** | `BlockValidator`, `BlockValidationError`, `validate_merkle_root`, `BlockchainHandle` |
+| `neo-state-service` | State service / MPT | `StateStore`, `StateRoot`, `StateRootCache`, `Verifier` |
 | `neo-wallets` | NEP-6 wallet, BIP32, NEP-2 | `Wallet`, `Account`, `KeyPair` |
-| `neo-transaction-pool` | Mempool bookkeeping / policy | `PoolItem`, `PoolIndex`, `PoolBookkeeping` |
+| `neo-mempool` | Mempool bookkeeping / policy | `PoolItem`, `PoolIndex`, `TransactionRouter`, `TransactionVerificationContext` |
 | `neo-rpc` | JSON-RPC server / client | `RpcServer`, `RpcClient`, `RpcErrorCode` |
 | `neo-application-logs` | ApplicationLogs plugin | `ApplicationLogs` |
 | `neo-tokens-tracker` | NEP-11 / NEP-17 balance tracker | `TokensTracker` |
 | `neo-oracle-service` | Oracle request fulfilment | `OracleService` |
 | `neo-runtime` | **Reth-style async service architecture** (canonical home for service traits + `Node` builder) | `Service`, `BlockExecutor`, `MempoolService`, `NetworkService`, `ConsensusService`, `NeoEngine`, `BlockchainHandle`, `Node`, `NodeBuilder` |
-| `neo-actors` | Legacy Akka-style actor runtime (kept for back-compat; will be removed in Stage F) | `ActorSystem`, `ActorRef`, `Props`, `EventStreamHandle` |
 | `neo-telemetry` | Observability | `Metrics`, `Tracing`, `Health` |
 | `neo-tee` (optional) | TEE support | `EnclaveClient` |
 | `neo-hsm` (optional) | HSM support | `HsmSigner` |
@@ -181,39 +174,17 @@ The application layer contains user-facing binaries.
 
 ---
 
-### `neo-core`: a thin compatibility facade, not the layer model
+### Legacy Compatibility Status
 
-`neo-core` historically was the catch-all "core" layer that owned the full blockchain protocol implementation. It has been progressively split into the layered crates above. As of the `2026-06-03-kill-neo-core` change, `neo-core` no longer owns `Witness` / `TimeProvider` / block validation / `CoreError`:
-
-- `Witness` lives in `neo-ledger-types` (re-exported from `neo-core` for historical import-path stability).
-- `TimeProvider` / `TimeSource` live in `neo-time` (re-exported from `neo-core`).
-- `CoreError` / `CoreResult` / `Result` / `ToNativeError` live in `neo-error` (re-exported from `neo-core`).
-- `BlockValidator` / `BlockValidationError` live in `neo-chain::block_validation` (re-exported from `neo-core`).
-
-Everything else in `neo-core` (smart-contract host, native contracts, mempool, blockchain orchestrator, etc.) is scheduled for future extraction into dedicated crates (`neo-execution`, `neo-native-contracts`, `neo-system`, `neo-ledger`). The current layering violations in those remaining modules (e.g. `HeaderCache`, `DataCache`, native-contract helpers) are tracked as pre-existing tech debt and will be resolved in subsequent slices.
-| `neo-state` | State management | `StateStore`, `StateRoot`, `MerklePatriciaTrie` |
-
-### Layer 2: Service Layer
-
-The service layer provides higher-level blockchain services and orchestration.
-
-| Crate | Purpose | Key Types |
-|-------|---------|-----------|
-| `neo-chain` | Chain management | `Blockchain`, `ForkChoice`, `HeaderCache` |
-| `neo-mempool` | Transaction pool | `MemoryPool`, `TransactionVerification` |
-| `neo-config` | Configuration | `ProtocolSettings`, `NodeConfig` |
-| `neo-telemetry` | Observability | `Metrics`, `HealthCheck`, `Tracing` |
-| `neo-tee` | TEE support | `EnclaveClient` (feature-gated) |
-| `neo-hsm` | HSM support | `HsmSigner` (feature-gated) |
-
-### Layer 3: Application Layer
-
-The application layer contains user-facing binaries.
-
-| Crate | Purpose | Key Types |
-|-------|---------|-----------|
-| `neo-node` | Full node daemon | `NeoNode`, `RpcServer` |
-| `neo-cli` | CLI client | `Cli`, `WalletCommands`, `ContractCommands` |
+The current workspace metadata no longer contains the historical catch-all
+or thin crates such as `neo-core`, `neo-cli`, `neo-chain`,
+`neo-ledger-types`, `neo-state-types`, `neo-time`, `neo-services`,
+`neo-smart-contract-types`, `neo-wire`, `neo-json`, or
+`neo-storage-rocksdb`. Their functionality has been moved into the canonical
+crates above: payloads in `neo-payloads`, time primitives in
+`neo-primitives`, JSON under `neo-serialization::json`, wire codecs under
+`neo-network::wire`, RocksDB storage under `neo-storage::rocksdb`, and node
+entrypoints under `neo-node`.
 
 ---
 
@@ -238,17 +209,17 @@ Layer 0 (Foundation)   ───────────────────
 // ❌ WRONG: Layer 0 depending on Layer 1
 // neo-primitives/Cargo.toml:
 [dependencies]
-neo-core = { path = "../neo-core" }  // FORBIDDEN
+neo-payloads = { path = "../neo-payloads" }  // FORBIDDEN
 
 // ❌ WRONG: Circular dependencies
-// neo-core/Cargo.toml:
-neo-p2p = { path = "../neo-p2p" }
+// neo-network/Cargo.toml:
+neo-rpc = { path = "../neo-rpc" }
 
-// neo-p2p/Cargo.toml:
-neo-core = { path = "../neo-core" }  // FORBIDDEN - creates cycle
+// neo-rpc/Cargo.toml:
+neo-network = { path = "../neo-network" }  // FORBIDDEN - creates cycle
 
 // ❌ WRONG: Layer jumping
-// neo-cli (Layer 3) directly using neo-primitives (Layer 0)
+// neo-node (Layer 3) reaching around service abstractions into storage internals
 // While technically allowed, prefer going through Layer 2 abstractions
 ```
 
@@ -260,17 +231,17 @@ neo-core = { path = "../neo-core" }  // FORBIDDEN - creates cycle
 [dependencies]
 serde = "1.0"  // External crates only
 
-// ✅ CORRECT: Core layer depends on Foundation
-// neo-core/Cargo.toml:
+// ✅ CORRECT: Protocol layer depends on Foundation
+// neo-payloads/Cargo.toml:
 [dependencies]
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
 neo-vm-rs = { workspace = true }
 
-// ✅ CORRECT: Service layer depends on Core and Foundation
-// neo-chain/Cargo.toml:
+// ✅ CORRECT: Service layer depends on Protocol and Foundation
+// neo-blockchain/Cargo.toml:
 [dependencies]
-neo-core = { path = "../neo-core" }
+neo-payloads = { path = "../neo-payloads" }
 neo-primitives = { path = "../neo-primitives" }
 ```
 
@@ -331,58 +302,31 @@ pub struct StorageItem { ... }
 pub enum SeekDirection { Forward, Backward }
 ```
 
-### Core Crates
+### Protocol and Execution Crates
 
-#### neo-core
-
-Main protocol implementation matching C# Neo project.
-
-```rust
-// Module structure matches C# namespaces
-pub mod ledger {        // Neo.Ledger
-    pub struct Block { ... }
-    pub struct Transaction { ... }
-}
-
-pub mod smart_contract { // Neo.SmartContract
-    pub struct Contract { ... }
-    pub struct ContractManifest { ... }
-    pub mod native {       // Native contracts
-        pub struct NeoToken { ... }
-        pub struct GasToken { ... }
-    }
-}
-
-pub mod wallets {       // Neo.Wallets
-    pub struct Wallet { ... }
-    pub struct KeyPair { ... }
-}
-
-pub mod services {      // Service traits
-    pub trait LedgerService { ... }
-    pub trait MempoolService { ... }
-}
-```
-
-#### `neo-core::neo_vm`
-
-Neo Virtual Machine compatibility module. Shared low-level opcode, ABI, and interpreter primitives come from `neo-vm-rs`.
+The old catch-all core module has been split into focused crates. Ledger and
+wire payloads live in `neo-payloads`; VM execution lives in `neo-vm`;
+application execution lives in `neo-execution`; manifests/NEF live in
+`neo-manifest`; native contracts live in `neo-native-contracts`; wallets live
+in `neo-wallets`.
 
 ```rust
-// Core VM types
-pub struct ExecutionEngine { ... }
-pub struct EvaluationStack { ... }
-pub struct ExecutionContext { ... }
+// Payload types
+neo_payloads::Block
+neo_payloads::Transaction
+neo_payloads::Witness
 
-// Script handling
-pub struct Script { ... }
-pub struct ScriptBuilder { ... }
+// VM and execution
+neo_vm::ExecutionEngine
+neo_vm::StackItem
+neo_execution::ApplicationEngine
 
-// VM values
-pub enum StackItem { ... }
-pub enum VMState { HALT, FAULT, BREAK, ... }
+// Contracts and wallets
+neo_manifest::ContractManifest
+neo_native_contracts::NeoToken
+neo_wallets::Wallet
 
-// Shared opcode definitions are imported directly from neo-vm-rs.
+// Shared opcode definitions come from neo-vm-rs.
 neo_vm_rs::OpCode
 ```
 
@@ -433,21 +377,16 @@ pub type CoreResult<T> = Result<T, CoreError>;
 
 ### 3. Feature-Gated Complexity
 
-Keep `neo-core` usable as a protocol-only layer by default.
+Keep production integrations feature-gated where they bring heavy optional
+dependencies.
 
 ```rust
-// In Cargo.toml
+// In neo-node/Cargo.toml
 [features]
-default = []
-runtime = ["dep:neo-runtime"]  // Service runtime (reth-style)
-monitoring = ["prometheus"]      // Metrics
-
-// In lib.rs
-#[cfg(feature = "runtime")]
-pub mod actors;
-
-#[cfg(feature = "runtime")]
-pub mod neo_system;
+default = ["wip"]              // full daemon
+full = ["wip"]                 // back-compat alias
+tee = ["neo-tee"]              // trusted execution support
+hsm = ["dep:neo-hsm"]          // hardware signing support
 ```
 
 ### 4. Trait-Based Abstractions
@@ -492,14 +431,14 @@ let transaction = TransactionBuilder::new()
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Error Hierarchy                               │
 ├─────────────────────────────────────────────────────────────────┤
-│  Application (neo-cli, neo-node)                                │
-│  └── CliError, NodeError                                        │
+│  Application (neo-node)                                         │
+│  └── NodeError                                                  │
 │                                                                 │
-│  Service (neo-chain, neo-mempool)                               │
-│  └── ChainError, MempoolError                                   │
+│  Service (neo-blockchain, neo-mempool, neo-system)              │
+│  └── BlockchainError, MempoolError, ServiceError                │
 │                                                                 │
-│  Core (neo-core, neo-p2p, neo-rpc, neo-consensus)               │
-│  └── CoreError, VmError, P2PError, RpcError, ConsensusError     │
+│  Protocol/Execution (neo-payloads, neo-vm, neo-rpc, neo-consensus)│
+│  └── CoreError, VmError, RpcError, ConsensusError               │
 │                                                                 │
 │  Foundation (neo-primitives, neo-crypto, neo-storage, neo-io)   │
 │  └── PrimitiveError, CryptoError, StorageError, IoError         │
@@ -599,7 +538,7 @@ pub mod contracts {
 //! ## Examples
 //!
 //! ```rust
-//! use neo_core::ledger::Block;
+//! use neo_payloads::Block;
 //!
 //! let block = Block::new(...);
 //! ```
@@ -630,15 +569,15 @@ pub fn my_function() -> Result<(), Error> { ... }
 
 | C# Namespace | Rust Crate | Rust Module |
 |--------------|------------|-------------|
-| `Neo` | `neo-core` | `neo_core` |
+| `Neo` | split across canonical crates | `neo_primitives`, `neo_payloads`, `neo_system` |
 | `Neo.Cryptography` | `neo-crypto` | `neo_crypto` |
 | `Neo.IO` | `neo-io` | `neo_io` |
-| `Neo.Json` | `neo-json` | `neo_json` |
-| `Neo.Ledger` | `neo-core` | `neo_core::ledger` |
+| `Neo.Json` | `neo-serialization::json` | `neo_serialization::json` |
+| `Neo.Ledger` | `neo-payloads` / `neo-blockchain` | `neo_payloads`, `neo_blockchain` |
 | `Neo.Network.P2P` | `neo-p2p` | `neo_p2p` |
-| `Neo.SmartContract` | `neo-core` | `neo_core::smart_contract` |
-| `Neo.VM` | `neo-core` | `neo_core::neo_vm` |
-| `Neo.Wallets` | `neo-core` | `neo_core::wallets` |
+| `Neo.SmartContract` | `neo-execution` / `neo-native-contracts` / `neo-manifest` | `neo_execution`, `neo_native_contracts`, `neo_manifest` |
+| `Neo.VM` | `neo-vm` | `neo_vm` |
+| `Neo.Wallets` | `neo-wallets` | `neo_wallets` |
 | `Neo.Plugins.RpcServer` | `neo-rpc` | `neo_rpc::server` |
 | `Neo.Plugins.DBFTPlugin` | `neo-consensus` | `neo_consensus` |
 
@@ -656,8 +595,9 @@ pub fn my_function() -> Result<(), Error> { ... }
 
 ## Service Architecture (Reth-style)
 
-> **Status**: Stages A, B, C, D complete (2026-06-08). Service traits defined in
-> `neo-runtime`; `neo-system` now hosts the `Node` builder. `neo-actors` and `neo-core` retained until Stages E/F are complete (see [Stage E/F status](#stage-ef-status) below).
+> **Status**: Stages A, B, C, D complete (2026-06-08). Service traits are
+> defined in `neo-runtime`; `neo-system` hosts the `Node` builder. The
+> historical actor/core crates are no longer current workspace packages.
 > See `openspec/changes/2026-06-08-reth-style-service-architecture/` for
 > the full migration plan.
 
@@ -758,17 +698,16 @@ Key components:
 | `BlockchainHandle` | `neo_blockchain::handle::BlockchainHandle` | Cheap-to-clone `mpsc::Sender<BlockchainCommand>` facade |
 | `BlockchainCommand` | `neo_blockchain::command::BlockchainCommand` | Internal command enum (the actor's old mailbox) |
 | `BlockchainEvent` (alias) | `neo_blockchain::RuntimeEvent` | The runtime's broadcast event enum |
-| `SystemContext` | `neo_blockchain::service_context::SystemContext` | Trait seam between the service and `neo-core::neo_system` |
+| `SystemContext` | `neo_blockchain::service_context::SystemContext` | Trait seam between the blockchain service and node context |
 | `MempoolLike` | `neo_blockchain::service::MempoolLike` | Trait seam between the service and the real `MemoryPool` |
 
 Construction goes through `BlockchainService::new` (or the
 `with_defaults` shorthand); the returned `(service, handle)` pair is
 the only stable public surface. The handle has both:
 
-- **Legacy actor-style API**: `tell(command)` / `try_tell(command)`
-  match the old `neo_core::ledger::blockchain::BlockchainHandle` so
-  the existing consumers (RPC, consensus, plugins) keep compiling
-  unchanged.
+- **Command-style API**: `tell(command)` / `try_tell(command)` preserve
+  the old fire-and-forget calling shape while consumers migrate to the
+  request/response methods.
 - **New request/response API**: `import_block(block).await?` /
   `get_block(&hash).await?` / `get_height().await?` /
   `add_transaction(tx).await?` use a `oneshot::Sender` reply
@@ -783,54 +722,42 @@ the only stable public surface. The handle has both:
 | C ✅  | `neo-network`    | Rewrite `LocalNode` / `RemoteNode` as `NetworkService`   |
 | D ✅  | `neo-system`     | Rewrite `NeoSystem` as a `NodeBuilder` consumer          |
 | E ⚠️  | consumers        | Migration map documented; bulk consumer update deferred  |
-| F ⚠️  | `neo-actors`, `neo-core` | Deletion blocked by Stage E (consumers still depend on them) |
+| F ✅  | legacy actor/core crates | Removed from the current workspace metadata |
 
 ## Stage E/F Status
 
-> **Stage E (consumer migration) and Stage F (deletion of legacy crates) are blocked on each other.**
+The Stage A/B/C/D service rewrite deliverables are in place and the
+historical actor/core crates are absent from `cargo metadata`. The remaining
+Stage E work is consumer cleanup: removing historical import paths and
+back-compat shims that survived the migration so RPC, consensus, and plugin
+code read directly against the canonical crates.
 
-The Stage A/B/C/D deliverables are in place. Stages E and F are the
-destructive half of the migration and require careful sequencing:
+The remaining migration helpers make cleanup incremental:
 
-- **Stage E** rewrites the consumer crates (`neo-rpc`, `neo-node`,
-  `neo-consensus`, `neo-tokens-tracker`, `neo-oracle-service`,
-  `neo-application-logs`) to depend on the new service handles
-  instead of `neo_core::neo_system::NeoSystem`. Scope: ~141 files
-  across the consumer crates.
-- **Stage F** deletes the `neo-actors` crate and shrinks
-  `neo-core` to its (now superseded) non-actor code, then
-  eventually deletes `neo-core` once all consumers are off it.
-
-These two stages are mutually dependent: deleting `neo-core` first
-breaks the consumer build; rewriting 141+ consumers is a multi-day
-effort that needs to be done in a single coherent sweep.
-
-The current Step 4 deliverables make the migration incremental:
-
-1. **`neo-system::legacy` module** re-exports the common types
+1. **`neo-system::legacy` module** re-exports common types
    (`UInt160`, `UInt256`, `Block`, `Transaction`, `Witness`,
    `Signer`, `ProtocolSettings`, `CoreError`, `CoreResult`,
-   `BigDecimal`) from their canonical homes. A consumer can swap
-   `use neo_core::X` for `use neo_system::legacy::X` as a
-   first-step migration.
+   `BigDecimal`) from their canonical homes while consumers are
+   cleaned up.
 2. **`neo-system::back_compat` module** documents the full
    type/method/module migration map (see [`neo-system/src/back_compat.rs`](neo-system/src/back_compat.rs)).
 3. **`neo-system/examples/migrate_from_neosystem.rs`** is a
-   worked end-to-end example of translating
-   `NeoSystem::new(…)` into `Node::builder()…build().run().await`.
+   worked end-to-end example of translating a historical system
+   constructor into `Node::builder()…build().run().await`.
 
 ## Testing Architecture
 
 ### Test Organization
 
 ```
-neo-core/
+tests/
 ├── src/
-│   └── ...
+│   └── lib.rs
 └── tests/
-    ├── unit/           # Unit tests
-    ├── integration/    # Integration tests
-    └── compatibility/  # C# parity tests
+    ├── contract_execution.rs
+    ├── csharp_compatibility_tests.rs
+    ├── end_to_end_tests.rs
+    └── p2p_message_exchange.rs
 ```
 
 ### Testing Layers
@@ -838,9 +765,9 @@ neo-core/
 | Layer | Test Focus | Examples |
 |-------|------------|----------|
 | Foundation | Serialization, math correctness | `UInt256` parsing, hash functions |
-| Core | State transitions, VM execution | Contract execution, block validation |
+| Protocol / execution | State transitions, VM execution | Contract execution, block validation |
 | Service | Component interaction | Mempool + chain integration |
-| Application | End-to-end scenarios | Full node sync, CLI commands |
+| Application | End-to-end scenarios | Full node sync, JSON-RPC smoke tests |
 
 ---
 
@@ -877,61 +804,49 @@ When multiple locks are needed, always acquire them in this order:
 
 ## 2026-06-08 Functional-Boundary Audit
 
-A comprehensive audit of all 46 workspace crates was performed after
-the kill-neo-core refactor. The audit covers (1) completeness /
-placeholder detection, (2) functional overlap, (3) file-level
-duplication, (4) consistency standards, and (5) best Rust practices.
+A comprehensive audit of the workspace crates was performed after
+the kill-neo-core refactor. A targeted metadata refresh on 2026-06-12
+shows **32 Cargo packages** in the current workspace. The audit covers
+(1) completeness / placeholder detection, (2) functional overlap,
+(3) file-level duplication, (4) consistency standards, and (5) best
+Rust practices.
 
 ### Crate status summary
 
-| Crate | Status | Lines | pub items | Notes |
-|-------|--------|-------|-----------|-------|
-| neo-application-logs | ✅ complete | 568 | 4 | plugin |
-| neo-block | ✅ complete | 495 | 12 | block-layer data types only |
-| neo-blockchain | ✅ complete | 2,135 | 66 | reth-style service |
-| neo-chain | ✅ complete | 692 | 15 | pure block validation |
-| neo-config | ✅ complete | 1,227 | 19 | |
-| neo-consensus | ✅ complete | 7,561 | 50 | dBFT |
-| neo-crypto | ✅ complete | 6,325 | 73 | |
-| neo-data-cache | ✅ complete | 119 | 11 | facade over `neo-storage` types |
-| neo-error | ✅ complete | 661 | 7 | `CoreError` authority |
-| neo-event-handlers | ✅ complete | 101 | 8 | typed handler traits |
-| neo-events | ✅ complete | 183 | 2 | typed event payloads |
-| neo-execution | ✅ complete | 10,277 | 120 | `ApplicationEngine` |
-| neo-extensions | ✅ complete | 368 | 26 | |
-| neo-hsm | ✅ complete | 1,732 | 37 | optional |
-| neo-io | ✅ complete | 2,454 | 62 | |
-| neo-json | ✅ complete | 1,793 | 31 | |
-| neo-ledger-types | ✅ complete | 1,210 | 11 | |
-| neo-manifest | ✅ complete | 3,618 | 43 | canonical ABI / NEF home |
-| neo-mempool | ✅ complete | ~530 | 8 | `MemoryPool`, `PoolItem`, `PoolIndex`, `TransactionRouter`, `TransactionVerificationContext`, event args |
-| neo-native-contracts | ✅ complete | 737 | 67 | |
-| neo-network | ✅ complete | 1,527 | 38 | reth-style P2P host |
-| neo-node | ✅ complete | ~155 (main) | 4 | real `tokio` daemon (CLI, config, `neo-system::NodeBuilder`, Ctrl-C shutdown) gated behind `wip`; default = stub binary |
-| neo-oracle-service | ✅ complete | 5,313 | 21 | |
-| neo-p2p | ✅ complete | 2,822 | 116 | |
-| neo-payloads | ✅ complete | 3,731 | 77 | canonical payload data types |
-| neo-primitives | ✅ complete | 7,106 | 166 | |
-| neo-redeem-script | ✅ complete | 347 | 10 | |
-| neo-rpc | ✅ complete | 36,554 | 325 | |
-| neo-runtime | ✅ complete | 1,359 | 30 | reth-style service architecture |
-| neo-script-builder | ✅ complete | 538 | 3 | |
-| neo-serialization | ✅ complete | 1,402 | 38 | |
-| neo-services | ✅ complete | 175 | 7 | typed service interfaces |
-| neo-smart-contract-types | ✅ complete | 47 | 0 | thin re-export of the canonical types in `neo-manifest` |
-| neo-state-service | ✅ complete | ~570 | 14 | `StateRoot`, `StateRootCache`, `StateStore`, `StateServiceCommitHandlers`, `Verifier` |
-| neo-state-types | ✅ complete | 195 | 14 | state-service wire types |
-| neo-storage | ✅ complete | 5,302 | 116 | |
-| neo-storage-rocksdb | ✅ complete | 1,957 | 17 | optional |
-| neo-system | ✅ complete | 757 | 16 | reth-style `Node` |
-| neo-tee | ✅ complete | 5,033 | 54 | optional |
-| neo-telemetry | ✅ complete | 1,977 | 62 | |
-| neo-time | ✅ complete | 141 | 2 | |
-| neo-tokens-tracker | ✅ complete | 2,077 | 49 | |
-| neo-tx-builder | ✅ complete | 621 | 13 | |
-| neo-vm | ✅ complete | 12,797 | 132 | |
-| neo-wallets | ✅ complete | 2,639 | 53 | |
-| neo-wire | ✅ complete | ~830 | 12 | `Message`, `MessageHeader`, `MessageFlags`, `MessageCommand`, `NetworkMessage`, `ProtocolMessage`, `MessageCodec` (Tokio framed), `capabilities` |
+| Crate | Status | Notes |
+|-------|--------|-------|
+| neo-application-logs | ✅ complete | ApplicationLogs plugin |
+| neo-blockchain | ✅ complete | block validation and blockchain orchestration |
+| neo-config | ✅ complete | protocol and node configuration |
+| neo-consensus | ✅ complete | dBFT |
+| neo-crypto | ✅ complete | hashes, ECC, MPT trie, BLS helpers |
+| neo-error | ✅ complete | `CoreError` authority |
+| neo-execution | ✅ complete | `ApplicationEngine` and interop surface |
+| neo-hsm | ✅ complete | optional HSM support |
+| neo-io | ✅ complete | binary readers/writers and serialization traits |
+| neo-manifest | ✅ complete | canonical ABI / NEF home |
+| neo-mempool | ✅ complete | `MemoryPool`, `PoolItem`, `PoolIndex`, transaction verification |
+| neo-native-contracts | ✅ complete | standard Neo native contracts |
+| neo-network | ✅ complete | reth-style P2P host plus `wire` module |
+| neo-node | ✅ complete | real default `tokio` daemon; `--no-default-features` keeps a dependency-check stub |
+| neo-oracle-service | ✅ complete | oracle plugin |
+| neo-p2p | ✅ complete | legacy P2P actor/message surface retained for consumers |
+| neo-payloads | ✅ complete | canonical payload and block lifecycle data types |
+| neo-primitives | ✅ complete | primitive types and time abstraction |
+| neo-rpc | ✅ complete | JSON-RPC server/client |
+| neo-runtime | ✅ complete | reth-style service architecture |
+| neo-script-builder | ✅ complete | `ScriptBuilder` plus signature / multi-sig helpers |
+| neo-serialization | ✅ complete | binary/JSON serializers and `json` module |
+| neo-state-service | ✅ complete | `StateRoot`, `StateRootCache`, `StateStore`, commit handlers |
+| neo-storage | ✅ complete | storage abstractions plus RocksDB backend |
+| neo-system | ✅ complete | reth-style `Node` |
+| neo-tee | ✅ complete | optional TEE support |
+| neo-telemetry | ✅ complete | observability |
+| neo-tokens-tracker | ✅ complete | NEP-11/NEP-17 tracker plugin |
+| neo-vm | ✅ complete | NeoVM host |
+| neo-wallets | ✅ complete | wallet/key management |
+| neo-tests | ✅ complete | integration test package |
+| neo-benches | ✅ complete | benchmark package |
 
 ### Issues fixed during the audit
 
@@ -943,26 +858,24 @@ duplication, (4) consistency standards, and (5) best Rust practices.
    (`binary_reader.rs`, `binary_writer.rs`, `memory_reader.rs`,
    `serializable.rs`) and the canonical `persistence/` sub-dirs
    are unchanged.
-2. **Placeholder crates marked with `wip` feature.**
-   `neo-mempool`, `neo-state-service`, `neo-wire`,
-   `neo-smart-contract-types` now declare a `wip` feature that
-   gates the historical placeholder modules. With the default
-   `wip = []` the crates are empty so dependents don't pull in
-   doc-only modules; with `--features wip` the historical
-   `neo_core::ledger::*` import paths still resolve for
-   back-compat.
-3. **`neo-node` binary is now a stub by default.** The full
-   in-progress implementation (CLI, config, startup, services,
-   dBFT, RPC, TEE / HSM) is gated behind a new `wip` feature
-   (the historical `full` feature is preserved as an alias).
-   `cargo build -p neo-node` now compiles a 30-line stub that
-   prints a clear message and exits; the full daemon is built
-   with `cargo build -p neo-node --features wip` (or
-   `--features full`).
+2. **Thin and placeholder crates consolidated.**
+   Historical small crates such as `neo-data-cache`,
+   `neo-redeem-script`, `neo-ledger-types`, `neo-state-types`,
+   `neo-time`, `neo-wire`, `neo-tx-builder`, `neo-json`,
+   `neo-services`, `neo-smart-contract-types`, and `neo-block` are no longer
+   workspace packages. Their functionality now lives in canonical
+   crates such as `neo-storage`, `neo-script-builder`,
+   `neo-payloads`, `neo-state-service`, `neo-primitives`,
+   `neo-network::wire`, `neo-serialization`, and `neo-manifest`.
+3. **`neo-node` binary is runnable by default.** The default feature set now
+   includes the real daemon (CLI, config, startup, services, dBFT, RPC,
+   TEE / HSM feature hooks). `--no-default-features` keeps the small
+   dependency-check stub for minimal builds; the historical `wip` and
+   `full` feature names remain back-compat aliases for the daemon feature set.
 4. **Cargo dep hygiene.** Heavy `neo-node` deps (RPC, consensus,
    payloads, etc.) are now `optional` and only pulled in under
-   the `wip` feature; the default stub build no longer drags in
-   the 28-crate dependency tree.
+   the daemon feature; the `--no-default-features` stub build no longer drags
+   in the 28-crate dependency tree.
 5. **Test fixes.** The `tests/Cargo.toml` no longer references the
    deleted `no_local_neo_vm_dependency.rs`; the
    `p2p_message_exchange` test was rewritten against the current
@@ -973,24 +886,18 @@ duplication, (4) consistency standards, and (5) best Rust practices.
    instead of the old `BlockchainService::new()` signature; the
    `neo-node/tests/block_assembly_test.rs` is gated behind
    `#[cfg(feature = "wip")]`.
-6. **`neo-block` description clarified.** The crate description
-   no longer claims to be the canonical home for the `Block`
-   data type (the `Block` / `Header` types live in
-   `neo-payloads`); the crate is the home for the smaller
-   block-layer data types (`ApplicationExecuted`, `NotifyEventArgs`,
-   `TransactionState`, `VerifyResult`).
+6. **`neo-block` merged into `neo-payloads`.** The smaller
+   block-layer lifecycle types (`ApplicationExecuted`,
+   `NotifyEventArgs`, `TransactionState`, `VerifyResult`, and typed
+   lifecycle handlers) now live beside `Block` / `Header` /
+   `Transaction` in `neo-payloads`, removing another standalone crate.
 
 ### Outstanding issues (not fixed by this audit)
 
-- **Stage E consumer migration.** The `neo-rpc` and `neo-consensus`
-  consumers still depend on the historical `neo_p2p::message::*`
-  and `neo_core::smart_contract::helper::*` paths. The migration
-  map is documented in `neo-system/src/back_compat.rs`; the bulk
-  consumer update is a multi-day effort that will land in its own
-  change. The `--features wip` builds of `neo-node` still fail to
-  compile (116 errors) for the same reason — the in-progress
-  consumer migration is exposed under `wip` so the consumer
-  author can see the migration deltas.
+- **Stage E consumer migration.** `neo-rpc` and `neo-consensus`
+  still retain some historical P2P/back-compat import paths.
+  The remaining cleanup is a consumer-facing migration, not a
+  `neo-node` feature-build blocker.
 - **Pre-existing test failures.** Four pre-existing test
   failures (unrelated to this audit) are visible in
   `cargo test --workspace --no-fail-fast`:
@@ -1003,14 +910,13 @@ duplication, (4) consistency standards, and (5) best Rust practices.
 ### Final compilation status
 
 - `cargo check --workspace` → **0 errors** (default build).
-- `cargo build -p neo-node` → **0 errors** (binary stub).
+- `cargo build -p neo-node` → **0 errors** (default daemon).
 - `cargo build -p neo-node --features wip` → **0 errors**
   (minimal but functional `tokio` daemon: CLI → `ProtocolSettings`
   JSON load → `neo-system::NodeBuilder` → Ctrl-C shutdown).
-- `cargo build -p neo-mempool -p neo-state-service -p neo-wire
-  -p neo-smart-contract-types` → **0 errors** (the canonical impl
-  is now in-tree, so the `wip` feature has been retired from the
-  load-bearing crates).
+- `cargo build -p neo-mempool -p neo-state-service -p neo-network`
+  → **0 errors** (the canonical implementations are in-tree; the
+  retired thin crates are no longer workspace packages).
 - `cargo test --workspace --lib` → **1,110 tests pass, 0 fail** (6
   ignored: 5 `neo-tokens-tracker` history-indexing tests that
   predate the audit, 1 `neo-oracle-service` exact-bytes C# parity

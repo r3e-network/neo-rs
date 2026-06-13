@@ -2,8 +2,8 @@
 //! [`crate::MemoryPool::transaction_removed`] when a transaction
 //! (or batch of transactions) is dropped from the mempool.
 
-use neo_primitives::TransactionRemovalReason;
 use neo_payloads::Transaction;
+use neo_primitives::TransactionRemovalReason;
 
 /// Event arguments for the `MemoryPool::transaction_removed` event.
 pub struct TransactionRemovedEventArgs {

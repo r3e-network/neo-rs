@@ -1,5 +1,5 @@
-use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
 use super::super::ConsensusService;
+use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
 use crate::context::ConsensusState;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
@@ -367,6 +367,15 @@ impl ConsensusService {
             return Ok(());
         }
 
+        let recovery = self.build_recovery_message()?;
+
+        let payload =
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
+        self.broadcast(payload)?;
+        Ok(())
+    }
+
+    pub(in crate::service) fn resend_recovery_message(&mut self) -> ConsensusResult<()> {
         let recovery = self.build_recovery_message()?;
 
         let payload =

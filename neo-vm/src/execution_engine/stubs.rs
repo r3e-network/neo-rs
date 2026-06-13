@@ -2,7 +2,7 @@
 // Default host hooks for ExecutionEngine runs without an attached ApplicationEngine.
 //
 
-use super::{ExecutionEngine, VmResult, HASH_SIZE};
+use super::{ExecutionEngine, HASH_SIZE, VmResult};
 
 impl ExecutionEngine {
     /// Returns the current script hash, if the host provides one.

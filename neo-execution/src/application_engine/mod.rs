@@ -68,9 +68,9 @@
 //! directory to keep individual methods readable while preserving a single Rust
 //! module boundary (matching the C# layout).
 
-use neo_crypto::{Crypto, murmur128};
-use neo_error::{CoreError as Error, Result};
 use neo_config::hardfork::Hardfork;
+use neo_crypto::{Crypto, murmur128};
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::Block;
 use neo_primitives::constants::HASH_SIZE;
 use neo_vm::evaluation_stack::EvaluationStack;
@@ -80,48 +80,48 @@ use neo_vm::jump_table::JumpTable;
 use neo_vm::script::Script;
 // InteropInterface trait removed - StackValue::Interop(u64) is used instead
 // VerifiableInterop is now stored via the interop host registry, not inline in the VM stack
-use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
-use neo_payloads::{Transaction, TransactionAttribute};
-use neo_data_cache::DataCache;
-use neo_storage::SeekDirection;
-use neo_config::ProtocolSettings;
 use crate::application_engine_contract::register_contract_interops;
 use crate::application_engine_crypto::register_crypto_interops;
 use crate::application_engine_iterator::register_iterator_interops;
 use crate::application_engine_runtime::register_runtime_interops;
 use crate::application_engine_storage::register_storage_interops;
-use neo_manifest::CallFlags;
-use neo_primitives::ContractParameterType;
 use crate::contract_state::ContractState;
-use crate::execution_context_state::ExecutionContextState;
-use neo_primitives::FindOptions;
-use crate::helper::Helper;
 use crate::diagnostic::Diagnostic;
-use crate::iterators::iterator::StorageIterator as _;
+use crate::execution_context_state::ExecutionContextState;
+use crate::helper::Helper;
 use crate::iterators::StorageIterator;
-use neo_primitives::LogEventArgs;
+use crate::iterators::iterator::StorageIterator as _;
+use neo_config::ProtocolSettings;
+use neo_manifest::CallFlags;
 use neo_manifest::ContractMethodDescriptor;
+use neo_payloads::{Transaction, TransactionAttribute};
+use neo_primitives::ContractParameterType;
+use neo_primitives::FindOptions;
+use neo_primitives::LogEventArgs;
+use neo_storage::DataCache;
+use neo_storage::SeekDirection;
+use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 // ContractManagement is now accessed via the native contract provider
 // LedgerContract and PolicyContract are now accessed via the native contract provider
 
-use crate::{NativeContract, NativeContractsCache, NativeRegistry};
 use crate::NotifyEventArgs;
 use crate::StorageContext;
-use neo_storage::StorageItem;
-use neo_storage::StorageKey;
+use crate::{NativeContract, NativeContractsCache, NativeRegistry};
+use neo_p2p::WitnessCondition;
 use neo_primitives::TriggerType;
 use neo_primitives::Verifiable;
-use neo_p2p::WitnessCondition;
-use neo_primitives::{UInt160, UInt256};
 use neo_primitives::WitnessRuleAction;
-use neo_vm_rs::interpret_with_stack_and_syscalls_at;
-use neo_vm_rs::interpret_with_stack_and_syscalls_at_with_result_limit;
+use neo_primitives::{UInt160, UInt256};
+use neo_storage::StorageItem;
+use neo_storage::StorageKey;
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::StackValue as VmStackValue;
 use neo_vm_rs::SyscallProvider;
 use neo_vm_rs::VmState as VMState;
+use neo_vm_rs::interpret_with_stack_and_syscalls_at;
+use neo_vm_rs::interpret_with_stack_and_syscalls_at_with_result_limit;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use std::any::{Any, TypeId};
@@ -146,9 +146,9 @@ struct HostInteropHandler {
     handler: InteropHandler,
 }
 
-fn map_core_error_to_vm_error(error: Error) -> VmError {
+fn map_core_error_to_vm_error(error: CoreError) -> VmError {
     match error {
-        Error::InsufficientGas {
+        CoreError::InsufficientGas {
             required,
             available,
         } => VmError::gas_exhausted(required, available),

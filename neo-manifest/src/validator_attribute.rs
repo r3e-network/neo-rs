@@ -19,13 +19,15 @@ impl Clone for Box<dyn ValidatorAttribute> {
     }
 }
 
-// Example implementation for a max length validator
+/// Validator that rejects byte strings and buffers above a configured length.
 #[derive(Clone, Debug)]
 pub struct MaxLengthValidator {
+    /// Maximum accepted byte length.
     pub max_length: usize,
 }
 
 impl MaxLengthValidator {
+    /// Creates a max-length validator.
     pub fn new(max_length: usize) -> Self {
         Self { max_length }
     }

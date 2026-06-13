@@ -18,15 +18,16 @@ use std::sync::Arc;
 /// Matches C# `TransactionManagerFactory`
 pub struct TransactionManagerFactory {
     /// The RPC client instance
-    rpc_client: Arc<RpcClient>}
+    rpc_client: Arc<RpcClient>,
+}
 
 impl TransactionManagerFactory {
     /// `TransactionManagerFactory` Constructor
     /// Matches C# constructor
     #[must_use]
     pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
-        Self {rpc_client}
-   }
+        Self { rpc_client }
+    }
 
     /// Create an unsigned Transaction object with given parameters
     /// Matches C# `MakeTransactionAsync`
@@ -43,7 +44,7 @@ impl TransactionManagerFactory {
 
         self.make_transaction_with_fee(script, invoke_result.gas_consumed, signers, &[])
             .await
-   }
+    }
 
     /// Create an unsigned Transaction object with given parameters and attributes
     /// Matches C# `MakeTransactionAsync` with attributes
@@ -61,7 +62,7 @@ impl TransactionManagerFactory {
 
         self.make_transaction_with_fee(script, invoke_result.gas_consumed, signers, attributes)
             .await
-   }
+    }
 
     /// Create an unsigned Transaction object with given parameters and system fee
     /// Matches C# `MakeTransactionAsync` with systemFee parameter
@@ -97,5 +98,5 @@ impl TransactionManagerFactory {
         tx.set_witnesses(Vec::new());
 
         Ok(TransactionManager::new(tx, self.rpc_client.clone()))
-   }
+    }
 }

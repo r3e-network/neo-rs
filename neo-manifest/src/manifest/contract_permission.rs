@@ -3,13 +3,12 @@
 //! and access their methods.
 
 use super::{ContractManifest, ContractPermissionDescriptor, WildCardContainer};
+use neo_crypto::ECPoint;
 use neo_error::CoreError;
-use neo_error::CoreError as Error;
 use neo_error::CoreResult;
+use neo_primitives::UInt160;
 use neo_vm::Interoperable;
 use neo_vm::StackItem;
-use neo_crypto::ECPoint;
-use neo_primitives::UInt160;
 // Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
@@ -94,7 +93,7 @@ impl ContractPermission {
             ContractPermissionDescriptor::Wildcard | ContractPermissionDescriptor::Hash(_) => {}
             ContractPermissionDescriptor::Group(pubkey) => {
                 if !pubkey.is_valid() {
-                    return Err(Error::invalid_data(
+                    return Err(CoreError::invalid_data(
                         "Invalid public key in contract permission",
                     ));
                 }
@@ -105,11 +104,11 @@ impl ContractPermission {
             WildCardContainer::Wildcard => {}
             WildCardContainer::List(methods) => {
                 if methods.is_empty() {
-                    return Err(Error::invalid_data("Method list cannot be empty"));
+                    return Err(CoreError::invalid_data("Method list cannot be empty"));
                 }
 
                 if methods.iter().any(|m| m.is_empty()) {
-                    return Err(Error::invalid_data("Method name cannot be empty"));
+                    return Err(CoreError::invalid_data("Method name cannot be empty"));
                 }
             }
         }
@@ -157,13 +156,17 @@ impl ContractPermission {
 }
 
 impl Interoperable for ContractPermission {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), neo_vm::VmError> {
+    fn from_stack_item(
+        &mut self,
+        stack_item: StackItem,
+    ) -> std::result::Result<(), neo_vm::VmError> {
         let sv = StackValue::try_from(stack_item).map_err(|error| {
             neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert ContractPermission StackItem to StackValue: {error}"
             ))
         })?;
-        self.from_stack_value(sv).map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+        self.from_stack_value(sv)
+            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn to_stack_item(&self) -> std::result::Result<StackItem, neo_vm::VmError> {

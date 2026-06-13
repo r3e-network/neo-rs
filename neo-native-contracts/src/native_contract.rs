@@ -7,5 +7,5 @@
 //! callers can `use neo_native_contracts::native_contract::*;`.
 
 pub use neo_execution::native_contract::{
-    is_active_for, NativeContract, NativeEvent, NativeMethod,
+    NativeContract, NativeEvent, NativeMethod, is_active_for,
 };

@@ -34,11 +34,11 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
+use neo_vm_rs::{Instruction, parse_script_instructions};
 use neo_vm_rs::{instruction_jump_target, instruction_try_targets};
-use neo_vm_rs::{parse_script_instructions, Instruction};
 use parking_lot::RwLock;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::Arc;

@@ -27,11 +27,17 @@ bitflags! {
 
 #[allow(non_upper_case_globals)]
 impl TriggerType {
+    /// C#-style alias for [`TriggerType::ON_PERSIST`].
     pub const OnPersist: TriggerType = TriggerType::ON_PERSIST;
+    /// C#-style alias for [`TriggerType::POST_PERSIST`].
     pub const PostPersist: TriggerType = TriggerType::POST_PERSIST;
+    /// C#-style alias for [`TriggerType::VERIFICATION`].
     pub const Verification: TriggerType = TriggerType::VERIFICATION;
+    /// C#-style alias for [`TriggerType::APPLICATION`].
     pub const Application: TriggerType = TriggerType::APPLICATION;
+    /// C#-style alias for [`TriggerType::SYSTEM`].
     pub const System: TriggerType = TriggerType::SYSTEM;
+    /// C#-style alias for [`TriggerType::ALL`].
     pub const All: TriggerType = TriggerType::ALL;
 }
 

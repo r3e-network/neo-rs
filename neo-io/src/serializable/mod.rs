@@ -1,6 +1,6 @@
 //! Serializable trait and helpers mirroring C# Neo.IO serialization contracts.
 
-use crate::{binary_writer::BinaryWriter, IoResult, MemoryReader};
+use crate::{IoResult, MemoryReader, binary_writer::BinaryWriter};
 
 pub mod helper;
 pub mod primitives;

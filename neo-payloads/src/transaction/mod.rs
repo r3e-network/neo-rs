@@ -10,38 +10,27 @@
 // modifications are permitted.
 
 use super::{
-    inventory::Inventory, signer::Signer, transaction_attribute::TransactionAttribute,
-    witness::Witness, InventoryType, TransactionAttributeType,
+    InventoryType, TransactionAttributeType, inventory::Inventory, signer::Signer,
+    transaction_attribute::TransactionAttribute, witness::Witness,
 };
-use neo_crypto::{Crypto, Secp256r1Crypto};
-use neo_primitives::Hardfork;
+use base64::{Engine as _, engine::general_purpose};
+use neo_config::ProtocolSettings;
+use neo_crypto::Crypto;
+use neo_error::CoreResult;
 use neo_io::serializable::helper::{
     deserialize_array_with, deserialize_exact_array, get_var_size, get_var_size_bytes,
     get_var_size_serializable_slice, serialize_array,
 };
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::helper;
-use neo_data_cache::DataCache;
-use neo_config::ProtocolSettings;
-use neo_primitives::CallFlags;
-use neo_primitives::TriggerType;
-use neo_primitives::ContractParameterType;
+use neo_primitives::{UInt160, UInt256};
 use neo_vm::Interoperable;
 use neo_vm::StackItem;
-use crate::verifiable_ext::VerifiableExt;
-use neo_error::CoreResult;
-use neo_primitives::{UInt160, UInt256, Verifiable};
-use neo_primitives::VerifyResult;
-use base64::{engine::general_purpose, Engine as _};
-use neo_vm_rs::OpCode;
 use parking_lot::Mutex;
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
 use std::collections::HashSet;
 use std::hash::{Hash as StdHash, Hasher};
-use std::sync::Arc;
 
 /// The maximum size of a transaction.
 pub const MAX_TRANSACTION_SIZE: usize = 102400;
@@ -119,69 +108,29 @@ impl Transaction {
     fn size(&self) -> usize {
         let attr_bytes_size: usize = self.attributes.iter().map(|a| a.size()).sum();
         let signers_size: usize = self.signers.iter().map(|s| s.size()).sum();
-        4 + 4 + 8 + 8 + 4 + 4 + self.script.len() + get_var_size(attr_bytes_size as u64) + attr_bytes_size + get_var_size(signers_size as u64) + signers_size
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        self.serialize_unsigned(writer)?;
-        for w in &self.witnesses {
-            <Witness as neo_io::Serializable>::serialize(w, writer)?;
-        }
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let version = reader.read_u8()?;
-        let nonce = reader.read_u32()?;
-        let system_fee = reader.read_i64()?;
-        let network_fee = reader.read_i64()?;
-        let valid_until_block = reader.read_u32()?;
-        let script = reader.read_var_bytes(usize::MAX)?;
-        let attr_count = reader.read_var_int(u32::MAX as u64)? as usize;
-        let mut attributes = Vec::with_capacity(attr_count);
-        for _ in 0..attr_count {
-            attributes.push(<TransactionAttribute as neo_io::Serializable>::deserialize(reader)?);
-        }
-        let signers_count = reader.read_var_int(u32::MAX as u64)? as usize;
-        let mut signers = Vec::with_capacity(signers_count);
-        for _ in 0..signers_count {
-            signers.push(<Signer as neo_io::Serializable>::deserialize(reader)?);
-        }
-        let mut witnesses = Vec::new();
-        // Read witnesses until end of stream (or for now, read 1)
-        loop {
-            // Try to peek; if EOF, break
-            let pos_before = reader.position();
-            match reader.peek() {
-                Ok(_) => {
-                    witnesses.push(<Witness as neo_io::Serializable>::deserialize(reader)?);
-                }
-                Err(_) => break,
-            }
-        }
-        Ok(Self {
-            version,
-            nonce,
-            system_fee,
-            network_fee,
-            valid_until_block,
-            script,
-            attributes,
-            signers,
-            witnesses,
-            _hash: Mutex::new(None),
-            _size: Mutex::new(None),
-        })
+        4 + 4
+            + 8
+            + 8
+            + 4
+            + 4
+            + self.script.len()
+            + get_var_size(attr_bytes_size as u64)
+            + attr_bytes_size
+            + get_var_size(signers_size as u64)
+            + signers_size
     }
 }
 
-
-
 impl neo_primitives::Verifiable for Transaction {
     fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
-        let data = self.try_get_hash_data()
-            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(format!("transaction unsigned serialization failed: {e}")))?;
-        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(&data)))
+        let data = self.try_get_hash_data().map_err(|e| {
+            neo_primitives::error::PrimitiveError::invalid_data(format!(
+                "transaction unsigned serialization failed: {e}"
+            ))
+        })?;
+        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
+            &data,
+        )))
     }
 
     fn hash_data(&self) -> Vec<u8> {
@@ -201,15 +150,17 @@ impl neo_primitives::Verifiable for Transaction {
     }
 }
 
-
 impl crate::VerifiableExt for Transaction {
-    fn script_hashes_for_verifying(&self, _snapshot: &neo_data_cache::DataCache) -> Vec<neo_primitives::UInt160> {
+    fn script_hashes_for_verifying(
+        &self,
+        _snapshot: &neo_storage::DataCache,
+    ) -> Vec<neo_primitives::UInt160> {
         self.signers().iter().map(|s| s.account).collect()
     }
-    fn witnesses(&self) -> Vec<&neo_ledger_types::Witness> {
+    fn witnesses(&self) -> Vec<&crate::Witness> {
         Vec::new()
     }
-    fn witnesses_mut(&mut self) -> Vec<&mut neo_ledger_types::Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut crate::Witness> {
         Vec::new()
     }
 }

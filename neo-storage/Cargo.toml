@@ -17,6 +17,7 @@ description = "Storage traits and abstractions for Neo blockchain"
 # Internal crates
 neo-primitives = { workspace = true }
 neo-error = { workspace = true }
+neo-io = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -43,9 +44,12 @@ fastbloom = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+rocksdb = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 default = []
+rocksdb = ["dep:rocksdb"]

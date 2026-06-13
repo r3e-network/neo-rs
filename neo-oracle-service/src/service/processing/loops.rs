@@ -1,7 +1,7 @@
 use super::super::{OracleService, OracleStatus, REFRESH_INTERVAL};
 use neo_native_contracts::OracleContract;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime};
 
 impl OracleService {
@@ -10,8 +10,7 @@ impl OracleService {
             let snapshot = self.snapshot_cache();
             self.sync_pending_queue(&snapshot);
 
-            let requests = OracleContract::new()
-                .get_requests(&snapshot);
+            let requests = OracleContract::new().get_requests(&snapshot);
 
             for (request_id, request) in requests {
                 if self.cancel.load(Ordering::SeqCst) {

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use neo_crypto::ECPoint;
-use neo_payloads::{block::Block, header::Header, transaction::Transaction, Witness};
+use neo_payloads::{Witness, block::Block, header::Header, transaction::Transaction};
 use neo_primitives::{UInt160, UInt256};
-use neo_script_builder::ScriptBuilder;
+use neo_vm::script_builder::ScriptBuilder;
 
 use crate::error::{ConsensusError, ConsensusResult};
 use crate::service::helpers::{compute_merkle_root, multisig_verification_script};
@@ -27,6 +27,8 @@ pub struct BlockData {
     pub validator_pubkeys: Vec<ECPoint>,
     /// Required signature count (M in M-of-N multi-sig)
     pub required_signatures: usize,
+    /// Header `NextConsensus` address agreed by the consensus round.
+    pub next_consensus: UInt160,
 }
 
 impl BlockData {
@@ -34,9 +36,9 @@ impl BlockData {
     /// mirroring C# `ConsensusContext.CreateBlock` / `EnsureHeader`:
     ///
     /// - `MerkleRoot = MerkleTree.ComputeRoot(TransactionHashes)`;
-    /// - `NextConsensus = Contract.GetBFTAddress(validators)` — the script
-    ///   hash of the M-of-N multi-sig over the validator public keys (for a
-    ///   static committee the next validators equal the current ones);
+    /// - `NextConsensus` is the address carried by the committed consensus
+    ///   context. At Neo committee-refresh heights this may differ from the
+    ///   current validators that sign the block witness;
     /// - the block witness has that multi-sig as its verification script and
     ///   an invocation script that pushes the M commit signatures in the
     ///   verification script's canonical (sorted) key order, which is the
@@ -53,16 +55,18 @@ impl BlockData {
         // Reuse the consensus crate's canonical computations so the assembled
         // block is byte-identical to the one the validators committed to:
         // MerkleRoot over the transaction hashes, and the M-of-N multi-sig
-        // verification script / `NextConsensus` over the validators.
+        // verification script over the current validators.
         let merkle_root = compute_merkle_root(&self.transaction_hashes);
         let verification_script = multisig_verification_script(&self.validator_pubkeys);
-        let next_consensus = UInt160::from_script(&verification_script);
 
         // Push the commit signatures in the verification script's canonical
         // key order (C# `CheckMultisig` walks signatures and keys in lockstep,
         // so the invocation order must match the sorted key order).
-        let signature_by_validator: HashMap<u8, &Vec<u8>> =
-            self.signatures.iter().map(|(index, sig)| (*index, sig)).collect();
+        let signature_by_validator: HashMap<u8, &Vec<u8>> = self
+            .signatures
+            .iter()
+            .map(|(index, sig)| (*index, sig))
+            .collect();
         let mut sorted_validators: Vec<(usize, &ECPoint)> =
             self.validator_pubkeys.iter().enumerate().collect();
         sorted_validators.sort_by(|a, b| a.1.cmp(b.1));
@@ -99,7 +103,7 @@ impl BlockData {
             self.nonce,
             self.block_index,
             self.primary_index,
-            next_consensus,
+            self.next_consensus,
             witness,
         );
         Ok(Block::from_parts(header, transactions))
@@ -135,6 +139,7 @@ mod tests {
             signatures: vec![(0u8, signature.clone())],
             validator_pubkeys: vec![pubkey.clone()],
             required_signatures: 1,
+            next_consensus: UInt160::from_script(&multisig_verification_script(&[pubkey.clone()])),
         };
 
         let block = data
@@ -152,12 +157,20 @@ mod tests {
         // NextConsensus == hash of the 1-of-1 multi-sig over the validator key,
         // and that script is the witness verification script.
         let expected_script = multisig_verification_script(&[pubkey]);
-        assert_eq!(*block.header.next_consensus(), UInt160::from_script(&expected_script));
+        assert_eq!(
+            *block.header.next_consensus(),
+            UInt160::from_script(&expected_script)
+        );
         assert_eq!(block.header.witness.verification_script, expected_script);
 
         // The invocation script pushes the single commit signature.
         assert!(
-            block.header.witness.invocation_script.windows(signature.len()).any(|w| w == signature),
+            block
+                .header
+                .witness
+                .invocation_script
+                .windows(signature.len())
+                .any(|w| w == signature),
             "invocation script must contain the pushed commit signature"
         );
     }
@@ -175,7 +188,37 @@ mod tests {
             signatures: Vec::new(),
             validator_pubkeys: vec![test_pubkey(1), test_pubkey(2), test_pubkey(3)],
             required_signatures: 2,
+            next_consensus: UInt160::zero(),
         };
         assert!(data.assemble_block(0, UInt256::zero(), Vec::new()).is_err());
+    }
+
+    #[test]
+    fn assemble_block_uses_committed_next_consensus_address() {
+        let pubkey = test_pubkey(1);
+        let committed_next_consensus =
+            UInt160::from_bytes(&[0x42; 20]).expect("test next consensus");
+        let data = BlockData {
+            block_index: 3,
+            timestamp: 12_345,
+            nonce: 7,
+            primary_index: 0,
+            transaction_hashes: Vec::new(),
+            signatures: vec![(0u8, vec![0xABu8; 64])],
+            validator_pubkeys: vec![pubkey.clone()],
+            required_signatures: 1,
+            next_consensus: committed_next_consensus,
+        };
+
+        let block = data
+            .assemble_block(0, UInt256::zero(), Vec::new())
+            .expect("assemble");
+
+        assert_eq!(*block.header.next_consensus(), committed_next_consensus);
+        assert_eq!(
+            block.header.witness.verification_script,
+            multisig_verification_script(&[pubkey]),
+            "the consensus address can differ from the current-round witness script"
+        );
     }
 }

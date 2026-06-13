@@ -6,8 +6,8 @@ This change was executed in two stages. The first stage (commit `90e7468`) scaff
 
 - [x] 1.1 Move `neo-core/src/error.rs` (593 lines) → `neo-error/src/error.rs`.
 - [x] 1.2 Rewrite `use` statements in the moved file (only `neo_primitives::PrimitiveError`, `thiserror`).
-- [x] 1.3 Add cross-crate `From` impls needed by other tracks: `From<neo_io::IoError>`, `From<neo_script_builder::ScriptBuilderError>`, `From<neo_redeem_script::RedeemScriptError>`, `From<neo_storage::StorageError>`, `From<neo_storage::KeyBuilderError>`, `From<neo_vm::VmError>`. Documented as TODO to relocate each into the source crate per polkadot-sdk convention.
-- [x] 1.4 Update `neo-error/Cargo.toml` deps to include `thiserror`, `neo-primitives`, `neo-io`, `neo-storage`, `neo-vm`, `neo-script-builder`, `neo-redeem-script`.
+- [x] 1.3 Add cross-crate `From` impls needed by other tracks: `From<neo_io::IoError>`, `From<neo_script_builder::ScriptBuilderError>`, `From<neo_script_builder::RedeemScriptError>`, `From<neo_storage::StorageError>`, `From<neo_storage::KeyBuilderError>`, `From<neo_vm::VmError>`. Documented as TODO to relocate each into the source crate per polkadot-sdk convention.
+- [x] 1.4 Update `neo-error/Cargo.toml` deps to include `thiserror`, `neo-primitives`, `neo-io`, `neo-storage`, `neo-vm`, `neo-script-builder`, `neo-script-builder`.
 - [x] 1.5 Add `neo-error` to `workspace.members` + `workspace.dependencies`.
 - [x] 1.6 **Verify:** `cargo check -p neo-error` ✅ green. `cargo test -p neo-error` ✅ 7 unit + 1 doc passing.
 - [x] 1.7 Update 89 internal `use crate::error::*` references in `neo-core` to `use neo_error::*`.
@@ -20,7 +20,7 @@ This change was executed in two stages. The first stage (commit `90e7468`) scaff
 - [x] 2.1 Move `neo-core/src/witness.rs` (522 lines) → `neo-ledger-types/src/witness.rs`.
 - [x] 2.2 Rewrite `use` statements: `neo_error::{CoreError, CoreResult}`, `neo_io::{serializable::helper::get_var_size_bytes, Serializable}`, `neo_primitives::UInt160`, `neo_crypto::Crypto`, `neo_vm_rs::OpCode`, `base64`, `serde::{Deserialize, Serialize}`, `std::sync::OnceLock`, `std::{convert::TryInto, fmt}`. Remove `crate::neo_io::*` and `crate::UInt160` references.
 - [x] 2.3 Add `pub mod witness;` to `neo-ledger-types/src/lib.rs` and a comprehensive crate-level doc explaining what belongs / doesn't belong.
-- [x] 2.4 Update `neo-ledger-types/Cargo.toml`: added `neo-error`, `neo-crypto`, `neo-primitives`, `neo-io`, `neo-vm-rs`, `neo-redeem-script`, `base64`, `hex`, `serde`, `serde_json`. Re-export `impl_default_via_new` / `impl_error_from` / `impl_from_bytes` / `impl_hash_for_fields` / `impl_ord_by_fields` from `neo-io`.
+- [x] 2.4 Update `neo-ledger-types/Cargo.toml`: added `neo-error`, `neo-crypto`, `neo-primitives`, `neo-io`, `neo-vm-rs`, `neo-script-builder`, `base64`, `hex`, `serde`, `serde_json`. Re-export `impl_default_via_new` / `impl_error_from` / `impl_from_bytes` / `impl_hash_for_fields` / `impl_ord_by_fields` from `neo-io`.
 - [x] 2.5 Add `neo-ledger-types` to `workspace.members` + `workspace.dependencies`.
 - [x] 2.6 **Verify:** `cargo check -p neo-ledger-types` ✅ green. `cargo test -p neo-ledger-types` ✅ 8 unit + 1 doc passing.
 - [x] 2.7 Bulk-migrate external `neo_core::Witness` / `neo_core::witness::` references in `neo-rpc`, `neo-consensus`, `neo-p2p`, `neo-node` to `neo_ledger_types::Witness` / `neo_ledger_types::witness::`.

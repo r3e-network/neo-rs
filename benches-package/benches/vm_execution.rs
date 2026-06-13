@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use neo_script_builder::ScriptBuilder;
-use neo_vm_rs::{interpret, validate_strict_script, OpCode, StackValue, VmState};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use neo_vm::script_builder::ScriptBuilder;
+use neo_vm_rs::{OpCode, StackValue, VmState, interpret, validate_strict_script};
 
 /// Benchmark opcode dispatch: PUSH1+PUSH1+ADD+DROP repeated 1000 times.
 fn bench_vm_add_loop(c: &mut Criterion) {

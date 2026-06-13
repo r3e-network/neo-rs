@@ -1,6 +1,6 @@
 //! Inventory payload types for relay and verification.
 
-use neo_payloads::{extensible_payload::ExtensiblePayload, Block, InventoryType, Transaction};
+use neo_payloads::{Block, InventoryType, Transaction, extensible_payload::ExtensiblePayload};
 use serde::{Deserialize, Serialize};
 
 /// Inventory payload types for relay and verification.

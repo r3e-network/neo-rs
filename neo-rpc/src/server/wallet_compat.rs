@@ -21,20 +21,20 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
+use neo_execution::ApplicationEngine;
 use neo_execution::contract_state::ContractState;
 use neo_execution::helper::Helper as ContractHelper;
-use neo_execution::ApplicationEngine;
 use neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_usize,
 };
 use neo_manifest::CallFlags;
 use neo_native_contracts::{ContractManagement, GasToken, LedgerContract, PolicyContract};
+use neo_payloads::HEADER_SIZE;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
-use neo_payloads::HEADER_SIZE;
 use neo_primitives::{ContractParameterType, TriggerType, UInt160, Verifiable, WitnessScope};
-use neo_script_builder::ScriptBuilder;
+use neo_vm::script_builder::ScriptBuilder;
 use neo_storage::persistence::DataCache;
 use neo_vm_rs::{OpCode, VmState as VMState};
 use neo_wallets::{KeyPair, TransferOutput, Wallet};
@@ -72,8 +72,7 @@ pub(crate) fn sign_transaction_with_key(
     key: &KeyPair,
     network: u32,
 ) -> Result<Vec<u8>, String> {
-    let data =
-        neo_payloads::get_sign_data(tx, network).map_err(|err| err.to_string())?;
+    let data = neo_payloads::get_sign_data(tx, network).map_err(|err| err.to_string())?;
     key.sign(&data).map_err(|err| err.to_string())
 }
 
@@ -364,8 +363,13 @@ fn nep17_balance_of(
     account: &UInt160,
 ) -> WalletCompatResult<BigInt> {
     let mut builder = ScriptBuilder::new();
-    emit_dynamic_call(&mut builder, asset, "balanceOf", &[CallArg::Bytes(account.to_bytes())])
-        .map_err(WalletCompatError::Other)?;
+    emit_dynamic_call(
+        &mut builder,
+        asset,
+        "balanceOf",
+        &[CallArg::Bytes(account.to_bytes())],
+    )
+    .map_err(WalletCompatError::Other)?;
     let engine = run_test_invocation(
         builder.to_array(),
         snapshot,
@@ -611,8 +615,7 @@ fn make_transaction_with_balances(
                 .get_account(hash)
                 .and_then(|account| account.contract().map(|contract| contract.script.clone()))
         };
-        let network_fee =
-            calculate_network_fee(&tx, snapshot, settings, &account_script, max_gas)?;
+        let network_fee = calculate_network_fee(&tx, snapshot, settings, &account_script, max_gas)?;
         tx.set_network_fee(network_fee);
 
         if value >= BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee()) {
@@ -671,7 +674,10 @@ pub(crate) fn make_transfer_transaction(
             .iter()
             .filter(|output| output.asset_id == asset_id)
             .collect();
-        let sum: BigInt = group.iter().map(|output| output.value.value().clone()).sum();
+        let sum: BigInt = group
+            .iter()
+            .map(|output| output.value.value().clone())
+            .sum();
 
         let mut balances: Vec<(UInt160, BigInt)> = Vec::new();
         for account in &accounts {
@@ -691,8 +697,7 @@ pub(crate) fn make_transfer_transaction(
 
         for output in group {
             balances.sort_by(|a, b| a.1.cmp(&b.1));
-            let balances_used =
-                find_paying_accounts(&mut balances, output.value.value().clone());
+            let balances_used = find_paying_accounts(&mut balances, output.value.value().clone());
             for (account, value) in balances_used {
                 match cosigner_list.get_mut(&account) {
                     Some(signer) => {
@@ -701,10 +706,8 @@ pub(crate) fn make_transfer_transaction(
                         }
                     }
                     None => {
-                        cosigner_list.insert(
-                            account,
-                            Signer::new(account, WitnessScope::CALLED_BY_ENTRY),
-                        );
+                        cosigner_list
+                            .insert(account, Signer::new(account, WitnessScope::CALLED_BY_ENTRY));
                     }
                 }
                 emit_dynamic_call(

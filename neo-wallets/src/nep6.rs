@@ -4,18 +4,18 @@
 //! C# Neo node.  It mirrors the behaviour of `Neo.Wallets.NEP6` exactly,
 //! enabling interoperability between the Rust and C# wallets.
 
-use neo_payloads::{Transaction, Witness};
-use neo_config::ProtocolSettings;
-use neo_execution::Contract;
-use neo_primitives::ContractParameterType;
-use neo_execution::{Helper};
-use crate::wallet_helper::{to_address, to_script_hash};
 use crate::key_pair::KeyPair;
 use crate::version::Version;
 use crate::wallet::{Wallet, WalletError, WalletResult};
 use crate::wallet_account::{StandardWalletAccount, WalletAccount};
-use neo_primitives::{UInt160, UInt256};
+use crate::wallet_helper::{to_address, to_script_hash};
 use async_trait::async_trait;
+use neo_config::ProtocolSettings;
+use neo_execution::Contract;
+use neo_execution::Helper;
+use neo_payloads::{Transaction, Witness};
+use neo_primitives::ContractParameterType;
+use neo_primitives::{UInt160, UInt256};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -279,8 +279,7 @@ impl Wallet for Nep6Wallet {
                 .map_err(|e| WalletError::Other(e.to_string()))?,
         );
         let account = Nep6Account::with_key(self.clone(), key_pair, contract, None);
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> =
-            Arc::new(account.clone());
+        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -296,8 +295,7 @@ impl Wallet for Nep6Wallet {
             Nep6Account::watch_only(self.clone(), contract.script_hash(), Some(contract))
         };
 
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> =
-            Arc::new(account.clone());
+        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -307,8 +305,7 @@ impl Wallet for Nep6Wallet {
         script_hash: UInt160,
     ) -> WalletResult<Arc<dyn crate::wallet_account::WalletAccount>> {
         let account = Nep6Account::watch_only(self.clone(), script_hash, None);
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> =
-            Arc::new(account.clone());
+        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -364,8 +361,7 @@ impl Wallet for Nep6Wallet {
                 .map_err(|e| WalletError::Other(e.to_string()))?,
         );
         let account = Nep6Account::with_key(self.clone(), key_pair, contract, None);
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> =
-            Arc::new(account.clone());
+        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -385,8 +381,7 @@ impl Wallet for Nep6Wallet {
         );
         let account =
             Nep6Account::with_key(self.clone(), key_pair, contract, Some(nep2_key.to_string()));
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> =
-            Arc::new(account.clone());
+        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -509,9 +504,7 @@ impl Wallet for Nep6Wallet {
         self.persist()
     }
 
-    fn get_default_account(
-        &self,
-    ) -> Option<Arc<dyn crate::wallet_account::WalletAccount>> {
+    fn get_default_account(&self) -> Option<Arc<dyn crate::wallet_account::WalletAccount>> {
         self.accounts
             .read()
             .values()
@@ -562,9 +555,8 @@ impl Nep6Account {
         wallet: &Nep6Wallet,
         password: Option<&str>,
     ) -> WalletResult<Self> {
-        let script_hash =
-            to_script_hash(&file.address, wallet.protocol_settings.address_version)
-                .map_err(WalletError::Other)?;
+        let script_hash = to_script_hash(&file.address, wallet.protocol_settings.address_version)
+            .map_err(WalletError::Other)?;
 
         let parsed_contract = match &file.contract {
             Some(contract_file) => Some(Nep6Contract::from_file(contract_file)?),
@@ -827,7 +819,7 @@ fn parse_parameter_type(name: &str) -> WalletResult<ContractParameterType> {
         other => {
             return Err(WalletError::Other(format!(
                 "Unsupported contract parameter type: {other}"
-            )))
+            )));
         }
     };
 

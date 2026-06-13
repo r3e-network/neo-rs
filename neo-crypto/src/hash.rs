@@ -37,34 +37,31 @@ pub struct Crypto;
 
 /// Incremental SHA-256 hasher for streaming inputs.
 ///
-/// This wrapper keeps direct `sha2` usage inside `neo-crypto` while allowing higher-level crates to
-/// hash async or chunked data without buffering it first.
-pub struct Sha256Hasher {
-    inner: Sha256,
-}
+/// This is a thin newtype wrapper around `sha2::Sha256` that keeps direct
+/// `sha2` usage contained to `neo-crypto` while exposing a small
+/// `new`/`update`/`finalize` surface to higher-level crates that hash
+/// async or chunked data without buffering it first.
+#[derive(Clone, Default)]
+pub struct Sha256Hasher(sha2::Sha256);
 
 impl Sha256Hasher {
     /// Creates a new empty SHA-256 hasher.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            inner: Sha256::new(),
-        }
+        Self(sha2::Sha256::new())
     }
 
     /// Adds bytes to the current hash state.
     pub fn update(&mut self, data: &[u8]) {
-        Digest::update(&mut self.inner, data);
+        sha2::Digest::update(&mut self.0, data);
     }
 
     /// Finalizes the hash and returns the 32-byte digest.
     #[must_use]
     pub fn finalize(self) -> [u8; 32] {
-        self.inner.finalize().into()
+        sha2::Digest::finalize(self.0).into()
     }
 }
-
-crate::impl_default_via_new!(Sha256Hasher);
 
 fn blake2b_with_salt(data: &[u8], salt: &[u8], output_size: usize) -> CryptoResult<Vec<u8>> {
     if output_size == 0 || output_size > 64 {

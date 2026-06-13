@@ -23,12 +23,12 @@
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_data_cache::DataCache;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_native_contracts::ContractManagement;
 use neo_primitives::{CallFlags, TriggerType, UInt160};
-use neo_script_builder::ScriptBuilder;
+use neo_vm::script_builder::ScriptBuilder;
+use neo_storage::DataCache;
 use neo_vm_rs::VmState;
 use num_traits::ToPrimitive;
 
@@ -110,8 +110,9 @@ impl AssetDescriptor {
             .map_err(|e| CoreError::invalid_operation(e.to_string()))?
             .as_bytes()
             .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
-        let symbol = String::from_utf8(symbol_bytes)
-            .map_err(|e| CoreError::invalid_format(format!("asset symbol is not valid UTF-8: {e}")))?;
+        let symbol = String::from_utf8(symbol_bytes).map_err(|e| {
+            CoreError::invalid_format(format!("asset symbol is not valid UTF-8: {e}"))
+        })?;
 
         let decimals_int = result_stack
             .peek(1)
@@ -165,10 +166,10 @@ fn emit_descriptor_call(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_data_cache::{DataCache, StorageItem, StorageKey};
-    use neo_execution::native_contract::{build_native_contract_state, NativeContract};
     use neo_execution::contract_state::ContractState;
+    use neo_execution::native_contract::{NativeContract, build_native_contract_state};
     use neo_native_contracts::{GasToken, NeoToken};
+    use neo_storage::{DataCache, StorageItem, StorageKey};
 
     /// `ContractManagement.PREFIX_CONTRACT` — the per-contract storage prefix
     /// (verified against `neo-native-contracts/src/contract_management.rs`).
@@ -226,8 +227,8 @@ mod tests {
         let snapshot = Arc::new(cache);
         let gas_hash = NativeContract::hash(&gas);
 
-        let descriptor = AssetDescriptor::new(snapshot, settings, gas_hash)
-            .expect("GAS descriptor must build");
+        let descriptor =
+            AssetDescriptor::new(snapshot, settings, gas_hash).expect("GAS descriptor must build");
 
         assert_eq!(descriptor.asset_id, gas_hash);
         assert_eq!(descriptor.asset_name, "GasToken");
@@ -250,8 +251,8 @@ mod tests {
         let snapshot = Arc::new(cache);
         let neo_hash = NativeContract::hash(&neo);
 
-        let descriptor = AssetDescriptor::new(snapshot, settings, neo_hash)
-            .expect("NEO descriptor must build");
+        let descriptor =
+            AssetDescriptor::new(snapshot, settings, neo_hash).expect("NEO descriptor must build");
 
         assert_eq!(descriptor.asset_id, neo_hash);
         assert_eq!(descriptor.asset_name, "NeoToken");

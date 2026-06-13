@@ -4,7 +4,6 @@
 
 use super::*;
 use neo_error::CoreError;
-use neo_primitives::error::PrimitiveResult;
 use neo_primitives::SerializablePayload;
 use neo_vm_rs::StackValue;
 
@@ -37,8 +36,6 @@ impl Inventory for Transaction {
         InventoryType::Transaction
     }
 }
-
-
 
 impl Transaction {
     /// Converts the transaction to a neo-vm-rs stack value (matches C# `Transaction.ToStackItem` layout).
@@ -75,9 +72,8 @@ impl Interoperable for Transaction {
     fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {
         // Build the lean neo-vm-rs StackValue projection first, then adapt it to
         // the host StackItem. Both steps' errors surface as a single VM error.
-        let to_item = || -> Result<StackItem, CoreError> {
-            Ok(StackItem::try_from(self.to_stack_value()?)?)
-        };
+        let to_item =
+            || -> Result<StackItem, CoreError> { Ok(StackItem::try_from(self.to_stack_value()?)?) };
         to_item().map_err(|error| {
             neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert transaction StackValue to StackItem: {error}"

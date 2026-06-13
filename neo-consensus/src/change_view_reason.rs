@@ -4,6 +4,7 @@ use neo_primitives::protocol_enum;
 
 protocol_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    #[allow(missing_docs)]
     /// Change view reason enum matching C# `ChangeViewReason` exactly
     pub ChangeViewReason {
         #[default]

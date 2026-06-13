@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+
 //! # neo-hsm
 //!
 //! Hardware Security Module (HSM) support for Neo N3 blockchain.

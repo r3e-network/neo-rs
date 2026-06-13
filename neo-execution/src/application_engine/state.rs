@@ -32,7 +32,7 @@ impl ApplicationEngine {
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
         diagnostic: Option<Box<dyn Diagnostic>>,
-    ) -> Result<Self> {
+    ) -> CoreResult<Self> {
         Self::new_with_shared_block(
             trigger,
             script_container,
@@ -52,7 +52,7 @@ impl ApplicationEngine {
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
         diagnostic: Option<Box<dyn Diagnostic>>,
-    ) -> Result<Self> {
+    ) -> CoreResult<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
@@ -129,7 +129,7 @@ impl ApplicationEngine {
         contracts: HashMap<UInt160, ContractState>,
         native_contract_cache: Arc<Mutex<NativeContractsCache>>,
         diagnostic: Option<Box<dyn Diagnostic>>,
-    ) -> Result<Self> {
+    ) -> CoreResult<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
@@ -203,7 +203,7 @@ impl ApplicationEngine {
         unsafe { self.vm_engine.engine_mut().set_interop_host(host_ptr) };
     }
 
-    fn register_default_interops(&mut self) -> Result<()> {
+    fn register_default_interops(&mut self) -> CoreResult<()> {
         register_contract_interops(self)
             .map_err(|err| Self::map_vm_error("System.Contract", err))?;
         register_runtime_interops(self).map_err(|err| Self::map_vm_error("System.Runtime", err))?;
@@ -214,8 +214,8 @@ impl ApplicationEngine {
         Ok(())
     }
 
-    fn map_vm_error(context: &str, error: VmError) -> Error {
-        Error::invalid_operation(format!("{context} interop failed: {error}"))
+    fn map_vm_error(context: &str, error: VmError) -> CoreError {
+        CoreError::invalid_operation(format!("{context} interop failed: {error}"))
     }
 
     pub(crate) fn register_host_service(
@@ -400,10 +400,10 @@ impl ApplicationEngine {
     }
 
     /// Returns the block currently being persisted, or an error if none.
-    pub fn get_persisting_block(&self) -> Result<Block> {
+    pub fn get_persisting_block(&self) -> CoreResult<Block> {
         self.persisting_block()
             .cloned()
-            .ok_or_else(|| Error::native_contract("No persisting block available"))
+            .ok_or_else(|| CoreError::native_contract("No persisting block available"))
     }
 
     /// Checks if a hardfork is enabled at the current block height.

@@ -3,9 +3,9 @@
 //! Mirrors the static factory methods on the C# `Wallet` class, grouping
 //! create/open/migrate over a set of registered [`WalletFactory`]s.
 
-use neo_config::ProtocolSettings;
 use crate::wallet::{Wallet, WalletError, WalletResult};
 use crate::wallet_factory::WalletFactory;
+use neo_config::ProtocolSettings;
 
 /// Static wallet factory methods.
 /// This matches the static methods in the C# Wallet class.

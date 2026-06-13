@@ -1,29 +1,29 @@
 use super::*;
 use crate::client::models::RpcRawMemPool;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_extensions::io::SerializableExtensions;
+use neo_config::ProtocolSettings;
+use neo_execution::ContractState;
+use neo_io::extensions::serializable::SerializableExtensions;
+use neo_io::{MemoryReader, Serializable};
+use neo_manifest::{ContractManifest, NefFile};
+use neo_native_contracts::LedgerContract;
 use neo_payloads::Block as LedgerBlock;
 use neo_payloads::BlockHeader as LedgerBlockHeader;
-use neo_block::VerifyResult;
-use neo_io::{MemoryReader, Serializable};
+use neo_payloads::TrimmedBlock;
+use neo_payloads::VerifyResult;
+use neo_payloads::Witness as LedgerWitness;
 use neo_payloads::block::Block;
 use neo_payloads::get_sign_data_vec;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
-use neo_config::ProtocolSettings;
-use neo_payloads::TrimmedBlock;
-use neo_native_contracts::LedgerContract;
-use neo_execution::ContractState;
-use neo_manifest::{ContractManifest, NefFile};
-use neo_serialization::BinarySerializer;
-use neo_storage::{StorageItem, StorageKey};
-use neo_wallets::KeyPair;
-use neo_payloads::Witness as LedgerWitness;
 use neo_primitives::{UInt160, UInt256, WitnessScope};
-use neo_json::JToken;
+use neo_serialization::BinarySerializer;
+use neo_serialization::json::JToken;
+use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
 use neo_vm_rs::{OpCode, StackValue};
+use neo_wallets::KeyPair;
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 
@@ -34,7 +34,7 @@ fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         .expect("handler present")
 }
 
-fn parse_object(value: &Value) -> neo_json::JObject {
+fn parse_object(value: &Value) -> neo_serialization::json::JObject {
     let json = serde_json::to_string(value).expect("serialize");
     let token = JToken::parse(&json, 128).expect("parse");
     token.as_object().cloned().expect("expected JSON object")
@@ -104,12 +104,22 @@ fn make_ledger_block(
 
     let merkle_root = if transactions.is_empty() {
         UInt256::zero()
-   } else {
+    } else {
         let hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
         neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
-   };
+    };
 
-    let header = LedgerBlockHeader::new_with_witnesses(0, prev_hash, merkle_root, 1, 0, index, 0, UInt160::zero(), vec![LedgerWitness::empty()]);
+    let header = LedgerBlockHeader::new_with_witnesses(
+        0,
+        prev_hash,
+        merkle_root,
+        1,
+        0,
+        index,
+        0,
+        UInt160::zero(),
+        vec![LedgerWitness::empty()],
+    );
 
     LedgerBlock::from_parts(header, transactions)
 }
@@ -155,7 +165,7 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
         tx_key_bytes.extend_from_slice(&tx.hash().to_bytes());
         let tx_key = StorageKey::new(LedgerContract::ID, tx_key_bytes);
         store.add(tx_key, StorageItem::from_bytes(record));
-   }
+    }
 
     // `Prefix_CurrentBlock` value: the C# `HashIndexState` interoperable
     // stack item (`Struct[ByteString(hash), Integer(index)]`).
@@ -167,7 +177,10 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     store.commit();
 }
 
-fn store_contract_state(store: &mut neo_storage::persistence::StoreCache, contract: &ContractState) {
+fn store_contract_state(
+    store: &mut neo_storage::persistence::StoreCache,
+    contract: &ContractState,
+) {
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
@@ -240,7 +253,7 @@ fn store_committee(
                 StackValue::ByteString(pk.as_bytes().to_vec()),
                 StackValue::Integer(0),
             ])
-       })
+        })
         .collect();
     let bytes = serialize_test_stack_value(&StackValue::Array(items));
     let key = StorageKey::create(neo_token_id, PREFIX_COMMITTEE);
@@ -324,7 +337,6 @@ async fn get_raw_mem_pool_verbose_roundtrips_into_client_model() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "MemoryPool::try_add admits into the unverified queue by design (verification is deferred to reverify) and the pool has no C# InvalidateVerifiedTransactions equivalent, so the verified/unverified split asserted here is unreachable until that pipeline lands in neo-mempool"]
 async fn get_raw_mem_pool_mixed_verified_and_unverified() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings.clone());
@@ -363,16 +375,19 @@ async fn get_raw_mem_pool_mixed_verified_and_unverified() {
             VerifyResult::Succeed
         );
 
-        let mut block = Block::new();
-        block.header.set_index(1);
-        let confirmed: Vec<UInt256> = block.transactions.iter().map(|tx| tx.hash()).collect();
-        pool.commit_block(&confirmed);
+        let block = Block::new();
+        let removed = pool.update_pool_for_block_persisted(&block.transactions);
+        assert!(removed.is_empty());
+        assert_eq!(pool.verified_count(), 0);
+        assert_eq!(pool.unverified_count(), 2);
 
         assert_eq!(
             pool.try_add(tx3.clone(), store.data_cache()),
             VerifyResult::Succeed
         );
-   }
+        assert_eq!(pool.verified_count(), 1);
+        assert_eq!(pool.unverified_count(), 2);
+    }
 
     let params = [Value::Bool(true)];
     let result = (handler.callback())(&server, &params).expect("getrawmempool verbose");
@@ -491,11 +506,7 @@ async fn get_block_hash_reports_hash_for_height() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getblockhash");
 
-    let block = make_ledger_block(
-        &system.store_cache(),
-        1,
-        vec![make_transaction(1)],
-    );
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(1)]);
     let mut store = system.store_cache();
     store_block(&mut store, &block);
 
@@ -511,11 +522,7 @@ async fn get_block_roundtrips_by_hash_and_index() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getblock");
 
-    let block = make_ledger_block(
-        &system.store_cache(),
-        1,
-        vec![make_transaction(1)],
-    );
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(1)]);
     let mut store = system.store_cache();
     store_block(&mut store, &block);
 
@@ -629,11 +636,7 @@ async fn get_block_verbose_reports_confirmations() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getblock");
 
-    let block = make_ledger_block(
-        &system.store_cache(),
-        1,
-        vec![make_transaction(2)],
-    );
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(2)]);
     let mut store = system.store_cache();
     store_block(&mut store, &block);
 
@@ -674,11 +677,7 @@ async fn get_block_header_roundtrips() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getblockheader");
 
-    let block = make_ledger_block(
-        &system.store_cache(),
-        1,
-        vec![make_transaction(3)],
-    );
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(3)]);
     let mut store = system.store_cache();
     store_block(&mut store, &block);
 
@@ -792,7 +791,7 @@ async fn get_contract_state_resolves_native_case_insensitive() {
             obj.get("hash").and_then(Value::as_str).unwrap_or_default(),
             gas_hash.to_string()
         );
-   }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -870,7 +869,7 @@ async fn get_raw_transaction_from_mempool() {
             pool.try_add(tx.clone(), store.data_cache()),
             VerifyResult::Succeed
         );
-   }
+    }
 
     let params = [Value::String(tx.hash().to_string()), Value::Bool(false)];
     let result = (handler.callback())(&server, &params).expect("get raw tx");
@@ -1120,7 +1119,7 @@ async fn find_storage_paginates_results() {
     let config = RpcServerConfig {
         find_storage_page_size: 10,
         ..Default::default()
-   };
+    };
     let server = RpcServer::new(system.clone(), config);
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "findstorage");
@@ -1139,7 +1138,7 @@ async fn find_storage_paginates_results() {
             StorageKey::new(contract.id, key),
             StorageItem::from_bytes(value),
         );
-   }
+    }
     store.commit();
 
     let prefix = BASE64_STANDARD.encode([0xAAu8]);
@@ -1150,10 +1149,11 @@ async fn find_storage_paginates_results() {
     ];
     let result = (handler.callback())(&server, &params).expect("find storage page1");
     let obj = result.as_object().expect("object");
-    assert!(obj
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(false));
+    assert!(
+        obj.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    );
     assert_eq!(
         obj.get("results")
             .and_then(Value::as_array)
@@ -1172,10 +1172,11 @@ async fn find_storage_paginates_results() {
     let result = (handler.callback())(&server, &params).expect("find storage page2");
     let obj = result.as_object().expect("object");
     println!("page2 result: {}", result);
-    assert!(!obj
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(true));
+    assert!(
+        !obj.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    );
     assert_eq!(
         obj.get("results")
             .and_then(Value::as_array)
@@ -1205,7 +1206,7 @@ async fn find_storage_returns_empty_page_at_end() {
             StorageKey::new(contract.id, key),
             StorageItem::from_bytes(value),
         );
-   }
+    }
     store.commit();
 
     let prefix_b64 = BASE64_STANDARD.encode(prefix);
@@ -1216,10 +1217,11 @@ async fn find_storage_returns_empty_page_at_end() {
     ];
     let result = (handler.callback())(&server, &params).expect("find storage page1");
     let obj = result.as_object().expect("object");
-    assert!(!obj
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(true));
+    assert!(
+        !obj.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    );
     let results = obj
         .get("results")
         .and_then(Value::as_array)
@@ -1235,10 +1237,11 @@ async fn find_storage_returns_empty_page_at_end() {
     ];
     let result = (handler.callback())(&server, &params).expect("find storage page2");
     let obj = result.as_object().expect("object");
-    assert!(!obj
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(true));
+    assert!(
+        !obj.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    );
     let results = obj
         .get("results")
         .and_then(Value::as_array)
@@ -1321,7 +1324,7 @@ async fn get_transaction_height_rejects_mempool_transaction() {
             pool.try_add(tx.clone(), store.data_cache()),
             VerifyResult::Succeed
         );
-   }
+    }
 
     let params = [Value::String(tx.hash().to_string())];
     let err = (handler.callback())(&server, &params).expect_err("mempool tx");
@@ -1378,7 +1381,7 @@ async fn get_next_block_validators_returns_standby() {
                 .get("publickey")
                 .and_then(Value::as_str)
                 .map(|value| value.to_string())
-       })
+        })
         .collect();
     assert_eq!(expected, received);
 }
@@ -1408,7 +1411,7 @@ async fn get_next_block_validators_reports_candidate_votes() {
             let obj = item.as_object()?;
             let public_key = obj.get("publickey")?.as_str()?;
             (public_key == key).then_some(obj)
-       })
+        })
         .expect("candidate entry");
     assert_eq!(
         entry
@@ -1444,7 +1447,7 @@ async fn get_next_block_validators_reports_unregistered_as_negative_one() {
             let obj = item.as_object()?;
             let public_key = obj.get("publickey")?.as_str()?;
             (public_key == key).then_some(obj)
-       })
+        })
         .expect("candidate entry");
     assert_eq!(
         entry
@@ -1480,7 +1483,7 @@ async fn get_candidates_reports_registered_candidate() {
             let obj = item.as_object()?;
             let public_key = obj.get("publickey")?.as_str()?;
             (public_key == key).then_some(obj)
-       })
+        })
         .expect("candidate entry");
     assert_eq!(
         entry
@@ -1489,10 +1492,12 @@ async fn get_candidates_reports_registered_candidate() {
             .unwrap_or_default(),
         "10000"
     );
-    assert!(entry
-        .get("active")
-        .and_then(Value::as_bool)
-        .unwrap_or(false));
+    assert!(
+        entry
+            .get("active")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1520,8 +1525,7 @@ async fn get_candidates_skips_blocked_and_unregistered() {
         .clone();
 
     let blocked_account =
-        neo_execution::Contract::create_signature_contract(candidate_blocked.clone())
-            .script_hash();
+        neo_execution::Contract::create_signature_contract(candidate_blocked.clone()).script_hash();
     let mut store = system.store_cache();
     store_candidate_state(&mut store, &candidate_active, true, BigInt::from(7));
     store_candidate_state(&mut store, &candidate_blocked, true, BigInt::from(9));
@@ -1537,7 +1541,7 @@ async fn get_candidates_skips_blocked_and_unregistered() {
                 .get("publickey")
                 .and_then(Value::as_str)
                 .map(|value| value.to_string())
-       })
+        })
         .collect();
 
     assert!(keys.contains(&hex::encode(candidate_active.as_bytes())));
@@ -1591,7 +1595,7 @@ async fn get_committee_returns_snapshot_members() {
             value.as_str().unwrap_or_default(),
             hex::encode(point.as_bytes())
         );
-   }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1620,7 +1624,7 @@ async fn get_native_contracts_includes_gas_token() {
             .and_then(|obj| obj.get("hash").and_then(Value::as_str))
             .map(|hash| hash == gas_hash.to_string())
             .unwrap_or(false)
-   });
+    });
     assert!(has_gas);
 }
 
@@ -1641,8 +1645,8 @@ async fn get_native_contracts_returns_all_registered_states() {
                 .expect("contract read")
         {
             expected.push(contract_state_to_json(&state));
-       }
-   }
+        }
+    }
 
     let result = (handler.callback())(&server, &[]).expect("native contracts");
     let result_array = result.as_array().expect("array");
@@ -1657,7 +1661,7 @@ async fn get_native_contracts_returns_all_registered_states() {
                 .expect("hash present")
                 .to_string();
             (hash, value)
-       })
+        })
         .collect();
 
     for value in result_array {
@@ -1669,7 +1673,7 @@ async fn get_native_contracts_returns_all_registered_states() {
             .get(hash)
             .unwrap_or_else(|| panic!("missing expected contract {}", hash));
         assert_eq!(value, expected_value);
-   }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1679,11 +1683,7 @@ async fn get_block_reports_unknown_block() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getblock");
 
-    let block = make_ledger_block(
-        &system.store_cache(),
-        1,
-        vec![make_transaction(5)],
-    );
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(5)]);
     let mut store = system.store_cache();
     store_block(&mut store, &block);
 
@@ -1705,11 +1705,7 @@ async fn get_block_hash_rejects_unknown_height() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getblockhash");
 
-    let block = make_ledger_block(
-        &system.store_cache(),
-        1,
-        vec![make_transaction(6)],
-    );
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(6)]);
     let mut store = system.store_cache();
     store_block(&mut store, &block);
 

@@ -36,7 +36,7 @@ lz4_flex = { workspace = true }
 
 # Internal dependencies
 # neo-primitives is a Layer 0 crate with no neo-* dependencies
-neo-primitives = { path = "../neo-primitives" }
+neo-primitives = { workspace = true }
 
 [features]
 default = []

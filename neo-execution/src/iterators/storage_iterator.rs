@@ -1,8 +1,8 @@
 //! StorageIterator - matches C# Neo.SmartContract.Iterators.StorageIterator exactly
 
-use neo_serialization::binary_serializer::BinarySerializer;
-use neo_primitives::FindOptions;
 use crate::iterators::iterator::StorageIterator as Iter;
+use neo_primitives::FindOptions;
+use neo_serialization::binary_serializer::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::StorageKey;
 use neo_vm::StackItem;

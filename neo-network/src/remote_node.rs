@@ -4,7 +4,7 @@
 //! `RemoteNodeService` task. The task owns:
 //!
 //! - a `tokio::net::TcpStream`, wrapped in a
-//!   `tokio_util::codec::Framed` with the `neo-wire`
+//!   `tokio_util::codec::Framed` with the local wire
 //!   [`MessageCodec`] for frame-level decode/encode,
 //! - the per-peer handshake state (peer version, verack flag —
 //!   C# `RemoteNode.Version` / `RemoteNode._verack`),
@@ -54,15 +54,15 @@ use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
+use crate::wire::{Message, MessageCodec};
 use neo_io::{MemoryReader, Serializable};
+use neo_p2p::MessageCommand;
 use neo_p2p::payloads::{
     AddrPayload, GetBlockByIndexPayload, GetBlocksPayload, InvPayload, NetworkAddressWithTime,
     NodeCapability, PingPayload, VersionPayload,
 };
-use neo_p2p::MessageCommand;
 use neo_payloads::{Block, ExtensiblePayload, Header, HeadersPayload, Transaction};
 use neo_primitives::{InventoryType, UInt256};
-use neo_wire::{Message, MessageCodec};
 
 use crate::connection_timeouts::ConnectionTimeouts;
 use crate::error::NetworkResult;
@@ -128,6 +128,12 @@ pub trait BlockSource: Send + Sync {
     /// Returns the transaction with `hash` (used to serve `GetData`
     /// transaction items). Defaults to `None`.
     fn transaction_by_hash(&self, _hash: &UInt256) -> Option<Transaction> {
+        None
+    }
+
+    /// Returns the extensible payload with `hash` (used to serve `GetData`
+    /// extensible items from the relay cache). Defaults to `None`.
+    fn extensible_by_hash(&self, _hash: &UInt256) -> Option<ExtensiblePayload> {
         None
     }
 
@@ -571,12 +577,14 @@ impl PeerSession {
         // (`TimerInterval`) whose tick sends a `ping`; the first tick is
         // scheduled one interval out so we never ping mid-handshake.
         let ping_interval = Duration::from_secs(30);
-        let mut ping_timer = tokio::time::interval_at(Instant::now() + ping_interval, ping_interval);
+        let mut ping_timer =
+            tokio::time::interval_at(Instant::now() + ping_interval, ping_interval);
         // Block-sync runs on its own fast cadence (decoupled from the 30 s
         // keepalive ping): each tick pipelines the next batch forward while the
         // ledger trails the peer, instead of one batch per keepalive interval.
         let sync_interval = Duration::from_secs(1);
-        let mut sync_timer = tokio::time::interval_at(Instant::now() + sync_interval, sync_interval);
+        let mut sync_timer =
+            tokio::time::interval_at(Instant::now() + sync_interval, sync_interval);
         loop {
             tokio::select! {
                 _ = shutdown.cancelled() => {
@@ -658,9 +666,12 @@ impl PeerSession {
             return Ok(());
         }
         let payload = PingPayload::create(self.identity.block_height());
-        let message =
-            Message::create(MessageCommand::Ping, Some(&payload), self.peer_allows_compression)
-                .map_err(|err| CloseReason::Transport(format!("encode ping: {err}")))?;
+        let message = Message::create(
+            MessageCommand::Ping,
+            Some(&payload),
+            self.peer_allows_compression,
+        )
+        .map_err(|err| CloseReason::Transport(format!("encode ping: {err}")))?;
         framed
             .send(message)
             .await
@@ -676,7 +687,10 @@ impl PeerSession {
     /// for the new tip. Redundant requests across peers are deduplicated by
     /// the blockchain service (already-persisted blocks are dropped), so a
     /// per-peer trigger needs no cross-peer range assignment to be correct.
-    async fn request_blocks_if_behind(&mut self, framed: &mut PeerFramed) -> Result<(), CloseReason> {
+    async fn request_blocks_if_behind(
+        &mut self,
+        framed: &mut PeerFramed,
+    ) -> Result<(), CloseReason> {
         if !self.verack_received {
             return Ok(());
         }
@@ -789,9 +803,12 @@ impl PeerSession {
                 })?;
                 self.peer_last_block_index = payload.last_block_index;
                 let pong = PingPayload::create(self.identity.block_height());
-                let message =
-                    Message::create(MessageCommand::Pong, Some(&pong), self.peer_allows_compression)
-                        .map_err(|err| CloseReason::Transport(format!("encode pong: {err}")))?;
+                let message = Message::create(
+                    MessageCommand::Pong,
+                    Some(&pong),
+                    self.peer_allows_compression,
+                )
+                .map_err(|err| CloseReason::Transport(format!("encode pong: {err}")))?;
                 framed
                     .send(message)
                     .await
@@ -829,7 +846,9 @@ impl PeerSession {
             MessageCommand::GetBlockByIndex => {
                 let mut reader = MemoryReader::new(&message.payload_raw);
                 let payload = GetBlockByIndexPayload::deserialize(&mut reader).map_err(|err| {
-                    CloseReason::ProtocolViolation(format!("invalid getblockbyindex payload: {err}"))
+                    CloseReason::ProtocolViolation(format!(
+                        "invalid getblockbyindex payload: {err}"
+                    ))
                 })?;
                 if let Some(source) = self.block_source.clone() {
                     // C# caps a response at `InvPayload.MaxHashesCount` (500);
@@ -924,11 +943,12 @@ impl PeerSession {
                     }
                     if !headers.is_empty() {
                         let hp = HeadersPayload::create(headers);
-                        let served =
-                            Message::create(MessageCommand::Headers, Some(&hp), self.peer_allows_compression)
-                                .map_err(|err| {
-                                    CloseReason::Transport(format!("encode headers: {err}"))
-                                })?;
+                        let served = Message::create(
+                            MessageCommand::Headers,
+                            Some(&hp),
+                            self.peer_allows_compression,
+                        )
+                        .map_err(|err| CloseReason::Transport(format!("encode headers: {err}")))?;
                         framed.send(served).await.map_err(|err| {
                             CloseReason::Transport(format!("send headers: {err}"))
                         })?;
@@ -937,7 +957,7 @@ impl PeerSession {
                 Ok(())
             }
             // C# `OnGetDataMessageReceived`: for each requested inventory hash,
-            // serve the matching block / transaction frame.
+            // serve the matching block / transaction / extensible frame.
             MessageCommand::GetData => {
                 let mut reader = MemoryReader::new(&message.payload_raw);
                 let payload = InvPayload::deserialize(&mut reader).map_err(|err| {
@@ -954,7 +974,9 @@ impl PeerSession {
                                         self.peer_allows_compression,
                                     )
                                     .map_err(|err| {
-                                        CloseReason::Transport(format!("encode getdata block: {err}"))
+                                        CloseReason::Transport(format!(
+                                            "encode getdata block: {err}"
+                                        ))
                                     })?;
                                     framed.send(served).await.map_err(|err| {
                                         CloseReason::Transport(format!("send getdata block: {err}"))
@@ -976,8 +998,25 @@ impl PeerSession {
                                     })?;
                                 }
                             }
-                            // Extensible/Consensus inventory is not served yet.
-                            _ => {}
+                            InventoryType::Extensible => {
+                                if let Some(payload) = source.extensible_by_hash(hash) {
+                                    let served = Message::create(
+                                        MessageCommand::Extensible,
+                                        Some(&payload),
+                                        self.peer_allows_compression,
+                                    )
+                                    .map_err(|err| {
+                                        CloseReason::Transport(format!(
+                                            "encode getdata extensible: {err}"
+                                        ))
+                                    })?;
+                                    framed.send(served).await.map_err(|err| {
+                                        CloseReason::Transport(format!(
+                                            "send getdata extensible: {err}"
+                                        ))
+                                    })?;
+                                }
+                            }
                         }
                     }
                 }
@@ -1005,7 +1044,9 @@ impl PeerSession {
                     CloseReason::ProtocolViolation(format!("invalid extensible payload: {err}"))
                 })?;
                 if let Some(tx) = &self.inbound_tx {
-                    let _ = tx.send(InboundInventory::Extensible(Arc::new(payload))).await;
+                    let _ = tx
+                        .send(InboundInventory::Extensible(Arc::new(payload)))
+                        .await;
                 }
                 Ok(())
             }
@@ -1024,9 +1065,10 @@ impl PeerSession {
                         .filter(|hash| match payload.inventory_type {
                             InventoryType::Block => !source.contains_block(hash),
                             InventoryType::Transaction => !source.contains_transaction(hash),
-                            // Extensible/Consensus inventory is pushed directly
-                            // (relayed as full payloads), never pulled by hash.
-                            _ => false,
+                            // Neo N3 pulls ExtensiblePayload inventory by hash;
+                            // consensus and state-service payloads are both
+                            // carried by MessageCommand::Extensible.
+                            InventoryType::Extensible => true,
                         })
                         .collect();
                     for group in InvPayload::create_group(payload.inventory_type, unknown) {
@@ -1035,9 +1077,7 @@ impl PeerSession {
                             Some(&group),
                             self.peer_allows_compression,
                         )
-                        .map_err(|err| {
-                            CloseReason::Transport(format!("encode getdata: {err}"))
-                        })?;
+                        .map_err(|err| CloseReason::Transport(format!("encode getdata: {err}")))?;
                         framed.send(getdata).await.map_err(|err| {
                             CloseReason::Transport(format!("send getdata: {err}"))
                         })?;
@@ -1070,9 +1110,10 @@ impl PeerSession {
             // connected peers' advertised listener endpoints (deduplicated,
             // excluding the requester) as a single `Addr` frame.
             MessageCommand::GetAddr => {
-                let addrs = self
-                    .registry
-                    .listener_addresses(self.peer_id, neo_p2p::payloads::addr_payload::MAX_COUNT_TO_SEND);
+                let addrs = self.registry.listener_addresses(
+                    self.peer_id,
+                    neo_p2p::payloads::addr_payload::MAX_COUNT_TO_SEND,
+                );
                 if !addrs.is_empty() {
                     let timestamp = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1128,8 +1169,9 @@ impl PeerSession {
         payload_raw: &[u8],
     ) -> Result<(), CloseReason> {
         let mut reader = MemoryReader::new(payload_raw);
-        let payload = VersionPayload::deserialize(&mut reader)
-            .map_err(|err| CloseReason::ProtocolViolation(format!("invalid version payload: {err}")))?;
+        let payload = VersionPayload::deserialize(&mut reader).map_err(|err| {
+            CloseReason::ProtocolViolation(format!("invalid version payload: {err}"))
+        })?;
 
         // Capability capture (OnVersionMessageReceived loop).
         for capability in &payload.capabilities {
@@ -1166,7 +1208,10 @@ impl PeerSession {
                 "self-connection rejected (version nonce equals local nonce)".to_string(),
             ));
         }
-        if !self.registry.record_version_nonce(self.peer_id, payload.nonce) {
+        if !self
+            .registry
+            .record_version_nonce(self.peer_id, payload.nonce)
+        {
             return Err(CloseReason::ProtocolViolation(format!(
                 "duplicate connection from {} with version nonce {}",
                 self.remote_addr.ip(),
@@ -1261,9 +1306,11 @@ impl PeerSession {
             return Ok(());
         }
         let message = match &item {
-            InventoryItem::Block(block) => {
-                Message::create(MessageCommand::Block, Some(block), self.peer_allows_compression)
-            }
+            InventoryItem::Block(block) => Message::create(
+                MessageCommand::Block,
+                Some(block),
+                self.peer_allows_compression,
+            ),
             InventoryItem::Transaction(tx) => Message::create(
                 MessageCommand::Transaction,
                 Some(tx),

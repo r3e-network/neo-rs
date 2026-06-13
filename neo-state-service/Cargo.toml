@@ -15,17 +15,14 @@ description = "Canonical home for the Neo state-service: state root, state root 
 
 [dependencies]
 neo-primitives = { workspace = true }
-neo-data-cache = { workspace = true }
 neo-storage = { workspace = true }
-neo-state-types = { workspace = true }
 neo-payloads = { workspace = true }
-neo-block = { workspace = true }
 neo-crypto = { workspace = true }
 neo-error = { workspace = true }
 neo-config = { workspace = true }
 neo-io = { workspace = true }
-neo-event-handlers = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 tracing.workspace = true
 parking_lot.workspace = true
 thiserror.workspace = true

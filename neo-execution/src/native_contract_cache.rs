@@ -1,7 +1,7 @@
-use neo_error::CoreError as Error;
-use neo_error::CoreResult as Result;
-use neo_config::ProtocolSettings;
 use crate::{NativeContract, NativeMethod};
+use neo_config::ProtocolSettings;
+use neo_error::CoreError;
+use neo_error::CoreResult;
 use std::collections::HashMap;
 
 /// Cache of native contract method metadata, mirroring the C# NativeContractsCache behaviour.
@@ -48,7 +48,7 @@ impl NativeContractsCacheEntry {
         parameter_count: usize,
         settings: &ProtocolSettings,
         block_height: u32,
-    ) -> Result<Option<&NativeMethod>> {
+    ) -> CoreResult<Option<&NativeMethod>> {
         let Some(candidates) = self.methods_by_name.get(name) else {
             return Ok(None);
         };
@@ -62,7 +62,7 @@ impl NativeContractsCacheEntry {
         };
 
         if active.next().is_some() {
-            return Err(Error::invalid_operation(format!(
+            return Err(CoreError::invalid_operation(format!(
                 "Ambiguous native method '{}({})' at height {}",
                 name, parameter_count, block_height
             )));

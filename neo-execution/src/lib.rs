@@ -17,17 +17,13 @@
 //!
 //! This is a **Layer 2 (Service)** crate. It depends on the foundation
 //! crates (`neo-vm`, `neo-primitives`, `neo-crypto`, `neo-config`,
-//! `neo-storage`, `neo-io`, `neo-error`, `neo-data-cache`,
-//! `neo-serialization`, `neo-manifest`, `neo-payloads`, `neo-block`,
-//! `neo-ledger-types`) and the [`neo_native_contracts`] crate provides
+//! `neo-storage`, `neo-io`, `neo-error`, `neo-storage`,
+//! `neo-serialization`, `neo-manifest`, `neo-payloads`,
+//! `neo-payloads`) and the [`neo_native_contracts`] crate provides
 //! the concrete `NativeContract` implementations.
 
-#![allow(missing_docs)]
+#![warn(missing_docs)]
 #![allow(dead_code)]
-
-// Re-export common macros from `neo-io` for back-compat with the
-// historical `crate::impl_default_via_new!` etc. paths.
-pub use neo_io::impl_default_via_new;
 
 // ============================================================================
 // Application engine
@@ -56,8 +52,8 @@ pub mod iterators;
 pub mod hardfork_activable;
 pub mod native_contract;
 pub mod native_contract_cache;
-pub mod native_registry;
 pub mod native_contract_provider;
+pub mod native_registry;
 
 // ============================================================================
 // Core smart-contract data types
@@ -102,10 +98,10 @@ pub use interop_parameter_descriptor::InteropParameterDescriptor;
 pub use interoperable::Interoperable;
 pub use key_builder::KeyBuilder;
 pub use max_length_attribute::MaxLengthAttribute;
-pub use native_contract::{is_active_for, NativeContract, NativeEvent, NativeMethod};
+pub use native_contract::{NativeContract, NativeEvent, NativeMethod, is_active_for};
 pub use native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
 pub use native_registry::NativeRegistry;
-pub use notify_event_args::NotifyEventArgs;
 pub use neo_primitives::TriggerType;
+pub use notify_event_args::NotifyEventArgs;
 pub use storage_context::StorageContext;
 pub use storage_item_ext::StorageItemExt;

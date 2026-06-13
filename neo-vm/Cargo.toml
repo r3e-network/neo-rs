@@ -4,15 +4,21 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "Stateful NeoVM host (execution engine, contexts, reference-counted StackItem) over the pure neo-vm-rs semantics"
 
 [dependencies]
 neo-vm-rs = { workspace = true }
-neo_io_crate = { path = "../neo-io", package = "neo-io" }
-neo-primitives = { path = "../neo-primitives" }
-neo-crypto = { path = "../neo-crypto" }
-neo-error = { path = "../neo-error" }
+neo-io = { workspace = true }
+neo-primitives = { workspace = true }
+neo-crypto = { workspace = true }
+neo-error = { workspace = true }
 parking_lot = { workspace = true }
 base64 = { workspace = true }
 num-bigint = { workspace = true }

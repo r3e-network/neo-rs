@@ -1,6 +1,6 @@
 use super::ConsensusEvent;
-use crate::context::{ConsensusContext, ValidatorInfo};
 use crate::ConsensusSigner;
+use crate::context::{ConsensusContext, ValidatorInfo};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use zeroize::Zeroizing;

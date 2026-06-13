@@ -189,7 +189,11 @@ impl ExternalVmHost<'_> {
                     stack.push(VmStackValue::Null);
                     return Ok(());
                 };
-                let Some(transaction) = container.as_ref().as_any().downcast_ref::<neo_payloads::Transaction>() else {
+                let Some(transaction) = container
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<neo_payloads::Transaction>()
+                else {
                     stack.push(VmStackValue::Null);
                     return Ok(());
                 };
@@ -209,7 +213,11 @@ impl ExternalVmHost<'_> {
                     .get_script_container()
                     .ok_or_else(|| "No script container".to_string())?;
 
-                let Some(transaction) = container.as_ref().as_any().downcast_ref::<neo_payloads::Transaction>() else {
+                let Some(transaction) = container
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<neo_payloads::Transaction>()
+                else {
                     return Err("Script container does not implement Interoperable".to_string());
                 };
 
@@ -360,7 +368,7 @@ impl ApplicationEngine {
                     return self.apply_external_vm_fault(
                         format!("Failed to convert external VM stack item: {error}"),
                         0,
-                    )
+                    );
                 }
             }
         }
@@ -377,7 +385,7 @@ impl ApplicationEngine {
                 return self.apply_external_vm_fault(
                     "No execution context after external VM halt".to_string(),
                     0,
-                )
+                );
             }
         };
 

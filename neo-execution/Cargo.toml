@@ -17,15 +17,10 @@ neo-crypto = { workspace = true }
 neo-vm = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-config = { workspace = true }
-neo-redeem-script = { workspace = true }
-neo-script-builder = { workspace = true }
-neo-data-cache = { workspace = true }
 neo-storage = { workspace = true }
 neo-manifest = { workspace = true }
 neo-serialization = { workspace = true }
-neo-block = { workspace = true }
 neo-payloads = { workspace = true }
-neo-ledger-types = { workspace = true }
 
 # External
 serde = { workspace = true }
@@ -40,7 +35,6 @@ num-integer = "0.1"
 async-trait = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
-once_cell = "1.19"
 smallvec = { workspace = true }
 bitflags = { workspace = true }
 bitvec = { workspace = true }

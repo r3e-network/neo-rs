@@ -28,7 +28,7 @@ impl ApplicationEngine {
             .map(|(start, end)| block_idx >= start && block_idx <= end)
             .unwrap_or(false)
     }
-    pub(super) fn fetch_contract(&mut self, hash: &UInt160) -> Result<ContractState> {
+    pub(super) fn fetch_contract(&mut self, hash: &UInt160) -> CoreResult<ContractState> {
         if let Some(contract) = self.contracts.get(hash) {
             return Ok(contract.clone());
         }
@@ -36,7 +36,10 @@ impl ApplicationEngine {
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
         let diag = Self::should_trace_block(block_idx);
 
-        match crate::native_contract_provider::lookup_contract_management(self.snapshot_cache.as_ref(), hash) {
+        match crate::native_contract_provider::lookup_contract_management(
+            self.snapshot_cache.as_ref(),
+            hash,
+        ) {
             Ok(Some(contract)) => {
                 if diag {
                     tracing::warn!(target: "neo", block_index = block_idx, %hash, id = contract.id, "TRACE: fetch_contract found in snapshot");
@@ -53,7 +56,7 @@ impl ApplicationEngine {
                 if diag {
                     tracing::warn!(target: "neo", block_index = block_idx, %hash, error = %e, "TRACE: fetch_contract snapshot error");
                 }
-                return Err(Error::invalid_operation(e.to_string()));
+                return Err(CoreError::invalid_operation(e.to_string()));
             }
         }
 
@@ -71,11 +74,14 @@ impl ApplicationEngine {
         if diag {
             tracing::warn!(target: "neo", block_index = block_idx, %hash, "TRACE: fetch_contract FAILED - not found anywhere");
         }
-        Err(Error::not_found(format!("Contract not found: {hash:?}")))
+        Err(CoreError::not_found(format!("Contract not found: {hash:?}")))
     }
 
-    fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> Result<bool> {
-        crate::native_contract_provider::is_contract_blocked_by_policy(self.snapshot_cache.as_ref(), contract_hash)
+    fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> CoreResult<bool> {
+        crate::native_contract_provider::is_contract_blocked_by_policy(
+            self.snapshot_cache.as_ref(),
+            contract_hash,
+        )
     }
 
     /// Refreshes the engine's per-tx contract cache after ContractManagement
@@ -96,9 +102,9 @@ impl ApplicationEngine {
         previous_context: Option<ExecutionContext>,
         previous_hash: Option<UInt160>,
         has_return_value: bool,
-    ) -> Result<ExecutionContext> {
+    ) -> CoreResult<ExecutionContext> {
         if method.offset < 0 {
-            return Err(Error::invalid_operation(
+            return Err(CoreError::invalid_operation(
                 "Method offset cannot be negative".to_string(),
             ));
         }
@@ -136,7 +142,7 @@ impl ApplicationEngine {
             ContractBasicMethod::INITIALIZE_P_COUNT as usize,
         ) {
             if init.offset < 0 {
-                return Err(Error::invalid_operation(
+                return Err(CoreError::invalid_operation(
                     "Initialization method offset cannot be negative".to_string(),
                 ));
             }
@@ -145,7 +151,7 @@ impl ApplicationEngine {
             self.vm_engine
                 .engine_mut()
                 .load_context(init_context)
-                .map_err(|e| Error::invalid_operation(e.to_string()))?;
+                .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
             self.refresh_context_tracking()?;
         }
 
@@ -159,9 +165,9 @@ impl ApplicationEngine {
         mut flags: CallFlags,
         has_return_value: bool,
         args: &[StackItem],
-    ) -> Result<ExecutionContext> {
+    ) -> CoreResult<ExecutionContext> {
         if args.len() != method.parameters.len() {
-            return Err(Error::invalid_operation(format!(
+            return Err(CoreError::invalid_operation(format!(
                 "Method '{}' expects {} arguments but received {}.",
                 method.name,
                 method.parameters.len(),
@@ -170,13 +176,13 @@ impl ApplicationEngine {
         }
 
         if has_return_value != (method.return_type != ContractParameterType::Void) {
-            return Err(Error::invalid_operation(
+            return Err(CoreError::invalid_operation(
                 "The return value type does not match.".to_string(),
             ));
         }
 
         if self.is_contract_blocked(&contract.hash)? {
-            return Err(Error::invalid_operation(format!(
+            return Err(CoreError::invalid_operation(format!(
                 "The contract {} has been blocked.",
                 contract.hash
             )));
@@ -187,7 +193,7 @@ impl ApplicationEngine {
             .engine()
             .current_context()
             .cloned()
-            .ok_or_else(|| Error::invalid_operation("No current execution context"))?;
+            .ok_or_else(|| CoreError::invalid_operation("No current execution context"))?;
 
         let state_arc = previous_context
             .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
@@ -197,7 +203,7 @@ impl ApplicationEngine {
         };
         let previous_hash = previous_hash_from_state
             .or_else(|| UInt160::from_bytes(&previous_context.script_hash()).ok())
-            .ok_or_else(|| Error::invalid_operation("Invalid script hash in execution context"))?;
+            .ok_or_else(|| CoreError::invalid_operation("Invalid script hash in execution context"))?;
 
         if method.safe {
             flags.remove(CallFlags::WRITE_STATES | CallFlags::ALLOW_NOTIFY);
@@ -219,7 +225,7 @@ impl ApplicationEngine {
                     &contract.hash,
                     &method.name,
                 ) {
-                    return Err(Error::invalid_operation(format!(
+                    return Err(CoreError::invalid_operation(format!(
                         "Cannot call method {} of contract {} from contract {}.",
                         method.name, contract.hash, previous_hash
                     )));
@@ -266,11 +272,11 @@ impl ApplicationEngine {
             let engine = self.vm_engine.engine_mut();
             let context_mut = engine
                 .current_context_mut()
-                .ok_or_else(|| Error::invalid_operation("No current execution context"))?;
+                .ok_or_else(|| CoreError::invalid_operation("No current execution context"))?;
             for arg in args.iter().rev() {
                 context_mut
                     .push(arg.clone())
-                    .map_err(|err| Error::invalid_operation(err.to_string()))?;
+                    .map_err(|err| CoreError::invalid_operation(err.to_string()))?;
             }
         }
 
@@ -285,12 +291,12 @@ impl ApplicationEngine {
         method: &str,
         call_flags: CallFlags,
         args: Vec<StackItem>,
-    ) -> Result<()> {
+    ) -> CoreResult<()> {
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
         let diag = Self::should_trace_block(block_idx);
 
         if method.starts_with('_') {
-            return Err(Error::invalid_operation(format!(
+            return Err(CoreError::invalid_operation(format!(
                 "Method name '{}' cannot start with underscore.",
                 method
             )));
@@ -320,7 +326,7 @@ impl ApplicationEngine {
                 if diag {
                     tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), ?available, "TRACE: method NOT FOUND in ABI");
                 }
-                Error::invalid_operation(format!(
+                CoreError::invalid_operation(format!(
                     "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
                     method,
                     args.len(),
@@ -362,7 +368,7 @@ impl ApplicationEngine {
         contract_hash: &UInt160,
         method: &str,
         args: Vec<StackItem>,
-    ) -> Result<()> {
+    ) -> CoreResult<()> {
         let contract = self.fetch_contract(contract_hash)?;
         let method_descriptor = contract
             .manifest
@@ -370,7 +376,7 @@ impl ApplicationEngine {
             .get_method_ref(method, args.len())
             .cloned()
             .ok_or_else(|| {
-                Error::invalid_operation(format!(
+                CoreError::invalid_operation(format!(
                     "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
                     method,
                     args.len(),
@@ -442,13 +448,13 @@ impl ApplicationEngine {
         contract_hash: &UInt160,
         method: &str,
         args: Vec<StackItem>,
-    ) -> Result<StackItem> {
+    ) -> CoreResult<StackItem> {
         // Depth of the native frame (the context whose System.Contract.CallNative
         // syscall is executing). The callee is loaded above it and run until the
         // invocation stack returns to this depth.
         let target_depth = self.vm_engine.engine().invocation_stack().len();
         if target_depth == 0 {
-            return Err(Error::invalid_operation(
+            return Err(CoreError::invalid_operation(
                 "A contract call from a native frame requires a live execution context",
             ));
         }
@@ -460,7 +466,7 @@ impl ApplicationEngine {
             .get_method_ref(method, args.len())
             .cloned()
             .ok_or_else(|| {
-                Error::invalid_operation(format!(
+                CoreError::invalid_operation(format!(
                     "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
                     method,
                     args.len(),
@@ -494,7 +500,7 @@ impl ApplicationEngine {
                 service
                     .register_host_descriptor(name, *price, *flags)
                     .map_err(|e| {
-                        Error::invalid_operation(format!(
+                        CoreError::invalid_operation(format!(
                             "rebuilding the interop registry for a nested native call: {e}"
                         ))
                     })?;
@@ -517,7 +523,7 @@ impl ApplicationEngine {
             let message = self.fault_exception.clone().unwrap_or_else(|| {
                 format!("Contract call from a native frame to {contract_hash}::{method} faulted")
             });
-            return Err(Error::invalid_operation(message));
+            return Err(CoreError::invalid_operation(message));
         }
 
         let depth_after = self.vm_engine.engine().invocation_stack().len();
@@ -527,17 +533,19 @@ impl ApplicationEngine {
             let message = format!(
                 "Contract call from a native frame to {contract_hash}::{method} unwound past the native frame"
             );
-            self.vm_engine.engine_mut().set_uncaught_exception(Some(
-                StackItem::from_byte_string(message.clone().into_bytes()),
-            ));
+            self.vm_engine
+                .engine_mut()
+                .set_uncaught_exception(Some(StackItem::from_byte_string(
+                    message.clone().into_bytes(),
+                )));
             self.vm_engine.engine_mut().set_state(VMState::FAULT);
             self.fault_exception = Some(message.clone());
-            return Err(Error::invalid_operation(message));
+            return Err(CoreError::invalid_operation(message));
         }
 
         // The callee returned: its RET moved exactly one item (`rvcount = 1`)
         // onto the native frame's evaluation stack.
-        self.pop().map_err(Error::invalid_operation)
+        self.pop().map_err(CoreError::invalid_operation)
     }
 
     /// Queues a contract call requested by a native contract.
@@ -566,7 +574,7 @@ impl ApplicationEngine {
     ///
     /// This is invoked by `System.Contract.CallNative` after a native method
     /// returns, and may also be called directly by tests.
-    pub fn process_pending_native_calls(&mut self) -> Result<()> {
+    pub fn process_pending_native_calls(&mut self) -> CoreResult<()> {
         if self.pending_native_calls.is_empty() {
             return Ok(());
         }
@@ -589,14 +597,13 @@ impl ApplicationEngine {
 mod tests {
     use super::*;
     use neo_manifest::{
-        ContractAbi, ContractManifest, ContractMethodDescriptor,
-        ContractParameterDefinition, NefFile, ContractPermission,
-        WildCardContainer,
+        ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+        ContractPermission, NefFile, WildCardContainer,
     };
     use neo_primitives::ContractParameterType;
     use neo_vm_rs::OpCode;
-    use std::collections::HashMap;
     use parking_lot::Mutex as PlMutex;
+    use std::collections::HashMap;
 
     /// Builds a small synthetic contract with a single `balanceOf(account)`
     /// method that returns immediately. Used by the dynamic-call tests so
@@ -606,11 +613,9 @@ mod tests {
         let script = vec![OpCode::RET.byte()];
         let nef = NefFile::new("test".to_string(), script);
 
-        let param = ContractParameterDefinition::new(
-            "account".to_string(),
-            ContractParameterType::Hash160,
-        )
-        .expect("parameter");
+        let param =
+            ContractParameterDefinition::new("account".to_string(), ContractParameterType::Hash160)
+                .expect("parameter");
 
         let method = ContractMethodDescriptor::new(
             "balanceOf".to_string(),
@@ -694,7 +699,10 @@ mod tests {
             .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         let called_state = called_state_arc.lock();
 
-        assert_eq!(called_state.calling_script_hash, Some(logical_contract_hash));
+        assert_eq!(
+            called_state.calling_script_hash,
+            Some(logical_contract_hash)
+        );
         assert_eq!(
             engine.get_calling_script_hash(),
             Some(logical_contract_hash)
@@ -772,7 +780,12 @@ mod tests {
         let mut contracts = HashMap::new();
         contracts.insert(
             target_hash,
-            build_returning_mock(target_hash, "whoCalls", ContractParameterType::Hash160, script),
+            build_returning_mock(
+                target_hash,
+                "whoCalls",
+                ContractParameterType::Hash160,
+                script,
+            ),
         );
         let mut engine = engine_with_entry(contracts);
 
@@ -780,7 +793,10 @@ mod tests {
             .call_from_native_contract_returning(&calling_hash, &target_hash, "whoCalls", vec![])
             .expect("returning call succeeds");
 
-        assert_eq!(result.as_bytes().expect("hash bytes"), calling_hash.to_bytes());
+        assert_eq!(
+            result.as_bytes().expect("hash bytes"),
+            calling_hash.to_bytes()
+        );
         // The invocation stack is back at the native frame and nothing faulted.
         assert_eq!(engine.invocation_stack().len(), 1);
         assert_ne!(engine.state(), VMState::FAULT);
@@ -923,9 +939,7 @@ mod tests {
         // ip10: PUSH2; RET            <- catch handler (must NOT run)
         // ip12: PUSH1; RET
         let mut script = vec![OpCode::TRY.byte(), 10, 0, OpCode::SYSCALL.byte()];
-        script.extend_from_slice(
-            &neo_vm_rs::interop_hash(BOUNDARY_TEST_SYSCALL).to_le_bytes(),
-        );
+        script.extend_from_slice(&neo_vm_rs::interop_hash(BOUNDARY_TEST_SYSCALL).to_le_bytes());
         script.extend_from_slice(&[
             OpCode::ENDTRY.byte(),
             4,

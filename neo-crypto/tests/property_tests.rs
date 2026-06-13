@@ -5,10 +5,7 @@
 //! - Crypto operations (sign then verify returns true)
 //! - Various hash algorithms
 
-use neo_crypto::{
-    Base58, Ed25519Crypto, Hex, Secp256r1Crypto,
-    Crypto,
-};
+use neo_crypto::{Base58, Crypto, Ed25519Crypto, Hex, Secp256r1Crypto};
 use proptest::prelude::*;
 
 proptest! {

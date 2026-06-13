@@ -1,10 +1,10 @@
 use super::error::{MptError, MptResult};
 use super::node::Node;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_primitives::UInt256;
 use neo_primitives::UINT256_SIZE;
-use std::collections::hash_map::Entry;
+use neo_primitives::UInt256;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

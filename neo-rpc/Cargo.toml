@@ -25,12 +25,9 @@ neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-config = { workspace = true, optional = true }
-neo-application-logs = { path = "../neo-application-logs", optional = true }
-neo-tokens-tracker = { path = "../neo-tokens-tracker", optional = true }
-neo-oracle-service = { path = "../neo-oracle-service", optional = true }
+neo-oracle-service = { workspace = true, optional = true }
 neo-execution = { workspace = true, optional = true }
 neo-payloads = { workspace = true, optional = true }
-neo-json = { path = "../neo-json", optional = true }
 neo-vm-rs = { workspace = true, optional = true }
 # neo-config merged into neo-core
 
@@ -52,10 +49,10 @@ anyhow = { version = "1.0", optional = true }
 tracing = { workspace = true }
 
 # Web server (server feature)
-warp = { version = "0.3", optional = true, features = ["compression-gzip"] }
-hyper = { workspace = true, optional = true }
-# Rust 1.85 permits jsonrpsee 0.26+; keep 0.24.10 until the server API
-# migration is audited separately from the edition change.
+# jsonrpsee is the canonical JSON-RPC transport for the server.
+# The legacy warp-based glue has been removed; see the
+# `2026-06-13-comprehensive-refactoring` change (Phase C1) for the
+# migration history.
 jsonrpsee = { version = "0.24.10", optional = true, default-features = false, features = ["server"] }
 
 # TLS (server feature)
@@ -81,7 +78,6 @@ bytes = { workspace = true, optional = true }
 num-bigint = { workspace = true, optional = true }
 num-traits = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
-socket2 = { workspace = true, optional = true }
 regex = { version = "1.10", optional = true }
 
 # Cryptography (server feature)
@@ -89,13 +85,10 @@ rand = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 subtle = { version = "2.5", optional = true }
 
-neo-block = { workspace = true }
 neo-error = { workspace = true }
-neo-extensions = { workspace = true }
 neo-manifest = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-network = { workspace = true }
-neo-script-builder = { workspace = true }
 neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
 neo-system = { workspace = true }
@@ -106,9 +99,7 @@ neo-blockchain = { workspace = true }
 neo-mempool = { workspace = true }
 neo-serialization = { workspace = true }
 
-neo-time = { workspace = true }
 neo-p2p = { workspace = true }
-neo-state-types = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
@@ -118,16 +109,12 @@ mockito = "1.0"
 default = []
 server = [
     "client",  # Server uses client models for JSON serialization
+    "dep:jsonrpsee",
     "dep:neo-config",
-    "dep:neo-application-logs",
-    "dep:neo-tokens-tracker",
     "dep:neo-oracle-service",
-    "dep:neo-json",
     "dep:neo-vm-rs",
     "dep:neo-execution",
     "dep:neo-payloads",
-    "dep:warp",
-    "dep:hyper",
     "dep:uuid",
     "dep:parking_lot",
     "dep:prometheus",
@@ -148,16 +135,13 @@ server = [
     "dep:rustls-native-certs",
     "dep:p12",
     "dep:sha1",
-    "dep:socket2",
 ]
 client = [
     "dep:neo-config",
-    "dep:neo-json",
     "dep:neo-vm-rs",
     "dep:neo-payloads",
     "dep:neo-execution",
     "dep:reqwest",
-    "dep:hyper",
     "dep:anyhow",
     "dep:base64",
     "dep:hex",
@@ -166,8 +150,4 @@ client = [
     "dep:regex",
     "dep:rand",
     "dep:zeroize",
-]
-jsonrpsee-server = [
-    "server",
-    "dep:jsonrpsee",
 ]

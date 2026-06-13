@@ -3,14 +3,14 @@
 //! This module consolidates common helper functions used across RPC server modules
 //! to eliminate code duplication.
 
-use neo_primitives::{UInt160, UInt256};
 use neo_io::Serializable;
+use neo_primitives::{UInt160, UInt256};
 use serde_json::Value;
 use std::str::FromStr;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 /// Creates an RpcException for invalid parameters.
 #[inline]
@@ -56,7 +56,7 @@ pub fn expect_base64_param(
 ) -> Result<Vec<u8>, RpcException> {
     let text = params.get(index).and_then(Value::as_str).ok_or_else(|| {
         invalid_params(format!("{} expects base64 parameter {}", method, index + 1))
-   })?;
+    })?;
     decode_trimmed_base64_text(text, "Invalid Base64-encoded bytes")
 }
 
@@ -117,7 +117,7 @@ pub fn expect_u32_param(params: &[Value], index: usize, method: &str) -> Result<
             method,
             index + 1
         ))
-   })?;
+    })?;
     value
         .as_u64()
         .and_then(|n| u32::try_from(n).ok())
@@ -127,7 +127,7 @@ pub fn expect_u32_param(params: &[Value], index: usize, method: &str) -> Result<
                 method,
                 index + 1
             ))
-       })
+        })
 }
 
 /// Extracts a u64 parameter from JSON-RPC params.
@@ -139,14 +139,14 @@ pub fn expect_u64_param(params: &[Value], index: usize, method: &str) -> Result<
             method,
             index + 1
         ))
-   })?;
+    })?;
     value.as_u64().ok_or_else(|| {
         invalid_params(format!(
             "{} expects integer parameter {}",
             method,
             index + 1
         ))
-   })
+    })
 }
 
 /// Parses a UInt160 from JSON-RPC params.
@@ -184,20 +184,20 @@ pub fn expect_hash_param(
     // Try hex first, then base64
     UInt256::from_str(&text)
         .or_else(|_| {
-            use base64::{engine::general_purpose::STANDARD, Engine};
+            use base64::{Engine, engine::general_purpose::STANDARD};
             STANDARD
                 .decode(&text)
                 .ok()
                 .and_then(|bytes| UInt256::from_bytes(&bytes).ok())
                 .ok_or(())
-       })
+        })
         .map_err(|_| {
             invalid_params(format!(
                 "{} expects valid hash at parameter {}",
                 method,
                 index + 1
             ))
-       })
+        })
 }
 
 /// Parses an optional boolean parameter (defaults to false).
@@ -207,5 +207,6 @@ pub fn parse_verbose(param: Option<&Value>) -> Result<bool, RpcException> {
         None | Some(Value::Null) => Ok(false),
         Some(Value::Bool(b)) => Ok(*b),
         Some(Value::Number(n)) => Ok(n.as_i64().map(|v| v != 0).unwrap_or(false)),
-        Some(_) => Err(invalid_params("verbose must be a boolean"))}
+        Some(_) => Err(invalid_params("verbose must be a boolean")),
+    }
 }

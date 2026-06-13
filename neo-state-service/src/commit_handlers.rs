@@ -12,11 +12,11 @@
 
 use crate::state_root::StateRoot;
 use crate::state_store::StateStore;
-use neo_block::ApplicationExecuted;
-use neo_data_cache::DataCache;
-use neo_event_handlers::{CommittedHandler, CommittingHandler};
+use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
+use neo_payloads::{CommittedHandler, CommittingHandler};
 use neo_primitives::UInt256;
+use neo_storage::DataCache;
 use std::any::Any;
 use std::sync::Arc;
 use tracing::{debug, warn};
@@ -25,11 +25,7 @@ use tracing::{debug, warn};
 /// pluggable MPT implementation.
 pub trait StateRootCalculator: Send + Sync {
     /// Computes the state root for the block's storage change set.
-    fn compute(
-        &self,
-        block_index: u32,
-        snapshot: &DataCache,
-    ) -> Result<StateRoot, String>;
+    fn compute(&self, block_index: u32, snapshot: &DataCache) -> Result<StateRoot, String>;
 }
 
 /// Default [`StateRootCalculator`] that hashes the snapshot's
@@ -41,11 +37,7 @@ pub trait StateRootCalculator: Send + Sync {
 pub struct SyntheticStateRootCalculator;
 
 impl StateRootCalculator for SyntheticStateRootCalculator {
-    fn compute(
-        &self,
-        block_index: u32,
-        snapshot: &DataCache,
-    ) -> Result<StateRoot, String> {
+    fn compute(&self, block_index: u32, snapshot: &DataCache) -> Result<StateRoot, String> {
         let mut buf = Vec::new();
         for key in snapshot.get_change_set() {
             buf.extend_from_slice(&key.to_array());
@@ -106,11 +98,7 @@ impl StateServiceCommitHandlers {
 }
 
 impl CommittedHandler for StateServiceCommitHandlers {
-    fn blockchain_committed_handler(
-        &self,
-        _system: &dyn Any,
-        block: &Block,
-    ) {
+    fn blockchain_committed_handler(&self, _system: &dyn Any, block: &Block) {
         // The block's own index is the only state we need; the
         // snapshot used for state-root calculation lives in the
         // blockchain service, not on the event handler.

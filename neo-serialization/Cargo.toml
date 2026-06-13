@@ -22,9 +22,6 @@ neo-storage = { workspace = true }
 neo-io = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-vm = { workspace = true }
-# JSON token model + C#-faithful (JavaScriptEncoder.Default) escaping/parsing.
-neo-json = { workspace = true }
-
 # External
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -35,13 +32,14 @@ tracing = { workspace = true }
 lz4_flex = { workspace = true }
 parking_lot = { workspace = true }
 hashbrown = { workspace = true }
+indexmap = { workspace = true }
 zstd = "0.13"
-neo-storage-rocksdb = { workspace = true, optional = true }
 bincode = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
+tokio = { workspace = true }
 
 [features]
 default = []
-rocksdb = ["dep:neo-storage-rocksdb"]
+rocksdb = ["neo-storage/rocksdb"]

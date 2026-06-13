@@ -1,24 +1,26 @@
 use super::*;
 use crate::server::rpc_server::RpcHandler;
 use crate::server::rpc_server_settings::RpcServerConfig;
+use neo_config::ProtocolSettings;
+use neo_execution::ContractState;
 use neo_io::{Serializable, SerializableExtensions};
-use neo_system::Node;
-use neo_storage::persistence::providers::MemoryStoreProvider;
+use neo_manifest::NefFile;
+use neo_manifest::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+};
+use neo_native_contracts::GasToken;
+use neo_native_contracts::NativeContract;
+use neo_primitives::ContractParameterType;
+use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
 use neo_storage::persistence::StoreProvider;
-use neo_config::ProtocolSettings;
-use neo_manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition};
-use neo_native_contracts::GasToken;
-use neo_execution::ContractState;
-use neo_manifest::NefFile;
-use neo_primitives::ContractParameterType;
+use neo_storage::persistence::providers::MemoryStoreProvider;
 use neo_storage::{StorageItem, StorageKey};
-use neo_tokens_tracker::{
-    find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService,
-    TokensTrackerSettings};
-use neo_native_contracts::NativeContract;
-use neo_primitives::UInt256;
+use neo_system::Node;
+use crate::plugins::tokens_tracker::{
+    Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, TokensTrackerSettings,
+    find_range,
+};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
@@ -227,7 +229,8 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let user = UInt160::from_bytes(&[1u8; 20]).expect("user hash");
     let balance = TokenBalance {
         balance: BigInt::from(42),
-        last_updated_block: 7};
+        last_updated_block: 7,
+    };
     let key = Nep17BalanceKey::new(user, asset);
     let (balance_prefix, _, _) = Nep17Tracker::rpc_prefixes();
     write_tracker_entry(&store, balance_prefix, &key, &balance);
@@ -242,7 +245,8 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep17balances");
 
-    let address = neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
+    let address =
+        neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (handler.callback())(&server, &params).expect("getnep17balances");
     let obj = result.as_object().expect("result object");
@@ -302,7 +306,8 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
         &key_a,
         &TokenBalance {
             balance: BigInt::from(5),
-            last_updated_block: 10},
+            last_updated_block: 10,
+        },
     );
     write_tracker_entry(
         &store,
@@ -310,14 +315,16 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
         &key_b,
         &TokenBalance {
             balance: BigInt::from(7),
-            last_updated_block: 11},
+            last_updated_block: 11,
+        },
     );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep11balances");
 
-    let address = neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
+    let address =
+        neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (handler.callback())(&server, &params).expect("getnep11balances");
     let obj = result.as_object().expect("result object");
@@ -363,7 +370,7 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
             .and_then(Value::as_u64)
             .expect("lastupdatedblock");
         token_map.insert(token_id, (amount, last));
-   }
+    }
 
     let token_a_key = hex::encode(&token_a);
     let token_b_key = hex::encode(&token_b);
@@ -409,7 +416,8 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
             user_script_hash: other,
             block_index: 1,
             tx_hash: tx1,
-            amount: BigInt::from(5)},
+            amount: BigInt::from(5),
+        },
     );
     write_tracker_entry(
         &store,
@@ -419,7 +427,8 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
             user_script_hash: other,
             block_index: 2,
             tx_hash: tx2,
-            amount: BigInt::from(7)},
+            amount: BigInt::from(7),
+        },
     );
 
     let received_key = Nep11TransferKey::new(user, t1, asset, token_a.clone(), 0);
@@ -431,14 +440,16 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
             user_script_hash: UInt160::zero(),
             block_index: 3,
             tx_hash: tx1,
-            amount: BigInt::from(11)},
+            amount: BigInt::from(11),
+        },
     );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep11transfers");
 
-    let address = neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
+    let address =
+        neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
     let params = [
         Value::String(address.clone()),
         json!(t1 - 1),
@@ -478,7 +489,6 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "NFT properties test needs system context - pre-existing issue"]
 async fn get_nep11_properties_returns_expected_fields() {
     let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
@@ -492,9 +502,11 @@ async fn get_nep11_properties_returns_expected_fields() {
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep11properties");
 
-    let address =
-        neo_wallets::wallet_helper::to_address(&contract_hash, server.system().settings().address_version);
-    let params = [Value::String(address), Value::String("0x0102".to_string())];
+    let address = neo_wallets::wallet_helper::to_address(
+        &contract_hash,
+        server.system().settings().address_version,
+    );
+    let params = [Value::String(address), Value::String("0102".to_string())];
     let result = (handler.callback())(&server, &params).expect("getnep11properties");
     let obj = result.as_object().expect("properties object");
     assert_eq!(obj.get("name").and_then(Value::as_str), Some("Example NFT"));
@@ -550,7 +562,8 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
             user_script_hash: other,
             block_index: 1,
             tx_hash: tx1,
-            amount: BigInt::from(5)},
+            amount: BigInt::from(5),
+        },
     );
     write_tracker_entry(
         &store,
@@ -560,7 +573,8 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
             user_script_hash: other,
             block_index: 2,
             tx_hash: tx2,
-            amount: BigInt::from(7)},
+            amount: BigInt::from(7),
+        },
     );
 
     let received_key = Nep17TransferKey::new(user, t1, asset, 0);
@@ -572,7 +586,8 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
             user_script_hash: UInt160::zero(),
             block_index: 3,
             tx_hash: tx1,
-            amount: BigInt::from(11)},
+            amount: BigInt::from(11),
+        },
     );
     let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
     prefix.push(sent_prefix);
@@ -588,7 +603,8 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep17transfers");
 
-    let address = neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
+    let address =
+        neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
     let params = [
         Value::String(address.clone()),
         json!(t1 - 1),
@@ -610,7 +626,13 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     assert_eq!(sent[1].get("timestamp").and_then(Value::as_u64), Some(t1));
     assert_eq!(
         sent[0].get("transferaddress").and_then(Value::as_str),
-        Some(neo_wallets::wallet_helper::to_address(&other, server.system().settings().address_version).as_str())
+        Some(
+            neo_wallets::wallet_helper::to_address(
+                &other,
+                server.system().settings().address_version
+            )
+            .as_str()
+        )
     );
 
     let received = obj

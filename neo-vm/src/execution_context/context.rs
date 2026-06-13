@@ -5,12 +5,12 @@
 //! This module provides the execution context implementation for the Neo VM.
 
 use super::shared_states::SharedStates;
-use neo_crypto::Crypto;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
+use neo_crypto::Crypto;
 use neo_vm_rs::ExceptionHandlingContext;
 use neo_vm_rs::Instruction;
 use parking_lot::Mutex;
@@ -193,9 +193,7 @@ impl ExecutionContext {
     #[must_use]
     pub fn static_fields_len(&self) -> usize {
         self.with_static_fields_mut(|static_fields| {
-            static_fields
-                .as_ref()
-                .map_or(0, crate::slot::Slot::len)
+            static_fields.as_ref().map_or(0, crate::slot::Slot::len)
         })
     }
 
@@ -432,10 +430,7 @@ impl ExecutionContext {
     }
 
     /// Loads a value from a static field.
-    pub fn load_static_field(
-        &self,
-        index: usize,
-    ) -> VmResult<crate::stack_item::StackItem> {
+    pub fn load_static_field(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
         self.shared_states.with_static_fields_mut(|static_fields| {
             if let Some(static_fields) = static_fields.as_ref() {
                 static_fields.get(index).cloned().ok_or_else(|| {

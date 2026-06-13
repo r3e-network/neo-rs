@@ -26,11 +26,14 @@ impl ContractBasicMethod {
     /// Any tokens in the contract must be transferred before destruction.
     pub const DESTROY: &'static str = "destroy";
 
-    /// Parameter counts for the methods.
-    /// -1 represents the method can take arbitrary parameters.
+    /// Parameter count for the verification method; `-1` means any arity.
     pub const VERIFY_P_COUNT: i32 = -1;
+    /// Parameter count for the initialization method.
     pub const INITIALIZE_P_COUNT: i32 = 0;
+    /// Parameter count for the deployment method.
     pub const DEPLOY_P_COUNT: i32 = 2;
+    /// Parameter count for the update method.
     pub const UPDATE_P_COUNT: i32 = 3;
+    /// Parameter count for the destruction method.
     pub const DESTROY_P_COUNT: i32 = 0;
 }

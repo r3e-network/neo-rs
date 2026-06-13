@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::{base64_string_token, object_array, optional_base64_field_lossy};
-use neo_json::{JObject, JToken};
+use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
 /// Found states result matching C# `RpcFoundStates`
@@ -26,7 +26,8 @@ pub struct RpcFoundStates {
     pub first_proof: Option<Vec<u8>>,
 
     /// Last proof
-    pub last_proof: Option<Vec<u8>>}
+    pub last_proof: Option<Vec<u8>>,
+}
 
 impl RpcFoundStates {
     /// Creates from JSON
@@ -34,7 +35,7 @@ impl RpcFoundStates {
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let truncated = json
             .get("truncated")
-            .map(neo_json::JToken::as_boolean)
+            .map(neo_serialization::json::JToken::as_boolean)
             .ok_or("Missing or invalid 'truncated' field")?;
 
         let results = json
@@ -48,9 +49,9 @@ impl RpcFoundStates {
                         let key = optional_base64_field_lossy(obj, "key")?;
                         let value = optional_base64_field_lossy(obj, "value")?;
                         Some((key, value))
-                   })
+                    })
                     .collect()
-           })
+            })
             .unwrap_or_default();
 
         let first_proof = optional_base64_field_lossy(json, "firstProof");
@@ -60,8 +61,9 @@ impl RpcFoundStates {
             truncated,
             results,
             first_proof,
-            last_proof})
-   }
+            last_proof,
+        })
+    }
 
     /// Converts to JSON
     /// Matches C# `ToJson`
@@ -77,25 +79,25 @@ impl RpcFoundStates {
                 entry.insert("key".to_string(), base64_string_token(key));
                 entry.insert("value".to_string(), base64_string_token(value));
                 entry
-           }),
+            }),
         );
 
         if let Some(first) = &self.first_proof {
             json.insert("firstProof".to_string(), base64_string_token(first));
-       }
+        }
         if let Some(last) = &self.last_proof {
             json.insert("lastProof".to_string(), base64_string_token(last));
-       }
+        }
 
         json
-   }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use base64::{Engine as _, engine::general_purpose};
-    use neo_json::{JArray, JToken};
+    use neo_serialization::json::{JArray, JToken};
 
     #[test]
     fn rpc_found_states_parses_results_and_proofs() {
@@ -131,7 +133,7 @@ mod tests {
         assert_eq!(parsed.results[0].1, b"v");
         assert_eq!(parsed.first_proof.unwrap(), b"first");
         assert_eq!(parsed.last_proof.unwrap(), b"last");
-   }
+    }
 
     #[test]
     fn rpc_found_states_roundtrip() {
@@ -139,7 +141,8 @@ mod tests {
             truncated: false,
             results: vec![(b"a".to_vec(), b"b".to_vec())],
             first_proof: None,
-            last_proof: Some(b"tail".to_vec())};
+            last_proof: Some(b"tail".to_vec()),
+        };
         let json = found.to_json();
         let parsed = RpcFoundStates::from_json(&json).expect("found states");
         assert_eq!(parsed.results.len(), 1);
@@ -155,7 +158,7 @@ mod tests {
             obj.get("key").and_then(|v| v.as_string()).unwrap(),
             general_purpose::STANDARD.encode(b"a")
         );
-   }
+    }
 
     #[test]
     fn rpc_found_states_keeps_lossy_base64_parse_behavior() {
@@ -206,7 +209,7 @@ mod tests {
         assert_eq!(parsed.results, vec![(b"k".to_vec(), b"v".to_vec())]);
         assert_eq!(parsed.first_proof, None);
         assert_eq!(parsed.last_proof, None);
-   }
+    }
 
     #[test]
     fn rpc_found_states_keeps_truncated_truthy_coercion() {
@@ -225,5 +228,5 @@ mod tests {
                 .expect("falsy truncated")
                 .truncated
         );
-   }
+    }
 }

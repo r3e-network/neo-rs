@@ -1,10 +1,10 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use neo_native_contracts::{ledger_contract::LedgerContract, NeoToken};
-use neo_wallets::wallet_helper as address_helper;
+use neo_native_contracts::{NeoToken, ledger_contract::LedgerContract};
 use neo_primitives::UInt160;
-use serde_json::{json, Value};
+use neo_wallets::wallet_helper as address_helper;
+use serde_json::{Value, json};
 
 use crate::server::native_queries;
 
@@ -21,9 +21,9 @@ pub(super) fn get_unclaimed_gas(
     let version = server.system().settings().address_version;
     let script_hash = if let Ok(hash) = UInt160::from_str(&address_text) {
         hash
-   } else {
+    } else {
         address_helper::to_script_hash(&address_text, version).map_err(invalid_params)?
-   };
+    };
 
     let store = server.system().store_cache();
     let ledger = LedgerContract::new();
@@ -39,10 +39,10 @@ pub(super) fn get_unclaimed_gas(
     let address = address_helper::to_address(&script_hash, version);
 
     Ok(json!({
-        "address": address,
-        // C# GetUnclaimedGas returns the raw datoshi BigInteger as a string
-        // (NEO.UnclaimedGas(...).ToString()), e.g. "100000000" for 1 GAS — not
-        // the decimal form. Wrapping in BigDecimal would divide by 10^8.
-        "unclaimed": unclaimed.to_string()
-   }))
+         "address": address,
+         // C# GetUnclaimedGas returns the raw datoshi BigInteger as a string
+         // (NEO.UnclaimedGas(...).ToString()), e.g. "100000000" for 1 GAS — not
+         // the decimal form. Wrapping in BigDecimal would divide by 10^8.
+         "unclaimed": unclaimed.to_string()
+    }))
 }

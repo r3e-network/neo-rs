@@ -30,7 +30,7 @@
 //!
 //! The trait is intentionally narrow — it only exposes the operations
 //! the engine needs at runtime (lookup by hash, list of all contracts,
-//! hardfork state used for default fee/storage prices).
+//! current Ledger height, and defaults used for fee/storage prices).
 
 use parking_lot::RwLock;
 use std::sync::{Arc, OnceLock};
@@ -54,6 +54,12 @@ pub trait NativeContractProvider: Send + Sync {
 
     /// Returns all native contract hashes known to this provider.
     fn all_native_contract_hashes(&self) -> Vec<UInt160>;
+
+    /// Returns LedgerContract.CurrentIndex for the supplied snapshot.
+    fn current_block_index(&self, snapshot: &neo_storage::DataCache) -> neo_error::CoreResult<u32> {
+        let _ = snapshot;
+        Ok(0)
+    }
 
     /// Returns the default execution fee factor used when none is
     /// configured (matches `PolicyContract.DEFAULT_EXEC_FEE_FACTOR`).
@@ -154,7 +160,7 @@ pub fn lookup_neo_token() -> Option<Arc<dyn NativeContract>> {
 
 /// Convenience wrapper around `ContractManagement.lookup_contract_state`.
 pub fn lookup_contract_management_state(
-    snapshot: &neo_data_cache::DataCache,
+    snapshot: &neo_storage::DataCache,
     hash: &neo_primitives::UInt160,
 ) -> neo_error::CoreResult<Option<crate::ContractState>> {
     let Some(provider) = native_contract_provider() else {
@@ -168,7 +174,7 @@ pub fn lookup_contract_management_state(
 
 /// Convenience wrapper around `PolicyContract.is_contract_blocked`.
 pub fn is_contract_blocked_by_policy(
-    snapshot: &neo_data_cache::DataCache,
+    snapshot: &neo_storage::DataCache,
     contract_hash: &neo_primitives::UInt160,
 ) -> neo_error::CoreResult<bool> {
     let Some(provider) = native_contract_provider() else {
@@ -185,7 +191,7 @@ pub fn is_contract_blocked_by_policy(
 /// or NeoToken is not registered, so the caller falls back to fail-closed
 /// behaviour.
 pub fn lookup_committee_address(
-    snapshot: &neo_data_cache::DataCache,
+    snapshot: &neo_storage::DataCache,
 ) -> neo_error::CoreResult<Option<neo_primitives::UInt160>> {
     let Some(provider) = native_contract_provider() else {
         return Ok(None);
@@ -198,7 +204,7 @@ pub fn lookup_committee_address(
 
 /// Convenience wrapper around `PolicyContract.whitelisted_fee`.
 pub fn get_whitelisted_fee_for_policy(
-    snapshot: &neo_data_cache::DataCache,
+    snapshot: &neo_storage::DataCache,
     contract_hash: &neo_primitives::UInt160,
     method: &str,
     param_count: u32,
@@ -216,30 +222,17 @@ pub fn get_whitelisted_fee_for_policy(
 /// the original `neo-core` code, now routed through the provider.
 /// This is the alias used by the application engine.
 pub fn lookup_contract_management(
-    snapshot: &neo_data_cache::DataCache,
+    snapshot: &neo_storage::DataCache,
     hash: &neo_primitives::UInt160,
 ) -> neo_error::CoreResult<Option<crate::ContractState>> {
     lookup_contract_management_state(snapshot, hash)
 }
 
-/// Returns the current block index from the LedgerContract (or 0 if not
-/// installed).
-pub fn lookup_current_block_index(
-    snapshot: &neo_data_cache::DataCache,
-) -> u32 {
+/// Returns the current block index from the LedgerContract (or 0 if no provider
+/// is installed).
+pub fn lookup_current_block_index(snapshot: &neo_storage::DataCache) -> u32 {
     let Some(provider) = native_contract_provider() else {
         return 0;
     };
-    let Some(ledger) = provider.get_native_contract_by_name("LedgerContract") else {
-        return 0;
-    };
-    // Use the whitelist-fee-like method to get the current index.
-    // (In the original code, LedgerContract.current_index(snapshot) was
-    // called; the trait doesn't expose this directly, so we return 0
-    // when no provider is installed, and call out to the ledger
-    // contract's `invoke` for "currentIndex" if the trait method is
-    // available.)
-    let _ = snapshot;
-    let _ = ledger;
-    0
+    provider.current_block_index(snapshot).unwrap_or(0)
 }

@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
@@ -14,7 +14,7 @@ use crate::server::wallet_compat;
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 use rand::random;
-use serde_json::{json, Map, Number as JsonNumber, Value};
+use serde_json::{Map, Number as JsonNumber, Value, json};
 
 use crate::server::diagnostic::Diagnostic;
 use crate::server::rpc_exception::RpcException;
@@ -27,19 +27,22 @@ use super::helpers::{
     build_dynamic_call_script, diagnostic_invocation_to_json, diagnostic_storage_changes,
     expect_string_param, final_rpc_vm_state_string, internal_error, invalid_params,
     notification_to_json, parse_contract_parameters, parse_signers_and_witnesses,
-    stack_item_to_json};
+    stack_item_to_json,
+};
 
 const TRANSACTION_TYPE_NAME: &str = "Neo.Network.P2P.Payloads.Transaction";
 
 enum WalletInvocationOutcome {
     Signed(Vec<u8>),
-    Pending(Value)}
+    Pending(Value),
+}
 
 #[derive(Clone)]
 struct PendingSignatureItem {
     account: UInt160,
     script: Option<Vec<u8>>,
-    parameter_types: Vec<neo_primitives::ContractParameterType>}
+    parameter_types: Vec<neo_primitives::ContractParameterType>,
+}
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
     let script_hash = expect_string_param(params, 0, "invokefunction")?;
@@ -83,9 +86,9 @@ fn execute_script(
 ) -> Result<Value, RpcException> {
     let diagnostic = if use_diagnostic {
         Some(Diagnostic::new())
-   } else {
+    } else {
         None
-   };
+    };
     let mut session = Session::new(
         server.system(),
         script,
@@ -111,14 +114,14 @@ fn execute_script(
         let system_fee = engine.fee_consumed();
         let exception_value = engine.fault_exception().map_or(Value::Null, |msg| {
             Value::String(normalize_fault_message(msg))
-       });
+        });
         let notifications_snapshot = engine.notifications().to_vec();
         let stack_snapshot: Vec<StackItem> = engine.result_stack().iter().cloned().collect();
         let diagnostics_snapshot = session.diagnostic().map(|diag| {
             let invocation = diagnostic_invocation_to_json(&diag);
             let storage = diagnostic_storage_changes(&engine);
             (invocation, storage)
-       });
+        });
         (
             vm_state,
             engine_state,
@@ -128,7 +131,7 @@ fn execute_script(
             stack_snapshot,
             diagnostics_snapshot,
         )
-   };
+    };
     let gas_consumed = system_fee.to_string();
 
     let mut result = Map::new();
@@ -148,9 +151,9 @@ fn execute_script(
                 notification,
                 session_ref.as_deref_mut(),
             )?);
-       }
+        }
         entries
-   };
+    };
     result.insert("notifications".to_string(), Value::Array(notifications));
 
     let stack_items = {
@@ -159,10 +162,11 @@ fn execute_script(
         for item in &stack_snapshot {
             match stack_item_to_json(item, session_ref.as_deref_mut()) {
                 Ok(value) => entries.push(value),
-                Err(err) => entries.push(Value::String(format!("error: {err}")))}
-       }
+                Err(err) => entries.push(Value::String(format!("error: {err}"))),
+            }
+        }
         entries
-   };
+    };
     result.insert("stack".to_string(), Value::Array(stack_items));
 
     if let Some((invocation, storage)) = diagnostics_snapshot {
@@ -172,7 +176,7 @@ fn execute_script(
                 "invokedcontracts": invocation,
                 "storagechanges": storage}),
         );
-   }
+    }
 
     if vm_state != VMState::FAULT {
         process_invoke_with_wallet(
@@ -183,13 +187,13 @@ fn execute_script(
             session.snapshot(),
             system_fee,
         );
-   }
+    }
 
     if server.session_enabled() && session.has_iterators() {
         server.purge_expired_sessions();
         let session_id = server.store_session(session);
         result.insert("session".to_string(), Value::String(session_id.to_string()));
-   }
+    }
 
     Ok(Value::Object(result))
 }
@@ -204,10 +208,12 @@ fn process_invoke_with_wallet(
 ) {
     let signers = match signers {
         Some(list) if !list.is_empty() => list,
-        _ => return};
+        _ => return,
+    };
     let wallet = match server.wallet() {
         Some(wallet) => wallet,
-        None => return};
+        None => return,
+    };
 
     match build_and_sign_transaction(server, script, signers, snapshot, system_fee, wallet) {
         Ok(WalletInvocationOutcome::Signed(bytes)) => {
@@ -215,22 +221,22 @@ fn process_invoke_with_wallet(
                 "tx".to_string(),
                 Value::String(BASE64_STANDARD.encode(bytes)),
             );
-       }
+        }
         Ok(WalletInvocationOutcome::Pending(context)) => {
             result.insert("pendingsignature".to_string(), context);
-       }
+        }
         Err(message) => {
             result.insert("exception".to_string(), Value::String(message));
-       }
-   }
+        }
+    }
 }
 
 fn normalize_fault_message(message: &str) -> String {
     if message.contains("Gas exhausted") || message.contains("Gas limit exceeded") {
         "Insufficient GAS".to_string()
-   } else {
+    } else {
         message.to_string()
-   }
+    }
 }
 
 fn build_and_sign_transaction(
@@ -264,7 +270,7 @@ fn build_and_sign_transaction(
         wallet
             .get_account(hash)
             .and_then(|account| account.contract().map(|contract| contract.script.clone()))
-   };
+    };
     let network_fee = wallet_compat::calculate_network_fee(
         &tx,
         data_cache,
@@ -281,16 +287,17 @@ fn build_and_sign_transaction(
         .map_err(|err| err.to_string())?;
     if available < required_fee {
         return Err("Insufficient GAS balance to pay system and network fees.".to_string());
-   }
+    }
 
     let mut tx_clone = tx.clone();
-    let pending = sign_transaction_with_wallet(&mut tx_clone, signers, &wallet, protocol_settings.network);
+    let pending =
+        sign_transaction_with_wallet(&mut tx_clone, signers, &wallet, protocol_settings.network);
     if pending.is_empty() {
         Ok(WalletInvocationOutcome::Signed(tx_clone.to_bytes()))
-   } else {
+    } else {
         let context = build_pending_context(&tx_clone, pending, protocol_settings.network);
         Ok(WalletInvocationOutcome::Pending(context))
-   }
+    }
 }
 
 fn sign_transaction_with_wallet(
@@ -305,11 +312,13 @@ fn sign_transaction_with_wallet(
             Some(account) if account.has_key() => {
                 match build_account_witness(&account, tx, network) {
                     Ok(witness) => tx.add_witness(witness),
-                    Err(_) => pending.push(build_pending_item(signer.account, Some(account)))}
-           }
+                    Err(_) => pending.push(build_pending_item(signer.account, Some(account))),
+                }
+            }
             Some(account) => pending.push(build_pending_item(signer.account, Some(account))),
-            None => pending.push(build_pending_item(signer.account, None))}
-   }
+            None => pending.push(build_pending_item(signer.account, None)),
+        }
+    }
     pending
 }
 
@@ -325,9 +334,9 @@ fn build_account_witness(
 
     let verification_script = if let Some(contract) = account.contract() {
         contract.script.clone()
-   } else {
+    } else {
         key.get_verification_script()
-   };
+    };
 
     let mut invocation = Vec::with_capacity(signature.len() + 2);
     invocation.push(neo_vm_rs::OpCode::PUSHDATA1.byte());
@@ -360,7 +369,7 @@ fn build_pending_context(
             "script".to_string(),
             entry.script.map_or(Value::Null, |bytes| {
                 Value::String(BASE64_STANDARD.encode(bytes))
-           }),
+            }),
         );
 
         let parameters = entry
@@ -370,13 +379,13 @@ fn build_pending_context(
                 json!({
                     "type": param_type.as_str(),
                     "value": Value::Null})
-           })
+            })
             .collect();
         obj.insert("parameters".to_string(), Value::Array(parameters));
         obj.insert("signatures".to_string(), Value::Object(Map::new()));
 
         items.insert(entry.account.to_string(), Value::Object(obj));
-   }
+    }
 
     context.insert("items".to_string(), Value::Object(items));
     context.insert(
@@ -395,12 +404,14 @@ fn build_pending_item(
             return PendingSignatureItem {
                 account,
                 script: Some(contract.script.clone()),
-                parameter_types: contract.parameter_list.clone()};
-       }
-   }
+                parameter_types: contract.parameter_list.clone(),
+            };
+        }
+    }
 
     PendingSignatureItem {
         account,
         script: None,
-        parameter_types: Vec::new()}
+        parameter_types: Vec::new(),
+    }
 }

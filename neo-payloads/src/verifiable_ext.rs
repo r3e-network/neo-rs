@@ -11,7 +11,7 @@
 //! contracts. The payload layer only depends on the basic
 //! [`Verifiable`] trait from `neo-primitives`.
 
-use neo_data_cache::DataCache;
+use neo_storage::DataCache;
 
 /// Extension of [`neo_primitives::Verifiable`] for the payload layer.
 ///
@@ -25,22 +25,21 @@ pub trait VerifiableExt: neo_primitives::Verifiable {
     }
 
     /// Returns the witnesses associated with this container.
-    fn witnesses(&self) -> Vec<&neo_ledger_types::Witness> {
+    fn witnesses(&self) -> Vec<&crate::Witness> {
         Vec::new()
     }
 
     /// Returns mutable access to the witnesses associated with this container.
-    fn witnesses_mut(&mut self) -> Vec<&mut neo_ledger_types::Witness> {
+    fn witnesses_mut(&mut self) -> Vec<&mut crate::Witness> {
         Vec::new()
     }
 
-    /// Structural check that the witness count matches the script-hash count.
-    fn as_transaction(
-        &self,
-    ) -> Option<&crate::Transaction> {
+    /// Returns this payload as a transaction when applicable.
+    fn as_transaction(&self) -> Option<&crate::Transaction> {
         None
     }
 
+    /// Verifies witnesses against the provided protocol settings and snapshot.
     fn verify_witnesses(
         &self,
         _settings: &neo_config::ProtocolSettings,

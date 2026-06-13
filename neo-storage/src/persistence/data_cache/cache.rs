@@ -8,8 +8,8 @@ use crate::persistence::seek_direction::SeekDirection;
 use crate::types::{StorageItem, StorageKey, TrackState};
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashSet};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tracing::{debug, trace, warn};
 
 /// Delegate for storage entries
@@ -275,8 +275,7 @@ impl DataCache {
         {
             let state = self.state.read();
             if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != TrackState::Deleted
-                    && trackable.state != TrackState::NotFound
+                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
                 {
                     log_watched_storage_event(
                         "get",
@@ -345,9 +344,10 @@ impl DataCache {
         }
         let mut state = self.state.write();
         if state.dictionary.len() < self.config.max_entries {
-            state.dictionary.entry(key.clone()).or_insert_with(|| {
-                Trackable::new(item.clone(), TrackState::None)
-            });
+            state
+                .dictionary
+                .entry(key.clone())
+                .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
         }
     }
 
@@ -357,8 +357,7 @@ impl DataCache {
         {
             let state = self.state.read();
             if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != TrackState::Deleted
-                    && trackable.state != TrackState::NotFound
+                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
                 {
                     return Some(trackable.item.clone());
                 }
@@ -400,10 +399,9 @@ impl DataCache {
             Some(TrackState::Added),
             Some(&value),
         );
-        state.dictionary.insert(
-            key.clone(),
-            Trackable::new(value, TrackState::Added),
-        );
+        state
+            .dictionary
+            .insert(key.clone(), Trackable::new(value, TrackState::Added));
         state.change_set.insert(key.clone());
     }
 
@@ -496,10 +494,7 @@ impl DataCache {
                 let mut state = self.state.write();
                 state.dictionary.insert(
                     key.clone(),
-                    Trackable::new(
-                        StorageItem::default(),
-                        TrackState::Deleted,
-                    ),
+                    Trackable::new(StorageItem::default(), TrackState::Deleted),
                 );
                 state.change_set.insert(key.clone());
                 log_watched_storage_event(
@@ -557,10 +552,7 @@ impl DataCache {
                     TrackState::Changed | TrackState::None | TrackState::NotFound => {
                         state.dictionary.insert(
                             key.clone(),
-                            Trackable::new(
-                                StorageItem::default(),
-                                TrackState::Deleted,
-                            ),
+                            Trackable::new(StorageItem::default(), TrackState::Deleted),
                         );
                         state.change_set.insert(key.clone());
                         log_watched_storage_event(

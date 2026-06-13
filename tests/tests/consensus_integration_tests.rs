@@ -10,8 +10,8 @@
 //! - Signature verification
 
 use neo_consensus::{
-    messages::RecoveryMessage, ConsensusEvent, ConsensusMessageType, ConsensusPayload,
-    ConsensusService, ValidatorInfo,
+    ConsensusEvent, ConsensusMessageType, ConsensusPayload, ConsensusService, ValidatorInfo,
+    messages::RecoveryMessage,
 };
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
@@ -48,6 +48,16 @@ fn create_consensus_service(
     );
 
     (service, rx)
+}
+
+fn fire_primary_prepare_timer(service: &mut ConsensusService) {
+    let deadline = {
+        let context = service.context();
+        context
+            .view_start_time
+            .saturating_add(context.prepare_request_delay())
+    };
+    service.on_timer_tick(deadline).unwrap();
 }
 
 // ============================================================================
@@ -133,8 +143,7 @@ async fn test_consensus_wrong_block_index_rejected() {
 }
 
 #[tokio::test]
-#[ignore = "Consensus view test needs investigation - pre-existing issue"]
-async fn test_consensus_wrong_view_rejected() {
+async fn test_consensus_wrong_view_ignored() {
     let (mut service, _rx) = create_consensus_service(Some(1), 7);
     service.start(100, 1000, UInt256::zero(), 0).unwrap();
 
@@ -149,7 +158,9 @@ async fn test_consensus_wrong_view_rejected() {
     );
 
     let result = service.process_message(payload);
-    assert!(result.is_err());
+    assert!(result.is_ok());
+    assert_eq!(service.context().view_number, 0);
+    assert!(service.context().prepare_responses.is_empty());
 }
 
 #[tokio::test]
@@ -177,13 +188,15 @@ async fn test_consensus_prepare_request_from_non_primary_rejected() {
 // ============================================================================
 
 #[tokio::test]
-async fn test_primary_requests_transactions_on_start() {
+async fn test_primary_requests_transactions_on_prepare_timer() {
     let (mut service, mut rx) = create_consensus_service(Some(0), 7);
 
     // Start consensus for block 0 where validator 0 is primary
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
+    assert!(rx.try_recv().is_err());
 
-    // Primary should request transactions
+    // Primary should request transactions when the PrepareRequest timer fires.
+    fire_primary_prepare_timer(&mut service);
     let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
         .await
         .expect("timeout")
@@ -207,6 +220,7 @@ async fn test_transactions_received_triggers_prepare_request() {
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
     // Drain the RequestTransactions event
+    fire_primary_prepare_timer(&mut service);
     let _ = rx.recv().await;
 
     // Simulate receiving transactions
@@ -358,6 +372,7 @@ async fn test_consensus_handles_empty_transaction_list() {
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
     // Drain RequestTransactions
+    fire_primary_prepare_timer(&mut service);
     let _ = rx.recv().await;
 
     // Send empty transaction list
@@ -376,7 +391,8 @@ async fn test_consensus_single_validator_network() {
     // Validator count should be 1
     assert_eq!(service.context().validator_count(), 1);
 
-    // Should request transactions
+    // Should request transactions when the PrepareRequest timer fires.
+    fire_primary_prepare_timer(&mut service);
     let event = rx.recv().await.expect("event");
     assert!(matches!(event, ConsensusEvent::RequestTransactions { .. }));
 }

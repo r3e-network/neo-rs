@@ -4,14 +4,13 @@
 //! Previously implemented as a plugin, now integrated directly into neo-rpc.
 
 mod diagnostic;
-#[cfg(feature = "jsonrpsee-server")]
-mod jsonrpsee_adapter;
+pub(crate) mod jsonrpsee_adapter;
+pub(crate) mod dispatch;
 mod ledger_queries;
 pub mod middleware;
 pub mod model;
 mod native_queries;
 mod parameter_converter;
-mod routes;
 mod rpc_error;
 mod rpc_error_factory;
 mod rpc_exception;
@@ -33,10 +32,10 @@ mod rpc_server_wallet;
 mod rpc_tls;
 mod rpc_transport;
 mod session;
+pub mod smart_contract;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod wallet_compat;
-pub mod smart_contract;
 pub mod ws;
 
 // Public exports
@@ -60,7 +59,8 @@ pub use session::Session;
 
 #[cfg(feature = "jsonrpsee-server")]
 pub use jsonrpsee_adapter::{
-    build_jsonrpsee_module, build_jsonrpsee_module_with_disabled, JsonRpseeContext};
+    JsonRpseeContext, build_jsonrpsee_module, build_jsonrpsee_module_with_disabled,
+};
 
 // Re-export smart contract handlers
 pub use smart_contract::RpcServerSmartContract;

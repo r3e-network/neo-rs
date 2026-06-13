@@ -9,10 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_io::{impl_serializable, BinaryWriter, IoResult, Serializable};
-use neo_data_cache::DataCache;
-use neo_config::ProtocolSettings;
-use neo_primitives::UInt160;
+use neo_io::{BinaryWriter, IoResult, Serializable, impl_serializable};
 use serde::{Deserialize, Serialize};
 
 /// Represents a notary-assisted transaction attribute.
@@ -27,12 +24,6 @@ impl NotaryAssisted {
     pub fn new(nkeys: u8) -> Self {
         Self { nkeys }
     }
-
-    /// Get the notary contract hash.
-    fn get_notary_hash() -> UInt160 { UInt160::zero() }
-
-    /// Verify the notary-assisted attribute.
-
 
     /// Calculate network fee for this attribute.
     /// Network fee consists of the base Notary service fee per key multiplied by the expected

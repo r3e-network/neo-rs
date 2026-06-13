@@ -1,9 +1,8 @@
 use super::super::super::utils::{filter_json, ledger_height, select_oracle_key, sign_transaction};
 use super::super::super::{OracleService, OracleServiceError};
-use neo_payloads::helper::get_sign_data_vec;
+use neo_native_contracts::{OracleContract, Role, RoleManagement};
 use neo_payloads::{OracleResponse, OracleResponseCode};
 use neo_storage::persistence::DataCache;
-use neo_native_contracts::{OracleContract, Role, RoleManagement};
 use tracing::{debug, warn};
 
 impl OracleService {

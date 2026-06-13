@@ -1,7 +1,7 @@
 //! Integration smoke test for the reth-style P2P host services.
 
-use std::sync::Arc;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_network::{

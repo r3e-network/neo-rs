@@ -20,9 +20,9 @@ use crate::pool_item::PoolItem;
 use crate::transaction_removed_event_args::TransactionRemovedEventArgs;
 use crate::transaction_verification_context::TransactionVerificationContext;
 use neo_config::ProtocolSettings;
-use neo_data_cache::DataCache;
 use neo_payloads::Transaction;
 use neo_primitives::{TransactionRemovalReason, UInt160, UInt256, VerifyResult};
+use neo_storage::DataCache;
 use num_bigint::BigInt;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
@@ -40,8 +40,7 @@ pub type TransactionRemovedCallback =
 pub type TransactionRelayCallback = dyn Fn(&Transaction) + Send + Sync;
 /// Callback invoked for every freshly-admitted transaction; subscribers
 /// may veto the admission by setting `cancel = true` on the event args.
-pub type NewTransactionCallback =
-    dyn Fn(&MemoryPool, &mut NewTransactionEventArgs) + Send + Sync;
+pub type NewTransactionCallback = dyn Fn(&MemoryPool, &mut NewTransactionEventArgs) + Send + Sync;
 
 /// Inner, mutable state of the memory pool. Split out so the outer
 /// `MemoryPool` can hand out read-only references while still
@@ -106,7 +105,11 @@ impl MemoryPoolInner {
             for hash in conflicting {
                 if let Some(pooled) = self.verified.get(hash) {
                     if tx_sender.is_some_and(|s| {
-                        pooled.transaction.signers().iter().any(|sig| sig.account == s)
+                        pooled
+                            .transaction
+                            .signers()
+                            .iter()
+                            .any(|sig| sig.account == s)
                     }) {
                         conflicts_fee_sum =
                             conflicts_fee_sum.saturating_add(pooled.transaction.network_fee());
@@ -118,8 +121,12 @@ impl MemoryPoolInner {
         // Step 2: pooled txs that `tx` declares in its own Conflicts attrs.
         for hash in conflict_target_hashes(tx) {
             if let Some(pooled) = self.verified.get(&hash) {
-                let pooled_accounts: HashSet<UInt160> =
-                    pooled.transaction.signers().iter().map(|s| s.account).collect();
+                let pooled_accounts: HashSet<UInt160> = pooled
+                    .transaction
+                    .signers()
+                    .iter()
+                    .map(|s| s.account)
+                    .collect();
                 // Must share at least one signer to be a real conflict.
                 if tx_accounts.is_disjoint(&pooled_accounts) {
                     return None;
@@ -241,6 +248,11 @@ impl MemoryPool {
             .cloned()
     }
 
+    /// Returns the verified pool item for the given hash.
+    pub fn get_verified(&self, hash: &UInt256) -> Option<PoolItem> {
+        self.inner.read().verified.get(hash).cloned()
+    }
+
     /// Returns a snapshot of the verified queue in priority order
     /// (highest fee-per-byte first).
     pub fn verified_snapshot(&self) -> Vec<PoolItem> {
@@ -250,6 +262,113 @@ impl MemoryPool {
     /// Returns a snapshot of the unverified queue in priority order.
     pub fn unverified_snapshot(&self) -> Vec<PoolItem> {
         self.inner.read().unverified.to_sorted_vec()
+    }
+
+    /// Updates the pool after a block is persisted, mirroring C#
+    /// `MemoryPool.UpdatePoolForBlockPersisted`:
+    ///
+    /// 1. removes every transaction that was mined in the block from the
+    ///    verified/unverified queues (so it is no longer served to peers or
+    ///    re-proposed by the consensus driver) and decrements its sender-fee
+    ///    accounting in the verification context;
+    /// 2. evicts pooled transactions that conflict with the persisted ones, in
+    ///    both directions — a pooled tx whose hash is named by a persisted tx's
+    ///    `Conflicts` attribute (with an intersecting signer), or whose own
+    ///    `Conflicts` attribute names a persisted tx — fired as `Conflict`;
+    /// 3. moves every remaining verified transaction back to the unverified
+    ///    queue and resets verified-only bookkeeping, matching C#'s
+    ///    `InvalidateVerifiedTransactions`.
+    ///
+    /// Returns the evicted conflict transactions with their removal reasons so
+    /// the caller can publish `TransactionRemoved` events.
+    pub fn update_pool_for_block_persisted(
+        &self,
+        block_txs: &[Transaction],
+    ) -> Vec<(Transaction, TransactionRemovalReason)> {
+        let mut guard = self.inner.write();
+        let mut removed = Vec::new();
+
+        // (1) Remove mined transactions and build the conflicts map
+        // (Conflicts-attribute target hash -> signers of the persisted txs).
+        let mut conflicts: HashMap<UInt256, Vec<UInt160>> = HashMap::new();
+        let mut persisted: HashSet<UInt256> = HashSet::with_capacity(block_txs.len());
+        for tx in block_txs {
+            let Ok(hash) = tx.try_hash() else { continue };
+            persisted.insert(hash);
+            guard.verification_context.confirm(hash);
+            if let Some(item) = guard.verified.remove(&hash) {
+                let mined = (*item.transaction).clone();
+                guard.conflicts.retain(|_, set| {
+                    set.remove(&hash);
+                    !set.is_empty()
+                });
+                guard.context_remove(&mined);
+            } else if let Some(item) = guard.unverified.remove(&hash) {
+                let mined = (*item.transaction).clone();
+                guard.context_remove(&mined);
+            }
+            let signers: Vec<UInt160> = tx.signers().iter().map(|s| s.account).collect();
+            for target in conflict_target_hashes(tx) {
+                conflicts
+                    .entry(target)
+                    .or_default()
+                    .extend(signers.iter().copied());
+            }
+        }
+
+        // (2) Evict pooled transactions conflicting with the persisted ones.
+        let candidates: Vec<PoolItem> = guard
+            .verified
+            .iter()
+            .chain(guard.unverified.iter())
+            .cloned()
+            .collect();
+        for item in candidates {
+            let Ok(hash) = item.transaction.try_hash() else {
+                continue;
+            };
+            let tx = &*item.transaction;
+            let signer_set: HashSet<UInt160> = tx.signers().iter().map(|s| s.account).collect();
+            let named_by_persisted = conflicts
+                .get(&hash)
+                .is_some_and(|signers| signers.iter().any(|s| signer_set.contains(s)));
+            let names_persisted = conflict_target_hashes(tx)
+                .iter()
+                .any(|target| persisted.contains(target));
+            if named_by_persisted || names_persisted {
+                let evicted = guard
+                    .verified
+                    .remove(&hash)
+                    .or_else(|| guard.unverified.remove(&hash));
+                if let Some(item) = evicted {
+                    let evicted_tx = (*item.transaction).clone();
+                    guard.conflicts.retain(|_, set| {
+                        set.remove(&hash);
+                        !set.is_empty()
+                    });
+                    guard.context_remove(&evicted_tx);
+                    removed.push((evicted_tx, TransactionRemovalReason::Conflict));
+                }
+            }
+        }
+
+        // (3) Invalidate all remaining verified transactions. They were checked
+        // against the previous block state; after a block is persisted C# moves
+        // them to the unverified queues and clears verified-only context before
+        // the next reverify pass.
+        let remaining_verified: Vec<PoolItem> = guard.verified.iter().cloned().collect();
+        guard.unverified.reserve(remaining_verified.len());
+        for item in remaining_verified {
+            guard.unverified.insert(item);
+        }
+        guard.verified.items.clear();
+        guard.verified.hashes.clear();
+        guard.conflicts.clear();
+        guard.verification_context = TransactionVerificationContext::new();
+        guard.sender_fees.clear();
+        guard.oracle_responses.clear();
+
+        removed
     }
 
     /// Records the supplied transaction hashes as confirmed in the
@@ -334,11 +453,7 @@ impl MemoryPool {
     /// transaction's own `Conflicts` attributes are tracked for future
     /// admissions. On-chain conflict records are checked separately via the
     /// `Conflicts` attribute verification.
-    pub fn try_add(
-        &self,
-        transaction: Transaction,
-        snapshot: &DataCache,
-    ) -> VerifyResult {
+    pub fn try_add(&self, transaction: Transaction, snapshot: &DataCache) -> VerifyResult {
         let hash = transaction.hash();
 
         // Subscriber veto gate.
@@ -355,7 +470,7 @@ impl MemoryPool {
         // concurrent submissions cannot both verify against the same pooled
         // sender-fee state (MemoryPool.cs:353-369). Verification is serialized
         // under the lock exactly like C#'s `_txRwLock.EnterWriteLock()`.
-        let (evicted, conflict_evicted, new_tx_evicted) = {
+        let (removed_transactions, new_tx_evicted) = {
             let mut guard = self.inner.write();
             if guard.verified.contains(&hash) || guard.unverified.contains(&hash) {
                 return VerifyResult::AlreadyExists;
@@ -382,11 +497,13 @@ impl MemoryPool {
             let rebate: BigInt = conflicts_to_remove
                 .iter()
                 .filter(|c| {
-                    tx_sender.is_some_and(|s| {
-                        c.transaction.signers().iter().any(|sig| sig.account == s)
-                    })
+                    tx_sender
+                        .is_some_and(|s| c.transaction.signers().iter().any(|sig| sig.account == s))
                 })
-                .map(|c| BigInt::from(c.transaction.system_fee()) + BigInt::from(c.transaction.network_fee()))
+                .map(|c| {
+                    BigInt::from(c.transaction.system_fee())
+                        + BigInt::from(c.transaction.network_fee())
+                })
                 .sum();
             let effective_pooled_fee = &pooled_sender_fee - &rebate;
             let oracle_duplicate = oracle_response_id(&transaction)
@@ -409,7 +526,7 @@ impl MemoryPool {
             guard.verified.insert(PoolItem::new(transaction.clone()));
             guard.context_add(&transaction);
 
-            let mut conflict_evicted = Vec::new();
+            let mut removed_transactions = Vec::new();
             for conflict in &conflicts_to_remove {
                 let chash = conflict.hash();
                 if let Some(removed) = guard.verified.remove(&chash) {
@@ -420,7 +537,7 @@ impl MemoryPool {
                         set.remove(&chash);
                         !set.is_empty()
                     });
-                    conflict_evicted.push(dropped);
+                    removed_transactions.push(dropped);
                 }
             }
             // Track this tx's declared conflicts: target hash -> {tx hash}.
@@ -431,7 +548,6 @@ impl MemoryPool {
             // C# RemoveOverCapacity drops the LOWEST-priority pooled item
             // (PoolItem ascending order ⇒ `next()`), which may be the just-added
             // transaction ⇒ OutOfMemory for the caller (MemoryPool.cs:362-368).
-            let mut evicted = None;
             let mut new_tx_evicted = false;
             if guard.verified.len() > guard.capacity {
                 if let Some(lowest) = guard.verified.items.iter().next().cloned() {
@@ -439,29 +555,26 @@ impl MemoryPool {
                     guard.verified.remove(&lowest_hash);
                     let dropped = (*lowest.transaction).clone();
                     guard.context_remove(&dropped);
+                    guard.conflicts.retain(|_, set| {
+                        set.remove(&lowest_hash);
+                        !set.is_empty()
+                    });
                     if lowest_hash == hash {
                         new_tx_evicted = true;
-                    } else {
-                        evicted = Some(dropped);
                     }
+                    removed_transactions.push(dropped);
                 }
             }
-            (evicted, conflict_evicted, new_tx_evicted)
+            (removed_transactions, new_tx_evicted)
         };
 
-        if !conflict_evicted.is_empty() {
-            if let Some(callback) = &self.transaction_removed {
-                let args = TransactionRemovedEventArgs::new(
-                    conflict_evicted,
-                    TransactionRemovalReason::Conflict,
-                );
-                callback(self, &args);
-            }
+        if let Some(callback) = &self.transaction_added {
+            callback(self, &transaction);
         }
-        if let Some(dropped) = evicted {
+        if !removed_transactions.is_empty() {
             if let Some(callback) = &self.transaction_removed {
                 let args = TransactionRemovedEventArgs::new(
-                    vec![dropped],
+                    removed_transactions,
                     TransactionRemovalReason::CapacityExceeded,
                 );
                 callback(self, &args);
@@ -469,10 +582,6 @@ impl MemoryPool {
         }
         if new_tx_evicted {
             return VerifyResult::OutOfMemory;
-        }
-
-        if let Some(callback) = &self.transaction_added {
-            callback(self, &transaction);
         }
         VerifyResult::Succeed
     }
@@ -533,7 +642,7 @@ mod tests {
     fn keypair(seed: u8) -> ([u8; 32], Vec<u8>, UInt160) {
         let private = [seed; 32];
         let public = Secp256r1Crypto::derive_public_key(&private).expect("pubkey");
-        let script = neo_redeem_script::signature_redeem_script(&public);
+        let script = neo_vm::script_builder::redeem_script::signature_redeem_script(&public);
         (private, public, UInt160::from_script(&script))
     }
 
@@ -541,16 +650,14 @@ mod tests {
     /// `FungibleToken.AccountState`) so the verification balance check
     /// passes.
     fn mint_gas(snapshot: &DataCache, account: &UInt160, datoshi: i64) {
-        let item = StackItem::from_struct(vec![StackItem::from_int(num_bigint::BigInt::from(
-            datoshi,
-        ))]);
-        let bytes =
-            BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
+        let item =
+            StackItem::from_struct(vec![StackItem::from_int(num_bigint::BigInt::from(datoshi))]);
+        let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
         let mut key = vec![20u8]; // shared NEP-17 Prefix_Account
         key.extend_from_slice(&account.to_bytes());
         snapshot.add(
-            neo_data_cache::StorageKey::new(neo_native_contracts::GasToken::ID, key),
-            neo_data_cache::StorageItem::from_bytes(bytes),
+            neo_storage::StorageKey::new(neo_native_contracts::GasToken::ID, key),
+            neo_storage::StorageItem::from_bytes(bytes),
         );
     }
 
@@ -564,10 +671,34 @@ mod tests {
         valid_until_block: u32,
         attributes: Vec<TransactionAttribute>,
     ) -> Transaction {
+        signed_tx_with_fees(
+            settings,
+            private,
+            public,
+            account,
+            nonce,
+            valid_until_block,
+            100,
+            3_000_000,
+            attributes,
+        )
+    }
+
+    fn signed_tx_with_fees(
+        settings: &ProtocolSettings,
+        private: &[u8; 32],
+        public: &[u8],
+        account: UInt160,
+        nonce: u32,
+        valid_until_block: u32,
+        system_fee: i64,
+        network_fee: i64,
+        attributes: Vec<TransactionAttribute>,
+    ) -> Transaction {
         let mut tx = Transaction::new();
         tx.set_nonce(nonce);
-        tx.set_system_fee(100);
-        tx.set_network_fee(3_000_000); // covers size fee + sig-check cost
+        tx.set_system_fee(system_fee);
+        tx.set_network_fee(network_fee); // covers size fee + sig-check cost
         tx.set_valid_until_block(valid_until_block);
         tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_attributes(attributes);
@@ -581,7 +712,7 @@ mod tests {
 
         let mut invocation = vec![OpCode::PUSHDATA1.byte(), 64];
         invocation.extend_from_slice(&signature);
-        let verification = neo_redeem_script::signature_redeem_script(public);
+        let verification = neo_vm::script_builder::redeem_script::signature_redeem_script(public);
         tx.set_witnesses(vec![Witness::new_with_scripts(invocation, verification)]);
         tx
     }
@@ -610,9 +741,120 @@ mod tests {
         let tx = signed_tx(&settings, &private, &public, account, 1, 1, Vec::new());
         let hash = tx.hash();
         assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
-        assert_eq!(pool.verified_count(), 1, "C# TryAdd admits into the sorted pool");
+        assert_eq!(
+            pool.verified_count(),
+            1,
+            "C# TryAdd admits into the sorted pool"
+        );
         assert_eq!(pool.unverified_count(), 0);
         assert!(pool.contains(&hash));
+    }
+
+    #[test]
+    fn block_persist_removes_mined_tx_and_evicts_conflicts() {
+        let (settings, snapshot, private, public, account) = fixture(0x55);
+        let pool = MemoryPool::new(&settings);
+
+        // `mined` is pooled and will be in the block (leg 1: removed).
+        let mined = signed_tx(&settings, &private, &public, account, 10, 100, Vec::new());
+        // `target` is NOT pooled, only in the block; `conflicting` (pooled,
+        // same signer) names it as a Conflicts target (leg 2: evicted on
+        // persist because its conflict target becomes on-chain).
+        let target = signed_tx(&settings, &private, &public, account, 12, 100, Vec::new());
+        let conflicting = signed_tx(
+            &settings,
+            &private,
+            &public,
+            account,
+            11,
+            100,
+            vec![TransactionAttribute::Conflicts(
+                neo_payloads::Conflicts::new(target.hash()),
+            )],
+        );
+        assert_eq!(
+            pool.try_add(mined.clone(), &snapshot),
+            VerifyResult::Succeed
+        );
+        assert_eq!(
+            pool.try_add(conflicting.clone(), &snapshot),
+            VerifyResult::Succeed
+        );
+        assert_eq!(pool.verified_count(), 2);
+
+        // Persist a block containing `mined` and `target`. C#
+        // UpdatePoolForBlockPersisted: `mined` is removed (it was confirmed),
+        // and `conflicting` is evicted because its Conflicts attribute names the
+        // now-persisted `target`.
+        let removed = pool.update_pool_for_block_persisted(&[mined.clone(), target.clone()]);
+        assert_eq!(
+            pool.verified_count(),
+            0,
+            "both the mined tx and its conflict leave the pool"
+        );
+        assert!(!pool.contains(&mined.hash()));
+        assert!(!pool.contains(&conflicting.hash()));
+        assert!(
+            removed
+                .iter()
+                .any(|(tx, reason)| tx.hash() == conflicting.hash()
+                    && *reason == TransactionRemovalReason::Conflict),
+            "the conflicting tx is reported as a Conflict removal"
+        );
+    }
+
+    #[test]
+    fn block_persist_invalidates_remaining_verified_transactions() {
+        let (settings, snapshot, private, public, account) = fixture(0x4E);
+        let pool = MemoryPool::new(&settings);
+        let first = signed_tx(&settings, &private, &public, account, 20, 1, Vec::new());
+        let second = signed_tx(&settings, &private, &public, account, 21, 1, Vec::new());
+
+        assert_eq!(
+            pool.try_add(first.clone(), &snapshot),
+            VerifyResult::Succeed
+        );
+        assert_eq!(
+            pool.try_add(second.clone(), &snapshot),
+            VerifyResult::Succeed
+        );
+        assert_eq!(pool.verified_count(), 2);
+        assert_eq!(pool.unverified_count(), 0);
+
+        let removed = pool.update_pool_for_block_persisted(&[]);
+        assert!(removed.is_empty());
+
+        let verified: HashSet<UInt256> = pool
+            .verified_snapshot()
+            .into_iter()
+            .map(|item| item.hash())
+            .collect();
+        let unverified: HashSet<UInt256> = pool
+            .unverified_snapshot()
+            .into_iter()
+            .map(|item| item.hash())
+            .collect();
+        assert!(verified.is_empty());
+        assert!(unverified.contains(&first.hash()));
+        assert!(unverified.contains(&second.hash()));
+        assert_eq!(pool.verified_count(), 0);
+        assert_eq!(pool.unverified_count(), 2);
+    }
+
+    #[test]
+    fn verified_lookup_does_not_return_unverified_transactions() {
+        let (settings, snapshot, private, public, account) = fixture(0x4F);
+        let pool = MemoryPool::new(&settings);
+        let tx = signed_tx(&settings, &private, &public, account, 22, 1, Vec::new());
+        let hash = tx.hash();
+
+        assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+        assert!(pool.get_verified(&hash).is_some());
+
+        let removed = pool.update_pool_for_block_persisted(&[]);
+        assert!(removed.is_empty());
+        assert!(pool.get(&hash).is_some());
+        assert!(pool.get_verified(&hash).is_none());
     }
 
     #[test]
@@ -622,6 +864,132 @@ mod tests {
         let tx = signed_tx(&settings, &private, &public, account, 2, 1, Vec::new());
         assert_eq!(pool.try_add(tx.clone(), &snapshot), VerifyResult::Succeed);
         assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::AlreadyExists);
+    }
+
+    #[test]
+    fn try_add_conflict_eviction_reports_capacity_exceeded_like_csharp() {
+        let (settings, snapshot, private, public, account) = fixture(0x50);
+        let mut pool = MemoryPool::new(&settings);
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(
+            TransactionRemovalReason,
+            Vec<UInt256>,
+        )>::new()));
+        let captured = events.clone();
+        pool.transaction_removed = Some(Box::new(move |_pool, args| {
+            captured.lock().unwrap().push((
+                args.reason,
+                args.transactions.iter().map(|tx| tx.hash()).collect(),
+            ));
+        }));
+
+        let old = signed_tx_with_fees(
+            &settings,
+            &private,
+            &public,
+            account,
+            30,
+            100,
+            100,
+            3_000_000,
+            Vec::new(),
+        );
+        let replacement = signed_tx_with_fees(
+            &settings,
+            &private,
+            &public,
+            account,
+            31,
+            100,
+            100,
+            6_000_000,
+            vec![TransactionAttribute::Conflicts(
+                neo_payloads::Conflicts::new(old.hash()),
+            )],
+        );
+
+        assert_eq!(pool.try_add(old.clone(), &snapshot), VerifyResult::Succeed);
+        assert_eq!(
+            pool.try_add(replacement.clone(), &snapshot),
+            VerifyResult::Succeed
+        );
+
+        assert!(!pool.contains(&old.hash()));
+        assert!(pool.contains(&replacement.hash()));
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, TransactionRemovalReason::CapacityExceeded);
+        assert_eq!(events[0].1, vec![old.hash()]);
+    }
+
+    #[test]
+    fn try_add_self_capacity_eviction_fires_added_then_removed_before_out_of_memory() {
+        let (mut settings, snapshot, private, public, account) = fixture(0x51);
+        settings.memory_pool_max_transactions = 1;
+        let mut pool = MemoryPool::new(&settings);
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let added_calls = calls.clone();
+        pool.transaction_added = Some(Box::new(move |_pool, tx| {
+            added_calls
+                .lock()
+                .unwrap()
+                .push(format!("added:{}", tx.hash()));
+        }));
+        let removed_calls = calls.clone();
+        pool.transaction_removed = Some(Box::new(move |_pool, args| {
+            removed_calls.lock().unwrap().push(format!(
+                "removed:{:?}:{:?}",
+                args.reason,
+                args.transactions
+                    .iter()
+                    .map(|tx| tx.hash())
+                    .collect::<Vec<_>>()
+            ));
+        }));
+
+        let kept = signed_tx_with_fees(
+            &settings,
+            &private,
+            &public,
+            account,
+            32,
+            100,
+            100,
+            6_000_000,
+            Vec::new(),
+        );
+        let evicted = signed_tx_with_fees(
+            &settings,
+            &private,
+            &public,
+            account,
+            33,
+            100,
+            100,
+            3_000_000,
+            Vec::new(),
+        );
+
+        assert_eq!(pool.try_add(kept.clone(), &snapshot), VerifyResult::Succeed);
+        assert_eq!(
+            pool.try_add(evicted.clone(), &snapshot),
+            VerifyResult::OutOfMemory
+        );
+
+        assert!(pool.contains(&kept.hash()));
+        assert!(!pool.contains(&evicted.hash()));
+        let calls = calls.lock().unwrap();
+        assert_eq!(
+            calls.as_slice(),
+            [
+                format!("added:{}", kept.hash()),
+                format!("added:{}", evicted.hash()),
+                format!(
+                    "removed:{:?}:{:?}",
+                    TransactionRemovalReason::CapacityExceeded,
+                    vec![evicted.hash()]
+                ),
+            ]
+        );
     }
 
     #[test]
@@ -658,7 +1026,10 @@ mod tests {
         let (settings, snapshot, private, public, account) = fixture(0x47);
         let pool = MemoryPool::new(&settings);
         let mut tx = signed_tx(&settings, &private, &public, account, 6, 1, Vec::new());
-        tx.set_script(vec![OpCode::PUSH1.byte(); neo_payloads::MAX_TRANSACTION_SIZE]);
+        tx.set_script(vec![
+            OpCode::PUSH1.byte();
+            neo_payloads::MAX_TRANSACTION_SIZE
+        ]);
         assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::OverSize);
     }
 
@@ -669,8 +1040,8 @@ mod tests {
         let mut key = vec![15u8];
         key.extend_from_slice(&account.to_bytes());
         snapshot.add(
-            neo_data_cache::StorageKey::new(-7, key),
-            neo_data_cache::StorageItem::from_bytes(Vec::new()),
+            neo_storage::StorageKey::new(-7, key),
+            neo_storage::StorageItem::from_bytes(Vec::new()),
         );
         let pool = MemoryPool::new(&settings);
         let tx = signed_tx(&settings, &private, &public, account, 7, 1, Vec::new());
@@ -705,7 +1076,7 @@ mod tests {
         // Shrink the balance so only one fits: 2 × 3_000_100 > 4_000_000.
         let mut key = vec![20u8];
         key.extend_from_slice(&account.to_bytes());
-        snapshot.delete(&neo_data_cache::StorageKey::new(
+        snapshot.delete(&neo_storage::StorageKey::new(
             neo_native_contracts::GasToken::ID,
             key,
         ));

@@ -9,7 +9,7 @@
 //!
 //! The full read/write surface (block storage, block-hash index, the
 //! various persistent transaction records and conflict stubs) is
-//! handled by the `neo-blockchain` reth-style service; this crate only
+//! handled by the `neo-payloadschain` reth-style service; this crate only
 //! provides the read-only query surface used by oracle service, RPC,
 //! and the application engine.
 
@@ -38,9 +38,6 @@ const PREFIX_TRANSACTION: u8 = 11;
 /// Storage prefix for the current-block (hash, index) pointer.
 const PREFIX_CURRENT_BLOCK: u8 = 12;
 
-/// Lazily-initialised script-hash handle for the LedgerContract.
-pub static LEDGER_HASH: LazyLock<UInt160> = LazyLock::new(|| *LEDGER_CONTRACT_HASH);
-
 /// Static accessor for the LedgerContract native contract.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct LedgerContract;
@@ -48,6 +45,8 @@ pub struct LedgerContract;
 impl LedgerContract {
     /// Stable native contract id (matches C# `LedgerContract.Id`).
     pub const ID: i32 = -4;
+    /// Stable native contract name (matches C# `LedgerContract.Name`).
+    pub const NAME: &'static str = "LedgerContract";
 
     /// Constructs a new `LedgerContract` handle.
     pub fn new() -> Self {
@@ -56,12 +55,12 @@ impl LedgerContract {
 
     /// Returns the script hash of the LedgerContract.
     pub fn hash(&self) -> UInt160 {
-        *LEDGER_HASH
+        Self::script_hash()
     }
 
     /// Returns the script hash of the LedgerContract (static).
     pub fn script_hash() -> UInt160 {
-        *LEDGER_HASH
+        *LEDGER_CONTRACT_HASH
     }
 
     /// Returns the current block index (height) of the blockchain.
@@ -118,7 +117,7 @@ impl LedgerContract {
         &self,
         snapshot: &DataCache,
         tx_hash: &UInt256,
-    ) -> CoreResult<Option<neo_block::TransactionState>> {
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
         let key = transaction_storage_key(Self::ID, tx_hash);
         let Some(item) = snapshot.get(&key) else {
             return Ok(None);
@@ -160,11 +159,7 @@ impl LedgerContract {
         match self.get_transaction_state(snapshot, hash)? {
             Some(stub)
                 if stub.transaction.is_none()
-                    && is_within_trace_window(
-                        stub.block_index,
-                        current,
-                        max_traceable_blocks,
-                    ) => {}
+                    && is_within_trace_window(stub.block_index, current, max_traceable_blocks) => {}
             _ => return Ok(false),
         }
 
@@ -184,18 +179,12 @@ impl LedgerContract {
 
     /// Returns the block hash for the given block index, or `None` if
     /// the block has not been persisted yet.
-    pub fn get_block_hash(
-        &self,
-        snapshot: &DataCache,
-        index: u32,
-    ) -> CoreResult<Option<UInt256>> {
+    pub fn get_block_hash(&self, snapshot: &DataCache, index: u32) -> CoreResult<Option<UInt256>> {
         let key = block_hash_storage_key(Self::ID, index);
         match snapshot.get(&key) {
             Some(item) => {
                 let bytes = item.value_bytes().into_owned();
-                let hash = UInt256::from_bytes(&bytes).map_err(|e| {
-                    CoreError::invalid_data(format!("invalid block hash bytes: {e}"))
-                })?;
+                let hash = crate::args::bytes_to_hash256(&bytes, "invalid block hash bytes")?;
                 Ok(Some(hash))
             }
             None => Ok(None),
@@ -249,9 +238,7 @@ impl LedgerContract {
                 self.get_block_hash(snapshot, index)
             }
             std::cmp::Ordering::Equal => {
-                let hash = UInt256::from_bytes(index_or_hash).map_err(|e| {
-                    CoreError::invalid_operation(format!("LedgerContract: bad block hash: {e}"))
-                })?;
+                let hash = crate::args::bytes_to_hash256(index_or_hash, "LedgerContract: bad block hash")?;
                 Ok(Some(hash))
             }
             std::cmp::Ordering::Greater => Err(CoreError::invalid_operation(format!(
@@ -277,18 +264,18 @@ fn current_block_storage_key(contract_id: i32) -> StorageKey {
 /// block order.
 #[inline]
 fn block_hash_storage_key(contract_id: i32, index: u32) -> StorageKey {
-    let mut key = Vec::with_capacity(1 + std::mem::size_of::<u32>());
-    key.push(PREFIX_BLOCK_HASH);
-    key.extend_from_slice(&index.to_be_bytes());
-    StorageKey::new(contract_id, key)
+    StorageKey::new(
+        contract_id,
+        crate::keys::prefixed_with_u32_be(PREFIX_BLOCK_HASH, index),
+    )
 }
 
 #[inline]
 fn transaction_storage_key(contract_id: i32, hash: &UInt256) -> StorageKey {
-    let mut key = Vec::with_capacity(1 + 32);
-    key.push(PREFIX_TRANSACTION);
-    key.extend_from_slice(&hash.to_bytes());
-    StorageKey::new(contract_id, key)
+    StorageKey::new(
+        contract_id,
+        crate::keys::prefixed_with_hash256(PREFIX_TRANSACTION, hash),
+    )
 }
 
 /// C# `CreateStorageKey(Prefix_Transaction, UInt256 hash, UInt160 signer)`
@@ -304,10 +291,10 @@ fn conflict_signer_storage_key(contract_id: i32, hash: &UInt256, signer: &UInt16
 
 #[inline]
 fn block_storage_key(contract_id: i32, hash: &UInt256) -> StorageKey {
-    let mut key = Vec::with_capacity(1 + 32);
-    key.push(PREFIX_BLOCK);
-    key.extend_from_slice(&hash.to_bytes());
-    StorageKey::new(contract_id, key)
+    StorageKey::new(
+        contract_id,
+        crate::keys::prefixed_with_hash256(PREFIX_BLOCK, hash),
+    )
 }
 
 // ============================================================================
@@ -346,8 +333,7 @@ fn deserialize_hash_index_state(bytes: &[u8]) -> CoreResult<(UInt256, u32)> {
     let hash_bytes = items[0]
         .as_bytes()
         .map_err(|e| CoreError::invalid_data(format!("HashIndexState hash: {e}")))?;
-    let hash = UInt256::from_bytes(&hash_bytes)
-        .map_err(|e| CoreError::invalid_data(format!("invalid HashIndexState hash: {e}")))?;
+    let hash = crate::args::bytes_to_hash256(&hash_bytes, "invalid HashIndexState hash")?;
     let index = items[1]
         .as_int()
         .map_err(|e| CoreError::invalid_data(format!("HashIndexState index: {e}")))?
@@ -360,7 +346,7 @@ fn deserialize_hash_index_state(bytes: &[u8]) -> CoreResult<(UInt256, u32)> {
 /// interoperable stack item (TransactionState.cs `FromStackItem`).
 /// `Struct[Integer]` is a conflict stub (no transaction);
 /// `Struct[Integer, ByteString, Integer]` is a full record.
-fn decode_transaction_state(bytes: &[u8]) -> CoreResult<neo_block::TransactionState> {
+fn decode_transaction_state(bytes: &[u8]) -> CoreResult<neo_payloads::TransactionState> {
     let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
         .map_err(|e| CoreError::invalid_data(format!("TransactionState: {e}")))?;
     let StackItem::Struct(fields) = item else {
@@ -379,7 +365,7 @@ fn decode_transaction_state(bytes: &[u8]) -> CoreResult<neo_block::TransactionSt
 
     // C#: `if (@struct.Count == 1) return;` — conflict record.
     if items.len() == 1 {
-        return Ok(neo_block::TransactionState::new(
+        return Ok(neo_payloads::TransactionState::new(
             block_index,
             None,
             VMState::NONE,
@@ -402,7 +388,7 @@ fn decode_transaction_state(bytes: &[u8]) -> CoreResult<neo_block::TransactionSt
         .map_err(|e| CoreError::invalid_data(format!("TransactionState vm state: {e}")))?
         .to_u8()
         .ok_or_else(|| CoreError::invalid_data("TransactionState vm state out of byte range"))?;
-    Ok(neo_block::TransactionState::new(
+    Ok(neo_payloads::TransactionState::new(
         block_index,
         Some(tx),
         VMState::from_byte(state_byte),
@@ -551,11 +537,11 @@ impl NativeContract for LedgerContract {
     }
 
     fn hash(&self) -> UInt160 {
-        *LEDGER_CONTRACT_HASH
+        Self::script_hash()
     }
 
     fn name(&self) -> &str {
-        "LedgerContract"
+        Self::NAME
     }
 
     fn methods(&self) -> &[NativeMethod] {
@@ -579,16 +565,7 @@ impl NativeContract for LedgerContract {
             "currentIndex" => Ok(BigInt::from(self.current_index(&snapshot)?).to_signed_bytes_le()),
             "currentHash" => Ok(self.current_hash(&snapshot)?.to_bytes()),
             "getTransactionHeight" => {
-                let hash_bytes = args.first().ok_or_else(|| {
-                    CoreError::invalid_operation(
-                        "LedgerContract::getTransactionHeight requires a hash",
-                    )
-                })?;
-                let hash = UInt256::from_bytes(hash_bytes).map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "LedgerContract::getTransactionHeight: bad hash: {e}"
-                    ))
-                })?;
+                let hash = crate::args::raw_hash256(args, 0, "LedgerContract::getTransactionHeight")?;
                 // C# `GetTransactionState` returns null for a conflict stub (its
                 // `Transaction` is null), and `getTransactionHeight` returns -1 for
                 // an absent or untraceable transaction; otherwise `(int)BlockIndex`.
@@ -605,16 +582,7 @@ impl NativeContract for LedgerContract {
                 Ok(BigInt::from(height).to_signed_bytes_le())
             }
             "getTransactionVMState" => {
-                let hash_bytes = args.first().ok_or_else(|| {
-                    CoreError::invalid_operation(
-                        "LedgerContract::getTransactionVMState requires a hash",
-                    )
-                })?;
-                let hash = UInt256::from_bytes(hash_bytes).map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "LedgerContract::getTransactionVMState: bad hash: {e}"
-                    ))
-                })?;
+                let hash = crate::args::raw_hash256(args, 0, "LedgerContract::getTransactionVMState")?;
                 // C# returns VMState.NONE for an absent, conflict-stub, or
                 // untraceable transaction; otherwise the recorded execution state.
                 let vm_state = match self.get_transaction_state(&snapshot, &hash)? {
@@ -630,16 +598,7 @@ impl NativeContract for LedgerContract {
                 Ok(BigInt::from(vm_state).to_signed_bytes_le())
             }
             "getTransaction" => {
-                let hash_bytes = args.first().ok_or_else(|| {
-                    CoreError::invalid_operation(
-                        "LedgerContract::getTransaction requires a hash",
-                    )
-                })?;
-                let hash = UInt256::from_bytes(hash_bytes).map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "LedgerContract::getTransaction: bad hash: {e}"
-                    ))
-                })?;
+                let hash = crate::args::raw_hash256(args, 0, "LedgerContract::getTransaction")?;
                 // C# returns the transaction (Array via ToStackItem) for a
                 // traceable full record; null (empty payload) for an absent,
                 // conflict-stub, or untraceable transaction.
@@ -652,12 +611,15 @@ impl NativeContract for LedgerContract {
                                         "LedgerContract::getTransaction: stack item: {e}"
                                     ))
                                 })?;
-                                BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                                    .map_err(|e| {
-                                        CoreError::invalid_operation(format!(
-                                            "LedgerContract::getTransaction: serialize: {e}"
-                                        ))
-                                    })
+                                BinarySerializer::serialize(
+                                    &item,
+                                    &ExecutionEngineLimits::default(),
+                                )
+                                .map_err(|e| {
+                                    CoreError::invalid_operation(format!(
+                                        "LedgerContract::getTransaction: serialize: {e}"
+                                    ))
+                                })
                             } else {
                                 Ok(Vec::new())
                             }
@@ -669,16 +631,7 @@ impl NativeContract for LedgerContract {
                 }
             }
             "getTransactionSigners" => {
-                let hash_bytes = args.first().ok_or_else(|| {
-                    CoreError::invalid_operation(
-                        "LedgerContract::getTransactionSigners requires a hash",
-                    )
-                })?;
-                let hash = UInt256::from_bytes(hash_bytes).map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "LedgerContract::getTransactionSigners: bad hash: {e}"
-                    ))
-                })?;
+                let hash = crate::args::raw_hash256(args, 0, "LedgerContract::getTransactionSigners")?;
                 // C# returns the transaction's Signer[] (Array via ToStackItem) for
                 // a traceable full record; null (empty payload) otherwise.
                 match self.get_transaction_state(&snapshot, &hash)? {
@@ -714,9 +667,7 @@ impl NativeContract for LedgerContract {
             }
             "getBlock" => {
                 let index_or_hash = args.first().ok_or_else(|| {
-                    CoreError::invalid_operation(
-                        "LedgerContract::getBlock requires an indexOrHash",
-                    )
+                    CoreError::invalid_operation("LedgerContract::getBlock requires an indexOrHash")
                 })?;
                 // C#: resolve the index/hash to a block hash, load the trimmed
                 // block, and return it (Array via ToStackItem) only if traceable;
@@ -812,9 +763,6 @@ mod tests {
     #[test]
     fn native_contract_surface() {
         let c = LedgerContract::new();
-        assert_eq!(NativeContract::id(&c), -4);
-        assert_eq!(NativeContract::name(&c), "LedgerContract");
-        assert_eq!(NativeContract::hash(&c), *LEDGER_CONTRACT_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
         assert_eq!(
             names,
@@ -829,10 +777,11 @@ mod tests {
                 "getTransactionFromBlock"
             ]
         );
-        assert!(c
-            .methods()
-            .iter()
-            .all(|m| m.safe && m.required_call_flags == CallFlags::READ_STATES.bits()));
+        assert!(
+            c.methods()
+                .iter()
+                .all(|m| m.safe && m.required_call_flags == CallFlags::READ_STATES.bits())
+        );
         for name in ["getTransactionHeight", "getTransactionVMState"] {
             let m = c.methods().iter().find(|m| m.name == name).unwrap();
             assert_eq!(m.parameters, vec![ContractParameterType::Hash256]);
@@ -859,7 +808,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             from_block.parameters,
-            vec![ContractParameterType::ByteArray, ContractParameterType::Integer]
+            vec![
+                ContractParameterType::ByteArray,
+                ContractParameterType::Integer
+            ]
         );
         assert_eq!(from_block.return_type, ContractParameterType::Array);
         assert_eq!(from_block.cpu_fee, 1 << 16);
@@ -887,7 +839,12 @@ mod tests {
         );
 
         // Absent block -> None.
-        assert!(ledger.get_trimmed_block(&cache, &block_hash).unwrap().is_none());
+        assert!(
+            ledger
+                .get_trimmed_block(&cache, &block_hash)
+                .unwrap()
+                .is_none()
+        );
 
         // Persist the trimmed block exactly as OnPersist does
         // (TrimmedBlock.ToArray() = ISerializable bytes) and read it back.
@@ -898,7 +855,10 @@ mod tests {
             StorageItem::from_bytes(writer.into_bytes()),
         );
 
-        let loaded = ledger.get_trimmed_block(&cache, &block_hash).unwrap().unwrap();
+        let loaded = ledger
+            .get_trimmed_block(&cache, &block_hash)
+            .unwrap()
+            .unwrap();
         assert_eq!(loaded.header.index(), 77);
         assert_eq!(loaded.header.nonce(), u64::MAX);
         assert_eq!(loaded.hashes, trimmed.hashes);
@@ -955,7 +915,12 @@ mod tests {
         let tx_hash = UInt256::from_bytes(&[9u8; 32]).unwrap();
 
         // Absent -> None (getTransactionHeight would return -1).
-        assert!(ledger.get_transaction_state(&cache, &tx_hash).unwrap().is_none());
+        assert!(
+            ledger
+                .get_transaction_state(&cache, &tx_hash)
+                .unwrap()
+                .is_none()
+        );
         assert!(!ledger.contains_transaction(&cache, &tx_hash).unwrap());
 
         // Conflict stub -> Some, but `transaction` is None, so C#
@@ -965,7 +930,10 @@ mod tests {
             transaction_storage_key(LedgerContract::ID, &tx_hash),
             StorageItem::from_bytes(serialize_conflict_stub(4242).unwrap()),
         );
-        let stub = ledger.get_transaction_state(&cache, &tx_hash).unwrap().unwrap();
+        let stub = ledger
+            .get_transaction_state(&cache, &tx_hash)
+            .unwrap()
+            .unwrap();
         assert!(stub.transaction.is_none());
         assert_eq!(stub.block_index, 4242);
         assert!(
@@ -1033,7 +1001,10 @@ mod tests {
             serialize_conflict_stub(3).unwrap(),
             vec![0x41, 0x01, 0x21, 0x01, 0x03]
         );
-        assert_eq!(serialize_conflict_stub(0).unwrap(), vec![0x41, 0x01, 0x21, 0x00]);
+        assert_eq!(
+            serialize_conflict_stub(0).unwrap(),
+            vec![0x41, 0x01, 0x21, 0x00]
+        );
 
         // Full transaction record:
         // Struct{ Integer(BlockIndex), ByteString(tx.ToArray()), Integer((byte)State) }.
@@ -1087,36 +1058,55 @@ mod tests {
         cache.add(
             current_block_storage_key(LedgerContract::ID),
             StorageItem::from_bytes(
-                serialize_hash_index_state(&UInt256::from_bytes(&[1u8; 32]).unwrap(), 100)
-                    .unwrap(),
+                serialize_hash_index_state(&UInt256::from_bytes(&[1u8; 32]).unwrap(), 100).unwrap(),
             ),
         );
 
         // No record at all → false.
-        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[signer], mtb).unwrap());
+        assert!(
+            !ledger
+                .contains_conflict_hash(&cache, &hash, &[signer], mtb)
+                .unwrap()
+        );
 
         // Bare stub (traceable) but no signer record → false.
         cache.add(
             transaction_storage_key(LedgerContract::ID, &hash),
             StorageItem::from_bytes(serialize_conflict_stub(95).unwrap()),
         );
-        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[signer], mtb).unwrap());
+        assert!(
+            !ledger
+                .contains_conflict_hash(&cache, &hash, &[signer], mtb)
+                .unwrap()
+        );
 
         // Signer record for a different account → still false for ours…
         cache.add(
             conflict_signer_storage_key(LedgerContract::ID, &hash, &other),
             StorageItem::from_bytes(serialize_conflict_stub(95).unwrap()),
         );
-        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[signer], mtb).unwrap());
+        assert!(
+            !ledger
+                .contains_conflict_hash(&cache, &hash, &[signer], mtb)
+                .unwrap()
+        );
         // …and true for the matching one.
-        assert!(ledger.contains_conflict_hash(&cache, &hash, &[other], mtb).unwrap());
+        assert!(
+            ledger
+                .contains_conflict_hash(&cache, &hash, &[other], mtb)
+                .unwrap()
+        );
 
         // An untraceable signer record (95 - window) does not count.
         cache.add(
             conflict_signer_storage_key(LedgerContract::ID, &hash, &signer),
             StorageItem::from_bytes(serialize_conflict_stub(80).unwrap()),
         );
-        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[signer], mtb).unwrap());
+        assert!(
+            !ledger
+                .contains_conflict_hash(&cache, &hash, &[signer], mtb)
+                .unwrap()
+        );
 
         // A full transaction record under the hash is NOT a conflict
         // record (C#: `stub.Transaction is not null` → false).
@@ -1133,7 +1123,11 @@ mod tests {
                 serialize_persisted_transaction_state(95, VMState::HALT, &tx).unwrap(),
             ),
         );
-        assert!(!ledger.contains_conflict_hash(&cache, &hash, &[other], mtb).unwrap());
+        assert!(
+            !ledger
+                .contains_conflict_hash(&cache, &hash, &[other], mtb)
+                .unwrap()
+        );
     }
 
     #[test]

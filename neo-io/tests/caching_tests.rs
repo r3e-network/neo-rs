@@ -1,6 +1,4 @@
-use neo_io::{
-    Cache, FIFOCache, HashSetCache, InventoryHash, IoCache, RelayCache,
-};
+use neo_io::{Cache, FIFOCache, HashSetCache, InventoryHash, IoCache, RelayCache};
 use std::hash::{Hash, Hasher};
 
 #[test]

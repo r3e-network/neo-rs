@@ -12,8 +12,10 @@ read_only = false
 
 [p2p]
 listen_port = 20333
-max_connections = 50
-min_desired_connections = 5
+max_connections = 40
+min_desired_connections = 10
+max_connections_per_address = 3
+max_known_hashes = 1000
 seed_nodes = [
     "seed1t5.neo.org:20333",
     "seed2t5.neo.org:20333",
@@ -47,3 +49,4 @@ max_files = 5
 
 [blockchain]
 block_time = 15000  # 15 seconds in milliseconds
+max_transactions_per_block = 5000

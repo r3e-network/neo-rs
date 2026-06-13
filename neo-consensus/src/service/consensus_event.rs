@@ -32,4 +32,11 @@ pub enum ConsensusEvent {
         /// Maximum number of transactions to request.
         max_count: usize,
     },
+    /// Request the exact transactions referenced by a primary proposal.
+    RequestProposalTransactions {
+        /// Index of the block being validated.
+        block_index: u32,
+        /// Proposed transaction hashes to resolve locally.
+        transaction_hashes: Vec<UInt256>,
+    },
 }

@@ -1,6 +1,4 @@
-use super::{
-    read_only_store::ReadOnlyStoreGeneric, store::Store, write_store::WriteStore,
-};
+use super::{read_only_store::ReadOnlyStoreGeneric, store::Store, write_store::WriteStore};
 use crate::error::StorageError;
 use std::sync::Arc;
 

@@ -6,10 +6,9 @@
 //! mempool / network backends it needs to validate and persist
 //! blocks.
 //!
-//! Concrete implementations live in `neo-core` (the
-//! `NeoSystemContext` is the canonical one); the trait is defined
-//! here so the blockchain service can be unit-tested with a mock
-//! without depending on `neo-core`.
+//! Concrete implementations live in node and test contexts. The production
+//! daemon context in `neo-node` exposes the canonical store snapshot and commit
+//! hook, while tests can provide smaller in-memory contexts.
 //!
 //! The trait surface is intentionally narrow — it covers the
 //! operations the service *actually* uses. New methods can be added
@@ -44,7 +43,7 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// persistence pipeline ([`crate::native_persist::persist_block_natives`])
     /// against it for every persisted block; committing the snapshot to the
     /// backing store remains the implementation's responsibility.
-    fn store_snapshot(&self) -> Option<Arc<neo_data_cache::DataCache>> {
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
         None
     }
 

@@ -1,7 +1,7 @@
 pub mod cache;
-pub mod trackable;
 mod prefetch;
 mod storage_watch;
+pub mod trackable;
 
 pub use cache::{DataCache, OnEntryDelegate};
 pub use prefetch::PrefetchPattern;

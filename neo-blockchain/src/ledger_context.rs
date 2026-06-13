@@ -63,7 +63,7 @@ impl LedgerContext {
 
     /// Records a block and its header for quick access by hash or
     /// index.
-    pub fn insert_block(&self, mut block: Block) -> CoreResult<UInt256> {
+    pub fn insert_block(&self, block: Block) -> CoreResult<UInt256> {
         let header = block.header.clone();
         let index = header.index() as usize;
         let hash = block.try_hash()?;
@@ -194,7 +194,10 @@ mod tests {
     fn make_signed_transaction() -> Transaction {
         let mut tx = Transaction::new();
         tx.set_valid_until_block(10);
-        tx.add_signer(Signer::new(UInt160::default(), WitnessScope::CALLED_BY_ENTRY));
+        tx.add_signer(Signer::new(
+            UInt160::default(),
+            WitnessScope::CALLED_BY_ENTRY,
+        ));
         tx.add_witness(Witness::new());
         tx
     }

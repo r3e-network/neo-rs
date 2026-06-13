@@ -10,13 +10,13 @@
 // modifications are permitted.
 
 use super::{block::Block, header::Header};
+use bitvec::prelude::{BitVec, Lsb0};
 use neo_crypto::MerkleTree;
+use neo_error::CoreResult;
 use neo_io::serializable::helper::{
     deserialize_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
 };
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_error::CoreResult;
-use bitvec::prelude::{BitVec, Lsb0};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -113,11 +113,11 @@ fn pack_flags(flags: &[bool]) -> Vec<u8> {
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use super::{pack_flags, pad_flags, MerkleBlockPayload};
+    use super::{MerkleBlockPayload, pack_flags, pad_flags};
+    use crate::Witness;
     use crate::block::Block;
     use crate::signer::Signer;
     use crate::transaction::Transaction;
-    use neo_ledger_types::Witness;
     use neo_primitives::{UInt160, WitnessScope};
     use neo_vm_rs::OpCode;
 

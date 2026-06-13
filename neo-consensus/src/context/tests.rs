@@ -87,6 +87,24 @@ fn test_has_enough_responses() {
 }
 
 #[test]
+fn test_missing_proposed_transaction_tracking() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(0, validators, Some(1), Some(1_000));
+    let first = UInt256::from([0x01; 32]);
+    let second = UInt256::from([0x02; 32]);
+    let unrelated = UInt256::from([0x99; 32]);
+
+    ctx.proposed_tx_hashes = vec![first, second];
+    assert!(ctx.has_missing_proposed_transactions());
+
+    ctx.mark_available_transactions([first, unrelated]);
+    assert!(ctx.has_missing_proposed_transactions());
+
+    ctx.mark_available_transactions([first, second]);
+    assert!(!ctx.has_missing_proposed_transactions());
+}
+
+#[test]
 fn test_reset_for_new_view() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
@@ -106,16 +124,60 @@ fn test_reset_for_new_view() {
 }
 
 #[test]
+fn test_reset_for_new_block_initializes_last_seen_messages() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(0, validators, Some(2), None);
+
+    ctx.reset_for_new_block(10, 1_000);
+
+    assert_eq!(ctx.last_seen_messages.get(&0), Some(&9));
+    assert_eq!(ctx.last_seen_messages.get(&1), Some(&9));
+    assert_eq!(ctx.last_seen_messages.get(&2), Some(&10));
+    assert_eq!(ctx.last_seen_messages.get(&3), Some(&9));
+    assert_eq!(ctx.count_failed(), 0);
+}
+
+#[test]
+fn test_reset_for_new_block_preserves_last_seen_messages() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(0, validators, Some(2), None);
+
+    ctx.reset_for_new_block(10, 1_000);
+    ctx.last_seen_messages.insert(0, 10);
+    ctx.last_seen_messages.insert(1, 7);
+
+    ctx.reset_for_new_block(11, 2_000);
+
+    assert_eq!(ctx.last_seen_messages.get(&0), Some(&10));
+    assert_eq!(ctx.last_seen_messages.get(&1), Some(&7));
+    assert_eq!(ctx.last_seen_messages.get(&2), Some(&11));
+    assert_eq!(ctx.last_seen_messages.get(&3), Some(&9));
+    assert_eq!(ctx.count_failed(), 2);
+}
+
+#[test]
 fn test_timeout_calculation() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(0, validators, None, None);
 
     // View 0: base << 1 = 30s (matches C# shift by ViewNumber+1)
     assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2);
+    assert_eq!(ctx.prepare_request_delay(), BLOCK_TIME_MS);
+    assert_eq!(ctx.prepare_request_follow_up_delay(), BLOCK_TIME_MS);
+    assert_eq!(ctx.primary_timeout_delay(), BLOCK_TIME_MS * 2);
+    assert_eq!(ctx.commit_recovery_resend_delay(), BLOCK_TIME_MS * 2);
+    assert_eq!(ctx.change_view_retry_delay(), BLOCK_TIME_MS * 4);
+
+    ctx.view_start_time = 1_000;
+    assert!(!ctx.is_timed_out(1_000 + BLOCK_TIME_MS * 2 - 1));
+    assert!(ctx.is_timed_out(1_000 + BLOCK_TIME_MS * 2));
 
     // View 1: base << 2 = 60s
     ctx.view_number = 1;
     assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 4);
+    assert_eq!(ctx.prepare_request_delay(), BLOCK_TIME_MS);
+    assert_eq!(ctx.prepare_request_follow_up_delay(), BLOCK_TIME_MS * 4);
+    assert_eq!(ctx.primary_timeout_delay(), BLOCK_TIME_MS * 5);
 
     // View 2: base << 3 = 120s
     ctx.view_number = 2;

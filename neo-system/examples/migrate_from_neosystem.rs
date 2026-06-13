@@ -10,13 +10,13 @@
 //! `with_capacity()` / `channel()` constructors and the [`Node`]
 //! to show the migration path.
 
-use std::sync::Arc;
 use neo_blockchain::BlockchainHandle;
 use neo_config::ProtocolSettings;
 use neo_network::NetworkHandle;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;
 use neo_system::Node;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

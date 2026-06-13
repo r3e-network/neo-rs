@@ -1,5 +1,5 @@
 use super::super::utility::required_string;
-use neo_json::{JObject, JToken};
+use neo_serialization::json::{JObject, JToken};
 use neo_vm_rs::VmState;
 
 pub fn vm_state_to_string(state: VmState) -> String {
@@ -14,7 +14,8 @@ pub fn vm_state_from_str(value: &str) -> Option<VmState> {
     match normalized.as_str() {
         "HALT" => Some(VmState::Halt),
         "FAULT" => Some(VmState::Fault),
-        _ => None}
+        _ => None,
+    }
 }
 
 pub(super) fn parse_vm_state_field(json: &JObject, field: &str) -> Result<VmState, String> {
@@ -51,15 +52,15 @@ mod tests {
         assert!(vm_state_from_str("running").is_none());
         assert!(vm_state_from_str("paused").is_none());
         assert!(vm_state_from_str("unknown").is_none());
-   }
+    }
 
     #[test]
     fn vm_state_to_string_roundtrip() {
         for state in [VmState::Halt, VmState::Fault] {
             let text = vm_state_to_string(state);
             assert_eq!(vm_state_from_str(&text), Some(state));
-       }
-   }
+        }
+    }
 
     #[test]
     fn vm_state_field_helpers_preserve_rpc_errors_and_output() {
@@ -86,7 +87,7 @@ mod tests {
             parse_vm_state_field(&missing, "state").expect_err("missing VM state"),
             "Missing or invalid 'state' field"
         );
-   }
+    }
 
     #[test]
     fn gas_consumed_field_helpers_preserve_rpc_errors_and_output() {
@@ -116,5 +117,5 @@ mod tests {
             parse_gas_consumed_field(&missing).expect_err("missing gas consumed"),
             "Missing or invalid 'gasconsumed' field"
         );
-   }
+    }
 }

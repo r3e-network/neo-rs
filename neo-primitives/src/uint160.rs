@@ -67,6 +67,7 @@ impl UInt160 {
     #[allow(clippy::cast_possible_truncation)]
     #[allow(clippy::cast_possible_wrap)]
     #[must_use]
+    /// Returns the Neo-compatible 32-bit hash code for this value.
     pub const fn hash_code(&self) -> i32 {
         let v1_hash = (self.value1 as i32) ^ ((self.value1 >> 32) as i32);
         let v2_hash = (self.value2 as i32) ^ ((self.value2 >> 32) as i32);
@@ -147,9 +148,21 @@ mod tests {
 
     #[test]
     fn test_uint160_ordering() {
-        let uint1 = UInt160 { value1: 1, value2: 0, value3: 0 };
-        let uint2 = UInt160 { value1: 0, value2: 1, value3: 0 };
-        let uint3 = UInt160 { value1: 0, value2: 0, value3: 1 };
+        let uint1 = UInt160 {
+            value1: 1,
+            value2: 0,
+            value3: 0,
+        };
+        let uint2 = UInt160 {
+            value1: 0,
+            value2: 1,
+            value3: 0,
+        };
+        let uint3 = UInt160 {
+            value1: 0,
+            value2: 0,
+            value3: 1,
+        };
         assert!(uint3 > uint2);
         assert!(uint2 > uint1);
         assert!(uint3 > uint1);
@@ -157,9 +170,21 @@ mod tests {
 
     #[test]
     fn test_uint160_equals() {
-        let uint1 = UInt160 { value1: 1, value2: 2, value3: 3 };
-        let uint2 = UInt160 { value1: 1, value2: 2, value3: 3 };
-        let uint3 = UInt160 { value1: 1, value2: 2, value3: 4 };
+        let uint1 = UInt160 {
+            value1: 1,
+            value2: 2,
+            value3: 3,
+        };
+        let uint2 = UInt160 {
+            value1: 1,
+            value2: 2,
+            value3: 3,
+        };
+        let uint3 = UInt160 {
+            value1: 1,
+            value2: 2,
+            value3: 4,
+        };
         assert!(uint1.equals(Some(&uint2)));
         assert!(!uint1.equals(Some(&uint3)));
         assert!(!uint1.equals(None));
@@ -186,13 +211,22 @@ mod tests {
     #[test]
     fn address_matches_known_neo_vectors() {
         let vectors = [
-            ("0xb8a020fce295c9e36ab7ec3502c9ebbabf2d8878", "NWuHQdxabXPdC6vVwJhxjYELDQPqc1d4TG"),
-            ("0x3f699a30c273a1b39e1346dd63dfafa384977f94", "NZTA3PJBp9zYyj32Cozheuxqo7S1yqC9Vj"),
+            (
+                "0xb8a020fce295c9e36ab7ec3502c9ebbabf2d8878",
+                "NWuHQdxabXPdC6vVwJhxjYELDQPqc1d4TG",
+            ),
+            (
+                "0x3f699a30c273a1b39e1346dd63dfafa384977f94",
+                "NZTA3PJBp9zYyj32Cozheuxqo7S1yqC9Vj",
+            ),
         ];
         for (script_hash, address) in vectors {
             let script_hash = UInt160::parse(script_hash).unwrap();
             assert_eq!(script_hash.to_address(), address);
-            assert_eq!(UInt160::from_address(address).unwrap().to_hex_string(), script_hash.to_hex_string());
+            assert_eq!(
+                UInt160::from_address(address).unwrap().to_hex_string(),
+                script_hash.to_hex_string()
+            );
         }
     }
 

@@ -17,7 +17,6 @@ description = "Reth-style async service architecture for Neo (service traits, co
 # Foundation layer
 neo-primitives = { workspace = true }
 neo-payloads = { workspace = true }
-neo-ledger-types = { workspace = true }
 
 # External
 tokio = { workspace = true }

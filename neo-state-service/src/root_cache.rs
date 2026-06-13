@@ -9,15 +9,15 @@ use lru::LruCache;
 use neo_primitives::UInt256;
 use parking_lot::Mutex;
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Default capacity for the state root cache (matches C# default).
 pub const DEFAULT_ROOT_CACHE_CAPACITY: usize = 1000;
 
 /// Atomic counters for the cache's hit / miss / insertion / eviction
 /// ratios. Useful for observability and for the
-/// [`neo_state_types::StateRootIngestStats`] snapshot.
+/// [`crate::StateRootIngestStats`] snapshot.
 #[derive(Debug, Default)]
 pub struct StateRootCacheStats {
     /// Cache hits.

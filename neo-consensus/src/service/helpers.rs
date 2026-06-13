@@ -11,4 +11,4 @@ pub(in crate::service) use block::{
 pub(in crate::service) use signatures::{
     invocation_script_from_signature, signature_from_invocation_script,
 };
-pub(in crate::service) use time::{current_timestamp, generate_nonce};
+pub(in crate::service) use time::{current_timestamp, generate_nonce, prepare_request_timestamp};

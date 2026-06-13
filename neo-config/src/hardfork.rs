@@ -35,9 +35,9 @@
 //! The `Hardfork` enum is defined in [`neo_primitives`] and re-exported here.
 //! This module provides the `HardforkManager` for managing hardfork activation heights.
 
-use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 // Re-export Hardfork from neo-primitives (single source of truth)
 pub use neo_primitives::{Hardfork, HardforkParseError};
@@ -48,7 +48,8 @@ pub struct HardforkManager {
     hardforks: HashMap<Hardfork, u32>,
 }
 
-static INSTANCE: LazyLock<RwLock<HardforkManager>> = LazyLock::new(|| RwLock::new(HardforkManager::new()));
+static INSTANCE: LazyLock<RwLock<HardforkManager>> =
+    LazyLock::new(|| RwLock::new(HardforkManager::new()));
 
 impl HardforkManager {
     /// Returns every known hardfork in declaration order.
@@ -74,12 +75,10 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 5450000);
         hardforks.insert(Hardfork::HfDomovoi, 5570000);
         hardforks.insert(Hardfork::HfEchidna, 7300000);
-        // HfFaun and HfGorgon are defined in the Hardfork enum but are NOT
-        // scheduled on MainNet: C# v3.9.1 config.mainnet.json lists hardforks
-        // only through HF_Echidna. Scheduling them here would activate native
-        // changes (e.g. Treasury init, Policy scaling) that C# nodes do not
-        // perform, forking the chain. Heights must come from the loaded config.
-        // See: neo_csharp/src/Neo.CLI/config.mainnet.json
+        hardforks.insert(Hardfork::HfFaun, 8800000);
+        // HfGorgon is defined in the Hardfork enum but is not scheduled in
+        // Neo v3.10.0 MainNet config.
+        // See: neo-node v3.10.0 src/Neo.CLI/config.mainnet.json
         Self { hardforks }
     }
 
@@ -91,9 +90,10 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 3967000);
         hardforks.insert(Hardfork::HfDomovoi, 4144000);
         hardforks.insert(Hardfork::HfEchidna, 5870000);
-        // HfFaun and HfGorgon are defined in the Hardfork enum but are NOT
-        // scheduled on TestNet: C# v3.9.1 config.testnet.json lists hardforks
-        // only through HF_Echidna. See: neo_csharp/src/Neo.CLI/config.testnet.json
+        hardforks.insert(Hardfork::HfFaun, 12960000);
+        // HfGorgon is defined in the Hardfork enum but is not scheduled in
+        // Neo v3.10.0 TestNet config.
+        // See: neo-node v3.10.0 src/Neo.CLI/config.testnet.json
         Self { hardforks }
     }
 
@@ -188,8 +188,13 @@ mod tests {
         assert!(!manager.is_enabled(Hardfork::HfBasilisk, 4119999));
         assert!(manager.is_enabled(Hardfork::HfEchidna, 7300000));
         assert!(!manager.is_enabled(Hardfork::HfEchidna, 7299999));
-        // HfFaun/HfGorgon are unscheduled on MainNet (match C# config): never enabled.
-        assert!(!manager.is_enabled(Hardfork::HfFaun, u32::MAX));
+        assert!(manager.is_enabled(Hardfork::HfFaun, 8800000));
+        assert!(!manager.is_enabled(Hardfork::HfFaun, 8799999));
+        assert_eq!(
+            manager.get_hardforks().get(&Hardfork::HfFaun),
+            Some(&8_800_000)
+        );
+        // HfGorgon is not scheduled in Neo v3.10.0 MainNet config.
         assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
     }
     #[test]
@@ -201,8 +206,13 @@ mod tests {
         assert!(!manager.is_enabled(Hardfork::HfBasilisk, 2679999));
         assert!(manager.is_enabled(Hardfork::HfEchidna, 5870000));
         assert!(!manager.is_enabled(Hardfork::HfEchidna, 5869999));
-        // HfFaun/HfGorgon are unscheduled on TestNet (match C# config): never enabled.
-        assert!(!manager.is_enabled(Hardfork::HfFaun, u32::MAX));
+        assert!(manager.is_enabled(Hardfork::HfFaun, 12960000));
+        assert!(!manager.is_enabled(Hardfork::HfFaun, 12959999));
+        assert_eq!(
+            manager.get_hardforks().get(&Hardfork::HfFaun),
+            Some(&12_960_000)
+        );
+        // HfGorgon is not scheduled in Neo v3.10.0 TestNet config.
         assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
     }
     #[test]

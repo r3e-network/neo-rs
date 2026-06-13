@@ -112,7 +112,7 @@ single, widely-used canonical Witness home — not a dup).
 5 cross-crate `From<X>` impls (`neo-error/src/error.rs:487-525`):
 `StorageError`, `KeyBuilderError`, `VmError`, `ScriptBuilderError`,
 `RedeemScriptError`. So 20 crates depending on `neo-error` transitively pull in
-`neo-vm`/`neo-storage`/`neo-script-builder`/`neo-redeem-script`. There is an
+`neo-vm`/`neo-storage`/`neo-script-builder`. There is an
 **in-code TODO** (`error.rs:482-485`) to invert this: have each crate provide its
 own `From<LocalError> for neo_error::CoreError` and trim `neo-error`'s deps to
 `neo-primitives + neo-io`. Doing so realigns with reth's per-crate-error model.
@@ -122,7 +122,7 @@ Low risk (additive `From` impls), high tidiness payoff.
 
 - **`neo-smart-contract-types`** — pure facade of `neo-manifest`. **REMOVED ✅**
   (commit `f6971cf5`; was also a duplicate workspace member).
-- **`neo-data-cache`** (119 LOC) — re-exports `StorageKey`/`StorageItem`/
+- **`neo-storage`** (119 LOC) — re-exports `StorageKey`/`StorageItem`/
   `DataCache` from `neo-storage` (the canonical definitions). Unlike the above,
   it has **~8 crate dependents**, so elimination = repoint those to
   `neo_storage::*` (medium mechanical effort). Decide: keep as deliberate compat
@@ -140,7 +140,7 @@ intra-doc links (`[`neo_core::X`]`) that would warn under `cargo doc`.
 
 - `VerifyResult` (neo-block + neo-p2p) and `InventoryType` (neo-p2p) are **thin
   re-exports of the single `neo_primitives` source of truth** — not dups.
-- `neo-storage` / `neo-data-cache` / `neo-serialization` / `neo-storage-rocksdb`
+- `neo-storage` / `neo-storage` / `neo-serialization` / `neo-storage-rocksdb`
   have clean, non-overlapping responsibilities (types / facade / codecs+compression
   / backend). No duplicate definitions.
 - `neo-execution` vs `neo-native-contracts` vs `neo-manifest`: clean engine /
@@ -176,7 +176,7 @@ intra-doc links (`[`neo_core::X`]`) that would warn under `cargo doc`.
 6. **`NeoSystem → Node` migration** in neo-rpc (P1.1) — focused unit.
 7. **Extract `neo-rpc-types`** (P1) — break the 36.5K monolith.
 8. **Wire RPC + consensus into `neo-node`** (P1) + integration smoke test.
-9. **`neo-data-cache` decision** (P3).
+9. **`neo-storage` decision** (P3).
 10. **Native-contract parity pass** vs C# (§5).
 
 Consensus guard for every step touching ledger/payloads/native code: genesis

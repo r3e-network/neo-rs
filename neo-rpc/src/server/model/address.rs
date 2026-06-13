@@ -6,23 +6,25 @@ use neo_primitives::UInt160;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Address {
     script_hash: UInt160,
-    address_version: u8}
+    address_version: u8,
+}
 
 impl Address {
     #[must_use]
     pub const fn new(script_hash: UInt160, address_version: u8) -> Self {
         Self {
             script_hash,
-            address_version}
-   }
+            address_version,
+        }
+    }
 
     #[must_use]
     pub const fn script_hash(&self) -> &UInt160 {
         &self.script_hash
-   }
+    }
 
     #[must_use]
     pub const fn address_version(&self) -> u8 {
         self.address_version
-   }
+    }
 }

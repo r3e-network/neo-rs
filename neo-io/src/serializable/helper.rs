@@ -1,7 +1,7 @@
 //! Helper utilities mirroring C# Neo serialization helpers.
 
 use super::Serializable;
-use crate::{var_int, BinaryWriter, IoError, IoResult, MemoryReader};
+use crate::{BinaryWriter, IoError, IoResult, MemoryReader, var_int};
 
 /// Returns the number of bytes required to encode `value` using Neo variable-length encoding.
 #[inline]

@@ -25,9 +25,10 @@ use crate::hashes::GAS_TOKEN_HASH;
 
 /// The GAS account storage key `(GasToken.ID, [Prefix_Account, account])`.
 fn gas_account_key(account: &UInt160) -> StorageKey {
-    let mut key = vec![crate::NEP17_PREFIX_ACCOUNT];
-    key.extend_from_slice(&account.to_bytes());
-    StorageKey::new(GasToken::ID, key)
+    StorageKey::new(
+        GasToken::ID,
+        crate::keys::prefixed_with_hash160(crate::NEP17_PREFIX_ACCOUNT, account),
+    )
 }
 
 /// Reads the GAS account balance, or `None` when the account has no entry. The
@@ -130,7 +131,7 @@ fn post_transfer(
     amount: &BigInt,
     data: &[u8],
 ) -> CoreResult<()> {
-    let gas_hash = *GAS_HASH;
+    let gas_hash = GasToken::script_hash();
     engine
         .send_notification(
             gas_hash,
@@ -180,7 +181,9 @@ pub(crate) fn gas_mint(
     call_on_payment: bool,
 ) -> CoreResult<()> {
     if amount < &BigInt::zero() {
-        return Err(CoreError::invalid_operation("GasToken::mint: amount cannot be negative"));
+        return Err(CoreError::invalid_operation(
+            "GasToken::mint: amount cannot be negative",
+        ));
     }
     if amount.is_zero() {
         return Ok(());
@@ -194,7 +197,10 @@ pub(crate) fn gas_mint(
         .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
         .unwrap_or_else(BigInt::zero)
         + amount;
-    snapshot.update(supply_key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)));
+    snapshot.update(
+        supply_key,
+        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
+    );
     post_mint(engine, account, amount, call_on_payment)
 }
 
@@ -207,7 +213,7 @@ fn post_mint(
     amount: &BigInt,
     call_on_payment: bool,
 ) -> CoreResult<()> {
-    let gas_hash = *GAS_HASH;
+    let gas_hash = GasToken::script_hash();
     engine
         .send_notification(
             gas_hash,
@@ -229,7 +235,11 @@ fn post_mint(
         gas_hash,
         *account,
         "onNEP17Payment",
-        vec![StackItem::null(), StackItem::from_int(amount.clone()), StackItem::null()],
+        vec![
+            StackItem::null(),
+            StackItem::from_int(amount.clone()),
+            StackItem::null(),
+        ],
     );
     Ok(())
 }
@@ -249,7 +259,9 @@ pub(crate) fn gas_burn(
     amount: &BigInt,
 ) -> CoreResult<()> {
     if amount < &BigInt::zero() {
-        return Err(CoreError::invalid_operation("GasToken::burn: amount cannot be negative"));
+        return Err(CoreError::invalid_operation(
+            "GasToken::burn: amount cannot be negative",
+        ));
     }
     if amount.is_zero() {
         return Ok(());
@@ -272,10 +284,13 @@ pub(crate) fn gas_burn(
         .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
         .unwrap_or_else(BigInt::zero)
         - amount;
-    snapshot.update(supply_key, StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)));
+    snapshot.update(
+        supply_key,
+        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
+    );
     engine
         .send_notification(
-            *GAS_HASH,
+            GasToken::script_hash(),
             "Transfer".to_string(),
             vec![
                 StackItem::from_byte_string(account.to_bytes()),
@@ -286,9 +301,6 @@ pub(crate) fn gas_burn(
         .map_err(|e| CoreError::invalid_operation(format!("GasToken::burn notify: {e}")))
 }
 
-/// Lazily-initialised script-hash handle for the GAS native contract.
-pub static GAS_HASH: LazyLock<UInt160> = LazyLock::new(|| *GAS_TOKEN_HASH);
-
 /// The GasToken native contract.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct GasToken;
@@ -296,6 +308,8 @@ pub struct GasToken;
 impl GasToken {
     /// Stable native contract id (matches C# `GasToken`).
     pub const ID: i32 = -6;
+    /// Stable native contract name (matches C# `GasToken.Name`).
+    pub const NAME: &'static str = "GasToken";
     /// NEP-17 symbol (C# `GasToken.Symbol => "GAS"`).
     pub const SYMBOL: &'static str = "GAS";
     /// NEP-17 decimals (C# `GasToken.Decimals => 8`).
@@ -307,8 +321,13 @@ impl GasToken {
     }
 
     /// Returns the GAS script hash.
+    pub fn hash(&self) -> UInt160 {
+        Self::script_hash()
+    }
+
+    /// Returns the GAS script hash.
     pub fn script_hash() -> UInt160 {
-        *GAS_HASH
+        *GAS_TOKEN_HASH
     }
 
     /// Core NEP-17 transfer (C# `FungibleToken.Transfer`), shared by the `transfer`
@@ -373,8 +392,22 @@ static GAS_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
     vec![
         // NEP-17 metadata: `[ContractMethod]` with no CpuFee -> fee 0, no flags.
-        NativeMethod::new("symbol".into(), 0, true, 0, vec![], ContractParameterType::String),
-        NativeMethod::new("decimals".into(), 0, true, 0, vec![], ContractParameterType::Integer),
+        NativeMethod::new(
+            "symbol".into(),
+            0,
+            true,
+            0,
+            vec![],
+            ContractParameterType::String,
+        ),
+        NativeMethod::new(
+            "decimals".into(),
+            0,
+            true,
+            0,
+            vec![],
+            ContractParameterType::Integer,
+        ),
         // NEP-17 state reads: CpuFee 1<<15, RequiredCallFlags ReadStates.
         NativeMethod::new(
             "totalSupply".into(),
@@ -424,13 +457,12 @@ impl NativeContract for GasToken {
     }
 
     fn hash(&self) -> UInt160 {
-        *GAS_HASH
+        Self::script_hash()
     }
 
     fn name(&self) -> &str {
-        "GasToken"
+        Self::NAME
     }
-
 
     fn methods(&self) -> &[NativeMethod] {
         &GAS_METHODS
@@ -442,11 +474,7 @@ impl NativeContract for GasToken {
 
     /// C# `FungibleToken.OnManifestCompose` (FungibleToken.cs:68-71): every
     /// fungible token declares NEP-17 unconditionally.
-    fn supported_standards(
-        &self,
-        _settings: &ProtocolSettings,
-        _block_height: u32,
-    ) -> Vec<String> {
+    fn supported_standards(&self, _settings: &ProtocolSettings, _block_height: u32) -> Vec<String> {
         vec!["NEP-17".to_string()]
     }
 
@@ -558,41 +586,32 @@ impl NativeContract for GasToken {
             "decimals" => Ok(BigInt::from(Self::DECIMALS).to_signed_bytes_le()),
             "totalSupply" => {
                 let snapshot = engine.snapshot_cache();
-                let total =
-                    crate::read_storage_int(&snapshot, Self::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY, 0)?;
+                let total = crate::read_storage_int(
+                    &snapshot,
+                    Self::ID,
+                    crate::NEP17_PREFIX_TOTAL_SUPPLY,
+                    0,
+                )?;
                 Ok(BigInt::from(total).to_signed_bytes_le())
             }
             "balanceOf" => {
-                let account_bytes = args.first().ok_or_else(|| {
-                    CoreError::invalid_operation("GasToken::balanceOf requires an account")
-                })?;
-                let account = UInt160::from_bytes(account_bytes).map_err(|e| {
-                    CoreError::invalid_operation(format!("GasToken::balanceOf: bad account: {e}"))
-                })?;
+                let account = crate::args::raw_account(args, "GasToken::balanceOf")?;
                 let snapshot = engine.snapshot_cache();
                 Ok(crate::read_nep17_balance(&snapshot, Self::ID, &account)?.to_signed_bytes_le())
             }
             "transfer" => {
                 // C# FungibleToken.Transfer(from, to, amount, data).
-                let from = UInt160::from_bytes(args.first().ok_or_else(|| {
-                    CoreError::invalid_operation("GasToken::transfer requires a from account")
-                })?)
-                .map_err(|e| {
-                    CoreError::invalid_operation(format!("GasToken::transfer: bad from: {e}"))
-                })?;
-                let to = UInt160::from_bytes(args.get(1).ok_or_else(|| {
-                    CoreError::invalid_operation("GasToken::transfer requires a to account")
-                })?)
-                .map_err(|e| {
-                    CoreError::invalid_operation(format!("GasToken::transfer: bad to: {e}"))
-                })?;
+                let from = crate::args::raw_hash160(args, 0, "GasToken::transfer")?;
+                let to = crate::args::raw_hash160(args, 1, "GasToken::transfer")?;
                 let amount = BigInt::from_signed_bytes_le(args.get(2).ok_or_else(|| {
                     CoreError::invalid_operation("GasToken::transfer requires an amount")
                 })?);
                 let data = args.get(3).map(Vec::as_slice).unwrap_or(&[]);
                 // The witness bypass uses the engine's calling script hash
                 // (C# `from.Equals(CallingScriptHash)`).
-                let caller = engine.get_calling_script_hash().unwrap_or_else(UInt160::zero);
+                let caller = engine
+                    .get_calling_script_hash()
+                    .unwrap_or_else(UInt160::zero);
                 Ok(vec![u8::from(Self::transfer_core(
                     engine, caller, &from, &to, &amount, data,
                 )?)])
@@ -611,11 +630,11 @@ mod tests {
     #[test]
     fn native_contract_surface() {
         let c = GasToken::new();
-        assert_eq!(NativeContract::id(&c), -6);
-        assert_eq!(NativeContract::name(&c), "GasToken");
-        assert_eq!(NativeContract::hash(&c), *GAS_TOKEN_HASH);
         let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["symbol", "decimals", "totalSupply", "balanceOf", "transfer"]);
+        assert_eq!(
+            names,
+            ["symbol", "decimals", "totalSupply", "balanceOf", "transfer"]
+        );
         // Metadata getters are zero-fee; the state reads are ReadStates getters.
         let symbol = c.methods().iter().find(|m| m.name == "symbol").unwrap();
         assert!(symbol.safe && symbol.cpu_fee == 0 && symbol.required_call_flags == 0);
@@ -767,11 +786,17 @@ mod tests {
         assert!(gas_burn(&mut engine, &account, &BigInt::from(-1)).is_err());
         gas_burn(&mut engine, &account, &BigInt::from(0)).unwrap();
         assert!(engine.notifications().is_empty());
-        assert_eq!(read_gas_account(&snapshot, &account).unwrap(), Some(BigInt::from(100)));
+        assert_eq!(
+            read_gas_account(&snapshot, &account).unwrap(),
+            Some(BigInt::from(100))
+        );
 
         // Partial burn: balance and supply shrink, Transfer(account, null, 30).
         gas_burn(&mut engine, &account, &BigInt::from(30)).unwrap();
-        assert_eq!(read_gas_account(&snapshot, &account).unwrap(), Some(BigInt::from(70)));
+        assert_eq!(
+            read_gas_account(&snapshot, &account).unwrap(),
+            Some(BigInt::from(70))
+        );
         assert_eq!(
             BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
             BigInt::from(70)
@@ -780,7 +805,10 @@ mod tests {
 
         // Over-burn -> fault, state unchanged.
         assert!(gas_burn(&mut engine, &account, &BigInt::from(71)).is_err());
-        assert_eq!(read_gas_account(&snapshot, &account).unwrap(), Some(BigInt::from(70)));
+        assert_eq!(
+            read_gas_account(&snapshot, &account).unwrap(),
+            Some(BigInt::from(70))
+        );
 
         // Full burn deletes the account entry; the supply reaches zero (stored
         // as the canonical empty-bytes BigInteger).
@@ -806,52 +834,7 @@ mod persist_tests {
     use neo_payloads::{Block, Header, NotaryAssisted, Signer, Transaction};
     use neo_primitives::{TriggerType, WitnessScope};
 
-    /// C# `NeoToken.Prefix_Committee`.
-    const NEO_PREFIX_COMMITTEE: u8 = 14;
-    /// C# `PolicyContract.Prefix_AttributeFee` (PolicyContract.cs:95).
-    const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
-
-    fn hex(s: &str) -> Vec<u8> {
-        (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect()
-    }
-
-    /// Three valid secp256r1 public keys (Neo N3 standby validators).
-    fn sample_committee() -> Vec<ECPoint> {
-        [
-            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
-            "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093",
-            "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
-        ]
-        .iter()
-        .map(|h| ECPoint::from_bytes(&hex(h)).unwrap())
-        .collect()
-    }
-
-    /// Stores NeoToken's committee cache (Array of `Struct[pubkey, votes]`)
-    /// under `Prefix_Committee` so `next_block_validators` can resolve the
-    /// validator set, like a persisted chain would have.
-    fn seed_committee(cache: &DataCache, points: &[ECPoint]) {
-        let array = StackItem::from_array(
-            points
-                .iter()
-                .map(|p| {
-                    StackItem::from_struct(vec![
-                        StackItem::from_byte_string(p.to_bytes()),
-                        StackItem::from_int(0),
-                    ])
-                })
-                .collect::<Vec<_>>(),
-        );
-        let bytes =
-            BinarySerializer::serialize(&array, &ExecutionEngineLimits::default()).unwrap();
-        cache.add(
-            StorageKey::new(crate::NeoToken::ID, vec![NEO_PREFIX_COMMITTEE]),
-            StorageItem::from_bytes(bytes),
-        );
-    }
+    use crate::test_support::{hex, sample_committee, seed_committee, NEO_PREFIX_COMMITTEE, POLICY_PREFIX_ATTRIBUTE_FEE};
 
     /// The signature-contract address of `points[primary]` after the C#
     /// `GetNextBlockValidators` ordering (take ValidatorsCount, sort ascending).
@@ -925,7 +908,11 @@ mod persist_tests {
 
         let bft = crate::neo_token::bft_address(&settings.standby_validators()).unwrap();
         let expected = BigInt::from(settings.initial_gas_distribution);
-        assert_eq!(balance(&snapshot, &bft), expected, "52M GAS to the BFT address");
+        assert_eq!(
+            balance(&snapshot, &bft),
+            expected,
+            "52M GAS to the BFT address"
+        );
         let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
         assert_eq!(
             BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
@@ -936,7 +923,10 @@ mod persist_tests {
         let transfer = &engine.notifications()[0];
         assert_eq!(transfer.event_name, "Transfer");
         assert_eq!(transfer.script_hash, GasToken::script_hash());
-        assert!(matches!(transfer.state[0], StackItem::Null), "from = null (mint)");
+        assert!(
+            matches!(transfer.state[0], StackItem::Null),
+            "from = null (mint)"
+        );
         assert_eq!(transfer.state[1].as_bytes().unwrap(), bft.to_bytes());
         assert_eq!(transfer.state[2].as_int().unwrap(), expected);
     }
@@ -1084,7 +1074,10 @@ mod persist_tests {
         let block = Block::from_parts(header, Vec::new());
         let mut engine = on_persist_engine(Arc::clone(&snapshot), block);
         NativeContract::on_persist(&GasToken::new(), &mut engine).expect("on_persist");
-        assert!(engine.notifications().is_empty(), "no Transfer for a zero mint");
+        assert!(
+            engine.notifications().is_empty(),
+            "no Transfer for a zero mint"
+        );
         let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
         assert!(snapshot.get(&supply_key).is_none(), "supply untouched");
     }

@@ -93,9 +93,7 @@ pub enum CoreError {
     },
 
     /// Buffer overflow or underflow
-    #[error(
-        "Buffer overflow: attempted to read {requested} bytes, but only {available} available"
-    )]
+    #[error("Buffer overflow: attempted to read {requested} bytes, but only {available} available")]
     BufferOverflow {
         /// Amount of space requested
         requested: usize,
@@ -342,6 +340,7 @@ impl CoreError {
         }
     }
 
+    /// Create a validation-failed error.
     pub fn validation_failed<S: Into<String>>(reason: S) -> Self {
         Self::ValidationFailed {
             reason: reason.into(),
@@ -435,6 +434,7 @@ pub type Result<T, E = CoreError> = std::result::Result<T, E>;
 /// This eliminates the repetitive `.map_err(CoreError::native_contract)?`
 /// pattern found throughout native contract implementations.
 pub trait ToNativeError<T> {
+    /// Converts this result's error into [`CoreError::Execution`].
     fn native_err(self) -> CoreResult<T>;
 }
 
@@ -472,16 +472,16 @@ impl From<PrimitiveError> for CoreError {
 // NOTE: cross-crate `From<OtherError> for CoreError` impls (for
 // `neo_storage::StorageError`, `neo_vm::VmError`,
 // `neo_script_builder::ScriptBuilderError`, and
-// `neo_redeem_script::RedeemScriptError`) used to live here when `CoreError`
+// `neo_script_builder::RedeemScriptError`) used to live here when `CoreError`
 // was owned by the `neo-core` monolith. They were removed when `CoreError`
 // was extracted into the `neo-error` foundation crate, because a Layer 0
 // crate must not depend on Layer 1+ crates. Each owning crate must provide
 // its own `impl From<its_error> for neo_error::CoreError` instead — see
-// `neo-storage`, `neo-vm`, `neo-script-builder`, and `neo-redeem-script`.
+// `neo-storage`, `neo-vm`, and `neo-script-builder`.
 
 // The cross-crate `From<OtherError> for CoreError` impls now live in their
-// owning crates (`neo-storage`, `neo-vm`, `neo-script-builder`,
-// `neo-redeem-script`), each implementing `From<LocalError> for
+// owning crates (`neo-storage`, `neo-vm`, `neo-script-builder`), each
+// implementing `From<LocalError> for
 // neo_error::CoreError`. This keeps `neo-error` at the foundation layer
 // (it depends only on `neo-primitives` + `neo-io`), per the reth-style
 // per-crate error model.

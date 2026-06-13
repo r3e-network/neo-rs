@@ -20,7 +20,7 @@ use num_bigint::BigInt;
 use std::fmt;
 use std::sync::Arc;
 
-use super::vm_integer::{vm_integer_stack_value, VmInteger};
+use super::vm_integer::{VmInteger, vm_integer_stack_value};
 
 /// A trait for interop interfaces that can be wrapped by a stack item.
 pub trait InteropInterface: fmt::Debug + Send + Sync {
@@ -89,12 +89,12 @@ fn equals_plain(a: &StackItem, b: &StackItem) -> bool {
         (StackItem::InteropInterface(x), StackItem::InteropInterface(y)) => Arc::ptr_eq(x, y),
         (StackItem::Buffer(x), StackItem::Buffer(y)) => x.id() == y.id(),
         // Array/Map/Struct fall back to the base `ReferenceEquals` (identity).
-        (StackItem::Array(_), _)
-        | (StackItem::Struct(_), _)
-        | (StackItem::Map(_), _) => match (compound_identity(a), compound_identity(b)) {
-            (Some(ia), Some(ib)) => ia == ib,
-            _ => false,
-        },
+        (StackItem::Array(_), _) | (StackItem::Struct(_), _) | (StackItem::Map(_), _) => {
+            match (compound_identity(a), compound_identity(b)) {
+                (Some(ia), Some(ib)) => ia == ib,
+                _ => false,
+            }
+        }
         _ => false,
     }
 }
@@ -118,9 +118,7 @@ fn byte_string_size_eq_with_budget(
     let mut compared_size: u64 = 1;
     let result = match other {
         StackItem::ByteString(b) => {
-            compared_size = compared_size
-                .max(a_size)
-                .max(b.len() as u64);
+            compared_size = compared_size.max(a_size).max(b.len() as u64);
             if (b.len() as u64) > u64::from(*limits) {
                 // Decrement still runs in C#'s `finally` before the throw propagates,
                 // but the throw fails the engine regardless, so surface the fault here.
@@ -700,7 +698,7 @@ impl StackItem {
                 );
             }
             (Self::Null, StackItemType::ByteString) => {
-                return Ok(Self::ByteString(self.as_bytes()?))
+                return Ok(Self::ByteString(self.as_bytes()?));
             }
             (Self::Null, StackItemType::Buffer) => {
                 return Ok(Self::Buffer(BufferItem::new(self.as_bytes()?)));
@@ -789,9 +787,9 @@ impl StackItem {
             }
             count -= 1;
 
-            let b = stack2
-                .pop()
-                .ok_or_else(|| VmError::invalid_operation_msg("Struct comparison stack underflow"))?;
+            let b = stack2.pop().ok_or_else(|| {
+                VmError::invalid_operation_msg("Struct comparison stack underflow")
+            })?;
 
             if let Self::ByteString(bytes) = &a {
                 if !byte_string_size_eq_with_budget(bytes, &b, &mut max_comparable_size)? {
@@ -1427,12 +1425,16 @@ mod tests {
         // Dispatch is on self's type: ByteString.Equals(Integer) is also false.
         assert!(!bytes_one.equals_with_limits(&int_one, &limits).unwrap());
         // Same-type value equality still holds.
-        assert!(int_one
-            .equals_with_limits(&StackItem::from_int(1), &limits)
-            .unwrap());
-        assert!(bytes_one
-            .equals_with_limits(&StackItem::from_byte_string(vec![1u8]), &limits)
-            .unwrap());
+        assert!(
+            int_one
+                .equals_with_limits(&StackItem::from_int(1), &limits)
+                .unwrap()
+        );
+        assert!(
+            bytes_one
+                .equals_with_limits(&StackItem::from_byte_string(vec![1u8]), &limits)
+                .unwrap()
+        );
     }
 
     #[test]

@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::{parse_optional_string_array_strict, token_array};
-use neo_json::{JObject, JToken};
+use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
 /// Plugin information matching C# `RpcPlugin`
@@ -27,7 +27,8 @@ pub struct RpcPlugin {
 
     /// Optional category provided by newer nodes (e.g., "Consensus", "Rpc").
     #[serde(default)]
-    pub category: Option<String>}
+    pub category: Option<String>,
+}
 
 impl RpcPlugin {
     /// Converts to JSON
@@ -44,22 +45,22 @@ impl RpcPlugin {
         );
         if let Some(category) = &self.category {
             json.insert("category".to_string(), JToken::String(category.clone()));
-       }
+        }
 
         json
-   }
+    }
 
     /// Creates from JSON
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let name = json
             .get("name")
-            .and_then(neo_json::JToken::as_string)
+            .and_then(neo_serialization::json::JToken::as_string)
             .ok_or("Missing or invalid 'name' field")?;
 
         let version = json
             .get("version")
-            .and_then(neo_json::JToken::as_string)
+            .and_then(neo_serialization::json::JToken::as_string)
             .ok_or("Missing or invalid 'version' field")?;
 
         let interfaces = parse_optional_string_array_strict(
@@ -68,21 +69,24 @@ impl RpcPlugin {
             "Interface entry must be a string",
         )?;
 
-        let category = json.get("category").and_then(neo_json::JToken::as_string);
+        let category = json
+            .get("category")
+            .and_then(neo_serialization::json::JToken::as_string);
 
         Ok(Self {
             name,
             version,
             interfaces,
-            category})
-   }
+            category,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_fixtures::rpc_case_result_array;
-    use neo_json::{JArray, JToken};
+    use super::*;
+    use neo_serialization::json::{JArray, JToken};
 
     #[test]
     fn rpc_plugin_roundtrip() {
@@ -90,7 +94,8 @@ mod tests {
             name: "RpcServer".into(),
             version: "1.0.0".into(),
             interfaces: vec!["ISmartContract".into(), "IBlock".into()],
-            category: Some("Rpc".into())};
+            category: Some("Rpc".into()),
+        };
 
         let json = plugin.to_json();
         let parsed = RpcPlugin::from_json(&json).expect("plugin");
@@ -98,7 +103,7 @@ mod tests {
         assert_eq!(parsed.version, plugin.version);
         assert_eq!(parsed.interfaces, plugin.interfaces);
         assert_eq!(parsed.category, plugin.category);
-   }
+    }
 
     #[test]
     fn rpc_plugin_defaults_to_empty_interfaces() {
@@ -113,7 +118,7 @@ mod tests {
         json.insert("interfaces".to_string(), JToken::Boolean(true));
         let parsed = RpcPlugin::from_json(&json).expect("plugin");
         assert!(parsed.interfaces.is_empty());
-   }
+    }
 
     #[test]
     fn rpc_plugin_rejects_empty_or_non_string_interface_entries() {
@@ -133,13 +138,13 @@ mod tests {
         );
         let err = RpcPlugin::from_json(&json).expect_err("non-string should fail");
         assert_eq!(err, "Interface entry must be a string");
-   }
+    }
 
     #[test]
     fn plugins_to_json_matches_rpc_test_case() {
         let Some(expected) = rpc_case_result_array("listpluginsasync") else {
             return;
-       };
+        };
         let parsed = expected
             .children()
             .iter()
@@ -154,5 +159,5 @@ mod tests {
                 .collect::<Vec<_>>(),
         );
         assert_eq!(expected.to_string(), actual.to_string());
-   }
+    }
 }

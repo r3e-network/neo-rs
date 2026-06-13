@@ -1,11 +1,11 @@
 //! ExecutionContextState - matches C# Neo.SmartContract.ExecutionContextState exactly
 
-use neo_data_cache::DataCache;
+use crate::contract_state::ContractState;
 use neo_manifest::CallFlags;
 use neo_primitives::ContractParameterType;
-use crate::contract_state::ContractState;
-use neo_vm::ExecutionContext;
 use neo_primitives::UInt160;
+use neo_storage::DataCache;
+use neo_vm::ExecutionContext;
 use std::sync::Arc;
 
 /// State associated with an execution context (matches C# ExecutionContextState)
@@ -76,4 +76,4 @@ impl ExecutionContextState {
     }
 }
 
-crate::impl_default_via_new!(ExecutionContextState);
+neo_io::impl_default_via_new!(ExecutionContextState);

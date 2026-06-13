@@ -49,8 +49,9 @@ pub mod validator_attribute;
 
 pub use call_flags::CallFlags;
 pub use manifest::{
-    ContractAbi, ContractEventDescriptor, ContractGroup, ContractManifest, ContractMethodDescriptor,
-    ContractParameterDefinition, ContractPermission, ContractPermissionDescriptor, WildCardContainer,
+    ContractAbi, ContractEventDescriptor, ContractGroup, ContractManifest,
+    ContractMethodDescriptor, ContractParameterDefinition, ContractPermission,
+    ContractPermissionDescriptor, WildCardContainer,
 };
 pub use method_token::MethodToken;
 pub use nef_file::NefFile;

@@ -64,7 +64,7 @@ use neo_runtime::{NetworkEvent as RuntimeNetworkEvent, NetworkService, Service, 
 use crate::command::NetworkCommand;
 use crate::error::{NetworkError, NetworkResult};
 use crate::event::NetworkEvent;
-use crate::handle::{NetworkHandle, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY};
+use crate::handle::{DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, NetworkHandle};
 use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
 use crate::peer_registry::PeerRegistry;
@@ -382,7 +382,7 @@ impl LocalNodeService {
     /// payloads are small (< the compression minimum), so it is sent
     /// uncompressed for a deterministic frame.
     async fn handle_broadcast_extensible(&self, payload: &neo_payloads::ExtensiblePayload) {
-        let frame = match neo_wire::Message::create(
+        let frame = match crate::wire::Message::create(
             neo_p2p::MessageCommand::Extensible,
             Some(payload),
             false,
@@ -419,7 +419,7 @@ impl LocalNodeService {
             return;
         }
         for group in neo_p2p::payloads::InvPayload::create_group(inventory_type, hashes) {
-            let frame = match neo_wire::Message::create(
+            let frame = match crate::wire::Message::create(
                 neo_p2p::MessageCommand::Inv,
                 Some(&group),
                 false,

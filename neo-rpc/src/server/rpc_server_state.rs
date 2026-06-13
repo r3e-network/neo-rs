@@ -26,10 +26,10 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Trie};
 use neo_execution::contract_state::ContractState;
 use neo_io::MemoryReader;
+use neo_primitives::{UInt160, UInt256};
 use neo_state_service::mpt_store::{MptReadSnapshot, MptStore};
 use neo_state_service::state_store::StateStoreLookup;
 use neo_state_service::{StateRoot, StateStore};
-use neo_primitives::{UInt160, UInt256};
 use serde_json::{Map, Value, json};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -86,23 +86,22 @@ impl RpcServerState {
             "getstate" => Self::get_state,
             "findstates" => Self::find_states,
         ]
-   }
+    }
 
     fn state_store(server: &RpcServer) -> Result<Arc<StateStore>, RpcException> {
         server.system().state_store().ok_or_else(|| {
             RpcException::from(
-                RpcError::internal_server_error()
-                    .with_data("StateService service not registered"),
+                RpcError::internal_server_error().with_data("StateService service not registered"),
             )
-       })
-   }
+        })
+    }
 
     /// Resolves the persisted MPT backend, or reports the same
     /// `UnsupportedState` error the MPT-less build always served.
     fn mpt_store(server: &RpcServer) -> Result<Arc<MptStore>, RpcException> {
         let state_store = Self::state_store(server)?;
         state_store.mpt().ok_or_else(Self::proofs_unsupported)
-   }
+    }
 
     fn get_state_height(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let state_store = Self::state_store(server)?;
@@ -114,7 +113,7 @@ impl RpcServerState {
         Ok(json!({
             "localrootindex": index,
             "validatedrootindex": index}))
-   }
+    }
 
     fn get_state_root(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let index = Self::expect_u32(params, 0, "getstateroot")?;
@@ -123,7 +122,7 @@ impl RpcServerState {
             .get_state_root(StateStoreLookup::ByBlockIndex(index))
             .ok_or_else(|| RpcException::from(RpcError::unknown_state_root()))?;
         Ok(Self::state_root_to_json(&state_root))
-   }
+    }
 
     /// `getproof(roothash, scripthash, key)` — C#
     /// `StatePlugin.GetProof`: resolves the contract id under the
@@ -145,23 +144,24 @@ impl RpcServerState {
         let contract_id = Self::historical_contract_id(&mut trie, &script_hash)?;
         let payload = Self::proof_payload(&mut trie, contract_id, &key)?;
         Ok(Value::String(payload))
-   }
+    }
 
     fn verify_proof(_server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let root_hash = Self::parse_uint256(params, 0, "verifyproof")?;
         let proof_bytes = Self::parse_base64(params, 1, "verifyproof", "Base64 proof payload")?;
         let (key, nodes) = Self::decode_proof_payload(&proof_bytes).ok_or_else(|| {
             RpcException::from(RpcError::invalid_params().with_data("invalid proof payload"))
-       })?;
+        })?;
         let proof: HashSet<Vec<u8>> = nodes.into_iter().collect();
-        let value = Trie::<ProofVerifySnapshot>::verify_proof(root_hash, &key, &proof).map_err(|_| {
-            RpcException::from(
-                RpcError::verification_failed()
-                    .with_data("failed to verify state proof against supplied root"),
-            )
-       })?;
+        let value =
+            Trie::<ProofVerifySnapshot>::verify_proof(root_hash, &key, &proof).map_err(|_| {
+                RpcException::from(
+                    RpcError::verification_failed()
+                        .with_data("failed to verify state proof against supplied root"),
+                )
+            })?;
         Ok(Value::String(BASE64_STANDARD.encode(value)))
-   }
+    }
 
     /// `getstate(roothash, scripthash, key)` — C# `StatePlugin.GetState`:
     /// resolves the value stored under the historical root and returns
@@ -188,7 +188,7 @@ impl RpcServerState {
             .map_err(|err| Self::trie_lookup_error("getstate", &err))?
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
         Ok(Value::String(BASE64_STANDARD.encode(value)))
-   }
+    }
 
     /// `findstates(roothash, scripthash, prefix, [key], [count])` — C#
     /// `StatePlugin.FindStates`: enumerates storage entries under
@@ -266,7 +266,7 @@ impl RpcServerState {
             ),
         );
         Ok(Value::Object(response))
-   }
+    }
 
     /// C# `StatePlugin.CheckRootHash`: without `FullState`, only the
     /// current local root may be queried (`UnsupportedState`
@@ -292,7 +292,7 @@ impl RpcServerState {
             )));
         }
         Ok(())
-   }
+    }
 
     /// C# `StatePlugin.GetHistoricalContractState`: reads the
     /// `ContractManagement` per-contract record
@@ -317,9 +317,9 @@ impl RpcServerState {
                 RpcError::internal_server_error()
                     .with_data(format!("malformed contract record in state trie: {err}")),
             )
-       })?;
+        })?;
         Ok(contract.id)
-   }
+    }
 
     /// C# `StatePlugin.GetProof(Trie, int, byte[])`: builds the proof
     /// for `(contract_id, key)` and serializes the payload
@@ -336,7 +336,7 @@ impl RpcServerState {
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
         let nodes: Vec<Vec<u8>> = proof.into_iter().collect();
         Ok(BASE64_STANDARD.encode(Self::encode_proof_payload(&storage_key, &nodes)))
-   }
+    }
 
     /// Serializes `(contract_id, key)` as the C# `StorageKey.ToArray()`
     /// bytes the state trie is keyed by: little-endian `i32` id + key.
@@ -345,7 +345,7 @@ impl RpcServerState {
         bytes.extend_from_slice(&contract_id.to_le_bytes());
         bytes.extend_from_slice(key);
         bytes
-   }
+    }
 
     /// Maps a trie resolution failure (e.g. a root hash this store has
     /// never persisted) to an internal error.
@@ -359,7 +359,7 @@ impl RpcServerState {
             RpcError::internal_server_error()
                 .with_data(format!("{context}: MPT resolution failed: {err}")),
         )
-   }
+    }
 
     /// Maps `Trie::find` argument failures (`from` not under the
     /// prefix, oversized keys) to `InvalidParams`; anything else is a
@@ -371,7 +371,7 @@ impl RpcServerState {
             }
             other => Self::trie_lookup_error("findstates", &other),
         }
-   }
+    }
 
     /// The state-root cache does not persist the MPT trie, so queries
     /// that must walk historical tries cannot be answered.
@@ -380,7 +380,7 @@ impl RpcServerState {
             "the state service in this build records validated state roots only and does not \
              persist the MPT trie required for state/proof queries",
         ))
-   }
+    }
 
     /// Decodes the C# StateService proof payload: `VarBytes(key)` then
     /// `VarInt(count)` proof nodes, each `VarBytes`.
@@ -391,9 +391,9 @@ impl RpcServerState {
         let mut nodes = Vec::with_capacity(usize::try_from(count).ok()?);
         for _ in 0..count {
             nodes.push(reader.read_var_bytes(MAX_PROOF_NODE_LENGTH).ok()?);
-       }
+        }
         Some((key, nodes))
-   }
+    }
 
     /// Encodes the C# StateService proof payload (the inverse of
     /// [`Self::decode_proof_payload`]): `WriteVarBytes(storage_key)`,
@@ -405,9 +405,9 @@ impl RpcServerState {
         let _ = writer.write_var_int(nodes.len() as u64);
         for node in nodes {
             let _ = writer.write_var_bytes(node);
-       }
+        }
         writer.into_bytes()
-   }
+    }
 
     fn parse_uint256(params: &[Value], idx: usize, method: &str) -> Result<UInt256, RpcException> {
         let value = params.get(idx).and_then(Value::as_str).ok_or_else(|| {
@@ -415,13 +415,13 @@ impl RpcServerState {
                 RpcError::invalid_params()
                     .with_data(format!("{method} expects UInt256 parameter at index {idx}")),
             )
-       })?;
+        })?;
         UInt256::parse(value).map_err(|_| {
             RpcException::from(
                 RpcError::invalid_params().with_data("failed to parse UInt256 parameter"),
             )
-       })
-   }
+        })
+    }
 
     fn parse_uint160(params: &[Value], idx: usize, method: &str) -> Result<UInt160, RpcException> {
         let value = params.get(idx).and_then(Value::as_str).ok_or_else(|| {
@@ -429,13 +429,13 @@ impl RpcServerState {
                 RpcError::invalid_params()
                     .with_data(format!("{method} expects UInt160 parameter at index {idx}")),
             )
-       })?;
+        })?;
         UInt160::parse(value).map_err(|_| {
             RpcException::from(
                 RpcError::invalid_params().with_data("failed to parse UInt160 parameter"),
             )
-       })
-   }
+        })
+    }
 
     fn parse_base64(
         params: &[Value],
@@ -448,7 +448,7 @@ impl RpcServerState {
             idx,
             format!("{method} expects {descriptor} at index {idx}"),
         )
-   }
+    }
 
     /// Parses an optional Base64 parameter: absent or `null` maps to
     /// `None` (the C# binder's `byte[] key = null` default).
@@ -462,7 +462,7 @@ impl RpcServerState {
             None | Some(Value::Null) => Ok(None),
             Some(_) => Self::parse_base64(params, idx, method, descriptor).map(Some),
         }
-   }
+    }
 
     /// Parses the optional `findstates` count with the C# binder's
     /// accepting behaviour: absent or `null` falls back to the C#
@@ -479,7 +479,7 @@ impl RpcServerState {
             return Ok(MAX_FIND_RESULT_ITEMS);
         }
         Ok((requested as usize).min(MAX_FIND_RESULT_ITEMS))
-   }
+    }
 
     /// C# `ParameterConverter.ToNumeric<int>` (ParameterConverter.cs):
     /// funnels the token through `JToken.AsNumber()` and requires the
@@ -494,8 +494,7 @@ impl RpcServerState {
         // `IsValidInteger` (an exact integral remainder; NaN fails
         // it). Infinity fails the range check; both reject the same
         // way here.
-        if !(number >= f64::from(i32::MIN) && number <= f64::from(i32::MAX))
-            || number % 1.0 != 0.0
+        if !(number >= f64::from(i32::MIN) && number <= f64::from(i32::MAX)) || number % 1.0 != 0.0
         {
             return Err(RpcException::from(
                 RpcError::invalid_params()
@@ -503,7 +502,7 @@ impl RpcServerState {
             ));
         }
         Ok(number as i32)
-   }
+    }
 
     /// Neo.Json `JToken.AsNumber()`: numbers pass through, strings
     /// parse as invariant floating-point text (`JString.AsNumber` —
@@ -534,7 +533,7 @@ impl RpcServerState {
             }
             _ => f64::NAN,
         }
-   }
+    }
 
     fn expect_u32(params: &[Value], idx: usize, method: &str) -> Result<u32, RpcException> {
         params
@@ -546,8 +545,8 @@ impl RpcServerState {
                     RpcError::invalid_params()
                         .with_data(format!("{method} expects unsigned integer parameter")),
                 )
-           })
-   }
+            })
+    }
 
     fn state_root_to_json(root: &StateRoot) -> Value {
         let mut obj = Map::new();
@@ -562,7 +561,7 @@ impl RpcServerState {
         // served empty (C# emits the witness when present).
         obj.insert("witnesses".to_string(), Value::Array(Vec::new()));
         Value::Object(obj)
-   }
+    }
 }
 
 #[cfg(test)]

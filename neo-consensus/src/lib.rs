@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+
 // Copyright (c) 2024 R3E Network
 // This file is part of the neo-rs project
 // Licensed under the MIT License
@@ -264,8 +267,8 @@ pub use signer::ConsensusSigner;
 // ============================================================================
 
 pub use context::{
-    ConsensusContext, ConsensusState, ValidatorInfo, BLOCK_TIME_MS, DEFAULT_BLOCK_TIME_MS,
-    MAX_VALIDATORS,
+    BLOCK_TIME_MS, ConsensusContext, ConsensusState, DEFAULT_BLOCK_TIME_MS, MAX_VALIDATORS,
+    ValidatorInfo,
 };
 
 // ============================================================================

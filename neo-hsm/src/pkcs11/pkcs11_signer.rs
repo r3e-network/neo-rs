@@ -2,7 +2,7 @@
 
 use crate::device::{HsmDeviceInfo, HsmDeviceType};
 use crate::error::{HsmError, HsmResult};
-use crate::signer::{normalize_public_key, script_hash_from_public_key, HsmKeyInfo, HsmSigner};
+use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::path::Path;

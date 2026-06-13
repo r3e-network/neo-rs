@@ -3,7 +3,7 @@ use super::{WitnessCondition, WitnessRule, WitnessRuleAction};
 use neo_primitives::UInt160;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::str::FromStr;
 
 impl WitnessCondition {

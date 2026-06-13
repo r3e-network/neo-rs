@@ -52,10 +52,10 @@
 //!   otherwise it is cloned once and the old generation stays alive
 //!   (and fully resolvable) until the last reader drops it.
 
+use crate::Keys;
 use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Trie};
-use neo_primitives::{UInt256, UINT256_SIZE};
-use neo_state_types::Keys;
+use neo_primitives::{UINT256_SIZE, UInt256};
 use parking_lot::{Mutex, RwLock};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -564,14 +564,20 @@ mod tests {
             trie1.get(&storage_key(5, &[0xAA, 0x02])).expect("get"),
             Some(b"v2".to_vec())
         );
-        assert_eq!(trie1.get(&storage_key(5, &[0xAA, 0x03])).expect("get"), None);
+        assert_eq!(
+            trie1.get(&storage_key(5, &[0xAA, 0x03])).expect("get"),
+            None
+        );
 
         let mut trie2 = store.open_trie(Some(root2));
         assert_eq!(
             trie2.get(&storage_key(5, &[0xAA, 0x01])).expect("get"),
             Some(b"v1-updated".to_vec())
         );
-        assert_eq!(trie2.get(&storage_key(5, &[0xAA, 0x02])).expect("get"), None);
+        assert_eq!(
+            trie2.get(&storage_key(5, &[0xAA, 0x02])).expect("get"),
+            None
+        );
         assert_eq!(
             trie2.get(&storage_key(5, &[0xAA, 0x03])).expect("get"),
             Some(b"v3".to_vec())
@@ -833,10 +839,7 @@ mod tests {
         let keys: Vec<Vec<u8>> = entries.iter().map(|e| e.key.clone()).collect();
         assert_eq!(
             keys,
-            vec![
-                storage_key(5, &[0xAA, 0x01]),
-                storage_key(5, &[0xAA, 0x03]),
-            ]
+            vec![storage_key(5, &[0xAA, 0x01]), storage_key(5, &[0xAA, 0x03]),]
         );
 
         // Resume strictly after the first key.

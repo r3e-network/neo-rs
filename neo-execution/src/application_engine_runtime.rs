@@ -1,18 +1,16 @@
 //! ApplicationEngine.Runtime - matches C# Neo.SmartContract.ApplicationEngine.Runtime.cs exactly
 
-use neo_crypto::murmur128;
+use crate::Interoperable;
+use crate::application_engine::{ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE};
 use neo_config::hardfork::Hardfork;
-use neo_primitives::constants::{ADDRESS_SIZE, HASH_SIZE};
-use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
-use crate::application_engine::{
-    ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE,
-};
+use neo_crypto::murmur128;
 use neo_manifest::CallFlags;
+use neo_manifest::ContractParameterDefinition;
 use neo_primitives::ContractParameterType;
 use neo_primitives::LogEventArgs;
-use neo_manifest::ContractParameterDefinition;
-use crate::Interoperable;
 use neo_primitives::UInt160;
+use neo_primitives::constants::{ADDRESS_SIZE, HASH_SIZE};
+use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use neo_vm_rs::StackItemType;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
@@ -345,7 +343,11 @@ impl ApplicationEngine {
             return self.push_null();
         };
 
-        let Some(tx) = container.as_ref().as_any().downcast_ref::<neo_payloads::Transaction>() else {
+        let Some(tx) = container
+            .as_ref()
+            .as_any()
+            .downcast_ref::<neo_payloads::Transaction>()
+        else {
             return self.push_null();
         };
 

@@ -1,17 +1,17 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_execution::{ApplicationEngine, TriggerType};
+use neo_manifest::CallFlags;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
-use neo_manifest::CallFlags;
 use neo_primitives::ContractParameterType;
-use neo_execution::{ApplicationEngine, TriggerType};
 use neo_primitives::UInt160;
 use rand::random;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_error_factory;
@@ -21,7 +21,8 @@ use neo_vm_rs::OpCode;
 
 use super::helpers::{
     final_rpc_vm_state_string, internal_error, invalid_params, parse_contract_parameters,
-    parse_signers_and_witnesses, stack_item_to_json_limited};
+    parse_signers_and_witnesses, stack_item_to_json_limited,
+};
 
 pub(super) fn invoke_contract_verify(
     server: &RpcServer,
@@ -38,13 +39,12 @@ pub(super) fn invoke_contract_verify(
     let store_cache = system.store_cache();
     let snapshot_cache = Arc::new(store_cache.data_cache().clone());
 
-    let contract =
-        neo_native_contracts::ContractManagement::get_contract_from_snapshot(
-            snapshot_cache.as_ref(),
-            &script_hash,
-        )
-        .map_err(|err| internal_error(err.to_string()))?
-        .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
+    let contract = neo_native_contracts::ContractManagement::get_contract_from_snapshot(
+        snapshot_cache.as_ref(),
+        &script_hash,
+    )
+    .map_err(|err| internal_error(err.to_string()))?
+    .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
 
     let verify_method = contract
         .manifest
@@ -56,7 +56,7 @@ pub(super) fn invoke_contract_verify(
                 &contract.hash,
                 parameters.len() as i32,
             ))
-       })?;
+        })?;
 
     if verify_method.return_type != ContractParameterType::Boolean {
         return Err(RpcException::from(
@@ -64,10 +64,10 @@ pub(super) fn invoke_contract_verify(
                 "The verify method doesn't return boolean value.",
             ),
         ));
-   }
+    }
 
-    let signers =
-        signers.unwrap_or_else(|| vec![Signer::new(script_hash, neo_primitives::WitnessScope::NONE)]);
+    let signers = signers
+        .unwrap_or_else(|| vec![Signer::new(script_hash, neo_primitives::WitnessScope::NONE)]);
     let mut witnesses = witnesses.unwrap_or_default();
 
     let mut invocation_script = Vec::new();
@@ -78,8 +78,8 @@ pub(super) fn invoke_contract_verify(
                 invocation_script.clone(),
                 Vec::new(),
             ));
-       }
-   }
+        }
+    }
 
     let mut tx = Transaction::new();
     tx.set_version(0);
@@ -108,7 +108,7 @@ pub(super) fn invoke_contract_verify(
         engine
             .load_script(invocation_script.clone(), CallFlags::NONE, None)
             .map_err(|err| internal_error(err.to_string()))?;
-   }
+    }
 
     engine.execute_allow_fault();
 
@@ -125,12 +125,12 @@ pub(super) fn invoke_contract_verify(
             Err(err) => {
                 stack_error = Some(err);
                 break;
-           }
-       }
-   }
+            }
+        }
+    }
     if let Some(err) = stack_error.as_ref() {
         exception = Value::String(err.to_string());
-   }
+    }
 
     let mut result = json!({
         "script": BASE64_STANDARD.encode(&invocation_script),
@@ -140,8 +140,8 @@ pub(super) fn invoke_contract_verify(
     if stack_error.is_none() {
         if let Value::Object(ref mut obj) = result {
             obj.insert("stack".to_string(), Value::Array(stack_items));
-       }
-   }
+        }
+    }
 
     Ok(result)
 }
@@ -149,12 +149,12 @@ pub(super) fn invoke_contract_verify(
 fn build_verification_invocation_script(
     parameters: &[neo_execution::contract_parameter::ContractParameter],
 ) -> Result<Vec<u8>, RpcException> {
-    let mut builder = neo_script_builder::ScriptBuilder::new();
+    let mut builder = neo_vm::script_builder::ScriptBuilder::new();
     for parameter in parameters.iter().rev() {
         let item = super::helpers::contract_parameter_to_stack_value(parameter)?;
         builder
             .emit_push_stack_value(&item)
             .map_err(|err| internal_error(err.to_string()))?;
-   }
+    }
     Ok(builder.to_array())
 }

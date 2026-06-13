@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+
 // Copyright (c) 2024 R3E Network
 // This file is part of the neo-rs project
 // Licensed under the MIT License
@@ -43,7 +46,7 @@
 //! Layer 1 (Core):   neo-rpc ◄── YOU ARE HERE
 //!            │
 //!            ▼
-//! Layer 0 (Foundation): neo-primitives, neo-io, neo-json
+//! Layer 0 (Foundation): neo-primitives, neo-io, neo-serialization::json
 //! ```
 //!
 //! ## Features
@@ -202,6 +205,14 @@
 // Module Declarations
 // ============================================================================
 
+/// ApplicationLogs plugin for capturing execution logs.
+#[cfg(feature = "server")]
+pub mod application_logs;
+
+/// Plugin implementations (merged from `neo-tokens-tracker`).
+#[cfg(feature = "server")]
+pub mod plugins;
+
 /// Error types for RPC operations.
 pub mod error;
 
@@ -236,4 +247,5 @@ pub use server::{RpcServer, RpcServerConfig, RpcServerSettings};
 pub use client::{
     ClientRpcError, ContractClient, Nep17Api, PolicyApi, RpcClient, RpcClientBuilder,
     RpcClientHooks, RpcRequestOutcome, RpcUtility, StateApi, TransactionManager,
-    TransactionManagerFactory, WalletApi};
+    TransactionManagerFactory, WalletApi,
+};

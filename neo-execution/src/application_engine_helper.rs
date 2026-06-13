@@ -1,19 +1,17 @@
 //! ApplicationEngine.Helper - matches C# Neo.SmartContract.ApplicationEngine helper methods exactly
 
-use neo_crypto::Crypto;
 use neo_config::hardfork::Hardfork;
+use neo_crypto::Crypto;
 // Old wrapper types removed - StackValue compounds are flat Vecs now
+use crate::NotifyEventArgs;
+use crate::application_engine::{ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE};
+use crate::interoperable::Interoperable;
+use neo_primitives::TriggerType;
+use neo_primitives::UInt160;
+use neo_serialization::BinarySerializer;
 use neo_vm::StackItem;
 use neo_vm::stack_item::{Array as ArrayItem, Map as MapItem, Struct as StructItem};
 use neo_vm_rs::VmOrderedDictionary;
-use crate::application_engine::{
-    ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE,
-};
-use neo_serialization::BinarySerializer;
-use crate::interoperable::Interoperable;
-use crate::NotifyEventArgs;
-use neo_primitives::TriggerType;
-use neo_primitives::UInt160;
 use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
@@ -429,7 +427,9 @@ fn clone_stack_item_as_immutable(
             for (entry_key, entry_value) in entries.iter() {
                 let cloned_key = clone_stack_item_as_immutable(&entry_key, seen)?;
                 let cloned_value = clone_stack_item_as_immutable(&entry_value, seen)?;
-                cloned.set(cloned_key, cloned_value).map_err(|e| e.to_string())?;
+                cloned
+                    .set(cloned_key, cloned_value)
+                    .map_err(|e| e.to_string())?;
             }
             Ok(cloned_item)
         }

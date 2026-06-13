@@ -52,7 +52,7 @@ pub fn panic_message(payload: &(dyn Any + Send), fallback: &'static str) -> Stri
 
 #[cfg(test)]
 mod tests {
-    use super::{panic_message, UnhandledExceptionPolicy};
+    use super::{UnhandledExceptionPolicy, panic_message};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]

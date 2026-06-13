@@ -9,31 +9,36 @@ pub enum RpcError {
     #[error("Request failed: {message}")]
     RequestFailed {
         /// Error message.
-        message: String},
+        message: String,
+    },
 
     /// Invalid response.
     #[error("Invalid response: {message}")]
     InvalidResponse {
         /// Error message.
-        message: String},
+        message: String,
+    },
 
     /// Method not found.
     #[error("Method not found: {method}")]
     MethodNotFound {
         /// Method name.
-        method: String},
+        method: String,
+    },
 
     /// Invalid parameters.
     #[error("Invalid parameters: {message}")]
     InvalidParams {
         /// Error message.
-        message: String},
+        message: String,
+    },
 
     /// Internal error.
     #[error("Internal error: {message}")]
     InternalError {
         /// Error message.
-        message: String},
+        message: String,
+    },
 
     /// Serialization error.
     #[error("Serialization error: {0}")]
@@ -74,38 +79,42 @@ pub enum RpcError {
 
     /// Generic error for domain-specific validation failures.
     #[error("{0}")]
-    Other(String)}
+    Other(String),
+}
 
 impl RpcError {
     /// Create a request failed error.
     pub fn request_failed<S: Into<String>>(message: S) -> Self {
         Self::RequestFailed {
-            message: message.into()}
-   }
+            message: message.into(),
+        }
+    }
 
     /// Create an invalid response error.
     pub fn invalid_response<S: Into<String>>(message: S) -> Self {
         Self::InvalidResponse {
-            message: message.into()}
-   }
+            message: message.into(),
+        }
+    }
 
     /// Create an invalid params error.
     pub fn invalid_params<S: Into<String>>(message: S) -> Self {
         Self::InvalidParams {
-            message: message.into()}
-   }
+            message: message.into(),
+        }
+    }
 }
 
 impl From<&str> for RpcError {
     fn from(s: &str) -> Self {
         Self::Other(s.to_string())
-   }
+    }
 }
 
 impl From<String> for RpcError {
     fn from(s: String) -> Self {
         Self::Other(s)
-   }
+    }
 }
 
 /// Result type for RPC operations.
