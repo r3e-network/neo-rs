@@ -142,6 +142,42 @@ impl MemoryPoolInner {
         }
         Some(list)
     }
+
+    /// C# `MemoryPool.GetLowestFeeTransaction` + one step of `RemoveOverCapacity`:
+    /// evict the single global lowest-fee pooled transaction, PREFERRING the
+    /// unverified queue on a tie (C# returns the unverified min when
+    /// `verifiedMin.CompareTo(unverifiedMin) >= 0`). Returns the evicted
+    /// transaction, or `None` if both queues are empty.
+    fn remove_lowest_fee(&mut self) -> Option<Transaction> {
+        // `items` is a BTreeSet ascending by PoolItem::compare_to, so
+        // `iter().next()` is the lowest-priority item of each queue.
+        let unverified_min = self.unverified.items.iter().next().cloned();
+        let verified_min = self.verified.items.iter().next().cloned();
+        let from_unverified = match (&verified_min, &unverified_min) {
+            (Some(v), Some(u)) => v.compare_to(u) != std::cmp::Ordering::Less,
+            (None, Some(_)) => true,
+            (Some(_), None) => false,
+            (None, None) => return None,
+        };
+        let item = if from_unverified {
+            unverified_min?
+        } else {
+            verified_min?
+        };
+        let hash = item.hash();
+        if from_unverified {
+            self.unverified.remove(&hash);
+        } else {
+            self.verified.remove(&hash);
+        }
+        let dropped = (*item.transaction).clone();
+        self.context_remove(&dropped);
+        self.conflicts.retain(|_, set| {
+            set.remove(&hash);
+            !set.is_empty()
+        });
+        Some(dropped)
+    }
 }
 
 /// The hashes a transaction declares as conflicting via its `Conflicts` attributes.
@@ -545,25 +581,22 @@ impl MemoryPool {
                 guard.conflicts.entry(target).or_default().insert(hash);
             }
 
-            // C# RemoveOverCapacity drops the LOWEST-priority pooled item
-            // (PoolItem ascending order ⇒ `next()`), which may be the just-added
-            // transaction ⇒ OutOfMemory for the caller (MemoryPool.cs:362-368).
+            // C# RemoveOverCapacity loops over the TOTAL count (verified +
+            // unverified), evicting the global lowest-fee item each pass
+            // (preferring the unverified queue on a tie) until total <= Capacity.
+            // The evicted item may be the just-added transaction => OutOfMemory
+            // for the caller. The previous gate only counted the verified queue,
+            // so block-persist survivors dumped into the unverified queue could
+            // push total occupancy to ~2x the configured capacity.
             let mut new_tx_evicted = false;
-            if guard.verified.len() > guard.capacity {
-                if let Some(lowest) = guard.verified.items.iter().next().cloned() {
-                    let lowest_hash = lowest.hash();
-                    guard.verified.remove(&lowest_hash);
-                    let dropped = (*lowest.transaction).clone();
-                    guard.context_remove(&dropped);
-                    guard.conflicts.retain(|_, set| {
-                        set.remove(&lowest_hash);
-                        !set.is_empty()
-                    });
-                    if lowest_hash == hash {
-                        new_tx_evicted = true;
-                    }
-                    removed_transactions.push(dropped);
+            while guard.verified.len() + guard.unverified.len() > guard.capacity {
+                let Some(dropped) = guard.remove_lowest_fee() else {
+                    break;
+                };
+                if dropped.hash() == hash {
+                    new_tx_evicted = true;
                 }
+                removed_transactions.push(dropped);
             }
             (removed_transactions, new_tx_evicted)
         };
