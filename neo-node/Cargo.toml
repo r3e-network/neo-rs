@@ -31,22 +31,12 @@ full = ["wip"]
 tee = ["neo-tee"]
 # Enable TEE with SGX hardware (requires `tee`)
 tee-sgx = ["tee", "neo-tee/sgx-hw"]
-# Enable HSM (Hardware Security Module) support (requires `wip`)
-hsm = ["dep:neo-hsm", "dep:rpassword"]
-# Enable HSM with Ledger hardware wallet (requires `hsm`)
-hsm-ledger = ["hsm", "neo-hsm/ledger"]
-# Enable HSM with PKCS#11 interface (requires `hsm`)
-hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
 neo-vm-rs = { workspace = true }
 
-# TEE/HSM integrations (feature-gated)
+# TEE integration (feature-gated)
 neo-tee = { workspace = true, optional = true }
-neo-hsm = { workspace = true, optional = true }
-
-# PIN input for HSM
-rpassword = { version = "7.3", optional = true }
 
 # Async channels
 futures = { workspace = true }

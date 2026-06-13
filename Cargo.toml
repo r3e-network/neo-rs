@@ -85,10 +85,6 @@ members = [
     # Optional feature-gated integration via neo-node (`--features tee`)
     "neo-tee",
 
-    # HSM (Hardware Security Module) support
-    # Optional feature-gated integration via neo-node (`--features hsm`)
-    "neo-hsm",
-
     # Reth-style service architecture (service traits + Node builder).
     # Depends on foundation crates: neo-primitives and neo-payloads.
     "neo-runtime",
@@ -171,7 +167,6 @@ neo-payloads = { path = "neo-payloads", version = "0.7.2" }
 neo-network = { path = "neo-network", version = "0.7.2" }
 # Infrastructure layer
 neo-tee = { path = "neo-tee", version = "0.7.2" }
-neo-hsm = { path = "neo-hsm", version = "0.7.2" }
 
 # Actor runtime
 # Reth-style service architecture
