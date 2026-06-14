@@ -71,7 +71,7 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
         } else {
             (st.block_count as f32 / st.header_count as f32).clamp(0.0, 1.0)
         };
-        ui.add(egui::ProgressBar::new(frac).fill(theme::ACCENT).desired_height(10.0).rounding(egui::Rounding::same(5.0)));
+        ui.add(egui::ProgressBar::new(frac).fill(theme::ACCENT).desired_height(10.0));
 
         if heights.len() >= 2 {
             ui.add_space(10.0);

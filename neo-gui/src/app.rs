@@ -49,6 +49,43 @@ pub struct NeoGuiApp {
 
     // Signer screen: selected key-management backend.
     pub signer_backend: usize,
+
+    // Configuration editor.
+    pub config_text: String,
+    pub config_status: Option<String>,
+
+    // Third-party integrations.
+    pub integrations: Vec<Integration>,
+    pub integration_status: Arc<Mutex<Option<String>>>,
+}
+
+/// A configurable third-party monitoring / alerting / logging integration.
+pub struct Integration {
+    pub name: &'static str,
+    pub kind: &'static str,
+    pub field: &'static str,
+    pub value: String,
+    pub enabled: bool,
+}
+
+impl Integration {
+    fn new(name: &'static str, kind: &'static str, field: &'static str) -> Self {
+        Self { name, kind, field, value: String::new(), enabled: false }
+    }
+}
+
+fn default_integrations() -> Vec<Integration> {
+    vec![
+        Integration::new("Prometheus / Grafana", "Metrics", "remote_write URL"),
+        Integration::new("Datadog", "Metrics", "API key"),
+        Integration::new("Better Stack Logs", "Logging", "source token"),
+        Integration::new("Better Stack Uptime", "Uptime", "heartbeat URL"),
+        Integration::new("UptimeRobot", "Uptime", "monitor URL / key"),
+        Integration::new("Slack", "Alerting", "webhook URL"),
+        Integration::new("Discord", "Alerting", "webhook URL"),
+        Integration::new("Telegram", "Alerting", "bot token / chat id"),
+        Integration::new("Sentry", "Errors", "DSN"),
+    ]
 }
 
 impl NeoGuiApp {
@@ -76,6 +113,10 @@ impl NeoGuiApp {
             wallet_password: String::new(),
             wallet_out: Arc::new(Mutex::new(None)),
             signer_backend: 0,
+            config_text: String::new(),
+            config_status: None,
+            integrations: default_integrations(),
+            integration_status: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -179,23 +220,28 @@ impl NeoGuiApp {
             .exact_width(196.0)
             .frame(egui::Frame::none().fill(theme::BG_PANEL).inner_margin(egui::Margin::same(10.0)))
             .show(ctx, |ui| {
-                ui.add_space(6.0);
-                for item in Screen::ALL {
-                    let selected = self.screen == *item;
-                    let label = RichText::new(format!("  {}  {}", item.icon(), item.title()))
-                        .size(14.5)
-                        .color(if selected { theme::ACCENT } else { theme::TEXT });
-                    let resp = ui.add_sized(
-                        [ui.available_width(), 34.0],
-                        egui::SelectableLabel::new(selected, label),
-                    );
-                    if resp.clicked() {
-                        self.screen = *item;
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    ui.add_space(4.0);
+                    for (group, items) in crate::screens::NAV {
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(*group).size(10.5).strong().color(theme::TEXT_MUTED));
+                        ui.add_space(2.0);
+                        for item in *items {
+                            let selected = self.screen == *item;
+                            let label = RichText::new(format!("  {}  {}", item.icon(), item.title()))
+                                .size(14.0)
+                                .color(if selected { theme::ACCENT } else { theme::TEXT });
+                            let resp = ui.add_sized(
+                                [ui.available_width(), 32.0],
+                                egui::SelectableLabel::new(selected, label),
+                            );
+                            if resp.clicked() {
+                                self.screen = *item;
+                            }
+                            ui.add_space(1.0);
+                        }
                     }
-                    ui.add_space(2.0);
-                }
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    ui.add_space(6.0);
+                    ui.add_space(10.0);
                     ui.label(RichText::new("neo-gui v0.1").size(11.0).color(theme::TEXT_MUTED));
                 });
             });
@@ -203,31 +249,64 @@ impl NeoGuiApp {
 }
 
 fn spawn_poller(ctx: Context, cfg: Arc<Mutex<PollerCfg>>, state: SharedState) {
-    std::thread::spawn(move || loop {
-        let (url, interval, enabled) = {
-            let c = cfg.lock().unwrap();
-            (c.url.clone(), c.interval, c.enabled)
-        };
-        if enabled && !url.is_empty() {
-            let client = RpcClient::new(&url);
-            match client.status() {
-                Ok(status) => {
-                    let peers = client.peers().ok();
-                    let mut s = state.lock().unwrap();
-                    s.online = true;
-                    s.last_error = None;
-                    s.push_height(status.block_count);
-                    s.status = Some(status);
-                    s.peers = peers;
+    std::thread::spawn(move || {
+        let mut sys = sysinfo::System::new();
+        let mut last_height: u64 = 0;
+        loop {
+            let (url, interval, enabled) = {
+                let c = cfg.lock().unwrap();
+                (c.url.clone(), c.interval, c.enabled)
+            };
+
+            // Host metrics (refreshed every tick; CPU needs the previous sample).
+            sys.refresh_cpu_usage();
+            sys.refresh_memory();
+            let disks = sysinfo::Disks::new_with_refreshed_list();
+            let (disk_total, disk_avail) = disks
+                .iter()
+                .find(|d| d.mount_point().to_str() == Some("/"))
+                .or_else(|| disks.iter().next())
+                .map(|d| (d.total_space(), d.available_space()))
+                .unwrap_or((0, 0));
+            let host = crate::node::HostMetrics {
+                cpu_percent: sys.global_cpu_usage(),
+                mem_used: sys.used_memory(),
+                mem_total: sys.total_memory(),
+                disk_total,
+                disk_used: disk_total.saturating_sub(disk_avail),
+                process_running: false,
+                uptime_secs: sysinfo::System::uptime(),
+            };
+
+            if enabled && !url.is_empty() {
+                let client = RpcClient::new(&url);
+                match client.status() {
+                    Ok(status) => {
+                        let peers = client.peers().ok();
+                        let bps = status.block_count.saturating_sub(last_height) as f32;
+                        last_height = status.block_count;
+                        let mut s = state.lock().unwrap();
+                        s.online = true;
+                        s.last_error = None;
+                        s.push_height(status.block_count);
+                        s.push_metrics(host.cpu_percent, host.mem_percent(), bps);
+                        s.status = Some(status);
+                        s.peers = peers;
+                        s.host = host;
+                    }
+                    Err(e) => {
+                        let mut s = state.lock().unwrap();
+                        s.online = false;
+                        s.last_error = Some(e.to_string());
+                        s.host = host;
+                    }
                 }
-                Err(e) => {
-                    let mut s = state.lock().unwrap();
-                    s.online = false;
-                    s.last_error = Some(e.to_string());
-                }
+            } else {
+                let mut s = state.lock().unwrap();
+                s.host = host;
             }
             ctx.request_repaint();
+            std::thread::sleep(interval);
         }
-        std::thread::sleep(interval);
     });
 }

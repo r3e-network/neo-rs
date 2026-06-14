@@ -23,6 +23,46 @@ pub struct NodeState {
     pub last_error: Option<String>,
     /// Recent block heights, for the sync sparkline (height samples).
     pub height_history: VecDeque<u64>,
+    /// Host machine metrics (the machine running the manager / local node).
+    pub host: HostMetrics,
+    /// CPU% history for the monitoring chart.
+    pub cpu_history: VecDeque<f32>,
+    /// Memory% history for the monitoring chart.
+    pub mem_history: VecDeque<f32>,
+    /// Blocks-per-poll history (sync rate) for the monitoring chart.
+    pub bps_history: VecDeque<f32>,
+}
+
+/// Host machine resource snapshot.
+#[derive(Default, Clone, Copy)]
+pub struct HostMetrics {
+    pub cpu_percent: f32,
+    pub mem_used: u64,
+    pub mem_total: u64,
+    pub disk_used: u64,
+    pub disk_total: u64,
+    pub process_running: bool,
+    pub uptime_secs: u64,
+}
+
+impl HostMetrics {
+    pub fn mem_percent(&self) -> f32 {
+        if self.mem_total == 0 { 0.0 } else { self.mem_used as f32 / self.mem_total as f32 * 100.0 }
+    }
+    pub fn disk_percent(&self) -> f32 {
+        if self.disk_total == 0 { 0.0 } else { self.disk_used as f32 / self.disk_total as f32 * 100.0 }
+    }
+}
+
+/// Format a byte count as a human string (GiB/MiB).
+pub fn human_bytes(b: u64) -> String {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    const MIB: u64 = 1024 * 1024;
+    if b >= GIB {
+        format!("{:.1} GiB", b as f64 / GIB as f64)
+    } else {
+        format!("{:.0} MiB", b as f64 / MIB as f64)
+    }
 }
 
 impl NodeState {
@@ -32,6 +72,20 @@ impl NodeState {
             self.height_history.push_back(h);
             while self.height_history.len() > 120 {
                 self.height_history.pop_front();
+            }
+        }
+    }
+
+    /// Record a monitoring sample (called once per poll).
+    pub fn push_metrics(&mut self, cpu: f32, mem: f32, bps: f32) {
+        for (series, v) in [
+            (&mut self.cpu_history, cpu),
+            (&mut self.mem_history, mem),
+            (&mut self.bps_history, bps),
+        ] {
+            series.push_back(v);
+            while series.len() > 120 {
+                series.pop_front();
             }
         }
     }
