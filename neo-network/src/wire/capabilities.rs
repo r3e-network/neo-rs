@@ -1,12 +1,12 @@
 //! Node capability descriptors.
 //!
-//! The canonical `NodeCapability` type lives in [`neo_p2p::payloads`];
+//! The canonical `NodeCapability` type lives in [`neo_payloads::node_capability`];
 //! this module re-exports it alongside helper constructors for common
 //! capability shapes (full node, archival, TCP/WS server).
 
 use neo_io::IoResult;
 pub use neo_p2p::NodeCapabilityType;
-pub use neo_p2p::payloads::node_capability::{
+pub use neo_payloads::node_capability::{
     MAX_UNKNOWN_CAPABILITY_DATA, NodeCapability, deserialize_node_capabilities,
     node_capabilities_size, serialize_node_capabilities,
 };

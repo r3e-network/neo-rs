@@ -9,7 +9,7 @@
 use super::error::{WireError, WireResult};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_p2p::MessageCommand;
-use neo_p2p::payloads::{
+use neo_payloads::p2p_payloads::{
     AddrPayload, FilterAddPayload, FilterLoadPayload, GetBlockByIndexPayload, GetBlocksPayload,
     InvPayload, PingPayload, VersionPayload,
 };

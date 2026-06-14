@@ -24,7 +24,6 @@ neo-vm = { workspace = true }
 neo-storage = { workspace = true }
 neo-serialization = { workspace = true }
 neo-manifest = { workspace = true }
-neo-p2p = { workspace = true }
 neo-config = { workspace = true }
 
 # Scripting

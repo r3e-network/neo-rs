@@ -8,7 +8,7 @@
 
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 
-use neo_p2p::payloads::{NodeCapability, VersionPayload};
+use neo_payloads::p2p_payloads::{NodeCapability, VersionPayload};
 
 /// Identity of the local node as advertised to remote peers in the
 /// version handshake.

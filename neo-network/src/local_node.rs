@@ -417,7 +417,7 @@ impl LocalNodeService {
         if hashes.is_empty() {
             return;
         }
-        for group in neo_p2p::payloads::InvPayload::create_group(inventory_type, hashes) {
+        for group in neo_payloads::inv_payload::InvPayload::create_group(inventory_type, hashes) {
             let frame = match crate::wire::Message::create(
                 neo_p2p::MessageCommand::Inv,
                 Some(&group),

@@ -98,7 +98,7 @@ impl From<ProtocolMessage> for NetworkMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_p2p::payloads::PingPayload;
+    use neo_payloads::ping_payload::PingPayload;
 
     #[test]
     fn network_message_round_trip_ping() {

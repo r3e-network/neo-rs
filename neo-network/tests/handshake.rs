@@ -18,7 +18,7 @@ use neo_network::{
     NetworkEvent, NetworkHandle, PeerId, PeerRegistry, RemoteNodeService, RemoteNodeState,
 };
 use neo_p2p::MessageCommand;
-use neo_p2p::payloads::{
+use neo_payloads::p2p_payloads::{
     GetBlockByIndexPayload, InvPayload, NodeCapability, PingPayload, VersionPayload,
 };
 use neo_primitives::{InventoryType, UInt256};
@@ -371,7 +371,7 @@ async fn first_message_must_be_version() {
     // pre-version command.
     let ping = Message::create(
         MessageCommand::Ping,
-        Some(&neo_p2p::payloads::PingPayload::create(0)),
+        Some(&PingPayload::create(0)),
         false,
     )
     .expect("encode ping");

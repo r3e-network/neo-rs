@@ -31,7 +31,6 @@
 //!   `neo-vm-rs`, `neo-vm` (Layer 0)
 //! - `neo-storage`, `neo-serialization`, `neo-manifest`,
 //!   `neo-script-builder` (Layer 1)
-//! - `neo-p2p` (Layer 1) — for `WitnessRule` / `WitnessCondition`
 //! - `neo-config` (Layer 1) — for `ProtocolSettings`
 //! - `neo-native-contracts` (Layer 1) — for the
 //!   `GasToken`/`PolicyContract`/`LedgerContract` types used by the
@@ -57,7 +56,7 @@
 //! | `Header` | `header` |
 //! | `Transaction` | `transaction` |
 //! | `Signer` | `signer` |
-//! | `WitnessCondition` / `WitnessRule` | re-exported from `neo-p2p` |
+//! | `WitnessCondition` / `WitnessRule` | `witness_rule` |
 //! | `ExtensiblePayload` | `extensible_payload` |
 //! | `MerkleBlockPayload` | `merkle_block_payload` |
 //! | `HeadersPayload` | `headers_payload` |
@@ -76,28 +75,31 @@
 
 #![doc(html_root_url = "https://docs.rs/neo-payloads/0.7.2")]
 
-// ── Re-exports from neo-p2p for simple payload types ──────────────────
+// ── P2P wire payload types (relocated from neo-p2p) ───────────────────
+
+/// Simple P2P wire payload types (serialization-only, no neo-core dependencies).
+pub mod p2p_payloads;
 
 /// Address payload for peer discovery.
-pub use neo_p2p::payloads::addr_payload;
+pub use p2p_payloads::addr_payload;
 /// Bloom filter add payload.
-pub use neo_p2p::payloads::filter_add_payload;
+pub use p2p_payloads::filter_add_payload;
 /// Bloom filter load payload.
-pub use neo_p2p::payloads::filter_load_payload;
+pub use p2p_payloads::filter_load_payload;
 /// Get block by index request payload.
-pub use neo_p2p::payloads::get_block_by_index_payload;
+pub use p2p_payloads::get_block_by_index_payload;
 /// Get blocks request payload.
-pub use neo_p2p::payloads::get_blocks_payload;
+pub use p2p_payloads::get_blocks_payload;
 /// Inventory payload for announcements.
-pub use neo_p2p::payloads::inv_payload;
+pub use p2p_payloads::inv_payload;
 /// Network address with timestamp.
-pub use neo_p2p::payloads::network_address_with_time;
+pub use p2p_payloads::network_address_with_time;
 /// Node capability descriptors.
-pub use neo_p2p::payloads::node_capability;
+pub use p2p_payloads::node_capability;
 /// Ping/pong payload for keepalive.
-pub use neo_p2p::payloads::ping_payload;
+pub use p2p_payloads::ping_payload;
 /// Version payload for handshake.
-pub use neo_p2p::payloads::version_payload;
+pub use p2p_payloads::version_payload;
 
 // ── Local modules: data types and structural verification ─────────────
 

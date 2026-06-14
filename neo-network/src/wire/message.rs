@@ -145,7 +145,7 @@ impl Message {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_p2p::payloads::PingPayload;
+    use neo_payloads::ping_payload::PingPayload;
 
     #[test]
     fn message_round_trip_uncompressed_ping() {

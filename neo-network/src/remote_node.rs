@@ -57,7 +57,7 @@ use tracing::{debug, info, trace, warn};
 use crate::wire::{Message, MessageCodec};
 use neo_io::{MemoryReader, Serializable};
 use neo_p2p::MessageCommand;
-use neo_p2p::payloads::{
+use neo_payloads::p2p_payloads::{
     AddrPayload, GetBlockByIndexPayload, GetBlocksPayload, InvPayload, NetworkAddressWithTime,
     NodeCapability, PingPayload, VersionPayload,
 };
@@ -922,10 +922,10 @@ impl PeerSession {
                 if let Some(source) = self.block_source.clone() {
                     if let Some(start_index) = source.block_index_by_hash(&payload.hash_start) {
                         let count = if payload.count < 0 {
-                            neo_p2p::payloads::inv_payload::MAX_HASHES_COUNT as u32
+                            neo_payloads::inv_payload::MAX_HASHES_COUNT as u32
                         } else {
                             (payload.count as u32)
-                                .min(neo_p2p::payloads::inv_payload::MAX_HASHES_COUNT as u32)
+                                .min(neo_payloads::inv_payload::MAX_HASHES_COUNT as u32)
                         };
                         let mut hashes = Vec::new();
                         for offset in 1..=count {
@@ -1143,7 +1143,7 @@ impl PeerSession {
             MessageCommand::GetAddr => {
                 let addrs = self.registry.listener_addresses(
                     self.peer_id,
-                    neo_p2p::payloads::addr_payload::MAX_COUNT_TO_SEND,
+                    neo_payloads::addr_payload::MAX_COUNT_TO_SEND,
                 );
                 if !addrs.is_empty() {
                     let timestamp = std::time::SystemTime::now()

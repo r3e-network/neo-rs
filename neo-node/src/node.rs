@@ -977,7 +977,7 @@ mod tests {
     use futures::{SinkExt, StreamExt};
     use neo_network::wire::{Message, MessageCodec};
     use neo_p2p::MessageCommand;
-    use neo_p2p::payloads::{GetBlockByIndexPayload, NodeCapability, VersionPayload};
+    use neo_payloads::p2p_payloads::{GetBlockByIndexPayload, NodeCapability, VersionPayload};
     use std::time::Duration;
     use tokio::net::TcpStream;
     use tokio_util::codec::Framed;
