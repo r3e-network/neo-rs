@@ -1,0 +1,7 @@
+# Generated benchmark output (keep results/TEMPLATE.md, ignore measurements)
+results/*.csv
+results/*.jsonl
+results/*.log
+# bench-client build artifacts (standalone workspace)
+bench-client/target/
+bench-client/Cargo.lock
