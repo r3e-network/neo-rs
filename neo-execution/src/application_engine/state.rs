@@ -205,13 +205,16 @@ impl ApplicationEngine {
     }
 
     fn register_default_interops(&mut self) -> CoreResult<()> {
-        register_contract_interops(self)
+        self.register_contract_interops()
             .map_err(|err| Self::map_vm_error("System.Contract", err))?;
-        register_runtime_interops(self).map_err(|err| Self::map_vm_error("System.Runtime", err))?;
-        register_storage_interops(self).map_err(|err| Self::map_vm_error("System.Storage", err))?;
-        register_iterator_interops(self)
+        self.register_runtime_interops()
+            .map_err(|err| Self::map_vm_error("System.Runtime", err))?;
+        self.register_storage_interops()
+            .map_err(|err| Self::map_vm_error("System.Storage", err))?;
+        self.register_iterator_interops()
             .map_err(|err| Self::map_vm_error("System.Iterator", err))?;
-        register_crypto_interops(self).map_err(|err| Self::map_vm_error("System.Crypto", err))?;
+        self.register_crypto_interops()
+            .map_err(|err| Self::map_vm_error("System.Crypto", err))?;
         Ok(())
     }
 

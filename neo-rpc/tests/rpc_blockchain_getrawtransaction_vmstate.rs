@@ -105,12 +105,9 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
         // Integer((byte)State)]` serialized with `BinarySerializer` — NOT a
         // hand-rolled `kind/index/state/varbytes` layout. Use the canonical
         // writer so the fixture matches what the server's reader expects.
-        let record = neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
-            index,
-            VMState::HALT,
-            tx,
-        )
-        .expect("serialize transaction state");
+        let record = LedgerContract::new()
+            .serialize_persisted_transaction_state(index, VMState::HALT, tx)
+            .expect("serialize transaction state");
 
         let mut tx_key_bytes = Vec::with_capacity(1 + 32);
         tx_key_bytes.push(PREFIX_TRANSACTION);
@@ -122,9 +119,9 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     // C# `HashIndexState.ToStackItem`: the Prefix_CurrentBlock value is the
     // interoperable `Struct[ByteString(hash), Integer(index)]` serialized with
     // `BinarySerializer`, not a raw 32+4-byte concatenation.
-    let current_bytes =
-        neo_native_contracts::ledger_contract::serialize_hash_index_state(&hash, index)
-            .expect("serialize hash index state");
+    let current_bytes = LedgerContract::new()
+        .serialize_hash_index_state(&hash, index)
+        .expect("serialize hash index state");
     let current_key = StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]);
     store.add(
         current_key,

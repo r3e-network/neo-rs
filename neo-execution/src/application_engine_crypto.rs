@@ -259,18 +259,20 @@ fn crypto_check_multisig_handler(
 }
 
 /// Registers crypto-related interop services
-pub(crate) fn register_crypto_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
-    engine.register_host_service(
-        "System.Crypto.CheckSig",
-        CHECK_SIG_PRICE,
-        CallFlags::NONE,
-        crypto_check_sig_handler,
-    )?;
-    engine.register_host_service(
-        "System.Crypto.CheckMultisig",
-        CHECK_MULTISIG_PRICE,
-        CallFlags::NONE,
-        crypto_check_multisig_handler,
-    )?;
-    Ok(())
+impl ApplicationEngine {
+    pub(crate) fn register_crypto_interops(&mut self) -> VmResult<()> {
+        self.register_host_service(
+            "System.Crypto.CheckSig",
+            CHECK_SIG_PRICE,
+            CallFlags::NONE,
+            crypto_check_sig_handler,
+        )?;
+        self.register_host_service(
+            "System.Crypto.CheckMultisig",
+            CHECK_MULTISIG_PRICE,
+            CallFlags::NONE,
+            crypto_check_multisig_handler,
+        )?;
+        Ok(())
+    }
 }

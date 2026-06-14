@@ -54,57 +54,59 @@ fn native_call_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| env_flag_enabled("NEO_TRACE_CALL_NATIVE", false))
 }
 
-pub(crate) fn register_contract_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
-    engine.register_host_service(
-        "System.Contract.Call",
-        SYSTEM_CONTRACT_CALL_PRICE,
-        CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
-        contract_call_handler,
-    )?;
+impl ApplicationEngine {
+    pub(crate) fn register_contract_interops(&mut self) -> VmResult<()> {
+        self.register_host_service(
+            "System.Contract.Call",
+            SYSTEM_CONTRACT_CALL_PRICE,
+            CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
+            contract_call_handler,
+        )?;
 
-    engine.register_host_service(
-        "System.Contract.GetCallFlags",
-        1 << 10,
-        CallFlags::NONE,
-        contract_get_call_flags_handler,
-    )?;
+        self.register_host_service(
+            "System.Contract.GetCallFlags",
+            1 << 10,
+            CallFlags::NONE,
+            contract_get_call_flags_handler,
+        )?;
 
-    engine.register_host_service(
-        "System.Contract.CreateStandardAccount",
-        0,
-        CallFlags::NONE,
-        contract_create_standard_account_handler,
-    )?;
+        self.register_host_service(
+            "System.Contract.CreateStandardAccount",
+            0,
+            CallFlags::NONE,
+            contract_create_standard_account_handler,
+        )?;
 
-    engine.register_host_service(
-        "System.Contract.CreateMultisigAccount",
-        0,
-        CallFlags::NONE,
-        contract_create_multisig_account_handler,
-    )?;
+        self.register_host_service(
+            "System.Contract.CreateMultisigAccount",
+            0,
+            CallFlags::NONE,
+            contract_create_multisig_account_handler,
+        )?;
 
-    engine.register_host_service(
-        "System.Contract.CallNative",
-        0,
-        CallFlags::NONE,
-        contract_call_native_handler,
-    )?;
+        self.register_host_service(
+            "System.Contract.CallNative",
+            0,
+            CallFlags::NONE,
+            contract_call_native_handler,
+        )?;
 
-    engine.register_host_service(
-        "System.Contract.NativeOnPersist",
-        0,
-        CallFlags::STATES,
-        contract_native_on_persist_handler,
-    )?;
+        self.register_host_service(
+            "System.Contract.NativeOnPersist",
+            0,
+            CallFlags::STATES,
+            contract_native_on_persist_handler,
+        )?;
 
-    engine.register_host_service(
-        "System.Contract.NativePostPersist",
-        0,
-        CallFlags::STATES,
-        contract_native_post_persist_handler,
-    )?;
+        self.register_host_service(
+            "System.Contract.NativePostPersist",
+            0,
+            CallFlags::STATES,
+            contract_native_post_persist_handler,
+        )?;
 
-    Ok(())
+        Ok(())
+    }
 }
 
 fn map_contract_result(service: &str, result: CoreResult<()>) -> VmResult<()> {

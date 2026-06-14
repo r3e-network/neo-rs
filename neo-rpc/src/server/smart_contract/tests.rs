@@ -16,7 +16,6 @@ use neo_payloads::witness::Witness;
 use neo_primitives::{ContractParameterType, FindOptions};
 use neo_primitives::{UInt160, WitnessScope};
 use neo_serialization::BinarySerializer;
-use neo_storage::persistence::transaction::apply_tracked_items;
 use neo_storage::{StorageItem, StorageKey};
 use neo_wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_wallets::wallet_helper as address_helper;
@@ -244,7 +243,7 @@ fn deploy_verify_contract(system: &Arc<neo_system::Node>) -> UInt160 {
     let _ = contract.from_stack_item(item);
 
     let tracked = engine.snapshot_cache().tracked_items();
-    apply_tracked_items(&mut store_cache, tracked);
+    store_cache.apply_tracked_items(tracked);
     store_cache.commit();
 
     contract.hash

@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use super::jsonrpsee_adapter::{build_jsonrpsee_module_with_methods, public_method_names};
+use super::jsonrpsee_adapter::build_jsonrpsee_module_with_methods;
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
@@ -248,7 +248,7 @@ impl RpcServer {
         // this method runs under the outer write lock
         // (`server.write().start_rpc_server(...)`); re-locking it here would
         // deadlock RPC startup.
-        let methods = public_method_names(self);
+        let methods = self.public_method_names();
         let module = match build_jsonrpsee_module_with_methods(handle, disabled_methods, methods) {
             Ok(m) => m,
             Err(err) => {
@@ -474,5 +474,23 @@ impl RpcServer {
 
     pub(crate) fn handlers_guard(&self) -> RwLockReadGuard<'_, HashMap<String, Arc<RpcHandler>>> {
         self.handler_lookup.read()
+    }
+
+    /// Collects the sorted, deduplicated names of the public (non-auth) handlers
+    /// directly from `&self`, taking only the inner handler-map lock.
+    ///
+    /// Used both by [`crate::server::jsonrpsee_adapter`] (after acquiring an outer
+    /// read lock) and by `RpcServer::start_rpc_server` (which already holds the
+    /// outer write lock and therefore cannot acquire the outer read lock).
+    pub fn public_method_names(&self) -> Vec<String> {
+        let handlers = self.handlers_guard();
+        let mut methods = handlers
+            .values()
+            .filter(|handler| !handler.descriptor().requires_auth())
+            .map(|handler| handler.descriptor().name.clone())
+            .collect::<Vec<_>>();
+        methods.sort_unstable();
+        methods.dedup();
+        methods
     }
 }

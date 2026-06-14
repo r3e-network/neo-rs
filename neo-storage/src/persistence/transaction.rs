@@ -3,8 +3,7 @@
 use super::data_cache::{DataCacheConfig, DataCacheResult};
 use super::store::Store;
 use super::store_snapshot::StoreSnapshot;
-use super::{StoreCache, TrackState, Trackable};
-use crate::types::StorageKey;
+use super::StoreCache;
 use std::sync::Arc;
 
 /// Represents a write transaction over a store or snapshot.
@@ -54,17 +53,5 @@ impl StoreTransaction {
 impl From<StoreTransaction> for StoreCache {
     fn from(tx: StoreTransaction) -> Self {
         tx.cache
-    }
-}
-
-/// Helper to apply a tracked change set onto a transactional cache.
-pub fn apply_tracked_items(cache: &mut StoreCache, tracked: Vec<(StorageKey, Trackable)>) {
-    for (key, trackable) in tracked {
-        match trackable.state {
-            TrackState::Added => cache.add(key, trackable.item),
-            TrackState::Changed => cache.update(key, trackable.item),
-            TrackState::Deleted => cache.delete(key),
-            TrackState::None | TrackState::NotFound => {}
-        }
     }
 }

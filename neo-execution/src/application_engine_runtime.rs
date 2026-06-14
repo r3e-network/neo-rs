@@ -557,122 +557,124 @@ fn runtime_current_signers_handler(
     )
 }
 
-pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
-    engine.register_host_service(
-        "System.Runtime.Platform",
-        1 << 3,
-        CallFlags::NONE,
-        runtime_platform_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetTrigger",
-        1 << 3,
-        CallFlags::NONE,
-        runtime_get_trigger_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetNetwork",
-        1 << 3,
-        CallFlags::NONE,
-        runtime_get_network_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetAddressVersion",
-        1 << 3,
-        CallFlags::NONE,
-        runtime_get_address_version_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetTime",
-        1 << 3,
-        CallFlags::NONE,
-        runtime_get_time_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetScriptContainer",
-        1 << 3,
-        CallFlags::NONE,
-        runtime_get_script_container_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.LoadScript",
-        1 << 15,
-        CallFlags::ALLOW_CALL,
-        runtime_load_script_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetExecutingScriptHash",
-        1 << 4,
-        CallFlags::NONE,
-        runtime_get_executing_script_hash_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetCallingScriptHash",
-        1 << 4,
-        CallFlags::NONE,
-        runtime_get_calling_script_hash_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetEntryScriptHash",
-        1 << 4,
-        CallFlags::NONE,
-        runtime_get_entry_script_hash_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.CheckWitness",
-        1 << 10,
-        CallFlags::NONE,
-        runtime_check_witness_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetInvocationCounter",
-        1 << 4,
-        CallFlags::NONE,
-        runtime_get_invocation_counter_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetRandom",
-        0,
-        CallFlags::NONE,
-        runtime_get_random_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GasLeft",
-        1 << 4,
-        CallFlags::NONE,
-        runtime_gas_left_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.Log",
-        1 << 15,
-        CallFlags::ALLOW_NOTIFY,
-        runtime_log_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.Notify",
-        1 << 15,
-        CallFlags::ALLOW_NOTIFY,
-        runtime_notify_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.GetNotifications",
-        1 << 12,
-        CallFlags::NONE,
-        runtime_get_notifications_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.BurnGas",
-        1 << 4,
-        CallFlags::NONE,
-        runtime_burn_gas_handler,
-    )?;
-    engine.register_host_service(
-        "System.Runtime.CurrentSigners",
-        1 << 4,
-        CallFlags::NONE,
-        runtime_current_signers_handler,
-    )?;
-    Ok(())
+impl ApplicationEngine {
+    pub(crate) fn register_runtime_interops(&mut self) -> VmResult<()> {
+        self.register_host_service(
+            "System.Runtime.Platform",
+            1 << 3,
+            CallFlags::NONE,
+            runtime_platform_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetTrigger",
+            1 << 3,
+            CallFlags::NONE,
+            runtime_get_trigger_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetNetwork",
+            1 << 3,
+            CallFlags::NONE,
+            runtime_get_network_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetAddressVersion",
+            1 << 3,
+            CallFlags::NONE,
+            runtime_get_address_version_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetTime",
+            1 << 3,
+            CallFlags::NONE,
+            runtime_get_time_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetScriptContainer",
+            1 << 3,
+            CallFlags::NONE,
+            runtime_get_script_container_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.LoadScript",
+            1 << 15,
+            CallFlags::ALLOW_CALL,
+            runtime_load_script_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetExecutingScriptHash",
+            1 << 4,
+            CallFlags::NONE,
+            runtime_get_executing_script_hash_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetCallingScriptHash",
+            1 << 4,
+            CallFlags::NONE,
+            runtime_get_calling_script_hash_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetEntryScriptHash",
+            1 << 4,
+            CallFlags::NONE,
+            runtime_get_entry_script_hash_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.CheckWitness",
+            1 << 10,
+            CallFlags::NONE,
+            runtime_check_witness_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetInvocationCounter",
+            1 << 4,
+            CallFlags::NONE,
+            runtime_get_invocation_counter_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetRandom",
+            0,
+            CallFlags::NONE,
+            runtime_get_random_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GasLeft",
+            1 << 4,
+            CallFlags::NONE,
+            runtime_gas_left_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.Log",
+            1 << 15,
+            CallFlags::ALLOW_NOTIFY,
+            runtime_log_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.Notify",
+            1 << 15,
+            CallFlags::ALLOW_NOTIFY,
+            runtime_notify_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.GetNotifications",
+            1 << 12,
+            CallFlags::NONE,
+            runtime_get_notifications_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.BurnGas",
+            1 << 4,
+            CallFlags::NONE,
+            runtime_burn_gas_handler,
+        )?;
+        self.register_host_service(
+            "System.Runtime.CurrentSigners",
+            1 << 4,
+            CallFlags::NONE,
+            runtime_current_signers_handler,
+        )?;
+        Ok(())
+    }
 }
 
 fn validate_event_parameters(

@@ -424,74 +424,76 @@ fn storage_find_handler(
     Ok(())
 }
 
-pub(crate) fn register_storage_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
-    engine.register_host_service(
-        "System.Storage.GetContext",
-        1 << 4,
-        CallFlags::READ_STATES,
-        storage_get_context_handler,
-    )?;
-    engine.register_host_service(
-        "System.Storage.GetReadOnlyContext",
-        1 << 4,
-        CallFlags::READ_STATES,
-        storage_get_read_only_context_handler,
-    )?;
-    engine.register_host_service(
-        "System.Storage.AsReadOnly",
-        1 << 4,
-        CallFlags::READ_STATES,
-        storage_as_read_only_handler,
-    )?;
-    engine.register_host_service(
-        "System.Storage.Get",
-        1 << 15,
-        CallFlags::READ_STATES,
-        storage_get_handler,
-    )?;
-    engine.register_host_service(
-        "System.Storage.Put",
-        1 << 15,
-        CallFlags::WRITE_STATES,
-        storage_put_handler,
-    )?;
-    engine.register_host_service(
-        "System.Storage.Delete",
-        1 << 15,
-        CallFlags::WRITE_STATES,
-        storage_delete_handler,
-    )?;
-    engine.register_host_service(
-        "System.Storage.Find",
-        1 << 15,
-        CallFlags::READ_STATES,
-        storage_find_handler,
-    )?;
-    if engine.is_hardfork_enabled(Hardfork::HfFaun) {
-        engine.register_host_service(
-            "System.Storage.Local.Get",
+impl ApplicationEngine {
+    pub(crate) fn register_storage_interops(&mut self) -> VmResult<()> {
+        self.register_host_service(
+            "System.Storage.GetContext",
+            1 << 4,
+            CallFlags::READ_STATES,
+            storage_get_context_handler,
+        )?;
+        self.register_host_service(
+            "System.Storage.GetReadOnlyContext",
+            1 << 4,
+            CallFlags::READ_STATES,
+            storage_get_read_only_context_handler,
+        )?;
+        self.register_host_service(
+            "System.Storage.AsReadOnly",
+            1 << 4,
+            CallFlags::READ_STATES,
+            storage_as_read_only_handler,
+        )?;
+        self.register_host_service(
+            "System.Storage.Get",
             1 << 15,
             CallFlags::READ_STATES,
-            storage_get_local_handler,
+            storage_get_handler,
         )?;
-        engine.register_host_service(
-            "System.Storage.Local.Put",
+        self.register_host_service(
+            "System.Storage.Put",
             1 << 15,
             CallFlags::WRITE_STATES,
-            storage_put_local_handler,
+            storage_put_handler,
         )?;
-        engine.register_host_service(
-            "System.Storage.Local.Delete",
+        self.register_host_service(
+            "System.Storage.Delete",
             1 << 15,
             CallFlags::WRITE_STATES,
-            storage_delete_local_handler,
+            storage_delete_handler,
         )?;
-        engine.register_host_service(
-            "System.Storage.Local.Find",
+        self.register_host_service(
+            "System.Storage.Find",
             1 << 15,
             CallFlags::READ_STATES,
-            storage_find_local_handler,
+            storage_find_handler,
         )?;
+        if self.is_hardfork_enabled(Hardfork::HfFaun) {
+            self.register_host_service(
+                "System.Storage.Local.Get",
+                1 << 15,
+                CallFlags::READ_STATES,
+                storage_get_local_handler,
+            )?;
+            self.register_host_service(
+                "System.Storage.Local.Put",
+                1 << 15,
+                CallFlags::WRITE_STATES,
+                storage_put_local_handler,
+            )?;
+            self.register_host_service(
+                "System.Storage.Local.Delete",
+                1 << 15,
+                CallFlags::WRITE_STATES,
+                storage_delete_local_handler,
+            )?;
+            self.register_host_service(
+                "System.Storage.Local.Find",
+                1 << 15,
+                CallFlags::READ_STATES,
+                storage_find_local_handler,
+            )?;
+        }
+        Ok(())
     }
-    Ok(())
 }

@@ -187,6 +187,21 @@ impl StoreCache {
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         self.data_cache.find(key_prefix, direction)
     }
+
+    /// Applies a tracked change set onto this cache.
+    pub fn apply_tracked_items(
+        &mut self,
+        tracked: Vec<(StorageKey, super::data_cache::Trackable)>,
+    ) {
+        for (key, trackable) in tracked {
+            match trackable.state {
+                TrackState::Added => self.add(key, trackable.item),
+                TrackState::Changed => self.update(key, trackable.item),
+                TrackState::Deleted => self.delete(key),
+                TrackState::None | TrackState::NotFound => {}
+            }
+        }
+    }
 }
 
 pub fn apply_tracked<T>(

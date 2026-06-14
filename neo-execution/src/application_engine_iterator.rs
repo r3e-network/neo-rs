@@ -45,18 +45,20 @@ fn iterator_value_handler(
     Ok(())
 }
 
-pub(crate) fn register_iterator_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
-    engine.register_host_service(
-        "System.Iterator.Next",
-        1 << 15,
-        CallFlags::NONE,
-        iterator_next_handler,
-    )?;
-    engine.register_host_service(
-        "System.Iterator.Value",
-        1 << 4,
-        CallFlags::NONE,
-        iterator_value_handler,
-    )?;
-    Ok(())
+impl ApplicationEngine {
+    pub(crate) fn register_iterator_interops(&mut self) -> VmResult<()> {
+        self.register_host_service(
+            "System.Iterator.Next",
+            1 << 15,
+            CallFlags::NONE,
+            iterator_next_handler,
+        )?;
+        self.register_host_service(
+            "System.Iterator.Value",
+            1 << 4,
+            CallFlags::NONE,
+            iterator_value_handler,
+        )?;
+        Ok(())
+    }
 }

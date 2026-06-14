@@ -222,27 +222,3 @@ impl Serializable for NodeCapability {
     }
 }
 
-/// Creates a TCP server capability descriptor.
-pub fn tcp_server(port: u16) -> NodeCapability {
-    NodeCapability::tcp_server(port)
-}
-
-/// Creates an archival node capability descriptor.
-pub fn archival_node() -> NodeCapability {
-    NodeCapability::archival_node()
-}
-
-/// Creates a disable-compression capability descriptor.
-pub fn disable_compression() -> NodeCapability {
-    NodeCapability::disable_compression()
-}
-
-/// Creates a full node capability descriptor.
-pub fn full_node(start_height: u32) -> NodeCapability {
-    NodeCapability::full_node(start_height)
-}
-
-/// Creates a WebSocket server capability descriptor.
-pub fn ws_server(port: u16) -> NodeCapability {
-    NodeCapability::ws_server(port)
-}

@@ -51,7 +51,7 @@ pub fn build_jsonrpsee_module_with_disabled(
 /// read the `Weak<RwLock<RpcServer>>` to collect method names — that re-locks
 /// the same non-reentrant `parking_lot::RwLock` on the same thread and
 /// deadlocks RPC startup. It collects the names from `&self` via
-/// [`public_method_names`] and passes them in here instead.
+/// [`RpcServer::public_method_names`] and passes them in here instead.
 pub fn build_jsonrpsee_module_with_methods(
     server: Weak<RwLock<RpcServer>>,
     disabled: Arc<HashSet<String>>,
@@ -68,25 +68,7 @@ fn registered_public_methods(server: &Weak<RwLock<RpcServer>>) -> Vec<String> {
     let Some(server) = server.upgrade() else {
         return Vec::new();
     };
-    public_method_names(&server.read())
-}
-
-/// Collects the sorted, deduplicated names of the public (non-auth) handlers
-/// directly from a `&RpcServer`, taking only the inner handler-map lock.
-///
-/// Used both by [`registered_public_methods`] (after acquiring an outer read
-/// lock) and by `RpcServer::start_rpc_server` (which already holds the outer
-/// write lock and therefore cannot acquire the outer read lock).
-pub fn public_method_names(server: &RpcServer) -> Vec<String> {
-    let handlers = server.handlers_guard();
-    let mut methods = handlers
-        .values()
-        .filter(|handler| !handler.descriptor().requires_auth())
-        .map(|handler| handler.descriptor().name.clone())
-        .collect::<Vec<_>>();
-    methods.sort_unstable();
-    methods.dedup();
-    methods
+    server.read().public_method_names()
 }
 
 fn register_neo_method(

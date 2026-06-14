@@ -80,11 +80,6 @@ use neo_vm::jump_table::JumpTable;
 use neo_vm::script::Script;
 // InteropInterface trait removed - StackValue::Interop(u64) is used instead
 // VerifiableInterop is now stored via the interop host registry, not inline in the VM stack
-use crate::application_engine_contract::register_contract_interops;
-use crate::application_engine_crypto::register_crypto_interops;
-use crate::application_engine_iterator::register_iterator_interops;
-use crate::application_engine_runtime::register_runtime_interops;
-use crate::application_engine_storage::register_storage_interops;
 use crate::contract_state::ContractState;
 use crate::diagnostic::Diagnostic;
 use crate::execution_context_state::ExecutionContextState;
