@@ -227,7 +227,9 @@ impl StorageValue for StorageItem {
     }
 
     fn storage_size(&self) -> usize {
-        self.value.len()
+        // Must match to_storage_bytes(): to_value() materializes the cache, so a
+        // cache-only item (empty `value`) still reports its true serialized size.
+        self.to_value().len()
     }
 }
 

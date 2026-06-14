@@ -179,21 +179,16 @@ impl Interoperable for ContractGroup {
         &mut self,
         stack_item: StackItem,
     ) -> std::result::Result<(), neo_vm::VmError> {
-        match StackValue::try_from(stack_item)
-            .map_err(|error| {
-                neo_vm::VmError::invalid_operation_msg(format!(
-                    "Failed to convert ContractGroup StackItem to StackValue: {error}"
-                ))
-            })
-            .and_then(|sv| {
-                Self::try_from_stack_value(sv)
-                    .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
-            }) {
-            Ok(group) => *self = group,
-            Err(e) => {
-                tracing::error!("Failed to parse ContractGroup from stack item: {}", e);
-            }
-        }
+        // Propagate parse errors like the other 11 Interoperable impls (and C#
+        // ContractGroup.FromStackItem, which throws) — swallowing them would let
+        // a malformed manifest silently lose group data.
+        let sv = StackValue::try_from(stack_item).map_err(|error| {
+            neo_vm::VmError::invalid_operation_msg(format!(
+                "Failed to convert ContractGroup StackItem to StackValue: {error}"
+            ))
+        })?;
+        *self = Self::try_from_stack_value(sv)
+            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))?;
         Ok(())
     }
 

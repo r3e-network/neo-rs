@@ -67,12 +67,9 @@ impl neo_payloads::WalletChangedHandler for OracleService {
         // dep, so the impl just best-effort casts: it tries the
         // downcast via the `Any` vtable and otherwise drops the
         // event.
-        let wallet_arc: Option<Arc<dyn Wallet>> = None;
-        if let Some(w) = wallet.as_ref() {
-            if let Some(concrete) = w.downcast_ref::<Arc<dyn Wallet>>() {
-                let _ = concrete;
-            }
-        }
+        let wallet_arc: Option<Arc<dyn Wallet>> = wallet
+            .as_ref()
+            .and_then(|w| w.downcast_ref::<Arc<dyn Wallet>>().cloned());
         *self.wallet.write() = wallet_arc.clone();
         if self.settings.auto_start {
             if let Some(wallet) = wallet_arc {
