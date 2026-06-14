@@ -4,377 +4,156 @@
 
 # neo-rs
 
-Professional Rust implementation of the Neo N3 blockchain node and CLI tools.
+A complete **Neo N3 blockchain node in Rust** — a from-scratch reimplementation of
+the C# reference node with byte-for-byte protocol parity (Neo N3 **v3.10.0**). It
+joins the real MainNet/TestNet, produces the same block hashes and state roots,
+runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
 
 [![Build Status](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust Version](https://img.shields.io/badge/rust-1.85+-blue.svg)](https://www.rust-lang.org)
 
-## Quick Start
+> **New here?** This README is a complete tour. For depth, the [`docs/`](./docs/README.md)
+> system explains the architecture, dataflow, configuration, and full RPC API with
+> diagrams and tables.
 
-### Installation
+---
+
+## What it is
+
+neo-rs is a production node implementation that speaks Neo N3's wire protocol,
+executes its virtual machine, and maintains its ledger and state exactly as the
+canonical C# node does — so the two are interchangeable on the same network. It
+is organized as a layered Rust workspace of 27 focused crates, built on mature
+libraries (RocksDB, jsonrpsee, the RustCrypto suite) with the protocol-defining
+parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
+
+## What it supports
+
+| Area | Support |
+|------|---------|
+| **Networks** | MainNet, TestNet, and private nets (configurable) |
+| **Consensus** | dBFT 2.0 (single-block finality, view changes) |
+| **Virtual machine** | NeoVM with full opcode + interop surface and gas metering |
+| **State** | Merkle-Patricia Trie state root, proofs (`getproof`/`getstate`) |
+| **Native contracts** | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger |
+| **Standards** | NEP-17 (tokens), NEP-11 (NFTs), NEP-6 (wallets), NEP-2 keys |
+| **Hardforks** | Full Neo N3 hardfork schedule through v3.10.0 |
+| **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
+| **Storage** | RocksDB (persistent) or in-memory |
+| **Oracle** | HTTPS + NeoFS request fulfilment |
+
+See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the parity details.
+
+## Architecture at a glance
+
+The workspace is layered so dependencies flow strictly downward — Foundation
+crates know nothing of the services above them.
+
+```mermaid
+flowchart TD
+    APP["<b>Application</b><br/>neo-node (daemon)"]
+    SVC["<b>Services</b><br/>neo-system · neo-runtime · neo-blockchain · neo-consensus<br/>neo-network · neo-rpc · neo-wallets · neo-oracle-service"]
+    MID["<b>VM / Execution / State / Protocol</b><br/>neo-vm · neo-execution · neo-native-contracts · neo-state-service<br/>neo-mempool · neo-payloads · neo-p2p · neo-manifest"]
+    FND["<b>Foundation</b><br/>neo-primitives · neo-io · neo-crypto · neo-config<br/>neo-error · neo-serialization · neo-storage"]
+    APP --> SVC --> MID --> FND
+```
+
+Full crate map and design decisions: [docs/architecture.md](./docs/architecture.md).
+How a block, transaction, and consensus round flow through these crates:
+[docs/dataflow.md](./docs/dataflow.md).
+
+## Quick start
+
+Requires Rust **1.85+** and the usual build toolchain (plus `clang`/`libclang`
+and RocksDB system libs — see [getting-started.md](./docs/getting-started.md)).
 
 ```bash
-# Clone the repository
-git clone https://github.com/r3e-network/neo-rs.git
+# Clone and build the node daemon (release)
+git clone https://github.com/r3e-network/neo-rs
 cd neo-rs
-
-# Build the node daemon
 cargo build --release -p neo-node
+
+# Run a TestNet node
+./target/release/neo-node --config config/testnet.toml
+
+# ...or MainNet
+./target/release/neo-node --config config/mainnet.toml
 ```
 
-> **Note:** `neo-node` builds the runnable daemon by default. Use
-> `--no-default-features` only for the tiny dependency-check stub.
-
-### Running a Node
+Query a running node over JSON-RPC (default MainNet port `10332`):
 
 ```bash
-# TestNet node
-./target/release/neo-node --config neo_testnet_node.toml
-
-# MainNet node
-./target/release/neo-node --config neo_mainnet_node.toml
-
-# Override the RocksDB data directory (also settable via [storage].data_dir
-# or [storage].path in the TOML)
-./target/release/neo-node --config neo_mainnet_node.toml --storage-path /opt/neo/data
-```
-
-The daemon CLI exposes `--config/-c <FILE>`, `--storage-path <DIR>`,
-`--network-magic <U32>`, and the preflight flags `--check-config`,
-`--check-storage`, and `--check-all`. Network/RPC/P2P settings live in the
-TOML config (`[network]`, `[storage]`, `[p2p]`, `[rpc]`, `[consensus]`).
-
-### Querying a Running Node (JSON-RPC)
-
-Enable the RPC server in the config (`[rpc] enabled = true`), then query it over
-HTTP — there is no separate CLI client binary:
-
-```bash
-# Node version / network / hardforks
-curl -s --compressed -X POST http://127.0.0.1:10332 \
-  -H 'Content-Type: application/json' \
+# Node version, network, and active hardforks
+curl -s localhost:10332 -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getversion","params":[]}'
 
 # Current block height
-curl -s -X POST http://127.0.0.1:10332 \
-  -H 'Content-Type: application/json' \
+curl -s localhost:10332 -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
 ```
+
+The full RPC surface is in [docs/rpc-api.md](./docs/rpc-api.md).
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Architecture](./ARCHITECTURE.md) | Comprehensive architecture guide with diagrams, dependency rules, and design principles |
-| [Architecture Details](./docs/ARCHITECTURE.md) | Layering and service boundaries |
-| [Architecture Comparison](./docs/ARCHITECTURE_COMPARISON.md) | C# vs Rust implementation differences |
-| [Style Guide](./docs/STYLE.md) | Code organization, naming conventions, and standards |
-| [Plugin System](./docs/PLUGIN_SYSTEM.md) | Plugin architecture and adding new services |
-| [CLI Architecture](./docs/CLI_ARCHITECTURE.md) | CLI design and wallet operation model |
-| [Deployment](./docs/DEPLOYMENT.md) | Production deployment guide |
-| [Operations](./docs/OPERATIONS.md) | Day-to-day operations and maintenance |
+The [`docs/`](./docs/README.md) directory is a self-contained learning system —
+you can understand the whole node without reading source.
 
-## Architecture
+| Doc | What you'll learn |
+|-----|-------------------|
+| [Getting started](./docs/getting-started.md) | Install, build, and run your first node |
+| [Architecture](./docs/architecture.md) | The 27-crate layered design and key decisions |
+| [Dataflow](./docs/dataflow.md) | How blocks, transactions, consensus, and state move through the node |
+| [Configuration](./docs/configuration.md) | Every TOML section and key, with defaults |
+| [RPC API](./docs/rpc-api.md) | All JSON-RPC methods, grouped, with examples |
+| [Protocol & compatibility](./docs/protocol-compatibility.md) | Neo N3 v3.10.0 parity, native contracts, hardforks |
+| [Operations](./docs/operations.md) | Deploy, monitor, secure, back up, and upgrade |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Application:  neo-node (daemon)  ·  neo-rpc (JSON-RPC server)│
-├─────────────────────────────────────────────────────────────┤
-│  Services:     neo-system · neo-network · neo-consensus (dBFT)│
-│                neo-blockchain · neo-mempool · neo-state-service│
-├─────────────────────────────────────────────────────────────┤
-│  Execution:    neo-execution (ApplicationEngine) · neo-vm     │
-│                neo-native-contracts · neo-blockchain checks    │
-├─────────────────────────────────────────────────────────────┤
-│  Protocol:     neo-payloads · neo-p2p · neo-config · net wire  │
-├─────────────────────────────────────────────────────────────┤
-│  Foundation:   neo-primitives · neo-crypto · neo-storage       │
-│                neo-io · neo-serialization::json · neo-error                   │
-└─────────────────────────────────────────────────────────────┘
-```
+**Learning paths:** operators → *getting-started → configuration → operations*;
+developers → *architecture → dataflow → protocol-compatibility → rpc-api*.
 
-> The historical `neo-core` crate was dissolved into the current 32-package
-> workspace with an acyclic dependency DAG (foundation → protocol → execution
-> → services → application).
-> There is no `neo-cli` binary; query a running node over JSON-RPC.
-
-## Compatibility
-
-| neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
-| -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
-| 0.7.x          | 3.10.0         | [`v3.10.0`](https://github.com/neo-project/neo/releases/tag/v3.10.0) (HF_Gorgon VM gating, native activation, CryptoLib V2, VerifyResult.NotYetValid) |
-| 0.7.x          | 3.9.1          | [`v3.9.1`](https://github.com/neo-project/neo/releases/tag/v3.9.1) (execution/vector parity validated) |
-| 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
-
-This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation for blocks, transactions, and P2P messages, and tracks consensus-affecting changes through C# v3.10.0 (the VM jump-table is hardfork-gated so pre-Gorgon blocks replay identically).
-
-### C# v3.10.0 Feature Parity
-
-The following Neo N3 protocol features are implemented and checked against the
-C# reference line through v3.10.0:
-
-| Feature | Status | Description |
-|---------|--------|-------------|
-| **VersionPayload NodeKey/NodeId** | ✅ Complete | P2P identity using ECDSA public key + SHA256(node_id) |
-| **P2P Signature Verification** | ✅ Complete | VersionPayload cryptographic signature for handshake |
-| **BIP-0032 HD Wallets** | ✅ Complete | ExtendedKey, KeyPath derivation (m/44'/888'/i'/0/0) |
-| **BIP-0039 Mnemonics** | ✅ Complete | Multi-language wordlists (10 languages) |
-| **NEP-30 Oracle/Notary/Treasury** | ✅ Complete | NEP-30 standard support for native contracts |
-| **TokenManagement Contract** | ✅ Complete | NEP-17/NEP-11 management with `_onTransfer` callbacks |
-| **TokenManagement Methods** | ✅ Complete | create, mint, burn, transfer, balanceOf, getTokenInfo, getAssetsOfOwner |
-| **NEP-11 NFT Methods** | ✅ Complete (9 tests) | mintNFT, burnNFT, transferNFT, getNFTInfo, getNFTs, getNFTsOfOwner, balanceOf |
-| **Fungible Token (NEP-17)** | ✅ Complete | Full implementation with mintable_address validation |
-| **Gas Token (NEP-17)** | ✅ Complete | Mint, burn, transfer with `onNEP17Payment` callback |
-| **Neo Token (NEP-17)** | ✅ Complete | Voting, candidate registration, GAS distribution |
-| **Notary Contract** | ✅ Complete | Multi-signature deposits, GAS locking |
-| **Oracle Contract** | ✅ Complete | External data requests with NEP-30 support |
-| **Policy Contract** | ✅ Complete | Fee management, account blocking |
-| **Role Management** | ✅ Complete | Oracle/Notary role designation |
-| **Ledger Contract** | ✅ Complete | Block/transaction storage, state roots |
-| **StdLib Crypto** | ✅ Complete | SHA256, RIPEMD160, BLS12-381, Keccak256 |
-| **Base58 Security** | ✅ Complete | Stack allocation bounds checking |
-
-### Native Contract IDs
-
-All native contract hashes match the C# reference implementation:
-
-| Contract | ID | Hash (LE) |
-|----------|---|-----------|
-| ContractManagement | -1 | `0xfffdc93764dbaddd97c48f252a53ea4643faa3fd` |
-| StdLib | -2 | `0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0` |
-| CryptoLib | -3 | `0x726cb6e0cd8628a1350a611384688911ab75f51b` |
-| LedgerContract | -4 | `0xda65b600f7124ce6c79950c1772a36403104f2be` |
-| NeoToken | -5 | `0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5` |
-| GasToken | -6 | `0xd2a4cff31913016155e38e474a2c06d08be276cf` |
-| PolicyContract | -7 | `0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b` |
-| RoleManagement | -8 | `0x49cf4e5378ffcd4dec034fd98a174c5491e395e2` |
-| OracleContract | -9 | `0xfe924b7cfe89ddd271abaf7210a80a7e11178758` |
-| Notary | -10 | `0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b` |
-| Treasury | -11 | `0x156326f25b1b5d839a4d326aeaa75383c9563ac1` |
-| TokenManagement | -12 | `0xae00c57daeb20f9b65504f53265e4f32b9f4a8a0` |
-
-### Test Coverage
+## Project layout
 
 ```
-✅ cargo test --workspace            — 124 test binaries, 0 failures
-✅ cargo test -p neo-rpc --features server   — JSON-RPC server suite green
-✅ cargo test -p neo-node          — node daemon suite green
-✅ Native contract hash + JSON manifest parity with C# v3.9.1/3.10.0
-✅ C#-derived reference-vector tests (VM opcodes/interops, MPT state roots,
-   ledger-record encoding, dBFT block assembly)
+neo-rs/
+├── neo-primitives, neo-io, neo-crypto, neo-config,   # Foundation layer
+│   neo-error, neo-serialization, neo-storage
+├── neo-payloads, neo-p2p, neo-manifest,              # Protocol / VM / state
+│   neo-vm, neo-execution, neo-native-contracts,
+│   neo-state-service, neo-mempool
+├── neo-blockchain, neo-consensus, neo-network,       # Services
+│   neo-runtime, neo-system, neo-wallets,
+│   neo-rpc, neo-oracle-service, neo-tee
+├── neo-node                                          # Application (daemon)
+├── config/                                           # mainnet/testnet TOML configs
+├── docs/                                             # the documentation system
+└── tests/, benches-package/, fuzz/                   # tests, benchmarks, fuzzing
 ```
 
-## Prerequisites
-
-- Rust (stable toolchain recommended)
-- RocksDB native library (required by the default storage provider). On Ubuntu/Debian: `sudo apt-get install librocksdb-dev`.
-
-## Build
+## Build and test
 
 ```bash
-# The full node daemon
-cargo build --release -p neo-node
-
-# Or build/test the whole workspace
-cargo build --workspace
+cargo build --release -p neo-node       # the node daemon
+cargo test  --workspace                 # workspace test suite
+cargo clippy --workspace --all-targets  # lints (policy in [workspace.lints])
 ```
 
-Release build for production:
-
-```bash
-cargo build --release
-```
-
-Use `cargo build --workspace` when you explicitly need optional crates such as
-TEE/HSM integrations, telemetry, tests, and benchmarks.
-
-## Run the node
-
-`neo-node` is the daemon (P2P sync + optional JSON-RPC server). Query it over
-JSON-RPC.
-
-```bash
-cargo run -p neo-node --release -- --config neo_mainnet_node.toml
-```
-
-Common overrides:
-
-- `--storage-path <path>`: custom RocksDB path
-- `--network-magic <u32>`: override the protocol network magic
-- Edit `[storage].backend`, `[p2p].port`, seed nodes, and RPC settings in TOML.
-
-Use `cargo run -p neo-node -- --help` for the full daemon flag list.
-
-Query a running node:
-
-```bash
-curl -s --compressed -X POST http://localhost:10332 \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
-```
-
-Validate a node config without starting the daemon:
-
-```bash
-cargo run -p neo-node -- --config neo_mainnet_node.toml --check-config
-```
-
-Validate storage accessibility without starting the daemon:
-
-```bash
-cargo run -p neo-node -- --config neo_mainnet_node.toml --check-storage
-```
-
-Run both checks in one go:
-
-```bash
-cargo run -p neo-node -- --config neo_mainnet_node.toml --check-all
-```
-
-Preflight both bundled configs:
-
-```bash
-make preflight
-```
-
-Configuration is CLI plus TOML. The native daemon reads `RUST_LOG` for logging
-filters; Docker adds a small entrypoint layer for selecting the bundled config
-and storage directory.
-
-For hardened RPC, set the `[rpc]` section in TOML: bind to loopback, disable
-CORS, enable authentication, and disable wallet-mutating methods before exposing
-the endpoint through a reverse proxy.
-
-## Docker
-
-Build an image and run on TestNet with a persistent data volume:
-
-```bash
-docker build -t neo-rs .
-docker run -d --name neo-node \
-  -p 20332:20332 -p 20333:20333 \
-  -v $(pwd)/data:/data \
-  -e NEO_NETWORK=testnet \
-  neo-rs
-```
-
-Key Docker environment knobs:
-
-- `NEO_NETWORK`: `testnet` (default) or `mainnet` to pick the bundled TOML config.
-- `NEO_STORAGE`: RocksDB path inside the container (defaults to `/data/testnet` or `/data/mainnet` based on `NEO_NETWORK`).
-- `NEO_CONFIG`: custom config path if you bind-mount your own TOML.
-- `NEO_PLUGINS_DIR`: where plugin configs (e.g., RpcServer.json) are written; defaults to `/data/Plugins`.
-- `NEO_RPC_PORT`: optional health-check port override. The node's actual RPC port still comes from the TOML `[rpc]` section.
-- Containers run as an unprivileged `neo` user with home at `/home/neo`; mount data under `/data` for persistence.
-
-Health checks hit `getversion` on the detected RPC port (parsed from the config when possible; otherwise 20332 for TestNet or 10332 for MainNet). See `docker-compose.yml` for a compose-based setup.
-
-## Security
-
-Please see `SECURITY.md` for vulnerability reporting guidelines.
+Coding standards and the lint/error/style conventions are in
+[CONVENTIONS.md](./CONVENTIONS.md).
 
 ## Contributing
 
-See `CONTRIBUTING.md` for development, testing, and release note guidelines before opening a PR.
-Use the GitHub issue templates for bug reports and feature requests; for security issues, follow `SECURITY.md`.
+Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) and
+[CONVENTIONS.md](./CONVENTIONS.md). Work on a feature branch, keep `cargo test`,
+`cargo clippy`, and `cargo fmt --check` green, and match the existing style.
 
-Using Docker Compose (defaults to TestNet):
+## Security
 
-```bash
-# optional: cp .env.example .env and tweak values
-docker compose up -d neo-node
-# or use Makefile helpers
-make compose-up   # start
-make compose-logs # tail logs
-make compose-down # stop/remove
-make compose-ps   # status
-make compose-monitor # start Grafana (monitoring profile)
-```
+Report vulnerabilities per [SECURITY.md](./SECURITY.md). Before exposing RPC
+beyond localhost, read the hardening guidance in
+[docs/operations.md](./docs/operations.md).
 
-Optional monitoring (Grafana) is behind a compose profile:
+## License
 
-```bash
-docker compose --profile monitoring up -d neo-monitor
-make compose-monitor  # equivalent
-```
-
-Adjust `.env` or environment variables to switch to mainnet
-(`NEO_NETWORK=mainnet`), mount your own config (`NEO_CONFIG`), or change the
-storage location (`NEO_STORAGE`). Edit the TOML to change backend, P2P, and RPC
-ports. The compose file also raises `nofile`/`nproc` limits for better
-production defaults.
-
-## Tests
-
-Run the full suite:
-
-```bash
-cargo test --workspace
-```
-
-For faster iterations you can target a specific crate or test:
-
-```bash
-cargo test -p neo-native-contracts
-```
-
-## Legacy Neo v3.9.1 Consistency Validation
-
-The repository still includes the historical v3.9.1 compatibility workflow used
-before the v3.10.0 alignment work. Run it only when checking that legacy target:
-
-```bash
-bash scripts/validate-v391-consistency.sh --network all
-```
-
-Key checks performed:
-
-- Local `neo-node` `getversion.protocol` parity vs live C# (`Neo:3.9.1`) and NeoGo endpoints.
-- Full execution-spec vector run against local `neo-node` for MainNet/TestNet.
-- Optional C# vs NeoGo baseline compatibility to detect reference endpoint drift.
-
-CI automation:
-
-- Workflow: `.github/workflows/compatibility-v391.yml`
-- Triggers: schedule every 12 hours, `workflow_dispatch`, and PR/push affecting core protocol paths.
-- Artifacts: `reports/compat-v391/**` with protocol snapshots, logs, and vector reports.
-
-## Linting & formatting
-
-```bash
-cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-```
-
-## Configuration
-
-- `neo_mainnet_node.toml`: default mainnet settings.
-- `neo_production_node.toml`: production template you can adjust for your environment.
-- `NEO_PLUGINS_DIR`: set this env var to move plugin state/config (like `Plugins/RpcServer.json`) to a writable, persistent path.
-- Config files are tolerant of unknown future keys/tables. Consumed sections include `[network]`, `[p2p]`, `[storage]`, `[blockchain]`, `[mempool]`, `[rpc]`, and `[consensus]`/`[dbft]`.
-- Validate configs without starting the node via `neo-node --check-config --config <path>`.
-- Logging defaults to `/data/Logs/neo-node.log` in Docker and can be moved via the config `logging.path`.
-- If you use the bundled production TOML outside Docker, create the configured log directory (or override `logging.path`).
-- See `docs/RPC_HARDENING.md` for a hardened `RpcServer.json` example and reverse-proxy guidance.
-- See `docs/MONITORING.md` for signal/alert suggestions.
-- Sample RPC plugin config: `config/Plugins/RpcServer/RpcServer.json.example` (copy to your `Plugins/RpcServer` directory and adjust network/credentials).
-
-Logs and data directories default to `Logs/` and `data/` in the repository root; override via CLI flags or the TOML configuration.
-
-## Production notes
-
-- Build with `--release` and ensure `librocksdb` is available on the host.
-- Data directories carry `NETWORK_MAGIC` and `VERSION` markers; start a node only with matching binaries/configs for that path.
-- Point `--storage-path` and `--config` to durable volumes; back up RocksDB data regularly.
-- RPC security: CORS is disabled by default in the production TOML; expose RPC through a reverse proxy with TLS/auth and rate limits if publishing it beyond localhost.
-- Ensure the log directory exists and is writable for the configured path (default `/data/Logs` in the production TOML).
-- Keep plugin configs on persistent storage; set `NEO_PLUGINS_DIR` when running from a read-only prefix (containers, packages).
-- Tune OS limits: increase `nofile` and `nproc`, and run under a service manager (systemd, supervisord) with restart policies.
-- Set logging via `RUST_LOG=info` (or `debug` when diagnosing); rotate `Logs/` via your log manager.
-- Keep peers and network magic consistent with your target network; verify via the TOML files.
-- For a systemd-based setup, see `docs/DEPLOYMENT.md` for a sample unit and checklist.
-- For day-to-day operations (health checks, backups, upgrades), see `docs/OPERATIONS.md`.
-- Backups: use `scripts/backup-rocksdb.sh <rocksdb_path> [backup_dir]` (or `make backup-rocksdb ROCKSDB_PATH=/path/to/db BACKUP_DIR=backups`) and keep backups off the data volume; stopping the node during backup is recommended.
-- Monitoring: see `docs/MONITORING.md` for suggested signals and alerts.
-- Releases: `docs/RELEASE.md` covers tagging and the GHCR publish workflow.
+Licensed under the [MIT License](./LICENSE).
