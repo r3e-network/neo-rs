@@ -140,11 +140,9 @@ impl LedgerRecords {
         // Prefix_Block: hash → TrimmedBlock.Create(block).ToArray().
         let mut tx_hashes = Vec::with_capacity(block.transactions.len());
         for tx in &block.transactions {
-            tx_hashes.push(
-                tx.try_hash().map_err(|e| {
-                    CoreError::invalid_operation(format!("ledger records: tx hash: {e}"))
-                })?,
-            );
+            tx_hashes.push(tx.try_hash().map_err(|e| {
+                CoreError::invalid_operation(format!("ledger records: tx hash: {e}"))
+            })?);
         }
         let trimmed = TrimmedBlock::new(block.header.clone(), tx_hashes.clone());
         let mut writer = neo_io::BinaryWriter::new();
@@ -159,7 +157,11 @@ impl LedgerRecords {
         // Per-transaction records + conflict stubs, in block order (later
         // writes overwrite earlier ones, exactly like the C# loop).
         for (tx, tx_hash) in block.transactions.iter().zip(tx_hashes.iter()) {
-            let record = LedgerContract::new().serialize_persisted_transaction_state(index, VMState::NONE, tx)?;
+            let record = LedgerContract::new().serialize_persisted_transaction_state(
+                index,
+                VMState::NONE,
+                tx,
+            )?;
             upsert(cache, Self::transaction_key(tx_hash), record);
 
             let conflict_hashes: Vec<UInt256> = tx
@@ -202,7 +204,11 @@ impl LedgerRecords {
         tx_hash: &UInt256,
         vm_state: VMState,
     ) -> CoreResult<()> {
-        let record = LedgerContract::new().serialize_persisted_transaction_state(block_index, vm_state, tx)?;
+        let record = LedgerContract::new().serialize_persisted_transaction_state(
+            block_index,
+            vm_state,
+            tx,
+        )?;
         upsert(cache, Self::transaction_key(tx_hash), record);
         Ok(())
     }
@@ -365,11 +371,20 @@ mod tests {
         ];
         expected_record.extend_from_slice(&tx_bytes);
         expected_record.extend_from_slice(&[0x21, 0x00]); // VMState::NONE
-        assert_eq!(raw(&LedgerRecords::transaction_key(&tx_hash)), expected_record);
+        assert_eq!(
+            raw(&LedgerRecords::transaction_key(&tx_hash)),
+            expected_record
+        );
 
         // After execution the record is rewritten with HALT (= 1).
-        LedgerRecords::update_transaction_vm_state(&cache, 0x0102_0304, &tx, &tx_hash, VMState::HALT)
-            .unwrap();
+        LedgerRecords::update_transaction_vm_state(
+            &cache,
+            0x0102_0304,
+            &tx,
+            &tx_hash,
+            VMState::HALT,
+        )
+        .unwrap();
         let mut expected_halt = vec![
             0x41,
             0x03,
@@ -384,7 +399,10 @@ mod tests {
         ];
         expected_halt.extend_from_slice(&tx_bytes);
         expected_halt.extend_from_slice(&[0x21, 0x01, 0x01]);
-        assert_eq!(raw(&LedgerRecords::transaction_key(&tx_hash)), expected_halt);
+        assert_eq!(
+            raw(&LedgerRecords::transaction_key(&tx_hash)),
+            expected_halt
+        );
 
         // --- Prefix_CurrentBlock (12): value = BinarySerializer bytes of
         // Struct[ByteString(hash), Integer(index)] (HashIndexState).

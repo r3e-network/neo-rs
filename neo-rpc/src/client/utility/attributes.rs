@@ -20,9 +20,9 @@ pub fn attribute_from_json(json: &JObject) -> CoreResult<TransactionAttribute> {
     match attr_type.as_str() {
         "HighPriority" => Ok(TransactionAttribute::HighPriority),
         "NotValidBefore" => {
-            let height_token = json
-                .get("height")
-                .ok_or_else(|| CoreError::other("NotValidBefore attribute missing 'height' field"))?;
+            let height_token = json.get("height").ok_or_else(|| {
+                CoreError::other("NotValidBefore attribute missing 'height' field")
+            })?;
             let height = parse_u32_token(height_token, "height")?;
             Ok(TransactionAttribute::NotValidBefore(NotValidBefore::new(
                 height,
@@ -38,9 +38,9 @@ pub fn attribute_from_json(json: &JObject) -> CoreResult<TransactionAttribute> {
             Ok(TransactionAttribute::Conflicts(Conflicts::new(hash)))
         }
         "NotaryAssisted" => {
-            let nkeys_token = json
-                .get("nkeys")
-                .ok_or_else(|| CoreError::other("NotaryAssisted attribute missing 'nkeys' field"))?;
+            let nkeys_token = json.get("nkeys").ok_or_else(|| {
+                CoreError::other("NotaryAssisted attribute missing 'nkeys' field")
+            })?;
             let nkeys = parse_u32_token(nkeys_token, "nkeys")?;
             Ok(TransactionAttribute::NotaryAssisted(NotaryAssisted::new(
                 nkeys as u8,
@@ -55,9 +55,9 @@ pub fn attribute_from_json(json: &JObject) -> CoreResult<TransactionAttribute> {
                 .get("code")
                 .ok_or_else(|| CoreError::other("OracleResponse attribute missing 'code' field"))?;
             let code = parse_oracle_response_code(code_token)?;
-            let result_token = json
-                .get("result")
-                .ok_or_else(|| CoreError::other("OracleResponse attribute missing 'result' field"))?;
+            let result_token = json.get("result").ok_or_else(|| {
+                CoreError::other("OracleResponse attribute missing 'result' field")
+            })?;
             let result = parse_base64_token(result_token, "result")?;
             Ok(TransactionAttribute::OracleResponse(OracleResponse::new(
                 id, code, result,

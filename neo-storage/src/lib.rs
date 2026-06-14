@@ -1,4 +1,3 @@
-
 //! # Neo Storage
 //!
 //! Storage traits and types for the Neo blockchain.

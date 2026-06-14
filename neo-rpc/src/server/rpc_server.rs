@@ -3,11 +3,7 @@ use prometheus::Counter;
 use rustls::ServerConfig;
 use serde_json::Value;
 use std::sync::LazyLock;
-use tokio::{
-    sync::oneshot,
-    task::JoinHandle,
-    time::sleep,
-};
+use tokio::{sync::oneshot, task::JoinHandle, time::sleep};
 
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -272,8 +268,7 @@ impl RpcServer {
         // tower layer carries a fragile response-body type bound. Both are
         // tracked as follow-ups in docs/RPC_HARDENING.md.
         let max_body = u32::try_from(self.settings.max_request_body_size).unwrap_or(u32::MAX);
-        let max_conns =
-            u32::try_from(self.settings.max_concurrent_connections).unwrap_or(u32::MAX);
+        let max_conns = u32::try_from(self.settings.max_concurrent_connections).unwrap_or(u32::MAX);
         let batch_cfg = match u32::try_from(self.settings.max_batch_size).unwrap_or(u32::MAX) {
             0 => jsonrpsee::server::BatchRequestConfig::Disabled,
             n => jsonrpsee::server::BatchRequestConfig::Limit(n),
@@ -342,15 +337,15 @@ impl RpcServer {
             let purge_task = tokio::spawn(async move {
                 loop {
                     tokio::select! {
-                     () = sleep(interval) => {
-                         // Purge runs in a best-effort manner; the actual
-                         // lock acquisition happens inside `purge_expired_sessions`
-                         // which the server uses through the rpc handler
-                         // invocation path. For the periodic background
-                         // purge, the daemon's `stop_rpc_server` sends the
-                         // shutdown signal so we just sleep here.
-                     }
-                     _ = &mut purge_rx => break}
+                    () = sleep(interval) => {
+                        // Purge runs in a best-effort manner; the actual
+                        // lock acquisition happens inside `purge_expired_sessions`
+                        // which the server uses through the rpc handler
+                        // invocation path. For the periodic background
+                        // purge, the daemon's `stop_rpc_server` sends the
+                        // shutdown signal so we just sleep here.
+                    }
+                    _ = &mut purge_rx => break}
                 }
             });
             self.session_purge_shutdown = Some(purge_tx);

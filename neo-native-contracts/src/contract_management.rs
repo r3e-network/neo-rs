@@ -256,12 +256,16 @@ impl ContractManagement {
             let items = fields.items();
             let method = items
                 .get(1)
-                .ok_or_else(|| CoreError::invalid_data("whitelisted-contract entry missing method"))?
+                .ok_or_else(|| {
+                    CoreError::invalid_data("whitelisted-contract entry missing method")
+                })?
                 .as_bytes()
                 .map_err(|e| CoreError::invalid_data(format!("whitelist method: {e}")))?;
             let arg_count = items
                 .get(2)
-                .ok_or_else(|| CoreError::invalid_data("whitelisted-contract entry missing argCount"))?
+                .ok_or_else(|| {
+                    CoreError::invalid_data("whitelisted-contract entry missing argCount")
+                })?
                 .as_int()
                 .map_err(|e| CoreError::invalid_data(format!("whitelist argCount: {e}")))?;
             engine
@@ -276,7 +280,9 @@ impl ContractManagement {
                     ],
                 )
                 .map_err(|e| {
-                    CoreError::invalid_operation(format!("ContractManagement::destroy: notify: {e}"))
+                    CoreError::invalid_operation(format!(
+                        "ContractManagement::destroy: notify: {e}"
+                    ))
                 })?;
         }
         Ok(())
@@ -429,9 +435,9 @@ impl ContractManagement {
                 Some(validated) => {
                     if !validated.has_instruction_at(offset) {
                         return Err(CoreError::invalid_operation(format!(
-                        "ContractManagement: method '{}' offset {} is not an instruction boundary",
-                        method.name, offset
-                    )));
+                            "ContractManagement: method '{}' offset {} is not an instruction boundary",
+                            method.name, offset
+                        )));
                     }
                 }
                 None => {
@@ -573,7 +579,9 @@ impl ContractManagement {
             })?
             .sender()
             .ok_or_else(|| {
-                CoreError::invalid_operation("ContractManagement::deploy: transaction has no sender")
+                CoreError::invalid_operation(
+                    "ContractManagement::deploy: transaction has no sender",
+                )
             })?;
         let nef_bytes = args.first().ok_or_else(|| {
             CoreError::invalid_operation("ContractManagement::deploy requires a NEF file")
@@ -714,12 +722,14 @@ impl ContractManagement {
             CoreError::invalid_operation("ContractManagement::update requires a calling contract")
         })?;
         let snapshot = engine.snapshot_cache();
-        let mut contract = ContractManagement::get_contract_from_snapshot(&snapshot, &calling_hash)?
-            .ok_or_else(|| {
-                CoreError::invalid_operation(format!(
-                    "Updating Contract Does Not Exist: {calling_hash}"
-                ))
-            })?;
+        let mut contract =
+            ContractManagement::get_contract_from_snapshot(&snapshot, &calling_hash)?.ok_or_else(
+                || {
+                    CoreError::invalid_operation(format!(
+                        "Updating Contract Does Not Exist: {calling_hash}"
+                    ))
+                },
+            )?;
         if contract.update_counter == u16::MAX {
             return Err(CoreError::invalid_operation(
                 "The contract reached the maximum number of updates.",
@@ -1286,7 +1296,10 @@ impl NativeContract for ContractManagement {
                     self.policy_clean_whitelist(engine, &contract)?;
                 }
                 // Delete the per-contract record and the id -> hash index entry.
-                snapshot.delete(&StorageKey::new(Self::ID, Self::contract_storage_key(&hash)));
+                snapshot.delete(&StorageKey::new(
+                    Self::ID,
+                    Self::contract_storage_key(&hash),
+                ));
                 snapshot.delete(&StorageKey::new(
                     Self::ID,
                     Self::contract_id_storage_key(contract.id),
@@ -1557,7 +1570,9 @@ mod tests {
             StorageItem::from_bytes(vec![0xEE; 20]),
         );
         assert_eq!(
-            ContractManagement::new().contract_hash_entries(&cache).len(),
+            ContractManagement::new()
+                .contract_hash_entries(&cache)
+                .len(),
             2
         );
     }
@@ -1624,7 +1639,11 @@ mod tests {
             .unwrap()
             .expect("contract record resolves");
         // Positive: exact pcount and the -1 wildcard.
-        assert!(ContractManagement::abi_has_method(&fetched.manifest, "transfer", 4));
+        assert!(ContractManagement::abi_has_method(
+            &fetched.manifest,
+            "transfer",
+            4
+        ));
         assert!(ContractManagement::abi_has_method(
             &fetched.manifest,
             "transfer",
@@ -1731,11 +1750,19 @@ mod tests {
         // Exact (name, count) match.
         assert!(ContractManagement::abi_has_method(&manifest, "transfer", 4));
         // Wrong count -> no match.
-        assert!(!ContractManagement::abi_has_method(&manifest, "transfer", 3));
+        assert!(!ContractManagement::abi_has_method(
+            &manifest, "transfer", 3
+        ));
         // pcount == -1 matches any count.
-        assert!(ContractManagement::abi_has_method(&manifest, "transfer", -1));
+        assert!(ContractManagement::abi_has_method(
+            &manifest, "transfer", -1
+        ));
         // Unknown name -> no match.
-        assert!(!ContractManagement::abi_has_method(&manifest, "balanceOf", -1));
+        assert!(!ContractManagement::abi_has_method(
+            &manifest,
+            "balanceOf",
+            -1
+        ));
         // Empty manifest -> no match.
         assert!(!ContractManagement::abi_has_method(
             &ContractManifest::new("e".to_string()),
@@ -1830,8 +1857,18 @@ mod tests {
         // C# GetNextAvailableId: return the stored value, write value + 1; the
         // genesis InitializeAsync seeds 1, which the absent-key default mirrors.
         let cache = DataCache::new(false);
-        assert_eq!(ContractManagement::new().get_next_available_id(&cache).unwrap(), 1);
-        assert_eq!(ContractManagement::new().get_next_available_id(&cache).unwrap(), 2);
+        assert_eq!(
+            ContractManagement::new()
+                .get_next_available_id(&cache)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            ContractManagement::new()
+                .get_next_available_id(&cache)
+                .unwrap(),
+            2
+        );
         assert_eq!(
             crate::read_storage_int(
                 &cache,
@@ -1867,7 +1904,9 @@ mod tests {
         // An out-of-range offset fails in both modes (C# `ip >= Length`).
         let abi_oob = ContractAbi::new(vec![method("main", 9)], vec![]);
         assert!(ContractManagement::check_script_against_abi(&ret_script, &abi_oob, true).is_err());
-        assert!(ContractManagement::check_script_against_abi(&ret_script, &abi_oob, false).is_err());
+        assert!(
+            ContractManagement::check_script_against_abi(&ret_script, &abi_oob, false).is_err()
+        );
 
         // PUSHDATA1 [len 1] [0x40]: offset 2 sits INSIDE the operand. The
         // strict (post-Basilisk) Script rejects non-boundary offsets, while the
@@ -1891,7 +1930,8 @@ mod tests {
             ],
         );
         assert!(
-            ContractManagement::check_script_against_abi(&ret_script, &abi_dup_events, true).is_err()
+            ContractManagement::check_script_against_abi(&ret_script, &abi_dup_events, true)
+                .is_err()
         );
     }
 
@@ -2199,9 +2239,11 @@ mod destroy_engine_tests {
         let account = UInt160::from_bytes(&[0x33u8; 20]).unwrap();
         // First block: post-Faun the entry stores GetTime() (the persisting
         // block's timestamp) for Policy's recoverFund.
-        assert!(crate::PolicyContract::new()
-            .block_account_internal(&mut engine, &account)
-            .unwrap());
+        assert!(
+            crate::PolicyContract::new()
+                .block_account_internal(&mut engine, &account)
+                .unwrap()
+        );
         let item = snapshot
             .get(&crate::PolicyContract::blocked_account_key(&account))
             .expect("blocked entry written");
@@ -2210,9 +2252,11 @@ mod destroy_engine_tests {
             BigInt::from(1_700_000_123_456i64)
         );
         // Already blocked -> false, nothing rewritten (C# returns early).
-        assert!(!crate::PolicyContract::new()
-            .block_account_internal(&mut engine, &account)
-            .unwrap());
+        assert!(
+            !crate::PolicyContract::new()
+                .block_account_internal(&mut engine, &account)
+                .unwrap()
+        );
     }
 
     #[test]
@@ -2271,9 +2315,11 @@ mod destroy_engine_tests {
             settings,
         );
 
-        assert!(crate::PolicyContract::new()
-            .block_account_internal(&mut engine, &account)
-            .unwrap());
+        assert!(
+            crate::PolicyContract::new()
+                .block_account_internal(&mut engine, &account)
+                .unwrap()
+        );
         let item = snapshot
             .get(&crate::PolicyContract::blocked_account_key(&account))
             .expect("blocked entry written after the vote transition");

@@ -97,7 +97,8 @@ impl RpcResponseError {
         let code = json
             .get("code")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'code' field"))? as i32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'code' field"))?
+            as i32;
 
         let message = json
             .get("message")

@@ -9,9 +9,7 @@
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 
-use neo_primitives::base58_check::{
-    AddressDecodeError, Base58Check, Base58CheckDecodeError,
-};
+use neo_primitives::base58_check::{AddressDecodeError, Base58Check, Base58CheckDecodeError};
 
 /// Address / script-hash conversion helpers.
 pub struct WalletAddress;
@@ -43,6 +41,7 @@ impl WalletAddress {
                     format!("Invalid address version: expected version {expected}, but got {actual}. The address may be for a different network.")
                 }
             }))?;
-        UInt160::from_bytes(&script_hash).map_err(|e| CoreError::other(format!("Invalid script hash bytes: {e}")))
+        UInt160::from_bytes(&script_hash)
+            .map_err(|e| CoreError::other(format!("Invalid script hash bytes: {e}")))
     }
 }

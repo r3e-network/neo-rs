@@ -169,9 +169,7 @@ impl BlockValidator {
     /// # Returns
     /// * `Ok(())` if transaction count is within limits
     /// * `Err(BlockValidationError)` if too many transactions
-    pub fn validate_transaction_count<B: BlockLike>(
-        block: &B,
-    ) -> Result<(), BlockValidationError> {
+    pub fn validate_transaction_count<B: BlockLike>(block: &B) -> Result<(), BlockValidationError> {
         Self::validate_transaction_count_raw(block.transaction_count())
     }
 

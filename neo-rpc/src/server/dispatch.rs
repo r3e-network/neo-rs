@@ -105,4 +105,3 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
         "panic".to_string()
     }
 }
-

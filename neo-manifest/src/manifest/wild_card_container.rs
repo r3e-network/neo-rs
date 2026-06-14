@@ -126,7 +126,9 @@ impl WildCardContainer<String> {
             StackValue::Null => Ok(Self::create_wildcard()),
             StackValue::Array(items) => Ok(Self::create(Self::strings_from_stack_values(items)?)),
             StackValue::Struct(items) => Ok(Self::create(Self::strings_from_stack_values(items)?)),
-            _ => Err(CoreError::other("Unsupported stack value for wildcard container")),
+            _ => Err(CoreError::other(
+                "Unsupported stack value for wildcard container",
+            )),
         }
     }
 

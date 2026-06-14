@@ -137,7 +137,8 @@ impl Witness {
     ///
     /// The size in bytes
     pub fn size(&self) -> usize {
-        SerializeHelper::get_var_size_bytes(&self.invocation_script) + SerializeHelper::get_var_size_bytes(&self.verification_script)
+        SerializeHelper::get_var_size_bytes(&self.invocation_script)
+            + SerializeHelper::get_var_size_bytes(&self.verification_script)
     }
 
     /// Converts the witness to JSON (matches C# `ToJson`).
@@ -257,7 +258,9 @@ impl Witness {
 
     /// Extracts public key from verification script (matches C# verification script parsing exactly).
     fn extract_public_key_from_verification_script(&self) -> Result<Vec<u8>, CoreError> {
-        if !neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(&self.verification_script) {
+        if !neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(
+            &self.verification_script,
+        ) {
             return Err(CoreError::Invalid {
                 message: "Unsupported verification script format".to_string(),
             });
@@ -348,7 +351,11 @@ impl Witness {
             });
         }
 
-        Ok(neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(public_key))
+        Ok(
+            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+                public_key,
+            ),
+        )
     }
 }
 
@@ -498,8 +505,11 @@ mod tests {
 
         let public_keys: Vec<Vec<u8>> = pairs.iter().map(|(p, _)| p.clone()).collect();
         let verification_script =
-            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_keys(m, &public_keys)
-                .expect("multi-sig redeem script");
+            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_keys(
+                m,
+                &public_keys,
+            )
+            .expect("multi-sig redeem script");
         let account = UInt160::from_script(&verification_script);
 
         let signatures: Vec<Vec<u8>> = pairs

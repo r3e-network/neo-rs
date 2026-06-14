@@ -153,12 +153,9 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
         // `Prefix_Transaction` value: the C# `TransactionState` interoperable
         // stack item (`Struct[Integer(index), ByteString(tx), Integer(state)]`)
         // serialized with `BinarySerializer`, matching the reader.
-        let record = neo_native_contracts::LedgerContract::new().serialize_persisted_transaction_state(
-            index,
-            VMState::NONE,
-            tx,
-        )
-        .expect("serialize TransactionState record");
+        let record = neo_native_contracts::LedgerContract::new()
+            .serialize_persisted_transaction_state(index, VMState::NONE, tx)
+            .expect("serialize TransactionState record");
 
         let mut tx_key_bytes = Vec::with_capacity(1 + 32);
         tx_key_bytes.push(PREFIX_TRANSACTION);
@@ -169,9 +166,9 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
 
     // `Prefix_CurrentBlock` value: the C# `HashIndexState` interoperable
     // stack item (`Struct[ByteString(hash), Integer(index)]`).
-    let current_bytes =
-        neo_native_contracts::LedgerContract::new().serialize_hash_index_state(&hash, index)
-            .expect("serialize HashIndexState pointer");
+    let current_bytes = neo_native_contracts::LedgerContract::new()
+        .serialize_hash_index_state(&hash, index)
+        .expect("serialize HashIndexState pointer");
     let current_key = StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]);
     store.add(current_key, StorageItem::from_bytes(current_bytes));
     store.commit();
@@ -422,9 +419,9 @@ async fn get_best_block_hash_reflects_current_state() {
     let hash = UInt256::zero();
     let index = 100u32;
     // C# `HashIndexState` interoperable stack item, matching the reader.
-    let current_bytes =
-        neo_native_contracts::LedgerContract::new().serialize_hash_index_state(&hash, index)
-            .expect("serialize HashIndexState pointer");
+    let current_bytes = neo_native_contracts::LedgerContract::new()
+        .serialize_hash_index_state(&hash, index)
+        .expect("serialize HashIndexState pointer");
     let key = StorageKey::new(LedgerContract::ID, vec![0x0c]);
     store.add(key, StorageItem::from_bytes(current_bytes));
     store.commit();

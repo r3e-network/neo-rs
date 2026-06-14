@@ -57,8 +57,8 @@ impl ExtendedKey {
         private_key.copy_from_slice(&i[..32]);
         chain_code.copy_from_slice(&i[32..]);
 
-        let public_key =
-            ECC::generate_public_key(&private_key, curve).map_err(|e| CoreError::other(e.to_string()))?;
+        let public_key = ECC::generate_public_key(&private_key, curve)
+            .map_err(|e| CoreError::other(e.to_string()))?;
 
         Ok(Self {
             private_key,
@@ -67,11 +67,7 @@ impl ExtendedKey {
         })
     }
 
-    pub fn create_with_path(
-        seed: &[u8],
-        path: &str,
-        curve: Option<ECCurve>,
-    ) -> CoreResult<Self> {
+    pub fn create_with_path(seed: &[u8], path: &str, curve: Option<ECCurve>) -> CoreResult<Self> {
         let key_path = KeyPath::parse(path)?;
         let mut ext_key = Self::create(seed, curve)?;
         for index in key_path.indices() {

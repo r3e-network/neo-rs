@@ -1,4 +1,3 @@
-
 //! Neo Node - Neo N3 node daemon (server).
 //!
 //! `neo-node` is the binary entry point for a Neo N3 node: a `tokio`-based

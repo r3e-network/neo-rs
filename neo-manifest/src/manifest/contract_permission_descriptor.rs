@@ -73,7 +73,8 @@ impl ContractPermissionDescriptor {
             }
             // Try to parse as public key
             if let Ok(bytes) = hex::decode(s) {
-                let key = ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(e.to_string()))?;
+                let key =
+                    ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(e.to_string()))?;
                 return Ok(ContractPermissionDescriptor::Group(key));
             }
         }
@@ -143,14 +144,12 @@ impl ContractPermissionDescriptor {
         }
         match bytes.len() {
             0 => Ok(Self::create_wildcard()),
-            20 => Ok(Self::create_hash(
-                UInt160::from_bytes(bytes)
-                    .map_err(|e| CoreError::other(format!("Invalid UInt160 bytes: {}", e)))?,
-            )),
-            33 => Ok(Self::create_group(
-                ECPoint::from_bytes(bytes)
-                    .map_err(|e| CoreError::other(format!("Invalid ECPoint bytes: {}", e)))?,
-            )),
+            20 => Ok(Self::create_hash(UInt160::from_bytes(bytes).map_err(
+                |e| CoreError::other(format!("Invalid UInt160 bytes: {}", e)),
+            )?)),
+            33 => Ok(Self::create_group(ECPoint::from_bytes(bytes).map_err(
+                |e| CoreError::other(format!("Invalid ECPoint bytes: {}", e)),
+            )?)),
             len => Err(CoreError::other(format!(
                 "Invalid descriptor byte length: {}",
                 len

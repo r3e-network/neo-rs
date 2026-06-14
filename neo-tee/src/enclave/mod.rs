@@ -7,4 +7,4 @@ mod runtime;
 mod sealing;
 
 pub use runtime::{EnclaveConfig, EnclaveState, InitResult, TeeEnclave};
-pub use sealing::{KeyDerivationParams, SealedData, SecureKey, Sealing};
+pub use sealing::{KeyDerivationParams, SealedData, Sealing, SecureKey};

@@ -27,12 +27,14 @@ impl RpcStateRoot {
         let version = json
             .get("version")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))? as u8;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))?
+            as u8;
 
         let index = json
             .get("index")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'index' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'index' field"))?
+            as u32;
 
         let root_hash = json
             .get("roothash")

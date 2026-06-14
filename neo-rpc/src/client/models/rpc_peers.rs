@@ -191,9 +191,7 @@ mod tests {
         );
         let parsed = RpcPeers::from_json(&invalid);
         assert_eq!(
-            parsed
-                .expect_err("peer parse error propagates")
-                .to_string(),
+            parsed.expect_err("peer parse error propagates").to_string(),
             "Missing or invalid 'port' field"
         );
     }

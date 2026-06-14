@@ -183,11 +183,7 @@ impl Pkcs11Signer {
                 );
                 for cmd in cmd_rx {
                     match cmd {
-                        WorkerCmd::Sign {
-                            digest,
-                            key,
-                            reply,
-                        } => {
+                        WorkerCmd::Sign { digest, key, reply } => {
                             let res = session
                                 .sign(&Mechanism::Ecdsa, key, &digest)
                                 .map_err(HsmError::Pkcs11);
@@ -272,9 +268,7 @@ impl Pkcs11Signer {
                     }
                 }
             }
-            found.ok_or_else(|| {
-                HsmError::Init(format!("no token with label '{label}' found"))
-            })?
+            found.ok_or_else(|| HsmError::Init(format!("no token with label '{label}' found")))?
         } else {
             // First available slot.
             pkcs11
@@ -308,11 +302,12 @@ impl Pkcs11Signer {
         let priv_objects = session
             .find_objects(&priv_template)
             .map_err(|e| HsmError::Sign(format!("C_FindObjects(private): {e}")))?;
-        let priv_handle = priv_objects.into_iter().next().ok_or_else(|| {
-            HsmError::KeyNotFound {
+        let priv_handle = priv_objects
+            .into_iter()
+            .next()
+            .ok_or_else(|| HsmError::KeyNotFound {
                 label: key_label.to_string(),
-            }
-        })?;
+            })?;
 
         // 7. Find the matching public key and read its EC point.
         let mut pub_template = vec![
@@ -350,7 +345,10 @@ impl Pkcs11Signer {
 
         // Validate curve: ec_params must contain the secp256r1 OID.
         if let Some(ref params) = ec_params_bytes {
-            if !params.windows(SECP256R1_DER_OID.len()).any(|w| w == SECP256R1_DER_OID) {
+            if !params
+                .windows(SECP256R1_DER_OID.len())
+                .any(|w| w == SECP256R1_DER_OID)
+            {
                 return Err(HsmError::PublicKey(format!(
                     "key '{key_label}' is not on secp256r1: ec_params={}",
                     hex::encode(params)
@@ -363,9 +361,8 @@ impl Pkcs11Signer {
         // Decode CKA_EC_POINT: PKCS#11 wraps the point in a DER OCTET STRING.
         // The X9.62 uncompressed form is `04 || x(32) || y(32)` = 65 bytes;
         // compressed form is `02/03 || x(32)` = 33 bytes.
-        let ec_point_raw = ec_point_bytes.ok_or_else(|| {
-            HsmError::PublicKey("CKA_EC_POINT attribute not returned".into())
-        })?;
+        let ec_point_raw = ec_point_bytes
+            .ok_or_else(|| HsmError::PublicKey("CKA_EC_POINT attribute not returned".into()))?;
         let point_bytes = decode_der_octet_string(&ec_point_raw)?;
         let compressed_pubkey = normalize_to_compressed(&point_bytes)?;
 
@@ -440,11 +437,8 @@ impl ConsensusSigner for Pkcs11Signer {
 /// * Both paths: `normalize_s()` → low half-order `s`.
 fn finalize_signature(raw: &[u8], format: SigFormat) -> HsmResult<Vec<u8>> {
     let sig: Signature = match format {
-        SigFormat::Der => {
-            Signature::from_der(raw).map_err(|e: SigError| {
-                HsmError::SigDecode(format!("DER decode: {e}"))
-            })?
-        }
+        SigFormat::Der => Signature::from_der(raw)
+            .map_err(|e: SigError| HsmError::SigDecode(format!("DER decode: {e}")))?,
         SigFormat::RawRs => {
             if raw.len() != 64 {
                 return Err(HsmError::UnexpectedSigLen {
@@ -452,9 +446,8 @@ fn finalize_signature(raw: &[u8], format: SigFormat) -> HsmResult<Vec<u8>> {
                     got: raw.len(),
                 });
             }
-            Signature::from_slice(raw).map_err(|e: SigError| {
-                HsmError::SigDecode(format!("raw r||s parse: {e}"))
-            })?
+            Signature::from_slice(raw)
+                .map_err(|e: SigError| HsmError::SigDecode(format!("raw r||s parse: {e}")))?
         }
     };
 

@@ -1,9 +1,9 @@
 //! Thin transactional wrapper over `StoreCache` for explicit commit semantics.
 
+use super::StoreCache;
 use super::data_cache::{DataCacheConfig, DataCacheResult};
 use super::store::Store;
 use super::store_snapshot::StoreSnapshot;
-use super::StoreCache;
 use std::sync::Arc;
 
 /// Represents a write transaction over a store or snapshot.

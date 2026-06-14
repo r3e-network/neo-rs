@@ -263,10 +263,7 @@ pub fn transaction_from_json(
     Ok(tx)
 }
 
-fn signer_to_json(
-    signer: &neo_payloads::Signer,
-    _protocol_settings: &ProtocolSettings,
-) -> JObject {
+fn signer_to_json(signer: &neo_payloads::Signer, _protocol_settings: &ProtocolSettings) -> JObject {
     let mut json = JObject::new();
     json.insert(
         "account".to_string(),

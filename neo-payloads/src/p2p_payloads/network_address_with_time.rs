@@ -81,7 +81,8 @@ impl Serializable for NetworkAddressWithTime {
         let addr_array = reader.read_array::<16>()?;
         let address = Self::unmap_from_ipv6(&addr_array);
 
-        let capabilities = NodeCapabilities::deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
+        let capabilities =
+            NodeCapabilities::deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
 
         Ok(Self {
             timestamp,

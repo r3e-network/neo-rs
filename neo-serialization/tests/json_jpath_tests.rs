@@ -122,7 +122,10 @@ fn ut_jpath_success_vectors() {
     );
 
     // Recursive descent collecting nulls (UT_JPath.cs:77).
-    assert_eq!(jpath_str(&json, "$.store..price"), r#"[19.95,8.95,12.99,8.99,null]"#);
+    assert_eq!(
+        jpath_str(&json, "$.store..price"),
+        r#"[19.95,8.95,12.99,8.99,null]"#
+    );
 
     // Indexing, including negative index normalization (UT_JPath.cs:78-79).
     let moby = r#"[{"category":"fiction","author":"Herman Melville","title":"Moby Dick","isbn":"0-553-21311-3","price":8.99}]"#;

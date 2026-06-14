@@ -1,4 +1,3 @@
-
 //! # Neo Config
 //!
 //! Configuration management for Neo N3 blockchain node.

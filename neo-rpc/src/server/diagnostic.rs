@@ -100,7 +100,7 @@ impl DiagnosticTrait for Diagnostic {
         let script_hash = {
             let state_arc = context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            
+
             state_arc.lock().script_hash
         };
 

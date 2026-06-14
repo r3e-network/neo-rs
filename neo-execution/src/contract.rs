@@ -76,7 +76,11 @@ impl Contract {
         // The redeem-script byte construction was hoisted into the
         // `neo-script-builder` crate (below neo-core); kept here for the
         // historical `Contract::try_create_multi_sig_redeem_script` path.
-        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(m, public_keys).map_err(Into::into)
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            m,
+            public_keys,
+        )
+        .map_err(Into::into)
     }
 
     /// Creates the script of a multi-sig contract (panics on invalid input).

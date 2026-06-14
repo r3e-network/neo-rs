@@ -412,9 +412,9 @@ fn seed_genesis_state(node: &Node) {
     // interoperable stack item (`Struct[ByteString(hash), Integer(index)]`)
     // serialized with `BinarySerializer` — exactly what the `LedgerContract`
     // reader (`current_index` / `current_hash`) decodes.
-    let pointer =
-        neo_native_contracts::LedgerContract::new().serialize_hash_index_state(&genesis_hash, 0)
-            .expect("serialize genesis HashIndexState pointer");
+    let pointer = neo_native_contracts::LedgerContract::new()
+        .serialize_hash_index_state(&genesis_hash, 0)
+        .expect("serialize genesis HashIndexState pointer");
     store.update(
         StorageKey::new(ledger_id, vec![LEDGER_PREFIX_CURRENT_BLOCK]),
         StorageItem::from_bytes(pointer),

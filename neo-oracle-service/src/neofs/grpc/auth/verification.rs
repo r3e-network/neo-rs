@@ -20,10 +20,7 @@ pub(crate) fn build_neofs_request_verification_header<B: Message>(
     })
 }
 
-fn neofs_sign_message_part(
-    data: &[u8],
-    key: &KeyPair,
-) -> CoreResult<neofs_v2::refs::Signature> {
+fn neofs_sign_message_part(data: &[u8], key: &KeyPair) -> CoreResult<neofs_v2::refs::Signature> {
     let signature = NeoFsBearerSigner::sign_neofs_sha512(data, key)?;
     Ok(neofs_v2::refs::Signature {
         key: key.compressed_public_key(),

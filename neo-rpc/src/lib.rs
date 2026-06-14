@@ -1,4 +1,3 @@
-
 // Copyright (c) 2024 R3E Network
 // This file is part of the neo-rs project
 // Licensed under the MIT License

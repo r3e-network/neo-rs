@@ -1,8 +1,8 @@
 use neo_config::ProtocolSettings;
-use neo_error::{CoreError, CoreResult};
-use neo_primitives::WitnessRuleAction;
 use neo_crypto::{ECCurve, ECPoint};
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::{WitnessCondition, WitnessRule};
+use neo_primitives::WitnessRuleAction;
 use neo_serialization::json::{JArray, JObject};
 
 pub fn rule_from_json(
@@ -141,9 +141,7 @@ fn parse_composite(
         let expr_obj = expr
             .as_ref()
             .and_then(|value| value.as_object())
-            .ok_or_else(|| {
-                CoreError::other("Witness condition expression must be an object")
-            })?;
+            .ok_or_else(|| CoreError::other("Witness condition expression must be an object"))?;
         conditions.push(condition_from_json(
             expr_obj,
             protocol_settings,
@@ -173,8 +171,8 @@ fn parse_group_bytes(value: &str) -> CoreResult<Vec<u8>> {
 mod tests {
     use super::*;
     use neo_primitives::UInt160;
-    use neo_wallets::KeyPair;
     use neo_serialization::json::JToken;
+    use neo_wallets::KeyPair;
 
     fn assert_rule_roundtrip(rule: WitnessRule) {
         let json = rule.to_json();

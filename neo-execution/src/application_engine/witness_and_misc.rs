@@ -156,8 +156,10 @@ impl ApplicationEngine {
             ));
         }
 
-        let Some(contract) =
-            NativeContractLookup::lookup_contract_management(self.snapshot_cache.as_ref(), contract_hash)?
+        let Some(contract) = NativeContractLookup::lookup_contract_management(
+            self.snapshot_cache.as_ref(),
+            contract_hash,
+        )?
         else {
             return Ok(false);
         };
@@ -378,7 +380,10 @@ impl ApplicationEngine {
     }
 
     /// Gets the storage context for a native contract.
-    pub fn get_native_storage_context(&self, contract_hash: &UInt160) -> CoreResult<StorageContext> {
+    pub fn get_native_storage_context(
+        &self,
+        contract_hash: &UInt160,
+    ) -> CoreResult<StorageContext> {
         // Create storage context for native contracts using the best available source:
         // preloaded contract metadata first, then native registry fallback.
         let contract_id = self

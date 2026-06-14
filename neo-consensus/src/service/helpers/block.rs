@@ -19,7 +19,9 @@ impl ConsensusBlockFields {
     /// sorted keys): `PUSH(m) · {PUSH(key)}* · PUSH(n) · System.Crypto.CheckMultisig`.
     /// This is the block witness's verification script, and its hash is the
     /// `NextConsensus` address.
-    pub(in crate::service) fn multisig_verification_script(keys: &[neo_crypto::ECPoint]) -> Vec<u8> {
+    pub(in crate::service) fn multisig_verification_script(
+        keys: &[neo_crypto::ECPoint],
+    ) -> Vec<u8> {
         use neo_vm::script_builder::ScriptBuilder;
 
         let n = keys.len();
@@ -40,11 +42,14 @@ impl ConsensusBlockFields {
         builder.to_array()
     }
 
-    pub(in crate::service) fn compute_next_consensus_address(validators: &[ValidatorInfo]) -> UInt160 {
+    pub(in crate::service) fn compute_next_consensus_address(
+        validators: &[ValidatorInfo],
+    ) -> UInt160 {
         if validators.is_empty() {
             return UInt160::zero();
         }
-        let keys: Vec<neo_crypto::ECPoint> = validators.iter().map(|v| v.public_key.clone()).collect();
+        let keys: Vec<neo_crypto::ECPoint> =
+            validators.iter().map(|v| v.public_key.clone()).collect();
         UInt160::from_script(&ConsensusBlockFields::multisig_verification_script(&keys))
     }
 

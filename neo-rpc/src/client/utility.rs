@@ -13,8 +13,8 @@ pub(crate) use nep::{
     insert_nep_transfer_fields, parse_balance_list, parse_nep_balance_fields,
     parse_nep_transfer_fields, parse_transfer_lists, transfer_lists_to_json,
 };
-pub use parsing::optional_string;
 pub use parsing::JsonParseError;
+pub use parsing::optional_string;
 pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 #[allow(unused_imports)]
 pub use parsing::{
@@ -82,10 +82,7 @@ impl RpcUtility {
             .ok_or_else(|| CoreError::other("Value is not a string"))?;
 
         if address_or_script_hash.len() < 40 && !address_or_script_hash.starts_with("0x") {
-            WalletHelper::to_script_hash(
-                &address_or_script_hash,
-                protocol_settings.address_version,
-            )
+            WalletHelper::to_script_hash(&address_or_script_hash, protocol_settings.address_version)
         } else {
             UInt160::parse(&address_or_script_hash).map_err(|e| CoreError::other(e.to_string()))
         }
@@ -129,8 +126,7 @@ impl RpcUtility {
             }
             64 => {
                 // Hex private key
-                let bytes =
-                    hex::decode(key).map_err(|e| CoreError::other(e.to_string()))?;
+                let bytes = hex::decode(key).map_err(|e| CoreError::other(e.to_string()))?;
                 KeyPair::from_private_key(&bytes).map_err(|e| CoreError::other(e.to_string()))
             }
             _ => Err(CoreError::other("Invalid key format")),
@@ -162,9 +158,8 @@ impl RpcUtility {
                 // Public key - Neo N3 uses secp256r1 (NIST P-256) curve
                 let key_bytes = hex::decode(account)
                     .map_err(|err| CoreError::other(format!("Invalid public key hex: {err}")))?;
-                let point =
-                    ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &key_bytes)
-                        .map_err(|err| CoreError::other(err.to_string()))?;
+                let point = ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &key_bytes)
+                    .map_err(|err| CoreError::other(err.to_string()))?;
                 let script = Contract::create_signature_redeem_script(point);
                 Ok(UInt160::from_script(&script))
             }
@@ -186,7 +181,8 @@ impl RpcUtility {
         let version = json
             .get("version")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))?
+            as u32;
 
         let previous_hash = json
             .get("previousblockhash")
@@ -203,7 +199,8 @@ impl RpcUtility {
         let timestamp = json
             .get("time")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'time' field"))? as u64;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'time' field"))?
+            as u64;
 
         let nonce_token = json
             .get("nonce")
@@ -213,12 +210,14 @@ impl RpcUtility {
         let index = json
             .get("index")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'index' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'index' field"))?
+            as u32;
 
         let primary_index = json
             .get("primary")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'primary' field"))? as u8;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'primary' field"))?
+            as u8;
 
         let next_consensus_text = json
             .get("nextconsensus")
@@ -325,10 +324,7 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     RpcUtility::block_to_json(block, protocol_settings)
 }
 
-pub fn block_from_json(
-    json: &JObject,
-    protocol_settings: &ProtocolSettings,
-) -> CoreResult<Block> {
+pub fn block_from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Block> {
     RpcUtility::block_from_json(json, protocol_settings)
 }
 
@@ -360,8 +356,8 @@ mod tests {
     use super::*;
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
-    use neo_payloads::WitnessCondition;
     use neo_payloads::OracleResponseCode;
+    use neo_payloads::WitnessCondition;
     use neo_payloads::{Signer, TransactionAttribute};
     use neo_primitives::{ADDRESS_SIZE, UInt256, WitnessScope};
     use neo_serialization::json::JArray;

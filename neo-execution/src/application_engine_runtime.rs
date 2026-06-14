@@ -58,9 +58,15 @@ impl ApplicationEngine {
             .as_any()
             .downcast_ref::<neo_payloads::Transaction>()
         {
-            self.push(transaction.to_stack_item().map_err(|e| CoreError::other(e.to_string()))?)
+            self.push(
+                transaction
+                    .to_stack_item()
+                    .map_err(|e| CoreError::other(e.to_string()))?,
+            )
         } else {
-            Err(CoreError::other("Script container does not implement Interoperable"))
+            Err(CoreError::other(
+                "Script container does not implement Interoperable",
+            ))
         }
     }
 
@@ -72,7 +78,9 @@ impl ApplicationEngine {
         args: Vec<StackItem>,
     ) -> CoreResult<()> {
         if call_flags.bits() & !CallFlags::ALL.bits() != 0 {
-            return Err(CoreError::other(format!("Invalid call flags: {call_flags:?}")));
+            return Err(CoreError::other(format!(
+                "Invalid call flags: {call_flags:?}"
+            )));
         }
 
         let calling_context = self
@@ -253,7 +261,9 @@ impl ApplicationEngine {
             let state_arc = self.current_execution_state()?;
             let state_guard = state_arc.lock();
             if state_guard.contract.is_none() {
-                return Err(CoreError::other("Notifications are not allowed in dynamic scripts."));
+                return Err(CoreError::other(
+                    "Notifications are not allowed in dynamic scripts.",
+                ));
             }
         }
 
@@ -278,10 +288,9 @@ impl ApplicationEngine {
         let parameters = {
             let state_arc = self.current_execution_state()?;
             let guard = state_arc.lock();
-            let contract = guard
-                .contract
-                .clone()
-                .ok_or_else(|| CoreError::other("Notifications are not allowed in dynamic scripts."))?;
+            let contract = guard.contract.clone().ok_or_else(|| {
+                CoreError::other("Notifications are not allowed in dynamic scripts.")
+            })?;
             let event = contract
                 .manifest
                 .abi
@@ -289,7 +298,9 @@ impl ApplicationEngine {
                 .iter()
                 .find(|descriptor| descriptor.name == event_name)
                 .cloned()
-                .ok_or_else(|| CoreError::other(format!("Event `{}` does not exist.", event_name)))?;
+                .ok_or_else(|| {
+                    CoreError::other(format!("Event `{}` does not exist.", event_name))
+                })?;
             event.parameters
         };
 
@@ -353,7 +364,10 @@ impl ApplicationEngine {
         let items = tx
             .signers()
             .iter()
-            .map(|s| s.to_stack_item().map_err(|e| CoreError::other(e.to_string())))
+            .map(|s| {
+                s.to_stack_item()
+                    .map_err(|e| CoreError::other(e.to_string()))
+            })
             .collect::<CoreResult<Vec<_>>>()?;
 
         self.push_array(items)
@@ -441,7 +455,9 @@ fn runtime_load_script_handler(
 
         let raw = call_flags_value as u8;
         let Some(call_flags) = CallFlags::from_bits(raw) else {
-            return Err(CoreError::other(format!("Invalid call flags: {call_flags_value}")));
+            return Err(CoreError::other(format!(
+                "Invalid call flags: {call_flags_value}"
+            )));
         };
 
         app.runtime_load_script(script, call_flags, args)

@@ -298,11 +298,7 @@ pub struct RocksDbSnapshot {
 }
 
 impl RocksDbSnapshot {
-    fn new(
-        db: Arc<DB>,
-        store: Arc<RocksDbStore>,
-        read_ahead_config: ReadAheadConfig,
-    ) -> Self {
+    fn new(db: Arc<DB>, store: Arc<RocksDbStore>, read_ahead_config: ReadAheadConfig) -> Self {
         let snapshot = Self::create_snapshot(&db);
 
         Self {

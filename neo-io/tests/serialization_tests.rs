@@ -280,7 +280,12 @@ mod tests {
         let mut reader = MemoryReader::new(&bytes);
 
         assert!(
-            SerializeHelper::deserialize_exact_array::<TestSerializable>(&mut reader, 1, "count mismatch").is_err()
+            SerializeHelper::deserialize_exact_array::<TestSerializable>(
+                &mut reader,
+                1,
+                "count mismatch"
+            )
+            .is_err()
         );
         assert_eq!(reader.position(), 1);
     }
@@ -292,13 +297,18 @@ mod tests {
         assert_eq!(SerializeHelper::get_var_size_for_slice(&items, |_| 1), 4);
 
         let mut writer = BinaryWriter::new();
-        SerializeHelper::serialize_array_with(&items, &mut writer, |item, writer| writer.write_u8(*item)).unwrap();
+        SerializeHelper::serialize_array_with(&items, &mut writer, |item, writer| {
+            writer.write_u8(*item)
+        })
+        .unwrap();
         let bytes = writer.into_bytes();
 
         assert_eq!(bytes, vec![0x03, 0xAA, 0xBB, 0xCC]);
 
         let mut reader = MemoryReader::new(&bytes);
-        let decoded = SerializeHelper::deserialize_array_with(&mut reader, 3, |reader| reader.read_u8()).unwrap();
+        let decoded =
+            SerializeHelper::deserialize_array_with(&mut reader, 3, |reader| reader.read_u8())
+                .unwrap();
 
         assert_eq!(decoded, items);
         assert_eq!(reader.position(), bytes.len());

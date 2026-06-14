@@ -1,6 +1,6 @@
 use super::helpers::{
-    current_timestamp, generate_nonce, prepare_request_timestamp, ConsensusBlockFields,
-    InvocationScript,
+    ConsensusBlockFields, InvocationScript, current_timestamp, generate_nonce,
+    prepare_request_timestamp,
 };
 use super::{ConsensusEvent, ConsensusService};
 use crate::messages::PrepareRequestMessage;

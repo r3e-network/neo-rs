@@ -4,8 +4,8 @@
 //! Previously implemented as a plugin, now integrated directly into neo-rpc.
 
 mod diagnostic;
-pub(crate) mod jsonrpsee_adapter;
 pub(crate) mod dispatch;
+pub(crate) mod jsonrpsee_adapter;
 mod ledger_queries;
 pub mod middleware;
 pub mod model;

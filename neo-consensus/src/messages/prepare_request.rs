@@ -110,8 +110,9 @@ impl PrepareRequestMessage {
             .read_u64()
             .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest nonce"))?;
 
-        let transaction_hashes = SerializeHelper::deserialize_array::<UInt256>(&mut reader, u16::MAX as usize)
-            .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
+        let transaction_hashes =
+            SerializeHelper::deserialize_array::<UInt256>(&mut reader, u16::MAX as usize)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
 
         // C# checks for duplicates.
         let mut uniq = std::collections::HashSet::with_capacity(transaction_hashes.len());
@@ -178,8 +179,9 @@ impl PrepareRequestMessage {
             .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest nonce"))?;
 
         use neo_io::serializable::helper::SerializeHelper;
-        let transaction_hashes = SerializeHelper::deserialize_array::<UInt256>(reader, u16::MAX as usize)
-            .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
+        let transaction_hashes =
+            SerializeHelper::deserialize_array::<UInt256>(reader, u16::MAX as usize)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
 
         let mut uniq = std::collections::HashSet::with_capacity(transaction_hashes.len());
         for h in &transaction_hashes {

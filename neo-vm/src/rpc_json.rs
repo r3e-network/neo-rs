@@ -22,33 +22,36 @@ struct RenderBudget {
 pub struct StackItemRpcJson;
 
 impl StackItemRpcJson {
-/// Renders a single stack item as the Neo JSON-RPC stack envelope.
-pub fn stack_item_rpc_json(item: &StackItem, max_size: Option<usize>) -> Result<Value, VmError> {
-    render_stack_item_with_size_check(item, max_size, SizeCheck::Immediate)
-}
+    /// Renders a single stack item as the Neo JSON-RPC stack envelope.
+    pub fn stack_item_rpc_json(
+        item: &StackItem,
+        max_size: Option<usize>,
+    ) -> Result<Value, VmError> {
+        render_stack_item_with_size_check(item, max_size, SizeCheck::Immediate)
+    }
 
-/// Renders with the legacy RPC budget timing.
-///
-/// The RPC server historically checked the remaining budget after each item was
-/// fully rendered, so a circular reference discovered during traversal takes
-/// precedence over an already-exhausted size budget.
-pub fn stack_item_rpc_json_deferred_size_check(
-    item: &StackItem,
-    max_size: Option<usize>,
-) -> Result<Value, VmError> {
-    render_stack_item_with_size_check(item, max_size, SizeCheck::Deferred)
-}
+    /// Renders with the legacy RPC budget timing.
+    ///
+    /// The RPC server historically checked the remaining budget after each item was
+    /// fully rendered, so a circular reference discovered during traversal takes
+    /// precedence over an already-exhausted size budget.
+    pub fn stack_item_rpc_json_deferred_size_check(
+        item: &StackItem,
+        max_size: Option<usize>,
+    ) -> Result<Value, VmError> {
+        render_stack_item_with_size_check(item, max_size, SizeCheck::Deferred)
+    }
 
-/// Renders top-level stack items with an independent size budget for each item.
-pub fn stack_items_rpc_json_per_item(
-    items: &[StackItem],
-    max_size: usize,
-) -> Result<Vec<Value>, VmError> {
-    items
-        .iter()
-        .map(|item| Self::stack_item_rpc_json(item, Some(max_size)))
-        .collect()
-}
+    /// Renders top-level stack items with an independent size budget for each item.
+    pub fn stack_items_rpc_json_per_item(
+        items: &[StackItem],
+        max_size: usize,
+    ) -> Result<Vec<Value>, VmError> {
+        items
+            .iter()
+            .map(|item| Self::stack_item_rpc_json(item, Some(max_size)))
+            .collect()
+    }
 }
 
 fn render_stack_item_with_size_check(
@@ -278,7 +281,10 @@ mod tests {
         ];
 
         for (item, expected) in cases {
-            assert_eq!(StackItemRpcJson::stack_item_rpc_json(&item, None).unwrap(), expected);
+            assert_eq!(
+                StackItemRpcJson::stack_item_rpc_json(&item, None).unwrap(),
+                expected
+            );
         }
     }
 
@@ -316,14 +322,17 @@ mod tests {
             let _ = array.set(0, item.clone());
         }
 
-        let err = StackItemRpcJson::stack_item_rpc_json_deferred_size_check(&item, Some(1)).unwrap_err();
+        let err =
+            StackItemRpcJson::stack_item_rpc_json_deferred_size_check(&item, Some(1)).unwrap_err();
 
         assert!(err.to_string().contains("Circular reference"));
     }
 
     #[test]
     fn deferred_size_check_still_reports_max_size() {
-        let err = StackItemRpcJson::stack_item_rpc_json_deferred_size_check(&StackItem::Null, Some(13)).unwrap_err();
+        let err =
+            StackItemRpcJson::stack_item_rpc_json_deferred_size_check(&StackItem::Null, Some(13))
+                .unwrap_err();
 
         assert!(err.to_string().contains("Max size reached"));
     }

@@ -20,12 +20,14 @@ impl RpcContractState {
         let id = json
             .get("id")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'id' field"))? as i32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'id' field"))?
+            as i32;
 
         let update_counter = json
             .get("updatecounter")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'updatecounter' field"))? as u16;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'updatecounter' field"))?
+            as u16;
 
         let hash = json
             .get("hash")
@@ -44,7 +46,9 @@ impl RpcContractState {
             .and_then(|v| v.as_object())
             .ok_or_else(|| CoreError::other("Missing or invalid 'manifest' field"))?;
         let manifest_value = serde_json::from_str::<JsonValue>(&manifest_json.to_string())
-            .map_err(|err| CoreError::other(format!("Invalid manifest: Serialization error: {err}")))?;
+            .map_err(|err| {
+                CoreError::other(format!("Invalid manifest: Serialization error: {err}"))
+            })?;
         let manifest_str = normalize_numeric_json(manifest_value).to_string();
         let manifest = ContractManifest::from_json(&manifest_str)
             .map_err(|err| CoreError::other(format!("Invalid manifest: {err}")))?;

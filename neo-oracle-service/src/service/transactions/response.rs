@@ -152,14 +152,16 @@ impl OracleService {
 
         let fee_per_byte: i64 = PolicyContract::new()
             .get_fee_per_byte_snapshot(snapshot)
-            .unwrap_or(neo_native_contracts::policy_contract::DEFAULT_FEE_PER_BYTE) as i64;
+            .unwrap_or(neo_native_contracts::policy_contract::DEFAULT_FEE_PER_BYTE)
+            as i64;
 
         if response.result.len() > MAX_RESULT_SIZE {
             response.code = OracleResponseCode::ResponseTooLarge;
             response.result = Vec::new();
             tx.set_attributes(vec![TransactionAttribute::OracleResponse(response.clone())]);
         } else if tx.network_fee()
-            + ((size + SerializeHelper::get_var_size_serializable_slice(tx.attributes())) as i64 * fee_per_byte)
+            + ((size + SerializeHelper::get_var_size_serializable_slice(tx.attributes())) as i64
+                * fee_per_byte)
             > request.gas_for_response
         {
             response.code = OracleResponseCode::InsufficientFunds;

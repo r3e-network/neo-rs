@@ -90,7 +90,9 @@ impl WitnessCondition {
                     ));
                 }
                 if expressions.len() > Self::MAX_SUBITEMS {
-                    return Err(CoreError::other("Composite witness condition exceeds max subitems"));
+                    return Err(CoreError::other(
+                        "Composite witness condition exceeds max subitems",
+                    ));
                 }
                 let mut conditions = Vec::with_capacity(expressions.len());
                 for expr in expressions {
@@ -109,7 +111,9 @@ impl WitnessCondition {
                     ));
                 }
                 if expressions.len() > Self::MAX_SUBITEMS {
-                    return Err(CoreError::other("Composite witness condition exceeds max subitems"));
+                    return Err(CoreError::other(
+                        "Composite witness condition exceeds max subitems",
+                    ));
                 }
                 let mut conditions = Vec::with_capacity(expressions.len());
                 for expr in expressions {
@@ -122,8 +126,8 @@ impl WitnessCondition {
                     .get("hash")
                     .and_then(Value::as_str)
                     .ok_or_else(|| CoreError::other("ScriptHash condition missing hash"))?;
-                let hash =
-                    UInt160::from_str(hash_str).map_err(|e| CoreError::other(format!("Invalid script hash: {e}")))?;
+                let hash = UInt160::from_str(hash_str)
+                    .map_err(|e| CoreError::other(format!("Invalid script hash: {e}")))?;
                 Ok(WitnessCondition::ScriptHash { hash })
             }
             "Group" => {
@@ -140,8 +144,8 @@ impl WitnessCondition {
                     .get("hash")
                     .and_then(Value::as_str)
                     .ok_or_else(|| CoreError::other("CalledByContract missing hash"))?;
-                let hash =
-                    UInt160::from_str(hash_str).map_err(|e| CoreError::other(format!("Invalid script hash: {e}")))?;
+                let hash = UInt160::from_str(hash_str)
+                    .map_err(|e| CoreError::other(format!("Invalid script hash: {e}")))?;
                 Ok(WitnessCondition::CalledByContract { hash })
             }
             "CalledByGroup" => {
@@ -152,7 +156,9 @@ impl WitnessCondition {
                 let group = parse_group_bytes(group_str)?;
                 Ok(WitnessCondition::CalledByGroup { group })
             }
-            other => Err(CoreError::other(format!("Unsupported witness condition type: {other}"))),
+            other => Err(CoreError::other(format!(
+                "Unsupported witness condition type: {other}"
+            ))),
         }
     }
 }

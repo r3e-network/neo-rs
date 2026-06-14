@@ -16,9 +16,9 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_manifest::CallFlags;
 use neo_primitives::{TriggerType, UInt160};
-use neo_vm::script_builder::ScriptBuilder;
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 
@@ -122,7 +122,8 @@ impl NativeQueries {
         }
         engine
             .result_stack()
-            .peek(0).cloned()
+            .peek(0)
+            .cloned()
             .map_err(|err| CoreError::other(err.to_string()))
     }
 
@@ -146,7 +147,8 @@ impl NativeQueries {
                 NativeArg::Int(i64::from(end)),
             ],
         )?;
-        item.as_int().map_err(|err| CoreError::other(err.to_string()))
+        item.as_int()
+            .map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// `NEO.getCommittee()` — the current committee public keys (sorted).
@@ -155,7 +157,8 @@ impl NativeQueries {
         snapshot: Arc<DataCache>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<Vec<u8>>> {
-        let item = NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getCommittee", &[])?;
+        let item =
+            NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getCommittee", &[])?;
         stack_array_of_bytes(&item)
     }
 
@@ -165,7 +168,13 @@ impl NativeQueries {
         snapshot: Arc<DataCache>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<Vec<u8>>> {
-        let item = NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getNextBlockValidators", &[])?;
+        let item = NativeQueries::invoke_native_read(
+            server,
+            snapshot,
+            neo_hash,
+            "getNextBlockValidators",
+            &[],
+        )?;
         stack_array_of_bytes(&item)
     }
 
@@ -175,19 +184,28 @@ impl NativeQueries {
         snapshot: Arc<DataCache>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<(Vec<u8>, BigInt)>> {
-        let item = NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getCandidates", &[])?;
-        let entries = item.as_array().map_err(|err| CoreError::other(err.to_string()))?;
+        let item =
+            NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getCandidates", &[])?;
+        let entries = item
+            .as_array()
+            .map_err(|err| CoreError::other(err.to_string()))?;
         let mut candidates = Vec::with_capacity(entries.len());
         for entry in entries {
-            let fields = entry.as_array().map_err(|err| CoreError::other(err.to_string()))?;
+            let fields = entry
+                .as_array()
+                .map_err(|err| CoreError::other(err.to_string()))?;
             if fields.len() != 2 {
                 return Err(CoreError::other(format!(
                     "getCandidates entry has {} fields, expected 2",
                     fields.len()
                 )));
             }
-            let pubkey = fields[0].as_bytes().map_err(|err| CoreError::other(err.to_string()))?;
-            let votes = fields[1].as_int().map_err(|err| CoreError::other(err.to_string()))?;
+            let pubkey = fields[0]
+                .as_bytes()
+                .map_err(|err| CoreError::other(err.to_string()))?;
+            let votes = fields[1]
+                .as_int()
+                .map_err(|err| CoreError::other(err.to_string()))?;
             candidates.push((pubkey, votes));
         }
         Ok(candidates)
@@ -209,7 +227,8 @@ impl NativeQueries {
             "isBlocked",
             &[NativeArg::Bytes(account_bytes.as_slice())],
         )?;
-        item.as_bool().map_err(|err| CoreError::other(err.to_string()))
+        item.as_bool()
+            .map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// `NEO.getCandidateVote(pubkey)` — the candidate's vote count, or `-1`
@@ -227,15 +246,22 @@ impl NativeQueries {
             "getCandidateVote",
             &[NativeArg::Bytes(pubkey)],
         )?;
-        item.as_int().map_err(|err| CoreError::other(err.to_string()))
+        item.as_int()
+            .map_err(|err| CoreError::other(err.to_string()))
     }
 }
 
 /// Decodes a stack array whose elements are byte strings.
 fn stack_array_of_bytes(item: &StackItem) -> CoreResult<Vec<Vec<u8>>> {
-    let entries = item.as_array().map_err(|err| CoreError::other(err.to_string()))?;
+    let entries = item
+        .as_array()
+        .map_err(|err| CoreError::other(err.to_string()))?;
     entries
         .iter()
-        .map(|entry| entry.as_bytes().map_err(|err| CoreError::other(err.to_string())))
+        .map(|entry| {
+            entry
+                .as_bytes()
+                .map_err(|err| CoreError::other(err.to_string()))
+        })
         .collect()
 }

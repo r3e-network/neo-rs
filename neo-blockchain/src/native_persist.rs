@@ -179,7 +179,10 @@ pub(crate) fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> CoreResult<UInt160
         ));
     }
     let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-    let script = neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(m, pubkeys)
+    let script =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            m, pubkeys,
+        )
         .map_err(|e| CoreError::invalid_operation(format!("BFT multisig script: {e}")))?;
     Ok(UInt160::from_script(&script))
 }
@@ -318,7 +321,11 @@ pub fn persist_block_natives(
     // hook is a read-only no-op; see `ledger_records`): the block-hash
     // index entry, the trimmed block, the per-transaction records
     // (VMState::NONE until executed), and the conflict stubs.
-    crate::ledger_records::LedgerRecords::write_on_persist_records(&block_cache, &block, &block_hash)?;
+    crate::ledger_records::LedgerRecords::write_on_persist_records(
+        &block_cache,
+        &block,
+        &block_hash,
+    )?;
 
     run_native_persist_hooks(&contracts, &mut engine, settings, block_index)?;
     outcome.on_persist_notifications = collect_notifications(&engine);
@@ -388,7 +395,11 @@ pub fn persist_block_natives(
     )?;
     run_native_persist_hooks(&contracts, &mut engine, settings, block_index)?;
     // LedgerContract.PostPersistAsync: the current-block pointer.
-    crate::ledger_records::LedgerRecords::write_post_persist_record(&block_cache, &block_hash, block_index)?;
+    crate::ledger_records::LedgerRecords::write_post_persist_record(
+        &block_cache,
+        &block_hash,
+        block_index,
+    )?;
     outcome.post_persist_notifications = collect_notifications(&engine);
     outcome
         .application_executed
@@ -636,7 +647,9 @@ mod tests {
         // gasPerBlock(5 GAS) * CommitteeRewardRatio(10) / 100 = 0.5 GAS to the
         // signature address of committee[0 % m] = standby_committee[0].
         let member = &settings.standby_committee[0];
-        let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&member.to_bytes());
+        let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+            &member.to_bytes(),
+        );
         let reward_account = UInt160::from_script(&script);
         let mut gas_key = vec![NEP17_PREFIX_ACCOUNT];
         gas_key.extend_from_slice(&reward_account.to_bytes());
@@ -682,7 +695,9 @@ mod tests {
 
         // committee[1 % 21] = standby_committee[1] earns 0.5 GAS.
         let member = &settings.standby_committee[1];
-        let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&member.to_bytes());
+        let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+            &member.to_bytes(),
+        );
         let reward_account = UInt160::from_script(&script);
         let mut gas_key = vec![NEP17_PREFIX_ACCOUNT];
         gas_key.extend_from_slice(&reward_account.to_bytes());

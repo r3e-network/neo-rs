@@ -465,13 +465,14 @@ impl RpcServerBlockchain {
         let store = system.store_cache();
         let snapshot = std::sync::Arc::new(store.data_cache().clone());
         let neo_hash = neo_native_contracts::NeoToken::script_hash();
-        let candidates =
-            native_queries::NativeQueries::neo_candidates(server, std::sync::Arc::clone(&snapshot), &neo_hash)
-                .map_err(|_| {
-                    RpcException::from(
-                        RpcError::internal_server_error().with_data("Can't get candidates."),
-                    )
-                })?;
+        let candidates = native_queries::NativeQueries::neo_candidates(
+            server,
+            std::sync::Arc::clone(&snapshot),
+            &neo_hash,
+        )
+        .map_err(|_| {
+            RpcException::from(RpcError::internal_server_error().with_data("Can't get candidates."))
+        })?;
         let validators = native_queries::NativeQueries::neo_next_block_validators(
             server,
             std::sync::Arc::clone(&snapshot),
@@ -535,13 +536,13 @@ impl RpcServerBlockchain {
         let store = server.system().store_cache();
         let snapshot = std::sync::Arc::new(store.data_cache().clone());
         let neo_hash = neo_native_contracts::NeoToken::script_hash();
-        let committee =
-            native_queries::NativeQueries::neo_committee(server, snapshot, &neo_hash).map_err(|err| {
-                RpcException::from(
-                    RpcError::internal_server_error()
-                        .with_data(format!("committee not available: {err}")),
-                )
-            })?;
+        let committee = native_queries::NativeQueries::neo_committee(server, snapshot, &neo_hash)
+            .map_err(|err| {
+            RpcException::from(
+                RpcError::internal_server_error()
+                    .with_data(format!("committee not available: {err}")),
+            )
+        })?;
         let members: Vec<Value> = committee
             .iter()
             .map(|point| Value::String(hex::encode(point)))

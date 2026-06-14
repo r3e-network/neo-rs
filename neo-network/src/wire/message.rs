@@ -81,8 +81,8 @@ impl Message {
             && command.allows_compression()
             && payload_raw.len() > COMPRESSION_MIN_SIZE
         {
-            let compressed =
-                Lz4::compress_lz4(&payload_raw).map_err(|e| WireError::Compression(e.to_string()))?;
+            let compressed = Lz4::compress_lz4(&payload_raw)
+                .map_err(|e| WireError::Compression(e.to_string()))?;
             if compressed.len() < payload_raw.len().saturating_sub(COMPRESSION_THRESHOLD) {
                 (MessageFlags::COMPRESSED, compressed)
             } else {

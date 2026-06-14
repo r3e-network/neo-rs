@@ -159,7 +159,11 @@ impl LedgerContract {
         match self.get_transaction_state(snapshot, hash)? {
             Some(stub)
                 if stub.transaction.is_none()
-                    && Self::is_within_trace_window(stub.block_index, current, max_traceable_blocks) => {}
+                    && Self::is_within_trace_window(
+                        stub.block_index,
+                        current,
+                        max_traceable_blocks,
+                    ) => {}
             _ => return Ok(false),
         }
 
@@ -327,7 +331,11 @@ impl LedgerContract {
     /// C# `CreateStorageKey(Prefix_Transaction, UInt256 hash, UInt160 signer)`
     /// — the per-signer conflict-stub key.
     #[inline]
-    fn conflict_signer_storage_key(contract_id: i32, hash: &UInt256, signer: &UInt160) -> StorageKey {
+    fn conflict_signer_storage_key(
+        contract_id: i32,
+        hash: &UInt256,
+        signer: &UInt160,
+    ) -> StorageKey {
         let mut key = Vec::with_capacity(1 + 32 + 20);
         key.push(PREFIX_TRANSACTION);
         key.extend_from_slice(&hash.to_bytes());
@@ -418,7 +426,9 @@ impl LedgerContract {
             .as_int()
             .map_err(|e| CoreError::invalid_data(format!("TransactionState vm state: {e}")))?
             .to_u8()
-            .ok_or_else(|| CoreError::invalid_data("TransactionState vm state out of byte range"))?;
+            .ok_or_else(|| {
+                CoreError::invalid_data("TransactionState vm state out of byte range")
+            })?;
         Ok(neo_payloads::TransactionState::new(
             block_index,
             Some(tx),
@@ -434,7 +444,11 @@ impl LedgerContract {
         let max_traceable_blocks = crate::PolicyContract::new().max_traceable_blocks(engine)?;
         let snapshot = engine.snapshot_cache();
         let current = LedgerContract::new().current_index(&snapshot)?;
-        Ok(Self::is_within_trace_window(index, current, max_traceable_blocks))
+        Ok(Self::is_within_trace_window(
+            index,
+            current,
+            max_traceable_blocks,
+        ))
     }
 
     /// Pure core of C# `LedgerContract.IsTraceableBlock(snapshot, index, mtb)`:
@@ -977,8 +991,14 @@ mod tests {
             &expected[..]
         );
 
-        assert_eq!(LedgerContract::current_block_storage_key(LedgerContract::ID).key(), &[12u8]);
-        assert_eq!(LedgerContract::block_storage_key(LedgerContract::ID, &hash).key()[0], 5u8);
+        assert_eq!(
+            LedgerContract::current_block_storage_key(LedgerContract::ID).key(),
+            &[12u8]
+        );
+        assert_eq!(
+            LedgerContract::block_storage_key(LedgerContract::ID, &hash).key()[0],
+            5u8
+        );
     }
 
     /// Byte-level pins of the C# `BinarySerializer` value layouts

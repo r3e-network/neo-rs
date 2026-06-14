@@ -46,7 +46,8 @@ impl RpcBlock {
         let confirmations = json
             .get("confirmations")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'confirmations' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'confirmations' field"))?
+            as u32;
 
         let next_block_hash = json
             .get("nextblockhash")

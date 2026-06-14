@@ -62,19 +62,27 @@ impl ContractParameter {
                 ContractParameterValue::Signature(bytes)
             }
             ContractParameterType::Boolean => {
-                let val = text.parse::<bool>().map_err(|e| CoreError::other(e.to_string()))?;
+                let val = text
+                    .parse::<bool>()
+                    .map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::Boolean(val)
             }
             ContractParameterType::Integer => {
-                let val = text.parse::<BigInt>().map_err(|e| CoreError::other(e.to_string()))?;
+                let val = text
+                    .parse::<BigInt>()
+                    .map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::Integer(val)
             }
             ContractParameterType::Hash160 => {
-                let val = text.parse::<UInt160>().map_err(|e| CoreError::other(e.to_string()))?;
+                let val = text
+                    .parse::<UInt160>()
+                    .map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::Hash160(val)
             }
             ContractParameterType::Hash256 => {
-                let val = text.parse::<UInt256>().map_err(|e| CoreError::other(e.to_string()))?;
+                let val = text
+                    .parse::<UInt256>()
+                    .map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::Hash256(val)
             }
             ContractParameterType::ByteArray => {
@@ -86,7 +94,8 @@ impl ContractParameter {
                 if bytes.len() != 33 && bytes.len() != 65 {
                     return Err(CoreError::other("Invalid public key length"));
                 }
-                let point = ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(e.to_string()))?;
+                let point =
+                    ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::PublicKey(point)
             }
             ContractParameterType::String => ContractParameterValue::String(text.to_string()),
@@ -176,7 +185,12 @@ impl ContractParameter {
             "Map" => ContractParameterType::Map,
             "InteropInterface" => ContractParameterType::InteropInterface,
             "Void" => ContractParameterType::Void,
-            _ => return Err(CoreError::other(format!("Unknown parameter type: {}", type_str))),
+            _ => {
+                return Err(CoreError::other(format!(
+                    "Unknown parameter type: {}",
+                    type_str
+                )));
+            }
         };
 
         let mut param = Self::new(param_type);

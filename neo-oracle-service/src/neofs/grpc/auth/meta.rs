@@ -6,27 +6,25 @@ const NEOFS_SDK_VERSION_MAJOR: u32 = 2;
 const NEOFS_SDK_VERSION_MINOR: u32 = 11;
 
 impl NeoFsAuth {
-pub(crate) fn build_neofs_meta_header(
-    &self,
-) -> CoreResult<neofs_v2::session::RequestMetaHeader> {
-    let mut meta = neofs_v2::session::RequestMetaHeader {
-        version: Some(neofs_v2::refs::Version {
-            major: NEOFS_SDK_VERSION_MAJOR,
-            minor: NEOFS_SDK_VERSION_MINOR,
-        }),
-        ttl: 2,
-        ..Default::default()
-    };
-    if let Some(token) = build_neofs_bearer_token(self)? {
-        meta.bearer_token = Some(token);
+    pub(crate) fn build_neofs_meta_header(
+        &self,
+    ) -> CoreResult<neofs_v2::session::RequestMetaHeader> {
+        let mut meta = neofs_v2::session::RequestMetaHeader {
+            version: Some(neofs_v2::refs::Version {
+                major: NEOFS_SDK_VERSION_MAJOR,
+                minor: NEOFS_SDK_VERSION_MINOR,
+            }),
+            ttl: 2,
+            ..Default::default()
+        };
+        if let Some(token) = build_neofs_bearer_token(self)? {
+            meta.bearer_token = Some(token);
+        }
+        Ok(meta)
     }
-    Ok(meta)
-}
 }
 
-fn build_neofs_bearer_token(
-    auth: &NeoFsAuth,
-) -> CoreResult<Option<neofs_v2::acl::BearerToken>> {
+fn build_neofs_bearer_token(auth: &NeoFsAuth) -> CoreResult<Option<neofs_v2::acl::BearerToken>> {
     let token = auth
         .token
         .as_ref()

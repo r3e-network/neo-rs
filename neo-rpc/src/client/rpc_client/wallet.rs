@@ -48,7 +48,8 @@ impl RpcClient {
             .rpc_send_async("validateaddress", vec![JToken::String(address.to_string())])
             .await?;
         let obj = token_as_object(result, "validateaddress")?;
-        RpcValidateAddressResult::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
+        RpcValidateAddressResult::from_json(&obj)
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Creates a new account in the wallet opened by RPC.

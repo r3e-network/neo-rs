@@ -1,11 +1,11 @@
+use crate::witness_rule::WitnessCondition;
+use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
 use neo_io::macros::{OptionExt, ValidateLength};
 use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::witness_rule::WitnessCondition;
-use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use neo_primitives::WitnessScope;
 use neo_primitives::{UINT160_SIZE, UInt160};
 use neo_vm::Interoperable;
@@ -159,8 +159,8 @@ impl Signer {
             .get("account")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CoreError::other("Signer.account must be a string"))?;
-        let account =
-            UInt160::from_str(account_str).map_err(|e| CoreError::other(format!("Invalid signer account: {e}")))?;
+        let account = UInt160::from_str(account_str)
+            .map_err(|e| CoreError::other(format!("Invalid signer account: {e}")))?;
 
         let scopes_str = obj
             .get("scopes")
@@ -174,7 +174,9 @@ impl Signer {
 
         if scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             let contracts_value = obj.get("allowedcontracts").ok_or_else(|| {
-                CoreError::other("allowedcontracts must be provided when CustomContracts scope is set")
+                CoreError::other(
+                    "allowedcontracts must be provided when CustomContracts scope is set",
+                )
             })?;
             let contracts_array = contracts_value
                 .as_array()
@@ -190,8 +192,9 @@ impl Signer {
                         .as_str()
                         .ok_or_else(|| CoreError::other("allowedcontracts items must be strings"))
                         .and_then(|s| {
-                            UInt160::from_str(s)
-                                .map_err(|e| CoreError::other(format!("Invalid allowed contract hash: {e}")))
+                            UInt160::from_str(s).map_err(|e| {
+                                CoreError::other(format!("Invalid allowed contract hash: {e}"))
+                            })
                         })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -215,9 +218,10 @@ impl Signer {
                         .as_str()
                         .ok_or_else(|| CoreError::other("allowedgroups items must be strings"))?;
                     let trimmed = text.trim_start_matches("0x");
-                    let bytes =
-                        hex_decode(trimmed).map_err(|e| CoreError::other(format!("Invalid ECPoint hex: {e}")))?;
-                    ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(format!("Invalid ECPoint: {e}")))
+                    let bytes = hex_decode(trimmed)
+                        .map_err(|e| CoreError::other(format!("Invalid ECPoint hex: {e}")))?;
+                    ECPoint::from_bytes(&bytes)
+                        .map_err(|e| CoreError::other(format!("Invalid ECPoint: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
         }
@@ -236,7 +240,8 @@ impl Signer {
             signer.rules = rules_array
                 .iter()
                 .map(|value| {
-                    WitnessRule::from_json(value).map_err(|e| CoreError::other(format!("Invalid witness rule: {e}")))
+                    WitnessRule::from_json(value)
+                        .map_err(|e| CoreError::other(format!("Invalid witness rule: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
         }
@@ -293,7 +298,9 @@ impl Serializable for Signer {
         }
 
         if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-            size += SerializeHelper::get_var_size_for_slice(&self.allowed_groups, |group| group.as_bytes().len());
+            size += SerializeHelper::get_var_size_for_slice(&self.allowed_groups, |group| {
+                group.as_bytes().len()
+            });
         }
 
         if self.scopes.contains(WitnessScope::WITNESS_RULES) {
@@ -318,15 +325,19 @@ impl Serializable for Signer {
         if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
             self.allowed_groups
                 .validate_max_length(MAX_SUBITEMS, "Allowed groups")?;
-            SerializeHelper::serialize_array_with(&self.allowed_groups, writer, |group, writer| {
-                let encoded = group
-                    .encode_point(true)
-                    .map_err(|e| IoError::invalid_data(e.to_string()))?;
-                if encoded.len() != 33 {
-                    return Err(IoError::invalid_data("Group must be compressed"));
-                }
-                writer.write_bytes(&encoded)
-            })?;
+            SerializeHelper::serialize_array_with(
+                &self.allowed_groups,
+                writer,
+                |group, writer| {
+                    let encoded = group
+                        .encode_point(true)
+                        .map_err(|e| IoError::invalid_data(e.to_string()))?;
+                    if encoded.len() != 33 {
+                        return Err(IoError::invalid_data("Group must be compressed"));
+                    }
+                    writer.write_bytes(&encoded)
+                },
+            )?;
         }
 
         // Write rules if flag is set
@@ -371,16 +382,17 @@ impl Serializable for Signer {
 
         // Read allowed groups if flag is set
         if scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-            allowed_groups = SerializeHelper::deserialize_array_with(reader, MAX_SUBITEMS, |reader| {
-                // C# Signer.Deserialize reads each AllowedGroups entry via ECPoint
-                // (DeserializeFrom -> DecodePoint), which accepts 33-byte compressed
-                // AND 65-byte uncompressed encodings. Reading a fixed 33 bytes here
-                // would misalign the stream on an uncompressed point and reject a
-                // transaction C# accepts (Signer is part of the tx hash preimage).
-                let encoded = crate::witness_rule::helpers::read_group_bytes(reader)?;
-                ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &encoded)
-                    .map_err(|e| IoError::invalid_data(e.to_string()))
-            })?;
+            allowed_groups =
+                SerializeHelper::deserialize_array_with(reader, MAX_SUBITEMS, |reader| {
+                    // C# Signer.Deserialize reads each AllowedGroups entry via ECPoint
+                    // (DeserializeFrom -> DecodePoint), which accepts 33-byte compressed
+                    // AND 65-byte uncompressed encodings. Reading a fixed 33 bytes here
+                    // would misalign the stream on an uncompressed point and reject a
+                    // transaction C# accepts (Signer is part of the tx hash preimage).
+                    let encoded = crate::witness_rule::helpers::read_group_bytes(reader)?;
+                    ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &encoded)
+                        .map_err(|e| IoError::invalid_data(e.to_string()))
+                })?;
         }
 
         // Read rules if flag is set

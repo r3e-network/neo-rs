@@ -83,7 +83,8 @@ impl Serializable for VersionPayload {
         let nonce = reader.read_u32()?;
         let user_agent = reader.read_var_string(1024)?;
 
-        let capabilities = NodeCapabilities::deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
+        let capabilities =
+            NodeCapabilities::deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
 
         Ok(Self {
             network,

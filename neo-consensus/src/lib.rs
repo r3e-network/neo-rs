@@ -1,4 +1,3 @@
-
 // Copyright (c) 2024 R3E Network
 // This file is part of the neo-rs project
 // Licensed under the MIT License
@@ -214,7 +213,6 @@
 //! - **Safety**: No two honest nodes commit different blocks at the same height
 //! - **Liveness**: If the network is synchronous and < 1/3 nodes are faulty, blocks are eventually committed
 //! - **Accountability**: All consensus actions are signed and auditable
-
 
 // ============================================================================
 // Module Declarations

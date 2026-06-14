@@ -99,9 +99,8 @@ impl AzureKeyVaultSigner {
 
     /// Perform the REST sign call and return the 64-byte low-s `r‖s`.
     fn rest_sign(&self, data: &[u8]) -> HsmResult<Vec<u8>> {
-        let bearer = std::env::var("AZURE_BEARER_TOKEN").map_err(|_| {
-            HsmError::Init("azure: AZURE_BEARER_TOKEN env var not set".into())
-        })?;
+        let bearer = std::env::var("AZURE_BEARER_TOKEN")
+            .map_err(|_| HsmError::Init("azure: AZURE_BEARER_TOKEN env var not set".into()))?;
 
         // Compute SHA-256 digest locally (Key Vault signs a *hash*, not raw data).
         let digest = Crypto::sha256(data);
@@ -151,9 +150,9 @@ impl AzureKeyVaultSigner {
             .as_str()
             .ok_or_else(|| HsmError::Sign("azure: missing 'value' in response".into()))?;
 
-        let raw = URL_SAFE_NO_PAD.decode(sig_b64).map_err(|e| {
-            HsmError::SigDecode(format!("azure: base64url decode: {e}"))
-        })?;
+        let raw = URL_SAFE_NO_PAD
+            .decode(sig_b64)
+            .map_err(|e| HsmError::SigDecode(format!("azure: base64url decode: {e}")))?;
 
         if raw.len() != 64 {
             return Err(HsmError::UnexpectedSigLen {

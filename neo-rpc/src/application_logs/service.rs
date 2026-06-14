@@ -71,7 +71,9 @@ impl ApplicationLogsService {
             return Ok(());
         };
         let Some(snapshot) = Arc::get_mut(snapshot_arc) else {
-            return Err(CoreError::other("application logs commit failed: snapshot is still shared"));
+            return Err(CoreError::other(
+                "application logs commit failed: snapshot is still shared",
+            ));
         };
         snapshot
             .try_commit()
@@ -108,16 +110,19 @@ impl ApplicationLogsService {
             return Ok(());
         };
         let Some(snapshot) = Arc::get_mut(snapshot_arc) else {
-            return Err(CoreError::other("application logs write failed: snapshot is still shared"));
+            return Err(CoreError::other(
+                "application logs write failed: snapshot is still shared",
+            ));
         };
         let mut key = Vec::with_capacity(1 + 32);
         key.push(prefix);
         key.extend_from_slice(&hash.to_bytes());
-        let bytes = serde_json::to_vec(&value)
-            .map_err(|err| CoreError::other(format!("failed to serialize application log: {err}")))?;
-        snapshot
-            .put(key, bytes)
-            .map_err(|err| CoreError::other(format!("failed to write application log to storage: {err}")))?;
+        let bytes = serde_json::to_vec(&value).map_err(|err| {
+            CoreError::other(format!("failed to serialize application log: {err}"))
+        })?;
+        snapshot.put(key, bytes).map_err(|err| {
+            CoreError::other(format!("failed to write application log to storage: {err}"))
+        })?;
         Ok(())
     }
 
@@ -172,7 +177,10 @@ impl ApplicationLogsService {
 
         let mut exception = include_exception.then(|| exec.exception.clone()).flatten();
         let stack_items: &[StackItem] = &exec.stack;
-        match StackItemRpcJson::stack_items_rpc_json_per_item(stack_items, self.settings.max_stack_size) {
+        match StackItemRpcJson::stack_items_rpc_json_per_item(
+            stack_items,
+            self.settings.max_stack_size,
+        ) {
             Ok(stack) => {
                 trigger.insert("stack".to_string(), Value::Array(stack));
             }
@@ -467,7 +475,10 @@ mod tests {
             .commit_batch()
             .expect_err("application logs commit should propagate snapshot commit failure");
 
-        assert!(err.to_string().contains("injected application logs commit failure"));
+        assert!(
+            err.to_string()
+                .contains("injected application logs commit failure")
+        );
     }
 
     #[test]
@@ -486,7 +497,10 @@ mod tests {
             )
             .expect_err("application logs write should propagate snapshot put failure");
 
-        assert!(err.to_string().contains("injected application logs write failure"));
+        assert!(
+            err.to_string()
+                .contains("injected application logs write failure")
+        );
     }
 
     #[test]

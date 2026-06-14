@@ -44,7 +44,8 @@ impl RpcNefFile {
         let checksum = json
             .get("checksum")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'checksum' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'checksum' field"))?
+            as u32;
 
         Ok(Self {
             nef_file: NefFile {

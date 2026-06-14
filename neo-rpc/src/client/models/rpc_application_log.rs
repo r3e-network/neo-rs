@@ -101,8 +101,8 @@ impl Execution {
     /// Creates from JSON
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
-        let trigger_str = required_string(json, "trigger")
-            .map_err(|e| CoreError::other(e.to_string()))?;
+        let trigger_str =
+            required_string(json, "trigger").map_err(|e| CoreError::other(e.to_string()))?;
         let trigger = TriggerType::from_str(&trigger_str)
             .map_err(|_| CoreError::other(format!("Invalid trigger type: {trigger_str}")))?;
 
@@ -168,25 +168,22 @@ pub struct RpcNotifyEventArgs {
 impl RpcNotifyEventArgs {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(
-        json: &JObject,
-        _protocol_settings: &ProtocolSettings,
-    ) -> CoreResult<Self> {
+    pub fn from_json(json: &JObject, _protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
         let contract = json
             .get("contract")
             .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|s| UInt160::parse(&s).ok())
             .ok_or_else(|| CoreError::other("Missing or invalid 'contract' field"))?;
 
-        let event_name = required_string(json, "eventname")
-            .map_err(|e| CoreError::other(e.to_string()))?;
+        let event_name =
+            required_string(json, "eventname").map_err(|e| CoreError::other(e.to_string()))?;
 
         let state_json = json
             .get("state")
             .and_then(|v| v.as_object())
             .ok_or_else(|| CoreError::other("Missing or invalid 'state' field"))?;
-        let state = stack_item_from_json(state_json)
-            .map_err(|e| CoreError::other(e.to_string()))?;
+        let state =
+            stack_item_from_json(state_json).map_err(|e| CoreError::other(e.to_string()))?;
 
         Ok(Self {
             contract,

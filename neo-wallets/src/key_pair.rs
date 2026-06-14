@@ -60,7 +60,9 @@ impl KeyPair {
     /// Creates a key pair from a private key.
     pub fn from_private_key(private_key: &[u8]) -> CoreResult<Self> {
         if private_key.len() != HASH_SIZE {
-            return Err(CoreError::invalid_private_key("private key must be 32 bytes"));
+            return Err(CoreError::invalid_private_key(
+                "private key must be 32 bytes",
+            ));
         }
 
         let mut key_bytes = [0u8; HASH_SIZE];
@@ -94,7 +96,11 @@ impl KeyPair {
 
     /// Creates a key pair from a NEP-2 encrypted private key.
     /// The encrypted_key should be the Base58Check-encoded NEP-2 "6P..." string.
-    pub fn from_nep2(encrypted_key: &[u8], password: &str, address_version: u8) -> CoreResult<Self> {
+    pub fn from_nep2(
+        encrypted_key: &[u8],
+        password: &str,
+        address_version: u8,
+    ) -> CoreResult<Self> {
         // NEP-2 strings are Base58Check-encoded (standard "6P..." form), matching
         // C# Wallet.GetPrivateKeyFromNEP2 -> Base58.Base58CheckDecode.
         let encrypted_str = std::str::from_utf8(encrypted_key)
@@ -353,7 +359,9 @@ impl KeyPair {
         if !bool::from(computed_hash.ct_eq(address_hash)) {
             // Zeroize private key before returning error
             private_key.zeroize();
-            return Err(CoreError::invalid_password("invalid password for NEP-2 key"));
+            return Err(CoreError::invalid_password(
+                "invalid password for NEP-2 key",
+            ));
         }
 
         Ok(private_key)

@@ -655,7 +655,8 @@ impl RpcClient {
             .rpc_send_async("getcontractstate", vec![JToken::String(hash.to_string())])
             .await?;
         let obj = token_as_object(result, "getcontractstate")?;
-        RpcContractState::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
+        RpcContractState::from_json(&obj)
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets contract state by numeric contract ID.
@@ -667,7 +668,8 @@ impl RpcClient {
             .rpc_send_async("getcontractstate", vec![JToken::Number(f64::from(id))])
             .await?;
         let obj = token_as_object(result, "getcontractstate")?;
-        RpcContractState::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
+        RpcContractState::from_json(&obj)
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets NEP-11 properties.

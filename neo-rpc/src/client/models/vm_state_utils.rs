@@ -21,8 +21,7 @@ pub fn vm_state_from_str(value: &str) -> Option<VmState> {
 
 pub(super) fn parse_vm_state_field(json: &JObject, field: &str) -> CoreResult<VmState> {
     let value = required_string(json, field).map_err(|e| CoreError::other(e.to_string()))?;
-    vm_state_from_str(&value)
-        .ok_or_else(|| CoreError::other(format!("Invalid VM state: {value}")))
+    vm_state_from_str(&value).ok_or_else(|| CoreError::other(format!("Invalid VM state: {value}")))
 }
 
 pub(super) fn insert_vm_state_field(json: &mut JObject, field: &str, state: VmState) {
@@ -30,7 +29,8 @@ pub(super) fn insert_vm_state_field(json: &mut JObject, field: &str, state: VmSt
 }
 
 pub(super) fn parse_gas_consumed_field(json: &JObject) -> CoreResult<i64> {
-    let value = required_string(json, "gasconsumed").map_err(|e| CoreError::other(e.to_string()))?;
+    let value =
+        required_string(json, "gasconsumed").map_err(|e| CoreError::other(e.to_string()))?;
     value
         .parse::<i64>()
         .map_err(|_| CoreError::other(format!("Invalid gas consumed value: {value}")))

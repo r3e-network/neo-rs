@@ -79,8 +79,8 @@ impl RpcNep11Balance {
     }
 
     pub fn from_json(json: &JObject) -> CoreResult<Self> {
-        let asset_hash_str = required_string(json, "assethash")
-            .map_err(|e| CoreError::other(e.to_string()))?;
+        let asset_hash_str =
+            required_string(json, "assethash").map_err(|e| CoreError::other(e.to_string()))?;
         let asset_hash = UInt160::parse(&asset_hash_str)
             .map_err(|_| CoreError::other(format!("Invalid asset hash: {asset_hash_str}")))?;
 
@@ -145,8 +145,8 @@ impl RpcNep11TokenBalance {
     }
 
     pub fn from_json(json: &JObject) -> CoreResult<Self> {
-        let token_id_str = required_string(json, "tokenid")
-            .map_err(|e| CoreError::other(e.to_string()))?;
+        let token_id_str =
+            required_string(json, "tokenid").map_err(|e| CoreError::other(e.to_string()))?;
         let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
             .map_err(|_| CoreError::other(format!("Invalid tokenid: {token_id_str}")))?;
 

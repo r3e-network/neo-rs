@@ -34,7 +34,9 @@ impl KeyPath {
         }
 
         let mut parts = trimmed.split('/');
-        let first = parts.next().ok_or_else(|| CoreError::other("Invalid key path"))?;
+        let first = parts
+            .next()
+            .ok_or_else(|| CoreError::other("Invalid key path"))?;
         if first.trim() != "m" {
             return Err(CoreError::other("Invalid key path"));
         }

@@ -287,7 +287,9 @@ fn build_and_sign_transaction(
     let available = wallet_compat::gas_balance_of(data_cache, &protocol_settings, &sender)
         .map_err(|err| CoreError::other(err.to_string()))?;
     if available < required_fee {
-        return Err(CoreError::other("Insufficient GAS balance to pay system and network fees."));
+        return Err(CoreError::other(
+            "Insufficient GAS balance to pay system and network fees.",
+        ));
     }
 
     let mut tx_clone = tx.clone();
@@ -328,9 +330,9 @@ fn build_account_witness(
     tx: &Transaction,
     network: u32,
 ) -> CoreResult<Witness> {
-    let key = account
-        .get_key()
-        .ok_or_else(|| CoreError::other(WalletError::Other("Account locked".to_string()).to_string()))?;
+    let key = account.get_key().ok_or_else(|| {
+        CoreError::other(WalletError::Other("Account locked".to_string()).to_string())
+    })?;
     let signature = wallet_compat::sign_transaction_with_key(tx, &key, network)?;
 
     let verification_script = if let Some(contract) = account.contract() {

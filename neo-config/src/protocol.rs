@@ -443,8 +443,9 @@ impl ProtocolSettings {
         if let Some(hardforks) = raw.hardforks {
             let mut parsed = HashMap::new();
             for (name, height) in hardforks {
-                let hardfork = Hardfork::from_str(&name)
-                    .map_err(|err| ProtocolConfigError::InvalidHardforkName(format!("{name}: {err}")))?;
+                let hardfork = Hardfork::from_str(&name).map_err(|err| {
+                    ProtocolConfigError::InvalidHardforkName(format!("{name}: {err}"))
+                })?;
                 parsed.insert(hardfork, height);
             }
 
@@ -455,7 +456,9 @@ impl ProtocolSettings {
         Ok(settings)
     }
 
-    fn validate_hardfork_sequence(hardforks: &HashMap<Hardfork, u32>) -> Result<(), ProtocolConfigError> {
+    fn validate_hardfork_sequence(
+        hardforks: &HashMap<Hardfork, u32>,
+    ) -> Result<(), ProtocolConfigError> {
         let all = HardforkManager::all();
         let mut previous_index: Option<usize> = None;
         let mut previous_height: Option<u32> = None;
@@ -516,12 +519,11 @@ impl CommitteeParser {
             if trimmed.is_empty() {
                 continue;
             }
-            let bytes = hex::decode(trimmed).map_err(|err| {
-                ProtocolConfigError::InvalidCommitteeEntry {
+            let bytes =
+                hex::decode(trimmed).map_err(|err| ProtocolConfigError::InvalidCommitteeEntry {
                     entry: entry.clone(),
                     reason: format!("invalid hex: {err}"),
-                }
-            })?;
+                })?;
             let point = ECPoint::from_bytes(&bytes).map_err(|e| {
                 ProtocolConfigError::InvalidCommitteeEntry {
                     entry: entry.clone(),

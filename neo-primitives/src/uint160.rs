@@ -61,12 +61,11 @@ impl UInt160 {
     /// Returns `PrimitiveError::InvalidFormat` if the address is not valid Base58,
     /// has an incorrect length, has an invalid version byte, or has an invalid checksum.
     pub fn from_address(address: &str) -> crate::PrimitiveResult<Self> {
-        let script_hash =
-            base58_check::Base58Check::decode_address_payload(
-                address,
-                crate::constants::ADDRESS_VERSION,
-            )
-            .map_err(map_base58_check_address_error)?;
+        let script_hash = base58_check::Base58Check::decode_address_payload(
+            address,
+            crate::constants::ADDRESS_VERSION,
+        )
+        .map_err(map_base58_check_address_error)?;
         Self::from_bytes(&script_hash)
     }
 

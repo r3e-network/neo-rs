@@ -81,10 +81,7 @@ impl RpcNep17Balance {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(
-        json: &JObject,
-        _protocol_settings: &ProtocolSettings,
-    ) -> CoreResult<Self> {
+    pub fn from_json(json: &JObject, _protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
         let asset_hash =
             required_script_hash_or_address(json, "assethash", _protocol_settings, "asset hash")?;
         let fields = parse_nep_balance_fields(json)?;

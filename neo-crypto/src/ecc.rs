@@ -579,173 +579,182 @@ impl Ord for ECCurve {
 pub struct EcdsaVerify;
 
 impl EcdsaVerify {
-/// Verifies a signature for the specified curve.
-///
-/// For secp256r1/secp256k1 the message is hashed internally using SHA-256 by the
-/// ECDSA implementation. For Ed25519, the message is verified directly.
-pub fn verify_signature(
-    curve: ECCurve,
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-) -> CryptoResult<bool> {
-    match curve {
-        ECCurve::Secp256r1 => Self::verify_signature_secp256r1(public_key, message, signature),
-        ECCurve::Secp256k1 => Self::verify_signature_secp256k1(public_key, message, signature),
-        ECCurve::Ed25519 => Self::verify_ed25519(public_key, message, signature),
-    }
-}
-
-/// Verifies a secp256r1 (P-256) signature.
-pub fn verify_signature_secp256r1(
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-) -> CryptoResult<bool> {
-    let verifying_key = P256VerifyingKey::from_sec1_bytes(public_key)
-        .map_err(|e| CryptoError::invalid_key(format!("Invalid secp256r1 public key: {e}")))?;
-
-    let sig = P256Signature::from_der(signature)
-        .or_else(|_| P256Signature::from_slice(signature))
-        .map_err(|e| CryptoError::invalid_signature(format!("Invalid secp256r1 signature: {e}")))?;
-
-    Ok(verifying_key.verify(message, &sig).is_ok())
-}
-
-/// Verifies a secp256k1 signature.
-pub fn verify_signature_secp256k1(
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-) -> CryptoResult<bool> {
-    let verifying_key = K256VerifyingKey::from_sec1_bytes(public_key)
-        .map_err(|e| CryptoError::invalid_key(format!("Invalid secp256k1 public key: {e}")))?;
-
-    let sig = K256Signature::from_der(signature)
-        .or_else(|_| K256Signature::from_slice(signature))
-        .map_err(|e| CryptoError::invalid_signature(format!("Invalid secp256k1 signature: {e}")))?;
-
-    // C# (.NET ECDsa / BouncyCastle) accepts both low-s and high-s signatures,
-    // but RustCrypto's k256 verifier enforces low-s. Normalize to low-s so a
-    // high-s signature that C# verifies also verifies here (malleability parity);
-    // a no-op for an already-low-s signature.
-    let sig = sig.normalize_s().unwrap_or(sig);
-    Ok(verifying_key.verify(message, &sig).is_ok())
-}
-
-/// Verifies an ECDSA signature over `message`, hashing the message with the
-/// selected `hash` algorithm before verification.
-///
-/// Mirrors C# `Crypto.VerifySignature(message, signature, pubkey, curve,
-/// hashAlgorithm)` used by `CryptoLib.VerifyWithECDsa`: the message is reduced to
-/// a 32-byte digest (SHA-256 or Keccak-256), which is then ECDSA-verified against
-/// the public key. Only `Sha256` and `Keccak256` are valid ECDSA hashes; any
-/// other algorithm (or the non-ECDSA `Ed25519` curve) is an error. A malformed
-/// public key or signature yields `Ok(false)`, matching the C# path that catches
-/// `ArgumentException` and returns `false`.
-///
-/// For the SHA-256 algorithm this is equivalent to [`verify_signature`] (whose
-/// `Verifier::verify` hashes with the curve's SHA-256 digest); the Keccak-256
-/// variants were added by the `HF_Cockatrice` hardfork.
-pub fn verify_signature_with_hash(
-    curve: ECCurve,
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-    hash: HashAlgorithm,
-) -> CryptoResult<bool> {
-    use sha2::{Digest as _, Sha256};
-    use sha3::Keccak256;
-
-    let digest: [u8; 32] = match hash {
-        HashAlgorithm::Sha256 => Sha256::digest(message).into(),
-        HashAlgorithm::Keccak256 => Keccak256::digest(message).into(),
-        other => {
-            return Err(CryptoError::invalid_argument(format!(
-                "ECDSA verification does not support hash algorithm {other:?}"
-            )));
-        }
-    };
-
-    match curve {
-        ECCurve::Secp256r1 => {
-            let Ok(verifying_key) = P256VerifyingKey::from_sec1_bytes(public_key) else {
-                return Ok(false);
-            };
-            let Ok(sig) = P256Signature::from_der(signature)
-                .or_else(|_| P256Signature::from_slice(signature))
-            else {
-                return Ok(false);
-            };
-            Ok(P256PrehashVerifier::verify_prehash(&verifying_key, &digest, &sig).is_ok())
-        }
-        ECCurve::Secp256k1 => {
-            let Ok(verifying_key) = K256VerifyingKey::from_sec1_bytes(public_key) else {
-                return Ok(false);
-            };
-            let Ok(sig) = K256Signature::from_der(signature)
-                .or_else(|_| K256Signature::from_slice(signature))
-            else {
-                return Ok(false);
-            };
-            // Accept high-s like C# (k256 enforces low-s; normalize for parity).
-            let sig = sig.normalize_s().unwrap_or(sig);
-            Ok(K256PrehashVerifier::verify_prehash(&verifying_key, &digest, &sig).is_ok())
-        }
-        ECCurve::Ed25519 => Err(CryptoError::invalid_argument(
-            "Ed25519 is not an ECDSA curve".to_string(),
-        )),
-    }
-}
-
-/// Verifies an Ed25519 signature.
-pub fn verify_ed25519(public_key: &[u8], message: &[u8], signature: &[u8]) -> CryptoResult<bool> {
-    let pk_bytes: [u8; 32] = public_key
-        .try_into()
-        .map_err(|_| CryptoError::invalid_key("Ed25519 public key must be 32 bytes"))?;
-    let sig = Ed25519Signature::try_from(signature)
-        .map_err(|e| CryptoError::invalid_signature(format!("Invalid Ed25519 signature: {e}")))?;
-    let verifying_key = VerifyingKey::from_bytes(&pk_bytes)
-        .map_err(|e| CryptoError::invalid_key(format!("Invalid Ed25519 public key: {e}")))?;
-
-    Ok(verifying_key.verify_strict(message, &sig).is_ok())
-}
-
-/// Generates a random keypair for the specified curve.
-///
-/// The private key is returned wrapped in [`Zeroizing`] so it is automatically
-/// zeroed when dropped, preventing secret material from lingering in memory.
-pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Zeroizing<Vec<u8>>, ECPoint)> {
-    match curve {
-        ECCurve::Secp256r1 => {
-            let signing_key = P256SigningKey::random(&mut OsRng);
-            let verifying_key = signing_key.verifying_key();
-            let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
-            let public_point = ECPoint::new_unchecked(
-                curve,
-                verifying_key.to_encoded_point(true).as_bytes().to_vec(),
-            )?;
-            Ok((private_key, public_point))
-        }
-        ECCurve::Secp256k1 => {
-            let signing_key = K256SigningKey::random(&mut OsRng);
-            let verifying_key = signing_key.verifying_key();
-            let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
-            let public_point = ECPoint::new_unchecked(
-                curve,
-                verifying_key.to_encoded_point(true).as_bytes().to_vec(),
-            )?;
-            Ok((private_key, public_point))
-        }
-        ECCurve::Ed25519 => {
-            let signing_key = Ed25519SigningKey::generate(&mut OsRng);
-            let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
-            let public_point =
-                ECPoint::new_unchecked(curve, signing_key.verifying_key().to_bytes().to_vec())?;
-            Ok((private_key, public_point))
+    /// Verifies a signature for the specified curve.
+    ///
+    /// For secp256r1/secp256k1 the message is hashed internally using SHA-256 by the
+    /// ECDSA implementation. For Ed25519, the message is verified directly.
+    pub fn verify_signature(
+        curve: ECCurve,
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+    ) -> CryptoResult<bool> {
+        match curve {
+            ECCurve::Secp256r1 => Self::verify_signature_secp256r1(public_key, message, signature),
+            ECCurve::Secp256k1 => Self::verify_signature_secp256k1(public_key, message, signature),
+            ECCurve::Ed25519 => Self::verify_ed25519(public_key, message, signature),
         }
     }
-}
+
+    /// Verifies a secp256r1 (P-256) signature.
+    pub fn verify_signature_secp256r1(
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+    ) -> CryptoResult<bool> {
+        let verifying_key = P256VerifyingKey::from_sec1_bytes(public_key)
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid secp256r1 public key: {e}")))?;
+
+        let sig = P256Signature::from_der(signature)
+            .or_else(|_| P256Signature::from_slice(signature))
+            .map_err(|e| {
+                CryptoError::invalid_signature(format!("Invalid secp256r1 signature: {e}"))
+            })?;
+
+        Ok(verifying_key.verify(message, &sig).is_ok())
+    }
+
+    /// Verifies a secp256k1 signature.
+    pub fn verify_signature_secp256k1(
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+    ) -> CryptoResult<bool> {
+        let verifying_key = K256VerifyingKey::from_sec1_bytes(public_key)
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid secp256k1 public key: {e}")))?;
+
+        let sig = K256Signature::from_der(signature)
+            .or_else(|_| K256Signature::from_slice(signature))
+            .map_err(|e| {
+                CryptoError::invalid_signature(format!("Invalid secp256k1 signature: {e}"))
+            })?;
+
+        // C# (.NET ECDsa / BouncyCastle) accepts both low-s and high-s signatures,
+        // but RustCrypto's k256 verifier enforces low-s. Normalize to low-s so a
+        // high-s signature that C# verifies also verifies here (malleability parity);
+        // a no-op for an already-low-s signature.
+        let sig = sig.normalize_s().unwrap_or(sig);
+        Ok(verifying_key.verify(message, &sig).is_ok())
+    }
+
+    /// Verifies an ECDSA signature over `message`, hashing the message with the
+    /// selected `hash` algorithm before verification.
+    ///
+    /// Mirrors C# `Crypto.VerifySignature(message, signature, pubkey, curve,
+    /// hashAlgorithm)` used by `CryptoLib.VerifyWithECDsa`: the message is reduced to
+    /// a 32-byte digest (SHA-256 or Keccak-256), which is then ECDSA-verified against
+    /// the public key. Only `Sha256` and `Keccak256` are valid ECDSA hashes; any
+    /// other algorithm (or the non-ECDSA `Ed25519` curve) is an error. A malformed
+    /// public key or signature yields `Ok(false)`, matching the C# path that catches
+    /// `ArgumentException` and returns `false`.
+    ///
+    /// For the SHA-256 algorithm this is equivalent to [`verify_signature`] (whose
+    /// `Verifier::verify` hashes with the curve's SHA-256 digest); the Keccak-256
+    /// variants were added by the `HF_Cockatrice` hardfork.
+    pub fn verify_signature_with_hash(
+        curve: ECCurve,
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+        hash: HashAlgorithm,
+    ) -> CryptoResult<bool> {
+        use sha2::{Digest as _, Sha256};
+        use sha3::Keccak256;
+
+        let digest: [u8; 32] = match hash {
+            HashAlgorithm::Sha256 => Sha256::digest(message).into(),
+            HashAlgorithm::Keccak256 => Keccak256::digest(message).into(),
+            other => {
+                return Err(CryptoError::invalid_argument(format!(
+                    "ECDSA verification does not support hash algorithm {other:?}"
+                )));
+            }
+        };
+
+        match curve {
+            ECCurve::Secp256r1 => {
+                let Ok(verifying_key) = P256VerifyingKey::from_sec1_bytes(public_key) else {
+                    return Ok(false);
+                };
+                let Ok(sig) = P256Signature::from_der(signature)
+                    .or_else(|_| P256Signature::from_slice(signature))
+                else {
+                    return Ok(false);
+                };
+                Ok(P256PrehashVerifier::verify_prehash(&verifying_key, &digest, &sig).is_ok())
+            }
+            ECCurve::Secp256k1 => {
+                let Ok(verifying_key) = K256VerifyingKey::from_sec1_bytes(public_key) else {
+                    return Ok(false);
+                };
+                let Ok(sig) = K256Signature::from_der(signature)
+                    .or_else(|_| K256Signature::from_slice(signature))
+                else {
+                    return Ok(false);
+                };
+                // Accept high-s like C# (k256 enforces low-s; normalize for parity).
+                let sig = sig.normalize_s().unwrap_or(sig);
+                Ok(K256PrehashVerifier::verify_prehash(&verifying_key, &digest, &sig).is_ok())
+            }
+            ECCurve::Ed25519 => Err(CryptoError::invalid_argument(
+                "Ed25519 is not an ECDSA curve".to_string(),
+            )),
+        }
+    }
+
+    /// Verifies an Ed25519 signature.
+    pub fn verify_ed25519(
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+    ) -> CryptoResult<bool> {
+        let pk_bytes: [u8; 32] = public_key
+            .try_into()
+            .map_err(|_| CryptoError::invalid_key("Ed25519 public key must be 32 bytes"))?;
+        let sig = Ed25519Signature::try_from(signature).map_err(|e| {
+            CryptoError::invalid_signature(format!("Invalid Ed25519 signature: {e}"))
+        })?;
+        let verifying_key = VerifyingKey::from_bytes(&pk_bytes)
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid Ed25519 public key: {e}")))?;
+
+        Ok(verifying_key.verify_strict(message, &sig).is_ok())
+    }
+
+    /// Generates a random keypair for the specified curve.
+    ///
+    /// The private key is returned wrapped in [`Zeroizing`] so it is automatically
+    /// zeroed when dropped, preventing secret material from lingering in memory.
+    pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Zeroizing<Vec<u8>>, ECPoint)> {
+        match curve {
+            ECCurve::Secp256r1 => {
+                let signing_key = P256SigningKey::random(&mut OsRng);
+                let verifying_key = signing_key.verifying_key();
+                let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
+                let public_point = ECPoint::new_unchecked(
+                    curve,
+                    verifying_key.to_encoded_point(true).as_bytes().to_vec(),
+                )?;
+                Ok((private_key, public_point))
+            }
+            ECCurve::Secp256k1 => {
+                let signing_key = K256SigningKey::random(&mut OsRng);
+                let verifying_key = signing_key.verifying_key();
+                let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
+                let public_point = ECPoint::new_unchecked(
+                    curve,
+                    verifying_key.to_encoded_point(true).as_bytes().to_vec(),
+                )?;
+                Ok((private_key, public_point))
+            }
+            ECCurve::Ed25519 => {
+                let signing_key = Ed25519SigningKey::generate(&mut OsRng);
+                let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
+                let public_point =
+                    ECPoint::new_unchecked(curve, signing_key.verifying_key().to_bytes().to_vec())?;
+                Ok((private_key, public_point))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -926,8 +935,12 @@ mod tests {
         let signature_bytes = signature.to_bytes();
 
         assert!(
-            EcdsaVerify::verify_signature_secp256r1(&pub_bytes, message, signature_bytes.as_slice())
-                .unwrap()
+            EcdsaVerify::verify_signature_secp256r1(
+                &pub_bytes,
+                message,
+                signature_bytes.as_slice()
+            )
+            .unwrap()
         );
 
         let mut bad_sig = signature_bytes;
@@ -1060,8 +1073,12 @@ mod tests {
         let signature_bytes = signature.to_bytes();
 
         assert!(
-            EcdsaVerify::verify_signature_secp256k1(&pub_bytes, message, signature_bytes.as_slice())
-                .unwrap()
+            EcdsaVerify::verify_signature_secp256k1(
+                &pub_bytes,
+                message,
+                signature_bytes.as_slice()
+            )
+            .unwrap()
         );
 
         let mut bad_sig = signature_bytes;
@@ -1083,12 +1100,15 @@ mod tests {
 
         let mut bad_sig = signature.to_bytes();
         bad_sig[0] ^= 0x01;
-        assert!(!EcdsaVerify::verify_ed25519(&verifying_key.to_bytes(), message, &bad_sig).unwrap());
+        assert!(
+            !EcdsaVerify::verify_ed25519(&verifying_key.to_bytes(), message, &bad_sig).unwrap()
+        );
     }
 
     #[test]
     fn test_generate_keypair_roundtrip() {
-        let (private_key, public_point) = EcdsaVerify::generate_keypair(ECCurve::Secp256r1).unwrap();
+        let (private_key, public_point) =
+            EcdsaVerify::generate_keypair(ECCurve::Secp256r1).unwrap();
         assert_eq!(
             public_point.as_bytes().len(),
             ECCurve::Secp256r1.compressed_size()

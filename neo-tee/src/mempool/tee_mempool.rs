@@ -348,7 +348,11 @@ impl TeeMempool {
                 // node. This is an internal TEE ordering-proof digest (NOT a Neo
                 // block merkle root, which is double-SHA-256); route it through
                 // the central neo-crypto hasher rather than reimplementing sha2.
-                let right = if chunk.len() > 1 { &chunk[1] } else { &chunk[0] };
+                let right = if chunk.len() > 1 {
+                    &chunk[1]
+                } else {
+                    &chunk[0]
+                };
                 let mut data = [0u8; 64];
                 data[..32].copy_from_slice(&chunk[0]);
                 data[32..].copy_from_slice(right);

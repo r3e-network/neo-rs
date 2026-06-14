@@ -1,5 +1,5 @@
-use super::super::helpers::current_timestamp;
 use super::super::helpers::InvocationScript;
+use super::super::helpers::current_timestamp;
 use super::super::{ConsensusEvent, ConsensusService};
 use crate::messages::{ChangeViewMessage, ConsensusPayload, RecoveryRequestMessage};
 use crate::{ChangeViewReason, ConsensusMessageType, ConsensusResult};

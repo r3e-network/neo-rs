@@ -84,13 +84,11 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
             Ok(StackValue::Boolean(value))
         }
         "Integer" => {
-            let value_token = json
-                .get("value")
-                .ok_or_else(|| {
-                    StackParseError::MissingField(
-                        "Integer stack item missing 'value' field".to_string(),
-                    )
-                })?;
+            let value_token = json.get("value").ok_or_else(|| {
+                StackParseError::MissingField(
+                    "Integer stack item missing 'value' field".to_string(),
+                )
+            })?;
             let text = value_token.as_string().ok_or_else(|| {
                 StackParseError::InvalidType(
                     "Integer stack item value must be a string".to_string(),
@@ -101,9 +99,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
             })?;
             Ok(integer_stack_value(integer))
         }
-        "ByteString" => {
-            parse_base64_stack_value(json, "ByteString", StackValue::ByteString)
-        }
+        "ByteString" => parse_base64_stack_value(json, "ByteString", StackValue::ByteString),
         "Buffer" => parse_base64_stack_value(json, "Buffer", StackValue::Buffer),
         "Array" => parse_stack_sequence(json, "Array", StackValue::Array),
         "Struct" => parse_stack_sequence(json, "Struct", StackValue::Struct),
@@ -234,9 +230,9 @@ fn parse_base64_stack_value(
     type_name: &str,
     make_value: impl FnOnce(Vec<u8>) -> StackValue,
 ) -> Result<StackValue, StackParseError> {
-    let value_token = json
-        .get("value")
-        .ok_or_else(|| StackParseError::MissingField(format!("{type_name} stack item missing 'value' field")))?;
+    let value_token = json.get("value").ok_or_else(|| {
+        StackParseError::MissingField(format!("{type_name} stack item missing 'value' field"))
+    })?;
     let data = parse_base64_token(value_token, "value").map_err(StackParseError::from)?;
     Ok(make_value(data))
 }
@@ -254,12 +250,12 @@ fn parse_stack_sequence(
         })?;
     let mut items = Vec::with_capacity(values.len());
     for value in values.children() {
-        let token = value
-            .as_ref()
-            .ok_or_else(|| StackParseError::InvalidType(format!("{type_name} entries must be objects")))?;
-        let obj = token
-            .as_object()
-            .ok_or_else(|| StackParseError::InvalidType(format!("{type_name} entries must be objects")))?;
+        let token = value.as_ref().ok_or_else(|| {
+            StackParseError::InvalidType(format!("{type_name} entries must be objects"))
+        })?;
+        let obj = token.as_object().ok_or_else(|| {
+            StackParseError::InvalidType(format!("{type_name} entries must be objects"))
+        })?;
         items.push(stack_item_from_json(obj)?);
     }
     Ok(make_value(items))

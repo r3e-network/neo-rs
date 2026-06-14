@@ -148,7 +148,9 @@ impl ApplicationEngine {
     /// Helper to pop an integer from the stack
     pub fn pop_integer(&mut self) -> CoreResult<i64> {
         let item = self.pop()?;
-        let integer = item.into_int().map_err(|e| CoreError::other(e.to_string()))?;
+        let integer = item
+            .into_int()
+            .map_err(|e| CoreError::other(e.to_string()))?;
         integer
             .to_i64()
             .ok_or_else(|| CoreError::other("Integer too large"))
@@ -163,7 +165,9 @@ impl ApplicationEngine {
     /// Helper to pop a string from the stack
     pub fn pop_string(&mut self) -> CoreResult<String> {
         let item = self.pop()?;
-        let bytes = item.as_bytes().map_err(|e| CoreError::other(e.to_string()))?;
+        let bytes = item
+            .as_bytes()
+            .map_err(|e| CoreError::other(e.to_string()))?;
         String::from_utf8(bytes).map_err(|_| CoreError::other("Invalid UTF-8"))
     }
 
@@ -271,7 +275,11 @@ impl ApplicationEngine {
         let mut result = Vec::new();
         for notification in self.notifications() {
             if hash.is_none_or(|expected| notification.script_hash == expected) {
-                result.push(notification.to_stack_item().map_err(|e| CoreError::other(e.to_string()))?);
+                result.push(
+                    notification
+                        .to_stack_item()
+                        .map_err(|e| CoreError::other(e.to_string()))?,
+                );
                 if result.len() > limits.max_stack_size as usize {
                     return Err(CoreError::other("Too many notifications"));
                 }
@@ -329,7 +337,9 @@ fn detect_stack_item_cycle(
                 return Ok(());
             }
             if !visiting.insert(key) {
-                return Err(CoreError::other("Circular reference detected while serializing map"));
+                return Err(CoreError::other(
+                    "Circular reference detected while serializing map",
+                ));
             }
             for (entry_key, entry_value) in entries.iter() {
                 detect_stack_item_cycle(&entry_key, visiting, visited)?;
@@ -398,7 +408,9 @@ fn clone_stack_item_as_immutable(
             seen.insert(key, cloned_item.clone());
             for element in array.iter() {
                 let child = clone_stack_item_as_immutable(&element, seen)?;
-                cloned.push(child).map_err(|e| CoreError::other(e.to_string()))?;
+                cloned
+                    .push(child)
+                    .map_err(|e| CoreError::other(e.to_string()))?;
             }
             Ok(cloned_item)
         }
@@ -412,7 +424,9 @@ fn clone_stack_item_as_immutable(
             seen.insert(key, cloned_item.clone());
             for element in struct_item.iter() {
                 let child = clone_stack_item_as_immutable(&element, seen)?;
-                cloned.push(child).map_err(|e| CoreError::other(e.to_string()))?;
+                cloned
+                    .push(child)
+                    .map_err(|e| CoreError::other(e.to_string()))?;
             }
             Ok(cloned_item)
         }

@@ -24,7 +24,10 @@ pub enum ImportDisposition {
 
 impl ImportDisposition {
     /// Classify an incoming import block relative to the current chain height.
-    pub(super) fn classify_import_block(current_height: u32, block_index: u32) -> ImportDisposition {
+    pub(super) fn classify_import_block(
+        current_height: u32,
+        block_index: u32,
+    ) -> ImportDisposition {
         if block_index <= current_height {
             ImportDisposition::AlreadySeen
         } else if block_index == current_height.saturating_add(1) {

@@ -26,8 +26,8 @@ use neo_native_contracts::{LedgerContract, NeoToken};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::script_builder::RedeemScript;
 use neo_storage::persistence::DataCache;
+use neo_vm::script_builder::RedeemScript;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -117,7 +117,9 @@ fn validator_infos_from_keys(keys: Vec<ECPoint>) -> Vec<ValidatorInfo> {
     keys.into_iter()
         .enumerate()
         .map(|(index, public_key)| {
-            let script_hash = UInt160::from_script(&RedeemScript::signature_redeem_script(public_key.as_bytes()));
+            let script_hash = UInt160::from_script(&RedeemScript::signature_redeem_script(
+                public_key.as_bytes(),
+            ));
             ValidatorInfo {
                 index: index as u8,
                 public_key,
@@ -253,10 +255,9 @@ fn round_validator_context(
     block_index: u32,
 ) -> anyhow::Result<(Vec<ValidatorInfo>, UInt160)> {
     let validators_count = usize::try_from(settings.validators_count).unwrap_or(0);
-    let validators = validator_infos_from_keys(NeoToken::new().next_block_validators(
-        snapshot,
-        validators_count,
-    )?);
+    let validators = validator_infos_from_keys(
+        NeoToken::new().next_block_validators(snapshot, validators_count)?,
+    );
     let next_consensus =
         NeoToken::new().next_consensus_address_for_block(snapshot, settings, block_index)?;
     Ok((validators, next_consensus))

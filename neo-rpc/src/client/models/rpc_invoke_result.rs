@@ -39,7 +39,8 @@ impl RpcInvokeResult {
     /// Creates from JSON
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> CoreResult<Self> {
-        let script = required_string(json, "script").map_err(|e| CoreError::other(e.to_string()))?;
+        let script =
+            required_string(json, "script").map_err(|e| CoreError::other(e.to_string()))?;
 
         let state = parse_vm_state_field(json, "state")?;
         let gas_consumed = parse_gas_consumed_field(json)?;

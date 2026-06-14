@@ -245,4 +245,3 @@ impl NativeContractLookup {
         provider.current_block_index(snapshot).unwrap_or(0)
     }
 }
-

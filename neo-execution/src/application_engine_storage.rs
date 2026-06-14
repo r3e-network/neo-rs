@@ -13,7 +13,8 @@ use neo_vm::{ExecutionEngine, StackItem, VmResult};
 impl ApplicationEngine {
     /// Gets storage context for reading
     pub fn storage_get_context(&mut self) -> CoreResult<StorageContext> {
-        self.get_storage_context().map_err(|err| CoreError::other(err.to_string()))
+        self.get_storage_context()
+            .map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// Gets storage context for reading (readonly)
@@ -23,10 +24,7 @@ impl ApplicationEngine {
     }
 
     /// Converts context to read-write
-    pub fn storage_as_read_write(
-        &mut self,
-        context: StorageContext,
-    ) -> CoreResult<StorageContext> {
+    pub fn storage_as_read_write(&mut self, context: StorageContext) -> CoreResult<StorageContext> {
         if !self.has_call_flags(CallFlags::WRITE_STATES) {
             return Err(CoreError::other("Write states not allowed"));
         }

@@ -107,7 +107,10 @@ impl ExternalVmHost<'_> {
                 Ok(())
             }
             Some(ExternalRuntimeSyscall::GetTime) => {
-                let time = self.engine.get_current_block_time().map_err(|e| e.to_string())?;
+                let time = self
+                    .engine
+                    .get_current_block_time()
+                    .map_err(|e| e.to_string())?;
                 stack.push(vm_integer_from_u64(time));
                 Ok(())
             }
@@ -138,7 +141,9 @@ impl ExternalVmHost<'_> {
             }
             Some(ExternalRuntimeSyscall::BurnGas) => {
                 let amount = pop_vm_i64(stack, "System.Runtime.BurnGas")?;
-                self.engine.runtime_burn_gas(amount).map_err(|e| e.to_string())
+                self.engine
+                    .runtime_burn_gas(amount)
+                    .map_err(|e| e.to_string())
             }
             Some(ExternalRuntimeSyscall::CheckWitness) => {
                 let hash_or_pubkey = pop_vm_bytes(stack, "System.Runtime.CheckWitness")?;

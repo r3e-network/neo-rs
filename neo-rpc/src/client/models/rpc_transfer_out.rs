@@ -45,7 +45,8 @@ impl RpcTransferOut {
             .ok_or_else(|| CoreError::other("Missing or invalid 'asset' field"))?;
 
         let asset = if asset_str.starts_with("0x") || asset_str.len() == 40 {
-            UInt160::parse(&asset_str).map_err(|_| CoreError::other(format!("Invalid asset: {asset_str}")))?
+            UInt160::parse(&asset_str)
+                .map_err(|_| CoreError::other(format!("Invalid asset: {asset_str}")))?
         } else {
             WalletHelper::to_script_hash(&asset_str, protocol_settings.address_version)
                 .map_err(|_| CoreError::other(format!("Invalid asset: {asset_str}")))?
@@ -66,11 +67,13 @@ impl RpcTransferOut {
             .ok_or_else(|| CoreError::other("Missing or invalid 'address' field"))?;
 
         let script_hash = if address.len() == 40 || address.starts_with("0x") {
-            UInt160::parse(&address)
-                .map_err(|_| CoreError::other(format!("Invalid address or scripthash: {address}")))?
+            UInt160::parse(&address).map_err(|_| {
+                CoreError::other(format!("Invalid address or scripthash: {address}"))
+            })?
         } else {
-            WalletHelper::to_script_hash(&address, protocol_settings.address_version)
-                .map_err(|_| CoreError::other(format!("Invalid address or scripthash: {address}")))?
+            WalletHelper::to_script_hash(&address, protocol_settings.address_version).map_err(
+                |_| CoreError::other(format!("Invalid address or scripthash: {address}")),
+            )?
         };
 
         Ok(Self {

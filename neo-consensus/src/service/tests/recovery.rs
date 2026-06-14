@@ -442,7 +442,8 @@ async fn recovery_message_with_commits_triggers_block_commit() {
     );
     sign_payload(&service, &mut prepare_payload, &keys[0]);
 
-    let merkle_root = ConsensusBlockFields::compute_merkle_root(&prepare_request.transaction_hashes);
+    let merkle_root =
+        ConsensusBlockFields::compute_merkle_root(&prepare_request.transaction_hashes);
     let next_consensus =
         ConsensusBlockFields::compute_next_consensus_address(&service.context().validators);
     let block_hash = ConsensusBlockFields::compute_header_hash(

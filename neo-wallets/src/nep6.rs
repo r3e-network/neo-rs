@@ -146,7 +146,8 @@ impl Nep6Wallet {
         let content = fs::read_to_string(path)?;
         let wallet_file: Nep6WalletFile = serde_json::from_str(&content)
             .map_err(|e| WalletError::Other(format!("Invalid wallet format: {e}")))?;
-        let version = Version::parse(&wallet_file.version).map_err(|e| WalletError::Other(e.to_string()))?;
+        let version =
+            Version::parse(&wallet_file.version).map_err(|e| WalletError::Other(e.to_string()))?;
 
         let wallet = Self {
             name: wallet_file.name.clone(),
@@ -555,8 +556,9 @@ impl Nep6Account {
         wallet: &Nep6Wallet,
         password: Option<&str>,
     ) -> WalletResult<Self> {
-        let script_hash = WalletAddress::to_script_hash(&file.address, wallet.protocol_settings.address_version)
-            .map_err(|e| WalletError::Other(e.to_string()))?;
+        let script_hash =
+            WalletAddress::to_script_hash(&file.address, wallet.protocol_settings.address_version)
+                .map_err(|e| WalletError::Other(e.to_string()))?;
 
         let parsed_contract = match &file.contract {
             Some(contract_file) => Some(Nep6Contract::from_file(contract_file)?),

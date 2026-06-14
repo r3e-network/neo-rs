@@ -13,8 +13,8 @@ use neo_primitives::ContractParameterType;
 use neo_primitives::TriggerType;
 use neo_primitives::Verifiable;
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::script_builder::ScriptBuilder;
 use neo_storage::DataCache;
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use std::any::Any;
@@ -101,7 +101,11 @@ impl Helper {
     /// - `m` exceeds `public_keys.len()`
     /// - any public key fails to parse
     pub fn try_multi_sig_redeem_script(m: usize, public_keys: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_keys(m, public_keys).map_err(Into::into)
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_keys(
+            m,
+            public_keys,
+        )
+        .map_err(Into::into)
     }
 
     /// Creates a multi-sig redeem script (panics on invalid input).
@@ -135,7 +139,10 @@ impl Helper {
         invocation: &[u8],
         required_signatures: usize,
     ) -> Option<Vec<Vec<u8>>> {
-        neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(invocation, required_signatures)
+        neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(
+            invocation,
+            required_signatures,
+        )
     }
 
     /// Verifies all witnesses for a verifiable object.
@@ -252,13 +259,12 @@ impl Helper {
         if witness.verification_script.is_empty() {
             // Contract verification: load the contract's Verify method
             let mut contract =
-                crate::native_contract_provider::NativeContractLookup::lookup_contract_management(snapshot, hash)?
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation(format!(
-                            "Contract not found for hash {}",
-                            hash
-                        ))
-                    })?;
+                crate::native_contract_provider::NativeContractLookup::lookup_contract_management(
+                    snapshot, hash,
+                )?
+                .ok_or_else(|| {
+                    CoreError::invalid_operation(format!("Contract not found for hash {}", hash))
+                })?;
 
             // Resolve the Verify method using C# semantics (pcount = -1 matches any signature).
             let verify_method = contract

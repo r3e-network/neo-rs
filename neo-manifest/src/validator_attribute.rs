@@ -43,12 +43,9 @@ impl ValidatorAttribute for MaxLengthValidator {
                     self.max_length
                 )))
             }
-            StackValue::Buffer(buffer) if buffer.len() > self.max_length => {
-                Err(CoreError::other(format!(
-                    "Buffer exceeds maximum length of {}",
-                    self.max_length
-                )))
-            }
+            StackValue::Buffer(buffer) if buffer.len() > self.max_length => Err(CoreError::other(
+                format!("Buffer exceeds maximum length of {}", self.max_length),
+            )),
             _ => Ok(()),
         }
     }

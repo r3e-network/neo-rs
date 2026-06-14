@@ -142,10 +142,12 @@ impl StdLib {
             // (C# `SerializeToByteArray(item, engine.Limits.MaxItemSize)`).
             "jsonSerialize" => Self::arg_bytes(args, method).and_then(|data| {
                 let limits = ExecutionEngineLimits::default();
-                let item = BinarySerializer::deserialize(data, &limits, None)
-                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}")))?;
-                JsonSerializer::serialize_to_byte_array(&item, limits.max_item_size)
-                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}")))
+                let item = BinarySerializer::deserialize(data, &limits, None).map_err(|e| {
+                    CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}"))
+                })?;
+                JsonSerializer::serialize_to_byte_array(&item, limits.max_item_size).map_err(|e| {
+                    CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}"))
+                })
             }),
             // jsonDeserialize(json) -> the StackItem, re-encoded as BinarySerializer
             // bytes for the engine's `Any`-return decode. Depth 10 + MaxStackSize
@@ -156,8 +158,9 @@ impl StdLib {
                     .map_err(|e| {
                         CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
                     })?;
-                BinarySerializer::serialize(&item, &limits)
-                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}")))
+                BinarySerializer::serialize(&item, &limits).map_err(|e| {
+                    CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
+                })
             }),
             _ => return None,
         };
@@ -368,9 +371,12 @@ impl StdLib {
             )));
         }
         let value = std::str::from_utf8(raw).map_err(|_| {
-            CoreError::invalid_operation("StdLib::hexDecode: argument is not valid UTF-8".to_string())
+            CoreError::invalid_operation(
+                "StdLib::hexDecode: argument is not valid UTF-8".to_string(),
+            )
         })?;
-        Hex::decode(value).map_err(|e| CoreError::invalid_operation(format!("StdLib::hexDecode: {e}")))
+        Hex::decode(value)
+            .map_err(|e| CoreError::invalid_operation(format!("StdLib::hexDecode: {e}")))
     }
 
     /// C# `StdLib.StringSplit(str, separator[, removeEmptyEntries])` = `String.Split`:
@@ -387,7 +393,9 @@ impl StdLib {
             )));
         }
         let value = std::str::from_utf8(raw).map_err(|_| {
-            CoreError::invalid_operation("StdLib::stringSplit: argument is not valid UTF-8".to_string())
+            CoreError::invalid_operation(
+                "StdLib::stringSplit: argument is not valid UTF-8".to_string(),
+            )
         })?;
         let separator = match args.get(1) {
             Some(bytes) => std::str::from_utf8(bytes).map_err(|_| {
@@ -1046,9 +1054,17 @@ mod tests {
     fn atoi_respects_max_input_length() {
         // C# [MaxLength(1024)] on the input: 1024 bytes ok, 1025 faults.
         let ok = "1".repeat(MAX_INPUT_LENGTH);
-        assert!(StdLib::dispatch("atoi", &[ok.into_bytes()]).unwrap().is_ok());
+        assert!(
+            StdLib::dispatch("atoi", &[ok.into_bytes()])
+                .unwrap()
+                .is_ok()
+        );
         let too_long = "1".repeat(MAX_INPUT_LENGTH + 1);
-        assert!(StdLib::dispatch("atoi", &[too_long.into_bytes()]).unwrap().is_err());
+        assert!(
+            StdLib::dispatch("atoi", &[too_long.into_bytes()])
+                .unwrap()
+                .is_err()
+        );
     }
 
     #[test]
@@ -1228,7 +1244,9 @@ mod tests {
         // The engine BinarySerializes the `Any` arg before dispatch sees it.
         let ser = |item: &StackItem| -> String {
             let payload = BinarySerializer::serialize(item, &limits).unwrap();
-            let json = StdLib::dispatch("jsonSerialize", &[payload]).unwrap().unwrap();
+            let json = StdLib::dispatch("jsonSerialize", &[payload])
+                .unwrap()
+                .unwrap();
             String::from_utf8(json).unwrap()
         };
         // C# UT_StdLib.Json_Serialize.

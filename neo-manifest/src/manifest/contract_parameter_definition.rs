@@ -49,8 +49,7 @@ impl ContractParameterDefinition {
             .and_then(|v| v.as_str())
             .ok_or_else(|| CoreError::other("Missing type"))?;
 
-        let param_type =
-            ContractParameterType::from_string(type_str).map_err(CoreError::other)?;
+        let param_type = ContractParameterType::from_string(type_str).map_err(CoreError::other)?;
 
         Self::new(name, param_type)
     }

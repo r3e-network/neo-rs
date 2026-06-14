@@ -679,7 +679,8 @@ mod tests {
     fn keypair(seed: u8) -> ([u8; 32], Vec<u8>, UInt160) {
         let private = [seed; 32];
         let public = Secp256r1Crypto::derive_public_key(&private).expect("pubkey");
-        let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public);
+        let script =
+            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public);
         (private, public, UInt160::from_script(&script))
     }
 
@@ -749,7 +750,8 @@ mod tests {
 
         let mut invocation = vec![OpCode::PUSHDATA1.byte(), 64];
         invocation.extend_from_slice(&signature);
-        let verification = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(public);
+        let verification =
+            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(public);
         tx.set_witnesses(vec![Witness::new_with_scripts(invocation, verification)]);
         tx
     }

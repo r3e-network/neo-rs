@@ -12,8 +12,8 @@ use neo_payloads::VerifiableExt;
 use neo_payloads::{transaction::Transaction, witness::Witness};
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::script_builder::ScriptBuilder;
 use neo_storage::DataCache;
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
@@ -502,8 +502,8 @@ impl ContractParametersContext {
         json_text: &str,
         snapshot: Arc<DataCache>,
     ) -> CoreResult<(Self, Transaction)> {
-        let value: serde_json::Value = serde_json::from_str(json_text)
-            .map_err(|err| CoreError::other(err.to_string()))?;
+        let value: serde_json::Value =
+            serde_json::from_str(json_text).map_err(|err| CoreError::other(err.to_string()))?;
         Self::from_transaction_json(&value, snapshot)
     }
 

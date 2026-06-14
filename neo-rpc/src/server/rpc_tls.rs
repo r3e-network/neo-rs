@@ -27,26 +27,38 @@ async fn build_tls_config(settings: &RpcServerConfig) -> CoreResult<Option<Arc<S
         return Ok(None);
     }
 
-    let cert_bytes = tokio::fs::read(cert_path)
-        .await
-        .map_err(|err| CoreError::other(format!("failed to read TLS certificate {cert_path}: {err}")))?;
-    let pfx =
-        PFX::parse(&cert_bytes).map_err(|err| CoreError::other(format!("invalid PKCS#12 {cert_path}: {err:?}")))?;
+    let cert_bytes = tokio::fs::read(cert_path).await.map_err(|err| {
+        CoreError::other(format!("failed to read TLS certificate {cert_path}: {err}"))
+    })?;
+    let pfx = PFX::parse(&cert_bytes)
+        .map_err(|err| CoreError::other(format!("invalid PKCS#12 {cert_path}: {err:?}")))?;
     if !pfx.verify_mac(settings.ssl_cert_password.as_str()) {
-        return Err(CoreError::other(format!("invalid TLS certificate password for {cert_path}")));
+        return Err(CoreError::other(format!(
+            "invalid TLS certificate password for {cert_path}"
+        )));
     }
 
     let certs_der = pfx
         .cert_x509_bags(settings.ssl_cert_password.as_str())
-        .map_err(|err| CoreError::other(format!("failed to read TLS certificate chain from {cert_path}: {err:?}")))?;
+        .map_err(|err| {
+            CoreError::other(format!(
+                "failed to read TLS certificate chain from {cert_path}: {err:?}"
+            ))
+        })?;
     if certs_der.is_empty() {
-        return Err(CoreError::other(format!("no TLS certificates found in {cert_path}")));
+        return Err(CoreError::other(format!(
+            "no TLS certificates found in {cert_path}"
+        )));
     }
     let certs = certs_der.into_iter().map(Certificate).collect::<Vec<_>>();
 
     let mut keys = pfx
         .key_bags(settings.ssl_cert_password.as_str())
-        .map_err(|err| CoreError::other(format!("failed to read TLS private key from {cert_path}: {err:?}")))?;
+        .map_err(|err| {
+            CoreError::other(format!(
+                "failed to read TLS private key from {cert_path}: {err:?}"
+            ))
+        })?;
     let key_der = keys
         .pop()
         .ok_or_else(|| CoreError::other(format!("no TLS private key found in {cert_path}")))?;
@@ -59,9 +71,9 @@ async fn build_tls_config(settings: &RpcServerConfig) -> CoreResult<Option<Arc<S
         let roots = load_trusted_authorities(&settings.trusted_authorities)?;
         builder.with_client_cert_verifier(Arc::new(AllowAnyAuthenticatedClient::new(roots)))
     };
-    let config = builder
-        .with_single_cert(certs, key)
-        .map_err(|err| CoreError::other(format!("failed to configure TLS for {cert_path}: {err}")))?;
+    let config = builder.with_single_cert(certs, key).map_err(|err| {
+        CoreError::other(format!("failed to configure TLS for {cert_path}: {err}"))
+    })?;
 
     Ok(Some(Arc::new(config)))
 }
@@ -82,9 +94,11 @@ fn load_trusted_authorities(thumbprints: &[String]) -> CoreResult<RootCertStore>
         let thumbprint = thumbprint_hex(&cert_der);
         if allowed.contains(&thumbprint) {
             let rustls_cert = Certificate(cert_der);
-            roots
-                .add(&rustls_cert)
-                .map_err(|err| CoreError::other(format!("failed to add trusted authority {thumbprint}: {err}")))?;
+            roots.add(&rustls_cert).map_err(|err| {
+                CoreError::other(format!(
+                    "failed to add trusted authority {thumbprint}: {err}"
+                ))
+            })?;
             matched += 1;
         }
     }

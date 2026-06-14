@@ -22,7 +22,8 @@ pub(super) fn get_unclaimed_gas(
     let script_hash = if let Ok(hash) = UInt160::from_str(&address_text) {
         hash
     } else {
-        address_helper::to_script_hash(&address_text, version).map_err(|e| invalid_params(e.to_string()))?
+        address_helper::to_script_hash(&address_text, version)
+            .map_err(|e| invalid_params(e.to_string()))?
     };
 
     let store = server.system().store_cache();
@@ -33,9 +34,14 @@ pub(super) fn get_unclaimed_gas(
         .saturating_add(1);
     let neo_hash = NeoToken::script_hash();
     let snapshot = Arc::new(store.data_cache().clone());
-    let unclaimed =
-        native_queries::NativeQueries::neo_unclaimed_gas(server, snapshot, &neo_hash, &script_hash, height)
-            .map_err(internal_error)?;
+    let unclaimed = native_queries::NativeQueries::neo_unclaimed_gas(
+        server,
+        snapshot,
+        &neo_hash,
+        &script_hash,
+        height,
+    )
+    .map_err(internal_error)?;
     let address = address_helper::to_address(&script_hash, version);
 
     Ok(json!({

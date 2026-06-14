@@ -10,7 +10,9 @@ impl ApplicationEngine {
 
     pub(super) fn validate_find_options(&self, options: FindOptions) -> CoreResult<()> {
         if options.bits() & !FindOptions::All.bits() != 0 {
-            return Err(CoreError::other(format!("Invalid FindOptions value: {options:?}")));
+            return Err(CoreError::other(format!(
+                "Invalid FindOptions value: {options:?}"
+            )));
         }
 
         let keys_only = options.contains(FindOptions::KeysOnly);
@@ -20,19 +22,27 @@ impl ApplicationEngine {
         let pick_field1 = options.contains(FindOptions::PickField1);
 
         if keys_only && (values_only || deserialize || pick_field0 || pick_field1) {
-            return Err(CoreError::other("KeysOnly cannot be used with ValuesOnly, DeserializeValues, PickField0, or PickField1"));
+            return Err(CoreError::other(
+                "KeysOnly cannot be used with ValuesOnly, DeserializeValues, PickField0, or PickField1",
+            ));
         }
 
         if values_only && (keys_only || options.contains(FindOptions::RemovePrefix)) {
-            return Err(CoreError::other("ValuesOnly cannot be used with KeysOnly or RemovePrefix"));
+            return Err(CoreError::other(
+                "ValuesOnly cannot be used with KeysOnly or RemovePrefix",
+            ));
         }
 
         if pick_field0 && pick_field1 {
-            return Err(CoreError::other("PickField0 and PickField1 cannot be used together"));
+            return Err(CoreError::other(
+                "PickField0 and PickField1 cannot be used together",
+            ));
         }
 
         if (pick_field0 || pick_field1) && !deserialize {
-            return Err(CoreError::other("PickField0 or PickField1 requires DeserializeValues"));
+            return Err(CoreError::other(
+                "PickField0 or PickField1 requires DeserializeValues",
+            ));
         }
 
         Ok(())
@@ -90,10 +100,7 @@ impl ApplicationEngine {
         Ok(())
     }
 
-    pub fn push_interop_container(
-        &mut self,
-        _container: Arc<dyn Verifiable>,
-    ) -> CoreResult<()> {
+    pub fn push_interop_container(&mut self, _container: Arc<dyn Verifiable>) -> CoreResult<()> {
         // Iterator/interop handles are carried as integer stack items; the
         // concrete object lives in the engine-side `storage_iterators` table.
         self.push(StackItem::from_i64(0))

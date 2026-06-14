@@ -447,7 +447,8 @@ impl PolicyContract {
             .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing hash"))?
             .as_bytes()
             .map_err(|e| CoreError::invalid_data(format!("whitelisted contract hash: {e}")))?;
-        let contract_hash = crate::args::bytes_to_hash160(&hash_bytes, "whitelisted contract hash")?;
+        let contract_hash =
+            crate::args::bytes_to_hash160(&hash_bytes, "whitelisted contract hash")?;
         let method_bytes = items
             .get(1)
             .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing method"))?
@@ -495,7 +496,8 @@ impl PolicyContract {
     /// forward-seek order, the backing set for the `getWhitelistFeeContracts`
     /// iterator (C# `GetWhitelistFeeContracts`).
     fn whitelist_fee_entries(&self, snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
-        let prefix_key = StorageKey::new(PolicyContract::ID, vec![PREFIX_WHITELISTED_FEE_CONTRACTS]);
+        let prefix_key =
+            StorageKey::new(PolicyContract::ID, vec![PREFIX_WHITELISTED_FEE_CONTRACTS]);
         snapshot
             .find(Some(&prefix_key), SeekDirection::Forward)
             .collect()
@@ -515,8 +517,9 @@ impl PolicyContract {
         method: &str,
         arg_count: i32,
     ) -> CoreResult<i32> {
-        let contract = crate::ContractManagement::get_contract_from_snapshot(snapshot, contract_hash)?
-            .ok_or_else(|| CoreError::invalid_operation("Is not a valid contract"))?;
+        let contract =
+            crate::ContractManagement::get_contract_from_snapshot(snapshot, contract_hash)?
+                .ok_or_else(|| CoreError::invalid_operation("Is not a valid contract"))?;
         let arg_count = usize::try_from(arg_count).map_err(|_| {
             CoreError::invalid_operation(format!(
                 "Method {method} with {arg_count} args was not found in {contract_hash}"
@@ -552,9 +555,12 @@ impl PolicyContract {
         let item = snapshot.get(&key).ok_or_else(|| {
             CoreError::invalid_operation("NeoToken committee cache is not initialized")
         })?;
-        let decoded =
-            BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
-                .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
+        let decoded = BinarySerializer::deserialize(
+            &item.value_bytes(),
+            &ExecutionEngineLimits::default(),
+            None,
+        )
+        .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
         let StackItem::Array(array) = decoded else {
             return Err(CoreError::invalid_data("committee cache is not an array"));
         };
@@ -598,9 +604,9 @@ impl PolicyContract {
             )
             .map_err(|e| CoreError::invalid_operation(format!("committee multisig script: {e}")))?;
         let address = UInt160::from_script(&script);
-        let authorized = engine
-            .check_witness_hash(&address)
-            .map_err(|e| CoreError::invalid_operation(format!("recoverFund committee check: {e}")))?;
+        let authorized = engine.check_witness_hash(&address).map_err(|e| {
+            CoreError::invalid_operation(format!("recoverFund committee check: {e}"))
+        })?;
         if !authorized {
             return Err(CoreError::invalid_operation(
                 "Invalid committee signature. It should be a multisig(max(1,len(committee) - 2))).",
@@ -717,7 +723,10 @@ impl PolicyContract {
     /// hardfork-aware source, matching the C# extension
     /// `IReadOnlyStore.GetMaxValidUntilBlockIncrement(ProtocolSettings)` (pre-Echidna
     /// the protocol setting; from Echidna the Policy storage value).
-    pub(crate) fn read_max_valid_until_block_increment(&self, engine: &ApplicationEngine) -> CoreResult<i64> {
+    pub(crate) fn read_max_valid_until_block_increment(
+        &self,
+        engine: &ApplicationEngine,
+    ) -> CoreResult<i64> {
         let default = i64::from(engine.protocol_settings().max_valid_until_block_increment);
         let snapshot = engine.snapshot_cache();
         crate::read_storage_int(
@@ -1231,7 +1240,9 @@ impl NativeContract for PolicyContract {
         let snapshot = engine.snapshot_cache();
         match method {
             "getFeePerByte" => Ok(BigInt::from(self.fee_per_byte(&snapshot)?).to_signed_bytes_le()),
-            "getStoragePrice" => Ok(BigInt::from(self.storage_price(&snapshot)?).to_signed_bytes_le()),
+            "getStoragePrice" => {
+                Ok(BigInt::from(self.storage_price(&snapshot)?).to_signed_bytes_le())
+            }
             "setFeePerByte" => {
                 // C# order: validate range, then AssertCommittee, then write.
                 let value = Self::setter_int_arg(args, "setFeePerByte")?;
@@ -1407,7 +1418,9 @@ impl NativeContract for PolicyContract {
                 // flags differ): AssertCommittee, then BlockAccountInternal.
                 let account = Self::hash160_arg(args, 0, "blockAccount")?;
                 assert_committee(engine, "blockAccount")?;
-                Ok(vec![u8::from(self.block_account_internal(engine, &account)?)])
+                Ok(vec![u8::from(
+                    self.block_account_internal(engine, &account)?,
+                )])
             }
             "setWhitelistFeeContract" => {
                 // C# SetWhitelistFeeContract: ThrowIfNegative(fixedFee) ->
@@ -1973,21 +1986,38 @@ mod tests {
         // HighPriority (0x01) is a defined type: defaults to 0, then round-trips.
         let hp = TransactionAttributeType::HighPriority.to_byte();
         assert_eq!(
-            PolicyContract::new().attribute_fee(&cache, hp, false).unwrap(),
+            PolicyContract::new()
+                .attribute_fee(&cache, hp, false)
+                .unwrap(),
             DEFAULT_ATTRIBUTE_FEE
         );
         PolicyContract::new().put_attribute_fee(&cache, hp, 5_000);
-        assert_eq!(PolicyContract::new().attribute_fee(&cache, hp, false).unwrap(), 5_000);
+        assert_eq!(
+            PolicyContract::new()
+                .attribute_fee(&cache, hp, false)
+                .unwrap(),
+            5_000
+        );
 
         // An undefined attribute byte is rejected regardless of the notary flag.
-        assert!(PolicyContract::new().attribute_fee(&cache, 0xFE, true).is_err());
+        assert!(
+            PolicyContract::new()
+                .attribute_fee(&cache, 0xFE, true)
+                .is_err()
+        );
 
         // NotaryAssisted (0x22) is gated: rejected pre-Echidna (allow=false),
         // accepted from Echidna (allow=true).
         let na = TransactionAttributeType::NotaryAssisted.to_byte();
-        assert!(PolicyContract::new().attribute_fee(&cache, na, false).is_err());
+        assert!(
+            PolicyContract::new()
+                .attribute_fee(&cache, na, false)
+                .is_err()
+        );
         assert_eq!(
-            PolicyContract::new().attribute_fee(&cache, na, true).unwrap(),
+            PolicyContract::new()
+                .attribute_fee(&cache, na, true)
+                .unwrap(),
             DEFAULT_ATTRIBUTE_FEE
         );
     }
@@ -2002,10 +2032,16 @@ mod tests {
             i64::from(DEFAULT_EXEC_FEE_FACTOR)
         );
         PolicyContract::new().put_exec_fee_factor(&cache, 50);
-        assert_eq!(PolicyContract::new().exec_fee_factor_raw(&cache).unwrap(), 50);
+        assert_eq!(
+            PolicyContract::new().exec_fee_factor_raw(&cache).unwrap(),
+            50
+        );
         // Overwrite (GetAndChange semantics).
         PolicyContract::new().put_exec_fee_factor(&cache, 100);
-        assert_eq!(PolicyContract::new().exec_fee_factor_raw(&cache).unwrap(), 100);
+        assert_eq!(
+            PolicyContract::new().exec_fee_factor_raw(&cache).unwrap(),
+            100
+        );
     }
 
     #[test]
@@ -2057,18 +2093,29 @@ mod tests {
     fn storage_price_write_then_read_round_trips() {
         let cache = DataCache::new(false);
         PolicyContract::new().put_storage_price(&cache, 250_000);
-        assert_eq!(PolicyContract::new().storage_price(&cache).unwrap(), 250_000);
+        assert_eq!(
+            PolicyContract::new().storage_price(&cache).unwrap(),
+            250_000
+        );
         PolicyContract::new().put_storage_price(&cache, 1_000_000);
-        assert_eq!(PolicyContract::new().storage_price(&cache).unwrap(), 1_000_000);
+        assert_eq!(
+            PolicyContract::new().storage_price(&cache).unwrap(),
+            1_000_000
+        );
     }
 
     #[test]
     fn set_milliseconds_per_block_validation_bounds() {
         // C# SetMillisecondsPerBlock accepts [1, MaxMillisecondsPerBlock].
         assert!(PolicyContract::validate_milliseconds_per_block(1).is_ok());
-        assert!(PolicyContract::validate_milliseconds_per_block(MAX_MILLISECONDS_PER_BLOCK).is_ok());
+        assert!(
+            PolicyContract::validate_milliseconds_per_block(MAX_MILLISECONDS_PER_BLOCK).is_ok()
+        );
         assert!(PolicyContract::validate_milliseconds_per_block(0).is_err());
-        assert!(PolicyContract::validate_milliseconds_per_block(MAX_MILLISECONDS_PER_BLOCK + 1).is_err());
+        assert!(
+            PolicyContract::validate_milliseconds_per_block(MAX_MILLISECONDS_PER_BLOCK + 1)
+                .is_err()
+        );
     }
 
     #[test]
@@ -2089,18 +2136,25 @@ mod tests {
         // C# MaxMaxValidUntilBlockIncrement = 86400, MaxMaxTraceableBlocks = 2102400.
         assert!(PolicyContract::validate_max_valid_until_block_increment(1).is_ok());
         assert!(
-            PolicyContract::validate_max_valid_until_block_increment(MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT).is_ok()
+            PolicyContract::validate_max_valid_until_block_increment(
+                MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT
+            )
+            .is_ok()
         );
         assert!(PolicyContract::validate_max_valid_until_block_increment(0).is_err());
         assert!(
-            PolicyContract::validate_max_valid_until_block_increment(MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT + 1)
-                .is_err()
+            PolicyContract::validate_max_valid_until_block_increment(
+                MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT + 1
+            )
+            .is_err()
         );
 
         assert!(PolicyContract::validate_max_traceable_blocks(1).is_ok());
         assert!(PolicyContract::validate_max_traceable_blocks(MAX_MAX_TRACEABLE_BLOCKS).is_ok());
         assert!(PolicyContract::validate_max_traceable_blocks(0).is_err());
-        assert!(PolicyContract::validate_max_traceable_blocks(MAX_MAX_TRACEABLE_BLOCKS + 1).is_err());
+        assert!(
+            PolicyContract::validate_max_traceable_blocks(MAX_MAX_TRACEABLE_BLOCKS + 1).is_err()
+        );
     }
 
     #[test]
@@ -2158,14 +2212,20 @@ mod tests {
     #[test]
     fn storage_price_reads_storage_with_default() {
         let cache = DataCache::new(false);
-        assert_eq!(PolicyContract::new().storage_price(&cache).unwrap(), DEFAULT_STORAGE_PRICE);
+        assert_eq!(
+            PolicyContract::new().storage_price(&cache).unwrap(),
+            DEFAULT_STORAGE_PRICE
+        );
 
         let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_STORAGE_PRICE]);
         cache.add(
             key,
             StorageItem::from_bytes(BigInt::from(250_000).to_signed_bytes_le()),
         );
-        assert_eq!(PolicyContract::new().storage_price(&cache).unwrap(), 250_000);
+        assert_eq!(
+            PolicyContract::new().storage_price(&cache).unwrap(),
+            250_000
+        );
     }
 
     #[test]
@@ -2271,8 +2331,14 @@ mod tests {
             PolicyContract::format_remaining_time(&BigInt::from(ms(0, 0, 4, 5))),
             "4m 5s"
         );
-        assert_eq!(PolicyContract::format_remaining_time(&BigInt::from(ms(0, 0, 0, 5))), "5s");
-        assert_eq!(PolicyContract::format_remaining_time(&BigInt::from(999)), "0s");
+        assert_eq!(
+            PolicyContract::format_remaining_time(&BigInt::from(ms(0, 0, 0, 5))),
+            "5s"
+        );
+        assert_eq!(
+            PolicyContract::format_remaining_time(&BigInt::from(999)),
+            "0s"
+        );
     }
 
     #[test]
@@ -2476,7 +2542,11 @@ mod policy_writer_tests {
             VmState::FAULT,
             "non-committee blockAccount must FAULT"
         );
-        assert!(snapshot.get(&PolicyContract::blocked_account_key(&account)).is_none());
+        assert!(
+            snapshot
+                .get(&PolicyContract::blocked_account_key(&account))
+                .is_none()
+        );
     }
 
     /// blockAccount on a native contract hash faults ("Cannot block a native
@@ -2507,7 +2577,11 @@ mod policy_writer_tests {
             },
         );
         assert_eq!(state, VmState::FAULT, "blocking a native hash must FAULT");
-        assert!(snapshot.get(&PolicyContract::blocked_account_key(&gas_hash)).is_none());
+        assert!(
+            snapshot
+                .get(&PolicyContract::blocked_account_key(&gas_hash))
+                .is_none()
+        );
     }
 
     /// Faun-path blockAccount (the V1 registration): clears the account's vote
@@ -2835,7 +2909,11 @@ mod policy_writer_tests {
             },
         );
         assert_eq!(state2, VmState::FAULT, "unknown method must FAULT");
-        assert!(PolicyContract::new().whitelist_fee_entries(&snapshot).is_empty());
+        assert!(
+            PolicyContract::new()
+                .whitelist_fee_entries(&snapshot)
+                .is_empty()
+        );
     }
 
     /// recoverFund's verifiable prefix: the almost-full-committee gate (2-of-3
@@ -2999,7 +3077,11 @@ mod policy_writer_tests {
             BigInt::from(0)
         );
         // recoverFund does not unblock the account.
-        assert!(snapshot.get(&PolicyContract::blocked_account_key(&account)).is_some());
+        assert!(
+            snapshot
+                .get(&PolicyContract::blocked_account_key(&account))
+                .is_some()
+        );
 
         // Notification order matches C#: the GAS Transfer (emitted inside the
         // nested transfer call) first, then Policy's RecoveredFund(account).

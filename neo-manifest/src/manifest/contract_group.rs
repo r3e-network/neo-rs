@@ -102,12 +102,12 @@ impl ContractGroup {
             ));
         }
 
-        let pub_key_bytes = items[0]
-            .to_byte_string_bytes()
-            .ok_or_else(|| CoreError::invalid_data("ContractGroup public key must be byte string"))?;
-        let signature_bytes = items[1]
-            .to_byte_string_bytes()
-            .ok_or_else(|| CoreError::invalid_data("ContractGroup signature must be byte string"))?;
+        let pub_key_bytes = items[0].to_byte_string_bytes().ok_or_else(|| {
+            CoreError::invalid_data("ContractGroup public key must be byte string")
+        })?;
+        let signature_bytes = items[1].to_byte_string_bytes().ok_or_else(|| {
+            CoreError::invalid_data("ContractGroup signature must be byte string")
+        })?;
 
         let pub_key = ECPoint::from_bytes(&pub_key_bytes)
             .map_err(|e| CoreError::invalid_data(format!("Failed to decode ECPoint: {}", e)))?;

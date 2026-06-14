@@ -82,9 +82,12 @@ impl Notary {
         let Some(item) = snapshot.get(&key) else {
             return Ok(BigInt::from(0));
         };
-        let state =
-            BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
-                .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
+        let state = BinarySerializer::deserialize(
+            &item.value_bytes(),
+            &ExecutionEngineLimits::default(),
+            None,
+        )
+        .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
         let StackItem::Struct(fields) = state else {
             return Err(CoreError::invalid_data("Notary deposit is not a struct"));
         };
@@ -107,13 +110,20 @@ impl Notary {
 
     /// Reads the full `Deposit` `(Amount, Till)` for `account`, or `None` when the
     /// account has no deposit (C# `GetDepositFor` returning null).
-    fn read_deposit(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<Option<(BigInt, u32)>> {
+    fn read_deposit(
+        &self,
+        snapshot: &DataCache,
+        account: &UInt160,
+    ) -> CoreResult<Option<(BigInt, u32)>> {
         let Some(item) = snapshot.get(&Self::deposit_key(account)) else {
             return Ok(None);
         };
-        let state =
-            BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
-                .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
+        let state = BinarySerializer::deserialize(
+            &item.value_bytes(),
+            &ExecutionEngineLimits::default(),
+            None,
+        )
+        .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
         let StackItem::Struct(fields) = state else {
             return Err(CoreError::invalid_data("Notary deposit is not a struct"));
         };
@@ -183,7 +193,9 @@ impl Notary {
     /// and `till` is the requested lock height.
     fn parse_onnep17_data(from: &UInt160, data: &[u8]) -> CoreResult<(UInt160, u32)> {
         let item = BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment data: {e}")))?;
+            .map_err(|e| {
+                CoreError::invalid_operation(format!("Notary::onNEP17Payment data: {e}"))
+            })?;
         let StackItem::Array(arr) = item else {
             return Err(CoreError::invalid_operation(
                 "Notary::onNEP17Payment data must be an array of 2 elements",
@@ -198,9 +210,9 @@ impl Notary {
         let to = if matches!(items[0], StackItem::Null) {
             *from
         } else {
-            let bytes = items[0]
-                .as_bytes()
-                .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment to: {e}")))?;
+            let bytes = items[0].as_bytes().map_err(|e| {
+                CoreError::invalid_operation(format!("Notary::onNEP17Payment to: {e}"))
+            })?;
             crate::args::bytes_to_hash160(&bytes, "Notary::onNEP17Payment to: bad hash")?
         };
         let till = items[1]
@@ -559,11 +571,15 @@ impl NativeContract for Notary {
             }
             "balanceOf" => {
                 let account = Self::parse_account(args, "balanceOf")?;
-                Ok(self.read_deposit_field(&snapshot, &account, 0)?.to_signed_bytes_le())
+                Ok(self
+                    .read_deposit_field(&snapshot, &account, 0)?
+                    .to_signed_bytes_le())
             }
             "expirationOf" => {
                 let account = Self::parse_account(args, "expirationOf")?;
-                Ok(self.read_deposit_field(&snapshot, &account, 1)?.to_signed_bytes_le())
+                Ok(self
+                    .read_deposit_field(&snapshot, &account, 1)?
+                    .to_signed_bytes_le())
             }
             "lockDepositUntil" => {
                 // C#: CheckWitnessInternal(account) (false return on no witness),
@@ -909,11 +925,18 @@ mod tests {
         let account = UInt160::from_bytes(&[7u8; 20]).unwrap();
 
         // No deposit -> read_deposit None; lock decision -> None (false).
-        assert!(Notary::new().read_deposit(&cache, &account).unwrap().is_none());
+        assert!(
+            Notary::new()
+                .read_deposit(&cache, &account)
+                .unwrap()
+                .is_none()
+        );
         assert!(Notary::lock_deposit_decision(100, None, 200).is_none());
 
         // Write a deposit (Amount=1000, Till=150) and read it back.
-        Notary::new().write_deposit(&cache, &account, &BigInt::from(1000), 150).unwrap();
+        Notary::new()
+            .write_deposit(&cache, &account, &BigInt::from(1000), 150)
+            .unwrap();
         assert_eq!(
             Notary::new().read_deposit(&cache, &account).unwrap(),
             Some((BigInt::from(1000), 150))
@@ -931,7 +954,9 @@ mod tests {
         );
 
         // The lock write preserves Amount and updates Till.
-        Notary::new().write_deposit(&cache, &account, &BigInt::from(1000), 300).unwrap();
+        Notary::new()
+            .write_deposit(&cache, &account, &BigInt::from(1000), 300)
+            .unwrap();
         assert_eq!(
             Notary::new().read_deposit(&cache, &account).unwrap(),
             Some((BigInt::from(1000), 300))
@@ -939,7 +964,12 @@ mod tests {
 
         // withdraw's RemoveDepositFor: delete clears the entry.
         Notary::new().delete_deposit(&cache, &account);
-        assert!(Notary::new().read_deposit(&cache, &account).unwrap().is_none());
+        assert!(
+            Notary::new()
+                .read_deposit(&cache, &account)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -962,15 +992,20 @@ mod tests {
         );
 
         // Existing deposit: till below previous Till -> error.
-        assert!(Notary::compute_deposit(Some((BigInt::from(50), 200)), &amount, 150, true, 10, 0).is_err());
+        assert!(
+            Notary::compute_deposit(Some((BigInt::from(50), 200)), &amount, 150, true, 10, 0)
+                .is_err()
+        );
         // Existing, owner extends -> Amount accumulates, Till = requested.
         assert_eq!(
-            Notary::compute_deposit(Some((BigInt::from(50), 200)), &amount, 300, true, 10, 0).unwrap(),
+            Notary::compute_deposit(Some((BigInt::from(50), 200)), &amount, 300, true, 10, 0)
+                .unwrap(),
             (BigInt::from(150), 300)
         );
         // Existing, NOT owner -> Amount accumulates, Till unchanged.
         assert_eq!(
-            Notary::compute_deposit(Some((BigInt::from(50), 200)), &amount, 300, false, 10, 0).unwrap(),
+            Notary::compute_deposit(Some((BigInt::from(50), 200)), &amount, 300, false, 10, 0)
+                .unwrap(),
             (BigInt::from(150), 200)
         );
     }
@@ -984,7 +1019,10 @@ mod tests {
         let null_to = StackItem::from_array(vec![StackItem::null(), StackItem::from_int(500)]);
         let bytes =
             BinarySerializer::serialize(&null_to, &ExecutionEngineLimits::default()).unwrap();
-        assert_eq!(Notary::parse_onnep17_data(&from, &bytes).unwrap(), (from, 500));
+        assert_eq!(
+            Notary::parse_onnep17_data(&from, &bytes).unwrap(),
+            (from, 500)
+        );
 
         // [explicit_to, 700] -> to is the provided hash.
         let with_to = StackItem::from_array(vec![
@@ -993,7 +1031,10 @@ mod tests {
         ]);
         let bytes2 =
             BinarySerializer::serialize(&with_to, &ExecutionEngineLimits::default()).unwrap();
-        assert_eq!(Notary::parse_onnep17_data(&from, &bytes2).unwrap(), (explicit, 700));
+        assert_eq!(
+            Notary::parse_onnep17_data(&from, &bytes2).unwrap(),
+            (explicit, 700)
+        );
 
         // Wrong shape (not a 2-element array) -> error.
         let bad = StackItem::from_array(vec![StackItem::from_int(1)]);
@@ -1038,11 +1079,15 @@ mod tests {
 
         // Absent deposit -> both reads are 0.
         assert_eq!(
-            Notary::new().read_deposit_field(&cache, &account, 0).unwrap(),
+            Notary::new()
+                .read_deposit_field(&cache, &account, 0)
+                .unwrap(),
             BigInt::from(0)
         );
         assert_eq!(
-            Notary::new().read_deposit_field(&cache, &account, 1).unwrap(),
+            Notary::new()
+                .read_deposit_field(&cache, &account, 1)
+                .unwrap(),
             BigInt::from(0)
         );
 
@@ -1059,11 +1104,15 @@ mod tests {
         );
 
         assert_eq!(
-            Notary::new().read_deposit_field(&cache, &account, 0).unwrap(),
+            Notary::new()
+                .read_deposit_field(&cache, &account, 0)
+                .unwrap(),
             BigInt::from(1000)
         ); // Amount
         assert_eq!(
-            Notary::new().read_deposit_field(&cache, &account, 1).unwrap(),
+            Notary::new()
+                .read_deposit_field(&cache, &account, 1)
+                .unwrap(),
             BigInt::from(42)
         ); // Till
     }
@@ -1366,7 +1415,9 @@ mod verify_dispatch_tests {
         );
 
         // An underfunded deposit (9 < 10) -> false.
-        Notary::new().write_deposit(&snapshot, &payer, &BigInt::from(9), 1000).unwrap();
+        Notary::new()
+            .write_deposit(&snapshot, &payer, &BigInt::from(9), 1000)
+            .unwrap();
         let (state2, ok2) = call_verify(
             Arc::clone(&snapshot),
             Some(Arc::clone(&container)),
@@ -1376,7 +1427,9 @@ mod verify_dispatch_tests {
         assert!(!ok2, "an underfunded deposit must be false");
 
         // A deposit covering the fees exactly -> true.
-        Notary::new().write_deposit(&snapshot, &payer, &BigInt::from(10), 1000).unwrap();
+        Notary::new()
+            .write_deposit(&snapshot, &payer, &BigInt::from(10), 1000)
+            .unwrap();
         let (state3, ok3) = call_verify(Arc::clone(&snapshot), Some(container), Some(&signature));
         assert_eq!(state3, VmState::HALT);
         assert!(ok3, "a funded deposit must verify");
@@ -1460,7 +1513,9 @@ mod verify_dispatch_tests {
         // Seed the payer's deposit (amount D, till T).
         let payer = UInt160::from_bytes(&[0x07; 20]).unwrap();
         let deposit_amount = BigInt::from(5_0000_0000i64); // 5 GAS
-        Notary::new().write_deposit(&snapshot, &payer, &deposit_amount, 1000).unwrap();
+        Notary::new()
+            .write_deposit(&snapshot, &payer, &deposit_amount, 1000)
+            .unwrap();
 
         // A NotaryAssisted tx (nKeys = 1) paid by the Notary on behalf of the
         // payer: Signers = [Notary, payer].
@@ -1490,7 +1545,8 @@ mod verify_dispatch_tests {
         NativeContract::on_persist(&Notary, &mut engine).expect("notary on_persist");
 
         // Payer deposit debited by SystemFee + NetworkFee; Till unchanged.
-        let (amount_after, till_after) = Notary::new().read_deposit(&snapshot, &payer)
+        let (amount_after, till_after) = Notary::new()
+            .read_deposit(&snapshot, &payer)
             .expect("deposit read")
             .expect("deposit present");
         assert_eq!(amount_after, &deposit_amount - BigInt::from(fees));

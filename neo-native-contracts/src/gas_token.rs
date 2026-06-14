@@ -82,13 +82,20 @@ impl GasToken {
     /// Reads the GAS account balance, or `None` when the account has no entry. The
     /// GAS account state is the base `FungibleToken.AccountState` = `Struct[Balance]`
     /// (a single field), so `read_nep17_balance`'s field 0 is the balance.
-    fn read_gas_account(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<Option<BigInt>> {
+    fn read_gas_account(
+        &self,
+        snapshot: &DataCache,
+        account: &UInt160,
+    ) -> CoreResult<Option<BigInt>> {
         let Some(item) = snapshot.get(&Self::gas_account_key(account)) else {
             return Ok(None);
         };
-        let state =
-            BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
-                .map_err(|e| CoreError::deserialization(format!("GAS account state: {e}")))?;
+        let state = BinarySerializer::deserialize(
+            &item.value_bytes(),
+            &ExecutionEngineLimits::default(),
+            None,
+        )
+        .map_err(|e| CoreError::deserialization(format!("GAS account state: {e}")))?;
         let StackItem::Struct(fields) = state else {
             return Err(CoreError::invalid_data("GAS account state is not a struct"));
         };
@@ -102,11 +109,19 @@ impl GasToken {
     }
 
     /// Writes the GAS account state `Struct[Balance]` (C# `GetAndChange(...).Set`).
-    fn write_gas_account(&self, snapshot: &DataCache, account: &UInt160, balance: &BigInt) -> CoreResult<()> {
+    fn write_gas_account(
+        &self,
+        snapshot: &DataCache,
+        account: &UInt160,
+        balance: &BigInt,
+    ) -> CoreResult<()> {
         let item = StackItem::from_struct(vec![StackItem::from_int(balance.clone())]);
         let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
             .map_err(|e| CoreError::serialization(format!("GAS account serialize: {e}")))?;
-        snapshot.update(Self::gas_account_key(account), StorageItem::from_bytes(bytes));
+        snapshot.update(
+            Self::gas_account_key(account),
+            StorageItem::from_bytes(bytes),
+        );
         Ok(())
     }
 
@@ -220,7 +235,10 @@ impl GasToken {
             return Ok(());
         }
         let snapshot = engine.snapshot_cache();
-        let balance = self.read_gas_account(&snapshot, account)?.unwrap_or_else(BigInt::zero) + amount;
+        let balance = self
+            .read_gas_account(&snapshot, account)?
+            .unwrap_or_else(BigInt::zero)
+            + amount;
         self.write_gas_account(&snapshot, account, &balance)?;
         let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
         let supply = snapshot
@@ -300,7 +318,9 @@ impl GasToken {
             return Ok(());
         }
         let snapshot = engine.snapshot_cache();
-        let balance = self.read_gas_account(&snapshot, account)?.unwrap_or_else(BigInt::zero);
+        let balance = self
+            .read_gas_account(&snapshot, account)?
+            .unwrap_or_else(BigInt::zero);
         if &balance < amount {
             return Err(CoreError::invalid_operation(format!(
                 "GasToken::burn: insufficient balance {balance} to burn {amount}"
@@ -697,7 +717,12 @@ mod tests {
         );
         // from == to with sufficient balance -> no movement.
         assert_eq!(
-            GasToken::compute_gas_transfer(Some(BigInt::from(100)), Some(BigInt::from(100)), true, &amt),
+            GasToken::compute_gas_transfer(
+                Some(BigInt::from(100)),
+                Some(BigInt::from(100)),
+                true,
+                &amt
+            ),
             GasTransferOutcome::NoMovement
         );
         // Exact balance -> deduct to zero deletes the from-entry; to credited.
@@ -711,7 +736,12 @@ mod tests {
         );
         // Partial balance -> from keeps the remainder; existing to is added to.
         assert_eq!(
-            GasToken::compute_gas_transfer(Some(BigInt::from(250)), Some(BigInt::from(7)), false, &amt),
+            GasToken::compute_gas_transfer(
+                Some(BigInt::from(250)),
+                Some(BigInt::from(7)),
+                false,
+                &amt
+            ),
             GasTransferOutcome::Move {
                 from_new: BigInt::from(150),
                 delete_from: false,
@@ -726,8 +756,15 @@ mod tests {
         let cache = DataCache::new(false);
         let account = UInt160::from_bytes(&[3u8; 20]).unwrap();
 
-        assert!(GasToken::new().read_gas_account(&cache, &account).unwrap().is_none());
-        GasToken::new().write_gas_account(&cache, &account, &BigInt::from(12345)).unwrap();
+        assert!(
+            GasToken::new()
+                .read_gas_account(&cache, &account)
+                .unwrap()
+                .is_none()
+        );
+        GasToken::new()
+            .write_gas_account(&cache, &account, &BigInt::from(12345))
+            .unwrap();
         assert_eq!(
             GasToken::new().read_gas_account(&cache, &account).unwrap(),
             Some(BigInt::from(12345))
@@ -738,7 +775,12 @@ mod tests {
             BigInt::from(12345)
         );
         GasToken::new().delete_gas_account(&cache, &account);
-        assert!(GasToken::new().read_gas_account(&cache, &account).unwrap().is_none());
+        assert!(
+            GasToken::new()
+                .read_gas_account(&cache, &account)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -777,7 +819,9 @@ mod tests {
 
         let cache = DataCache::new(false);
         let account = UInt160::from_bytes(&[9u8; 20]).unwrap();
-        GasToken::new().write_gas_account(&cache, &account, &BigInt::from(100)).unwrap();
+        GasToken::new()
+            .write_gas_account(&cache, &account, &BigInt::from(100))
+            .unwrap();
         let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
         cache.add(
             supply_key.clone(),
@@ -796,18 +840,30 @@ mod tests {
         .expect("engine builds");
 
         // Negative -> fault; zero -> no-op (no event, no state change).
-        assert!(GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(-1)).is_err());
-        GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(0)).unwrap();
+        assert!(
+            GasToken::new()
+                .gas_burn(&mut engine, &account, &BigInt::from(-1))
+                .is_err()
+        );
+        GasToken::new()
+            .gas_burn(&mut engine, &account, &BigInt::from(0))
+            .unwrap();
         assert!(engine.notifications().is_empty());
         assert_eq!(
-            GasToken::new().read_gas_account(&snapshot, &account).unwrap(),
+            GasToken::new()
+                .read_gas_account(&snapshot, &account)
+                .unwrap(),
             Some(BigInt::from(100))
         );
 
         // Partial burn: balance and supply shrink, Transfer(account, null, 30).
-        GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(30)).unwrap();
+        GasToken::new()
+            .gas_burn(&mut engine, &account, &BigInt::from(30))
+            .unwrap();
         assert_eq!(
-            GasToken::new().read_gas_account(&snapshot, &account).unwrap(),
+            GasToken::new()
+                .read_gas_account(&snapshot, &account)
+                .unwrap(),
             Some(BigInt::from(70))
         );
         assert_eq!(
@@ -817,16 +873,29 @@ mod tests {
         assert_eq!(engine.notifications().len(), 1);
 
         // Over-burn -> fault, state unchanged.
-        assert!(GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(71)).is_err());
+        assert!(
+            GasToken::new()
+                .gas_burn(&mut engine, &account, &BigInt::from(71))
+                .is_err()
+        );
         assert_eq!(
-            GasToken::new().read_gas_account(&snapshot, &account).unwrap(),
+            GasToken::new()
+                .read_gas_account(&snapshot, &account)
+                .unwrap(),
             Some(BigInt::from(70))
         );
 
         // Full burn deletes the account entry; the supply reaches zero (stored
         // as the canonical empty-bytes BigInteger).
-        GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(70)).unwrap();
-        assert!(GasToken::new().read_gas_account(&snapshot, &account).unwrap().is_none());
+        GasToken::new()
+            .gas_burn(&mut engine, &account, &BigInt::from(70))
+            .unwrap();
+        assert!(
+            GasToken::new()
+                .read_gas_account(&snapshot, &account)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(
             BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
             BigInt::from(0)
@@ -884,7 +953,9 @@ mod persist_tests {
     }
 
     fn seed_gas(cache: &DataCache, account: &UInt160, balance: i64) {
-        GasToken::new().write_gas_account(cache, account, &BigInt::from(balance)).unwrap();
+        GasToken::new()
+            .write_gas_account(cache, account, &BigInt::from(balance))
+            .unwrap();
         let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
         let supply = cache
             .get(&supply_key)

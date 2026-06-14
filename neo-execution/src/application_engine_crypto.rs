@@ -83,7 +83,9 @@ impl ApplicationEngine {
         let container = self
             .get_script_container()
             .ok_or_else(|| CoreError::other("No script container available"))?;
-        let hash = container.hash().map_err(|e| CoreError::other(e.to_string()))?;
+        let hash = container
+            .hash()
+            .map_err(|e| CoreError::other(e.to_string()))?;
         let network = self.protocol_settings().network;
 
         let mut sign_data = Vec::with_capacity(36);
@@ -102,7 +104,10 @@ impl ApplicationEngine {
                 let items = arr.items();
                 let mut result = Vec::with_capacity(items.len());
                 for item in items {
-                    result.push(item.as_bytes().map_err(|e| CoreError::other(e.to_string()))?);
+                    result.push(
+                        item.as_bytes()
+                            .map_err(|e| CoreError::other(e.to_string()))?,
+                    );
                 }
                 Ok(result)
             }

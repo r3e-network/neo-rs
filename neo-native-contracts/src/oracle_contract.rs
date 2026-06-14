@@ -321,7 +321,9 @@ impl OracleContract {
             .as_any()
             .downcast_ref::<Transaction>()
             .ok_or_else(|| {
-                CoreError::invalid_operation("OracleContract: script container is not a transaction")
+                CoreError::invalid_operation(
+                    "OracleContract: script container is not a transaction",
+                )
             })?;
         match Self::oracle_response_attribute(tx) {
             None => Ok(tx.hash()),
@@ -329,7 +331,9 @@ impl OracleContract {
                 // C# uses the null-forgiving `GetRequest(...)!`: a missing record
                 // dereferences null and faults.
                 let request = self.read_request(snapshot, response.id)?.ok_or_else(|| {
-                    CoreError::invalid_operation("OracleContract: original oracle request not found")
+                    CoreError::invalid_operation(
+                        "OracleContract: original oracle request not found",
+                    )
                 })?;
                 Ok(request.original_tx_id)
             }
@@ -601,7 +605,10 @@ impl NativeContract for OracleContract {
             if list.is_empty() {
                 snapshot.delete(&list_key);
             } else {
-                snapshot.update(list_key, StorageItem::from_bytes(Self::encode_id_list(&list)?));
+                snapshot.update(
+                    list_key,
+                    StorageItem::from_bytes(Self::encode_id_list(&list)?),
+                );
             }
 
             // Accumulate the oracle fee for the node selected by the id.
@@ -861,7 +868,10 @@ impl NativeContract for OracleContract {
                     ));
                 }
                 list.push(id);
-                snapshot.update(list_key, StorageItem::from_bytes(Self::encode_id_list(&list)?));
+                snapshot.update(
+                    list_key,
+                    StorageItem::from_bytes(Self::encode_id_list(&list)?),
+                );
 
                 let filter_item = match &filter {
                     Some(f) => StackItem::from_byte_string(f.as_bytes().to_vec()),
@@ -972,7 +982,9 @@ impl NativeContract for OracleContract {
                             "OracleContract::verify: script container is not a transaction",
                         )
                     })?;
-                Ok(vec![u8::from(Self::oracle_response_attribute(tx).is_some())])
+                Ok(vec![u8::from(
+                    Self::oracle_response_attribute(tx).is_some(),
+                )])
             }
             other => Err(CoreError::invalid_operation(format!(
                 "OracleContract method '{other}' is not implemented"
@@ -1618,10 +1630,12 @@ mod oracle_request_finish_tests {
             Arc::clone(&snapshot),
         );
         assert_eq!(state, VmState::FAULT);
-        assert!(OracleContract::new()
-            .read_request(&snapshot, 0)
-            .unwrap()
-            .is_none());
+        assert!(
+            OracleContract::new()
+                .read_request(&snapshot, 0)
+                .unwrap()
+                .is_none()
+        );
     }
 
     fn seeded_finish_snapshot(id: u64) -> (Arc<DataCache>, OracleRequest, UInt160) {
@@ -1705,10 +1719,12 @@ mod oracle_request_finish_tests {
         );
 
         // C# Finish does NOT remove the request — PostPersist does.
-        assert!(OracleContract::new()
-            .read_request(&snapshot, 7)
-            .unwrap()
-            .is_some());
+        assert!(
+            OracleContract::new()
+                .read_request(&snapshot, 7)
+                .unwrap()
+                .is_some()
+        );
         let list_item = snapshot
             .get(&OracleContract::id_list_key(&request.url))
             .unwrap();
@@ -1830,10 +1846,12 @@ mod oracle_request_finish_tests {
         let mut engine =
             post_persist_engine(Arc::clone(&snapshot), 11, vec![oracle_response_tx(8, b"")]);
         NativeContract::post_persist(&OracleContract, &mut engine).expect("post_persist");
-        assert!(OracleContract::new()
-            .read_request(&snapshot, 8)
-            .unwrap()
-            .is_none());
+        assert!(
+            OracleContract::new()
+                .read_request(&snapshot, 8)
+                .unwrap()
+                .is_none()
+        );
         assert!(
             snapshot
                 .get(&OracleContract::id_list_key(&request.url))

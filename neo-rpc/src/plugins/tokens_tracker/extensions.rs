@@ -25,10 +25,7 @@ pub fn bigint_var_size(value: &BigInt) -> usize {
 }
 
 /// Finds entries whose keys start with the given prefix.
-pub fn find_prefix<TKey, TValue>(
-    db: &dyn Store,
-    prefix: &[u8],
-) -> CoreResult<Vec<(TKey, TValue)>>
+pub fn find_prefix<TKey, TValue>(db: &dyn Store, prefix: &[u8]) -> CoreResult<Vec<(TKey, TValue)>>
 where
     TKey: Serializable,
     TValue: Serializable,
@@ -43,10 +40,12 @@ where
         }
 
         let mut key_reader = MemoryReader::new(&key_bytes[1..]);
-        let key = TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
+        let key =
+            TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
         let mut value_reader = MemoryReader::new(&value_bytes);
-        let value = TValue::deserialize(&mut value_reader).map_err(|e| CoreError::other(e.to_string()))?;
+        let value =
+            TValue::deserialize(&mut value_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
         results.push((key, value));
     }
@@ -74,10 +73,12 @@ where
         }
 
         let mut key_reader = MemoryReader::new(&key_bytes[1..]);
-        let key = TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
+        let key =
+            TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
         let mut value_reader = MemoryReader::new(&value_bytes);
-        let value = TValue::deserialize(&mut value_reader).map_err(|e| CoreError::other(e.to_string()))?;
+        let value =
+            TValue::deserialize(&mut value_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
         results.push((key, value));
     }

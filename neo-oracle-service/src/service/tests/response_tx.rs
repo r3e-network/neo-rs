@@ -27,12 +27,9 @@ fn seed_transaction_state(
     // Seed through the canonical ledger codec (the C# interoperable
     // `TransactionState` layout) so the fixture stays byte-identical
     // to what the persist pipeline writes.
-    let record = LedgerContract::new().serialize_persisted_transaction_state(
-        block_index,
-        VMState::NONE,
-        tx,
-    )
-    .expect("transaction state record");
+    let record = LedgerContract::new()
+        .serialize_persisted_transaction_state(block_index, VMState::NONE, tx)
+        .expect("transaction state record");
 
     let mut key = Vec::with_capacity(1 + 32);
     key.push(11);

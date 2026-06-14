@@ -39,9 +39,8 @@ pub(crate) fn parse_balance_list<T>(
     protocol_settings: &ProtocolSettings,
     mut parse: impl FnMut(&JObject) -> CoreResult<T>,
 ) -> CoreResult<(Vec<T>, UInt160)> {
-    let balances = parse_object_array_lossy(json, "balance", |obj| {
-        parse(obj).map_err(|e| e.to_string())
-    });
+    let balances =
+        parse_object_array_lossy(json, "balance", |obj| parse(obj).map_err(|e| e.to_string()));
     let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
     Ok((balances, user_script_hash))
 }
@@ -235,8 +234,7 @@ pub(crate) fn parse_nep_transfer_fields(
             .map_err(|e| CoreError::other(e.to_string()))?,
         transfer_notify_index: required_u16_number(json, "transfernotifyindex")
             .map_err(|e| CoreError::other(e.to_string()))?,
-        tx_hash: required_uint256(json, "txhash")
-            .map_err(|e| CoreError::other(e.to_string()))?,
+        tx_hash: required_uint256(json, "txhash").map_err(|e| CoreError::other(e.to_string()))?,
     })
 }
 

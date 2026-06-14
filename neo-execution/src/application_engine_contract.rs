@@ -226,8 +226,7 @@ fn contract_create_multisig_account_handler(
             return Err(CoreError::other("Invalid multisig threshold"));
         }
 
-        let account = app
-            .create_multisig_account(m as i32, public_keys_items)?;
+        let account = app.create_multisig_account(m as i32, public_keys_items)?;
         app.push_bytes(account.to_bytes())?;
         Ok(())
     })();
@@ -241,7 +240,9 @@ fn contract_call_native_handler(
 ) -> VmResult<()> {
     let result = (|| -> CoreResult<()> {
         let version_item = engine.pop().map_err(|e| CoreError::other(e.to_string()))?;
-        let version_big = version_item.as_int().map_err(|e| CoreError::other(e.to_string()))?;
+        let version_big = version_item
+            .as_int()
+            .map_err(|e| CoreError::other(e.to_string()))?;
         if !version_big.is_zero() {
             return Err(CoreError::other(format!(
                 "Unsupported native contract version {}",
@@ -361,7 +362,9 @@ fn contract_call_native_handler(
             if force_null_return {
                 // The native method explicitly returned `null` (e.g. a failed
                 // `recoverSecp256K1`); push `Null` rather than the empty payload.
-                engine.push(StackItem::null()).map_err(|e| CoreError::other(e.to_string()))?;
+                engine
+                    .push(StackItem::null())
+                    .map_err(|e| CoreError::other(e.to_string()))?;
             } else {
                 push_native_result(engine, ret_type, result_bytes)?;
             }
@@ -384,7 +387,9 @@ fn push_native_result(
     let Some(item) = decode_native_result(return_type, result)? else {
         return Ok(());
     };
-    engine.push(item).map_err(|e| CoreError::other(e.to_string()))
+    engine
+        .push(item)
+        .map_err(|e| CoreError::other(e.to_string()))
 }
 
 fn decode_native_result(

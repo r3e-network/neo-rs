@@ -8,11 +8,14 @@ use neo_crypto::MerkleTree;
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 
-use super::super::helpers::{current_timestamp, ConsensusBlockFields};
+use super::super::helpers::{ConsensusBlockFields, current_timestamp};
 
 #[test]
 fn consensus_merkle_root_matches_core_merkle_tree() {
-    assert_eq!(ConsensusBlockFields::compute_merkle_root(&[]), UInt256::zero());
+    assert_eq!(
+        ConsensusBlockFields::compute_merkle_root(&[]),
+        UInt256::zero()
+    );
 
     for hashes in [
         vec![UInt256::from([0x11; 32])],
@@ -741,7 +744,9 @@ async fn committed_round_assembles_into_the_agreed_block() {
     // The witness verification script is the M-of-N multi-sig over the validators.
     assert_eq!(
         block.header.witness.verification_script,
-        crate::service::helpers::ConsensusBlockFields::multisig_verification_script(&block_data.validator_pubkeys),
+        crate::service::helpers::ConsensusBlockFields::multisig_verification_script(
+            &block_data.validator_pubkeys
+        ),
     );
     assert!(!block.header.witness.invocation_script.is_empty());
 }

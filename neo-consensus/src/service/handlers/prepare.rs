@@ -75,7 +75,9 @@ impl ConsensusService {
         self.context.prepare_request_invocation = if payload.witness.is_empty() {
             None
         } else {
-            Some(InvocationScript::invocation_script_from_signature(&payload.witness))
+            Some(InvocationScript::invocation_script_from_signature(
+                &payload.witness,
+            ))
         };
         self.context.version = prepare_request.version;
         self.context.prev_hash = prepare_request.prev_hash;
@@ -182,7 +184,8 @@ impl ConsensusService {
         }
 
         // Add the response
-        let invocation_script = InvocationScript::invocation_script_from_signature(&payload.witness);
+        let invocation_script =
+            InvocationScript::invocation_script_from_signature(&payload.witness);
         self.context.add_prepare_response(
             payload.validator_index,
             invocation_script,

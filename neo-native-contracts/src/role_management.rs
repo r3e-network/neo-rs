@@ -75,7 +75,12 @@ impl RoleManagement {
     /// A `Backward` prefix scan yields them in descending designation-index order, so
     /// the first one with `designation_index <= index` is the effective designation —
     /// equivalent to C#'s `FindRange((role, index), (role), Backward).FirstOrDefault`.
-    fn find_designation_value(&self, snapshot: &DataCache, role_byte: u8, index: u32) -> Option<Vec<u8>> {
+    fn find_designation_value(
+        &self,
+        snapshot: &DataCache,
+        role_byte: u8,
+        index: u32,
+    ) -> Option<Vec<u8>> {
         let prefix = StorageKey::new(RoleManagement::ID, vec![role_byte]);
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
             let key_bytes = key.key();
@@ -105,11 +110,9 @@ impl RoleManagement {
             let bytes = entry
                 .as_bytes()
                 .map_err(|e| CoreError::invalid_data(format!("RoleManagement node bytes: {e}")))?;
-            points.push(
-                ECPoint::from_bytes(&bytes).map_err(|e| {
-                    CoreError::invalid_data(format!("RoleManagement node EC point: {e}"))
-                })?,
-            );
+            points.push(ECPoint::from_bytes(&bytes).map_err(|e| {
+                CoreError::invalid_data(format!("RoleManagement node EC point: {e}"))
+            })?);
         }
         Ok(points)
     }
@@ -150,8 +153,11 @@ impl RoleManagement {
     fn encode_node_list(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
         let mut sorted = points.to_vec();
         sorted.sort();
-        BinarySerializer::serialize(&Self::nodes_to_array(&sorted), &ExecutionEngineLimits::default())
-            .map_err(|e| CoreError::invalid_operation(format!("RoleManagement node list: {e}")))
+        BinarySerializer::serialize(
+            &Self::nodes_to_array(&sorted),
+            &ExecutionEngineLimits::default(),
+        )
+        .map_err(|e| CoreError::invalid_operation(format!("RoleManagement node list: {e}")))
     }
 
     /// Decodes + validates the `nodes` Array argument: 1..=32 compressed EC points
@@ -379,7 +385,10 @@ impl NativeContract for RoleManagement {
                         "designateAsRole: role already designated at this index",
                     ));
                 }
-                snapshot.add(key, StorageItem::from_bytes(Self::encode_node_list(&nodes)?));
+                snapshot.add(
+                    key,
+                    StorageItem::from_bytes(Self::encode_node_list(&nodes)?),
+                );
 
                 // Emit the Designation event; from HF_Echidna it also carries the
                 // previously-effective (at block_index) and new node lists.
@@ -392,8 +401,13 @@ impl NativeContract for RoleManagement {
                 } else {
                     Vec::new()
                 };
-                let state =
-                    Self::designation_event_state(role_byte, block_index, echidna, &old_nodes, &nodes);
+                let state = Self::designation_event_state(
+                    role_byte,
+                    block_index,
+                    echidna,
+                    &old_nodes,
+                    &nodes,
+                );
                 engine
                     .send_notification(Self::script_hash(), "Designation".to_string(), state)
                     .map_err(|e| {
@@ -461,7 +475,9 @@ mod tests {
         .unwrap();
         let input = vec![a.clone(), b.clone()];
         // encode_node_list stores them sorted; decode_node_list reads them back.
-        let decoded = RoleManagement::decode_node_list(&RoleManagement::encode_node_list(&input).unwrap()).unwrap();
+        let decoded =
+            RoleManagement::decode_node_list(&RoleManagement::encode_node_list(&input).unwrap())
+                .unwrap();
         let mut expected = input.clone();
         expected.sort();
         assert_eq!(decoded, expected);

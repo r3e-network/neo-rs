@@ -1087,8 +1087,7 @@ mod tests {
     }
 
     fn unused_local_rpc_port() -> u16 {
-        let listener =
-            std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral RPC port");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral RPC port");
         listener.local_addr().expect("local RPC address").port()
     }
 
@@ -1101,9 +1100,9 @@ mod tests {
                 .json(&request)
                 .send(),
         )
-            .await
-            .expect("RPC request timed out")
-            .expect("RPC request failed");
+        .await
+        .expect("RPC request timed out")
+        .expect("RPC request failed");
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         response
             .json::<serde_json::Value>()

@@ -120,12 +120,11 @@ pub fn insert_optional_string(json: &mut JObject, field: &str, value: Option<imp
 
 /// Reads a required numeric field as a `u64`.
 pub fn required_u64_number(json: &JObject, field: &str) -> Result<u64, JsonParseError> {
-    let value = json
-        .get(field)
-        .and_then(JToken::as_number)
-        .ok_or_else(|| JsonParseError::MissingField {
+    let value = json.get(field).and_then(JToken::as_number).ok_or_else(|| {
+        JsonParseError::MissingField {
             field: field.to_string(),
-        })?;
+        }
+    })?;
     if value < 0.0 || value > u64::MAX as f64 || value.fract() != 0.0 {
         return Err(JsonParseError::OutOfRange {
             field: field.to_string(),
@@ -138,12 +137,11 @@ pub fn required_u64_number(json: &JObject, field: &str) -> Result<u64, JsonParse
 
 /// Reads a required numeric field as a `u32`.
 pub fn required_u32_number(json: &JObject, field: &str) -> Result<u32, JsonParseError> {
-    let value = json
-        .get(field)
-        .and_then(JToken::as_number)
-        .ok_or_else(|| JsonParseError::MissingField {
+    let value = json.get(field).and_then(JToken::as_number).ok_or_else(|| {
+        JsonParseError::MissingField {
             field: field.to_string(),
-        })?;
+        }
+    })?;
     if value < 0.0 || value > f64::from(u32::MAX) || value.fract() != 0.0 {
         return Err(JsonParseError::OutOfRange {
             field: field.to_string(),
@@ -156,12 +154,11 @@ pub fn required_u32_number(json: &JObject, field: &str) -> Result<u32, JsonParse
 
 /// Reads a required numeric field as a `u16`.
 pub fn required_u16_number(json: &JObject, field: &str) -> Result<u16, JsonParseError> {
-    let value = json
-        .get(field)
-        .and_then(JToken::as_number)
-        .ok_or_else(|| JsonParseError::MissingField {
+    let value = json.get(field).and_then(JToken::as_number).ok_or_else(|| {
+        JsonParseError::MissingField {
             field: field.to_string(),
-        })?;
+        }
+    })?;
     if value < 0.0 || value > f64::from(u16::MAX) || value.fract() != 0.0 {
         return Err(JsonParseError::OutOfRange {
             field: field.to_string(),
@@ -185,11 +182,10 @@ where
     if let Some(number) = token.as_number() {
         Ok(from_number(number))
     } else if let Some(text) = token.as_string() {
-        text.parse::<T>()
-            .map_err(|_| JsonParseError::InvalidValue {
-                name: format!("{value_name} value"),
-                value: text.to_string(),
-            })
+        text.parse::<T>().map_err(|_| JsonParseError::InvalidValue {
+            name: format!("{value_name} value"),
+            value: text.to_string(),
+        })
     } else {
         Err(JsonParseError::InvalidType(invalid_type_error.to_string()))
     }
@@ -222,9 +218,7 @@ pub fn parse_script_hash_or_address(
 ) -> CoreResult<UInt160> {
     UInt160::parse(value)
         .map_err(|err| CoreError::other(err.to_string()))
-        .or_else(|_| {
-            WalletHelper::to_script_hash(value, protocol_settings.address_version)
-        })
+        .or_else(|_| WalletHelper::to_script_hash(value, protocol_settings.address_version))
 }
 
 /// Reads a required script-hash-or-address field.
@@ -283,10 +277,7 @@ pub fn fallible_object_array<T, E>(
     items: &[T],
     to_object: impl FnMut(&T) -> Result<JObject, E>,
 ) -> Result<JToken, E> {
-    let objects = items
-        .iter()
-        .map(to_object)
-        .collect::<Result<Vec<_>, E>>()?;
+    let objects = items.iter().map(to_object).collect::<Result<Vec<_>, E>>()?;
     Ok(object_array_from_iter(objects))
 }
 
@@ -491,7 +482,9 @@ where
         // Boolean coercion fallback (true -> 1.0 / false -> 0.0): prior behavior.
         Ok(from_number(number))
     } else {
-        Err(CoreError::other(format!("Field '{field}' must be a number")))
+        Err(CoreError::other(format!(
+            "Field '{field}' must be a number"
+        )))
     }
 }
 
@@ -504,18 +497,16 @@ pub fn parse_nonce_token(token: &JToken) -> CoreResult<u64> {
     } else if let Some(number) = token.as_number() {
         // 2^64 exclusive: `u64::MAX as f64` rounds UP to 2^64, so an exact 2^64
         // would otherwise slip through to a saturating cast.
-        if !number.is_finite()
-            || number < 0.0
-            || number.fract() != 0.0
-            || number >= 2f64.powi(64)
-        {
+        if !number.is_finite() || number < 0.0 || number.fract() != 0.0 || number >= 2f64.powi(64) {
             return Err(CoreError::other(format!(
                 "Invalid nonce number '{number}': out of u64 range or not an integer"
             )));
         }
         Ok(number as u64)
     } else {
-        Err(CoreError::other("Nonce value must be a hex string or number"))
+        Err(CoreError::other(
+            "Nonce value must be a hex string or number",
+        ))
     }
 }
 
@@ -536,9 +527,7 @@ pub fn parse_oracle_response_code(token: &JToken) -> CoreResult<OracleResponseCo
             other => {
                 let normalized = other.trim_start_matches("0x");
                 let value = u8::from_str_radix(normalized, 16).map_err(|err| {
-                    CoreError::other(format!(
-                        "Invalid oracle response code '{other}': {err}"
-                    ))
+                    CoreError::other(format!("Invalid oracle response code '{other}': {err}"))
                 })?;
                 OracleResponseCode::from_byte(value).ok_or_else(|| {
                     CoreError::other(format!(

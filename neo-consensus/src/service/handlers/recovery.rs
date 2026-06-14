@@ -176,11 +176,9 @@ impl ConsensusService {
                         .iter()
                         .find(|p| p.validator_index == primary_index)
                     {
-                        if let Some(signature) =
-                            InvocationScript::signature_from_invocation_script(
-                                &primary_prep.invocation_script,
-                            )
-                        {
+                        if let Some(signature) = InvocationScript::signature_from_invocation_script(
+                            &primary_prep.invocation_script,
+                        ) {
                             let recovered = ConsensusPayload {
                                 network: self.network,
                                 block_index: prep_req.block_index,

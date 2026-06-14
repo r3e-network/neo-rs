@@ -189,8 +189,8 @@ pub use witness::Witness;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // Re-exports of the protocol enums.
+pub use neo_primitives::{InventoryType, OracleResponseCode, TransactionAttributeType};
+pub use verify_result::VerifyResult;
 pub use witness_rule::{
     ToStackItem, WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction,
 };
-pub use neo_primitives::{InventoryType, OracleResponseCode, TransactionAttributeType};
-pub use verify_result::VerifyResult;

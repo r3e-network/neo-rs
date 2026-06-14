@@ -8,7 +8,10 @@ use super::parsing::parse_base64_token;
 
 pub fn witness_from_json(json: &JObject) -> CoreResult<Witness> {
     let (invocation_bytes, verification_bytes) = parse_witness_scripts(json)?;
-    Ok(Witness::new_with_scripts(invocation_bytes, verification_bytes))
+    Ok(Witness::new_with_scripts(
+        invocation_bytes,
+        verification_bytes,
+    ))
 }
 
 pub fn payload_witness_from_json(json: &JObject) -> CoreResult<PayloadWitness> {

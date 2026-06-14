@@ -131,7 +131,9 @@ impl TrackerBase {
                     .try_commit()
                     .map_err(|e| CoreError::other(format!("snapshot commit failed: {}", e)))?;
             } else {
-                return Err(CoreError::other("snapshot commit failed: snapshot is still shared"));
+                return Err(CoreError::other(
+                    "snapshot commit failed: snapshot is still shared",
+                ));
             }
         }
         Ok(())
@@ -140,7 +142,10 @@ impl TrackerBase {
     fn key<K: Serializable>(prefix: u8, key: &K) -> CoreResult<Vec<u8>> {
         let mut buffer = Vec::with_capacity(key.size() + 1);
         buffer.push(prefix);
-        buffer.extend_from_slice(&key.to_array().map_err(|e| CoreError::other(e.to_string()))?);
+        buffer.extend_from_slice(
+            &key.to_array()
+                .map_err(|e| CoreError::other(e.to_string()))?,
+        );
         Ok(buffer)
     }
 
@@ -158,7 +163,9 @@ impl TrackerBase {
             return Ok(());
         };
         let key_bytes = Self::key(prefix, key)?;
-        let value_bytes = value.to_array().map_err(|e| CoreError::other(e.to_string()))?;
+        let value_bytes = value
+            .to_array()
+            .map_err(|e| CoreError::other(e.to_string()))?;
         snapshot
             .put(key_bytes, value_bytes)
             .map_err(|e| CoreError::other(format!("storage put failed: {}", e)))?;
@@ -211,10 +218,12 @@ impl TrackerBase {
             }
 
             let mut key_reader = MemoryReader::new(&key_bytes[1..]);
-            let key = TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
+            let key =
+                TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
             let mut val_reader = MemoryReader::new(&value_bytes);
-            let val = TValue::deserialize(&mut val_reader).map_err(|e| CoreError::other(e.to_string()))?;
+            let val = TValue::deserialize(&mut val_reader)
+                .map_err(|e| CoreError::other(e.to_string()))?;
 
             results.push((key, val));
         }

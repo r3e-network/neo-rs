@@ -27,8 +27,8 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_native_contracts::ContractManagement;
 use neo_primitives::{CallFlags, TriggerType, UInt160};
-use neo_vm::script_builder::ScriptBuilder;
 use neo_storage::DataCache;
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
 use num_traits::ToPrimitive;
 

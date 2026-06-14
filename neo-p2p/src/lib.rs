@@ -1,4 +1,3 @@
-
 // Copyright (c) 2024 R3E Network
 // This file is part of the neo-rs project
 // Licensed under the MIT License
@@ -200,7 +199,6 @@ pub mod timeouts;
 pub mod transaction_removal_reason {
     pub use neo_primitives::TransactionRemovalReason;
 }
-
 
 /// Verification result enumeration.
 pub mod verify_result;

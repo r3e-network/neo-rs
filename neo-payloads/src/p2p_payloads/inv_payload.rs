@@ -83,7 +83,8 @@ impl Serializable for InvPayload {
         let ty = InventoryType::from_byte(reader.read_u8()?)
             .ok_or_else(|| IoError::invalid_data("Unsupported inventory type encountered"))?;
 
-        let hashes = helper::SerializeHelper::deserialize_array::<UInt256>(reader, MAX_HASHES_COUNT)?;
+        let hashes =
+            helper::SerializeHelper::deserialize_array::<UInt256>(reader, MAX_HASHES_COUNT)?;
         Ok(Self {
             inventory_type: ty,
             hashes,

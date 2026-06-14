@@ -287,7 +287,10 @@ fn decode_sealing_key_from_hex(input: &str) -> CoreResult<[u8; 32]> {
     let normalized = normalize_hex_input(input);
     let bytes = hex::decode(normalized).map_err(|e| CoreError::other(e.to_string()))?;
     if bytes.len() != 32 {
-        return Err(CoreError::other(format!("expected 32 bytes, got {}", bytes.len())));
+        return Err(CoreError::other(format!(
+            "expected 32 bytes, got {}",
+            bytes.len()
+        )));
     }
     let mut key = [0u8; 32];
     key.copy_from_slice(&bytes);

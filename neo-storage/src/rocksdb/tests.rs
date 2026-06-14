@@ -193,8 +193,8 @@ fn backward_raw_prefix_find_uses_rocksdb_prefix_bounds() {
         ..Default::default()
     };
 
-    let mut store = RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), true, true)
-        .expect("rocksdb store");
+    let mut store =
+        RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), true, true).expect("rocksdb store");
 
     for (key, value) in [
         (b"a\x00".to_vec(), vec![0x01]),

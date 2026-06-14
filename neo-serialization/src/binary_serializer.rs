@@ -88,8 +88,9 @@ impl BinarySerializer {
             }
 
             let item_type_byte = reader.read_byte().map_err(Self::io_error_to_core_error)?;
-            let item_type = StackItemType::from_byte(item_type_byte)
-                .ok_or_else(|| CoreError::other(format!("Unknown stack item type: 0x{item_type_byte:02x}")))?;
+            let item_type = StackItemType::from_byte(item_type_byte).ok_or_else(|| {
+                CoreError::other(format!("Unknown stack item type: 0x{item_type_byte:02x}"))
+            })?;
 
             match item_type {
                 StackItemType::Any => {
@@ -97,7 +98,9 @@ impl BinarySerializer {
                     total_items += 1;
                 }
                 StackItemType::Boolean => {
-                    let value = reader.read_boolean().map_err(Self::io_error_to_core_error)?;
+                    let value = reader
+                        .read_boolean()
+                        .map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingItem::Value(StackItem::from_bool(value)));
                     total_items += 1;
                 }
@@ -170,45 +173,44 @@ impl BinarySerializer {
             match item {
                 PendingItem::Value(stack_item) => constructed.push(stack_item),
                 PendingItem::Container(container) => {
-                    let result =
-                        match container.item_type {
-                            StackItemType::Array => {
-                                let mut elements = Vec::with_capacity(container.element_count);
-                                for _ in 0..container.element_count {
-                                    elements.push(constructed.pop().ok_or_else(|| {
-                                        CoreError::other("Invalid serialized array data")
-                                    })?);
-                                }
-                                StackItem::from_array(elements)
+                    let result = match container.item_type {
+                        StackItemType::Array => {
+                            let mut elements = Vec::with_capacity(container.element_count);
+                            for _ in 0..container.element_count {
+                                elements.push(constructed.pop().ok_or_else(|| {
+                                    CoreError::other("Invalid serialized array data")
+                                })?);
                             }
-                            StackItemType::Struct => {
-                                let mut elements = Vec::with_capacity(container.element_count);
-                                for _ in 0..container.element_count {
-                                    elements.push(constructed.pop().ok_or_else(|| {
-                                        CoreError::other("Invalid serialized struct data")
-                                    })?);
-                                }
-                                StackItem::from_struct(elements)
+                            StackItem::from_array(elements)
+                        }
+                        StackItemType::Struct => {
+                            let mut elements = Vec::with_capacity(container.element_count);
+                            for _ in 0..container.element_count {
+                                elements.push(constructed.pop().ok_or_else(|| {
+                                    CoreError::other("Invalid serialized struct data")
+                                })?);
                             }
-                            StackItemType::Map => {
-                                let mut entries = Vec::with_capacity(container.element_count);
-                                for _ in 0..container.element_count {
-                                    let key = constructed
-                                        .pop()
-                                        .ok_or_else(|| CoreError::other("Invalid serialized map key"))?;
-                                    let value = constructed.pop().ok_or_else(|| {
-                                        CoreError::other("Invalid serialized map value")
-                                    })?;
-                                    entries.push((key, value));
-                                }
-                                let mut dict = neo_vm_rs::VmOrderedDictionary::new();
-                                for (key, value) in entries {
-                                    dict.insert(key, value);
-                                }
-                                StackItem::from_map(dict)
+                            StackItem::from_struct(elements)
+                        }
+                        StackItemType::Map => {
+                            let mut entries = Vec::with_capacity(container.element_count);
+                            for _ in 0..container.element_count {
+                                let key = constructed.pop().ok_or_else(|| {
+                                    CoreError::other("Invalid serialized map key")
+                                })?;
+                                let value = constructed.pop().ok_or_else(|| {
+                                    CoreError::other("Invalid serialized map value")
+                                })?;
+                                entries.push((key, value));
                             }
-                            _ => return Err(CoreError::other("Invalid container descriptor")),
-                        };
+                            let mut dict = neo_vm_rs::VmOrderedDictionary::new();
+                            for (key, value) in entries {
+                                dict.insert(key, value);
+                            }
+                            StackItem::from_map(dict)
+                        }
+                        _ => return Err(CoreError::other("Invalid container descriptor")),
+                    };
                     constructed.push(result);
                 }
             }
@@ -255,7 +257,9 @@ impl BinarySerializer {
                     pending.push(PendingStackValue::Value(StackValue::Null));
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BOOLEAN => {
-                    let value = reader.read_boolean().map_err(Self::io_error_to_core_error)?;
+                    let value = reader
+                        .read_boolean()
+                        .map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingStackValue::Value(StackValue::Boolean(value)));
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_INTEGER => {
@@ -337,11 +341,9 @@ impl BinarySerializer {
                     StackValueContainerKind::Array | StackValueContainerKind::Struct => {
                         let mut elements = Vec::with_capacity(container.element_count);
                         for _ in 0..container.element_count {
-                            elements.push(
-                                constructed
-                                    .pop()
-                                    .ok_or_else(|| CoreError::other("Invalid serialized array data"))?,
-                            );
+                            elements.push(constructed.pop().ok_or_else(|| {
+                                CoreError::other("Invalid serialized array data")
+                            })?);
                         }
                         if matches!(container.kind, StackValueContainerKind::Array) {
                             constructed.push(StackValue::Array(elements));
@@ -388,7 +390,8 @@ impl BinarySerializer {
         value: &StackValue,
         limits: &ExecutionEngineLimits,
     ) -> CoreResult<Vec<u8>> {
-        let item = StackItem::try_from(value.clone()).map_err(|err| CoreError::other(err.to_string()))?;
+        let item =
+            StackItem::try_from(value.clone()).map_err(|err| CoreError::other(err.to_string()))?;
         Self::serialize(&item, limits)
     }
 

@@ -38,7 +38,8 @@ impl SerializeHelper {
     /// Returns the encoded size of an array of serializable items.
     #[inline]
     pub fn get_var_size_serializable_slice<T: Serializable>(values: &[T]) -> usize {
-        Self::get_var_size_usize(values.len()) + values.iter().map(Serializable::size).sum::<usize>()
+        Self::get_var_size_usize(values.len())
+            + values.iter().map(Serializable::size).sum::<usize>()
     }
 
     /// Returns the encoded size of a length-prefixed array whose items use custom sizing.
@@ -51,7 +52,10 @@ impl SerializeHelper {
     }
 
     /// Serializes an array of `Serializable` items with a Neo length prefix.
-    pub fn serialize_array<T: Serializable>(values: &[T], writer: &mut BinaryWriter) -> IoResult<()> {
+    pub fn serialize_array<T: Serializable>(
+        values: &[T],
+        writer: &mut BinaryWriter,
+    ) -> IoResult<()> {
         writer.write_var_int(values.len() as u64)?;
         for value in values {
             value.serialize(writer)?;

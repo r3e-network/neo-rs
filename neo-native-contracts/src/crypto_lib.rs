@@ -184,9 +184,9 @@ impl CryptoLib {
             }),
             "bls12381Add" => Self::bls_point(method, args, 0).and_then(|a| {
                 let b = Self::bls_point(method, args, 1)?;
-                a.add(&b)
-                    .map(|sum| sum.serialize())
-                    .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::bls12381Add: {e}")))
+                a.add(&b).map(|sum| sum.serialize()).map_err(|e| {
+                    CoreError::invalid_operation(format!("CryptoLib::bls12381Add: {e}"))
+                })
             }),
             "bls12381Mul" => Self::bls_point(method, args, 0).and_then(|p| {
                 let mul = args.get(1).ok_or_else(|| {
@@ -194,9 +194,9 @@ impl CryptoLib {
                 })?;
                 // The `neg` flag (3rd arg) is a VM Boolean: any non-zero byte is true.
                 let neg = args.get(2).is_some_and(|b| b.iter().any(|x| *x != 0));
-                p.mul(mul, neg)
-                    .map(|out| out.serialize())
-                    .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::bls12381Mul: {e}")))
+                p.mul(mul, neg).map(|out| out.serialize()).map_err(|e| {
+                    CoreError::invalid_operation(format!("CryptoLib::bls12381Mul: {e}"))
+                })
             }),
             "bls12381Pairing" => Self::bls_point(method, args, 0).and_then(|g1| {
                 let g2 = Self::bls_point(method, args, 1)?;
@@ -886,7 +886,9 @@ mod tests {
             "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
         );
         let message: &[u8] = b"";
-        assert!(CryptoLib::verify_ed25519_method(message, &pubkey, &signature));
+        assert!(CryptoLib::verify_ed25519_method(
+            message, &pubkey, &signature
+        ));
 
         // A tampered signature fails.
         let mut bad = signature.clone();
@@ -894,7 +896,15 @@ mod tests {
         assert!(!CryptoLib::verify_ed25519_method(message, &pubkey, &bad));
 
         // Wrong-length inputs return false without panicking (C# length guards).
-        assert!(!CryptoLib::verify_ed25519_method(message, &pubkey[..31], &signature));
-        assert!(!CryptoLib::verify_ed25519_method(message, &pubkey, &signature[..63]));
+        assert!(!CryptoLib::verify_ed25519_method(
+            message,
+            &pubkey[..31],
+            &signature
+        ));
+        assert!(!CryptoLib::verify_ed25519_method(
+            message,
+            &pubkey,
+            &signature[..63]
+        ));
     }
 }

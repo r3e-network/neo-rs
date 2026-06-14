@@ -51,12 +51,14 @@ impl RpcVersion {
         let tcp_port = json
             .get("tcpport")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'tcpport' field"))? as i32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'tcpport' field"))?
+            as i32;
 
         let nonce = json
             .get("nonce")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'nonce' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'nonce' field"))?
+            as u32;
 
         let user_agent = json
             .get("useragent")
@@ -195,48 +197,58 @@ impl RpcProtocol {
         let network = json
             .get("network")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'network' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'network' field"))?
+            as u32;
 
-        let validators_count =
-            json.get("validatorscount")
-                .and_then(neo_serialization::json::JToken::as_number)
-                .ok_or_else(|| CoreError::other("Missing or invalid 'validatorscount' field"))? as i32;
+        let validators_count = json
+            .get("validatorscount")
+            .and_then(neo_serialization::json::JToken::as_number)
+            .ok_or_else(|| CoreError::other("Missing or invalid 'validatorscount' field"))?
+            as i32;
 
-        let milliseconds_per_block =
-            json.get("msperblock")
-                .and_then(neo_serialization::json::JToken::as_number)
-                .ok_or_else(|| CoreError::other("Missing or invalid 'msperblock' field"))? as u32;
+        let milliseconds_per_block = json
+            .get("msperblock")
+            .and_then(neo_serialization::json::JToken::as_number)
+            .ok_or_else(|| CoreError::other("Missing or invalid 'msperblock' field"))?
+            as u32;
 
         let max_valid_until_block_increment = json
             .get("maxvaliduntilblockincrement")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'maxvaliduntilblockincrement' field"))?
+            .ok_or_else(|| {
+                CoreError::other("Missing or invalid 'maxvaliduntilblockincrement' field")
+            })? as u32;
+
+        let max_traceable_blocks = json
+            .get("maxtraceableblocks")
+            .and_then(neo_serialization::json::JToken::as_number)
+            .ok_or_else(|| CoreError::other("Missing or invalid 'maxtraceableblocks' field"))?
             as u32;
 
-        let max_traceable_blocks =
-            json.get("maxtraceableblocks")
-                .and_then(neo_serialization::json::JToken::as_number)
-                .ok_or_else(|| CoreError::other("Missing or invalid 'maxtraceableblocks' field"))? as u32;
+        let address_version = json
+            .get("addressversion")
+            .and_then(neo_serialization::json::JToken::as_number)
+            .ok_or_else(|| CoreError::other("Missing or invalid 'addressversion' field"))?
+            as u8;
 
-        let address_version =
-            json.get("addressversion")
-                .and_then(neo_serialization::json::JToken::as_number)
-                .ok_or_else(|| CoreError::other("Missing or invalid 'addressversion' field"))? as u8;
+        let max_transactions_per_block = json
+            .get("maxtransactionsperblock")
+            .and_then(neo_serialization::json::JToken::as_number)
+            .ok_or_else(|| CoreError::other("Missing or invalid 'maxtransactionsperblock' field"))?
+            as u32;
 
-        let max_transactions_per_block =
-            json.get("maxtransactionsperblock")
-                .and_then(neo_serialization::json::JToken::as_number)
-                .ok_or_else(|| CoreError::other("Missing or invalid 'maxtransactionsperblock' field"))? as u32;
+        let memory_pool_max_transactions = json
+            .get("memorypoolmaxtransactions")
+            .and_then(neo_serialization::json::JToken::as_number)
+            .ok_or_else(|| {
+                CoreError::other("Missing or invalid 'memorypoolmaxtransactions' field")
+            })? as i32;
 
-        let memory_pool_max_transactions =
-            json.get("memorypoolmaxtransactions")
-                .and_then(neo_serialization::json::JToken::as_number)
-                .ok_or_else(|| CoreError::other("Missing or invalid 'memorypoolmaxtransactions' field"))? as i32;
-
-        let initial_gas_distribution =
-            json.get("initialgasdistribution")
-                .and_then(neo_serialization::json::JToken::as_number)
-                .ok_or_else(|| CoreError::other("Missing or invalid 'initialgasdistribution' field"))? as u64;
+        let initial_gas_distribution = json
+            .get("initialgasdistribution")
+            .and_then(neo_serialization::json::JToken::as_number)
+            .ok_or_else(|| CoreError::other("Missing or invalid 'initialgasdistribution' field"))?
+            as u64;
 
         // Parse hardforks
         let hardforks = json

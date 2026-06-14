@@ -1,10 +1,10 @@
 //! `ApplicationLogs` RPC endpoints (`ApplicationLogs` plugin).
 
+use crate::application_logs::ApplicationLogsService;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use crate::application_logs::ApplicationLogsService;
 use neo_primitives::TriggerType;
 use neo_primitives::UInt256;
 use serde_json::Value;

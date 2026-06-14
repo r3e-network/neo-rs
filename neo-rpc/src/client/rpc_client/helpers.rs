@@ -158,7 +158,10 @@ pub(super) fn parse_plugins(result: &JToken) -> Result<Vec<RpcPlugin>, ClientRpc
         "listplugins returned non-array",
         "plugin entry was null",
         "plugin entry was not an object",
-        |obj| RpcPlugin::from_json(obj).map_err(|err| neo_error::CoreError::other(format!("invalid plugin entry: {err}"))),
+        |obj| {
+            RpcPlugin::from_json(obj)
+                .map_err(|err| neo_error::CoreError::other(format!("invalid plugin entry: {err}")))
+        },
     )
 }
 

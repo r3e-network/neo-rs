@@ -87,9 +87,9 @@ impl JsonSerializer {
             StackItem::Struct(struct_item) => Self::serialize_compound_struct(struct_item, seen),
             StackItem::Map(map) => Self::serialize_map(map, seen),
             StackItem::Pointer(_) => Err(CoreError::other("Cannot serialize Pointer to JSON")),
-            StackItem::InteropInterface(_) => {
-                Err(CoreError::other("Cannot serialize InteropInterface to JSON"))
-            }
+            StackItem::InteropInterface(_) => Err(CoreError::other(
+                "Cannot serialize InteropInterface to JSON",
+            )),
         }
     }
 
@@ -163,11 +163,7 @@ impl JsonSerializer {
     /// bounds the total produced item count (C# `JsonSerializer.Deserialize`
     /// decrements `engine.Limits.MaxStackSize`, default 2048, once per item and
     /// once per map entry, faulting when exhausted). Both faults match C#.
-    pub fn deserialize(
-        json: &[u8],
-        max_depth: usize,
-        max_items: usize,
-    ) -> CoreResult<StackItem> {
+    pub fn deserialize(json: &[u8], max_depth: usize, max_items: usize) -> CoreResult<StackItem> {
         let value: JsonValue =
             serde_json::from_slice(json).map_err(|e| CoreError::other(e.to_string()))?;
         Self::deserialize_from_json(&value, max_depth, max_items)

@@ -334,7 +334,9 @@ impl BlockchainService {
         if let Err(error) =
             crate::block_validation::BlockValidator::validate_block_version(block.version())
         {
-            return Err(CoreError::other(format!("block {index} has an invalid version: {error}")));
+            return Err(CoreError::other(format!(
+                "block {index} has an invalid version: {error}"
+            )));
         }
         let settings = self.system.settings();
         if let Err(error) =
@@ -360,7 +362,9 @@ impl BlockchainService {
         if let Err(error) =
             crate::block_validation::BlockValidator::validate_no_duplicate_transactions(&tx_hashes)
         {
-            return Err(CoreError::other(format!("block {index} has duplicate transactions: {error}")));
+            return Err(CoreError::other(format!(
+                "block {index} has duplicate transactions: {error}"
+            )));
         }
 
         // C# Header.Verify (Blockchain.OnNewBlock runs block.Verify before
@@ -371,18 +375,26 @@ impl BlockchainService {
         if !pre_verified {
             if let Some(snapshot) = self.system.store_snapshot() {
                 if i32::from(block.header.primary_index()) >= settings.validators_count {
-                    return Err(CoreError::other(format!("block {index}: primary index out of range")));
+                    return Err(CoreError::other(format!(
+                        "block {index}: primary index out of range"
+                    )));
                 }
                 let prev = neo_native_contracts::LedgerContract::new()
                     .get_trimmed_block(&snapshot, block.header.prev_hash())
                     .ok()
                     .flatten()
-                    .ok_or_else(|| CoreError::other(format!("block {index}: previous block not found")))?;
+                    .ok_or_else(|| {
+                        CoreError::other(format!("block {index}: previous block not found"))
+                    })?;
                 if prev.header.index() + 1 != index {
-                    return Err(CoreError::other(format!("block {index}: previous block index mismatch")));
+                    return Err(CoreError::other(format!(
+                        "block {index}: previous block index mismatch"
+                    )));
                 }
                 if block.header.timestamp() <= prev.header.timestamp() {
-                    return Err(CoreError::other(format!("block {index}: timestamp not after previous block")));
+                    return Err(CoreError::other(format!(
+                        "block {index}: timestamp not after previous block"
+                    )));
                 }
                 // The single block witness must satisfy prev.NextConsensus, under
                 // the C# 3-GAS block-verification cap (Header.Verify, not the
@@ -452,8 +464,9 @@ impl BlockchainService {
         let hash = payload.hash();
         if let Some(snapshot) = self.system.store_snapshot() {
             let settings = self.system.settings();
-            Self::verify_extensible(&payload, settings.as_ref(), &snapshot)
-                .map_err(|error| CoreError::other(format!("extensible payload rejected: {error}")))?;
+            Self::verify_extensible(&payload, settings.as_ref(), &snapshot).map_err(|error| {
+                CoreError::other(format!("extensible payload rejected: {error}"))
+            })?;
         }
         if let Err(error) = self.ledger.insert_extensible(payload) {
             return Err(CoreError::other(format!("ledger insert: {error}")));
@@ -476,7 +489,9 @@ impl BlockchainService {
         use neo_payloads::VerifiableExt;
 
         let ledger = neo_native_contracts::LedgerContract::new();
-        let height = ledger.current_index(snapshot).map_err(|e| CoreError::other(e.to_string()))?;
+        let height = ledger
+            .current_index(snapshot)
+            .map_err(|e| CoreError::other(e.to_string()))?;
         if height < payload.valid_block_start || height >= payload.valid_block_end {
             return Err(CoreError::other(format!(
                 "height {height} outside the valid range [{}, {})",
@@ -500,11 +515,14 @@ impl BlockchainService {
             .map_err(|e| CoreError::other(e.to_string()))?;
         if !validators.is_empty() {
             whitelist.insert(
-                crate::native_persist::bft_address(&validators).map_err(|e| CoreError::other(e.to_string()))?,
+                crate::native_persist::bft_address(&validators)
+                    .map_err(|e| CoreError::other(e.to_string()))?,
             );
             for validator in &validators {
                 whitelist.insert(neo_primitives::UInt160::from_script(
-                    &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(validator.as_bytes()),
+                    &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+                        validator.as_bytes(),
+                    ),
                 ));
             }
         }
@@ -513,16 +531,21 @@ impl BlockchainService {
             .unwrap_or_default();
         if !state_validators.is_empty() {
             whitelist.insert(
-                crate::native_persist::bft_address(&state_validators).map_err(|e| CoreError::other(e.to_string()))?,
+                crate::native_persist::bft_address(&state_validators)
+                    .map_err(|e| CoreError::other(e.to_string()))?,
             );
             for validator in &state_validators {
                 whitelist.insert(neo_primitives::UInt160::from_script(
-                    &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(validator.as_bytes()),
+                    &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+                        validator.as_bytes(),
+                    ),
                 ));
             }
         }
         if !whitelist.contains(&payload.sender) {
-            return Err(CoreError::other("sender is not in the extensible witness whitelist"));
+            return Err(CoreError::other(
+                "sender is not in the extensible witness whitelist",
+            ));
         }
 
         // C# `this.VerifyWitnesses(settings, snapshot, 0_06000000L)`.
@@ -543,7 +566,9 @@ impl BlockchainService {
             ) {
                 Ok(fee) => remaining_gas -= fee,
                 Err(error) => {
-                    return Err(CoreError::other(format!("witness verification failed: {error}")));
+                    return Err(CoreError::other(format!(
+                        "witness verification failed: {error}"
+                    )));
                 }
             }
         }
@@ -983,7 +1008,10 @@ mod tests {
             .await
             .expect_err("block above the effective protocol transaction cap is rejected");
 
-        assert!(error.to_string().contains("exceeds the transaction limit"), "{error}");
+        assert!(
+            error.to_string().contains("exceeds the transaction limit"),
+            "{error}"
+        );
         assert!(error.to_string().contains("maximum 1"), "{error}");
     }
 
@@ -1031,7 +1059,9 @@ mod tests {
 
         let settings = neo_config::ProtocolSettings::default();
         let member = &settings.standby_committee[1];
-        let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&member.to_bytes());
+        let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+            &member.to_bytes(),
+        );
         let account = neo_primitives::UInt160::from_script(&script);
         let mut key = vec![20u8]; // shared NEP-17 Prefix_Account
         key.extend_from_slice(&account.to_bytes());
@@ -1255,7 +1285,10 @@ mod tests {
         let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
         service.initialize().await;
 
-        let verification = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key);
+        let verification =
+            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+                &public_key,
+            );
         let sender = neo_primitives::UInt160::from_script(&verification);
 
         let mut payload = ExtensiblePayload::new();

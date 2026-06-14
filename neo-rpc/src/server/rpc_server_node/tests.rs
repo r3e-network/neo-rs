@@ -199,12 +199,9 @@ fn persist_transaction_record(store: &mut StoreCache, tx: &Transaction, block_in
 
     // `Prefix_Transaction` value: the C# `TransactionState` interoperable
     // stack item serialized with `BinarySerializer`, matching the reader.
-    let record = neo_native_contracts::LedgerContract::new().serialize_persisted_transaction_state(
-        block_index,
-        VMState::NONE,
-        tx,
-    )
-    .expect("serialize TransactionState record");
+    let record = neo_native_contracts::LedgerContract::new()
+        .serialize_persisted_transaction_state(block_index, VMState::NONE, tx)
+        .expect("serialize TransactionState record");
 
     let mut key_bytes = Vec::with_capacity(1 + 32);
     key_bytes.push(PREFIX_TRANSACTION);

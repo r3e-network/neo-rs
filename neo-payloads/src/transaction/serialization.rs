@@ -139,7 +139,11 @@ impl Serializable for Transaction {
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let mut tx = Self::deserialize_unsigned(reader)?;
 
-        tx.witnesses = SerializeHelper::deserialize_exact_array(reader, tx.signers.len(), "Witness count mismatch")?;
+        tx.witnesses = SerializeHelper::deserialize_exact_array(
+            reader,
+            tx.signers.len(),
+            "Witness count mismatch",
+        )?;
 
         tx.invalidate_size();
         Ok(tx)

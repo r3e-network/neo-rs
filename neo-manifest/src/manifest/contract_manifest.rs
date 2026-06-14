@@ -196,7 +196,9 @@ impl ContractManifest {
                 ));
             }
             if !seen_standards.insert(standard) {
-                return Err(CoreError::invalid_data("Supported standards must be unique"));
+                return Err(CoreError::invalid_data(
+                    "Supported standards must be unique",
+                ));
             }
         }
 
@@ -244,7 +246,9 @@ impl ContractManifest {
                 seen_trusts.push(trust.clone());
                 if let ContractPermissionDescriptor::Group(pub_key) = trust {
                     if !pub_key.is_valid() {
-                        return Err(CoreError::invalid_data("Invalid group public key in trusts"));
+                        return Err(CoreError::invalid_data(
+                            "Invalid group public key in trusts",
+                        ));
                     }
                 }
             }
@@ -549,7 +553,10 @@ impl ContractManifest {
     }
 
     /// Populates the manifest from the VM stack-value shape used by native interop.
-    pub fn from_stack_value(&mut self, stack_value: StackValue) -> std::result::Result<(), CoreError> {
+    pub fn from_stack_value(
+        &mut self,
+        stack_value: StackValue,
+    ) -> std::result::Result<(), CoreError> {
         let StackValue::Struct(items) = stack_value else {
             return Err(CoreError::invalid_format(
                 "ContractManifest expects Struct stack value",

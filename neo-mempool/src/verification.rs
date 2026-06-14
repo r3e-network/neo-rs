@@ -205,7 +205,8 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
     for (hash, witness) in hashes.iter().zip(witnesses.iter()) {
         let verification = witness.verification_script();
         let invocation = witness.invocation_script();
-        if neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(verification) {
+        if neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(verification)
+        {
             let Some(signature) = single_signature_invocation(invocation) else {
                 continue; // not the fast-path shape: verified state-dependently
             };
@@ -213,14 +214,22 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
                 return VerifyResult::Invalid;
             }
             let pubkey = &verification[2..35];
-            match neo_crypto::ecc::EcdsaVerify::verify_signature_secp256r1(pubkey, &message, signature) {
+            match neo_crypto::ecc::EcdsaVerify::verify_signature_secp256r1(
+                pubkey, &message, signature,
+            ) {
                 Ok(true) => {}
                 Ok(false) => return VerifyResult::InvalidSignature,
                 Err(_) => return VerifyResult::Invalid,
             }
-        } else if let Some((m, points)) = neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(verification)
+        } else if let Some((m, points)) =
+            neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(
+                verification,
+            )
         {
-            let Some(signatures) = neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(invocation, m)
+            let Some(signatures) =
+                neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(
+                    invocation, m,
+                )
             else {
                 continue;
             };
@@ -352,13 +361,18 @@ pub fn verify_state_dependent(
     for (hash, witness) in hashes.iter().zip(witnesses.iter()) {
         let verification = witness.verification_script();
         let invocation = witness.invocation_script();
-        let is_single = neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(verification)
-            && single_signature_invocation(invocation).is_some();
-        let multi =
-            neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(verification).and_then(|(m, points)| {
-                neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(invocation, m)
-                    .map(|_| (m, points.len()))
-            });
+        let is_single = neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(
+            verification,
+        ) && single_signature_invocation(invocation).is_some();
+        let multi = neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(
+            verification,
+        )
+        .and_then(|(m, points)| {
+            neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(
+                invocation, m,
+            )
+            .map(|_| (m, points.len()))
+        });
         if is_single {
             // `Helper::signature_contract_cost` returns C# OpCodePrices
             // execution units (PUSHDATA1×2 + SYSCALL + CheckSigPrice);
@@ -495,6 +509,10 @@ fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> Option<UInt160> {
         return None;
     }
     let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-    let script = neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(m, pubkeys).ok()?;
+    let script =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            m, pubkeys,
+        )
+        .ok()?;
     Some(UInt160::from_script(&script))
 }

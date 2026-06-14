@@ -281,10 +281,11 @@ impl RecoveryMessage {
     ) -> ConsensusResult<Self> {
         let mut reader = MemoryReader::new(data);
 
-        let change_view_messages =
-            SerializeHelper::deserialize_array::<ChangeViewPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
-                |_| crate::ConsensusError::invalid_proposal("RecoveryMessage change views"),
-            )?;
+        let change_view_messages = SerializeHelper::deserialize_array::<ChangeViewPayloadCompact>(
+            &mut reader,
+            u8::MAX as usize,
+        )
+        .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage change views"))?;
 
         let has_prepare_request = reader
             .read_bool()
@@ -311,13 +312,16 @@ impl RecoveryMessage {
             }
         };
 
-        let preparation_messages =
-            SerializeHelper::deserialize_array::<PreparationPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
-                |_| crate::ConsensusError::invalid_proposal("RecoveryMessage preparations"),
-            )?;
-        let commit_messages =
-            SerializeHelper::deserialize_array::<CommitPayloadCompact>(&mut reader, u8::MAX as usize)
-                .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage commits"))?;
+        let preparation_messages = SerializeHelper::deserialize_array::<PreparationPayloadCompact>(
+            &mut reader,
+            u8::MAX as usize,
+        )
+        .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage preparations"))?;
+        let commit_messages = SerializeHelper::deserialize_array::<CommitPayloadCompact>(
+            &mut reader,
+            u8::MAX as usize,
+        )
+        .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage commits"))?;
 
         Ok(Self {
             block_index,

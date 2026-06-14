@@ -369,12 +369,8 @@ async fn first_message_must_be_version() {
     let _node_version = recv_frame(&mut fake).await.expect("node version");
     // C# OnMessage throws ProtocolViolationException for any
     // pre-version command.
-    let ping = Message::create(
-        MessageCommand::Ping,
-        Some(&PingPayload::create(0)),
-        false,
-    )
-    .expect("encode ping");
+    let ping = Message::create(MessageCommand::Ping, Some(&PingPayload::create(0)), false)
+        .expect("encode ping");
     fake.send(ping).await.expect("send ping");
 
     expect_closed(&mut fake).await;

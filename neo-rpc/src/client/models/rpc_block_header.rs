@@ -28,7 +28,8 @@ impl RpcBlockHeader {
         let version = json
             .get("version")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))?
+            as u32;
 
         let previous_hash = json
             .get("previousblockhash")
@@ -45,7 +46,8 @@ impl RpcBlockHeader {
         let timestamp = json
             .get("time")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'time' field"))? as u64;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'time' field"))?
+            as u64;
 
         let nonce_str = json
             .get("nonce")
@@ -57,12 +59,14 @@ impl RpcBlockHeader {
         let index = json
             .get("index")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'index' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'index' field"))?
+            as u32;
 
         let primary_index = json
             .get("primary")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'primary' field"))? as u8;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'primary' field"))?
+            as u8;
 
         let next_consensus_str = json
             .get("nextconsensus")
@@ -77,7 +81,9 @@ impl RpcBlockHeader {
             .ok_or_else(|| CoreError::other("Missing 'witnesses' array"))?;
         let mut parsed_witnesses = Vec::with_capacity(witnesses.len());
         for entry in witnesses.iter() {
-            let witness_token = entry.as_ref().ok_or_else(|| CoreError::other("Invalid witness entry: null value"))?;
+            let witness_token = entry
+                .as_ref()
+                .ok_or_else(|| CoreError::other("Invalid witness entry: null value"))?;
             let witness_obj = witness_token
                 .as_object()
                 .ok_or_else(|| CoreError::other("Invalid witness entry: expected object"))?;
@@ -99,7 +105,8 @@ impl RpcBlockHeader {
         let confirmations = json
             .get("confirmations")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or_else(|| CoreError::other("Missing or invalid 'confirmations' field"))? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'confirmations' field"))?
+            as u32;
 
         let next_block_hash = json
             .get("nextblockhash")

@@ -74,7 +74,9 @@ impl ApplicationEngine {
         if diag {
             tracing::warn!(target: "neo", block_index = block_idx, %hash, "TRACE: fetch_contract FAILED - not found anywhere");
         }
-        Err(CoreError::not_found(format!("Contract not found: {hash:?}")))
+        Err(CoreError::not_found(format!(
+            "Contract not found: {hash:?}"
+        )))
     }
 
     fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> CoreResult<bool> {
@@ -203,7 +205,9 @@ impl ApplicationEngine {
         };
         let previous_hash = previous_hash_from_state
             .or_else(|| UInt160::from_bytes(&previous_context.script_hash()).ok())
-            .ok_or_else(|| CoreError::invalid_operation("Invalid script hash in execution context"))?;
+            .ok_or_else(|| {
+                CoreError::invalid_operation("Invalid script hash in execution context")
+            })?;
 
         if method.safe {
             flags.remove(CallFlags::WRITE_STATES | CallFlags::ALLOW_NOTIFY);

@@ -284,7 +284,9 @@ fn parse_gas_value(value: Value) -> CoreResult<i64> {
         Value::Number(number) => parse_gas_number(&number),
         Value::String(text) => parse_gas_string(&text),
         Value::Null => Err(neo_error::CoreError::other("gas value cannot be null")),
-        _ => Err(neo_error::CoreError::other("gas value must be a number or string")),
+        _ => Err(neo_error::CoreError::other(
+            "gas value must be a number or string",
+        )),
     }
 }
 
@@ -293,8 +295,8 @@ fn parse_gas_number(number: &serde_json::Number) -> CoreResult<i64> {
         return apply_gas_threshold(int_value);
     }
     if let Some(uint_value) = number.as_u64() {
-        let int_value =
-            i64::try_from(uint_value).map_err(|_| neo_error::CoreError::other("gas value exceeds i64"))?;
+        let int_value = i64::try_from(uint_value)
+            .map_err(|_| neo_error::CoreError::other("gas value exceeds i64"))?;
         return apply_gas_threshold(int_value);
     }
     let float_value = number

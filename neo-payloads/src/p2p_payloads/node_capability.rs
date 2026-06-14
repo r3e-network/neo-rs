@@ -226,4 +226,3 @@ impl Serializable for NodeCapability {
         Ok(capability)
     }
 }
-

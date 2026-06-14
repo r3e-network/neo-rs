@@ -40,10 +40,11 @@ mod integration_tests {
 
         impl Serializable for MockWitness {
             fn size(&self) -> usize {
-                neo_io::serializable::helper::SerializeHelper::get_var_size(self.invocation_script.len() as u64)
-                    + self.invocation_script.len()
+                neo_io::serializable::helper::SerializeHelper::get_var_size(
+                    self.invocation_script.len() as u64,
+                ) + self.invocation_script.len()
                     + neo_io::serializable::helper::SerializeHelper::get_var_size(
-                        self.verification_script.len() as u64
+                        self.verification_script.len() as u64,
                     )
                     + self.verification_script.len()
             }
@@ -70,9 +71,13 @@ mod integration_tests {
                     + 8
                     + 8
                     + 4
-                    + neo_io::serializable::helper::SerializeHelper::get_var_size(self.script.len() as u64)
+                    + neo_io::serializable::helper::SerializeHelper::get_var_size(
+                        self.script.len() as u64
+                    )
                     + self.script.len()
-                    + neo_io::serializable::helper::SerializeHelper::get_var_size(self.witnesses.len() as u64)
+                    + neo_io::serializable::helper::SerializeHelper::get_var_size(
+                        self.witnesses.len() as u64,
+                    )
                     + self.witnesses.iter().map(|w| w.size()).sum::<usize>()
             }
 

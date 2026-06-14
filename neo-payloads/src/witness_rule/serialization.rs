@@ -58,9 +58,10 @@ impl WitnessCondition {
         max_depth: usize,
         error_msg: &'static str,
     ) -> IoResult<Vec<WitnessCondition>> {
-        let conditions = SerializeHelper::deserialize_array_with(reader, Self::MAX_SUBITEMS, |reader| {
-            Self::deserialize_with_depth(reader, max_depth - 1)
-        })?;
+        let conditions =
+            SerializeHelper::deserialize_array_with(reader, Self::MAX_SUBITEMS, |reader| {
+                Self::deserialize_with_depth(reader, max_depth - 1)
+            })?;
         if conditions.is_empty() {
             return Err(IoError::invalid_data(error_msg));
         }
