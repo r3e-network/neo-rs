@@ -1,0 +1,73 @@
+[package]
+name = "neo-hsm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Cloud-HSM-backed validator key management for Neo N3 consensus (PKCS#11, Azure Key Vault, GCP Cloud KMS)"
+
+[features]
+# pkcs11 (default): generic PKCS#11 signer covering AWS CloudHSM, Azure Cloud HSM,
+# GCP via libkmsp11, and any generic HSM (SoftHSM, Luna, nCipher).
+default = ["pkcs11"]
+pkcs11 = ["dep:cryptoki"]
+
+# azure: native REST signer for Azure Managed HSM / Key Vault Premium.
+# Not included by default; requires the azure_* SDK crates which are heavyweight.
+# The module compiles to a stub returning a clear "not wired" error if the
+# REST call cannot be fully implemented cleanly.
+azure = ["dep:reqwest", "dep:base64", "dep:serde_json"]
+
+# gcp: native Cloud KMS AsymmetricSign signer (ADC / Workload Identity).
+# Not included by default. Stub compiles but returns "not wired" error.
+gcp = []
+
+[dependencies]
+# Internal workspace crates
+neo-primitives = { workspace = true }
+neo-crypto     = { workspace = true }
+neo-consensus  = { workspace = true }
+neo-error      = { workspace = true }
+
+# PKCS#11 v2.40 wrapper (feature-gated; all three clouds via their .so)
+cryptoki = { version = "0.12", optional = true }
+
+# DER signature decoding for GCP (which returns X9.62/ASN.1 r||s) and
+# signature normalization. Re-uses the workspace p256 = 0.13.
+# p256 is already a transitive dep via neo-crypto but we need it directly
+# for Signature::from_der and Signature::from_slice.
+p256 = { version = "0.13", features = ["ecdsa"] }
+
+# HTTP client for azure native feature
+reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }
+
+# base64url for Azure Key Vault REST request/response
+base64 = { version = "0.22", optional = true }
+
+# JSON for Azure Key Vault REST bodies
+serde_json = { workspace = true, optional = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Interior mutability + lock-free handles
+parking_lot = { workspace = true }
+
+# Observability
+tracing = { workspace = true }
+
+# Zero-on-drop for PIN material
+zeroize = { workspace = true }
+
+# Hex encoding for tracing/error messages
+hex = { workspace = true }
+
+[lints]
+workspace = true

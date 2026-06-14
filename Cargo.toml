@@ -81,6 +81,10 @@ members = [
     #   DBFTPlugin      → neo-consensus
     #   RpcServer       → neo-rpc/src/server
 
+    # HSM (Hardware Security Module) support
+    # Optional feature-gated integration via neo-node (`--features hsm`)
+    "neo-hsm",
+
     # TEE (Trusted Execution Environment) support
     # Optional feature-gated integration via neo-node (`--features tee`)
     "neo-tee",
@@ -201,6 +205,7 @@ neo-manifest = { path = "neo-manifest", version = "0.7.2" }
 neo-payloads = { path = "neo-payloads", version = "0.7.2" }
 neo-network = { path = "neo-network", version = "0.7.2" }
 # Infrastructure layer
+neo-hsm = { path = "neo-hsm", version = "0.7.2" }
 neo-tee = { path = "neo-tee", version = "0.7.2" }
 
 # Actor runtime
