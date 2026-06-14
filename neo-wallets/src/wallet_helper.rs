@@ -1,14 +1,3 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// wallet_helper.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
 //! Address / script-hash conversion helpers used by the wallet layer.
 //!
 //! The full wallet `Helper` (which includes the network-fee calculator,

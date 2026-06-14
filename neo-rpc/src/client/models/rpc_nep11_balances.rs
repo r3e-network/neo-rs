@@ -1,14 +1,3 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// rpc_nep11_balances.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
 use super::super::utility::{
     NepBalanceFieldRefs, balance_list_to_json, insert_nep_balance_fields, object_array,
     parse_balance_list, parse_nep_balance_fields, parse_object_array_lossy, required_string,

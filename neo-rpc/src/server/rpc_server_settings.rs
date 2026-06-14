@@ -1,5 +1,3 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
 // Rust translation of Neo.Plugins.RpcServer.RpcServerSettings and
 // RpcServersSettings. Provides JSON configuration deserialisation for the RPC
 // server plugin.

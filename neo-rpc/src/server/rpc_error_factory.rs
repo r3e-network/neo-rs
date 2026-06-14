@@ -1,5 +1,3 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
 // Rust port of Neo.Plugins.RpcServer.RpcErrorFactory providing helper
 // constructors for specialised `RpcError` instances.
 

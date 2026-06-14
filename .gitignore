@@ -15,3 +15,11 @@ openspec/changes/2026-06-03-kill-neo-core/design.md
 # Local C# Neo reference checkouts (parity audits only — never committed)
 neo_csharp/
 neo_csharp_vm/
+
+# AI assistant tooling artifacts (never part of the project)
+.agents/
+.claude/
+.cursor/
+.aider*
+.opencode/
+CLAUDE.local.md

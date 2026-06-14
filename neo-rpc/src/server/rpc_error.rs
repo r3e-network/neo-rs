@@ -1,5 +1,3 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
 // This module mirrors Neo.Plugins.RpcServer.RpcError from the C# codebase while
 // following idiomatic Rust patterns. It provides strongly-typed error instances
 // that can be serialised to JSON responses for the RPC subsystem.
