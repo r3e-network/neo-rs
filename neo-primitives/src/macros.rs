@@ -96,18 +96,6 @@ macro_rules! uint_type {
                 Self::from_bytes(value)
             }
 
-            #[deprecated(since = "0.7.1", note = "Use try_from_span() or from_bytes() instead")]
-            /// Parses from a byte span, returning zero and logging on failure.
-            pub fn from_span(value: &[u8]) -> Self {
-                match Self::from_bytes(value) {
-                    Ok(result) => result,
-                    Err(e) => {
-                        tracing::error!("Invalid {} input: {}", stringify!($name), e);
-                        Self::zero()
-                    }
-                }
-            }
-
             #[inline]
             #[must_use]
             /// Returns the little-endian fixed-width byte array.

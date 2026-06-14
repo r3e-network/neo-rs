@@ -235,18 +235,6 @@ impl ECPoint {
         Self::from_bytes_with_curve(curve, data)
     }
 
-    /// Creates an `ECPoint` from bytes, inferring the curve from data length.
-    ///
-    /// # Deprecated
-    /// Use `decode_compressed_with_curve` for explicit curve specification.
-    #[deprecated(
-        since = "0.7.1",
-        note = "Use decode_compressed_with_curve() with explicit curve to avoid curve confusion"
-    )]
-    pub fn decode_compressed(data: &[u8]) -> CryptoResult<Self> {
-        Self::from_bytes(data)
-    }
-
     /// Decodes a secp256r1 (P-256) point (compressed or uncompressed).
     pub fn decode_secp256r1(data: &[u8]) -> CryptoResult<Self> {
         Self::from_bytes_with_curve(ECCurve::Secp256r1, data)

@@ -18,18 +18,10 @@ name = "neo-node"
 path = "src/main.rs"
 
 [features]
-# Default: build the runnable node daemon (CLI, config, startup, services,
-# P2P, RPC server, and dBFT consensus wiring). A lightweight stub is still
-# available for dependency-only checks via `--no-default-features`.
-default = ["wip"]
-# Back-compat feature name retained for historical invocations.
-wip = ["dep:neo-config", "dep:neo-blockchain", "dep:neo-storage", "neo-storage/rocksdb", "dep:neo-system", "dep:neo-primitives", "dep:neo-mempool", "dep:neo-native-contracts", "dep:neo-network", "dep:neo-p2p", "dep:neo-consensus", "dep:neo-crypto", "dep:neo-payloads", "dep:neo-execution", "dep:neo-vm", "dep:hex", "neo-rpc/server"]
-# Back-compat alias: `full` was the previous feature name; it now means
-# the same thing as `wip` so historical build invocations keep working.
-full = ["wip"]
-# Enable TEE (Trusted Execution Environment) support (requires `wip`)
-tee = ["neo-tee"]
-# Enable TEE with SGX hardware (requires `tee`)
+default = []
+# Optional TEE (Trusted Execution Environment) support.
+tee = ["dep:neo-tee"]
+# Enable TEE with SGX hardware (requires `tee`).
 tee-sgx = ["tee", "neo-tee/sgx-hw"]
 
 [dependencies]
@@ -73,32 +65,29 @@ url = { workspace = true }
 num_cpus = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
 
-# The full implementation depends on the node workspace crates. These remain
-# optional so `--no-default-features` can build the tiny stub when needed.
-# neo-tokens-tracker was merged into neo-rpc in the
-# 2026-06-13-comprehensive-refactoring change (Phase E3); the
-# tokens_tracker module is now at neo-rpc/src/plugins/tokens_tracker/.
-neo-oracle-service = { workspace = true, optional = true }
-neo-consensus = { workspace = true, optional = true }
-neo-p2p = { workspace = true, optional = true }
-neo-crypto = { workspace = true, optional = true }
-neo-rpc = { workspace = true, optional = true }
-neo-config = { workspace = true, optional = true }
-neo-execution = { workspace = true, optional = true }
-neo-io = { workspace = true, optional = true }
-neo-native-contracts = { workspace = true, optional = true }
-neo-network = { workspace = true, optional = true }
-neo-payloads = { workspace = true, optional = true }
-neo-primitives = { workspace = true, optional = true }
-neo-state-service = { workspace = true, optional = true }
-neo-storage = { workspace = true, optional = true }
-neo-system = { workspace = true, optional = true }
-neo-wallets = { workspace = true, optional = true }
-neo-blockchain = { workspace = true, optional = true }
-neo-manifest = { workspace = true, optional = true }
-neo-vm = { workspace = true, optional = true }
-hex = { workspace = true, optional = true }
-neo-mempool = { workspace = true, optional = true }
+# The node workspace crates. (neo-tokens-tracker was merged into neo-rpc; its
+# tokens_tracker module is now at neo-rpc/src/plugins/tokens_tracker/.)
+neo-oracle-service = { workspace = true }
+neo-consensus = { workspace = true }
+neo-p2p = { workspace = true }
+neo-crypto = { workspace = true }
+neo-rpc = { workspace = true, features = ["server"] }
+neo-config = { workspace = true }
+neo-execution = { workspace = true }
+neo-io = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-network = { workspace = true }
+neo-payloads = { workspace = true }
+neo-primitives = { workspace = true }
+neo-state-service = { workspace = true }
+neo-storage = { workspace = true, features = ["rocksdb"] }
+neo-system = { workspace = true }
+neo-wallets = { workspace = true }
+neo-blockchain = { workspace = true }
+neo-manifest = { workspace = true }
+neo-vm = { workspace = true }
+hex = { workspace = true }
+neo-mempool = { workspace = true }
 
 [dev-dependencies]
 neo-io = { workspace = true }

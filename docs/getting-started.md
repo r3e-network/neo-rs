@@ -45,17 +45,9 @@ cd neo-rs
 cargo build --release -p neo-node
 ```
 
-The daemon is built by `neo-node`'s default features. `--features wip` is a
-back-compat alias for the same default feature set, so both of these are
-equivalent:
-
-```bash
-cargo build --release -p neo-node
-cargo build --release -p neo-node --features wip
-```
-
-`--no-default-features` builds only a tiny dependency-check stub that exits
-immediately; do not use it to run a node.
+This builds the full node — RocksDB storage and the RPC server are included by
+default. The only optional feature is `tee` (Trusted Execution Environment
+support), enabled with `--features tee`.
 
 The resulting binary is at `target/release/neo-node`.
 
