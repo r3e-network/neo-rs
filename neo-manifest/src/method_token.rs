@@ -9,7 +9,7 @@
 //! on-wire encoding is a pure data concern.
 
 use neo_error::{CoreError, CoreResult};
-use neo_io::serializable::helper::get_var_size_str;
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{CallFlags, UInt160};
 use serde::{Deserialize, Serialize};
@@ -115,7 +115,7 @@ impl MethodToken {
 impl Serializable for MethodToken {
     fn size(&self) -> usize {
         UInt160::LENGTH
-            + get_var_size_str(&self.method)
+            + SerializeHelper::get_var_size_str(&self.method)
             + 2 // ParametersCount (u16)
             + 1 // HasReturnValue (bool)
             + 1 // CallFlags (u8)

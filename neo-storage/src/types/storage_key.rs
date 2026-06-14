@@ -1,4 +1,4 @@
-use crate::hash_utils::{default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32};
+use crate::hash_utils::XxHash3;
 use neo_primitives::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -197,9 +197,9 @@ impl StorageKey {
     /// Returns the hash code using the same algorithm as the C# implementation.
     #[must_use]
     pub fn hash_code(&self) -> i32 {
-        let seed = default_xx_hash3_seed();
-        let suffix_hash = xx_hash3_32(&self.key, seed);
-        hash_code_combine_i32(self.id, suffix_hash)
+        let seed = XxHash3::default_xx_hash3_seed();
+        let suffix_hash = XxHash3::xx_hash3_32(&self.key, seed);
+        XxHash3::hash_code_combine_i32(self.id, suffix_hash)
     }
 
     /// Builds the full key bytes.

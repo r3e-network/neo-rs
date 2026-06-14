@@ -46,6 +46,6 @@ impl MemoryReaderExtensions for MemoryReader<'_> {
     }
 
     fn read_serializable_array<T: Serializable>(&mut self, max: usize) -> IoResult<Vec<T>> {
-        helper::deserialize_array::<T>(self, max)
+        helper::SerializeHelper::deserialize_array::<T>(self, max)
     }
 }

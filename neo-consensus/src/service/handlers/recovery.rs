@@ -1,5 +1,5 @@
 use super::super::ConsensusService;
-use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
+use super::super::helpers::InvocationScript;
 use crate::context::ConsensusState;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
@@ -136,7 +136,8 @@ impl ConsensusService {
                 if cv.validator_index as usize >= self.context.validator_count() {
                     continue;
                 }
-                let Some(signature) = signature_from_invocation_script(&cv.invocation_script)
+                let Some(signature) =
+                    InvocationScript::signature_from_invocation_script(&cv.invocation_script)
                 else {
                     continue;
                 };
@@ -176,7 +177,9 @@ impl ConsensusService {
                         .find(|p| p.validator_index == primary_index)
                     {
                         if let Some(signature) =
-                            signature_from_invocation_script(&primary_prep.invocation_script)
+                            InvocationScript::signature_from_invocation_script(
+                                &primary_prep.invocation_script,
+                            )
                         {
                             let recovered = ConsensusPayload {
                                 network: self.network,
@@ -210,7 +213,8 @@ impl ConsensusService {
                     if prep.validator_index == primary_index {
                         continue;
                     }
-                    let Some(signature) = signature_from_invocation_script(&prep.invocation_script)
+                    let Some(signature) =
+                        InvocationScript::signature_from_invocation_script(&prep.invocation_script)
                     else {
                         continue;
                     };
@@ -240,7 +244,8 @@ impl ConsensusService {
                 if commit.validator_index as usize >= self.context.validator_count() {
                     continue;
                 }
-                let Some(signature) = signature_from_invocation_script(&commit.invocation_script)
+                let Some(signature) =
+                    InvocationScript::signature_from_invocation_script(&commit.invocation_script)
                 else {
                     continue;
                 };
@@ -298,7 +303,8 @@ impl ConsensusService {
                 let payload =
                     self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
                 let commit_witness = payload.witness.clone();
-                let commit_invocation = invocation_script_from_signature(&commit_witness);
+                let commit_invocation =
+                    InvocationScript::invocation_script_from_signature(&commit_witness);
                 self.broadcast(payload)?;
                 if !commit_witness.is_empty() {
                     self.context

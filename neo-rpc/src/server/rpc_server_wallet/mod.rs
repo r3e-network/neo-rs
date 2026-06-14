@@ -22,7 +22,7 @@ use neo_storage::persistence::DataCache;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use neo_wallets::AssetDescriptor;
-use neo_wallets::wallet_helper as address_helper;
+use neo_wallets::wallet_helper::WalletAddress as address_helper;
 use neo_wallets::{
     KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet, WalletAccount, WalletError,
     WalletResult,
@@ -147,7 +147,7 @@ impl RpcServerWallet {
             // C# GetWalletUnclaimedGas sums NativeContract.NEO.UnclaimedGas
             // per account; the engine probe invokes the same native
             // `unclaimedGas(account, end)` method.
-            let gas = crate::server::native_queries::neo_unclaimed_gas(
+            let gas = crate::server::native_queries::NativeQueries::neo_unclaimed_gas(
                 server,
                 Arc::clone(&snapshot),
                 &neo_hash,

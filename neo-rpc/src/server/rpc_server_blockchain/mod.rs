@@ -402,7 +402,7 @@ impl RpcServerBlockchain {
             .current_index(store.data_cache())
             .map_err(internal_error)?;
 
-        let registry = crate::server::native_queries::native_registry();
+        let registry = crate::server::native_queries::NativeQueries::native_registry();
         let mut contract_states = Vec::new();
 
         for contract in registry.contracts() {
@@ -433,7 +433,7 @@ impl RpcServerBlockchain {
         let store = system.store_cache();
         let snapshot = std::sync::Arc::new(store.data_cache().clone());
         let neo_hash = neo_native_contracts::NeoToken::script_hash();
-        let validators = native_queries::neo_next_block_validators(
+        let validators = native_queries::NativeQueries::neo_next_block_validators(
             server,
             std::sync::Arc::clone(&snapshot),
             &neo_hash,
@@ -441,7 +441,7 @@ impl RpcServerBlockchain {
         .map_err(internal_error)?;
         let mut result = Vec::with_capacity(validators.len());
         for point in validators {
-            let votes = native_queries::neo_candidate_vote(
+            let votes = native_queries::NativeQueries::neo_candidate_vote(
                 server,
                 std::sync::Arc::clone(&snapshot),
                 &neo_hash,
@@ -466,13 +466,13 @@ impl RpcServerBlockchain {
         let snapshot = std::sync::Arc::new(store.data_cache().clone());
         let neo_hash = neo_native_contracts::NeoToken::script_hash();
         let candidates =
-            native_queries::neo_candidates(server, std::sync::Arc::clone(&snapshot), &neo_hash)
+            native_queries::NativeQueries::neo_candidates(server, std::sync::Arc::clone(&snapshot), &neo_hash)
                 .map_err(|_| {
                     RpcException::from(
                         RpcError::internal_server_error().with_data("Can't get candidates."),
                     )
                 })?;
-        let validators = native_queries::neo_next_block_validators(
+        let validators = native_queries::NativeQueries::neo_next_block_validators(
             server,
             std::sync::Arc::clone(&snapshot),
             &neo_hash,
@@ -497,7 +497,7 @@ impl RpcServerBlockchain {
             })?;
             let account =
                 neo_execution::Contract::create_signature_contract(ec_point).script_hash();
-            let blocked = native_queries::policy_is_blocked(
+            let blocked = native_queries::NativeQueries::policy_is_blocked(
                 server,
                 std::sync::Arc::clone(&snapshot),
                 &policy_hash,
@@ -536,7 +536,7 @@ impl RpcServerBlockchain {
         let snapshot = std::sync::Arc::new(store.data_cache().clone());
         let neo_hash = neo_native_contracts::NeoToken::script_hash();
         let committee =
-            native_queries::neo_committee(server, snapshot, &neo_hash).map_err(|err| {
+            native_queries::NativeQueries::neo_committee(server, snapshot, &neo_hash).map_err(|err| {
                 RpcException::from(
                     RpcError::internal_server_error()
                         .with_data(format!("committee not available: {err}")),
@@ -760,7 +760,7 @@ impl RpcServerBlockchain {
     }
 
     fn contract_name_to_hash(name: &str) -> Result<UInt160, RpcException> {
-        let registry = crate::server::native_queries::native_registry();
+        let registry = crate::server::native_queries::NativeQueries::native_registry();
         if let Some(contract) = registry.get_by_name(name) {
             return Ok(contract.hash());
         }

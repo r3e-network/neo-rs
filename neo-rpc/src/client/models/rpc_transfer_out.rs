@@ -2,7 +2,7 @@ use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_serialization::json::{JObject, JToken};
-use neo_wallets::wallet_helper as WalletHelper;
+use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use serde::{Deserialize, Serialize};
 
 /// Transfer output information matching C# `RpcTransferOut`

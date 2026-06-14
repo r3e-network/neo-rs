@@ -2,10 +2,10 @@ use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_io::serializable::Serializable;
-use neo_io::serializable::helper::get_var_size;
+use neo_io::serializable::helper::SerializeHelper;
 use neo_payloads::{Block, BlockHeader, Signer, Transaction};
 use neo_serialization::json::{JObject, JToken};
-use neo_wallets::wallet_helper as WalletHelper;
+use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 
 use super::attributes::attribute_from_json;
 use super::parsing::{
@@ -21,7 +21,7 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
 
     json.insert("hash".to_string(), JToken::String(block.hash().to_string()));
     let block_size = header.size()
-        + get_var_size(block.transactions.len() as u64)
+        + SerializeHelper::get_var_size(block.transactions.len() as u64)
         + block
             .transactions
             .iter()

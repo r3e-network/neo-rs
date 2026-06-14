@@ -52,7 +52,7 @@ pub(super) fn invoke_contract_verify(
         .get_method_ref("verify", parameters.len())
         .cloned()
         .ok_or_else(|| {
-            RpcException::from(rpc_error_factory::invalid_contract_verification_hash(
+            RpcException::from(RpcError::invalid_contract_verification_hash(
                 &contract.hash,
                 parameters.len() as i32,
             ))

@@ -3,6 +3,10 @@
 use neo_error::{CoreError, CoreResult};
 use std::net::IpAddr;
 
+/// SSRF protection and URL validation helpers for the Oracle service.
+pub struct Ssrf;
+
+impl Ssrf {
 /// Checks if a host is an internal/private host that should be blocked.
 pub(super) async fn is_internal_host(uri: &url::Url) -> Result<bool, std::io::Error> {
     let host = match uri.host_str() {
@@ -11,19 +15,19 @@ pub(super) async fn is_internal_host(uri: &url::Url) -> Result<bool, std::io::Er
     };
 
     // Check for common localhost names
-    if is_localhost_name(host) {
+    if Ssrf::is_localhost_name(host) {
         return Ok(true);
     }
 
     // Check if it's a raw IP address
     if let Ok(ip) = host.parse::<IpAddr>() {
-        return Ok(is_internal_ip(ip));
+        return Ok(Ssrf::is_internal_ip(ip));
     }
 
     // DNS lookup and check resolved IP
     let addr = tokio::net::lookup_host((host, 0)).await?.next();
     if let Some(addr) = addr {
-        if is_internal_ip(addr.ip()) {
+        if Ssrf::is_internal_ip(addr.ip()) {
             return Ok(true);
         }
     }
@@ -86,7 +90,7 @@ pub(crate) fn is_internal_ip(ip: IpAddr) -> bool {
             }
             // Check for IPv4-mapped addresses
             if let Some(ipv4) = ip.to_ipv4_mapped() {
-                return is_internal_ip(IpAddr::V4(ipv4));
+                return Ssrf::is_internal_ip(IpAddr::V4(ipv4));
             }
             false
         }
@@ -153,6 +157,7 @@ pub fn validate_url_for_ssrf(url: &str) -> CoreResult<()> {
 
     Ok(())
 }
+}
 
 #[cfg(test)]
 mod tests {
@@ -160,38 +165,38 @@ mod tests {
 
     #[test]
     fn test_is_internal_ip_v4() {
-        assert!(is_internal_ip("127.0.0.1".parse().unwrap()));
-        assert!(is_internal_ip("10.0.0.1".parse().unwrap()));
-        assert!(is_internal_ip("192.168.1.1".parse().unwrap()));
-        assert!(is_internal_ip("172.16.0.1".parse().unwrap()));
-        assert!(is_internal_ip("0.0.0.0".parse().unwrap()));
-        assert!(!is_internal_ip("8.8.8.8".parse().unwrap()));
-        assert!(!is_internal_ip("1.1.1.1".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("127.0.0.1".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("10.0.0.1".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("192.168.1.1".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("172.16.0.1".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("0.0.0.0".parse().unwrap()));
+        assert!(!Ssrf::is_internal_ip("8.8.8.8".parse().unwrap()));
+        assert!(!Ssrf::is_internal_ip("1.1.1.1".parse().unwrap()));
     }
 
     #[test]
     fn test_is_internal_ip_v6() {
-        assert!(is_internal_ip("::1".parse().unwrap()));
-        assert!(is_internal_ip("::".parse().unwrap()));
-        assert!(is_internal_ip("fc00::1".parse().unwrap()));
-        assert!(is_internal_ip("fe80::1".parse().unwrap()));
-        assert!(!is_internal_ip("2001:4860:4860::8888".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("::1".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("::".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("fc00::1".parse().unwrap()));
+        assert!(Ssrf::is_internal_ip("fe80::1".parse().unwrap()));
+        assert!(!Ssrf::is_internal_ip("2001:4860:4860::8888".parse().unwrap()));
     }
 
     #[test]
     fn test_is_localhost_name() {
-        assert!(is_localhost_name("localhost"));
-        assert!(is_localhost_name("LOCALHOST"));
-        assert!(is_localhost_name("localhost.localdomain"));
-        assert!(is_localhost_name("myhost.local"));
-        assert!(!is_localhost_name("example.com"));
+        assert!(Ssrf::is_localhost_name("localhost"));
+        assert!(Ssrf::is_localhost_name("LOCALHOST"));
+        assert!(Ssrf::is_localhost_name("localhost.localdomain"));
+        assert!(Ssrf::is_localhost_name("myhost.local"));
+        assert!(!Ssrf::is_localhost_name("example.com"));
     }
 
     #[test]
     fn test_validate_url_for_ssrf() {
-        assert!(validate_url_for_ssrf("https://example.com").is_ok());
-        assert!(validate_url_for_ssrf("http://example.com/path").is_ok());
-        assert!(validate_url_for_ssrf("ftp://example.com").is_err());
-        assert!(validate_url_for_ssrf("https://user:pass@example.com").is_err());
+        assert!(Ssrf::validate_url_for_ssrf("https://example.com").is_ok());
+        assert!(Ssrf::validate_url_for_ssrf("http://example.com/path").is_ok());
+        assert!(Ssrf::validate_url_for_ssrf("ftp://example.com").is_err());
+        assert!(Ssrf::validate_url_for_ssrf("https://user:pass@example.com").is_err());
     }
 }

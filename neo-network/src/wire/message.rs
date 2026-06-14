@@ -13,7 +13,7 @@
 
 use super::error::{WireError, WireResult};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_io::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, compress_lz4, decompress_lz4};
+use neo_io::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, Lz4};
 use neo_p2p::{MessageCommand, MessageFlags};
 use serde::{Deserialize, Serialize};
 
@@ -82,7 +82,7 @@ impl Message {
             && payload_raw.len() > COMPRESSION_MIN_SIZE
         {
             let compressed =
-                compress_lz4(&payload_raw).map_err(|e| WireError::Compression(e.to_string()))?;
+                Lz4::compress_lz4(&payload_raw).map_err(|e| WireError::Compression(e.to_string()))?;
             if compressed.len() < payload_raw.len().saturating_sub(COMPRESSION_THRESHOLD) {
                 (MessageFlags::COMPRESSED, compressed)
             } else {
@@ -103,7 +103,7 @@ impl Message {
     /// Returns the on-the-wire size (header + var-int length prefix + payload).
     pub fn wire_size(&self) -> usize {
         let payload_len = self.payload_compressed.len();
-        2 + neo_io::var_int::encoded_len(payload_len as u64) + payload_len
+        2 + neo_io::var_int::VarInt::encoded_len(payload_len as u64) + payload_len
     }
 
     /// Encodes the message into its on-the-wire byte sequence.
@@ -111,7 +111,7 @@ impl Message {
         let mut buf = Vec::with_capacity(self.wire_size());
         buf.push(self.flags.bits());
         buf.push(self.command.to_byte());
-        neo_io::var_int::write_var_bytes(&self.payload_compressed, &mut buf);
+        neo_io::var_int::VarInt::write_var_bytes(&self.payload_compressed, &mut buf);
         Ok(buf)
     }
 
@@ -127,7 +127,7 @@ impl Message {
             .map_err(|e| WireError::InvalidMessage(format!("invalid payload length: {e}")))?;
 
         let payload_raw = if flags.contains(MessageFlags::COMPRESSED) {
-            decompress_lz4(&payload_compressed, PAYLOAD_MAX_SIZE)
+            Lz4::decompress_lz4(&payload_compressed, PAYLOAD_MAX_SIZE)
                 .map_err(|e| WireError::Compression(e.to_string()))?
         } else {
             payload_compressed.clone()

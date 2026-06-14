@@ -191,7 +191,7 @@ impl ApplicationEngine {
         let native = self
             .native_registry
             .get(&contract_hash)
-            .or_else(|| crate::native_contract_provider::get_native_contract(&contract_hash))
+            .or_else(|| crate::native_contract_provider::NativeContractLookup::get_native_contract(&contract_hash))
             .ok_or_else(|| CoreError::not_found(contract_hash.to_string()))?;
 
         let block_height = self.current_block_index();
@@ -240,7 +240,7 @@ impl ApplicationEngine {
         if self
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, block_height)
-            && crate::native_contract_provider::get_whitelisted_fee_for_policy(
+            && crate::native_contract_provider::NativeContractLookup::get_whitelisted_fee_for_policy(
                 self.snapshot_cache.as_ref(),
                 &contract_hash,
                 method,

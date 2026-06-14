@@ -1,7 +1,7 @@
 use super::{InventoryType, inventory::Inventory, witness::Witness};
 use neo_error::CoreResult;
 use neo_io::macros::ValidateLength;
-use neo_io::serializable::helper::{get_var_size, get_var_size_bytes, get_var_size_str};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
@@ -191,12 +191,12 @@ impl crate::VerifiableExt for ExtensiblePayload {
 
 impl Serializable for ExtensiblePayload {
     fn size(&self) -> usize {
-        get_var_size_str(&self.category)
+        SerializeHelper::get_var_size_str(&self.category)
             + 4
             + 4
             + UInt160::LENGTH
-            + get_var_size_bytes(&self.data)
-            + get_var_size(1)
+            + SerializeHelper::get_var_size_bytes(&self.data)
+            + SerializeHelper::get_var_size(1)
             + self.witness.size()
     }
 

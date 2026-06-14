@@ -110,24 +110,29 @@ impl NodeCapability {
     }
 }
 
-pub fn node_capabilities_size(capabilities: &[NodeCapability]) -> usize {
-    helper::get_var_size_serializable_slice(capabilities)
-}
+/// Serialization helpers for collections of [`NodeCapability`].
+pub struct NodeCapabilities;
 
-pub fn serialize_node_capabilities(
-    capabilities: &[NodeCapability],
-    writer: &mut BinaryWriter,
-) -> IoResult<()> {
-    helper::serialize_array(capabilities, writer)
-}
+impl NodeCapabilities {
+    pub fn node_capabilities_size(capabilities: &[NodeCapability]) -> usize {
+        helper::SerializeHelper::get_var_size_serializable_slice(capabilities)
+    }
 
-pub fn deserialize_node_capabilities(
-    reader: &mut MemoryReader,
-    max: usize,
-) -> IoResult<Vec<NodeCapability>> {
-    let capabilities = helper::deserialize_array(reader, max)?;
-    ensure_unique_known_capabilities(&capabilities)?;
-    Ok(capabilities)
+    pub fn serialize_node_capabilities(
+        capabilities: &[NodeCapability],
+        writer: &mut BinaryWriter,
+    ) -> IoResult<()> {
+        helper::SerializeHelper::serialize_array(capabilities, writer)
+    }
+
+    pub fn deserialize_node_capabilities(
+        reader: &mut MemoryReader,
+        max: usize,
+    ) -> IoResult<Vec<NodeCapability>> {
+        let capabilities = helper::SerializeHelper::deserialize_array(reader, max)?;
+        ensure_unique_known_capabilities(&capabilities)?;
+        Ok(capabilities)
+    }
 }
 
 fn ensure_unique_known_capabilities(capabilities: &[NodeCapability]) -> IoResult<()> {
@@ -150,7 +155,7 @@ impl Serializable for NodeCapability {
             Self::TcpServer { .. } | Self::WsServer { .. } => 1 + 2,
             Self::DisableCompression | Self::ArchivalNode => 1 + 1,
             Self::FullNode { .. } => 1 + 4,
-            Self::Unknown { data, .. } => 1 + helper::get_var_size_bytes(data),
+            Self::Unknown { data, .. } => 1 + helper::SerializeHelper::get_var_size_bytes(data),
         }
     }
 

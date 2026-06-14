@@ -1,5 +1,5 @@
 use super::super::helpers::current_timestamp;
-use super::super::helpers::invocation_script_from_signature;
+use super::super::helpers::InvocationScript;
 use super::super::{ConsensusEvent, ConsensusService};
 use crate::messages::{ChangeViewMessage, ConsensusPayload, RecoveryRequestMessage};
 use crate::{ChangeViewReason, ConsensusMessageType, ConsensusResult};
@@ -81,7 +81,7 @@ impl ConsensusService {
         if !payload.witness.is_empty() {
             self.context.change_view_invocations.insert(
                 payload.validator_index,
-                invocation_script_from_signature(&payload.witness),
+                InvocationScript::invocation_script_from_signature(&payload.witness),
             );
         }
 
@@ -150,7 +150,7 @@ impl ConsensusService {
         if !payload.witness.is_empty() {
             self.context.change_view_invocations.insert(
                 self.my_index()?,
-                invocation_script_from_signature(&payload.witness),
+                InvocationScript::invocation_script_from_signature(&payload.witness),
             );
         }
         self.broadcast(payload)?;

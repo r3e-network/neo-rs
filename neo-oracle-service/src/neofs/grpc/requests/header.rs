@@ -1,7 +1,7 @@
 use super::super::super::json::build_neofs_object_payload;
 use super::super::super::proto::neofs_v2;
 use super::super::super::{NeoFsAuth, OracleNeoFsProtocol};
-use super::super::auth::{build_neofs_meta_header, build_neofs_request_verification_header};
+use super::super::auth::build_neofs_request_verification_header;
 use super::super::verify::{validate_neofs_response, verify_neofs_signature_bytes};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::OracleResponseCode;
@@ -46,7 +46,7 @@ impl OracleNeoFsProtocol {
         auth: &NeoFsAuth,
         oracle_key: &KeyPair,
     ) -> CoreResult<neofs_v2::object::Object> {
-        let meta = build_neofs_meta_header(auth)?;
+        let meta = auth.build_neofs_meta_header()?;
         let body = neofs_v2::object::head_request::Body {
             address: Some(address.clone()),
             main_only: false,

@@ -47,51 +47,56 @@ pub enum AddressDecodeError {
     },
 }
 
-/// Encodes data as Base58Check with a 4-byte double-SHA256 checksum.
-#[must_use]
-pub fn encode_check(data: &[u8]) -> String {
-    bs58::encode(data).with_check().into_string()
-}
+/// Base58Check helpers shared by primitive, crypto, and wallet APIs.
+pub struct Base58Check;
 
-/// Decodes Base58Check data and verifies the embedded checksum.
-pub fn decode_check(value: &str) -> Result<Vec<u8>, Base58CheckDecodeError> {
-    bs58::decode(value)
-        .with_check(None)
-        .into_vec()
-        .map_err(map_decode_error)
-}
-
-/// Encodes a script hash as a Neo address payload using the supplied version byte.
-#[must_use]
-pub fn encode_address_payload(version: u8, script_hash: &[u8]) -> String {
-    let mut payload = Vec::with_capacity(1 + script_hash.len());
-    payload.push(version);
-    payload.extend_from_slice(script_hash);
-    encode_check(&payload)
-}
-
-/// Decodes a Neo address and returns the script hash bytes.
-pub fn decode_address_payload(
-    address: &str,
-    expected_version: u8,
-) -> Result<Vec<u8>, AddressDecodeError> {
-    let payload = decode_check(address)?;
-    if payload.len() != ADDRESS_PAYLOAD_SIZE {
-        return Err(AddressDecodeError::InvalidLength {
-            expected: ADDRESS_PAYLOAD_SIZE,
-            actual: payload.len(),
-        });
+impl Base58Check {
+    /// Encodes data as Base58Check with a 4-byte double-SHA256 checksum.
+    #[must_use]
+    pub fn encode_check(data: &[u8]) -> String {
+        bs58::encode(data).with_check().into_string()
     }
 
-    let actual_version = payload[0];
-    if actual_version != expected_version {
-        return Err(AddressDecodeError::InvalidVersion {
-            expected: expected_version,
-            actual: actual_version,
-        });
+    /// Decodes Base58Check data and verifies the embedded checksum.
+    pub fn decode_check(value: &str) -> Result<Vec<u8>, Base58CheckDecodeError> {
+        bs58::decode(value)
+            .with_check(None)
+            .into_vec()
+            .map_err(map_decode_error)
     }
 
-    Ok(payload[1..].to_vec())
+    /// Encodes a script hash as a Neo address payload using the supplied version byte.
+    #[must_use]
+    pub fn encode_address_payload(version: u8, script_hash: &[u8]) -> String {
+        let mut payload = Vec::with_capacity(1 + script_hash.len());
+        payload.push(version);
+        payload.extend_from_slice(script_hash);
+        Self::encode_check(&payload)
+    }
+
+    /// Decodes a Neo address and returns the script hash bytes.
+    pub fn decode_address_payload(
+        address: &str,
+        expected_version: u8,
+    ) -> Result<Vec<u8>, AddressDecodeError> {
+        let payload = Self::decode_check(address)?;
+        if payload.len() != ADDRESS_PAYLOAD_SIZE {
+            return Err(AddressDecodeError::InvalidLength {
+                expected: ADDRESS_PAYLOAD_SIZE,
+                actual: payload.len(),
+            });
+        }
+
+        let actual_version = payload[0];
+        if actual_version != expected_version {
+            return Err(AddressDecodeError::InvalidVersion {
+                expected: expected_version,
+                actual: actual_version,
+            });
+        }
+
+        Ok(payload[1..].to_vec())
+    }
 }
 
 fn map_decode_error(error: bs58::decode::Error) -> Base58CheckDecodeError {

@@ -13,7 +13,7 @@ impl ApplicationEngine {
     ) -> JumpTable {
         let index = match persisting_block {
             Some(block) => block.header.index(),
-            None => crate::native_contract_provider::lookup_current_block_index(snapshot),
+            None => crate::native_contract_provider::NativeContractLookup::lookup_current_block_index(snapshot),
         };
         if protocol_settings.is_hardfork_enabled(Hardfork::HfGorgon, index) {
             JumpTable::default()
@@ -387,7 +387,7 @@ impl ApplicationEngine {
             return block.header.index();
         }
 
-        crate::native_contract_provider::lookup_current_block_index(self.snapshot_cache.as_ref())
+        crate::native_contract_provider::NativeContractLookup::lookup_current_block_index(self.snapshot_cache.as_ref())
     }
 
     /// Returns the timestamp of the block currently being persisted.
@@ -553,7 +553,7 @@ impl ApplicationEngine {
     }
 
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
-        let policy_hash = crate::native_contract_provider::lookup_policy_contract()
+        let policy_hash = crate::native_contract_provider::NativeContractLookup::lookup_policy_contract()
             .map(|c| c.hash())
             .unwrap_or(neo_primitives::UInt160::zero());
         self.native_registry.get(&policy_hash)

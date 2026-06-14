@@ -23,7 +23,7 @@ use crate::PreverifyCompleted;
 use crate::command::AddTransactionReply;
 use crate::fill_memory_pool::FillMemoryPool;
 use crate::import::Import;
-use crate::internal::{ImportDisposition, classify_import_block};
+use crate::internal::ImportDisposition;
 use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
 use crate::reverify::Reverify;
@@ -173,7 +173,7 @@ impl BlockchainService {
         for block in import.blocks {
             let index = block.index();
             let current_height = self.ledger.current_height();
-            match classify_import_block(current_height, index) {
+            match ImportDisposition::classify_import_block(current_height, index) {
                 ImportDisposition::AlreadySeen => continue,
                 ImportDisposition::FutureGap => {
                     warn!(
@@ -331,28 +331,34 @@ impl BlockchainService {
         // Stateless block-integrity pre-checks before persisting a peer-relayed
         // block (the structural half of C# `Block.Verify`): version, transaction
         // count, merkle root, and duplicate transactions.
-        if let Err(error) = crate::block_validation::validate_block_version(block.version()) {
+        if let Err(error) =
+            crate::block_validation::BlockValidator::validate_block_version(block.version())
+        {
             return Err(CoreError::other(format!("block {index} has an invalid version: {error}")));
         }
         let settings = self.system.settings();
-        if let Err(error) = crate::block_validation::validate_transaction_count_raw_with_limit(
-            block.transactions.len(),
-            settings.max_transactions_per_block as usize,
-        ) {
+        if let Err(error) =
+            crate::block_validation::BlockValidator::validate_transaction_count_raw_with_limit(
+                block.transactions.len(),
+                settings.max_transactions_per_block as usize,
+            )
+        {
             return Err(CoreError::other(format!(
                 "block {index} exceeds the transaction limit: {error}"
             )));
         }
         let tx_hashes: Vec<neo_primitives::UInt256> =
             block.transactions.iter().map(|tx| tx.hash()).collect();
-        if let Err(error) =
-            crate::block_validation::validate_merkle_root(block.header.merkle_root(), &tx_hashes)
-        {
+        if let Err(error) = crate::block_validation::BlockValidator::validate_merkle_root(
+            block.header.merkle_root(),
+            &tx_hashes,
+        ) {
             return Err(CoreError::other(format!(
                 "block {index} failed merkle-root validation: {error}"
             )));
         }
-        if let Err(error) = crate::block_validation::validate_no_duplicate_transactions(&tx_hashes)
+        if let Err(error) =
+            crate::block_validation::BlockValidator::validate_no_duplicate_transactions(&tx_hashes)
         {
             return Err(CoreError::other(format!("block {index} has duplicate transactions: {error}")));
         }
@@ -498,7 +504,7 @@ impl BlockchainService {
             );
             for validator in &validators {
                 whitelist.insert(neo_primitives::UInt160::from_script(
-                    &neo_vm::script_builder::redeem_script::signature_redeem_script(validator.as_bytes()),
+                    &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(validator.as_bytes()),
                 ));
             }
         }
@@ -511,7 +517,7 @@ impl BlockchainService {
             );
             for validator in &state_validators {
                 whitelist.insert(neo_primitives::UInt160::from_script(
-                    &neo_vm::script_builder::redeem_script::signature_redeem_script(validator.as_bytes()),
+                    &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(validator.as_bytes()),
                 ));
             }
         }
@@ -1025,7 +1031,7 @@ mod tests {
 
         let settings = neo_config::ProtocolSettings::default();
         let member = &settings.standby_committee[1];
-        let script = neo_vm::script_builder::redeem_script::signature_redeem_script(&member.to_bytes());
+        let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&member.to_bytes());
         let account = neo_primitives::UInt160::from_script(&script);
         let mut key = vec![20u8]; // shared NEP-17 Prefix_Account
         key.extend_from_slice(&account.to_bytes());
@@ -1123,7 +1129,7 @@ mod tests {
         sign_data.extend_from_slice(&network.to_le_bytes());
         sign_data.extend_from_slice(&header.hash().to_bytes());
         let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
-        let verification = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(1, &[point])
+        let verification = neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(1, &[point])
             .expect("multisig script");
         let invocation = |sig: &[u8]| {
             let mut script = vec![0x0C, 64]; // PUSHDATA1 64
@@ -1188,7 +1194,7 @@ mod tests {
         sign_data.extend_from_slice(&network.to_le_bytes());
         sign_data.extend_from_slice(&header.hash().to_bytes());
         let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
-        let verification = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(1, &[point])
+        let verification = neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(1, &[point])
             .expect("multisig script");
         let invocation = |sig: &[u8]| {
             let mut script = vec![0x0C, 64];
@@ -1249,7 +1255,7 @@ mod tests {
         let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
         service.initialize().await;
 
-        let verification = neo_vm::script_builder::redeem_script::signature_redeem_script(&public_key);
+        let verification = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key);
         let sender = neo_primitives::UInt160::from_script(&verification);
 
         let mut payload = ExtensiblePayload::new();
@@ -1318,7 +1324,7 @@ mod tests {
         sign_data.extend_from_slice(&network.to_le_bytes());
         sign_data.extend_from_slice(&header.hash().to_bytes());
         let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
-        let verification = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(1, &[point])
+        let verification = neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(1, &[point])
             .expect("multisig script");
         let invocation = |sig: &[u8]| {
             let mut script = vec![0x0C, 64];

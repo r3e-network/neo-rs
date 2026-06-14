@@ -1,6 +1,6 @@
 use super::ConsensusService;
 use crate::messages::ConsensusPayload;
-use crate::service::helpers::compute_next_consensus_address;
+use crate::service::helpers::ConsensusBlockFields;
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
 use neo_primitives::{UInt160, UInt256};
 use tracing::{debug, info};
@@ -30,7 +30,8 @@ impl ConsensusService {
         previous_block_timestamp: u64,
         version: u32,
     ) -> ConsensusResult<()> {
-        let next_consensus = compute_next_consensus_address(&self.context.validators);
+        let next_consensus =
+            ConsensusBlockFields::compute_next_consensus_address(&self.context.validators);
         self.start_with_block_context(
             block_index,
             timestamp,
@@ -78,7 +79,8 @@ impl ConsensusService {
         prev_hash: UInt256,
         version: u32,
     ) -> ConsensusResult<()> {
-        let next_consensus = compute_next_consensus_address(&self.context.validators);
+        let next_consensus =
+            ConsensusBlockFields::compute_next_consensus_address(&self.context.validators);
         self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version)
     }
 

@@ -1,4 +1,4 @@
-use super::super::super::auth::sign_neofs_sha512;
+use super::super::super::auth::NeoFsBearerSigner;
 use super::super::super::proto::neofs_v2;
 use neo_error::CoreResult;
 use neo_wallets::KeyPair;
@@ -24,7 +24,7 @@ fn neofs_sign_message_part(
     data: &[u8],
     key: &KeyPair,
 ) -> CoreResult<neofs_v2::refs::Signature> {
-    let signature = sign_neofs_sha512(data, key)?;
+    let signature = NeoFsBearerSigner::sign_neofs_sha512(data, key)?;
     Ok(neofs_v2::refs::Signature {
         key: key.compressed_public_key(),
         sign: signature,

@@ -217,9 +217,7 @@ pub use interop_service::InteropService;
 pub use interoperable::Interoperable;
 pub use jump_table::JumpTable;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
-pub use rpc_json::{
-    stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item,
-};
+pub use rpc_json::StackItemRpcJson;
 pub use script::Script;
 pub use slot::Slot;
 pub use stack_item::{InteropInterface, StackItem};

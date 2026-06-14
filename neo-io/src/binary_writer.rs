@@ -122,7 +122,7 @@ impl BinaryWriter {
     /// Values below 0xFD are stored as a single byte; larger values use a
     /// 2-, 4-, or 8-byte little-endian representation prefixed by 0xFD/0xFE/0xFF.
     pub fn write_var_int(&mut self, value: u64) -> IoResult<()> {
-        var_int::write_var_int(value, &mut self.buffer);
+        var_int::VarInt::write_var_int(value, &mut self.buffer);
         Ok(())
     }
 
@@ -134,7 +134,7 @@ impl BinaryWriter {
 
     /// Writes a length-prefixed byte slice (variable-length integer prefix followed by raw bytes).
     pub fn write_var_bytes(&mut self, bytes: &[u8]) -> IoResult<()> {
-        var_int::write_var_bytes(bytes, &mut self.buffer);
+        var_int::VarInt::write_var_bytes(bytes, &mut self.buffer);
         Ok(())
     }
 

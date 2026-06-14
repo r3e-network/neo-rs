@@ -184,7 +184,7 @@ fn store_contract_state(
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
-    let contract_mgmt_id = crate::server::native_queries::native_registry()
+    let contract_mgmt_id = crate::server::native_queries::NativeQueries::native_registry()
         .get_by_name("ContractManagement")
         .expect("contract management")
         .id();
@@ -241,7 +241,7 @@ fn store_committee(
     committee: &[neo_crypto::ECPoint],
 ) {
     const PREFIX_COMMITTEE: u8 = 0x0e;
-    let neo_token_id = crate::server::native_queries::native_registry()
+    let neo_token_id = crate::server::native_queries::NativeQueries::native_registry()
         .get_by_name("NeoToken")
         .expect("neo token")
         .id();
@@ -281,7 +281,7 @@ fn store_candidate_state_raw(
     bytes: Vec<u8>,
 ) {
     const PREFIX_CANDIDATE: u8 = 0x21;
-    let neo_token_id = crate::server::native_queries::native_registry()
+    let neo_token_id = crate::server::native_queries::NativeQueries::native_registry()
         .get_by_name("NeoToken")
         .expect("neo token")
         .id();
@@ -295,7 +295,7 @@ fn store_candidate_state_raw(
 
 fn store_blocked_account(store: &mut neo_storage::persistence::StoreCache, account: &UInt160) {
     const PREFIX_BLOCKED_ACCOUNT: u8 = 0x0f;
-    let policy_id = crate::server::native_queries::native_registry()
+    let policy_id = crate::server::native_queries::NativeQueries::native_registry()
         .get_by_name("PolicyContract")
         .expect("policy")
         .id();
@@ -747,7 +747,7 @@ async fn get_contract_state_roundtrips_native_name_and_id() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getcontractstate");
 
-    let registry = crate::server::native_queries::native_registry();
+    let registry = crate::server::native_queries::NativeQueries::native_registry();
     let contract = registry
         .get_by_name("ContractManagement")
         .expect("contract management");
@@ -773,7 +773,7 @@ async fn get_contract_state_resolves_native_case_insensitive() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getcontractstate");
 
-    let registry = crate::server::native_queries::native_registry();
+    let registry = crate::server::native_queries::NativeQueries::native_registry();
     let gas_contract = registry.get_by_name("GasToken").expect("gas token");
     let gas_state = gas_contract
         .contract_state(&system.settings(), 0)
@@ -994,7 +994,7 @@ async fn get_storage_accepts_native_contract_name() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getstorage");
 
-    let registry = crate::server::native_queries::native_registry();
+    let registry = crate::server::native_queries::NativeQueries::native_registry();
     let gas_contract = registry.get_by_name("GasToken").expect("gas token");
     let gas_state = gas_contract
         .contract_state(&system.settings(), 0)
@@ -1023,7 +1023,7 @@ async fn find_storage_accepts_native_contract_name() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "findstorage");
 
-    let registry = crate::server::native_queries::native_registry();
+    let registry = crate::server::native_queries::NativeQueries::native_registry();
     let gas_contract = registry.get_by_name("GasToken").expect("gas token");
     let gas_state = gas_contract
         .contract_state(&system.settings(), 0)
@@ -1606,7 +1606,7 @@ async fn get_native_contracts_includes_gas_token() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getnativecontracts");
 
-    let registry = crate::server::native_queries::native_registry();
+    let registry = crate::server::native_queries::NativeQueries::native_registry();
     let gas_contract = registry.get_by_name("GasToken").expect("gas token");
     let gas_state = gas_contract
         .contract_state(&settings, 0)
@@ -1636,7 +1636,7 @@ async fn get_native_contracts_returns_all_registered_states() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getnativecontracts");
 
-    let registry = crate::server::native_queries::native_registry();
+    let registry = crate::server::native_queries::NativeQueries::native_registry();
     let store = system.store_cache();
     let mut expected = Vec::new();
     for contract in registry.contracts() {

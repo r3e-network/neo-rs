@@ -89,7 +89,7 @@ impl Serializable for TrimmedBlock {
         // C# `Size => Header.Size + Hashes.GetVarSize()`: the header plus the
         // var-int length prefix and the fixed-size hash elements.
         <Header as Serializable>::size(&self.header)
-            + neo_io::serializable::helper::get_var_size_serializable_slice(&self.hashes)
+            + neo_io::serializable::helper::SerializeHelper::get_var_size_serializable_slice(&self.hashes)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

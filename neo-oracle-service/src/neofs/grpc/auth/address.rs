@@ -3,15 +3,17 @@ use super::super::super::decode_raw_base58;
 use super::super::super::proto::neofs_v2;
 use neo_error::{CoreError, CoreResult};
 
+impl NeoFsRequest {
 pub(crate) fn build_neofs_grpc_address(
-    request: &NeoFsRequest,
+    &self,
 ) -> CoreResult<neofs_v2::refs::Address> {
-    let container = decode_neofs_id_bytes(&request.container, 32)?;
-    let object = decode_neofs_id_bytes(&request.object, 32)?;
+    let container = decode_neofs_id_bytes(&self.container, 32)?;
+    let object = decode_neofs_id_bytes(&self.object, 32)?;
     Ok(neofs_v2::refs::Address {
         container_id: Some(neofs_v2::refs::ContainerId { value: container }),
         object_id: Some(neofs_v2::refs::ObjectId { value: object }),
     })
+}
 }
 
 fn decode_neofs_id_bytes(value: &str, expected_len: usize) -> CoreResult<Vec<u8>> {

@@ -4,7 +4,7 @@
 
 use base64::Engine;
 use neo_error::{CoreError, CoreResult};
-use neo_io::serializable::helper::get_var_size_bytes;
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{MemoryReader, Serializable};
 use neo_storage::persistence::{SeekDirection, Store};
 use num_bigint::BigInt;
@@ -21,7 +21,7 @@ pub fn to_base64(data: &[u8]) -> String {
 /// Returns the Neo var-size contribution of a BigInt.
 pub fn bigint_var_size(value: &BigInt) -> usize {
     let bytes = value.to_signed_bytes_le();
-    get_var_size_bytes(&bytes)
+    SerializeHelper::get_var_size_bytes(&bytes)
 }
 
 /// Finds entries whose keys start with the given prefix.

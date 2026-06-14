@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     use neo_config::ProtocolSettings;
     use neo_serialization::json::{JArray, JToken};
-    use neo_wallets::wallet_helper as WalletHelper;
+    use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 
     #[test]
     fn balance_roundtrip() {

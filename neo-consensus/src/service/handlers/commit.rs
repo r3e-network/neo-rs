@@ -1,4 +1,4 @@
-use super::super::helpers::invocation_script_from_signature;
+use super::super::helpers::InvocationScript;
 use super::super::{BlockData, ConsensusEvent, ConsensusService};
 use crate::context::ConsensusState;
 use crate::messages::ConsensusPayload;
@@ -42,7 +42,7 @@ impl ConsensusService {
             if !payload.witness.is_empty() {
                 self.context.commit_invocations.insert(
                     payload.validator_index,
-                    invocation_script_from_signature(&payload.witness),
+                    InvocationScript::invocation_script_from_signature(&payload.witness),
                 );
             }
             return Ok(());
@@ -110,7 +110,7 @@ impl ConsensusService {
         if !payload.witness.is_empty() {
             self.context.commit_invocations.insert(
                 payload.validator_index,
-                invocation_script_from_signature(&payload.witness),
+                InvocationScript::invocation_script_from_signature(&payload.witness),
             );
         }
 

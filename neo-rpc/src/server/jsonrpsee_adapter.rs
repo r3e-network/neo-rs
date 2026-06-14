@@ -5,7 +5,7 @@
 //! `super::dispatch`, so the same panic-safe handler invocation is
 //! reused by both this jsonrpsee module and any future transport.
 
-use super::dispatch::{invoke_rpc_handler, resolve_rpc_handler};
+use super::dispatch::Dispatch;
 use super::rpc_error::RpcError;
 use super::rpc_server::RpcServer;
 use jsonrpsee::RpcModule;
@@ -94,10 +94,11 @@ fn dispatch(
     method: &str,
     params: &[Value],
 ) -> Result<Value, ErrorObjectOwned> {
-    let (server, handler) = resolve_rpc_handler(&context.server, context.disabled.as_ref(), method)
-        .map_err(error_object)?;
+    let (server, handler) =
+        Dispatch::resolve_rpc_handler(&context.server, context.disabled.as_ref(), method)
+            .map_err(error_object)?;
 
-    invoke_rpc_handler(&server, handler, method, params).map_err(error_object)
+    Dispatch::invoke_rpc_handler(&server, handler, method, params).map_err(error_object)
 }
 
 fn parse_array_params(params: Params<'_>) -> Result<Vec<Value>, ErrorObjectOwned> {

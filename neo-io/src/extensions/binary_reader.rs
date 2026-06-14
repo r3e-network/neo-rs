@@ -1,4 +1,4 @@
-use crate::var_int::read_var_int_prefix;
+use crate::var_int::VarInt;
 use std::io::{Error, ErrorKind, Read, Result};
 
 /// Extension helpers for [`Read`] mirroring `Neo.Extensions.IO.BinaryReaderExtensions`.
@@ -63,7 +63,7 @@ impl<T: Read> BinaryReaderExtensions for T {
         };
         self.read_exact(&mut buf[1..width])?;
 
-        let (value, decoded_width) = read_var_int_prefix(&buf[..width])
+        let (value, decoded_width) = VarInt::read_var_int_prefix(&buf[..width])
             .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Invalid Neo var-int prefix"))?;
         debug_assert_eq!(decoded_width, width);
 

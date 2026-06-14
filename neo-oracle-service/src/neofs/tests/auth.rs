@@ -1,4 +1,4 @@
-use super::super::auth::{salt_message_wallet_connect, strip_bearer_prefix};
+use super::super::auth::{NeoFsBearerSigner, strip_bearer_prefix};
 use super::super::json::normalize_neofs_hex_header;
 
 #[test]
@@ -29,7 +29,7 @@ fn strip_bearer_prefix_handles_case() {
 fn salt_message_wallet_connect_includes_salt_and_suffix() {
     let data = b"payload";
     let salt = [0x11u8; 16];
-    let message = salt_message_wallet_connect(data, &salt);
+    let message = NeoFsBearerSigner::salt_message_wallet_connect(data, &salt);
     assert!(message.starts_with(&[0x01, 0x00, 0x01, 0xf0]));
     assert_eq!(&message[message.len() - 2..], [0x00, 0x00]);
 

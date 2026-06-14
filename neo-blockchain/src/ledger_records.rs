@@ -58,47 +58,6 @@ const PREFIX_TRANSACTION: u8 = 11;
 /// C# `LedgerContract.Prefix_CurrentBlock` (12).
 const PREFIX_CURRENT_BLOCK: u8 = 12;
 
-/// `Prefix_BlockHash` key: prefix + **big-endian** block index, the C#
-/// `CreateStorageKey(Prefix_BlockHash, engine.PersistingBlock.Index)`
-/// overload (`KeyBuilder.AddBigEndian(uint)`, NativeContract.cs:403).
-fn block_hash_key(index: u32) -> StorageKey {
-    let mut key = Vec::with_capacity(5);
-    key.push(PREFIX_BLOCK_HASH);
-    key.extend_from_slice(&index.to_be_bytes());
-    StorageKey::new(LedgerContract::ID, key)
-}
-
-/// `Prefix_Block` key (prefix + 32-byte block hash).
-fn block_key(hash: &UInt256) -> StorageKey {
-    let mut key = Vec::with_capacity(33);
-    key.push(PREFIX_BLOCK);
-    key.extend_from_slice(&hash.to_bytes());
-    StorageKey::new(LedgerContract::ID, key)
-}
-
-/// `Prefix_Transaction` key (prefix + 32-byte transaction hash).
-fn transaction_key(hash: &UInt256) -> StorageKey {
-    let mut key = Vec::with_capacity(33);
-    key.push(PREFIX_TRANSACTION);
-    key.extend_from_slice(&hash.to_bytes());
-    StorageKey::new(LedgerContract::ID, key)
-}
-
-/// `Prefix_Transaction` conflict key (prefix + conflict hash + signer),
-/// mirroring C# `CreateStorageKey(Prefix_Transaction, attr.Hash, signer)`.
-fn conflict_signer_key(hash: &UInt256, signer: &UInt160) -> StorageKey {
-    let mut key = Vec::with_capacity(53);
-    key.push(PREFIX_TRANSACTION);
-    key.extend_from_slice(&hash.to_bytes());
-    key.extend_from_slice(&signer.to_bytes());
-    StorageKey::new(LedgerContract::ID, key)
-}
-
-/// `Prefix_CurrentBlock` key.
-fn current_block_key() -> StorageKey {
-    StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK])
-}
-
 /// Upsert helper: C# `GetAndChange(key, factory).FromReplica(item)`
 /// replaces the stored value whether or not the key already exists.
 fn upsert(cache: &DataCache, key: StorageKey, value: Vec<u8>) {
@@ -109,105 +68,156 @@ fn upsert(cache: &DataCache, key: StorageKey, value: Vec<u8>) {
     }
 }
 
-/// The exact write set of C# `LedgerContract.OnPersistAsync`: the
-/// block-hash index entry, the trimmed block, the per-transaction
-/// records (initial `VMState::NONE`, like C#'s `State = VMState.NONE`),
-/// and the conflict stubs for every `Conflicts` attribute (one stub per
-/// conflict hash plus one per conflicting signer).
-pub(crate) fn write_on_persist_records(
-    cache: &DataCache,
-    block: &Block,
-    block_hash: &UInt256,
-) -> CoreResult<()> {
-    let index = block.index();
+/// LedgerContract block/transaction record key builders and writers.
+///
+/// The cohesive `LedgerContract.OnPersistAsync` / `PostPersistAsync` write
+/// set grouped onto a single zero-sized type: each key builder and writer is
+/// an associated function (none carry state), so callers spell them
+/// `LedgerRecords::*`.
+pub(crate) struct LedgerRecords;
 
-    // Prefix_BlockHash: index → hash (raw 32 bytes, like C#
-    // `engine.PersistingBlock.Hash.ToArray()`).
-    cache.add(
-        block_hash_key(index),
-        StorageItem::from_bytes(block_hash.to_bytes()),
-    );
-
-    // Prefix_Block: hash → TrimmedBlock.Create(block).ToArray().
-    let mut tx_hashes = Vec::with_capacity(block.transactions.len());
-    for tx in &block.transactions {
-        tx_hashes.push(
-            tx.try_hash().map_err(|e| {
-                CoreError::invalid_operation(format!("ledger records: tx hash: {e}"))
-            })?,
-        );
+impl LedgerRecords {
+    /// `Prefix_BlockHash` key: prefix + **big-endian** block index, the C#
+    /// `CreateStorageKey(Prefix_BlockHash, engine.PersistingBlock.Index)`
+    /// overload (`KeyBuilder.AddBigEndian(uint)`, NativeContract.cs:403).
+    fn block_hash_key(index: u32) -> StorageKey {
+        let mut key = Vec::with_capacity(5);
+        key.push(PREFIX_BLOCK_HASH);
+        key.extend_from_slice(&index.to_be_bytes());
+        StorageKey::new(LedgerContract::ID, key)
     }
-    let trimmed = TrimmedBlock::new(block.header.clone(), tx_hashes.clone());
-    let mut writer = neo_io::BinaryWriter::new();
-    trimmed
-        .serialize(&mut writer)
-        .map_err(|e| CoreError::serialization(format!("ledger records: trimmed block: {e}")))?;
-    cache.add(
-        block_key(block_hash),
-        StorageItem::from_bytes(writer.into_bytes()),
-    );
 
-    // Per-transaction records + conflict stubs, in block order (later
-    // writes overwrite earlier ones, exactly like the C# loop).
-    for (tx, tx_hash) in block.transactions.iter().zip(tx_hashes.iter()) {
-        let record = LedgerContract::new().serialize_persisted_transaction_state(index, VMState::NONE, tx)?;
-        upsert(cache, transaction_key(tx_hash), record);
+    /// `Prefix_Block` key (prefix + 32-byte block hash).
+    fn block_key(hash: &UInt256) -> StorageKey {
+        let mut key = Vec::with_capacity(33);
+        key.push(PREFIX_BLOCK);
+        key.extend_from_slice(&hash.to_bytes());
+        StorageKey::new(LedgerContract::ID, key)
+    }
 
-        let conflict_hashes: Vec<UInt256> = tx
-            .attributes()
-            .iter()
-            .filter_map(|attr| match attr {
-                TransactionAttribute::Conflicts(c) => Some(c.hash),
-                _ => None,
-            })
-            .collect();
-        if conflict_hashes.is_empty() {
-            continue;
+    /// `Prefix_Transaction` key (prefix + 32-byte transaction hash).
+    fn transaction_key(hash: &UInt256) -> StorageKey {
+        let mut key = Vec::with_capacity(33);
+        key.push(PREFIX_TRANSACTION);
+        key.extend_from_slice(&hash.to_bytes());
+        StorageKey::new(LedgerContract::ID, key)
+    }
+
+    /// `Prefix_Transaction` conflict key (prefix + conflict hash + signer),
+    /// mirroring C# `CreateStorageKey(Prefix_Transaction, attr.Hash, signer)`.
+    fn conflict_signer_key(hash: &UInt256, signer: &UInt160) -> StorageKey {
+        let mut key = Vec::with_capacity(53);
+        key.push(PREFIX_TRANSACTION);
+        key.extend_from_slice(&hash.to_bytes());
+        key.extend_from_slice(&signer.to_bytes());
+        StorageKey::new(LedgerContract::ID, key)
+    }
+
+    /// `Prefix_CurrentBlock` key.
+    fn current_block_key() -> StorageKey {
+        StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK])
+    }
+
+    /// The exact write set of C# `LedgerContract.OnPersistAsync`: the
+    /// block-hash index entry, the trimmed block, the per-transaction
+    /// records (initial `VMState::NONE`, like C#'s `State = VMState.NONE`),
+    /// and the conflict stubs for every `Conflicts` attribute (one stub per
+    /// conflict hash plus one per conflicting signer).
+    pub(crate) fn write_on_persist_records(
+        cache: &DataCache,
+        block: &Block,
+        block_hash: &UInt256,
+    ) -> CoreResult<()> {
+        let index = block.index();
+
+        // Prefix_BlockHash: index → hash (raw 32 bytes, like C#
+        // `engine.PersistingBlock.Hash.ToArray()`).
+        cache.add(
+            Self::block_hash_key(index),
+            StorageItem::from_bytes(block_hash.to_bytes()),
+        );
+
+        // Prefix_Block: hash → TrimmedBlock.Create(block).ToArray().
+        let mut tx_hashes = Vec::with_capacity(block.transactions.len());
+        for tx in &block.transactions {
+            tx_hashes.push(
+                tx.try_hash().map_err(|e| {
+                    CoreError::invalid_operation(format!("ledger records: tx hash: {e}"))
+                })?,
+            );
         }
-        let signers: Vec<UInt160> = tx.signers().iter().map(|s| s.account).collect();
-        let stub = LedgerContract::new().serialize_conflict_stub(index)?;
-        for conflict_hash in &conflict_hashes {
-            upsert(cache, transaction_key(conflict_hash), stub.clone());
-            for signer in &signers {
-                upsert(
-                    cache,
-                    conflict_signer_key(conflict_hash, signer),
-                    stub.clone(),
-                );
+        let trimmed = TrimmedBlock::new(block.header.clone(), tx_hashes.clone());
+        let mut writer = neo_io::BinaryWriter::new();
+        trimmed
+            .serialize(&mut writer)
+            .map_err(|e| CoreError::serialization(format!("ledger records: trimmed block: {e}")))?;
+        cache.add(
+            Self::block_key(block_hash),
+            StorageItem::from_bytes(writer.into_bytes()),
+        );
+
+        // Per-transaction records + conflict stubs, in block order (later
+        // writes overwrite earlier ones, exactly like the C# loop).
+        for (tx, tx_hash) in block.transactions.iter().zip(tx_hashes.iter()) {
+            let record = LedgerContract::new().serialize_persisted_transaction_state(index, VMState::NONE, tx)?;
+            upsert(cache, Self::transaction_key(tx_hash), record);
+
+            let conflict_hashes: Vec<UInt256> = tx
+                .attributes()
+                .iter()
+                .filter_map(|attr| match attr {
+                    TransactionAttribute::Conflicts(c) => Some(c.hash),
+                    _ => None,
+                })
+                .collect();
+            if conflict_hashes.is_empty() {
+                continue;
+            }
+            let signers: Vec<UInt160> = tx.signers().iter().map(|s| s.account).collect();
+            let stub = LedgerContract::new().serialize_conflict_stub(index)?;
+            for conflict_hash in &conflict_hashes {
+                upsert(cache, Self::transaction_key(conflict_hash), stub.clone());
+                for signer in &signers {
+                    upsert(
+                        cache,
+                        Self::conflict_signer_key(conflict_hash, signer),
+                        stub.clone(),
+                    );
+                }
             }
         }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    /// Rewrites a transaction's `Prefix_Transaction` record with its final
+    /// VM state. C# mutates the in-memory `TransactionState` stored by
+    /// `OnPersistAsync` (`transactionState.State = engine.Execute()`), so
+    /// the record committed at the end of `Blockchain.Persist` carries the
+    /// execution result; the explicit Rust codec requires a rewrite.
+    pub(crate) fn update_transaction_vm_state(
+        cache: &DataCache,
+        block_index: u32,
+        tx: &Transaction,
+        tx_hash: &UInt256,
+        vm_state: VMState,
+    ) -> CoreResult<()> {
+        let record = LedgerContract::new().serialize_persisted_transaction_state(block_index, vm_state, tx)?;
+        upsert(cache, Self::transaction_key(tx_hash), record);
+        Ok(())
+    }
 
-/// Rewrites a transaction's `Prefix_Transaction` record with its final
-/// VM state. C# mutates the in-memory `TransactionState` stored by
-/// `OnPersistAsync` (`transactionState.State = engine.Execute()`), so
-/// the record committed at the end of `Blockchain.Persist` carries the
-/// execution result; the explicit Rust codec requires a rewrite.
-pub(crate) fn update_transaction_vm_state(
-    cache: &DataCache,
-    block_index: u32,
-    tx: &Transaction,
-    tx_hash: &UInt256,
-    vm_state: VMState,
-) -> CoreResult<()> {
-    let record = LedgerContract::new().serialize_persisted_transaction_state(block_index, vm_state, tx)?;
-    upsert(cache, transaction_key(tx_hash), record);
-    Ok(())
-}
-
-/// The exact write of C# `LedgerContract.PostPersistAsync`: the
-/// `Prefix_CurrentBlock` pointer becomes `(block hash, block index)`.
-pub(crate) fn write_post_persist_record(
-    cache: &DataCache,
-    block_hash: &UInt256,
-    index: u32,
-) -> CoreResult<()> {
-    let value = LedgerContract::new().serialize_hash_index_state(block_hash, index)?;
-    upsert(cache, current_block_key(), value);
-    Ok(())
+    /// The exact write of C# `LedgerContract.PostPersistAsync`: the
+    /// `Prefix_CurrentBlock` pointer becomes `(block hash, block index)`.
+    pub(crate) fn write_post_persist_record(
+        cache: &DataCache,
+        block_hash: &UInt256,
+        index: u32,
+    ) -> CoreResult<()> {
+        let value = LedgerContract::new().serialize_hash_index_state(block_hash, index)?;
+        upsert(cache, Self::current_block_key(), value);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -236,8 +246,10 @@ mod tests {
         let block = Block::from_parts(header, vec![tx.clone()]);
         let block_hash = block.header.try_hash().expect("block hash");
 
-        write_on_persist_records(&cache, &block, &block_hash).expect("on-persist records");
-        write_post_persist_record(&cache, &block_hash, 7).expect("post-persist record");
+        LedgerRecords::write_on_persist_records(&cache, &block, &block_hash)
+            .expect("on-persist records");
+        LedgerRecords::write_post_persist_record(&cache, &block_hash, 7)
+            .expect("post-persist record");
 
         // Block-hash index + trimmed block.
         assert_eq!(
@@ -259,7 +271,7 @@ mod tests {
             .expect("record present");
         assert_eq!(state.block_index, 7);
         assert_eq!(state.state, VMState::NONE);
-        update_transaction_vm_state(&cache, 7, &tx, &tx_hash, VMState::HALT)
+        LedgerRecords::update_transaction_vm_state(&cache, 7, &tx, &tx_hash, VMState::HALT)
             .expect("vm-state rewrite");
         let state = ledger
             .get_transaction_state(&cache, &tx_hash)
@@ -299,8 +311,10 @@ mod tests {
         let block = Block::from_parts(header, vec![tx.clone()]);
         let block_hash = block.header.try_hash().unwrap();
 
-        write_on_persist_records(&cache, &block, &block_hash).expect("on-persist records");
-        write_post_persist_record(&cache, &block_hash, 0x0102_0304).expect("post-persist");
+        LedgerRecords::write_on_persist_records(&cache, &block, &block_hash)
+            .expect("on-persist records");
+        LedgerRecords::write_post_persist_record(&cache, &block_hash, 0x0102_0304)
+            .expect("post-persist");
 
         let raw = |key: &StorageKey| {
             cache
@@ -311,14 +325,14 @@ mod tests {
 
         // --- Prefix_BlockHash (9): key = prefix ‖ BIG-ENDIAN index;
         // value = the raw 32-byte block hash.
-        let bh_key = block_hash_key(0x0102_0304);
+        let bh_key = LedgerRecords::block_hash_key(0x0102_0304);
         assert_eq!(bh_key.id(), LedgerContract::ID);
         assert_eq!(bh_key.key(), &[9u8, 0x01, 0x02, 0x03, 0x04]);
         assert_eq!(raw(&bh_key), block_hash.to_bytes());
 
         // --- Prefix_Block (5): key = prefix ‖ hash; value =
         // TrimmedBlock.ToArray() = header bytes ‖ var-int count ‖ hashes.
-        let b_key = block_key(&block_hash);
+        let b_key = LedgerRecords::block_key(&block_hash);
         let mut expected_key = vec![5u8];
         expected_key.extend_from_slice(&block_hash.to_bytes());
         assert_eq!(b_key.key(), &expected_key[..]);
@@ -351,10 +365,11 @@ mod tests {
         ];
         expected_record.extend_from_slice(&tx_bytes);
         expected_record.extend_from_slice(&[0x21, 0x00]); // VMState::NONE
-        assert_eq!(raw(&transaction_key(&tx_hash)), expected_record);
+        assert_eq!(raw(&LedgerRecords::transaction_key(&tx_hash)), expected_record);
 
         // After execution the record is rewritten with HALT (= 1).
-        update_transaction_vm_state(&cache, 0x0102_0304, &tx, &tx_hash, VMState::HALT).unwrap();
+        LedgerRecords::update_transaction_vm_state(&cache, 0x0102_0304, &tx, &tx_hash, VMState::HALT)
+            .unwrap();
         let mut expected_halt = vec![
             0x41,
             0x03,
@@ -369,15 +384,15 @@ mod tests {
         ];
         expected_halt.extend_from_slice(&tx_bytes);
         expected_halt.extend_from_slice(&[0x21, 0x01, 0x01]);
-        assert_eq!(raw(&transaction_key(&tx_hash)), expected_halt);
+        assert_eq!(raw(&LedgerRecords::transaction_key(&tx_hash)), expected_halt);
 
         // --- Prefix_CurrentBlock (12): value = BinarySerializer bytes of
         // Struct[ByteString(hash), Integer(index)] (HashIndexState).
-        assert_eq!(current_block_key().key(), &[12u8]);
+        assert_eq!(LedgerRecords::current_block_key().key(), &[12u8]);
         let mut expected_pointer = vec![0x41, 0x02, 0x28, 0x20];
         expected_pointer.extend_from_slice(&block_hash.to_bytes());
         expected_pointer.extend_from_slice(&[0x21, 0x04, 0x04, 0x03, 0x02, 0x01]);
-        assert_eq!(raw(&current_block_key()), expected_pointer);
+        assert_eq!(raw(&LedgerRecords::current_block_key()), expected_pointer);
     }
 
     /// C# stores conflict stubs under the bare conflict hash and under
@@ -405,7 +420,7 @@ mod tests {
         let block = Block::from_parts(header, vec![tx]);
         let block_hash = block.header.try_hash().unwrap();
 
-        write_on_persist_records(&cache, &block, &block_hash).expect("records");
+        LedgerRecords::write_on_persist_records(&cache, &block, &block_hash).expect("records");
 
         let stub = ledger
             .get_transaction_state(&cache, &conflict_hash)
@@ -418,7 +433,7 @@ mod tests {
         assert_eq!(stub.block_index, 3);
 
         // The signer-suffixed stub exists with the same payload.
-        let key = conflict_signer_key(&conflict_hash, &signer_account);
+        let key = LedgerRecords::conflict_signer_key(&conflict_hash, &signer_account);
         let raw = cache.get(&key).expect("signer stub present");
         assert_eq!(
             raw.value_bytes().into_owned(),

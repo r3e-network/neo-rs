@@ -4,7 +4,7 @@ use neo_crypto::{Crypto, ECPoint};
 use neo_error::CoreError;
 use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
-use neo_primitives::base58_check;
+use neo_primitives::base58_check::Base58Check;
 use neo_vm::script_builder::ScriptBuilder;
 use std::sync::OnceLock;
 
@@ -76,7 +76,7 @@ impl Contract {
         // The redeem-script byte construction was hoisted into the
         // `neo-script-builder` crate (below neo-core); kept here for the
         // historical `Contract::try_create_multi_sig_redeem_script` path.
-        neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, public_keys).map_err(Into::into)
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(m, public_keys).map_err(Into::into)
     }
 
     /// Creates the script of a multi-sig contract (panics on invalid input).
@@ -112,7 +112,7 @@ impl Contract {
 
     /// Gets the address of the contract
     pub fn get_address(&self) -> String {
-        base58_check::encode_address_payload(
+        Base58Check::encode_address_payload(
             neo_config::ProtocolSettings::default_settings().address_version,
             &self.script_hash().to_array(),
         )

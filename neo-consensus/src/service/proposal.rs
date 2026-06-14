@@ -1,6 +1,6 @@
 use super::helpers::{
-    compute_header_hash, compute_merkle_root, current_timestamp, generate_nonce,
-    prepare_request_timestamp,
+    current_timestamp, generate_nonce, prepare_request_timestamp, ConsensusBlockFields,
+    InvocationScript,
 };
 use super::{ConsensusEvent, ConsensusService};
 use crate::messages::PrepareRequestMessage;
@@ -79,14 +79,15 @@ impl ConsensusService {
             self.context.prepare_request_invocation = if payload.witness.is_empty() {
                 None
             } else {
-                Some(super::helpers::invocation_script_from_signature(
+                Some(InvocationScript::invocation_script_from_signature(
                     &payload.witness,
                 ))
             };
 
             // Compute block header hash for commit signatures.
-            let merkle_root = compute_merkle_root(&self.context.proposed_tx_hashes);
-            self.context.proposed_block_hash = Some(compute_header_hash(
+            let merkle_root =
+                ConsensusBlockFields::compute_merkle_root(&self.context.proposed_tx_hashes);
+            self.context.proposed_block_hash = Some(ConsensusBlockFields::compute_header_hash(
                 self.context.version,
                 self.context.prev_hash,
                 merkle_root,

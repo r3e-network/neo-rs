@@ -5,7 +5,7 @@ use neo_io::Serializable;
 use neo_payloads::BlockHeader;
 use neo_primitives::UInt256;
 use neo_serialization::json::{JObject, JToken};
-use neo_wallets::wallet_helper as WalletHelper;
+use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use serde::{Deserialize, Serialize};
 
 /// RPC block header information matching C# `RpcBlockHeader`

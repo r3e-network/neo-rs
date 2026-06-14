@@ -2,9 +2,7 @@ use super::{block::Block, header::Header};
 use bitvec::prelude::{BitVec, Lsb0};
 use neo_crypto::MerkleTree;
 use neo_error::CoreResult;
-use neo_io::serializable::helper::{
-    deserialize_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
-};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -181,8 +179,8 @@ impl Serializable for MerkleBlockPayload {
     fn size(&self) -> usize {
         self.header.size()
             + std::mem::size_of::<u32>()
-            + get_var_size_serializable_slice(&self.hashes)
-            + get_var_size_bytes(&self.flags)
+            + SerializeHelper::get_var_size_serializable_slice(&self.hashes)
+            + SerializeHelper::get_var_size_bytes(&self.flags)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -195,7 +193,7 @@ impl Serializable for MerkleBlockPayload {
         writer.write_var_uint(self.tx_count as u64)?;
 
         // Write hashes
-        serialize_array(&self.hashes, writer)?;
+        SerializeHelper::serialize_array(&self.hashes, writer)?;
 
         // Write flags
         let max_flags = (self.tx_count.max(1) as usize).div_ceil(8);
@@ -213,7 +211,7 @@ impl Serializable for MerkleBlockPayload {
         let tx_count = reader.read_var_int(u16::MAX as u64)?;
         let tx_count = tx_count as u32;
 
-        let hashes = deserialize_array::<UInt256>(reader, tx_count as usize)?;
+        let hashes = SerializeHelper::deserialize_array::<UInt256>(reader, tx_count as usize)?;
 
         // Read flags
         let max_flags = (tx_count.max(1) as usize).div_ceil(8);

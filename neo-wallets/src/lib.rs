@@ -80,7 +80,7 @@ pub mod version;
 
 pub use asset_descriptor::AssetDescriptor;
 pub use bip32::{ExtendedKey, KeyPath};
-pub use bip39::{get_mnemonic_code, get_mnemonic_code_with_language, mnemonic_to_entropy};
+pub use bip39::Bip39;
 pub use key_pair::KeyPair;
 pub use nep6::{Nep6Account, Nep6Wallet, ScryptParameters};
 pub use scripts::signature_invocation;

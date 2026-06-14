@@ -1,7 +1,5 @@
 use super::*;
-use crate::native_contract_provider::{
-    lookup_contract_management, lookup_ledger_contract, lookup_oracle_contract,
-};
+use crate::native_contract_provider::NativeContractLookup;
 use neo_payloads::VerifiableExt;
 
 impl ApplicationEngine {
@@ -29,7 +27,7 @@ impl ApplicationEngine {
                 TransactionAttribute::OracleResponse(resp) => Some(resp.id),
                 _ => None,
             }) {
-                let oracle = lookup_oracle_contract();
+                let oracle = NativeContractLookup::lookup_oracle_contract();
                 let Some(request) = oracle.and_then(|o| {
                     o.oracle_request_url_full(self.snapshot_cache.as_ref(), oracle_id)
                         .ok()
@@ -38,7 +36,7 @@ impl ApplicationEngine {
                     return Ok(false);
                 };
 
-                let ledger = lookup_ledger_contract();
+                let ledger = NativeContractLookup::lookup_ledger_contract();
                 let Some(state) = ledger.and_then(|l| {
                     l.transaction_state(self.snapshot_cache.as_ref(), &request.original_tx_id)
                         .ok()
@@ -159,7 +157,7 @@ impl ApplicationEngine {
         }
 
         let Some(contract) =
-            lookup_contract_management(self.snapshot_cache.as_ref(), contract_hash)?
+            NativeContractLookup::lookup_contract_management(self.snapshot_cache.as_ref(), contract_hash)?
         else {
             return Ok(false);
         };

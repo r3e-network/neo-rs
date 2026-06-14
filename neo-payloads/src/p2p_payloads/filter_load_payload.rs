@@ -1,5 +1,5 @@
 use neo_crypto::bloom_filter::BloomFilter;
-use neo_io::serializable::helper::get_var_size_bytes;
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +45,7 @@ impl FilterLoadPayload {
 
 impl Serializable for FilterLoadPayload {
     fn size(&self) -> usize {
-        get_var_size_bytes(&self.filter) +
+        SerializeHelper::get_var_size_bytes(&self.filter) +
         1 + // K
         4 // Tweak
     }

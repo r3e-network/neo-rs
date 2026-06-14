@@ -3,7 +3,7 @@
 //! This module provides cryptographic key pair functionality,
 //! converted from the C# Neo KeyPair class (@neo-sharp/src/Neo/Wallets/KeyPair.cs).
 
-use crate::wallet_helper::{to_address, to_script_hash};
+use crate::wallet_helper::WalletAddress;
 use aes::Aes256;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray};
 use neo_crypto::{Base58, CryptoError, ECC, ECCurve, ECDsa, Secp256r1Crypto};
@@ -232,7 +232,7 @@ impl KeyPair {
         // Generate address hash
         let script_hash =
             UInt160::from_script(&Self::try_get_verification_script_for_key(private_key)?);
-        let address = to_address(&script_hash, address_version);
+        let address = WalletAddress::to_address(&script_hash, address_version);
         let address_hash_full = neo_crypto::Crypto::hash256(address.as_bytes());
         let mut address_hash = [0u8; 4];
         address_hash.copy_from_slice(&address_hash_full[0..4]);
@@ -345,7 +345,7 @@ impl KeyPair {
         // Verify by checking address hash
         let verification_script = Self::try_get_verification_script_for_key(&private_key)?;
         let script_hash = UInt160::from_script(&verification_script);
-        let address = to_address(&script_hash, address_version);
+        let address = WalletAddress::to_address(&script_hash, address_version);
         let computed_hash_full = neo_crypto::Crypto::hash256(address.as_bytes());
         let computed_hash = &computed_hash_full[0..4];
 

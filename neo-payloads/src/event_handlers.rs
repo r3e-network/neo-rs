@@ -129,10 +129,12 @@ impl std::fmt::Display for PluginEvent {
     }
 }
 
-/// Broadcasts a plugin event by logging it.
-#[inline]
-pub fn broadcast_plugin_event(event: &PluginEvent) {
-    debug!(target: "neo::events", event = %event, "plugin event");
+impl PluginEvent {
+    /// Broadcasts a plugin event by logging it.
+    #[inline]
+    pub fn broadcast_plugin_event(&self) {
+        debug!(target: "neo::events", event = %self, "plugin event");
+    }
 }
 
 /// Implemented by services that need to react to a block being committed to

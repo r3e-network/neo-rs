@@ -8,7 +8,7 @@ use neo_payloads::{
 use neo_primitives::UInt160;
 use neo_storage::persistence::DataCache;
 use neo_wallets::KeyPair;
-use neo_wallets::wallet_helper as WalletHelper;
+use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
 use std::sync::Arc;
 

@@ -24,18 +24,8 @@ use num_bigint::BigInt;
 
 use crate::server::rpc_server::RpcServer;
 
-/// Builds a [`neo_execution::NativeRegistry`] populated with the
-/// standard native contracts. `NativeRegistry::new()` is *empty* by
-/// design; the canonical contract set lives in
-/// [`neo_native_contracts::StandardNativeProvider`].
-pub(crate) fn native_registry() -> neo_execution::NativeRegistry {
-    use neo_execution::native_contract_provider::NativeContractProvider;
-    let mut registry = neo_execution::NativeRegistry::new();
-    for contract in neo_native_contracts::StandardNativeProvider::new().all_native_contracts() {
-        registry.register(contract);
-    }
-    registry
-}
+/// Engine-script probes for native-contract reads.
+pub(crate) struct NativeQueries;
 
 /// Argument value for a native-contract probe call.
 pub(crate) enum NativeArg<'a> {
@@ -82,148 +72,163 @@ fn emit_native_call(
     Ok(())
 }
 
-/// Runs a single read-only native-method call against `snapshot` and
-/// returns the top of the result stack. Faults are surfaced as errors
-/// (the native reads probed here cannot fault on healthy state).
-pub(crate) fn invoke_native_read(
-    server: &RpcServer,
-    snapshot: Arc<DataCache>,
-    contract: &UInt160,
-    method: &str,
-    args: &[NativeArg<'_>],
-) -> CoreResult<StackItem> {
-    let mut builder = ScriptBuilder::new();
-    emit_native_call(&mut builder, contract, method, args)?;
-    let script = builder.to_array();
-
-    let settings = server.system().settings().as_ref().clone();
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        snapshot,
-        None,
-        settings,
-        server.settings().max_gas_invoke,
-        None,
-    )
-    .map_err(|err| CoreError::other(err.to_string()))?;
-    engine
-        .load_script(script, CallFlags::READ_ONLY, None)
-        .map_err(|err| CoreError::other(err.to_string()))?;
-    let state = engine.execute_allow_fault();
-    if state != VMState::HALT {
-        return Err(CoreError::other(format!(
-            "native read '{method}' did not HALT (VM state: {state:?})"
-        )));
+impl NativeQueries {
+    /// Builds a [`neo_execution::NativeRegistry`] populated with the
+    /// standard native contracts. `NativeRegistry::new()` is *empty* by
+    /// design; the canonical contract set lives in
+    /// [`neo_native_contracts::StandardNativeProvider`].
+    pub(crate) fn native_registry() -> neo_execution::NativeRegistry {
+        use neo_execution::native_contract_provider::NativeContractProvider;
+        let mut registry = neo_execution::NativeRegistry::new();
+        for contract in neo_native_contracts::StandardNativeProvider::new().all_native_contracts() {
+            registry.register(contract);
+        }
+        registry
     }
-    engine
-        .result_stack()
-        .peek(0).cloned()
-        .map_err(|err| CoreError::other(err.to_string()))
-}
 
-/// `NEO.unclaimedGas(account, end)` — the amount of unclaimed GAS for
-/// `account` at the `end` block height.
-pub(crate) fn neo_unclaimed_gas(
-    server: &RpcServer,
-    snapshot: Arc<DataCache>,
-    neo_hash: &UInt160,
-    account: &UInt160,
-    end: u32,
-) -> CoreResult<BigInt> {
-    let account_bytes = account.to_bytes();
-    let item = invoke_native_read(
-        server,
-        snapshot,
-        neo_hash,
-        "unclaimedGas",
-        &[
-            NativeArg::Bytes(account_bytes.as_slice()),
-            NativeArg::Int(i64::from(end)),
-        ],
-    )?;
-    item.as_int().map_err(|err| CoreError::other(err.to_string()))
-}
+    /// Runs a single read-only native-method call against `snapshot` and
+    /// returns the top of the result stack. Faults are surfaced as errors
+    /// (the native reads probed here cannot fault on healthy state).
+    pub(crate) fn invoke_native_read(
+        server: &RpcServer,
+        snapshot: Arc<DataCache>,
+        contract: &UInt160,
+        method: &str,
+        args: &[NativeArg<'_>],
+    ) -> CoreResult<StackItem> {
+        let mut builder = ScriptBuilder::new();
+        emit_native_call(&mut builder, contract, method, args)?;
+        let script = builder.to_array();
 
-/// `NEO.getCommittee()` — the current committee public keys (sorted).
-pub(crate) fn neo_committee(
-    server: &RpcServer,
-    snapshot: Arc<DataCache>,
-    neo_hash: &UInt160,
-) -> CoreResult<Vec<Vec<u8>>> {
-    let item = invoke_native_read(server, snapshot, neo_hash, "getCommittee", &[])?;
-    stack_array_of_bytes(&item)
-}
-
-/// `NEO.getNextBlockValidators()` — the validators for the next block.
-pub(crate) fn neo_next_block_validators(
-    server: &RpcServer,
-    snapshot: Arc<DataCache>,
-    neo_hash: &UInt160,
-) -> CoreResult<Vec<Vec<u8>>> {
-    let item = invoke_native_read(server, snapshot, neo_hash, "getNextBlockValidators", &[])?;
-    stack_array_of_bytes(&item)
-}
-
-/// `NEO.getCandidates()` — registered candidates with their votes.
-pub(crate) fn neo_candidates(
-    server: &RpcServer,
-    snapshot: Arc<DataCache>,
-    neo_hash: &UInt160,
-) -> CoreResult<Vec<(Vec<u8>, BigInt)>> {
-    let item = invoke_native_read(server, snapshot, neo_hash, "getCandidates", &[])?;
-    let entries = item.as_array().map_err(|err| CoreError::other(err.to_string()))?;
-    let mut candidates = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let fields = entry.as_array().map_err(|err| CoreError::other(err.to_string()))?;
-        if fields.len() != 2 {
+        let settings = server.system().settings().as_ref().clone();
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            settings,
+            server.settings().max_gas_invoke,
+            None,
+        )
+        .map_err(|err| CoreError::other(err.to_string()))?;
+        engine
+            .load_script(script, CallFlags::READ_ONLY, None)
+            .map_err(|err| CoreError::other(err.to_string()))?;
+        let state = engine.execute_allow_fault();
+        if state != VMState::HALT {
             return Err(CoreError::other(format!(
-                "getCandidates entry has {} fields, expected 2",
-                fields.len()
+                "native read '{method}' did not HALT (VM state: {state:?})"
             )));
         }
-        let pubkey = fields[0].as_bytes().map_err(|err| CoreError::other(err.to_string()))?;
-        let votes = fields[1].as_int().map_err(|err| CoreError::other(err.to_string()))?;
-        candidates.push((pubkey, votes));
+        engine
+            .result_stack()
+            .peek(0).cloned()
+            .map_err(|err| CoreError::other(err.to_string()))
     }
-    Ok(candidates)
-}
 
-/// `Policy.isBlocked(account)` — whether the account is on the
-/// `PolicyContract` block list.
-pub(crate) fn policy_is_blocked(
-    server: &RpcServer,
-    snapshot: Arc<DataCache>,
-    policy_hash: &UInt160,
-    account: &UInt160,
-) -> CoreResult<bool> {
-    let account_bytes = account.to_bytes();
-    let item = invoke_native_read(
-        server,
-        snapshot,
-        policy_hash,
-        "isBlocked",
-        &[NativeArg::Bytes(account_bytes.as_slice())],
-    )?;
-    item.as_bool().map_err(|err| CoreError::other(err.to_string()))
-}
+    /// `NEO.unclaimedGas(account, end)` — the amount of unclaimed GAS for
+    /// `account` at the `end` block height.
+    pub(crate) fn neo_unclaimed_gas(
+        server: &RpcServer,
+        snapshot: Arc<DataCache>,
+        neo_hash: &UInt160,
+        account: &UInt160,
+        end: u32,
+    ) -> CoreResult<BigInt> {
+        let account_bytes = account.to_bytes();
+        let item = NativeQueries::invoke_native_read(
+            server,
+            snapshot,
+            neo_hash,
+            "unclaimedGas",
+            &[
+                NativeArg::Bytes(account_bytes.as_slice()),
+                NativeArg::Int(i64::from(end)),
+            ],
+        )?;
+        item.as_int().map_err(|err| CoreError::other(err.to_string()))
+    }
 
-/// `NEO.getCandidateVote(pubkey)` — the candidate's vote count, or `-1`
-/// when the key is not a registered candidate.
-pub(crate) fn neo_candidate_vote(
-    server: &RpcServer,
-    snapshot: Arc<DataCache>,
-    neo_hash: &UInt160,
-    pubkey: &[u8],
-) -> CoreResult<BigInt> {
-    let item = invoke_native_read(
-        server,
-        snapshot,
-        neo_hash,
-        "getCandidateVote",
-        &[NativeArg::Bytes(pubkey)],
-    )?;
-    item.as_int().map_err(|err| CoreError::other(err.to_string()))
+    /// `NEO.getCommittee()` — the current committee public keys (sorted).
+    pub(crate) fn neo_committee(
+        server: &RpcServer,
+        snapshot: Arc<DataCache>,
+        neo_hash: &UInt160,
+    ) -> CoreResult<Vec<Vec<u8>>> {
+        let item = NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getCommittee", &[])?;
+        stack_array_of_bytes(&item)
+    }
+
+    /// `NEO.getNextBlockValidators()` — the validators for the next block.
+    pub(crate) fn neo_next_block_validators(
+        server: &RpcServer,
+        snapshot: Arc<DataCache>,
+        neo_hash: &UInt160,
+    ) -> CoreResult<Vec<Vec<u8>>> {
+        let item = NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getNextBlockValidators", &[])?;
+        stack_array_of_bytes(&item)
+    }
+
+    /// `NEO.getCandidates()` — registered candidates with their votes.
+    pub(crate) fn neo_candidates(
+        server: &RpcServer,
+        snapshot: Arc<DataCache>,
+        neo_hash: &UInt160,
+    ) -> CoreResult<Vec<(Vec<u8>, BigInt)>> {
+        let item = NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getCandidates", &[])?;
+        let entries = item.as_array().map_err(|err| CoreError::other(err.to_string()))?;
+        let mut candidates = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let fields = entry.as_array().map_err(|err| CoreError::other(err.to_string()))?;
+            if fields.len() != 2 {
+                return Err(CoreError::other(format!(
+                    "getCandidates entry has {} fields, expected 2",
+                    fields.len()
+                )));
+            }
+            let pubkey = fields[0].as_bytes().map_err(|err| CoreError::other(err.to_string()))?;
+            let votes = fields[1].as_int().map_err(|err| CoreError::other(err.to_string()))?;
+            candidates.push((pubkey, votes));
+        }
+        Ok(candidates)
+    }
+
+    /// `Policy.isBlocked(account)` — whether the account is on the
+    /// `PolicyContract` block list.
+    pub(crate) fn policy_is_blocked(
+        server: &RpcServer,
+        snapshot: Arc<DataCache>,
+        policy_hash: &UInt160,
+        account: &UInt160,
+    ) -> CoreResult<bool> {
+        let account_bytes = account.to_bytes();
+        let item = NativeQueries::invoke_native_read(
+            server,
+            snapshot,
+            policy_hash,
+            "isBlocked",
+            &[NativeArg::Bytes(account_bytes.as_slice())],
+        )?;
+        item.as_bool().map_err(|err| CoreError::other(err.to_string()))
+    }
+
+    /// `NEO.getCandidateVote(pubkey)` — the candidate's vote count, or `-1`
+    /// when the key is not a registered candidate.
+    pub(crate) fn neo_candidate_vote(
+        server: &RpcServer,
+        snapshot: Arc<DataCache>,
+        neo_hash: &UInt160,
+        pubkey: &[u8],
+    ) -> CoreResult<BigInt> {
+        let item = NativeQueries::invoke_native_read(
+            server,
+            snapshot,
+            neo_hash,
+            "getCandidateVote",
+            &[NativeArg::Bytes(pubkey)],
+        )?;
+        item.as_int().map_err(|err| CoreError::other(err.to_string()))
+    }
 }
 
 /// Decodes a stack array whose elements are byte strings.

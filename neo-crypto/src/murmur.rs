@@ -3,23 +3,38 @@
 use murmur3::murmur3_32;
 use std::io::Cursor;
 
-/// Computes a 32-bit Murmur3 hash of the given data with the specified seed.
-#[must_use]
-pub fn murmur32(data: &[u8], seed: u32) -> u32 {
-    murmur3_32(&mut Cursor::new(data), seed).expect("murmur32 hashing should not fail")
+/// Murmur3 hash helpers grouped as associated functions.
+pub struct Murmur3;
+
+impl Murmur3 {
+    /// Computes a 32-bit Murmur3 hash of the given data with the specified seed.
+    #[must_use]
+    pub fn murmur32(data: &[u8], seed: u32) -> u32 {
+        murmur3_32(&mut Cursor::new(data), seed).expect("murmur32 hashing should not fail")
+    }
+
+    /// Computes a 128-bit Murmur3 hash of the given data with the specified seed.
+    #[must_use]
+    pub fn murmur128(data: &[u8], seed: u32) -> [u8; 16] {
+        murmur3::murmur3_x64_128(&mut std::io::Cursor::new(data), seed)
+            .expect("murmur128 hashing should not fail")
+            .to_le_bytes()
+    }
 }
 
-/// Computes a 128-bit Murmur3 hash of the given data with the specified seed.
+/// Backward-compatible free-function alias for [`Murmur3::murmur32`].
+///
+/// Retained so external consumers that predate the `Murmur3` grouping keep
+/// resolving `neo_crypto::murmur32`; delegates verbatim, no behavior change.
+#[doc(hidden)]
 #[must_use]
-pub fn murmur128(data: &[u8], seed: u32) -> [u8; 16] {
-    murmur3::murmur3_x64_128(&mut std::io::Cursor::new(data), seed)
-        .expect("murmur128 hashing should not fail")
-        .to_le_bytes()
+pub fn murmur32(data: &[u8], seed: u32) -> u32 {
+    Murmur3::murmur32(data, seed)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::murmur128;
+    use super::Murmur3;
 
     #[test]
     fn test_murmur128_vectors() {
@@ -32,7 +47,7 @@ mod tests {
         ];
 
         for (input, expected) in cases {
-            let hash = murmur128(input, 123u32);
+            let hash = Murmur3::murmur128(input, 123u32);
             assert_eq!(hex::encode(hash), expected);
         }
     }

@@ -24,9 +24,7 @@ use neo_config::ProtocolSettings;
 use neo_execution::ApplicationEngine;
 use neo_execution::contract_state::ContractState;
 use neo_execution::helper::Helper as ContractHelper;
-use neo_io::serializable::helper::{
-    get_var_size_bytes, get_var_size_serializable_slice, get_var_size_usize,
-};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_native_contracts::{ContractManagement, GasToken, LedgerContract, PolicyContract};
@@ -95,10 +93,10 @@ pub(crate) fn calculate_network_fee(
 
     // Base size: header + signers + attributes + script + witness count.
     let mut size = HEADER_SIZE
-        + get_var_size_serializable_slice(tx.signers())
-        + get_var_size_serializable_slice(tx.attributes())
-        + get_var_size_bytes(tx.script())
-        + get_var_size_usize(hashes.len());
+        + SerializeHelper::get_var_size_serializable_slice(tx.signers())
+        + SerializeHelper::get_var_size_serializable_slice(tx.attributes())
+        + SerializeHelper::get_var_size_bytes(tx.script())
+        + SerializeHelper::get_var_size_usize(hashes.len());
 
     let policy = PolicyContract::new();
     let current_index = LedgerContract::new()
@@ -131,14 +129,14 @@ pub(crate) fn calculate_network_fee(
         match witness_script {
             Some(script) if !script.is_empty() => {
                 if ContractHelper::is_signature_contract(&script) {
-                    size += 67 + get_var_size_bytes(&script);
+                    size += 67 + SerializeHelper::get_var_size_bytes(&script);
                     network_fee += exec_fee_factor * ContractHelper::signature_contract_cost();
                 } else if let Some((m, public_keys)) =
                     ContractHelper::parse_multi_sig_contract(&script)
                 {
                     let n = public_keys.len();
                     let size_inv = 66 * m;
-                    size += get_var_size_usize(size_inv) + size_inv + get_var_size_bytes(&script);
+                    size += SerializeHelper::get_var_size_usize(size_inv) + size_inv + SerializeHelper::get_var_size_bytes(&script);
                     network_fee += exec_fee_factor
                         * ContractHelper::multi_signature_contract_cost(m as i32, n as i32);
                 }
@@ -191,7 +189,7 @@ fn contract_verification_fee(
         .ok_or_else(|| {
             // C# `Helper.CalculateNetworkFee` includes the base58
             // rendering: `{hash} ({hash.ToAddress(settings.AddressVersion)})`.
-            let address = neo_wallets::wallet_helper::to_address(hash, settings.address_version);
+            let address = neo_wallets::wallet_helper::WalletAddress::to_address(hash, settings.address_version);
             WalletCompatError::Other(format!(
                 "The smart contract or address {hash} ({address}) is not found. If this is your \
                  wallet address and you want to sign a transaction with it, make sure you have \
@@ -258,8 +256,8 @@ fn contract_verification_fee(
     // Empty verification script + the invocation script bytes.
     let invocation_size = invocation_script
         .as_deref()
-        .map_or(get_var_size_bytes(&[]), get_var_size_bytes);
-    *size += get_var_size_bytes(&[]) + invocation_size;
+        .map_or(SerializeHelper::get_var_size_bytes(&[]), SerializeHelper::get_var_size_bytes);
+    *size += SerializeHelper::get_var_size_bytes(&[]) + invocation_size;
 
     let fee = run_contract_verify(
         tx,

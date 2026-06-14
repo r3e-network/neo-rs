@@ -43,7 +43,7 @@ pub use rpc_error::RpcError as ServerRpcError;
 pub use rpc_exception::RpcException;
 pub(crate) use rpc_handler_macros::rpc_handlers;
 pub use rpc_method_attribute::RpcMethodDescriptor;
-pub use rpc_registry::{SERVERS, get_server, register_server, remove_server};
+pub use rpc_registry::{SERVERS, ServerRegistry};
 pub use rpc_server::{RpcCallback, RpcHandler, RpcServer};
 pub use rpc_server_application_logs::RpcServerApplicationLogs;
 pub use rpc_server_blockchain::RpcServerBlockchain;

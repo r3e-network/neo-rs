@@ -1,5 +1,4 @@
 use super::super::super::{NeoFsAuth, NeoFsCommand, NeoFsRequest, OracleNeoFsProtocol};
-use super::super::auth::build_neofs_grpc_address;
 use super::super::client::neofs_grpc_client;
 use neo_payloads::OracleResponseCode;
 use neo_payloads::oracle_response::MAX_RESULT_SIZE;
@@ -13,7 +12,7 @@ impl OracleNeoFsProtocol {
         auth: &NeoFsAuth,
         oracle_key: &KeyPair,
     ) -> (OracleResponseCode, String) {
-        let address = match build_neofs_grpc_address(&request) {
+        let address = match request.build_neofs_grpc_address() {
             Ok(address) => address,
             Err(_) => return (OracleResponseCode::Error, String::new()),
         };

@@ -164,7 +164,7 @@ impl RpcNep11TokenBalance {
 mod tests {
     use super::*;
     use neo_serialization::json::JArray;
-    use neo_wallets::wallet_helper as WalletHelper;
+    use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 
     #[test]
     fn token_balance_roundtrip() {

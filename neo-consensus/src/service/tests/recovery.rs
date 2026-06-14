@@ -10,9 +10,7 @@ use neo_primitives::UInt256;
 use neo_vm::script_builder::ScriptBuilder;
 use tokio::sync::mpsc;
 
-use super::super::helpers::{
-    compute_header_hash, compute_merkle_root, compute_next_consensus_address,
-};
+use super::super::helpers::ConsensusBlockFields;
 
 fn invocation_script(signature: &[u8]) -> Vec<u8> {
     let mut builder = ScriptBuilder::new();
@@ -444,9 +442,10 @@ async fn recovery_message_with_commits_triggers_block_commit() {
     );
     sign_payload(&service, &mut prepare_payload, &keys[0]);
 
-    let merkle_root = compute_merkle_root(&prepare_request.transaction_hashes);
-    let next_consensus = compute_next_consensus_address(&service.context().validators);
-    let block_hash = compute_header_hash(
+    let merkle_root = ConsensusBlockFields::compute_merkle_root(&prepare_request.transaction_hashes);
+    let next_consensus =
+        ConsensusBlockFields::compute_next_consensus_address(&service.context().validators);
+    let block_hash = ConsensusBlockFields::compute_header_hash(
         prepare_request.version,
         prepare_request.prev_hash,
         merkle_root,

@@ -25,7 +25,7 @@ impl BinaryWriterExtensions for BinaryWriter {
     }
 
     fn write_serializable_collection<T: Serializable>(&mut self, value: &[T]) -> IoResult<()> {
-        helper::serialize_array(value, self)
+        helper::SerializeHelper::serialize_array(value, self)
     }
 
     fn write_nullable_array<T: Serializable>(&mut self, value: &[Option<T>]) -> IoResult<()> {

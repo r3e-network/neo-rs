@@ -8,7 +8,7 @@ use crate::key_pair::KeyPair;
 use crate::version::Version;
 use crate::wallet::{Wallet, WalletError, WalletResult};
 use crate::wallet_account::{StandardWalletAccount, WalletAccount};
-use crate::wallet_helper::{to_address, to_script_hash};
+use crate::wallet_helper::WalletAddress;
 use async_trait::async_trait;
 use neo_config::ProtocolSettings;
 use neo_execution::Contract;
@@ -555,7 +555,7 @@ impl Nep6Account {
         wallet: &Nep6Wallet,
         password: Option<&str>,
     ) -> WalletResult<Self> {
-        let script_hash = to_script_hash(&file.address, wallet.protocol_settings.address_version)
+        let script_hash = WalletAddress::to_script_hash(&file.address, wallet.protocol_settings.address_version)
             .map_err(|e| WalletError::Other(e.to_string()))?;
 
         let parsed_contract = match &file.contract {

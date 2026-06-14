@@ -39,7 +39,7 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_crypto::Crypto;
 use neo_error::{CoreError, CoreResult};
-use neo_io::{Serializable, serializable::helper::get_var_size_bytes};
+use neo_io::{Serializable, serializable::helper::SerializeHelper};
 use neo_primitives::UInt160;
 use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
@@ -137,7 +137,7 @@ impl Witness {
     ///
     /// The size in bytes
     pub fn size(&self) -> usize {
-        get_var_size_bytes(&self.invocation_script) + get_var_size_bytes(&self.verification_script)
+        SerializeHelper::get_var_size_bytes(&self.invocation_script) + SerializeHelper::get_var_size_bytes(&self.verification_script)
     }
 
     /// Converts the witness to JSON (matches C# `ToJson`).
@@ -205,7 +205,7 @@ impl Witness {
             return Ok(false);
         }
 
-        let script = match neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_keys(
+        let script = match neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_keys(
             required_signatures,
             public_keys,
         ) {
@@ -257,7 +257,7 @@ impl Witness {
 
     /// Extracts public key from verification script (matches C# verification script parsing exactly).
     fn extract_public_key_from_verification_script(&self) -> Result<Vec<u8>, CoreError> {
-        if !neo_vm::script_builder::redeem_script::is_signature_contract(&self.verification_script) {
+        if !neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(&self.verification_script) {
             return Err(CoreError::Invalid {
                 message: "Unsupported verification script format".to_string(),
             });
@@ -348,7 +348,7 @@ impl Witness {
             });
         }
 
-        Ok(neo_vm::script_builder::redeem_script::signature_redeem_script(public_key))
+        Ok(neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(public_key))
     }
 }
 
@@ -452,8 +452,8 @@ mod tests {
             assert_eq!(witness.size(), writer.as_bytes().len());
             assert_eq!(
                 witness.size(),
-                get_var_size_bytes(&witness.invocation_script)
-                    + get_var_size_bytes(&witness.verification_script)
+                SerializeHelper::get_var_size_bytes(&witness.invocation_script)
+                    + SerializeHelper::get_var_size_bytes(&witness.verification_script)
             );
         }
     }
@@ -498,7 +498,7 @@ mod tests {
 
         let public_keys: Vec<Vec<u8>> = pairs.iter().map(|(p, _)| p.clone()).collect();
         let verification_script =
-            neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_keys(m, &public_keys)
+            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_keys(m, &public_keys)
                 .expect("multi-sig redeem script");
         let account = UInt160::from_script(&verification_script);
 

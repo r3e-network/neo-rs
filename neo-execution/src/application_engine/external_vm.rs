@@ -168,9 +168,9 @@ impl ExternalVmHost<'_> {
                 let buffer = if aspid_enabled {
                     let seed = network.wrapping_add(self.engine.random_counter());
                     self.engine.increment_random_counter();
-                    murmur128(self.engine.nonce_bytes(), seed)
+                    Murmur3::murmur128(self.engine.nonce_bytes(), seed)
                 } else {
-                    let bytes = murmur128(self.engine.nonce_bytes(), network);
+                    let bytes = Murmur3::murmur128(self.engine.nonce_bytes(), network);
                     self.engine.set_nonce_bytes(bytes);
                     bytes
                 };

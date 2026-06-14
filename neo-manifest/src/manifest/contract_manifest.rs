@@ -10,7 +10,7 @@ use crate::manifest::{
 };
 use neo_error::CoreError;
 use neo_error::CoreResult;
-use neo_io::serializable::helper::{get_var_size, get_var_size_str};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt160;
 use neo_primitives::constants::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
@@ -110,38 +110,38 @@ impl ContractManifest {
         // node). Size calculations must mirror `serialize_io` exactly.
         let mut size = 0usize;
 
-        size += get_var_size_str(&self.name);
+        size += SerializeHelper::get_var_size_str(&self.name);
 
-        size += get_var_size(self.groups.len() as u64);
+        size += SerializeHelper::get_var_size(self.groups.len() as u64);
         for group in &self.groups {
             let group_json = serde_json::to_string(group).unwrap_or_default();
-            size += get_var_size_str(&group_json);
+            size += SerializeHelper::get_var_size_str(&group_json);
         }
 
         let features_json = serde_json::to_string(&self.features).unwrap_or_default();
-        size += get_var_size_str(&features_json);
+        size += SerializeHelper::get_var_size_str(&features_json);
 
-        size += get_var_size(self.supported_standards.len() as u64);
+        size += SerializeHelper::get_var_size(self.supported_standards.len() as u64);
         for standard in &self.supported_standards {
-            size += get_var_size_str(standard);
+            size += SerializeHelper::get_var_size_str(standard);
         }
 
         let abi_json = serde_json::to_string(&self.abi).unwrap_or_default();
-        size += get_var_size_str(&abi_json);
+        size += SerializeHelper::get_var_size_str(&abi_json);
 
-        size += get_var_size(self.permissions.len() as u64);
+        size += SerializeHelper::get_var_size(self.permissions.len() as u64);
         for permission in &self.permissions {
             let permission_json = serde_json::to_string(permission).unwrap_or_default();
-            size += get_var_size_str(&permission_json);
+            size += SerializeHelper::get_var_size_str(&permission_json);
         }
 
         match &self.trusts {
-            WildCardContainer::Wildcard => size += get_var_size(0),
+            WildCardContainer::Wildcard => size += SerializeHelper::get_var_size(0),
             WildCardContainer::List(trusts) => {
-                size += get_var_size(trusts.len() as u64);
+                size += SerializeHelper::get_var_size(trusts.len() as u64);
                 for trust in trusts {
                     let trust_json = serde_json::to_string(trust).unwrap_or_default();
-                    size += get_var_size_str(&trust_json);
+                    size += SerializeHelper::get_var_size_str(&trust_json);
                 }
             }
         }
@@ -151,7 +151,7 @@ impl ContractManifest {
             .as_ref()
             .and_then(|value| serde_json::to_string(value).ok())
             .unwrap_or_default();
-        size += get_var_size_str(&extra_json);
+        size += SerializeHelper::get_var_size_str(&extra_json);
 
         size
     }

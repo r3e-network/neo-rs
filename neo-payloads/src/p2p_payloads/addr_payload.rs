@@ -1,7 +1,5 @@
 use super::network_address_with_time::NetworkAddressWithTime;
-use neo_io::serializable::helper::{
-    deserialize_array, get_var_size_serializable_slice, serialize_array,
-};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +24,7 @@ impl AddrPayload {
 
 impl Serializable for AddrPayload {
     fn size(&self) -> usize {
-        get_var_size_serializable_slice(&self.address_list)
+        SerializeHelper::get_var_size_serializable_slice(&self.address_list)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -34,11 +32,11 @@ impl Serializable for AddrPayload {
             return Err(IoError::invalid_data("Too many addresses"));
         }
 
-        serialize_array(&self.address_list, writer)
+        SerializeHelper::serialize_array(&self.address_list, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let address_list = deserialize_array(reader, MAX_COUNT_TO_SEND)?;
+        let address_list = SerializeHelper::deserialize_array(reader, MAX_COUNT_TO_SEND)?;
         if address_list.is_empty() {
             return Err(IoError::invalid_data("Empty address list"));
         }

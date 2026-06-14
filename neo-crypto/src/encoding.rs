@@ -5,7 +5,7 @@ use base64::Engine as _;
 use base64::alphabet;
 use base64::engine::DecodePaddingMode;
 use base64::engine::general_purpose::{self, GeneralPurpose, GeneralPurposeConfig};
-use neo_primitives::base58_check::{self, Base58CheckDecodeError};
+use neo_primitives::base58_check::{Base58Check, Base58CheckDecodeError};
 
 /// Base58 encoding/decoding utilities.
 pub struct Base58;
@@ -27,12 +27,12 @@ impl Base58 {
     /// Encodes data to `Base58Check` with a 4-byte Neo/Bitcoin-style checksum.
     #[must_use]
     pub fn encode_check(data: &[u8]) -> String {
-        base58_check::encode_check(data)
+        Base58Check::encode_check(data)
     }
 
     /// Decodes `Base58Check` bytes and verifies the 4-byte checksum.
     pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
-        base58_check::decode_check(s).map_err(map_base58_check_decode_error)
+        Base58Check::decode_check(s).map_err(map_base58_check_decode_error)
     }
 }
 

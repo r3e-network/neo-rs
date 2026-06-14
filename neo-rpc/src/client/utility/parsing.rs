@@ -4,7 +4,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_payloads::OracleResponseCode;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::{JArray, JObject, JToken};
-use neo_wallets::wallet_helper as WalletHelper;
+use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
 use serde_json::Value as JsonValue;
 use std::{fmt::Display, str::FromStr};
@@ -587,7 +587,7 @@ mod tests {
     use neo_config::ProtocolSettings;
     use neo_primitives::UInt160;
     use neo_serialization::json::{JArray, JObject};
-    use neo_wallets::wallet_helper as WalletHelper;
+    use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 
     #[test]
     fn optional_string_or_null_preserves_present_and_absent_values() {

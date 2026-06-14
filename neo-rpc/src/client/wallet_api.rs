@@ -7,7 +7,7 @@ use neo_payloads::Transaction;
 use neo_primitives::BigDecimal;
 use neo_primitives::UInt160;
 use neo_wallets::KeyPair;
-use neo_wallets::wallet_helper as WalletHelper;
+use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;

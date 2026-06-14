@@ -1,5 +1,5 @@
-use super::super::helpers::invocation_script_from_signature;
-use super::super::helpers::{compute_header_hash, compute_merkle_root};
+use super::super::helpers::ConsensusBlockFields;
+use super::super::helpers::InvocationScript;
 use super::super::{ConsensusEvent, ConsensusService};
 use crate::context::ConsensusState;
 use crate::messages::{
@@ -75,7 +75,7 @@ impl ConsensusService {
         self.context.prepare_request_invocation = if payload.witness.is_empty() {
             None
         } else {
-            Some(invocation_script_from_signature(&payload.witness))
+            Some(InvocationScript::invocation_script_from_signature(&payload.witness))
         };
         self.context.version = prepare_request.version;
         self.context.prev_hash = prepare_request.prev_hash;
@@ -96,8 +96,9 @@ impl ConsensusService {
         }
 
         // Calculate block header hash from proposal data (for commit signatures).
-        let merkle_root = compute_merkle_root(&self.context.proposed_tx_hashes);
-        let block_hash = compute_header_hash(
+        let merkle_root =
+            ConsensusBlockFields::compute_merkle_root(&self.context.proposed_tx_hashes);
+        let block_hash = ConsensusBlockFields::compute_header_hash(
             self.context.version,
             self.context.prev_hash,
             merkle_root,
@@ -181,7 +182,7 @@ impl ConsensusService {
         }
 
         // Add the response
-        let invocation_script = invocation_script_from_signature(&payload.witness);
+        let invocation_script = InvocationScript::invocation_script_from_signature(&payload.witness);
         self.context.add_prepare_response(
             payload.validator_index,
             invocation_script,
@@ -219,7 +220,7 @@ impl ConsensusService {
         let response_payload =
             self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize())?;
         let my_witness = response_payload.witness.clone();
-        let invocation_script = invocation_script_from_signature(&my_witness);
+        let invocation_script = InvocationScript::invocation_script_from_signature(&my_witness);
         self.broadcast(response_payload)?;
 
         // Add our own response
@@ -261,7 +262,7 @@ impl ConsensusService {
 
         let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
         let commit_witness = payload.witness.clone();
-        let commit_invocation = invocation_script_from_signature(&commit_witness);
+        let commit_invocation = InvocationScript::invocation_script_from_signature(&commit_witness);
         self.broadcast(payload)?;
         if !commit_witness.is_empty() {
             self.context

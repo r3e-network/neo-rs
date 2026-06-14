@@ -8,7 +8,7 @@ use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::{JObject, JToken};
-use neo_wallets::wallet_helper as WalletHelper;
+use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
 
 /// Builds the shared NEP balance container shape.

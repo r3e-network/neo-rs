@@ -85,7 +85,7 @@ macro_rules! impl_serializable {
 
     // ── var_bytes ──────────────────────────────────────────────────────────
     (@size $total:ident, $val:ident, var_bytes { max: $max:expr }) => {
-        $total += $crate::serializable::helper::get_var_size_bytes($val);
+        $total += $crate::serializable::helper::SerializeHelper::get_var_size_bytes($val);
     };
     (@serialize $writer:ident, $val:ident, var_bytes { max: $max:expr }) => {
         $writer.write_var_bytes($val)?;
@@ -96,7 +96,7 @@ macro_rules! impl_serializable {
 
     // ── var_string ─────────────────────────────────────────────────────────
     (@size $total:ident, $val:ident, var_string { max: $max:expr }) => {
-        $total += $crate::serializable::helper::get_var_size_str($val);
+        $total += $crate::serializable::helper::SerializeHelper::get_var_size_str($val);
     };
     (@serialize $writer:ident, $val:ident, var_string { max: $max:expr }) => {
         $writer.write_var_string($val)?;
@@ -107,13 +107,13 @@ macro_rules! impl_serializable {
 
     // ── var_array<T> ───────────────────────────────────────────────────────
     (@size $total:ident, $val:ident, var_array <$elem:ty> { max: $max:expr }) => {
-        $total += $crate::serializable::helper::get_var_size_serializable_slice($val);
+        $total += $crate::serializable::helper::SerializeHelper::get_var_size_serializable_slice($val);
     };
     (@serialize $writer:ident, $val:ident, var_array <$elem:ty> { max: $max:expr }) => {
-        $crate::serializable::helper::serialize_array($val, $writer)?;
+        $crate::serializable::helper::SerializeHelper::serialize_array($val, $writer)?;
     };
     (@deserialize $reader:ident, $field:ident, var_array <$elem:ty> { max: $max:expr }) => {
-        let $field = $crate::serializable::helper::deserialize_array::<$elem>($reader, $max)?;
+        let $field = $crate::serializable::helper::SerializeHelper::deserialize_array::<$elem>($reader, $max)?;
     };
 
     // ── primitive: u8 ──────────────────────────────────────────────────────

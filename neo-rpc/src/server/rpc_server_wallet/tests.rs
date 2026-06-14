@@ -14,7 +14,7 @@ use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_primitives::UInt256;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::VmState as VMState;
-use neo_wallets::wallet_helper;
+use neo_wallets::wallet_helper::WalletAddress as wallet_helper;
 use num_bigint::BigInt;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};

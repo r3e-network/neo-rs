@@ -3,7 +3,7 @@
 use crate::Interoperable;
 use crate::application_engine::{ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE};
 use neo_config::hardfork::Hardfork;
-use neo_crypto::murmur128;
+use neo_crypto::Murmur3;
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_manifest::ContractParameterDefinition;
@@ -167,9 +167,9 @@ impl ApplicationEngine {
         let buffer = if aspid_enabled {
             let seed = network.wrapping_add(self.random_counter());
             self.increment_random_counter();
-            murmur128(self.nonce_bytes(), seed)
+            Murmur3::murmur128(self.nonce_bytes(), seed)
         } else {
-            let bytes = murmur128(self.nonce_bytes(), network);
+            let bytes = Murmur3::murmur128(self.nonce_bytes(), network);
             self.set_nonce_bytes(bytes);
             bytes
         };

@@ -7,8 +7,7 @@
 use neo_io::IoResult;
 pub use neo_p2p::NodeCapabilityType;
 pub use neo_payloads::node_capability::{
-    MAX_UNKNOWN_CAPABILITY_DATA, NodeCapability, deserialize_node_capabilities,
-    node_capabilities_size, serialize_node_capabilities,
+    MAX_UNKNOWN_CAPABILITY_DATA, NodeCapabilities, NodeCapability,
 };
 
 /// Constructs an archival-node capability descriptor.

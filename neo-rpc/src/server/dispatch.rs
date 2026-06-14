@@ -15,79 +15,83 @@ use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Weak};
 use tracing::error;
 
-/// Look up a registered RPC handler by method name (case-insensitive).
-///
-/// Returns `Err(RpcError::access_denied())` for disabled methods,
-/// `Err(RpcError::internal_server_error())` if the server has been
-/// dropped, and `Err(RpcError::method_not_found())` for unknown methods.
-pub(crate) fn resolve_rpc_handler(
-    server: &Weak<RwLock<RpcServer>>,
-    disabled: &HashSet<String>,
-    method: &str,
-) -> Result<(Arc<RwLock<RpcServer>>, Arc<RpcHandler>), RpcError> {
-    let method_key = method.to_ascii_lowercase();
-    if disabled.contains(&method_key) {
-        return Err(RpcError::access_denied());
+pub struct Dispatch;
+
+impl Dispatch {
+    /// Look up a registered RPC handler by method name (case-insensitive).
+    ///
+    /// Returns `Err(RpcError::access_denied())` for disabled methods,
+    /// `Err(RpcError::internal_server_error())` if the server has been
+    /// dropped, and `Err(RpcError::method_not_found())` for unknown methods.
+    pub(crate) fn resolve_rpc_handler(
+        server: &Weak<RwLock<RpcServer>>,
+        disabled: &HashSet<String>,
+        method: &str,
+    ) -> Result<(Arc<RwLock<RpcServer>>, Arc<RpcHandler>), RpcError> {
+        let method_key = method.to_ascii_lowercase();
+        if disabled.contains(&method_key) {
+            return Err(RpcError::access_denied());
+        }
+
+        let Some(server_arc) = server.upgrade() else {
+            return Err(RpcError::internal_server_error());
+        };
+
+        let Some(handler) = Dispatch::lookup_rpc_handler(&server_arc, &method_key) else {
+            return Err(RpcError::method_not_found().with_data(method));
+        };
+
+        Ok((server_arc, handler))
     }
 
-    let Some(server_arc) = server.upgrade() else {
-        return Err(RpcError::internal_server_error());
-    };
-
-    let Some(handler) = lookup_rpc_handler(&server_arc, &method_key) else {
-        return Err(RpcError::method_not_found().with_data(method));
-    };
-
-    Ok((server_arc, handler))
-}
-
-/// Look up a handler in the server's method registry.
-pub(crate) fn lookup_rpc_handler(
-    server_arc: &Arc<RwLock<RpcServer>>,
-    method_key: &str,
-) -> Option<Arc<RpcHandler>> {
-    let server_guard = server_arc.read();
-    let guard = server_guard.handlers_guard();
-    guard.get(method_key).cloned()
-}
-
-/// Invoke a registered handler, catching panics and applying the
-/// configured `UnhandledExceptionPolicy`.
-pub(crate) fn invoke_rpc_handler(
-    server_arc: &Arc<RwLock<RpcServer>>,
-    handler: Arc<RpcHandler>,
-    method: &str,
-    params: &[serde_json::Value],
-) -> Result<serde_json::Value, RpcError> {
-    let policy = RpcServerSettings::current().exception_policy();
-    let callback = handler.callback();
-    let call_result = panic::catch_unwind(AssertUnwindSafe(|| {
+    /// Look up a handler in the server's method registry.
+    pub(crate) fn lookup_rpc_handler(
+        server_arc: &Arc<RwLock<RpcServer>>,
+        method_key: &str,
+    ) -> Option<Arc<RpcHandler>> {
         let server_guard = server_arc.read();
-        (callback)(&server_guard, params)
-    }));
+        let guard = server_guard.handlers_guard();
+        guard.get(method_key).cloned()
+    }
 
-    match call_result {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(err)) => Err(RpcError::from(err)),
-        Err(payload) => {
-            error!(
-                target: "neo::rpc",
-                method,
-                error = panic_message(&payload),
-                "rpc handler panicked"
-            );
-            match policy {
-                UnhandledExceptionPolicy::StopPlugin => {
-                    let mut server = server_arc.write();
-                    server.stop_rpc_server();
+    /// Invoke a registered handler, catching panics and applying the
+    /// configured `UnhandledExceptionPolicy`.
+    pub(crate) fn invoke_rpc_handler(
+        server_arc: &Arc<RwLock<RpcServer>>,
+        handler: Arc<RpcHandler>,
+        method: &str,
+        params: &[serde_json::Value],
+    ) -> Result<serde_json::Value, RpcError> {
+        let policy = RpcServerSettings::current().exception_policy();
+        let callback = handler.callback();
+        let call_result = panic::catch_unwind(AssertUnwindSafe(|| {
+            let server_guard = server_arc.read();
+            (callback)(&server_guard, params)
+        }));
+
+        match call_result {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(err)) => Err(RpcError::from(err)),
+            Err(payload) => {
+                error!(
+                    target: "neo::rpc",
+                    method,
+                    error = panic_message(&payload),
+                    "rpc handler panicked"
+                );
+                match policy {
+                    UnhandledExceptionPolicy::StopPlugin => {
+                        let mut server = server_arc.write();
+                        server.stop_rpc_server();
+                    }
+                    UnhandledExceptionPolicy::StopNode => std::process::exit(1),
+                    UnhandledExceptionPolicy::Terminate => std::process::abort(),
+                    UnhandledExceptionPolicy::Ignore
+                    | UnhandledExceptionPolicy::Log
+                    | UnhandledExceptionPolicy::Continue => {}
                 }
-                UnhandledExceptionPolicy::StopNode => std::process::exit(1),
-                UnhandledExceptionPolicy::Terminate => std::process::abort(),
-                UnhandledExceptionPolicy::Ignore
-                | UnhandledExceptionPolicy::Log
-                | UnhandledExceptionPolicy::Continue => {}
+                Err(RpcError::internal_server_error())
             }
-            Err(RpcError::internal_server_error())
         }
     }
 }

@@ -6,7 +6,7 @@ use neo_primitives::{UInt160, UInt256};
 use neo_vm::script_builder::ScriptBuilder;
 
 use crate::error::{ConsensusError, ConsensusResult};
-use crate::service::helpers::{compute_merkle_root, multisig_verification_script};
+use crate::service::helpers::ConsensusBlockFields;
 
 /// Block data for assembly by upper layers
 #[derive(Debug, Clone)]
@@ -56,8 +56,9 @@ impl BlockData {
         // block is byte-identical to the one the validators committed to:
         // MerkleRoot over the transaction hashes, and the M-of-N multi-sig
         // verification script over the current validators.
-        let merkle_root = compute_merkle_root(&self.transaction_hashes);
-        let verification_script = multisig_verification_script(&self.validator_pubkeys);
+        let merkle_root = ConsensusBlockFields::compute_merkle_root(&self.transaction_hashes);
+        let verification_script =
+            ConsensusBlockFields::multisig_verification_script(&self.validator_pubkeys);
 
         // Push the commit signatures in the verification script's canonical
         // key order (C# `CheckMultisig` walks signatures and keys in lockstep,
@@ -139,7 +140,7 @@ mod tests {
             signatures: vec![(0u8, signature.clone())],
             validator_pubkeys: vec![pubkey.clone()],
             required_signatures: 1,
-            next_consensus: UInt160::from_script(&multisig_verification_script(std::slice::from_ref(&pubkey))),
+            next_consensus: UInt160::from_script(&ConsensusBlockFields::multisig_verification_script(std::slice::from_ref(&pubkey))),
         };
 
         let block = data
@@ -156,7 +157,7 @@ mod tests {
 
         // NextConsensus == hash of the 1-of-1 multi-sig over the validator key,
         // and that script is the witness verification script.
-        let expected_script = multisig_verification_script(&[pubkey]);
+        let expected_script = ConsensusBlockFields::multisig_verification_script(&[pubkey]);
         assert_eq!(
             *block.header.next_consensus(),
             UInt160::from_script(&expected_script)
@@ -217,7 +218,7 @@ mod tests {
         assert_eq!(*block.header.next_consensus(), committed_next_consensus);
         assert_eq!(
             block.header.witness.verification_script,
-            multisig_verification_script(&[pubkey]),
+            ConsensusBlockFields::multisig_verification_script(&[pubkey]),
             "the consensus address can differ from the current-round witness script"
         );
     }

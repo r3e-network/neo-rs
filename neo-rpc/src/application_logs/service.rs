@@ -11,7 +11,7 @@ use neo_primitives::panic_message;
 use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
 use neo_system::Node;
 use neo_vm::StackItem;
-use neo_vm::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
+use neo_vm::rpc_json::StackItemRpcJson;
 use neo_vm_rs::VmState as VMState;
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
@@ -172,7 +172,7 @@ impl ApplicationLogsService {
 
         let mut exception = include_exception.then(|| exec.exception.clone()).flatten();
         let stack_items: &[StackItem] = &exec.stack;
-        match stack_items_rpc_json_per_item(stack_items, self.settings.max_stack_size) {
+        match StackItemRpcJson::stack_items_rpc_json_per_item(stack_items, self.settings.max_stack_size) {
             Ok(stack) => {
                 trigger.insert("stack".to_string(), Value::Array(stack));
             }
@@ -319,7 +319,7 @@ fn notification_to_json(event: &NotifyEventArgs) -> Value {
     let state_values = event
         .state
         .iter()
-        .map(|item| stack_item_rpc_json(item, None))
+        .map(|item| StackItemRpcJson::stack_item_rpc_json(item, None))
         .collect::<Result<Vec<_>, _>>();
 
     let state = match state_values {

@@ -11,8 +11,4 @@ pub use neo_vm_rs::script_builder::{
 };
 
 // Re-export redeem_script helpers (these depend on neo-crypto, so they stay in neo-vm)
-pub use redeem_script::{
-    RedeemScriptError, check_multisig_hash, check_sig_hash, is_multi_sig_contract,
-    is_signature_contract, multi_sig_redeem_script_from_keys, multi_sig_redeem_script_from_points,
-    parse_multi_sig_contract, parse_multi_sig_invocation, signature_redeem_script,
-};
+pub use redeem_script::{RedeemScript, RedeemScriptError};

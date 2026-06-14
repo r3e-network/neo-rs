@@ -1,7 +1,8 @@
 use super::super::{NeoFsAuth, OracleServiceSettings};
-use super::signing::sign_neofs_bearer;
+use super::signing::NeoFsBearerSigner;
 use neo_wallets::KeyPair;
 
+impl NeoFsAuth {
 pub(crate) fn build_neofs_auth(
     settings: &OracleServiceSettings,
     oracle_key: Option<&KeyPair>,
@@ -28,7 +29,7 @@ pub(crate) fn build_neofs_auth(
         && token.as_deref().map(strip_bearer_prefix).is_some()
     {
         if let (Some(token_value), Some(key)) = (token.as_deref(), oracle_key) {
-            if let Some((sig, key_bytes)) = sign_neofs_bearer(
+            if let Some((sig, key_bytes)) = NeoFsBearerSigner::sign_neofs_bearer(
                 strip_bearer_prefix(token_value),
                 key,
                 settings.neofs_wallet_connect,
@@ -45,6 +46,7 @@ pub(crate) fn build_neofs_auth(
         signature_key,
         wallet_connect: settings.neofs_wallet_connect,
     }
+}
 }
 
 pub(crate) fn strip_bearer_prefix(value: &str) -> &str {

@@ -46,7 +46,7 @@ use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::{JObject, JToken};
 use neo_vm_rs::StackValue;
 use neo_wallets::KeyPair;
-use neo_wallets::wallet_helper as WalletHelper;
+use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
 use std::sync::OnceLock;
 

@@ -1,5 +1,5 @@
 use crate::error::{CryptoError, CryptoResult};
-use crate::murmur::murmur32;
+use crate::murmur::Murmur3;
 use bitvec::prelude::{BitVec, Lsb0};
 
 const SEED_MULTIPLIER: u32 = 0xFBA4_C795;
@@ -108,7 +108,7 @@ impl BloomFilter {
 }
 
 fn bit_index(bit_size: usize, element: &[u8], seed: u32) -> usize {
-    (murmur32(element, seed) as usize) % bit_size
+    (Murmur3::murmur32(element, seed) as usize) % bit_size
 }
 
 fn bloom_seed(hash_index: usize, tweak: u32) -> u32 {

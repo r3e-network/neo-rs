@@ -108,59 +108,62 @@ impl PartialOrd for OrderingKey {
     }
 }
 
-/// Compute ordering key based on policy
-pub fn compute_ordering_key(
-    policy: FairOrderingPolicy,
-    timing: &TransactionTiming,
-    tx_hash: &[u8; 32],
-    network_fee: i64,
-) -> OrderingKey {
-    match policy {
-        FairOrderingPolicy::FirstComeFirstServed => {
-            // Primary key is sequence number, secondary is random
-            OrderingKey {
-                primary: timing.sequence_number,
-                secondary: rand::random(),
-                tx_hash: *tx_hash,
+impl FairOrderingPolicy {
+    /// Compute ordering key based on policy
+    pub fn compute_ordering_key(
+        policy: FairOrderingPolicy,
+        timing: &TransactionTiming,
+        tx_hash: &[u8; 32],
+        network_fee: i64,
+    ) -> OrderingKey {
+        match policy {
+            FairOrderingPolicy::FirstComeFirstServed => {
+                // Primary key is sequence number, secondary is random
+                OrderingKey {
+                    primary: timing.sequence_number,
+                    secondary: rand::random(),
+                    tx_hash: *tx_hash,
+                }
             }
-        }
-        FairOrderingPolicy::BatchedRandom { .. } => {
-            // Primary key is batch ID, secondary is random within batch
-            OrderingKey {
-                primary: timing.batch_id.unwrap_or(0),
-                secondary: rand::random(),
-                tx_hash: *tx_hash,
+            FairOrderingPolicy::BatchedRandom { .. } => {
+                // Primary key is batch ID, secondary is random within batch
+                OrderingKey {
+                    primary: timing.batch_id.unwrap_or(0),
+                    secondary: rand::random(),
+                    tx_hash: *tx_hash,
+                }
             }
-        }
-        FairOrderingPolicy::CommitReveal { .. } => {
-            // Primary key is commit time, secondary uses commitment for deterministic ordering
-            let commitment_key = timing
-                .commitment
-                .map(|c| u64::from_le_bytes(c[..8].try_into().unwrap()))
-                .unwrap_or(0);
-            OrderingKey {
-                primary: timing.sequence_number,
-                secondary: commitment_key,
-                tx_hash: *tx_hash,
+            FairOrderingPolicy::CommitReveal { .. } => {
+                // Primary key is commit time, secondary uses commitment for deterministic ordering
+                let commitment_key = timing
+                    .commitment
+                    .map(|c| u64::from_le_bytes(c[..8].try_into().unwrap()))
+                    .unwrap_or(0);
+                OrderingKey {
+                    primary: timing.sequence_number,
+                    secondary: commitment_key,
+                    tx_hash: *tx_hash,
+                }
             }
-        }
-        FairOrderingPolicy::ThresholdEncryption => {
-            // All transactions have same priority until decrypted
-            // Random ordering after decryption
-            OrderingKey {
-                primary: 0,
-                secondary: rand::random(),
-                tx_hash: *tx_hash,
+            FairOrderingPolicy::ThresholdEncryption => {
+                // All transactions have same priority until decrypted
+                // Random ordering after decryption
+                OrderingKey {
+                    primary: 0,
+                    secondary: rand::random(),
+                    tx_hash: *tx_hash,
+                }
             }
-        }
-        FairOrderingPolicy::FcfsWithGasCap { max_gas_multiplier } => {
-            // FCFS but transactions paying excessive fees get deprioritized
-            // This prevents gas wars while still allowing normal fee bidding
-            let capped_fee = network_fee.min(network_fee.saturating_mul(max_gas_multiplier as i64));
-            OrderingKey {
-                primary: timing.sequence_number,
-                secondary: capped_fee as u64,
-                tx_hash: *tx_hash,
+            FairOrderingPolicy::FcfsWithGasCap { max_gas_multiplier } => {
+                // FCFS but transactions paying excessive fees get deprioritized
+                // This prevents gas wars while still allowing normal fee bidding
+                let capped_fee =
+                    network_fee.min(network_fee.saturating_mul(max_gas_multiplier as i64));
+                OrderingKey {
+                    primary: timing.sequence_number,
+                    secondary: capped_fee as u64,
+                    tx_hash: *tx_hash,
+                }
             }
         }
     }
@@ -180,8 +183,8 @@ mod tests {
         let hash1 = [0u8; 32];
         let hash2 = [1u8; 32];
 
-        let key1 = compute_ordering_key(policy, &timing1, &hash1, 1000);
-        let key2 = compute_ordering_key(policy, &timing2, &hash2, 2000);
+        let key1 = FairOrderingPolicy::compute_ordering_key(policy, &timing1, &hash1, 1000);
+        let key2 = FairOrderingPolicy::compute_ordering_key(policy, &timing2, &hash2, 2000);
 
         // Earlier sequence number should come first
         assert!(key1 < key2);
@@ -201,9 +204,9 @@ mod tests {
         let hash2 = [1u8; 32];
         let hash3 = [2u8; 32];
 
-        let key1 = compute_ordering_key(policy, &timing1, &hash1, 1000);
-        let key2 = compute_ordering_key(policy, &timing2, &hash2, 1000);
-        let key3 = compute_ordering_key(policy, &timing3, &hash3, 1000);
+        let key1 = FairOrderingPolicy::compute_ordering_key(policy, &timing1, &hash1, 1000);
+        let key2 = FairOrderingPolicy::compute_ordering_key(policy, &timing2, &hash2, 1000);
+        let key3 = FairOrderingPolicy::compute_ordering_key(policy, &timing3, &hash3, 1000);
 
         // Same batch should have same primary key
         assert_eq!(key1.primary, key2.primary);

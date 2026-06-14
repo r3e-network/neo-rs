@@ -1,8 +1,5 @@
-use super::node_capability::{
-    NodeCapability, deserialize_node_capabilities, node_capabilities_size,
-    serialize_node_capabilities,
-};
-use neo_io::serializable::helper::get_var_size_str;
+use super::node_capability::{NodeCapabilities, NodeCapability};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
@@ -65,8 +62,8 @@ impl Serializable for VersionPayload {
         4 + // Version
         4 + // Timestamp
         4 + // Nonce
-        get_var_size_str(&self.user_agent) + // UserAgent
-        node_capabilities_size(&self.capabilities)
+        SerializeHelper::get_var_size_str(&self.user_agent) + // UserAgent
+        NodeCapabilities::node_capabilities_size(&self.capabilities)
         // Capabilities
     }
 
@@ -76,7 +73,7 @@ impl Serializable for VersionPayload {
         writer.write_u32(self.timestamp)?;
         writer.write_u32(self.nonce)?;
         writer.write_var_string(&self.user_agent)?;
-        serialize_node_capabilities(&self.capabilities, writer)
+        NodeCapabilities::serialize_node_capabilities(&self.capabilities, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
@@ -86,7 +83,7 @@ impl Serializable for VersionPayload {
         let nonce = reader.read_u32()?;
         let user_agent = reader.read_var_string(1024)?;
 
-        let capabilities = deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
+        let capabilities = NodeCapabilities::deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
 
         Ok(Self {
             network,

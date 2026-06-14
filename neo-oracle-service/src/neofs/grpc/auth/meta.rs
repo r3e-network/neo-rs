@@ -5,8 +5,9 @@ use neo_error::{CoreError, CoreResult};
 const NEOFS_SDK_VERSION_MAJOR: u32 = 2;
 const NEOFS_SDK_VERSION_MINOR: u32 = 11;
 
+impl NeoFsAuth {
 pub(crate) fn build_neofs_meta_header(
-    auth: &NeoFsAuth,
+    &self,
 ) -> CoreResult<neofs_v2::session::RequestMetaHeader> {
     let mut meta = neofs_v2::session::RequestMetaHeader {
         version: Some(neofs_v2::refs::Version {
@@ -16,10 +17,11 @@ pub(crate) fn build_neofs_meta_header(
         ttl: 2,
         ..Default::default()
     };
-    if let Some(token) = build_neofs_bearer_token(auth)? {
+    if let Some(token) = build_neofs_bearer_token(self)? {
         meta.bearer_token = Some(token);
     }
     Ok(meta)
+}
 }
 
 fn build_neofs_bearer_token(

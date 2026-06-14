@@ -13,11 +13,9 @@ mod proto;
 mod tests;
 
 use super::OracleServiceSettings;
-use auth::build_neofs_auth;
 use http::normalize_neofs_endpoint;
 use neo_payloads::OracleResponseCode;
 use neo_wallets::KeyPair;
-use parse::parse_neofs_request;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NeoFsRange {
@@ -76,7 +74,7 @@ impl OracleNeoFsProtocol {
         url: &str,
         oracle_key: Option<&KeyPair>,
     ) -> (OracleResponseCode, String) {
-        let request = match parse_neofs_request(url) {
+        let request = match NeoFsRequest::parse_neofs_request(url) {
             Ok(request) => request,
             Err(_) => return (OracleResponseCode::Error, String::new()),
         };
@@ -84,7 +82,7 @@ impl OracleNeoFsProtocol {
             Ok(endpoint) => endpoint,
             Err(_) => return (OracleResponseCode::Error, String::new()),
         };
-        let auth = build_neofs_auth(settings, oracle_key);
+        let auth = NeoFsAuth::build_neofs_auth(settings, oracle_key);
 
         if settings.neofs_use_grpc {
             #[cfg(feature = "neofs-grpc")]

@@ -14,9 +14,7 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_crypto::Crypto;
 use neo_error::{CoreError, CoreResult};
 use neo_io::extensions::memory_reader::MemoryReaderExtensions;
-use neo_io::serializable::helper::{
-    get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
-};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde_json::{Value, json};
 
@@ -67,11 +65,11 @@ impl NefFile {
     pub fn size(&self) -> usize {
         4 + // Magic (u32)
         Self::COMPILER_LENGTH + // Compiler fixed string (64 bytes)
-        get_var_size_str(&self.source) + // Source var string
+        SerializeHelper::get_var_size_str(&self.source) + // Source var string
         1 + // Reserved byte
-        get_var_size_serializable_slice(&self.tokens) + // Tokens array
+        SerializeHelper::get_var_size_serializable_slice(&self.tokens) + // Tokens array
         2 + // Reserved bytes (u16)
-        get_var_size_bytes(&self.script) + // Script var bytes
+        SerializeHelper::get_var_size_bytes(&self.script) + // Script var bytes
         4 // Checksum (u32)
     }
 

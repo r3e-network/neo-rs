@@ -158,7 +158,7 @@ pub use block::Block;
 pub use conflicts::Conflicts;
 pub use event_handlers::{
     AccountLike, CommittedHandler, CommittingHandler, MessageLike, MessageReceivedHandler,
-    PluginEvent, WalletChangedHandler, WalletProvider, WitnessType, broadcast_plugin_event,
+    PluginEvent, WalletChangedHandler, WalletProvider, WitnessType,
 };
 pub use extensible_payload::ExtensiblePayload;
 pub use header::{Header as BlockHeader, Header};

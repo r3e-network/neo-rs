@@ -13,8 +13,8 @@ impl Transaction {
         writer.write_i64(self.network_fee)?;
         writer.write_u32(self.valid_until_block)?;
 
-        serialize_array(&self.signers, writer)?;
-        serialize_array(&self.attributes, writer)?;
+        SerializeHelper::serialize_array(&self.signers, writer)?;
+        SerializeHelper::serialize_array(&self.attributes, writer)?;
 
         if self.script.len() > u16::MAX as usize {
             return Err(IoError::invalid_data(
@@ -84,7 +84,7 @@ impl Transaction {
         max_count: usize,
     ) -> IoResult<Vec<Signer>> {
         let mut hashset = HashSet::new();
-        let signers = deserialize_array_with(reader, max_count, |reader| {
+        let signers = SerializeHelper::deserialize_array_with(reader, max_count, |reader| {
             let signer = <Signer as Serializable>::deserialize(reader)?;
             if !hashset.insert(signer.account) {
                 return Err(IoError::invalid_data("Duplicate signer"));
@@ -104,7 +104,7 @@ impl Transaction {
         max_count: usize,
     ) -> IoResult<Vec<TransactionAttribute>> {
         let mut hashset = HashSet::new();
-        deserialize_array_with(reader, max_count, |reader| {
+        SerializeHelper::deserialize_array_with(reader, max_count, |reader| {
             let attribute = <TransactionAttribute as Serializable>::deserialize(reader)?;
             if !attribute.allow_multiple() && !hashset.insert(attribute.type_id()) {
                 return Err(IoError::invalid_data("Duplicate attribute"));
@@ -122,10 +122,10 @@ impl Serializable for Transaction {
         }
 
         let size = HEADER_SIZE
-            + get_var_size_serializable_slice(&self.signers)
-            + get_var_size_serializable_slice(&self.attributes)
-            + get_var_size_bytes(&self.script)
-            + get_var_size_serializable_slice(&self.witnesses);
+            + SerializeHelper::get_var_size_serializable_slice(&self.signers)
+            + SerializeHelper::get_var_size_serializable_slice(&self.attributes)
+            + SerializeHelper::get_var_size_bytes(&self.script)
+            + SerializeHelper::get_var_size_serializable_slice(&self.witnesses);
 
         *size_guard = Some(size);
         size
@@ -133,13 +133,13 @@ impl Serializable for Transaction {
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         self.serialize_unsigned(writer)?;
-        serialize_array(&self.witnesses, writer)
+        SerializeHelper::serialize_array(&self.witnesses, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let mut tx = Self::deserialize_unsigned(reader)?;
 
-        tx.witnesses = deserialize_exact_array(reader, tx.signers.len(), "Witness count mismatch")?;
+        tx.witnesses = SerializeHelper::deserialize_exact_array(reader, tx.signers.len(), "Witness count mismatch")?;
 
         tx.invalidate_size();
         Ok(tx)

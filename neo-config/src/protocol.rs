@@ -157,7 +157,7 @@ impl ProtocolSettings {
 
     /// Returns built-in ProtocolSettings for Neo MainNet.
     pub fn mainnet() -> Self {
-        let standby_committee = parse_committee_slice(&[
+        let standby_committee = CommitteeParser::parse_committee_slice(&[
             "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
             "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093",
             "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
@@ -209,7 +209,7 @@ impl ProtocolSettings {
 
     /// Returns built-in ProtocolSettings for Neo TestNet.
     pub fn testnet() -> Self {
-        let standby_committee = parse_committee_slice(&[
+        let standby_committee = CommitteeParser::parse_committee_slice(&[
             "023e9b32ea89b94d066e649b124fd50e396ee91369e8e2a6ae1b11c170d022256d",
             "03009b7540e10f2562e5fd8fac9eaec25166a58b26e412348ff5a86927bfac22a2",
             "02ba2c70f5996f357a43198705859fae2cfea13e1172962800772b3d588a9d4abd",
@@ -437,7 +437,7 @@ impl ProtocolSettings {
         }
 
         if let Some(committee) = raw.standby_committee {
-            settings.standby_committee = parse_committee(committee)?;
+            settings.standby_committee = CommitteeParser::parse_committee(committee)?;
         }
 
         if let Some(hardforks) = raw.hardforks {
@@ -502,32 +502,36 @@ fn application_root() -> Option<PathBuf> {
         .and_then(|path| path.parent().map(Path::to_path_buf))
 }
 
-fn parse_committee_slice(entries: &[&str]) -> Result<Vec<ECPoint>, ProtocolConfigError> {
-    parse_committee(entries.iter().map(|entry| entry.to_string()).collect())
-}
+pub struct CommitteeParser;
 
-fn parse_committee(entries: Vec<String>) -> Result<Vec<ECPoint>, ProtocolConfigError> {
-    let mut committee = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let trimmed = neo_primitives::strip_hex_prefix(entry.trim());
-        if trimmed.is_empty() {
-            continue;
-        }
-        let bytes = hex::decode(trimmed).map_err(|err| {
-            ProtocolConfigError::InvalidCommitteeEntry {
-                entry: entry.clone(),
-                reason: format!("invalid hex: {err}"),
-            }
-        })?;
-        let point = ECPoint::from_bytes(&bytes).map_err(|e| {
-            ProtocolConfigError::InvalidCommitteeEntry {
-                entry: entry.clone(),
-                reason: e.to_string(),
-            }
-        })?;
-        committee.push(point);
+impl CommitteeParser {
+    fn parse_committee_slice(entries: &[&str]) -> Result<Vec<ECPoint>, ProtocolConfigError> {
+        CommitteeParser::parse_committee(entries.iter().map(|entry| entry.to_string()).collect())
     }
-    Ok(committee)
+
+    fn parse_committee(entries: Vec<String>) -> Result<Vec<ECPoint>, ProtocolConfigError> {
+        let mut committee = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let trimmed = neo_primitives::strip_hex_prefix(entry.trim());
+            if trimmed.is_empty() {
+                continue;
+            }
+            let bytes = hex::decode(trimmed).map_err(|err| {
+                ProtocolConfigError::InvalidCommitteeEntry {
+                    entry: entry.clone(),
+                    reason: format!("invalid hex: {err}"),
+                }
+            })?;
+            let point = ECPoint::from_bytes(&bytes).map_err(|e| {
+                ProtocolConfigError::InvalidCommitteeEntry {
+                    entry: entry.clone(),
+                    reason: e.to_string(),
+                }
+            })?;
+            committee.push(point);
+        }
+        Ok(committee)
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -36,7 +36,7 @@ impl ApplicationEngine {
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
         let diag = Self::should_trace_block(block_idx);
 
-        match crate::native_contract_provider::lookup_contract_management(
+        match crate::native_contract_provider::NativeContractLookup::lookup_contract_management(
             self.snapshot_cache.as_ref(),
             hash,
         ) {
@@ -78,7 +78,7 @@ impl ApplicationEngine {
     }
 
     fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> CoreResult<bool> {
-        crate::native_contract_provider::is_contract_blocked_by_policy(
+        crate::native_contract_provider::NativeContractLookup::is_contract_blocked_by_policy(
             self.snapshot_cache.as_ref(),
             contract_hash,
         )
@@ -211,7 +211,7 @@ impl ApplicationEngine {
             let executing_contract = if self.is_hardfork_enabled(Hardfork::HfDomovoi) {
                 executing_contract
             } else {
-                crate::native_contract_provider::lookup_contract_management(
+                crate::native_contract_provider::NativeContractLookup::lookup_contract_management(
                     self.snapshot_cache.as_ref(),
                     &previous_hash,
                 )
@@ -239,7 +239,7 @@ impl ApplicationEngine {
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, self.current_block_index())
         {
-            crate::native_contract_provider::get_whitelisted_fee_for_policy(
+            crate::native_contract_provider::NativeContractLookup::get_whitelisted_fee_for_policy(
                 self.snapshot_cache.as_ref(),
                 &contract.hash,
                 &method.name,

@@ -81,7 +81,7 @@ fn is_neofs_status_success(status: &neofs_v2::status::Status) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{neofs_v2, verify_neofs_signature_bytes};
-    use crate::neofs::auth::sign_neofs_sha512;
+    use crate::neofs::auth::NeoFsBearerSigner;
     use neo_crypto::Secp256r1Crypto;
     use neo_wallets::KeyPair;
 
@@ -92,7 +92,7 @@ mod tests {
         let data = b"neofs response body";
         let signature = neofs_v2::refs::Signature {
             key: key.compressed_public_key(),
-            sign: sign_neofs_sha512(data, &key).expect("neofs signature"),
+            sign: NeoFsBearerSigner::sign_neofs_sha512(data, &key).expect("neofs signature"),
             scheme: neofs_v2::refs::SignatureScheme::EcdsaSha512 as i32,
         };
 

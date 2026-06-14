@@ -1,6 +1,6 @@
 use super::super::super::proto::neofs_v2;
 use super::super::super::{NeoFsAuth, OracleNeoFsProtocol};
-use super::super::auth::{build_neofs_meta_header, build_neofs_request_verification_header};
+use super::super::auth::build_neofs_request_verification_header;
 use super::super::verify::validate_neofs_response;
 use neo_payloads::OracleResponseCode;
 use neo_payloads::oracle_response::MAX_RESULT_SIZE;
@@ -15,7 +15,7 @@ impl OracleNeoFsProtocol {
         auth: &NeoFsAuth,
         oracle_key: &KeyPair,
     ) -> (OracleResponseCode, String) {
-        let meta = match build_neofs_meta_header(auth) {
+        let meta = match auth.build_neofs_meta_header() {
             Ok(meta) => meta,
             Err(_) => return (OracleResponseCode::Error, String::new()),
         };

@@ -3,10 +3,7 @@
 //! These tests ensure full compatibility with C# Neo's ISerializable functionality.
 //! Tests are based on the C# Neo.IO.ISerializable test suite.
 
-use neo_io::serializable::helper::{
-    deserialize_array_with, deserialize_exact_array, get_var_size, get_var_size_for_slice,
-    serialize_array, serialize_array_with,
-};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 
 #[cfg(test)]
@@ -26,9 +23,9 @@ mod tests {
     impl Serializable for TestSerializable {
         fn size(&self) -> usize {
             4 + // value1
-            get_var_size(self.value2.len() as u64) + self.value2.len() + // value2
+            SerializeHelper::get_var_size(self.value2.len() as u64) + self.value2.len() + // value2
             1 + // value3
-            get_var_size(self.bytes.len() as u64) + self.bytes.len() // bytes
+            SerializeHelper::get_var_size(self.bytes.len() as u64) + self.bytes.len() // bytes
         }
 
         fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -90,7 +87,7 @@ mod tests {
             fn size(&self) -> usize {
                 self.inner.size() + // inner
                 4 + // count
-                get_var_size(self.items.len() as u64) + (self.items.len() * 4) // items
+                SerializeHelper::get_var_size(self.items.len() as u64) + (self.items.len() * 4) // items
             }
 
             fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -202,7 +199,7 @@ mod tests {
 
         impl Serializable for ArrayContainer {
             fn size(&self) -> usize {
-                let mut size = get_var_size(self.items.len() as u64);
+                let mut size = SerializeHelper::get_var_size(self.items.len() as u64);
                 for item in &self.items {
                     size += item.size();
                 }
@@ -278,12 +275,12 @@ mod tests {
             },
         ];
         let mut writer = BinaryWriter::new();
-        serialize_array(&items, &mut writer).unwrap();
+        SerializeHelper::serialize_array(&items, &mut writer).unwrap();
         let bytes = writer.into_bytes();
         let mut reader = MemoryReader::new(&bytes);
 
         assert!(
-            deserialize_exact_array::<TestSerializable>(&mut reader, 1, "count mismatch").is_err()
+            SerializeHelper::deserialize_exact_array::<TestSerializable>(&mut reader, 1, "count mismatch").is_err()
         );
         assert_eq!(reader.position(), 1);
     }
@@ -292,16 +289,16 @@ mod tests {
     fn test_custom_array_helpers_preserve_wire_layout() {
         let items = vec![0xAA, 0xBB, 0xCC];
 
-        assert_eq!(get_var_size_for_slice(&items, |_| 1), 4);
+        assert_eq!(SerializeHelper::get_var_size_for_slice(&items, |_| 1), 4);
 
         let mut writer = BinaryWriter::new();
-        serialize_array_with(&items, &mut writer, |item, writer| writer.write_u8(*item)).unwrap();
+        SerializeHelper::serialize_array_with(&items, &mut writer, |item, writer| writer.write_u8(*item)).unwrap();
         let bytes = writer.into_bytes();
 
         assert_eq!(bytes, vec![0x03, 0xAA, 0xBB, 0xCC]);
 
         let mut reader = MemoryReader::new(&bytes);
-        let decoded = deserialize_array_with(&mut reader, 3, |reader| reader.read_u8()).unwrap();
+        let decoded = SerializeHelper::deserialize_array_with(&mut reader, 3, |reader| reader.read_u8()).unwrap();
 
         assert_eq!(decoded, items);
         assert_eq!(reader.position(), bytes.len());
@@ -333,7 +330,7 @@ mod tests {
         impl Serializable for VersionedStruct {
             fn size(&self) -> usize {
                 1 + // version
-                get_var_size(self.data.len() as u64) + self.data.len() // data
+                SerializeHelper::get_var_size(self.data.len() as u64) + self.data.len() // data
             }
 
             fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

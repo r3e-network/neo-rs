@@ -1,7 +1,7 @@
 //! Recovery messages - for consensus state recovery.
 
 use crate::{ConsensusMessageType, ConsensusResult};
-use neo_io::serializable::helper::{deserialize_array, get_var_size_bytes, serialize_array};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -90,7 +90,7 @@ impl Serializable for ChangeViewPayloadCompact {
     }
 
     fn size(&self) -> usize {
-        1 + 1 + 8 + get_var_size_bytes(&self.invocation_script)
+        1 + 1 + 8 + SerializeHelper::get_var_size_bytes(&self.invocation_script)
     }
 }
 
@@ -120,7 +120,7 @@ impl Serializable for PreparationPayloadCompact {
     }
 
     fn size(&self) -> usize {
-        1 + get_var_size_bytes(&self.invocation_script)
+        1 + SerializeHelper::get_var_size_bytes(&self.invocation_script)
     }
 }
 
@@ -166,7 +166,7 @@ impl Serializable for CommitPayloadCompact {
     }
 
     fn size(&self) -> usize {
-        1 + 1 + 64 + get_var_size_bytes(&self.invocation_script)
+        1 + 1 + 64 + SerializeHelper::get_var_size_bytes(&self.invocation_script)
     }
 }
 
@@ -238,7 +238,7 @@ impl RecoveryMessage {
         // ChangeViewMessages (serializable array)
         let mut cvs = self.change_view_messages.clone();
         cvs.sort_by_key(|p| p.validator_index);
-        let _ = serialize_array(&cvs, &mut writer);
+        let _ = SerializeHelper::serialize_array(&cvs, &mut writer);
 
         // PrepareRequestMessage presence flag + value OR PreparationHash var-bytes.
         let has_prepare_request = self.prepare_request_message.is_some();
@@ -262,12 +262,12 @@ impl RecoveryMessage {
         // PreparationMessages (serializable array)
         let mut preps = self.preparation_messages.clone();
         preps.sort_by_key(|p| p.validator_index);
-        let _ = serialize_array(&preps, &mut writer);
+        let _ = SerializeHelper::serialize_array(&preps, &mut writer);
 
         // CommitMessages (serializable array)
         let mut commits = self.commit_messages.clone();
         commits.sort_by_key(|p| p.validator_index);
-        let _ = serialize_array(&commits, &mut writer);
+        let _ = SerializeHelper::serialize_array(&commits, &mut writer);
 
         writer.into_bytes()
     }
@@ -282,7 +282,7 @@ impl RecoveryMessage {
         let mut reader = MemoryReader::new(data);
 
         let change_view_messages =
-            deserialize_array::<ChangeViewPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
+            SerializeHelper::deserialize_array::<ChangeViewPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
                 |_| crate::ConsensusError::invalid_proposal("RecoveryMessage change views"),
             )?;
 
@@ -312,11 +312,11 @@ impl RecoveryMessage {
         };
 
         let preparation_messages =
-            deserialize_array::<PreparationPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
+            SerializeHelper::deserialize_array::<PreparationPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
                 |_| crate::ConsensusError::invalid_proposal("RecoveryMessage preparations"),
             )?;
         let commit_messages =
-            deserialize_array::<CommitPayloadCompact>(&mut reader, u8::MAX as usize)
+            SerializeHelper::deserialize_array::<CommitPayloadCompact>(&mut reader, u8::MAX as usize)
                 .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage commits"))?;
 
         Ok(Self {

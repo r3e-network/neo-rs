@@ -73,12 +73,12 @@ impl Helper {
     /// were hoisted below neo-core); kept here for the historical
     /// `Helper::is_signature_contract` path.
     pub fn is_signature_contract(script: &[u8]) -> bool {
-        neo_vm::script_builder::redeem_script::is_signature_contract(script)
+        neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(script)
     }
 
     /// Checks if a script is a multi-sig contract. Delegates to `neo-script-builder`.
     pub fn is_multi_sig_contract(script: &[u8]) -> bool {
-        neo_vm::script_builder::redeem_script::is_multi_sig_contract(script)
+        neo_vm::script_builder::redeem_script::RedeemScript::is_multi_sig_contract(script)
     }
 
     /// Gets the script hash from a contract
@@ -88,7 +88,7 @@ impl Helper {
 
     /// Creates a signature redeem script. Delegates to `neo-script-builder`.
     pub fn signature_redeem_script(public_key: &[u8]) -> Vec<u8> {
-        neo_vm::script_builder::redeem_script::signature_redeem_script(public_key)
+        neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(public_key)
     }
 
     /// Creates a multi-sig redeem script. Delegates to `neo-script-builder`.
@@ -101,7 +101,7 @@ impl Helper {
     /// - `m` exceeds `public_keys.len()`
     /// - any public key fails to parse
     pub fn try_multi_sig_redeem_script(m: usize, public_keys: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_keys(m, public_keys).map_err(Into::into)
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_keys(m, public_keys).map_err(Into::into)
     }
 
     /// Creates a multi-sig redeem script (panics on invalid input).
@@ -127,7 +127,7 @@ impl Helper {
     /// the ordered public keys. Delegates to `neo-script-builder` (recognizer primitives were
     /// hoisted below neo-core); kept here for the historical `Helper::parse_multi_sig_contract` path.
     pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
-        neo_vm::script_builder::redeem_script::parse_multi_sig_contract(script)
+        neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(script)
     }
 
     /// Parses a multi-signature invocation script. Delegates to `neo-script-builder`.
@@ -135,7 +135,7 @@ impl Helper {
         invocation: &[u8],
         required_signatures: usize,
     ) -> Option<Vec<Vec<u8>>> {
-        neo_vm::script_builder::redeem_script::parse_multi_sig_invocation(invocation, required_signatures)
+        neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(invocation, required_signatures)
     }
 
     /// Verifies all witnesses for a verifiable object.
@@ -252,7 +252,7 @@ impl Helper {
         if witness.verification_script.is_empty() {
             // Contract verification: load the contract's Verify method
             let mut contract =
-                crate::native_contract_provider::lookup_contract_management(snapshot, hash)?
+                crate::native_contract_provider::NativeContractLookup::lookup_contract_management(snapshot, hash)?
                     .ok_or_else(|| {
                         CoreError::invalid_operation(format!(
                             "Contract not found for hash {}",

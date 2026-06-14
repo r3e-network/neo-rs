@@ -45,7 +45,7 @@ pub(super) fn parse_address_param(
         }
     }
 
-    neo_wallets::wallet_helper::to_script_hash(text, address_version)
+    neo_wallets::wallet_helper::WalletAddress::to_script_hash(text, address_version)
         .map_err(|_| invalid_params(format!("Invalid address: {text}")))
 }
 
@@ -115,7 +115,7 @@ pub(super) fn collect_transfers(
         let transfer_address = if value.user_script_hash == UInt160::zero() {
             Value::Null
         } else {
-            Value::String(neo_wallets::wallet_helper::to_address(
+            Value::String(neo_wallets::wallet_helper::WalletAddress::to_address(
                 &value.user_script_hash,
                 address_version,
             ))
@@ -170,7 +170,7 @@ pub(super) fn collect_nep11_transfers(
         let transfer_address = if value.user_script_hash == UInt160::zero() {
             Value::Null
         } else {
-            Value::String(neo_wallets::wallet_helper::to_address(
+            Value::String(neo_wallets::wallet_helper::WalletAddress::to_address(
                 &value.user_script_hash,
                 address_version,
             ))

@@ -18,7 +18,7 @@ use neo_primitives::{UInt160, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_storage::{StorageItem, StorageKey};
 use neo_wallets::wallet::{Wallet, WalletError, WalletResult};
-use neo_wallets::wallet_helper as address_helper;
+use neo_wallets::wallet_helper::WalletAddress as address_helper;
 use neo_wallets::{KeyPair, StandardWalletAccount, WalletAccount};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};

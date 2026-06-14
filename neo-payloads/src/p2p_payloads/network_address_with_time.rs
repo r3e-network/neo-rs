@@ -1,9 +1,6 @@
 //! Network address descriptor with timestamp (mirrors `NetworkAddressWithTime.cs`).
 
-use super::node_capability::{
-    NodeCapability, deserialize_node_capabilities, node_capabilities_size,
-    serialize_node_capabilities,
-};
+use super::node_capability::{NodeCapabilities, NodeCapability};
 use super::version_payload::MAX_CAPABILITIES;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
@@ -64,7 +61,7 @@ impl Serializable for NetworkAddressWithTime {
     fn size(&self) -> usize {
         4 + // timestamp
         16 + // mapped address
-        node_capabilities_size(&self.capabilities)
+        NodeCapabilities::node_capabilities_size(&self.capabilities)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -75,7 +72,7 @@ impl Serializable for NetworkAddressWithTime {
             return Err(IoError::invalid_data("Too many capabilities"));
         }
 
-        serialize_node_capabilities(&self.capabilities, writer)
+        NodeCapabilities::serialize_node_capabilities(&self.capabilities, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
@@ -84,7 +81,7 @@ impl Serializable for NetworkAddressWithTime {
         let addr_array = reader.read_array::<16>()?;
         let address = Self::unmap_from_ipv6(&addr_array);
 
-        let capabilities = deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
+        let capabilities = NodeCapabilities::deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
 
         Ok(Self {
             timestamp,

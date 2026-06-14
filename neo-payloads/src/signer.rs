@@ -2,10 +2,7 @@ use hex::{decode as hex_decode, encode as hex_encode};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
 use neo_io::macros::{OptionExt, ValidateLength};
-use neo_io::serializable::helper::{
-    deserialize_array, deserialize_array_with, get_var_size_for_slice,
-    get_var_size_serializable_slice, serialize_array, serialize_array_with,
-};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::witness_rule::WitnessCondition;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
@@ -292,15 +289,15 @@ impl Serializable for Signer {
         let mut size = UINT160_SIZE + 1;
 
         if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
-            size += get_var_size_serializable_slice(&self.allowed_contracts);
+            size += SerializeHelper::get_var_size_serializable_slice(&self.allowed_contracts);
         }
 
         if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-            size += get_var_size_for_slice(&self.allowed_groups, |group| group.as_bytes().len());
+            size += SerializeHelper::get_var_size_for_slice(&self.allowed_groups, |group| group.as_bytes().len());
         }
 
         if self.scopes.contains(WitnessScope::WITNESS_RULES) {
-            size += get_var_size_serializable_slice(&self.rules);
+            size += SerializeHelper::get_var_size_serializable_slice(&self.rules);
         }
 
         size
@@ -314,14 +311,14 @@ impl Serializable for Signer {
         if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             self.allowed_contracts
                 .validate_max_length(MAX_SUBITEMS, "Allowed contracts")?;
-            serialize_array(&self.allowed_contracts, writer)?;
+            SerializeHelper::serialize_array(&self.allowed_contracts, writer)?;
         }
 
         // Write allowed groups if flag is set
         if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
             self.allowed_groups
                 .validate_max_length(MAX_SUBITEMS, "Allowed groups")?;
-            serialize_array_with(&self.allowed_groups, writer, |group, writer| {
+            SerializeHelper::serialize_array_with(&self.allowed_groups, writer, |group, writer| {
                 let encoded = group
                     .encode_point(true)
                     .map_err(|e| IoError::invalid_data(e.to_string()))?;
@@ -335,7 +332,7 @@ impl Serializable for Signer {
         // Write rules if flag is set
         if self.scopes.contains(WitnessScope::WITNESS_RULES) {
             self.rules.validate_max_length(MAX_SUBITEMS, "Rules")?;
-            serialize_array(&self.rules, writer)?;
+            SerializeHelper::serialize_array(&self.rules, writer)?;
         }
 
         Ok(())
@@ -369,12 +366,12 @@ impl Serializable for Signer {
 
         // Read allowed contracts if flag is set
         if scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
-            allowed_contracts = deserialize_array(reader, MAX_SUBITEMS)?;
+            allowed_contracts = SerializeHelper::deserialize_array(reader, MAX_SUBITEMS)?;
         }
 
         // Read allowed groups if flag is set
         if scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-            allowed_groups = deserialize_array_with(reader, MAX_SUBITEMS, |reader| {
+            allowed_groups = SerializeHelper::deserialize_array_with(reader, MAX_SUBITEMS, |reader| {
                 // C# Signer.Deserialize reads each AllowedGroups entry via ECPoint
                 // (DeserializeFrom -> DecodePoint), which accepts 33-byte compressed
                 // AND 65-byte uncompressed encodings. Reading a fixed 33 bytes here
@@ -388,7 +385,7 @@ impl Serializable for Signer {
 
         // Read rules if flag is set
         if scopes.contains(WitnessScope::WITNESS_RULES) {
-            rules = deserialize_array(reader, MAX_SUBITEMS)?;
+            rules = SerializeHelper::deserialize_array(reader, MAX_SUBITEMS)?;
         }
 
         Ok(Self {

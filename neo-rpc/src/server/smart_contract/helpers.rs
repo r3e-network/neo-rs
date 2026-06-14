@@ -7,7 +7,7 @@ use neo_payloads::signer::Signer;
 use neo_payloads::witness::Witness;
 use neo_primitives::UInt160;
 use neo_serialization::json::JToken;
-use neo_vm::rpc_json::stack_item_rpc_json_deferred_size_check;
+use neo_vm::rpc_json::StackItemRpcJson;
 use neo_vm::stack_item::StackItem;
 use neo_vm_rs::{StackValue, VmState};
 use num_traits::ToPrimitive;
@@ -169,7 +169,7 @@ fn stack_item_to_json_with_budget(
     session: Option<&mut Session>,
     max_size: Option<usize>,
 ) -> Result<Value, RpcException> {
-    let mut value = stack_item_rpc_json_deferred_size_check(item, max_size)
+    let mut value = StackItemRpcJson::stack_item_rpc_json_deferred_size_check(item, max_size)
         .map_err(|err| stack_item_error(err.to_string()))?;
     if let StackItem::InteropInterface(iface) = item {
         if let Some(session) = session {

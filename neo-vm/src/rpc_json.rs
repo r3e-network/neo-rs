@@ -18,6 +18,10 @@ struct RenderBudget {
     size_check: SizeCheck,
 }
 
+/// JSON-RPC envelope rendering for host VM stack items.
+pub struct StackItemRpcJson;
+
+impl StackItemRpcJson {
 /// Renders a single stack item as the Neo JSON-RPC stack envelope.
 pub fn stack_item_rpc_json(item: &StackItem, max_size: Option<usize>) -> Result<Value, VmError> {
     render_stack_item_with_size_check(item, max_size, SizeCheck::Immediate)
@@ -42,8 +46,9 @@ pub fn stack_items_rpc_json_per_item(
 ) -> Result<Vec<Value>, VmError> {
     items
         .iter()
-        .map(|item| stack_item_rpc_json(item, Some(max_size)))
+        .map(|item| Self::stack_item_rpc_json(item, Some(max_size)))
         .collect()
+}
 }
 
 fn render_stack_item_with_size_check(
@@ -196,9 +201,7 @@ impl RenderBudget {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item,
-    };
+    use super::StackItemRpcJson;
     use crate::StackItem;
     use crate::script::Script;
     use crate::stack_item::InteropInterface;
@@ -275,21 +278,21 @@ mod tests {
         ];
 
         for (item, expected) in cases {
-            assert_eq!(stack_item_rpc_json(&item, None).unwrap(), expected);
+            assert_eq!(StackItemRpcJson::stack_item_rpc_json(&item, None).unwrap(), expected);
         }
     }
 
     #[test]
     fn applies_size_budget_per_top_level_item() {
         let items = vec![StackItem::Null, StackItem::Null];
-        let values = stack_items_rpc_json_per_item(&items, 14).unwrap();
+        let values = StackItemRpcJson::stack_items_rpc_json_per_item(&items, 14).unwrap();
 
         assert_eq!(values, vec![json!({"type": "Any"}), json!({"type": "Any"})]);
     }
 
     #[test]
     fn reports_max_size_reached() {
-        let err = stack_item_rpc_json(&StackItem::Null, Some(13)).unwrap_err();
+        let err = StackItemRpcJson::stack_item_rpc_json(&StackItem::Null, Some(13)).unwrap_err();
 
         assert!(err.to_string().contains("Max size reached"));
     }
@@ -301,7 +304,7 @@ mod tests {
             let _ = array.set(0, item.clone());
         }
 
-        let err = stack_item_rpc_json(&item, None).unwrap_err();
+        let err = StackItemRpcJson::stack_item_rpc_json(&item, None).unwrap_err();
 
         assert!(err.to_string().contains("Circular reference"));
     }
@@ -313,14 +316,14 @@ mod tests {
             let _ = array.set(0, item.clone());
         }
 
-        let err = stack_item_rpc_json_deferred_size_check(&item, Some(1)).unwrap_err();
+        let err = StackItemRpcJson::stack_item_rpc_json_deferred_size_check(&item, Some(1)).unwrap_err();
 
         assert!(err.to_string().contains("Circular reference"));
     }
 
     #[test]
     fn deferred_size_check_still_reports_max_size() {
-        let err = stack_item_rpc_json_deferred_size_check(&StackItem::Null, Some(13)).unwrap_err();
+        let err = StackItemRpcJson::stack_item_rpc_json_deferred_size_check(&StackItem::Null, Some(13)).unwrap_err();
 
         assert!(err.to_string().contains("Max size reached"));
     }

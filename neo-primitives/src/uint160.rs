@@ -41,14 +41,17 @@ impl UInt160 {
     /// Converts this `UInt160` to a Neo address string.
     #[must_use]
     pub fn to_address(&self) -> String {
-        base58_check::encode_address_payload(crate::constants::ADDRESS_VERSION, &self.to_array())
+        base58_check::Base58Check::encode_address_payload(
+            crate::constants::ADDRESS_VERSION,
+            &self.to_array(),
+        )
     }
 
     /// Converts this `UInt160` to a Neo address string using an explicit
     /// address-version byte (matches C# `ToAddress(byte version)`).
     #[must_use]
     pub fn to_address_with_version(&self, version: u8) -> String {
-        base58_check::encode_address_payload(version, &self.to_array())
+        base58_check::Base58Check::encode_address_payload(version, &self.to_array())
     }
 
     /// Parses a Neo address string to a `UInt160`.
@@ -59,8 +62,11 @@ impl UInt160 {
     /// has an incorrect length, has an invalid version byte, or has an invalid checksum.
     pub fn from_address(address: &str) -> crate::PrimitiveResult<Self> {
         let script_hash =
-            base58_check::decode_address_payload(address, crate::constants::ADDRESS_VERSION)
-                .map_err(map_base58_check_address_error)?;
+            base58_check::Base58Check::decode_address_payload(
+                address,
+                crate::constants::ADDRESS_VERSION,
+            )
+            .map_err(map_base58_check_address_error)?;
         Self::from_bytes(&script_hash)
     }
 

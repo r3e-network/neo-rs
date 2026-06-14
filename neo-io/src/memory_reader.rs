@@ -6,7 +6,7 @@ use std::str;
 use bytes::Buf;
 use thiserror::Error;
 
-use crate::var_int::read_var_int_prefix;
+use crate::var_int::VarInt;
 
 /// Errors that can occur while reading Neo binary data.
 #[derive(Debug, Error)]
@@ -246,7 +246,7 @@ impl<'a> MemoryReader<'a> {
     #[inline]
     pub fn read_var_int(&mut self, max: u64) -> IoResult<u64> {
         let unread = &self.buffer[self.position..];
-        let (value, width) = match read_var_int_prefix(unread) {
+        let (value, width) = match VarInt::read_var_int_prefix(unread) {
             Some(decoded) => decoded,
             None => {
                 if !unread.is_empty() {

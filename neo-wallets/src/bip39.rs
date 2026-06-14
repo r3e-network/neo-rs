@@ -62,67 +62,72 @@ impl From<Bip39Error> for String {
     }
 }
 
-/// Generates a BIP-39 mnemonic from entropy using the current locale (falls back to English).
-///
-/// # Security
-///
-/// The returned mnemonic words are private-key-equivalent material.
-/// Callers MUST ensure the returned `Vec<String>` is not persisted to disk
-/// or logged, and should be dropped as soon as possible. `String` heap
-/// allocations are not guaranteed to be zeroed by the allocator on drop;
-/// consider converting to a seed immediately and discarding the word list.
-pub fn get_mnemonic_code(entropy: &[u8]) -> Result<Vec<String>, Bip39Error> {
-    let language = current_language().unwrap_or_else(|| "en".to_string());
-    get_mnemonic_code_with_language(entropy, &language)
-}
+/// BIP-39 mnemonic helpers (multi-language wordlists).
+pub struct Bip39;
 
-/// Generates a BIP-39 mnemonic from entropy using the specified language code.
-///
-/// # Security
-///
-/// The returned mnemonic words are private-key-equivalent material.
-/// See [`get_mnemonic_code`] for security considerations.
-pub fn get_mnemonic_code_with_language(
-    entropy: &[u8],
-    language: &str,
-) -> Result<Vec<String>, Bip39Error> {
-    if entropy.len() < 16 || entropy.len() > 32 {
-        return Err(Bip39Error::InvalidEntropyLength {
-            got: entropy.len() * 8,
-        });
-    }
-    if entropy.len() % 4 != 0 {
-        return Err(Bip39Error::InvalidEntropyLength {
-            got: entropy.len() * 8,
-        });
+impl Bip39 {
+    /// Generates a BIP-39 mnemonic from entropy using the current locale (falls back to English).
+    ///
+    /// # Security
+    ///
+    /// The returned mnemonic words are private-key-equivalent material.
+    /// Callers MUST ensure the returned `Vec<String>` is not persisted to disk
+    /// or logged, and should be dropped as soon as possible. `String` heap
+    /// allocations are not guaranteed to be zeroed by the allocator on drop;
+    /// consider converting to a seed immediately and discarding the word list.
+    pub fn get_mnemonic_code(entropy: &[u8]) -> Result<Vec<String>, Bip39Error> {
+        let language = current_language().unwrap_or_else(|| "en".to_string());
+        Self::get_mnemonic_code_with_language(entropy, &language)
     }
 
-    let mnemonic = Mnemonic::from_entropy_in(resolve_language(language), entropy)
-        .map_err(|error| Bip39Error::UnknownLanguage(error.to_string()))?;
-    Ok(mnemonic.words().map(str::to_string).collect())
-}
-
-/// Converts a BIP-39 mnemonic back to entropy (any supported language).
-///
-/// The returned entropy is wrapped in [`Zeroizing`] so the seed material
-/// is automatically zeroed when dropped.
-pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Zeroizing<Vec<u8>>, Bip39Error> {
-    let word_count = mnemonic.len();
-    if !(12..=24).contains(&word_count) || word_count % 3 != 0 {
-        return Err(Bip39Error::UnknownLanguage(format!(
-            "The number of words should be 12, 15, 18, 21 or 24 (got {word_count})."
-        )));
-    }
-    for word in mnemonic {
-        if word.trim() != *word || word.split_whitespace().count() != 1 {
-            return Err(Bip39Error::UnknownLanguage(unknown_word_error(word)));
+    /// Generates a BIP-39 mnemonic from entropy using the specified language code.
+    ///
+    /// # Security
+    ///
+    /// The returned mnemonic words are private-key-equivalent material.
+    /// See [`get_mnemonic_code`] for security considerations.
+    pub fn get_mnemonic_code_with_language(
+        entropy: &[u8],
+        language: &str,
+    ) -> Result<Vec<String>, Bip39Error> {
+        if entropy.len() < 16 || entropy.len() > 32 {
+            return Err(Bip39Error::InvalidEntropyLength {
+                got: entropy.len() * 8,
+            });
         }
+        if entropy.len() % 4 != 0 {
+            return Err(Bip39Error::InvalidEntropyLength {
+                got: entropy.len() * 8,
+            });
+        }
+
+        let mnemonic = Mnemonic::from_entropy_in(resolve_language(language), entropy)
+            .map_err(|error| Bip39Error::UnknownLanguage(error.to_string()))?;
+        Ok(mnemonic.words().map(str::to_string).collect())
     }
 
-    let phrase = mnemonic.join(" ");
-    let parsed = parse_mnemonic_phrase(&phrase)?;
+    /// Converts a BIP-39 mnemonic back to entropy (any supported language).
+    ///
+    /// The returned entropy is wrapped in [`Zeroizing`] so the seed material
+    /// is automatically zeroed when dropped.
+    pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Zeroizing<Vec<u8>>, Bip39Error> {
+        let word_count = mnemonic.len();
+        if !(12..=24).contains(&word_count) || word_count % 3 != 0 {
+            return Err(Bip39Error::UnknownLanguage(format!(
+                "The number of words should be 12, 15, 18, 21 or 24 (got {word_count})."
+            )));
+        }
+        for word in mnemonic {
+            if word.trim() != *word || word.split_whitespace().count() != 1 {
+                return Err(Bip39Error::UnknownLanguage(unknown_word_error(word)));
+            }
+        }
 
-    Ok(Zeroizing::new(parsed.to_entropy()))
+        let phrase = mnemonic.join(" ");
+        let parsed = parse_mnemonic_phrase(&phrase)?;
+
+        Ok(Zeroizing::new(parsed.to_entropy()))
+    }
 }
 
 fn resolve_language(language: &str) -> Language {

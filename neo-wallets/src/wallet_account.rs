@@ -6,7 +6,7 @@
 
 use crate::key_pair::KeyPair;
 use crate::wallet::{WalletError, WalletResult};
-use crate::wallet_helper::{to_address, to_script_hash};
+use crate::wallet_helper::WalletAddress;
 use neo_config::ProtocolSettings;
 use neo_execution::Contract;
 use neo_execution::Helper;
@@ -166,7 +166,7 @@ impl WalletAccount for StandardWalletAccount {
     }
 
     fn address(&self) -> String {
-        to_address(&self.script_hash, self.protocol_settings.address_version)
+        WalletAddress::to_address(&self.script_hash, self.protocol_settings.address_version)
     }
 
     fn label(&self) -> Option<&str> {

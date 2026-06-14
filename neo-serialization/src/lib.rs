@@ -29,10 +29,7 @@ pub mod providers;
 pub mod serialization;
 
 pub use binary_serializer::BinarySerializer;
-pub use compression::{
-    CompressionAlgorithm, CompressionResult, compress, compress_lz4, decompress, decompress_lz4,
-    estimate_compressed_size, get_compression_ratio,
-};
+pub use compression::{Compression, CompressionAlgorithm, CompressionResult};
 pub use json_serializer::JsonSerializer;
 pub use providers::{MemorySnapshot, MemoryStore, MemoryStoreProvider};
 pub use serialization::{

@@ -6,6 +6,10 @@ use neo_wallets::KeyPair;
 use rand::RngCore;
 use rand::rngs::OsRng;
 
+/// NeoFS bearer-token signing helpers.
+pub(crate) struct NeoFsBearerSigner;
+
+impl NeoFsBearerSigner {
 pub(crate) fn sign_neofs_bearer(
     token: &str,
     key: &KeyPair,
@@ -18,9 +22,9 @@ pub(crate) fn sign_neofs_bearer(
         return None;
     }
     let signature = if wallet_connect {
-        sign_neofs_wallet_connect(&data, key).ok()?
+        NeoFsBearerSigner::sign_neofs_wallet_connect(&data, key).ok()?
     } else {
-        sign_neofs_sha512(&data, key).ok()?
+        NeoFsBearerSigner::sign_neofs_sha512(&data, key).ok()?
     };
     Some((signature, key.compressed_public_key()))
 }
@@ -35,7 +39,7 @@ fn sign_neofs_wallet_connect(data: &[u8], key: &KeyPair) -> CoreResult<Vec<u8>> 
     let b64 = base64::engine::general_purpose::STANDARD.encode(data);
     let mut salt = [0u8; 16];
     OsRng.fill_bytes(&mut salt);
-    let message = salt_message_wallet_connect(b64.as_bytes(), &salt);
+    let message = NeoFsBearerSigner::salt_message_wallet_connect(b64.as_bytes(), &salt);
     let signature = Secp256r1Crypto::sign(&message, key.private_key())
         .map_err(|err| CoreError::other(format!("invalid neofs key: {err}")))?;
     let mut output = signature.to_vec();
@@ -58,6 +62,7 @@ pub(crate) fn salt_message_wallet_connect(data: &[u8], salt: &[u8; 16]) -> Vec<u
     writer.write_bytes(&[0x00, 0x00]).expect("write suffix");
     writer.into_bytes()
 }
+}
 
 #[cfg(test)]
 mod tests {
@@ -68,13 +73,13 @@ mod tests {
         let key = KeyPair::from_private_key(&[7u8; 32]).expect("test key");
         let data = b"wallet-connect payload";
 
-        let output = sign_neofs_wallet_connect(data, &key).expect("wallet connect signature");
+        let output = NeoFsBearerSigner::sign_neofs_wallet_connect(data, &key).expect("wallet connect signature");
 
         assert_eq!(output.len(), 80);
         let signature: [u8; 64] = output[..64].try_into().expect("signature length");
         let salt: [u8; 16] = output[64..].try_into().expect("salt length");
         let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-        let message = salt_message_wallet_connect(b64.as_bytes(), &salt);
+        let message = NeoFsBearerSigner::salt_message_wallet_connect(b64.as_bytes(), &salt);
 
         assert!(
             Secp256r1Crypto::verify(&message, &signature, &key.compressed_public_key())

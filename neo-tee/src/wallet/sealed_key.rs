@@ -1,6 +1,6 @@
 //! Sealed key storage for TEE wallet
 
-use crate::enclave::{SealedData, TeeEnclave, seal_data, unseal_data};
+use crate::enclave::{SealedData, Sealing, TeeEnclave};
 use crate::error::{TeeError, TeeResult};
 use neo_crypto::Base58;
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,7 @@ impl SealedKey {
         aad.extend_from_slice(public_key);
         aad.extend_from_slice(script_hash);
 
-        let sealed_data = seal_data(private_key, &sealing_key, &aad, counter)?;
+        let sealed_data = Sealing::seal_data(private_key, &sealing_key, &aad, counter)?;
 
         let created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -73,7 +73,7 @@ impl SealedKey {
             ));
         }
 
-        Ok(Zeroizing::new(unseal_data(
+        Ok(Zeroizing::new(Sealing::unseal_data(
             &self.sealed_data,
             &sealing_key,
             None,

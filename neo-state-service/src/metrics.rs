@@ -12,19 +12,24 @@ pub struct StateRootIngestStats {
 static ACCEPTED: AtomicU64 = AtomicU64::new(0);
 static REJECTED: AtomicU64 = AtomicU64::new(0);
 
-/// Records the outcome of processing a state root from the network.
-pub fn record_ingest_result(accepted: bool) {
-    if accepted {
-        ACCEPTED.fetch_add(1, Ordering::Relaxed);
-    } else {
-        REJECTED.fetch_add(1, Ordering::Relaxed);
-    }
-}
+/// Namespace for state root ingestion metric helpers.
+pub struct StateRootIngestMetrics;
 
-/// Returns the current ingestion counters.
-pub fn state_root_ingest_stats() -> StateRootIngestStats {
-    StateRootIngestStats {
-        accepted: ACCEPTED.load(Ordering::Relaxed),
-        rejected: REJECTED.load(Ordering::Relaxed),
+impl StateRootIngestMetrics {
+    /// Records the outcome of processing a state root from the network.
+    pub fn record_ingest_result(accepted: bool) {
+        if accepted {
+            ACCEPTED.fetch_add(1, Ordering::Relaxed);
+        } else {
+            REJECTED.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Returns the current ingestion counters.
+    pub fn state_root_ingest_stats() -> StateRootIngestStats {
+        StateRootIngestStats {
+            accepted: ACCEPTED.load(Ordering::Relaxed),
+            rejected: REJECTED.load(Ordering::Relaxed),
+        }
     }
 }

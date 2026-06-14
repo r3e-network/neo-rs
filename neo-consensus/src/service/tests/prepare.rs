@@ -8,13 +8,11 @@ use neo_crypto::MerkleTree;
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 
-use super::super::helpers::{
-    compute_header_hash, compute_merkle_root, compute_next_consensus_address, current_timestamp,
-};
+use super::super::helpers::{current_timestamp, ConsensusBlockFields};
 
 #[test]
 fn consensus_merkle_root_matches_core_merkle_tree() {
-    assert_eq!(compute_merkle_root(&[]), UInt256::zero());
+    assert_eq!(ConsensusBlockFields::compute_merkle_root(&[]), UInt256::zero());
 
     for hashes in [
         vec![UInt256::from([0x11; 32])],
@@ -26,7 +24,7 @@ fn consensus_merkle_root_matches_core_merkle_tree() {
         ],
     ] {
         assert_eq!(
-            compute_merkle_root(&hashes),
+            ConsensusBlockFields::compute_merkle_root(&hashes),
             MerkleTree::compute_root(&hashes).expect("non-empty merkle root")
         );
     }
@@ -430,9 +428,10 @@ async fn primary_broadcasts_prepare_request_with_transactions() {
     let expected_hash = service.dbft_payload_hash(&payload).expect("payload hash");
     assert_eq!(service.context().preparation_hash, Some(expected_hash));
 
-    let merkle_root = compute_merkle_root(&msg.transaction_hashes);
-    let next_consensus = compute_next_consensus_address(&service.context().validators);
-    let expected_block_hash = compute_header_hash(
+    let merkle_root = ConsensusBlockFields::compute_merkle_root(&msg.transaction_hashes);
+    let next_consensus =
+        ConsensusBlockFields::compute_next_consensus_address(&service.context().validators);
+    let expected_block_hash = ConsensusBlockFields::compute_header_hash(
         msg.version,
         msg.prev_hash,
         merkle_root,
@@ -742,7 +741,7 @@ async fn committed_round_assembles_into_the_agreed_block() {
     // The witness verification script is the M-of-N multi-sig over the validators.
     assert_eq!(
         block.header.witness.verification_script,
-        crate::service::helpers::multisig_verification_script(&block_data.validator_pubkeys),
+        crate::service::helpers::ConsensusBlockFields::multisig_verification_script(&block_data.validator_pubkeys),
     );
     assert!(!block.header.witness.invocation_script.is_empty());
 }

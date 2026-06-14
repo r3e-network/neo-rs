@@ -4,9 +4,7 @@ use neo_crypto::ECPoint;
 use neo_execution::ApplicationEngine;
 use neo_execution::Contract;
 use neo_execution::TriggerType;
-use neo_io::serializable::helper::{
-    get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
-};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
 use neo_native_contracts::{ContractManagement, LedgerContract, OracleContract, PolicyContract};
 use neo_payloads::VerifiableExt;
@@ -143,13 +141,13 @@ impl OracleService {
         let size_inv = 66 * m;
         let oracle_witness_size = Witness::empty().size();
         let mut size = HEADER_SIZE
-            + get_var_size_serializable_slice(tx.signers())
-            + get_var_size_bytes(tx.script())
-            + get_var_size(hashes.len() as u64)
+            + SerializeHelper::get_var_size_serializable_slice(tx.signers())
+            + SerializeHelper::get_var_size_bytes(tx.script())
+            + SerializeHelper::get_var_size(hashes.len() as u64)
             + oracle_witness_size
-            + get_var_size(size_inv as u64)
+            + SerializeHelper::get_var_size(size_inv as u64)
             + size_inv
-            + get_var_size(oracle_sign_contract.script.len() as u64)
+            + SerializeHelper::get_var_size(oracle_sign_contract.script.len() as u64)
             + oracle_sign_contract.script.len();
 
         let fee_per_byte: i64 = PolicyContract::new()
@@ -161,7 +159,7 @@ impl OracleService {
             response.result = Vec::new();
             tx.set_attributes(vec![TransactionAttribute::OracleResponse(response.clone())]);
         } else if tx.network_fee()
-            + ((size + get_var_size_serializable_slice(tx.attributes())) as i64 * fee_per_byte)
+            + ((size + SerializeHelper::get_var_size_serializable_slice(tx.attributes())) as i64 * fee_per_byte)
             > request.gas_for_response
         {
             response.code = OracleResponseCode::InsufficientFunds;
@@ -169,7 +167,7 @@ impl OracleService {
             tx.set_attributes(vec![TransactionAttribute::OracleResponse(response.clone())]);
         }
 
-        size += get_var_size_serializable_slice(tx.attributes());
+        size += SerializeHelper::get_var_size_serializable_slice(tx.attributes());
         let comp3 = size as i64 * fee_per_byte;
         let final_network_fee = tx.network_fee().saturating_add(comp3);
         tx.set_network_fee(final_network_fee);

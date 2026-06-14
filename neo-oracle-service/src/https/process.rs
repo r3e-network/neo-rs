@@ -1,5 +1,5 @@
 use super::OracleHttpsProtocol;
-use super::security::{is_internal_host, validate_url_for_ssrf};
+use super::security::Ssrf;
 use crate::settings::MAX_ORACLE_RESPONSE_SIZE;
 use futures::StreamExt;
 use neo_payloads::OracleResponseCode;
@@ -23,7 +23,7 @@ impl OracleHttpsProtocol {
         mut uri: url::Url,
     ) -> (OracleResponseCode, String) {
         // Validate URL against SSRF patterns
-        if let Err(reason) = validate_url_for_ssrf(uri.as_str()) {
+        if let Err(reason) = Ssrf::validate_url_for_ssrf(uri.as_str()) {
             tracing::warn!(
                 target: "neo::oracle",
                 url = %uri,
@@ -46,7 +46,7 @@ impl OracleHttpsProtocol {
         let mut redirects = MAX_REDIRECTS;
         loop {
             if !settings.allow_private_host {
-                match is_internal_host(&uri).await {
+                match Ssrf::is_internal_host(&uri).await {
                     Ok(true) => {
                         tracing::warn!(
                             target: "neo::oracle",
@@ -99,7 +99,7 @@ impl OracleHttpsProtocol {
                 if let Ok(location) = location.to_str() {
                     if let Ok(next_uri) = url::Url::parse(location) {
                         // Validate redirect URL
-                        if let Err(reason) = validate_url_for_ssrf(next_uri.as_str()) {
+                        if let Err(reason) = Ssrf::validate_url_for_ssrf(next_uri.as_str()) {
                             tracing::warn!(
                                 target: "neo::oracle",
                                 url = %next_uri,

@@ -26,7 +26,7 @@ use neo_native_contracts::{LedgerContract, NeoToken};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::script_builder::signature_redeem_script;
+use neo_vm::script_builder::RedeemScript;
 use neo_storage::persistence::DataCache;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
@@ -84,7 +84,7 @@ fn consensus_to_extensible(
     ext.data = payload.to_message_bytes();
     ext.witness = Witness::new_with_scripts(
         invocation_script_from_signature(&payload.witness),
-        signature_redeem_script(&validator.public_key.encoded()),
+        RedeemScript::signature_redeem_script(&validator.public_key.encoded()),
     );
     Some(ext)
 }
@@ -117,7 +117,7 @@ fn validator_infos_from_keys(keys: Vec<ECPoint>) -> Vec<ValidatorInfo> {
     keys.into_iter()
         .enumerate()
         .map(|(index, public_key)| {
-            let script_hash = UInt160::from_script(&signature_redeem_script(public_key.as_bytes()));
+            let script_hash = UInt160::from_script(&RedeemScript::signature_redeem_script(public_key.as_bytes()));
             ValidatorInfo {
                 index: index as u8,
                 public_key,

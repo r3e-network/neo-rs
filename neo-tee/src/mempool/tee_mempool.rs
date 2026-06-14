@@ -7,9 +7,7 @@
 
 use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
-use crate::mempool::fair_ordering::{
-    FairOrderingPolicy, OrderingKey, TransactionTiming, compute_ordering_key,
-};
+use crate::mempool::fair_ordering::{FairOrderingPolicy, OrderingKey, TransactionTiming};
 use neo_crypto::Secp256r1Crypto;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -150,8 +148,12 @@ impl TeeMempool {
         let timing = TransactionTiming::new(sequence).with_batch(batch_id);
 
         // Compute ordering key based on policy
-        let ordering_key =
-            compute_ordering_key(self.config.ordering_policy, &timing, &tx_hash, network_fee);
+        let ordering_key = FairOrderingPolicy::compute_ordering_key(
+            self.config.ordering_policy,
+            &timing,
+            &tx_hash,
+            network_fee,
+        );
 
         let entry = TeeMempoolEntry {
             hash: tx_hash,

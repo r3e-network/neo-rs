@@ -80,7 +80,7 @@ fn store_contract_state(system: &Arc<Node>, contract: &ContractState) {
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
-    let contract_mgmt_id = crate::server::native_queries::native_registry()
+    let contract_mgmt_id = crate::server::native_queries::NativeQueries::native_registry()
         .get_by_name("ContractManagement")
         .expect("contract management")
         .id();
@@ -246,7 +246,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let handler = find_handler(&handlers, "getnep17balances");
 
     let address =
-        neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
+        neo_wallets::wallet_helper::WalletAddress::to_address(&user, server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (handler.callback())(&server, &params).expect("getnep17balances");
     let obj = result.as_object().expect("result object");
@@ -324,7 +324,7 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
     let handler = find_handler(&handlers, "getnep11balances");
 
     let address =
-        neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
+        neo_wallets::wallet_helper::WalletAddress::to_address(&user, server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (handler.callback())(&server, &params).expect("getnep11balances");
     let obj = result.as_object().expect("result object");
@@ -449,7 +449,7 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
     let handler = find_handler(&handlers, "getnep11transfers");
 
     let address =
-        neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
+        neo_wallets::wallet_helper::WalletAddress::to_address(&user, server.system().settings().address_version);
     let params = [
         Value::String(address.clone()),
         json!(t1 - 1),
@@ -502,7 +502,7 @@ async fn get_nep11_properties_returns_expected_fields() {
     let handlers = RpcServerTokensTracker::register_handlers();
     let handler = find_handler(&handlers, "getnep11properties");
 
-    let address = neo_wallets::wallet_helper::to_address(
+    let address = neo_wallets::wallet_helper::WalletAddress::to_address(
         &contract_hash,
         server.system().settings().address_version,
     );
@@ -604,7 +604,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     let handler = find_handler(&handlers, "getnep17transfers");
 
     let address =
-        neo_wallets::wallet_helper::to_address(&user, server.system().settings().address_version);
+        neo_wallets::wallet_helper::WalletAddress::to_address(&user, server.system().settings().address_version);
     let params = [
         Value::String(address.clone()),
         json!(t1 - 1),
@@ -627,7 +627,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     assert_eq!(
         sent[0].get("transferaddress").and_then(Value::as_str),
         Some(
-            neo_wallets::wallet_helper::to_address(
+            neo_wallets::wallet_helper::WalletAddress::to_address(
                 &other,
                 server.system().settings().address_version
             )

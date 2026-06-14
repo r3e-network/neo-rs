@@ -1,6 +1,6 @@
 use super::helpers::{ECPOINT_COMPRESSED_SIZE, read_group_bytes};
 use super::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
-use neo_io::serializable::helper::{deserialize_array_with, serialize_array};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt160;
 
@@ -27,7 +27,7 @@ impl Serializable for WitnessCondition {
                         "Composite witness condition exceeds max subitems",
                     ));
                 }
-                serialize_array(conditions, writer)?;
+                SerializeHelper::serialize_array(conditions, writer)?;
             }
             WitnessCondition::ScriptHash { hash } => Serializable::serialize(hash, writer)?,
             WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
@@ -58,7 +58,7 @@ impl WitnessCondition {
         max_depth: usize,
         error_msg: &'static str,
     ) -> IoResult<Vec<WitnessCondition>> {
-        let conditions = deserialize_array_with(reader, Self::MAX_SUBITEMS, |reader| {
+        let conditions = SerializeHelper::deserialize_array_with(reader, Self::MAX_SUBITEMS, |reader| {
             Self::deserialize_with_depth(reader, max_depth - 1)
         })?;
         if conditions.is_empty() {

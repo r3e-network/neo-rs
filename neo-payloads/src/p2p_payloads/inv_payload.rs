@@ -70,12 +70,12 @@ impl InvPayload {
 
 impl Serializable for InvPayload {
     fn size(&self) -> usize {
-        1 + helper::get_var_size_serializable_slice(&self.hashes)
+        1 + helper::SerializeHelper::get_var_size_serializable_slice(&self.hashes)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         writer.write_u8(self.inventory_type.to_byte())?;
-        helper::serialize_array(&self.hashes, writer)?;
+        helper::SerializeHelper::serialize_array(&self.hashes, writer)?;
         Ok(())
     }
 
@@ -83,7 +83,7 @@ impl Serializable for InvPayload {
         let ty = InventoryType::from_byte(reader.read_u8()?)
             .ok_or_else(|| IoError::invalid_data("Unsupported inventory type encountered"))?;
 
-        let hashes = helper::deserialize_array::<UInt256>(reader, MAX_HASHES_COUNT)?;
+        let hashes = helper::SerializeHelper::deserialize_array::<UInt256>(reader, MAX_HASHES_COUNT)?;
         Ok(Self {
             inventory_type: ty,
             hashes,

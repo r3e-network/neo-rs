@@ -1,6 +1,7 @@
 use super::{NeoFsCommand, NeoFsRange, NeoFsRequest, decode_raw_base58};
 use neo_error::{CoreError, CoreResult};
 
+impl NeoFsRequest {
 pub(super) fn parse_neofs_request(url: &str) -> CoreResult<NeoFsRequest> {
     let (_, suffix) = url
         .split_once(':')
@@ -39,12 +40,12 @@ pub(super) fn parse_neofs_request(url: &str) -> CoreResult<NeoFsRequest> {
             let range_raw = segments
                 .get(3)
                 .ok_or_else(|| CoreError::other("missing object range (expected 'Offset|Length')"))?;
-            NeoFsCommand::Range(parse_neofs_range(range_raw)?)
+            NeoFsCommand::Range(NeoFsRange::parse_neofs_range(range_raw)?)
         }
         "header" => NeoFsCommand::Header,
         "hash" => {
             let range = match segments.get(3) {
-                Some(raw) => Some(parse_neofs_range(raw)?),
+                Some(raw) => Some(NeoFsRange::parse_neofs_range(raw)?),
                 None => None,
             };
             NeoFsCommand::Hash(range)
@@ -58,7 +59,9 @@ pub(super) fn parse_neofs_request(url: &str) -> CoreResult<NeoFsRequest> {
         command,
     })
 }
+}
 
+impl NeoFsRange {
 pub(super) fn parse_neofs_range(raw: &str) -> CoreResult<NeoFsRange> {
     let decoded = percent_encoding::percent_decode_str(raw)
         .decode_utf8()
@@ -73,6 +76,7 @@ pub(super) fn parse_neofs_range(raw: &str) -> CoreResult<NeoFsRange> {
         .parse::<u64>()
         .map_err(|_| CoreError::other("object range is invalid (expected 'Offset|Length')"))?;
     Ok(NeoFsRange { offset, length })
+}
 }
 
 fn validate_neofs_id(value: &str, kind: &str) -> CoreResult<()> {

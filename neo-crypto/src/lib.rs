@@ -66,12 +66,12 @@ pub use bls12381_point::Bls12381Point;
 pub use ecc::{ECCurve, ECPoint};
 pub use encoding::{Base58, Base64, Hex};
 pub use error::{CryptoError, CryptoResult};
-pub use hash::{Crypto, HashAlgorithm, Sha256Hasher, ct_hash_eq, ct_hash_slice_eq};
+pub use hash::{Crypto, CtCompare, HashAlgorithm, Sha256Hasher};
 pub use merkle_tree::MerkleTree;
 pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };
-pub use murmur::{murmur32, murmur128};
+pub use murmur::{Murmur3, murmur32};
 pub use named_curve_hash::NamedCurveHash;
 pub use signature::{
     ECC, ECDsa, Ed25519Crypto, NEOFS_ECDSA_SHA512_PREFIX, NEOFS_ECDSA_SHA512_SIGNATURE_LEN,

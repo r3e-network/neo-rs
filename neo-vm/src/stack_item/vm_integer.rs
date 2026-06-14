@@ -94,6 +94,14 @@ impl VmInteger {
             Self::Large(v) => v.sign(),
         }
     }
+
+    #[inline]
+    pub fn vm_integer_stack_value(&self) -> StackValue {
+        match self.to_i64() {
+            Some(value) => StackValue::Integer(value),
+            None => StackValue::BigInteger(self.to_signed_bytes_le()),
+        }
+    }
 }
 
 impl std::fmt::Display for VmInteger {
@@ -132,14 +140,6 @@ impl Ord for VmInteger {
 impl PartialEq<BigInt> for VmInteger {
     fn eq(&self, other: &BigInt) -> bool {
         self.to_bigint() == *other
-    }
-}
-
-#[inline]
-pub fn vm_integer_stack_value(value: &VmInteger) -> StackValue {
-    match value.to_i64() {
-        Some(value) => StackValue::Integer(value),
-        None => StackValue::BigInteger(value.to_signed_bytes_le()),
     }
 }
 

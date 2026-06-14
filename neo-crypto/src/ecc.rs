@@ -380,7 +380,7 @@ impl ECPoint {
     /// with SHA-256 by the underlying ECDSA implementation). For Ed25519, the message is
     /// verified directly.
     pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> CryptoResult<bool> {
-        verify_signature(self.curve, self.as_bytes(), message, signature)
+        EcdsaVerify::verify_signature(self.curve, self.as_bytes(), message, signature)
     }
 
     /// Validates that the given point data represents a valid point on the specified curve.
@@ -574,6 +574,11 @@ impl Ord for ECCurve {
     }
 }
 
+/// ECDSA/EdDSA signature verification and keypair generation helpers grouped as
+/// associated functions.
+pub struct EcdsaVerify;
+
+impl EcdsaVerify {
 /// Verifies a signature for the specified curve.
 ///
 /// For secp256r1/secp256k1 the message is hashed internally using SHA-256 by the
@@ -585,9 +590,9 @@ pub fn verify_signature(
     signature: &[u8],
 ) -> CryptoResult<bool> {
     match curve {
-        ECCurve::Secp256r1 => verify_signature_secp256r1(public_key, message, signature),
-        ECCurve::Secp256k1 => verify_signature_secp256k1(public_key, message, signature),
-        ECCurve::Ed25519 => verify_ed25519(public_key, message, signature),
+        ECCurve::Secp256r1 => Self::verify_signature_secp256r1(public_key, message, signature),
+        ECCurve::Secp256k1 => Self::verify_signature_secp256k1(public_key, message, signature),
+        ECCurve::Ed25519 => Self::verify_ed25519(public_key, message, signature),
     }
 }
 
@@ -741,6 +746,33 @@ pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Zeroizing<Vec<u8>>, ECP
         }
     }
 }
+}
+
+/// Backward-compatible free-function alias for [`EcdsaVerify::verify_signature_with_hash`].
+///
+/// Retained so external consumers that predate the `EcdsaVerify` grouping keep
+/// resolving `neo_crypto::ecc::verify_signature_with_hash`; delegates verbatim,
+/// no behavior change.
+#[doc(hidden)]
+pub fn verify_signature_with_hash(
+    curve: ECCurve,
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+    hash: HashAlgorithm,
+) -> CryptoResult<bool> {
+    EcdsaVerify::verify_signature_with_hash(curve, public_key, message, signature, hash)
+}
+
+/// Backward-compatible free-function alias for [`EcdsaVerify::verify_ed25519`].
+///
+/// Retained so external consumers that predate the `EcdsaVerify` grouping keep
+/// resolving `neo_crypto::ecc::verify_ed25519`; delegates verbatim, no behavior
+/// change.
+#[doc(hidden)]
+pub fn verify_ed25519(public_key: &[u8], message: &[u8], signature: &[u8]) -> CryptoResult<bool> {
+    EcdsaVerify::verify_ed25519(public_key, message, signature)
+}
 
 #[cfg(test)]
 mod tests {
@@ -778,9 +810,9 @@ mod tests {
         padded[32 - high_s.len()..].copy_from_slice(&high_s);
         high_sig[32..].copy_from_slice(&padded);
 
-        assert!(verify_signature_secp256k1(&public_key, message, &high_sig).unwrap());
+        assert!(EcdsaVerify::verify_signature_secp256k1(&public_key, message, &high_sig).unwrap());
         assert!(
-            verify_signature_with_hash(
+            EcdsaVerify::verify_signature_with_hash(
                 ECCurve::Secp256k1,
                 &public_key,
                 message,
@@ -920,12 +952,13 @@ mod tests {
         let signature_bytes = signature.to_bytes();
 
         assert!(
-            verify_signature_secp256r1(&pub_bytes, message, signature_bytes.as_slice()).unwrap()
+            EcdsaVerify::verify_signature_secp256r1(&pub_bytes, message, signature_bytes.as_slice())
+                .unwrap()
         );
 
         let mut bad_sig = signature_bytes;
         bad_sig[0] ^= 0x01;
-        assert!(!verify_signature_secp256r1(&pub_bytes, message, &bad_sig).unwrap());
+        assert!(!EcdsaVerify::verify_signature_secp256r1(&pub_bytes, message, &bad_sig).unwrap());
     }
 
     #[test]
@@ -943,7 +976,7 @@ mod tests {
         let sig_bytes = signature.to_bytes();
 
         assert!(
-            verify_signature_with_hash(
+            EcdsaVerify::verify_signature_with_hash(
                 ECCurve::Secp256r1,
                 &pub_bytes,
                 message,
@@ -952,12 +985,15 @@ mod tests {
             )
             .unwrap()
         );
-        assert!(verify_signature_secp256r1(&pub_bytes, message, sig_bytes.as_slice()).unwrap());
+        assert!(
+            EcdsaVerify::verify_signature_secp256r1(&pub_bytes, message, sig_bytes.as_slice())
+                .unwrap()
+        );
 
         // A Keccak-256 verification of a SHA-256 signature must fail (the digest
         // differs), and a malformed key yields false (not an error).
         assert!(
-            !verify_signature_with_hash(
+            !EcdsaVerify::verify_signature_with_hash(
                 ECCurve::Secp256r1,
                 &pub_bytes,
                 message,
@@ -967,7 +1003,7 @@ mod tests {
             .unwrap()
         );
         assert!(
-            !verify_signature_with_hash(
+            !EcdsaVerify::verify_signature_with_hash(
                 ECCurve::Secp256r1,
                 &[0u8; 33],
                 message,
@@ -996,7 +1032,7 @@ mod tests {
             .to_vec();
         let p256_sig: P256Signature = p256_key.sign_prehash(&digest).unwrap();
         assert!(
-            verify_signature_with_hash(
+            EcdsaVerify::verify_signature_with_hash(
                 ECCurve::Secp256r1,
                 &p256_pub,
                 message,
@@ -1007,7 +1043,7 @@ mod tests {
         );
         // The same signature must NOT verify under SHA-256 (wrong digest).
         assert!(
-            !verify_signature_with_hash(
+            !EcdsaVerify::verify_signature_with_hash(
                 ECCurve::Secp256r1,
                 &p256_pub,
                 message,
@@ -1026,7 +1062,7 @@ mod tests {
             .to_vec();
         let k256_sig: K256Signature = k256_key.sign_prehash(&digest).unwrap();
         assert!(
-            verify_signature_with_hash(
+            EcdsaVerify::verify_signature_with_hash(
                 ECCurve::Secp256k1,
                 &k256_pub,
                 message,
@@ -1050,12 +1086,13 @@ mod tests {
         let signature_bytes = signature.to_bytes();
 
         assert!(
-            verify_signature_secp256k1(&pub_bytes, message, signature_bytes.as_slice()).unwrap()
+            EcdsaVerify::verify_signature_secp256k1(&pub_bytes, message, signature_bytes.as_slice())
+                .unwrap()
         );
 
         let mut bad_sig = signature_bytes;
         bad_sig[0] ^= 0x01;
-        assert!(!verify_signature_secp256k1(&pub_bytes, message, &bad_sig).unwrap());
+        assert!(!EcdsaVerify::verify_signature_secp256k1(&pub_bytes, message, &bad_sig).unwrap());
     }
 
     #[test]
@@ -1065,16 +1102,19 @@ mod tests {
         let message = b"neo-ed25519";
         let signature = signing_key.sign(message);
 
-        assert!(verify_ed25519(&verifying_key.to_bytes(), message, &signature.to_bytes()).unwrap());
+        assert!(
+            EcdsaVerify::verify_ed25519(&verifying_key.to_bytes(), message, &signature.to_bytes())
+                .unwrap()
+        );
 
         let mut bad_sig = signature.to_bytes();
         bad_sig[0] ^= 0x01;
-        assert!(!verify_ed25519(&verifying_key.to_bytes(), message, &bad_sig).unwrap());
+        assert!(!EcdsaVerify::verify_ed25519(&verifying_key.to_bytes(), message, &bad_sig).unwrap());
     }
 
     #[test]
     fn test_generate_keypair_roundtrip() {
-        let (private_key, public_point) = generate_keypair(ECCurve::Secp256r1).unwrap();
+        let (private_key, public_point) = EcdsaVerify::generate_keypair(ECCurve::Secp256r1).unwrap();
         assert_eq!(
             public_point.as_bytes().len(),
             ECCurve::Secp256r1.compressed_size()
@@ -1088,7 +1128,7 @@ mod tests {
         let signature_bytes = signature.to_bytes();
 
         assert!(
-            verify_signature(
+            EcdsaVerify::verify_signature(
                 ECCurve::Secp256r1,
                 public_point.as_bytes(),
                 message,

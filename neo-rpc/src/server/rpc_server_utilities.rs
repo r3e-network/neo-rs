@@ -100,7 +100,7 @@ impl RpcServer {
     #[must_use]
     pub fn validate_address(&self, address: &str) -> Value {
         let address_version = self.system().settings().address_version;
-        let is_valid = neo_wallets::wallet_helper::to_script_hash(address, address_version).is_ok();
+        let is_valid = neo_wallets::wallet_helper::WalletAddress::to_script_hash(address, address_version).is_ok();
 
         json!({
             "address": address,

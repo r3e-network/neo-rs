@@ -6,10 +6,7 @@ use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;
 use neo_error::CoreResult;
-use neo_io::serializable::helper::{
-    deserialize_array_with, deserialize_exact_array, get_var_size_bytes,
-    get_var_size_serializable_slice, serialize_array,
-};
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::Interoperable;

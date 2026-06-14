@@ -7,7 +7,7 @@
 //! storage/persistence layer carries no edge back into the smart-contract layer.
 
 use crate::interoperable::Interoperable;
-use neo_io::serializable::helper::get_var_size_bytes;
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{IoResult, MemoryReader};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
@@ -124,7 +124,7 @@ impl StorageItemExt for StorageItem {
     }
 
     fn serialized_size(&self) -> usize {
-        get_var_size_bytes(&self.value_bytes())
+        SerializeHelper::get_var_size_bytes(&self.value_bytes())
     }
 
     fn deserialize_reader(&mut self, reader: &mut MemoryReader<'_>) -> IoResult<()> {

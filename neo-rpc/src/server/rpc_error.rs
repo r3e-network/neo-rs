@@ -2,6 +2,7 @@
 // following idiomatic Rust patterns. It provides strongly-typed error instances
 // that can be serialised to JSON responses for the RPC subsystem.
 
+use neo_primitives::UInt160;
 use neo_serialization::json::{JObject, JToken};
 use std::fmt::{self, Display};
 
@@ -117,6 +118,12 @@ impl RpcError {
             obj.set("data".to_string(), Some(JToken::String(data.clone())));
         }
         JToken::Object(obj)
+    }
+
+    pub fn invalid_contract_verification_hash(contract_hash: &UInt160, pcount: i32) -> RpcError {
+        RpcError::invalid_contract_verification().with_data(format!(
+            "The smart contract {contract_hash} haven't got verify method with {pcount} input parameters."
+        ))
     }
 
     rpc_error_constructors! {

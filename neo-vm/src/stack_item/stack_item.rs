@@ -20,7 +20,7 @@ use num_bigint::BigInt;
 use std::fmt;
 use std::sync::Arc;
 
-use super::vm_integer::{VmInteger, vm_integer_stack_value};
+use super::vm_integer::VmInteger;
 
 /// A trait for interop interfaces that can be wrapped by a stack item.
 pub trait InteropInterface: fmt::Debug + Send + Sync {
@@ -301,7 +301,7 @@ impl StackItem {
         match self {
             Self::Null => Ok(stack_value_truthy(StackValue::Null)),
             Self::Boolean(b) => Ok(stack_value_truthy(StackValue::Boolean(*b))),
-            Self::Integer(i) => Ok(stack_value_truthy(vm_integer_stack_value(i))),
+            Self::Integer(i) => Ok(stack_value_truthy(i.vm_integer_stack_value())),
             Self::ByteString(b) => {
                 if b.len() > VM_INTEGER_MAX_SIZE {
                     return Err(VmError::invalid_type_simple(

@@ -31,7 +31,7 @@ pub use extensions::{
 };
 
 // Re-export compression types
-pub use compression::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, compress_lz4, decompress_lz4};
+pub use compression::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, Lz4};
 
 // Re-export caching types
 pub use caching::{

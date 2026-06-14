@@ -3,7 +3,7 @@
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
 use neo_error::{CoreError, CoreResult};
-use neo_io::var_int;
+use neo_io::var_int::VarInt;
 use neo_io::{IoError, MemoryReader};
 use neo_vm::StackItem;
 use neo_vm::reference_counter::ReferenceCounter;
@@ -446,15 +446,15 @@ impl BinarySerializer {
                     } else {
                         integer.to_signed_bytes_le()
                     };
-                    var_int::write_var_bytes(&bytes, writer);
+                    VarInt::write_var_bytes(&bytes, writer);
                 }
                 StackItem::ByteString(bytes) => {
                     writer.push(StackItemType::ByteString.to_byte());
-                    var_int::write_var_bytes(bytes, writer);
+                    VarInt::write_var_bytes(bytes, writer);
                 }
                 StackItem::Buffer(buffer) => {
                     writer.push(StackItemType::Buffer.to_byte());
-                    var_int::write_var_bytes(&buffer.data(), writer);
+                    VarInt::write_var_bytes(&buffer.data(), writer);
                 }
                 StackItem::Array(array) => {
                     writer.push(StackItemType::Array.to_byte());
@@ -464,7 +464,7 @@ impl BinarySerializer {
                             "Circular reference detected while serializing array",
                         ));
                     }
-                    var_int::write_var_int(array.len() as u64, writer);
+                    VarInt::write_var_int(array.len() as u64, writer);
                     for element in array.iter().rev() {
                         queue.push_back(element.clone());
                     }
@@ -477,7 +477,7 @@ impl BinarySerializer {
                             "Circular reference detected while serializing struct",
                         ));
                     }
-                    var_int::write_var_int(struct_item.len() as u64, writer);
+                    VarInt::write_var_int(struct_item.len() as u64, writer);
                     for element in struct_item.iter().rev() {
                         queue.push_back(element.clone());
                     }
@@ -490,7 +490,7 @@ impl BinarySerializer {
                             "Circular reference detected while serializing map",
                         ));
                     }
-                    var_int::write_var_int(map.len() as u64, writer);
+                    VarInt::write_var_int(map.len() as u64, writer);
                     for (key, value) in map.iter().rev() {
                         queue.push_back(value.clone());
                         queue.push_back(key.clone());

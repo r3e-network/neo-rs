@@ -89,7 +89,7 @@ impl PrepareRequestMessage {
         view_number: u8,
         validator_index: u8,
     ) -> ConsensusResult<Self> {
-        use neo_io::serializable::helper::deserialize_array;
+        use neo_io::serializable::helper::SerializeHelper;
 
         let mut reader = MemoryReader::new(data);
         let version = reader
@@ -110,7 +110,7 @@ impl PrepareRequestMessage {
             .read_u64()
             .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest nonce"))?;
 
-        let transaction_hashes = deserialize_array::<UInt256>(&mut reader, u16::MAX as usize)
+        let transaction_hashes = SerializeHelper::deserialize_array::<UInt256>(&mut reader, u16::MAX as usize)
             .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
 
         // C# checks for duplicates.
@@ -177,8 +177,8 @@ impl PrepareRequestMessage {
             .read_u64()
             .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest nonce"))?;
 
-        use neo_io::serializable::helper::deserialize_array;
-        let transaction_hashes = deserialize_array::<UInt256>(reader, u16::MAX as usize)
+        use neo_io::serializable::helper::SerializeHelper;
+        let transaction_hashes = SerializeHelper::deserialize_array::<UInt256>(reader, u16::MAX as usize)
             .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
 
         let mut uniq = std::collections::HashSet::with_capacity(transaction_hashes.len());

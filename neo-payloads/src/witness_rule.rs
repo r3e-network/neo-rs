@@ -27,7 +27,7 @@
 //! | `CalledByContract` | Called by specific contract |
 //! | `CalledByGroup` | Called by specific group |
 
-use neo_io::serializable::helper::get_var_size_serializable_slice;
+use neo_io::serializable::helper::SerializeHelper;
 
 mod display;
 pub mod helpers;
@@ -131,7 +131,7 @@ impl WitnessCondition {
             WitnessCondition::Boolean { .. } => 1, // bool
             WitnessCondition::Not { condition } => condition.size(),
             WitnessCondition::And { conditions } | WitnessCondition::Or { conditions } => {
-                get_var_size_serializable_slice(conditions)
+                SerializeHelper::get_var_size_serializable_slice(conditions)
             }
             WitnessCondition::ScriptHash { .. } => ADDRESS_SIZE,
             WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {

@@ -54,64 +54,70 @@ const DEFAULT_ATTRIBUTE_FEE: i64 = 0;
 /// Shared NEP-17 `Prefix_Account` (20) — the GAS balance records.
 const NEP17_PREFIX_ACCOUNT: u8 = 20;
 
-/// Reads a Policy storage value as a little-endian `BigInteger`,
-/// falling back to the C# default when the key is absent (C#
-/// `snapshot.TryGet(key, out item) ? (long)(BigInteger)item : default`).
-fn policy_int(snapshot: &DataCache, key: Vec<u8>, default: i64) -> i64 {
-    snapshot
-        .get(&neo_storage::StorageKey::new(POLICY_CONTRACT_ID, key))
-        .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
-        .and_then(|v| v.to_i64())
-        .unwrap_or(default)
-}
+/// Stateless reader of `PolicyContract` storage and the derived protocol
+/// limits the mempool needs during transaction admission.
+pub struct PolicyReader;
 
-/// C# `PolicyContract.IsBlocked` — key existence under
-/// `Prefix_BlockedAccount + account`.
-fn policy_is_blocked(snapshot: &DataCache, account: &UInt160) -> bool {
-    let mut key = vec![POLICY_PREFIX_BLOCKED_ACCOUNT];
-    key.extend_from_slice(&account.to_bytes());
-    snapshot
-        .get(&neo_storage::StorageKey::new(POLICY_CONTRACT_ID, key))
-        .is_some()
-}
-
-/// C# `NeoSystemExtensions.GetMaxValidUntilBlockIncrement(snapshot,
-/// settings)`: before HF_Echidna the protocol setting, after it the
-/// Policy storage value (falling back to the setting when the key has
-/// not been initialized yet).
-fn max_valid_until_block_increment(
-    snapshot: &DataCache,
-    settings: &ProtocolSettings,
-    height: u32,
-) -> u32 {
-    if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
-        return settings.max_valid_until_block_increment;
+impl PolicyReader {
+    /// Reads a Policy storage value as a little-endian `BigInteger`,
+    /// falling back to the C# default when the key is absent (C#
+    /// `snapshot.TryGet(key, out item) ? (long)(BigInteger)item : default`).
+    fn policy_int(snapshot: &DataCache, key: Vec<u8>, default: i64) -> i64 {
+        snapshot
+            .get(&neo_storage::StorageKey::new(POLICY_CONTRACT_ID, key))
+            .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+            .and_then(|v| v.to_i64())
+            .unwrap_or(default)
     }
-    let stored = policy_int(
-        snapshot,
-        vec![POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT],
-        i64::from(settings.max_valid_until_block_increment),
-    );
-    u32::try_from(stored).unwrap_or(settings.max_valid_until_block_increment)
-}
 
-/// The effective `MaxTraceableBlocks` (C# `NeoSystem.GetMaxTraceableBlocks`):
-/// the static protocol setting before `HF_Echidna`, the committee-adjustable
-/// Policy storage value (prefix 23) from `HF_Echidna` onward.
-fn max_traceable_blocks_effective(
-    snapshot: &DataCache,
-    settings: &ProtocolSettings,
-    height: u32,
-) -> u32 {
-    if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
-        return settings.max_traceable_blocks;
+    /// C# `PolicyContract.IsBlocked` — key existence under
+    /// `Prefix_BlockedAccount + account`.
+    fn policy_is_blocked(snapshot: &DataCache, account: &UInt160) -> bool {
+        let mut key = vec![POLICY_PREFIX_BLOCKED_ACCOUNT];
+        key.extend_from_slice(&account.to_bytes());
+        snapshot
+            .get(&neo_storage::StorageKey::new(POLICY_CONTRACT_ID, key))
+            .is_some()
     }
-    let stored = policy_int(
-        snapshot,
-        vec![POLICY_PREFIX_MAX_TRACEABLE_BLOCKS],
-        i64::from(settings.max_traceable_blocks),
-    );
-    u32::try_from(stored).unwrap_or(settings.max_traceable_blocks)
+
+    /// C# `NeoSystemExtensions.GetMaxValidUntilBlockIncrement(snapshot,
+    /// settings)`: before HF_Echidna the protocol setting, after it the
+    /// Policy storage value (falling back to the setting when the key has
+    /// not been initialized yet).
+    fn max_valid_until_block_increment(
+        snapshot: &DataCache,
+        settings: &ProtocolSettings,
+        height: u32,
+    ) -> u32 {
+        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
+            return settings.max_valid_until_block_increment;
+        }
+        let stored = PolicyReader::policy_int(
+            snapshot,
+            vec![POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT],
+            i64::from(settings.max_valid_until_block_increment),
+        );
+        u32::try_from(stored).unwrap_or(settings.max_valid_until_block_increment)
+    }
+
+    /// The effective `MaxTraceableBlocks` (C# `NeoSystem.GetMaxTraceableBlocks`):
+    /// the static protocol setting before `HF_Echidna`, the committee-adjustable
+    /// Policy storage value (prefix 23) from `HF_Echidna` onward.
+    fn max_traceable_blocks_effective(
+        snapshot: &DataCache,
+        settings: &ProtocolSettings,
+        height: u32,
+    ) -> u32 {
+        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
+            return settings.max_traceable_blocks;
+        }
+        let stored = PolicyReader::policy_int(
+            snapshot,
+            vec![POLICY_PREFIX_MAX_TRACEABLE_BLOCKS],
+            i64::from(settings.max_traceable_blocks),
+        );
+        u32::try_from(stored).unwrap_or(settings.max_traceable_blocks)
+    }
 }
 
 /// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: the first field of the
@@ -199,7 +205,7 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
     for (hash, witness) in hashes.iter().zip(witnesses.iter()) {
         let verification = witness.verification_script();
         let invocation = witness.invocation_script();
-        if neo_vm::script_builder::redeem_script::is_signature_contract(verification) {
+        if neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(verification) {
             let Some(signature) = single_signature_invocation(invocation) else {
                 continue; // not the fast-path shape: verified state-dependently
             };
@@ -207,14 +213,14 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
                 return VerifyResult::Invalid;
             }
             let pubkey = &verification[2..35];
-            match neo_crypto::ecc::verify_signature_secp256r1(pubkey, &message, signature) {
+            match neo_crypto::ecc::EcdsaVerify::verify_signature_secp256r1(pubkey, &message, signature) {
                 Ok(true) => {}
                 Ok(false) => return VerifyResult::InvalidSignature,
                 Err(_) => return VerifyResult::Invalid,
             }
-        } else if let Some((m, points)) = neo_vm::script_builder::redeem_script::parse_multi_sig_contract(verification)
+        } else if let Some((m, points)) = neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(verification)
         {
-            let Some(signatures) = neo_vm::script_builder::redeem_script::parse_multi_sig_invocation(invocation, m)
+            let Some(signatures) = neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(invocation, m)
             else {
                 continue;
             };
@@ -224,7 +230,7 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
             let n = points.len();
             let (mut x, mut y) = (0usize, 0usize);
             while x < m && y < n {
-                match neo_crypto::ecc::verify_signature_secp256r1(
+                match neo_crypto::ecc::EcdsaVerify::verify_signature_secp256r1(
                     &points[y],
                     &message,
                     &signatures[x],
@@ -263,7 +269,7 @@ pub fn verify_state_dependent(
     // one more than `MaxValidUntilBlockIncrement` ahead of the tip is
     // `NotYetValid`. The accept range (`height < VUB <= height + increment`) is
     // unchanged; only the rejection classification differs.
-    let max_increment = max_valid_until_block_increment(snapshot, settings, height);
+    let max_increment = PolicyReader::max_valid_until_block_increment(snapshot, settings, height);
     if tx.valid_until_block() <= height {
         return VerifyResult::Expired;
     }
@@ -274,7 +280,7 @@ pub fn verify_state_dependent(
     // Blocked accounts.
     let hashes: Vec<UInt160> = tx.signers().iter().map(|s| s.account).collect();
     for hash in &hashes {
-        if policy_is_blocked(snapshot, hash) {
+        if PolicyReader::policy_is_blocked(snapshot, hash) {
             return VerifyResult::PolicyFail;
         }
     }
@@ -282,7 +288,7 @@ pub fn verify_state_dependent(
     // C# Blockchain.OnNewTransaction: a traceable on-chain conflict record for
     // this hash, registered by a persisted transaction sharing at least one
     // signer, blocks admission (`ContainsConflictHash` -> HasConflicts).
-    let mtb = max_traceable_blocks_effective(snapshot, settings, height);
+    let mtb = PolicyReader::max_traceable_blocks_effective(snapshot, settings, height);
     if LedgerContract::new()
         .contains_conflict_hash(snapshot, &tx.hash(), &hashes, mtb)
         .unwrap_or(false)
@@ -321,7 +327,7 @@ pub fn verify_state_dependent(
     }
 
     // Net fee left for witness verification.
-    let fee_per_byte = policy_int(
+    let fee_per_byte = PolicyReader::policy_int(
         snapshot,
         vec![POLICY_PREFIX_FEE_PER_BYTE],
         DEFAULT_FEE_PER_BYTE,
@@ -334,7 +340,7 @@ pub fn verify_state_dependent(
         net_fee = Helper::MAX_VERIFICATION_GAS;
     }
 
-    let exec_fee_factor = policy_int(
+    let exec_fee_factor = PolicyReader::policy_int(
         snapshot,
         vec![POLICY_PREFIX_EXEC_FEE_FACTOR],
         DEFAULT_EXEC_FEE_FACTOR,
@@ -346,11 +352,11 @@ pub fn verify_state_dependent(
     for (hash, witness) in hashes.iter().zip(witnesses.iter()) {
         let verification = witness.verification_script();
         let invocation = witness.invocation_script();
-        let is_single = neo_vm::script_builder::redeem_script::is_signature_contract(verification)
+        let is_single = neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(verification)
             && single_signature_invocation(invocation).is_some();
         let multi =
-            neo_vm::script_builder::redeem_script::parse_multi_sig_contract(verification).and_then(|(m, points)| {
-                neo_vm::script_builder::redeem_script::parse_multi_sig_invocation(invocation, m)
+            neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(verification).and_then(|(m, points)| {
+                neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(invocation, m)
                     .map(|_| (m, points.len()))
             });
         if is_single {
@@ -465,7 +471,7 @@ fn attribute_network_fee(
     tx: &Transaction,
     attribute: &TransactionAttribute,
 ) -> i64 {
-    let base = policy_int(
+    let base = PolicyReader::policy_int(
         snapshot,
         vec![
             POLICY_PREFIX_ATTRIBUTE_FEE,
@@ -489,6 +495,6 @@ fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> Option<UInt160> {
         return None;
     }
     let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-    let script = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, pubkeys).ok()?;
+    let script = neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(m, pubkeys).ok()?;
     Some(UInt160::from_script(&script))
 }

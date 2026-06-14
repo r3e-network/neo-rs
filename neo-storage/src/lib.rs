@@ -52,9 +52,7 @@ pub mod types;
 // Canonical cache types live in `persistence::data_cache`; re-export the common
 // surface at the crate root for ergonomic access.
 pub use error::{StorageError, StorageResult};
-pub use hash_utils::{
-    DEFAULT_XX_HASH3_SEED, default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32,
-};
+pub use hash_utils::{DEFAULT_XX_HASH3_SEED, XxHash3};
 pub use key_builder::{KeyBuilder, KeyBuilderError};
 pub use persistence::data_cache::{
     DataCache, DataCacheError, DataCacheResult, Trackable, TrackableEntry,

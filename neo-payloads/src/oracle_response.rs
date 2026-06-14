@@ -1,5 +1,5 @@
 use neo_io::macros::{OptionExt, ValidateLength};
-use neo_io::serializable::helper::get_var_size_bytes;
+use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::CallFlags;
 use neo_primitives::OracleResponseCode;
@@ -61,7 +61,7 @@ impl Serializable for OracleResponse {
     fn size(&self) -> usize {
         8 + // Id (u64)
         1 + // Code (u8)
-        get_var_size_bytes(&self.result) // Result with var length prefix
+        SerializeHelper::get_var_size_bytes(&self.result) // Result with var length prefix
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

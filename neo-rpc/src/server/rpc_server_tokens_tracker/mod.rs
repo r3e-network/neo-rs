@@ -119,7 +119,7 @@ impl RpcServerTokensTracker {
         }
 
         Ok(json!({
-            "address": neo_wallets::wallet_helper::to_address(&script_hash, address_version),
+            "address": neo_wallets::wallet_helper::WalletAddress::to_address(&script_hash, address_version),
             "balance": results}))
     }
 
@@ -168,7 +168,7 @@ impl RpcServerTokensTracker {
         )?;
 
         Ok(json!({
-            "address": neo_wallets::wallet_helper::to_address(&script_hash, address_version),
+            "address": neo_wallets::wallet_helper::WalletAddress::to_address(&script_hash, address_version),
             "sent": sent,
             "received": received}))
     }
@@ -318,7 +318,7 @@ impl RpcServerTokensTracker {
         }
 
         Ok(json!({
-            "address": neo_wallets::wallet_helper::to_address(&script_hash, address_version),
+            "address": neo_wallets::wallet_helper::WalletAddress::to_address(&script_hash, address_version),
             "balance": results}))
     }
 
@@ -367,7 +367,7 @@ impl RpcServerTokensTracker {
         )?;
 
         Ok(json!({
-            "address": neo_wallets::wallet_helper::to_address(&script_hash, address_version),
+            "address": neo_wallets::wallet_helper::WalletAddress::to_address(&script_hash, address_version),
             "sent": sent,
             "received": received}))
     }
