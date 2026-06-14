@@ -475,12 +475,21 @@ fn finalize_signature(raw: &[u8], format: SigFormat) -> HsmResult<Vec<u8>> {
 /// `OCTET STRING` header (`0x04 <len> <point>`).  Strip the header and
 /// return the raw point bytes.
 fn decode_der_octet_string(raw: &[u8]) -> HsmResult<Vec<u8>> {
-    // DER OCTET STRING: tag=0x04, then one or two length bytes, then content.
+    // A bare X9.62 point is exactly 33 bytes (compressed) or 65 bytes
+    // (uncompressed); a DER OCTET STRING wrapping one is 35 or 67 bytes
+    // (a 2-byte short-form header `04 <len>`). Those four sizes never collide,
+    // so length alone disambiguates wrapped-vs-bare. We MUST NOT key off the
+    // tag byte: an uncompressed point itself begins with 0x04, which equals the
+    // OCTET STRING tag, so a bare point would otherwise be misread as wrapped.
+    if raw.len() == 33 || raw.len() == 65 {
+        return Ok(raw.to_vec());
+    }
+    // Otherwise expect a DER OCTET STRING: tag=0x04, length byte(s), content.
     if raw.len() < 2 || raw[0] != 0x04 {
         // Some tokens already strip the DER wrapper and return the raw point.
         return Ok(raw.to_vec());
     }
-    let (content_offset, _content_len) = if raw[1] & 0x80 == 0 {
+    let (content_offset, content_len) = if raw[1] & 0x80 == 0 {
         // Short form: length in 1 byte.
         (2usize, raw[1] as usize)
     } else {
@@ -495,8 +504,11 @@ fn decode_der_octet_string(raw: &[u8]) -> HsmResult<Vec<u8>> {
         }
         (2 + num_len_bytes, len)
     };
-    if raw.len() <= content_offset {
-        return Err(HsmError::PublicKey("CKA_EC_POINT DER body missing".into()));
+    // Only strip the header when the declared length matches the buffer exactly;
+    // a mismatch means this isn't really a DER wrapper (e.g. a bare point whose
+    // leading coordinate byte happens to look like a length), so pass it through.
+    if content_offset + content_len != raw.len() {
+        return Ok(raw.to_vec());
     }
     Ok(raw[content_offset..].to_vec())
 }
