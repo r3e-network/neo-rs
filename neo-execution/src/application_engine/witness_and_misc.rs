@@ -260,8 +260,8 @@ impl ApplicationEngine {
     }
 
     /// Stores an existing storage iterator and returns its identifier.
-    pub fn store_storage_iterator(&mut self, iterator: StorageIterator) -> Result<u32, String> {
-        let iterator_id = self.allocate_iterator_id().map_err(|err| err.to_string())?;
+    pub fn store_storage_iterator(&mut self, iterator: StorageIterator) -> CoreResult<u32> {
+        let iterator_id = self.allocate_iterator_id()?;
         self.storage_iterators.insert(iterator_id, iterator);
         Ok(iterator_id)
     }
@@ -670,7 +670,7 @@ impl ApplicationEngine {
     }
 
     /// Converts a VM stack item into bytes, mirroring the C# helper.
-    pub fn stack_item_to_bytes(item: StackItem) -> Result<Vec<u8>, String> {
+    pub fn stack_item_to_bytes(item: StackItem) -> CoreResult<Vec<u8>> {
         if matches!(item, StackItem::Null) {
             return neo_serialization::binary_serializer::BinarySerializer::serialize(
                 &StackItem::null(),

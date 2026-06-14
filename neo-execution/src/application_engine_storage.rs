@@ -4,6 +4,7 @@ use crate::application_engine::ApplicationEngine;
 use crate::iterators::{IteratorInterop, StorageIterator};
 use crate::storage_context::StorageContext;
 use neo_config::hardfork::Hardfork;
+use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_primitives::FindOptions;
 use neo_vm::error::VmError;
@@ -11,23 +12,23 @@ use neo_vm::{ExecutionEngine, StackItem, VmResult};
 
 impl ApplicationEngine {
     /// Gets storage context for reading
-    pub fn storage_get_context(&mut self) -> Result<StorageContext, String> {
-        self.get_storage_context().map_err(|err| err.to_string())
+    pub fn storage_get_context(&mut self) -> CoreResult<StorageContext> {
+        self.get_storage_context().map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// Gets storage context for reading (readonly)
-    pub fn storage_get_read_only_context(&mut self) -> Result<StorageContext, String> {
+    pub fn storage_get_read_only_context(&mut self) -> CoreResult<StorageContext> {
         self.get_read_only_storage_context()
-            .map_err(|err| err.to_string())
+            .map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// Converts context to read-write
     pub fn storage_as_read_write(
         &mut self,
         context: StorageContext,
-    ) -> Result<StorageContext, String> {
+    ) -> CoreResult<StorageContext> {
         if !self.has_call_flags(CallFlags::WRITE_STATES) {
-            return Err("Write states not allowed".to_string());
+            return Err(CoreError::other("Write states not allowed"));
         }
 
         Ok(StorageContext::read_write(context.id))
@@ -38,14 +39,14 @@ impl ApplicationEngine {
         &mut self,
         context: StorageContext,
         key: Vec<u8>,
-    ) -> Result<Option<Vec<u8>>, String> {
+    ) -> CoreResult<Option<Vec<u8>>> {
         if !self.has_call_flags(CallFlags::READ_STATES) {
-            return Err("Read states not allowed".to_string());
+            return Err(CoreError::other("Read states not allowed"));
         }
 
         // Check key size
         if key.len() > neo_primitives::constants::MAX_STORAGE_KEY_SIZE {
-            return Err("Key too large".to_string());
+            return Err(CoreError::other("Key too large"));
         }
 
         Ok(self.get_storage_item(&context, &key))
@@ -57,47 +58,47 @@ impl ApplicationEngine {
         context: StorageContext,
         key: Vec<u8>,
         value: Vec<u8>,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         if context.is_read_only {
-            return Err("Context is read-only".to_string());
+            return Err(CoreError::other("Context is read-only"));
         }
 
         if !self.has_call_flags(CallFlags::WRITE_STATES) {
-            return Err("Write states not allowed".to_string());
+            return Err(CoreError::other("Write states not allowed"));
         }
 
         // Check sizes
         if key.len() > neo_primitives::constants::MAX_STORAGE_KEY_SIZE {
-            return Err("Key too large".to_string());
+            return Err(CoreError::other("Key too large"));
         }
 
         if value.len() > neo_primitives::constants::MAX_STORAGE_VALUE_SIZE {
-            return Err("Value too large".to_string());
+            return Err(CoreError::other("Value too large"));
         }
 
         self.put_storage_item(&context, &key, &value)
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| CoreError::other(err.to_string()))?;
 
         Ok(())
     }
 
     /// Deletes a storage value
-    pub fn storage_delete(&mut self, context: StorageContext, key: Vec<u8>) -> Result<(), String> {
+    pub fn storage_delete(&mut self, context: StorageContext, key: Vec<u8>) -> CoreResult<()> {
         if context.is_read_only {
-            return Err("Context is read-only".to_string());
+            return Err(CoreError::other("Context is read-only"));
         }
 
         if !self.has_call_flags(CallFlags::WRITE_STATES) {
-            return Err("Write states not allowed".to_string());
+            return Err(CoreError::other("Write states not allowed"));
         }
 
         // Check key size
         if key.len() > neo_primitives::constants::MAX_STORAGE_KEY_SIZE {
-            return Err("Key too large".to_string());
+            return Err(CoreError::other("Key too large"));
         }
 
         self.delete_storage_item(&context, &key)
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| CoreError::other(err.to_string()))?;
 
         Ok(())
     }
@@ -108,30 +109,30 @@ impl ApplicationEngine {
         context: StorageContext,
         prefix: Vec<u8>,
         options: FindOptions,
-    ) -> Result<StorageIterator, String> {
+    ) -> CoreResult<StorageIterator> {
         if !self.has_call_flags(CallFlags::READ_STATES) {
-            return Err("Read states not allowed".to_string());
+            return Err(CoreError::other("Read states not allowed"));
         }
 
         // Check prefix size
         if prefix.len() > neo_primitives::constants::MAX_STORAGE_KEY_SIZE {
-            return Err("Prefix too large".to_string());
+            return Err(CoreError::other("Prefix too large"));
         }
 
         self.find_storage_entries(&context, &prefix, options)
     }
 
-    pub fn storage_get_local(&mut self, key: Vec<u8>) -> Result<Option<Vec<u8>>, String> {
+    pub fn storage_get_local(&mut self, key: Vec<u8>) -> CoreResult<Option<Vec<u8>>> {
         let context = self.storage_get_read_only_context()?;
         self.storage_get(context, key)
     }
 
-    pub fn storage_put_local(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), String> {
+    pub fn storage_put_local(&mut self, key: Vec<u8>, value: Vec<u8>) -> CoreResult<()> {
         let context = self.storage_get_context()?;
         self.storage_put(context, key, value)
     }
 
-    pub fn storage_delete_local(&mut self, key: Vec<u8>) -> Result<(), String> {
+    pub fn storage_delete_local(&mut self, key: Vec<u8>) -> CoreResult<()> {
         let context = self.storage_get_context()?;
         self.storage_delete(context, key)
     }
@@ -140,16 +141,16 @@ impl ApplicationEngine {
         &mut self,
         prefix: Vec<u8>,
         options: FindOptions,
-    ) -> Result<StorageIterator, String> {
+    ) -> CoreResult<StorageIterator> {
         let context = self.storage_get_read_only_context()?;
         self.storage_find(context, prefix, options)
     }
 }
 
-fn map_storage_error(service: &str, error: String) -> VmError {
+fn map_storage_error(service: &str, error: impl std::fmt::Display) -> VmError {
     VmError::InteropService {
         service: service.to_string(),
-        error,
+        error: error.to_string(),
     }
 }
 

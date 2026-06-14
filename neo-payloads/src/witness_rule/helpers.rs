@@ -1,4 +1,5 @@
 use hex::{decode as hex_decode, encode as hex_encode};
+use neo_error::{CoreError, CoreResult};
 use neo_io::{IoError, IoResult, MemoryReader};
 
 /// Size of a compressed ECPoint in bytes.
@@ -11,24 +12,24 @@ pub fn encode_hex(bytes: &[u8]) -> String {
     hex_encode(bytes)
 }
 
-fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
+fn decode_hex(value: &str) -> CoreResult<Vec<u8>> {
     hex_decode(neo_primitives::strip_hex_prefix(value))
-        .map_err(|e| format!("Invalid hex string: {e}"))
+        .map_err(|e| CoreError::other(format!("Invalid hex string: {e}")))
 }
 
 /// Parses a hex-encoded ECPoint group, validating the byte length.
-pub fn parse_group_bytes(value: &str) -> Result<Vec<u8>, String> {
+pub fn parse_group_bytes(value: &str) -> CoreResult<Vec<u8>> {
     let bytes = decode_hex(value)?;
     // Validate compressed/uncompressed ECPoint length without ECCurve dependency.
     // Full ECPoint validation is performed in neo-core at deserialization time.
     match bytes.len() {
         ECPOINT_COMPRESSED_SIZE | ECPOINT_UNCOMPRESSED_SIZE => Ok(bytes),
-        _ => Err(format!(
+        _ => Err(CoreError::other(format!(
             "Invalid ECPoint length: expected {} or {} bytes, got {}",
             ECPOINT_COMPRESSED_SIZE,
             ECPOINT_UNCOMPRESSED_SIZE,
             bytes.len()
-        )),
+        ))),
     }
 }
 

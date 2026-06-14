@@ -2,7 +2,7 @@
 
 use crate::manifest::stack_value_helpers::{decode_stack_value_objects, required_struct_fields};
 use crate::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
-use neo_error::CoreError;
+use neo_error::{CoreError, CoreResult};
 use neo_vm::Interoperable;
 use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
@@ -88,8 +88,10 @@ impl ContractAbi {
     }
 
     /// Creates from JSON
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
-        let obj = json.as_object().ok_or("Expected object")?;
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected object"))?;
 
         let methods: Vec<ContractMethodDescriptor> = obj
             .get("methods")
@@ -112,7 +114,7 @@ impl ContractAbi {
             .unwrap_or_default();
 
         if methods.is_empty() {
-            return Err("ABI must have at least one method".to_string());
+            return Err(CoreError::other("ABI must have at least one method"));
         }
 
         Ok(Self::new(methods, events))
@@ -176,9 +178,9 @@ impl ContractAbi {
     }
 
     /// Validates the ABI structure.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> CoreResult<()> {
         if self.methods.is_empty() {
-            return Err("ABI must contain at least one method".to_string());
+            return Err(CoreError::other("ABI must contain at least one method"));
         }
         Ok(())
     }

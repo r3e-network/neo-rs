@@ -1,13 +1,14 @@
 use futures::StreamExt;
 use neo_crypto::Sha256Hasher;
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::OracleResponseCode;
 use neo_primitives::UInt256;
 use reqwest::StatusCode;
 
-pub(crate) fn normalize_neofs_endpoint(endpoint: &str) -> Result<String, String> {
+pub(crate) fn normalize_neofs_endpoint(endpoint: &str) -> CoreResult<String> {
     let trimmed = endpoint.trim();
     if trimmed.is_empty() {
-        return Err("NeoFS endpoint not configured".to_string());
+        return Err(CoreError::other("NeoFS endpoint not configured"));
     }
     let normalized = if trimmed.contains("://") {
         trimmed.to_string()

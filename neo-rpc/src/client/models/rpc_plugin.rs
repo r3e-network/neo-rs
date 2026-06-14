@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::{parse_optional_string_array_strict, token_array};
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -52,16 +53,16 @@ impl RpcPlugin {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let name = json
             .get("name")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'name' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'name' field"))?;
 
         let version = json
             .get("version")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'version' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))?;
 
         let interfaces = parse_optional_string_array_strict(
             json,
@@ -130,14 +131,14 @@ mod tests {
         empty_slot.add(None);
         json.insert("interfaces".to_string(), JToken::Array(empty_slot));
         let err = RpcPlugin::from_json(&json).expect_err("empty slot should fail");
-        assert_eq!(err, "Interface entry must be a string");
+        assert_eq!(err.to_string(), "Interface entry must be a string");
 
         json.insert(
             "interfaces".to_string(),
             JToken::Array(JArray::from(vec![JToken::Number(1.0)])),
         );
         let err = RpcPlugin::from_json(&json).expect_err("non-string should fail");
-        assert_eq!(err, "Interface entry must be a string");
+        assert_eq!(err.to_string(), "Interface entry must be a string");
     }
 
     #[test]

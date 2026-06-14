@@ -349,7 +349,7 @@ impl Tracker for Nep11Tracker {
         self.base.reset_batch();
     }
 
-    fn commit(&mut self) -> Result<(), String> {
+    fn commit(&mut self) -> neo_error::CoreResult<()> {
         self.base.commit()
     }
 }

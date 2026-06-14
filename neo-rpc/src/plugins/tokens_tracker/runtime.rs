@@ -123,11 +123,11 @@ impl TokensTracker {
 
     fn run_tracker_result_action<F>(&self, tracker: &str, action: &str, f: F) -> bool
     where
-        F: FnOnce() -> Result<(), String>,
+        F: FnOnce() -> neo_error::CoreResult<()>,
     {
         match panic::catch_unwind(AssertUnwindSafe(f)) {
             Ok(Ok(())) => true,
-            Ok(Err(err)) => self.handle_error(tracker, action, err),
+            Ok(Err(err)) => self.handle_error(tracker, action, err.to_string()),
             Err(payload) => self.handle_panic(tracker, action, payload),
         }
     }
@@ -217,7 +217,7 @@ mod tests {
         let tracker = tracker_with_policy(UnhandledExceptionPolicy::StopPlugin);
 
         let should_continue = tracker.run_tracker_result_action("test", "commit", || {
-            Err("injected commit failure".to_string())
+            Err(neo_error::CoreError::other("injected commit failure"))
         });
 
         assert!(!should_continue);
@@ -229,7 +229,7 @@ mod tests {
         let tracker = tracker_with_policy(UnhandledExceptionPolicy::Continue);
 
         let should_continue = tracker.run_tracker_result_action("test", "commit", || {
-            Err("injected commit failure".to_string())
+            Err(neo_error::CoreError::other("injected commit failure"))
         });
 
         assert!(should_continue);

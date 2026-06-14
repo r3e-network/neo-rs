@@ -12,6 +12,7 @@
 use super::super::utility::{object_array, parse_object_array_lossy};
 use super::RpcMethodToken;
 use base64::{Engine as _, engine::general_purpose};
+use neo_error::{CoreError, CoreResult};
 use neo_manifest::NefFile;
 use neo_serialization::json::{JObject, JToken};
 
@@ -30,29 +31,31 @@ impl RpcNefFile {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let compiler = json
             .get("compiler")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'compiler' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'compiler' field"))?;
 
         let source = json
             .get("source")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'source' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'source' field"))?;
 
-        let tokens = parse_object_array_lossy(json, "tokens", RpcMethodToken::from_json);
+        let tokens = parse_object_array_lossy(json, "tokens", |obj| {
+            RpcMethodToken::from_json(obj).map_err(|e| e.to_string())
+        });
 
         let script = json
             .get("script")
             .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|s| general_purpose::STANDARD.decode(s).ok())
-            .ok_or("Missing or invalid 'script' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'script' field"))?;
 
         let checksum = json
             .get("checksum")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'checksum' field")? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'checksum' field"))? as u32;
 
         Ok(Self {
             nef_file: NefFile {

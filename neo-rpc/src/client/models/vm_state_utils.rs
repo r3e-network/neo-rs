@@ -1,4 +1,5 @@
 use super::super::utility::required_string;
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use neo_vm_rs::VmState;
 
@@ -18,20 +19,21 @@ pub fn vm_state_from_str(value: &str) -> Option<VmState> {
     }
 }
 
-pub(super) fn parse_vm_state_field(json: &JObject, field: &str) -> Result<VmState, String> {
-    let value = required_string(json, field)?;
-    vm_state_from_str(&value).ok_or_else(|| format!("Invalid VM state: {value}"))
+pub(super) fn parse_vm_state_field(json: &JObject, field: &str) -> CoreResult<VmState> {
+    let value = required_string(json, field).map_err(|e| CoreError::other(e.to_string()))?;
+    vm_state_from_str(&value)
+        .ok_or_else(|| CoreError::other(format!("Invalid VM state: {value}")))
 }
 
 pub(super) fn insert_vm_state_field(json: &mut JObject, field: &str, state: VmState) {
     json.insert(field.to_string(), JToken::String(vm_state_to_string(state)));
 }
 
-pub(super) fn parse_gas_consumed_field(json: &JObject) -> Result<i64, String> {
-    let value = required_string(json, "gasconsumed")?;
+pub(super) fn parse_gas_consumed_field(json: &JObject) -> CoreResult<i64> {
+    let value = required_string(json, "gasconsumed").map_err(|e| CoreError::other(e.to_string()))?;
     value
         .parse::<i64>()
-        .map_err(|_| format!("Invalid gas consumed value: {value}"))
+        .map_err(|_| CoreError::other(format!("Invalid gas consumed value: {value}")))
 }
 
 pub(super) fn insert_gas_consumed_field(json: &mut JObject, gas_consumed: i64) {
@@ -78,13 +80,17 @@ mod tests {
 
         json.insert("state".to_string(), JToken::String("running".to_string()));
         assert_eq!(
-            parse_vm_state_field(&json, "state").expect_err("invalid VM state"),
+            parse_vm_state_field(&json, "state")
+                .expect_err("invalid VM state")
+                .to_string(),
             "Invalid VM state: running"
         );
 
         let missing = JObject::new();
         assert_eq!(
-            parse_vm_state_field(&missing, "state").expect_err("missing VM state"),
+            parse_vm_state_field(&missing, "state")
+                .expect_err("missing VM state")
+                .to_string(),
             "Missing or invalid 'state' field"
         );
     }
@@ -108,13 +114,17 @@ mod tests {
 
         json.insert("gasconsumed".to_string(), JToken::String("bad".to_string()));
         assert_eq!(
-            parse_gas_consumed_field(&json).expect_err("invalid gas consumed"),
+            parse_gas_consumed_field(&json)
+                .expect_err("invalid gas consumed")
+                .to_string(),
             "Invalid gas consumed value: bad"
         );
 
         let missing = JObject::new();
         assert_eq!(
-            parse_gas_consumed_field(&missing).expect_err("missing gas consumed"),
+            parse_gas_consumed_field(&missing)
+                .expect_err("missing gas consumed")
+                .to_string(),
             "Missing or invalid 'gasconsumed' field"
         );
     }

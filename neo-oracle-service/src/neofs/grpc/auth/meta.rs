@@ -1,12 +1,13 @@
 use super::super::super::NeoFsAuth;
 use super::super::super::proto::neofs_v2;
+use neo_error::{CoreError, CoreResult};
 
 const NEOFS_SDK_VERSION_MAJOR: u32 = 2;
 const NEOFS_SDK_VERSION_MINOR: u32 = 11;
 
 pub(crate) fn build_neofs_meta_header(
     auth: &NeoFsAuth,
-) -> Result<neofs_v2::session::RequestMetaHeader, String> {
+) -> CoreResult<neofs_v2::session::RequestMetaHeader> {
     let mut meta = neofs_v2::session::RequestMetaHeader {
         version: Some(neofs_v2::refs::Version {
             major: NEOFS_SDK_VERSION_MAJOR,
@@ -23,7 +24,7 @@ pub(crate) fn build_neofs_meta_header(
 
 fn build_neofs_bearer_token(
     auth: &NeoFsAuth,
-) -> Result<Option<neofs_v2::acl::BearerToken>, String> {
+) -> CoreResult<Option<neofs_v2::acl::BearerToken>> {
     let token = auth
         .token
         .as_ref()
@@ -34,7 +35,7 @@ fn build_neofs_bearer_token(
     };
     let data = base64::engine::general_purpose::STANDARD
         .decode(strip_bearer_prefix(token))
-        .map_err(|_| "invalid bearer token".to_string())?;
+        .map_err(|_| CoreError::other("invalid bearer token"))?;
     if data.is_empty() {
         return Ok(None);
     }
@@ -53,7 +54,7 @@ fn build_neofs_bearer_token(
     match (signature, signature_key) {
         (Some(signature), Some(signature_key)) => {
             let body = neofs_v2::acl::bearer_token::Body::decode(data.as_slice())
-                .map_err(|_| "invalid bearer token body".to_string())?;
+                .map_err(|_| CoreError::other("invalid bearer token body"))?;
             let signature_bytes = decode_neofs_signature_bytes(signature)?;
             let key_bytes = decode_neofs_signature_bytes(signature_key)?;
             let scheme = if auth.wallet_connect {
@@ -72,14 +73,14 @@ fn build_neofs_bearer_token(
         }
         (None, None) => {
             let token = neofs_v2::acl::BearerToken::decode(data.as_slice())
-                .map_err(|_| "invalid bearer token".to_string())?;
+                .map_err(|_| CoreError::other("invalid bearer token"))?;
             Ok(Some(token))
         }
-        _ => Err("missing bearer signature or key".to_string()),
+        _ => Err(CoreError::other("missing bearer signature or key")),
     }
 }
 
-fn decode_neofs_signature_bytes(value: &str) -> Result<Vec<u8>, String> {
+fn decode_neofs_signature_bytes(value: &str) -> CoreResult<Vec<u8>> {
     let trimmed = value.trim();
     let normalized = normalize_neofs_hex_header(trimmed);
     if let Ok(decoded) = hex::decode(&normalized) {
@@ -87,7 +88,7 @@ fn decode_neofs_signature_bytes(value: &str) -> Result<Vec<u8>, String> {
     }
     base64::engine::general_purpose::STANDARD
         .decode(trimmed)
-        .map_err(|_| "invalid neofs signature".to_string())
+        .map_err(|_| CoreError::other("invalid neofs signature"))
 }
 
 use super::super::super::auth::strip_bearer_prefix;

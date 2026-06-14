@@ -6,6 +6,7 @@ use crate::contract_parameter::ContractParameterValue;
 use crate::helper::Helper as ContractHelper;
 use base64::{Engine as _, engine::general_purpose};
 use neo_crypto::{Crypto, ECPoint};
+use neo_error::{CoreError, CoreResult};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_payloads::VerifiableExt;
 use neo_payloads::{transaction::Transaction, witness::Witness};
@@ -46,8 +47,10 @@ impl ContextItem {
     }
 
     /// Creates from JSON
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
-        let obj = json.as_object().ok_or("Expected object")?;
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected object"))?;
 
         let script = obj
             .get("script")
@@ -211,9 +214,9 @@ impl ContractParametersContext {
         contract: Contract,
         public_key: ECPoint,
         signature: Vec<u8>,
-    ) -> Result<bool, String> {
+    ) -> CoreResult<bool> {
         if signature.len() != 64 {
-            return Err("Invalid signature length".to_string());
+            return Err(CoreError::other("Invalid signature length"));
         }
 
         let hash = contract.script_hash();
@@ -221,7 +224,9 @@ impl ContractParametersContext {
         // Multi-signature contract path
         if let Some((_m, public_keys)) = ContractHelper::parse_multi_sig_contract(&contract.script)
         {
-            let encoded = public_key.encode_point(true).map_err(|e| e.to_string())?;
+            let encoded = public_key
+                .encode_point(true)
+                .map_err(|e| CoreError::other(e.to_string()))?;
             if !public_keys
                 .iter()
                 .any(|key| key.as_slice() == encoded.as_slice())
@@ -281,7 +286,7 @@ impl ContractParametersContext {
         for (i, param) in contract.parameter_list.iter().enumerate() {
             if *param == ContractParameterType::Signature {
                 if index.is_some() {
-                    return Err("more than one signature parameter".to_string());
+                    return Err(CoreError::other("more than one signature parameter"));
                 }
                 index = Some(i);
             }
@@ -436,8 +441,10 @@ impl ContractParametersContext {
         json: &serde_json::Value,
         verifiable: impl VerifiableExt + Serializable + 'static,
         snapshot: Arc<DataCache>,
-    ) -> Result<Self, String> {
-        let obj = json.as_object().ok_or("Expected object")?;
+    ) -> CoreResult<Self> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected object"))?;
 
         let network = obj.get("network").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
 
@@ -445,7 +452,9 @@ impl ContractParametersContext {
 
         if let Some(items) = obj.get("items").and_then(|v| v.as_object()) {
             for (hash_str, item_json) in items {
-                let hash = hash_str.parse::<UInt160>().map_err(|e| e.to_string())?;
+                let hash = hash_str
+                    .parse::<UInt160>()
+                    .map_err(|e| CoreError::other(e.to_string()))?;
                 let item = ContextItem::from_json(item_json)?;
                 context.context_items.insert(hash, item);
             }
@@ -458,26 +467,31 @@ impl ContractParametersContext {
     pub fn from_transaction_json(
         json: &serde_json::Value,
         snapshot: Arc<DataCache>,
-    ) -> Result<(Self, Transaction), String> {
-        let obj = json.as_object().ok_or("Expected object")?;
+    ) -> CoreResult<(Self, Transaction)> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected object"))?;
         let type_name = obj
             .get("type")
             .and_then(|v| v.as_str())
-            .ok_or("Missing context type")?;
+            .ok_or_else(|| CoreError::other("Missing context type"))?;
         if type_name != "Neo.Network.P2P.Payloads.Transaction" {
-            return Err(format!("Unsupported context type: {}", type_name));
+            return Err(CoreError::other(format!(
+                "Unsupported context type: {}",
+                type_name
+            )));
         }
 
         let data_field = obj
             .get("data")
             .and_then(|v| v.as_str())
-            .ok_or("Missing context data")?;
+            .ok_or_else(|| CoreError::other("Missing context data"))?;
         let data_bytes = general_purpose::STANDARD
             .decode(data_field)
-            .map_err(|err| format!("Invalid context data: {}", err))?;
+            .map_err(|err| CoreError::other(format!("Invalid context data: {}", err)))?;
         let mut reader = MemoryReader::new(&data_bytes);
         let transaction = <Transaction as Serializable>::deserialize(&mut reader)
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| CoreError::other(err.to_string()))?;
 
         let context = Self::from_json(json, transaction.clone(), snapshot)?;
         Ok((context, transaction))
@@ -487,9 +501,9 @@ impl ContractParametersContext {
     pub fn parse_transaction_context(
         json_text: &str,
         snapshot: Arc<DataCache>,
-    ) -> Result<(Self, Transaction), String> {
-        let value: serde_json::Value =
-            serde_json::from_str(json_text).map_err(|err| err.to_string())?;
+    ) -> CoreResult<(Self, Transaction)> {
+        let value: serde_json::Value = serde_json::from_str(json_text)
+            .map_err(|err| CoreError::other(err.to_string()))?;
         Self::from_transaction_json(&value, snapshot)
     }
 

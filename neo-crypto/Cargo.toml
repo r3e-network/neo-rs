@@ -47,6 +47,7 @@ base64 = { workspace = true }
 serde = { workspace = true }
 
 # Error handling
+neo-error = { workspace = true }
 thiserror = { workspace = true }
 
 # Constant-time operations and secure memory handling

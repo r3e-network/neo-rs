@@ -6,6 +6,7 @@ use crate::env_flags::env_flag_enabled;
 use crate::execution_context_state::ExecutionContextState;
 use crate::iterators::IteratorInterop;
 use neo_crypto::bls12381_point::{G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE};
+use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
@@ -106,10 +107,10 @@ pub(crate) fn register_contract_interops(engine: &mut ApplicationEngine) -> VmRe
     Ok(())
 }
 
-fn map_contract_result(service: &str, result: Result<(), String>) -> VmResult<()> {
+fn map_contract_result(service: &str, result: CoreResult<()>) -> VmResult<()> {
     result.map_err(|error| VmError::InteropService {
         service: service.to_string(),
-        error,
+        error: error.to_string(),
     })
 }
 
@@ -124,41 +125,40 @@ fn contract_call_handler(
     // so we must pop: hash -> method -> flags -> args.
     let hash_bytes = app.pop_bytes().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
     let method = app.pop_string().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
     let call_flags_value = app.pop_integer().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
     let args = app.pop_array().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
-    let result = (|| {
+    let result = (|| -> CoreResult<()> {
         if hash_bytes.len() != 20 {
-            return Err("Contract hash must be 20 bytes".to_string());
+            return Err(CoreError::other("Contract hash must be 20 bytes"));
         }
 
         let contract_hash = UInt160::from_bytes(&hash_bytes)
-            .map_err(|e| format!("Invalid contract hash: {}", e))?;
+            .map_err(|e| CoreError::other(format!("Invalid contract hash: {}", e)))?;
 
         if call_flags_value < 0 || call_flags_value > u8::MAX as i64 {
-            return Err("Invalid call flags value".to_string());
+            return Err(CoreError::other("Invalid call flags value"));
         }
 
         let call_flags = CallFlags::from_bits(call_flags_value as u8)
-            .ok_or_else(|| "Call flags contain unsupported bits".to_string())?;
+            .ok_or_else(|| CoreError::other("Call flags contain unsupported bits"))?;
 
         app.call_contract_dynamic(&contract_hash, &method, call_flags, args)
-            .map_err(|e| e.to_string())
     })();
 
     map_contract_result("System.Contract.Call", result)
@@ -168,8 +168,8 @@ fn contract_get_call_flags_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let result = (|| {
-        let flags = app.get_current_call_flags().map_err(|e| e.to_string())?;
+    let result = (|| -> CoreResult<()> {
+        let flags = app.get_current_call_flags()?;
         app.push_integer(i64::from(flags.bits()))?;
         Ok(())
     })();
@@ -183,7 +183,7 @@ fn contract_create_standard_account_handler(
 ) -> VmResult<()> {
     let pub_key_bytes = app.pop_bytes().map_err(|e| VmError::InteropService {
         service: "System.Contract.CreateStandardAccount".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
     let result = match app.create_standard_account(&pub_key_bytes) {
@@ -191,11 +191,11 @@ fn contract_create_standard_account_handler(
             .push_bytes(account.to_bytes())
             .map_err(|e| VmError::InteropService {
                 service: "System.Contract.CreateStandardAccount".to_string(),
-                error: e,
+                error: e.to_string(),
             })
             .map(|_| ())
-            .map_err(|e| e.to_string()),
-        Err(err) => Err(err.to_string()),
+            .map_err(|e: VmError| CoreError::other(e.to_string())),
+        Err(err) => Err(CoreError::other(err.to_string())),
     };
 
     map_contract_result("System.Contract.CreateStandardAccount", result)
@@ -211,24 +211,22 @@ fn contract_create_multisig_account_handler(
     // then pubKeys. Caller's SWAP between LDLOC0/LDARG0 confirms m-on-top layout.
     let m = app.pop_integer().map_err(|e| VmError::InteropService {
         service: "System.Contract.CreateMultisigAccount".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
     let public_keys_items = app.pop_array().map_err(|e| VmError::InteropService {
         service: "System.Contract.CreateMultisigAccount".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
-    let result = (|| {
+    let result = (|| -> CoreResult<()> {
         if m < 0 || m > i32::MAX as i64 {
-            return Err("Invalid multisig threshold".to_string());
+            return Err(CoreError::other("Invalid multisig threshold"));
         }
 
         let account = app
-            .create_multisig_account(m as i32, public_keys_items)
-            .map_err(|e| e.to_string())?;
-        app.push_bytes(account.to_bytes())
-            .map_err(|e| e.to_string())?;
+            .create_multisig_account(m as i32, public_keys_items)?;
+        app.push_bytes(account.to_bytes())?;
         Ok(())
     })();
 
@@ -239,20 +237,20 @@ fn contract_call_native_handler(
     app: &mut ApplicationEngine,
     engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let result = (|| -> Result<(), String> {
-        let version_item = engine.pop().map_err(|e| e.to_string())?;
-        let version_big = version_item.as_int().map_err(|e| e.to_string())?;
+    let result = (|| -> CoreResult<()> {
+        let version_item = engine.pop().map_err(|e| CoreError::other(e.to_string()))?;
+        let version_big = version_item.as_int().map_err(|e| CoreError::other(e.to_string()))?;
         if !version_big.is_zero() {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "Unsupported native contract version {}",
                 version_big
-            ));
+            )));
         }
 
         let (state_arc, stack_len) = {
             let context = engine
                 .current_context()
-                .ok_or_else(|| "No current execution context".to_string())?;
+                .ok_or_else(|| CoreError::other("No current execution context"))?;
             let state_arc = context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             let stack_len = context.evaluation_stack().len();
@@ -263,11 +261,11 @@ fn contract_call_native_handler(
             let state = state_arc.lock();
             let script_hash = state
                 .script_hash
-                .ok_or_else(|| "Native contract context missing script hash".to_string())?;
+                .ok_or_else(|| CoreError::other("Native contract context missing script hash"))?;
             let method_name = state
                 .method_name
                 .clone()
-                .ok_or_else(|| "Native contract context missing method name".to_string())?;
+                .ok_or_else(|| CoreError::other("Native contract context missing method name"))?;
             let arg_count = state.argument_count;
             let return_type = state.return_type;
             let parameter_types = state.parameter_types.clone();
@@ -290,16 +288,16 @@ fn contract_call_native_handler(
         }
 
         if arg_count > stack_len {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "Native contract expected {} argument(s) but stack contains {}",
                 arg_count, stack_len
-            ));
+            )));
         }
 
         let mut args = Vec::with_capacity(arg_count);
         let mut null_mask: u32 = 0;
         for index in 0..arg_count {
-            let item = engine.pop().map_err(|e| e.to_string())?;
+            let item = engine.pop().map_err(|e| CoreError::other(e.to_string()))?;
             if matches!(item, StackItem::Null) && index < 32 {
                 null_mask |= 1u32 << index;
             }
@@ -312,8 +310,7 @@ fn contract_call_native_handler(
             }
             let bytes = match parameter_types.get(index) {
                 Some(ContractParameterType::Any) => {
-                    BinarySerializer::serialize(&item, app.execution_limits())
-                        .map_err(|e| e.to_string())?
+                    BinarySerializer::serialize(&item, app.execution_limits())?
                 }
                 Some(ContractParameterType::InteropInterface) => stack_item_to_interop_bytes(item)?,
                 _ => ApplicationEngine::stack_item_to_bytes(item)?,
@@ -333,7 +330,7 @@ fn contract_call_native_handler(
         app.set_state(NativeArgNullMask(null_mask));
         let call_result = app.call_native_contract(script_hash, &method_name, &args);
         app.take_state::<NativeArgNullMask>();
-        let result_bytes = call_result.map_err(|e| e.to_string())?;
+        let result_bytes = call_result?;
         // A native method may signal a `null` return (a nullable-reference result
         // such as `byte[]?`) via `set_native_return_null`; consume it here so it
         // never leaks into the next call.
@@ -362,15 +359,14 @@ fn contract_call_native_handler(
             if force_null_return {
                 // The native method explicitly returned `null` (e.g. a failed
                 // `recoverSecp256K1`); push `Null` rather than the empty payload.
-                engine.push(StackItem::null()).map_err(|e| e.to_string())?;
+                engine.push(StackItem::null()).map_err(|e| CoreError::other(e.to_string()))?;
             } else {
                 push_native_result(engine, ret_type, result_bytes)?;
             }
         }
 
         // Load any queued calls requested by the native method (e.g. NEP-17 callbacks).
-        app.process_pending_native_calls()
-            .map_err(|e| e.to_string())?;
+        app.process_pending_native_calls()?;
 
         Ok(())
     })();
@@ -382,17 +378,17 @@ fn push_native_result(
     engine: &mut ExecutionEngine,
     return_type: ContractParameterType,
     result: Vec<u8>,
-) -> Result<(), String> {
+) -> CoreResult<()> {
     let Some(item) = decode_native_result(return_type, result)? else {
         return Ok(());
     };
-    engine.push(item).map_err(|e| e.to_string())
+    engine.push(item).map_err(|e| CoreError::other(e.to_string()))
 }
 
 fn decode_native_result(
     return_type: ContractParameterType,
     result: Vec<u8>,
-) -> Result<Option<StackItem>, String> {
+) -> CoreResult<Option<StackItem>> {
     match return_type {
         ContractParameterType::Void => Ok(None),
         ContractParameterType::Boolean => {
@@ -405,7 +401,7 @@ fn decode_native_result(
         }
         ContractParameterType::String => {
             let string_bytes = String::from_utf8(result.clone())
-                .map_err(|_| "Invalid UTF-8 string returned by native contract".to_string())?
+                .map_err(|_| CoreError::other("Invalid UTF-8 string returned by native contract"))?
                 .into_bytes();
             Ok(Some(StackItem::from_byte_string(string_bytes)))
         }
@@ -434,7 +430,7 @@ fn decode_native_result(
                 let id = BigInt::from_signed_bytes_le(&result);
                 let iterator_id = id
                     .to_u32()
-                    .ok_or_else(|| "Iterator identifier out of range".to_string())?;
+                    .ok_or_else(|| CoreError::other("Iterator identifier out of range"))?;
                 // Iterator results are InteropInterface values (C# parity): wrap
                 // the engine-side storage-iterator handle, do not surface it as a
                 // bare integer.
@@ -464,7 +460,7 @@ fn decode_native_result(
     }
 }
 
-fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
+fn stack_item_to_interop_bytes(item: StackItem) -> CoreResult<Vec<u8>> {
     // Iterator interop interfaces encode their engine-side handle id as 4 LE bytes.
     if let Ok(iterator) = item.as_interface::<IteratorInterop>() {
         return Ok(iterator.id().to_le_bytes().to_vec());
@@ -476,14 +472,14 @@ fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
     // Anything else (e.g. a plain byte string) is NOT a live interop object;
     // rejecting it matches C#, where binding an `InteropInterface` parameter
     // from a non-interface stack item throws and faults the VM.
-    Err("Stack item is not an InteropInterface".to_string())
+    Err(CoreError::other("Stack item is not an InteropInterface"))
 }
 
 fn contract_native_on_persist_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let result = app.native_on_persist().map_err(|e| e.to_string());
+    let result = app.native_on_persist();
     map_contract_result("System.Contract.NativeOnPersist", result)
 }
 
@@ -491,7 +487,7 @@ fn contract_native_post_persist_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let result = app.native_post_persist().map_err(|e| e.to_string());
+    let result = app.native_post_persist();
     map_contract_result("System.Contract.NativePostPersist", result)
 }
 

@@ -1,5 +1,6 @@
 //! BIP-32 key path parser.
 
+use neo_error::{CoreError, CoreResult};
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,23 +27,23 @@ impl KeyPath {
         }
     }
 
-    pub fn parse(path: &str) -> Result<Self, String> {
+    pub fn parse(path: &str) -> CoreResult<Self> {
         let trimmed = path.trim();
         if trimmed.is_empty() {
-            return Err("Invalid key path".to_string());
+            return Err(CoreError::other("Invalid key path"));
         }
 
         let mut parts = trimmed.split('/');
-        let first = parts.next().ok_or_else(|| "Invalid key path".to_string())?;
+        let first = parts.next().ok_or_else(|| CoreError::other("Invalid key path"))?;
         if first.trim() != "m" {
-            return Err("Invalid key path".to_string());
+            return Err(CoreError::other("Invalid key path"));
         }
 
         let mut indices = Vec::new();
         for part in parts {
             let part = part.trim();
             if part.is_empty() {
-                return Err("Invalid key path".to_string());
+                return Err(CoreError::other("Invalid key path"));
             }
 
             let hardened = part.ends_with('\'');
@@ -53,14 +54,14 @@ impl KeyPath {
             };
 
             if number_str.is_empty() {
-                return Err("Invalid key path".to_string());
+                return Err(CoreError::other("Invalid key path"));
             }
 
             let mut index: u32 = number_str
                 .parse()
-                .map_err(|_| "Invalid key path".to_string())?;
+                .map_err(|_| CoreError::other("Invalid key path"))?;
             if index >= 0x8000_0000 {
-                return Err("Invalid key path".to_string());
+                return Err(CoreError::other("Invalid key path"));
             }
             if hardened {
                 index |= 0x8000_0000;

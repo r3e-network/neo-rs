@@ -1,5 +1,6 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
+use neo_error::{CoreError, CoreResult};
 use neo_execution::NotifyEventArgs;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block as LedgerBlock;
@@ -64,17 +65,17 @@ impl ApplicationLogsService {
         *guard = Some(self.store.snapshot());
     }
 
-    fn commit_batch(&self) -> Result<(), String> {
+    fn commit_batch(&self) -> CoreResult<()> {
         let mut guard = self.snapshot.lock();
         let Some(snapshot_arc) = guard.as_mut() else {
             return Ok(());
         };
         let Some(snapshot) = Arc::get_mut(snapshot_arc) else {
-            return Err("application logs commit failed: snapshot is still shared".to_string());
+            return Err(CoreError::other("application logs commit failed: snapshot is still shared"));
         };
         snapshot
             .try_commit()
-            .map_err(|err| format!("application logs commit failed: {err}"))
+            .map_err(|err| CoreError::other(format!("application logs commit failed: {err}")))
     }
 
     fn handle_panic(&self, payload: Box<dyn Any + Send>, phase: &'static str) {
@@ -101,22 +102,22 @@ impl ApplicationLogsService {
             .apply(|| self.disabled.store(true, Ordering::SeqCst));
     }
 
-    fn write_log(&self, prefix: u8, hash: &UInt256, value: Value) -> Result<(), String> {
+    fn write_log(&self, prefix: u8, hash: &UInt256, value: Value) -> CoreResult<()> {
         let mut guard = self.snapshot.lock();
         let Some(snapshot_arc) = guard.as_mut() else {
             return Ok(());
         };
         let Some(snapshot) = Arc::get_mut(snapshot_arc) else {
-            return Err("application logs write failed: snapshot is still shared".to_string());
+            return Err(CoreError::other("application logs write failed: snapshot is still shared"));
         };
         let mut key = Vec::with_capacity(1 + 32);
         key.push(prefix);
         key.extend_from_slice(&hash.to_bytes());
         let bytes = serde_json::to_vec(&value)
-            .map_err(|err| format!("failed to serialize application log: {err}"))?;
+            .map_err(|err| CoreError::other(format!("failed to serialize application log: {err}")))?;
         snapshot
             .put(key, bytes)
-            .map_err(|err| format!("failed to write application log to storage: {err}"))?;
+            .map_err(|err| CoreError::other(format!("failed to write application log to storage: {err}")))?;
         Ok(())
     }
 
@@ -232,7 +233,7 @@ impl CommittingHandler for ApplicationLogsService {
         if system.settings().network != self.settings.network {
             return;
         }
-        let result = panic::catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| -> CoreResult<()> {
             self.start_batch();
 
             let block_hash = block.hash();
@@ -251,7 +252,7 @@ impl CommittingHandler for ApplicationLogsService {
         }));
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(err)) => self.handle_error(&err, "committing"),
+            Ok(Err(err)) => self.handle_error(&err.to_string(), "committing"),
             Err(payload) => self.handle_panic(payload, "committing"),
         }
     }
@@ -271,7 +272,7 @@ impl CommittedHandler for ApplicationLogsService {
         let result = panic::catch_unwind(AssertUnwindSafe(|| self.commit_batch()));
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(err)) => self.handle_error(&err, "committed"),
+            Ok(Err(err)) => self.handle_error(&err.to_string(), "committed"),
             Err(payload) => self.handle_panic(payload, "committed"),
         }
     }
@@ -466,7 +467,7 @@ mod tests {
             .commit_batch()
             .expect_err("application logs commit should propagate snapshot commit failure");
 
-        assert!(err.contains("injected application logs commit failure"));
+        assert!(err.to_string().contains("injected application logs commit failure"));
     }
 
     #[test]
@@ -485,7 +486,7 @@ mod tests {
             )
             .expect_err("application logs write should propagate snapshot put failure");
 
-        assert!(err.contains("injected application logs write failure"));
+        assert!(err.to_string().contains("injected application logs write failure"));
     }
 
     #[test]

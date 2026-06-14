@@ -1,5 +1,6 @@
 //! ValidatorAttribute - matches C# Neo.SmartContract.ValidatorAttribute exactly
 
+use neo_error::{CoreError, CoreResult};
 use neo_vm_rs::StackValue;
 
 /// Abstract base for validator attributes (matches C# ValidatorAttribute)
@@ -7,7 +8,7 @@ use neo_vm_rs::StackValue;
 /// In Rust, we implement this as a trait
 pub trait ValidatorAttribute: std::fmt::Debug {
     /// Validates a stack item
-    fn validate(&self, item: &StackValue) -> Result<(), String>;
+    fn validate(&self, item: &StackValue) -> CoreResult<()>;
 
     /// Clone the validator
     fn clone_box(&self) -> Box<dyn ValidatorAttribute>;
@@ -34,16 +35,20 @@ impl MaxLengthValidator {
 }
 
 impl ValidatorAttribute for MaxLengthValidator {
-    fn validate(&self, item: &StackValue) -> Result<(), String> {
+    fn validate(&self, item: &StackValue) -> CoreResult<()> {
         match item {
-            StackValue::ByteString(bytes) if bytes.len() > self.max_length => Err(format!(
-                "ByteString exceeds maximum length of {}",
-                self.max_length
-            )),
-            StackValue::Buffer(buffer) if buffer.len() > self.max_length => Err(format!(
-                "Buffer exceeds maximum length of {}",
-                self.max_length
-            )),
+            StackValue::ByteString(bytes) if bytes.len() > self.max_length => {
+                Err(CoreError::other(format!(
+                    "ByteString exceeds maximum length of {}",
+                    self.max_length
+                )))
+            }
+            StackValue::Buffer(buffer) if buffer.len() > self.max_length => {
+                Err(CoreError::other(format!(
+                    "Buffer exceeds maximum length of {}",
+                    self.max_length
+                )))
+            }
             _ => Ok(()),
         }
     }

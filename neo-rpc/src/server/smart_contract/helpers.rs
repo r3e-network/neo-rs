@@ -33,7 +33,7 @@ pub(super) fn parse_contract_parameters(
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Array(values)) => values
             .iter()
-            .map(|value| ContractParameter::from_json(value).map_err(invalid_params))
+            .map(|value| ContractParameter::from_json(value).map_err(|e| invalid_params(e.to_string())))
             .collect(),
         Some(_) => Err(invalid_params("args must be an array")),
     }

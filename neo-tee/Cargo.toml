@@ -42,6 +42,7 @@ libloading = "0.8"
 
 # Workspace crypto primitives (secp256r1 + hash160)
 neo-crypto = { workspace = true }
+neo-error = { workspace = true }
 
 # SGX dependencies (optional)
 sgx-isa = { version = "0.4", optional = true }

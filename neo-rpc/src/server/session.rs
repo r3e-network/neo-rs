@@ -1,5 +1,6 @@
 //! RPC invocation sessions mirroring `Neo.Plugins.RpcServer.Session`.
 
+use neo_error::{CoreError, CoreResult};
 use parking_lot::{Mutex, MutexGuard};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -101,7 +102,7 @@ impl Session {
         witnesses: Option<Vec<Witness>>,
         gas_limit: i64,
         diagnostic: Option<Diagnostic>,
-    ) -> Result<Self, String> {
+    ) -> CoreResult<Self> {
         let store_cache = system.store_cache();
         let snapshot_cache = Arc::new(store_cache.data_cache().clone());
 
@@ -138,11 +139,11 @@ impl Session {
             gas_limit,
             diagnostic_box,
         )
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| CoreError::other(err.to_string()))?;
 
         engine
             .load_script(script.clone(), CallFlags::ALL, None)
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| CoreError::other(err.to_string()))?;
         engine.execute_allow_fault();
 
         Ok(Self {

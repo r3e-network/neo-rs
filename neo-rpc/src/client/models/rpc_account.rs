@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::insert_optional_string;
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -44,16 +45,16 @@ impl RpcAccount {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let address = json
             .get("address")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'address' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'address' field"))?;
 
         let has_key = json
             .get("haskey")
             .map(neo_serialization::json::JToken::as_boolean)
-            .ok_or("Missing or invalid 'haskey' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'haskey' field"))?;
 
         let label = json
             .get("label")
@@ -62,7 +63,7 @@ impl RpcAccount {
         let watch_only = json
             .get("watchonly")
             .map(neo_serialization::json::JToken::as_boolean)
-            .ok_or("Missing or invalid 'watchonly' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'watchonly' field"))?;
 
         Ok(Self {
             address,

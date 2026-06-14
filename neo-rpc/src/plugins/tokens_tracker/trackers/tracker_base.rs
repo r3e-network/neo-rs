@@ -4,6 +4,7 @@
 //! database operations and transfer record extraction.
 
 use super::token_transfer_key::TokenTransferKey;
+use neo_error::{CoreError, CoreResult};
 use neo_io::extensions::serializable::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::ApplicationExecuted;
@@ -83,7 +84,7 @@ pub trait Tracker: Send + Sync {
     fn reset_batch(&mut self);
 
     /// Commits the current batch to the database.
-    fn commit(&mut self) -> Result<(), String>;
+    fn commit(&mut self) -> CoreResult<()>;
 }
 
 /// Base tracker state shared by NEP-11 and NEP-17 trackers.
@@ -123,23 +124,23 @@ impl TrackerBase {
     }
 
     /// Commits the current snapshot to the database.
-    pub fn commit(&mut self) -> Result<(), String> {
+    pub fn commit(&mut self) -> CoreResult<()> {
         if let Some(snapshot_arc) = self.snapshot.as_mut() {
             if let Some(snapshot) = Arc::get_mut(snapshot_arc) {
                 snapshot
                     .try_commit()
-                    .map_err(|e| format!("snapshot commit failed: {}", e))?;
+                    .map_err(|e| CoreError::other(format!("snapshot commit failed: {}", e)))?;
             } else {
-                return Err("snapshot commit failed: snapshot is still shared".to_string());
+                return Err(CoreError::other("snapshot commit failed: snapshot is still shared"));
             }
         }
         Ok(())
     }
 
-    fn key<K: Serializable>(prefix: u8, key: &K) -> Result<Vec<u8>, String> {
+    fn key<K: Serializable>(prefix: u8, key: &K) -> CoreResult<Vec<u8>> {
         let mut buffer = Vec::with_capacity(key.size() + 1);
         buffer.push(prefix);
-        buffer.extend_from_slice(&key.to_array().map_err(|e| e.to_string())?);
+        buffer.extend_from_slice(&key.to_array().map_err(|e| CoreError::other(e.to_string()))?);
         Ok(buffer)
     }
 
@@ -149,7 +150,7 @@ impl TrackerBase {
         prefix: u8,
         key: &K,
         value: &V,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         let Some(snapshot_arc) = self.snapshot.as_mut() else {
             return Ok(());
         };
@@ -157,15 +158,15 @@ impl TrackerBase {
             return Ok(());
         };
         let key_bytes = Self::key(prefix, key)?;
-        let value_bytes = value.to_array().map_err(|e| e.to_string())?;
+        let value_bytes = value.to_array().map_err(|e| CoreError::other(e.to_string()))?;
         snapshot
             .put(key_bytes, value_bytes)
-            .map_err(|e| format!("storage put failed: {}", e))?;
+            .map_err(|e| CoreError::other(format!("storage put failed: {}", e)))?;
         Ok(())
     }
 
     /// Deletes a key with the given prefix.
-    pub fn delete<K: Serializable>(&mut self, prefix: u8, key: &K) -> Result<(), String> {
+    pub fn delete<K: Serializable>(&mut self, prefix: u8, key: &K) -> CoreResult<()> {
         let Some(snapshot_arc) = self.snapshot.as_mut() else {
             return Ok(());
         };
@@ -175,7 +176,7 @@ impl TrackerBase {
         let key_bytes = Self::key(prefix, key)?;
         snapshot
             .delete(key_bytes)
-            .map_err(|e| format!("storage delete failed: {}", e))?;
+            .map_err(|e| CoreError::other(format!("storage delete failed: {}", e)))?;
         Ok(())
     }
 
@@ -186,7 +187,7 @@ impl TrackerBase {
         user_script_hash: &UInt160,
         start_time: u64,
         end_time: u64,
-    ) -> Result<Vec<(TKey, TValue)>, String>
+    ) -> CoreResult<Vec<(TKey, TValue)>>
     where
         TKey: Serializable,
         TValue: Serializable,
@@ -210,10 +211,10 @@ impl TrackerBase {
             }
 
             let mut key_reader = MemoryReader::new(&key_bytes[1..]);
-            let key = TKey::deserialize(&mut key_reader).map_err(|e| e.to_string())?;
+            let key = TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
             let mut val_reader = MemoryReader::new(&value_bytes);
-            let val = TValue::deserialize(&mut val_reader).map_err(|e| e.to_string())?;
+            let val = TValue::deserialize(&mut val_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
             results.push((key, val));
         }
@@ -457,6 +458,6 @@ mod tests {
             .commit()
             .expect_err("tracker commit should propagate snapshot commit failure");
 
-        assert!(err.contains("injected tracker commit failure"));
+        assert!(err.to_string().contains("injected tracker commit failure"));
     }
 }

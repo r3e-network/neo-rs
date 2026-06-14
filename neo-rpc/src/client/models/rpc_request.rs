@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::cloned_token_array;
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -44,18 +45,21 @@ impl RpcRequest {
 
     /// Creates an RPC request from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let id = json.get("id").ok_or("Missing 'id' field")?.clone();
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
+        let id = json
+            .get("id")
+            .ok_or_else(|| CoreError::other("Missing 'id' field"))?
+            .clone();
 
         let json_rpc = json
             .get("jsonrpc")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'jsonrpc' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'jsonrpc' field"))?;
 
         let method = json
             .get("method")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'method' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'method' field"))?;
 
         let params = json
             .get("params")

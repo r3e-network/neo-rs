@@ -1,5 +1,6 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::OracleResponseCode;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::{JArray, JObject, JToken};
@@ -208,19 +209,22 @@ pub fn required_bigint_string(
 }
 
 /// Reads a required `UInt256` string field.
-pub fn required_uint256(json: &JObject, field: &str) -> Result<UInt256, String> {
-    let value = required_string(json, field)?;
-    UInt256::parse(&value).map_err(|_| format!("Missing or invalid '{field}' field"))
+pub fn required_uint256(json: &JObject, field: &str) -> CoreResult<UInt256> {
+    let value = required_string(json, field).map_err(|e| CoreError::other(e.to_string()))?;
+    UInt256::parse(&value)
+        .map_err(|_| CoreError::other(format!("Missing or invalid '{field}' field")))
 }
 
 /// Parses either a hex script hash or an address using the supplied protocol settings.
 pub fn parse_script_hash_or_address(
     value: &str,
     protocol_settings: &ProtocolSettings,
-) -> Result<UInt160, String> {
+) -> CoreResult<UInt160> {
     UInt160::parse(value)
-        .map_err(|err| err.to_string())
-        .or_else(|_| WalletHelper::to_script_hash(value, protocol_settings.address_version))
+        .map_err(|err| CoreError::other(err.to_string()))
+        .or_else(|_| {
+            WalletHelper::to_script_hash(value, protocol_settings.address_version)
+        })
 }
 
 /// Reads a required script-hash-or-address field.
@@ -229,10 +233,10 @@ pub fn required_script_hash_or_address(
     field: &str,
     protocol_settings: &ProtocolSettings,
     value_name: &str,
-) -> Result<UInt160, String> {
-    let value = required_string(json, field)?;
+) -> CoreResult<UInt160> {
+    let value = required_string(json, field).map_err(|e| CoreError::other(e.to_string()))?;
     parse_script_hash_or_address(&value, protocol_settings)
-        .map_err(|_| format!("Invalid {value_name}: {value}"))
+        .map_err(|_| CoreError::other(format!("Invalid {value_name}: {value}")))
 }
 
 /// Reads an optional script-hash-or-address field, preserving lossy legacy parsing.
@@ -251,13 +255,14 @@ pub fn required_address_script_hash(
     json: &JObject,
     field: &str,
     protocol_settings: &ProtocolSettings,
-) -> Result<UInt160, String> {
-    let address = required_string(json, field)?;
+) -> CoreResult<UInt160> {
+    let address = required_string(json, field).map_err(|e| CoreError::other(e.to_string()))?;
     if address.starts_with("0x") {
-        UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))
+        UInt160::parse(&address)
+            .map_err(|_| CoreError::other(format!("Invalid address: {address}")))
     } else {
         WalletHelper::to_script_hash(&address, protocol_settings.address_version)
-            .map_err(|err| format!("Invalid address: {err}"))
+            .map_err(|err| CoreError::other(format!("Invalid address: {err}")))
     }
 }
 
@@ -348,8 +353,8 @@ pub fn parse_object_array_lossy<T>(
 pub fn parse_optional_present_token_array_strict<T>(
     json: &JObject,
     field: &str,
-    parse: impl FnMut(&JToken) -> Result<T, String>,
-) -> Result<Vec<T>, String> {
+    parse: impl FnMut(&JToken) -> CoreResult<T>,
+) -> CoreResult<Vec<T>> {
     json.get(field)
         .and_then(JToken::as_array)
         .map(|entries| {
@@ -371,15 +376,17 @@ pub fn parse_optional_token_array_strict<T>(
     json: &JObject,
     field: &str,
     entry_error: &str,
-    mut parse: impl FnMut(&JToken) -> Result<T, String>,
-) -> Result<Vec<T>, String> {
+    mut parse: impl FnMut(&JToken) -> CoreResult<T>,
+) -> CoreResult<Vec<T>> {
     json.get(field)
         .and_then(JToken::as_array)
         .map(|entries| {
             entries
                 .iter()
                 .map(|entry| {
-                    let token = entry.as_ref().ok_or_else(|| entry_error.to_string())?;
+                    let token = entry
+                        .as_ref()
+                        .ok_or_else(|| CoreError::other(entry_error))?;
                     parse(token)
                 })
                 .collect()
@@ -392,7 +399,7 @@ pub fn parse_optional_string_array_strict(
     json: &JObject,
     field: &str,
     entry_error: &str,
-) -> Result<Vec<String>, String> {
+) -> CoreResult<Vec<String>> {
     json.get(field)
         .and_then(JToken::as_array)
         .map(|entries| {
@@ -402,7 +409,7 @@ pub fn parse_optional_string_array_strict(
                     entry
                         .as_ref()
                         .and_then(JToken::as_string)
-                        .ok_or_else(|| entry_error.to_string())
+                        .ok_or_else(|| CoreError::other(entry_error))
                 })
                 .collect()
         })
@@ -410,13 +417,13 @@ pub fn parse_optional_string_array_strict(
 }
 
 /// Parses a base64-encoded string token.
-pub fn parse_base64_token(token: &JToken, field: &str) -> Result<Vec<u8>, String> {
+pub fn parse_base64_token(token: &JToken, field: &str) -> CoreResult<Vec<u8>> {
     let text = token
         .as_string()
-        .ok_or_else(|| format!("Field '{field}' must be a base64 string"))?;
+        .ok_or_else(|| CoreError::other(format!("Field '{field}' must be a base64 string")))?;
     general_purpose::STANDARD
         .decode(text.as_bytes())
-        .map_err(|err| format!("Invalid base64 data in '{field}': {err}"))
+        .map_err(|err| CoreError::other(format!("Invalid base64 data in '{field}': {err}")))
 }
 
 /// Builds a base64 string token.
@@ -432,17 +439,17 @@ pub(crate) fn optional_base64_field_lossy(json: &JObject, field: &str) -> Option
 }
 
 /// Parses a u32 token that may be encoded as number or string.
-pub fn parse_u32_token(token: &JToken, field: &str) -> Result<u32, String> {
+pub fn parse_u32_token(token: &JToken, field: &str) -> CoreResult<u32> {
     parse_integer_token(token, field, "unsigned", |number| number as u32)
 }
 
 /// Parses a u64 token that may be encoded as number or string.
-pub fn parse_u64_token(token: &JToken, field: &str) -> Result<u64, String> {
+pub fn parse_u64_token(token: &JToken, field: &str) -> CoreResult<u64> {
     parse_integer_token(token, field, "unsigned", |number| number as u64)
 }
 
 /// Parses an i64 token that may be encoded as number or string.
-pub fn parse_i64_token(token: &JToken, field: &str) -> Result<i64, String> {
+pub fn parse_i64_token(token: &JToken, field: &str) -> CoreResult<i64> {
     parse_integer_token(token, field, "signed", |number| number as i64)
 }
 
@@ -451,7 +458,7 @@ fn parse_integer_token<T>(
     field: &str,
     integer_kind: &str,
     from_number: impl FnOnce(f64) -> T,
-) -> Result<T, String>
+) -> CoreResult<T>
 where
     T: FromStr,
     T::Err: Display,
@@ -461,50 +468,59 @@ where
     // `as_number()` first would funnel them through f64 and silently corrupt any
     // value above 2^53.
     if let Some(text) = token.as_string() {
-        text.parse::<T>()
-            .map_err(|err| format!("Invalid {integer_kind} integer for '{field}': {err}"))
+        text.parse::<T>().map_err(|err| {
+            CoreError::other(format!(
+                "Invalid {integer_kind} integer for '{field}': {err}"
+            ))
+        })
     } else if let JToken::Number(number) = token {
         let number = *number;
         if !number.is_finite() || number.fract() != 0.0 {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "Invalid {integer_kind} integer for '{field}': {number} is not an integer"
-            ));
+            )));
         }
         // Round-trip through a decimal string so out-of-range values error
         // instead of saturating, with per-type bounds checking for free.
-        format!("{number:.0}")
-            .parse::<T>()
-            .map_err(|err| format!("Invalid {integer_kind} integer for '{field}': {err}"))
+        format!("{number:.0}").parse::<T>().map_err(|err| {
+            CoreError::other(format!(
+                "Invalid {integer_kind} integer for '{field}': {err}"
+            ))
+        })
     } else if let Some(number) = token.as_number() {
         // Boolean coercion fallback (true -> 1.0 / false -> 0.0): prior behavior.
         Ok(from_number(number))
     } else {
-        Err(format!("Field '{field}' must be a number"))
+        Err(CoreError::other(format!("Field '{field}' must be a number")))
     }
 }
 
 /// Parses a nonce token that may be a hex string or number.
-pub fn parse_nonce_token(token: &JToken) -> Result<u64, String> {
+pub fn parse_nonce_token(token: &JToken) -> CoreResult<u64> {
     if let Some(text) = token.as_string() {
         let value = text.trim_start_matches("0x");
         u64::from_str_radix(value, 16)
-            .map_err(|err| format!("Invalid nonce hex string '{text}': {err}"))
+            .map_err(|err| CoreError::other(format!("Invalid nonce hex string '{text}': {err}")))
     } else if let Some(number) = token.as_number() {
         // 2^64 exclusive: `u64::MAX as f64` rounds UP to 2^64, so an exact 2^64
         // would otherwise slip through to a saturating cast.
-        if !number.is_finite() || number < 0.0 || number.fract() != 0.0 || number >= 2f64.powi(64) {
-            return Err(format!(
+        if !number.is_finite()
+            || number < 0.0
+            || number.fract() != 0.0
+            || number >= 2f64.powi(64)
+        {
+            return Err(CoreError::other(format!(
                 "Invalid nonce number '{number}': out of u64 range or not an integer"
-            ));
+            )));
         }
         Ok(number as u64)
     } else {
-        Err("Nonce value must be a hex string or number".to_string())
+        Err(CoreError::other("Nonce value must be a hex string or number"))
     }
 }
 
 /// Parses an oracle response code supporting string, hex, or numeric values.
-pub fn parse_oracle_response_code(token: &JToken) -> Result<OracleResponseCode, String> {
+pub fn parse_oracle_response_code(token: &JToken) -> CoreResult<OracleResponseCode> {
     if let Some(text) = token.as_string() {
         match text.as_str() {
             "Success" => Ok(OracleResponseCode::Success),
@@ -519,19 +535,29 @@ pub fn parse_oracle_response_code(token: &JToken) -> Result<OracleResponseCode, 
             "Error" => Ok(OracleResponseCode::Error),
             other => {
                 let normalized = other.trim_start_matches("0x");
-                let value = u8::from_str_radix(normalized, 16)
-                    .map_err(|err| format!("Invalid oracle response code '{other}': {err}"))?;
+                let value = u8::from_str_radix(normalized, 16).map_err(|err| {
+                    CoreError::other(format!(
+                        "Invalid oracle response code '{other}': {err}"
+                    ))
+                })?;
                 OracleResponseCode::from_byte(value).ok_or_else(|| {
-                    format!("Unknown oracle response code value '{other}' in RPC payload")
+                    CoreError::other(format!(
+                        "Unknown oracle response code value '{other}' in RPC payload"
+                    ))
                 })
             }
         }
     } else if let Some(number) = token.as_number() {
         let value = number as u8;
-        OracleResponseCode::from_byte(value)
-            .ok_or_else(|| format!("Unknown oracle response code value '{value}' in RPC payload"))
+        OracleResponseCode::from_byte(value).ok_or_else(|| {
+            CoreError::other(format!(
+                "Unknown oracle response code value '{value}' in RPC payload"
+            ))
+        })
     } else {
-        Err("OracleResponse attribute 'code' must be a string or number".to_string())
+        Err(CoreError::other(
+            "OracleResponse attribute 'code' must be a string or number",
+        ))
     }
 }
 
@@ -551,8 +577,8 @@ pub const fn oracle_response_code_to_str(code: OracleResponseCode) -> &'static s
     }
 }
 
-pub fn jtoken_to_serde(token: &JToken) -> Result<JsonValue, String> {
-    serde_json::from_str(&token.to_string()).map_err(|err| err.to_string())
+pub fn jtoken_to_serde(token: &JToken) -> CoreResult<JsonValue> {
+    serde_json::from_str(&token.to_string()).map_err(|err| CoreError::other(err.to_string()))
 }
 
 #[cfg(test)]
@@ -598,16 +624,20 @@ mod tests {
     fn integer_token_parsers_preserve_legacy_errors() {
         assert_eq!(
             parse_u32_token(&JToken::String("bad".to_string()), "height")
-                .expect_err("invalid unsigned integer"),
+                .expect_err("invalid unsigned integer")
+                .to_string(),
             "Invalid unsigned integer for 'height': invalid digit found in string"
         );
         assert_eq!(
             parse_i64_token(&JToken::String("bad".to_string()), "sysfee")
-                .expect_err("invalid signed integer"),
+                .expect_err("invalid signed integer")
+                .to_string(),
             "Invalid signed integer for 'sysfee': invalid digit found in string"
         );
         assert_eq!(
-            parse_u64_token(&JToken::Null, "id").expect_err("non-number token"),
+            parse_u64_token(&JToken::Null, "id")
+                .expect_err("non-number token")
+                .to_string(),
             "Field 'id' must be a number"
         );
     }
@@ -855,6 +885,7 @@ mod tests {
 
     #[test]
     fn optional_present_token_array_strict_skips_empty_slots_and_errors_present_tokens() {
+        use neo_error::CoreError;
         let mut entries = JArray::new();
         entries.add(Some(JToken::Number(1.0)));
         entries.add(None);
@@ -867,20 +898,22 @@ mod tests {
             token
                 .as_number()
                 .map(|value| value as u8)
-                .ok_or_else(|| "entry must be a number".to_string())
+                .ok_or_else(|| CoreError::other("entry must be a number"))
         })
         .expect("strict present entries");
         assert_eq!(parsed, vec![1, 2]);
         assert!(
-            parse_optional_present_token_array_strict(&root, "missing", |_| Ok::<_, String>(0))
-                .expect("missing defaults")
-                .is_empty()
+            parse_optional_present_token_array_strict(&root, "missing", |_| {
+                Ok::<_, neo_error::CoreError>(0)
+            })
+            .expect("missing defaults")
+            .is_empty()
         );
         let mut non_array = JObject::new();
         non_array.insert("items".to_string(), JToken::Boolean(true));
         assert!(
             parse_optional_present_token_array_strict(&non_array, "items", |_| {
-                Ok::<_, String>(0)
+                Ok::<_, neo_error::CoreError>(0)
             })
             .expect("non-array defaults")
             .is_empty()
@@ -896,15 +929,17 @@ mod tests {
                 token
                     .as_number()
                     .map(|value| value as u8)
-                    .ok_or_else(|| "entry must be a number".to_string())
+                    .ok_or_else(|| CoreError::other("entry must be a number"))
             })
-            .expect_err("present invalid token errors"),
+            .expect_err("present invalid token errors")
+            .to_string(),
             "entry must be a number"
         );
     }
 
     #[test]
     fn optional_token_array_strict_errors_on_empty_or_invalid_slots() {
+        use neo_error::CoreError;
         let mut entries = JArray::new();
         entries.add(Some(JToken::Number(1.0)));
         entries.add(Some(JToken::Number(2.0)));
@@ -917,13 +952,13 @@ mod tests {
                 token
                     .as_number()
                     .map(|value| value as u8)
-                    .ok_or_else(|| "entry must be a number".to_string())
+                    .ok_or_else(|| CoreError::other("entry must be a number"))
             })
             .expect("strict tokens");
         assert_eq!(parsed, vec![1, 2]);
         assert!(
             parse_optional_token_array_strict(&root, "missing", "entry must be a number", |_| {
-                Ok::<_, String>(0)
+                Ok::<_, neo_error::CoreError>(0)
             })
             .expect("missing defaults")
             .is_empty()
@@ -935,7 +970,7 @@ mod tests {
                 &non_array,
                 "items",
                 "entry must be a number",
-                |_| { Ok::<_, String>(0) }
+                |_| { Ok::<_, neo_error::CoreError>(0) }
             )
             .expect("non-array defaults")
             .is_empty()
@@ -950,9 +985,10 @@ mod tests {
                 &invalid,
                 "items",
                 "entry must be a number",
-                |_| Ok::<_, String>(0)
+                |_| Ok::<_, neo_error::CoreError>(0)
             )
-            .expect_err("empty slot errors"),
+            .expect_err("empty slot errors")
+            .to_string(),
             "entry must be a number"
         );
 
@@ -969,10 +1005,11 @@ mod tests {
                     token
                         .as_number()
                         .map(|value| value as u8)
-                        .ok_or_else(|| "entry parse failed".to_string())
+                        .ok_or_else(|| CoreError::other("entry parse failed"))
                 },
             )
-            .expect_err("present invalid token errors"),
+            .expect_err("present invalid token errors")
+            .to_string(),
             "entry parse failed"
         );
     }
@@ -1010,7 +1047,8 @@ mod tests {
         invalid.insert("items".to_string(), JToken::Array(missing_slot));
         assert_eq!(
             parse_optional_string_array_strict(&invalid, "items", "entry must be a string")
-                .expect_err("empty slot errors"),
+                .expect_err("empty slot errors")
+                .to_string(),
             "entry must be a string"
         );
 
@@ -1020,7 +1058,8 @@ mod tests {
         );
         assert_eq!(
             parse_optional_string_array_strict(&invalid, "items", "entry must be a string")
-                .expect_err("non-string errors"),
+                .expect_err("non-string errors")
+                .to_string(),
             "entry must be a string"
         );
     }

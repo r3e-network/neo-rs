@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::RpcNefFile;
+use neo_error::{CoreError, CoreResult};
 use neo_execution::ContractState;
 use neo_manifest::ContractManifest;
 use neo_primitives::UInt160;
@@ -26,38 +27,38 @@ pub struct RpcContractState {
 impl RpcContractState {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let id = json
             .get("id")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'id' field")? as i32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'id' field"))? as i32;
 
         let update_counter = json
             .get("updatecounter")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'updatecounter' field")? as u16;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'updatecounter' field"))? as u16;
 
         let hash = json
             .get("hash")
             .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|s| UInt160::parse(&s).ok())
-            .ok_or("Missing or invalid 'hash' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'hash' field"))?;
 
         let nef_json = json
             .get("nef")
             .and_then(|v| v.as_object())
-            .ok_or("Missing or invalid 'nef' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'nef' field"))?;
         let nef = RpcNefFile::from_json(nef_json)?;
 
         let manifest_json = json
             .get("manifest")
             .and_then(|v| v.as_object())
-            .ok_or("Missing or invalid 'manifest' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'manifest' field"))?;
         let manifest_value = serde_json::from_str::<JsonValue>(&manifest_json.to_string())
-            .map_err(|err| format!("Invalid manifest: Serialization error: {err}"))?;
+            .map_err(|err| CoreError::other(format!("Invalid manifest: Serialization error: {err}")))?;
         let manifest_str = normalize_numeric_json(manifest_value).to_string();
         let manifest = ContractManifest::from_json(&manifest_str)
-            .map_err(|err| format!("Invalid manifest: {err}"))?;
+            .map_err(|err| CoreError::other(format!("Invalid manifest: {err}")))?;
 
         Ok(Self {
             contract_state: ContractState {
@@ -72,7 +73,7 @@ impl RpcContractState {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    pub fn to_json(&self) -> Result<JObject, String> {
+    pub fn to_json(&self) -> CoreResult<JObject> {
         let mut json = JObject::new();
         json.insert(
             "id".to_string(),
@@ -100,10 +101,10 @@ impl RpcContractState {
             .contract_state
             .manifest
             .to_json()
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| CoreError::other(err.to_string()))?;
         let manifest_jtoken =
             neo_serialization::json::JToken::parse(&manifest_json_value.to_string(), 128)
-                .map_err(|err| err.to_string())?;
+                .map_err(|err| CoreError::other(err.to_string()))?;
         json.insert("manifest".to_string(), manifest_jtoken);
 
         Ok(json)

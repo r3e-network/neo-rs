@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -35,16 +36,16 @@ impl RpcValidateAddressResult {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let address = json
             .get("address")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'address' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'address' field"))?;
 
         let is_valid = json
             .get("isvalid")
             .map(neo_serialization::json::JToken::as_boolean)
-            .ok_or("Missing or invalid 'isvalid' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'isvalid' field"))?;
 
         Ok(Self { address, is_valid })
     }

@@ -38,6 +38,7 @@ tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"], option
 prost = { version = "0.12", optional = true }
 
 neo-config = { workspace = true }
+neo-error = { workspace = true }
 neo-execution = { workspace = true }
 neo-io = { workspace = true }
 neo-serialization = { workspace = true }

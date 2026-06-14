@@ -1,4 +1,5 @@
 use base64::{Engine as _, engine::general_purpose};
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
@@ -54,14 +55,20 @@ impl From<StackParseError> for String {
     }
 }
 
+impl From<CoreError> for StackParseError {
+    fn from(err: CoreError) -> Self {
+        Self::InvalidValue(err.to_string())
+    }
+}
+
 /// Converts a `neo-serialization::json` representation of an RPC stack item into `neo-vm-rs`.
 pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseError> {
     let item_type = json
         .get("type")
         .and_then(neo_serialization::json::JToken::as_string)
-        .ok_or_else(|| StackParseError::MissingField(
-            "StackItem entry missing 'type' field".to_string(),
-        ))?;
+        .ok_or_else(|| {
+            StackParseError::MissingField("StackItem entry missing 'type' field".to_string())
+        })?;
 
     match item_type.as_str() {
         "Any" => Ok(fallback_text_or_null(json)),
@@ -69,47 +76,54 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
             let value = json
                 .get("value")
                 .map(neo_serialization::json::JToken::as_boolean)
-                .ok_or_else(|| StackParseError::MissingField(
-                    "Boolean stack item missing 'value' field".to_string(),
-                ))?;
+                .ok_or_else(|| {
+                    StackParseError::MissingField(
+                        "Boolean stack item missing 'value' field".to_string(),
+                    )
+                })?;
             Ok(StackValue::Boolean(value))
         }
         "Integer" => {
             let value_token = json
                 .get("value")
-                .ok_or_else(|| StackParseError::MissingField(
-                    "Integer stack item missing 'value' field".to_string(),
-                ))?;
-            let text = value_token
-                .as_string()
-                .ok_or_else(|| StackParseError::InvalidType(
+                .ok_or_else(|| {
+                    StackParseError::MissingField(
+                        "Integer stack item missing 'value' field".to_string(),
+                    )
+                })?;
+            let text = value_token.as_string().ok_or_else(|| {
+                StackParseError::InvalidType(
                     "Integer stack item value must be a string".to_string(),
-                ))?;
-            let integer = BigInt::parse_bytes(text.as_bytes(), 10)
-                .ok_or_else(|| StackParseError::InvalidValue(
-                    format!("Invalid integer stack item value: {text}"),
-                ))?;
+                )
+            })?;
+            let integer = BigInt::parse_bytes(text.as_bytes(), 10).ok_or_else(|| {
+                StackParseError::InvalidValue(format!("Invalid integer stack item value: {text}"))
+            })?;
             Ok(integer_stack_value(integer))
         }
-        "ByteString" => parse_base64_stack_value(json, "ByteString", StackValue::ByteString).map_err(Into::into),
-        "Buffer" => parse_base64_stack_value(json, "Buffer", StackValue::Buffer).map_err(Into::into),
-        "Array" => parse_stack_sequence(json, "Array", StackValue::Array).map_err(Into::into),
-        "Struct" => parse_stack_sequence(json, "Struct", StackValue::Struct).map_err(Into::into),
+        "ByteString" => {
+            parse_base64_stack_value(json, "ByteString", StackValue::ByteString)
+        }
+        "Buffer" => parse_base64_stack_value(json, "Buffer", StackValue::Buffer),
+        "Array" => parse_stack_sequence(json, "Array", StackValue::Array),
+        "Struct" => parse_stack_sequence(json, "Struct", StackValue::Struct),
         "Map" => {
             let values = json
                 .get("value")
                 .and_then(|token| token.as_array())
-                .ok_or_else(|| StackParseError::MissingField(
-                    "Map stack item missing 'value' array".to_string(),
-                ))?;
+                .ok_or_else(|| {
+                    StackParseError::MissingField(
+                        "Map stack item missing 'value' array".to_string(),
+                    )
+                })?;
             let mut entries = Vec::with_capacity(values.len());
             for entry in values.children() {
-                let token = entry.as_ref().ok_or_else(|| StackParseError::InvalidType(
-                    "Map entries must be objects".to_string(),
-                ))?;
-                let obj = token.as_object().ok_or_else(|| StackParseError::InvalidType(
-                    "Map entries must be objects".to_string(),
-                ))?;
+                let token = entry.as_ref().ok_or_else(|| {
+                    StackParseError::InvalidType("Map entries must be objects".to_string())
+                })?;
+                let obj = token.as_object().ok_or_else(|| {
+                    StackParseError::InvalidType("Map entries must be objects".to_string())
+                })?;
                 let key_obj = obj
                     .get("key")
                     .and_then(|token| token.as_object())
@@ -129,10 +143,9 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
             let index_token = json
                 .get("value")
                 .ok_or("Pointer stack item missing 'value' field")?;
-            Ok(StackValue::Pointer(i64::from(parse_u32_token(
-                index_token,
-                "value",
-            )?)))
+            Ok(StackValue::Pointer(i64::from(
+                parse_u32_token(index_token, "value").map_err(StackParseError::from)?,
+            )))
         }
         "InteropInterface" => Ok(StackValue::Interop(0)),
         _other => Ok(fallback_text_or_null(json)),
@@ -140,7 +153,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
 }
 
 /// Converts an RPC stack value into its `neo-serialization::json` representation.
-pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
+pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
     let mut json = JObject::new();
     json.insert(
         "type".to_string(),
@@ -184,7 +197,7 @@ pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
                         "value".to_string(),
                         JToken::Object(stack_item_to_json(value)?),
                     );
-                    Ok::<_, String>(entry)
+                    Ok::<_, CoreError>(entry)
                 })?,
             );
         }
@@ -193,7 +206,7 @@ pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
     Ok(json)
 }
 
-pub fn stack_items_to_json(items: &[StackValue]) -> Result<JToken, String> {
+pub fn stack_items_to_json(items: &[StackValue]) -> CoreResult<JToken> {
     fallible_object_array(items, stack_item_to_json)
 }
 
@@ -220,11 +233,11 @@ fn parse_base64_stack_value(
     json: &JObject,
     type_name: &str,
     make_value: impl FnOnce(Vec<u8>) -> StackValue,
-) -> Result<StackValue, String> {
+) -> Result<StackValue, StackParseError> {
     let value_token = json
         .get("value")
-        .ok_or_else(|| format!("{type_name} stack item missing 'value' field"))?;
-    let data = parse_base64_token(value_token, "value")?;
+        .ok_or_else(|| StackParseError::MissingField(format!("{type_name} stack item missing 'value' field")))?;
+    let data = parse_base64_token(value_token, "value").map_err(StackParseError::from)?;
     Ok(make_value(data))
 }
 
@@ -232,19 +245,21 @@ fn parse_stack_sequence(
     json: &JObject,
     type_name: &str,
     make_value: impl FnOnce(Vec<StackValue>) -> StackValue,
-) -> Result<StackValue, String> {
+) -> Result<StackValue, StackParseError> {
     let values = json
         .get("value")
         .and_then(|token| token.as_array())
-        .ok_or_else(|| format!("{type_name} stack item missing 'value' array"))?;
+        .ok_or_else(|| {
+            StackParseError::MissingField(format!("{type_name} stack item missing 'value' array"))
+        })?;
     let mut items = Vec::with_capacity(values.len());
     for value in values.children() {
         let token = value
             .as_ref()
-            .ok_or_else(|| format!("{type_name} entries must be objects"))?;
+            .ok_or_else(|| StackParseError::InvalidType(format!("{type_name} entries must be objects")))?;
         let obj = token
             .as_object()
-            .ok_or_else(|| format!("{type_name} entries must be objects"))?;
+            .ok_or_else(|| StackParseError::InvalidType(format!("{type_name} entries must be objects")))?;
         items.push(stack_item_from_json(obj)?);
     }
     Ok(make_value(items))
@@ -257,20 +272,20 @@ fn insert_base64_value(json: &mut JObject, bytes: &[u8]) {
     );
 }
 
-pub fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
+pub fn stack_value_to_bigint(value: &StackValue) -> CoreResult<BigInt> {
     match value {
         StackValue::Boolean(value) => Ok(BigInt::from(if *value { 1 } else { 0 })),
         StackValue::Integer(value) => Ok(BigInt::from(*value)),
         StackValue::BigInteger(bytes)
         | StackValue::ByteString(bytes)
         | StackValue::Buffer(bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
-        StackValue::Null => Err("Cannot convert Null to Integer".to_string()),
+        StackValue::Null => Err(CoreError::other("Cannot convert Null to Integer")),
         StackValue::Array(_)
         | StackValue::Struct(_)
         | StackValue::Map(_)
         | StackValue::Interop(_)
         | StackValue::Iterator(_)
-        | StackValue::Pointer(_) => Err("Cannot convert to Integer".to_string()),
+        | StackValue::Pointer(_) => Err(CoreError::other("Cannot convert to Integer")),
     }
 }
 
@@ -278,16 +293,18 @@ pub fn stack_value_to_bool(value: &StackValue) -> bool {
     value.to_bool()
 }
 
-pub fn stack_value_to_string(value: &StackValue) -> Result<String, String> {
+pub fn stack_value_to_string(value: &StackValue) -> CoreResult<String> {
     match value {
         StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
-            String::from_utf8(bytes.clone()).map_err(|err| err.to_string())
+            String::from_utf8(bytes.clone()).map_err(|err| CoreError::other(err.to_string()))
         }
         StackValue::Integer(_) | StackValue::BigInteger(_) => {
             Ok(stack_value_to_bigint(value)?.to_string())
         }
         StackValue::Boolean(value) => Ok(value.to_string()),
-        _ => Err("Unsupported stack item for string conversion".to_string()),
+        _ => Err(CoreError::other(
+            "Unsupported stack item for string conversion",
+        )),
     }
 }
 

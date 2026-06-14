@@ -5,6 +5,7 @@
 use crate::attestation::Quote;
 use crate::error::{EnclaveInitError, TeeError, TeeResult};
 use libloading::{Library, Symbol};
+use neo_error::{CoreError, CoreResult};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -282,11 +283,11 @@ fn parse_key_file_contents(data: &[u8]) -> Option<[u8; 32]> {
     decode_sealing_key_from_hex(text).ok()
 }
 
-fn decode_sealing_key_from_hex(input: &str) -> Result<[u8; 32], String> {
+fn decode_sealing_key_from_hex(input: &str) -> CoreResult<[u8; 32]> {
     let normalized = normalize_hex_input(input);
-    let bytes = hex::decode(normalized).map_err(|e| e.to_string())?;
+    let bytes = hex::decode(normalized).map_err(|e| CoreError::other(e.to_string()))?;
     if bytes.len() != 32 {
-        return Err(format!("expected 32 bytes, got {}", bytes.len()));
+        return Err(CoreError::other(format!("expected 32 bytes, got {}", bytes.len())));
     }
     let mut key = [0u8; 32];
     key.copy_from_slice(&bytes);

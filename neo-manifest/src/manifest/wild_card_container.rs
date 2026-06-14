@@ -1,5 +1,6 @@
 //! WildCardContainer - matches C# Neo.SmartContract.Manifest.WildCardContainer exactly
 
+use neo_error::{CoreError, CoreResult};
 use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
@@ -65,18 +66,18 @@ impl<T> WildCardContainer<T> {
     }
 
     /// Creates from JSON representation
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String>
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self>
     where
         T: for<'de> Deserialize<'de>,
     {
         match json {
             serde_json::Value::String(s) if s == "*" => Ok(WildCardContainer::Wildcard),
             serde_json::Value::Array(_) => {
-                let data: Vec<T> =
-                    serde_json::from_value(json.clone()).map_err(|e| e.to_string())?;
+                let data: Vec<T> = serde_json::from_value(json.clone())
+                    .map_err(|e| CoreError::other(e.to_string()))?;
                 Ok(WildCardContainer::List(data))
             }
-            _ => Err("Invalid WildCardContainer format".to_string()),
+            _ => Err(CoreError::other("Invalid WildCardContainer format")),
         }
     }
 }
@@ -106,34 +107,34 @@ impl<T: fmt::Display> fmt::Display for WildCardContainer<T> {
 }
 
 impl WildCardContainer<String> {
-    fn strings_from_stack_values(items: Vec<StackValue>) -> Result<Vec<String>, String> {
+    fn strings_from_stack_values(items: Vec<StackValue>) -> CoreResult<Vec<String>> {
         let mut values = Vec::with_capacity(items.len());
         for element in items {
             let bytes = element
                 .to_byte_string_bytes()
-                .ok_or_else(|| "Expected byte string element".to_string())?;
+                .ok_or_else(|| CoreError::other("Expected byte string element"))?;
             let value = String::from_utf8(bytes)
-                .map_err(|_| "Invalid UTF-8 string in wildcard container".to_string())?;
+                .map_err(|_| CoreError::other("Invalid UTF-8 string in wildcard container"))?;
             values.push(value);
         }
         Ok(values)
     }
 
     /// Converts from a neo-vm-rs stack value.
-    pub fn from_stack_value(stack_value: StackValue) -> Result<Self, String> {
+    pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),
             StackValue::Array(items) => Ok(Self::create(Self::strings_from_stack_values(items)?)),
             StackValue::Struct(items) => Ok(Self::create(Self::strings_from_stack_values(items)?)),
-            _ => Err("Unsupported stack value for wildcard container".to_string()),
+            _ => Err(CoreError::other("Unsupported stack value for wildcard container")),
         }
     }
 
     /// Converts from a VM stack item.
-    pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
+    pub fn from_stack_item(item: &StackItem) -> CoreResult<Self> {
         Self::from_stack_value(
             StackValue::try_from(item.clone())
-                .map_err(|_| "Unsupported stack item for wildcard container".to_string())?,
+                .map_err(|_| CoreError::other("Unsupported stack item for wildcard container"))?,
         )
     }
 

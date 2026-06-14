@@ -49,6 +49,7 @@ pub use witness_rule::rule_from_json;
 
 use neo_config::ProtocolSettings;
 use neo_crypto::{ECCurve, ECPoint};
+use neo_error::{CoreError, CoreResult};
 use neo_execution::Contract;
 use neo_native_contracts::NativeRegistry;
 use neo_payloads::{Block, BlockHeader, Transaction, Witness};
@@ -86,13 +87,18 @@ impl RpcUtility {
     pub fn to_script_hash(
         value: &JToken,
         protocol_settings: &ProtocolSettings,
-    ) -> Result<UInt160, String> {
-        let address_or_script_hash = value.as_string().ok_or("Value is not a string")?;
+    ) -> CoreResult<UInt160> {
+        let address_or_script_hash = value
+            .as_string()
+            .ok_or_else(|| CoreError::other("Value is not a string"))?;
 
         if address_or_script_hash.len() < 40 && !address_or_script_hash.starts_with("0x") {
-            WalletHelper::to_script_hash(&address_or_script_hash, protocol_settings.address_version)
+            WalletHelper::to_script_hash(
+                &address_or_script_hash,
+                protocol_settings.address_version,
+            )
         } else {
-            UInt160::parse(&address_or_script_hash).map_err(|e| e.to_string())
+            UInt160::parse(&address_or_script_hash).map_err(|e| CoreError::other(e.to_string()))
         }
     }
 
@@ -120,9 +126,9 @@ impl RpcUtility {
 
     /// Parse WIF or private key hex string to `KeyPair`
     /// Matches C# `GetKeyPair`
-    pub fn key_pair(key: &str) -> Result<KeyPair, String> {
+    pub fn key_pair(key: &str) -> CoreResult<KeyPair> {
         if key.is_empty() {
-            return Err("Key cannot be empty".to_string());
+            return Err(CoreError::other("Key cannot be empty"));
         }
 
         let key = key.strip_prefix("0x").unwrap_or(key);
@@ -130,14 +136,15 @@ impl RpcUtility {
         match key.len() {
             52 => {
                 // WIF format
-                KeyPair::from_wif(key).map_err(|e| e.to_string())
+                KeyPair::from_wif(key).map_err(|e| CoreError::other(e.to_string()))
             }
             64 => {
                 // Hex private key
-                let bytes = hex::decode(key).map_err(|e| e.to_string())?;
-                KeyPair::from_private_key(&bytes).map_err(|e| e.to_string())
+                let bytes =
+                    hex::decode(key).map_err(|e| CoreError::other(e.to_string()))?;
+                KeyPair::from_private_key(&bytes).map_err(|e| CoreError::other(e.to_string()))
             }
-            _ => Err("Invalid key format".to_string()),
+            _ => Err(CoreError::other("Invalid key format")),
         }
     }
 
@@ -146,9 +153,9 @@ impl RpcUtility {
     pub fn get_script_hash(
         account: &str,
         protocol_settings: &ProtocolSettings,
-    ) -> Result<UInt160, String> {
+    ) -> CoreResult<UInt160> {
         if account.is_empty() {
-            return Err("Account cannot be empty".to_string());
+            return Err(CoreError::other("Account cannot be empty"));
         }
 
         let account = account.strip_prefix("0x").unwrap_or(account);
@@ -160,18 +167,19 @@ impl RpcUtility {
             }
             40 => {
                 // Script hash
-                UInt160::parse(account).map_err(|e| e.to_string())
+                UInt160::parse(account).map_err(|e| CoreError::other(e.to_string()))
             }
             66 => {
                 // Public key - Neo N3 uses secp256r1 (NIST P-256) curve
-                let key_bytes =
-                    hex::decode(account).map_err(|err| format!("Invalid public key hex: {err}"))?;
-                let point = ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &key_bytes)
-                    .map_err(|err| err.to_string())?;
+                let key_bytes = hex::decode(account)
+                    .map_err(|err| CoreError::other(format!("Invalid public key hex: {err}")))?;
+                let point =
+                    ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &key_bytes)
+                        .map_err(|err| CoreError::other(err.to_string()))?;
                 let script = Contract::create_signature_redeem_script(point);
                 Ok(UInt160::from_script(&script))
             }
-            _ => Err("Invalid account format".to_string()),
+            _ => Err(CoreError::other("Invalid account format")),
         }
     }
 
@@ -185,50 +193,54 @@ impl RpcUtility {
     pub fn header_from_json(
         json: &JObject,
         protocol_settings: &ProtocolSettings,
-    ) -> Result<BlockHeader, String> {
+    ) -> CoreResult<BlockHeader> {
         let version = json
             .get("version")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'version' field")? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))? as u32;
 
         let previous_hash = json
             .get("previousblockhash")
             .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|value| UInt256::parse(&value).ok())
-            .ok_or("Missing or invalid 'previousblockhash' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'previousblockhash' field"))?;
 
         let merkle_root = json
             .get("merkleroot")
             .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|value| UInt256::parse(&value).ok())
-            .ok_or("Missing or invalid 'merkleroot' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'merkleroot' field"))?;
 
         let timestamp = json
             .get("time")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'time' field")? as u64;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'time' field"))? as u64;
 
         let nonce_token = json
             .get("nonce")
-            .ok_or("Missing 'nonce' field for header parsing")?;
+            .ok_or_else(|| CoreError::other("Missing 'nonce' field for header parsing"))?;
         let nonce = parse_nonce_token(nonce_token)?;
 
         let index = json
             .get("index")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'index' field")? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'index' field"))? as u32;
 
         let primary_index = json
             .get("primary")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'primary' field")? as u8;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'primary' field"))? as u8;
 
         let next_consensus_text = json
             .get("nextconsensus")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'nextconsensus' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'nextconsensus' field"))?;
         let next_consensus = Self::get_script_hash(&next_consensus_text, protocol_settings)
-            .map_err(|err| format!("Invalid 'nextconsensus' field in block header: {err}"))?;
+            .map_err(|err| {
+                CoreError::other(format!(
+                    "Invalid 'nextconsensus' field in block header: {err}"
+                ))
+            })?;
 
         let witnesses = parse_optional_token_array_strict(
             json,
@@ -237,7 +249,7 @@ impl RpcUtility {
             |token| {
                 let obj = token
                     .as_object()
-                    .ok_or_else(|| "Witness entry must be an object".to_string())?;
+                    .ok_or_else(|| CoreError::other("Witness entry must be an object"))?;
                 Self::witness_from_json(obj)
             },
         )?;
@@ -260,7 +272,7 @@ impl RpcUtility {
     pub fn block_from_json(
         json: &JObject,
         protocol_settings: &ProtocolSettings,
-    ) -> Result<Block, String> {
+    ) -> CoreResult<Block> {
         tx_json::block_from_json(json, protocol_settings, Self::header_from_json)
     }
 
@@ -275,22 +287,22 @@ impl RpcUtility {
     pub fn transaction_from_json(
         json: &JObject,
         protocol_settings: &ProtocolSettings,
-    ) -> Result<Transaction, String> {
+    ) -> CoreResult<Transaction> {
         tx_json::transaction_from_json(json, protocol_settings)
     }
 
     /// Converts a `neo-serialization::json` representation of a stack item into `neo-vm-rs`.
-    pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
-        stack::stack_item_from_json(json).map_err(|e| e.to_string())
+    pub fn stack_item_from_json(json: &JObject) -> CoreResult<StackValue> {
+        stack::stack_item_from_json(json).map_err(|e| CoreError::other(e.to_string()))
     }
 
     /// Converts a `neo-vm-rs` stack value into a `neo-serialization::json` representation.
-    pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
+    pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
         stack::stack_item_to_json(item)
     }
 
     /// Converts an RPC stack value using the same integer rules as local VM clients.
-    pub fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
+    pub fn stack_value_to_bigint(value: &StackValue) -> CoreResult<BigInt> {
         stack::stack_value_to_bigint(value)
     }
 
@@ -301,12 +313,12 @@ impl RpcUtility {
     }
 
     /// Converts an RPC stack value to a display/API string.
-    pub fn stack_value_to_string(value: &StackValue) -> Result<String, String> {
+    pub fn stack_value_to_string(value: &StackValue) -> CoreResult<String> {
         stack::stack_value_to_string(value)
     }
 
     /// Creates a witness from JSON (invocation/verification scripts encoded as base64).
-    pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
+    pub fn witness_from_json(json: &JObject) -> CoreResult<Witness> {
         witness::witness_from_json(json)
     }
 
@@ -314,7 +326,7 @@ impl RpcUtility {
     pub fn rule_from_json(
         json: &JObject,
         protocol_settings: &ProtocolSettings,
-    ) -> Result<neo_payloads::WitnessRule, String> {
+    ) -> CoreResult<neo_payloads::WitnessRule> {
         witness_rule::rule_from_json(json, protocol_settings)
     }
 }
@@ -327,7 +339,7 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
 pub fn block_from_json(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
-) -> Result<Block, String> {
+) -> CoreResult<Block> {
     RpcUtility::block_from_json(json, protocol_settings)
 }
 
@@ -338,19 +350,19 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
 pub fn transaction_from_json(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
-) -> Result<Transaction, String> {
+) -> CoreResult<Transaction> {
     RpcUtility::transaction_from_json(json, protocol_settings)
 }
 
-pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
+pub fn stack_item_from_json(json: &JObject) -> CoreResult<StackValue> {
     RpcUtility::stack_item_from_json(json)
 }
 
-pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
+pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
     RpcUtility::stack_item_to_json(item)
 }
 
-pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
+pub fn witness_from_json(json: &JObject) -> CoreResult<Witness> {
     RpcUtility::witness_from_json(json)
 }
 
@@ -418,10 +430,10 @@ mod tests {
     #[test]
     fn get_key_pair_rejects_invalid_input() {
         let err = RpcUtility::key_pair("").expect_err("empty");
-        assert_eq!(err, "Key cannot be empty");
+        assert_eq!(err.to_string(), "Key cannot be empty");
 
         let err = RpcUtility::key_pair("00").expect_err("invalid");
-        assert_eq!(err, "Invalid key format");
+        assert_eq!(err.to_string(), "Invalid key format");
     }
 
     #[test]
@@ -441,11 +453,11 @@ mod tests {
 
         let err = RpcUtility::get_script_hash("", &ProtocolSettings::default_settings())
             .expect_err("empty");
-        assert_eq!(err, "Account cannot be empty");
+        assert_eq!(err.to_string(), "Account cannot be empty");
 
         let err = RpcUtility::get_script_hash("00", &ProtocolSettings::default_settings())
             .expect_err("invalid");
-        assert_eq!(err, "Invalid account format");
+        assert_eq!(err.to_string(), "Invalid account format");
     }
 
     #[test]
@@ -613,7 +625,7 @@ mod tests {
             let err =
                 RpcUtility::transaction_from_json(&json, &ProtocolSettings::default_settings())
                     .expect_err("empty array slot should fail");
-            assert_eq!(err, expected);
+            assert_eq!(err.to_string(), expected);
         }
     }
 
@@ -681,7 +693,7 @@ mod tests {
 
         let err = RpcUtility::header_from_json(&json, &ProtocolSettings::default_settings())
             .expect_err("empty witness slot should fail");
-        assert_eq!(err, "Witness entry must be an object");
+        assert_eq!(err.to_string(), "Witness entry must be an object");
     }
 
     #[test]

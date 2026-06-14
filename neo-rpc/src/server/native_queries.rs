@@ -12,6 +12,7 @@
 
 use std::sync::Arc;
 
+use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_manifest::CallFlags;
 use neo_primitives::{TriggerType, UInt160};
@@ -54,7 +55,7 @@ fn emit_native_call(
     contract: &UInt160,
     method: &str,
     args: &[NativeArg<'_>],
-) -> Result<(), String> {
+) -> CoreResult<()> {
     if args.is_empty() {
         builder.emit_push_int(0);
         builder.emit_pack();
@@ -77,7 +78,7 @@ fn emit_native_call(
     builder.emit_push(&contract.to_array());
     builder
         .emit_syscall("System.Contract.Call")
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| CoreError::other(err.to_string()))?;
     Ok(())
 }
 
@@ -90,7 +91,7 @@ pub(crate) fn invoke_native_read(
     contract: &UInt160,
     method: &str,
     args: &[NativeArg<'_>],
-) -> Result<StackItem, String> {
+) -> CoreResult<StackItem> {
     let mut builder = ScriptBuilder::new();
     emit_native_call(&mut builder, contract, method, args)?;
     let script = builder.to_array();
@@ -105,20 +106,20 @@ pub(crate) fn invoke_native_read(
         server.settings().max_gas_invoke,
         None,
     )
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| CoreError::other(err.to_string()))?;
     engine
         .load_script(script, CallFlags::READ_ONLY, None)
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| CoreError::other(err.to_string()))?;
     let state = engine.execute_allow_fault();
     if state != VMState::HALT {
-        return Err(format!(
+        return Err(CoreError::other(format!(
             "native read '{method}' did not HALT (VM state: {state:?})"
-        ));
+        )));
     }
     engine
         .result_stack()
         .peek(0).cloned()
-        .map_err(|err| err.to_string())
+        .map_err(|err| CoreError::other(err.to_string()))
 }
 
 /// `NEO.unclaimedGas(account, end)` — the amount of unclaimed GAS for
@@ -129,7 +130,7 @@ pub(crate) fn neo_unclaimed_gas(
     neo_hash: &UInt160,
     account: &UInt160,
     end: u32,
-) -> Result<BigInt, String> {
+) -> CoreResult<BigInt> {
     let account_bytes = account.to_bytes();
     let item = invoke_native_read(
         server,
@@ -141,7 +142,7 @@ pub(crate) fn neo_unclaimed_gas(
             NativeArg::Int(i64::from(end)),
         ],
     )?;
-    item.as_int().map_err(|err| err.to_string())
+    item.as_int().map_err(|err| CoreError::other(err.to_string()))
 }
 
 /// `NEO.getCommittee()` — the current committee public keys (sorted).
@@ -149,7 +150,7 @@ pub(crate) fn neo_committee(
     server: &RpcServer,
     snapshot: Arc<DataCache>,
     neo_hash: &UInt160,
-) -> Result<Vec<Vec<u8>>, String> {
+) -> CoreResult<Vec<Vec<u8>>> {
     let item = invoke_native_read(server, snapshot, neo_hash, "getCommittee", &[])?;
     stack_array_of_bytes(&item)
 }
@@ -159,7 +160,7 @@ pub(crate) fn neo_next_block_validators(
     server: &RpcServer,
     snapshot: Arc<DataCache>,
     neo_hash: &UInt160,
-) -> Result<Vec<Vec<u8>>, String> {
+) -> CoreResult<Vec<Vec<u8>>> {
     let item = invoke_native_read(server, snapshot, neo_hash, "getNextBlockValidators", &[])?;
     stack_array_of_bytes(&item)
 }
@@ -169,20 +170,20 @@ pub(crate) fn neo_candidates(
     server: &RpcServer,
     snapshot: Arc<DataCache>,
     neo_hash: &UInt160,
-) -> Result<Vec<(Vec<u8>, BigInt)>, String> {
+) -> CoreResult<Vec<(Vec<u8>, BigInt)>> {
     let item = invoke_native_read(server, snapshot, neo_hash, "getCandidates", &[])?;
-    let entries = item.as_array().map_err(|err| err.to_string())?;
+    let entries = item.as_array().map_err(|err| CoreError::other(err.to_string()))?;
     let mut candidates = Vec::with_capacity(entries.len());
     for entry in entries {
-        let fields = entry.as_array().map_err(|err| err.to_string())?;
+        let fields = entry.as_array().map_err(|err| CoreError::other(err.to_string()))?;
         if fields.len() != 2 {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "getCandidates entry has {} fields, expected 2",
                 fields.len()
-            ));
+            )));
         }
-        let pubkey = fields[0].as_bytes().map_err(|err| err.to_string())?;
-        let votes = fields[1].as_int().map_err(|err| err.to_string())?;
+        let pubkey = fields[0].as_bytes().map_err(|err| CoreError::other(err.to_string()))?;
+        let votes = fields[1].as_int().map_err(|err| CoreError::other(err.to_string()))?;
         candidates.push((pubkey, votes));
     }
     Ok(candidates)
@@ -195,7 +196,7 @@ pub(crate) fn policy_is_blocked(
     snapshot: Arc<DataCache>,
     policy_hash: &UInt160,
     account: &UInt160,
-) -> Result<bool, String> {
+) -> CoreResult<bool> {
     let account_bytes = account.to_bytes();
     let item = invoke_native_read(
         server,
@@ -204,7 +205,7 @@ pub(crate) fn policy_is_blocked(
         "isBlocked",
         &[NativeArg::Bytes(account_bytes.as_slice())],
     )?;
-    item.as_bool().map_err(|err| err.to_string())
+    item.as_bool().map_err(|err| CoreError::other(err.to_string()))
 }
 
 /// `NEO.getCandidateVote(pubkey)` — the candidate's vote count, or `-1`
@@ -214,7 +215,7 @@ pub(crate) fn neo_candidate_vote(
     snapshot: Arc<DataCache>,
     neo_hash: &UInt160,
     pubkey: &[u8],
-) -> Result<BigInt, String> {
+) -> CoreResult<BigInt> {
     let item = invoke_native_read(
         server,
         snapshot,
@@ -222,14 +223,14 @@ pub(crate) fn neo_candidate_vote(
         "getCandidateVote",
         &[NativeArg::Bytes(pubkey)],
     )?;
-    item.as_int().map_err(|err| err.to_string())
+    item.as_int().map_err(|err| CoreError::other(err.to_string()))
 }
 
 /// Decodes a stack array whose elements are byte strings.
-fn stack_array_of_bytes(item: &StackItem) -> Result<Vec<Vec<u8>>, String> {
-    let entries = item.as_array().map_err(|err| err.to_string())?;
+fn stack_array_of_bytes(item: &StackItem) -> CoreResult<Vec<Vec<u8>>> {
+    let entries = item.as_array().map_err(|err| CoreError::other(err.to_string()))?;
     entries
         .iter()
-        .map(|entry| entry.as_bytes().map_err(|err| err.to_string()))
+        .map(|entry| entry.as_bytes().map_err(|err| CoreError::other(err.to_string())))
         .collect()
 }

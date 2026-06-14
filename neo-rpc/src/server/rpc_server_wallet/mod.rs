@@ -320,7 +320,7 @@ impl RpcServerWallet {
                 server.system().settings().as_ref().clone(),
                 *asset,
             )
-            .map_err(|err| err.to_string())
+            .map_err(|err| neo_error::CoreError::other(err.to_string()))
         };
 
         let transfers = outputs_array
@@ -415,7 +415,7 @@ impl RpcServerWallet {
             return Ok(hash);
         }
         let version = server.system().settings().address_version;
-        address_helper::to_script_hash(value, version).map_err(invalid_params)
+        address_helper::to_script_hash(value, version).map_err(|e| invalid_params(e.to_string()))
     }
 
     fn parse_signers(server: &RpcServer, value: &Value) -> Result<Vec<Signer>, RpcException> {
@@ -446,7 +446,7 @@ impl RpcServerWallet {
 
     fn parse_send_many_output(
         server: &RpcServer,
-        descriptor_cache: &impl Fn(&UInt160) -> Result<AssetDescriptor, String>,
+        descriptor_cache: &impl Fn(&UInt160) -> neo_error::CoreResult<AssetDescriptor>,
         index: usize,
         entry: &Value,
     ) -> Result<TransferOutput, RpcException> {
@@ -459,7 +459,7 @@ impl RpcServerWallet {
             .ok_or_else(|| invalid_params(format!("no 'asset' parameter at 'to[{index}]'.")))?;
         let asset = UInt160::from_str(asset_str)
             .map_err(|err| invalid_params(format!("invalid asset {asset_str}: {err}")))?;
-        let descriptor = descriptor_cache(&asset).map_err(invalid_params)?;
+        let descriptor = descriptor_cache(&asset).map_err(|e| invalid_params(e.to_string()))?;
         let value_str = obj
             .get("value")
             .and_then(|value| value.as_str())

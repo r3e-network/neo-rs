@@ -11,6 +11,7 @@
 
 use super::super::utility::insert_optional_string;
 use neo_config::ProtocolSettings;
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::Block;
 use neo_primitives::UInt256;
 use neo_serialization::json::JObject;
@@ -50,13 +51,13 @@ impl RpcBlock {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
         let block = super::super::utility::block_from_json(json, protocol_settings)?;
 
         let confirmations = json
             .get("confirmations")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'confirmations' field")? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'confirmations' field"))? as u32;
 
         let next_block_hash = json
             .get("nextblockhash")

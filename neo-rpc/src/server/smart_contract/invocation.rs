@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
@@ -225,8 +226,8 @@ fn process_invoke_with_wallet(
         Ok(WalletInvocationOutcome::Pending(context)) => {
             result.insert("pendingsignature".to_string(), context);
         }
-        Err(message) => {
-            result.insert("exception".to_string(), Value::String(message));
+        Err(err) => {
+            result.insert("exception".to_string(), Value::String(err.to_string()));
         }
     }
 }
@@ -246,7 +247,7 @@ fn build_and_sign_transaction(
     snapshot: &StoreCache,
     system_fee: i64,
     wallet: Arc<dyn Wallet>,
-) -> Result<WalletInvocationOutcome, String> {
+) -> CoreResult<WalletInvocationOutcome> {
     let rpc_settings = server.settings().clone();
     let system = server.system();
     let protocol_settings = system.settings();
@@ -260,7 +261,7 @@ fn build_and_sign_transaction(
     let ledger = neo_native_contracts::LedgerContract::new();
     let valid_until = ledger
         .current_index(snapshot.data_cache())
-        .map_err(|err| err.to_string())?
+        .map_err(|err| CoreError::other(err.to_string()))?
         .saturating_add(system.max_valid_until_block_increment());
     tx.set_valid_until_block(valid_until);
     tx.set_system_fee(system_fee);
@@ -278,15 +279,15 @@ fn build_and_sign_transaction(
         &account_script,
         rpc_settings.max_gas_invoke,
     )
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| CoreError::other(err.to_string()))?;
     tx.set_network_fee(network_fee);
 
     let required_fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
     let sender = signers[0].account;
     let available = wallet_compat::gas_balance_of(data_cache, &protocol_settings, &sender)
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| CoreError::other(err.to_string()))?;
     if available < required_fee {
-        return Err("Insufficient GAS balance to pay system and network fees.".to_string());
+        return Err(CoreError::other("Insufficient GAS balance to pay system and network fees."));
     }
 
     let mut tx_clone = tx.clone();
@@ -326,10 +327,10 @@ fn build_account_witness(
     account: &Arc<dyn WalletAccount>,
     tx: &Transaction,
     network: u32,
-) -> Result<Witness, String> {
+) -> CoreResult<Witness> {
     let key = account
         .get_key()
-        .ok_or_else(|| WalletError::Other("Account locked".to_string()).to_string())?;
+        .ok_or_else(|| CoreError::other(WalletError::Other("Account locked".to_string()).to_string()))?;
     let signature = wallet_compat::sign_transaction_with_key(tx, &key, network)?;
 
     let verification_script = if let Some(contract) = account.contract() {

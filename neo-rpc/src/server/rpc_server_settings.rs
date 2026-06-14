@@ -281,61 +281,61 @@ where
     parse_gas_value(value).map_err(de::Error::custom)
 }
 
-fn parse_gas_value(value: Value) -> Result<i64, String> {
+fn parse_gas_value(value: Value) -> CoreResult<i64> {
     match value {
         Value::Number(number) => parse_gas_number(&number),
         Value::String(text) => parse_gas_string(&text),
-        Value::Null => Err("gas value cannot be null".to_string()),
-        _ => Err("gas value must be a number or string".to_string()),
+        Value::Null => Err(neo_error::CoreError::other("gas value cannot be null")),
+        _ => Err(neo_error::CoreError::other("gas value must be a number or string")),
     }
 }
 
-fn parse_gas_number(number: &serde_json::Number) -> Result<i64, String> {
+fn parse_gas_number(number: &serde_json::Number) -> CoreResult<i64> {
     if let Some(int_value) = number.as_i64() {
         return apply_gas_threshold(int_value);
     }
     if let Some(uint_value) = number.as_u64() {
         let int_value =
-            i64::try_from(uint_value).map_err(|_| "gas value exceeds i64".to_string())?;
+            i64::try_from(uint_value).map_err(|_| neo_error::CoreError::other("gas value exceeds i64"))?;
         return apply_gas_threshold(int_value);
     }
     let float_value = number
         .as_f64()
-        .ok_or_else(|| "gas value must be numeric".to_string())?;
+        .ok_or_else(|| neo_error::CoreError::other("gas value must be numeric"))?;
     convert_gas_units(float_value)
 }
 
-fn parse_gas_string(text: &str) -> Result<i64, String> {
+fn parse_gas_string(text: &str) -> CoreResult<i64> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return Err("gas value cannot be empty".to_string());
+        return Err(neo_error::CoreError::other("gas value cannot be empty"));
     }
     if let Ok(int_value) = trimmed.parse::<i64>() {
         return apply_gas_threshold(int_value);
     }
     let float_value = trimmed
         .parse::<f64>()
-        .map_err(|_| "gas value must be numeric".to_string())?;
+        .map_err(|_| neo_error::CoreError::other("gas value must be numeric"))?;
     convert_gas_units(float_value)
 }
 
-fn apply_gas_threshold(value: i64) -> Result<i64, String> {
+fn apply_gas_threshold(value: i64) -> CoreResult<i64> {
     if value.abs() <= GAS_UNIT_THRESHOLD {
         value
             .checked_mul(RpcServerConfig::gas_datoshi_factor())
-            .ok_or_else(|| "gas value overflow".to_string())
+            .ok_or_else(|| neo_error::CoreError::other("gas value overflow"))
     } else {
         Ok(value)
     }
 }
 
-fn convert_gas_units(value: f64) -> Result<i64, String> {
+fn convert_gas_units(value: f64) -> CoreResult<i64> {
     if !value.is_finite() {
-        return Err("gas value must be finite".to_string());
+        return Err(neo_error::CoreError::other("gas value must be finite"));
     }
     let scaled = value * RpcServerConfig::gas_datoshi_factor() as f64;
     if scaled > i64::MAX as f64 || scaled < i64::MIN as f64 {
-        return Err("gas value overflow".to_string());
+        return Err(neo_error::CoreError::other("gas value overflow"));
     }
     Ok(scaled.round() as i64)
 }

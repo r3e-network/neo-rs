@@ -107,7 +107,7 @@ impl ExternalVmHost<'_> {
                 Ok(())
             }
             Some(ExternalRuntimeSyscall::GetTime) => {
-                let time = self.engine.get_current_block_time()?;
+                let time = self.engine.get_current_block_time().map_err(|e| e.to_string())?;
                 stack.push(vm_integer_from_u64(time));
                 Ok(())
             }
@@ -138,7 +138,7 @@ impl ExternalVmHost<'_> {
             }
             Some(ExternalRuntimeSyscall::BurnGas) => {
                 let amount = pop_vm_i64(stack, "System.Runtime.BurnGas")?;
-                self.engine.runtime_burn_gas(amount)
+                self.engine.runtime_burn_gas(amount).map_err(|e| e.to_string())
             }
             Some(ExternalRuntimeSyscall::CheckWitness) => {
                 let hash_or_pubkey = pop_vm_bytes(stack, "System.Runtime.CheckWitness")?;
@@ -148,13 +148,13 @@ impl ExternalVmHost<'_> {
                             .map_err(|error| error.to_string())?;
                         self.engine
                             .check_witness_hash(&hash)
-                            .map_err(|error| error.to_string())?
+                            .map_err(|e| e.to_string())?
                     }
                     33 => {
                         let hash = self.engine.pubkey_to_hash(&hash_or_pubkey);
                         self.engine
                             .check_witness_hash(&hash)
-                            .map_err(|error| error.to_string())?
+                            .map_err(|e| e.to_string())?
                     }
                     _ => return Err("Invalid hashOrPubkey length".to_string()),
                 };

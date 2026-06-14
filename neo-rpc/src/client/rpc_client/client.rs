@@ -319,7 +319,7 @@ impl RpcClient {
 
         let result = self.rpc_send_async("invokescript", parameters).await?;
         let obj = token_as_object(result, "invokescript")?;
-        RpcInvokeResult::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcInvokeResult::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Invokes a function on a contract.
@@ -340,7 +340,7 @@ impl RpcClient {
             )
             .await?;
         let obj = token_as_object(result, "invokefunction")?;
-        RpcInvokeResult::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcInvokeResult::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets a block by hash or index (verbose).
@@ -421,7 +421,7 @@ impl RpcClient {
         let result = self.get_block(hash_or_index).await?;
         let obj = token_as_object(result, "getblock")?;
         super::super::models::RpcBlock::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets a block header by hash or index (verbose).
@@ -449,7 +449,7 @@ impl RpcClient {
         let result = self.get_block_header(hash_or_index).await?;
         let obj = token_as_object(result, "getblockheader")?;
         super::super::models::RpcBlockHeader::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Obtains the number of connections for the node.
@@ -464,7 +464,7 @@ impl RpcClient {
     pub async fn get_peers(&self) -> Result<RpcPeers, ClientRpcError> {
         let result = self.rpc_send_async("getpeers", vec![]).await?;
         let obj = token_as_object(result, "getpeers")?;
-        RpcPeers::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcPeers::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Returns the node version details.
@@ -472,7 +472,7 @@ impl RpcClient {
     pub async fn get_version(&self) -> Result<RpcVersion, ClientRpcError> {
         let result = self.rpc_send_async("getversion", vec![]).await?;
         let obj = token_as_object(result, "getversion")?;
-        RpcVersion::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcVersion::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Returns the current committee members.
@@ -588,7 +588,7 @@ impl RpcClient {
             .rpc_send_async("getrawmempool", vec![JToken::Boolean(true)])
             .await?;
         let obj = token_as_object(result, "getrawmempool")?;
-        RpcRawMemPool::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcRawMemPool::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets NEP-17 transfers.
@@ -609,7 +609,7 @@ impl RpcClient {
         let result = self.rpc_send_async("getnep17transfers", params).await?;
         let obj = token_as_object(result, "getnep17transfers")?;
         RpcNep17Transfers::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets NEP-17 balances.
@@ -625,7 +625,7 @@ impl RpcClient {
             .await?;
         let obj = token_as_object(result, "getnep17balances")?;
         RpcNep17Balances::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets NEP-11 transfers.
@@ -641,7 +641,7 @@ impl RpcClient {
             .await?;
         let obj = token_as_object(result, "getnep11transfers")?;
         RpcNep11Transfers::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets NEP-11 balances.
@@ -657,7 +657,7 @@ impl RpcClient {
             .await?;
         let obj = token_as_object(result, "getnep11balances")?;
         RpcNep11Balances::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets contract state by hash.
@@ -666,7 +666,7 @@ impl RpcClient {
             .rpc_send_async("getcontractstate", vec![JToken::String(hash.to_string())])
             .await?;
         let obj = token_as_object(result, "getcontractstate")?;
-        RpcContractState::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcContractState::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets contract state by numeric contract ID.
@@ -678,7 +678,7 @@ impl RpcClient {
             .rpc_send_async("getcontractstate", vec![JToken::Number(f64::from(id))])
             .await?;
         let obj = token_as_object(result, "getcontractstate")?;
-        RpcContractState::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcContractState::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets NEP-11 properties.
@@ -706,7 +706,7 @@ impl RpcClient {
             .await?;
         let obj = token_as_object(result, "getrawtransaction")?;
         RpcTransaction::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Retrieves the application log for a block or transaction hash.
@@ -720,7 +720,7 @@ impl RpcClient {
             .await?;
         let obj = token_as_object(result, "getapplicationlog")?;
         RpcApplicationLog::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Retrieves the application log for a block or transaction hash with trigger filtering.
@@ -737,7 +737,7 @@ impl RpcClient {
         let result = self.rpc_send_async("getapplicationlog", params).await?;
         let obj = token_as_object(result, "getapplicationlog")?;
         RpcApplicationLog::from_json(&obj, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Retrieves a transaction by hash as raw hex.

@@ -12,6 +12,7 @@ use crate::method_token::MethodToken;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_crypto::Crypto;
+use neo_error::{CoreError, CoreResult};
 use neo_io::extensions::memory_reader::MemoryReaderExtensions;
 use neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
@@ -129,13 +130,13 @@ impl NefFile {
     }
 
     /// Parses a NEF file from bytes.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    pub fn from_bytes(bytes: &[u8]) -> CoreResult<Self> {
         let mut reader = MemoryReader::new(bytes);
-        Self::deserialize(&mut reader).map_err(|e| e.to_string())
+        Self::deserialize(&mut reader).map_err(|e| CoreError::other(e.to_string()))
     }
 
     /// Parses a NEF file from bytes (alias for [`Self::from_bytes`]).
-    pub fn parse(bytes: &[u8]) -> Result<Self, String> {
+    pub fn parse(bytes: &[u8]) -> CoreResult<Self> {
         Self::from_bytes(bytes)
     }
 
@@ -145,8 +146,10 @@ impl NefFile {
     }
 
     /// Parses a NEF file from base64-encoded bytes.
-    pub fn from_base64(base64: &str) -> Result<Self, String> {
-        let bytes = BASE64_STANDARD.decode(base64).map_err(|e| e.to_string())?;
+    pub fn from_base64(base64: &str) -> CoreResult<Self> {
+        let bytes = BASE64_STANDARD
+            .decode(base64)
+            .map_err(|e| CoreError::other(e.to_string()))?;
         Self::from_bytes(&bytes)
     }
 

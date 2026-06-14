@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::{parse_number_or_string_token, parse_uint256_array_lossy, token_array};
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt256;
 use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
@@ -50,16 +51,17 @@ impl RpcRawMemPool {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let height_token = json
             .get("height")
-            .ok_or("Missing or invalid 'height' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'height' field"))?;
         let height = parse_number_or_string_token(
             height_token,
             "height",
             "Missing or invalid 'height' field",
             |value| value as u32,
-        )?;
+        )
+        .map_err(|e| CoreError::other(e.to_string()))?;
 
         let verified = parse_uint256_array_lossy(json, "verified");
         let unverified = parse_uint256_array_lossy(json, "unverified");

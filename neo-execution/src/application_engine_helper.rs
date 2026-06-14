@@ -6,6 +6,7 @@ use neo_crypto::Crypto;
 use crate::NotifyEventArgs;
 use crate::application_engine::{ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE};
 use crate::interoperable::Interoperable;
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::TriggerType;
 use neo_primitives::UInt160;
 use neo_serialization::BinarySerializer;
@@ -109,75 +110,75 @@ impl ApplicationEngine {
     }
 
     /// Helper to push a boolean to the stack
-    pub fn push_boolean(&mut self, value: bool) -> Result<(), String> {
+    pub fn push_boolean(&mut self, value: bool) -> CoreResult<()> {
         self.push(StackItem::from_bool(value))
     }
 
     /// Helper to push an integer to the stack
-    pub fn push_integer(&mut self, value: i64) -> Result<(), String> {
+    pub fn push_integer(&mut self, value: i64) -> CoreResult<()> {
         self.push(StackItem::from_int(value))
     }
 
     /// Helper to push bytes to the stack
-    pub fn push_bytes(&mut self, value: Vec<u8>) -> Result<(), String> {
+    pub fn push_bytes(&mut self, value: Vec<u8>) -> CoreResult<()> {
         self.push(StackItem::from_byte_string(value))
     }
 
     /// Helper to push a string to the stack
-    pub fn push_string(&mut self, value: String) -> Result<(), String> {
+    pub fn push_string(&mut self, value: String) -> CoreResult<()> {
         self.push(StackItem::from_byte_string(value.into_bytes()))
     }
 
     /// Helper to push an array to the stack
-    pub fn push_array(&mut self, value: Vec<StackItem>) -> Result<(), String> {
+    pub fn push_array(&mut self, value: Vec<StackItem>) -> CoreResult<()> {
         self.push(StackItem::from_array(value))
     }
 
     /// Helper to push null to the stack
-    pub fn push_null(&mut self) -> Result<(), String> {
+    pub fn push_null(&mut self) -> CoreResult<()> {
         self.push(StackItem::null())
     }
 
     /// Helper to pop a boolean from the stack
-    pub fn pop_boolean(&mut self) -> Result<bool, String> {
+    pub fn pop_boolean(&mut self) -> CoreResult<bool> {
         let item = self.pop()?;
-        item.as_bool().map_err(|e| e.to_string())
+        item.as_bool().map_err(|e| CoreError::other(e.to_string()))
     }
 
     /// Helper to pop an integer from the stack
-    pub fn pop_integer(&mut self) -> Result<i64, String> {
+    pub fn pop_integer(&mut self) -> CoreResult<i64> {
         let item = self.pop()?;
-        let integer = item.into_int().map_err(|e| e.to_string())?;
+        let integer = item.into_int().map_err(|e| CoreError::other(e.to_string()))?;
         integer
             .to_i64()
-            .ok_or_else(|| "Integer too large".to_string())
+            .ok_or_else(|| CoreError::other("Integer too large"))
     }
 
     /// Helper to pop bytes from the stack
-    pub fn pop_bytes(&mut self) -> Result<Vec<u8>, String> {
+    pub fn pop_bytes(&mut self) -> CoreResult<Vec<u8>> {
         let item = self.pop()?;
-        item.as_bytes().map_err(|e| e.to_string())
+        item.as_bytes().map_err(|e| CoreError::other(e.to_string()))
     }
 
     /// Helper to pop a string from the stack
-    pub fn pop_string(&mut self) -> Result<String, String> {
+    pub fn pop_string(&mut self) -> CoreResult<String> {
         let item = self.pop()?;
-        let bytes = item.as_bytes().map_err(|e| e.to_string())?;
-        String::from_utf8(bytes).map_err(|_| "Invalid UTF-8".to_string())
+        let bytes = item.as_bytes().map_err(|e| CoreError::other(e.to_string()))?;
+        String::from_utf8(bytes).map_err(|_| CoreError::other("Invalid UTF-8"))
     }
 
     /// Helper to pop an array from the stack
-    pub fn pop_array(&mut self) -> Result<Vec<StackItem>, String> {
+    pub fn pop_array(&mut self) -> CoreResult<Vec<StackItem>> {
         let item = self.pop()?;
         match item {
             StackItem::Array(array) => Ok(array.items()),
             StackItem::Struct(struct_item) => Ok(struct_item.items()),
-            _ => Err("Expected array".to_string()),
+            _ => Err(CoreError::other("Expected array")),
         }
     }
 
     /// Helper to check if top of stack is null
-    pub fn peek_is_null(&self, index: usize) -> Result<bool, String> {
+    pub fn peek_is_null(&self, index: usize) -> CoreResult<bool> {
         let item = self.peek(index)?;
         Ok(item.is_null())
     }
@@ -192,23 +193,23 @@ impl ApplicationEngine {
     }
 
     /// Helper to get current block time
-    pub fn get_current_block_time(&self) -> Result<u64, String> {
+    pub fn get_current_block_time(&self) -> CoreResult<u64> {
         self.current_block_timestamp()
     }
 
     /// Reserves a notification slot, enforcing hardfork limits.
-    pub fn reserve_notification_slot(&mut self) -> Result<(), String> {
-        let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
+    pub fn reserve_notification_slot(&mut self) -> CoreResult<()> {
+        let state_arc = self.current_execution_state()?;
         let mut state = state_arc.lock();
 
         if self.is_hardfork_enabled(Hardfork::HfEchidna)
             && self.trigger_type() == TriggerType::Application
             && state.notification_count >= MAX_NOTIFICATION_COUNT
         {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "Maximum number of notifications `{}` is reached.",
                 MAX_NOTIFICATION_COUNT
-            ));
+            )));
         }
 
         state.notification_count = state.notification_count.saturating_add(1);
@@ -226,18 +227,17 @@ impl ApplicationEngine {
     }
 
     /// Ensures the notification payload size stays within protocol limits.
-    pub fn ensure_notification_size(&self, state: &[StackItem]) -> Result<(), String> {
+    pub fn ensure_notification_size(&self, state: &[StackItem]) -> CoreResult<()> {
         detect_circular_reference(state)?;
         let limits = self.execution_limits();
         let serialized =
-            BinarySerializer::serialize(&StackItem::from_array(state.to_vec()), limits)
-                .map_err(|e| e.to_string())?;
+            BinarySerializer::serialize(&StackItem::from_array(state.to_vec()), limits)?;
         if serialized.len() > MAX_NOTIFICATION_SIZE {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "Notification size {} exceeds maximum allowed size of {} bytes",
                 serialized.len(),
                 MAX_NOTIFICATION_SIZE
-            ));
+            )));
         }
         Ok(())
     }
@@ -249,7 +249,7 @@ impl ApplicationEngine {
         script_hash: UInt160,
         event_name: String,
         state: Vec<StackItem>,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         // Get optional container (can be None for OnPersist/PostPersist triggers)
         let container = self.script_container().cloned();
 
@@ -266,14 +266,14 @@ impl ApplicationEngine {
     }
 
     /// Helper to get notifications
-    pub fn get_notifications(&self, hash: Option<UInt160>) -> Result<Vec<StackItem>, String> {
+    pub fn get_notifications(&self, hash: Option<UInt160>) -> CoreResult<Vec<StackItem>> {
         let limits = self.execution_limits();
         let mut result = Vec::new();
         for notification in self.notifications() {
             if hash.is_none_or(|expected| notification.script_hash == expected) {
-                result.push(notification.to_stack_item().map_err(|e| e.to_string())?);
+                result.push(notification.to_stack_item().map_err(|e| CoreError::other(e.to_string()))?);
                 if result.len() > limits.max_stack_size as usize {
-                    return Err("Too many notifications".to_string());
+                    return Err(CoreError::other("Too many notifications"));
                 }
             }
         }
@@ -288,7 +288,7 @@ enum CompoundKey {
     Map(usize),
 }
 
-fn detect_circular_reference(state: &[StackItem]) -> Result<(), String> {
+fn detect_circular_reference(state: &[StackItem]) -> CoreResult<()> {
     let mut visiting = HashSet::new();
     let mut visited = HashSet::new();
     for item in state {
@@ -301,7 +301,7 @@ fn detect_stack_item_cycle(
     item: &StackItem,
     visiting: &mut HashSet<CompoundKey>,
     visited: &mut HashSet<CompoundKey>,
-) -> Result<(), String> {
+) -> CoreResult<()> {
     match item {
         StackItem::Array(array) => {
             let key = CompoundKey::Array(array.id());
@@ -329,7 +329,7 @@ fn detect_stack_item_cycle(
                 return Ok(());
             }
             if !visiting.insert(key) {
-                return Err("Circular reference detected while serializing map".to_string());
+                return Err(CoreError::other("Circular reference detected while serializing map"));
             }
             for (entry_key, entry_value) in entries.iter() {
                 detect_stack_item_cycle(&entry_key, visiting, visited)?;
@@ -349,12 +349,12 @@ fn detect_compound_cycle(
     visited: &mut HashSet<CompoundKey>,
     items: Vec<StackItem>,
     cycle_message: &str,
-) -> Result<(), String> {
+) -> CoreResult<()> {
     if visited.contains(&key) {
         return Ok(());
     }
     if !visiting.insert(key) {
-        return Err(cycle_message.to_string());
+        return Err(CoreError::other(cycle_message.to_string()));
     }
     for item in items {
         detect_stack_item_cycle(&item, visiting, visited)?;
@@ -364,7 +364,7 @@ fn detect_compound_cycle(
     Ok(())
 }
 
-fn clone_notification_state(state: &[StackItem]) -> Result<Vec<StackItem>, String> {
+fn clone_notification_state(state: &[StackItem]) -> CoreResult<Vec<StackItem>> {
     let mut seen = HashMap::new();
     let mut copied = Vec::with_capacity(state.len());
     for item in state {
@@ -376,7 +376,7 @@ fn clone_notification_state(state: &[StackItem]) -> Result<Vec<StackItem>, Strin
 fn clone_stack_item_as_immutable(
     item: &StackItem,
     seen: &mut HashMap<CompoundKey, StackItem>,
-) -> Result<StackItem, String> {
+) -> CoreResult<StackItem> {
     match item {
         StackItem::Null => Ok(StackItem::Null),
         StackItem::Boolean(value) => Ok(StackItem::Boolean(*value)),
@@ -398,7 +398,7 @@ fn clone_stack_item_as_immutable(
             seen.insert(key, cloned_item.clone());
             for element in array.iter() {
                 let child = clone_stack_item_as_immutable(&element, seen)?;
-                cloned.push(child).map_err(|e| e.to_string())?;
+                cloned.push(child).map_err(|e| CoreError::other(e.to_string()))?;
             }
             Ok(cloned_item)
         }
@@ -412,7 +412,7 @@ fn clone_stack_item_as_immutable(
             seen.insert(key, cloned_item.clone());
             for element in struct_item.iter() {
                 let child = clone_stack_item_as_immutable(&element, seen)?;
-                cloned.push(child).map_err(|e| e.to_string())?;
+                cloned.push(child).map_err(|e| CoreError::other(e.to_string()))?;
             }
             Ok(cloned_item)
         }
@@ -429,7 +429,7 @@ fn clone_stack_item_as_immutable(
                 let cloned_value = clone_stack_item_as_immutable(&entry_value, seen)?;
                 cloned
                     .set(cloned_key, cloned_value)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| CoreError::other(e.to_string()))?;
             }
             Ok(cloned_item)
         }

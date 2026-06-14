@@ -12,6 +12,7 @@
 
 use std::sync::Arc;
 
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::{
     Transaction, block::Block, extensible_payload::ExtensiblePayload, header::Header,
 };
@@ -272,7 +273,7 @@ impl BlockchainService {
         block: Arc<Block>,
         relay: bool,
         pre_verified: bool,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         let index = block.index();
         let current_height = self.ledger.current_height();
 
@@ -311,7 +312,7 @@ impl BlockchainService {
         block: Arc<Block>,
         relay: bool,
         pre_verified: bool,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         let index = block.index();
         let hash = Self::try_block_hash(block.as_ref())?;
         let current_height = self.ledger.current_height();
@@ -321,39 +322,39 @@ impl BlockchainService {
         }
 
         if index != current_height + 1 {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "block {index} is not the next expected height {}",
                 current_height + 1
-            ));
+            )));
         }
 
         // Stateless block-integrity pre-checks before persisting a peer-relayed
         // block (the structural half of C# `Block.Verify`): version, transaction
         // count, merkle root, and duplicate transactions.
         if let Err(error) = crate::block_validation::validate_block_version(block.version()) {
-            return Err(format!("block {index} has an invalid version: {error}"));
+            return Err(CoreError::other(format!("block {index} has an invalid version: {error}")));
         }
         let settings = self.system.settings();
         if let Err(error) = crate::block_validation::validate_transaction_count_raw_with_limit(
             block.transactions.len(),
             settings.max_transactions_per_block as usize,
         ) {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "block {index} exceeds the transaction limit: {error}"
-            ));
+            )));
         }
         let tx_hashes: Vec<neo_primitives::UInt256> =
             block.transactions.iter().map(|tx| tx.hash()).collect();
         if let Err(error) =
             crate::block_validation::validate_merkle_root(block.header.merkle_root(), &tx_hashes)
         {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "block {index} failed merkle-root validation: {error}"
-            ));
+            )));
         }
         if let Err(error) = crate::block_validation::validate_no_duplicate_transactions(&tx_hashes)
         {
-            return Err(format!("block {index} has duplicate transactions: {error}"));
+            return Err(CoreError::other(format!("block {index} has duplicate transactions: {error}")));
         }
 
         // C# Header.Verify (Blockchain.OnNewBlock runs block.Verify before
@@ -364,18 +365,18 @@ impl BlockchainService {
         if !pre_verified {
             if let Some(snapshot) = self.system.store_snapshot() {
                 if i32::from(block.header.primary_index()) >= settings.validators_count {
-                    return Err(format!("block {index}: primary index out of range"));
+                    return Err(CoreError::other(format!("block {index}: primary index out of range")));
                 }
                 let prev = neo_native_contracts::LedgerContract::new()
                     .get_trimmed_block(&snapshot, block.header.prev_hash())
                     .ok()
                     .flatten()
-                    .ok_or_else(|| format!("block {index}: previous block not found"))?;
+                    .ok_or_else(|| CoreError::other(format!("block {index}: previous block not found")))?;
                 if prev.header.index() + 1 != index {
-                    return Err(format!("block {index}: previous block index mismatch"));
+                    return Err(CoreError::other(format!("block {index}: previous block index mismatch")));
                 }
                 if block.header.timestamp() <= prev.header.timestamp() {
-                    return Err(format!("block {index}: timestamp not after previous block"));
+                    return Err(CoreError::other(format!("block {index}: timestamp not after previous block")));
                 }
                 // The single block witness must satisfy prev.NextConsensus, under
                 // the C# 3-GAS block-verification cap (Header.Verify, not the
@@ -391,9 +392,9 @@ impl BlockchainService {
                 )
                 .is_err()
                 {
-                    return Err(format!(
+                    return Err(CoreError::other(format!(
                         "block {index}: consensus witness verification failed"
-                    ));
+                    )));
                 }
             }
         }
@@ -401,13 +402,13 @@ impl BlockchainService {
         // C# Blockchain.OnNewBlock → Persist(block): the native-contract
         // state transition runs before the block becomes the new tip.
         if !self.persist_block_sequence(Arc::clone(&block)).await {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "native persistence pipeline failed for block {index}"
-            ));
+            )));
         }
 
         if let Err(error) = self.ledger.insert_block((*block).clone()) {
-            return Err(format!("ledger insert: {error}"));
+            return Err(CoreError::other(format!("ledger insert: {error}")));
         }
 
         // Flush the block's native-persist writes through to the durable store
@@ -441,15 +442,15 @@ impl BlockchainService {
         &self,
         mut payload: ExtensiblePayload,
         relay: bool,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         let hash = payload.hash();
         if let Some(snapshot) = self.system.store_snapshot() {
             let settings = self.system.settings();
             Self::verify_extensible(&payload, settings.as_ref(), &snapshot)
-                .map_err(|error| format!("extensible payload rejected: {error}"))?;
+                .map_err(|error| CoreError::other(format!("extensible payload rejected: {error}")))?;
         }
         if let Err(error) = self.ledger.insert_extensible(payload) {
-            return Err(format!("ledger insert: {error}"));
+            return Err(CoreError::other(format!("ledger insert: {error}")));
         }
         debug!(target: "neo", %hash, relay, "extensible payload accepted");
         Ok(())
@@ -465,16 +466,16 @@ impl BlockchainService {
         payload: &ExtensiblePayload,
         settings: &neo_config::ProtocolSettings,
         snapshot: &neo_storage::DataCache,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         use neo_payloads::VerifiableExt;
 
         let ledger = neo_native_contracts::LedgerContract::new();
-        let height = ledger.current_index(snapshot).map_err(|e| e.to_string())?;
+        let height = ledger.current_index(snapshot).map_err(|e| CoreError::other(e.to_string()))?;
         if height < payload.valid_block_start || height >= payload.valid_block_end {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "height {height} outside the valid range [{}, {})",
                 payload.valid_block_start, payload.valid_block_end
-            ));
+            )));
         }
 
         let mut whitelist: std::collections::HashSet<neo_primitives::UInt160> =
@@ -489,10 +490,10 @@ impl BlockchainService {
             snapshot,
             usize::try_from(settings.validators_count).unwrap_or(0),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CoreError::other(e.to_string()))?;
         if !validators.is_empty() {
             whitelist.insert(
-                crate::native_persist::bft_address(&validators).map_err(|e| e.to_string())?,
+                crate::native_persist::bft_address(&validators).map_err(|e| CoreError::other(e.to_string()))?,
             );
             for validator in &validators {
                 whitelist.insert(neo_primitives::UInt160::from_script(
@@ -505,7 +506,7 @@ impl BlockchainService {
             .unwrap_or_default();
         if !state_validators.is_empty() {
             whitelist.insert(
-                crate::native_persist::bft_address(&state_validators).map_err(|e| e.to_string())?,
+                crate::native_persist::bft_address(&state_validators).map_err(|e| CoreError::other(e.to_string()))?,
             );
             for validator in &state_validators {
                 whitelist.insert(neo_primitives::UInt160::from_script(
@@ -514,14 +515,14 @@ impl BlockchainService {
             }
         }
         if !whitelist.contains(&payload.sender) {
-            return Err("sender is not in the extensible witness whitelist".to_string());
+            return Err(CoreError::other("sender is not in the extensible witness whitelist"));
         }
 
         // C# `this.VerifyWitnesses(settings, snapshot, 0_06000000L)`.
         let hashes = payload.script_hashes_for_verifying(snapshot);
         let witnesses = payload.witnesses();
         if hashes.len() != witnesses.len() {
-            return Err("witness count mismatch".to_string());
+            return Err(CoreError::other("witness count mismatch"));
         }
         let mut remaining_gas = 6_000_000i64;
         for (hash, witness) in hashes.iter().zip(witnesses) {
@@ -535,7 +536,7 @@ impl BlockchainService {
             ) {
                 Ok(fee) => remaining_gas -= fee,
                 Err(error) => {
-                    return Err(format!("witness verification failed: {error}"));
+                    return Err(CoreError::other(format!("witness verification failed: {error}")));
                 }
             }
         }
@@ -730,11 +731,11 @@ impl BlockchainService {
 
     /// Compute the hash of a block. Returns an error string when the
     /// header cannot be hashed (e.g. because it is missing).
-    pub(crate) fn try_block_hash(block: &Block) -> Result<neo_primitives::UInt256, String> {
+    pub(crate) fn try_block_hash(block: &Block) -> CoreResult<neo_primitives::UInt256> {
         let header = block.header.clone();
         header
             .try_hash()
-            .map_err(|err| format!("hash computation failed: {err}"))
+            .map_err(|err| CoreError::other(format!("hash computation failed: {err}")))
     }
 }
 
@@ -975,8 +976,8 @@ mod tests {
             .await
             .expect_err("block above the effective protocol transaction cap is rejected");
 
-        assert!(error.contains("exceeds the transaction limit"), "{error}");
-        assert!(error.contains("maximum 1"), "{error}");
+        assert!(error.to_string().contains("exceeds the transaction limit"), "{error}");
+        assert!(error.to_string().contains("maximum 1"), "{error}");
     }
 
     #[tokio::test]
@@ -1142,7 +1143,7 @@ mod tests {
             .await
             .expect_err("tampered consensus witness must be rejected");
         assert!(
-            err.contains("witness"),
+            err.to_string().contains("witness"),
             "rejection names the witness: {err}"
         );
         assert_eq!(service.ledger.current_height(), 0);
@@ -1271,7 +1272,7 @@ mod tests {
             .handle_extensible_inventory(stale, false)
             .await
             .expect_err("out-of-range extensible must be rejected");
-        assert!(err.contains("valid range"), "{err}");
+        assert!(err.to_string().contains("valid range"), "{err}");
 
         // Non-whitelisted sender -> rejected before witness execution.
         let mut foreign = payload.clone();
@@ -1280,7 +1281,7 @@ mod tests {
             .handle_extensible_inventory(foreign, false)
             .await
             .expect_err("non-whitelisted sender must be rejected");
-        assert!(err.contains("whitelist"), "{err}");
+        assert!(err.to_string().contains("whitelist"), "{err}");
 
         // Valid range + whitelisted validator sender + correct signature.
         service

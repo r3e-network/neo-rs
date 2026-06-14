@@ -11,6 +11,7 @@
 
 use super::super::utility::parse_number_or_string_token;
 use super::super::utility::JsonParseError;
+use neo_error::{CoreError, CoreResult};
 use neo_manifest::MethodToken;
 use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
@@ -24,35 +25,35 @@ pub struct RpcMethodToken {
 impl RpcMethodToken {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let hash = json
             .get("hash")
             .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|s| UInt160::parse(&s).ok())
-            .ok_or("Missing or invalid 'hash' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'hash' field"))?;
 
         let method = json
             .get("method")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'method' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'method' field"))?;
 
         let parameters_count = parse_u16_field(json, "paramcount")?;
 
         let has_return_value = json
             .get("hasreturnvalue")
             .map(neo_serialization::json::JToken::as_boolean)
-            .ok_or("Missing or invalid 'hasreturnvalue' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'hasreturnvalue' field"))?;
 
         let call_flags_token = json
             .get("callflags")
-            .ok_or("Missing or invalid 'callflags' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'callflags' field"))?;
         let call_flags = if let Some(text) = call_flags_token.as_string() {
-            parse_call_flags(&text).ok_or_else(|| format!("Invalid call flags: {text}"))?
+            parse_call_flags(&text).ok_or_else(|| CoreError::other(format!("Invalid call flags: {text}")))?
         } else if let Some(number) = call_flags_token.as_number() {
             CallFlags::from_bits(number as u8)
-                .ok_or_else(|| format!("Invalid call flags bits: {}", number as u8))?
+                .ok_or_else(|| CoreError::other(format!("Invalid call flags bits: {}", number as u8)))?
         } else {
-            return Err("Invalid 'callflags' field".to_string());
+            return Err(CoreError::other("Invalid 'callflags' field"));
         };
 
         Ok(Self {
@@ -170,17 +171,17 @@ fn parse_call_flags(value: &str) -> Option<CallFlags> {
     if matched { Some(result) } else { None }
 }
 
-fn parse_u16_field(json: &JObject, field: &str) -> Result<u16, String> {
+fn parse_u16_field(json: &JObject, field: &str) -> CoreResult<u16> {
     let token = json
         .get(field)
-        .ok_or_else(|| format!("Missing '{field}' field"))?;
+        .ok_or_else(|| CoreError::other(format!("Missing '{field}' field")))?;
     let result: Result<u16, JsonParseError> = parse_number_or_string_token(
         token,
         field,
         &format!("Invalid '{field}' field"),
         |value| value as u16,
     );
-    result.map_err(|e| e.to_string())
+    result.map_err(|e| CoreError::other(e.to_string()))
 }
 
 #[cfg(test)]

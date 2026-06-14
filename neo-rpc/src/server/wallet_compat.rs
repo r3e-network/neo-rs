@@ -27,6 +27,7 @@ use neo_execution::helper::Helper as ContractHelper;
 use neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_usize,
 };
+use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_native_contracts::{ContractManagement, GasToken, LedgerContract, PolicyContract};
 use neo_payloads::HEADER_SIZE;
@@ -71,9 +72,9 @@ pub(crate) fn sign_transaction_with_key(
     tx: &Transaction,
     key: &KeyPair,
     network: u32,
-) -> Result<Vec<u8>, String> {
-    let data = neo_payloads::get_sign_data(tx, network).map_err(|err| err.to_string())?;
-    key.sign(&data).map_err(|err| err.to_string())
+) -> CoreResult<Vec<u8>> {
+    let data = neo_payloads::get_sign_data(tx, network).map_err(|err| CoreError::other(err.to_string()))?;
+    key.sign(&data).map_err(|err| CoreError::other(err.to_string()))
 }
 
 /// C# `Helper.CalculateNetworkFee(tx, snapshot, settings, accountScript,
@@ -327,7 +328,7 @@ fn run_test_invocation(
     container: Option<Arc<dyn Verifiable>>,
     settings: &ProtocolSettings,
     max_gas: i64,
-) -> Result<ApplicationEngine, String> {
+) -> CoreResult<ApplicationEngine> {
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         container,
@@ -337,10 +338,10 @@ fn run_test_invocation(
         max_gas,
         None,
     )
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| CoreError::other(err.to_string()))?;
     engine
         .load_script(script, CallFlags::ALL, None)
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| CoreError::other(err.to_string()))?;
     engine.execute_allow_fault();
     Ok(engine)
 }
@@ -369,7 +370,7 @@ fn nep17_balance_of(
         "balanceOf",
         &[CallArg::Bytes(account.to_bytes())],
     )
-    .map_err(WalletCompatError::Other)?;
+    .map_err(|e| WalletCompatError::Other(e.to_string()))?;
     let engine = run_test_invocation(
         builder.to_array(),
         snapshot,
@@ -377,7 +378,7 @@ fn nep17_balance_of(
         settings,
         BALANCE_PROBE_GAS,
     )
-    .map_err(WalletCompatError::Other)?;
+    .map_err(|e| WalletCompatError::Other(e.to_string()))?;
     if engine.state() != VMState::HALT {
         return Err(WalletCompatError::Other(format!(
             "Failed to execute balanceOf method for asset {asset} on account {account}. The \
@@ -411,7 +412,7 @@ fn emit_dynamic_call(
     contract: &UInt160,
     method: &str,
     args: &[CallArg],
-) -> Result<(), String> {
+) -> CoreResult<()> {
     if args.is_empty() {
         builder.emit_push_int(0);
         builder.emit_pack();
@@ -424,7 +425,7 @@ fn emit_dynamic_call(
                 CallArg::Int(value) => {
                     builder
                         .emit_push_bigint(value.clone())
-                        .map_err(|err| err.to_string())?;
+                        .map_err(|err| CoreError::other(err.to_string()))?;
                 }
                 CallArg::Null => {
                     builder.emit_opcode(OpCode::PUSHNULL);
@@ -439,7 +440,7 @@ fn emit_dynamic_call(
     builder.emit_push(&contract.to_array());
     builder
         .emit_syscall("System.Contract.Call")
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| CoreError::other(err.to_string()))?;
     Ok(())
 }
 
@@ -597,7 +598,7 @@ fn make_transaction_with_balances(
             settings,
             max_gas,
         )
-        .map_err(WalletCompatError::Other)?;
+        .map_err(|e| WalletCompatError::Other(e.to_string()))?;
         if engine.state() == VMState::FAULT {
             let detail = engine
                 .fault_exception()
@@ -721,7 +722,7 @@ pub(crate) fn make_transfer_transaction(
                         CallArg::Null,
                     ],
                 )
-                .map_err(WalletCompatError::Other)?;
+                .map_err(|e| WalletCompatError::Other(e.to_string()))?;
                 builder.emit_opcode(OpCode::ASSERT);
             }
         }

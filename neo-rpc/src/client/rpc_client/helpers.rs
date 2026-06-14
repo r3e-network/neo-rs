@@ -143,7 +143,7 @@ pub(super) fn parse_object_array_result<T>(
     non_array_error: &str,
     null_entry_error: &str,
     non_object_error: &str,
-    mut parse_object: impl FnMut(&JObject) -> Result<T, String>,
+    mut parse_object: impl FnMut(&JObject) -> neo_error::CoreResult<T>,
 ) -> Result<Vec<T>, ClientRpcError> {
     let array = result
         .as_array()
@@ -158,7 +158,7 @@ pub(super) fn parse_object_array_result<T>(
             let obj = token
                 .as_object()
                 .ok_or_else(|| ClientRpcError::new(-32603, non_object_error))?;
-            parse_object(obj).map_err(|err| ClientRpcError::new(-32603, err))
+            parse_object(obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
         })
         .collect()
 }
@@ -169,7 +169,7 @@ pub(super) fn parse_plugins(result: &JToken) -> Result<Vec<RpcPlugin>, ClientRpc
         "listplugins returned non-array",
         "plugin entry was null",
         "plugin entry was not an object",
-        |obj| RpcPlugin::from_json(obj).map_err(|err| format!("invalid plugin entry: {err}")),
+        |obj| RpcPlugin::from_json(obj).map_err(|err| neo_error::CoreError::other(format!("invalid plugin entry: {err}"))),
     )
 }
 

@@ -2,7 +2,7 @@
 
 use crate::manifest::ContractParameterDefinition;
 use crate::manifest::stack_value_helpers::{decode_stack_value_objects, required_struct_fields};
-use neo_error::CoreError;
+use neo_error::{CoreError, CoreResult};
 use neo_vm::Interoperable;
 use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
@@ -20,16 +20,19 @@ pub struct ContractEventDescriptor {
 
 impl ContractEventDescriptor {
     /// Creates a new event descriptor
-    pub fn new(name: String, parameters: Vec<ContractParameterDefinition>) -> Result<Self, String> {
+    pub fn new(name: String, parameters: Vec<ContractParameterDefinition>) -> CoreResult<Self> {
         if name.is_empty() {
-            return Err("Event name cannot be empty".to_string());
+            return Err(CoreError::other("Event name cannot be empty"));
         }
 
         // Check for duplicate parameter names
         let mut names = std::collections::HashSet::new();
         for param in &parameters {
             if !names.insert(&param.name) {
-                return Err(format!("Duplicate parameter name: {}", param.name));
+                return Err(CoreError::other(format!(
+                    "Duplicate parameter name: {}",
+                    param.name
+                )));
             }
         }
 
@@ -37,13 +40,15 @@ impl ContractEventDescriptor {
     }
 
     /// Creates from JSON
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
-        let obj = json.as_object().ok_or("Expected object")?;
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected object"))?;
 
         let name = obj
             .get("name")
             .and_then(|v| v.as_str())
-            .ok_or("Missing name")?
+            .ok_or_else(|| CoreError::other("Missing name"))?
             .to_string();
 
         let parameters = obj

@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::Witness;
 use neo_primitives::UInt256;
 use neo_serialization::json::{JArray, JObject, JToken};
@@ -33,22 +34,22 @@ pub struct RpcStateRoot {
 impl RpcStateRoot {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let version = json
             .get("version")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'version' field")? as u8;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'version' field"))? as u8;
 
         let index = json
             .get("index")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'index' field")? as u32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'index' field"))? as u32;
 
         let root_hash = json
             .get("roothash")
             .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok())
-            .ok_or("Missing or invalid 'roothash' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'roothash' field"))?;
 
         let witness = json
             .get("witnesses")

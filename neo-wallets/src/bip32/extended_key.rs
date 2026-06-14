@@ -5,6 +5,7 @@
 
 use super::key_path::KeyPath;
 use neo_crypto::{Bip32Crypto, CryptoError, ECC, ECCurve, ECPoint};
+use neo_error::{CoreError, CoreResult};
 use zeroize::Zeroize;
 
 #[derive(Clone, Zeroize)]
@@ -45,10 +46,10 @@ impl ExtendedKey {
         &self.chain_code
     }
 
-    pub fn create(seed: &[u8], curve: Option<ECCurve>) -> Result<Self, String> {
+    pub fn create(seed: &[u8], curve: Option<ECCurve>) -> CoreResult<Self> {
         let curve = curve.unwrap_or(ECCurve::Secp256r1);
         if matches!(curve, ECCurve::Ed25519) {
-            return Err("Ed25519 is not supported for BIP32".to_string());
+            return Err(CoreError::other("Ed25519 is not supported for BIP32"));
         }
         let i = Bip32Crypto::hmac_sha512(b"Bitcoin seed", seed).map_err(bip32_error_message)?;
         let mut private_key = [0u8; 32];
@@ -57,7 +58,7 @@ impl ExtendedKey {
         chain_code.copy_from_slice(&i[32..]);
 
         let public_key =
-            ECC::generate_public_key(&private_key, curve).map_err(|e| e.to_string())?;
+            ECC::generate_public_key(&private_key, curve).map_err(|e| CoreError::other(e.to_string()))?;
 
         Ok(Self {
             private_key,
@@ -70,7 +71,7 @@ impl ExtendedKey {
         seed: &[u8],
         path: &str,
         curve: Option<ECCurve>,
-    ) -> Result<Self, String> {
+    ) -> CoreResult<Self> {
         let key_path = KeyPath::parse(path)?;
         let mut ext_key = Self::create(seed, curve)?;
         for index in key_path.indices() {
@@ -79,7 +80,7 @@ impl ExtendedKey {
         Ok(ext_key)
     }
 
-    pub fn derive(&self, index: u32) -> Result<Self, String> {
+    pub fn derive(&self, index: u32) -> CoreResult<Self> {
         let mut data = [0u8; 37];
         if index >= 0x8000_0000 {
             data[0] = 0;
@@ -88,9 +89,9 @@ impl ExtendedKey {
             let pub_bytes = self
                 .public_key
                 .encode_point(true)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| CoreError::other(e.to_string()))?;
             if pub_bytes.len() != 33 {
-                return Err("Invalid public key length".to_string());
+                return Err(CoreError::other("Invalid public key length"));
             }
             data[..33].copy_from_slice(&pub_bytes);
         }
@@ -107,7 +108,7 @@ impl ExtendedKey {
             Bip32Crypto::add_private_keys_mod_order(il, &self.private_key, self.public_key.curve())
                 .map_err(bip32_error_message)?;
         let public_key = ECC::generate_public_key(&private_key, self.public_key.curve())
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| CoreError::other(e.to_string()))?;
 
         Ok(Self {
             private_key,
@@ -117,9 +118,9 @@ impl ExtendedKey {
     }
 }
 
-fn bip32_error_message(error: CryptoError) -> String {
-    match error {
+fn bip32_error_message(error: CryptoError) -> CoreError {
+    CoreError::other(match error {
         CryptoError::InvalidArgument { message } => message,
         error => error.to_string(),
-    }
+    })
 }

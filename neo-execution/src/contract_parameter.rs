@@ -2,6 +2,7 @@
 
 use base64::{Engine as _, engine::general_purpose};
 use neo_crypto::ECPoint;
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
@@ -49,51 +50,51 @@ impl ContractParameter {
     }
 
     /// Sets the value from string
-    pub fn set_value(&mut self, text: &str) -> Result<(), String> {
+    pub fn set_value(&mut self, text: &str) -> CoreResult<()> {
         self.value = match self.param_type {
             ContractParameterType::Signature => {
                 let bytes = general_purpose::STANDARD
                     .decode(text)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| CoreError::other(e.to_string()))?;
                 if bytes.len() != 64 {
-                    return Err("Signature must be 64 bytes".to_string());
+                    return Err(CoreError::other("Signature must be 64 bytes"));
                 }
                 ContractParameterValue::Signature(bytes)
             }
             ContractParameterType::Boolean => {
-                let val = text.parse::<bool>().map_err(|e| e.to_string())?;
+                let val = text.parse::<bool>().map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::Boolean(val)
             }
             ContractParameterType::Integer => {
-                let val = text.parse::<BigInt>().map_err(|e| e.to_string())?;
+                let val = text.parse::<BigInt>().map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::Integer(val)
             }
             ContractParameterType::Hash160 => {
-                let val = text.parse::<UInt160>().map_err(|e| e.to_string())?;
+                let val = text.parse::<UInt160>().map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::Hash160(val)
             }
             ContractParameterType::Hash256 => {
-                let val = text.parse::<UInt256>().map_err(|e| e.to_string())?;
+                let val = text.parse::<UInt256>().map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::Hash256(val)
             }
             ContractParameterType::ByteArray => {
-                let bytes = hex::decode(text).map_err(|e| e.to_string())?;
+                let bytes = hex::decode(text).map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::ByteArray(bytes)
             }
             ContractParameterType::PublicKey => {
-                let bytes = hex::decode(text).map_err(|e| e.to_string())?;
+                let bytes = hex::decode(text).map_err(|e| CoreError::other(e.to_string()))?;
                 if bytes.len() != 33 && bytes.len() != 65 {
-                    return Err("Invalid public key length".to_string());
+                    return Err(CoreError::other("Invalid public key length"));
                 }
-                let point = ECPoint::from_bytes(&bytes).map_err(|e| e.to_string())?;
+                let point = ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::PublicKey(point)
             }
             ContractParameterType::String => ContractParameterValue::String(text.to_string()),
             _ => {
-                return Err(format!(
+                return Err(CoreError::other(format!(
                     "Cannot set value from string for type {:?}",
                     self.param_type
-                ));
+                )));
             }
         };
 
@@ -151,13 +152,15 @@ impl ContractParameter {
     }
 
     /// Creates from JSON representation
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
-        let obj = json.as_object().ok_or("Expected JSON object")?;
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected JSON object"))?;
 
         let type_str = obj
             .get("type")
             .and_then(|v| v.as_str())
-            .ok_or("Missing type field")?;
+            .ok_or_else(|| CoreError::other("Missing type field"))?;
 
         let param_type = match type_str {
             "Any" => ContractParameterType::Any,
@@ -173,7 +176,7 @@ impl ContractParameter {
             "Map" => ContractParameterType::Map,
             "InteropInterface" => ContractParameterType::InteropInterface,
             "Void" => ContractParameterType::Void,
-            _ => return Err(format!("Unknown parameter type: {}", type_str)),
+            _ => return Err(CoreError::other(format!("Unknown parameter type: {}", type_str))),
         };
 
         let mut param = Self::new(param_type);
@@ -198,7 +201,7 @@ impl ContractParameter {
                     }
                     ContractParameterType::Array => {
                         if let Some(arr) = value_json.as_array() {
-                            let items: Result<Vec<_>, _> =
+                            let items: CoreResult<Vec<_>> =
                                 arr.iter().map(Self::from_json).collect();
                             param.value = ContractParameterValue::Array(items?);
                         }

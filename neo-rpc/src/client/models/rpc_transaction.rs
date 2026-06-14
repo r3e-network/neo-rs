@@ -11,6 +11,7 @@
 
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use neo_config::ProtocolSettings;
+use neo_error::CoreResult;
 use neo_payloads::Transaction;
 use neo_primitives::UInt256;
 use neo_serialization::json::JObject;
@@ -74,7 +75,7 @@ impl RpcTransaction {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
         let transaction = super::super::utility::transaction_from_json(json, protocol_settings)?;
 
         let (block_hash, confirmations, block_time, vm_state) =

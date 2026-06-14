@@ -799,7 +799,7 @@ fn contract_state_to_json(contract: &ContractState) -> Value {
     match rpc_contract.to_json() {
         Ok(jobj) => serde_json::from_str(&jobj.to_string())
             .unwrap_or_else(|err| json!({"error": err.to_string()})),
-        Err(err) => json!({"error": err}),
+        Err(err) => json!({"error": err.to_string()}),
     }
 }
 

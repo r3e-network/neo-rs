@@ -20,6 +20,7 @@ use super::vm_state_utils::{
 use std::str::FromStr;
 
 use neo_config::ProtocolSettings;
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::TriggerType;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::{JObject, JToken};
@@ -41,7 +42,7 @@ pub struct RpcApplicationLog {
 impl RpcApplicationLog {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
         let tx_id = json
             .get("txid")
             .and_then(neo_serialization::json::JToken::as_string)
@@ -53,7 +54,7 @@ impl RpcApplicationLog {
             .and_then(|s| UInt256::parse(&s).ok());
 
         let executions = parse_object_array_lossy(json, "executions", |obj| {
-            Execution::from_json(obj, protocol_settings)
+            Execution::from_json(obj, protocol_settings).map_err(|e| e.to_string())
         });
 
         Ok(Self {
@@ -110,10 +111,11 @@ pub struct Execution {
 impl Execution {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let trigger_str = required_string(json, "trigger")?;
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
+        let trigger_str = required_string(json, "trigger")
+            .map_err(|e| CoreError::other(e.to_string()))?;
         let trigger = TriggerType::from_str(&trigger_str)
-            .map_err(|_| format!("Invalid trigger type: {trigger_str}"))?;
+            .map_err(|_| CoreError::other(format!("Invalid trigger type: {trigger_str}")))?;
 
         let vm_state = parse_vm_state_field(json, "vmstate")?;
         let gas_consumed = parse_gas_consumed_field(json)?;
@@ -125,7 +127,7 @@ impl Execution {
         let stack = stack_items_from_json_field(json, "stack");
 
         let notifications = parse_object_array_lossy(json, "notifications", |obj| {
-            RpcNotifyEventArgs::from_json(obj, protocol_settings)
+            RpcNotifyEventArgs::from_json(obj, protocol_settings).map_err(|e| e.to_string())
         });
 
         Ok(Self {
@@ -180,20 +182,22 @@ impl RpcNotifyEventArgs {
     pub fn from_json(
         json: &JObject,
         _protocol_settings: &ProtocolSettings,
-    ) -> Result<Self, String> {
+    ) -> CoreResult<Self> {
         let contract = json
             .get("contract")
             .and_then(neo_serialization::json::JToken::as_string)
             .and_then(|s| UInt160::parse(&s).ok())
-            .ok_or("Missing or invalid 'contract' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'contract' field"))?;
 
-        let event_name = required_string(json, "eventname")?;
+        let event_name = required_string(json, "eventname")
+            .map_err(|e| CoreError::other(e.to_string()))?;
 
         let state_json = json
             .get("state")
             .and_then(|v| v.as_object())
-            .ok_or("Missing or invalid 'state' field")?;
-        let state = stack_item_from_json(state_json)?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'state' field"))?;
+        let state = stack_item_from_json(state_json)
+            .map_err(|e| CoreError::other(e.to_string()))?;
 
         Ok(Self {
             contract,

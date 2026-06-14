@@ -257,7 +257,7 @@ impl ApplicationEngine {
         context: &StorageContext,
         prefix: &[u8],
         options: FindOptions,
-    ) -> Result<StorageIterator, String> {
+    ) -> CoreResult<StorageIterator> {
         self.validate_find_options(options)?;
 
         let search_key = StorageKey::new(context.id, prefix.to_vec());

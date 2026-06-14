@@ -12,6 +12,7 @@
 
 use crate::state_root::StateRoot;
 use crate::state_store::StateStore;
+use neo_error::CoreResult;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
@@ -25,7 +26,7 @@ use tracing::{debug, warn};
 /// pluggable MPT implementation.
 pub trait StateRootCalculator: Send + Sync {
     /// Computes the state root for the block's storage change set.
-    fn compute(&self, block_index: u32, snapshot: &DataCache) -> Result<StateRoot, String>;
+    fn compute(&self, block_index: u32, snapshot: &DataCache) -> CoreResult<StateRoot>;
 }
 
 /// Default [`StateRootCalculator`] that hashes the snapshot's
@@ -37,7 +38,7 @@ pub trait StateRootCalculator: Send + Sync {
 pub struct SyntheticStateRootCalculator;
 
 impl StateRootCalculator for SyntheticStateRootCalculator {
-    fn compute(&self, block_index: u32, snapshot: &DataCache) -> Result<StateRoot, String> {
+    fn compute(&self, block_index: u32, snapshot: &DataCache) -> CoreResult<StateRoot> {
         let mut buf = Vec::new();
         for key in snapshot.get_change_set() {
             buf.extend_from_slice(&key.to_array());

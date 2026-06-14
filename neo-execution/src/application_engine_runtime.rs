@@ -4,6 +4,7 @@ use crate::Interoperable;
 use crate::application_engine::{ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE};
 use neo_config::hardfork::Hardfork;
 use neo_crypto::murmur128;
+use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_manifest::ContractParameterDefinition;
 use neo_primitives::ContractParameterType;
@@ -20,47 +21,46 @@ use std::sync::Arc;
 
 impl ApplicationEngine {
     /// Gets the platform name
-    pub fn runtime_platform(&mut self) -> Result<(), String> {
+    pub fn runtime_platform(&mut self) -> CoreResult<()> {
         self.push_string("NEO".to_string())
     }
 
     /// Gets the trigger type
-    pub fn runtime_get_trigger(&mut self) -> Result<(), String> {
+    pub fn runtime_get_trigger(&mut self) -> CoreResult<()> {
         self.push_integer(i64::from(self.trigger_type().bits()))
     }
 
     /// Gets the network magic number
-    pub fn runtime_get_network(&mut self) -> Result<(), String> {
+    pub fn runtime_get_network(&mut self) -> CoreResult<()> {
         self.push_integer(self.protocol_settings().network as i64)
     }
 
     /// Gets the address version of the current network
-    pub fn runtime_get_address_version(&mut self) -> Result<(), String> {
+    pub fn runtime_get_address_version(&mut self) -> CoreResult<()> {
         self.push_integer(self.protocol_settings().address_version as i64)
     }
 
     /// Gets the current block time
-    pub fn runtime_get_time(&mut self) -> Result<(), String> {
+    pub fn runtime_get_time(&mut self) -> CoreResult<()> {
         let time = self.get_current_block_time()?;
         let big = BigInt::from(time);
         self.push(StackItem::from_int(big))
-            .map_err(|e| e.to_string())
     }
 
     /// Gets the script container
-    pub fn runtime_get_script_container(&mut self) -> Result<(), String> {
+    pub fn runtime_get_script_container(&mut self) -> CoreResult<()> {
         let container = self
             .get_script_container()
             .cloned()
-            .ok_or_else(|| "No script container".to_string())?;
+            .ok_or_else(|| CoreError::other("No script container"))?;
 
         if let Some(transaction) = container
             .as_any()
             .downcast_ref::<neo_payloads::Transaction>()
         {
-            self.push(transaction.to_stack_item().map_err(|e| e.to_string())?)
+            self.push(transaction.to_stack_item().map_err(|e| CoreError::other(e.to_string()))?)
         } else {
-            Err("Script container does not implement Interoperable".to_string())
+            Err(CoreError::other("Script container does not implement Interoperable"))
         }
     }
 
@@ -70,17 +70,17 @@ impl ApplicationEngine {
         script: Vec<u8>,
         call_flags: CallFlags,
         args: Vec<StackItem>,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         if call_flags.bits() & !CallFlags::ALL.bits() != 0 {
-            return Err(format!("Invalid call flags: {call_flags:?}"));
+            return Err(CoreError::other(format!("Invalid call flags: {call_flags:?}")));
         }
 
         let calling_context = self
             .current_context()
             .cloned()
-            .ok_or_else(|| "No current execution context".to_string())?;
+            .ok_or_else(|| CoreError::other("No current execution context"))?;
 
-        let state_call_flags = self.get_current_call_flags().map_err(|e| e.to_string())?;
+        let state_call_flags = self.get_current_call_flags()?;
 
         let effective_flags = call_flags & state_call_flags & CallFlags::READ_ONLY;
 
@@ -88,8 +88,7 @@ impl ApplicationEngine {
             state.calling_context = Some(calling_context);
             state.call_flags = effective_flags;
             state.is_dynamic_call = true;
-        })
-        .map_err(|e| e.to_string())?;
+        })?;
 
         for item in args.into_iter().rev() {
             self.push(item)?;
@@ -99,7 +98,7 @@ impl ApplicationEngine {
     }
 
     /// Gets the executing script hash
-    pub fn runtime_get_executing_script_hash(&mut self) -> Result<(), String> {
+    pub fn runtime_get_executing_script_hash(&mut self) -> CoreResult<()> {
         if let Some(hash) = self.current_script_hash() {
             self.push_bytes(hash.to_bytes())
         } else {
@@ -108,7 +107,7 @@ impl ApplicationEngine {
     }
 
     /// Gets the calling script hash
-    pub fn runtime_get_calling_script_hash(&mut self) -> Result<(), String> {
+    pub fn runtime_get_calling_script_hash(&mut self) -> CoreResult<()> {
         let hash = self.get_calling_script_hash();
         if let Some(hash) = hash {
             self.push_bytes(hash.to_bytes())
@@ -118,7 +117,7 @@ impl ApplicationEngine {
     }
 
     /// Gets the entry script hash
-    pub fn runtime_get_entry_script_hash(&mut self) -> Result<(), String> {
+    pub fn runtime_get_entry_script_hash(&mut self) -> CoreResult<()> {
         if let Some(hash) = self.entry_script_hash() {
             self.push_bytes(hash.to_bytes())
         } else {
@@ -127,22 +126,23 @@ impl ApplicationEngine {
     }
 
     /// Checks witness
-    pub fn runtime_check_witness(&mut self) -> Result<(), String> {
+    pub fn runtime_check_witness(&mut self) -> CoreResult<()> {
         let hash_or_pubkey = self.pop_bytes()?;
 
         // Check if it's a hash (20 bytes) or public key (33 bytes)
         let result = match hash_or_pubkey.len() {
             20 => {
-                let hash = UInt160::from_bytes(&hash_or_pubkey).map_err(|e| e.to_string())?;
-                self.check_witness_hash(&hash).map_err(|e| e.to_string())?
+                let hash = UInt160::from_bytes(&hash_or_pubkey)
+                    .map_err(|e| CoreError::other(e.to_string()))?;
+                self.check_witness_hash(&hash)?
             }
             33 => {
                 // Convert public key to hash
                 let hash = self.pubkey_to_hash(&hash_or_pubkey);
-                self.check_witness_hash(&hash).map_err(|e| e.to_string())?
+                self.check_witness_hash(&hash)?
             }
             _ => {
-                return Err("Invalid hashOrPubkey length".to_string());
+                return Err(CoreError::other("Invalid hashOrPubkey length"));
             }
         };
 
@@ -150,15 +150,17 @@ impl ApplicationEngine {
     }
 
     /// Gets invocation counter
-    pub fn runtime_get_invocation_counter(&mut self) -> Result<(), String> {
-        let hash = self.current_script_hash().ok_or("No current script")?;
+    pub fn runtime_get_invocation_counter(&mut self) -> CoreResult<()> {
+        let hash = self
+            .current_script_hash()
+            .ok_or_else(|| CoreError::other("No current script"))?;
 
         let counter = self.get_invocation_counter(&hash);
         self.push_integer(counter as i64)
     }
 
     /// Gets the next random number derived from VRF-like construction (matches C# GetRandom exactly).
-    pub fn runtime_get_random(&mut self) -> Result<(), String> {
+    pub fn runtime_get_random(&mut self) -> CoreResult<()> {
         let network = self.protocol_settings().network;
         let aspid_enabled = self.is_hardfork_enabled(Hardfork::HfAspidochelone);
 
@@ -176,37 +178,36 @@ impl ApplicationEngine {
         // HF_Aspidochelone enabled → price 1<<13 (new per-call counter, more work)
         // HF_Aspidochelone disabled → price 1<<4 (legacy single-shot path)
         let price: i64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };
-        self.add_cpu_fee(price).map_err(|e| e.to_string())?;
+        self.add_cpu_fee(price)?;
 
         let bigint = BigInt::from_bytes_le(Sign::Plus, &buffer);
         self.push(StackItem::from_int(bigint))
-            .map_err(|e| e.to_string())
     }
 
     /// Gets the remaining GAS available for execution (matches C# GasLeft).
-    pub fn runtime_gas_left(&mut self) -> Result<(), String> {
+    pub fn runtime_gas_left(&mut self) -> CoreResult<()> {
         self.push_integer(self.gas_left())
     }
 
     /// Logs a message
-    pub fn runtime_log(&mut self) -> Result<(), String> {
+    pub fn runtime_log(&mut self) -> CoreResult<()> {
         let message_bytes = self.pop_bytes()?;
 
         if message_bytes.len() > MAX_NOTIFICATION_SIZE {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "Notification size {} exceeds maximum allowed size of {} bytes",
                 message_bytes.len(),
                 MAX_NOTIFICATION_SIZE
-            ));
+            )));
         }
 
         let message = StdString::from_utf8(message_bytes).map_err(|_| {
-            "Failed to convert byte array to string: Invalid UTF-8 sequence".to_string()
+            CoreError::other("Failed to convert byte array to string: Invalid UTF-8 sequence")
         })?;
 
         let container = self
             .script_container()
-            .ok_or_else(|| "No script container".to_string())?;
+            .ok_or_else(|| CoreError::other("No script container"))?;
 
         let script_hash = self.current_script_hash().unwrap_or_else(UInt160::zero);
 
@@ -217,7 +218,7 @@ impl ApplicationEngine {
     }
 
     /// Sends a notification
-    pub fn runtime_notify(&mut self) -> Result<(), String> {
+    pub fn runtime_notify(&mut self) -> CoreResult<()> {
         // Match C# interop argument binding order:
         // System.Runtime.Notify(eventName, state)
         // OnSysCall pops arguments from stack in declaration order, so event name
@@ -226,11 +227,11 @@ impl ApplicationEngine {
         let state = self.pop_array()?;
 
         if event_name.len() > MAX_EVENT_NAME {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "Event name size {} exceeds maximum allowed size of {} bytes",
                 event_name.len(),
                 MAX_EVENT_NAME
-            ));
+            )));
         }
 
         if !self.is_hardfork_enabled(Hardfork::HfBasilisk) {
@@ -244,15 +245,15 @@ impl ApplicationEngine {
         &mut self,
         event_name_bytes: Vec<u8>,
         state: Vec<StackItem>,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         let event_name = StdString::from_utf8(event_name_bytes)
-            .map_err(|_| "Failed to convert event name to UTF-8 string".to_string())?;
+            .map_err(|_| CoreError::other("Failed to convert event name to UTF-8 string"))?;
 
         {
-            let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
+            let state_arc = self.current_execution_state()?;
             let state_guard = state_arc.lock();
             if state_guard.contract.is_none() {
-                return Err("Notifications are not allowed in dynamic scripts.".to_string());
+                return Err(CoreError::other("Notifications are not allowed in dynamic scripts."));
             }
         }
 
@@ -268,19 +269,19 @@ impl ApplicationEngine {
         &mut self,
         event_name_bytes: Vec<u8>,
         state: Vec<StackItem>,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         let event_name = StdString::from_utf8(event_name_bytes)
-            .map_err(|_| "Failed to convert event name to UTF-8 string".to_string())?;
+            .map_err(|_| CoreError::other("Failed to convert event name to UTF-8 string"))?;
 
         let script_hash = self.current_script_hash().unwrap_or_else(UInt160::zero);
 
         let parameters = {
-            let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
+            let state_arc = self.current_execution_state()?;
             let guard = state_arc.lock();
             let contract = guard
                 .contract
                 .clone()
-                .ok_or_else(|| "Notifications are not allowed in dynamic scripts.".to_string())?;
+                .ok_or_else(|| CoreError::other("Notifications are not allowed in dynamic scripts."))?;
             let event = contract
                 .manifest
                 .abi
@@ -288,15 +289,14 @@ impl ApplicationEngine {
                 .iter()
                 .find(|descriptor| descriptor.name == event_name)
                 .cloned()
-                .ok_or_else(|| format!("Event `{}` does not exist.", event_name))?;
+                .ok_or_else(|| CoreError::other(format!("Event `{}` does not exist.", event_name)))?;
             event.parameters
         };
 
         if parameters.len() != state.len() {
-            return Err(
-                "The number of the arguments does not match the formal parameters of the event."
-                    .to_string(),
-            );
+            return Err(CoreError::other(
+                "The number of the arguments does not match the formal parameters of the event.",
+            ));
         }
 
         validate_event_parameters(&state, &parameters)?;
@@ -307,16 +307,16 @@ impl ApplicationEngine {
     }
 
     /// Gets notifications
-    pub fn runtime_get_notifications(&mut self) -> Result<(), String> {
+    pub fn runtime_get_notifications(&mut self) -> CoreResult<()> {
         let hash = if self.peek_is_null(0)? {
             self.pop()?;
             None
         } else {
             let bytes = self.pop_bytes()?;
             if bytes.len() != 20 {
-                return Err("Invalid hash length".to_string());
+                return Err(CoreError::other("Invalid hash length"));
             }
-            Some(UInt160::from_bytes(&bytes).map_err(|e| e.to_string())?)
+            Some(UInt160::from_bytes(&bytes).map_err(|e| CoreError::other(e.to_string()))?)
         };
 
         // Get notifications for the specified contract (or all if None)
@@ -326,19 +326,18 @@ impl ApplicationEngine {
     }
 
     /// Burns gas
-    pub fn runtime_burn_gas(&mut self, amount: i64) -> Result<(), String> {
+    pub fn runtime_burn_gas(&mut self, amount: i64) -> CoreResult<()> {
         if amount <= 0 {
-            return Err("GAS must be positive.".to_string());
+            return Err(CoreError::other("GAS must be positive."));
         }
 
-        let datoshi = u64::try_from(amount).map_err(|_| "GAS amount overflow".to_string())?;
-        self.charge_execution_fee(datoshi)
-            .map_err(|e| e.to_string())?;
+        let datoshi = u64::try_from(amount).map_err(|_| CoreError::other("GAS amount overflow"))?;
+        self.charge_execution_fee(datoshi)?;
         Ok(())
     }
 
     /// Gets the signers of the current transaction (matches C# GetCurrentSigners).
-    pub fn runtime_current_signers(&mut self) -> Result<(), String> {
+    pub fn runtime_current_signers(&mut self) -> CoreResult<()> {
         let Some(container) = self.get_script_container() else {
             return self.push_null();
         };
@@ -354,16 +353,17 @@ impl ApplicationEngine {
         let items = tx
             .signers()
             .iter()
-            .map(|s| s.to_stack_item().map_err(|e| e.to_string()))
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+            .map(|s| s.to_stack_item().map_err(|e| CoreError::other(e.to_string())))
+            .collect::<CoreResult<Vec<_>>>()?;
 
         self.push_array(items)
     }
 }
-fn map_runtime_result(service: &str, result: Result<(), String>) -> VmResult<()> {
+
+fn map_runtime_result(service: &str, result: CoreResult<()>) -> VmResult<()> {
     result.map_err(|error| VmError::InteropService {
         service: service.to_string(),
-        error,
+        error: error.to_string(),
     })
 }
 
@@ -421,27 +421,27 @@ fn runtime_load_script_handler(
 ) -> VmResult<()> {
     let args = app.pop_array().map_err(|e| VmError::InteropService {
         service: "System.Runtime.LoadScript".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
     let call_flags_value = app.pop_integer().map_err(|e| VmError::InteropService {
         service: "System.Runtime.LoadScript".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
     let script = app.pop_bytes().map_err(|e| VmError::InteropService {
         service: "System.Runtime.LoadScript".to_string(),
-        error: e,
+        error: e.to_string(),
     })?;
 
-    let result = (|| {
+    let result = (|| -> CoreResult<()> {
         if call_flags_value < 0 || call_flags_value > u8::MAX as i64 {
-            return Err("Invalid call flags value".to_string());
+            return Err(CoreError::other("Invalid call flags value"));
         }
 
         let raw = call_flags_value as u8;
         let Some(call_flags) = CallFlags::from_bits(raw) else {
-            return Err(format!("Invalid call flags: {call_flags_value}"));
+            return Err(CoreError::other(format!("Invalid call flags: {call_flags_value}")));
         };
 
         app.runtime_load_script(script, call_flags, args)
@@ -678,13 +678,13 @@ pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmRes
 fn validate_event_parameters(
     state: &[StackItem],
     parameters: &[ContractParameterDefinition],
-) -> Result<(), String> {
+) -> CoreResult<()> {
     for (item, parameter) in state.iter().zip(parameters.iter()) {
         if !matches_parameter_type(item, parameter.param_type) {
-            return Err(format!(
+            return Err(CoreError::other(format!(
                 "The type of the argument `{}` does not match the formal parameter.",
                 parameter.name
-            ));
+            )));
         }
     }
     Ok(())

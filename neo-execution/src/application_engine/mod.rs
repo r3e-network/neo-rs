@@ -137,7 +137,7 @@ pub const CHECK_SIG_PRICE: i64 = 1 << 15;
 pub const FEE_FACTOR: i64 = 10000;
 
 type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
-type StdResult<T> = std::result::Result<T, String>;
+type StdResult<T> = CoreResult<T>;
 
 #[derive(Clone, Copy)]
 struct HostInteropHandler {

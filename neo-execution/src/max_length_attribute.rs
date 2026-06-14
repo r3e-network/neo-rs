@@ -1,5 +1,6 @@
 //! MaxLengthAttribute - matches C# Neo.SmartContract.MaxLengthAttribute exactly
 
+use neo_error::{CoreError, CoreResult};
 use neo_manifest::ValidatorAttribute;
 use neo_vm_rs::StackValue;
 
@@ -18,7 +19,7 @@ impl MaxLengthAttribute {
 }
 
 impl ValidatorAttribute for MaxLengthAttribute {
-    fn validate(&self, item: &StackValue) -> Result<(), String> {
+    fn validate(&self, item: &StackValue) -> CoreResult<()> {
         let length = match item {
             StackValue::Boolean(_) | StackValue::Integer(_) | StackValue::BigInteger(_) => item
                 .to_byte_string_bytes()
@@ -32,7 +33,7 @@ impl ValidatorAttribute for MaxLengthAttribute {
         };
 
         if length > self.max_length {
-            Err("The input exceeds the maximum length.".to_string())
+            Err(CoreError::other("The input exceeds the maximum length."))
         } else {
             Ok(())
         }

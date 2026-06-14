@@ -1,6 +1,6 @@
 //! ContractParameterDefinition - matches C# Neo.SmartContract.Manifest.ContractParameterDefinition exactly
 
-use neo_error::CoreError;
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::ContractParameterType;
 use neo_vm::Interoperable;
 use neo_vm::StackItem;
@@ -20,34 +20,37 @@ pub struct ContractParameterDefinition {
 
 impl ContractParameterDefinition {
     /// Creates a new parameter definition
-    pub fn new(name: String, param_type: ContractParameterType) -> Result<Self, String> {
+    pub fn new(name: String, param_type: ContractParameterType) -> CoreResult<Self> {
         if name.is_empty() {
-            return Err("Parameter name cannot be empty".to_string());
+            return Err(CoreError::other("Parameter name cannot be empty"));
         }
 
         if param_type == ContractParameterType::Void {
-            return Err("Parameter type cannot be Void".to_string());
+            return Err(CoreError::other("Parameter type cannot be Void"));
         }
 
         Ok(Self { name, param_type })
     }
 
     /// Creates from JSON
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
-        let obj = json.as_object().ok_or("Expected object")?;
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected object"))?;
 
         let name = obj
             .get("name")
             .and_then(|v| v.as_str())
-            .ok_or("Missing name")?
+            .ok_or_else(|| CoreError::other("Missing name"))?
             .to_string();
 
         let type_str = obj
             .get("type")
             .and_then(|v| v.as_str())
-            .ok_or("Missing type")?;
+            .ok_or_else(|| CoreError::other("Missing type"))?;
 
-        let param_type = ContractParameterType::from_string(type_str)?;
+        let param_type =
+            ContractParameterType::from_string(type_str).map_err(CoreError::other)?;
 
         Self::new(name, param_type)
     }

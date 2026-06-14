@@ -8,9 +8,9 @@ impl ApplicationEngine {
             .map(|item| item.value_bytes().into_owned())
     }
 
-    pub(super) fn validate_find_options(&self, options: FindOptions) -> Result<(), String> {
+    pub(super) fn validate_find_options(&self, options: FindOptions) -> CoreResult<()> {
         if options.bits() & !FindOptions::All.bits() != 0 {
-            return Err(format!("Invalid FindOptions value: {options:?}"));
+            return Err(CoreError::other(format!("Invalid FindOptions value: {options:?}")));
         }
 
         let keys_only = options.contains(FindOptions::KeysOnly);
@@ -20,19 +20,19 @@ impl ApplicationEngine {
         let pick_field1 = options.contains(FindOptions::PickField1);
 
         if keys_only && (values_only || deserialize || pick_field0 || pick_field1) {
-            return Err("KeysOnly cannot be used with ValuesOnly, DeserializeValues, PickField0, or PickField1".to_string());
+            return Err(CoreError::other("KeysOnly cannot be used with ValuesOnly, DeserializeValues, PickField0, or PickField1"));
         }
 
         if values_only && (keys_only || options.contains(FindOptions::RemovePrefix)) {
-            return Err("ValuesOnly cannot be used with KeysOnly or RemovePrefix".to_string());
+            return Err(CoreError::other("ValuesOnly cannot be used with KeysOnly or RemovePrefix"));
         }
 
         if pick_field0 && pick_field1 {
-            return Err("PickField0 and PickField1 cannot be used together".to_string());
+            return Err(CoreError::other("PickField0 and PickField1 cannot be used together"));
         }
 
         if (pick_field0 || pick_field1) && !deserialize {
-            return Err("PickField0 or PickField1 requires DeserializeValues".to_string());
+            return Err(CoreError::other("PickField0 or PickField1 requires DeserializeValues"));
         }
 
         Ok(())
@@ -93,35 +93,35 @@ impl ApplicationEngine {
     pub fn push_interop_container(
         &mut self,
         _container: Arc<dyn Verifiable>,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         // Iterator/interop handles are carried as integer stack items; the
         // concrete object lives in the engine-side `storage_iterators` table.
         self.push(StackItem::from_i64(0))
     }
 
-    pub fn pop_iterator_id(&mut self) -> Result<u32, String> {
+    pub fn pop_iterator_id(&mut self) -> CoreResult<u32> {
         let item = self.pop()?;
         let identifier = item
             .into_int()
-            .map_err(|e| e.to_string())?
+            .map_err(|e| CoreError::other(e.to_string()))?
             .to_u32()
-            .ok_or_else(|| "Iterator identifier out of range".to_string())?;
+            .ok_or_else(|| CoreError::other("Iterator identifier out of range"))?;
         Ok(identifier)
     }
 
-    pub fn iterator_next_internal(&mut self, iterator_id: u32) -> Result<bool, String> {
+    pub fn iterator_next_internal(&mut self, iterator_id: u32) -> CoreResult<bool> {
         let iterator = self
             .storage_iterators
             .get_mut(&iterator_id)
-            .ok_or_else(|| format!("Iterator {} not found", iterator_id))?;
+            .ok_or_else(|| CoreError::other(format!("Iterator {} not found", iterator_id)))?;
         Ok(iterator.next())
     }
 
-    pub fn iterator_value_internal(&self, iterator_id: u32) -> Result<StackItem, String> {
+    pub fn iterator_value_internal(&self, iterator_id: u32) -> CoreResult<StackItem> {
         let iterator = self
             .storage_iterators
             .get(&iterator_id)
-            .ok_or_else(|| format!("Iterator {} not found", iterator_id))?;
+            .ok_or_else(|| CoreError::other(format!("Iterator {} not found", iterator_id)))?;
         Ok(iterator.value())
     }
 

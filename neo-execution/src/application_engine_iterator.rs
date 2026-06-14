@@ -4,10 +4,10 @@ use crate::application_engine::ApplicationEngine;
 use neo_manifest::CallFlags;
 use neo_vm::{ExecutionEngine, VmError, VmResult};
 
-fn map_iterator_error(service: &str, error: String) -> VmError {
+fn map_iterator_error(service: &str, error: impl std::fmt::Display) -> VmError {
     VmError::InteropService {
         service: service.to_string(),
-        error,
+        error: error.to_string(),
     }
 }
 

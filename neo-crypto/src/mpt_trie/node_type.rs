@@ -1,5 +1,6 @@
 //! MPT Node Type enumeration matching C# Neo.Cryptography.MPTTrie.NodeType
 
+use neo_error::{CoreError, CoreResult};
 use serde::{Deserialize, Serialize};
 
 /// Node types in the Merkle Patricia Trie
@@ -20,14 +21,14 @@ pub enum NodeType {
 
 impl NodeType {
     /// Convert from byte representation
-    pub fn from_byte(b: u8) -> Result<Self, String> {
+    pub fn from_byte(b: u8) -> CoreResult<Self> {
         match b {
             0x00 => Ok(Self::BranchNode),
             0x01 => Ok(Self::ExtensionNode),
             0x02 => Ok(Self::LeafNode),
             0x03 => Ok(Self::HashNode),
             0x04 => Ok(Self::Empty),
-            _ => Err(format!("Invalid NodeType byte: {b}")),
+            _ => Err(CoreError::other(format!("Invalid NodeType byte: {b}"))),
         }
     }
 

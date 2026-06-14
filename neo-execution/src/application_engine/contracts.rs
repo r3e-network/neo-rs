@@ -545,7 +545,7 @@ impl ApplicationEngine {
 
         // The callee returned: its RET moved exactly one item (`rvcount = 1`)
         // onto the native frame's evaluation stack.
-        self.pop().map_err(CoreError::invalid_operation)
+        self.pop()
     }
 
     /// Queues a contract call requested by a native contract.

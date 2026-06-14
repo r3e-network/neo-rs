@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use crate::{ContractClient, RpcClient, RpcError, RpcUtility};
+use neo_error::{CoreError, CoreResult};
 use neo_native_contracts::PolicyContract;
 use neo_primitives::UInt160;
 use num_traits::cast::ToPrimitive;
@@ -134,7 +135,7 @@ mod tests {
         item
     }
 
-    fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), String> {
+    fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> CoreResult<()> {
         match arg {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);
@@ -152,7 +153,7 @@ mod tests {
                     sb.emit_push_int(u as i64);
                     Ok(())
                 } else {
-                    Err("Invalid number format".to_string())
+                    Err(CoreError::other("Invalid number format"))
                 }
             }
             serde_json::Value::String(s) => {
@@ -167,7 +168,7 @@ mod tests {
                 sb.emit_pack();
                 Ok(())
             }
-            _ => Err("Unsupported argument type".to_string()),
+            _ => Err(CoreError::other("Unsupported argument type")),
         }
     }
 

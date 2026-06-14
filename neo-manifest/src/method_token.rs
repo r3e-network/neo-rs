@@ -8,6 +8,7 @@
 //! family. The `Serializable` impl lives here too because the
 //! on-wire encoding is a pure data concern.
 
+use neo_error::{CoreError, CoreResult};
 use neo_io::serializable::helper::get_var_size_str;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{CallFlags, UInt160};
@@ -56,12 +57,12 @@ impl MethodToken {
         parameters_count: u16,
         has_return_value: bool,
         call_flags: CallFlags,
-    ) -> Result<Self, String> {
+    ) -> CoreResult<Self> {
         if method.starts_with('_') {
-            return Err("Method name cannot start with underscore".to_string());
+            return Err(CoreError::other("Method name cannot start with underscore"));
         }
         if method.len() > Self::MAX_METHOD_LENGTH {
-            return Err("Method name too long".to_string());
+            return Err(CoreError::other("Method name too long"));
         }
         Ok(Self {
             hash,
@@ -84,20 +85,20 @@ impl MethodToken {
     }
 
     /// Creates from JSON representation.
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
         let obj = json
             .as_object()
-            .ok_or_else(|| "Expected object for MethodToken".to_string())?;
+            .ok_or_else(|| CoreError::other("Expected object for MethodToken"))?;
         let hash = obj
             .get("hash")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing hash".to_string())?
+            .ok_or_else(|| CoreError::other("Missing hash"))?
             .parse()
-            .map_err(|e| format!("Invalid hash: {e}"))?;
+            .map_err(|e| CoreError::other(format!("Invalid hash: {e}")))?;
         let method = obj
             .get("method")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing method".to_string())?
+            .ok_or_else(|| CoreError::other("Missing method"))?
             .to_string();
         let parameters_count = obj.get("paramcount").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
         let has_return_value = obj
@@ -106,7 +107,7 @@ impl MethodToken {
             .unwrap_or(false);
         let call_flags_bits = obj.get("callflags").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
         let call_flags = CallFlags::from_bits(call_flags_bits)
-            .ok_or_else(|| "Invalid call flags".to_string())?;
+            .ok_or_else(|| CoreError::other("Invalid call flags"))?;
         Self::new(hash, method, parameters_count, has_return_value, call_flags)
     }
 }

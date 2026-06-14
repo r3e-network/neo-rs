@@ -12,6 +12,7 @@
 use super::super::utility::{
     object_array, parse_number_or_string_token, parse_optional_present_token_array_strict,
 };
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -52,7 +53,7 @@ impl RpcPeers {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let unconnected = parse_peer_list(json, "unconnected")?;
         let bad = parse_peer_list(json, "bad")?;
         let connected = parse_peer_list(json, "connected")?;
@@ -88,29 +89,32 @@ impl RpcPeer {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let address = json
             .get("address")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'address' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'address' field"))?;
 
-        let port_token = json.get("port").ok_or("Missing or invalid 'port' field")?;
+        let port_token = json
+            .get("port")
+            .ok_or_else(|| CoreError::other("Missing or invalid 'port' field"))?;
         let port = parse_number_or_string_token(
             port_token,
             "port",
             "Invalid 'port' field type",
             |value| value as i32,
-        )?;
+        )
+        .map_err(|e| CoreError::other(e.to_string()))?;
 
         Ok(Self { address, port })
     }
 }
 
-fn parse_peer_list(json: &JObject, field: &str) -> Result<Vec<RpcPeer>, String> {
+fn parse_peer_list(json: &JObject, field: &str) -> CoreResult<Vec<RpcPeer>> {
     parse_optional_present_token_array_strict(json, field, |token| {
         token
             .as_object()
-            .ok_or_else(|| format!("{field} entry must be an object"))
+            .ok_or_else(|| CoreError::other(format!("{field} entry must be an object")))
             .and_then(RpcPeer::from_json)
     })
 }
@@ -198,7 +202,9 @@ mod tests {
         );
         let parsed = RpcPeers::from_json(&invalid);
         assert_eq!(
-            parsed.expect_err("peer parse error propagates"),
+            parsed
+                .expect_err("peer parse error propagates")
+                .to_string(),
             "Missing or invalid 'port' field"
         );
     }

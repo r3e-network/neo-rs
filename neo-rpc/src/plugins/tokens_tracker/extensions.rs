@@ -3,6 +3,7 @@
 //! Utility functions for serialization size calculation and database queries.
 
 use base64::Engine;
+use neo_error::{CoreError, CoreResult};
 use neo_io::serializable::helper::get_var_size_bytes;
 use neo_io::{MemoryReader, Serializable};
 use neo_storage::persistence::{SeekDirection, Store};
@@ -27,7 +28,7 @@ pub fn bigint_var_size(value: &BigInt) -> usize {
 pub fn find_prefix<TKey, TValue>(
     db: &dyn Store,
     prefix: &[u8],
-) -> Result<Vec<(TKey, TValue)>, String>
+) -> CoreResult<Vec<(TKey, TValue)>>
 where
     TKey: Serializable,
     TValue: Serializable,
@@ -42,10 +43,10 @@ where
         }
 
         let mut key_reader = MemoryReader::new(&key_bytes[1..]);
-        let key = TKey::deserialize(&mut key_reader).map_err(|e| e.to_string())?;
+        let key = TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
         let mut value_reader = MemoryReader::new(&value_bytes);
-        let value = TValue::deserialize(&mut value_reader).map_err(|e| e.to_string())?;
+        let value = TValue::deserialize(&mut value_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
         results.push((key, value));
     }
@@ -58,7 +59,7 @@ pub fn find_range<TKey, TValue>(
     db: &dyn Store,
     start_key: &[u8],
     end_key: &[u8],
-) -> Result<Vec<(TKey, TValue)>, String>
+) -> CoreResult<Vec<(TKey, TValue)>>
 where
     TKey: Serializable,
     TValue: Serializable,
@@ -73,10 +74,10 @@ where
         }
 
         let mut key_reader = MemoryReader::new(&key_bytes[1..]);
-        let key = TKey::deserialize(&mut key_reader).map_err(|e| e.to_string())?;
+        let key = TKey::deserialize(&mut key_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
         let mut value_reader = MemoryReader::new(&value_bytes);
-        let value = TValue::deserialize(&mut value_reader).map_err(|e| e.to_string())?;
+        let value = TValue::deserialize(&mut value_reader).map_err(|e| CoreError::other(e.to_string()))?;
 
         results.push((key, value));
     }

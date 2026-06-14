@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::parse_number_or_string_token;
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
@@ -40,19 +41,20 @@ impl RpcValidator {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let public_key = json
             .get("publickey")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'publickey' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'publickey' field"))?;
 
         let votes_token = json
             .get("votes")
-            .ok_or("Missing or invalid 'votes' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'votes' field"))?;
         let votes =
             parse_number_or_string_token(votes_token, "votes", "Invalid 'votes' field", |value| {
                 BigInt::from(value as i64)
-            })?;
+            })
+            .map_err(|e| CoreError::other(e.to_string()))?;
 
         Ok(Self { public_key, votes })
     }

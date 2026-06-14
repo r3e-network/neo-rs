@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::{base64_string_token, object_array, optional_base64_field_lossy};
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -32,11 +33,11 @@ pub struct RpcFoundStates {
 impl RpcFoundStates {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let truncated = json
             .get("truncated")
             .map(neo_serialization::json::JToken::as_boolean)
-            .ok_or("Missing or invalid 'truncated' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'truncated' field"))?;
 
         let results = json
             .get("results")

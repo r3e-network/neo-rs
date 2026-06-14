@@ -1,5 +1,6 @@
 //! SSRF protection and URL validation for Oracle service.
 
+use neo_error::{CoreError, CoreResult};
 use std::net::IpAddr;
 
 /// Checks if a host is an internal/private host that should be blocked.
@@ -94,32 +95,35 @@ pub(crate) fn is_internal_ip(ip: IpAddr) -> bool {
 
 /// Validates a URL for SSRF protection.
 /// Returns Ok(()) if the URL is safe, Err with reason otherwise.
-pub fn validate_url_for_ssrf(url: &str) -> Result<(), String> {
-    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+pub fn validate_url_for_ssrf(url: &str) -> CoreResult<()> {
+    let parsed =
+        url::Url::parse(url).map_err(|e| CoreError::other(format!("Invalid URL: {}", e)))?;
 
     // Validate scheme
     let scheme = parsed.scheme();
     if !matches!(scheme, "http" | "https") {
-        return Err(format!("Unsupported scheme: {}", scheme));
+        return Err(CoreError::other(format!("Unsupported scheme: {}", scheme)));
     }
 
     // Check for credentials in URL (potential security risk)
     if parsed.username() != "" || parsed.password().is_some() {
-        return Err("URLs with credentials are not allowed".to_string());
+        return Err(CoreError::other("URLs with credentials are not allowed"));
     }
 
     // Check for non-standard ports
     if let Some(port) = parsed.port() {
         // Note: port is u16, so max is 65535 - only check for 0
         if port == 0 {
-            return Err("Invalid port number".to_string());
+            return Err(CoreError::other("Invalid port number"));
         }
         // Block common internal service ports
         if matches!(
             port,
             22 | 23 | 25 | 53 | 110 | 143 | 993 | 995 | 3306 | 5432 | 6379 | 27017 | 9200 | 9300
         ) {
-            return Err("Port not allowed for security reasons".to_string());
+            return Err(CoreError::other(
+                "Port not allowed for security reasons",
+            ));
         }
     }
 
@@ -127,19 +131,23 @@ pub fn validate_url_for_ssrf(url: &str) -> Result<(), String> {
     if let Some(host) = parsed.host_str() {
         // Block IPv4-mapped IPv6 addresses
         if host.starts_with("[::ffff:") || host.starts_with("[0:0:0:0:0:ffff:") {
-            return Err("IPv4-mapped IPv6 addresses are not allowed".to_string());
+            return Err(CoreError::other(
+                "IPv4-mapped IPv6 addresses are not allowed",
+            ));
         }
 
         // Block URL-encoded hosts
         if host.contains('%') {
-            return Err("URL-encoded hosts are not allowed".to_string());
+            return Err(CoreError::other("URL-encoded hosts are not allowed"));
         }
 
         // Block hosts that look like IP addresses with leading zeros (octal bypass)
         if host.split('.').any(|part| {
             part.len() > 1 && part.starts_with('0') && part.chars().all(|c| c.is_ascii_digit())
         }) {
-            return Err("IP addresses with octal notation are not allowed".to_string());
+            return Err(CoreError::other(
+                "IP addresses with octal notation are not allowed",
+            ));
         }
     }
 

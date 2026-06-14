@@ -1,5 +1,6 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
+use neo_error::{CoreError, CoreResult};
 use neo_io::serializable::Serializable;
 use neo_io::serializable::helper::get_var_size;
 use neo_payloads::{Block, BlockHeader, Signer, Transaction};
@@ -81,8 +82,8 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
 pub fn block_from_json(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
-    header_parser: fn(&JObject, &ProtocolSettings) -> Result<BlockHeader, String>,
-) -> Result<Block, String> {
+    header_parser: fn(&JObject, &ProtocolSettings) -> CoreResult<BlockHeader>,
+) -> CoreResult<Block> {
     let header = header_parser(json, protocol_settings)?;
 
     let transactions = parse_optional_token_array_strict(
@@ -92,7 +93,7 @@ pub fn block_from_json(
         |token| {
             let obj = token
                 .as_object()
-                .ok_or_else(|| "Transaction entry must be an object".to_string())?;
+                .ok_or_else(|| CoreError::other("Transaction entry must be an object"))?;
             transaction_from_json(obj, protocol_settings)
         },
     )?;
@@ -168,7 +169,7 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
 pub fn transaction_from_json(
     json: &JObject,
     _protocol_settings: &ProtocolSettings,
-) -> Result<Transaction, String> {
+) -> CoreResult<Transaction> {
     let mut tx = Transaction::new();
 
     if let Some(version) = json
@@ -183,9 +184,9 @@ pub fn transaction_from_json(
             number as u32
         } else if let Some(text) = nonce_token.as_string() {
             text.parse::<u32>()
-                .map_err(|err| format!("Invalid nonce value: {err}"))?
+                .map_err(|err| CoreError::other(format!("Invalid nonce value: {err}")))?
         } else {
-            return Err("Invalid 'nonce' field".to_string());
+            return Err(CoreError::other("Invalid 'nonce' field"));
         };
         tx.set_nonce(nonce);
     }
@@ -211,7 +212,8 @@ pub fn transaction_from_json(
         "Signer entry must be an object",
         |token| {
             let signer_json = jtoken_to_serde(token)?;
-            Signer::from_json(&signer_json).map_err(|err| format!("Invalid signer entry: {err}"))
+            Signer::from_json(&signer_json)
+                .map_err(|err| CoreError::other(format!("Invalid signer entry: {err}")))
         },
     )?;
     if !parsed_signers.is_empty() {
@@ -225,7 +227,7 @@ pub fn transaction_from_json(
         |token| {
             let attr_obj = token
                 .as_object()
-                .ok_or_else(|| "Transaction attribute must be an object".to_string())?;
+                .ok_or_else(|| CoreError::other("Transaction attribute must be an object"))?;
             attribute_from_json(attr_obj)
         },
     )?;
@@ -236,10 +238,10 @@ pub fn transaction_from_json(
     if let Some(script_token) = json.get("script") {
         let script_str = script_token
             .as_string()
-            .ok_or("Missing or invalid 'script' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'script' field"))?;
         let script_bytes = general_purpose::STANDARD
             .decode(script_str.as_bytes())
-            .map_err(|err| format!("Invalid 'script' value: {err}"))?;
+            .map_err(|err| CoreError::other(format!("Invalid 'script' value: {err}")))?;
         tx.set_script(script_bytes);
     }
 
@@ -250,7 +252,7 @@ pub fn transaction_from_json(
         |token| {
             let witness_obj = token
                 .as_object()
-                .ok_or_else(|| "Witness entry must be an object".to_string())?;
+                .ok_or_else(|| CoreError::other("Witness entry must be an object"))?;
             payload_witness_from_json(witness_obj)
         },
     )?;
@@ -261,7 +263,10 @@ pub fn transaction_from_json(
     Ok(tx)
 }
 
-fn signer_to_json(signer: &neo_payloads::Signer, _protocol_settings: &ProtocolSettings) -> JObject {
+fn signer_to_json(
+    signer: &neo_payloads::Signer,
+    _protocol_settings: &ProtocolSettings,
+) -> JObject {
     let mut json = JObject::new();
     json.insert(
         "account".to_string(),

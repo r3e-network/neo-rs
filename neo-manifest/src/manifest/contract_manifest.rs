@@ -251,7 +251,7 @@ impl ContractManifest {
         }
 
         // Validate ABI
-        self.abi.validate().map_err(CoreError::invalid_data)?;
+        self.abi.validate()?;
 
         Ok(())
     }

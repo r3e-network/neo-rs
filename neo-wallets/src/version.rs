@@ -3,6 +3,7 @@
 //! The C# implementation relies on `System.Version`. We mirror only the
 //! functionality that is required by the current Rust port.
 
+use neo_error::{CoreError, CoreResult};
 use std::fmt;
 use std::str::FromStr;
 
@@ -25,7 +26,7 @@ impl Version {
     }
 
     /// Parses a dotted version string (e.g. "1.0.0").
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> CoreResult<Self> {
         value.parse()
     }
 
@@ -52,28 +53,28 @@ impl fmt::Display for Version {
 }
 
 impl FromStr for Version {
-    type Err = String;
+    type Err = CoreError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('.');
         let major = parts
             .next()
-            .ok_or_else(|| "missing major component".to_string())?
+            .ok_or_else(|| CoreError::other("missing major component"))?
             .parse()
-            .map_err(|e| format!("invalid major component: {e}"))?;
+            .map_err(|e| CoreError::other(format!("invalid major component: {e}")))?;
         let minor = parts
             .next()
-            .ok_or_else(|| "missing minor component".to_string())?
+            .ok_or_else(|| CoreError::other("missing minor component"))?
             .parse()
-            .map_err(|e| format!("invalid minor component: {e}"))?;
+            .map_err(|e| CoreError::other(format!("invalid minor component: {e}")))?;
         let build = parts
             .next()
             .unwrap_or("0")
             .parse()
-            .map_err(|e| format!("invalid build component: {e}"))?;
+            .map_err(|e| CoreError::other(format!("invalid build component: {e}")))?;
 
         if parts.next().is_some() {
-            return Err("too many components".to_string());
+            return Err(CoreError::other("too many components"));
         }
 
         Ok(Self::new(major, minor, build))

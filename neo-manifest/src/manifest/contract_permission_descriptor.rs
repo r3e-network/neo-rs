@@ -2,6 +2,7 @@
 
 use super::contract_group::ContractGroup;
 use neo_crypto::ECPoint;
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
@@ -61,7 +62,7 @@ impl ContractPermissionDescriptor {
     }
 
     /// Creates from JSON
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
         if let Some(s) = json.as_str() {
             if s == "*" {
                 return Ok(ContractPermissionDescriptor::Wildcard);
@@ -72,11 +73,11 @@ impl ContractPermissionDescriptor {
             }
             // Try to parse as public key
             if let Ok(bytes) = hex::decode(s) {
-                let key = ECPoint::from_bytes(&bytes).map_err(|e| e.to_string())?;
+                let key = ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(e.to_string()))?;
                 return Ok(ContractPermissionDescriptor::Group(key));
             }
         }
-        Err("Invalid permission descriptor".to_string())
+        Err(CoreError::other("Invalid permission descriptor"))
     }
 
     /// Converts to JSON
@@ -113,29 +114,29 @@ impl ContractPermissionDescriptor {
     }
 
     /// Creates a descriptor from a neo-vm-rs stack value encoded form.
-    pub fn from_stack_value(stack_value: StackValue) -> Result<Self, String> {
+    pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),
             StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Self::from_bytes(&bytes),
-            other => Err(format!(
+            other => Err(CoreError::other(format!(
                 "Unsupported stack value type for ContractPermissionDescriptor: {:?}",
                 other
-            )),
+            ))),
         }
     }
 
     /// Creates a descriptor from a stack item encoded form.
-    pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
+    pub fn from_stack_item(item: &StackItem) -> CoreResult<Self> {
         Self::from_stack_value(StackValue::try_from(item.clone()).map_err(|_| {
-            format!(
+            CoreError::other(format!(
                 "Unsupported stack item type for ContractPermissionDescriptor: {:?}",
                 item.stack_item_type()
-            )
+            ))
         })?)
     }
 
     /// Builds a descriptor from raw bytes.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    pub fn from_bytes(bytes: &[u8]) -> CoreResult<Self> {
         // C# encodes Wildcard as ByteString("*") (single byte 0x2A)
         if bytes == b"*" {
             return Ok(Self::create_wildcard());
@@ -143,12 +144,17 @@ impl ContractPermissionDescriptor {
         match bytes.len() {
             0 => Ok(Self::create_wildcard()),
             20 => Ok(Self::create_hash(
-                UInt160::from_bytes(bytes).map_err(|e| format!("Invalid UInt160 bytes: {}", e))?,
+                UInt160::from_bytes(bytes)
+                    .map_err(|e| CoreError::other(format!("Invalid UInt160 bytes: {}", e)))?,
             )),
             33 => Ok(Self::create_group(
-                ECPoint::from_bytes(bytes).map_err(|e| format!("Invalid ECPoint bytes: {}", e))?,
+                ECPoint::from_bytes(bytes)
+                    .map_err(|e| CoreError::other(format!("Invalid ECPoint bytes: {}", e)))?,
             )),
-            len => Err(format!("Invalid descriptor byte length: {}", len)),
+            len => Err(CoreError::other(format!(
+                "Invalid descriptor byte length: {}",
+                len
+            ))),
         }
     }
 

@@ -1,5 +1,6 @@
 //! StorageContext - matches C# Neo.SmartContract.StorageContext exactly
 
+use neo_error::{CoreError, CoreResult};
 use neo_vm::StackItem;
 use num_traits::ToPrimitive;
 
@@ -52,9 +53,9 @@ impl StorageContext {
     }
 
     /// Builds a storage context from encoded bytes.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    pub fn from_bytes(bytes: &[u8]) -> CoreResult<Self> {
         if bytes.len() != 5 {
-            return Err("StorageContext payload must be 5 bytes".to_string());
+            return Err(CoreError::other("StorageContext payload must be 5 bytes"));
         }
 
         let mut id_bytes = [0u8; 4];
@@ -63,7 +64,7 @@ impl StorageContext {
         let is_read_only = match bytes[4] {
             0 => false,
             1 => true,
-            _ => return Err("Invalid StorageContext read-only flag".to_string()),
+            _ => return Err(CoreError::other("Invalid StorageContext read-only flag")),
         };
 
         Ok(Self { id, is_read_only })
@@ -77,38 +78,37 @@ impl StorageContext {
     }
 
     /// Parses a stack item into a storage context.
-    pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
+    pub fn from_stack_item(item: &StackItem) -> CoreResult<Self> {
         match item {
             StackItem::ByteString(bytes) => Self::from_bytes(bytes),
             StackItem::Buffer(buffer) => Self::from_bytes(&buffer.data()),
             StackItem::Struct(items) => Self::from_stack_parts(&items.items()),
             StackItem::Array(items) => Self::from_stack_parts(&items.items()),
-            _ => Err(format!(
+            _ => Err(CoreError::other(format!(
                 "StorageContext stack representation must be a byte array or interop context, got {:?}",
                 item.stack_item_type()
-            )),
+            ))),
         }
     }
 
-    fn from_stack_parts(items: &[StackItem]) -> Result<Self, String> {
+    fn from_stack_parts(items: &[StackItem]) -> CoreResult<Self> {
         if items.is_empty() || items.len() > 2 {
-            return Err(
-                "StorageContext stack representation must contain id and optional read-only flag"
-                    .to_string(),
-            );
+            return Err(CoreError::other(
+                "StorageContext stack representation must contain id and optional read-only flag",
+            ));
         }
 
         let id_bigint = items[0]
             .as_int()
-            .map_err(|_| "StorageContext id must be integer".to_string())?;
+            .map_err(|_| CoreError::other("StorageContext id must be integer"))?;
         let id = id_bigint
             .to_i32()
-            .ok_or_else(|| "StorageContext id out of i32 range".to_string())?;
+            .ok_or_else(|| CoreError::other("StorageContext id out of i32 range"))?;
 
         let is_read_only = if items.len() == 2 {
             items[1]
                 .as_bool()
-                .map_err(|_| "StorageContext read-only flag must be boolean".to_string())?
+                .map_err(|_| CoreError::other("StorageContext read-only flag must be boolean"))?
         } else {
             false
         };

@@ -14,6 +14,7 @@ use super::super::utility::{
     parse_balance_list, parse_nep_balance_fields, parse_object_array_lossy, required_string,
 };
 use neo_config::ProtocolSettings;
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_serialization::json::{JObject, JToken};
 use num_bigint::BigInt;
@@ -41,7 +42,7 @@ impl RpcNep11Balances {
     }
 
     /// Creates from JSON.
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
         let (balances, user_script_hash) =
             parse_balance_list(json, protocol_settings, RpcNep11Balance::from_json)?;
 
@@ -88,10 +89,11 @@ impl RpcNep11Balance {
         json
     }
 
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let asset_hash_str = required_string(json, "assethash")?;
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
+        let asset_hash_str = required_string(json, "assethash")
+            .map_err(|e| CoreError::other(e.to_string()))?;
         let asset_hash = UInt160::parse(&asset_hash_str)
-            .map_err(|_| format!("Invalid asset hash: {asset_hash_str}"))?;
+            .map_err(|_| CoreError::other(format!("Invalid asset hash: {asset_hash_str}")))?;
 
         let name = json
             .get("name")
@@ -110,7 +112,9 @@ impl RpcNep11Balance {
                 .map_or(0, |n| n as u8),
         };
 
-        let tokens = parse_object_array_lossy(json, "tokens", RpcNep11TokenBalance::from_json);
+        let tokens = parse_object_array_lossy(json, "tokens", |obj| {
+            RpcNep11TokenBalance::from_json(obj).map_err(|e| e.to_string())
+        });
 
         Ok(Self {
             asset_hash,
@@ -151,10 +155,11 @@ impl RpcNep11TokenBalance {
         json
     }
 
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let token_id_str = required_string(json, "tokenid")?;
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
+        let token_id_str = required_string(json, "tokenid")
+            .map_err(|e| CoreError::other(e.to_string()))?;
         let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
-            .map_err(|_| format!("Invalid tokenid: {token_id_str}"))?;
+            .map_err(|_| CoreError::other(format!("Invalid tokenid: {token_id_str}")))?;
 
         let fields = parse_nep_balance_fields(json)?;
 

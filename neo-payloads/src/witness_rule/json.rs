@@ -1,5 +1,6 @@
 use super::helpers::{encode_hex, parse_group_bytes};
 use super::{WitnessCondition, WitnessRule, WitnessRuleAction};
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -47,32 +48,32 @@ impl WitnessCondition {
         }
     }
 
-    pub fn from_json(json: &Value) -> Result<Self, String> {
+    pub fn from_json(json: &Value) -> CoreResult<Self> {
         Self::from_json_with_depth(json, Self::MAX_NESTING_DEPTH)
     }
 
-    pub fn from_json_with_depth(json: &Value, max_depth: usize) -> Result<Self, String> {
+    pub fn from_json_with_depth(json: &Value, max_depth: usize) -> CoreResult<Self> {
         if max_depth == 0 {
-            return Err("Max nesting depth exceeded".to_string());
+            return Err(CoreError::other("Max nesting depth exceeded"));
         }
 
         let condition_type = json
             .get("type")
             .and_then(Value::as_str)
-            .ok_or_else(|| "Condition type missing".to_string())?;
+            .ok_or_else(|| CoreError::other("Condition type missing"))?;
         match condition_type {
             "Boolean" => {
                 let value = json
                     .get("expression")
                     .and_then(Value::as_bool)
                     .or_else(|| json.get("value").and_then(Value::as_bool))
-                    .ok_or_else(|| "Boolean condition missing expression".to_string())?;
+                    .ok_or_else(|| CoreError::other("Boolean condition missing expression"))?;
                 Ok(WitnessCondition::Boolean { value })
             }
             "Not" => {
                 let expression = json
                     .get("expression")
-                    .ok_or_else(|| "Not condition missing expression".to_string())?;
+                    .ok_or_else(|| CoreError::other("Not condition missing expression"))?;
                 let inner = WitnessCondition::from_json_with_depth(expression, max_depth - 1)?;
                 Ok(WitnessCondition::Not {
                     condition: Box::new(inner),
@@ -82,14 +83,14 @@ impl WitnessCondition {
                 let expressions = json
                     .get("expressions")
                     .and_then(Value::as_array)
-                    .ok_or_else(|| "And condition missing expressions".to_string())?;
+                    .ok_or_else(|| CoreError::other("And condition missing expressions"))?;
                 if expressions.is_empty() {
-                    return Err(
-                        "Composite witness condition requires at least one expression".to_string(),
-                    );
+                    return Err(CoreError::other(
+                        "Composite witness condition requires at least one expression",
+                    ));
                 }
                 if expressions.len() > Self::MAX_SUBITEMS {
-                    return Err("Composite witness condition exceeds max subitems".to_string());
+                    return Err(CoreError::other("Composite witness condition exceeds max subitems"));
                 }
                 let mut conditions = Vec::with_capacity(expressions.len());
                 for expr in expressions {
@@ -101,14 +102,14 @@ impl WitnessCondition {
                 let expressions = json
                     .get("expressions")
                     .and_then(Value::as_array)
-                    .ok_or_else(|| "Or condition missing expressions".to_string())?;
+                    .ok_or_else(|| CoreError::other("Or condition missing expressions"))?;
                 if expressions.is_empty() {
-                    return Err(
-                        "Composite witness condition requires at least one expression".to_string(),
-                    );
+                    return Err(CoreError::other(
+                        "Composite witness condition requires at least one expression",
+                    ));
                 }
                 if expressions.len() > Self::MAX_SUBITEMS {
-                    return Err("Composite witness condition exceeds max subitems".to_string());
+                    return Err(CoreError::other("Composite witness condition exceeds max subitems"));
                 }
                 let mut conditions = Vec::with_capacity(expressions.len());
                 for expr in expressions {
@@ -120,16 +121,16 @@ impl WitnessCondition {
                 let hash_str = json
                     .get("hash")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| "ScriptHash condition missing hash".to_string())?;
+                    .ok_or_else(|| CoreError::other("ScriptHash condition missing hash"))?;
                 let hash =
-                    UInt160::from_str(hash_str).map_err(|e| format!("Invalid script hash: {e}"))?;
+                    UInt160::from_str(hash_str).map_err(|e| CoreError::other(format!("Invalid script hash: {e}")))?;
                 Ok(WitnessCondition::ScriptHash { hash })
             }
             "Group" => {
                 let group_str = json
                     .get("group")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| "Group condition missing group".to_string())?;
+                    .ok_or_else(|| CoreError::other("Group condition missing group"))?;
                 let group = parse_group_bytes(group_str)?;
                 Ok(WitnessCondition::Group { group })
             }
@@ -138,20 +139,20 @@ impl WitnessCondition {
                 let hash_str = json
                     .get("hash")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| "CalledByContract missing hash".to_string())?;
+                    .ok_or_else(|| CoreError::other("CalledByContract missing hash"))?;
                 let hash =
-                    UInt160::from_str(hash_str).map_err(|e| format!("Invalid script hash: {e}"))?;
+                    UInt160::from_str(hash_str).map_err(|e| CoreError::other(format!("Invalid script hash: {e}")))?;
                 Ok(WitnessCondition::CalledByContract { hash })
             }
             "CalledByGroup" => {
                 let group_str = json
                     .get("group")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| "CalledByGroup missing group".to_string())?;
+                    .ok_or_else(|| CoreError::other("CalledByGroup missing group"))?;
                 let group = parse_group_bytes(group_str)?;
                 Ok(WitnessCondition::CalledByGroup { group })
             }
-            other => Err(format!("Unsupported witness condition type: {other}")),
+            other => Err(CoreError::other(format!("Unsupported witness condition type: {other}"))),
         }
     }
 }
@@ -164,19 +165,19 @@ impl WitnessRule {
         })
     }
 
-    pub fn from_json(value: &Value) -> Result<Self, String> {
+    pub fn from_json(value: &Value) -> CoreResult<Self> {
         Self::from_json_with_depth(value, WitnessCondition::MAX_NESTING_DEPTH)
     }
 
-    pub fn from_json_with_depth(value: &Value, max_depth: usize) -> Result<Self, String> {
+    pub fn from_json_with_depth(value: &Value, max_depth: usize) -> CoreResult<Self> {
         let action_str = value
             .get("action")
             .and_then(Value::as_str)
-            .ok_or_else(|| "WitnessRule missing action".to_string())?;
-        let action: WitnessRuleAction = action_str.parse()?;
+            .ok_or_else(|| CoreError::other("WitnessRule missing action"))?;
+        let action: WitnessRuleAction = action_str.parse().map_err(CoreError::other)?;
         let condition_value = value
             .get("condition")
-            .ok_or_else(|| "WitnessRule missing condition".to_string())?;
+            .ok_or_else(|| CoreError::other("WitnessRule missing condition"))?;
         let condition = WitnessCondition::from_json_with_depth(condition_value, max_depth)?;
         Ok(Self { action, condition })
     }

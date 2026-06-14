@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
@@ -38,13 +39,16 @@ pub struct RpcResponse {
 impl RpcResponse {
     /// Creates an RPC response from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let id = json.get("id").ok_or("Missing 'id' field")?.clone();
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
+        let id = json
+            .get("id")
+            .ok_or_else(|| CoreError::other("Missing 'id' field"))?
+            .clone();
 
         let json_rpc = json
             .get("jsonrpc")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'jsonrpc' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'jsonrpc' field"))?;
 
         let result = json.get("result").cloned();
 
@@ -100,16 +104,16 @@ pub struct RpcResponseError {
 impl RpcResponseError {
     /// Creates an RPC response error from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let code = json
             .get("code")
             .and_then(neo_serialization::json::JToken::as_number)
-            .ok_or("Missing or invalid 'code' field")? as i32;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'code' field"))? as i32;
 
         let message = json
             .get("message")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'message' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'message' field"))?;
 
         let data = json.get("data").cloned();
 

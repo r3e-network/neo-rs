@@ -22,7 +22,7 @@ pub(super) fn get_unclaimed_gas(
     let script_hash = if let Ok(hash) = UInt160::from_str(&address_text) {
         hash
     } else {
-        address_helper::to_script_hash(&address_text, version).map_err(invalid_params)?
+        address_helper::to_script_hash(&address_text, version).map_err(|e| invalid_params(e.to_string()))?
     };
 
     let store = server.system().store_cache();

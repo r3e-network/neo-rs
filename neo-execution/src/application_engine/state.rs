@@ -314,7 +314,7 @@ impl ApplicationEngine {
         self.vm_engine
             .engine_mut()
             .push(item)
-            .map_err(|err| err.to_string())
+            .map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// Pops a stack item from the evaluation stack.
@@ -322,7 +322,7 @@ impl ApplicationEngine {
         self.vm_engine
             .engine_mut()
             .pop()
-            .map_err(|err| err.to_string())
+            .map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// Peeks at a stack item at the given index without removing it.
@@ -330,7 +330,7 @@ impl ApplicationEngine {
         self.vm_engine
             .engine()
             .peek(index)
-            .map_err(|err| err.to_string())
+            .map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// Returns the invocation stack of execution contexts.
@@ -388,11 +388,11 @@ impl ApplicationEngine {
     }
 
     /// Returns the timestamp of the block currently being persisted.
-    pub fn current_block_timestamp(&self) -> Result<u64, String> {
+    pub fn current_block_timestamp(&self) -> CoreResult<u64> {
         self.persisting_block
             .as_deref()
             .map(|block| block.header.timestamp())
-            .ok_or_else(|| "GetTime can only be called with Application trigger.".to_string())
+            .ok_or_else(|| CoreError::other("GetTime can only be called with Application trigger."))
     }
 
     /// Returns the block currently being persisted, if any.

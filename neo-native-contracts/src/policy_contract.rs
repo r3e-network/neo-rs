@@ -367,9 +367,7 @@ pub(crate) fn initialize_for_hardfork(
 
         // C# stamps every blocked account with `engine.GetTime()` (the
         // persisting block's millisecond timestamp).
-        let time = engine
-            .current_block_timestamp()
-            .map_err(CoreError::invalid_operation)?;
+        let time = engine.current_block_timestamp()?;
         let stamp = crate::bigint_to_storage_bytes(&BigInt::from(time));
         for (key, _) in blocked_account_entries(&snapshot) {
             snapshot.update(key, StorageItem::from_bytes(stamp.clone()));
@@ -439,9 +437,7 @@ pub(crate) fn block_account_internal(
     let value = if engine.is_hardfork_enabled(Hardfork::HfFaun) {
         // C# `new StorageItem(engine.GetTime())`: the persisting block's
         // timestamp as a BigInteger; GetTime faults without a persisting block.
-        let time = engine
-            .current_block_timestamp()
-            .map_err(CoreError::invalid_operation)?;
+        let time = engine.current_block_timestamp()?;
         crate::bigint_to_storage_bytes(&BigInt::from(time))
     } else {
         // C# `new StorageItem([])`.
@@ -1586,11 +1582,7 @@ impl NativeContract for PolicyContract {
                     .get(&blocked_account_key(&account))
                     .ok_or_else(|| CoreError::invalid_operation("Request not found."))?;
                 let request_time = BigInt::from_signed_bytes_le(&entry.value_bytes());
-                let now = BigInt::from(
-                    engine
-                        .current_block_timestamp()
-                        .map_err(CoreError::invalid_operation)?,
-                );
+                let now = BigInt::from(engine.current_block_timestamp()?);
                 let elapsed = now - request_time;
                 let required = BigInt::from(REQUIRED_TIME_FOR_RECOVER_FUND);
                 if elapsed < required {

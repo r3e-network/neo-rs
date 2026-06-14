@@ -11,6 +11,7 @@
 
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_crypto::{ECCurve, ECPoint};
+use neo_error::{CoreError, CoreResult};
 use neo_io::macros::{OptionExt, ValidateLength};
 use neo_io::serializable::helper::{
     deserialize_array, deserialize_array_with, get_var_size_for_slice,
@@ -163,37 +164,37 @@ impl Signer {
     }
 
     /// Creates a signer from a JSON object.
-    pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
         let obj = json
             .as_object()
-            .ok_or_else(|| "Signer JSON must be an object".to_string())?;
+            .ok_or_else(|| CoreError::other("Signer JSON must be an object"))?;
 
         let account_str = obj
             .get("account")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Signer.account must be a string".to_string())?;
+            .ok_or_else(|| CoreError::other("Signer.account must be a string"))?;
         let account =
-            UInt160::from_str(account_str).map_err(|e| format!("Invalid signer account: {e}"))?;
+            UInt160::from_str(account_str).map_err(|e| CoreError::other(format!("Invalid signer account: {e}")))?;
 
         let scopes_str = obj
             .get("scopes")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Signer.scopes must be a string".to_string())?;
+            .ok_or_else(|| CoreError::other("Signer.scopes must be a string"))?;
         let scopes = scopes_str
             .parse::<WitnessScope>()
-            .map_err(|e| format!("Invalid witness scope: {e}"))?;
+            .map_err(|e| CoreError::other(format!("Invalid witness scope: {e}")))?;
 
         let mut signer = Self::new(account, scopes);
 
         if scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             let contracts_value = obj.get("allowedcontracts").ok_or_else(|| {
-                "allowedcontracts must be provided when CustomContracts scope is set".to_string()
+                CoreError::other("allowedcontracts must be provided when CustomContracts scope is set")
             })?;
             let contracts_array = contracts_value
                 .as_array()
-                .ok_or_else(|| "allowedcontracts must be an array".to_string())?;
+                .ok_or_else(|| CoreError::other("allowedcontracts must be an array"))?;
             if contracts_array.len() > MAX_SUBITEMS {
-                return Err("Too many allowed contracts".to_string());
+                return Err(CoreError::other("Too many allowed contracts"));
             }
 
             signer.allowed_contracts = contracts_array
@@ -201,10 +202,10 @@ impl Signer {
                 .map(|value| {
                     value
                         .as_str()
-                        .ok_or_else(|| "allowedcontracts items must be strings".to_string())
+                        .ok_or_else(|| CoreError::other("allowedcontracts items must be strings"))
                         .and_then(|s| {
                             UInt160::from_str(s)
-                                .map_err(|e| format!("Invalid allowed contract hash: {e}"))
+                                .map_err(|e| CoreError::other(format!("Invalid allowed contract hash: {e}")))
                         })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -212,13 +213,13 @@ impl Signer {
 
         if scopes.contains(WitnessScope::CUSTOM_GROUPS) {
             let groups_value = obj.get("allowedgroups").ok_or_else(|| {
-                "allowedgroups must be provided when CustomGroups scope is set".to_string()
+                CoreError::other("allowedgroups must be provided when CustomGroups scope is set")
             })?;
             let groups_array = groups_value
                 .as_array()
-                .ok_or_else(|| "allowedgroups must be an array".to_string())?;
+                .ok_or_else(|| CoreError::other("allowedgroups must be an array"))?;
             if groups_array.len() > MAX_SUBITEMS {
-                return Err("Too many allowed groups".to_string());
+                return Err(CoreError::other("Too many allowed groups"));
             }
 
             signer.allowed_groups = groups_array
@@ -226,30 +227,30 @@ impl Signer {
                 .map(|value| {
                     let text = value
                         .as_str()
-                        .ok_or_else(|| "allowedgroups items must be strings".to_string())?;
+                        .ok_or_else(|| CoreError::other("allowedgroups items must be strings"))?;
                     let trimmed = text.trim_start_matches("0x");
                     let bytes =
-                        hex_decode(trimmed).map_err(|e| format!("Invalid ECPoint hex: {e}"))?;
-                    ECPoint::from_bytes(&bytes).map_err(|e| format!("Invalid ECPoint: {e}"))
+                        hex_decode(trimmed).map_err(|e| CoreError::other(format!("Invalid ECPoint hex: {e}")))?;
+                    ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(format!("Invalid ECPoint: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
         }
 
         if scopes.contains(WitnessScope::WITNESS_RULES) {
             let rules_value = obj.get("rules").ok_or_else(|| {
-                "rules must be provided when WitnessRules scope is set".to_string()
+                CoreError::other("rules must be provided when WitnessRules scope is set")
             })?;
             let rules_array = rules_value
                 .as_array()
-                .ok_or_else(|| "rules must be an array".to_string())?;
+                .ok_or_else(|| CoreError::other("rules must be an array"))?;
             if rules_array.len() > MAX_SUBITEMS {
-                return Err("Too many witness rules".to_string());
+                return Err(CoreError::other("Too many witness rules"));
             }
 
             signer.rules = rules_array
                 .iter()
                 .map(|value| {
-                    WitnessRule::from_json(value).map_err(|e| format!("Invalid witness rule: {e}"))
+                    WitnessRule::from_json(value).map_err(|e| CoreError::other(format!("Invalid witness rule: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
         }

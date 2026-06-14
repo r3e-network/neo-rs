@@ -31,6 +31,8 @@ use neo_storage::DataCache;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
+use neo_error::{CoreError, CoreResult};
+
 use crate::error::NodeResult;
 use crate::service_registry::ServiceRegistry;
 use crate::wallet_provider::WalletProvider;
@@ -300,10 +302,10 @@ impl TxRouterHandle {
         tx: Transaction,
         relay: bool,
         snapshot: &DataCache,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         let result = self.mempool.try_add(tx.clone(), snapshot);
         if result != VerifyResult::Succeed {
-            return Err(format!("{result:?}"));
+            return Err(CoreError::other(format!("{result:?}")));
         }
         if relay {
             // Best-effort relay; a dropped broadcast must not undo a successful

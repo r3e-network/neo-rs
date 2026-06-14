@@ -14,6 +14,7 @@ use super::super::utility::{
     parse_transfer_lists, transfer_lists_to_json,
 };
 use neo_config::ProtocolSettings;
+use neo_error::CoreResult;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::JObject;
 use num_bigint::BigInt;
@@ -48,7 +49,7 @@ impl RpcNep17Transfers {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
         let (sent, received, user_script_hash) =
             parse_transfer_lists(json, protocol_settings, RpcNep17Transfer::from_json)?;
 
@@ -109,7 +110,7 @@ impl RpcNep17Transfer {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
         let fields = parse_nep_transfer_fields(json, protocol_settings)?;
 
         Ok(Self {

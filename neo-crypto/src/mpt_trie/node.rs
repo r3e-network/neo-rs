@@ -416,7 +416,8 @@ impl Node {
 
 impl Serializable for Node {
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let node_type = NodeType::from_byte(reader.read_byte()?).map_err(IoError::invalid_data)?;
+        let node_type = NodeType::from_byte(reader.read_byte()?)
+            .map_err(|e| IoError::invalid_data(e.to_string()))?;
         match node_type {
             NodeType::BranchNode => {
                 let children = Self::deserialize_branch(reader)?;

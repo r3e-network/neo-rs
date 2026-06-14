@@ -2,6 +2,7 @@
 
 //! JsonSerializer - mirrors `Neo.SmartContract.JsonSerializer`.
 
+use neo_error::{CoreError, CoreResult};
 use neo_vm::StackItem;
 use neo_vm::stack_item::{Array, Map as MapItem, Struct};
 use neo_vm_rs::StackItemType;
@@ -27,11 +28,11 @@ impl JsonSerializer {
     /// than the limit faults (C# throws `InvalidOperationException`).
     ///
     /// [`encode_value_csharp_compatible`]: Self::encode_value_csharp_compatible
-    pub fn serialize_to_byte_array(item: &StackItem, max_size: u32) -> Result<Vec<u8>, String> {
+    pub fn serialize_to_byte_array(item: &StackItem, max_size: u32) -> CoreResult<Vec<u8>> {
         let json = Self::serialize_to_json(item)?;
         let payload = Self::encode_value_csharp_compatible(&json);
         if payload.len() > max_size as usize {
-            return Err("JSON output too large".to_string());
+            return Err(CoreError::other("JSON output too large"));
         }
         Ok(payload)
     }
@@ -55,7 +56,7 @@ impl JsonSerializer {
     }
 
     /// Serializes a stack item to a [`JsonValue`].
-    pub fn serialize_to_json(item: &StackItem) -> Result<JsonValue, String> {
+    pub fn serialize_to_json(item: &StackItem) -> CoreResult<JsonValue> {
         let mut seen = HashSet::new();
         Self::serialize_internal(item, &mut seen)
     }
@@ -63,7 +64,7 @@ impl JsonSerializer {
     fn serialize_internal(
         item: &StackItem,
         seen: &mut HashSet<(usize, StackItemType)>,
-    ) -> Result<JsonValue, String> {
+    ) -> CoreResult<JsonValue> {
         match item {
             StackItem::Null => Ok(JsonValue::Null),
             StackItem::Boolean(value) => Ok(JsonValue::Bool(*value)),
@@ -71,7 +72,7 @@ impl JsonSerializer {
                 let int_value = integer
                     .to_i64()
                     .filter(|v| (Self::MIN_SAFE_INTEGER..=Self::MAX_SAFE_INTEGER).contains(v))
-                    .ok_or_else(|| "Integer out of safe JSON range".to_string())?;
+                    .ok_or_else(|| CoreError::other("Integer out of safe JSON range"))?;
                 Ok(JsonValue::Number(JsonNumber::from(int_value)))
             }
             StackItem::ByteString(bytes) => {
@@ -85,9 +86,9 @@ impl JsonSerializer {
             StackItem::Array(array) => Self::serialize_compound_array(array, seen),
             StackItem::Struct(struct_item) => Self::serialize_compound_struct(struct_item, seen),
             StackItem::Map(map) => Self::serialize_map(map, seen),
-            StackItem::Pointer(_) => Err("Cannot serialize Pointer to JSON".to_string()),
+            StackItem::Pointer(_) => Err(CoreError::other("Cannot serialize Pointer to JSON")),
             StackItem::InteropInterface(_) => {
-                Err("Cannot serialize InteropInterface to JSON".to_string())
+                Err(CoreError::other("Cannot serialize InteropInterface to JSON"))
             }
         }
     }
@@ -95,10 +96,10 @@ impl JsonSerializer {
     fn serialize_compound_array(
         array: &Array,
         seen: &mut HashSet<(usize, StackItemType)>,
-    ) -> Result<JsonValue, String> {
+    ) -> CoreResult<JsonValue> {
         let identity = (array.id(), StackItemType::Array);
         if !seen.insert(identity) {
-            return Err("Circular reference detected".to_string());
+            return Err(CoreError::other("Circular reference detected"));
         }
 
         let mut result = Vec::with_capacity(array.len());
@@ -113,10 +114,10 @@ impl JsonSerializer {
     fn serialize_compound_struct(
         structure: &Struct,
         seen: &mut HashSet<(usize, StackItemType)>,
-    ) -> Result<JsonValue, String> {
+    ) -> CoreResult<JsonValue> {
         let identity = (structure.id(), StackItemType::Struct);
         if !seen.insert(identity) {
-            return Err("Circular reference detected".to_string());
+            return Err(CoreError::other("Circular reference detected"));
         }
 
         let mut result = Vec::with_capacity(structure.len());
@@ -131,10 +132,10 @@ impl JsonSerializer {
     fn serialize_map(
         map: &MapItem,
         seen: &mut HashSet<(usize, StackItemType)>,
-    ) -> Result<JsonValue, String> {
+    ) -> CoreResult<JsonValue> {
         let identity = (map.id(), StackItemType::Map);
         if !seen.insert(identity) {
-            return Err("Circular reference detected".to_string());
+            return Err(CoreError::other("Circular reference detected"));
         }
 
         let mut result = JsonMap::new();
@@ -142,11 +143,11 @@ impl JsonSerializer {
             let key_bytes = match &key {
                 StackItem::ByteString(bytes) => bytes.clone(),
                 StackItem::Buffer(buffer) => buffer.data(),
-                _ => return Err("Map key must be a byte string".to_string()),
+                _ => return Err(CoreError::other("Map key must be a byte string")),
             };
 
-            let key_str =
-                String::from_utf8(key_bytes).map_err(|_| "Invalid UTF-8 in map key".to_string())?;
+            let key_str = String::from_utf8(key_bytes)
+                .map_err(|_| CoreError::other("Invalid UTF-8 in map key"))?;
 
             let value_json = Self::serialize_internal(&value, seen)?;
             result.insert(key_str, value_json);
@@ -166,8 +167,9 @@ impl JsonSerializer {
         json: &[u8],
         max_depth: usize,
         max_items: usize,
-    ) -> Result<StackItem, String> {
-        let value: JsonValue = serde_json::from_slice(json).map_err(|e| e.to_string())?;
+    ) -> CoreResult<StackItem> {
+        let value: JsonValue =
+            serde_json::from_slice(json).map_err(|e| CoreError::other(e.to_string()))?;
         Self::deserialize_from_json(&value, max_depth, max_items)
     }
 
@@ -179,7 +181,7 @@ impl JsonSerializer {
         value: &JsonValue,
         max_depth: usize,
         max_items: usize,
-    ) -> Result<StackItem, String> {
+    ) -> CoreResult<StackItem> {
         let mut remaining = max_items;
         Self::deserialize_internal(value, 0, max_depth, &mut remaining)
     }
@@ -189,14 +191,14 @@ impl JsonSerializer {
         depth: usize,
         max_depth: usize,
         remaining: &mut usize,
-    ) -> Result<StackItem, String> {
+    ) -> CoreResult<StackItem> {
         if depth >= max_depth {
-            return Err("Maximum JSON depth exceeded".to_string());
+            return Err(CoreError::other("Maximum JSON depth exceeded"));
         }
         // C# decrements maxStackSize before processing each item and faults when
         // it was already 0 (`if (maxStackSize-- == 0) throw`).
         if *remaining == 0 {
-            return Err("Max stack size reached".to_string());
+            return Err(CoreError::other("Max stack size reached"));
         }
         *remaining -= 1;
 
@@ -217,9 +219,9 @@ impl JsonSerializer {
                 } else {
                     let f = n
                         .as_f64()
-                        .ok_or_else(|| "Invalid JSON number".to_string())?;
+                        .ok_or_else(|| CoreError::other("Invalid JSON number"))?;
                     if f.fract() != 0.0 {
-                        return Err("Decimal value is not allowed".to_string());
+                        return Err(CoreError::other("Decimal value is not allowed"));
                     }
                     // `{f}` is the shortest round-trippable decimal in fixed (never
                     // scientific) notation — matching the integer value C# obtains
@@ -227,7 +229,7 @@ impl JsonSerializer {
                     // exact stored value (which `{:.0}` would give).
                     let big = format!("{f}")
                         .parse::<BigInt>()
-                        .map_err(|_| "Invalid JSON integer".to_string())?;
+                        .map_err(|_| CoreError::other("Invalid JSON integer"))?;
                     Ok(StackItem::from_int(big))
                 }
             }
@@ -255,7 +257,7 @@ impl JsonSerializer {
                     // C# charges an extra `maxStackSize--` per map entry (before
                     // the value) on top of the value's own item cost.
                     if *remaining == 0 {
-                        return Err("Max stack size reached".to_string());
+                        return Err(CoreError::other("Max stack size reached"));
                     }
                     *remaining -= 1;
                     let key_item = StackItem::from_byte_string(key.as_bytes());
@@ -278,7 +280,7 @@ mod tests {
         String::from_utf8(bytes).expect("ascii/utf8 output")
     }
 
-    fn de(json: &str) -> Result<StackItem, String> {
+    fn de(json: &str) -> neo_error::CoreResult<StackItem> {
         // C# defaults: JToken.Parse depth 10, engine MaxStackSize 2048.
         JsonSerializer::deserialize(json.as_bytes(), 10, 2048)
     }

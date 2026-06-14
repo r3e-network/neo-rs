@@ -35,7 +35,7 @@ impl RpcClient {
             .rpc_send_async("importprivkey", vec![JToken::String(wif.to_string())])
             .await?;
         let obj = token_as_object(result, "importprivkey")?;
-        RpcAccount::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcAccount::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Validates a wallet address.
@@ -48,7 +48,7 @@ impl RpcClient {
             .rpc_send_async("validateaddress", vec![JToken::String(address.to_string())])
             .await?;
         let obj = token_as_object(result, "validateaddress")?;
-        RpcValidateAddressResult::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcValidateAddressResult::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Creates a new account in the wallet opened by RPC.
@@ -76,7 +76,7 @@ impl RpcClient {
             ClientRpcError::new(-32603, format!("Invalid balance value: {balance_str}"))
         })?;
         let asset_hash = RpcUtility::get_script_hash(asset_id, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err))?;
+            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))?;
         let nep17 = Nep17Api::new(Arc::new(self.clone()));
         let decimals = nep17
             .decimals(&asset_hash)
@@ -95,7 +95,7 @@ impl RpcClient {
             .rpc_send_async("getunclaimedgas", vec![JToken::String(address.to_string())])
             .await?;
         let obj = token_as_object(result, "getunclaimedgas")?;
-        RpcUnclaimedGas::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
+        RpcUnclaimedGas::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
     }
 
     /// Gets the amount of unclaimed GAS in the wallet.

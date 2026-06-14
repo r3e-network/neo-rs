@@ -2,6 +2,7 @@
 
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
+use neo_error::{CoreError, CoreResult};
 use neo_io::var_int;
 use neo_io::{IoError, MemoryReader};
 use neo_vm::StackItem;
@@ -54,7 +55,7 @@ impl BinarySerializer {
         data: &[u8],
         limits: &ExecutionEngineLimits,
         _reference_counter: Option<ReferenceCounter>,
-    ) -> Result<StackItem, String> {
+    ) -> CoreResult<StackItem> {
         let mut reader = MemoryReader::new(data);
         Self::deserialize_with_limits(
             &mut reader,
@@ -65,7 +66,7 @@ impl BinarySerializer {
     }
 
     /// Deserialize a [`StackItem`] from the provided buffer using default VM limits.
-    pub fn deserialize_default(data: &[u8]) -> Result<StackItem, String> {
+    pub fn deserialize_default(data: &[u8]) -> CoreResult<StackItem> {
         Self::deserialize(data, &ExecutionEngineLimits::default(), None)
     }
 
@@ -75,7 +76,7 @@ impl BinarySerializer {
         max_size: u32,
         max_items: u32,
         _reference_counter: Option<ReferenceCounter>,
-    ) -> Result<StackItem, String> {
+    ) -> CoreResult<StackItem> {
         let mut pending: Vec<PendingItem> = Vec::new();
         let mut remaining = 1usize;
         let mut total_items = 0usize;
@@ -83,12 +84,12 @@ impl BinarySerializer {
         while remaining > 0 {
             remaining -= 1;
             if total_items >= max_items as usize {
-                return Err("Too many items".to_string());
+                return Err(CoreError::other("Too many items"));
             }
 
-            let item_type_byte = reader.read_byte().map_err(Self::io_error_to_string)?;
+            let item_type_byte = reader.read_byte().map_err(Self::io_error_to_core_error)?;
             let item_type = StackItemType::from_byte(item_type_byte)
-                .ok_or_else(|| format!("Unknown stack item type: 0x{item_type_byte:02x}"))?;
+                .ok_or_else(|| CoreError::other(format!("Unknown stack item type: 0x{item_type_byte:02x}")))?;
 
             match item_type {
                 StackItemType::Any => {
@@ -96,14 +97,14 @@ impl BinarySerializer {
                     total_items += 1;
                 }
                 StackItemType::Boolean => {
-                    let value = reader.read_boolean().map_err(Self::io_error_to_string)?;
+                    let value = reader.read_boolean().map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingItem::Value(StackItem::from_bool(value)));
                     total_items += 1;
                 }
                 StackItemType::Integer => {
                     let bytes = reader
                         .read_var_bytes(Self::MAX_INTEGER_SIZE)
-                        .map_err(Self::io_error_to_string)?;
+                        .map_err(Self::io_error_to_core_error)?;
                     let value = if bytes.is_empty() {
                         BigInt::from(0)
                     } else {
@@ -115,24 +116,24 @@ impl BinarySerializer {
                 StackItemType::ByteString => {
                     let bytes = reader
                         .read_var_bytes(max_size as usize)
-                        .map_err(Self::io_error_to_string)?;
+                        .map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingItem::Value(StackItem::from_byte_string(bytes)));
                     total_items += 1;
                 }
                 StackItemType::Buffer => {
                     let bytes = reader
                         .read_var_bytes(max_size as usize)
-                        .map_err(Self::io_error_to_string)?;
+                        .map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingItem::Value(StackItem::from_buffer(bytes)));
                     total_items += 1;
                 }
                 StackItemType::Array | StackItemType::Struct => {
                     let count = reader
                         .read_var_int(max_items as u64)
-                        .map_err(Self::io_error_to_string)?
+                        .map_err(Self::io_error_to_core_error)?
                         as usize;
                     if count > (max_items as usize).saturating_sub(total_items) {
-                        return Err("Too many items".to_string());
+                        return Err(CoreError::other("Too many items"));
                     }
                     pending.push(PendingItem::Container(ContainerDescriptor {
                         item_type,
@@ -144,10 +145,10 @@ impl BinarySerializer {
                 StackItemType::Map => {
                     let count = reader
                         .read_var_int(max_items as u64)
-                        .map_err(Self::io_error_to_string)?
+                        .map_err(Self::io_error_to_core_error)?
                         as usize;
                     if count > (max_items as usize).saturating_sub(total_items) {
-                        return Err("Too many items".to_string());
+                        return Err(CoreError::other("Too many items"));
                     }
                     pending.push(PendingItem::Container(ContainerDescriptor {
                         item_type,
@@ -156,11 +157,11 @@ impl BinarySerializer {
                     remaining += count * 2;
                     total_items += count * 2 + 1;
                 }
-                _ => return Err("Unsupported stack item type".to_string()),
+                _ => return Err(CoreError::other("Unsupported stack item type")),
             }
 
             if pending.len() > max_items as usize {
-                return Err("Too many items".to_string());
+                return Err(CoreError::other("Too many items"));
             }
         }
 
@@ -175,7 +176,7 @@ impl BinarySerializer {
                                 let mut elements = Vec::with_capacity(container.element_count);
                                 for _ in 0..container.element_count {
                                     elements.push(constructed.pop().ok_or_else(|| {
-                                        "Invalid serialized array data".to_string()
+                                        CoreError::other("Invalid serialized array data")
                                     })?);
                                 }
                                 StackItem::from_array(elements)
@@ -184,7 +185,7 @@ impl BinarySerializer {
                                 let mut elements = Vec::with_capacity(container.element_count);
                                 for _ in 0..container.element_count {
                                     elements.push(constructed.pop().ok_or_else(|| {
-                                        "Invalid serialized struct data".to_string()
+                                        CoreError::other("Invalid serialized struct data")
                                     })?);
                                 }
                                 StackItem::from_struct(elements)
@@ -194,9 +195,9 @@ impl BinarySerializer {
                                 for _ in 0..container.element_count {
                                     let key = constructed
                                         .pop()
-                                        .ok_or_else(|| "Invalid serialized map key".to_string())?;
+                                        .ok_or_else(|| CoreError::other("Invalid serialized map key"))?;
                                     let value = constructed.pop().ok_or_else(|| {
-                                        "Invalid serialized map value".to_string()
+                                        CoreError::other("Invalid serialized map value")
                                     })?;
                                     entries.push((key, value));
                                 }
@@ -206,7 +207,7 @@ impl BinarySerializer {
                                 }
                                 StackItem::from_map(dict)
                             }
-                            _ => return Err("Invalid container descriptor".to_string()),
+                            _ => return Err(CoreError::other("Invalid container descriptor")),
                         };
                     constructed.push(result);
                 }
@@ -215,14 +216,14 @@ impl BinarySerializer {
 
         constructed
             .pop()
-            .ok_or_else(|| "Empty serialization payload".to_string())
+            .ok_or_else(|| CoreError::other("Empty serialization payload"))
     }
 
     /// Deserialize a binary-serialized stack item into the shared `neo-vm-rs` value type.
     ///
     /// This is intended for callers that need to inspect persisted stack payloads
     /// but do not need local VM object identity or reference counting.
-    pub fn deserialize_stack_value(data: &[u8]) -> Result<StackValue, String> {
+    pub fn deserialize_stack_value(data: &[u8]) -> CoreResult<StackValue> {
         Self::deserialize_stack_value_with_limits(
             data,
             Self::DEFAULT_MAX_ITEM_SIZE,
@@ -235,7 +236,7 @@ impl BinarySerializer {
         data: &[u8],
         max_size: usize,
         max_items: usize,
-    ) -> Result<StackValue, String> {
+    ) -> CoreResult<StackValue> {
         let mut reader = MemoryReader::new(data);
         let mut pending: Vec<PendingStackValue> = Vec::new();
         let mut remaining = 1usize;
@@ -244,45 +245,45 @@ impl BinarySerializer {
         while remaining > 0 {
             remaining -= 1;
             if total_items >= max_items {
-                return Err("Too many items".to_string());
+                return Err(CoreError::other("Too many items"));
             }
             total_items += 1;
 
-            let item_type = reader.read_byte().map_err(Self::io_error_to_string)?;
+            let item_type = reader.read_byte().map_err(Self::io_error_to_core_error)?;
             match item_type {
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ANY => {
                     pending.push(PendingStackValue::Value(StackValue::Null));
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BOOLEAN => {
-                    let value = reader.read_boolean().map_err(Self::io_error_to_string)?;
+                    let value = reader.read_boolean().map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingStackValue::Value(StackValue::Boolean(value)));
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_INTEGER => {
                     let bytes = reader
                         .read_var_bytes(Self::MAX_INTEGER_SIZE)
-                        .map_err(Self::io_error_to_string)?;
+                        .map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingStackValue::Value(StackValue::BigInteger(bytes)));
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BYTESTRING => {
                     let bytes = reader
                         .read_var_bytes(max_size)
-                        .map_err(Self::io_error_to_string)?;
+                        .map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingStackValue::Value(StackValue::ByteString(bytes)));
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BUFFER => {
                     let bytes = reader
                         .read_var_bytes(max_size)
-                        .map_err(Self::io_error_to_string)?;
+                        .map_err(Self::io_error_to_core_error)?;
                     pending.push(PendingStackValue::Value(StackValue::Buffer(bytes)));
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ARRAY
                 | neo_vm_rs::NEOVM_STACK_ITEM_TYPE_STRUCT => {
                     let count = reader
                         .read_var_int(max_items as u64)
-                        .map_err(Self::io_error_to_string)?
+                        .map_err(Self::io_error_to_core_error)?
                         as usize;
                     if count > max_items.saturating_sub(total_items) {
-                        return Err("Too many items".to_string());
+                        return Err(CoreError::other("Too many items"));
                     }
                     let kind = if item_type == neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ARRAY {
                         StackValueContainerKind::Array
@@ -297,18 +298,18 @@ impl BinarySerializer {
                     ));
                     remaining = remaining
                         .checked_add(count)
-                        .ok_or_else(|| "Too many items".to_string())?;
+                        .ok_or_else(|| CoreError::other("Too many items"))?;
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_MAP => {
                     let count = reader
                         .read_var_int(max_items as u64)
-                        .map_err(Self::io_error_to_string)?
+                        .map_err(Self::io_error_to_core_error)?
                         as usize;
                     let child_count = count
                         .checked_mul(2)
-                        .ok_or_else(|| "Too many items".to_string())?;
+                        .ok_or_else(|| CoreError::other("Too many items"))?;
                     if child_count > max_items.saturating_sub(total_items) {
-                        return Err("Too many items".to_string());
+                        return Err(CoreError::other("Too many items"));
                     }
                     pending.push(PendingStackValue::Container(
                         StackValueContainerDescriptor {
@@ -318,13 +319,13 @@ impl BinarySerializer {
                     ));
                     remaining = remaining
                         .checked_add(child_count)
-                        .ok_or_else(|| "Too many items".to_string())?;
+                        .ok_or_else(|| CoreError::other("Too many items"))?;
                 }
-                _ => return Err("Unsupported stack item type".to_string()),
+                _ => return Err(CoreError::other("Unsupported stack item type")),
             }
 
             if pending.len() > max_items {
-                return Err("Too many items".to_string());
+                return Err(CoreError::other("Too many items"));
             }
         }
 
@@ -339,7 +340,7 @@ impl BinarySerializer {
                             elements.push(
                                 constructed
                                     .pop()
-                                    .ok_or_else(|| "Invalid serialized array data".to_string())?,
+                                    .ok_or_else(|| CoreError::other("Invalid serialized array data"))?,
                             );
                         }
                         if matches!(container.kind, StackValueContainerKind::Array) {
@@ -353,10 +354,10 @@ impl BinarySerializer {
                         for _ in 0..container.element_count {
                             let key = constructed
                                 .pop()
-                                .ok_or_else(|| "Invalid serialized map key".to_string())?;
+                                .ok_or_else(|| CoreError::other("Invalid serialized map key"))?;
                             let value = constructed
                                 .pop()
-                                .ok_or_else(|| "Invalid serialized map value".to_string())?;
+                                .ok_or_else(|| CoreError::other("Invalid serialized map value"))?;
                             entries.push((key, value));
                         }
                         constructed.push(StackValue::Map(entries));
@@ -367,11 +368,11 @@ impl BinarySerializer {
 
         constructed
             .pop()
-            .ok_or_else(|| "Empty serialization payload".to_string())
+            .ok_or_else(|| CoreError::other("Empty serialization payload"))
     }
 
     /// Serialize a stack item with VM limits.
-    pub fn serialize(item: &StackItem, limits: &ExecutionEngineLimits) -> Result<Vec<u8>, String> {
+    pub fn serialize(item: &StackItem, limits: &ExecutionEngineLimits) -> CoreResult<Vec<u8>> {
         Self::serialize_with_limits(
             item,
             limits.max_item_size as usize,
@@ -386,18 +387,18 @@ impl BinarySerializer {
     pub fn serialize_stack_value(
         value: &StackValue,
         limits: &ExecutionEngineLimits,
-    ) -> Result<Vec<u8>, String> {
-        let item = StackItem::try_from(value.clone()).map_err(|err| err.to_string())?;
+    ) -> CoreResult<Vec<u8>> {
+        let item = StackItem::try_from(value.clone()).map_err(|err| CoreError::other(err.to_string()))?;
         Self::serialize(&item, limits)
     }
 
     /// Serialize a stack item with default VM limits.
-    pub fn serialize_default(item: &StackItem) -> Result<Vec<u8>, String> {
+    pub fn serialize_default(item: &StackItem) -> CoreResult<Vec<u8>> {
         Self::serialize(item, &ExecutionEngineLimits::default())
     }
 
     /// Serialize a shared `neo-vm-rs` stack value with default VM limits.
-    pub fn serialize_stack_value_default(value: &StackValue) -> Result<Vec<u8>, String> {
+    pub fn serialize_stack_value_default(value: &StackValue) -> CoreResult<Vec<u8>> {
         Self::serialize_stack_value(value, &ExecutionEngineLimits::default())
     }
 
@@ -406,7 +407,7 @@ impl BinarySerializer {
         item: &StackItem,
         max_size: usize,
         max_items: usize,
-    ) -> Result<Vec<u8>, String> {
+    ) -> CoreResult<Vec<u8>> {
         let mut writer = Vec::new();
         Self::serialize_into(item, &mut writer, max_size, max_items)?;
         Ok(writer)
@@ -418,7 +419,7 @@ impl BinarySerializer {
         writer: &mut Vec<u8>,
         max_size: usize,
         max_items: usize,
-    ) -> Result<(), String> {
+    ) -> CoreResult<()> {
         let mut processed: HashSet<(usize, StackItemType)> = HashSet::new();
         let mut queue: VecDeque<StackItem> = VecDeque::new();
         queue.push_back(item.clone());
@@ -427,7 +428,7 @@ impl BinarySerializer {
         while let Some(current) = queue.pop_back() {
             remaining -= 1;
             if remaining < 0 {
-                return Err("Too many items".to_string());
+                return Err(CoreError::other("Too many items"));
             }
 
             match &current {
@@ -459,9 +460,9 @@ impl BinarySerializer {
                     writer.push(StackItemType::Array.to_byte());
                     let identity = (array.id(), StackItemType::Array);
                     if !processed.insert(identity) {
-                        return Err(
-                            "Circular reference detected while serializing array".to_string()
-                        );
+                        return Err(CoreError::other(
+                            "Circular reference detected while serializing array",
+                        ));
                     }
                     var_int::write_var_int(array.len() as u64, writer);
                     for element in array.iter().rev() {
@@ -472,9 +473,9 @@ impl BinarySerializer {
                     writer.push(StackItemType::Struct.to_byte());
                     let identity = (struct_item.id(), StackItemType::Struct);
                     if !processed.insert(identity) {
-                        return Err(
-                            "Circular reference detected while serializing struct".to_string()
-                        );
+                        return Err(CoreError::other(
+                            "Circular reference detected while serializing struct",
+                        ));
                     }
                     var_int::write_var_int(struct_item.len() as u64, writer);
                     for element in struct_item.iter().rev() {
@@ -485,7 +486,9 @@ impl BinarySerializer {
                     writer.push(StackItemType::Map.to_byte());
                     let identity = (map.id(), StackItemType::Map);
                     if !processed.insert(identity) {
-                        return Err("Circular reference detected while serializing map".to_string());
+                        return Err(CoreError::other(
+                            "Circular reference detected while serializing map",
+                        ));
                     }
                     var_int::write_var_int(map.len() as u64, writer);
                     for (key, value) in map.iter().rev() {
@@ -493,24 +496,24 @@ impl BinarySerializer {
                         queue.push_back(key.clone());
                     }
                 }
-                _ => return Err("Unsupported stack item type".to_string()),
+                _ => return Err(CoreError::other("Unsupported stack item type")),
             }
 
             if writer.len() > max_size {
-                return Err("Serialized data exceeds limit".to_string());
+                return Err(CoreError::other("Serialized data exceeds limit"));
             }
         }
 
         Ok(())
     }
 
-    fn io_error_to_string(error: IoError) -> String {
-        match error {
+    fn io_error_to_core_error(error: IoError) -> CoreError {
+        CoreError::other(match error {
             IoError::Format => "format error".to_string(),
             IoError::InvalidUtf8 => "invalid utf-8 data".to_string(),
             IoError::InvalidData { context, value } => format!("{context}: {value}"),
             IoError::Io(inner) => inner.to_string(),
-        }
+        })
     }
 }
 
@@ -590,7 +593,7 @@ mod tests {
             BinarySerializer::deserialize_stack_value_with_limits(&payload, u16::MAX as usize, 3)
                 .expect_err("limit error");
 
-        assert_eq!(err, "Too many items");
+        assert_eq!(err.to_string(), "Too many items");
     }
 
     #[test]

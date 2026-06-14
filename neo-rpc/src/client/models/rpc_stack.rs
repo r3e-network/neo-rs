@@ -1,5 +1,6 @@
 //! RPC stack item representation (`RpcStack`).
 
+use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
 
 /// RPC stack item representation matching C# `RpcStack`
@@ -15,13 +16,16 @@ pub struct RpcStack {
 impl RpcStack {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let item_type = json
             .get("type")
             .and_then(neo_serialization::json::JToken::as_string)
-            .ok_or("Missing or invalid 'type' field")?;
+            .ok_or_else(|| CoreError::other("Missing or invalid 'type' field"))?;
 
-        let value = json.get("value").ok_or("Missing 'value' field")?.clone();
+        let value = json
+            .get("value")
+            .ok_or_else(|| CoreError::other("Missing 'value' field"))?
+            .clone();
 
         Ok(Self { item_type, value })
     }

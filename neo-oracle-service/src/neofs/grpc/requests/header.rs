@@ -3,6 +3,7 @@ use super::super::super::proto::neofs_v2;
 use super::super::super::{NeoFsAuth, OracleNeoFsProtocol};
 use super::super::auth::{build_neofs_meta_header, build_neofs_request_verification_header};
 use super::super::verify::{validate_neofs_response, verify_neofs_signature_bytes};
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::OracleResponseCode;
 use neo_wallets::KeyPair;
 use prost::Message;
@@ -21,7 +22,7 @@ impl OracleNeoFsProtocol {
             .await
         {
             Ok(object) => object,
-            Err(msg) => return (OracleResponseCode::Error, msg),
+            Err(msg) => return (OracleResponseCode::Error, msg.to_string()),
         };
         let header = match object.header.as_ref() {
             Some(h) => h,
@@ -44,7 +45,7 @@ impl OracleNeoFsProtocol {
         address: &neofs_v2::refs::Address,
         auth: &NeoFsAuth,
         oracle_key: &KeyPair,
-    ) -> Result<neofs_v2::object::Object, String> {
+    ) -> CoreResult<neofs_v2::object::Object> {
         let meta = build_neofs_meta_header(auth)?;
         let body = neofs_v2::object::head_request::Body {
             address: Some(address.clone()),
@@ -58,11 +59,14 @@ impl OracleNeoFsProtocol {
             verify_header: Some(verify),
         };
 
-        let response = client.head(request).await.map_err(|_| "request failed")?;
+        let response = client
+            .head(request)
+            .await
+            .map_err(|_| CoreError::other("request failed"))?;
         let response = response.into_inner();
         let body = response
             .body
-            .ok_or_else(|| "missing response body".to_string())?;
+            .ok_or_else(|| CoreError::other("missing response body"))?;
         validate_neofs_response(
             &body,
             response.meta_header.as_ref(),
@@ -73,16 +77,16 @@ impl OracleNeoFsProtocol {
             Some(neofs_v2::object::head_response::body::Head::Header(header_with_sig)) => {
                 let header = header_with_sig
                     .header
-                    .ok_or_else(|| "missing object header".to_string())?;
+                    .ok_or_else(|| CoreError::other("missing object header"))?;
                 let signature = header_with_sig
                     .signature
-                    .ok_or_else(|| "missing object signature".to_string())?;
+                    .ok_or_else(|| CoreError::other("missing object signature"))?;
                 let object_id = address
                     .object_id
                     .as_ref()
-                    .ok_or_else(|| "missing object id".to_string())?;
+                    .ok_or_else(|| CoreError::other("missing object id"))?;
                 if !verify_neofs_signature_bytes(&signature, &object_id.encode_to_vec()) {
-                    return Err("invalid object signature".to_string());
+                    return Err(CoreError::other("invalid object signature"));
                 }
                 Ok(neofs_v2::object::Object {
                     object_id: Some(object_id.clone()),
@@ -92,12 +96,12 @@ impl OracleNeoFsProtocol {
                 })
             }
             Some(neofs_v2::object::head_response::body::Head::ShortHeader(_)) => {
-                Err("unexpected short header".to_string())
+                Err(CoreError::other("unexpected short header"))
             }
             Some(neofs_v2::object::head_response::body::Head::SplitInfo(_)) => {
-                Err("split header response".to_string())
+                Err(CoreError::other("split header response"))
             }
-            None => Err("missing header response".to_string()),
+            None => Err(CoreError::other("missing header response")),
         }
     }
 }

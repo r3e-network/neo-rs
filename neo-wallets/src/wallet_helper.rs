@@ -17,6 +17,7 @@
 //! for now. The pure-crypto address helpers extracted here are
 //! what `KeyPair`, `WalletAccount`, and `Nep6Wallet` actually need.
 
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 
 use neo_primitives::base58_check::{
@@ -30,9 +31,9 @@ pub fn to_address(script_hash: &UInt160, version: u8) -> String {
 
 /// Convert a base58 address string back to a script hash, validating the
 /// embedded version byte.
-pub fn to_script_hash(address: &str, version: u8) -> Result<UInt160, String> {
+pub fn to_script_hash(address: &str, version: u8) -> CoreResult<UInt160> {
     let script_hash = decode_address_payload(address, version)
-        .map_err(|err| match err {
+        .map_err(|err| CoreError::other(match err {
             AddressDecodeError::Base58(Base58CheckDecodeError::InvalidBase58 { message }) => {
                 format!("Invalid Base58 string: {message}")
             }
@@ -48,6 +49,6 @@ pub fn to_script_hash(address: &str, version: u8) -> Result<UInt160, String> {
             AddressDecodeError::InvalidVersion { expected, actual } => {
                 format!("Invalid address version: expected version {expected}, but got {actual}. The address may be for a different network.")
             }
-        })?;
-    UInt160::from_bytes(&script_hash).map_err(|e| format!("Invalid script hash bytes: {e}"))
+        }))?;
+    UInt160::from_bytes(&script_hash).map_err(|e| CoreError::other(format!("Invalid script hash bytes: {e}")))
 }

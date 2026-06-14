@@ -1,20 +1,21 @@
 use super::super::proto::neofs_v2;
 use neo_crypto::{NEOFS_ECDSA_SHA512_SIGNATURE_LEN, Secp256r1Crypto};
+use neo_error::{CoreError, CoreResult};
 use prost::Message;
 
 pub(super) fn validate_neofs_response<B: Message>(
     body: &B,
     meta: Option<&neofs_v2::session::ResponseMetaHeader>,
     verify: Option<&neofs_v2::session::ResponseVerificationHeader>,
-) -> Result<(), String> {
-    let meta = meta.ok_or_else(|| "missing meta header".to_string())?;
-    let verify = verify.ok_or_else(|| "missing verify header".to_string())?;
+) -> CoreResult<()> {
+    let meta = meta.ok_or_else(|| CoreError::other("missing meta header"))?;
+    let verify = verify.ok_or_else(|| CoreError::other("missing verify header"))?;
     if !verify_neofs_matryoshka(body, meta, verify) {
-        return Err("invalid neofs response signature".to_string());
+        return Err(CoreError::other("invalid neofs response signature"));
     }
     if let Some(status) = meta.status.as_ref() {
         if !is_neofs_status_success(status) {
-            return Err("neofs response status error".to_string());
+            return Err(CoreError::other("neofs response status error"));
         }
     }
     Ok(())

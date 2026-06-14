@@ -1,5 +1,6 @@
 use base64::Engine as _;
 use neo_crypto::Secp256r1Crypto;
+use neo_error::{CoreError, CoreResult};
 use neo_io::BinaryWriter;
 use neo_wallets::KeyPair;
 use rand::RngCore;
@@ -24,19 +25,19 @@ pub(crate) fn sign_neofs_bearer(
     Some((signature, key.compressed_public_key()))
 }
 
-pub(crate) fn sign_neofs_sha512(data: &[u8], key: &KeyPair) -> Result<Vec<u8>, String> {
+pub(crate) fn sign_neofs_sha512(data: &[u8], key: &KeyPair) -> CoreResult<Vec<u8>> {
     Secp256r1Crypto::sign_neofs_sha512(data, key.private_key())
         .map(|signature| signature.to_vec())
-        .map_err(|err| format!("failed to sign bearer token: {err}"))
+        .map_err(|err| CoreError::other(format!("failed to sign bearer token: {err}")))
 }
 
-fn sign_neofs_wallet_connect(data: &[u8], key: &KeyPair) -> Result<Vec<u8>, String> {
+fn sign_neofs_wallet_connect(data: &[u8], key: &KeyPair) -> CoreResult<Vec<u8>> {
     let b64 = base64::engine::general_purpose::STANDARD.encode(data);
     let mut salt = [0u8; 16];
     OsRng.fill_bytes(&mut salt);
     let message = salt_message_wallet_connect(b64.as_bytes(), &salt);
     let signature = Secp256r1Crypto::sign(&message, key.private_key())
-        .map_err(|err| format!("invalid neofs key: {err}"))?;
+        .map_err(|err| CoreError::other(format!("invalid neofs key: {err}")))?;
     let mut output = signature.to_vec();
     output.extend_from_slice(&salt);
     Ok(output)
