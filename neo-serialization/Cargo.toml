@@ -40,9 +40,5 @@ bincode = { workspace = true }
 hex = { workspace = true }
 tokio = { workspace = true }
 
-[features]
-default = []
-rocksdb = ["neo-storage/rocksdb"]
-
 [lints]
 workspace = true

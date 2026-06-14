@@ -45,7 +45,6 @@ pub mod error;
 pub mod hash_utils;
 pub mod key_builder;
 pub mod persistence;
-#[cfg(feature = "rocksdb")]
 pub mod rocksdb;
 pub mod types;
 

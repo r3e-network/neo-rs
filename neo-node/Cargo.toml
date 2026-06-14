@@ -80,7 +80,7 @@ neo-network = { workspace = true }
 neo-payloads = { workspace = true }
 neo-primitives = { workspace = true }
 neo-state-service = { workspace = true }
-neo-storage = { workspace = true, features = ["rocksdb"] }
+neo-storage = { workspace = true }
 neo-system = { workspace = true }
 neo-wallets = { workspace = true }
 neo-blockchain = { workspace = true }

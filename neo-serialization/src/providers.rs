@@ -9,8 +9,6 @@ pub use memory_store_provider::MemoryStoreProvider;
 // Re-export the RocksDB backend here (under the same `providers::rocksdb` path)
 // so existing `neo_core::persistence::providers::{RocksDBStoreProvider,
 // rocksdb::*}` callers are unaffected.
-#[cfg(feature = "rocksdb")]
 pub use neo_storage::rocksdb;
 
-#[cfg(feature = "rocksdb")]
 pub use neo_storage::rocksdb::RocksDBStoreProvider;

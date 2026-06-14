@@ -44,15 +44,11 @@ fastbloom = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
-rocksdb = { workspace = true, optional = true }
+rocksdb = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-
-[features]
-default = []
-rocksdb = ["dep:rocksdb"]
 
 [lints]
 workspace = true
