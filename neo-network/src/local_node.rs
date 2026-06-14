@@ -499,7 +499,7 @@ impl NetworkService for LocalNodeService {
         self.registry.len()
     }
 
-    fn subscribe_events(&self) -> broadcast::Receiver<RuntimeNetworkEvent> {
+    fn subscribe_events(&self) -> broadcast::Receiver<NetworkEvent> {
         self.event_tx.subscribe()
     }
 }

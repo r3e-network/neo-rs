@@ -12,7 +12,7 @@ use neo_manifest::CallFlags;
 use neo_native_contracts::contract_management::ContractManagement;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
-use neo_primitives::{LogLevel, UInt160};
+use neo_primitives::{LogLevel, TriggerType, UInt160};
 use neo_storage::persistence::DataCache;
 use neo_system::Node;
 use neo_vm::StackItem;
@@ -156,7 +156,7 @@ impl Nep17Tracker {
         }
 
         let mut engine = match ApplicationEngine::new(
-            neo_primitives::TriggerType::Application,
+            TriggerType::Application,
             None,
             Arc::new(snapshot.clone()),
             self.current_block.clone(),

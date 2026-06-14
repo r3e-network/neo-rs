@@ -510,26 +510,12 @@ impl NativeContract for OracleContract {
         self
     }
 
-    /// C# `GetRequest(...).Url`, exposed through the native-contract seam so
-    /// the engine can resolve oracle-response witnesses without depending on
-    /// `neo-native-contracts`.
-    fn oracle_request_url(&self, snapshot: &DataCache, id: u64) -> CoreResult<Option<String>> {
-        Ok(self.read_request(snapshot, id)?.map(|request| request.url))
-    }
-
-    /// C# `GetRequest(...).OriginalTxid` through the native-contract seam.
-    fn oracle_request_original_tx(
-        &self,
-        snapshot: &DataCache,
-        id: u64,
-    ) -> CoreResult<Option<UInt256>> {
-        Ok(self
-            .read_request(snapshot, id)?
-            .map(|request| request.original_tx_id))
-    }
-
     /// Url + original txid pair consumed by the engine's oracle-response
     /// witness path (`CheckWitness` signer inheritance).
+    ///
+    /// C# `GetRequest(...)` exposed through the native-contract seam so the
+    /// engine can resolve oracle-response witnesses without depending on
+    /// `neo-native-contracts`.
     fn oracle_request_url_full(
         &self,
         snapshot: &DataCache,
@@ -1249,14 +1235,6 @@ mod oracle_native_tests {
         );
 
         // The native-contract seam exposes the same record to the engine.
-        assert_eq!(
-            NativeContract::oracle_request_url(&contract, &cache, 3).unwrap(),
-            Some(request.url.clone())
-        );
-        assert_eq!(
-            NativeContract::oracle_request_original_tx(&contract, &cache, 3).unwrap(),
-            Some(request.original_tx_id)
-        );
         let details = NativeContract::oracle_request_url_full(&contract, &cache, 3)
             .unwrap()
             .expect("details");

@@ -90,7 +90,7 @@ impl MempoolLike for NodeMempoolAdapter {
     fn try_add(
         &self,
         tx: &neo_payloads::Transaction,
-        _snapshot: &neo_storage::persistence::DataCache,
+        _snapshot: &neo_storage::DataCache,
         _settings: &ProtocolSettings,
     ) -> VerifyResult {
         let hash = tx.hash();

@@ -421,7 +421,7 @@ impl ConsensusSigner for Pkcs11Signer {
     fn sign(&self, data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, ConsensusError> {
         if !self.can_sign(script_hash) {
             return Err(ConsensusError::state_error(format!(
-                "hsm: unknown script hash {script_hash}"
+                "hsm-pkcs11: unknown script hash {script_hash}"
             )));
         }
         self.do_sign(data).map_err(ConsensusError::from)

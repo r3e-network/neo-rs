@@ -32,7 +32,9 @@ use neo_payloads::HEADER_SIZE;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
-use neo_primitives::{ContractParameterType, TriggerType, UInt160, Verifiable, WitnessScope};
+use neo_primitives::{
+    ContractParameterType, TriggerType, UInt160, Verifiable, Witness as _, WitnessScope,
+};
 use neo_storage::persistence::DataCache;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState as VMState};

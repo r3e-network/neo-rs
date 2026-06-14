@@ -451,6 +451,8 @@ fn collect_notifications(engine: &ApplicationEngine) -> Vec<NativePersistNotific
 #[cfg(test)]
 mod tests {
     use super::*;
+    // `invocation_script`/`verification_script` on `Witness` are trait methods.
+    use neo_primitives::Witness as _;
     use neo_serialization::BinarySerializer;
     use neo_storage::StorageKey;
     use neo_vm_rs::ExecutionEngineLimits;

@@ -3,7 +3,7 @@
 use neo_error::{CoreError, CoreResult};
 use neo_execution::NotifyEventArgs;
 use neo_payloads::ApplicationExecuted;
-use neo_payloads::Block as LedgerBlock;
+use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
 use neo_primitives::TriggerType;
 use neo_primitives::UInt256;
@@ -228,7 +228,7 @@ impl CommittingHandler for ApplicationLogsService {
     fn blockchain_committing_handler(
         &self,
         system: &dyn Any,
-        block: &LedgerBlock,
+        block: &Block,
         _snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     ) {
@@ -267,7 +267,7 @@ impl CommittingHandler for ApplicationLogsService {
 }
 
 impl CommittedHandler for ApplicationLogsService {
-    fn blockchain_committed_handler(&self, system: &dyn Any, _block: &LedgerBlock) {
+    fn blockchain_committed_handler(&self, system: &dyn Any, _block: &Block) {
         if self.disabled.load(Ordering::Relaxed) {
             return;
         }

@@ -46,12 +46,8 @@ pub mod wallet_account;
 pub mod nep6;
 /// Base `Wallet` trait and shared error type.
 pub mod wallet;
-/// Wallet factory trait.
-pub mod wallet_factory;
 /// Address / script-hash conversion helpers used by the wallet layer.
 pub mod wallet_helper;
-/// Wallet manager (factory registry + lifecycle).
-pub mod wallet_manager;
 /// Wallet provider (lifecycle notifications).
 pub mod wallet_provider;
 
@@ -88,11 +84,9 @@ pub use transfer_output::TransferOutput;
 pub use version::Version;
 pub use wallet::{Wallet, WalletError, WalletResult};
 pub use wallet_account::{StandardWalletAccount, WalletAccount};
-pub use wallet_factory::WalletFactory;
 
 // Re-export of the canonical smart-contract Helper for back-compat with the
 // historical `neo_wallets::Helper` (which was a type alias for
 // `crate::smart_contract::helper::Helper`).
 pub use neo_execution::Helper;
-pub use wallet_manager::WalletManager;
 pub use wallet_provider::WalletProvider;

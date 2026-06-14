@@ -241,19 +241,6 @@ pub trait NativeContract: Any + Send + Sync {
         Ok(None)
     }
 
-    /// Returns the transaction state for a transaction by hash, if
-    /// this contract stores transaction records.
-    ///
-    /// The default implementation returns `Ok(None)`; only
-    /// `LedgerContract` overrides this.
-    fn lookup_transaction_state(
-        &self,
-        _snapshot: &neo_storage::DataCache,
-        _tx_hash: &neo_primitives::UInt256,
-    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
-        Ok(None)
-    }
-
     /// Returns whether the given contract hash is currently blocked
     /// from being invoked.
     ///
@@ -294,27 +281,12 @@ pub trait NativeContract: Any + Send + Sync {
         Ok(None)
     }
 
-    /// Returns the oracle request for a given request ID, if any.
+    /// Returns the URL and original txid of the oracle request for a given
+    /// request ID, if any.
     ///
     /// The default implementation returns `Ok(None)`; only
-    /// `OracleContract` overrides this.
-    fn oracle_request_url(
-        &self,
-        _snapshot: &neo_storage::DataCache,
-        _id: u64,
-    ) -> CoreResult<Option<String>> {
-        Ok(None)
-    }
-
-    fn oracle_request_original_tx(
-        &self,
-        _snapshot: &neo_storage::DataCache,
-        _id: u64,
-    ) -> CoreResult<Option<neo_primitives::UInt256>> {
-        Ok(None)
-    }
-
-    /// Returns the URL of the oracle request, if any.
+    /// `OracleContract` overrides this. Consumed by the engine's
+    /// oracle-response witness path (`CheckWitness` signer inheritance).
     fn oracle_request_url_full(
         &self,
         _snapshot: &neo_storage::DataCache,

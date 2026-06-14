@@ -136,11 +136,6 @@ impl StorageItem {
         self.cache = replica.cache.as_ref().map(|c| c.clone_box());
     }
 
-    /// Serialize the value to a byte vector.
-    pub fn serialize(&self) -> Vec<u8> {
-        self.to_value()
-    }
-
     /// Convenience helper to populate the value from raw bytes.
     pub fn deserialize_from_bytes(&mut self, data: &[u8]) {
         self.value = data.to_vec();
@@ -410,7 +405,7 @@ mod tests {
     #[test]
     fn test_serialize() {
         let item = StorageItem::from_bytes(vec![0x01, 0x02]);
-        assert_eq!(item.serialize(), vec![0x01, 0x02]);
+        assert_eq!(item.to_storage_bytes(), vec![0x01, 0x02]);
     }
 
     #[test]

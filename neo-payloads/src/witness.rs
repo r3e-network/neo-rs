@@ -109,16 +109,6 @@ impl Witness {
         Self::new()
     }
 
-    /// Returns the invocation script.
-    pub fn invocation_script(&self) -> &[u8] {
-        &self.invocation_script
-    }
-
-    /// Returns the verification script.
-    pub fn verification_script(&self) -> &[u8] {
-        &self.verification_script
-    }
-
     /// Gets the hash of the verification script (matches C# ScriptHash property).
     /// Calculates RIPEMD160(SHA256(verification_script)) like the C# implementation.
     ///

@@ -97,6 +97,9 @@ fn set_script_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The `invocation_script`/`verification_script` accessors on the built
+    // `Witness` come from the `neo_primitives::Witness` trait.
+    use neo_primitives::Witness as _;
 
     #[test]
     fn empty_builder_produces_empty_witness() {
