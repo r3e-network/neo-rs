@@ -31,14 +31,6 @@ use crate::internal::UnverifiedBlocksList;
 use crate::ledger_context::LedgerContext;
 use crate::service_context::SystemContext;
 
-/// Backwards-compatible alias for the legacy actor name.
-///
-/// The old `neo_core::ledger::blockchain::Blockchain` was an
-/// Akka-style actor. The new struct is a reth-style service; the
-/// name is kept around so old `use Blockchain;` statements keep
-/// resolving.
-pub type Blockchain = BlockchainService;
-
 // `AddTransactionReply` is re-exported from `crate::command` for
 // downstream callers; the service uses it through that re-export.
 pub use crate::command::AddTransactionReply as _AddTransactionReplyAlias;

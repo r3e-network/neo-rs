@@ -5,21 +5,16 @@
 //! `Clone`, `Send`, and `Sync`; the only state it owns is the two
 //! channels the service loop reads from.
 //!
-//! The handle has *two* layers of API:
+//! The handle has *two* styles of API:
 //!
-//! 1. **Legacy actor-style API** ([`Self::tell`], [`Self::tell_async`]):
-//!    matches the old `neo_core::ledger::blockchain::BlockchainHandle`
-//!    interface one-for-one so the existing callers (RPC server,
-//!    consensus driver, transaction router, plugins) keep compiling
-//!    unchanged. Internally these methods just send a
-//!    [`crate::BlockchainCommand`] down the `mpsc::Sender`.
-//! 2. **New request/response API** ([`Self::import_block`],
-//!    [`Self::get_block`], [`Self::get_block_by_height`],
-//!    [`Self::get_height`]): a thin shim that translates the
-//!    reth-style method call into a `BlockchainCommand::ImportBlock` /
-//!    `GetBlock` / … command and awaits the `oneshot` reply. New code
-//!    should prefer these — they read like normal `async fn`s rather
-//!    than `tell(Command::Variant { … })` boilerplate.
+//! 1. **Fire-and-forget commands** ([`Self::tell`]): send a
+//!    [`crate::BlockchainCommand`] down the `mpsc::Sender` without
+//!    waiting for a reply.
+//! 2. **Request/response** ([`Self::import_block`], [`Self::get_block`],
+//!    [`Self::get_block_by_height`], [`Self::get_height`]): translate the
+//!    method call into a `BlockchainCommand::ImportBlock` / `GetBlock` / …
+//!    command and await the `oneshot` reply. These read like normal
+//!    `async fn`s rather than `tell(Command::Variant { … })` boilerplate.
 //!
 //! Both layers share the same channel and the same service loop: there
 //! is exactly one `BlockchainCommand` stream, dispatched by a single
@@ -230,68 +225,3 @@ impl BlockchainHandle {
 // a duplicated local subset — `neo_runtime` is already part of this crate's
 // public surface (see the `RuntimeEvent` re-export), so the single shared
 // error vocabulary keeps the runtime layer overlap-free.
-
-// =============================================================================
-// Legacy actor-style back-compat shims
-// =============================================================================
-//
-// The methods in this section are *not* part of the reth-style
-// service API. They are provided so the existing consumers of the
-// legacy `neo_core::ledger::blockchain::BlockchainHandle` (RPC
-// server, consensus driver, plugins, …) can be migrated to the new
-// handle in Stage C without an immediate API change. The
-// implementations are thin wrappers around [`Self::tell`] and the
-// `cmd_tx` channel.
-
-/// The handle's stable identifier for the actor-runtime's `ActorRef`
-/// integration. In the reth-style service there is no `ActorRef`;
-/// the equivalent identifier is the broadcast channel's address.
-/// This is a no-op back-compat shim.
-pub type RawRef = ();
-
-impl BlockchainHandle {
-    /// Returns a stable reference to the underlying channel wrapper.
-    /// In the reth-style service the handle *is* the wrapper, so
-    /// this method returns a unit value. New code should not call it.
-    pub fn raw_ref(&self) -> &RawRef {
-        // Stable, hashable address of the underlying sender: we
-        // synthesise a fresh unit value because the reth-style
-        // service has no `ActorRef` to expose.
-        static UNIT: RawRef = ();
-        &UNIT
-    }
-
-    /// Sends a blockchain command with the given sender.
-    /// The sender is ignored in the reth-style service because
-    /// command replies are routed through `oneshot` channels; this
-    /// method is a back-compat shim that drops the sender and
-    /// forwards to [`Self::tell`].
-    pub async fn tell_from(
-        &self,
-        command: BlockchainCommand,
-        _sender: Option<()>,
-    ) -> Result<(), mpsc::error::SendError<BlockchainCommand>> {
-        self.tell(command).await
-    }
-
-    /// Synchronous version of [`Self::tell`]. The reth-style service
-    /// is fully async; this method delegates to [`Self::try_tell`].
-    pub fn tell_async(
-        &self,
-        command: BlockchainCommand,
-    ) -> impl std::future::Future<Output = Result<(), mpsc::error::SendError<BlockchainCommand>>>
-    {
-        self.tell(command)
-    }
-
-    /// Sends a blockchain command with the given sender, using a
-    /// backpressure-aware async send. Back-compat shim around
-    /// [`Self::tell_from`].
-    pub async fn tell_from_async(
-        &self,
-        command: BlockchainCommand,
-        _sender: Option<()>,
-    ) -> Result<(), mpsc::error::SendError<BlockchainCommand>> {
-        self.tell(command).await
-    }
-}

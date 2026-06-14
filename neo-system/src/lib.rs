@@ -1,7 +1,7 @@
 //! # neo-system
 //!
 //! The Neo node orchestrator. This is the reth-style equivalent of
-//! the legacy `NeoSystem` class. The [`Node`] composes the various
+//! the C# `NeoSystem` class. The [`Node`] composes the various
 //! service implementations and exposes them to consumers (RPC
 //! server, consensus driver, plugins) as plain `async fn` calls on
 //! the corresponding trait objects.
@@ -17,10 +17,9 @@
 //! optionally a `oneshot::Sender<Reply>` for request/response
 //! flows.
 //!
-//! ## Migration path
+//! ## Usage
 //!
-//! The legacy `neo_core::neo_system::NeoSystem` is being phased
-//! out. New code should:
+//! Compose a [`Node`] from explicitly-constructed services:
 //!
 //! 1. Construct services explicitly:
 //!
@@ -55,11 +54,9 @@
 //! | Node builder | [`NodeBuilder`] | Fluent builder for [`Node`] |
 //! | Wallet provider | [`WalletProvider`] | Thread-safe wallet handle |
 //! | Node error | [`NodeError`] | Builder / lifecycle error vocabulary |
-//! | Back-compat re-exports | [`legacy`] | Common type aliases for incremental migration |
 
 #![doc(html_root_url = "https://docs.rs/neo-system/0.7.2")]
 
-pub mod back_compat;
 pub mod builder;
 pub mod error;
 pub mod node;
@@ -72,25 +69,3 @@ pub use error::{NodeError, NodeResult};
 pub use node::Node;
 pub use service_registry::ServiceRegistry;
 pub use wallet_provider::WalletProvider;
-
-// Re-export common types from the foundation / service-layer crates
-// so the migration from `neo_core::X` to the new home is purely
-// mechanical: replace `neo_core::X` with `neo_system::X` and the
-// code keeps compiling. The underlying types are the same
-// (they were moved out of `neo-core` into the new canonical
-// crates); this module is a re-export convenience only.
-pub mod legacy {
-    //! Back-compat re-exports of the common types that used to live
-    //! at `neo_core::X` and have since moved to the canonical
-    //! foundation / service-layer crates.
-    //!
-    //! Existing consumers can switch from `use neo_core::X;` to
-    //! `use neo_system::legacy::X;` as a first step. The eventual
-    //! goal is to import directly from the canonical crate
-    //! (`use neo_primitives::X;`, `use neo_payloads::X;`, …).
-    pub use neo_config::ProtocolSettings;
-    pub use neo_error::{CoreError, CoreResult};
-    pub use neo_payloads::Witness;
-    pub use neo_payloads::{Block, Header, Signer, Transaction};
-    pub use neo_primitives::{BigDecimal, UInt160, UInt256};
-}

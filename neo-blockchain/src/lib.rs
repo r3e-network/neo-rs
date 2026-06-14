@@ -112,7 +112,7 @@ pub use command::AddTransactionReply;
 pub use neo_mempool::PreverifyCompleted;
 pub use relay_result::RelayResult;
 pub use reverify::{Reverify, ReverifyItem};
-pub use service::{Blockchain, BlockchainService};
+pub use service::BlockchainService;
 
 pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 
