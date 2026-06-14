@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-14
+
+### Added
+- `neo-hsm` crate: a multi-cloud PKCS#11 `ConsensusSigner` (AWS CloudHSM / Azure Dedicated+Cloud HSM / GCP) implementing the `neo-consensus` signer seam, with optional native Azure/GCP REST backends and no `unsafe`.
+- Cross-implementation benchmark harness (`benchmarks/`): a standalone JSON-RPC load generator plus offline `.acc` block-import throughput, RPC, and resource-sampling scripts for comparing neo-rs against neo-cli (C#) and neo-go.
+- Native node GUI / manager (`neo-gui`) — an eframe/egui application for configuring, running, and monitoring the node.
+
+### Changed
+- Uniform struct-based API: every native-contract operation, plus the genuine local-type operations across other crates (storage, execution, payloads, rpc), are now methods/associated functions on their owning struct instead of module-level free functions.
+- Removed the upstream C# Neo MIT-license headers that had been copied into Rust source files (they cover the C# project's files, not this Rust node); genuine module documentation is preserved.
+- `.gitignore` now excludes AI assistant tooling artifacts (`.agents/`, `.claude/`, etc.).
+
+### Fixed
+- HSM public-key decode now disambiguates a bare X9.62 EC point (which begins with `0x04`, identical to the DER OCTET STRING tag) from a DER-wrapped one by length, preventing a wrong consensus script hash.
+
 ### Breaking changes (workspace restructuring)
 
 The `neo-core` monolith has been split into four focused, single-responsibility crates. The end state mirrors the polkadot-sdk / reth convention: a thin `neo-core` compatibility facade over a layered workspace where each crate owns exactly one domain.
