@@ -117,6 +117,9 @@ exclude = [
     "examples",
     "neo_csharp",
     "fuzz",
+    # Standalone native GUI (eframe app). Built on its own; talks to the node
+    # over JSON-RPC + process control, so it stays out of the workspace graph.
+    "neo-gui",
 ]
 
 [workspace.package]
