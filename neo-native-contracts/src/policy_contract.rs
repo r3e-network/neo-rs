@@ -1166,6 +1166,22 @@ impl NativeContract for PolicyContract {
         self
     }
 
+    /// The `ApplicationEngine` contract-invocation gate (C#
+    /// `ApplicationEngine.CallContract` -> `NativeContract.Policy.IsBlocked`):
+    /// `snapshot.Contains(key(Prefix_BlockedAccount, hash))`. Native contracts can
+    /// never be in the blocked list (`blockAccount` rejects them), so no special
+    /// casing is needed. Without this override the trait default `Ok(false)` would
+    /// let a blocked contract be invoked, diverging from C#.
+    fn is_contract_blocked(
+        &self,
+        snapshot: &neo_storage::persistence::DataCache,
+        contract_hash: &UInt160,
+    ) -> CoreResult<bool> {
+        Ok(snapshot
+            .get(&Self::blocked_account_key(contract_hash))
+            .is_some())
+    }
+
     /// C# `PolicyContract.InitializeAsync(engine, hardfork)` for `hardfork ==
     /// ActiveIn` (PolicyContract.cs:137-143; Policy is genesis-active, so this
     /// runs while persisting block 0): seed `Prefix_FeePerByte` (1000),
@@ -2192,6 +2208,23 @@ mod tests {
         assert!(cache.get(&key).is_none());
         cache.add(key.clone(), StorageItem::from_bytes(vec![]));
         assert!(cache.get(&key).is_some());
+    }
+
+    #[test]
+    fn is_contract_blocked_trait_reflects_blocked_list() {
+        // Regression: the engine's contract-invocation gate (contracts.rs) calls
+        // the NativeContract::is_contract_blocked TRAIT method. It must reflect
+        // the blocked-account list rather than the default Ok(false) — otherwise
+        // a blocked contract could be invoked, diverging from C#.
+        let cache = DataCache::new(false);
+        let hash = UInt160::from_bytes(&[7u8; 20]).unwrap();
+        let policy = PolicyContract::new();
+        assert!(!<PolicyContract as NativeContract>::is_contract_blocked(&policy, &cache, &hash).unwrap());
+        cache.add(
+            PolicyContract::blocked_account_key(&hash),
+            StorageItem::from_bytes(vec![]),
+        );
+        assert!(<PolicyContract as NativeContract>::is_contract_blocked(&policy, &cache, &hash).unwrap());
     }
 
     #[test]
