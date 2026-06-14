@@ -34,7 +34,7 @@ use num_traits::ToPrimitive;
 
 /// GAS budget for the descriptor probe, matching C# `ApplicationEngine.Run`
 /// (`gas: 0_30000000L` — 0.3 GAS).
-const DESCRIPTOR_PROBE_GAS: i64 = 0_30000000;
+const DESCRIPTOR_PROBE_GAS: i64 = 30_000_000;
 
 /// Describes a NEP-17 asset: its id, human-readable name, ticker symbol, and
 /// decimal precision. Mirrors C# `Neo.Wallets.AssetDescriptor`.

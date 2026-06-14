@@ -240,8 +240,7 @@ impl ApplicationEngine {
         if self
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, block_height)
-        {
-            if crate::native_contract_provider::get_whitelisted_fee_for_policy(
+            && crate::native_contract_provider::get_whitelisted_fee_for_policy(
                 self.snapshot_cache.as_ref(),
                 &contract_hash,
                 method,
@@ -251,7 +250,6 @@ impl ApplicationEngine {
             {
                 is_whitelisted = true;
             }
-        }
 
         if !is_whitelisted {
             // Charge native contract fees upfront (matches C# NativeContract.Invoke).

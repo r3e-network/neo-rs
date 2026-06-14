@@ -111,10 +111,8 @@ impl StorageItemExt for StorageItem {
     fn to_bigint(&self) -> BigInt {
         // Try to recover a cached BigInteger.
         if let Some(cache) = self.cache() {
-            if let Some(sc) = cache.as_any().downcast_ref::<StorageCache>() {
-                if let StorageCache::BigInteger(v) = sc {
-                    return v.clone();
-                }
+            if let Some(StorageCache::BigInteger(v)) = cache.as_any().downcast_ref::<StorageCache>() {
+                return v.clone();
             }
         }
         // Fallback: decode from bytes.

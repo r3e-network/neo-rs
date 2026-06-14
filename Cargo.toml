@@ -147,6 +147,29 @@ msrv = "1.85"
 unsafe_code = "deny"
 missing_docs = "warn"
 
+# Clippy policy, moved here from the inline flags in .github/workflows/ci.yml so
+# local `cargo clippy` enforces exactly what CI does. `all` is denied (priority
+# -1 so the specific allows below win); the allows are the pragmatic exceptions
+# the project has accepted.
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+doc_overindented_list_items = "allow"
+doc_lazy_continuation = "allow"
+large_enum_variant = "allow"
+# Sibling of large_enum_variant: Neo's error enums are intentionally large and
+# boxing every Result's Err to shave bytes is not worth the churn.
+result_large_err = "allow"
+module_inception = "allow"
+type_complexity = "allow"
+len_zero = "allow"
+nonminimal_bool = "allow"
+enum_variant_names = "allow"
+too_many_arguments = "allow"
+field_reassign_with_default = "allow"
+assertions_on_constants = "allow"
+# False-fires on test byte-vectors that happen to approximate PI.
+approx_constant = "allow"
+
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer

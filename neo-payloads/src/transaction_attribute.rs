@@ -147,8 +147,7 @@ impl TransactionAttribute {
         self.type_id().allows_multiple()
     }
 
-    /// Verify the attribute.
-    /// Matches C# Verify method.
+    // verify: Matches C# Verify method. Handled by attribute-type dispatch.
 
     /// Calculate the network fee for this attribute.
     /// Matches C# CalculateNetworkFee method.

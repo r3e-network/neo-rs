@@ -25,7 +25,7 @@ impl NotValidBefore {
         Self { height }
     }
 
-    /// Verify the not-valid-before attribute.
+    // verify: handled by TransactionAttribute dispatch.
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {

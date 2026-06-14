@@ -141,3 +141,67 @@ MerkleBlock Size-vs-Serialize quirk; neo-vm two-tier engine + ported subtle
 semantics; neo-crypto malleability normalization / BLS / NamedCurveHash;
 neo-system ServiceRegistry TypeId `.expect()`s; neo-consensus dbft signing path;
 neo-serialization CSharpEscapeFormatter; neo-wallets NEP-2 AES/Base58Check crypto.
+
+---
+
+## Completion status — 2026-06-13 (continued execution)
+
+### DONE this session (committed, each verified green)
+- **#16 ABI overload** — `ContractAbi::get_method` returns the FIRST overload for
+  pcount<0 (C# FirstOrDefault). [`14dc65b8`]
+- **#4 NEP-2 verification-script salt** — uses the canonical CheckSig redeem
+  script; '6P…' keys now interoperate with standard wallets + round-trip test.
+  [`14dc65b8`]
+- **#13 CheckSig/CheckMultisig** — out-of-field pubkey coordinate (≥Q) →
+  `Ok(false)` (C# ArgumentException), other decode failures still fault.
+  [`14dc65b8`]
+- **#17 consensus dedup-before-verify** — payload marked seen only after the
+  witness-verifying handler succeeds (anti cache-poison). [`14dc65b8`]
+- **#15 NEF deserialize** — script read capped at MaxItemSize, empty/oversize
+  rejected, total-size verified. [`14dc65b8`]
+- **#29 RocksDbSnapshot** — ATTEMPTED then REVERTED [`16658fc5`]: removing the
+  shared read cache regressed commit-invalidation coherency (a committed update
+  stopped being visible to a new reader). Moved back to the remaining list; the
+  isolation needs a coherency-preserving fix, not a cache removal.
+- **#32 PKCS#11 low-s** — `Secp256r1Crypto::normalize_low_s`; HSM signer
+  canonicalizes r‖s. [`14dc65b8`]
+- **#14 Oracle JSONPath** — full C# JPathToken grammar ($.., slices, unions,
+  negative indices, quoted keys) + maxDepth=6/maxObjects=1024 DoS bounds + 5
+  differential tests from `UT_JPath.cs`. [`a9c59c9f`]
+- **#20/#31 foundation deletions** — dead `Fixed8`/bigdecimal, dead
+  MAX_ARRAY_SIZE/MAX_ITEM_SIZE consts, `persistence/index.rs`, zero-caller
+  unit-inconsistent `check_gas`/`consume_gas`/`add_gas`. [`50c015a8`]
+- **misc clarity** — Slot::clear dedup, `_hash`→`hash`, state-root comment,
+  hsm device_info. [`c2fa97b9`]
+- **#10 getstateroot/getstateheight** — fall back to the live MptStore so a
+  running node serves real state-root data. [`90a054a3`]
+- **#19 NEP-17 balance dedup** (`GasToken::balance_of`, mempool delegates) +
+  **#33 neo-tee merkle** routed through `neo_crypto::Crypto::sha256`. [`90a054a3`]
+- **#25 unused deps** — dropped async-trait/neo-network/neo-system (consensus),
+  uuid/dirs (config), anyhow (tee), bigdecimal (root) + a duplicate lint.
+  [`6fcdd74d`]
+
+### Decisions (kept, not changed)
+- **#22 neo-network TaskManagerService + typed-wire** — KEPT. Both have an
+  integration test / are WIP sync scaffolding; deleting tested intentional WIP
+  is a maintainer call, not a cleanup. The 16 conditional-jump opcode handlers
+  are likewise kept explicit for 1:1 C# auditability.
+
+### Remaining (precisely scoped follow-ups — each a focused effort)
+- **#24 `Result<_,String>` → `CoreResult`/thiserror** across neo-manifest,
+  neo-serialization, neo-wallets, neo-system, neo-crypto. Mechanical but broad
+  (per-crate enum + call-site sweep); do one crate per change to keep green.
+- **#5/#6/#7/#8/#9 node hardening** — DONE: #9 non-blocking broadcast fan-out
+  [`4246b022`], #5 TxRouterHandle wired to mempool+broadcast [`6202f3e5`], #6
+  mempool total-occupancy eviction [`46b29835`]. REMAINING: #7 bound the in-RAM
+  `LedgerContext` with an LRU + durable-store fallback for cold get_block/
+  get_block_by_height reads (OOM on mainnet sync); #8 enforce `RpcServerConfig`
+  DoS limits + GovernorRateLimiter on the jsonrpsee server (large — jsonrpsee
+  0.24 ServerBuilder + a tower middleware layer).
+- **#21 neo-vm `VmError`** — trim never-constructed variants + the unused gas
+  surface (needs careful per-variant never-constructed verification).
+- **neo-hsm `pkcs11` feature** — pre-existing: does not compile (`cryptoki`
+  Session is `!Send` under `async_trait`); needs a `spawn_blocking`/Send wrapper.
+- **neo-state-service verification pipeline** — now that getstateroot reads
+  MptStore, the dormant StateStore/Verifier/commit-handler half can be deleted
+  (or wired); structural, deferred.

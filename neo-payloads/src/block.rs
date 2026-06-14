@@ -277,6 +277,81 @@ impl neo_primitives::SerializablePayload for Block {
 // Use macro to reduce boilerplate
 neo_io::impl_default_via_new!(Block);
 
+impl neo_primitives::Verifiable for Block {
+    fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
+        let data = self.header.try_get_hash_data().map_err(|e| {
+            neo_primitives::error::PrimitiveError::invalid_data(format!(
+                "block header serialization failed: {e}"
+            ))
+        })?;
+        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
+            &data,
+        )))
+    }
+    fn hash_data(&self) -> Vec<u8> {
+        let mut writer = neo_io::BinaryWriter::new();
+        if self.serialize_unsigned(&mut writer).is_err() {
+            return Vec::new();
+        }
+        writer.into_bytes()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn verify(&self) -> bool {
+        true
+    }
+}
+
+/// Wire size of a var-int (C# `GetVarSize`).
+fn var_int_size(value: u64) -> usize {
+    match value {
+        v if v < 0xFD => 1,
+        v if v <= 0xFFFF => 3,
+        v if v <= 0xFFFF_FFFF => 5,
+        _ => 9,
+    }
+}
+
+impl Serializable for Block {
+    fn size(&self) -> usize {
+        // C# Block.Size includes the transaction var-array count bytes.
+        let mut size = <Header as Serializable>::size(&self.header)
+            + var_int_size(self.transactions.len() as u64);
+        for tx in &self.transactions {
+            size += <Transaction as Serializable>::size(tx);
+        }
+        size
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        <Header as Serializable>::serialize(&self.header, writer)?;
+        writer.write_var_int(self.transactions.len() as u64)?;
+        for tx in &self.transactions {
+            <Transaction as Serializable>::serialize(tx, writer)?;
+        }
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let header = <Header as neo_io::Serializable>::deserialize(reader)?;
+        let tx_count = reader.read_var_int(usize::MAX as u64)? as usize;
+        if tx_count > neo_primitives::constants::BLOCK_MAX_TX_WIRE_LIMIT {
+            return Err(IoError::invalid_data("Too many transactions"));
+        }
+        let mut transactions = Vec::with_capacity(tx_count);
+        for _ in 0..tx_count {
+            transactions.push(<Transaction as neo_io::Serializable>::deserialize(reader)?);
+        }
+        Ok(Self {
+            header,
+            transactions,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::signer::Signer;
@@ -375,80 +450,5 @@ mod tests {
         block.transactions.push(transaction_with_oversized_script());
 
         assert!(!block.verify_no_duplicate_transactions());
-    }
-}
-
-impl neo_primitives::Verifiable for Block {
-    fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
-        let data = self.header.try_get_hash_data().map_err(|e| {
-            neo_primitives::error::PrimitiveError::invalid_data(format!(
-                "block header serialization failed: {e}"
-            ))
-        })?;
-        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
-            &data,
-        )))
-    }
-    fn hash_data(&self) -> Vec<u8> {
-        let mut writer = neo_io::BinaryWriter::new();
-        if self.serialize_unsigned(&mut writer).is_err() {
-            return Vec::new();
-        }
-        writer.into_bytes()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn verify(&self) -> bool {
-        true
-    }
-}
-
-/// Wire size of a var-int (C# `GetVarSize`).
-fn var_int_size(value: u64) -> usize {
-    match value {
-        v if v < 0xFD => 1,
-        v if v <= 0xFFFF => 3,
-        v if v <= 0xFFFF_FFFF => 5,
-        _ => 9,
-    }
-}
-
-impl Serializable for Block {
-    fn size(&self) -> usize {
-        // C# Block.Size includes the transaction var-array count bytes.
-        let mut size = <Header as Serializable>::size(&self.header)
-            + var_int_size(self.transactions.len() as u64);
-        for tx in &self.transactions {
-            size += <Transaction as Serializable>::size(tx);
-        }
-        size
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        <Header as Serializable>::serialize(&self.header, writer)?;
-        writer.write_var_int(self.transactions.len() as u64)?;
-        for tx in &self.transactions {
-            <Transaction as Serializable>::serialize(tx, writer)?;
-        }
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let header = <Header as neo_io::Serializable>::deserialize(reader)?;
-        let tx_count = reader.read_var_int(usize::MAX as u64)? as usize;
-        if tx_count > neo_primitives::constants::BLOCK_MAX_TX_WIRE_LIMIT {
-            return Err(IoError::invalid_data("Too many transactions"));
-        }
-        let mut transactions = Vec::with_capacity(tx_count);
-        for _ in 0..tx_count {
-            transactions.push(<Transaction as neo_io::Serializable>::deserialize(reader)?);
-        }
-        Ok(Self {
-            header,
-            transactions,
-        })
     }
 }

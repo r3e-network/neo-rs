@@ -74,7 +74,7 @@ impl InteropHost for ApplicationEngine {
         // instance). Using script_hash equality here would incorrectly skip the dynamic-call
         // null placeholder push for self-calls, causing stack underflow at the caller's
         // post-SYSCALL DROP.
-        let is_cross_contract_unload = engine.current_context().map_or(true, |current_ctx| {
+        let is_cross_contract_unload = engine.current_context().is_none_or(|current_ctx| {
             !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc())
         });
         let _ = unloaded_script_hash;

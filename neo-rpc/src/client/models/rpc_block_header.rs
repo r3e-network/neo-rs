@@ -171,7 +171,7 @@ impl RpcBlockHeader {
         );
         json.insert(
             "witnesses".to_string(),
-            object_array(&[header.witness.clone()], witness_to_json),
+            object_array(std::slice::from_ref(&header.witness), witness_to_json),
         );
         json.insert(
             "confirmations".to_string(),

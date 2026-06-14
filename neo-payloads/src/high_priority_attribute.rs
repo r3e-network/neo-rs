@@ -22,7 +22,7 @@ impl HighPriorityAttribute {
         Self
     }
 
-    /// Verify the high priority attribute.
+    // verify: handled by TransactionAttribute dispatch.
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {

@@ -26,7 +26,6 @@ pub(crate) use nep::{
 };
 pub use parsing::optional_string;
 pub use parsing::JsonParseError;
-pub use stack::StackParseError;
 pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 #[allow(unused_imports)]
 pub use parsing::{

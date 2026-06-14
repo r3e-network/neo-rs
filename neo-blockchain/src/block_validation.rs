@@ -206,7 +206,7 @@ pub fn validate_transaction_count_raw_with_limit(
     Ok(())
 }
 
-/// Re-export BlockLike from neo-primitives (single source of truth).
+// Re-export BlockLike from neo-primitives (single source of truth).
 // pub use neo_primitives::BlockLike; // already imported at the top of the file
 
 /// Validates block timestamp is within acceptable bounds.

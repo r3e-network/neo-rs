@@ -71,6 +71,10 @@ mod tests {
     #[test]
     fn result_alias_compiles() {
         let ok: NodeResult<u32> = Ok(1);
-        assert_eq!(ok.unwrap(), 1);
+        if let Ok(v) = ok {
+            assert_eq!(v, 1);
+        } else {
+            panic!("expected Ok");
+        }
     }
 }

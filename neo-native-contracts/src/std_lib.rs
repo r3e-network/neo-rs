@@ -1201,13 +1201,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            dispatch("serialize", &[payload.clone()]).unwrap().unwrap(),
+            dispatch("serialize", std::slice::from_ref(&payload)).unwrap().unwrap(),
             payload
         );
         // deserialize accepts the valid payload (returns it for the Any-return
         // decode) and faults on malformed input.
         assert_eq!(
-            dispatch("deserialize", &[payload.clone()])
+            dispatch("deserialize", std::slice::from_ref(&payload))
                 .unwrap()
                 .unwrap(),
             payload

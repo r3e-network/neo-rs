@@ -660,6 +660,10 @@ impl std::fmt::Debug for MemoryPool {
     }
 }
 
+/// Shared handle alias for the `Arc<MemoryPool>` pattern used by
+/// services that need to share the pool across tasks.
+pub type SharedMemoryPool = Arc<MemoryPool>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1156,7 +1160,3 @@ mod tests {
         assert_eq!(pool.unverified_count(), 0);
     }
 }
-
-/// Shared handle alias for the `Arc<MemoryPool>` pattern used by
-/// services that need to share the pool across tasks.
-pub type SharedMemoryPool = Arc<MemoryPool>;

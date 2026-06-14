@@ -1194,7 +1194,7 @@ mod tests {
             script
         };
 
-        let mut tampered_signature = signature.clone();
+        let mut tampered_signature = signature;
         tampered_signature[10] ^= 0xFF;
         let mut tampered_header = header.clone();
         tampered_header.witness = neo_payloads::Witness::new_with_scripts(

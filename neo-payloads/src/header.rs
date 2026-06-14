@@ -97,7 +97,7 @@ impl Header {
             index,
             primary_index,
             next_consensus,
-            witnesses.into_iter().next().unwrap_or_else(Witness::new),
+            witnesses.into_iter().next().unwrap_or_default(),
         )
     }
 
@@ -320,10 +320,6 @@ impl neo_primitives::SerializablePayload for Header {
     }
 }
 
-#[cfg(test)]
-#[cfg(test)]
-mod tests {}
-
 // ============================================================================
 // Serialization impls (inlined from header/serialization.rs)
 // ============================================================================
@@ -445,3 +441,6 @@ impl Serializable for Header {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {}

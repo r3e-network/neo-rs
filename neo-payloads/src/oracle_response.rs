@@ -58,8 +58,9 @@ impl OracleResponse {
         builder.to_array()
     }
 
-    /// Verify the oracle response attribute. Mirrors C# `OracleResponse.Verify`
-    /// (Neo/Network/P2P/Payloads/OracleResponse.cs), all five checks:
+    // verify: Mirrors C# `OracleResponse.Verify`
+    // (Neo/Network/P2P/Payloads/OracleResponse.cs), all five checks.
+    // Handled by TransactionAttribute dispatch.
 
     /// Serialize without type byte.
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {

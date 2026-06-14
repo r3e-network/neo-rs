@@ -16,7 +16,7 @@ use std::sync::Arc;
 use neo_payloads::Block;
 use tracing::{debug, error, warn};
 
-use crate::internal::{UnverifiedBlock, UnverifiedBlocksList};
+use crate::internal::UnverifiedBlock;
 use crate::service::BlockchainService;
 
 const DRAIN_BATCH_SIZE: usize = 50;
@@ -42,7 +42,7 @@ impl BlockchainService {
         let mut cache = self.unverified_blocks.lock();
         cache
             .entry(index)
-            .or_insert_with(UnverifiedBlocksList::new)
+            .or_default()
             .push_back(UnverifiedBlock::new(block, relay, pre_verified));
         true
     }

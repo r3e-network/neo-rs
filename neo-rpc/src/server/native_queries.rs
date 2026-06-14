@@ -117,8 +117,7 @@ pub(crate) fn invoke_native_read(
     }
     engine
         .result_stack()
-        .peek(0)
-        .map(StackItem::clone)
+        .peek(0).cloned()
         .map_err(|err| err.to_string())
 }
 

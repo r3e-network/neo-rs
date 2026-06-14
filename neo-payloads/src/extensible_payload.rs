@@ -60,7 +60,7 @@ impl ExtensiblePayload {
         }
     }
 
-    /// Verify the payload against protocol settings and snapshot.
+    // verify: handled externally by protocol/consensus.
 
     /// Returns the cached hash of the payload, computing it if necessary.
     pub fn ensure_hash(&mut self) -> UInt256 {
@@ -236,6 +236,34 @@ impl Serializable for ExtensiblePayload {
 // Use macro to reduce boilerplate
 neo_io::impl_default_via_new!(ExtensiblePayload);
 
+impl neo_primitives::Verifiable for ExtensiblePayload {
+    fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
+        let data = self.try_get_hash_data().map_err(|e| {
+            neo_primitives::error::PrimitiveError::invalid_data(format!(
+                "extensible payload serialization failed: {e}"
+            ))
+        })?;
+        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
+            &data,
+        )))
+    }
+    fn hash_data(&self) -> Vec<u8> {
+        let mut writer = neo_io::BinaryWriter::new();
+        if self.serialize_unsigned(&mut writer).is_err() {
+            return Vec::new();
+        }
+        writer.into_bytes()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn verify(&self) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,33 +304,5 @@ mod tests {
             neo_primitives::Verifiable::hash(&payload).unwrap(),
             expected
         );
-    }
-}
-
-impl neo_primitives::Verifiable for ExtensiblePayload {
-    fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
-        let data = self.try_get_hash_data().map_err(|e| {
-            neo_primitives::error::PrimitiveError::invalid_data(format!(
-                "extensible payload serialization failed: {e}"
-            ))
-        })?;
-        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
-            &data,
-        )))
-    }
-    fn hash_data(&self) -> Vec<u8> {
-        let mut writer = neo_io::BinaryWriter::new();
-        if self.serialize_unsigned(&mut writer).is_err() {
-            return Vec::new();
-        }
-        writer.into_bytes()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn verify(&self) -> bool {
-        true
     }
 }

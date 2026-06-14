@@ -64,7 +64,7 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     );
     json.insert(
         "witnesses".to_string(),
-        object_array(&[header.witness.clone()], witness_to_json),
+        object_array(std::slice::from_ref(&header.witness), witness_to_json),
     );
     json.insert(
         "tx".to_string(),
@@ -375,7 +375,7 @@ fn condition_to_json(condition: &neo_payloads::WitnessCondition) -> JObject {
         WC::And { conditions } | WC::Or { conditions } => {
             json.insert(
                 "expressions".to_string(),
-                object_array(conditions, |condition| condition_to_json(condition)),
+                object_array(conditions, condition_to_json),
             );
         }
         WC::ScriptHash { hash } | WC::CalledByContract { hash } => {

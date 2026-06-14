@@ -428,6 +428,9 @@ impl Nep17Api {
         build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)
     }
 
+    // reason: `&self` is required to call `self.emit_argument` recursively in the Array branch;
+    // removing it would require converting this to a free function and changing all call sites.
+    #[allow(clippy::only_used_in_recursion)]
     fn emit_argument(
         &self,
         sb: &mut ScriptBuilder,

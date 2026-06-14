@@ -59,12 +59,10 @@ jobs:
       with:
         shared-key: ci-lint
     - name: Clippy
-      run: "cargo clippy --workspace --all-targets --profile test -- \\\n  -D clippy::all\
-        \ \\\n  -A clippy::doc_overindented_list_items \\\n  -A clippy::doc_lazy_continuation\
-        \ \\\n  -A clippy::large_enum_variant \\\n  -A clippy::module_inception \\\
-        \n  -A clippy::type_complexity \\\n  -A clippy::len_zero \\\n  -A clippy::nonminimal_bool\
-        \ \\\n  -A clippy::enum_variant_names \\\n  -A clippy::too_many_arguments\
-        \ \\\n  -A clippy::field_reassign_with_default \\\n  -A clippy::assertions_on_constants\n"
+      # The lint policy (deny clippy::all + the accepted allow-list) lives in
+      # [workspace.lints.clippy] in the root Cargo.toml, so local `cargo clippy`
+      # and CI enforce exactly the same rules.
+      run: cargo clippy --workspace --all-targets --profile test
   test:
     name: Test
     runs-on: ubuntu-latest

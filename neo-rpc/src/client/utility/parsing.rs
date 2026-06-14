@@ -262,8 +262,8 @@ pub fn required_address_script_hash(
 }
 
 /// Builds an ordered JSON object array token.
-pub fn object_array<T>(items: &[T], mut to_object: impl FnMut(&T) -> JObject) -> JToken {
-    object_array_from_iter(items.iter().map(|item| to_object(item)))
+pub fn object_array<T>(items: &[T], to_object: impl FnMut(&T) -> JObject) -> JToken {
+    object_array_from_iter(items.iter().map(to_object))
 }
 
 /// Builds an ordered JSON object array token from an object iterator.
@@ -276,11 +276,11 @@ pub fn object_array_from_iter(objects: impl IntoIterator<Item = JObject>) -> JTo
 /// Builds an ordered JSON object array token from a fallible object mapper.
 pub fn fallible_object_array<T, E>(
     items: &[T],
-    mut to_object: impl FnMut(&T) -> Result<JObject, E>,
+    to_object: impl FnMut(&T) -> Result<JObject, E>,
 ) -> Result<JToken, E> {
     let objects = items
         .iter()
-        .map(|item| to_object(item))
+        .map(to_object)
         .collect::<Result<Vec<_>, E>>()?;
     Ok(object_array_from_iter(objects))
 }
@@ -348,7 +348,7 @@ pub fn parse_object_array_lossy<T>(
 pub fn parse_optional_present_token_array_strict<T>(
     json: &JObject,
     field: &str,
-    mut parse: impl FnMut(&JToken) -> Result<T, String>,
+    parse: impl FnMut(&JToken) -> Result<T, String>,
 ) -> Result<Vec<T>, String> {
     json.get(field)
         .and_then(JToken::as_array)
@@ -356,7 +356,7 @@ pub fn parse_optional_present_token_array_strict<T>(
             entries
                 .iter()
                 .filter_map(|entry| entry.as_ref())
-                .map(|token| parse(token))
+                .map(parse)
                 .collect()
         })
         .unwrap_or_else(|| Ok(Vec::new()))

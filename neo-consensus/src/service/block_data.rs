@@ -139,7 +139,7 @@ mod tests {
             signatures: vec![(0u8, signature.clone())],
             validator_pubkeys: vec![pubkey.clone()],
             required_signatures: 1,
-            next_consensus: UInt160::from_script(&multisig_verification_script(&[pubkey.clone()])),
+            next_consensus: UInt160::from_script(&multisig_verification_script(std::slice::from_ref(&pubkey))),
         };
 
         let block = data

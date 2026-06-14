@@ -170,7 +170,7 @@ impl OracleService {
         }
 
         size += get_var_size_serializable_slice(tx.attributes());
-        let comp3 = size as i64 * fee_per_byte as i64;
+        let comp3 = size as i64 * fee_per_byte;
         let final_network_fee = tx.network_fee().saturating_add(comp3);
         tx.set_network_fee(final_network_fee);
         tx.set_system_fee(request.gas_for_response - final_network_fee);

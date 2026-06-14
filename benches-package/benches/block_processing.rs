@@ -66,7 +66,7 @@ fn bench_header_hash(c: &mut Criterion) {
     c.bench_function("header_hash", |b| {
         b.iter(|| {
             // Clear cached hash to force recomputation each iteration.
-            let mut h = header.clone();
+            let h = header.clone();
             black_box(h.hash());
         });
     });

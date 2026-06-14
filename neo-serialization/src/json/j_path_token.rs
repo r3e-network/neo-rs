@@ -391,8 +391,8 @@ impl JPathToken {
 
     /// `Descent` (no-arg, JPathToken.cs:273-282): flatten children of every
     /// `JContainer` (BOTH objects and arrays), preserving null entries.
-    fn descent_all<'a>(
-        objects: &mut Vec<&'a JToken>,
+    fn descent_all(
+        objects: &mut Vec<&JToken>,
         max_depth: &mut i32,
         max_objects: usize,
     ) -> Result<(), JsonError> {
@@ -429,8 +429,8 @@ impl JPathToken {
 
     /// `Descent(params string[] names)` (JPathToken.cs:284-300): for each object,
     /// yield `obj[name]` for every existing name (including null values).
-    fn descent_names<'a>(
-        objects: &mut Vec<&'a JToken>,
+    fn descent_names(
+        objects: &mut Vec<&JToken>,
         max_depth: &mut i32,
         max_objects: usize,
         names: &[String],
@@ -460,8 +460,8 @@ impl JPathToken {
 
     /// `Descent(params int[] indexes)` (JPathToken.cs:302-321): negative indices
     /// normalize via `index + count`; out-of-range indices are dropped.
-    fn descent_indexes<'a>(
-        objects: &mut Vec<&'a JToken>,
+    fn descent_indexes(
+        objects: &mut Vec<&JToken>,
         max_depth: &mut i32,
         max_objects: usize,
         indexes: &[i32],
@@ -494,8 +494,8 @@ impl JPathToken {
     /// `DescentRange` (JPathToken.cs:323-339): slice normalization mirrors C#
     /// `iStart = start>=0?start:start+count; if iStart<0 iStart=0;
     /// iEnd = end>0?end:end+count; Skip(iStart).Take(iEnd-iStart)`.
-    fn descent_range<'a>(
-        objects: &mut Vec<&'a JToken>,
+    fn descent_range(
+        objects: &mut Vec<&JToken>,
         max_depth: &mut i32,
         max_objects: usize,
         start: i32,

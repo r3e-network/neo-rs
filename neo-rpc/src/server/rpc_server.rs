@@ -4,7 +4,7 @@ use rustls::ServerConfig;
 use serde_json::Value;
 use std::sync::LazyLock;
 use tokio::{
-    sync::{Semaphore, oneshot},
+    sync::oneshot,
     task::JoinHandle,
     time::sleep,
 };

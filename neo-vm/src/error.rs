@@ -735,6 +735,14 @@ impl VmError {
     }
 }
 
+impl From<VmError> for neo_error::CoreError {
+    fn from(err: VmError) -> Self {
+        neo_error::CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -798,13 +806,5 @@ mod tests {
 
         let error = VmError::gas_exhausted(1000, 800);
         assert_eq!(error.to_string(), "Gas exhausted: used 1000, limit 800");
-    }
-}
-
-impl From<VmError> for neo_error::CoreError {
-    fn from(err: VmError) -> Self {
-        neo_error::CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
     }
 }

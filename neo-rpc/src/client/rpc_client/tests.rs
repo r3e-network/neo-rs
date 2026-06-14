@@ -19,7 +19,6 @@ use neo_primitives::UInt256;
 use neo_serialization::json::{JArray, JObject, JToken};
 use num_bigint::BigInt;
 use regex::escape;
-use std::convert::Infallible;
 use std::fs;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;

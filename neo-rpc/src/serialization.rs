@@ -5,7 +5,7 @@ use neo_io::{BinaryWriter, IoResult, Serializable};
 
 pub(crate) fn serializable_to_bytes<T>(value: &T) -> IoResult<Vec<u8>>
 where
-    T: Serializable + ?Sized,
+    T: Serializable,
 {
     let mut writer = BinaryWriter::new();
     value.serialize(&mut writer)?;
@@ -14,7 +14,7 @@ where
 
 pub(crate) fn serializable_to_base64<T>(value: &T) -> IoResult<String>
 where
-    T: Serializable + ?Sized,
+    T: Serializable,
 {
     serializable_to_bytes(value).map(|bytes| BASE64_STANDARD.encode(bytes))
 }

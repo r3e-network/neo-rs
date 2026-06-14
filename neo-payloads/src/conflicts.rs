@@ -26,7 +26,7 @@ impl Conflicts {
         Self { hash }
     }
 
-    /// Verify the conflicts attribute.
+    // verify: handled by TransactionAttribute dispatch.
 
     /// Calculate network fee for this attribute.
     pub fn calculate_network_fee(

@@ -119,7 +119,7 @@ impl Message {
     pub fn from_bytes(bytes: &[u8]) -> WireResult<Self> {
         let mut reader = MemoryReader::new(bytes);
         let flags = MessageFlags::from_bits(reader.read_u8()?)
-            .ok_or_else(|| WireError::InvalidMessage(format!("invalid flags byte")))?;
+            .ok_or_else(|| WireError::InvalidMessage("invalid flags byte".to_string()))?;
         let command = MessageCommand::from_byte(reader.read_u8()?)
             .map_err(|e| WireError::InvalidMessage(format!("invalid command byte: {e}")))?;
         let payload_compressed = reader

@@ -782,8 +782,8 @@ mod tests {
         };
 
         // Deserialize normalizes to canonical bytes; Serialize returns them.
-        assert_eq!(call("bls12381Deserialize", &[g1.clone()]), g1);
-        assert_eq!(call("bls12381Serialize", &[g1.clone()]), g1);
+        assert_eq!(call("bls12381Deserialize", std::slice::from_ref(&g1)), g1);
+        assert_eq!(call("bls12381Serialize", std::slice::from_ref(&g1)), g1);
 
         // Pairing e(g1,g2) == s_gtHex — the headline C# vector through dispatch.
         assert_eq!(call("bls12381Pairing", &[g1.clone(), g2.clone()]), gt);

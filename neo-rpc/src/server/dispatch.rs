@@ -7,7 +7,7 @@
 //! the dispatch path.
 
 use super::rpc_error::RpcError;
-use super::rpc_server::{RPC_ERR_TOTAL, RPC_REQ_TOTAL, RpcHandler, RpcServer};
+use super::rpc_server::{RpcHandler, RpcServer};
 use super::rpc_server_settings::{RpcServerSettings, UnhandledExceptionPolicy};
 use parking_lot::RwLock;
 use std::collections::HashSet;
@@ -102,6 +102,3 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-/// Re-export the jsonrpsee context type so consumers can build modules
-/// without depending on the inner adapter module.
-pub use super::jsonrpsee_adapter::JsonRpseeContext as DispatchContext;

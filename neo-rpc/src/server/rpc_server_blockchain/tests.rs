@@ -533,8 +533,8 @@ async fn get_block_roundtrips_by_hash_and_index() {
         .expect("decode");
     let mut reader = MemoryReader::new(&bytes);
     let decoded = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
-    let mut decoded_clone = decoded.clone();
-    assert_eq!(Block::hash(&mut decoded_clone), block.hash());
+    let decoded_clone = decoded.clone();
+    assert_eq!(Block::hash(&decoded_clone), block.hash());
 
     let index_params = [Value::Number(1u32.into())];
     let result = (handler.callback())(&server, &index_params).expect("get block by index");
@@ -543,8 +543,8 @@ async fn get_block_roundtrips_by_hash_and_index() {
         .expect("decode");
     let mut reader = MemoryReader::new(&bytes);
     let decoded = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
-    let mut decoded_clone = decoded.clone();
-    assert_eq!(Block::hash(&mut decoded_clone), block.hash());
+    let decoded_clone = decoded.clone();
+    assert_eq!(Block::hash(&decoded_clone), block.hash());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -569,8 +569,8 @@ async fn get_block_genesis_roundtrips_and_reports_empty_txs() {
         .expect("decode");
     let mut reader = MemoryReader::new(&bytes);
     let decoded = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
-    let mut decoded_clone = decoded.clone();
-    assert_eq!(Block::hash(&mut decoded_clone), genesis_hash);
+    let decoded_clone = decoded.clone();
+    assert_eq!(Block::hash(&decoded_clone), genesis_hash);
     assert!(decoded.transactions.is_empty());
 
     let params = [Value::Number(0u32.into()), Value::Bool(true)];
@@ -608,8 +608,8 @@ async fn get_block_no_transactions_reports_empty_txs() {
         .expect("decode");
     let mut reader = MemoryReader::new(&bytes);
     let decoded = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
-    let mut decoded_clone = decoded.clone();
-    assert_eq!(Block::hash(&mut decoded_clone), block.hash());
+    let decoded_clone = decoded.clone();
+    assert_eq!(Block::hash(&decoded_clone), block.hash());
     assert!(decoded.transactions.is_empty());
 
     let params = [Value::Number(1u32.into()), Value::Bool(true)];
