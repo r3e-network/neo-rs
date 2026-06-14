@@ -169,6 +169,13 @@ pub enum CoreError {
         /// Error message describing the compression issue
         message: String,
     },
+
+    /// An error carrying a verbatim message. Used where the exact text is
+    /// observed by a caller (for example a C#-parity VM fault string or an RPC
+    /// error response) and must be preserved byte-for-byte. Prefer a specific
+    /// semantic variant above when the text is purely internal.
+    #[error("{0}")]
+    Other(String),
 }
 
 impl CoreError {
@@ -355,6 +362,12 @@ impl CoreError {
         }
     }
 
+    /// Wrap a verbatim message whose exact text must be preserved (see
+    /// [`CoreError::Other`]).
+    pub fn other<S: Into<String>>(message: S) -> Self {
+        Self::Other(message.into())
+    }
+
     /// Create a new validation error (delegates to `ValidationFailed`)
     pub fn validation<S: Into<String>>(message: S) -> Self {
         Self::ValidationFailed {
@@ -418,6 +431,7 @@ impl CoreError {
             CoreError::TypeConversion { .. } => "conversion",
             CoreError::Execution { .. } => "execution",
             CoreError::Compression { .. } => "compression",
+            CoreError::Other(_) => "other",
         }
     }
 }
