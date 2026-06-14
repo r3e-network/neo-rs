@@ -748,32 +748,6 @@ pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Zeroizing<Vec<u8>>, ECP
 }
 }
 
-/// Backward-compatible free-function alias for [`EcdsaVerify::verify_signature_with_hash`].
-///
-/// Retained so external consumers that predate the `EcdsaVerify` grouping keep
-/// resolving `neo_crypto::ecc::verify_signature_with_hash`; delegates verbatim,
-/// no behavior change.
-#[doc(hidden)]
-pub fn verify_signature_with_hash(
-    curve: ECCurve,
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-    hash: HashAlgorithm,
-) -> CryptoResult<bool> {
-    EcdsaVerify::verify_signature_with_hash(curve, public_key, message, signature, hash)
-}
-
-/// Backward-compatible free-function alias for [`EcdsaVerify::verify_ed25519`].
-///
-/// Retained so external consumers that predate the `EcdsaVerify` grouping keep
-/// resolving `neo_crypto::ecc::verify_ed25519`; delegates verbatim, no behavior
-/// change.
-#[doc(hidden)]
-pub fn verify_ed25519(public_key: &[u8], message: &[u8], signature: &[u8]) -> CryptoResult<bool> {
-    EcdsaVerify::verify_ed25519(public_key, message, signature)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

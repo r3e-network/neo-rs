@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use neo_execution::NativeContract;
-use neo_execution::native_contract_provider::{NativeContractProvider, install_provider};
+use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_primitives::UInt160;
 
 use crate::LedgerContract;
@@ -66,7 +66,7 @@ impl NativeContractProvider for StandardNativeProvider {
 /// seam. Call once at process startup (and freely from tests); installing again
 /// replaces the previous provider.
 pub fn install() {
-    install_provider(Arc::new(StandardNativeProvider::new()));
+    NativeContractLookup::install_provider(Arc::new(StandardNativeProvider::new()));
 }
 
 #[cfg(test)]
@@ -102,7 +102,9 @@ mod tests {
     fn install_wires_global_provider() {
         install();
         let resolved =
-            neo_execution::native_contract_provider::get_native_contract(&CRYPTO_LIB_HASH);
+            neo_execution::native_contract_provider::NativeContractLookup::get_native_contract(
+                &CRYPTO_LIB_HASH,
+            );
         assert!(
             resolved.is_some(),
             "global provider resolves CryptoLib after install()"

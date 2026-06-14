@@ -263,20 +263,6 @@ pub fn check_multisig_hash() -> [u8; 4] {
 }
 }
 
-/// Backward-compatible free-function alias for
-/// [`RedeemScript::multi_sig_redeem_script_from_points`].
-///
-/// Retained so external consumers that predate the `RedeemScript` grouping keep
-/// resolving `neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points`;
-/// delegates verbatim, no behavior change.
-#[doc(hidden)]
-pub fn multi_sig_redeem_script_from_points(
-    m: usize,
-    public_keys: &[ECPoint],
-) -> Result<Vec<u8>, RedeemScriptError> {
-    RedeemScript::multi_sig_redeem_script_from_points(m, public_keys)
-}
-
 /// Decodes an `m`/`n` count from a multi-sig script at `offset`, mirroring C#
 /// `Helper.IsMultiSigContract`: the value may be a `PUSHINT8`, `PUSHINT16`, or a
 /// `PUSH1..PUSH16` opcode. Returns `(value, bytes_consumed)`.

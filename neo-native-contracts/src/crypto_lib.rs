@@ -15,7 +15,7 @@ use std::any::Any;
 use std::sync::LazyLock;
 
 use neo_config::Hardfork;
-use neo_crypto::{Bls12381Point, Crypto, HashAlgorithm, NamedCurveHash, Secp256k1Crypto, murmur32};
+use neo_crypto::{Bls12381Point, Crypto, HashAlgorithm, Murmur3, NamedCurveHash, Secp256k1Crypto};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_primitives::{ContractParameterType, UInt160};
@@ -68,7 +68,8 @@ impl CryptoLib {
     fn verify_ed25519_method(message: &[u8], pubkey: &[u8], signature: &[u8]) -> bool {
         signature.len() == 64
             && pubkey.len() == 32
-            && neo_crypto::ecc::verify_ed25519(pubkey, message, signature).unwrap_or(false)
+            && neo_crypto::ecc::EcdsaVerify::verify_ed25519(pubkey, message, signature)
+                .unwrap_or(false)
     }
 
     /// Pure ECDSA verification with C# `VerifyWithECDsa` semantics, split out so the
@@ -97,7 +98,7 @@ impl CryptoLib {
                 "CryptoLib::verifyWithECDsa: Keccak256 curves require the Cockatrice hardfork",
             ));
         }
-        Ok(neo_crypto::ecc::verify_signature_with_hash(
+        Ok(neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
             named.curve(),
             pubkey,
             message,
@@ -131,7 +132,7 @@ impl CryptoLib {
                 "CryptoLib::verifyWithECDsa: signature size should be 64 bytes",
             ));
         }
-        Ok(neo_crypto::ecc::verify_signature_with_hash(
+        Ok(neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
             named.curve(),
             pubkey,
             message,
@@ -460,7 +461,7 @@ impl NativeContract for CryptoLib {
             let seed = (BigInt::from_signed_bytes_le(seed_bytes) & BigInt::from(u32::MAX))
                 .to_u32()
                 .unwrap_or(0);
-            return Ok(murmur32(data, seed).to_le_bytes().to_vec());
+            return Ok(Murmur3::murmur32(data, seed).to_le_bytes().to_vec());
         }
 
         if method == "verifyWithEd25519" {
@@ -489,8 +490,8 @@ impl NativeContract for CryptoLib {
                         "CryptoLib::verifyWithEd25519: public key size should be 32",
                     ));
                 }
-                let ok =
-                    neo_crypto::ecc::verify_ed25519(pubkey, message, signature).unwrap_or(false);
+                let ok = neo_crypto::ecc::EcdsaVerify::verify_ed25519(pubkey, message, signature)
+                    .unwrap_or(false);
                 return Ok(vec![u8::from(ok)]);
             }
             return Ok(vec![u8::from(Self::verify_ed25519_method(
@@ -606,10 +607,13 @@ mod tests {
     fn murmur32_is_little_endian() {
         // MurmurHash3 x86 32 of empty input with seed 0 is 0 -> LE bytes 0,0,0,0
         // (C# `BinaryPrimitives.WriteUInt32LittleEndian`).
-        assert_eq!(murmur32(b"", 0).to_le_bytes().to_vec(), vec![0u8, 0, 0, 0]);
+        assert_eq!(
+            Murmur3::murmur32(b"", 0).to_le_bytes().to_vec(),
+            vec![0u8, 0, 0, 0]
+        );
         // Deterministic and non-trivial for a non-empty input.
-        let h = murmur32(b"hello", 0);
-        assert_eq!(murmur32(b"hello", 0), h);
+        let h = Murmur3::murmur32(b"hello", 0);
+        assert_eq!(Murmur3::murmur32(b"hello", 0), h);
         assert_eq!(h.to_le_bytes().len(), 4);
     }
 

@@ -592,8 +592,11 @@ impl PolicyContract {
         let m = usize::try_from(m)
             .map_err(|_| CoreError::invalid_operation("invalid committee threshold"))?;
         let script =
-            neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, &committees)
-                .map_err(|e| CoreError::invalid_operation(format!("committee multisig script: {e}")))?;
+            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+                m,
+                &committees,
+            )
+            .map_err(|e| CoreError::invalid_operation(format!("committee multisig script: {e}")))?;
         let address = UInt160::from_script(&script);
         let authorized = engine
             .check_witness_hash(&address)

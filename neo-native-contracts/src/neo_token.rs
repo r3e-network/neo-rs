@@ -835,7 +835,9 @@ impl NeoToken {
         }
         let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
         let script =
-            neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, pubkeys)
+            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+                m, pubkeys,
+            )
                 .map_err(|e| CoreError::invalid_operation(format!("BFT multisig script: {e}")))?;
         Ok(UInt160::from_script(&script))
     }
@@ -1135,7 +1137,9 @@ impl NeoToken {
         }
         let m = Self::committee_threshold(points.len());
         let script =
-            neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(m, &points)
+            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+                m, &points,
+            )
                 .map_err(|e| CoreError::invalid_operation(format!("committee multisig script: {e}")))?;
         Ok(UInt160::from_script(&script))
     }
@@ -2487,7 +2491,9 @@ mod tests {
         // For n=3, m=2; the address is the 2-of-3 multisig script hash. The
         // builder sorts the keys the same way C# CreateMultiSigRedeemScript does.
         let script =
-            neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(2, &points)
+            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+                2, &points,
+            )
                 .unwrap();
         assert_eq!(
             NeoToken::new().compute_committee_address(&cache).unwrap(),
@@ -3555,11 +3561,12 @@ mod committee_recompute_tests {
         // C# Contract.GetBFTAddress: m = n - (n - 1) / 3 (7 validators -> 5).
         let validators = ProtocolSettings::default().standby_validators();
         assert_eq!(validators.len(), 7);
-        let script = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(
-            5,
-            &validators,
-        )
-        .unwrap();
+        let script =
+            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+                5,
+                &validators,
+            )
+            .unwrap();
         assert_eq!(
             NeoToken::bft_address(&validators).unwrap(),
             UInt160::from_script(&script)

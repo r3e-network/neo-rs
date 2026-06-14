@@ -56,8 +56,10 @@ pub fn sample_committee() -> Vec<ECPoint> {
 /// `check_committee_witness` accepts.
 pub fn committee_address(points: &[ECPoint]) -> UInt160 {
     let script =
-        neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(2, points)
-            .unwrap();
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            2, points,
+        )
+        .unwrap();
     UInt160::from_script(&script)
 }
 

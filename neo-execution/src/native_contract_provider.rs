@@ -246,26 +246,3 @@ impl NativeContractLookup {
     }
 }
 
-/// Backward-compatible free-function alias for
-/// [`NativeContractLookup::install_provider`].
-///
-/// Retained so external consumers that predate the `NativeContractLookup`
-/// grouping keep resolving
-/// `neo_execution::native_contract_provider::install_provider`; delegates
-/// verbatim, no behavior change.
-#[doc(hidden)]
-pub fn install_provider(provider: Arc<dyn NativeContractProvider>) {
-    NativeContractLookup::install_provider(provider);
-}
-
-/// Backward-compatible free-function alias for
-/// [`NativeContractLookup::get_native_contract`].
-///
-/// Retained so external consumers that predate the `NativeContractLookup`
-/// grouping keep resolving
-/// `neo_execution::native_contract_provider::get_native_contract`; delegates
-/// verbatim, no behavior change.
-#[doc(hidden)]
-pub fn get_native_contract(hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-    NativeContractLookup::get_native_contract(hash)
-}

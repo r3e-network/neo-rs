@@ -22,16 +22,6 @@ impl Murmur3 {
     }
 }
 
-/// Backward-compatible free-function alias for [`Murmur3::murmur32`].
-///
-/// Retained so external consumers that predate the `Murmur3` grouping keep
-/// resolving `neo_crypto::murmur32`; delegates verbatim, no behavior change.
-#[doc(hidden)]
-#[must_use]
-pub fn murmur32(data: &[u8], seed: u32) -> u32 {
-    Murmur3::murmur32(data, seed)
-}
-
 #[cfg(test)]
 mod tests {
     use super::Murmur3;

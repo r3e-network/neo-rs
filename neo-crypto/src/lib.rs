@@ -71,7 +71,7 @@ pub use merkle_tree::MerkleTree;
 pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };
-pub use murmur::{Murmur3, murmur32};
+pub use murmur::Murmur3;
 pub use named_curve_hash::NamedCurveHash;
 pub use signature::{
     ECC, ECDsa, Ed25519Crypto, NEOFS_ECDSA_SHA512_PREFIX, NEOFS_ECDSA_SHA512_SIGNATURE_LEN,
