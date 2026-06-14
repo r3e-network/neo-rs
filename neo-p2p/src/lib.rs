@@ -27,12 +27,12 @@
 //! let inv = InventoryType::Transaction;
 //! ```
 //!
-//! ### 2. Full Networking (neo-core)
+//! ### 2. Full Networking (neo-network)
 //!
-//! For full P2P node functionality, use `neo_core::network::p2p`:
+//! For full P2P node functionality, use the `neo-network` crate:
 //!
 //! ```rust,ignore
-//! use neo_core::network::p2p::LocalNode;
+//! use neo_network::LocalNode;
 //!
 //! // Full P2P node with connection management
 //! let node = LocalNode::new(config);
@@ -58,7 +58,7 @@
 //! - Witness conditions
 //! - **Minimal dependencies** (only `neo-primitives`)
 //!
-//! Use `neo_core::network::p2p` when you need:
+//! Use `neo-network` when you need:
 //! - Full P2P node implementation
 //! - Connection management
 //! - Block/transaction synchronization

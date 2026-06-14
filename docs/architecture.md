@@ -86,7 +86,7 @@ and `neo-payloads`.
 | neo-serialization | Foundation | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
 | neo-storage | Foundation | `Store` traits, `DataCache`, plus RocksDB and in-memory backends. |
 | neo-payloads | Protocol | `Block`, `Header`, `Transaction`, `Signer`, `WitnessRule`, attributes, and verification logic. |
-| neo-p2p | Protocol | P2P wire constants and message types. |
+| neo-p2p | Protocol | P2P wire constants: message commands, inventory types, node capabilities, message flags. |
 | neo-manifest | Protocol | Contract ABI, NEF, `CallFlags`, `MethodToken`, validator attributes. |
 | neo-vm | VM | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
 | neo-execution | Execution | `ApplicationEngine` and interop services (runtime, storage, contract, crypto syscalls). |
