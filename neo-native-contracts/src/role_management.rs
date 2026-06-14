@@ -62,133 +62,133 @@ impl RoleManagement {
         role: Role,
         height: u32,
     ) -> CoreResult<Vec<ECPoint>> {
-        match find_designation_value(snapshot, role.as_byte(), height) {
-            Some(value) => decode_node_list(&value),
+        match self.find_designation_value(snapshot, role.as_byte(), height) {
+            Some(value) => Self::decode_node_list(&value),
             None => Ok(Vec::new()),
         }
     }
-}
 
-/// Finds the serialized node-list value for `role_byte` effective at `index`:
-/// the entry with the greatest designation index that is ≤ `index`.
-///
-/// Designations are stored under key `(RoleManagement.ID, [role_byte, index_be])`.
-/// A `Backward` prefix scan yields them in descending designation-index order, so
-/// the first one with `designation_index <= index` is the effective designation —
-/// equivalent to C#'s `FindRange((role, index), (role), Backward).FirstOrDefault`.
-fn find_designation_value(snapshot: &DataCache, role_byte: u8, index: u32) -> Option<Vec<u8>> {
-    let prefix = StorageKey::new(RoleManagement::ID, vec![role_byte]);
-    for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
-        let key_bytes = key.key();
-        if key_bytes.len() >= 5 {
-            let designation_index =
-                u32::from_be_bytes([key_bytes[1], key_bytes[2], key_bytes[3], key_bytes[4]]);
-            if designation_index <= index {
-                return Some(item.value_bytes().into_owned());
+    /// Finds the serialized node-list value for `role_byte` effective at `index`:
+    /// the entry with the greatest designation index that is ≤ `index`.
+    ///
+    /// Designations are stored under key `(RoleManagement.ID, [role_byte, index_be])`.
+    /// A `Backward` prefix scan yields them in descending designation-index order, so
+    /// the first one with `designation_index <= index` is the effective designation —
+    /// equivalent to C#'s `FindRange((role, index), (role), Backward).FirstOrDefault`.
+    fn find_designation_value(&self, snapshot: &DataCache, role_byte: u8, index: u32) -> Option<Vec<u8>> {
+        let prefix = StorageKey::new(RoleManagement::ID, vec![role_byte]);
+        for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
+            let key_bytes = key.key();
+            if key_bytes.len() >= 5 {
+                let designation_index =
+                    u32::from_be_bytes([key_bytes[1], key_bytes[2], key_bytes[3], key_bytes[4]]);
+                if designation_index <= index {
+                    return Some(item.value_bytes().into_owned());
+                }
             }
         }
+        None
     }
-    None
-}
 
-/// Decodes a serialized node-list (a `BinarySerializer` array of compressed
-/// EC-point byte strings) into `ECPoint`s.
-fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
-    let item = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
-        .map_err(|e| CoreError::deserialization(format!("RoleManagement node list: {e}")))?;
-    let StackItem::Array(array) = item else {
-        return Err(CoreError::invalid_data(
-            "RoleManagement node list is not an array",
-        ));
-    };
-    let mut points = Vec::new();
-    for entry in array.items() {
-        let bytes = entry
-            .as_bytes()
-            .map_err(|e| CoreError::invalid_data(format!("RoleManagement node bytes: {e}")))?;
-        points.push(
-            ECPoint::from_bytes(&bytes).map_err(|e| {
-                CoreError::invalid_data(format!("RoleManagement node EC point: {e}"))
-            })?,
-        );
+    /// Decodes a serialized node-list (a `BinarySerializer` array of compressed
+    /// EC-point byte strings) into `ECPoint`s.
+    fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
+        let item = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
+            .map_err(|e| CoreError::deserialization(format!("RoleManagement node list: {e}")))?;
+        let StackItem::Array(array) = item else {
+            return Err(CoreError::invalid_data(
+                "RoleManagement node list is not an array",
+            ));
+        };
+        let mut points = Vec::new();
+        for entry in array.items() {
+            let bytes = entry
+                .as_bytes()
+                .map_err(|e| CoreError::invalid_data(format!("RoleManagement node bytes: {e}")))?;
+            points.push(
+                ECPoint::from_bytes(&bytes).map_err(|e| {
+                    CoreError::invalid_data(format!("RoleManagement node EC point: {e}"))
+                })?,
+            );
+        }
+        Ok(points)
     }
-    Ok(points)
-}
 
-/// Serializes an empty node list (C# returns an empty `ECPoint[]`, not `null`,
-/// when no designation exists).
-fn empty_node_list() -> CoreResult<Vec<u8>> {
-    BinarySerializer::serialize(
-        &StackItem::from_array(Vec::new()),
-        &ExecutionEngineLimits::default(),
-    )
-    .map_err(|e| CoreError::invalid_operation(format!("RoleManagement empty list: {e}")))
-}
-
-/// The designation storage key `(RoleManagement.ID, [role_byte, index_be])`.
-fn designation_key(role_byte: u8, index: u32) -> StorageKey {
-    StorageKey::new(
-        RoleManagement::ID,
-        crate::keys::prefixed_with_u32_be(role_byte, index),
-    )
-}
-
-/// Builds a `StackItem::Array` of compressed EC-point byte strings, preserving
-/// the given order (used for the event's node arrays).
-fn nodes_to_array(points: &[ECPoint]) -> StackItem {
-    StackItem::from_array(
-        points
-            .iter()
-            .map(|p| StackItem::from_byte_string(p.to_bytes()))
-            .collect::<Vec<_>>(),
-    )
-}
-
-/// Serializes a node list as C# `NodeList` stores it: a `BinarySerializer` array
-/// of compressed EC-point byte strings, with the points sorted ascending
-/// (`list.Sort()`). The stored order differs from the event's `newNodes` order
-/// (which preserves the caller's input order).
-fn encode_node_list(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
-    let mut sorted = points.to_vec();
-    sorted.sort();
-    BinarySerializer::serialize(&nodes_to_array(&sorted), &ExecutionEngineLimits::default())
-        .map_err(|e| CoreError::invalid_operation(format!("RoleManagement node list: {e}")))
-}
-
-/// Decodes + validates the `nodes` Array argument: 1..=32 compressed EC points
-/// (C# `nodes.Length == 0 || nodes.Length > 32` guard).
-fn parse_nodes_arg(bytes: &[u8]) -> CoreResult<Vec<ECPoint>> {
-    let points = decode_node_list(bytes)?;
-    if points.is_empty() || points.len() > 32 {
-        return Err(CoreError::invalid_operation(format!(
-            "RoleManagement: nodes count {} must be between 1 and 32",
-            points.len()
-        )));
+    /// Serializes an empty node list (C# returns an empty `ECPoint[]`, not `null`,
+    /// when no designation exists).
+    fn empty_node_list() -> CoreResult<Vec<u8>> {
+        BinarySerializer::serialize(
+            &StackItem::from_array(Vec::new()),
+            &ExecutionEngineLimits::default(),
+        )
+        .map_err(|e| CoreError::invalid_operation(format!("RoleManagement empty list: {e}")))
     }
-    Ok(points)
-}
 
-/// Builds the `Designation` event state, mirroring C# `DesignateAsRole`'s
-/// `SendNotification`. Pre-`HF_Echidna` the state is `[role, blockIndex]`; from
-/// `HF_Echidna` it is `[role, blockIndex, oldNodes, newNodes]` where `oldNodes`
-/// is the previously-effective (stored, sorted) list and `newNodes` is the
-/// caller's input list in its original order.
-fn designation_event_state(
-    role_byte: u8,
-    block_index: u32,
-    echidna: bool,
-    old_nodes: &[ECPoint],
-    new_nodes: &[ECPoint],
-) -> Vec<StackItem> {
-    let mut state = vec![
-        StackItem::from_int(i64::from(role_byte)),
-        StackItem::from_int(i64::from(block_index)),
-    ];
-    if echidna {
-        state.push(nodes_to_array(old_nodes));
-        state.push(nodes_to_array(new_nodes));
+    /// The designation storage key `(RoleManagement.ID, [role_byte, index_be])`.
+    fn designation_key(role_byte: u8, index: u32) -> StorageKey {
+        StorageKey::new(
+            RoleManagement::ID,
+            crate::keys::prefixed_with_u32_be(role_byte, index),
+        )
     }
-    state
+
+    /// Builds a `StackItem::Array` of compressed EC-point byte strings, preserving
+    /// the given order (used for the event's node arrays).
+    fn nodes_to_array(points: &[ECPoint]) -> StackItem {
+        StackItem::from_array(
+            points
+                .iter()
+                .map(|p| StackItem::from_byte_string(p.to_bytes()))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Serializes a node list as C# `NodeList` stores it: a `BinarySerializer` array
+    /// of compressed EC-point byte strings, with the points sorted ascending
+    /// (`list.Sort()`). The stored order differs from the event's `newNodes` order
+    /// (which preserves the caller's input order).
+    fn encode_node_list(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
+        let mut sorted = points.to_vec();
+        sorted.sort();
+        BinarySerializer::serialize(&Self::nodes_to_array(&sorted), &ExecutionEngineLimits::default())
+            .map_err(|e| CoreError::invalid_operation(format!("RoleManagement node list: {e}")))
+    }
+
+    /// Decodes + validates the `nodes` Array argument: 1..=32 compressed EC points
+    /// (C# `nodes.Length == 0 || nodes.Length > 32` guard).
+    fn parse_nodes_arg(bytes: &[u8]) -> CoreResult<Vec<ECPoint>> {
+        let points = Self::decode_node_list(bytes)?;
+        if points.is_empty() || points.len() > 32 {
+            return Err(CoreError::invalid_operation(format!(
+                "RoleManagement: nodes count {} must be between 1 and 32",
+                points.len()
+            )));
+        }
+        Ok(points)
+    }
+
+    /// Builds the `Designation` event state, mirroring C# `DesignateAsRole`'s
+    /// `SendNotification`. Pre-`HF_Echidna` the state is `[role, blockIndex]`; from
+    /// `HF_Echidna` it is `[role, blockIndex, oldNodes, newNodes]` where `oldNodes`
+    /// is the previously-effective (stored, sorted) list and `newNodes` is the
+    /// caller's input list in its original order.
+    fn designation_event_state(
+        role_byte: u8,
+        block_index: u32,
+        echidna: bool,
+        old_nodes: &[ECPoint],
+        new_nodes: &[ECPoint],
+    ) -> Vec<StackItem> {
+        let mut state = vec![
+            StackItem::from_int(i64::from(role_byte)),
+            StackItem::from_int(i64::from(block_index)),
+        ];
+        if echidna {
+            state.push(Self::nodes_to_array(old_nodes));
+            state.push(Self::nodes_to_array(new_nodes));
+        }
+        state
+    }
 }
 
 static ROLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
@@ -315,11 +315,11 @@ impl NativeContract for RoleManagement {
                     )));
                 }
 
-                match find_designation_value(&snapshot, role_byte, index) {
+                match self.find_designation_value(&snapshot, role_byte, index) {
                     // The stored value is already the BinarySerializer-encoded
                     // node-list array — exactly the Array return wants.
                     Some(value) => Ok(value),
-                    None => empty_node_list(),
+                    None => Self::empty_node_list(),
                 }
             }
             "designateAsRole" => {
@@ -336,7 +336,7 @@ impl NativeContract for RoleManagement {
                 let nodes_bytes = args.get(1).ok_or_else(|| {
                     CoreError::invalid_operation("RoleManagement: missing nodes argument")
                 })?;
-                let nodes = parse_nodes_arg(nodes_bytes)?;
+                let nodes = Self::parse_nodes_arg(nodes_bytes)?;
                 let role_byte = match role_value {
                     4 | 8 | 16 | 32 => role_value as u8,
                     _ => {
@@ -373,27 +373,27 @@ impl NativeContract for RoleManagement {
                 })?;
 
                 let snapshot = engine.snapshot_cache();
-                let key = designation_key(role_byte, index);
+                let key = Self::designation_key(role_byte, index);
                 if snapshot.get(&key).is_some() {
                     return Err(CoreError::invalid_operation(
                         "designateAsRole: role already designated at this index",
                     ));
                 }
-                snapshot.add(key, StorageItem::from_bytes(encode_node_list(&nodes)?));
+                snapshot.add(key, StorageItem::from_bytes(Self::encode_node_list(&nodes)?));
 
                 // Emit the Designation event; from HF_Echidna it also carries the
                 // previously-effective (at block_index) and new node lists.
                 let echidna = engine.is_hardfork_enabled(Hardfork::HfEchidna);
                 let old_nodes = if echidna {
-                    match find_designation_value(&snapshot, role_byte, block_index) {
-                        Some(value) => decode_node_list(&value)?,
+                    match self.find_designation_value(&snapshot, role_byte, block_index) {
+                        Some(value) => Self::decode_node_list(&value)?,
                         None => Vec::new(),
                     }
                 } else {
                     Vec::new()
                 };
                 let state =
-                    designation_event_state(role_byte, block_index, echidna, &old_nodes, &nodes);
+                    Self::designation_event_state(role_byte, block_index, echidna, &old_nodes, &nodes);
                 engine
                     .send_notification(Self::script_hash(), "Designation".to_string(), state)
                     .map_err(|e| {
@@ -461,7 +461,7 @@ mod tests {
         .unwrap();
         let input = vec![a.clone(), b.clone()];
         // encode_node_list stores them sorted; decode_node_list reads them back.
-        let decoded = decode_node_list(&encode_node_list(&input).unwrap()).unwrap();
+        let decoded = RoleManagement::decode_node_list(&RoleManagement::encode_node_list(&input).unwrap()).unwrap();
         let mut expected = input.clone();
         expected.sort();
         assert_eq!(decoded, expected);
@@ -475,10 +475,10 @@ mod tests {
             &ExecutionEngineLimits::default(),
         )
         .unwrap();
-        assert!(parse_nodes_arg(&empty).is_err());
+        assert!(RoleManagement::parse_nodes_arg(&empty).is_err());
         // One valid node -> accepted.
-        let one = encode_node_list(&[sample_point()]).unwrap();
-        assert_eq!(parse_nodes_arg(&one).unwrap().len(), 1);
+        let one = RoleManagement::encode_node_list(&[sample_point()]).unwrap();
+        assert_eq!(RoleManagement::parse_nodes_arg(&one).unwrap().len(), 1);
     }
 
     #[test]
@@ -487,13 +487,13 @@ mod tests {
         let old_nodes: Vec<ECPoint> = Vec::new();
 
         // Pre-Echidna: [role, blockIndex].
-        let pre = designation_event_state(8, 41, false, &old_nodes, &new_nodes);
+        let pre = RoleManagement::designation_event_state(8, 41, false, &old_nodes, &new_nodes);
         assert_eq!(pre.len(), 2);
         assert_eq!(pre[0].as_int().unwrap(), num_bigint::BigInt::from(8));
         assert_eq!(pre[1].as_int().unwrap(), num_bigint::BigInt::from(41));
 
         // Echidna: [role, blockIndex, oldNodes(Array), newNodes(Array)].
-        let post = designation_event_state(8, 41, true, &old_nodes, &new_nodes);
+        let post = RoleManagement::designation_event_state(8, 41, true, &old_nodes, &new_nodes);
         assert_eq!(post.len(), 4);
         assert!(matches!(post[2], StackItem::Array(_)));
         match &post[3] {
@@ -522,7 +522,7 @@ mod tests {
         )
         .unwrap();
         cache.add(
-            designation_key(Role::Oracle.as_byte(), 10),
+            RoleManagement::designation_key(Role::Oracle.as_byte(), 10),
             StorageItem::from_bytes(list),
         );
 

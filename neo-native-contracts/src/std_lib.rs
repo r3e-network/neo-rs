@@ -55,464 +55,464 @@ impl StdLib {
     pub fn script_hash() -> UInt160 {
         *STDLIB_HASH
     }
-}
 
-fn arg_bytes<'a>(args: &'a [Vec<u8>], method: &str) -> CoreResult<&'a [u8]> {
-    args.first().map(Vec::as_slice).ok_or_else(|| {
-        CoreError::invalid_operation(format!("StdLib::{method} requires one argument"))
-    })
-}
+    fn arg_bytes<'a>(args: &'a [Vec<u8>], method: &str) -> CoreResult<&'a [u8]> {
+        args.first().map(Vec::as_slice).ok_or_else(|| {
+            CoreError::invalid_operation(format!("StdLib::{method} requires one argument"))
+        })
+    }
 
-/// Interprets the single argument as a native string (a VM ByteString carrying
-/// UTF-8 bytes).
-fn arg_str(args: &[Vec<u8>], method: &str) -> CoreResult<String> {
-    String::from_utf8(arg_bytes(args, method)?.to_vec()).map_err(|_| {
-        CoreError::invalid_operation(format!("StdLib::{method}: argument is not valid UTF-8"))
-    })
-}
+    /// Interprets the single argument as a native string (a VM ByteString carrying
+    /// UTF-8 bytes).
+    fn arg_str(args: &[Vec<u8>], method: &str) -> CoreResult<String> {
+        String::from_utf8(Self::arg_bytes(args, method)?.to_vec()).map_err(|_| {
+            CoreError::invalid_operation(format!("StdLib::{method}: argument is not valid UTF-8"))
+        })
+    }
 
-/// Pure dispatch for StdLib's stateless methods, split out so it can be unit
-/// tested without constructing an [`ApplicationEngine`]. Returns `None` for an
-/// unknown method so [`StdLib::invoke`] can emit a precise error.
-fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
-    let result = match method {
-        // Encoders: ByteArray -> String (returned as UTF-8 bytes).
-        "base64Encode" => arg_bytes(args, method).map(|b| Base64::encode(b).into_bytes()),
-        // base64Decode: String -> ByteArray (C# Convert.FromBase64String).
-        "base64Decode" => base64_decode_impl(args),
-        // base64Url* (HF_Echidna): String <-> String, URL-safe alphabet, no padding.
-        "base64UrlEncode" => base64_url_encode_impl(args),
-        "base64UrlDecode" => base64_url_decode_impl(args),
-        // hexEncode/hexDecode (HF_Faun): ByteArray <-> lowercase hex String.
-        "hexEncode" => hex_encode_impl(args),
-        "hexDecode" => hex_decode_impl(args),
-        "base58Encode" => arg_bytes(args, method).map(|b| Base58::encode(b).into_bytes()),
-        "base58CheckEncode" => {
-            arg_bytes(args, method).map(|b| Base58::encode_check(b).into_bytes())
-        }
-        // Decoders: String -> ByteArray. Invalid input faults the call, matching
-        // C# (Base58 throws on a bad alphabet / checksum).
-        "base58Decode" => arg_str(args, method).and_then(|s| {
-            Base58::decode(&s)
-                .map_err(|e| CoreError::invalid_operation(format!("StdLib::base58Decode: {e}")))
-        }),
-        "base58CheckDecode" => arg_str(args, method).and_then(|s| {
-            Base58::decode_check(&s).map_err(|e| {
-                CoreError::invalid_operation(format!("StdLib::base58CheckDecode: {e}"))
-            })
-        }),
-        // memoryCompare(a, b) -> Math.Sign(a.SequenceCompareTo(b)) as Integer.
-        // Rust slice `cmp` is the same lexicographic-then-length ordering.
-        "memoryCompare" => match (args.first(), args.get(1)) {
-            (Some(a), Some(b)) => {
-                let sign: i32 = match a.as_slice().cmp(b.as_slice()) {
-                    std::cmp::Ordering::Less => -1,
-                    std::cmp::Ordering::Equal => 0,
-                    std::cmp::Ordering::Greater => 1,
-                };
-                Ok(BigInt::from(sign).to_signed_bytes_le())
+    /// Pure dispatch for StdLib's stateless methods, split out so it can be unit
+    /// tested without constructing an [`ApplicationEngine`]. Returns `None` for an
+    /// unknown method so [`StdLib::invoke`] can emit a precise error.
+    fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
+        let result = match method {
+            // Encoders: ByteArray -> String (returned as UTF-8 bytes).
+            "base64Encode" => Self::arg_bytes(args, method).map(|b| Base64::encode(b).into_bytes()),
+            // base64Decode: String -> ByteArray (C# Convert.FromBase64String).
+            "base64Decode" => Self::base64_decode_impl(args),
+            // base64Url* (HF_Echidna): String <-> String, URL-safe alphabet, no padding.
+            "base64UrlEncode" => Self::base64_url_encode_impl(args),
+            "base64UrlDecode" => Self::base64_url_decode_impl(args),
+            // hexEncode/hexDecode (HF_Faun): ByteArray <-> lowercase hex String.
+            "hexEncode" => Self::hex_encode_impl(args),
+            "hexDecode" => Self::hex_decode_impl(args),
+            "base58Encode" => Self::arg_bytes(args, method).map(|b| Base58::encode(b).into_bytes()),
+            "base58CheckEncode" => {
+                Self::arg_bytes(args, method).map(|b| Base58::encode_check(b).into_bytes())
             }
-            _ => Err(CoreError::invalid_operation(
-                "StdLib::memoryCompare requires two arguments".to_string(),
-            )),
-        },
-        // memorySearch(mem, value[, start[, backward]]) -> Integer index or -1.
-        "memorySearch" => memory_search_impl(args),
-        // itoa(value[, base]) -> String; atoi(value[, base]) -> Integer.
-        "itoa" => itoa_impl(args),
-        "atoi" => atoi_impl(args),
-        // stringSplit(str, separator[, removeEmptyEntries]) -> Array of String.
-        "stringSplit" => string_split_impl(args),
-        // strLen(str) -> Integer: the .NET StringInfo text-element count.
-        "strLen" => str_len_impl(args),
-        // serialize(item) -> the item's BinarySerializer bytes. The `Any`-typed
-        // arg is already BinarySerialized by the engine, so C#
-        // `BinarySerializer.Serialize(item)` is exactly args[0].
-        "serialize" => arg_bytes(args, method).map(<[u8]>::to_vec),
-        // deserialize(data) -> the StackItem. We validate the payload here
-        // (C# faults on malformed input, whereas the engine's Any-return decode
-        // falls back to a raw ByteString) and hand the bytes back for that decode.
-        "deserialize" => arg_bytes(args, method).and_then(|data| {
-            BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
-                .map(|_| data.to_vec())
-                .map_err(|e| CoreError::invalid_operation(format!("StdLib::deserialize: {e}")))
-        }),
-        // jsonSerialize(item) -> JSON bytes (System.Text.Json byte-exact). The
-        // `Any`-typed arg arrives BinarySerialized by the engine, so decode it to
-        // a StackItem first, then JSON-encode bounded by the VM item-size limit
-        // (C# `SerializeToByteArray(item, engine.Limits.MaxItemSize)`).
-        "jsonSerialize" => arg_bytes(args, method).and_then(|data| {
-            let limits = ExecutionEngineLimits::default();
-            let item = BinarySerializer::deserialize(data, &limits, None)
-                .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}")))?;
-            JsonSerializer::serialize_to_byte_array(&item, limits.max_item_size)
-                .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}")))
-        }),
-        // jsonDeserialize(json) -> the StackItem, re-encoded as BinarySerializer
-        // bytes for the engine's `Any`-return decode. Depth 10 + MaxStackSize
-        // match C# (`JToken.Parse(json, 10)` + `engine.Limits`).
-        "jsonDeserialize" => arg_bytes(args, method).and_then(|json| {
-            let limits = ExecutionEngineLimits::default();
-            let item = JsonSerializer::deserialize(json, 10, limits.max_stack_size as usize)
-                .map_err(|e| {
-                    CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
-                })?;
-            BinarySerializer::serialize(&item, &limits)
-                .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}")))
-        }),
-        _ => return None,
-    };
-    Some(result)
-}
+            // Decoders: String -> ByteArray. Invalid input faults the call, matching
+            // C# (Base58 throws on a bad alphabet / checksum).
+            "base58Decode" => Self::arg_str(args, method).and_then(|s| {
+                Base58::decode(&s)
+                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::base58Decode: {e}")))
+            }),
+            "base58CheckDecode" => Self::arg_str(args, method).and_then(|s| {
+                Base58::decode_check(&s).map_err(|e| {
+                    CoreError::invalid_operation(format!("StdLib::base58CheckDecode: {e}"))
+                })
+            }),
+            // memoryCompare(a, b) -> Math.Sign(a.SequenceCompareTo(b)) as Integer.
+            // Rust slice `cmp` is the same lexicographic-then-length ordering.
+            "memoryCompare" => match (args.first(), args.get(1)) {
+                (Some(a), Some(b)) => {
+                    let sign: i32 = match a.as_slice().cmp(b.as_slice()) {
+                        std::cmp::Ordering::Less => -1,
+                        std::cmp::Ordering::Equal => 0,
+                        std::cmp::Ordering::Greater => 1,
+                    };
+                    Ok(BigInt::from(sign).to_signed_bytes_le())
+                }
+                _ => Err(CoreError::invalid_operation(
+                    "StdLib::memoryCompare requires two arguments".to_string(),
+                )),
+            },
+            // memorySearch(mem, value[, start[, backward]]) -> Integer index or -1.
+            "memorySearch" => Self::memory_search_impl(args),
+            // itoa(value[, base]) -> String; atoi(value[, base]) -> Integer.
+            "itoa" => Self::itoa_impl(args),
+            "atoi" => Self::atoi_impl(args),
+            // stringSplit(str, separator[, removeEmptyEntries]) -> Array of String.
+            "stringSplit" => Self::string_split_impl(args),
+            // strLen(str) -> Integer: the .NET StringInfo text-element count.
+            "strLen" => Self::str_len_impl(args),
+            // serialize(item) -> the item's BinarySerializer bytes. The `Any`-typed
+            // arg is already BinarySerialized by the engine, so C#
+            // `BinarySerializer.Serialize(item)` is exactly args[0].
+            "serialize" => Self::arg_bytes(args, method).map(<[u8]>::to_vec),
+            // deserialize(data) -> the StackItem. We validate the payload here
+            // (C# faults on malformed input, whereas the engine's Any-return decode
+            // falls back to a raw ByteString) and hand the bytes back for that decode.
+            "deserialize" => Self::arg_bytes(args, method).and_then(|data| {
+                BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
+                    .map(|_| data.to_vec())
+                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::deserialize: {e}")))
+            }),
+            // jsonSerialize(item) -> JSON bytes (System.Text.Json byte-exact). The
+            // `Any`-typed arg arrives BinarySerialized by the engine, so decode it to
+            // a StackItem first, then JSON-encode bounded by the VM item-size limit
+            // (C# `SerializeToByteArray(item, engine.Limits.MaxItemSize)`).
+            "jsonSerialize" => Self::arg_bytes(args, method).and_then(|data| {
+                let limits = ExecutionEngineLimits::default();
+                let item = BinarySerializer::deserialize(data, &limits, None)
+                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}")))?;
+                JsonSerializer::serialize_to_byte_array(&item, limits.max_item_size)
+                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonSerialize: {e}")))
+            }),
+            // jsonDeserialize(json) -> the StackItem, re-encoded as BinarySerializer
+            // bytes for the engine's `Any`-return decode. Depth 10 + MaxStackSize
+            // match C# (`JToken.Parse(json, 10)` + `engine.Limits`).
+            "jsonDeserialize" => Self::arg_bytes(args, method).and_then(|json| {
+                let limits = ExecutionEngineLimits::default();
+                let item = JsonSerializer::deserialize(json, 10, limits.max_stack_size as usize)
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
+                    })?;
+                BinarySerializer::serialize(&item, &limits)
+                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}")))
+            }),
+            _ => return None,
+        };
+        Some(result)
+    }
 
-/// C# `StdLib.MemorySearch` (its 3 overloads dispatch by argument count):
-/// forward search returns `mem[start..].IndexOf(value) + start` (or -1);
-/// backward search returns `mem[0..start].LastIndexOf(value)` (or -1).
-fn memory_search_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let mem = args.first().map(Vec::as_slice).ok_or_else(|| {
-        CoreError::invalid_operation("StdLib::memorySearch requires (mem, value)")
-    })?;
-    let value = args.get(1).map(Vec::as_slice).ok_or_else(|| {
-        CoreError::invalid_operation("StdLib::memorySearch requires (mem, value)")
-    })?;
-    let start = match args.get(2) {
-        Some(b) => BigInt::from_signed_bytes_le(b).to_usize().ok_or_else(|| {
-            CoreError::invalid_operation("StdLib::memorySearch: start out of range")
-        })?,
-        None => 0,
-    };
-    // C# `AsSpan(start)` / `AsSpan(0, start)` throw when start exceeds the length.
-    if start > mem.len() {
-        return Err(CoreError::invalid_operation(
-            "StdLib::memorySearch: start out of range",
-        ));
-    }
-    let backward = args
-        .get(3)
-        .map(|b| b.iter().any(|x| *x != 0))
-        .unwrap_or(false);
-    Ok(BigInt::from(memory_search(mem, value, start, backward)).to_signed_bytes_le())
-}
-
-fn memory_search(mem: &[u8], value: &[u8], start: usize, backward: bool) -> i64 {
-    if backward {
-        last_index_of(&mem[..start], value)
-    } else {
-        match index_of(&mem[start..], value) {
-            Some(i) => (i + start) as i64,
-            None => -1,
-        }
-    }
-}
-
-/// First index of `needle` in `haystack`, matching .NET `Span.IndexOf`
-/// (an empty needle is found at 0).
-fn index_of(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() {
-        return Some(0);
-    }
-    if needle.len() > haystack.len() {
-        return None;
-    }
-    haystack.windows(needle.len()).position(|w| w == needle)
-}
-
-/// Last index of `needle` in `haystack` (or -1), matching .NET `Span.LastIndexOf`
-/// (an empty needle is reported at `haystack.len()`).
-fn last_index_of(haystack: &[u8], needle: &[u8]) -> i64 {
-    if needle.is_empty() {
-        return haystack.len() as i64;
-    }
-    if needle.len() > haystack.len() {
-        return -1;
-    }
-    haystack
-        .windows(needle.len())
-        .rposition(|w| w == needle)
-        .map_or(-1, |i| i as i64)
-}
-
-/// Reads an optional integer `base` argument (C# StdLib's `@base` overload),
-/// defaulting to 10 when absent. Integer args arrive as signed little-endian.
-fn optional_base(args: &[Vec<u8>], index: usize, method: &str) -> CoreResult<i64> {
-    match args.get(index) {
-        None => Ok(10),
-        Some(bytes) => BigInt::from_signed_bytes_le(bytes).to_i64().ok_or_else(|| {
-            CoreError::invalid_argument(format!("StdLib::{method}: base out of range"))
-        }),
-    }
-}
-
-/// C# `StdLib.Base64Decode` = `Convert.FromBase64String`: strip the four
-/// whitespace characters .NET tolerates ({space, `\t`, `\n`, `\r`}), then
-/// strict-decode the remainder (any other character — including other
-/// whitespace — faults). Enforces the C# `[MaxLength(1024)]` cap on the input.
-fn base64_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let raw = arg_bytes(args, "base64Decode")?;
-    if raw.len() > MAX_INPUT_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::base64Decode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
-        )));
-    }
-    let value = std::str::from_utf8(raw).map_err(|_| {
-        CoreError::invalid_operation(
-            "StdLib::base64Decode: argument is not valid UTF-8".to_string(),
-        )
-    })?;
-    let stripped: String = value
-        .chars()
-        .filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r'))
-        .collect();
-    Base64::decode_strict(&stripped)
-        .map_err(|e| CoreError::invalid_operation(format!("StdLib::base64Decode: {e}")))
-}
-
-/// C# `StdLib.Base64UrlEncode(data)` (HF_Echidna) = `Base64UrlEncoder.Encode`:
-/// encodes the UTF-8 bytes of the input string into a URL-safe, unpadded base64
-/// string. Enforces the C# `[MaxLength(1024)]` cap on the input.
-fn base64_url_encode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let raw = arg_bytes(args, "base64UrlEncode")?;
-    if raw.len() > MAX_INPUT_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::base64UrlEncode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
-        )));
-    }
-    Ok(Base64::url_encode_no_pad(raw).into_bytes())
-}
-
-/// C# `StdLib.Base64UrlDecode(s)` (HF_Echidna) = `Base64UrlEncoder.Decode`: strip
-/// the four whitespace characters .NET tolerates ({space, `\t`, `\n`, `\r`}),
-/// then strict URL-safe-no-padding decode. The decoded bytes are returned as the
-/// `String` result. Enforces the C# `[MaxLength(1024)]` cap on the input.
-fn base64_url_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let raw = arg_bytes(args, "base64UrlDecode")?;
-    if raw.len() > MAX_INPUT_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::base64UrlDecode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
-        )));
-    }
-    let value = std::str::from_utf8(raw).map_err(|_| {
-        CoreError::invalid_operation(
-            "StdLib::base64UrlDecode: argument is not valid UTF-8".to_string(),
-        )
-    })?;
-    let stripped: String = value
-        .chars()
-        .filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r'))
-        .collect();
-    Base64::url_decode_no_pad_strict(&stripped)
-        .map_err(|e| CoreError::invalid_operation(format!("StdLib::base64UrlDecode: {e}")))
-}
-
-/// C# `StdLib.Itoa(value[, base])`: base 10 -> `BigInteger.ToString()` (decimal),
-/// base 16 -> `BigInteger.ToString("x")` (lowercase two's-complement hex).
-/// Any other base throws `ArgumentOutOfRangeException`.
-fn itoa_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let value = BigInt::from_signed_bytes_le(arg_bytes(args, "itoa")?);
-    let text = match optional_base(args, 1, "itoa")? {
-        10 => value.to_str_radix(10),
-        16 => dotnet_bigint_to_hex(&value),
-        other => {
-            return Err(CoreError::invalid_argument(format!(
-                "StdLib::itoa: invalid base: {other}"
-            )));
-        }
-    };
-    Ok(text.into_bytes())
-}
-
-/// C# `StdLib.Atoi(value[, base])`: base 10 -> `BigInteger.Parse(AllowLeadingSign)`,
-/// base 16 -> `BigInteger.Parse(AllowHexSpecifier)` (two's-complement). Enforces
-/// the C# `[MaxLength(1024)]` cap on the input. Any other base throws.
-fn atoi_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let raw = arg_bytes(args, "atoi")?;
-    if raw.len() > MAX_INPUT_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::atoi: input exceeds maximum length ({MAX_INPUT_LENGTH})"
-        )));
-    }
-    let value = std::str::from_utf8(raw).map_err(|_| {
-        CoreError::invalid_operation("StdLib::atoi: argument is not valid UTF-8".to_string())
-    })?;
-    let parsed = match optional_base(args, 1, "atoi")? {
-        10 => parse_dotnet_decimal(value)?,
-        16 => parse_dotnet_hex(value)?,
-        other => {
-            return Err(CoreError::invalid_argument(format!(
-                "StdLib::atoi: invalid base: {other}"
-            )));
-        }
-    };
-    Ok(parsed.to_signed_bytes_le())
-}
-
-/// C# `StdLib.HexEncode(bytes)` (HF_Faun) = `bytes.ToHexString()`: lowercase hex,
-/// no prefix. Enforces the C# `[MaxLength(1024)]` cap on the input.
-fn hex_encode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let raw = arg_bytes(args, "hexEncode")?;
-    if raw.len() > MAX_INPUT_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::hexEncode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
-        )));
-    }
-    Ok(Hex::encode(raw).into_bytes())
-}
-
-/// C# `StdLib.HexDecode(str)` (HF_Faun) = `str.HexToBytes()` (`Convert.FromHexString`):
-/// case-insensitive hex, length must be even, no prefix/whitespace. Enforces the
-/// C# `[MaxLength(1024)]` cap on the input.
-fn hex_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let raw = arg_bytes(args, "hexDecode")?;
-    if raw.len() > MAX_INPUT_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::hexDecode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
-        )));
-    }
-    let value = std::str::from_utf8(raw).map_err(|_| {
-        CoreError::invalid_operation("StdLib::hexDecode: argument is not valid UTF-8".to_string())
-    })?;
-    Hex::decode(value).map_err(|e| CoreError::invalid_operation(format!("StdLib::hexDecode: {e}")))
-}
-
-/// C# `StdLib.StringSplit(str, separator[, removeEmptyEntries])` = `String.Split`:
-/// split `str` on each occurrence of `separator`, keeping empty entries unless
-/// `removeEmptyEntries` is true. An empty separator yields `[str]` (the whole
-/// string), matching .NET's `string.Split(string)` overload. Enforces the C#
-/// `[MaxLength(1024)]` cap on `str`. Returns a VM Array of ByteStrings
-/// (BinarySerialized; the engine deserializes it for the `Array` return type).
-fn string_split_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let raw = arg_bytes(args, "stringSplit")?;
-    if raw.len() > MAX_INPUT_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::stringSplit: input exceeds maximum length ({MAX_INPUT_LENGTH})"
-        )));
-    }
-    let value = std::str::from_utf8(raw).map_err(|_| {
-        CoreError::invalid_operation("StdLib::stringSplit: argument is not valid UTF-8".to_string())
-    })?;
-    let separator = match args.get(1) {
-        Some(bytes) => std::str::from_utf8(bytes).map_err(|_| {
-            CoreError::invalid_operation(
-                "StdLib::stringSplit: separator is not valid UTF-8".to_string(),
-            )
-        })?,
-        None => {
+    /// C# `StdLib.MemorySearch` (its 3 overloads dispatch by argument count):
+    /// forward search returns `mem[start..].IndexOf(value) + start` (or -1);
+    /// backward search returns `mem[0..start].LastIndexOf(value)` (or -1).
+    fn memory_search_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let mem = args.first().map(Vec::as_slice).ok_or_else(|| {
+            CoreError::invalid_operation("StdLib::memorySearch requires (mem, value)")
+        })?;
+        let value = args.get(1).map(Vec::as_slice).ok_or_else(|| {
+            CoreError::invalid_operation("StdLib::memorySearch requires (mem, value)")
+        })?;
+        let start = match args.get(2) {
+            Some(b) => BigInt::from_signed_bytes_le(b).to_usize().ok_or_else(|| {
+                CoreError::invalid_operation("StdLib::memorySearch: start out of range")
+            })?,
+            None => 0,
+        };
+        // C# `AsSpan(start)` / `AsSpan(0, start)` throw when start exceeds the length.
+        if start > mem.len() {
             return Err(CoreError::invalid_operation(
-                "StdLib::stringSplit requires (str, separator)".to_string(),
+                "StdLib::memorySearch: start out of range",
             ));
         }
-    };
-    let remove_empty = args
-        .get(2)
-        .map(|b| b.iter().any(|x| *x != 0))
-        .unwrap_or(false);
-
-    let parts: Vec<&str> = if separator.is_empty() {
-        // .NET `string.Split("")` returns the whole string as a single element.
-        vec![value]
-    } else {
-        value.split(separator).collect()
-    };
-    let items: Vec<StackItem> = parts
-        .into_iter()
-        .filter(|part| !remove_empty || !part.is_empty())
-        .map(|part| StackItem::from_byte_string(part.as_bytes().to_vec()))
-        .collect();
-
-    BinarySerializer::serialize(
-        &StackItem::from_array(items),
-        &ExecutionEngineLimits::default(),
-    )
-    .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
-}
-
-/// C# `StdLib.StrLen(str)`: the number of text elements in the string, i.e.
-/// .NET `StringInfo` extended grapheme clusters (UAX #29 minus GB9c over the
-/// .NET runtime's break-property snapshot; see
-/// [`crate::dotnet_text_segmentation`]). Enforces the C# `[MaxLength(1024)]`
-/// cap on the raw input bytes; invalid UTF-8 faults the call, matching the C#
-/// `StrictUTF8` string conversion.
-fn str_len_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    let raw = arg_bytes(args, "strLen")?;
-    if raw.len() > MAX_INPUT_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::strLen: input exceeds maximum length ({MAX_INPUT_LENGTH})"
-        )));
+        let backward = args
+            .get(3)
+            .map(|b| b.iter().any(|x| *x != 0))
+            .unwrap_or(false);
+        Ok(BigInt::from(Self::memory_search(mem, value, start, backward)).to_signed_bytes_le())
     }
-    let value = std::str::from_utf8(raw).map_err(|_| {
-        CoreError::invalid_operation("StdLib::strLen: argument is not valid UTF-8".to_string())
-    })?;
-    Ok(BigInt::from(text_element_count(value)).to_signed_bytes_le())
-}
 
-/// Mirrors .NET `BigInteger.ToString("x")`: lowercase, minimal two's-complement
-/// hex with a sign-disambiguating leading nibble (a positive value whose top
-/// nibble is >= 8 gets a leading `0`; negatives are rendered in two's
-/// complement, e.g. `-1` -> "f", `255` -> "0ff", `-256` -> "f00").
-fn dotnet_bigint_to_hex(value: &BigInt) -> String {
-    if value.sign() == Sign::NoSign {
-        return "0".to_string();
-    }
-    let negative = value.sign() == Sign::Minus;
-    let mut hex = String::new();
-    for byte in value.to_signed_bytes_be() {
-        hex.push_str(&format!("{byte:02x}"));
-    }
-    let chars: Vec<char> = hex.chars().collect();
-    let mut start = 0;
-    // Drop redundant leading sign nibbles while the remainder keeps the sign.
-    while start + 1 < chars.len() {
-        let redundant = if negative {
-            chars[start] == 'f' && matches!(chars[start + 1], '8'..='9' | 'a'..='f')
+    fn memory_search(mem: &[u8], value: &[u8], start: usize, backward: bool) -> i64 {
+        if backward {
+            Self::last_index_of(&mem[..start], value)
         } else {
-            chars[start] == '0' && matches!(chars[start + 1], '0'..='7')
-        };
-        if redundant {
-            start += 1;
-        } else {
-            break;
+            match Self::index_of(&mem[start..], value) {
+                Some(i) => (i + start) as i64,
+                None => -1,
+            }
         }
     }
-    chars[start..].iter().collect()
-}
 
-/// Mirrors .NET `BigInteger.Parse(value, NumberStyles.AllowLeadingSign)`: an
-/// optional leading `+`/`-` then one or more decimal digits, nothing else
-/// (no whitespace, separators, or radix point).
-fn parse_dotnet_decimal(value: &str) -> CoreResult<BigInt> {
-    let (digits, negative) = match value.as_bytes().first() {
-        Some(b'+') => (&value[1..], false),
-        Some(b'-') => (&value[1..], true),
-        _ => (value, false),
-    };
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::atoi: '{value}' is not a valid base-10 integer"
-        )));
+    /// First index of `needle` in `haystack`, matching .NET `Span.IndexOf`
+    /// (an empty needle is found at 0).
+    fn index_of(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        if needle.is_empty() {
+            return Some(0);
+        }
+        if needle.len() > haystack.len() {
+            return None;
+        }
+        haystack.windows(needle.len()).position(|w| w == needle)
     }
-    let magnitude = BigInt::parse_bytes(digits.as_bytes(), 10).ok_or_else(|| {
-        CoreError::invalid_operation(format!("StdLib::atoi: '{value}' is not a valid integer"))
-    })?;
-    Ok(if negative { -magnitude } else { magnitude })
-}
 
-/// Mirrors .NET `BigInteger.Parse(value, NumberStyles.AllowHexSpecifier)`:
-/// case-insensitive hex digits interpreted as two's-complement (a leading
-/// nibble >= 8 makes the value negative, e.g. "ff" -> -1, "0ff" -> 255).
-fn parse_dotnet_hex(value: &str) -> CoreResult<BigInt> {
-    if value.is_empty() || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(CoreError::invalid_operation(format!(
-            "StdLib::atoi: '{value}' is not a valid base-16 integer"
-        )));
+    /// Last index of `needle` in `haystack` (or -1), matching .NET `Span.LastIndexOf`
+    /// (an empty needle is reported at `haystack.len()`).
+    fn last_index_of(haystack: &[u8], needle: &[u8]) -> i64 {
+        if needle.is_empty() {
+            return haystack.len() as i64;
+        }
+        if needle.len() > haystack.len() {
+            return -1;
+        }
+        haystack
+            .windows(needle.len())
+            .rposition(|w| w == needle)
+            .map_or(-1, |i| i as i64)
     }
-    let lower = value.to_ascii_lowercase();
-    let magnitude = BigInt::parse_bytes(lower.as_bytes(), 16).ok_or_else(|| {
-        CoreError::invalid_operation(format!("StdLib::atoi: '{value}' is not a valid integer"))
-    })?;
-    if matches!(lower.as_bytes()[0], b'8'..=b'9' | b'a'..=b'f') {
-        Ok(magnitude - (BigInt::from(1) << (4 * lower.len())))
-    } else {
-        Ok(magnitude)
+
+    /// Reads an optional integer `base` argument (C# StdLib's `@base` overload),
+    /// defaulting to 10 when absent. Integer args arrive as signed little-endian.
+    fn optional_base(args: &[Vec<u8>], index: usize, method: &str) -> CoreResult<i64> {
+        match args.get(index) {
+            None => Ok(10),
+            Some(bytes) => BigInt::from_signed_bytes_le(bytes).to_i64().ok_or_else(|| {
+                CoreError::invalid_argument(format!("StdLib::{method}: base out of range"))
+            }),
+        }
+    }
+
+    /// C# `StdLib.Base64Decode` = `Convert.FromBase64String`: strip the four
+    /// whitespace characters .NET tolerates ({space, `\t`, `\n`, `\r`}), then
+    /// strict-decode the remainder (any other character — including other
+    /// whitespace — faults). Enforces the C# `[MaxLength(1024)]` cap on the input.
+    fn base64_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let raw = Self::arg_bytes(args, "base64Decode")?;
+        if raw.len() > MAX_INPUT_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::base64Decode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+            )));
+        }
+        let value = std::str::from_utf8(raw).map_err(|_| {
+            CoreError::invalid_operation(
+                "StdLib::base64Decode: argument is not valid UTF-8".to_string(),
+            )
+        })?;
+        let stripped: String = value
+            .chars()
+            .filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r'))
+            .collect();
+        Base64::decode_strict(&stripped)
+            .map_err(|e| CoreError::invalid_operation(format!("StdLib::base64Decode: {e}")))
+    }
+
+    /// C# `StdLib.Base64UrlEncode(data)` (HF_Echidna) = `Base64UrlEncoder.Encode`:
+    /// encodes the UTF-8 bytes of the input string into a URL-safe, unpadded base64
+    /// string. Enforces the C# `[MaxLength(1024)]` cap on the input.
+    fn base64_url_encode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let raw = Self::arg_bytes(args, "base64UrlEncode")?;
+        if raw.len() > MAX_INPUT_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::base64UrlEncode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+            )));
+        }
+        Ok(Base64::url_encode_no_pad(raw).into_bytes())
+    }
+
+    /// C# `StdLib.Base64UrlDecode(s)` (HF_Echidna) = `Base64UrlEncoder.Decode`: strip
+    /// the four whitespace characters .NET tolerates ({space, `\t`, `\n`, `\r`}),
+    /// then strict URL-safe-no-padding decode. The decoded bytes are returned as the
+    /// `String` result. Enforces the C# `[MaxLength(1024)]` cap on the input.
+    fn base64_url_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let raw = Self::arg_bytes(args, "base64UrlDecode")?;
+        if raw.len() > MAX_INPUT_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::base64UrlDecode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+            )));
+        }
+        let value = std::str::from_utf8(raw).map_err(|_| {
+            CoreError::invalid_operation(
+                "StdLib::base64UrlDecode: argument is not valid UTF-8".to_string(),
+            )
+        })?;
+        let stripped: String = value
+            .chars()
+            .filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r'))
+            .collect();
+        Base64::url_decode_no_pad_strict(&stripped)
+            .map_err(|e| CoreError::invalid_operation(format!("StdLib::base64UrlDecode: {e}")))
+    }
+
+    /// C# `StdLib.Itoa(value[, base])`: base 10 -> `BigInteger.ToString()` (decimal),
+    /// base 16 -> `BigInteger.ToString("x")` (lowercase two's-complement hex).
+    /// Any other base throws `ArgumentOutOfRangeException`.
+    fn itoa_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let value = BigInt::from_signed_bytes_le(Self::arg_bytes(args, "itoa")?);
+        let text = match Self::optional_base(args, 1, "itoa")? {
+            10 => value.to_str_radix(10),
+            16 => Self::dotnet_bigint_to_hex(&value),
+            other => {
+                return Err(CoreError::invalid_argument(format!(
+                    "StdLib::itoa: invalid base: {other}"
+                )));
+            }
+        };
+        Ok(text.into_bytes())
+    }
+
+    /// C# `StdLib.Atoi(value[, base])`: base 10 -> `BigInteger.Parse(AllowLeadingSign)`,
+    /// base 16 -> `BigInteger.Parse(AllowHexSpecifier)` (two's-complement). Enforces
+    /// the C# `[MaxLength(1024)]` cap on the input. Any other base throws.
+    fn atoi_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let raw = Self::arg_bytes(args, "atoi")?;
+        if raw.len() > MAX_INPUT_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::atoi: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+            )));
+        }
+        let value = std::str::from_utf8(raw).map_err(|_| {
+            CoreError::invalid_operation("StdLib::atoi: argument is not valid UTF-8".to_string())
+        })?;
+        let parsed = match Self::optional_base(args, 1, "atoi")? {
+            10 => Self::parse_dotnet_decimal(value)?,
+            16 => Self::parse_dotnet_hex(value)?,
+            other => {
+                return Err(CoreError::invalid_argument(format!(
+                    "StdLib::atoi: invalid base: {other}"
+                )));
+            }
+        };
+        Ok(parsed.to_signed_bytes_le())
+    }
+
+    /// C# `StdLib.HexEncode(bytes)` (HF_Faun) = `bytes.ToHexString()`: lowercase hex,
+    /// no prefix. Enforces the C# `[MaxLength(1024)]` cap on the input.
+    fn hex_encode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let raw = Self::arg_bytes(args, "hexEncode")?;
+        if raw.len() > MAX_INPUT_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::hexEncode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+            )));
+        }
+        Ok(Hex::encode(raw).into_bytes())
+    }
+
+    /// C# `StdLib.HexDecode(str)` (HF_Faun) = `str.HexToBytes()` (`Convert.FromHexString`):
+    /// case-insensitive hex, length must be even, no prefix/whitespace. Enforces the
+    /// C# `[MaxLength(1024)]` cap on the input.
+    fn hex_decode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let raw = Self::arg_bytes(args, "hexDecode")?;
+        if raw.len() > MAX_INPUT_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::hexDecode: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+            )));
+        }
+        let value = std::str::from_utf8(raw).map_err(|_| {
+            CoreError::invalid_operation("StdLib::hexDecode: argument is not valid UTF-8".to_string())
+        })?;
+        Hex::decode(value).map_err(|e| CoreError::invalid_operation(format!("StdLib::hexDecode: {e}")))
+    }
+
+    /// C# `StdLib.StringSplit(str, separator[, removeEmptyEntries])` = `String.Split`:
+    /// split `str` on each occurrence of `separator`, keeping empty entries unless
+    /// `removeEmptyEntries` is true. An empty separator yields `[str]` (the whole
+    /// string), matching .NET's `string.Split(string)` overload. Enforces the C#
+    /// `[MaxLength(1024)]` cap on `str`. Returns a VM Array of ByteStrings
+    /// (BinarySerialized; the engine deserializes it for the `Array` return type).
+    fn string_split_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let raw = Self::arg_bytes(args, "stringSplit")?;
+        if raw.len() > MAX_INPUT_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::stringSplit: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+            )));
+        }
+        let value = std::str::from_utf8(raw).map_err(|_| {
+            CoreError::invalid_operation("StdLib::stringSplit: argument is not valid UTF-8".to_string())
+        })?;
+        let separator = match args.get(1) {
+            Some(bytes) => std::str::from_utf8(bytes).map_err(|_| {
+                CoreError::invalid_operation(
+                    "StdLib::stringSplit: separator is not valid UTF-8".to_string(),
+                )
+            })?,
+            None => {
+                return Err(CoreError::invalid_operation(
+                    "StdLib::stringSplit requires (str, separator)".to_string(),
+                ));
+            }
+        };
+        let remove_empty = args
+            .get(2)
+            .map(|b| b.iter().any(|x| *x != 0))
+            .unwrap_or(false);
+
+        let parts: Vec<&str> = if separator.is_empty() {
+            // .NET `string.Split("")` returns the whole string as a single element.
+            vec![value]
+        } else {
+            value.split(separator).collect()
+        };
+        let items: Vec<StackItem> = parts
+            .into_iter()
+            .filter(|part| !remove_empty || !part.is_empty())
+            .map(|part| StackItem::from_byte_string(part.as_bytes().to_vec()))
+            .collect();
+
+        BinarySerializer::serialize(
+            &StackItem::from_array(items),
+            &ExecutionEngineLimits::default(),
+        )
+        .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
+    }
+
+    /// C# `StdLib.StrLen(str)`: the number of text elements in the string, i.e.
+    /// .NET `StringInfo` extended grapheme clusters (UAX #29 minus GB9c over the
+    /// .NET runtime's break-property snapshot; see
+    /// [`crate::dotnet_text_segmentation`]). Enforces the C# `[MaxLength(1024)]`
+    /// cap on the raw input bytes; invalid UTF-8 faults the call, matching the C#
+    /// `StrictUTF8` string conversion.
+    fn str_len_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        let raw = Self::arg_bytes(args, "strLen")?;
+        if raw.len() > MAX_INPUT_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::strLen: input exceeds maximum length ({MAX_INPUT_LENGTH})"
+            )));
+        }
+        let value = std::str::from_utf8(raw).map_err(|_| {
+            CoreError::invalid_operation("StdLib::strLen: argument is not valid UTF-8".to_string())
+        })?;
+        Ok(BigInt::from(text_element_count(value)).to_signed_bytes_le())
+    }
+
+    /// Mirrors .NET `BigInteger.ToString("x")`: lowercase, minimal two's-complement
+    /// hex with a sign-disambiguating leading nibble (a positive value whose top
+    /// nibble is >= 8 gets a leading `0`; negatives are rendered in two's
+    /// complement, e.g. `-1` -> "f", `255` -> "0ff", `-256` -> "f00").
+    fn dotnet_bigint_to_hex(value: &BigInt) -> String {
+        if value.sign() == Sign::NoSign {
+            return "0".to_string();
+        }
+        let negative = value.sign() == Sign::Minus;
+        let mut hex = String::new();
+        for byte in value.to_signed_bytes_be() {
+            hex.push_str(&format!("{byte:02x}"));
+        }
+        let chars: Vec<char> = hex.chars().collect();
+        let mut start = 0;
+        // Drop redundant leading sign nibbles while the remainder keeps the sign.
+        while start + 1 < chars.len() {
+            let redundant = if negative {
+                chars[start] == 'f' && matches!(chars[start + 1], '8'..='9' | 'a'..='f')
+            } else {
+                chars[start] == '0' && matches!(chars[start + 1], '0'..='7')
+            };
+            if redundant {
+                start += 1;
+            } else {
+                break;
+            }
+        }
+        chars[start..].iter().collect()
+    }
+
+    /// Mirrors .NET `BigInteger.Parse(value, NumberStyles.AllowLeadingSign)`: an
+    /// optional leading `+`/`-` then one or more decimal digits, nothing else
+    /// (no whitespace, separators, or radix point).
+    fn parse_dotnet_decimal(value: &str) -> CoreResult<BigInt> {
+        let (digits, negative) = match value.as_bytes().first() {
+            Some(b'+') => (&value[1..], false),
+            Some(b'-') => (&value[1..], true),
+            _ => (value, false),
+        };
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::atoi: '{value}' is not a valid base-10 integer"
+            )));
+        }
+        let magnitude = BigInt::parse_bytes(digits.as_bytes(), 10).ok_or_else(|| {
+            CoreError::invalid_operation(format!("StdLib::atoi: '{value}' is not a valid integer"))
+        })?;
+        Ok(if negative { -magnitude } else { magnitude })
+    }
+
+    /// Mirrors .NET `BigInteger.Parse(value, NumberStyles.AllowHexSpecifier)`:
+    /// case-insensitive hex digits interpreted as two's-complement (a leading
+    /// nibble >= 8 makes the value negative, e.g. "ff" -> -1, "0ff" -> 255).
+    fn parse_dotnet_hex(value: &str) -> CoreResult<BigInt> {
+        if value.is_empty() || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(CoreError::invalid_operation(format!(
+                "StdLib::atoi: '{value}' is not a valid base-16 integer"
+            )));
+        }
+        let lower = value.to_ascii_lowercase();
+        let magnitude = BigInt::parse_bytes(lower.as_bytes(), 16).ok_or_else(|| {
+            CoreError::invalid_operation(format!("StdLib::atoi: '{value}' is not a valid integer"))
+        })?;
+        if matches!(lower.as_bytes()[0], b'8'..=b'9' | b'a'..=b'f') {
+            Ok(magnitude - (BigInt::from(1) << (4 * lower.len())))
+        } else {
+            Ok(magnitude)
+        }
     }
 }
 
@@ -716,7 +716,7 @@ impl NativeContract for StdLib {
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        dispatch(method, args).unwrap_or_else(|| {
+        Self::dispatch(method, args).unwrap_or_else(|| {
             Err(CoreError::invalid_operation(format!(
                 "StdLib method '{method}' is not implemented"
             )))
@@ -729,7 +729,7 @@ mod tests {
     use super::*;
 
     fn call(method: &str, arg: &[u8]) -> CoreResult<Vec<u8>> {
-        dispatch(method, &[arg.to_vec()]).expect("known method")
+        StdLib::dispatch(method, &[arg.to_vec()]).expect("known method")
     }
 
     #[test]
@@ -772,13 +772,13 @@ mod tests {
         let ok = "A".repeat(MAX_INPUT_LENGTH - 4) + "QQ==";
         assert_eq!(ok.len(), MAX_INPUT_LENGTH);
         assert!(
-            dispatch("base64Decode", &[ok.into_bytes()])
+            StdLib::dispatch("base64Decode", &[ok.into_bytes()])
                 .unwrap()
                 .is_ok()
         );
         let too_long = "A".repeat(MAX_INPUT_LENGTH + 1);
         assert!(
-            dispatch("base64Decode", &[too_long.into_bytes()])
+            StdLib::dispatch("base64Decode", &[too_long.into_bytes()])
                 .unwrap()
                 .is_err()
         );
@@ -877,7 +877,7 @@ mod tests {
     #[test]
     fn memory_compare_matches_csharp_sign() {
         let cmp = |a: &[u8], b: &[u8]| -> BigInt {
-            let out = dispatch("memoryCompare", &[a.to_vec(), b.to_vec()])
+            let out = StdLib::dispatch("memoryCompare", &[a.to_vec(), b.to_vec()])
                 .unwrap()
                 .unwrap();
             BigInt::from_signed_bytes_le(&out)
@@ -892,14 +892,14 @@ mod tests {
 
     #[test]
     fn unknown_method_is_none() {
-        assert!(dispatch("notAStdLibMethod", &[vec![1]]).is_none());
+        assert!(StdLib::dispatch("notAStdLibMethod", &[vec![1]]).is_none());
     }
 
     /// stringSplit via the dispatch seam: decodes the BinarySerialized Array
     /// return back into the substrings for comparison.
     fn split(args: &[&[u8]]) -> Vec<String> {
         let owned: Vec<Vec<u8>> = args.iter().map(|a| a.to_vec()).collect();
-        let bytes = dispatch("stringSplit", &owned).unwrap().unwrap();
+        let bytes = StdLib::dispatch("stringSplit", &owned).unwrap().unwrap();
         let item =
             BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
         item.as_array()
@@ -945,7 +945,7 @@ mod tests {
         if let Some(base) = base {
             args.push(BigInt::from(base).to_signed_bytes_le());
         }
-        dispatch("itoa", &args)
+        StdLib::dispatch("itoa", &args)
             .unwrap()
             .map(|b| String::from_utf8(b).unwrap())
     }
@@ -957,7 +957,7 @@ mod tests {
         if let Some(base) = base {
             args.push(BigInt::from(base).to_signed_bytes_le());
         }
-        dispatch("atoi", &args)
+        StdLib::dispatch("atoi", &args)
             .unwrap()
             .map(|b| BigInt::from_signed_bytes_le(&b))
     }
@@ -1046,9 +1046,9 @@ mod tests {
     fn atoi_respects_max_input_length() {
         // C# [MaxLength(1024)] on the input: 1024 bytes ok, 1025 faults.
         let ok = "1".repeat(MAX_INPUT_LENGTH);
-        assert!(dispatch("atoi", &[ok.into_bytes()]).unwrap().is_ok());
+        assert!(StdLib::dispatch("atoi", &[ok.into_bytes()]).unwrap().is_ok());
         let too_long = "1".repeat(MAX_INPUT_LENGTH + 1);
-        assert!(dispatch("atoi", &[too_long.into_bytes()]).unwrap().is_err());
+        assert!(StdLib::dispatch("atoi", &[too_long.into_bytes()]).unwrap().is_err());
     }
 
     #[test]
@@ -1098,7 +1098,7 @@ mod tests {
 
     /// strLen via the dispatch seam: UTF-8 string bytes in, signed-LE Integer out.
     fn str_len(arg: &[u8]) -> CoreResult<i64> {
-        dispatch("strLen", &[arg.to_vec()])
+        StdLib::dispatch("strLen", &[arg.to_vec()])
             .unwrap()
             .map(|b| BigInt::from_signed_bytes_le(&b).to_i64().unwrap())
     }
@@ -1164,7 +1164,7 @@ mod tests {
     fn memory_search_matches_csharp() {
         let search = |args: &[&[u8]]| -> i64 {
             let owned: Vec<Vec<u8>> = args.iter().map(|a| a.to_vec()).collect();
-            let out = dispatch("memorySearch", &owned).unwrap().unwrap();
+            let out = StdLib::dispatch("memorySearch", &owned).unwrap().unwrap();
             BigInt::from_signed_bytes_le(&out).to_i64().unwrap()
         };
         let n = |v: i64| BigInt::from(v).to_signed_bytes_le();
@@ -1184,7 +1184,7 @@ mod tests {
     fn memory_search_start_out_of_range_faults() {
         // C# AsSpan(start) throws when start exceeds the length.
         assert!(
-            dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]])
+            StdLib::dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]])
                 .unwrap()
                 .is_err()
         );
@@ -1201,19 +1201,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            dispatch("serialize", std::slice::from_ref(&payload)).unwrap().unwrap(),
+            StdLib::dispatch("serialize", std::slice::from_ref(&payload))
+                .unwrap()
+                .unwrap(),
             payload
         );
         // deserialize accepts the valid payload (returns it for the Any-return
         // decode) and faults on malformed input.
         assert_eq!(
-            dispatch("deserialize", std::slice::from_ref(&payload))
+            StdLib::dispatch("deserialize", std::slice::from_ref(&payload))
                 .unwrap()
                 .unwrap(),
             payload
         );
         assert!(
-            dispatch("deserialize", &[vec![0xff, 0xff, 0xff]])
+            StdLib::dispatch("deserialize", &[vec![0xff, 0xff, 0xff]])
                 .unwrap()
                 .is_err()
         );
@@ -1226,7 +1228,7 @@ mod tests {
         // The engine BinarySerializes the `Any` arg before dispatch sees it.
         let ser = |item: &StackItem| -> String {
             let payload = BinarySerializer::serialize(item, &limits).unwrap();
-            let json = dispatch("jsonSerialize", &[payload]).unwrap().unwrap();
+            let json = StdLib::dispatch("jsonSerialize", &[payload]).unwrap().unwrap();
             String::from_utf8(json).unwrap()
         };
         // C# UT_StdLib.Json_Serialize.
@@ -1242,7 +1244,7 @@ mod tests {
         // bytes (for the engine's Any-return decode); compare to the direct
         // encoding of the expected item.
         let de_eq = |json: &str, item: &StackItem| {
-            let out = dispatch("jsonDeserialize", &[json.as_bytes().to_vec()])
+            let out = StdLib::dispatch("jsonDeserialize", &[json.as_bytes().to_vec()])
                 .unwrap()
                 .unwrap();
             assert_eq!(
@@ -1256,18 +1258,18 @@ mod tests {
         de_eq("null", &StackItem::null());
         // Faults: invalid JSON ("***") and a fractional number ("no decimals").
         assert!(
-            dispatch("jsonDeserialize", &[b"***".to_vec()])
+            StdLib::dispatch("jsonDeserialize", &[b"***".to_vec()])
                 .unwrap()
                 .is_err()
         );
         assert!(
-            dispatch("jsonDeserialize", &[b"123.45".to_vec()])
+            StdLib::dispatch("jsonDeserialize", &[b"123.45".to_vec()])
                 .unwrap()
                 .is_err()
         );
 
         // Serialize -> deserialize round-trips a structured value.
-        let payload = dispatch("jsonDeserialize", &[br#"{"k":[1,true,null]}"#.to_vec()])
+        let payload = StdLib::dispatch("jsonDeserialize", &[br#"{"k":[1,true,null]}"#.to_vec()])
             .unwrap()
             .unwrap();
         let item = BinarySerializer::deserialize(&payload, &limits, None).unwrap();

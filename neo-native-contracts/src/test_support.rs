@@ -12,11 +12,11 @@
 
 use neo_crypto::ECPoint;
 use neo_primitives::UInt160;
+use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
-use neo_serialization::BinarySerializer;
 
 /// ContractManagement per-contract storage prefix (C# `ContractManagement.Prefix_Contract`).
 pub const CM_PREFIX_CONTRACT: u8 = 8;
@@ -55,8 +55,9 @@ pub fn sample_committee() -> Vec<ECPoint> {
 /// 3-member committee (2-of-3) — used to construct a `Witness` that
 /// `check_committee_witness` accepts.
 pub fn committee_address(points: &[ECPoint]) -> UInt160 {
-    let script = neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(2, points)
-        .unwrap();
+    let script =
+        neo_vm::script_builder::redeem_script::multi_sig_redeem_script_from_points(2, points)
+            .unwrap();
     UInt160::from_script(&script)
 }
 

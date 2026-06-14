@@ -22,7 +22,7 @@ use neo_consensus::messages::ConsensusPayload;
 use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
 use neo_crypto::{ECPoint, Secp256r1Crypto};
 use neo_mempool::MemoryPool;
-use neo_native_contracts::{LedgerContract, neo_token};
+use neo_native_contracts::{LedgerContract, NeoToken};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256};
@@ -253,12 +253,12 @@ fn round_validator_context(
     block_index: u32,
 ) -> anyhow::Result<(Vec<ValidatorInfo>, UInt160)> {
     let validators_count = usize::try_from(settings.validators_count).unwrap_or(0);
-    let validators = validator_infos_from_keys(neo_token::next_block_validators(
+    let validators = validator_infos_from_keys(NeoToken::new().next_block_validators(
         snapshot,
         validators_count,
     )?);
     let next_consensus =
-        neo_token::next_consensus_address_for_block(snapshot, settings, block_index)?;
+        NeoToken::new().next_consensus_address_for_block(snapshot, settings, block_index)?;
     Ok((validators, next_consensus))
 }
 

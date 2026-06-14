@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn provider_current_block_index_feeds_engine_without_persisting_block() {
-        use crate::ledger_contract::serialize_hash_index_state;
+        use crate::LedgerContract;
         use neo_config::ProtocolSettings;
         use neo_execution::ApplicationEngine;
         use neo_payloads::Block;
@@ -126,7 +126,11 @@ mod tests {
         let current_hash = UInt256::from_bytes(&[0x34; 32]).unwrap();
         cache.add(
             StorageKey::new(LedgerContract::ID, vec![12]),
-            StorageItem::from_bytes(serialize_hash_index_state(&current_hash, 1234).unwrap()),
+            StorageItem::from_bytes(
+                LedgerContract::new()
+                    .serialize_hash_index_state(&current_hash, 1234)
+                    .unwrap(),
+            ),
         );
 
         let engine = ApplicationEngine::new(

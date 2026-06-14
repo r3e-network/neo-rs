@@ -94,7 +94,7 @@ impl ContractManagement {
         snapshot: &DataCache,
         hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
-        let key = StorageKey::new(Self::ID, contract_storage_key(hash));
+        let key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
         let Some(item) = snapshot.get(&key) else {
             return Ok(None);
         };
@@ -118,12 +118,12 @@ impl ContractManagement {
         snapshot: &DataCache,
         id: i32,
     ) -> CoreResult<Option<ContractState>> {
-        let id_key = StorageKey::new(Self::ID, contract_id_storage_key(id));
+        let id_key = StorageKey::new(Self::ID, Self::contract_id_storage_key(id));
         let hash_bytes = match snapshot.get(&id_key) {
             Some(item) => item.value_bytes().into_owned(),
             None => {
                 // Fall back to the legacy LE encoding for older snapshots.
-                let legacy = StorageKey::new(Self::ID, contract_id_storage_key_legacy(id));
+                let legacy = StorageKey::new(Self::ID, Self::contract_id_storage_key_legacy(id));
                 match snapshot.get(&legacy) {
                     Some(item) => item.value_bytes().into_owned(),
                     None => return Ok(None),
@@ -142,624 +142,654 @@ impl ContractManagement {
 
     /// Checks whether a contract is deployed in the given snapshot.
     pub fn is_contract(snapshot: &DataCache, hash: &UInt160) -> bool {
-        let key = StorageKey::new(Self::ID, contract_storage_key(hash));
+        let key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
         snapshot.get(&key).is_some()
     }
-}
 
-#[inline]
-fn contract_storage_key(hash: &UInt160) -> Vec<u8> {
-    crate::keys::prefixed_with_hash160(PREFIX_CONTRACT, hash)
-}
+    #[inline]
+    fn contract_storage_key(hash: &UInt160) -> Vec<u8> {
+        crate::keys::prefixed_with_hash160(PREFIX_CONTRACT, hash)
+    }
 
-#[inline]
-fn contract_id_storage_key(id: i32) -> Vec<u8> {
-    crate::keys::prefixed_with_i32_be(PREFIX_CONTRACT_HASH, id)
-}
+    #[inline]
+    fn contract_id_storage_key(id: i32) -> Vec<u8> {
+        crate::keys::prefixed_with_i32_be(PREFIX_CONTRACT_HASH, id)
+    }
 
-#[inline]
-fn contract_id_storage_key_legacy(id: i32) -> Vec<u8> {
-    let mut key = Vec::with_capacity(1 + 4);
-    key.push(PREFIX_CONTRACT_HASH);
-    key.extend_from_slice(&id.to_le_bytes());
-    key
-}
+    #[inline]
+    fn contract_id_storage_key_legacy(id: i32) -> Vec<u8> {
+        let mut key = Vec::with_capacity(1 + 4);
+        key.push(PREFIX_CONTRACT_HASH);
+        key.extend_from_slice(&id.to_le_bytes());
+        key
+    }
 
-/// Parses the leading `Hash160` argument shared by `getContract`/`isContract`.
-fn parse_hash_arg(args: &[Vec<u8>], method: &str) -> CoreResult<UInt160> {
-    crate::args::raw_account(args, &format!("ContractManagement::{method}"))
-}
+    /// Parses the leading `Hash160` argument shared by `getContract`/`isContract`.
+    fn parse_hash_arg(args: &[Vec<u8>], method: &str) -> CoreResult<UInt160> {
+        crate::args::raw_account(args, &format!("ContractManagement::{method}"))
+    }
 
-/// C# `ContractAbi.GetMethod(name, pcount) != null`: true when the manifest ABI
-/// declares a method named `name` whose parameter count matches `pcount`, where
-/// `pcount == -1` matches any count.
-fn abi_has_method(manifest: &neo_manifest::ContractManifest, name: &str, pcount: i32) -> bool {
-    manifest
-        .abi
-        .methods
-        .iter()
-        .any(|m| m.name == name && (pcount == -1 || m.parameters.len() as i32 == pcount))
-}
+    /// C# `ContractAbi.GetMethod(name, pcount) != null`: true when the manifest ABI
+    /// declares a method named `name` whose parameter count matches `pcount`, where
+    /// `pcount == -1` matches any count.
+    fn abi_has_method(manifest: &neo_manifest::ContractManifest, name: &str, pcount: i32) -> bool {
+        manifest
+            .abi
+            .methods
+            .iter()
+            .any(|m| m.name == name && (pcount == -1 || m.parameters.len() as i32 == pcount))
+    }
 
-/// Marshals a `ContractState` to the Array return bytes (C# `ToStackItem` +
-/// `BinarySerializer`) — shared by `getContract` / `getContractById`. A miss is
-/// the caller's responsibility (an empty payload encodes the C# `null`).
-fn contract_state_to_bytes(state: &ContractState, method: &str) -> CoreResult<Vec<u8>> {
-    let item = state.to_stack_item().map_err(|e| {
-        CoreError::invalid_operation(format!("ContractManagement::{method}: stack item: {e}"))
-    })?;
-    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).map_err(|e| {
-        CoreError::invalid_operation(format!("ContractManagement::{method}: serialize: {e}"))
-    })
-}
-
-/// Collects the `Prefix_ContractHash` storage entries (`id -> hash`) in
-/// forward-seek order, the backing set for C# `GetContractHashes`'s iterator.
-///
-/// C# reads the contract id back out of each key
-/// (`ReadInt32BigEndian(key.Key[1..])`) and keeps only `id >= 0`, which
-/// excludes the native contracts (negative ids; their big-endian
-/// two's-complement keys sort after every non-negative id).
-fn contract_hash_entries(snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
-    let prefix_key = StorageKey::new(ContractManagement::ID, vec![PREFIX_CONTRACT_HASH]);
-    snapshot
-        .find(Some(&prefix_key), SeekDirection::Forward)
-        .filter(|(key, _)| {
-            let suffix = key.suffix();
-            suffix.len() >= 5
-                && i32::from_be_bytes([suffix[1], suffix[2], suffix[3], suffix[4]]) >= 0
-        })
-        .collect()
-}
-
-/// C# `NativeContract.IsNative(hash)`: whether the hash belongs to one of the
-/// 11 registered native contracts.
-fn is_native_contract_hash(hash: &UInt160) -> bool {
-    crate::catalog::is_standard_native_contract_hash(hash)
-}
-
-/// C# `PolicyContract.CleanWhitelist(engine, contract)` (PolicyContract.cs
-/// ~368), invoked cross-natively by `ContractManagement.Destroy`: deletes every
-/// `Prefix_WhitelistedFeeContracts ++ contract.Hash` entry and emits Policy's
-/// `WhitelistFeeChanged` event (`[hash, method, argCount, null]`) per removal.
-/// Entries decode as the C# `WhitelistedContract` interoperable
-/// `Struct[ContractHash, Method, ArgCount, FixedFee]`.
-fn policy_clean_whitelist(
-    engine: &mut ApplicationEngine,
-    contract: &ContractState,
-) -> CoreResult<()> {
-    let snapshot = engine.snapshot_cache();
-    let mut prefix_bytes = Vec::with_capacity(1 + 20);
-    prefix_bytes.push(POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS);
-    prefix_bytes.extend_from_slice(&contract.hash.to_bytes());
-    let prefix_key = StorageKey::new(crate::PolicyContract::ID, prefix_bytes);
-    let entries: Vec<(StorageKey, StorageItem)> = snapshot
-        .find(Some(&prefix_key), SeekDirection::Forward)
-        .collect();
-    for (key, item) in entries {
-        snapshot.delete(&key);
-        let decoded = BinarySerializer::deserialize(
-            &item.value_bytes(),
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .map_err(|e| {
-            CoreError::invalid_operation(format!(
-                "ContractManagement::destroy: whitelist entry: {e}"
-            ))
+    /// Marshals a `ContractState` to the Array return bytes (C# `ToStackItem` +
+    /// `BinarySerializer`) — shared by `getContract` / `getContractById`. A miss is
+    /// the caller's responsibility (an empty payload encodes the C# `null`).
+    fn contract_state_to_bytes(state: &ContractState, method: &str) -> CoreResult<Vec<u8>> {
+        let item = state.to_stack_item().map_err(|e| {
+            CoreError::invalid_operation(format!("ContractManagement::{method}: stack item: {e}"))
         })?;
-        let StackItem::Struct(fields) = decoded else {
-            return Err(CoreError::invalid_data(
-                "whitelisted-contract entry is not a struct",
-            ));
-        };
-        let items = fields.items();
-        let method = items
-            .get(1)
-            .ok_or_else(|| CoreError::invalid_data("whitelisted-contract entry missing method"))?
-            .as_bytes()
-            .map_err(|e| CoreError::invalid_data(format!("whitelist method: {e}")))?;
-        let arg_count = items
-            .get(2)
-            .ok_or_else(|| CoreError::invalid_data("whitelisted-contract entry missing argCount"))?
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("whitelist argCount: {e}")))?;
-        engine
-            .send_notification(
-                crate::PolicyContract::script_hash(),
-                "WhitelistFeeChanged".to_string(),
-                vec![
-                    StackItem::from_byte_string(contract.hash.to_bytes()),
-                    StackItem::from_byte_string(method),
-                    StackItem::from_int(arg_count),
-                    StackItem::Null,
-                ],
+        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).map_err(|e| {
+            CoreError::invalid_operation(format!("ContractManagement::{method}: serialize: {e}"))
+        })
+    }
+
+    /// Collects the `Prefix_ContractHash` storage entries (`id -> hash`) in
+    /// forward-seek order, the backing set for C# `GetContractHashes`'s iterator.
+    ///
+    /// C# reads the contract id back out of each key
+    /// (`ReadInt32BigEndian(key.Key[1..])`) and keeps only `id >= 0`, which
+    /// excludes the native contracts (negative ids; their big-endian
+    /// two's-complement keys sort after every non-negative id).
+    fn contract_hash_entries(&self, snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
+        let prefix_key = StorageKey::new(ContractManagement::ID, vec![PREFIX_CONTRACT_HASH]);
+        snapshot
+            .find(Some(&prefix_key), SeekDirection::Forward)
+            .filter(|(key, _)| {
+                let suffix = key.suffix();
+                suffix.len() >= 5
+                    && i32::from_be_bytes([suffix[1], suffix[2], suffix[3], suffix[4]]) >= 0
+            })
+            .collect()
+    }
+
+    /// C# `NativeContract.IsNative(hash)`: whether the hash belongs to one of the
+    /// 11 registered native contracts.
+    fn is_native_contract_hash(hash: &UInt160) -> bool {
+        crate::catalog::is_standard_native_contract_hash(hash)
+    }
+
+    /// C# `PolicyContract.CleanWhitelist(engine, contract)` (PolicyContract.cs
+    /// ~368), invoked cross-natively by `ContractManagement.Destroy`: deletes every
+    /// `Prefix_WhitelistedFeeContracts ++ contract.Hash` entry and emits Policy's
+    /// `WhitelistFeeChanged` event (`[hash, method, argCount, null]`) per removal.
+    /// Entries decode as the C# `WhitelistedContract` interoperable
+    /// `Struct[ContractHash, Method, ArgCount, FixedFee]`.
+    fn policy_clean_whitelist(
+        &self,
+        engine: &mut ApplicationEngine,
+        contract: &ContractState,
+    ) -> CoreResult<()> {
+        let snapshot = engine.snapshot_cache();
+        let mut prefix_bytes = Vec::with_capacity(1 + 20);
+        prefix_bytes.push(POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS);
+        prefix_bytes.extend_from_slice(&contract.hash.to_bytes());
+        let prefix_key = StorageKey::new(crate::PolicyContract::ID, prefix_bytes);
+        let entries: Vec<(StorageKey, StorageItem)> = snapshot
+            .find(Some(&prefix_key), SeekDirection::Forward)
+            .collect();
+        for (key, item) in entries {
+            snapshot.delete(&key);
+            let decoded = BinarySerializer::deserialize(
+                &item.value_bytes(),
+                &ExecutionEngineLimits::default(),
+                None,
             )
             .map_err(|e| {
-                CoreError::invalid_operation(format!("ContractManagement::destroy: notify: {e}"))
+                CoreError::invalid_operation(format!(
+                    "ContractManagement::destroy: whitelist entry: {e}"
+                ))
             })?;
+            let StackItem::Struct(fields) = decoded else {
+                return Err(CoreError::invalid_data(
+                    "whitelisted-contract entry is not a struct",
+                ));
+            };
+            let items = fields.items();
+            let method = items
+                .get(1)
+                .ok_or_else(|| CoreError::invalid_data("whitelisted-contract entry missing method"))?
+                .as_bytes()
+                .map_err(|e| CoreError::invalid_data(format!("whitelist method: {e}")))?;
+            let arg_count = items
+                .get(2)
+                .ok_or_else(|| CoreError::invalid_data("whitelisted-contract entry missing argCount"))?
+                .as_int()
+                .map_err(|e| CoreError::invalid_data(format!("whitelist argCount: {e}")))?;
+            engine
+                .send_notification(
+                    crate::PolicyContract::script_hash(),
+                    "WhitelistFeeChanged".to_string(),
+                    vec![
+                        StackItem::from_byte_string(contract.hash.to_bytes()),
+                        StackItem::from_byte_string(method),
+                        StackItem::from_int(arg_count),
+                        StackItem::Null,
+                    ],
+                )
+                .map_err(|e| {
+                    CoreError::invalid_operation(format!("ContractManagement::destroy: notify: {e}"))
+                })?;
+        }
+        Ok(())
     }
-    Ok(())
-}
 
-/// C# `SetMinimumDeploymentFee` storage effect: overwrite
-/// `Prefix_MinimumDeploymentFee` (`GetAndChange(...).Set(value)`). The key is
-/// genesis-initialised, so `update` (= C# GetAndChange) is the correct primitive;
-/// the value is stored as the full signed-LE BigInteger (the C# parameter is
-/// `BigInteger`, not `long`).
-fn put_minimum_deployment_fee(snapshot: &DataCache, value: &BigInt) {
-    snapshot.update(
-        StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
-        StorageItem::from_bytes(crate::bigint_to_storage_bytes(value)),
-    );
-}
-
-/// C# `ContractManagement.GetNextAvailableId`: returns the current
-/// `Prefix_NextAvailableId` value and stores `value + 1`
-/// (`item.Add(1)`). The key is genesis-initialised to 1; absence (tests /
-/// pre-genesis snapshots) falls back to that same default.
-fn get_next_available_id(snapshot: &DataCache) -> CoreResult<i32> {
-    let value = crate::read_storage_int(
-        snapshot,
-        ContractManagement::ID,
-        PREFIX_NEXT_AVAILABLE_ID,
-        DEFAULT_NEXT_AVAILABLE_ID,
-    )?;
-    let id = i32::try_from(value).map_err(|_| {
-        // C# casts `(int)(BigInteger)item`, which throws on overflow.
-        CoreError::invalid_operation("next available contract id out of range")
-    })?;
-    snapshot.update(
-        StorageKey::new(ContractManagement::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
-        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-            i64::from(id) + 1,
-        ))),
-    );
-    Ok(id)
-}
-
-/// C# Deploy/Update post-Aspidochelone guard (refs neo#2653 / neo#2673): the
-/// current (native) context must carry `CallFlags.All`, i.e. the caller must
-/// have requested a full-trust call.
-fn require_call_flags_all(engine: &ApplicationEngine, method: &str) -> CoreResult<()> {
-    if !engine.is_hardfork_enabled(Hardfork::HfAspidochelone) {
-        return Ok(());
+    /// C# `SetMinimumDeploymentFee` storage effect: overwrite
+    /// `Prefix_MinimumDeploymentFee` (`GetAndChange(...).Set(value)`). The key is
+    /// genesis-initialised, so `update` (= C# GetAndChange) is the correct primitive;
+    /// the value is stored as the full signed-LE BigInteger (the C# parameter is
+    /// `BigInteger`, not `long`).
+    fn put_minimum_deployment_fee(&self, snapshot: &DataCache, value: &BigInt) {
+        snapshot.update(
+            StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(value)),
+        );
     }
-    let flags = engine.get_current_call_flags().map_err(|e| {
-        CoreError::invalid_operation(format!("ContractManagement::{method}: call flags: {e}"))
-    })?;
-    if !flags.contains(CallFlags::ALL) {
-        return Err(CoreError::invalid_operation(format!(
-            "Cannot call {method} with the flag {flags:?}."
-        )));
-    }
-    Ok(())
-}
 
-/// Returns whether native-call argument `index` was pushed as `StackItem::Null`
-/// (bit `index` of the dispatcher's [`NativeArgNullMask`]). This is the only
-/// reliable null signal: a `Null` ByteArray arg reaches the `Vec<u8>` layer as
-/// the 1-byte serialized-null payload, not as empty bytes.
-fn native_arg_is_null(engine: &ApplicationEngine, index: usize) -> bool {
-    index < 32
-        && engine
-            .get_state::<NativeArgNullMask>()
-            .is_some_and(|mask| mask.0 & (1u32 << index) != 0)
-}
-
-/// C# `nefFile.AsSerializable<NefFile>()` with the preceding
-/// `nefFile.Length == 0` guard: rejects empty payloads, then parses the NEF3
-/// container (magic + checksum validation included in `NefFile::deserialize`).
-fn parse_nef_checked(bytes: &[u8], method: &str) -> CoreResult<NefFile> {
-    if bytes.is_empty() {
-        return Err(CoreError::invalid_operation(format!(
-            "ContractManagement::{method}: NEF file length cannot be zero"
-        )));
-    }
-    NefFile::parse(bytes).map_err(|e| {
-        CoreError::invalid_operation(format!("ContractManagement::{method}: bad NEF: {e}"))
-    })
-}
-
-/// C# `ContractManifest.Parse(manifest)` with the preceding
-/// `manifest.Length == 0` guard: the byte-length cap from
-/// `Parse(ReadOnlySpan<byte>)` (`MaxLength` = u16::MAX), JSON parsing, and the
-/// `FromJson` structural checks (non-empty name, empty features, unique
-/// groups / standards / permissions / trusts) which `validate()` mirrors.
-fn parse_manifest_checked(bytes: &[u8], method: &str) -> CoreResult<ContractManifest> {
-    if bytes.is_empty() {
-        return Err(CoreError::invalid_operation(format!(
-            "ContractManagement::{method}: manifest length cannot be zero"
-        )));
-    }
-    if bytes.len() > MAX_MANIFEST_LENGTH {
-        return Err(CoreError::invalid_operation(format!(
-            "ContractManagement::{method}: manifest length {} exceeds maximum {}",
-            bytes.len(),
-            MAX_MANIFEST_LENGTH
-        )));
-    }
-    let json = std::str::from_utf8(bytes).map_err(|e| {
-        CoreError::invalid_operation(format!(
-            "ContractManagement::{method}: manifest is not UTF-8: {e}"
-        ))
-    })?;
-    let manifest = ContractManifest::parse(json).map_err(|e| {
-        CoreError::invalid_operation(format!("ContractManagement::{method}: bad manifest: {e}"))
-    })?;
-    manifest.validate().map_err(|e| {
-        CoreError::invalid_operation(format!("ContractManagement::{method}: bad manifest: {e}"))
-    })?;
-    Ok(manifest)
-}
-
-/// C# `Helper.Check(new Script(script, strict), abi)`:
-/// - strict (post-Basilisk): full structural script validation, and every ABI
-///   method offset must land on a parsed instruction boundary
-///   (`Script.GetInstruction` throws for non-boundary offsets in strict mode);
-/// - non-strict: each offset must be in range and the instruction at that
-///   exact offset must parse (`Instruction.Parse` on demand);
-/// - both: method `(name, pcount)` pairs and event names must be unique
-///   (C# `abi.GetMethod("", 0)` dictionary construction + events
-///   `ToDictionary`).
-fn check_script_against_abi(script: &[u8], abi: &ContractAbi, strict: bool) -> CoreResult<()> {
-    let validated = if strict {
-        Some(neo_vm_rs::validate_script(script, true).map_err(|e| {
-            CoreError::invalid_operation(format!("ContractManagement: invalid script: {e}"))
-        })?)
-    } else {
-        None
-    };
-    for method in &abi.methods {
-        let offset = usize::try_from(method.offset).map_err(|_| {
-            CoreError::invalid_operation(format!(
-                "ContractManagement: method '{}' has a negative offset",
-                method.name
-            ))
+    /// C# `ContractManagement.GetNextAvailableId`: returns the current
+    /// `Prefix_NextAvailableId` value and stores `value + 1`
+    /// (`item.Add(1)`). The key is genesis-initialised to 1; absence (tests /
+    /// pre-genesis snapshots) falls back to that same default.
+    fn get_next_available_id(&self, snapshot: &DataCache) -> CoreResult<i32> {
+        let value = crate::read_storage_int(
+            snapshot,
+            ContractManagement::ID,
+            PREFIX_NEXT_AVAILABLE_ID,
+            DEFAULT_NEXT_AVAILABLE_ID,
+        )?;
+        let id = i32::try_from(value).map_err(|_| {
+            // C# casts `(int)(BigInteger)item`, which throws on overflow.
+            CoreError::invalid_operation("next available contract id out of range")
         })?;
-        if offset >= script.len() {
+        snapshot.update(
+            StorageKey::new(ContractManagement::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                i64::from(id) + 1,
+            ))),
+        );
+        Ok(id)
+    }
+
+    /// C# Deploy/Update post-Aspidochelone guard (refs neo#2653 / neo#2673): the
+    /// current (native) context must carry `CallFlags.All`, i.e. the caller must
+    /// have requested a full-trust call.
+    fn require_call_flags_all(&self, engine: &ApplicationEngine, method: &str) -> CoreResult<()> {
+        if !engine.is_hardfork_enabled(Hardfork::HfAspidochelone) {
+            return Ok(());
+        }
+        let flags = engine.get_current_call_flags().map_err(|e| {
+            CoreError::invalid_operation(format!("ContractManagement::{method}: call flags: {e}"))
+        })?;
+        if !flags.contains(CallFlags::ALL) {
             return Err(CoreError::invalid_operation(format!(
-                "ContractManagement: method '{}' offset {} is out of script range {}",
-                method.name,
-                offset,
-                script.len()
+                "Cannot call {method} with the flag {flags:?}."
             )));
         }
-        match &validated {
-            Some(validated) => {
-                if !validated.has_instruction_at(offset) {
-                    return Err(CoreError::invalid_operation(format!(
+        Ok(())
+    }
+
+    /// Returns whether native-call argument `index` was pushed as `StackItem::Null`
+    /// (bit `index` of the dispatcher's [`NativeArgNullMask`]). This is the only
+    /// reliable null signal: a `Null` ByteArray arg reaches the `Vec<u8>` layer as
+    /// the 1-byte serialized-null payload, not as empty bytes.
+    fn native_arg_is_null(&self, engine: &ApplicationEngine, index: usize) -> bool {
+        index < 32
+            && engine
+                .get_state::<NativeArgNullMask>()
+                .is_some_and(|mask| mask.0 & (1u32 << index) != 0)
+    }
+
+    /// C# `nefFile.AsSerializable<NefFile>()` with the preceding
+    /// `nefFile.Length == 0` guard: rejects empty payloads, then parses the NEF3
+    /// container (magic + checksum validation included in `NefFile::deserialize`).
+    fn parse_nef_checked(bytes: &[u8], method: &str) -> CoreResult<NefFile> {
+        if bytes.is_empty() {
+            return Err(CoreError::invalid_operation(format!(
+                "ContractManagement::{method}: NEF file length cannot be zero"
+            )));
+        }
+        NefFile::parse(bytes).map_err(|e| {
+            CoreError::invalid_operation(format!("ContractManagement::{method}: bad NEF: {e}"))
+        })
+    }
+
+    /// C# `ContractManifest.Parse(manifest)` with the preceding
+    /// `manifest.Length == 0` guard: the byte-length cap from
+    /// `Parse(ReadOnlySpan<byte>)` (`MaxLength` = u16::MAX), JSON parsing, and the
+    /// `FromJson` structural checks (non-empty name, empty features, unique
+    /// groups / standards / permissions / trusts) which `validate()` mirrors.
+    fn parse_manifest_checked(bytes: &[u8], method: &str) -> CoreResult<ContractManifest> {
+        if bytes.is_empty() {
+            return Err(CoreError::invalid_operation(format!(
+                "ContractManagement::{method}: manifest length cannot be zero"
+            )));
+        }
+        if bytes.len() > MAX_MANIFEST_LENGTH {
+            return Err(CoreError::invalid_operation(format!(
+                "ContractManagement::{method}: manifest length {} exceeds maximum {}",
+                bytes.len(),
+                MAX_MANIFEST_LENGTH
+            )));
+        }
+        let json = std::str::from_utf8(bytes).map_err(|e| {
+            CoreError::invalid_operation(format!(
+                "ContractManagement::{method}: manifest is not UTF-8: {e}"
+            ))
+        })?;
+        let manifest = ContractManifest::parse(json).map_err(|e| {
+            CoreError::invalid_operation(format!("ContractManagement::{method}: bad manifest: {e}"))
+        })?;
+        manifest.validate().map_err(|e| {
+            CoreError::invalid_operation(format!("ContractManagement::{method}: bad manifest: {e}"))
+        })?;
+        Ok(manifest)
+    }
+
+    /// C# `Helper.Check(new Script(script, strict), abi)`:
+    /// - strict (post-Basilisk): full structural script validation, and every ABI
+    ///   method offset must land on a parsed instruction boundary
+    ///   (`Script.GetInstruction` throws for non-boundary offsets in strict mode);
+    /// - non-strict: each offset must be in range and the instruction at that
+    ///   exact offset must parse (`Instruction.Parse` on demand);
+    /// - both: method `(name, pcount)` pairs and event names must be unique
+    ///   (C# `abi.GetMethod("", 0)` dictionary construction + events
+    ///   `ToDictionary`).
+    fn check_script_against_abi(script: &[u8], abi: &ContractAbi, strict: bool) -> CoreResult<()> {
+        let validated = if strict {
+            Some(neo_vm_rs::validate_script(script, true).map_err(|e| {
+                CoreError::invalid_operation(format!("ContractManagement: invalid script: {e}"))
+            })?)
+        } else {
+            None
+        };
+        for method in &abi.methods {
+            let offset = usize::try_from(method.offset).map_err(|_| {
+                CoreError::invalid_operation(format!(
+                    "ContractManagement: method '{}' has a negative offset",
+                    method.name
+                ))
+            })?;
+            if offset >= script.len() {
+                return Err(CoreError::invalid_operation(format!(
+                    "ContractManagement: method '{}' offset {} is out of script range {}",
+                    method.name,
+                    offset,
+                    script.len()
+                )));
+            }
+            match &validated {
+                Some(validated) => {
+                    if !validated.has_instruction_at(offset) {
+                        return Err(CoreError::invalid_operation(format!(
                         "ContractManagement: method '{}' offset {} is not an instruction boundary",
                         method.name, offset
                     )));
+                    }
+                }
+                None => {
+                    neo_vm_rs::Instruction::parse(script, offset).map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "ContractManagement: method '{}' offset {}: {e}",
+                            method.name, offset
+                        ))
+                    })?;
                 }
             }
-            None => {
-                neo_vm_rs::Instruction::parse(script, offset).map_err(|e| {
-                    CoreError::invalid_operation(format!(
-                        "ContractManagement: method '{}' offset {}: {e}",
-                        method.name, offset
-                    ))
-                })?;
+        }
+        let mut method_keys = HashSet::new();
+        for method in &abi.methods {
+            if !method_keys.insert((method.name.as_str(), method.parameters.len())) {
+                return Err(CoreError::invalid_operation(format!(
+                    "ContractManagement: duplicate ABI method '{}' with {} parameter(s)",
+                    method.name,
+                    method.parameters.len()
+                )));
             }
         }
-    }
-    let mut method_keys = HashSet::new();
-    for method in &abi.methods {
-        if !method_keys.insert((method.name.as_str(), method.parameters.len())) {
-            return Err(CoreError::invalid_operation(format!(
-                "ContractManagement: duplicate ABI method '{}' with {} parameter(s)",
-                method.name,
-                method.parameters.len()
-            )));
+        let mut event_names = HashSet::new();
+        for event in &abi.events {
+            if !event_names.insert(event.name.as_str()) {
+                return Err(CoreError::invalid_operation(format!(
+                    "ContractManagement: duplicate ABI event '{}'",
+                    event.name
+                )));
+            }
         }
+        Ok(())
     }
-    let mut event_names = HashSet::new();
-    for event in &abi.events {
-        if !event_names.insert(event.name.as_str()) {
-            return Err(CoreError::invalid_operation(format!(
-                "ContractManagement: duplicate ABI event '{}'",
-                event.name
-            )));
+
+    /// C# `ContractManifest.IsValid(limits, hash)`: the manifest must serialize as
+    /// a stack item within the engine limits, and every group signature must
+    /// verify (secp256r1) against the contract hash.
+    fn manifest_is_valid(
+        manifest: &ContractManifest,
+        limits: &ExecutionEngineLimits,
+        hash: &UInt160,
+    ) -> bool {
+        let Ok(item) = StackItem::try_from(manifest.to_stack_value()) else {
+            return false;
+        };
+        if BinarySerializer::serialize(&item, limits).is_err() {
+            return false;
         }
-    }
-    Ok(())
-}
-
-/// C# `ContractManifest.IsValid(limits, hash)`: the manifest must serialize as
-/// a stack item within the engine limits, and every group signature must
-/// verify (secp256r1) against the contract hash.
-fn manifest_is_valid(
-    manifest: &ContractManifest,
-    limits: &ExecutionEngineLimits,
-    hash: &UInt160,
-) -> bool {
-    let Ok(item) = StackItem::try_from(manifest.to_stack_value()) else {
-        return false;
-    };
-    if BinarySerializer::serialize(&item, limits).is_err() {
-        return false;
-    }
-    manifest
-        .groups
-        .iter()
-        .all(|group| group.verify_signature(&hash.to_bytes()).unwrap_or(false))
-}
-
-/// Serializes a `ContractState` into the per-contract record bytes — the C#
-/// interoperable form (`BinarySerializer.Serialize(state.ToStackItem(null))`,
-/// see `StorageItem.Value` over `IInteroperable`), the encoding that
-/// `get_contract_from_snapshot` reads.
-fn serialize_contract_record(state: &ContractState) -> CoreResult<Vec<u8>> {
-    state.serialize_contract_record()
-}
-
-/// Decodes the optional trailing `data: Any` argument shared by the 3-arg
-/// `deploy` / `update` overloads. The 2-arg overloads and an explicit `Null`
-/// argument both yield `StackItem::Null` (C# passes `StackItem.Null` through).
-fn optional_data_arg(
-    engine: &ApplicationEngine,
-    args: &[Vec<u8>],
-    method: &str,
-) -> CoreResult<StackItem> {
-    if args.len() < 3 || native_arg_is_null(engine, 2) {
-        return Ok(StackItem::Null);
-    }
-    let limits = *engine.execution_limits();
-    BinarySerializer::deserialize(&args[2], &limits, None).map_err(|e| {
-        CoreError::invalid_operation(format!("ContractManagement::{method}: bad data arg: {e}"))
-    })
-}
-
-/// C# `ContractManagement.OnDeployAsync`: invoke the contract's `_deploy(data,
-/// update)` callback when (and only when) its manifest ABI declares it with
-/// exactly two parameters, then emit the `Deploy` / `Update` event.
-///
-/// The callback goes through `queue_contract_call_from_native` (the faithful
-/// equivalent of C# `CallFromNativeContractAsync` in this engine, proven by
-/// the NEP-17 `onNEP17Payment` path): it executes after the native method
-/// returns, against the record this method has already written, and a fault
-/// inside `_deploy` still faults the whole transaction as in C#.
-fn on_deploy(
-    engine: &mut ApplicationEngine,
-    contract: &ContractState,
-    data: StackItem,
-    update: bool,
-) -> CoreResult<()> {
-    if abi_has_method(
-        &contract.manifest,
-        ContractBasicMethod::DEPLOY,
-        ContractBasicMethod::DEPLOY_P_COUNT,
-    ) {
-        engine.queue_contract_call_from_native(
-            ContractManagement::script_hash(),
-            contract.hash,
-            ContractBasicMethod::DEPLOY,
-            vec![data, StackItem::from_bool(update)],
-        );
-    }
-    let event = if update { "Update" } else { "Deploy" };
-    engine
-        .send_notification(
-            ContractManagement::script_hash(),
-            event.to_string(),
-            vec![StackItem::from_byte_string(contract.hash.to_bytes())],
-        )
-        .map_err(|e| {
-            CoreError::invalid_operation(format!("ContractManagement: {event} notify: {e}"))
-        })
-}
-
-/// C# `ContractManagement.Deploy(engine, nefFile, manifest, data)` (~239-303):
-/// validates the caller / payloads, charges
-/// `max(StoragePrice * payload, GetMinimumDeploymentFee)`, computes the
-/// contract hash from `(tx.Sender, nef.CheckSum, manifest.Name)`, allocates
-/// the next contract id, writes the record + big-endian id index, runs the
-/// `_deploy` callback, emits `Deploy`, and returns the new `ContractState`.
-fn deploy(engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    // Post-Aspidochelone the caller must hold CallFlags.All.
-    require_call_flags_all(engine, "Deploy")?;
-    // C#: `engine.ScriptContainer is not Transaction tx` -> throw; the sender
-    // is the transaction's first signer.
-    let sender = engine
-        .script_container()
-        .and_then(|container| container.as_any().downcast_ref::<Transaction>())
-        .ok_or_else(|| {
-            CoreError::invalid_operation(
-                "ContractManagement::deploy requires a transaction container",
-            )
-        })?
-        .sender()
-        .ok_or_else(|| {
-            CoreError::invalid_operation("ContractManagement::deploy: transaction has no sender")
-        })?;
-    let nef_bytes = args.first().ok_or_else(|| {
-        CoreError::invalid_operation("ContractManagement::deploy requires a NEF file")
-    })?;
-    let manifest_bytes = args.get(1).ok_or_else(|| {
-        CoreError::invalid_operation("ContractManagement::deploy requires a manifest")
-    })?;
-    if nef_bytes.is_empty() {
-        return Err(CoreError::invalid_operation(
-            "ContractManagement::deploy: NEF file length cannot be zero",
-        ));
-    }
-    if manifest_bytes.is_empty() {
-        return Err(CoreError::invalid_operation(
-            "ContractManagement::deploy: manifest length cannot be zero",
-        ));
-    }
-    let data = optional_data_arg(engine, args, "deploy")?;
-
-    // C#: AddFee(max(StoragePrice * (nef + manifest), GetMinimumDeploymentFee)
-    // * FeeFactor) — the FeeFactor multiplication is the datoshi -> picoGAS
-    // conversion that `charge_execution_fee` (datoshi in) performs internally.
-    let snapshot = engine.snapshot_cache();
-    let payload_len = i64::try_from(nef_bytes.len() + manifest_bytes.len())
-        .map_err(|_| CoreError::invalid_operation("deploy payload length overflow"))?;
-    let storage_component = i64::from(engine.storage_price())
-        .checked_mul(payload_len)
-        .ok_or_else(|| CoreError::invalid_operation("deploy storage fee overflow"))?;
-    let minimum_fee = crate::read_storage_int(
-        &snapshot,
-        ContractManagement::ID,
-        PREFIX_MINIMUM_DEPLOYMENT_FEE,
-        DEFAULT_MINIMUM_DEPLOYMENT_FEE,
-    )?;
-    let fee = storage_component.max(minimum_fee);
-    engine.charge_execution_fee(u64::try_from(fee).unwrap_or(0))?;
-
-    let nef = parse_nef_checked(nef_bytes, "deploy")?;
-    let manifest = parse_manifest_checked(manifest_bytes, "deploy")?;
-    // C#: Helper.Check(new Script(nef.Script, HF_Basilisk), manifest.Abi).
-    check_script_against_abi(
-        &nef.script,
-        &manifest.abi,
-        engine.is_hardfork_enabled(Hardfork::HfBasilisk),
-    )?;
-    let hash = Helper::get_contract_hash(&sender, nef.checksum, &manifest.name);
-
-    // C#: Policy.IsBlocked(snapshot, hash) -> "The contract {hash} has been blocked."
-    if snapshot
-        .get(&crate::policy_contract::blocked_account_key(&hash))
-        .is_some()
-    {
-        return Err(CoreError::invalid_operation(format!(
-            "The contract {hash} has been blocked."
-        )));
-    }
-    let record_key = StorageKey::new(ContractManagement::ID, contract_storage_key(&hash));
-    if snapshot.get(&record_key).is_some() {
-        return Err(CoreError::invalid_operation(format!(
-            "Contract Already Exists: {hash}"
-        )));
+        manifest
+            .groups
+            .iter()
+            .all(|group| group.verify_signature(&hash.to_bytes()).unwrap_or(false))
     }
 
-    let mut contract = ContractState::new(get_next_available_id(&snapshot)?, hash, nef, manifest);
-    contract.update_counter = 0;
-    let limits = *engine.execution_limits();
-    if !manifest_is_valid(&contract.manifest, &limits, &hash) {
-        return Err(CoreError::invalid_operation(format!(
-            "Invalid Manifest: {hash}"
-        )));
+    /// Serializes a `ContractState` into the per-contract record bytes — the C#
+    /// interoperable form (`BinarySerializer.Serialize(state.ToStackItem(null))`,
+    /// see `StorageItem.Value` over `IInteroperable`), the encoding that
+    /// `get_contract_from_snapshot` reads.
+    fn serialize_contract_record(state: &ContractState) -> CoreResult<Vec<u8>> {
+        state.serialize_contract_record()
     }
 
-    // The per-contract record plus the big-endian id -> hash index entry.
-    snapshot.add(
-        record_key,
-        StorageItem::from_bytes(serialize_contract_record(&contract)?),
-    );
-    snapshot.add(
-        StorageKey::new(ContractManagement::ID, contract_id_storage_key(contract.id)),
-        StorageItem::from_bytes(hash.to_bytes().to_vec()),
-    );
-
-    on_deploy(engine, &contract, data, false)?;
-
-    contract_state_to_bytes(&contract, "deploy")
-}
-
-/// C# `ContractManagement.Update(engine, nefFile, manifest, data)` (~312-376):
-/// the CALLING contract updates itself — at least one of `nefFile` /
-/// `manifest` non-null (nullability via the dispatcher's null mask), the
-/// storage fee charged on the payload, the record re-validated
-/// (`Helper.Check` over the final NEF + manifest, name immutable,
-/// `UpdateCounter` capped at u16::MAX and bumped), `Policy.CleanWhitelist`
-/// run, then the `_deploy(data, true)` callback and the `Update` event.
-fn update(engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-    // Post-Aspidochelone the caller must hold CallFlags.All.
-    require_call_flags_all(engine, "Update")?;
-    let nef_is_null = native_arg_is_null(engine, 0);
-    let manifest_is_null = native_arg_is_null(engine, 1);
-    if nef_is_null && manifest_is_null {
-        return Err(CoreError::invalid_operation(
-            "ContractManagement::update: NEF file and manifest cannot both be null",
-        ));
-    }
-    let nef_bytes = if nef_is_null {
-        None
-    } else {
-        Some(args.first().ok_or_else(|| {
-            CoreError::invalid_operation("ContractManagement::update requires a NEF file arg")
-        })?)
-    };
-    let manifest_bytes = if manifest_is_null {
-        None
-    } else {
-        Some(args.get(1).ok_or_else(|| {
-            CoreError::invalid_operation("ContractManagement::update requires a manifest arg")
-        })?)
-    };
-    let data = optional_data_arg(engine, args, "update")?;
-
-    // C#: AddFee(StoragePrice * FeeFactor * (nef?.len + manifest?.len)) — no
-    // minimum-deployment-fee floor for updates.
-    let payload_len =
-        i64::try_from(nef_bytes.map_or(0, |b| b.len()) + manifest_bytes.map_or(0, |b| b.len()))
-            .map_err(|_| CoreError::invalid_operation("update payload length overflow"))?;
-    let fee = i64::from(engine.storage_price())
-        .checked_mul(payload_len)
-        .ok_or_else(|| CoreError::invalid_operation("update storage fee overflow"))?;
-    engine.charge_execution_fee(u64::try_from(fee).unwrap_or(0))?;
-
-    // C#: GetAndChange(Prefix_Contract ++ engine.CallingScriptHash) -> the
-    // calling contract's record must exist.
-    let calling_hash = engine.get_calling_script_hash().ok_or_else(|| {
-        CoreError::invalid_operation("ContractManagement::update requires a calling contract")
-    })?;
-    let snapshot = engine.snapshot_cache();
-    let mut contract = ContractManagement::get_contract_from_snapshot(&snapshot, &calling_hash)?
-        .ok_or_else(|| {
-            CoreError::invalid_operation(format!(
-                "Updating Contract Does Not Exist: {calling_hash}"
-            ))
-        })?;
-    if contract.update_counter == u16::MAX {
-        return Err(CoreError::invalid_operation(
-            "The contract reached the maximum number of updates.",
-        ));
-    }
-
-    if let Some(bytes) = nef_bytes {
-        contract.nef = parse_nef_checked(bytes, "update")?;
-    }
-    // C#: Policy.CleanWhitelist(engine, contract) — unconditionally, between
-    // the NEF and manifest swaps.
-    policy_clean_whitelist(engine, &contract)?;
-    if let Some(bytes) = manifest_bytes {
-        let new_manifest = parse_manifest_checked(bytes, "update")?;
-        if new_manifest.name != contract.manifest.name {
-            return Err(CoreError::invalid_operation(
-                "The name of the contract can't be changed.",
-            ));
+    /// Decodes the optional trailing `data: Any` argument shared by the 3-arg
+    /// `deploy` / `update` overloads. The 2-arg overloads and an explicit `Null`
+    /// argument both yield `StackItem::Null` (C# passes `StackItem.Null` through).
+    fn optional_data_arg(
+        &self,
+        engine: &ApplicationEngine,
+        args: &[Vec<u8>],
+        method: &str,
+    ) -> CoreResult<StackItem> {
+        if args.len() < 3 || self.native_arg_is_null(engine, 2) {
+            return Ok(StackItem::Null);
         }
         let limits = *engine.execution_limits();
-        if !manifest_is_valid(&new_manifest, &limits, &contract.hash) {
+        BinarySerializer::deserialize(&args[2], &limits, None).map_err(|e| {
+            CoreError::invalid_operation(format!("ContractManagement::{method}: bad data arg: {e}"))
+        })
+    }
+
+    /// C# `ContractManagement.OnDeployAsync`: invoke the contract's `_deploy(data,
+    /// update)` callback when (and only when) its manifest ABI declares it with
+    /// exactly two parameters, then emit the `Deploy` / `Update` event.
+    ///
+    /// The callback goes through `queue_contract_call_from_native` (the faithful
+    /// equivalent of C# `CallFromNativeContractAsync` in this engine, proven by
+    /// the NEP-17 `onNEP17Payment` path): it executes after the native method
+    /// returns, against the record this method has already written, and a fault
+    /// inside `_deploy` still faults the whole transaction as in C#.
+    fn on_deploy(
+        &self,
+        engine: &mut ApplicationEngine,
+        contract: &ContractState,
+        data: StackItem,
+        update: bool,
+    ) -> CoreResult<()> {
+        if Self::abi_has_method(
+            &contract.manifest,
+            ContractBasicMethod::DEPLOY,
+            ContractBasicMethod::DEPLOY_P_COUNT,
+        ) {
+            engine.queue_contract_call_from_native(
+                ContractManagement::script_hash(),
+                contract.hash,
+                ContractBasicMethod::DEPLOY,
+                vec![data, StackItem::from_bool(update)],
+            );
+        }
+        let event = if update { "Update" } else { "Deploy" };
+        engine
+            .send_notification(
+                ContractManagement::script_hash(),
+                event.to_string(),
+                vec![StackItem::from_byte_string(contract.hash.to_bytes())],
+            )
+            .map_err(|e| {
+                CoreError::invalid_operation(format!("ContractManagement: {event} notify: {e}"))
+            })
+    }
+
+    /// C# `ContractManagement.Deploy(engine, nefFile, manifest, data)` (~239-303):
+    /// validates the caller / payloads, charges
+    /// `max(StoragePrice * payload, GetMinimumDeploymentFee)`, computes the
+    /// contract hash from `(tx.Sender, nef.CheckSum, manifest.Name)`, allocates
+    /// the next contract id, writes the record + big-endian id index, runs the
+    /// `_deploy` callback, emits `Deploy`, and returns the new `ContractState`.
+    fn deploy(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        // Post-Aspidochelone the caller must hold CallFlags.All.
+        self.require_call_flags_all(engine, "Deploy")?;
+        // C#: `engine.ScriptContainer is not Transaction tx` -> throw; the sender
+        // is the transaction's first signer.
+        let sender = engine
+            .script_container()
+            .and_then(|container| container.as_any().downcast_ref::<Transaction>())
+            .ok_or_else(|| {
+                CoreError::invalid_operation(
+                    "ContractManagement::deploy requires a transaction container",
+                )
+            })?
+            .sender()
+            .ok_or_else(|| {
+                CoreError::invalid_operation("ContractManagement::deploy: transaction has no sender")
+            })?;
+        let nef_bytes = args.first().ok_or_else(|| {
+            CoreError::invalid_operation("ContractManagement::deploy requires a NEF file")
+        })?;
+        let manifest_bytes = args.get(1).ok_or_else(|| {
+            CoreError::invalid_operation("ContractManagement::deploy requires a manifest")
+        })?;
+        if nef_bytes.is_empty() {
+            return Err(CoreError::invalid_operation(
+                "ContractManagement::deploy: NEF file length cannot be zero",
+            ));
+        }
+        if manifest_bytes.is_empty() {
+            return Err(CoreError::invalid_operation(
+                "ContractManagement::deploy: manifest length cannot be zero",
+            ));
+        }
+        let data = self.optional_data_arg(engine, args, "deploy")?;
+
+        // C#: AddFee(max(StoragePrice * (nef + manifest), GetMinimumDeploymentFee)
+        // * FeeFactor) — the FeeFactor multiplication is the datoshi -> picoGAS
+        // conversion that `charge_execution_fee` (datoshi in) performs internally.
+        let snapshot = engine.snapshot_cache();
+        let payload_len = i64::try_from(nef_bytes.len() + manifest_bytes.len())
+            .map_err(|_| CoreError::invalid_operation("deploy payload length overflow"))?;
+        let storage_component = i64::from(engine.storage_price())
+            .checked_mul(payload_len)
+            .ok_or_else(|| CoreError::invalid_operation("deploy storage fee overflow"))?;
+        let minimum_fee = crate::read_storage_int(
+            &snapshot,
+            ContractManagement::ID,
+            PREFIX_MINIMUM_DEPLOYMENT_FEE,
+            DEFAULT_MINIMUM_DEPLOYMENT_FEE,
+        )?;
+        let fee = storage_component.max(minimum_fee);
+        engine.charge_execution_fee(u64::try_from(fee).unwrap_or(0))?;
+
+        let nef = Self::parse_nef_checked(nef_bytes, "deploy")?;
+        let manifest = Self::parse_manifest_checked(manifest_bytes, "deploy")?;
+        // C#: Helper.Check(new Script(nef.Script, HF_Basilisk), manifest.Abi).
+        Self::check_script_against_abi(
+            &nef.script,
+            &manifest.abi,
+            engine.is_hardfork_enabled(Hardfork::HfBasilisk),
+        )?;
+        let hash = Helper::get_contract_hash(&sender, nef.checksum, &manifest.name);
+
+        // C#: Policy.IsBlocked(snapshot, hash) -> "The contract {hash} has been blocked."
+        if snapshot
+            .get(&crate::PolicyContract::blocked_account_key(&hash))
+            .is_some()
+        {
             return Err(CoreError::invalid_operation(format!(
-                "Invalid Manifest: {}",
-                contract.hash
+                "The contract {hash} has been blocked."
             )));
         }
-        contract.manifest = new_manifest;
+        let record_key = StorageKey::new(ContractManagement::ID, Self::contract_storage_key(&hash));
+        if snapshot.get(&record_key).is_some() {
+            return Err(CoreError::invalid_operation(format!(
+                "Contract Already Exists: {hash}"
+            )));
+        }
+
+        let mut contract =
+            ContractState::new(self.get_next_available_id(&snapshot)?, hash, nef, manifest);
+        contract.update_counter = 0;
+        let limits = *engine.execution_limits();
+        if !Self::manifest_is_valid(&contract.manifest, &limits, &hash) {
+            return Err(CoreError::invalid_operation(format!(
+                "Invalid Manifest: {hash}"
+            )));
+        }
+
+        // The per-contract record plus the big-endian id -> hash index entry.
+        snapshot.add(
+            record_key,
+            StorageItem::from_bytes(Self::serialize_contract_record(&contract)?),
+        );
+        snapshot.add(
+            StorageKey::new(
+                ContractManagement::ID,
+                Self::contract_id_storage_key(contract.id),
+            ),
+            StorageItem::from_bytes(hash.to_bytes().to_vec()),
+        );
+
+        self.on_deploy(engine, &contract, data, false)?;
+
+        Self::contract_state_to_bytes(&contract, "deploy")
     }
-    // C#: Helper.Check over the FINAL nef + manifest combination.
-    check_script_against_abi(
-        &contract.nef.script,
-        &contract.manifest.abi,
-        engine.is_hardfork_enabled(Hardfork::HfBasilisk),
-    )?;
-    contract.update_counter += 1;
 
-    // Persist the updated record (id, hash, and the id index are unchanged)
-    // before the queued `_deploy` callback resolves the contract from storage.
-    snapshot.update(
-        StorageKey::new(ContractManagement::ID, contract_storage_key(&contract.hash)),
-        StorageItem::from_bytes(serialize_contract_record(&contract)?),
-    );
+    /// C# `ContractManagement.Update(engine, nefFile, manifest, data)` (~312-376):
+    /// the CALLING contract updates itself — at least one of `nefFile` /
+    /// `manifest` non-null (nullability via the dispatcher's null mask), the
+    /// storage fee charged on the payload, the record re-validated
+    /// (`Helper.Check` over the final NEF + manifest, name immutable,
+    /// `UpdateCounter` capped at u16::MAX and bumped), `Policy.CleanWhitelist`
+    /// run, then the `_deploy(data, true)` callback and the `Update` event.
+    fn update(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        // Post-Aspidochelone the caller must hold CallFlags.All.
+        self.require_call_flags_all(engine, "Update")?;
+        let nef_is_null = self.native_arg_is_null(engine, 0);
+        let manifest_is_null = self.native_arg_is_null(engine, 1);
+        if nef_is_null && manifest_is_null {
+            return Err(CoreError::invalid_operation(
+                "ContractManagement::update: NEF file and manifest cannot both be null",
+            ));
+        }
+        let nef_bytes = if nef_is_null {
+            None
+        } else {
+            Some(args.first().ok_or_else(|| {
+                CoreError::invalid_operation("ContractManagement::update requires a NEF file arg")
+            })?)
+        };
+        let manifest_bytes = if manifest_is_null {
+            None
+        } else {
+            Some(args.get(1).ok_or_else(|| {
+                CoreError::invalid_operation("ContractManagement::update requires a manifest arg")
+            })?)
+        };
+        let data = self.optional_data_arg(engine, args, "update")?;
 
-    on_deploy(engine, &contract, data, true)?;
+        // C#: AddFee(StoragePrice * FeeFactor * (nef?.len + manifest?.len)) — no
+        // minimum-deployment-fee floor for updates.
+        let payload_len =
+            i64::try_from(nef_bytes.map_or(0, |b| b.len()) + manifest_bytes.map_or(0, |b| b.len()))
+                .map_err(|_| CoreError::invalid_operation("update payload length overflow"))?;
+        let fee = i64::from(engine.storage_price())
+            .checked_mul(payload_len)
+            .ok_or_else(|| CoreError::invalid_operation("update storage fee overflow"))?;
+        engine.charge_execution_fee(u64::try_from(fee).unwrap_or(0))?;
 
-    Ok(Vec::new())
+        // C#: GetAndChange(Prefix_Contract ++ engine.CallingScriptHash) -> the
+        // calling contract's record must exist.
+        let calling_hash = engine.get_calling_script_hash().ok_or_else(|| {
+            CoreError::invalid_operation("ContractManagement::update requires a calling contract")
+        })?;
+        let snapshot = engine.snapshot_cache();
+        let mut contract = ContractManagement::get_contract_from_snapshot(&snapshot, &calling_hash)?
+            .ok_or_else(|| {
+                CoreError::invalid_operation(format!(
+                    "Updating Contract Does Not Exist: {calling_hash}"
+                ))
+            })?;
+        if contract.update_counter == u16::MAX {
+            return Err(CoreError::invalid_operation(
+                "The contract reached the maximum number of updates.",
+            ));
+        }
+
+        if let Some(bytes) = nef_bytes {
+            contract.nef = Self::parse_nef_checked(bytes, "update")?;
+        }
+        // C#: Policy.CleanWhitelist(engine, contract) — unconditionally, between
+        // the NEF and manifest swaps.
+        self.policy_clean_whitelist(engine, &contract)?;
+        if let Some(bytes) = manifest_bytes {
+            let new_manifest = Self::parse_manifest_checked(bytes, "update")?;
+            if new_manifest.name != contract.manifest.name {
+                return Err(CoreError::invalid_operation(
+                    "The name of the contract can't be changed.",
+                ));
+            }
+            let limits = *engine.execution_limits();
+            if !Self::manifest_is_valid(&new_manifest, &limits, &contract.hash) {
+                return Err(CoreError::invalid_operation(format!(
+                    "Invalid Manifest: {}",
+                    contract.hash
+                )));
+            }
+            contract.manifest = new_manifest;
+        }
+        // C#: Helper.Check over the FINAL nef + manifest combination.
+        Self::check_script_against_abi(
+            &contract.nef.script,
+            &contract.manifest.abi,
+            engine.is_hardfork_enabled(Hardfork::HfBasilisk),
+        )?;
+        contract.update_counter += 1;
+
+        // Persist the updated record (id, hash, and the id index are unchanged)
+        // before the queued `_deploy` callback resolves the contract from storage.
+        snapshot.update(
+            StorageKey::new(
+                ContractManagement::ID,
+                Self::contract_storage_key(&contract.hash),
+            ),
+            StorageItem::from_bytes(Self::serialize_contract_record(&contract)?),
+        );
+
+        self.on_deploy(engine, &contract, data, true)?;
+
+        Ok(Vec::new())
+    }
+
+    /// C# `contract.InitializeAsync(engine, hardfork)` dispatch for a NON-`ActiveIn`
+    /// hardfork scheduled at the persisting block. Audit of every C# native
+    /// `InitializeAsync` override (ContractManagement.cs:53, GasToken.cs:29,
+    /// NeoToken.cs:106, OracleContract.cs:73, Notary.cs:52, PolicyContract.cs:137):
+    /// only `PolicyContract` carries branches for hardforks other than its
+    /// `ActiveIn` (the HF_Echidna and HF_Faun re-initializations) — every other
+    /// initializer is `if (hardfork == ActiveIn)`-gated, making the non-`ActiveIn`
+    /// calls no-ops.
+    fn initialize_native_for_hardfork(
+        &self,
+        engine: &mut ApplicationEngine,
+        contract: &dyn NativeContract,
+        hardfork: Hardfork,
+    ) -> CoreResult<()> {
+        if contract.id() == crate::PolicyContract::ID {
+            return crate::PolicyContract::new().initialize_for_hardfork(engine, hardfork);
+        }
+        Ok(())
+    }
 }
 
 static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
@@ -940,25 +970,6 @@ static NATIVE_CONTRACTS: LazyLock<Vec<std::sync::Arc<dyn NativeContract>>> = Laz
     crate::provider::StandardNativeProvider::new().all_native_contracts()
 });
 
-/// C# `contract.InitializeAsync(engine, hardfork)` dispatch for a NON-`ActiveIn`
-/// hardfork scheduled at the persisting block. Audit of every C# native
-/// `InitializeAsync` override (ContractManagement.cs:53, GasToken.cs:29,
-/// NeoToken.cs:106, OracleContract.cs:73, Notary.cs:52, PolicyContract.cs:137):
-/// only `PolicyContract` carries branches for hardforks other than its
-/// `ActiveIn` (the HF_Echidna and HF_Faun re-initializations) — every other
-/// initializer is `if (hardfork == ActiveIn)`-gated, making the non-`ActiveIn`
-/// calls no-ops.
-fn initialize_native_for_hardfork(
-    engine: &mut ApplicationEngine,
-    contract: &dyn NativeContract,
-    hardfork: Hardfork,
-) -> CoreResult<()> {
-    if contract.id() == crate::PolicyContract::ID {
-        return crate::policy_contract::initialize_for_hardfork(engine, hardfork);
-    }
-    Ok(())
-}
-
 impl NativeContract for ContractManagement {
     fn id(&self) -> i32 {
         Self::ID
@@ -1055,7 +1066,8 @@ impl NativeContract for ContractManagement {
                 &settings,
                 block_index,
             );
-            let record_key = StorageKey::new(Self::ID, contract_storage_key(&contract.hash()));
+            let record_key =
+                StorageKey::new(Self::ID, Self::contract_storage_key(&contract.hash()));
             let snapshot = engine.snapshot_cache();
             let existing = snapshot.get(&record_key);
             let is_create = existing.is_none();
@@ -1064,10 +1076,10 @@ impl NativeContract for ContractManagement {
                     // Create the contract record + the id → hash index entry.
                     snapshot.add(
                         record_key,
-                        StorageItem::from_bytes(serialize_contract_record(&composed)?),
+                        StorageItem::from_bytes(Self::serialize_contract_record(&composed)?),
                     );
                     snapshot.add(
-                        StorageKey::new(Self::ID, contract_id_storage_key(contract.id())),
+                        StorageKey::new(Self::ID, Self::contract_id_storage_key(contract.id())),
                         StorageItem::from_bytes(contract.hash().to_bytes().to_vec()),
                     );
                 }
@@ -1089,7 +1101,7 @@ impl NativeContract for ContractManagement {
                     stored.manifest = composed.manifest;
                     snapshot.update(
                         record_key,
-                        StorageItem::from_bytes(serialize_contract_record(&stored)?),
+                        StorageItem::from_bytes(Self::serialize_contract_record(&stored)?),
                     );
                 }
             }
@@ -1101,7 +1113,7 @@ impl NativeContract for ContractManagement {
                 if Some(*hardfork) == contract.active_in() {
                     continue;
                 }
-                initialize_native_for_hardfork(engine, contract.as_ref(), *hardfork)?;
+                self.initialize_native_for_hardfork(engine, contract.as_ref(), *hardfork)?;
             }
 
             engine
@@ -1144,12 +1156,12 @@ impl NativeContract for ContractManagement {
         let snapshot = engine.snapshot_cache();
         match method {
             "getContract" => {
-                let hash = parse_hash_arg(args, "getContract")?;
+                let hash = Self::parse_hash_arg(args, "getContract")?;
                 // C# `GetContract` returns the ContractState (as an Array via
                 // ToStackItem) or null on miss; the native return marshaling
                 // encodes a null Array result as an empty payload.
                 match Self::get_contract_from_snapshot(&snapshot, &hash)? {
-                    Some(state) => contract_state_to_bytes(&state, "getContract"),
+                    Some(state) => Self::contract_state_to_bytes(&state, "getContract"),
                     None => Ok(Vec::new()),
                 }
             }
@@ -1166,7 +1178,7 @@ impl NativeContract for ContractManagement {
                         )
                     })?;
                 match Self::get_contract_by_id_from_snapshot(&snapshot, id)? {
-                    Some(state) => contract_state_to_bytes(&state, "getContractById"),
+                    Some(state) => Self::contract_state_to_bytes(&state, "getContractById"),
                     None => Ok(Vec::new()),
                 }
             }
@@ -1196,7 +1208,7 @@ impl NativeContract for ContractManagement {
                     ));
                 }
                 crate::committee::assert_committee(engine, "setMinimumDeploymentFee")?;
-                put_minimum_deployment_fee(&engine.snapshot_cache(), &value);
+                self.put_minimum_deployment_fee(&engine.snapshot_cache(), &value);
                 Ok(Vec::new())
             }
             "getContractHashes" => {
@@ -1204,7 +1216,7 @@ impl NativeContract for ContractManagement {
                 // FindOptions.RemovePrefix and prefix length 1, yielding
                 // Struct[id_bytes, hash]. The 4-byte iterator id is decoded back
                 // into an InteropInterface (StorageIterator) by the dispatcher.
-                let results = contract_hash_entries(&snapshot);
+                let results = self.contract_hash_entries(&snapshot);
                 let iterator_id = engine
                     .create_storage_iterator_with_options(results, 1, FindOptions::RemovePrefix)
                     .map_err(|e| {
@@ -1215,12 +1227,12 @@ impl NativeContract for ContractManagement {
                 Ok(iterator_id.to_le_bytes().to_vec())
             }
             "isContract" => {
-                let hash = parse_hash_arg(args, "isContract")?;
+                let hash = Self::parse_hash_arg(args, "isContract")?;
                 // C# `IsContract` = snapshot.Contains(key(Prefix_Contract, hash)).
                 Ok(vec![u8::from(Self::is_contract(&snapshot, &hash))])
             }
             "hasMethod" => {
-                let hash = parse_hash_arg(args, "hasMethod")?;
+                let hash = Self::parse_hash_arg(args, "hasMethod")?;
                 let method_name = args
                     .get(1)
                     .map(|b| String::from_utf8_lossy(b).into_owned())
@@ -1241,16 +1253,16 @@ impl NativeContract for ContractManagement {
                 // C#: false if the contract does not exist; otherwise whether its
                 // manifest ABI declares the (method, pcount) method.
                 let has = match Self::get_contract_from_snapshot(&snapshot, &hash)? {
-                    Some(state) => abi_has_method(&state.manifest, &method_name, pcount),
+                    Some(state) => Self::abi_has_method(&state.manifest, &method_name, pcount),
                     None => false,
                 };
                 Ok(vec![u8::from(has)])
             }
             // Both deploy overloads land here; args.len() (2 vs 3) selects
             // the C# overload — the 2-arg form forwards data = StackItem.Null.
-            "deploy" => deploy(engine, args),
+            "deploy" => self.deploy(engine, args),
             // Both update overloads land here, same overload convention.
-            "update" => update(engine, args),
+            "update" => self.update(engine, args),
             "destroy" => {
                 // C# Destroy (~382): the CALLING contract destroys itself
                 // (hash = engine.CallingScriptHash; a missing calling context
@@ -1270,14 +1282,14 @@ impl NativeContract for ContractManagement {
                 // contract state/storage is erased; before Gorgon it stays after.
                 let block_before_erase = engine.is_hardfork_enabled(Hardfork::HfGorgon);
                 if block_before_erase {
-                    crate::policy_contract::block_account_internal(engine, &hash)?;
-                    policy_clean_whitelist(engine, &contract)?;
+                    crate::PolicyContract::new().block_account_internal(engine, &hash)?;
+                    self.policy_clean_whitelist(engine, &contract)?;
                 }
                 // Delete the per-contract record and the id -> hash index entry.
-                snapshot.delete(&StorageKey::new(Self::ID, contract_storage_key(&hash)));
+                snapshot.delete(&StorageKey::new(Self::ID, Self::contract_storage_key(&hash)));
                 snapshot.delete(&StorageKey::new(
                     Self::ID,
-                    contract_id_storage_key(contract.id),
+                    Self::contract_id_storage_key(contract.id),
                 ));
                 // Delete ALL of the contract's own storage (C# Find over
                 // `StorageKey.CreateSearchPrefix(contract.Id, empty)`).
@@ -1293,8 +1305,8 @@ impl NativeContract for ContractManagement {
                     // C#: `await Policy.BlockAccountInternal(engine, hash)` — lock
                     // the destroyed contract (the bool result is discarded) — then
                     // `Policy.CleanWhitelist(engine, contract)`.
-                    crate::policy_contract::block_account_internal(engine, &hash)?;
-                    policy_clean_whitelist(engine, &contract)?;
+                    crate::PolicyContract::new().block_account_internal(engine, &hash)?;
+                    self.policy_clean_whitelist(engine, &contract)?;
                 }
                 // Emit the Destroy event with the destroyed hash.
                 engine
@@ -1498,12 +1510,12 @@ mod tests {
         cache.add(
             StorageKey::new(
                 ContractManagement::ID,
-                contract_storage_key(&UInt160::zero()),
+                ContractManagement::contract_storage_key(&UInt160::zero()),
             ),
             StorageItem::from_bytes(vec![1]),
         );
 
-        let entries = contract_hash_entries(&cache);
+        let entries = ContractManagement::new().contract_hash_entries(&cache);
         assert_eq!(
             entries.len(),
             2,
@@ -1534,7 +1546,7 @@ mod tests {
             StorageItem::from_bytes(vec![0xDD; 20]),
         );
 
-        let entries = contract_hash_entries(&cache);
+        let entries = ContractManagement::new().contract_hash_entries(&cache);
         assert_eq!(entries.len(), 1, "native (negative-id) entries are skipped");
         assert_eq!(entries[0].1.value_bytes().to_vec(), vec![0xDD; 20]);
         // id 0 is the boundary: C# keeps `Id >= 0`.
@@ -1544,7 +1556,10 @@ mod tests {
             StorageKey::new(ContractManagement::ID, zero),
             StorageItem::from_bytes(vec![0xEE; 20]),
         );
-        assert_eq!(contract_hash_entries(&cache).len(), 2);
+        assert_eq!(
+            ContractManagement::new().contract_hash_entries(&cache).len(),
+            2
+        );
     }
 
     #[test]
@@ -1557,11 +1572,17 @@ mod tests {
         let hash = UInt160::from_bytes(&[0x42u8; 20]).unwrap();
         let state = ContractState::new_native(7, hash, "TestUserContract".to_string());
         cache.add(
-            StorageKey::new(ContractManagement::ID, contract_storage_key(&hash)),
+            StorageKey::new(
+                ContractManagement::ID,
+                ContractManagement::contract_storage_key(&hash),
+            ),
             StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
         );
         cache.add(
-            StorageKey::new(ContractManagement::ID, contract_id_storage_key(7)),
+            StorageKey::new(
+                ContractManagement::ID,
+                ContractManagement::contract_id_storage_key(7),
+            ),
             StorageItem::from_bytes(hash.to_bytes().to_vec()),
         );
 
@@ -1592,7 +1613,10 @@ mod tests {
             ..Default::default()
         });
         cache.add(
-            StorageKey::new(ContractManagement::ID, contract_storage_key(&hash)),
+            StorageKey::new(
+                ContractManagement::ID,
+                ContractManagement::contract_storage_key(&hash),
+            ),
             StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
         );
 
@@ -1600,11 +1624,23 @@ mod tests {
             .unwrap()
             .expect("contract record resolves");
         // Positive: exact pcount and the -1 wildcard.
-        assert!(abi_has_method(&fetched.manifest, "transfer", 4));
-        assert!(abi_has_method(&fetched.manifest, "transfer", -1));
+        assert!(ContractManagement::abi_has_method(&fetched.manifest, "transfer", 4));
+        assert!(ContractManagement::abi_has_method(
+            &fetched.manifest,
+            "transfer",
+            -1
+        ));
         // Negative: wrong pcount / unknown name.
-        assert!(!abi_has_method(&fetched.manifest, "transfer", 3));
-        assert!(!abi_has_method(&fetched.manifest, "balanceOf", -1));
+        assert!(!ContractManagement::abi_has_method(
+            &fetched.manifest,
+            "transfer",
+            3
+        ));
+        assert!(!ContractManagement::abi_has_method(
+            &fetched.manifest,
+            "balanceOf",
+            -1
+        ));
         // Missing contract -> C# returns false before any ABI lookup.
         let absent = UInt160::from_bytes(&[0x52u8; 20]).unwrap();
         assert!(
@@ -1618,13 +1654,13 @@ mod tests {
     fn is_native_contract_hash_covers_all_eleven_natives() {
         for spec in crate::standard_native_contract_specs() {
             assert!(
-                is_native_contract_hash(&spec.hash),
+                ContractManagement::is_native_contract_hash(&spec.hash),
                 "{} is native",
                 spec.name
             );
         }
         let user = UInt160::from_bytes(&[0x99u8; 20]).unwrap();
-        assert!(!is_native_contract_hash(&user));
+        assert!(!ContractManagement::is_native_contract_hash(&user));
     }
 
     #[test]
@@ -1632,7 +1668,7 @@ mod tests {
         // The cross-native blocked-account key must match PolicyContract's own
         // layout: (PolicyContract.ID, [Prefix_BlockedAccount(15), account]).
         let account = UInt160::from_bytes(&[0x77u8; 20]).unwrap();
-        let key = crate::policy_contract::blocked_account_key(&account);
+        let key = crate::PolicyContract::blocked_account_key(&account);
         assert_eq!(key.id, crate::PolicyContract::ID);
         assert_eq!(key.suffix()[0], POLICY_PREFIX_BLOCKED_ACCOUNT);
         assert_eq!(&key.suffix()[1..], account.to_bytes().as_slice());
@@ -1655,7 +1691,7 @@ mod tests {
             DEFAULT_MINIMUM_DEPLOYMENT_FEE
         );
         // Zero is permitted (C# rejects only value < 0).
-        put_minimum_deployment_fee(&cache, &BigInt::from(0));
+        ContractManagement::new().put_minimum_deployment_fee(&cache, &BigInt::from(0));
         assert_eq!(
             crate::read_storage_int(
                 &cache,
@@ -1667,7 +1703,7 @@ mod tests {
             0
         );
         // Overwrite with a positive fee (GetAndChange semantics).
-        put_minimum_deployment_fee(&cache, &BigInt::from(25_00000000i64));
+        ContractManagement::new().put_minimum_deployment_fee(&cache, &BigInt::from(25_00000000i64));
         assert_eq!(
             crate::read_storage_int(
                 &cache,
@@ -1693,15 +1729,15 @@ mod tests {
         });
 
         // Exact (name, count) match.
-        assert!(abi_has_method(&manifest, "transfer", 4));
+        assert!(ContractManagement::abi_has_method(&manifest, "transfer", 4));
         // Wrong count -> no match.
-        assert!(!abi_has_method(&manifest, "transfer", 3));
+        assert!(!ContractManagement::abi_has_method(&manifest, "transfer", 3));
         // pcount == -1 matches any count.
-        assert!(abi_has_method(&manifest, "transfer", -1));
+        assert!(ContractManagement::abi_has_method(&manifest, "transfer", -1));
         // Unknown name -> no match.
-        assert!(!abi_has_method(&manifest, "balanceOf", -1));
+        assert!(!ContractManagement::abi_has_method(&manifest, "balanceOf", -1));
         // Empty manifest -> no match.
-        assert!(!abi_has_method(
+        assert!(!ContractManagement::abi_has_method(
             &ContractManifest::new("e".to_string()),
             "transfer",
             -1
@@ -1714,7 +1750,10 @@ mod tests {
         let hash = UInt160::from_bytes(&[8u8; 20]).unwrap();
         assert!(!ContractManagement::is_contract(&cache, &hash));
         cache.add(
-            StorageKey::new(ContractManagement::ID, contract_storage_key(&hash)),
+            StorageKey::new(
+                ContractManagement::ID,
+                ContractManagement::contract_storage_key(&hash),
+            ),
             StorageItem::from_bytes(vec![1]),
         );
         assert!(ContractManagement::is_contract(&cache, &hash));
@@ -1791,8 +1830,8 @@ mod tests {
         // C# GetNextAvailableId: return the stored value, write value + 1; the
         // genesis InitializeAsync seeds 1, which the absent-key default mirrors.
         let cache = DataCache::new(false);
-        assert_eq!(get_next_available_id(&cache).unwrap(), 1);
-        assert_eq!(get_next_available_id(&cache).unwrap(), 2);
+        assert_eq!(ContractManagement::new().get_next_available_id(&cache).unwrap(), 1);
+        assert_eq!(ContractManagement::new().get_next_available_id(&cache).unwrap(), 2);
         assert_eq!(
             crate::read_storage_int(
                 &cache,
@@ -1822,13 +1861,13 @@ mod tests {
 
         // A method at offset 0 (RET) passes in both strict and lazy modes.
         let abi = ContractAbi::new(vec![method("main", 0)], vec![]);
-        assert!(check_script_against_abi(&ret_script, &abi, true).is_ok());
-        assert!(check_script_against_abi(&ret_script, &abi, false).is_ok());
+        assert!(ContractManagement::check_script_against_abi(&ret_script, &abi, true).is_ok());
+        assert!(ContractManagement::check_script_against_abi(&ret_script, &abi, false).is_ok());
 
         // An out-of-range offset fails in both modes (C# `ip >= Length`).
         let abi_oob = ContractAbi::new(vec![method("main", 9)], vec![]);
-        assert!(check_script_against_abi(&ret_script, &abi_oob, true).is_err());
-        assert!(check_script_against_abi(&ret_script, &abi_oob, false).is_err());
+        assert!(ContractManagement::check_script_against_abi(&ret_script, &abi_oob, true).is_err());
+        assert!(ContractManagement::check_script_against_abi(&ret_script, &abi_oob, false).is_err());
 
         // PUSHDATA1 [len 1] [0x40]: offset 2 sits INSIDE the operand. The
         // strict (post-Basilisk) Script rejects non-boundary offsets, while the
@@ -1836,12 +1875,12 @@ mod tests {
         // the exact C# Script strict-mode divergence.
         let pushdata = vec![0x0C, 0x01, 0x40];
         let abi_mid = ContractAbi::new(vec![method("main", 2)], vec![]);
-        assert!(check_script_against_abi(&pushdata, &abi_mid, true).is_err());
-        assert!(check_script_against_abi(&pushdata, &abi_mid, false).is_ok());
+        assert!(ContractManagement::check_script_against_abi(&pushdata, &abi_mid, true).is_err());
+        assert!(ContractManagement::check_script_against_abi(&pushdata, &abi_mid, false).is_ok());
 
         // Duplicate (name, pcount) pairs fail (C# methodDictionary build).
         let abi_dup = ContractAbi::new(vec![method("main", 0), method("main", 0)], vec![]);
-        assert!(check_script_against_abi(&ret_script, &abi_dup, true).is_err());
+        assert!(ContractManagement::check_script_against_abi(&ret_script, &abi_dup, true).is_err());
 
         // Duplicate event names fail (C# events ToDictionary).
         let abi_dup_events = ContractAbi::new(
@@ -1851,7 +1890,9 @@ mod tests {
                 ContractEventDescriptor::new("Changed".to_string(), vec![]).unwrap(),
             ],
         );
-        assert!(check_script_against_abi(&ret_script, &abi_dup_events, true).is_err());
+        assert!(
+            ContractManagement::check_script_against_abi(&ret_script, &abi_dup_events, true).is_err()
+        );
     }
 
     #[test]
@@ -1862,7 +1903,7 @@ mod tests {
         let hash = UInt160::from_bytes(&[0x21u8; 20]).unwrap();
 
         // No groups: valid (the stack-item projection serializes within limits).
-        assert!(manifest_is_valid(
+        assert!(ContractManagement::manifest_is_valid(
             &deployable_manifest("Valid"),
             &limits,
             &hash
@@ -1877,32 +1918,32 @@ mod tests {
         .unwrap();
         let mut bad = deployable_manifest("Valid");
         bad.groups.push(ContractGroup::new(pub_key, vec![0xAB; 64]));
-        assert!(!manifest_is_valid(&bad, &limits, &hash));
+        assert!(!ContractManagement::manifest_is_valid(&bad, &limits, &hash));
     }
 
     #[test]
     fn parse_manifest_checked_enforces_csharp_parse_gates() {
         // Empty payload (C# "Manifest length cannot be zero").
-        assert!(parse_manifest_checked(&[], "deploy").is_err());
+        assert!(ContractManagement::parse_manifest_checked(&[], "deploy").is_err());
         // Over the u16::MAX byte cap of C# ContractManifest.Parse.
         let oversized = vec![b' '; MAX_MANIFEST_LENGTH + 1];
-        assert!(parse_manifest_checked(&oversized, "deploy").is_err());
+        assert!(ContractManagement::parse_manifest_checked(&oversized, "deploy").is_err());
         // Not UTF-8 / not JSON.
-        assert!(parse_manifest_checked(&[0xFF, 0xFE], "deploy").is_err());
+        assert!(ContractManagement::parse_manifest_checked(&[0xFF, 0xFE], "deploy").is_err());
         // Structurally invalid: an empty ABI (C# ContractAbi.FromJson throws).
         let empty_abi = ContractManifest::new("NoMethods".to_string())
             .to_json()
             .unwrap()
             .to_string()
             .into_bytes();
-        assert!(parse_manifest_checked(&empty_abi, "deploy").is_err());
+        assert!(ContractManagement::parse_manifest_checked(&empty_abi, "deploy").is_err());
         // A valid manifest parses and keeps its name + ABI.
         let bytes = deployable_manifest("RoundTrip")
             .to_json()
             .unwrap()
             .to_string()
             .into_bytes();
-        let parsed = parse_manifest_checked(&bytes, "deploy").unwrap();
+        let parsed = ContractManagement::parse_manifest_checked(&bytes, "deploy").unwrap();
         assert_eq!(parsed.name, "RoundTrip");
         assert_eq!(parsed.abi.methods.len(), 1);
     }
@@ -1910,11 +1951,11 @@ mod tests {
     #[test]
     fn parse_nef_checked_validates_container_and_checksum() {
         // Empty payload (C# "NEF file length cannot be zero").
-        assert!(parse_nef_checked(&[], "deploy").is_err());
+        assert!(ContractManagement::parse_nef_checked(&[], "deploy").is_err());
         // A valid NEF3 container round-trips.
         let nef = NefFile::new("unit-test".to_string(), vec![neo_vm_rs::OpCode::RET.byte()]);
         let bytes = nef.to_bytes();
-        let parsed = parse_nef_checked(&bytes, "deploy").unwrap();
+        let parsed = ContractManagement::parse_nef_checked(&bytes, "deploy").unwrap();
         assert_eq!(parsed.checksum, nef.checksum);
         assert_eq!(parsed.script, vec![neo_vm_rs::OpCode::RET.byte()]);
         // Corrupting the trailing checksum fails the parse (the C#
@@ -1922,7 +1963,7 @@ mod tests {
         let mut corrupted = bytes;
         let last = corrupted.len() - 1;
         corrupted[last] ^= 0xFF;
-        assert!(parse_nef_checked(&corrupted, "deploy").is_err());
+        assert!(ContractManagement::parse_nef_checked(&corrupted, "deploy").is_err());
     }
 }
 
@@ -1947,7 +1988,10 @@ mod destroy_engine_tests {
     /// Writes a serialized contract record under `Prefix_Contract ++ hash`.
     fn put_contract_record(cache: &DataCache, state: &ContractState) {
         cache.add(
-            StorageKey::new(ContractManagement::ID, contract_storage_key(&state.hash)),
+            StorageKey::new(
+                ContractManagement::ID,
+                ContractManagement::contract_storage_key(&state.hash),
+            ),
             StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
         );
     }
@@ -2005,7 +2049,10 @@ mod destroy_engine_tests {
         let self_hash = UInt160::from_script(&script);
         let user = ContractState::new_native(7, self_hash, "SelfDestructFixture".to_string());
         put_contract_record(&cache, &user);
-        let index_key = StorageKey::new(ContractManagement::ID, contract_id_storage_key(7));
+        let index_key = StorageKey::new(
+            ContractManagement::ID,
+            ContractManagement::contract_id_storage_key(7),
+        );
         cache.add(
             index_key.clone(),
             StorageItem::from_bytes(self_hash.to_bytes().to_vec()),
@@ -2049,7 +2096,7 @@ mod destroy_engine_tests {
             snapshot
                 .get(&StorageKey::new(
                     ContractManagement::ID,
-                    contract_storage_key(&self_hash)
+                    ContractManagement::contract_storage_key(&self_hash)
                 ))
                 .is_none(),
             "contract record deleted"
@@ -2065,7 +2112,7 @@ mod destroy_engine_tests {
         // The destroyed hash is locked via Policy's blocked-account entry,
         // pre-Faun with an EMPTY value (C# StorageItem([])).
         let blocked = snapshot
-            .get(&crate::policy_contract::blocked_account_key(&self_hash))
+            .get(&crate::PolicyContract::blocked_account_key(&self_hash))
             .expect("destroyed contract is blocked");
         assert!(
             blocked.value_bytes().is_empty(),
@@ -2121,7 +2168,7 @@ mod destroy_engine_tests {
         );
         assert!(
             snapshot
-                .get(&crate::policy_contract::blocked_account_key(&self_hash))
+                .get(&crate::PolicyContract::blocked_account_key(&self_hash))
                 .is_none(),
             "no blocked-account entry for a no-op destroy"
         );
@@ -2152,16 +2199,20 @@ mod destroy_engine_tests {
         let account = UInt160::from_bytes(&[0x33u8; 20]).unwrap();
         // First block: post-Faun the entry stores GetTime() (the persisting
         // block's timestamp) for Policy's recoverFund.
-        assert!(crate::policy_contract::block_account_internal(&mut engine, &account).unwrap());
+        assert!(crate::PolicyContract::new()
+            .block_account_internal(&mut engine, &account)
+            .unwrap());
         let item = snapshot
-            .get(&crate::policy_contract::blocked_account_key(&account))
+            .get(&crate::PolicyContract::blocked_account_key(&account))
             .expect("blocked entry written");
         assert_eq!(
             BigInt::from_signed_bytes_le(&item.value_bytes()),
             BigInt::from(1_700_000_123_456i64)
         );
         // Already blocked -> false, nothing rewritten (C# returns early).
-        assert!(!crate::policy_contract::block_account_internal(&mut engine, &account).unwrap());
+        assert!(!crate::PolicyContract::new()
+            .block_account_internal(&mut engine, &account)
+            .unwrap());
     }
 
     #[test]
@@ -2171,12 +2222,13 @@ mod destroy_engine_tests {
         let mut engine = engine_for(Arc::clone(&snapshot), None, ProtocolSettings::default());
         // C#: "Cannot block a native contract."
         let neo_hash = *crate::hashes::NEO_TOKEN_HASH;
-        let err =
-            crate::policy_contract::block_account_internal(&mut engine, &neo_hash).unwrap_err();
+        let err = crate::PolicyContract::new()
+            .block_account_internal(&mut engine, &neo_hash)
+            .unwrap_err();
         assert!(err.to_string().contains("native"));
         assert!(
             snapshot
-                .get(&crate::policy_contract::blocked_account_key(&neo_hash))
+                .get(&crate::PolicyContract::blocked_account_key(&neo_hash))
                 .is_none()
         );
     }
@@ -2219,9 +2271,11 @@ mod destroy_engine_tests {
             settings,
         );
 
-        assert!(crate::policy_contract::block_account_internal(&mut engine, &account).unwrap());
+        assert!(crate::PolicyContract::new()
+            .block_account_internal(&mut engine, &account)
+            .unwrap());
         let item = snapshot
-            .get(&crate::policy_contract::blocked_account_key(&account))
+            .get(&crate::PolicyContract::blocked_account_key(&account))
             .expect("blocked entry written after the vote transition");
         assert_eq!(
             BigInt::from_signed_bytes_le(&item.value_bytes()),
@@ -2254,8 +2308,13 @@ mod deploy_update_engine_tests {
     /// Writes a serialized contract record under `Prefix_Contract ++ hash`.
     fn put_contract_record(cache: &DataCache, state: &ContractState) {
         cache.add(
-            StorageKey::new(ContractManagement::ID, contract_storage_key(&state.hash)),
-            StorageItem::from_bytes(serialize_contract_record(state).expect("record bytes")),
+            StorageKey::new(
+                ContractManagement::ID,
+                ContractManagement::contract_storage_key(&state.hash),
+            ),
+            StorageItem::from_bytes(
+                ContractManagement::serialize_contract_record(state).expect("record bytes"),
+            ),
         );
     }
 
@@ -2450,7 +2509,7 @@ mod deploy_update_engine_tests {
         let index = snapshot
             .get(&StorageKey::new(
                 ContractManagement::ID,
-                contract_id_storage_key(1),
+                ContractManagement::contract_id_storage_key(1),
             ))
             .expect("id index entry written");
         assert_eq!(
@@ -2704,7 +2763,7 @@ mod deploy_update_engine_tests {
         let snapshot = seeded_snapshot();
         let blocked_hash = Helper::get_contract_hash(&sender, nef.checksum, "FaultFixture");
         snapshot.add(
-            crate::policy_contract::blocked_account_key(&blocked_hash),
+            crate::PolicyContract::blocked_account_key(&blocked_hash),
             StorageItem::from_bytes(Vec::new()),
         );
         let (state, _) = run_deploy(
@@ -2793,7 +2852,10 @@ mod deploy_update_engine_tests {
             deployable_manifest("SelfUpdateFixture"),
         );
         put_contract_record(&cache, &fixture);
-        let index_key = StorageKey::new(ContractManagement::ID, contract_id_storage_key(7));
+        let index_key = StorageKey::new(
+            ContractManagement::ID,
+            ContractManagement::contract_id_storage_key(7),
+        );
         cache.add(
             index_key.clone(),
             StorageItem::from_bytes(self_hash.to_bytes().to_vec()),
@@ -3061,8 +3123,18 @@ mod persist_tests {
             Some(BigInt::from(1))
         );
         // The counter then hands out 1, 2, ... (C# GetNextAvailableId).
-        assert_eq!(get_next_available_id(&snapshot).unwrap(), 1);
-        assert_eq!(get_next_available_id(&snapshot).unwrap(), 2);
+        assert_eq!(
+            ContractManagement::new()
+                .get_next_available_id(&snapshot)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            ContractManagement::new()
+                .get_next_available_id(&snapshot)
+                .unwrap(),
+            2
+        );
     }
 
     /// C# `ContractManagement.OnPersistAsync` at genesis: every genesis-active
@@ -3164,7 +3236,11 @@ mod persist_tests {
             .unwrap()
             .unwrap();
         assert_eq!(pre.manifest.supported_standards, ["NEP-17"]);
-        assert!(!abi_has_method(&pre.manifest, "onNEP17Payment", 3));
+        assert!(!ContractManagement::abi_has_method(
+            &pre.manifest,
+            "onNEP17Payment",
+            3
+        ));
 
         // The Echidna activation block.
         let mut engine = on_persist_engine(&snapshot, &settings, 100, 100_000);
@@ -3178,7 +3254,11 @@ mod persist_tests {
         assert_eq!(post.update_counter, 1);
         assert_eq!(post.id, crate::NeoToken::ID);
         assert_eq!(post.manifest.supported_standards, ["NEP-17", "NEP-27"]);
-        assert!(abi_has_method(&post.manifest, "onNEP17Payment", 3));
+        assert!(ContractManagement::abi_has_method(
+            &post.manifest,
+            "onNEP17Payment",
+            3
+        ));
 
         // Notary: deployed fresh at its activation block.
         let notary = ContractManagement::get_contract_from_snapshot(
@@ -3339,7 +3419,8 @@ mod persist_tests {
         let settings = settings_with(&[(Hardfork::HfFaun, 50)]);
         let snapshot = Arc::new(DataCache::new(false));
         let mut engine = on_persist_engine(&snapshot, &settings, 50, 1);
-        let result = crate::policy_contract::initialize_for_hardfork(&mut engine, Hardfork::HfFaun);
+        let result =
+            crate::PolicyContract::new().initialize_for_hardfork(&mut engine, Hardfork::HfFaun);
         assert!(result.is_err(), "missing exec-fee factor must fault");
     }
 }

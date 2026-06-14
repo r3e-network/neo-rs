@@ -48,11 +48,11 @@ pub(crate) mod args;
 pub(crate) mod committee;
 pub(crate) mod keys;
 
-#[cfg(test)]
-pub(crate) mod test_support;
 pub mod role;
 pub mod role_management;
 pub mod std_lib;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod treasury;
 
 pub use catalog::{StandardNativeContractSpec, standard_native_contract_specs};

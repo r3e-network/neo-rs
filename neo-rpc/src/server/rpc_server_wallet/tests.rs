@@ -143,7 +143,7 @@ fn persist_transaction_record(store: &mut neo_storage::persistence::StoreCache, 
 
     // `Prefix_Transaction` value: the C# `TransactionState` interoperable
     // stack item serialized with `BinarySerializer`, matching the reader.
-    let record = neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+    let record = neo_native_contracts::LedgerContract::new().serialize_persisted_transaction_state(
         0,
         VMState::NONE,
         tx,

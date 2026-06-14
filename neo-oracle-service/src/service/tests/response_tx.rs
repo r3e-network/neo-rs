@@ -27,7 +27,7 @@ fn seed_transaction_state(
     // Seed through the canonical ledger codec (the C# interoperable
     // `TransactionState` layout) so the fixture stays byte-identical
     // to what the persist pipeline writes.
-    let record = neo_native_contracts::ledger_contract::serialize_persisted_transaction_state(
+    let record = LedgerContract::new().serialize_persisted_transaction_state(
         block_index,
         VMState::NONE,
         tx,

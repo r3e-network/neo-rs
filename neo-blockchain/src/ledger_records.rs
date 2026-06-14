@@ -44,9 +44,6 @@
 use neo_error::{CoreError, CoreResult};
 use neo_io::Serializable;
 use neo_native_contracts::LedgerContract;
-use neo_native_contracts::ledger_contract::{
-    serialize_conflict_stub, serialize_hash_index_state, serialize_persisted_transaction_state,
-};
 use neo_payloads::{Block, Transaction, TransactionAttribute, TrimmedBlock};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::{DataCache, StorageItem, StorageKey};
@@ -153,7 +150,7 @@ pub(crate) fn write_on_persist_records(
     // Per-transaction records + conflict stubs, in block order (later
     // writes overwrite earlier ones, exactly like the C# loop).
     for (tx, tx_hash) in block.transactions.iter().zip(tx_hashes.iter()) {
-        let record = serialize_persisted_transaction_state(index, VMState::NONE, tx)?;
+        let record = LedgerContract::new().serialize_persisted_transaction_state(index, VMState::NONE, tx)?;
         upsert(cache, transaction_key(tx_hash), record);
 
         let conflict_hashes: Vec<UInt256> = tx
@@ -168,7 +165,7 @@ pub(crate) fn write_on_persist_records(
             continue;
         }
         let signers: Vec<UInt160> = tx.signers().iter().map(|s| s.account).collect();
-        let stub = serialize_conflict_stub(index)?;
+        let stub = LedgerContract::new().serialize_conflict_stub(index)?;
         for conflict_hash in &conflict_hashes {
             upsert(cache, transaction_key(conflict_hash), stub.clone());
             for signer in &signers {
@@ -196,7 +193,7 @@ pub(crate) fn update_transaction_vm_state(
     tx_hash: &UInt256,
     vm_state: VMState,
 ) -> CoreResult<()> {
-    let record = serialize_persisted_transaction_state(block_index, vm_state, tx)?;
+    let record = LedgerContract::new().serialize_persisted_transaction_state(block_index, vm_state, tx)?;
     upsert(cache, transaction_key(tx_hash), record);
     Ok(())
 }
@@ -208,7 +205,7 @@ pub(crate) fn write_post_persist_record(
     block_hash: &UInt256,
     index: u32,
 ) -> CoreResult<()> {
-    let value = serialize_hash_index_state(block_hash, index)?;
+    let value = LedgerContract::new().serialize_hash_index_state(block_hash, index)?;
     upsert(cache, current_block_key(), value);
     Ok(())
 }
@@ -425,7 +422,7 @@ mod tests {
         let raw = cache.get(&key).expect("signer stub present");
         assert_eq!(
             raw.value_bytes().into_owned(),
-            serialize_conflict_stub(3).unwrap()
+            LedgerContract::new().serialize_conflict_stub(3).unwrap()
         );
     }
 }

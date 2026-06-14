@@ -15,7 +15,11 @@ use num_traits::ToPrimitive;
 
 /// Returns the i-th argument from `args`, raising a `CoreError::invalid_operation`
 /// if absent.
-pub(crate) fn arg<'a>(args: &'a [StackItem], index: usize, method: &str) -> CoreResult<&'a StackItem> {
+pub(crate) fn arg<'a>(
+    args: &'a [StackItem],
+    index: usize,
+    method: &str,
+) -> CoreResult<&'a StackItem> {
     args.get(index).ok_or_else(|| {
         CoreError::invalid_operation(format!(
             "{method}: expected at least {} argument(s), got {}",
@@ -27,9 +31,9 @@ pub(crate) fn arg<'a>(args: &'a [StackItem], index: usize, method: &str) -> Core
 
 /// Decodes the i-th argument as a `UInt160` (`Hash160`).
 pub(crate) fn hash160_arg(args: &[StackItem], index: usize, method: &str) -> CoreResult<UInt160> {
-    let bytes = arg(args, index, method)?
-        .as_bytes()
-        .map_err(|e| CoreError::invalid_operation(format!("{method}: arg {index} is not a ByteString: {e}")))?;
+    let bytes = arg(args, index, method)?.as_bytes().map_err(|e| {
+        CoreError::invalid_operation(format!("{method}: arg {index} is not a ByteString: {e}"))
+    })?;
     UInt160::from_bytes(&bytes).map_err(|e| {
         CoreError::invalid_operation(format!("{method}: arg {index} is not a valid Hash160: {e}"))
     })
@@ -37,9 +41,9 @@ pub(crate) fn hash160_arg(args: &[StackItem], index: usize, method: &str) -> Cor
 
 /// Decodes the i-th argument as a `UInt256` (`Hash256`).
 pub(crate) fn hash256_arg(args: &[StackItem], index: usize, method: &str) -> CoreResult<UInt256> {
-    let bytes = arg(args, index, method)?
-        .as_bytes()
-        .map_err(|e| CoreError::invalid_operation(format!("{method}: arg {index} is not a ByteString: {e}")))?;
+    let bytes = arg(args, index, method)?.as_bytes().map_err(|e| {
+        CoreError::invalid_operation(format!("{method}: arg {index} is not a ByteString: {e}"))
+    })?;
     UInt256::from_bytes(&bytes).map_err(|e| {
         CoreError::invalid_operation(format!("{method}: arg {index} is not a valid Hash256: {e}"))
     })
@@ -51,9 +55,9 @@ pub(crate) fn setter_int_arg(args: &[StackItem], method: &str) -> CoreResult<i64
     let value = arg(args, 0, method)?
         .as_int()
         .map_err(|e| CoreError::invalid_operation(format!("{method}: expected integer: {e}")))?;
-    value.to_i64().ok_or_else(|| {
-        CoreError::invalid_operation(format!("{method}: integer out of i64 range"))
-    })
+    value
+        .to_i64()
+        .ok_or_else(|| CoreError::invalid_operation(format!("{method}: integer out of i64 range")))
 }
 
 // ===== `&[Vec<u8>]`-based helpers (consume the raw args; used by native
@@ -75,15 +79,17 @@ pub(crate) fn raw_arg<'a>(args: &'a [Vec<u8>], index: usize, method: &str) -> Co
 /// Decodes the i-th raw argument as a `UInt160`.
 pub(crate) fn raw_hash160(args: &[Vec<u8>], index: usize, method: &str) -> CoreResult<UInt160> {
     let bytes = raw_arg(args, index, method)?;
-    UInt160::from_bytes(bytes)
-        .map_err(|e| CoreError::invalid_operation(format!("{method}: arg {index} is not a valid Hash160: {e}")))
+    UInt160::from_bytes(bytes).map_err(|e| {
+        CoreError::invalid_operation(format!("{method}: arg {index} is not a valid Hash160: {e}"))
+    })
 }
 
 /// Decodes the i-th raw argument as a `UInt256`.
 pub(crate) fn raw_hash256(args: &[Vec<u8>], index: usize, method: &str) -> CoreResult<UInt256> {
     let bytes = raw_arg(args, index, method)?;
-    UInt256::from_bytes(bytes)
-        .map_err(|e| CoreError::invalid_operation(format!("{method}: arg {index} is not a valid Hash256: {e}")))
+    UInt256::from_bytes(bytes).map_err(|e| {
+        CoreError::invalid_operation(format!("{method}: arg {index} is not a valid Hash256: {e}"))
+    })
 }
 
 /// Decodes the leading raw argument as a `UInt160` (positional, index 0).
@@ -97,13 +103,11 @@ pub(crate) fn raw_account(args: &[Vec<u8>], method: &str) -> CoreResult<UInt160>
 /// Decodes a `&[u8]` as a `UInt160`. Returns
 /// `CoreError::invalid_data(format!("{label}: {e}"))` on parse failure.
 pub(crate) fn bytes_to_hash160(bytes: &[u8], label: &str) -> CoreResult<UInt160> {
-    UInt160::from_bytes(bytes)
-        .map_err(|e| CoreError::invalid_data(format!("{label}: {e}")))
+    UInt160::from_bytes(bytes).map_err(|e| CoreError::invalid_data(format!("{label}: {e}")))
 }
 
 /// Decodes a `&[u8]` as a `UInt256`. Returns
 /// `CoreError::invalid_data(format!("{label}: {e}"))` on parse failure.
 pub(crate) fn bytes_to_hash256(bytes: &[u8], label: &str) -> CoreResult<UInt256> {
-    UInt256::from_bytes(bytes)
-        .map_err(|e| CoreError::invalid_data(format!("{label}: {e}")))
+    UInt256::from_bytes(bytes).map_err(|e| CoreError::invalid_data(format!("{label}: {e}")))
 }

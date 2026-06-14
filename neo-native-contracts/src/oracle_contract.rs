@@ -54,210 +54,6 @@ const MIN_GAS_FOR_RESPONSE: i64 = 10000000;
 /// C# `Request`: at most 256 pending responses per url.
 const MAX_PENDING_IDS_PER_URL: usize = 256;
 
-/// C# `SetPrice` storage effect: overwrite `Prefix_Price` as a `BigInteger`
-/// (`GetAndChange(...).Set(price)`).
-fn put_price(snapshot: &DataCache, price: i64) {
-    snapshot.update(
-        StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]),
-        StorageItem::from_bytes(BigInt::from(price).to_signed_bytes_le()),
-    );
-}
-
-/// The request-id counter key `(Oracle.ID, [Prefix_RequestId])`.
-fn request_id_key() -> StorageKey {
-    StorageKey::new(OracleContract::ID, vec![PREFIX_REQUEST_ID])
-}
-
-/// The request record key `(Oracle.ID, [Prefix_Request, id_be8])` — C#
-/// `CreateStorageKey(Prefix_Request, ulong)` appends the id big-endian.
-fn request_key(id: u64) -> StorageKey {
-    StorageKey::new(
-        OracleContract::ID,
-        crate::keys::prefixed_with_u64_be(PREFIX_REQUEST, id),
-    )
-}
-
-/// The per-url id-list key `(Oracle.ID, [Prefix_IdList] ++ Hash160(url))` —
-/// C# `GetUrlHash` is `Crypto.Hash160(url.ToStrictUtf8Bytes())`.
-fn id_list_key(url: &str) -> StorageKey {
-    StorageKey::new(
-        OracleContract::ID,
-        crate::keys::prefixed(PREFIX_ID_LIST, &Crypto::hash160(url.as_bytes())),
-    )
-}
-
-/// Reads the request-id counter (`Prefix_RequestId`). The C# genesis
-/// `InitializeAsync` seeds it with `BigInteger.Zero`; an absent record reads
-/// as 0 here, which is byte-identical post-genesis (zero serializes to an
-/// empty `BigInteger` payload).
-fn read_request_id(snapshot: &DataCache) -> CoreResult<u64> {
-    let Some(item) = snapshot.get(&request_id_key()) else {
-        return Ok(0);
-    };
-    BigInt::from_signed_bytes_le(&item.value_bytes())
-        .to_u64()
-        .ok_or_else(|| CoreError::invalid_data("Oracle request-id counter out of range"))
-}
-
-/// Writes the request-id counter (C# `itemId.Add(1)` after taking the id).
-fn write_request_id(snapshot: &DataCache, value: &BigInt) {
-    snapshot.update(
-        request_id_key(),
-        StorageItem::from_bytes(crate::bigint_to_storage_bytes(value)),
-    );
-}
-
-/// Encodes an `OracleRequest` as the C# `IInteroperable` layout: the
-/// BinarySerialized `Array[OriginalTxid, GasForResponse, Url, Filter|Null,
-/// CallbackContract, CallbackMethod, UserData]` (`OracleRequest.ToStackItem`).
-fn encode_oracle_request(request: &OracleRequest) -> CoreResult<Vec<u8>> {
-    let filter_item = match &request.filter {
-        Some(filter) => StackItem::from_byte_string(filter.as_bytes().to_vec()),
-        None => StackItem::null(),
-    };
-    let item = StackItem::from_array(vec![
-        StackItem::from_byte_string(request.original_tx_id.to_bytes()),
-        StackItem::from_int(BigInt::from(request.gas_for_response)),
-        StackItem::from_byte_string(request.url.as_bytes().to_vec()),
-        filter_item,
-        StackItem::from_byte_string(request.callback_contract.to_bytes()),
-        StackItem::from_byte_string(request.callback_method.as_bytes().to_vec()),
-        StackItem::from_byte_string(request.user_data.clone()),
-    ]);
-    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-        .map_err(|e| CoreError::serialization(format!("OracleRequest serialize: {e}")))
-}
-
-/// Decodes a stored `OracleRequest` record (C# `OracleRequest.FromStackItem`).
-fn decode_oracle_request(bytes: &[u8]) -> CoreResult<OracleRequest> {
-    let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
-        .map_err(|e| CoreError::deserialization(format!("OracleRequest: {e}")))?;
-    let StackItem::Array(array) = item else {
-        return Err(CoreError::invalid_data("OracleRequest is not an array"));
-    };
-    let items = array.items();
-    if items.len() != 7 {
-        return Err(CoreError::invalid_data("OracleRequest must have 7 fields"));
-    }
-    let field_bytes = |index: usize, name: &str| -> CoreResult<Vec<u8>> {
-        items[index]
-            .as_bytes()
-            .map_err(|e| CoreError::invalid_data(format!("OracleRequest {name}: {e}")))
-    };
-    let field_string = |index: usize, name: &str| -> CoreResult<String> {
-        String::from_utf8(field_bytes(index, name)?)
-            .map_err(|e| CoreError::invalid_data(format!("OracleRequest {name}: {e}")))
-    };
-    let original_tx_id = UInt256::from_bytes(&field_bytes(0, "OriginalTxid")?)
-        .map_err(|e| CoreError::invalid_data(format!("OracleRequest OriginalTxid: {e}")))?;
-    let gas_for_response = items[1]
-        .as_int()
-        .map_err(|e| CoreError::invalid_data(format!("OracleRequest GasForResponse: {e}")))?
-        .to_i64()
-        .ok_or_else(|| CoreError::invalid_data("OracleRequest GasForResponse out of range"))?;
-    let url = field_string(2, "Url")?;
-    let filter = if matches!(items[3], StackItem::Null) {
-        None
-    } else {
-        Some(field_string(3, "Filter")?)
-    };
-    let callback_contract = crate::args::bytes_to_hash160(
-        &field_bytes(4, "CallbackContract")?,
-        "OracleRequest CallbackContract",
-    )?;
-    let callback_method = field_string(5, "CallbackMethod")?;
-    let user_data = field_bytes(6, "UserData")?;
-    Ok(OracleRequest {
-        original_tx_id,
-        gas_for_response,
-        url,
-        filter,
-        callback_contract,
-        callback_method,
-        user_data,
-    })
-}
-
-/// Encodes the per-url id-list (C# `IdList : InteroperableList<ulong>`): the
-/// BinarySerialized `Array` of `Integer` ids.
-fn encode_id_list(ids: &[u64]) -> CoreResult<Vec<u8>> {
-    let items: Vec<StackItem> = ids
-        .iter()
-        .map(|id| StackItem::from_int(BigInt::from(*id)))
-        .collect();
-    BinarySerializer::serialize(
-        &StackItem::from_array(items),
-        &ExecutionEngineLimits::default(),
-    )
-    .map_err(|e| CoreError::serialization(format!("Oracle IdList serialize: {e}")))
-}
-
-/// Decodes the per-url id-list (C# `IdList.FromStackItem`, `(ulong)item.GetInteger()`).
-fn decode_id_list(bytes: &[u8]) -> CoreResult<Vec<u64>> {
-    let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
-        .map_err(|e| CoreError::deserialization(format!("Oracle IdList: {e}")))?;
-    let StackItem::Array(array) = item else {
-        return Err(CoreError::invalid_data("Oracle IdList is not an array"));
-    };
-    let mut ids = Vec::with_capacity(array.items().len());
-    for entry in array.items() {
-        let id = entry
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("Oracle IdList entry: {e}")))?
-            .to_u64()
-            .ok_or_else(|| CoreError::invalid_data("Oracle IdList entry out of range"))?;
-        ids.push(id);
-    }
-    Ok(ids)
-}
-
-/// Reads a pending request record (C# `GetRequest`): `None` when no request
-/// with the given id exists.
-fn read_request(snapshot: &DataCache, id: u64) -> CoreResult<Option<OracleRequest>> {
-    match snapshot.get(&request_key(id)) {
-        None => Ok(None),
-        Some(item) => decode_oracle_request(&item.value_bytes()).map(Some),
-    }
-}
-
-/// Returns the first `OracleResponse` transaction attribute (C#
-/// `tx.GetAttribute<OracleResponse>()`).
-fn oracle_response_attribute(tx: &Transaction) -> Option<&OracleResponse> {
-    tx.attributes()
-        .iter()
-        .find_map(|attribute| match attribute {
-            TransactionAttribute::OracleResponse(response) => Some(response),
-            _ => None,
-        })
-}
-
-/// C# `GetOriginalTxid`: the script container must be a transaction; when it
-/// carries an `OracleResponse` attribute (a request issued from a response
-/// callback) the original txid is taken from the answered request, otherwise
-/// it is the transaction's own hash.
-fn get_original_txid(engine: &ApplicationEngine, snapshot: &DataCache) -> CoreResult<UInt256> {
-    let container = engine.script_container().ok_or_else(|| {
-        CoreError::invalid_operation("OracleContract: request requires a transaction container")
-    })?;
-    let tx = container
-        .as_any()
-        .downcast_ref::<Transaction>()
-        .ok_or_else(|| {
-            CoreError::invalid_operation("OracleContract: script container is not a transaction")
-        })?;
-    match oracle_response_attribute(tx) {
-        None => Ok(tx.hash()),
-        Some(response) => {
-            // C# uses the null-forgiving `GetRequest(...)!`: a missing record
-            // dereferences null and faults.
-            let request = read_request(snapshot, response.id)?.ok_or_else(|| {
-                CoreError::invalid_operation("OracleContract: original oracle request not found")
-            })?;
-            Ok(request.original_tx_id)
-        }
-    }
-}
-
 /// Static accessor for the OracleContract native contract.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OracleContract;
@@ -285,7 +81,7 @@ impl OracleContract {
 
     /// Look up a single oracle request by its id (C# `GetRequest`).
     pub fn get_request(&self, snapshot: &DataCache, id: u64) -> CoreResult<Option<OracleRequest>> {
-        read_request(snapshot, id)
+        self.read_request(snapshot, id)
     }
 
     /// Enumerate all pending oracle requests (C# `GetRequests`): a forward
@@ -303,7 +99,7 @@ impl OracleContract {
             let mut id_bytes = [0u8; 8];
             id_bytes.copy_from_slice(&key_bytes[1..9]);
             let id = u64::from_be_bytes(id_bytes);
-            if let Ok(request) = decode_oracle_request(&item.value_bytes()) {
+            if let Ok(request) = Self::decode_oracle_request(&item.value_bytes()) {
                 out.push((id, request));
             }
         }
@@ -318,18 +114,226 @@ impl OracleContract {
         snapshot: &DataCache,
         url: &str,
     ) -> CoreResult<Vec<(u64, OracleRequest)>> {
-        let Some(item) = snapshot.get(&id_list_key(url)) else {
+        let Some(item) = snapshot.get(&Self::id_list_key(url)) else {
             return Ok(Vec::new());
         };
-        let ids = decode_id_list(&item.value_bytes())?;
+        let ids = Self::decode_id_list(&item.value_bytes())?;
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
-            let request = read_request(snapshot, id)?.ok_or_else(|| {
+            let request = self.read_request(snapshot, id)?.ok_or_else(|| {
                 CoreError::invalid_data(format!("Oracle request {id} missing for listed url"))
             })?;
             out.push((id, request));
         }
         Ok(out)
+    }
+
+    /// C# `SetPrice` storage effect: overwrite `Prefix_Price` as a `BigInteger`
+    /// (`GetAndChange(...).Set(price)`).
+    fn put_price(&self, snapshot: &DataCache, price: i64) {
+        snapshot.update(
+            StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]),
+            StorageItem::from_bytes(BigInt::from(price).to_signed_bytes_le()),
+        );
+    }
+
+    /// The request-id counter key `(Oracle.ID, [Prefix_RequestId])`.
+    fn request_id_key() -> StorageKey {
+        StorageKey::new(OracleContract::ID, vec![PREFIX_REQUEST_ID])
+    }
+
+    /// The request record key `(Oracle.ID, [Prefix_Request, id_be8])` — C#
+    /// `CreateStorageKey(Prefix_Request, ulong)` appends the id big-endian.
+    fn request_key(id: u64) -> StorageKey {
+        StorageKey::new(
+            OracleContract::ID,
+            crate::keys::prefixed_with_u64_be(PREFIX_REQUEST, id),
+        )
+    }
+
+    /// The per-url id-list key `(Oracle.ID, [Prefix_IdList] ++ Hash160(url))` —
+    /// C# `GetUrlHash` is `Crypto.Hash160(url.ToStrictUtf8Bytes())`.
+    fn id_list_key(url: &str) -> StorageKey {
+        StorageKey::new(
+            OracleContract::ID,
+            crate::keys::prefixed(PREFIX_ID_LIST, &Crypto::hash160(url.as_bytes())),
+        )
+    }
+
+    /// Reads the request-id counter (`Prefix_RequestId`). The C# genesis
+    /// `InitializeAsync` seeds it with `BigInteger.Zero`; an absent record reads
+    /// as 0 here, which is byte-identical post-genesis (zero serializes to an
+    /// empty `BigInteger` payload).
+    fn read_request_id(&self, snapshot: &DataCache) -> CoreResult<u64> {
+        let Some(item) = snapshot.get(&Self::request_id_key()) else {
+            return Ok(0);
+        };
+        BigInt::from_signed_bytes_le(&item.value_bytes())
+            .to_u64()
+            .ok_or_else(|| CoreError::invalid_data("Oracle request-id counter out of range"))
+    }
+
+    /// Writes the request-id counter (C# `itemId.Add(1)` after taking the id).
+    fn write_request_id(&self, snapshot: &DataCache, value: &BigInt) {
+        snapshot.update(
+            Self::request_id_key(),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(value)),
+        );
+    }
+
+    /// Encodes an `OracleRequest` as the C# `IInteroperable` layout: the
+    /// BinarySerialized `Array[OriginalTxid, GasForResponse, Url, Filter|Null,
+    /// CallbackContract, CallbackMethod, UserData]` (`OracleRequest.ToStackItem`).
+    fn encode_oracle_request(request: &OracleRequest) -> CoreResult<Vec<u8>> {
+        let filter_item = match &request.filter {
+            Some(filter) => StackItem::from_byte_string(filter.as_bytes().to_vec()),
+            None => StackItem::null(),
+        };
+        let item = StackItem::from_array(vec![
+            StackItem::from_byte_string(request.original_tx_id.to_bytes()),
+            StackItem::from_int(BigInt::from(request.gas_for_response)),
+            StackItem::from_byte_string(request.url.as_bytes().to_vec()),
+            filter_item,
+            StackItem::from_byte_string(request.callback_contract.to_bytes()),
+            StackItem::from_byte_string(request.callback_method.as_bytes().to_vec()),
+            StackItem::from_byte_string(request.user_data.clone()),
+        ]);
+        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+            .map_err(|e| CoreError::serialization(format!("OracleRequest serialize: {e}")))
+    }
+
+    /// Decodes a stored `OracleRequest` record (C# `OracleRequest.FromStackItem`).
+    fn decode_oracle_request(bytes: &[u8]) -> CoreResult<OracleRequest> {
+        let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+            .map_err(|e| CoreError::deserialization(format!("OracleRequest: {e}")))?;
+        let StackItem::Array(array) = item else {
+            return Err(CoreError::invalid_data("OracleRequest is not an array"));
+        };
+        let items = array.items();
+        if items.len() != 7 {
+            return Err(CoreError::invalid_data("OracleRequest must have 7 fields"));
+        }
+        let field_bytes = |index: usize, name: &str| -> CoreResult<Vec<u8>> {
+            items[index]
+                .as_bytes()
+                .map_err(|e| CoreError::invalid_data(format!("OracleRequest {name}: {e}")))
+        };
+        let field_string = |index: usize, name: &str| -> CoreResult<String> {
+            String::from_utf8(field_bytes(index, name)?)
+                .map_err(|e| CoreError::invalid_data(format!("OracleRequest {name}: {e}")))
+        };
+        let original_tx_id = UInt256::from_bytes(&field_bytes(0, "OriginalTxid")?)
+            .map_err(|e| CoreError::invalid_data(format!("OracleRequest OriginalTxid: {e}")))?;
+        let gas_for_response = items[1]
+            .as_int()
+            .map_err(|e| CoreError::invalid_data(format!("OracleRequest GasForResponse: {e}")))?
+            .to_i64()
+            .ok_or_else(|| CoreError::invalid_data("OracleRequest GasForResponse out of range"))?;
+        let url = field_string(2, "Url")?;
+        let filter = if matches!(items[3], StackItem::Null) {
+            None
+        } else {
+            Some(field_string(3, "Filter")?)
+        };
+        let callback_contract = crate::args::bytes_to_hash160(
+            &field_bytes(4, "CallbackContract")?,
+            "OracleRequest CallbackContract",
+        )?;
+        let callback_method = field_string(5, "CallbackMethod")?;
+        let user_data = field_bytes(6, "UserData")?;
+        Ok(OracleRequest {
+            original_tx_id,
+            gas_for_response,
+            url,
+            filter,
+            callback_contract,
+            callback_method,
+            user_data,
+        })
+    }
+
+    /// Encodes the per-url id-list (C# `IdList : InteroperableList<ulong>`): the
+    /// BinarySerialized `Array` of `Integer` ids.
+    fn encode_id_list(ids: &[u64]) -> CoreResult<Vec<u8>> {
+        let items: Vec<StackItem> = ids
+            .iter()
+            .map(|id| StackItem::from_int(BigInt::from(*id)))
+            .collect();
+        BinarySerializer::serialize(
+            &StackItem::from_array(items),
+            &ExecutionEngineLimits::default(),
+        )
+        .map_err(|e| CoreError::serialization(format!("Oracle IdList serialize: {e}")))
+    }
+
+    /// Decodes the per-url id-list (C# `IdList.FromStackItem`, `(ulong)item.GetInteger()`).
+    fn decode_id_list(bytes: &[u8]) -> CoreResult<Vec<u64>> {
+        let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+            .map_err(|e| CoreError::deserialization(format!("Oracle IdList: {e}")))?;
+        let StackItem::Array(array) = item else {
+            return Err(CoreError::invalid_data("Oracle IdList is not an array"));
+        };
+        let mut ids = Vec::with_capacity(array.items().len());
+        for entry in array.items() {
+            let id = entry
+                .as_int()
+                .map_err(|e| CoreError::invalid_data(format!("Oracle IdList entry: {e}")))?
+                .to_u64()
+                .ok_or_else(|| CoreError::invalid_data("Oracle IdList entry out of range"))?;
+            ids.push(id);
+        }
+        Ok(ids)
+    }
+
+    /// Reads a pending request record (C# `GetRequest`): `None` when no request
+    /// with the given id exists.
+    fn read_request(&self, snapshot: &DataCache, id: u64) -> CoreResult<Option<OracleRequest>> {
+        match snapshot.get(&Self::request_key(id)) {
+            None => Ok(None),
+            Some(item) => Self::decode_oracle_request(&item.value_bytes()).map(Some),
+        }
+    }
+
+    /// Returns the first `OracleResponse` transaction attribute (C#
+    /// `tx.GetAttribute<OracleResponse>()`).
+    fn oracle_response_attribute(tx: &Transaction) -> Option<&OracleResponse> {
+        tx.attributes()
+            .iter()
+            .find_map(|attribute| match attribute {
+                TransactionAttribute::OracleResponse(response) => Some(response),
+                _ => None,
+            })
+    }
+
+    /// C# `GetOriginalTxid`: the script container must be a transaction; when it
+    /// carries an `OracleResponse` attribute (a request issued from a response
+    /// callback) the original txid is taken from the answered request, otherwise
+    /// it is the transaction's own hash.
+    fn get_original_txid(
+        &self,
+        engine: &ApplicationEngine,
+        snapshot: &DataCache,
+    ) -> CoreResult<UInt256> {
+        let container = engine.script_container().ok_or_else(|| {
+            CoreError::invalid_operation("OracleContract: request requires a transaction container")
+        })?;
+        let tx = container
+            .as_any()
+            .downcast_ref::<Transaction>()
+            .ok_or_else(|| {
+                CoreError::invalid_operation("OracleContract: script container is not a transaction")
+            })?;
+        match Self::oracle_response_attribute(tx) {
+            None => Ok(tx.hash()),
+            Some(response) => {
+                // C# uses the null-forgiving `GetRequest(...)!`: a missing record
+                // dereferences null and faults.
+                let request = self.read_request(snapshot, response.id)?.ok_or_else(|| {
+                    CoreError::invalid_operation("OracleContract: original oracle request not found")
+                })?;
+                Ok(request.original_tx_id)
+            }
+        }
     }
 }
 
@@ -506,7 +510,7 @@ impl NativeContract for OracleContract {
     /// the engine can resolve oracle-response witnesses without depending on
     /// `neo-native-contracts`.
     fn oracle_request_url(&self, snapshot: &DataCache, id: u64) -> CoreResult<Option<String>> {
-        Ok(read_request(snapshot, id)?.map(|request| request.url))
+        Ok(self.read_request(snapshot, id)?.map(|request| request.url))
     }
 
     /// C# `GetRequest(...).OriginalTxid` through the native-contract seam.
@@ -515,7 +519,9 @@ impl NativeContract for OracleContract {
         snapshot: &DataCache,
         id: u64,
     ) -> CoreResult<Option<UInt256>> {
-        Ok(read_request(snapshot, id)?.map(|request| request.original_tx_id))
+        Ok(self
+            .read_request(snapshot, id)?
+            .map(|request| request.original_tx_id))
     }
 
     /// Url + original txid pair consumed by the engine's oracle-response
@@ -525,7 +531,8 @@ impl NativeContract for OracleContract {
         snapshot: &DataCache,
         id: u64,
     ) -> CoreResult<Option<OracleRequestDetails>> {
-        Ok(read_request(snapshot, id)?
+        Ok(self
+            .read_request(snapshot, id)?
             .map(|request| OracleRequestDetails::new(request.url, request.original_tx_id)))
     }
 
@@ -536,7 +543,7 @@ impl NativeContract for OracleContract {
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         snapshot.add(
-            request_id_key(),
+            Self::request_id_key(),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(0))),
         );
         snapshot.add(
@@ -562,7 +569,7 @@ impl NativeContract for OracleContract {
             let ids = block
                 .transactions
                 .iter()
-                .filter_map(|tx| oracle_response_attribute(tx).map(|response| response.id))
+                .filter_map(|tx| Self::oracle_response_attribute(tx).map(|response| response.id))
                 .collect();
             (block.index(), ids)
         };
@@ -571,18 +578,18 @@ impl NativeContract for OracleContract {
         let mut nodes: Option<Vec<(UInt160, BigInt)>> = None;
         for id in response_ids {
             // Remove the request from storage (skip responses without one).
-            let key = request_key(id);
+            let key = Self::request_key(id);
             let Some(item) = snapshot.get(&key) else {
                 continue;
             };
-            let request = decode_oracle_request(&item.value_bytes())?;
+            let request = Self::decode_oracle_request(&item.value_bytes())?;
             snapshot.delete(&key);
 
             // Remove the id from the url id-list; C# throws when the id is
             // not listed, and deletes the entry once the list is empty.
-            let list_key = id_list_key(&request.url);
+            let list_key = Self::id_list_key(&request.url);
             let mut list = match snapshot.get(&list_key) {
-                Some(list_item) => decode_id_list(&list_item.value_bytes())?,
+                Some(list_item) => Self::decode_id_list(&list_item.value_bytes())?,
                 None => Vec::new(),
             };
             let Some(position) = list.iter().position(|listed| *listed == id) else {
@@ -594,7 +601,7 @@ impl NativeContract for OracleContract {
             if list.is_empty() {
                 snapshot.delete(&list_key);
             } else {
-                snapshot.update(list_key, StorageItem::from_bytes(encode_id_list(&list)?));
+                snapshot.update(list_key, StorageItem::from_bytes(Self::encode_id_list(&list)?));
             }
 
             // Accumulate the oracle fee for the node selected by the id.
@@ -635,7 +642,7 @@ impl NativeContract for OracleContract {
         if let Some(nodes) = nodes {
             for (account, gas) in nodes {
                 if gas > BigInt::from(0) {
-                    crate::gas_token::gas_mint(engine, &account, &gas, false)?;
+                    crate::GasToken::new().gas_mint(engine, &account, &gas, false)?;
                 }
             }
         }
@@ -674,7 +681,7 @@ impl NativeContract for OracleContract {
                     )));
                 }
                 crate::committee::assert_committee(engine, "setPrice")?;
-                put_price(&engine.snapshot_cache(), price);
+                self.put_price(&engine.snapshot_cache(), price);
                 Ok(Vec::new())
             }
             "request" => {
@@ -784,7 +791,7 @@ impl NativeContract for OracleContract {
                             "OracleContract::request: response fee: {e}"
                         ))
                     })?;
-                crate::gas_token::gas_mint(
+                crate::GasToken::new().gas_mint(
                     engine,
                     &Self::script_hash(),
                     &BigInt::from(gas_for_response),
@@ -792,8 +799,8 @@ impl NativeContract for OracleContract {
                 )?;
 
                 // Increase the request id (the request takes the pre-increment value).
-                let id = read_request_id(&snapshot)?;
-                write_request_id(&snapshot, &(BigInt::from(id) + 1));
+                let id = self.read_request_id(&snapshot)?;
+                self.write_request_id(&snapshot, &(BigInt::from(id) + 1));
 
                 // The request must come from a deployed contract
                 // (C# ContractManagement.IsContract(CallingScriptHash)).
@@ -829,7 +836,7 @@ impl NativeContract for OracleContract {
                 })?;
 
                 let request = OracleRequest {
-                    original_tx_id: get_original_txid(engine, &snapshot)?,
+                    original_tx_id: self.get_original_txid(engine, &snapshot)?,
                     gas_for_response,
                     url: url.clone(),
                     filter: filter.clone(),
@@ -838,14 +845,14 @@ impl NativeContract for OracleContract {
                     user_data,
                 };
                 snapshot.update(
-                    request_key(id),
-                    StorageItem::from_bytes(encode_oracle_request(&request)?),
+                    Self::request_key(id),
+                    StorageItem::from_bytes(Self::encode_oracle_request(&request)?),
                 );
 
                 // Add the id to the per-url IdList (capped at 256 pending).
-                let list_key = id_list_key(&url);
+                let list_key = Self::id_list_key(&url);
                 let mut list = match snapshot.get(&list_key) {
-                    Some(item) => decode_id_list(&item.value_bytes())?,
+                    Some(item) => Self::decode_id_list(&item.value_bytes())?,
                     None => Vec::new(),
                 };
                 if list.len() >= MAX_PENDING_IDS_PER_URL {
@@ -854,7 +861,7 @@ impl NativeContract for OracleContract {
                     ));
                 }
                 list.push(id);
-                snapshot.update(list_key, StorageItem::from_bytes(encode_id_list(&list)?));
+                snapshot.update(list_key, StorageItem::from_bytes(Self::encode_id_list(&list)?));
 
                 let filter_item = match &filter {
                     Some(f) => StackItem::from_byte_string(f.as_bytes().to_vec()),
@@ -906,11 +913,12 @@ impl NativeContract for OracleContract {
                                 "OracleContract::finish: script container is not a transaction",
                             )
                         })?;
-                    let response = oracle_response_attribute(tx)
+                    let response = Self::oracle_response_attribute(tx)
                         .ok_or_else(|| CoreError::invalid_operation("Oracle response not found"))?;
                     (response.id, response.code as u8, response.result.clone())
                 };
-                let request = read_request(&snapshot, id)?
+                let request = self
+                    .read_request(&snapshot, id)?
                     .ok_or_else(|| CoreError::invalid_operation("Oracle request not found"))?;
                 engine
                     .send_notification(
@@ -964,7 +972,7 @@ impl NativeContract for OracleContract {
                             "OracleContract::verify: script container is not a transaction",
                         )
                     })?;
-                Ok(vec![u8::from(oracle_response_attribute(tx).is_some())])
+                Ok(vec![u8::from(Self::oracle_response_attribute(tx).is_some())])
             }
             other => Err(CoreError::invalid_operation(format!(
                 "OracleContract method '{other}' is not implemented"
@@ -1038,7 +1046,7 @@ mod oracle_native_tests {
         let cache = DataCache::new(false);
         // The setter's storage effect (overwrite Prefix_Price) is observed by
         // the getter's reader.
-        put_price(&cache, 7_5000000); // 0.75 GAS
+        OracleContract::new().put_price(&cache, 7_5000000); // 0.75 GAS
         assert_eq!(
             crate::read_storage_int(
                 &cache,
@@ -1101,8 +1109,8 @@ mod oracle_native_tests {
     fn request_record_round_trips() {
         for filter in [Some("$.value".to_string()), None] {
             let request = sample_request(filter);
-            let bytes = encode_oracle_request(&request).unwrap();
-            let decoded = decode_oracle_request(&bytes).unwrap();
+            let bytes = OracleContract::encode_oracle_request(&request).unwrap();
+            let decoded = OracleContract::decode_oracle_request(&bytes).unwrap();
             assert_eq!(decoded, request);
         }
     }
@@ -1112,7 +1120,7 @@ mod oracle_native_tests {
         // C# OracleRequest.ToStackItem: an Array of 7 items —
         // [txid bytes, Integer, url, filter|Null, contract bytes, method, userdata].
         let request = sample_request(Some("$.x".to_string()));
-        let bytes = encode_oracle_request(&request).unwrap();
+        let bytes = OracleContract::encode_oracle_request(&request).unwrap();
         let item =
             BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
         let StackItem::Array(array) = item else {
@@ -1139,7 +1147,7 @@ mod oracle_native_tests {
         );
 
         // A null filter serializes as StackItem::Null in slot 3.
-        let no_filter = encode_oracle_request(&sample_request(None)).unwrap();
+        let no_filter = OracleContract::encode_oracle_request(&sample_request(None)).unwrap();
         let StackItem::Array(array) =
             BinarySerializer::deserialize(&no_filter, &ExecutionEngineLimits::default(), None)
                 .unwrap()
@@ -1152,18 +1160,18 @@ mod oracle_native_tests {
     #[test]
     fn id_list_round_trips_and_key_uses_url_hash160() {
         let ids = vec![0u64, 1, 7, u64::from(u32::MAX) + 5];
-        let bytes = encode_id_list(&ids).unwrap();
-        assert_eq!(decode_id_list(&bytes).unwrap(), ids);
+        let bytes = OracleContract::encode_id_list(&ids).unwrap();
+        assert_eq!(OracleContract::decode_id_list(&bytes).unwrap(), ids);
 
         // C# GetUrlHash = Crypto.Hash160(strict utf8 url) appended to Prefix_IdList.
         let url = "https://example.org/data";
-        let key = id_list_key(url);
+        let key = OracleContract::id_list_key(url);
         let mut expected = vec![PREFIX_ID_LIST];
         expected.extend_from_slice(&Crypto::hash160(url.as_bytes()));
         assert_eq!(key.key(), expected.as_slice());
 
         // Request key is Prefix_Request ++ big-endian id.
-        let rkey = request_key(0x0102030405060708);
+        let rkey = OracleContract::request_key(0x0102030405060708);
         assert_eq!(
             rkey.key(),
             [
@@ -1185,11 +1193,14 @@ mod oracle_native_tests {
         let cache = DataCache::new(false);
         // Absent counter reads 0 (genesis seeds BigInteger.Zero, which
         // serializes to an empty payload).
-        assert_eq!(read_request_id(&cache).unwrap(), 0);
-        write_request_id(&cache, &BigInt::from(1));
-        assert_eq!(read_request_id(&cache).unwrap(), 1);
-        write_request_id(&cache, &BigInt::from(u64::MAX));
-        assert_eq!(read_request_id(&cache).unwrap(), u64::MAX);
+        assert_eq!(OracleContract::new().read_request_id(&cache).unwrap(), 0);
+        OracleContract::new().write_request_id(&cache, &BigInt::from(1));
+        assert_eq!(OracleContract::new().read_request_id(&cache).unwrap(), 1);
+        OracleContract::new().write_request_id(&cache, &BigInt::from(u64::MAX));
+        assert_eq!(
+            OracleContract::new().read_request_id(&cache).unwrap(),
+            u64::MAX
+        );
     }
 
     #[test]
@@ -1207,12 +1218,12 @@ mod oracle_native_tests {
 
         let request = sample_request(None);
         cache.add(
-            request_key(3),
-            StorageItem::from_bytes(encode_oracle_request(&request).unwrap()),
+            OracleContract::request_key(3),
+            StorageItem::from_bytes(OracleContract::encode_oracle_request(&request).unwrap()),
         );
         cache.add(
-            id_list_key(&request.url),
-            StorageItem::from_bytes(encode_id_list(&[3]).unwrap()),
+            OracleContract::id_list_key(&request.url),
+            StorageItem::from_bytes(OracleContract::encode_id_list(&[3]).unwrap()),
         );
 
         assert_eq!(
@@ -1271,6 +1282,7 @@ mod oracle_native_tests {
 #[cfg(test)]
 mod oracle_request_finish_tests {
     use super::*;
+    use crate::test_support::deploy_native as deploy_contract;
     use neo_config::ProtocolSettings;
     use neo_execution::contract_state::ContractState;
     use neo_execution::native_contract::build_native_contract_state;
@@ -1286,7 +1298,6 @@ mod oracle_request_finish_tests {
     use neo_vm::script_builder::ScriptBuilder;
     use neo_vm_rs::{OpCode, VmState};
     use std::sync::Arc;
-    use crate::test_support::deploy_native as deploy_contract;
 
     /// Builds a tiny deployed contract with one `method(params)` descriptor,
     /// so `ContractManagement.IsContract` passes and the queued `finish`
@@ -1454,10 +1465,13 @@ mod oracle_request_finish_tests {
         );
 
         // Request-id counter incremented to 1.
-        assert_eq!(read_request_id(&snapshot).unwrap(), 1);
+        assert_eq!(OracleContract::new().read_request_id(&snapshot).unwrap(), 1);
 
         // The stored OracleRequest record (id 0) matches the C# layout.
-        let request = read_request(&snapshot, 0).unwrap().expect("request stored");
+        let request = OracleContract::new()
+            .read_request(&snapshot, 0)
+            .unwrap()
+            .expect("request stored");
         assert_eq!(request.original_tx_id, expected_txid);
         assert_eq!(request.gas_for_response, 1_0000000);
         assert_eq!(request.url, "https://example.org/data");
@@ -1475,9 +1489,12 @@ mod oracle_request_finish_tests {
 
         // The per-url id-list holds the new id.
         let list_item = snapshot
-            .get(&id_list_key("https://example.org/data"))
+            .get(&OracleContract::id_list_key("https://example.org/data"))
             .expect("id list written");
-        assert_eq!(decode_id_list(&list_item.value_bytes()).unwrap(), vec![0]);
+        assert_eq!(
+            OracleContract::decode_id_list(&list_item.value_bytes()).unwrap(),
+            vec![0]
+        );
 
         // gasForResponse was minted to the Oracle account (GAS Struct[balance]).
         let mut gas_key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
@@ -1524,17 +1541,27 @@ mod oracle_request_finish_tests {
                 Arc::clone(&snapshot),
             );
             assert_eq!(state, VmState::HALT);
-            assert_eq!(read_request_id(&snapshot).unwrap(), expected_counter);
+            assert_eq!(
+                OracleContract::new().read_request_id(&snapshot).unwrap(),
+                expected_counter
+            );
         }
         // Both ids are pending for the url, and a null filter round-trips.
         let list_item = snapshot
-            .get(&id_list_key("https://example.org/data"))
+            .get(&OracleContract::id_list_key("https://example.org/data"))
             .unwrap();
         assert_eq!(
-            decode_id_list(&list_item.value_bytes()).unwrap(),
+            OracleContract::decode_id_list(&list_item.value_bytes()).unwrap(),
             vec![0, 1]
         );
-        assert_eq!(read_request(&snapshot, 1).unwrap().unwrap().filter, None);
+        assert_eq!(
+            OracleContract::new()
+                .read_request(&snapshot, 1)
+                .unwrap()
+                .unwrap()
+                .filter,
+            None
+        );
     }
 
     #[test]
@@ -1573,7 +1600,7 @@ mod oracle_request_finish_tests {
             );
             assert_eq!(state, VmState::FAULT, "{name} must FAULT");
             assert_eq!(
-                read_request_id(&snapshot).unwrap(),
+                OracleContract::new().read_request_id(&snapshot).unwrap(),
                 0,
                 "{name}: no id allocated"
             );
@@ -1591,7 +1618,10 @@ mod oracle_request_finish_tests {
             Arc::clone(&snapshot),
         );
         assert_eq!(state, VmState::FAULT);
-        assert!(read_request(&snapshot, 0).unwrap().is_none());
+        assert!(OracleContract::new()
+            .read_request(&snapshot, 0)
+            .unwrap()
+            .is_none());
     }
 
     fn seeded_finish_snapshot(id: u64) -> (Arc<DataCache>, OracleRequest, UInt160) {
@@ -1615,12 +1645,12 @@ mod oracle_request_finish_tests {
             .unwrap(),
         );
         snapshot.add(
-            request_key(id),
-            StorageItem::from_bytes(encode_oracle_request(&request).unwrap()),
+            OracleContract::request_key(id),
+            StorageItem::from_bytes(OracleContract::encode_oracle_request(&request).unwrap()),
         );
         snapshot.add(
-            id_list_key(&request.url),
-            StorageItem::from_bytes(encode_id_list(&[id]).unwrap()),
+            OracleContract::id_list_key(&request.url),
+            StorageItem::from_bytes(OracleContract::encode_id_list(&[id]).unwrap()),
         );
         (snapshot, request, callback_hash)
     }
@@ -1675,9 +1705,17 @@ mod oracle_request_finish_tests {
         );
 
         // C# Finish does NOT remove the request — PostPersist does.
-        assert!(read_request(&snapshot, 7).unwrap().is_some());
-        let list_item = snapshot.get(&id_list_key(&request.url)).unwrap();
-        assert_eq!(decode_id_list(&list_item.value_bytes()).unwrap(), vec![7]);
+        assert!(OracleContract::new()
+            .read_request(&snapshot, 7)
+            .unwrap()
+            .is_some());
+        let list_item = snapshot
+            .get(&OracleContract::id_list_key(&request.url))
+            .unwrap();
+        assert_eq!(
+            OracleContract::decode_id_list(&list_item.value_bytes()).unwrap(),
+            vec![7]
+        );
     }
 
     #[test]
@@ -1754,12 +1792,12 @@ mod oracle_request_finish_tests {
         let (snapshot, request, _) = seeded_finish_snapshot(7);
         // A second pending request for the same url keeps the list alive.
         snapshot.add(
-            request_key(8),
-            StorageItem::from_bytes(encode_oracle_request(&request).unwrap()),
+            OracleContract::request_key(8),
+            StorageItem::from_bytes(OracleContract::encode_oracle_request(&request).unwrap()),
         );
         snapshot.update(
-            id_list_key(&request.url),
-            StorageItem::from_bytes(encode_id_list(&[7, 8]).unwrap()),
+            OracleContract::id_list_key(&request.url),
+            StorageItem::from_bytes(OracleContract::encode_id_list(&[7, 8]).unwrap()),
         );
 
         let mut engine =
@@ -1767,23 +1805,39 @@ mod oracle_request_finish_tests {
         NativeContract::post_persist(&OracleContract, &mut engine).expect("post_persist");
 
         assert!(
-            read_request(&snapshot, 7).unwrap().is_none(),
+            OracleContract::new()
+                .read_request(&snapshot, 7)
+                .unwrap()
+                .is_none(),
             "request removed"
         );
         assert!(
-            read_request(&snapshot, 8).unwrap().is_some(),
+            OracleContract::new()
+                .read_request(&snapshot, 8)
+                .unwrap()
+                .is_some(),
             "other request kept"
         );
-        let list_item = snapshot.get(&id_list_key(&request.url)).expect("list kept");
-        assert_eq!(decode_id_list(&list_item.value_bytes()).unwrap(), vec![8]);
+        let list_item = snapshot
+            .get(&OracleContract::id_list_key(&request.url))
+            .expect("list kept");
+        assert_eq!(
+            OracleContract::decode_id_list(&list_item.value_bytes()).unwrap(),
+            vec![8]
+        );
 
         // Answering the last pending id deletes the list entry entirely.
         let mut engine =
             post_persist_engine(Arc::clone(&snapshot), 11, vec![oracle_response_tx(8, b"")]);
         NativeContract::post_persist(&OracleContract, &mut engine).expect("post_persist");
-        assert!(read_request(&snapshot, 8).unwrap().is_none());
+        assert!(OracleContract::new()
+            .read_request(&snapshot, 8)
+            .unwrap()
+            .is_none());
         assert!(
-            snapshot.get(&id_list_key(&request.url)).is_none(),
+            snapshot
+                .get(&OracleContract::id_list_key(&request.url))
+                .is_none(),
             "empty list deleted"
         );
 

@@ -486,11 +486,12 @@ impl BlockchainService {
         ) {
             whitelist.insert(committee);
         }
-        let validators = neo_native_contracts::neo_token::next_block_validators(
-            snapshot,
-            usize::try_from(settings.validators_count).unwrap_or(0),
-        )
-        .map_err(|e| CoreError::other(e.to_string()))?;
+        let validators = neo_native_contracts::NeoToken::new()
+            .next_block_validators(
+                snapshot,
+                usize::try_from(settings.validators_count).unwrap_or(0),
+            )
+            .map_err(|e| CoreError::other(e.to_string()))?;
         if !validators.is_empty() {
             whitelist.insert(
                 crate::native_persist::bft_address(&validators).map_err(|e| CoreError::other(e.to_string()))?,

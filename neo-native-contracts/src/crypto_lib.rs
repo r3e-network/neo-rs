@@ -48,6 +48,165 @@ impl CryptoLib {
     pub fn script_hash() -> UInt160 {
         *CRYPTO_LIB_HASH
     }
+
+    /// Computes a CryptoLib hash method, returning `None` for an unknown method.
+    ///
+    /// Split out from [`CryptoLib::invoke`] so the dispatch + hashing can be unit
+    /// tested without constructing an [`ApplicationEngine`].
+    fn hash_method(method: &str, data: &[u8]) -> Option<Vec<u8>> {
+        match method {
+            "sha256" => Some(Crypto::sha256(data).to_vec()),
+            "ripemd160" => Some(Crypto::ripemd160(data).to_vec()),
+            "keccak256" => Some(Crypto::keccak256(data).to_vec()),
+            _ => None,
+        }
+    }
+
+    /// Pure Ed25519 verification with C# `VerifyWithEd25519` semantics: a wrong-length
+    /// signature (64) or public key (32), or any verification error, yields `false`.
+    /// Split out so it can be unit tested without an [`ApplicationEngine`].
+    fn verify_ed25519_method(message: &[u8], pubkey: &[u8], signature: &[u8]) -> bool {
+        signature.len() == 64
+            && pubkey.len() == 32
+            && neo_crypto::ecc::verify_ed25519(pubkey, message, signature).unwrap_or(false)
+    }
+
+    /// Pure ECDSA verification with C# `VerifyWithECDsa` semantics, split out so the
+    /// curve/hash dispatch can be unit tested without an [`ApplicationEngine`].
+    ///
+    /// `allow_keccak` reflects the `HF_Cockatrice` hardfork (the V0/V1 split): before
+    /// Cockatrice only the SHA-256 named curves are valid, so a Keccak-256 curve
+    /// faults (C# `VerifyWithECDsaV0` throws `ArgumentOutOfRangeException`); an
+    /// undefined `curve` byte also faults (C# `s_curves[...]` `KeyNotFoundException`).
+    /// A malformed key or signature yields `Ok(false)` (the C# `ArgumentException`
+    /// catch).
+    fn verify_ecdsa_method(
+        message: &[u8],
+        pubkey: &[u8],
+        signature: &[u8],
+        curve: u8,
+        allow_keccak: bool,
+    ) -> CoreResult<bool> {
+        let named = NamedCurveHash::from_byte(curve).ok_or_else(|| {
+            CoreError::invalid_operation(format!(
+                "CryptoLib::verifyWithECDsa: unsupported curve {curve}"
+            ))
+        })?;
+        if !allow_keccak && matches!(named.hash_algorithm(), HashAlgorithm::Keccak256) {
+            return Err(CoreError::invalid_operation(
+                "CryptoLib::verifyWithECDsa: Keccak256 curves require the Cockatrice hardfork",
+            ));
+        }
+        Ok(neo_crypto::ecc::verify_signature_with_hash(
+            named.curve(),
+            pubkey,
+            message,
+            signature,
+            named.hash_algorithm(),
+        )
+        .unwrap_or(false))
+    }
+
+    /// Strict ECDSA verification (C# v3.10.0 `Crypto.VerifySignature`, used by
+    /// `VerifyWithECDsaV2` from HF_Gorgon): an unsupported curve and a malformed
+    /// signature length fault (rather than returning `false`). Keccak-256 curves are
+    /// always available here (Gorgon is after Cockatrice). A valid-length signature
+    /// that does not verify still returns `false`. (A right-length-but-invalid
+    /// public key returns `false` here where C# would fault — a narrow divergence
+    /// in this dormant Gorgon path, since the underlying verifier reports key parse
+    /// failure as a non-match rather than an error.)
+    fn verify_ecdsa_method_strict(
+        message: &[u8],
+        pubkey: &[u8],
+        signature: &[u8],
+        curve: u8,
+    ) -> CoreResult<bool> {
+        let named = NamedCurveHash::from_byte(curve).ok_or_else(|| {
+            CoreError::invalid_operation(format!(
+                "CryptoLib::verifyWithECDsa: unsupported curve {curve}"
+            ))
+        })?;
+        if signature.len() != 64 {
+            return Err(CoreError::invalid_operation(
+                "CryptoLib::verifyWithECDsa: signature size should be 64 bytes",
+            ));
+        }
+        Ok(neo_crypto::ecc::verify_signature_with_hash(
+            named.curve(),
+            pubkey,
+            message,
+            signature,
+            named.hash_algorithm(),
+        )
+        .unwrap_or(false))
+    }
+
+    /// Pure secp256k1 public-key recovery with C# `RecoverSecp256K1` semantics:
+    /// returns the 33-byte compressed public key, or `None` when recovery fails (C#
+    /// wraps `Crypto.ECRecover` in try/catch and returns `null`). Split out so the
+    /// success/null decision can be unit tested without an [`ApplicationEngine`].
+    fn recover_secp256k1_method(message_hash: &[u8], signature: &[u8]) -> Option<Vec<u8>> {
+        Secp256k1Crypto::recover_public_key(message_hash, signature).ok()
+    }
+
+    /// Deserializes the `idx`-th argument as a BLS12-381 point, faulting on a
+    /// missing argument or a malformed/off-curve/wrong-subgroup encoding (C#
+    /// `InteropInterface` binding + `FromCompressed`/`FromBytes` throw → VM fault).
+    fn bls_point(method: &str, args: &[Vec<u8>], idx: usize) -> CoreResult<Bls12381Point> {
+        let bytes = args.get(idx).ok_or_else(|| {
+            CoreError::invalid_operation(format!("CryptoLib::{method} is missing argument {idx}"))
+        })?;
+        Bls12381Point::deserialize(bytes)
+            .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::{method}: {e}")))
+    }
+
+    /// Pure BLS12-381 `CryptoLib` dispatch (serialize / deserialize / equal / add /
+    /// mul / pairing), split out so it can be unit-tested without an
+    /// [`ApplicationEngine`]. Point arguments arrive as their canonical encoding
+    /// (the dispatcher unwraps the `Bls12381Interop` operands to raw bytes); point
+    /// results are returned as canonical bytes for the dispatcher to re-wrap as a
+    /// `Bls12381Interop`. `bls12381Equal` returns a single boolean byte.
+    ///
+    /// Returns `Ok(None)` when `method` is not a BLS method (so the caller can fall
+    /// through to the hash methods).
+    fn bls12381_method(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
+        let result = match method {
+            // Serialize takes a point (InteropInterface) and returns its bytes; the
+            // operand already arrives canonical, so round-tripping it normalizes.
+            "bls12381Serialize" => Self::bls_point(method, args, 0).map(|p| p.serialize()),
+            // Deserialize validates raw bytes into a point; the dispatcher re-wraps
+            // the canonical encoding as an interop object.
+            "bls12381Deserialize" => Self::bls_point(method, args, 0).map(|p| p.serialize()),
+            "bls12381Equal" => Self::bls_point(method, args, 0).and_then(|a| {
+                let b = Self::bls_point(method, args, 1)?;
+                Ok(vec![u8::from(a.equals(&b))])
+            }),
+            "bls12381Add" => Self::bls_point(method, args, 0).and_then(|a| {
+                let b = Self::bls_point(method, args, 1)?;
+                a.add(&b)
+                    .map(|sum| sum.serialize())
+                    .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::bls12381Add: {e}")))
+            }),
+            "bls12381Mul" => Self::bls_point(method, args, 0).and_then(|p| {
+                let mul = args.get(1).ok_or_else(|| {
+                    CoreError::invalid_operation("CryptoLib::bls12381Mul is missing the multiplier")
+                })?;
+                // The `neg` flag (3rd arg) is a VM Boolean: any non-zero byte is true.
+                let neg = args.get(2).is_some_and(|b| b.iter().any(|x| *x != 0));
+                p.mul(mul, neg)
+                    .map(|out| out.serialize())
+                    .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::bls12381Mul: {e}")))
+            }),
+            "bls12381Pairing" => Self::bls_point(method, args, 0).and_then(|g1| {
+                let g2 = Self::bls_point(method, args, 1)?;
+                g1.pairing(&g2).map(|gt| gt.serialize()).map_err(|e| {
+                    CoreError::invalid_operation(format!("CryptoLib::bls12381Pairing: {e}"))
+                })
+            }),
+            _ => return None,
+        };
+        Some(result)
+    }
 }
 
 // C# `CpuFee = 1 << 15` for sha256 / ripemd160 / keccak256.
@@ -59,165 +218,6 @@ const CPU_FEE_BLS_EQUAL: i64 = 1 << 5;
 const CPU_FEE_BLS_ADD: i64 = 1 << 19;
 const CPU_FEE_BLS_MUL: i64 = 1 << 21;
 const CPU_FEE_BLS_PAIRING: i64 = 1 << 23;
-
-/// Computes a CryptoLib hash method, returning `None` for an unknown method.
-///
-/// Split out from [`CryptoLib::invoke`] so the dispatch + hashing can be unit
-/// tested without constructing an [`ApplicationEngine`].
-fn hash_method(method: &str, data: &[u8]) -> Option<Vec<u8>> {
-    match method {
-        "sha256" => Some(Crypto::sha256(data).to_vec()),
-        "ripemd160" => Some(Crypto::ripemd160(data).to_vec()),
-        "keccak256" => Some(Crypto::keccak256(data).to_vec()),
-        _ => None,
-    }
-}
-
-/// Pure Ed25519 verification with C# `VerifyWithEd25519` semantics: a wrong-length
-/// signature (64) or public key (32), or any verification error, yields `false`.
-/// Split out so it can be unit tested without an [`ApplicationEngine`].
-fn verify_ed25519_method(message: &[u8], pubkey: &[u8], signature: &[u8]) -> bool {
-    signature.len() == 64
-        && pubkey.len() == 32
-        && neo_crypto::ecc::verify_ed25519(pubkey, message, signature).unwrap_or(false)
-}
-
-/// Pure ECDSA verification with C# `VerifyWithECDsa` semantics, split out so the
-/// curve/hash dispatch can be unit tested without an [`ApplicationEngine`].
-///
-/// `allow_keccak` reflects the `HF_Cockatrice` hardfork (the V0/V1 split): before
-/// Cockatrice only the SHA-256 named curves are valid, so a Keccak-256 curve
-/// faults (C# `VerifyWithECDsaV0` throws `ArgumentOutOfRangeException`); an
-/// undefined `curve` byte also faults (C# `s_curves[...]` `KeyNotFoundException`).
-/// A malformed key or signature yields `Ok(false)` (the C# `ArgumentException`
-/// catch).
-fn verify_ecdsa_method(
-    message: &[u8],
-    pubkey: &[u8],
-    signature: &[u8],
-    curve: u8,
-    allow_keccak: bool,
-) -> CoreResult<bool> {
-    let named = NamedCurveHash::from_byte(curve).ok_or_else(|| {
-        CoreError::invalid_operation(format!(
-            "CryptoLib::verifyWithECDsa: unsupported curve {curve}"
-        ))
-    })?;
-    if !allow_keccak && matches!(named.hash_algorithm(), HashAlgorithm::Keccak256) {
-        return Err(CoreError::invalid_operation(
-            "CryptoLib::verifyWithECDsa: Keccak256 curves require the Cockatrice hardfork",
-        ));
-    }
-    Ok(neo_crypto::ecc::verify_signature_with_hash(
-        named.curve(),
-        pubkey,
-        message,
-        signature,
-        named.hash_algorithm(),
-    )
-    .unwrap_or(false))
-}
-
-/// Strict ECDSA verification (C# v3.10.0 `Crypto.VerifySignature`, used by
-/// `VerifyWithECDsaV2` from HF_Gorgon): an unsupported curve and a malformed
-/// signature length fault (rather than returning `false`). Keccak-256 curves are
-/// always available here (Gorgon is after Cockatrice). A valid-length signature
-/// that does not verify still returns `false`. (A right-length-but-invalid
-/// public key returns `false` here where C# would fault — a narrow divergence
-/// in this dormant Gorgon path, since the underlying verifier reports key parse
-/// failure as a non-match rather than an error.)
-fn verify_ecdsa_method_strict(
-    message: &[u8],
-    pubkey: &[u8],
-    signature: &[u8],
-    curve: u8,
-) -> CoreResult<bool> {
-    let named = NamedCurveHash::from_byte(curve).ok_or_else(|| {
-        CoreError::invalid_operation(format!(
-            "CryptoLib::verifyWithECDsa: unsupported curve {curve}"
-        ))
-    })?;
-    if signature.len() != 64 {
-        return Err(CoreError::invalid_operation(
-            "CryptoLib::verifyWithECDsa: signature size should be 64 bytes",
-        ));
-    }
-    Ok(neo_crypto::ecc::verify_signature_with_hash(
-        named.curve(),
-        pubkey,
-        message,
-        signature,
-        named.hash_algorithm(),
-    )
-    .unwrap_or(false))
-}
-
-/// Pure secp256k1 public-key recovery with C# `RecoverSecp256K1` semantics:
-/// returns the 33-byte compressed public key, or `None` when recovery fails (C#
-/// wraps `Crypto.ECRecover` in try/catch and returns `null`). Split out so the
-/// success/null decision can be unit tested without an [`ApplicationEngine`].
-fn recover_secp256k1_method(message_hash: &[u8], signature: &[u8]) -> Option<Vec<u8>> {
-    Secp256k1Crypto::recover_public_key(message_hash, signature).ok()
-}
-
-/// Deserializes the `idx`-th argument as a BLS12-381 point, faulting on a
-/// missing argument or a malformed/off-curve/wrong-subgroup encoding (C#
-/// `InteropInterface` binding + `FromCompressed`/`FromBytes` throw → VM fault).
-fn bls_point(method: &str, args: &[Vec<u8>], idx: usize) -> CoreResult<Bls12381Point> {
-    let bytes = args.get(idx).ok_or_else(|| {
-        CoreError::invalid_operation(format!("CryptoLib::{method} is missing argument {idx}"))
-    })?;
-    Bls12381Point::deserialize(bytes)
-        .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::{method}: {e}")))
-}
-
-/// Pure BLS12-381 `CryptoLib` dispatch (serialize / deserialize / equal / add /
-/// mul / pairing), split out so it can be unit-tested without an
-/// [`ApplicationEngine`]. Point arguments arrive as their canonical encoding
-/// (the dispatcher unwraps the `Bls12381Interop` operands to raw bytes); point
-/// results are returned as canonical bytes for the dispatcher to re-wrap as a
-/// `Bls12381Interop`. `bls12381Equal` returns a single boolean byte.
-///
-/// Returns `Ok(None)` when `method` is not a BLS method (so the caller can fall
-/// through to the hash methods).
-fn bls12381_method(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
-    let result = match method {
-        // Serialize takes a point (InteropInterface) and returns its bytes; the
-        // operand already arrives canonical, so round-tripping it normalizes.
-        "bls12381Serialize" => bls_point(method, args, 0).map(|p| p.serialize()),
-        // Deserialize validates raw bytes into a point; the dispatcher re-wraps
-        // the canonical encoding as an interop object.
-        "bls12381Deserialize" => bls_point(method, args, 0).map(|p| p.serialize()),
-        "bls12381Equal" => bls_point(method, args, 0).and_then(|a| {
-            let b = bls_point(method, args, 1)?;
-            Ok(vec![u8::from(a.equals(&b))])
-        }),
-        "bls12381Add" => bls_point(method, args, 0).and_then(|a| {
-            let b = bls_point(method, args, 1)?;
-            a.add(&b)
-                .map(|sum| sum.serialize())
-                .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::bls12381Add: {e}")))
-        }),
-        "bls12381Mul" => bls_point(method, args, 0).and_then(|p| {
-            let mul = args.get(1).ok_or_else(|| {
-                CoreError::invalid_operation("CryptoLib::bls12381Mul is missing the multiplier")
-            })?;
-            // The `neg` flag (3rd arg) is a VM Boolean: any non-zero byte is true.
-            let neg = args.get(2).is_some_and(|b| b.iter().any(|x| *x != 0));
-            p.mul(mul, neg)
-                .map(|out| out.serialize())
-                .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::bls12381Mul: {e}")))
-        }),
-        "bls12381Pairing" => bls_point(method, args, 0).and_then(|g1| {
-            let g2 = bls_point(method, args, 1)?;
-            g1.pairing(&g2).map(|gt| gt.serialize()).map_err(|e| {
-                CoreError::invalid_operation(format!("CryptoLib::bls12381Pairing: {e}"))
-            })
-        }),
-        _ => return None,
-    };
-    Some(result)
-}
 
 static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let byte_array = ContractParameterType::ByteArray;
@@ -493,7 +493,7 @@ impl NativeContract for CryptoLib {
                     neo_crypto::ecc::verify_ed25519(pubkey, message, signature).unwrap_or(false);
                 return Ok(vec![u8::from(ok)]);
             }
-            return Ok(vec![u8::from(verify_ed25519_method(
+            return Ok(vec![u8::from(Self::verify_ed25519_method(
                 message, pubkey, signature,
             ))]);
         }
@@ -522,12 +522,12 @@ impl NativeContract for CryptoLib {
             if engine.is_hardfork_enabled(Hardfork::HfGorgon) {
                 // C# v3.10.0 VerifyWithECDsaV2 (strict Crypto.VerifySignature):
                 // a malformed signature length faults instead of returning false.
-                return Ok(vec![u8::from(verify_ecdsa_method_strict(
+                return Ok(vec![u8::from(Self::verify_ecdsa_method_strict(
                     message, pubkey, signature, curve,
                 )?)]);
             }
             let allow_keccak = engine.is_hardfork_enabled(Hardfork::HfCockatrice);
-            return Ok(vec![u8::from(verify_ecdsa_method(
+            return Ok(vec![u8::from(Self::verify_ecdsa_method(
                 message,
                 pubkey,
                 signature,
@@ -546,7 +546,7 @@ impl NativeContract for CryptoLib {
             };
             let message_hash = args.first().map(Vec::as_slice).ok_or_else(arg_err)?;
             let signature = args.get(1).map(Vec::as_slice).ok_or_else(arg_err)?;
-            return match recover_secp256k1_method(message_hash, signature) {
+            return match Self::recover_secp256k1_method(message_hash, signature) {
                 Some(pubkey) => Ok(pubkey),
                 None => {
                     // C# returns null; signal a null return so the dispatcher pushes
@@ -560,7 +560,7 @@ impl NativeContract for CryptoLib {
         // BLS12-381 operations (bls12381Serialize/Deserialize/Equal/Add/Mul/
         // Pairing). Point operands/results cross the native boundary as their
         // canonical encoding, wrapped by the dispatcher as `Bls12381Interop`.
-        if let Some(result) = bls12381_method(method, args) {
+        if let Some(result) = Self::bls12381_method(method, args) {
             return result;
         }
 
@@ -570,7 +570,7 @@ impl NativeContract for CryptoLib {
         let data = args.first().ok_or_else(|| {
             CoreError::invalid_operation(format!("CryptoLib::{method} requires one argument"))
         })?;
-        hash_method(method, data).ok_or_else(|| {
+        Self::hash_method(method, data).ok_or_else(|| {
             CoreError::invalid_operation(format!("CryptoLib method '{method}' is not implemented"))
         })
     }
@@ -588,18 +588,18 @@ mod tests {
     fn hash_methods_match_csharp_vectors() {
         // C# CryptoLib.{Sha256,RIPEMD160,Keccak256}(utf8("abc")).
         assert_eq!(
-            hex(&hash_method("sha256", b"abc").unwrap()),
+            hex(&CryptoLib::hash_method("sha256", b"abc").unwrap()),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
         assert_eq!(
-            hex(&hash_method("ripemd160", b"abc").unwrap()),
+            hex(&CryptoLib::hash_method("ripemd160", b"abc").unwrap()),
             "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc"
         );
         assert_eq!(
-            hex(&hash_method("keccak256", b"abc").unwrap()),
+            hex(&CryptoLib::hash_method("keccak256", b"abc").unwrap()),
             "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
         );
-        assert!(hash_method("not_a_method", b"abc").is_none());
+        assert!(CryptoLib::hash_method("not_a_method", b"abc").is_none());
     }
 
     #[test]
@@ -771,7 +771,7 @@ mod tests {
         let g2 = hex::decode(BLS_G2).unwrap();
         let gt = hex::decode(BLS_GT).unwrap();
         let call = |m: &str, args: &[Vec<u8>]| {
-            bls12381_method(m, args)
+            CryptoLib::bls12381_method(m, args)
                 .expect("is a BLS method")
                 .expect("method succeeds")
         };
@@ -813,23 +813,23 @@ mod tests {
         // Faults (Err → VM fault): malformed point, swapped pairing operands,
         // wrong scalar length.
         assert!(
-            bls12381_method("bls12381Deserialize", &[vec![0u8; 47]])
+            CryptoLib::bls12381_method("bls12381Deserialize", &[vec![0u8; 47]])
                 .unwrap()
                 .is_err()
         );
         assert!(
-            bls12381_method("bls12381Pairing", &[g2.clone(), g1.clone()])
+            CryptoLib::bls12381_method("bls12381Pairing", &[g2.clone(), g1.clone()])
                 .unwrap()
                 .is_err()
         );
         assert!(
-            bls12381_method("bls12381Mul", &[gt.clone(), vec![0u8; 31], vec![0]])
+            CryptoLib::bls12381_method("bls12381Mul", &[gt.clone(), vec![0u8; 31], vec![0]])
                 .unwrap()
                 .is_err()
         );
 
         // A non-BLS method is not handled here (falls through to hash dispatch).
-        assert!(bls12381_method("sha256", &[]).is_none());
+        assert!(CryptoLib::bls12381_method("sha256", &[]).is_none());
     }
 
     #[test]
@@ -838,9 +838,9 @@ mod tests {
         // (recover_public_key_round_trips_and_rejects_bad_input); here we cover the
         // null path that maps to C# RecoverSecp256K1 returning null.
         let hash = [0x42u8; 32];
-        assert!(recover_secp256k1_method(&hash, &[0u8; 10]).is_none()); // bad sig length
-        assert!(recover_secp256k1_method(&[0u8; 31], &[0u8; 65]).is_none()); // bad hash length
-        assert!(recover_secp256k1_method(&hash, &[0u8; 65]).is_none()); // invalid signature
+        assert!(CryptoLib::recover_secp256k1_method(&hash, &[0u8; 10]).is_none()); // bad sig length
+        assert!(CryptoLib::recover_secp256k1_method(&[0u8; 31], &[0u8; 65]).is_none()); // bad hash length
+        assert!(CryptoLib::recover_secp256k1_method(&hash, &[0u8; 65]).is_none()); // invalid signature
     }
 
     #[test]
@@ -852,19 +852,19 @@ mod tests {
         let empty = b""; // malformed key/sig -> underlying verify yields false
 
         // Undefined curve byte -> error (C# KeyNotFound/ArgumentOutOfRange faults).
-        assert!(verify_ecdsa_method(msg, empty, empty, 0x00, true).is_err());
+        assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x00, true).is_err());
 
         // SHA-256 curves (0x16/0x17) are valid at any height; malformed inputs
         // dispatch to a false result rather than faulting.
-        assert!(!verify_ecdsa_method(msg, empty, empty, 0x16, false).unwrap());
-        assert!(!verify_ecdsa_method(msg, empty, empty, 0x17, false).unwrap());
+        assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, false).unwrap());
+        assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x17, false).unwrap());
 
         // Keccak-256 curves (0x7A/0x7B) require Cockatrice: gated off -> fault.
-        assert!(verify_ecdsa_method(msg, empty, empty, 0x7A, false).is_err());
-        assert!(verify_ecdsa_method(msg, empty, empty, 0x7B, false).is_err());
+        assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7A, false).is_err());
+        assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7B, false).is_err());
         // Enabled -> dispatch (malformed inputs -> false).
-        assert!(!verify_ecdsa_method(msg, empty, empty, 0x7A, true).unwrap());
-        assert!(!verify_ecdsa_method(msg, empty, empty, 0x7B, true).unwrap());
+        assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7A, true).unwrap());
+        assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7B, true).unwrap());
     }
 
     fn hex_bytes(s: &str) -> Vec<u8> {
@@ -882,15 +882,15 @@ mod tests {
             "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
         );
         let message: &[u8] = b"";
-        assert!(verify_ed25519_method(message, &pubkey, &signature));
+        assert!(CryptoLib::verify_ed25519_method(message, &pubkey, &signature));
 
         // A tampered signature fails.
         let mut bad = signature.clone();
         bad[0] ^= 0x01;
-        assert!(!verify_ed25519_method(message, &pubkey, &bad));
+        assert!(!CryptoLib::verify_ed25519_method(message, &pubkey, &bad));
 
         // Wrong-length inputs return false without panicking (C# length guards).
-        assert!(!verify_ed25519_method(message, &pubkey[..31], &signature));
-        assert!(!verify_ed25519_method(message, &pubkey, &signature[..63]));
+        assert!(!CryptoLib::verify_ed25519_method(message, &pubkey[..31], &signature));
+        assert!(!CryptoLib::verify_ed25519_method(message, &pubkey, &signature[..63]));
     }
 }

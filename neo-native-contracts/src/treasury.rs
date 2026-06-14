@@ -223,6 +223,10 @@ mod verify_witness_tests {
     use super::*;
     use std::sync::Arc;
 
+    use crate::test_support::{
+        CM_PREFIX_CONTRACT, NEO_PREFIX_COMMITTEE, committee_address, deploy_native, hex,
+        sample_committee, seed_committee,
+    };
     use neo_crypto::ECPoint;
     use neo_execution::contract_state::ContractState;
     use neo_execution::native_contract::build_native_contract_state;
@@ -231,13 +235,9 @@ mod verify_witness_tests {
     use neo_payloads::witness::Witness;
     use neo_payloads::{Block, Header};
     use neo_primitives::{TriggerType, Verifiable, WitnessScope};
-    use neo_vm::script_builder::ScriptBuilder;
     use neo_storage::persistence::DataCache;
+    use neo_vm::script_builder::ScriptBuilder;
     use neo_vm_rs::VmState;
-    use crate::test_support::{
-        committee_address, deploy_native, hex, sample_committee, seed_committee,
-        CM_PREFIX_CONTRACT, NEO_PREFIX_COMMITTEE,
-    };
 
     /// Runs `Treasury::verify()` via System.Contract.Call, signed (Global) by
     /// `signer`. Returns the final VM state and the boolean result.

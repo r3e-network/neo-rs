@@ -23,50 +23,6 @@ use num_traits::Zero;
 
 use crate::hashes::GAS_TOKEN_HASH;
 
-/// The GAS account storage key `(GasToken.ID, [Prefix_Account, account])`.
-fn gas_account_key(account: &UInt160) -> StorageKey {
-    StorageKey::new(
-        GasToken::ID,
-        crate::keys::prefixed_with_hash160(crate::NEP17_PREFIX_ACCOUNT, account),
-    )
-}
-
-/// Reads the GAS account balance, or `None` when the account has no entry. The
-/// GAS account state is the base `FungibleToken.AccountState` = `Struct[Balance]`
-/// (a single field), so `read_nep17_balance`'s field 0 is the balance.
-fn read_gas_account(snapshot: &DataCache, account: &UInt160) -> CoreResult<Option<BigInt>> {
-    let Some(item) = snapshot.get(&gas_account_key(account)) else {
-        return Ok(None);
-    };
-    let state =
-        BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
-            .map_err(|e| CoreError::deserialization(format!("GAS account state: {e}")))?;
-    let StackItem::Struct(fields) = state else {
-        return Err(CoreError::invalid_data("GAS account state is not a struct"));
-    };
-    let balance = fields
-        .items()
-        .first()
-        .ok_or_else(|| CoreError::invalid_data("GAS account Balance missing"))?
-        .as_int()
-        .map_err(|e| CoreError::invalid_data(format!("GAS account Balance: {e}")))?;
-    Ok(Some(balance))
-}
-
-/// Writes the GAS account state `Struct[Balance]` (C# `GetAndChange(...).Set`).
-fn write_gas_account(snapshot: &DataCache, account: &UInt160, balance: &BigInt) -> CoreResult<()> {
-    let item = StackItem::from_struct(vec![StackItem::from_int(balance.clone())]);
-    let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-        .map_err(|e| CoreError::serialization(format!("GAS account serialize: {e}")))?;
-    snapshot.update(gas_account_key(account), StorageItem::from_bytes(bytes));
-    Ok(())
-}
-
-/// Deletes the GAS account entry (C# `Delete(keyFrom)` when a balance reaches 0).
-fn delete_gas_account(snapshot: &DataCache, account: &UInt160) {
-    snapshot.delete(&gas_account_key(account));
-}
-
 /// The balance outcome of a GAS transfer (no governance — `OnBalanceChanging` is
 /// a no-op for GAS).
 #[derive(Debug, PartialEq, Eq)]
@@ -84,221 +40,6 @@ enum GasTransferOutcome {
         delete_from: bool,
         to_new: BigInt,
     },
-}
-
-/// Pure GAS-transfer balance arithmetic, mirroring C# `FungibleToken.Transfer`
-/// with a no-op `OnBalanceChanging`. `amount` is assumed non-negative (the caller
-/// faults on negative). `from_balance`/`to_balance` are the current balances
-/// (`None` = no account entry).
-fn compute_gas_transfer(
-    from_balance: Option<BigInt>,
-    to_balance: Option<BigInt>,
-    same_account: bool,
-    amount: &BigInt,
-) -> GasTransferOutcome {
-    if amount.is_zero() {
-        // C#: amount == 0 -> OnBalanceChanging no-op; no balance movement.
-        return GasTransferOutcome::NoMovement;
-    }
-    let Some(from_bal) = from_balance else {
-        return GasTransferOutcome::InsufficientBalance; // storageFrom is null
-    };
-    if &from_bal < amount {
-        return GasTransferOutcome::InsufficientBalance;
-    }
-    if same_account {
-        // C#: from == to -> OnBalanceChanging(0); no net movement.
-        return GasTransferOutcome::NoMovement;
-    }
-    let from_new = &from_bal - amount;
-    let delete_from = from_new.is_zero(); // C#: if stateFrom.Balance == amount -> Delete.
-    let to_new = to_balance.unwrap_or_else(BigInt::zero) + amount;
-    GasTransferOutcome::Move {
-        from_new,
-        delete_from,
-        to_new,
-    }
-}
-
-/// C# `FungibleToken.PostTransferAsync` for the transfer case (both `from`/`to`
-/// non-null): emit the `Transfer` event, then — only when `to` is a deployed
-/// contract — queue its `onNEP17Payment(from, amount, data)` callback (run after
-/// this native call returns, faithful to `CallFromNativeContractAsync`).
-fn post_transfer(
-    engine: &mut ApplicationEngine,
-    from: &UInt160,
-    to: &UInt160,
-    amount: &BigInt,
-    data: &[u8],
-) -> CoreResult<()> {
-    let gas_hash = GasToken::script_hash();
-    engine
-        .send_notification(
-            gas_hash,
-            "Transfer".to_string(),
-            vec![
-                StackItem::from_byte_string(from.to_bytes()),
-                StackItem::from_byte_string(to.to_bytes()),
-                StackItem::from_int(amount.clone()),
-            ],
-        )
-        .map_err(|e| CoreError::invalid_operation(format!("GasToken::transfer notify: {e}")))?;
-
-    let is_contract = crate::ContractManagement::is_contract(&engine.snapshot_cache(), to);
-    if !is_contract {
-        return Ok(());
-    }
-    // The transfer `data` param is `Any`, so it arrives BinarySerialized; round-trip
-    // it back to the StackItem passed to onNEP17Payment.
-    let data_item = if data.is_empty() {
-        StackItem::null()
-    } else {
-        BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| CoreError::deserialization(format!("GasToken::transfer data: {e}")))?
-    };
-    engine.queue_contract_call_from_native(
-        gas_hash,
-        *to,
-        "onNEP17Payment",
-        vec![
-            StackItem::from_byte_string(from.to_bytes()),
-            StackItem::from_int(amount.clone()),
-            data_item,
-        ],
-    );
-    Ok(())
-}
-
-/// C# `GasToken.Mint` (`FungibleToken.Mint`): credits `amount` GAS to `account`,
-/// raises the total supply, and emits `Transfer(null, account, amount)` —
-/// queuing the recipient's `onNEP17Payment` when `call_on_payment` and the
-/// recipient is a deployed contract. A zero amount is a no-op; a negative amount
-/// faults. `pub(crate)` so NeoToken's reward distribution can mint GAS.
-pub(crate) fn gas_mint(
-    engine: &mut ApplicationEngine,
-    account: &UInt160,
-    amount: &BigInt,
-    call_on_payment: bool,
-) -> CoreResult<()> {
-    if amount < &BigInt::zero() {
-        return Err(CoreError::invalid_operation(
-            "GasToken::mint: amount cannot be negative",
-        ));
-    }
-    if amount.is_zero() {
-        return Ok(());
-    }
-    let snapshot = engine.snapshot_cache();
-    let balance = read_gas_account(&snapshot, account)?.unwrap_or_else(BigInt::zero) + amount;
-    write_gas_account(&snapshot, account, &balance)?;
-    let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
-    let supply = snapshot
-        .get(&supply_key)
-        .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
-        .unwrap_or_else(BigInt::zero)
-        + amount;
-    snapshot.update(
-        supply_key,
-        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
-    );
-    post_mint(engine, account, amount, call_on_payment)
-}
-
-/// C# `PostTransferAsync(null, account, amount, …)` for the mint case: emit
-/// `Transfer(null, account, amount)`, then queue `onNEP17Payment(null, amount,
-/// null)` when `call_on_payment` and the recipient is a deployed contract.
-fn post_mint(
-    engine: &mut ApplicationEngine,
-    account: &UInt160,
-    amount: &BigInt,
-    call_on_payment: bool,
-) -> CoreResult<()> {
-    let gas_hash = GasToken::script_hash();
-    engine
-        .send_notification(
-            gas_hash,
-            "Transfer".to_string(),
-            vec![
-                StackItem::null(),
-                StackItem::from_byte_string(account.to_bytes()),
-                StackItem::from_int(amount.clone()),
-            ],
-        )
-        .map_err(|e| CoreError::invalid_operation(format!("GasToken::mint notify: {e}")))?;
-    if !call_on_payment {
-        return Ok(());
-    }
-    if !crate::ContractManagement::is_contract(&engine.snapshot_cache(), account) {
-        return Ok(());
-    }
-    engine.queue_contract_call_from_native(
-        gas_hash,
-        *account,
-        "onNEP17Payment",
-        vec![
-            StackItem::null(),
-            StackItem::from_int(amount.clone()),
-            StackItem::null(),
-        ],
-    );
-    Ok(())
-}
-
-/// C# `GasToken.Burn` (`FungibleToken.Burn`): debits `amount` GAS from
-/// `account` (deleting the entry when the balance reaches zero, like C#'s
-/// `Delete` on `Balance == amount`), lowers the total supply, and emits
-/// `Transfer(account, null, amount)` — no `onNEP17Payment` callback (C# burns
-/// with `callOnPayment: false`). A zero amount is a no-op; a negative amount
-/// or an insufficient balance faults (C# throws on `Balance < amount`, and a
-/// missing account entry NREs on the null-forgiving `GetAndChange`).
-/// `pub(crate)` so NeoToken's Echidna `onNEP17Payment` can burn the
-/// register-price GAS it receives.
-pub(crate) fn gas_burn(
-    engine: &mut ApplicationEngine,
-    account: &UInt160,
-    amount: &BigInt,
-) -> CoreResult<()> {
-    if amount < &BigInt::zero() {
-        return Err(CoreError::invalid_operation(
-            "GasToken::burn: amount cannot be negative",
-        ));
-    }
-    if amount.is_zero() {
-        return Ok(());
-    }
-    let snapshot = engine.snapshot_cache();
-    let balance = read_gas_account(&snapshot, account)?.unwrap_or_else(BigInt::zero);
-    if &balance < amount {
-        return Err(CoreError::invalid_operation(format!(
-            "GasToken::burn: insufficient balance {balance} to burn {amount}"
-        )));
-    }
-    if &balance == amount {
-        delete_gas_account(&snapshot, account);
-    } else {
-        write_gas_account(&snapshot, account, &(&balance - amount))?;
-    }
-    let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
-    let supply = snapshot
-        .get(&supply_key)
-        .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
-        .unwrap_or_else(BigInt::zero)
-        - amount;
-    snapshot.update(
-        supply_key,
-        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
-    );
-    engine
-        .send_notification(
-            GasToken::script_hash(),
-            "Transfer".to_string(),
-            vec![
-                StackItem::from_byte_string(account.to_bytes()),
-                StackItem::null(),
-                StackItem::from_int(amount.clone()),
-            ],
-        )
-        .map_err(|e| CoreError::invalid_operation(format!("GasToken::burn notify: {e}")))
 }
 
 /// The GasToken native contract.
@@ -328,6 +69,269 @@ impl GasToken {
     /// Returns the GAS script hash.
     pub fn script_hash() -> UInt160 {
         *GAS_TOKEN_HASH
+    }
+
+    /// The GAS account storage key `(GasToken.ID, [Prefix_Account, account])`.
+    fn gas_account_key(account: &UInt160) -> StorageKey {
+        StorageKey::new(
+            GasToken::ID,
+            crate::keys::prefixed_with_hash160(crate::NEP17_PREFIX_ACCOUNT, account),
+        )
+    }
+
+    /// Reads the GAS account balance, or `None` when the account has no entry. The
+    /// GAS account state is the base `FungibleToken.AccountState` = `Struct[Balance]`
+    /// (a single field), so `read_nep17_balance`'s field 0 is the balance.
+    fn read_gas_account(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<Option<BigInt>> {
+        let Some(item) = snapshot.get(&Self::gas_account_key(account)) else {
+            return Ok(None);
+        };
+        let state =
+            BinarySerializer::deserialize(&item.value_bytes(), &ExecutionEngineLimits::default(), None)
+                .map_err(|e| CoreError::deserialization(format!("GAS account state: {e}")))?;
+        let StackItem::Struct(fields) = state else {
+            return Err(CoreError::invalid_data("GAS account state is not a struct"));
+        };
+        let balance = fields
+            .items()
+            .first()
+            .ok_or_else(|| CoreError::invalid_data("GAS account Balance missing"))?
+            .as_int()
+            .map_err(|e| CoreError::invalid_data(format!("GAS account Balance: {e}")))?;
+        Ok(Some(balance))
+    }
+
+    /// Writes the GAS account state `Struct[Balance]` (C# `GetAndChange(...).Set`).
+    fn write_gas_account(&self, snapshot: &DataCache, account: &UInt160, balance: &BigInt) -> CoreResult<()> {
+        let item = StackItem::from_struct(vec![StackItem::from_int(balance.clone())]);
+        let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+            .map_err(|e| CoreError::serialization(format!("GAS account serialize: {e}")))?;
+        snapshot.update(Self::gas_account_key(account), StorageItem::from_bytes(bytes));
+        Ok(())
+    }
+
+    /// Deletes the GAS account entry (C# `Delete(keyFrom)` when a balance reaches 0).
+    fn delete_gas_account(&self, snapshot: &DataCache, account: &UInt160) {
+        snapshot.delete(&Self::gas_account_key(account));
+    }
+
+    /// Pure GAS-transfer balance arithmetic, mirroring C# `FungibleToken.Transfer`
+    /// with a no-op `OnBalanceChanging`. `amount` is assumed non-negative (the caller
+    /// faults on negative). `from_balance`/`to_balance` are the current balances
+    /// (`None` = no account entry).
+    fn compute_gas_transfer(
+        from_balance: Option<BigInt>,
+        to_balance: Option<BigInt>,
+        same_account: bool,
+        amount: &BigInt,
+    ) -> GasTransferOutcome {
+        if amount.is_zero() {
+            // C#: amount == 0 -> OnBalanceChanging no-op; no balance movement.
+            return GasTransferOutcome::NoMovement;
+        }
+        let Some(from_bal) = from_balance else {
+            return GasTransferOutcome::InsufficientBalance; // storageFrom is null
+        };
+        if &from_bal < amount {
+            return GasTransferOutcome::InsufficientBalance;
+        }
+        if same_account {
+            // C#: from == to -> OnBalanceChanging(0); no net movement.
+            return GasTransferOutcome::NoMovement;
+        }
+        let from_new = &from_bal - amount;
+        let delete_from = from_new.is_zero(); // C#: if stateFrom.Balance == amount -> Delete.
+        let to_new = to_balance.unwrap_or_else(BigInt::zero) + amount;
+        GasTransferOutcome::Move {
+            from_new,
+            delete_from,
+            to_new,
+        }
+    }
+
+    /// C# `FungibleToken.PostTransferAsync` for the transfer case (both `from`/`to`
+    /// non-null): emit the `Transfer` event, then — only when `to` is a deployed
+    /// contract — queue its `onNEP17Payment(from, amount, data)` callback (run after
+    /// this native call returns, faithful to `CallFromNativeContractAsync`).
+    fn post_transfer(
+        &self,
+        engine: &mut ApplicationEngine,
+        from: &UInt160,
+        to: &UInt160,
+        amount: &BigInt,
+        data: &[u8],
+    ) -> CoreResult<()> {
+        let gas_hash = GasToken::script_hash();
+        engine
+            .send_notification(
+                gas_hash,
+                "Transfer".to_string(),
+                vec![
+                    StackItem::from_byte_string(from.to_bytes()),
+                    StackItem::from_byte_string(to.to_bytes()),
+                    StackItem::from_int(amount.clone()),
+                ],
+            )
+            .map_err(|e| CoreError::invalid_operation(format!("GasToken::transfer notify: {e}")))?;
+
+        let is_contract = crate::ContractManagement::is_contract(&engine.snapshot_cache(), to);
+        if !is_contract {
+            return Ok(());
+        }
+        // The transfer `data` param is `Any`, so it arrives BinarySerialized; round-trip
+        // it back to the StackItem passed to onNEP17Payment.
+        let data_item = if data.is_empty() {
+            StackItem::null()
+        } else {
+            BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
+                .map_err(|e| CoreError::deserialization(format!("GasToken::transfer data: {e}")))?
+        };
+        engine.queue_contract_call_from_native(
+            gas_hash,
+            *to,
+            "onNEP17Payment",
+            vec![
+                StackItem::from_byte_string(from.to_bytes()),
+                StackItem::from_int(amount.clone()),
+                data_item,
+            ],
+        );
+        Ok(())
+    }
+
+    /// C# `GasToken.Mint` (`FungibleToken.Mint`): credits `amount` GAS to `account`,
+    /// raises the total supply, and emits `Transfer(null, account, amount)` —
+    /// queuing the recipient's `onNEP17Payment` when `call_on_payment` and the
+    /// recipient is a deployed contract. A zero amount is a no-op; a negative amount
+    /// faults. `pub(crate)` so NeoToken's reward distribution can mint GAS.
+    pub(crate) fn gas_mint(
+        &self,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+        amount: &BigInt,
+        call_on_payment: bool,
+    ) -> CoreResult<()> {
+        if amount < &BigInt::zero() {
+            return Err(CoreError::invalid_operation(
+                "GasToken::mint: amount cannot be negative",
+            ));
+        }
+        if amount.is_zero() {
+            return Ok(());
+        }
+        let snapshot = engine.snapshot_cache();
+        let balance = self.read_gas_account(&snapshot, account)?.unwrap_or_else(BigInt::zero) + amount;
+        self.write_gas_account(&snapshot, account, &balance)?;
+        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply = snapshot
+            .get(&supply_key)
+            .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+            .unwrap_or_else(BigInt::zero)
+            + amount;
+        snapshot.update(
+            supply_key,
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
+        );
+        self.post_mint(engine, account, amount, call_on_payment)
+    }
+
+    /// C# `PostTransferAsync(null, account, amount, …)` for the mint case: emit
+    /// `Transfer(null, account, amount)`, then queue `onNEP17Payment(null, amount,
+    /// null)` when `call_on_payment` and the recipient is a deployed contract.
+    fn post_mint(
+        &self,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+        amount: &BigInt,
+        call_on_payment: bool,
+    ) -> CoreResult<()> {
+        let gas_hash = GasToken::script_hash();
+        engine
+            .send_notification(
+                gas_hash,
+                "Transfer".to_string(),
+                vec![
+                    StackItem::null(),
+                    StackItem::from_byte_string(account.to_bytes()),
+                    StackItem::from_int(amount.clone()),
+                ],
+            )
+            .map_err(|e| CoreError::invalid_operation(format!("GasToken::mint notify: {e}")))?;
+        if !call_on_payment {
+            return Ok(());
+        }
+        if !crate::ContractManagement::is_contract(&engine.snapshot_cache(), account) {
+            return Ok(());
+        }
+        engine.queue_contract_call_from_native(
+            gas_hash,
+            *account,
+            "onNEP17Payment",
+            vec![
+                StackItem::null(),
+                StackItem::from_int(amount.clone()),
+                StackItem::null(),
+            ],
+        );
+        Ok(())
+    }
+
+    /// C# `GasToken.Burn` (`FungibleToken.Burn`): debits `amount` GAS from
+    /// `account` (deleting the entry when the balance reaches zero, like C#'s
+    /// `Delete` on `Balance == amount`), lowers the total supply, and emits
+    /// `Transfer(account, null, amount)` — no `onNEP17Payment` callback (C# burns
+    /// with `callOnPayment: false`). A zero amount is a no-op; a negative amount
+    /// or an insufficient balance faults (C# throws on `Balance < amount`, and a
+    /// missing account entry NREs on the null-forgiving `GetAndChange`).
+    /// `pub(crate)` so NeoToken's Echidna `onNEP17Payment` can burn the
+    /// register-price GAS it receives.
+    pub(crate) fn gas_burn(
+        &self,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+        amount: &BigInt,
+    ) -> CoreResult<()> {
+        if amount < &BigInt::zero() {
+            return Err(CoreError::invalid_operation(
+                "GasToken::burn: amount cannot be negative",
+            ));
+        }
+        if amount.is_zero() {
+            return Ok(());
+        }
+        let snapshot = engine.snapshot_cache();
+        let balance = self.read_gas_account(&snapshot, account)?.unwrap_or_else(BigInt::zero);
+        if &balance < amount {
+            return Err(CoreError::invalid_operation(format!(
+                "GasToken::burn: insufficient balance {balance} to burn {amount}"
+            )));
+        }
+        if &balance == amount {
+            self.delete_gas_account(&snapshot, account);
+        } else {
+            self.write_gas_account(&snapshot, account, &(&balance - amount))?;
+        }
+        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply = snapshot
+            .get(&supply_key)
+            .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+            .unwrap_or_else(BigInt::zero)
+            - amount;
+        snapshot.update(
+            supply_key,
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
+        );
+        engine
+            .send_notification(
+                GasToken::script_hash(),
+                "Transfer".to_string(),
+                vec![
+                    StackItem::from_byte_string(account.to_bytes()),
+                    StackItem::null(),
+                    StackItem::from_int(amount.clone()),
+                ],
+            )
+            .map_err(|e| CoreError::invalid_operation(format!("GasToken::burn notify: {e}")))
     }
 
     /// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: reads the `Balance`
@@ -371,9 +375,9 @@ impl GasToken {
         }
 
         let snapshot = engine.snapshot_cache();
-        let from_balance = read_gas_account(&snapshot, from)?;
-        let to_balance = read_gas_account(&snapshot, to)?;
-        match compute_gas_transfer(from_balance, to_balance, from == to, amount) {
+        let from_balance = GasToken::new().read_gas_account(&snapshot, from)?;
+        let to_balance = GasToken::new().read_gas_account(&snapshot, to)?;
+        match Self::compute_gas_transfer(from_balance, to_balance, from == to, amount) {
             GasTransferOutcome::InsufficientBalance => return Ok(false),
             GasTransferOutcome::NoMovement => {}
             GasTransferOutcome::Move {
@@ -382,16 +386,16 @@ impl GasToken {
                 to_new,
             } => {
                 if delete_from {
-                    delete_gas_account(&snapshot, from);
+                    GasToken::new().delete_gas_account(&snapshot, from);
                 } else {
-                    write_gas_account(&snapshot, from, &from_new)?;
+                    GasToken::new().write_gas_account(&snapshot, from, &from_new)?;
                 }
-                write_gas_account(&snapshot, to, &to_new)?;
+                GasToken::new().write_gas_account(&snapshot, to, &to_new)?;
             }
         }
 
         // PostTransfer: emit Transfer + (if `to` is a contract) onNEP17Payment.
-        post_transfer(engine, from, to, amount, data)?;
+        GasToken::new().post_transfer(engine, from, to, amount, data)?;
         Ok(true)
     }
 }
@@ -493,8 +497,8 @@ impl NativeContract for GasToken {
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let standby_validators = engine.protocol_settings().standby_validators();
         let initial = BigInt::from(engine.protocol_settings().initial_gas_distribution);
-        let account = crate::neo_token::bft_address(&standby_validators)?;
-        gas_mint(engine, &account, &initial, false)
+        let account = crate::NeoToken::bft_address(&standby_validators)?;
+        self.gas_mint(engine, &account, &initial, false)
     }
 
     /// C# `GasToken.OnPersistAsync` (GasToken.cs:39-58): for every transaction
@@ -545,14 +549,14 @@ impl NativeContract for GasToken {
             let fee = system_fee.checked_add(network_fee).ok_or_else(|| {
                 CoreError::invalid_operation("GasToken::on_persist: fee overflow")
             })?;
-            gas_burn(engine, &sender, &BigInt::from(fee))?;
+            self.gas_burn(engine, &sender, &BigInt::from(fee))?;
             total_network_fee = total_network_fee.checked_add(network_fee).ok_or_else(|| {
                 CoreError::invalid_operation("GasToken::on_persist: network fee overflow")
             })?;
             if let Some(nkeys) = notary_nkeys {
                 // C# `(notaryAssisted.NKeys + 1) * Policy.GetAttributeFeeV1(
                 // snapshot, (byte)notaryAssisted.Type)`.
-                let per_key = crate::policy_contract::attribute_fee(
+                let per_key = crate::PolicyContract::new().attribute_fee(
                     &engine.snapshot_cache(),
                     TransactionAttributeType::NotaryAssisted.to_byte(),
                     true,
@@ -567,7 +571,8 @@ impl NativeContract for GasToken {
         let validators_count =
             usize::try_from(engine.protocol_settings().validators_count).unwrap_or(0);
         let snapshot = engine.snapshot_cache();
-        let validators = crate::neo_token::next_block_validators(&snapshot, validators_count)?;
+        let validators =
+            crate::NeoToken::new().next_block_validators(&snapshot, validators_count)?;
         let primary_key = validators.get(primary_index).ok_or_else(|| {
             CoreError::invalid_operation(format!(
                 "GasToken::on_persist: primary index {primary_index} outside the validator set"
@@ -576,7 +581,7 @@ impl NativeContract for GasToken {
         let primary = UInt160::from_script(&Contract::create_signature_redeem_script(
             primary_key.clone(),
         ));
-        gas_mint(engine, &primary, &BigInt::from(total_network_fee), false)
+        self.gas_mint(engine, &primary, &BigInt::from(total_network_fee), false)
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -676,28 +681,28 @@ mod tests {
 
         // amount == 0 -> no movement (succeeds, emits) regardless of balances.
         assert_eq!(
-            compute_gas_transfer(None, None, false, &BigInt::zero()),
+            GasToken::compute_gas_transfer(None, None, false, &BigInt::zero()),
             GasTransferOutcome::NoMovement
         );
 
         // amount > 0, from has no account -> insufficient.
         assert_eq!(
-            compute_gas_transfer(None, None, false, &amt),
+            GasToken::compute_gas_transfer(None, None, false, &amt),
             GasTransferOutcome::InsufficientBalance
         );
         // amount > 0, from underfunded -> insufficient.
         assert_eq!(
-            compute_gas_transfer(Some(BigInt::from(99)), None, false, &amt),
+            GasToken::compute_gas_transfer(Some(BigInt::from(99)), None, false, &amt),
             GasTransferOutcome::InsufficientBalance
         );
         // from == to with sufficient balance -> no movement.
         assert_eq!(
-            compute_gas_transfer(Some(BigInt::from(100)), Some(BigInt::from(100)), true, &amt),
+            GasToken::compute_gas_transfer(Some(BigInt::from(100)), Some(BigInt::from(100)), true, &amt),
             GasTransferOutcome::NoMovement
         );
         // Exact balance -> deduct to zero deletes the from-entry; to credited.
         assert_eq!(
-            compute_gas_transfer(Some(BigInt::from(100)), None, false, &amt),
+            GasToken::compute_gas_transfer(Some(BigInt::from(100)), None, false, &amt),
             GasTransferOutcome::Move {
                 from_new: BigInt::zero(),
                 delete_from: true,
@@ -706,7 +711,7 @@ mod tests {
         );
         // Partial balance -> from keeps the remainder; existing to is added to.
         assert_eq!(
-            compute_gas_transfer(Some(BigInt::from(250)), Some(BigInt::from(7)), false, &amt),
+            GasToken::compute_gas_transfer(Some(BigInt::from(250)), Some(BigInt::from(7)), false, &amt),
             GasTransferOutcome::Move {
                 from_new: BigInt::from(150),
                 delete_from: false,
@@ -721,10 +726,10 @@ mod tests {
         let cache = DataCache::new(false);
         let account = UInt160::from_bytes(&[3u8; 20]).unwrap();
 
-        assert!(read_gas_account(&cache, &account).unwrap().is_none());
-        write_gas_account(&cache, &account, &BigInt::from(12345)).unwrap();
+        assert!(GasToken::new().read_gas_account(&cache, &account).unwrap().is_none());
+        GasToken::new().write_gas_account(&cache, &account, &BigInt::from(12345)).unwrap();
         assert_eq!(
-            read_gas_account(&cache, &account).unwrap(),
+            GasToken::new().read_gas_account(&cache, &account).unwrap(),
             Some(BigInt::from(12345))
         );
         // The single-field Struct[Balance] layout is what read_nep17_balance reads.
@@ -732,8 +737,8 @@ mod tests {
             crate::read_nep17_balance(&cache, GasToken::ID, &account).unwrap(),
             BigInt::from(12345)
         );
-        delete_gas_account(&cache, &account);
-        assert!(read_gas_account(&cache, &account).unwrap().is_none());
+        GasToken::new().delete_gas_account(&cache, &account);
+        assert!(GasToken::new().read_gas_account(&cache, &account).unwrap().is_none());
     }
 
     #[test]
@@ -772,7 +777,7 @@ mod tests {
 
         let cache = DataCache::new(false);
         let account = UInt160::from_bytes(&[9u8; 20]).unwrap();
-        write_gas_account(&cache, &account, &BigInt::from(100)).unwrap();
+        GasToken::new().write_gas_account(&cache, &account, &BigInt::from(100)).unwrap();
         let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
         cache.add(
             supply_key.clone(),
@@ -791,18 +796,18 @@ mod tests {
         .expect("engine builds");
 
         // Negative -> fault; zero -> no-op (no event, no state change).
-        assert!(gas_burn(&mut engine, &account, &BigInt::from(-1)).is_err());
-        gas_burn(&mut engine, &account, &BigInt::from(0)).unwrap();
+        assert!(GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(-1)).is_err());
+        GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(0)).unwrap();
         assert!(engine.notifications().is_empty());
         assert_eq!(
-            read_gas_account(&snapshot, &account).unwrap(),
+            GasToken::new().read_gas_account(&snapshot, &account).unwrap(),
             Some(BigInt::from(100))
         );
 
         // Partial burn: balance and supply shrink, Transfer(account, null, 30).
-        gas_burn(&mut engine, &account, &BigInt::from(30)).unwrap();
+        GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(30)).unwrap();
         assert_eq!(
-            read_gas_account(&snapshot, &account).unwrap(),
+            GasToken::new().read_gas_account(&snapshot, &account).unwrap(),
             Some(BigInt::from(70))
         );
         assert_eq!(
@@ -812,16 +817,16 @@ mod tests {
         assert_eq!(engine.notifications().len(), 1);
 
         // Over-burn -> fault, state unchanged.
-        assert!(gas_burn(&mut engine, &account, &BigInt::from(71)).is_err());
+        assert!(GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(71)).is_err());
         assert_eq!(
-            read_gas_account(&snapshot, &account).unwrap(),
+            GasToken::new().read_gas_account(&snapshot, &account).unwrap(),
             Some(BigInt::from(70))
         );
 
         // Full burn deletes the account entry; the supply reaches zero (stored
         // as the canonical empty-bytes BigInteger).
-        gas_burn(&mut engine, &account, &BigInt::from(70)).unwrap();
-        assert!(read_gas_account(&snapshot, &account).unwrap().is_none());
+        GasToken::new().gas_burn(&mut engine, &account, &BigInt::from(70)).unwrap();
+        assert!(GasToken::new().read_gas_account(&snapshot, &account).unwrap().is_none());
         assert_eq!(
             BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
             BigInt::from(0)
@@ -842,7 +847,9 @@ mod persist_tests {
     use neo_payloads::{Block, Header, NotaryAssisted, Signer, Transaction};
     use neo_primitives::{TriggerType, WitnessScope};
 
-    use crate::test_support::{hex, sample_committee, seed_committee, NEO_PREFIX_COMMITTEE, POLICY_PREFIX_ATTRIBUTE_FEE};
+    use crate::test_support::{
+        NEO_PREFIX_COMMITTEE, POLICY_PREFIX_ATTRIBUTE_FEE, hex, sample_committee, seed_committee,
+    };
 
     /// The signature-contract address of `points[primary]` after the C#
     /// `GetNextBlockValidators` ordering (take ValidatorsCount, sort ascending).
@@ -877,7 +884,7 @@ mod persist_tests {
     }
 
     fn seed_gas(cache: &DataCache, account: &UInt160, balance: i64) {
-        write_gas_account(cache, account, &BigInt::from(balance)).unwrap();
+        GasToken::new().write_gas_account(cache, account, &BigInt::from(balance)).unwrap();
         let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
         let supply = cache
             .get(&supply_key)
@@ -914,7 +921,7 @@ mod persist_tests {
 
         NativeContract::initialize(&GasToken::new(), &mut engine).expect("initialize");
 
-        let bft = crate::neo_token::bft_address(&settings.standby_validators()).unwrap();
+        let bft = crate::NeoToken::bft_address(&settings.standby_validators()).unwrap();
         let expected = BigInt::from(settings.initial_gas_distribution);
         assert_eq!(
             balance(&snapshot, &bft),
