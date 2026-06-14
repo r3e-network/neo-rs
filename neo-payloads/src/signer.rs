@@ -17,8 +17,8 @@ use neo_io::serializable::helper::{
     get_var_size_serializable_slice, serialize_array, serialize_array_with,
 };
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_p2p::witness_rule::WitnessCondition;
-use neo_p2p::witness_rule::{WitnessRule, WitnessRuleAction};
+use crate::witness_rule::WitnessCondition;
+use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use neo_primitives::WitnessScope;
 use neo_primitives::{UINT160_SIZE, UInt160};
 use neo_vm::Interoperable;
@@ -390,7 +390,7 @@ impl Serializable for Signer {
                 // AND 65-byte uncompressed encodings. Reading a fixed 33 bytes here
                 // would misalign the stream on an uncompressed point and reject a
                 // transaction C# accepts (Signer is part of the tx hash preimage).
-                let encoded = neo_p2p::witness_rule::helpers::read_group_bytes(reader)?;
+                let encoded = crate::witness_rule::helpers::read_group_bytes(reader)?;
                 ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &encoded)
                     .map_err(|e| IoError::invalid_data(e.to_string()))
             })?;

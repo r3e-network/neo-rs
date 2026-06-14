@@ -107,7 +107,7 @@ use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::NotifyEventArgs;
 use crate::StorageContext;
 use crate::{NativeContract, NativeContractsCache, NativeRegistry};
-use neo_p2p::WitnessCondition;
+use neo_payloads::WitnessCondition;
 use neo_primitives::TriggerType;
 use neo_primitives::Verifiable;
 use neo_primitives::WitnessRuleAction;

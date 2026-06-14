@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
 use neo_crypto::{ECCurve, ECPoint};
-use neo_p2p::witness_rule::WitnessRule;
+use neo_payloads::witness_rule::WitnessRule;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_payloads::witness::Witness;

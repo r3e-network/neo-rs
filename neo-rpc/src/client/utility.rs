@@ -359,7 +359,7 @@ mod tests {
     use super::*;
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
-    use neo_p2p::WitnessCondition;
+    use neo_payloads::WitnessCondition;
     use neo_payloads::OracleResponseCode;
     use neo_payloads::{Signer, TransactionAttribute};
     use neo_primitives::{ADDRESS_SIZE, UInt256, WitnessScope};
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn transaction_roundtrip_with_custom_signer() {
-        use neo_p2p::witness_rule::WitnessRuleAction;
+        use neo_payloads::WitnessRuleAction;
 
         let mut tx = Transaction::new();
         tx.set_nonce(999);

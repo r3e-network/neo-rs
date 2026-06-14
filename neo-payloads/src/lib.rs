@@ -153,6 +153,8 @@ pub mod verifiable_ext;
 pub mod verify_result;
 /// Witness attached to verifiable payloads.
 pub mod witness;
+/// Witness rules and conditions used by transaction signers.
+pub mod witness_rule;
 /// Witness scope flags (re-exported from `neo-primitives`).
 pub mod witness_scope {
     pub use neo_primitives::{InvalidWitnessScopeError, WitnessScope};
@@ -196,7 +198,7 @@ pub use witness::Witness;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // Re-exports of the protocol enums.
-pub use neo_p2p::witness_rule::{
+pub use witness_rule::{
     ToStackItem, WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction,
 };
 pub use neo_primitives::{InventoryType, OracleResponseCode, TransactionAttributeType};

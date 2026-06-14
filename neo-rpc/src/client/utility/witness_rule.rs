@@ -1,7 +1,7 @@
 use neo_config::ProtocolSettings;
 use neo_primitives::{WitnessRuleAction};
 use neo_crypto::{ECCurve, ECPoint};
-use neo_p2p::{WitnessCondition, WitnessRule};
+use neo_payloads::{WitnessCondition, WitnessRule};
 use neo_serialization::json::{JArray, JObject};
 
 pub fn rule_from_json(
