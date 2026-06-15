@@ -2219,12 +2219,18 @@ mod tests {
         let cache = DataCache::new(false);
         let hash = UInt160::from_bytes(&[7u8; 20]).unwrap();
         let policy = PolicyContract::new();
-        assert!(!<PolicyContract as NativeContract>::is_contract_blocked(&policy, &cache, &hash).unwrap());
+        assert!(
+            !<PolicyContract as NativeContract>::is_contract_blocked(&policy, &cache, &hash)
+                .unwrap()
+        );
         cache.add(
             PolicyContract::blocked_account_key(&hash),
             StorageItem::from_bytes(vec![]),
         );
-        assert!(<PolicyContract as NativeContract>::is_contract_blocked(&policy, &cache, &hash).unwrap());
+        assert!(
+            <PolicyContract as NativeContract>::is_contract_blocked(&policy, &cache, &hash)
+                .unwrap()
+        );
     }
 
     #[test]

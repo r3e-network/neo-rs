@@ -305,7 +305,10 @@ mod tests {
         let as_tx = tx
             .as_transaction()
             .expect("Transaction::as_transaction must return Some (C# parity)");
-        assert!(std::ptr::eq(as_tx, &tx), "must return the transaction itself");
+        assert!(
+            std::ptr::eq(as_tx, &tx),
+            "must return the transaction itself"
+        );
         assert_eq!(as_tx.signers().len(), 1);
     }
 
