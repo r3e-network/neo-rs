@@ -41,6 +41,9 @@ pub mod attestation;
 pub mod enclave;
 pub mod error;
 pub mod mempool;
+/// AWS Nitro Enclaves backend (EXPERIMENTAL, `nitro` feature, off by default).
+#[cfg(feature = "nitro")]
+pub mod nitro;
 #[cfg(feature = "sgx-hw")]
 pub(crate) mod sgx;
 pub mod wallet;

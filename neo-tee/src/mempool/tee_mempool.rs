@@ -82,7 +82,7 @@ pub struct TeeMempool {
 }
 
 /// Cryptographic proof of fair ordering
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrderingProof {
     /// Merkle root of ordered transaction hashes
     pub merkle_root: [u8; 32],

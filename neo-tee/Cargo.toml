@@ -21,6 +21,11 @@ simulation = []
 sgx-hw = ["sgx-isa"]
 # Enable remote attestation
 attestation = ["sgx-hw"]
+# EXPERIMENTAL: AWS Nitro Enclaves backend (host-side signer + attestation
+# parser + vsock protocol + in-enclave fair-ordering proofs). Off by default.
+# Pulls CBOR (attestation parsing) and the consensus signer trait. The
+# hardware/PKI/KMS parts are isolated and flagged inside `src/nitro/`.
+nitro = ["dep:ciborium", "dep:neo-consensus", "dep:neo-primitives"]
 
 [dependencies]
 # Core dependencies
@@ -43,9 +48,19 @@ libloading = "0.8"
 # Workspace crypto primitives (secp256r1 + hash160)
 neo-crypto = { workspace = true }
 neo-error = { workspace = true }
+bincode = { workspace = true }
 
 # SGX dependencies (optional)
 sgx-isa = { version = "0.4", optional = true }
+
+# Nitro backend dependencies (optional; enabled by the `nitro` feature)
+# CBOR for COSE_Sign1 / NSM attestation document parsing (pure Rust).
+ciborium = { version = "0.2", optional = true }
+# ConsensusSigner trait the NitroEnclaveSigner implements. Acyclic:
+# neo-consensus does NOT depend on neo-tee.
+neo-consensus = { workspace = true, optional = true }
+# UInt160 script hash for can_sign / signer identity.
+neo-primitives = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
