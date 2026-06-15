@@ -294,6 +294,22 @@ mod tests {
     }
 
     #[test]
+    fn transaction_is_its_own_verifiable_container() {
+        use crate::VerifiableExt;
+        let tx = transaction_with_script(vec![OpCode::NOP.byte()]);
+        // Witness verification must install the real Transaction (with its
+        // signers/scopes) as the engine's script container — C# Helper.VerifyWitness
+        // passes the IVerifiable itself. Without this override the default returns
+        // None, the engine falls back to a hash-only wrapper, and CheckWitness can't
+        // see signers during verification.
+        let as_tx = tx
+            .as_transaction()
+            .expect("Transaction::as_transaction must return Some (C# parity)");
+        assert!(std::ptr::eq(as_tx, &tx), "must return the transaction itself");
+        assert_eq!(as_tx.signers().len(), 1);
+    }
+
+    #[test]
     fn try_get_hash_data_rejects_oversized_script() {
         let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
 

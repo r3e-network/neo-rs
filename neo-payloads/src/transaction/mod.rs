@@ -139,5 +139,16 @@ impl crate::VerifiableExt for Transaction {
     fn witnesses_mut(&mut self) -> Vec<&mut crate::Witness> {
         Vec::new()
     }
+    /// A transaction is its own verification script container. Returning `Some`
+    /// here makes witness verification install the real `Transaction` (with its
+    /// signers, witness scopes/rules, and OracleResponse attributes) as the
+    /// engine's script container — matching C# `Helper.VerifyWitness`, which
+    /// passes the `IVerifiable` itself. Without this override the engine would
+    /// fall back to a hash-only wrapper and `CheckWitness` could not see the
+    /// signers during verification, wrongly rejecting contract-account,
+    /// witness-rule, and OracleResponse transactions that C# accepts.
+    fn as_transaction(&self) -> Option<&crate::Transaction> {
+        Some(self)
+    }
 }
 mod serialization;
