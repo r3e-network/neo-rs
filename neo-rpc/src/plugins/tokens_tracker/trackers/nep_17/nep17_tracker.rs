@@ -172,10 +172,20 @@ impl Nep17Tracker {
             .and_then(|_| engine.execute())
             .is_err()
         {
+            TrackerBase::log(self.track_name(), "balanceOf fault", LogLevel::Warning);
             return;
         }
 
-        let Ok(balance_item) = engine.peek(0) else {
+        // Mirror C# Nep17Tracker.SaveNep17Balance and the Nep11 path: guard against
+        // a faulted VM or an empty result stack before reading the balance, and read
+        // the returned value from the result stack (where top-level returns land),
+        // not the current execution context (which is empty once the script returns).
+        if engine.state().contains(VMState::FAULT) || engine.result_stack().is_empty() {
+            TrackerBase::log(self.track_name(), "balanceOf fault", LogLevel::Warning);
+            return;
+        }
+
+        let Ok(balance_item) = engine.result_stack().peek(0) else {
             return;
         };
         let Ok(balance) = balance_item.as_integer() else {

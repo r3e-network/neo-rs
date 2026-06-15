@@ -99,16 +99,25 @@ impl StoreSnapshot for MemorySnapshot {
 
     fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
         {
-            // Apply write batch to the store
+            // Apply write batch to the store.
             let batch = self.write_batch.read();
-            // If the underlying store is a MemoryStore, apply batch directly.
-            if let Some(mem) = self.store.as_any().downcast_ref::<MemoryStore>() {
-                mem.apply_batch(&batch);
+            // The underlying store must be a MemoryStore; otherwise the pending
+            // writes have nowhere to go. Fail loudly instead of silently
+            // discarding the batch, which would cause undetected data loss.
+            match self.store.as_any().downcast_ref::<MemoryStore>() {
+                Some(mem) => mem.apply_batch(&batch),
+                None => {
+                    return Err(crate::error::StorageError::CommitFailed(
+                        "MemorySnapshot::try_commit: underlying store is not a MemoryStore; \
+                         pending writes were not applied"
+                            .to_string(),
+                    ));
+                }
             }
             // drop read guard before acquiring write lock
         }
 
-        // Clear the write batch
+        // Only clear the write batch after the batch was successfully applied.
         self.write_batch.write().clear();
 
         Ok(())

@@ -1,6 +1,7 @@
 use super::{
     read_only_store::ReadOnlyStore, store_snapshot::StoreSnapshot, write_store::WriteStore,
 };
+use crate::error::StorageResult;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -23,7 +24,12 @@ pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + An
     fn disable_fast_sync_mode(&self) {}
 
     /// Flushes pending writes to durable storage when supported.
-    fn flush(&self) {}
+    ///
+    /// Returns an error if the backend fails to persist pending writes so that
+    /// callers can react to durability failures instead of silently losing data.
+    fn flush(&self) -> StorageResult<()> {
+        Ok(())
+    }
 
     /// Downcast support for concrete implementations.
     fn as_any(&self) -> &dyn Any;

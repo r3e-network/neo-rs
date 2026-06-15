@@ -251,11 +251,12 @@ impl Store for RocksDbStore {
         RocksDbStore::disable_fast_sync_mode(self);
     }
 
-    fn flush(&self) {
-        if let Err(err) = self.flush_batch_writes() {
-            warn!(target: "neo", error = %err, "failed to flush pending RocksDB batch writes");
-        }
+    fn flush(&self) -> StorageResult<()> {
+        // Propagate batch-write failures so callers can react to durability loss.
+        self.flush_batch_writes()?;
+        // flush_memtables logs WAL/memtable errors internally (best-effort).
         self.flush_memtables();
+        Ok(())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
