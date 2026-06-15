@@ -41,8 +41,6 @@ use neo_consensus::ConsensusSigner;
 use neo_consensus::error::ConsensusError;
 use neo_crypto::{Crypto, Secp256r1Crypto};
 use neo_primitives::UInt160;
-use p256::ecdsa::Signature;
-use p256::ecdsa::signature::Error as SigError;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -436,30 +434,11 @@ impl ConsensusSigner for Pkcs11Signer {
 /// * `SigFormat::RawRs` (AWS/Azure): parse with `Signature::from_slice`.
 /// * Both paths: `normalize_s()` → low half-order `s`.
 fn finalize_signature(raw: &[u8], format: SigFormat) -> HsmResult<Vec<u8>> {
-    let sig: Signature = match format {
-        SigFormat::Der => Signature::from_der(raw)
-            .map_err(|e: SigError| HsmError::SigDecode(format!("DER decode: {e}")))?,
-        SigFormat::RawRs => {
-            if raw.len() != 64 {
-                return Err(HsmError::UnexpectedSigLen {
-                    expected: 64,
-                    got: raw.len(),
-                });
-            }
-            Signature::from_slice(raw)
-                .map_err(|e: SigError| HsmError::SigDecode(format!("raw r||s parse: {e}")))?
-        }
-    };
-
-    // Low-s normalize: if s > n/2, replace with n - s (both verify, but low-s
-    // is canonical and matches C# Crypto.Sign output).
-    let sig = sig.normalize_s().unwrap_or(sig);
-    let bytes: [u8; 64] = sig.to_bytes().into();
-
-    // Final double-check via neo-crypto's own normalizer for belt-and-suspenders.
-    let normalized = Secp256r1Crypto::normalize_low_s(&bytes)
-        .map_err(|e| HsmError::Normalize(format!("{e}")))?;
-    Ok(normalized.to_vec())
+    // Shared canonicalization (DER-decode if needed + low-s) lives in neo-crypto
+    // so every external signer backend (PKCS#11, Ledger, …) reuses one path.
+    Secp256r1Crypto::canonicalize_signature(raw, matches!(format, SigFormat::Der))
+        .map(|sig| sig.to_vec())
+        .map_err(|e| HsmError::SigDecode(format!("{e}")))
 }
 
 /// Decode a PKCS#11 `CKA_EC_POINT` attribute value.

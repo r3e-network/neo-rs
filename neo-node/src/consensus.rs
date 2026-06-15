@@ -279,6 +279,10 @@ fn build_hsm_consensus_setup(
         "azure-cloud-hsm" | "azure" => neo_hsm::HsmProvider::AzureCloudHsm,
         "azure-dedicated-hsm" => neo_hsm::HsmProvider::AzureDedicatedHsm,
         "gcp-cloud-hsm" | "gcp" => neo_hsm::HsmProvider::GcpCloudHsm,
+        "yubihsm2" | "yubihsm" => neo_hsm::HsmProvider::YubiHsm2,
+        "nshield" => neo_hsm::HsmProvider::NShield,
+        "softhsm2" | "softhsm" => neo_hsm::HsmProvider::SoftHsm2,
+        "utimaco" => neo_hsm::HsmProvider::Utimaco,
         "generic" | "generic-pkcs11" => neo_hsm::HsmProvider::GenericPkcs11,
         other => anyhow::bail!("[consensus.hsm].provider {other:?} is not recognized"),
     };

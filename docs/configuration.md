@@ -127,7 +127,7 @@ present it takes precedence over `private_key_hex`.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `provider` | string | — | `aws`, `azure-cloud-hsm`, `azure-dedicated-hsm`, `gcp-cloud-hsm`, or `generic`. Selects the default PKCS#11 library and signature format. |
+| `provider` | string | — | `aws`, `azure-cloud-hsm`, `azure-dedicated-hsm`, `gcp-cloud-hsm`, `yubihsm2`, `nshield`, `softhsm2`, `utimaco`, or `generic`. Selects the default PKCS#11 library and signature format; use `generic` + `library_path` for any other PKCS#11 HSM. |
 | `library_path` | string | provider default | Path to the PKCS#11 `.so` to load. |
 | `slot` | int | first with token | PKCS#11 slot number. |
 | `token_label` | string | none | Token label to match when `slot` is omitted. |

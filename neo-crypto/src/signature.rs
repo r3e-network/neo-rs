@@ -208,6 +208,35 @@ impl Secp256r1Crypto {
         Ok(normalized.to_bytes().into())
     }
 
+    /// Canonicalizes a raw ECDSA signature produced by an *external* secp256r1
+    /// signer (HSM, hardware wallet) into Neo's 64-byte low-s `r‖s` form.
+    ///
+    /// `der_encoded` selects the input encoding:
+    /// * `true` — ASN.1 DER `SEQUENCE { INTEGER r, INTEGER s }` (e.g. GCP
+    ///   `libkmsp11`).
+    /// * `false` — a raw 64-byte `r‖s` pair (AWS/Azure CloudHSM, most PKCS#11
+    ///   `CKM_ECDSA` tokens, Ledger).
+    ///
+    /// The result is low-s normalized to match C# `Crypto.Sign` output, so any
+    /// backend (PKCS#11, Ledger, …) can share one verified post-processing path.
+    pub fn canonicalize_signature(raw: &[u8], der_encoded: bool) -> CryptoResult<[u8; 64]> {
+        let sig = if der_encoded {
+            Signature::from_der(raw)
+                .map_err(|e| CryptoError::invalid_signature(format!("DER decode: {e}")))?
+        } else {
+            if raw.len() != 64 {
+                return Err(CryptoError::invalid_signature(format!(
+                    "raw r||s signature must be 64 bytes, got {}",
+                    raw.len()
+                )));
+            }
+            Signature::from_slice(raw)
+                .map_err(|e| CryptoError::invalid_signature(format!("raw r||s parse: {e}")))?
+        };
+        let normalized = sig.normalize_s().unwrap_or(sig);
+        Ok(normalized.to_bytes().into())
+    }
+
     /// Verifies a secp256r1 signature.
     pub fn verify(message: &[u8], signature: &[u8; 64], public_key: &[u8]) -> CryptoResult<bool> {
         let public_key = P256PublicKey::from_sec1_bytes(public_key)
@@ -538,6 +567,28 @@ impl Crypto {
 mod tests {
     use super::{NEOFS_ECDSA_SHA512_PREFIX, Secp256k1Crypto, Secp256r1Crypto};
     use crate::{Crypto, ECCurve, HashAlgorithm};
+
+    #[test]
+    fn canonicalize_signature_raw_der_and_errors() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let message = b"canonicalize test";
+        let raw = Secp256r1Crypto::sign(message, &private_key).unwrap();
+
+        // Raw r||s path: canonicalizes to a low-s 64-byte sig that still verifies.
+        let canon = Secp256r1Crypto::canonicalize_signature(&raw, false).unwrap();
+        assert_eq!(canon.len(), 64);
+        assert_eq!(canon, Secp256r1Crypto::normalize_low_s(&raw).unwrap());
+        assert!(Secp256r1Crypto::verify(message, &canon, &public_key).unwrap());
+
+        // DER path (e.g. GCP libkmsp11) yields the same canonical r||s.
+        let der = p256::ecdsa::Signature::from_slice(&raw).unwrap().to_der();
+        let from_der = Secp256r1Crypto::canonicalize_signature(der.as_bytes(), true).unwrap();
+        assert_eq!(from_der, canon);
+
+        // A wrong-length raw signature is rejected, not silently accepted.
+        assert!(Secp256r1Crypto::canonicalize_signature(&[0u8; 10], false).is_err());
+    }
 
     #[test]
     fn test_secp256k1_operations() {

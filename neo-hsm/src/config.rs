@@ -37,7 +37,20 @@ pub enum HsmProvider {
     /// decoded to raw `r‖s` before returning.
     GcpCloudHsm,
 
-    /// Any other PKCS#11 HSM (SoftHSM2, nShield, Generic Luna, etc.).
+    /// YubiHSM 2 via `yubihsm_pkcs11.so`. Sig format: raw `r‖s`.
+    YubiHsm2,
+
+    /// Entrust (Thales) nShield via `libcknfast.so`. Sig format: raw `r‖s`.
+    NShield,
+
+    /// SoftHSM2 (`libsofthsm2.so`) — software PKCS#11 for dev/testing the HSM
+    /// path without hardware. Sig format: raw `r‖s`.
+    SoftHsm2,
+
+    /// Utimaco SecurityServer via `libcs_pkcs11_R3.so`. Sig format: raw `r‖s`.
+    Utimaco,
+
+    /// Any other PKCS#11 HSM (Generic Luna, nCipher, etc.).
     ///
     /// The caller supplies the full profile via [`HsmConfig`].
     GenericPkcs11,
@@ -89,6 +102,22 @@ pub fn profile(provider: HsmProvider) -> ProviderProfile {
             default_library: "/opt/kmsp11/libkmsp11.so",
             // GCP's libkmsp11 returns DER-encoded signatures, not raw r||s.
             signature_format: SigFormat::Der,
+        },
+        HsmProvider::YubiHsm2 => ProviderProfile {
+            default_library: "/usr/lib/pkcs11/yubihsm_pkcs11.so",
+            signature_format: SigFormat::RawRs,
+        },
+        HsmProvider::NShield => ProviderProfile {
+            default_library: "/opt/nfast/toolkits/pkcs11/libcknfast.so",
+            signature_format: SigFormat::RawRs,
+        },
+        HsmProvider::SoftHsm2 => ProviderProfile {
+            default_library: "/usr/lib/softhsm/libsofthsm2.so",
+            signature_format: SigFormat::RawRs,
+        },
+        HsmProvider::Utimaco => ProviderProfile {
+            default_library: "/opt/utimaco/lib/libcs_pkcs11_R3.so",
+            signature_format: SigFormat::RawRs,
         },
         HsmProvider::GenericPkcs11 => ProviderProfile {
             default_library: "/usr/lib/libpkcs11.so",
