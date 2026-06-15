@@ -2539,6 +2539,7 @@ dependencies = [
  "neo-consensus",
  "neo-crypto",
  "neo-execution",
+ "neo-hsm",
  "neo-io",
  "neo-manifest",
  "neo-mempool",

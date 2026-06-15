@@ -221,6 +221,11 @@ struct ConsensusSection {
     /// key is in the protocol's validator set; otherwise it relays only.
     #[serde(default)]
     private_key_hex: Option<String>,
+    /// Optional HSM-backed consensus signing (PKCS#11). When set, the node signs
+    /// consensus messages via the HSM instead of `private_key_hex`. Requires the
+    /// node to be built with `--features hsm`.
+    #[serde(default)]
+    hsm: Option<crate::consensus::HsmKeyConfig>,
 }
 
 /// `[blockchain]`: protocol settings that affect validation / production.
@@ -741,6 +746,7 @@ async fn build_node(
         &settings,
         config.consensus.enabled,
         config.consensus.private_key_hex.as_deref(),
+        config.consensus.hsm.as_ref(),
     )?;
     let consensus_configured = consensus_setup.is_some();
     let consensus_validators = consensus_setup

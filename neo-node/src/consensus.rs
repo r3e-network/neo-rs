@@ -19,7 +19,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use neo_blockchain::{BlockchainCommand, BlockchainHandle, RuntimeEvent};
 use neo_config::ProtocolSettings;
 use neo_consensus::messages::ConsensusPayload;
-use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
+use neo_consensus::{ConsensusEvent, ConsensusService, ConsensusSigner, ValidatorInfo};
 use neo_crypto::{ECPoint, Secp256r1Crypto};
 use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, NeoToken};
@@ -29,6 +29,7 @@ use neo_primitives::{UInt160, UInt256};
 use neo_storage::persistence::DataCache;
 use neo_vm::script_builder::RedeemScript;
 use parking_lot::RwLock;
+use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -166,12 +167,48 @@ pub struct ConsensusSetup {
     pub public_key: ECPoint,
     /// This node's validator index, or `None` (observer; relay-only).
     pub my_index: Option<u8>,
-    /// This node's 32-byte secp256r1 private key.
+    /// This node's 32-byte secp256r1 software private key. Zeroed and unused
+    /// when `signer` is set (HSM-backed signing).
     pub private_key: [u8; 32],
     /// Network magic.
     pub network: u32,
     /// Target block time (ms) — the view-timeout base.
     pub ms_per_block: u64,
+    /// Optional HSM-backed signer. When `Some`, the consensus service signs via
+    /// this signer (keyed by the validator script hash) instead of `private_key`.
+    pub signer: Option<Arc<dyn ConsensusSigner>>,
+}
+
+/// `[consensus.hsm]`: HSM-backed consensus signing over PKCS#11.
+///
+/// The PIN is never stored in the TOML; it is read at startup from the
+/// `pin_env` environment variable (default `NEO_HSM_CU_PASSWORD`). Requires
+/// the node to be built with `--features hsm`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HsmKeyConfig {
+    /// `aws` | `azure-cloud-hsm` | `azure-dedicated-hsm` | `gcp-cloud-hsm` | `generic`.
+    pub provider: String,
+    /// PKCS#11 `.so` to load; defaults to the provider's library when omitted.
+    #[serde(default)]
+    pub library_path: Option<String>,
+    /// PKCS#11 slot number; first slot with a token present when omitted.
+    #[serde(default)]
+    pub slot: Option<u64>,
+    /// Token label to match when `slot` is omitted.
+    #[serde(default)]
+    pub token_label: Option<String>,
+    /// `CKA_LABEL` of the consensus private key.
+    pub key_label: String,
+    /// Optional `CKA_ID` (hex) to disambiguate keys sharing a label.
+    #[serde(default)]
+    pub key_id_hex: Option<String>,
+    /// Environment variable holding the `C_Login` PIN.
+    #[serde(default = "default_hsm_pin_env")]
+    pub pin_env: String,
+}
+
+fn default_hsm_pin_env() -> String {
+    "NEO_HSM_CU_PASSWORD".to_string()
 }
 
 /// Builds the consensus setup from the protocol settings and the `[consensus]`
@@ -181,12 +218,26 @@ pub fn build_consensus_setup(
     settings: &ProtocolSettings,
     enabled: bool,
     private_key_hex: Option<&str>,
+    hsm: Option<&HsmKeyConfig>,
 ) -> anyhow::Result<Option<ConsensusSetup>> {
     if !enabled {
         return Ok(None);
     }
+
+    let validators = build_consensus_validators(settings);
+
+    // HSM-backed signing takes precedence over a software key when configured.
+    if let Some(hsm_cfg) = hsm {
+        if private_key_hex.is_some() {
+            warn!("[consensus] both private_key_hex and [consensus.hsm] are set; using the HSM");
+        }
+        return build_hsm_consensus_setup(settings, validators, hsm_cfg);
+    }
+
     let hex_key = private_key_hex.ok_or_else(|| {
-        anyhow::anyhow!("[consensus].enabled = true requires [consensus].private_key_hex")
+        anyhow::anyhow!(
+            "[consensus].enabled = true requires [consensus].private_key_hex or [consensus.hsm]"
+        )
     })?;
     let raw = hex::decode(hex_key.trim())
         .map_err(|e| anyhow::anyhow!("invalid [consensus].private_key_hex: {e}"))?;
@@ -200,7 +251,6 @@ pub fn build_consensus_setup(
     )
     .map_err(|e| anyhow::anyhow!("failed to decode consensus public key: {e}"))?;
 
-    let validators = build_consensus_validators(settings);
     let my_index = resolve_my_index(&private_key, &validators);
     Ok(Some(ConsensusSetup {
         validators,
@@ -209,7 +259,85 @@ pub fn build_consensus_setup(
         private_key,
         network: settings.network,
         ms_per_block: u64::from(settings.milliseconds_per_block),
+        signer: None,
     }))
+}
+
+/// Connects to the configured HSM, derives this node's validator index from the
+/// HSM public key, and returns a setup whose signing is HSM-backed (the software
+/// `private_key` is left zeroed and unused).
+#[cfg(feature = "hsm")]
+fn build_hsm_consensus_setup(
+    settings: &ProtocolSettings,
+    validators: Vec<ValidatorInfo>,
+    cfg: &HsmKeyConfig,
+) -> anyhow::Result<Option<ConsensusSetup>> {
+    use std::path::PathBuf;
+
+    let provider = match cfg.provider.to_ascii_lowercase().as_str() {
+        "aws" => neo_hsm::HsmProvider::Aws,
+        "azure-cloud-hsm" | "azure" => neo_hsm::HsmProvider::AzureCloudHsm,
+        "azure-dedicated-hsm" => neo_hsm::HsmProvider::AzureDedicatedHsm,
+        "gcp-cloud-hsm" | "gcp" => neo_hsm::HsmProvider::GcpCloudHsm,
+        "generic" | "generic-pkcs11" => neo_hsm::HsmProvider::GenericPkcs11,
+        other => anyhow::bail!("[consensus.hsm].provider {other:?} is not recognized"),
+    };
+    let library_path = cfg
+        .library_path
+        .clone()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(neo_hsm::profile(provider).default_library));
+    let key_id = match &cfg.key_id_hex {
+        Some(h) => Some(
+            hex::decode(h.trim())
+                .map_err(|e| anyhow::anyhow!("[consensus.hsm].key_id_hex is not valid hex: {e}"))?,
+        ),
+        None => None,
+    };
+    let user_pin = std::env::var(&cfg.pin_env)
+        .map_err(|_| anyhow::anyhow!("[consensus.hsm] PIN env var {} is not set", cfg.pin_env))?;
+
+    let hsm_config = neo_hsm::HsmConfig {
+        provider,
+        library_path,
+        slot: cfg.slot,
+        token_label: cfg.token_label.clone(),
+        key_label: cfg.key_label.clone(),
+        key_id,
+        user_pin,
+    };
+    let signer = neo_hsm::Pkcs11Signer::connect(&hsm_config)
+        .map_err(|e| anyhow::anyhow!("HSM connect failed: {e}"))?;
+    let public_key = ECPoint::from_bytes(signer.public_key())
+        .map_err(|e| anyhow::anyhow!("HSM public key is not a valid secp256r1 point: {e}"))?;
+    let my_index = resolve_public_key_index(&public_key, &validators);
+    if my_index.is_none() {
+        warn!(
+            pubkey = %hex::encode(signer.public_key()),
+            "HSM consensus key is not in the validator set; the node will relay only"
+        );
+    }
+    info!(provider = ?cfg.provider, "HSM consensus signer connected");
+    Ok(Some(ConsensusSetup {
+        validators,
+        public_key,
+        my_index,
+        private_key: [0u8; 32],
+        network: settings.network,
+        ms_per_block: u64::from(settings.milliseconds_per_block),
+        signer: Some(Arc::new(signer)),
+    }))
+}
+
+#[cfg(not(feature = "hsm"))]
+fn build_hsm_consensus_setup(
+    _settings: &ProtocolSettings,
+    _validators: Vec<ValidatorInfo>,
+    _cfg: &HsmKeyConfig,
+) -> anyhow::Result<Option<ConsensusSetup>> {
+    anyhow::bail!(
+        "[consensus.hsm] is configured but neo-node was built without the `hsm` feature; rebuild with --features hsm"
+    )
 }
 
 // ===================== the driver =====================
@@ -498,6 +626,9 @@ pub fn spawn_consensus_driver(
         setup.private_key.to_vec(),
         event_tx,
     );
+    // When an HSM-backed signer is configured, route consensus signing through
+    // it (the software private_key above is zeroed and unused in that case).
+    service.set_signer(setup.signer.clone());
     service.set_expected_block_time(setup.ms_per_block);
 
     let driver = ConsensusDriver {
@@ -592,15 +723,15 @@ mod tests {
     fn setup_gating() {
         let settings = ProtocolSettings::default();
         assert!(
-            build_consensus_setup(&settings, false, None)
+            build_consensus_setup(&settings, false, None, None)
                 .unwrap()
                 .is_none()
         );
-        assert!(build_consensus_setup(&settings, true, None).is_err());
-        assert!(build_consensus_setup(&settings, true, Some("zz")).is_err());
+        assert!(build_consensus_setup(&settings, true, None, None).is_err());
+        assert!(build_consensus_setup(&settings, true, Some("zz"), None).is_err());
 
         let non_validator_key = hex::encode([0x11u8; 32]);
-        let setup = build_consensus_setup(&settings, true, Some(&non_validator_key))
+        let setup = build_consensus_setup(&settings, true, Some(&non_validator_key), None)
             .unwrap()
             .expect("consensus configured");
         assert!(

@@ -116,6 +116,41 @@ The shipped configs also include `auto_start`; it is parsed but not consumed.
 > Keep `private_key_hex` out of shared configs and version control. It is a
 > validator signing key.
 
+#### `[consensus.hsm]` — HSM-backed signing (optional)
+
+Instead of a software `private_key_hex`, a validator can sign consensus
+messages with a hardware security module over PKCS#11. The node never sees the
+private key — it sends each pre-hashed message to the HSM and gets back the
+signature. Requires building the node with the `hsm` feature
+(`cargo build --release -p neo-node --features hsm`). When `[consensus.hsm]` is
+present it takes precedence over `private_key_hex`.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `provider` | string | — | `aws`, `azure-cloud-hsm`, `azure-dedicated-hsm`, `gcp-cloud-hsm`, or `generic`. Selects the default PKCS#11 library and signature format. |
+| `library_path` | string | provider default | Path to the PKCS#11 `.so` to load. |
+| `slot` | int | first with token | PKCS#11 slot number. |
+| `token_label` | string | none | Token label to match when `slot` is omitted. |
+| `key_label` | string | — | `CKA_LABEL` of the consensus private key (required). |
+| `key_id_hex` | string | none | Optional `CKA_ID` (hex) to disambiguate keys sharing a label. |
+| `pin_env` | string | `NEO_HSM_CU_PASSWORD` | Environment variable holding the `C_Login` PIN. |
+
+The PIN is **never** stored in the TOML — it is read at startup from the
+`pin_env` environment variable (for AWS/Azure Cloud HSM the value is
+`"<CU_user>:<password>"`; for GCP it is empty and credentials come from ADC).
+The node fails fast at startup if the HSM cannot be reached.
+
+```toml
+[consensus]
+enabled = true
+
+[consensus.hsm]
+provider = "aws"
+key_label = "neo-consensus-validator-1"
+# pin_env defaults to NEO_HSM_CU_PASSWORD; export it before starting the node:
+#   export NEO_HSM_CU_PASSWORD="crypto_user:hunter2"
+```
+
 ### `[blockchain]`
 
 Protocol limits that override the selected preset.
