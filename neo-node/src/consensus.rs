@@ -191,7 +191,14 @@ pub struct ConsensusSetup {
 /// The PIN is never stored in the TOML; it is read at startup from the
 /// `pin_env` environment variable (default `NEO_HSM_CU_PASSWORD`). Requires
 /// the node to be built with `--features hsm`.
+//
+// The fields below are deserialized from the `[consensus.hsm]` TOML table in
+// every build, but they are only *read* by the `hsm` feature's signer code.
+// Without that feature enabled they have no consumers, so we silence the
+// dead-code lint: the struct is the configuration schema, and dropping a
+// field just because the feature is off would silently discard user config.
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct HsmKeyConfig {
     /// `aws` | `azure-cloud-hsm` | `azure-dedicated-hsm` | `gcp-cloud-hsm` | `generic`.
     pub provider: String,
