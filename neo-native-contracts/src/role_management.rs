@@ -81,7 +81,7 @@ impl RoleManagement {
         role_byte: u8,
         index: u32,
     ) -> Option<Vec<u8>> {
-        let prefix = StorageKey::new(RoleManagement::ID, vec![role_byte]);
+        let prefix = StorageKey::create(RoleManagement::ID, role_byte);
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
             let key_bytes = key.key();
             if key_bytes.len() >= 5 {
@@ -118,10 +118,7 @@ impl RoleManagement {
 
     /// The designation storage key `(RoleManagement.ID, [role_byte, index_be])`.
     fn designation_key(role_byte: u8, index: u32) -> StorageKey {
-        StorageKey::new(
-            RoleManagement::ID,
-            crate::keys::prefixed_with_u32_be(role_byte, index),
-        )
+        StorageKey::create_with_uint32(RoleManagement::ID, role_byte, index)
     }
 
     /// Builds the persisted `StackValue::Array` representation for C# `NodeList`.

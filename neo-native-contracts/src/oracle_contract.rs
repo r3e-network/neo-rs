@@ -89,7 +89,7 @@ impl OracleContract {
     /// suffix. Records that fail to decode are skipped (the signature
     /// predates fallibility and only this contract writes the records).
     pub fn get_requests(&self, snapshot: &DataCache) -> Vec<(u64, OracleRequest)> {
-        let prefix = StorageKey::new(Self::ID, vec![PREFIX_REQUEST]);
+        let prefix = StorageKey::create(Self::ID, PREFIX_REQUEST);
         let mut out = Vec::new();
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
             let key_bytes = key.key();
@@ -132,7 +132,7 @@ impl OracleContract {
     /// (`GetAndChange(...).Set(price)`). Genesis initialization creates this
     /// row; later writes fault if it is missing.
     fn put_price(&self, snapshot: &DataCache, price: i64) -> CoreResult<()> {
-        let key = StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]);
+        let key = StorageKey::create(OracleContract::ID, PREFIX_PRICE);
         if snapshot.get(&key).is_none() {
             return Err(CoreError::invalid_data("OracleContract price is missing"));
         }
@@ -147,7 +147,7 @@ impl OracleContract {
     /// later code reads it with direct storage access, so absence is a fault.
     fn read_price(&self, snapshot: &DataCache) -> CoreResult<i64> {
         let item = snapshot
-            .get(&StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]))
+            .get(&StorageKey::create(OracleContract::ID, PREFIX_PRICE))
             .ok_or_else(|| CoreError::invalid_data("OracleContract price is missing"))?;
         BigInt::from_signed_bytes_le(&item.value_bytes())
             .to_i64()
@@ -156,24 +156,22 @@ impl OracleContract {
 
     /// The request-id counter key `(Oracle.ID, [Prefix_RequestId])`.
     fn request_id_key() -> StorageKey {
-        StorageKey::new(OracleContract::ID, vec![PREFIX_REQUEST_ID])
+        StorageKey::create(OracleContract::ID, PREFIX_REQUEST_ID)
     }
 
     /// The request record key `(Oracle.ID, [Prefix_Request, id_be8])` — C#
     /// `CreateStorageKey(Prefix_Request, ulong)` appends the id big-endian.
     fn request_key(id: u64) -> StorageKey {
-        StorageKey::new(
-            OracleContract::ID,
-            crate::keys::prefixed_with_u64_be(PREFIX_REQUEST, id),
-        )
+        StorageKey::create_with_uint64(OracleContract::ID, PREFIX_REQUEST, id)
     }
 
     /// The per-url id-list key `(Oracle.ID, [Prefix_IdList] ++ Hash160(url))` —
     /// C# `GetUrlHash` is `Crypto.Hash160(url.ToStrictUtf8Bytes())`.
     fn id_list_key(url: &str) -> StorageKey {
-        StorageKey::new(
+        StorageKey::create_with_bytes(
             OracleContract::ID,
-            crate::keys::prefixed(PREFIX_ID_LIST, &Crypto::hash160(url.as_bytes())),
+            PREFIX_ID_LIST,
+            &Crypto::hash160(url.as_bytes()),
         )
     }
 
@@ -620,7 +618,7 @@ impl NativeContract for OracleContract {
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(0))),
         );
         snapshot.add(
-            StorageKey::new(Self::ID, vec![PREFIX_PRICE]),
+            StorageKey::create(Self::ID, PREFIX_PRICE),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_ORACLE_PRICE,
             ))),
@@ -1109,7 +1107,7 @@ mod oracle_native_tests {
     fn set_price_write_round_trips() {
         let cache = DataCache::new(false);
         cache.add(
-            StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]),
+            StorageKey::create(OracleContract::ID, PREFIX_PRICE),
             StorageItem::from_bytes(BigInt::from(DEFAULT_ORACLE_PRICE).to_signed_bytes_le()),
         );
         // The setter's storage effect (overwrite Prefix_Price) is observed by
@@ -1126,7 +1124,7 @@ mod oracle_native_tests {
         assert!(OracleContract::new().read_price(&cache).is_err());
         assert!(OracleContract::new().put_price(&cache, 12345678).is_err());
 
-        let key = StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]);
+        let key = StorageKey::create(OracleContract::ID, PREFIX_PRICE);
         cache.add(
             key,
             StorageItem::from_bytes(BigInt::from(12345678).to_signed_bytes_le()),
@@ -1588,7 +1586,7 @@ mod oracle_request_finish_tests {
     fn seed_initialized_oracle_storage(cache: &DataCache) {
         OracleContract::new().write_request_id(cache, &BigInt::from(0));
         cache.add(
-            StorageKey::new(OracleContract::ID, vec![PREFIX_PRICE]),
+            StorageKey::create(OracleContract::ID, PREFIX_PRICE),
             StorageItem::from_bytes(BigInt::from(DEFAULT_ORACLE_PRICE).to_signed_bytes_le()),
         );
     }
@@ -1673,10 +1671,13 @@ mod oracle_request_finish_tests {
         );
 
         // gasForResponse was minted to the Oracle account (GAS Struct[balance]).
-        let mut gas_key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
-        gas_key_bytes.extend_from_slice(&OracleContract::script_hash().to_bytes());
+        let gas_key = StorageKey::create_with_uint160(
+            crate::GasToken::ID,
+            crate::NEP17_PREFIX_ACCOUNT,
+            OracleContract::script_hash(),
+        );
         let gas_item = snapshot
-            .get(&StorageKey::new(crate::GasToken::ID, gas_key_bytes))
+            .get(&gas_key)
             .expect("oracle GAS account written");
         let decoded = BinarySerializer::deserialize(
             &gas_item.value_bytes(),
@@ -2041,17 +2042,17 @@ mod oracle_request_finish_tests {
                 .unwrap(),
         )
         .unwrap();
-        let mut role_key = vec![crate::Role::Oracle.as_byte()];
-        role_key.extend_from_slice(&0u32.to_be_bytes());
+        let role_key = StorageKey::create_with_uint32(
+            crate::RoleManagement::ID,
+            crate::Role::Oracle.as_byte(),
+            0,
+        );
         let nodes = BinarySerializer::serialize(
             &StackItem::from_array(vec![StackItem::from_byte_string(pubkey.to_bytes())]),
             &ExecutionEngineLimits::default(),
         )
         .unwrap();
-        snapshot.add(
-            StorageKey::new(crate::RoleManagement::ID, role_key),
-            StorageItem::from_bytes(nodes),
-        );
+        snapshot.add(role_key, StorageItem::from_bytes(nodes));
 
         let mut engine =
             post_persist_engine(Arc::clone(&snapshot), 10, vec![oracle_response_tx(7, b"")]);
@@ -2059,10 +2060,13 @@ mod oracle_request_finish_tests {
 
         // The node received the default 0.5 GAS oracle price.
         let node_account = UInt160::from_script(&Contract::create_signature_redeem_script(pubkey));
-        let mut gas_key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
-        gas_key_bytes.extend_from_slice(&node_account.to_bytes());
+        let gas_key = StorageKey::create_with_uint160(
+            crate::GasToken::ID,
+            crate::NEP17_PREFIX_ACCOUNT,
+            &node_account,
+        );
         let gas_item = snapshot
-            .get(&StorageKey::new(crate::GasToken::ID, gas_key_bytes))
+            .get(&gas_key)
             .expect("node GAS account written");
         let decoded = BinarySerializer::deserialize(
             &gas_item.value_bytes(),

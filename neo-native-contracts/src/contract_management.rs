@@ -92,7 +92,7 @@ impl ContractManagement {
         snapshot: &DataCache,
         hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
-        let key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
+        let key = Self::contract_storage_key(hash);
         let Some(item) = snapshot.get(&key) else {
             return Ok(None);
         };
@@ -116,7 +116,7 @@ impl ContractManagement {
         snapshot: &DataCache,
         id: i32,
     ) -> CoreResult<Option<ContractState>> {
-        let id_key = StorageKey::new(Self::ID, Self::contract_id_storage_key(id));
+        let id_key = Self::contract_id_storage_key(id);
         let Some(item) = snapshot.get(&id_key) else {
             return Ok(None);
         };
@@ -133,18 +133,18 @@ impl ContractManagement {
 
     /// Checks whether a contract is deployed in the given snapshot.
     pub fn is_contract(snapshot: &DataCache, hash: &UInt160) -> bool {
-        let key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
+        let key = Self::contract_storage_key(hash);
         snapshot.get(&key).is_some()
     }
 
     #[inline]
-    fn contract_storage_key(hash: &UInt160) -> Vec<u8> {
-        crate::keys::prefixed_with_hash160(PREFIX_CONTRACT, hash)
+    fn contract_storage_key(hash: &UInt160) -> StorageKey {
+        StorageKey::create_with_uint160(Self::ID, PREFIX_CONTRACT, hash)
     }
 
     #[inline]
-    fn contract_id_storage_key(id: i32) -> Vec<u8> {
-        crate::keys::prefixed_with_i32_be(PREFIX_CONTRACT_HASH, id)
+    fn contract_id_storage_key(id: i32) -> StorageKey {
+        StorageKey::create_with_int32(Self::ID, PREFIX_CONTRACT_HASH, id)
     }
 
     /// Parses the leading `Hash160` argument shared by `getContract`/`isContract`.
@@ -182,7 +182,7 @@ impl ContractManagement {
     /// excludes the native contracts (negative ids; their big-endian
     /// two's-complement keys sort after every non-negative id).
     fn contract_hash_entries(&self, snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
-        let prefix_key = StorageKey::new(ContractManagement::ID, vec![PREFIX_CONTRACT_HASH]);
+        let prefix_key = StorageKey::create(ContractManagement::ID, PREFIX_CONTRACT_HASH);
         snapshot
             .find(Some(&prefix_key), SeekDirection::Forward)
             .filter(|(key, _)| {
@@ -211,10 +211,11 @@ impl ContractManagement {
         contract: &ContractState,
     ) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
-        let mut prefix_bytes = Vec::with_capacity(1 + 20);
-        prefix_bytes.push(POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS);
-        prefix_bytes.extend_from_slice(&contract.hash.to_bytes());
-        let prefix_key = StorageKey::new(crate::PolicyContract::ID, prefix_bytes);
+        let prefix_key = StorageKey::create_with_uint160(
+            crate::PolicyContract::ID,
+            POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS,
+            &contract.hash,
+        );
         let entries: Vec<(StorageKey, StorageItem)> = snapshot
             .find(Some(&prefix_key), SeekDirection::Forward)
             .collect();
@@ -283,7 +284,7 @@ impl ContractManagement {
         prefix: u8,
         setting: &str,
     ) -> CoreResult<i64> {
-        let key = StorageKey::new(ContractManagement::ID, vec![prefix]);
+        let key = StorageKey::create(ContractManagement::ID, prefix);
         let Some(item) = snapshot.get(&key) else {
             return Err(CoreError::invalid_data(format!(
                 "ContractManagement {setting} is missing"
@@ -313,7 +314,7 @@ impl ContractManagement {
     /// genesis-initialised, so absence faults; the value is stored as the full
     /// signed-LE BigInteger (the C# parameter is `BigInteger`, not `long`).
     fn put_minimum_deployment_fee(&self, snapshot: &DataCache, value: &BigInt) -> CoreResult<()> {
-        let key = StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]);
+        let key = StorageKey::create(ContractManagement::ID, PREFIX_MINIMUM_DEPLOYMENT_FEE);
         if snapshot.get(&key).is_none() {
             return Err(CoreError::invalid_data(
                 "ContractManagement MinimumDeploymentFee is missing",
@@ -336,7 +337,7 @@ impl ContractManagement {
             CoreError::invalid_operation("next available contract id out of range")
         })?;
         snapshot.update(
-            StorageKey::new(ContractManagement::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            StorageKey::create(ContractManagement::ID, PREFIX_NEXT_AVAILABLE_ID),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 i64::from(id) + 1,
             ))),
@@ -650,7 +651,7 @@ impl ContractManagement {
                 "The contract {hash} has been blocked."
             )));
         }
-        let record_key = StorageKey::new(ContractManagement::ID, Self::contract_storage_key(&hash));
+        let record_key = Self::contract_storage_key(&hash);
         if snapshot.get(&record_key).is_some() {
             return Err(CoreError::invalid_operation(format!(
                 "Contract Already Exists: {hash}"
@@ -672,11 +673,7 @@ impl ContractManagement {
             record_key,
             StorageItem::from_bytes(Self::serialize_contract_record(&contract)?),
         );
-        snapshot.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                Self::contract_id_storage_key(contract.id),
-            ),
+        snapshot.add(Self::contract_id_storage_key(contract.id),
             StorageItem::from_bytes(hash.to_bytes().to_vec()),
         );
 
@@ -781,10 +778,7 @@ impl ContractManagement {
         // Persist the updated record (id, hash, and the id index are unchanged)
         // before the queued `_deploy` callback resolves the contract from storage.
         snapshot.update(
-            StorageKey::new(
-                ContractManagement::ID,
-                Self::contract_storage_key(&contract.hash),
-            ),
+            Self::contract_storage_key(&contract.hash),
             StorageItem::from_bytes(Self::serialize_contract_record(&contract)?),
         );
 
@@ -1011,13 +1005,13 @@ impl NativeContract for ContractManagement {
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         snapshot.add(
-            StorageKey::new(Self::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            StorageKey::create(Self::ID, PREFIX_MINIMUM_DEPLOYMENT_FEE),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_MINIMUM_DEPLOYMENT_FEE,
             ))),
         );
         snapshot.add(
-            StorageKey::new(Self::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            StorageKey::create(Self::ID, PREFIX_NEXT_AVAILABLE_ID),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_NEXT_AVAILABLE_ID,
             ))),
@@ -1066,8 +1060,7 @@ impl NativeContract for ContractManagement {
                 &settings,
                 block_index,
             );
-            let record_key =
-                StorageKey::new(Self::ID, Self::contract_storage_key(&contract.hash()));
+            let record_key = Self::contract_storage_key(&contract.hash());
             let snapshot = engine.snapshot_cache();
             let existing = snapshot.get(&record_key);
             let is_create = existing.is_none();
@@ -1079,7 +1072,7 @@ impl NativeContract for ContractManagement {
                         StorageItem::from_bytes(Self::serialize_contract_record(&composed)?),
                     );
                     snapshot.add(
-                        StorageKey::new(Self::ID, Self::contract_id_storage_key(contract.id())),
+                        Self::contract_id_storage_key(contract.id()),
                         StorageItem::from_bytes(contract.hash().to_bytes().to_vec()),
                     );
 
@@ -1297,14 +1290,8 @@ impl NativeContract for ContractManagement {
                     return Ok(Vec::new());
                 };
                 // Delete the per-contract record and the id -> hash index entry.
-                snapshot.delete(&StorageKey::new(
-                    Self::ID,
-                    Self::contract_storage_key(&hash),
-                ));
-                snapshot.delete(&StorageKey::new(
-                    Self::ID,
-                    Self::contract_id_storage_key(contract.id),
-                ));
+                snapshot.delete(&Self::contract_storage_key(&hash));
+                snapshot.delete(&Self::contract_id_storage_key(contract.id));
                 // Delete ALL of the contract's own storage (C# Find over
                 // `StorageKey.CreateSearchPrefix(contract.Id, empty)`).
                 let search_prefix = StorageKey::new(contract.id, Vec::new());
@@ -1546,16 +1533,11 @@ mod tests {
         let cache = DataCache::new(false);
         // Two Prefix_ContractHash entries (id -> hash) plus an unrelated
         // Prefix_Contract entry that must NOT appear in the iterator's backing set.
-        let mut k1 = vec![PREFIX_CONTRACT_HASH];
-        k1.extend_from_slice(&1i32.to_be_bytes());
-        let mut k2 = vec![PREFIX_CONTRACT_HASH];
-        k2.extend_from_slice(&2i32.to_be_bytes());
+        let k1 = StorageKey::create_with_int32(ContractManagement::ID, PREFIX_CONTRACT_HASH, 1);
+        let k2 = StorageKey::create_with_int32(ContractManagement::ID, PREFIX_CONTRACT_HASH, 2);
+        cache.add(k1, StorageItem::from_bytes(vec![0xAA; 20]));
         cache.add(
-            StorageKey::new(ContractManagement::ID, k1),
-            StorageItem::from_bytes(vec![0xAA; 20]),
-        );
-        cache.add(
-            StorageKey::new(ContractManagement::ID, k2),
+            k2,
             StorageItem::from_bytes(vec![0xBB; 20]),
         );
         cache.add(
@@ -1583,30 +1565,18 @@ mod tests {
         // native contracts (negative ids) never appear in the iterator.
         let cache = DataCache::new(false);
         for id in [-1i32, -11] {
-            let mut key = vec![PREFIX_CONTRACT_HASH];
-            key.extend_from_slice(&id.to_be_bytes());
-            cache.add(
-                StorageKey::new(ContractManagement::ID, key),
-                StorageItem::from_bytes(vec![0xCC; 20]),
-            );
+            let key = StorageKey::create_with_int32(ContractManagement::ID, PREFIX_CONTRACT_HASH, id);
+            cache.add(key, StorageItem::from_bytes(vec![0xCC; 20]));
         }
-        let mut user = vec![PREFIX_CONTRACT_HASH];
-        user.extend_from_slice(&1i32.to_be_bytes());
-        cache.add(
-            StorageKey::new(ContractManagement::ID, user),
-            StorageItem::from_bytes(vec![0xDD; 20]),
-        );
+        let user = StorageKey::create_with_int32(ContractManagement::ID, PREFIX_CONTRACT_HASH, 1);
+        cache.add(user, StorageItem::from_bytes(vec![0xDD; 20]));
 
         let entries = ContractManagement::new().contract_hash_entries(&cache);
         assert_eq!(entries.len(), 1, "native (negative-id) entries are skipped");
         assert_eq!(entries[0].1.value_bytes().to_vec(), vec![0xDD; 20]);
         // id 0 is the boundary: C# keeps `Id >= 0`.
-        let mut zero = vec![PREFIX_CONTRACT_HASH];
-        zero.extend_from_slice(&0i32.to_be_bytes());
-        cache.add(
-            StorageKey::new(ContractManagement::ID, zero),
-            StorageItem::from_bytes(vec![0xEE; 20]),
-        );
+        let zero = StorageKey::create_with_int32(ContractManagement::ID, PREFIX_CONTRACT_HASH, 0);
+        cache.add(zero, StorageItem::from_bytes(vec![0xEE; 20]));
         assert_eq!(
             ContractManagement::new()
                 .contract_hash_entries(&cache)
@@ -1667,10 +1637,15 @@ mod tests {
             ),
             StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
         );
-        let mut legacy_key = vec![PREFIX_CONTRACT_HASH];
-        legacy_key.extend_from_slice(&7i32.to_le_bytes());
+        // Legacy entry written with a LITTLE-endian id suffix (historical bug);
+        // modern entries use big-endian. `contract_hash_entries` must still skip it.
+        let legacy_key = StorageKey::create_with_bytes(
+            ContractManagement::ID,
+            PREFIX_CONTRACT_HASH,
+            &7i32.to_le_bytes(),
+        );
         cache.add(
-            StorageKey::new(ContractManagement::ID, legacy_key),
+            legacy_key,
             StorageItem::from_bytes(hash.to_bytes().to_vec()),
         );
 
@@ -1797,7 +1772,7 @@ mod tests {
         // GetAndChange(...).Set(value).
         let cache = DataCache::new(false);
         cache.add(
-            StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            StorageKey::create(ContractManagement::ID, PREFIX_MINIMUM_DEPLOYMENT_FEE),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_MINIMUM_DEPLOYMENT_FEE,
             ))),
@@ -1965,7 +1940,7 @@ mod tests {
         assert!(err.to_string().contains("NextAvailableId"), "{err}");
 
         cache.add(
-            StorageKey::new(ContractManagement::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            StorageKey::create(ContractManagement::ID, PREFIX_NEXT_AVAILABLE_ID),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_NEXT_AVAILABLE_ID,
             ))),
@@ -2215,10 +2190,15 @@ mod destroy_engine_tests {
         // A whitelist entry for the contract (C# WhitelistedContract
         // Struct[ContractHash, Method, ArgCount, FixedFee]) that CleanWhitelist
         // must remove and report.
-        let mut wl_suffix = vec![POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS];
+        // Layout: [PREFIX, self_hash160, 0i32_be].
+        let mut wl_suffix = Vec::with_capacity(20 + 4);
         wl_suffix.extend_from_slice(&self_hash.to_bytes());
         wl_suffix.extend_from_slice(&0i32.to_be_bytes());
-        let wl_key = StorageKey::new(crate::PolicyContract::ID, wl_suffix);
+        let wl_key = StorageKey::create_with_bytes(
+            crate::PolicyContract::ID,
+            POLICY_PREFIX_WHITELISTED_FEE_CONTRACTS,
+            &wl_suffix,
+        );
         let wl_value = BinarySerializer::serialize(
             &StackItem::from_struct(vec![
                 StackItem::from_byte_string(self_hash.to_bytes()),
@@ -2405,8 +2385,8 @@ mod destroy_engine_tests {
         let cache = DataCache::new(false);
         let account = UInt160::from_bytes(&[0x44u8; 20]).unwrap();
         // Seed a NeoToken account state holding 100 NEO.
-        let mut neo_key = vec![crate::NEP17_PREFIX_ACCOUNT];
-        neo_key.extend_from_slice(&account.to_bytes());
+        let neo_key =
+            StorageKey::create_with_uint160(crate::NeoToken::ID, crate::NEP17_PREFIX_ACCOUNT, &account);
         let neo_state = BinarySerializer::serialize(
             &StackItem::from_struct(vec![
                 StackItem::from_int(100),
@@ -2417,10 +2397,7 @@ mod destroy_engine_tests {
             &ExecutionEngineLimits::default(),
         )
         .unwrap();
-        cache.add(
-            StorageKey::new(crate::NeoToken::ID, neo_key),
-            StorageItem::from_bytes(neo_state),
-        );
+        cache.add(neo_key, StorageItem::from_bytes(neo_state));
         let snapshot = Arc::new(cache);
         let mut engine = engine_for(
             Arc::clone(&snapshot),
@@ -2479,13 +2456,13 @@ mod deploy_update_engine_tests {
 
     fn seed_contract_management_settings(cache: &DataCache) {
         cache.add(
-            StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            StorageKey::create(ContractManagement::ID, PREFIX_MINIMUM_DEPLOYMENT_FEE),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_MINIMUM_DEPLOYMENT_FEE,
             ))),
         );
         cache.add(
-            StorageKey::new(ContractManagement::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            StorageKey::create(ContractManagement::ID, PREFIX_NEXT_AVAILABLE_ID),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_NEXT_AVAILABLE_ID,
             ))),
@@ -3366,7 +3343,7 @@ mod persist_tests {
             storage_int(
                 &snapshot,
                 ContractManagement::ID,
-                vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]
+                vec![PREFIX_MINIMUM_DEPLOYMENT_FEE],
             ),
             Some(BigInt::from(10_00000000i64))
         );
@@ -3374,7 +3351,7 @@ mod persist_tests {
             storage_int(
                 &snapshot,
                 ContractManagement::ID,
-                vec![PREFIX_NEXT_AVAILABLE_ID]
+                vec![PREFIX_NEXT_AVAILABLE_ID],
             ),
             Some(BigInt::from(1))
         );
@@ -3655,12 +3632,12 @@ mod persist_tests {
         NativeContract::on_persist(&ContractManagement::new(), &mut engine).expect("genesis");
         // A pre-Faun blocked account (empty-bytes record).
         let blocked = UInt160::from_bytes(&[0x77; 20]).unwrap();
-        let mut blocked_key = vec![POLICY_PREFIX_BLOCKED_ACCOUNT];
-        blocked_key.extend_from_slice(&blocked.to_bytes());
-        snapshot.add(
-            StorageKey::new(crate::PolicyContract::ID, blocked_key.clone()),
-            StorageItem::from_bytes(Vec::new()),
+        let blocked_key = StorageKey::create_with_uint160(
+            crate::PolicyContract::ID,
+            POLICY_PREFIX_BLOCKED_ACCOUNT,
+            &blocked,
         );
+        snapshot.add(blocked_key.clone(), StorageItem::from_bytes(Vec::new()));
 
         let timestamp: u64 = 1_700_000_000_123;
         let mut engine = on_persist_engine(&snapshot, &settings, 50, timestamp);
@@ -3677,7 +3654,11 @@ mod persist_tests {
         );
         // The blocked account now carries the persisting block's timestamp.
         assert_eq!(
-            storage_int(&snapshot, crate::PolicyContract::ID, blocked_key),
+            storage_int(
+                &snapshot,
+                crate::PolicyContract::ID,
+                blocked_key.key().to_vec()
+            ),
             Some(BigInt::from(timestamp))
         );
         // Treasury deploys at Faun.

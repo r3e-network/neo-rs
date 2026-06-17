@@ -369,7 +369,7 @@ impl LedgerContract {
 
     #[inline]
     fn current_block_storage_key(contract_id: i32) -> StorageKey {
-        StorageKey::new(contract_id, vec![PREFIX_CURRENT_BLOCK])
+        StorageKey::create(contract_id, PREFIX_CURRENT_BLOCK)
     }
 
     /// C# `CreateStorageKey(Prefix_BlockHash, uint bigEndianKey)`
@@ -378,18 +378,12 @@ impl LedgerContract {
     /// block order.
     #[inline]
     fn block_hash_storage_key(contract_id: i32, index: u32) -> StorageKey {
-        StorageKey::new(
-            contract_id,
-            crate::keys::prefixed_with_u32_be(PREFIX_BLOCK_HASH, index),
-        )
+        StorageKey::create_with_uint32(contract_id, PREFIX_BLOCK_HASH, index)
     }
 
     #[inline]
     fn transaction_storage_key(contract_id: i32, hash: &UInt256) -> StorageKey {
-        StorageKey::new(
-            contract_id,
-            crate::keys::prefixed_with_hash256(PREFIX_TRANSACTION, hash),
-        )
+        StorageKey::create_with_uint256(contract_id, PREFIX_TRANSACTION, hash)
     }
 
     /// C# `CreateStorageKey(Prefix_Transaction, UInt256 hash, UInt160 signer)`
@@ -400,19 +394,12 @@ impl LedgerContract {
         hash: &UInt256,
         signer: &UInt160,
     ) -> StorageKey {
-        let mut key = Vec::with_capacity(1 + 32 + 20);
-        key.push(PREFIX_TRANSACTION);
-        key.extend_from_slice(&hash.to_bytes());
-        key.extend_from_slice(&signer.to_bytes());
-        StorageKey::new(contract_id, key)
+        StorageKey::create_with_uint256_uint160(contract_id, PREFIX_TRANSACTION, hash, signer)
     }
 
     #[inline]
     fn block_storage_key(contract_id: i32, hash: &UInt256) -> StorageKey {
-        StorageKey::new(
-            contract_id,
-            crate::keys::prefixed_with_hash256(PREFIX_BLOCK, hash),
-        )
+        StorageKey::create_with_uint256(contract_id, PREFIX_BLOCK, hash)
     }
 
     // ============================================================================

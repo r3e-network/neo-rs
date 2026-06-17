@@ -116,10 +116,7 @@ impl Notary {
         account: &UInt160,
         index: usize,
     ) -> CoreResult<BigInt> {
-        let key = StorageKey::new(
-            Notary::ID,
-            crate::keys::prefixed_with_hash160(PREFIX_DEPOSIT, account),
-        );
+        let key = StorageKey::create_with_uint160(Notary::ID, PREFIX_DEPOSIT, account);
         let Some(item) = snapshot.get(&key) else {
             return Ok(BigInt::from(0));
         };
@@ -134,10 +131,7 @@ impl Notary {
 
     /// The deposit storage key `(Notary.ID, [Prefix_Deposit, account])`.
     fn deposit_key(account: &UInt160) -> StorageKey {
-        StorageKey::new(
-            Notary::ID,
-            crate::keys::prefixed_with_hash160(PREFIX_DEPOSIT, account),
-        )
+        StorageKey::create_with_uint160(Notary::ID, PREFIX_DEPOSIT, account)
     }
 
     fn decode_deposit(bytes: &[u8]) -> CoreResult<(BigInt, u32)> {
@@ -298,7 +292,7 @@ impl Notary {
     /// correct primitive.
     fn put_max_not_valid_before_delta(&self, snapshot: &DataCache, value: i64) {
         snapshot.update(
-            StorageKey::new(Notary::ID, vec![PREFIX_MAX_NOT_VALID_BEFORE_DELTA]),
+            StorageKey::create(Notary::ID, PREFIX_MAX_NOT_VALID_BEFORE_DELTA),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
         );
     }
@@ -306,7 +300,7 @@ impl Notary {
     /// C# `GetMaxNotValidBeforeDelta` directly indexes the initialized setting
     /// storage item; a missing key faults instead of silently using the default.
     fn read_max_not_valid_before_delta(&self, snapshot: &DataCache) -> CoreResult<i64> {
-        let key = StorageKey::new(Notary::ID, vec![PREFIX_MAX_NOT_VALID_BEFORE_DELTA]);
+        let key = StorageKey::create(Notary::ID, PREFIX_MAX_NOT_VALID_BEFORE_DELTA);
         let Some(item) = snapshot.get(&key) else {
             return Err(CoreError::invalid_data(
                 "Notary MaxNotValidBeforeDelta is missing",
@@ -466,7 +460,7 @@ impl NativeContract for Notary {
     /// `DefaultMaxNotValidBeforeDelta` (140).
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         engine.snapshot_cache().add(
-            StorageKey::new(Self::ID, vec![PREFIX_MAX_NOT_VALID_BEFORE_DELTA]),
+            StorageKey::create(Self::ID, PREFIX_MAX_NOT_VALID_BEFORE_DELTA),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_MAX_NOT_VALID_BEFORE_DELTA,
             ))),
@@ -1213,10 +1207,8 @@ mod tests {
             StackItem::from_struct(vec![StackItem::from_int(1000), StackItem::from_int(42)]);
         let bytes =
             BinarySerializer::serialize(&deposit, &ExecutionEngineLimits::default()).unwrap();
-        let mut key_bytes = vec![PREFIX_DEPOSIT];
-        key_bytes.extend_from_slice(&account.to_bytes());
         cache.add(
-            StorageKey::new(Notary::ID, key_bytes),
+            StorageKey::create_with_uint160(Notary::ID, PREFIX_DEPOSIT, account),
             StorageItem::from_bytes(bytes),
         );
 
@@ -1297,10 +1289,8 @@ mod verify_dispatch_tests {
                 .collect::<Vec<_>>(),
         );
         let value = BinarySerializer::serialize(&list, &ExecutionEngineLimits::default()).unwrap();
-        let mut key = vec![Role::P2PNotary.as_byte()];
-        key.extend_from_slice(&index.to_be_bytes());
         cache.add(
-            StorageKey::new(RoleManagement::ID, key),
+            StorageKey::create_with_uint32(RoleManagement::ID, Role::P2PNotary.as_byte(), index),
             StorageItem::from_bytes(value),
         );
     }
@@ -1593,9 +1583,8 @@ mod verify_dispatch_tests {
     /// Reads the GAS balance of `account` out of the NEP-17 account record
     /// (`Struct[Integer(balance), ...]`), returning 0 when absent.
     fn gas_balance(snapshot: &DataCache, account: &UInt160) -> BigInt {
-        let mut key = vec![crate::NEP17_PREFIX_ACCOUNT];
-        key.extend_from_slice(&account.to_bytes());
-        match snapshot.get(&StorageKey::new(crate::GasToken::ID, key)) {
+        let key = StorageKey::create_with_uint160(crate::GasToken::ID, crate::NEP17_PREFIX_ACCOUNT, account);
+        match snapshot.get(&key) {
             Some(item) => {
                 let st = BinarySerializer::deserialize(
                     &item.value_bytes(),

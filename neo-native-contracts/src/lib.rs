@@ -89,7 +89,7 @@ pub(crate) fn read_storage_int(
     default: i64,
 ) -> neo_error::CoreResult<i64> {
     use num_traits::ToPrimitive;
-    let key = neo_storage::StorageKey::new(contract_id, vec![prefix]);
+    let key = neo_storage::StorageKey::create(contract_id, prefix);
     match snapshot.get(&key) {
         Some(item) => num_bigint::BigInt::from_signed_bytes_le(&item.value_bytes())
             .to_i64()

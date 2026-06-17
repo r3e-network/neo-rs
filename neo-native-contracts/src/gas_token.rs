@@ -73,10 +73,7 @@ impl GasToken {
 
     /// The GAS account storage key `(GasToken.ID, [Prefix_Account, account])`.
     fn gas_account_key(account: &UInt160) -> StorageKey {
-        StorageKey::new(
-            GasToken::ID,
-            crate::keys::prefixed_with_hash160(crate::NEP17_PREFIX_ACCOUNT, account),
-        )
+        StorageKey::create_with_uint160(GasToken::ID, crate::NEP17_PREFIX_ACCOUNT, account)
     }
 
     /// Reads the GAS account balance, or `None` when the account has no entry. The
@@ -232,7 +229,7 @@ impl GasToken {
             .unwrap_or_else(BigInt::zero)
             + amount;
         self.write_gas_account(&snapshot, account, &balance)?;
-        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply_key = StorageKey::create(GasToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY);
         let supply = snapshot
             .get(&supply_key)
             .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
@@ -323,7 +320,7 @@ impl GasToken {
         } else {
             self.write_gas_account(&snapshot, account, &(&balance - amount))?;
         }
-        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply_key = StorageKey::create(GasToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY);
         let supply = snapshot
             .get(&supply_key)
             .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
@@ -857,7 +854,7 @@ mod tests {
         GasToken::new()
             .write_gas_account(&cache, &account, &BigInt::from(100))
             .unwrap();
-        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply_key = StorageKey::create(GasToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY);
         cache.add(
             supply_key.clone(),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(100))),
@@ -991,7 +988,7 @@ mod persist_tests {
         GasToken::new()
             .write_gas_account(cache, account, &BigInt::from(balance))
             .unwrap();
-        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply_key = StorageKey::create(GasToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY);
         let supply = cache
             .get(&supply_key)
             .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
@@ -1034,7 +1031,7 @@ mod persist_tests {
             expected,
             "52M GAS to the BFT address"
         );
-        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply_key = StorageKey::create(GasToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY);
         assert_eq!(
             BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
             expected,
@@ -1090,7 +1087,7 @@ mod persist_tests {
         let primary = primary_address(&committee, validators_count, 1);
         assert_eq!(balance(&snapshot, &primary), BigInt::from(1_5000_0000i64));
         // Supply: 15 GAS seeded - 6.5 burned + 1.5 minted = 10.
-        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply_key = StorageKey::create(GasToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY);
         assert_eq!(
             BigInt::from_signed_bytes_le(&snapshot.get(&supply_key).unwrap().value_bytes()),
             BigInt::from(10_0000_0000i64)
@@ -1199,7 +1196,7 @@ mod persist_tests {
             engine.notifications().is_empty(),
             "no Transfer for a zero mint"
         );
-        let supply_key = StorageKey::new(GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply_key = StorageKey::create(GasToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY);
         assert!(snapshot.get(&supply_key).is_none(), "supply untouched");
     }
 

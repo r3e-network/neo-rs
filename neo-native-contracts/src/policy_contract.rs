@@ -77,7 +77,7 @@ impl PolicyContract {
     }
 
     fn setting_key(prefix: u8) -> StorageKey {
-        StorageKey::new(PolicyContract::ID, vec![prefix])
+        StorageKey::create(PolicyContract::ID, prefix)
     }
 
     fn read_optional_i64_setting(
@@ -306,10 +306,7 @@ impl PolicyContract {
 
     /// The `(PolicyContract.ID, [Prefix_AttributeFee, attributeType])` storage key.
     fn attribute_fee_key(attribute_type: u8) -> StorageKey {
-        StorageKey::new(
-            PolicyContract::ID,
-            vec![PREFIX_ATTRIBUTE_FEE, attribute_type],
-        )
+        StorageKey::create_with_byte(PolicyContract::ID, PREFIX_ATTRIBUTE_FEE, attribute_type)
     }
 
     /// C# `GetAttributeFee`: validate the type, then read `Prefix_AttributeFee+type`
@@ -377,22 +374,22 @@ impl PolicyContract {
                 ))),
             );
             snapshot.add(
-                StorageKey::new(PolicyContract::ID, vec![PREFIX_MILLISECONDS_PER_BLOCK]),
+                StorageKey::create(PolicyContract::ID, PREFIX_MILLISECONDS_PER_BLOCK),
                 StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                     milliseconds_per_block,
                 ))),
             );
             snapshot.add(
-                StorageKey::new(
+                StorageKey::create(
                     PolicyContract::ID,
-                    vec![PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT],
+                    PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
                 ),
                 StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                     max_valid_until_block_increment,
                 ))),
             );
             snapshot.add(
-                StorageKey::new(PolicyContract::ID, vec![PREFIX_MAX_TRACEABLE_BLOCKS]),
+                StorageKey::create(PolicyContract::ID, PREFIX_MAX_TRACEABLE_BLOCKS),
                 StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                     max_traceable_blocks,
                 ))),
@@ -401,7 +398,7 @@ impl PolicyContract {
         if hardfork == Hardfork::HfFaun {
             // C# `GetAndChange(_execFeeFactor) ?? throw`: the factor must exist.
             let snapshot = engine.snapshot_cache();
-            let factor_key = StorageKey::new(PolicyContract::ID, vec![PREFIX_EXEC_FEE_FACTOR]);
+            let factor_key = StorageKey::create(PolicyContract::ID, PREFIX_EXEC_FEE_FACTOR);
             let stored = snapshot
                 .get(&factor_key)
                 .ok_or_else(|| CoreError::invalid_operation("Policy was not initialized"))?;
@@ -426,10 +423,7 @@ impl PolicyContract {
     /// The blocked-account storage key `(PolicyContract.ID, [Prefix_BlockedAccount,
     /// account])`, shared by `isBlocked` / `blockAccount` / `unblockAccount`.
     pub fn blocked_account_key(account: &UInt160) -> StorageKey {
-        StorageKey::new(
-            PolicyContract::ID,
-            crate::keys::prefixed_with_hash160(PREFIX_BLOCKED_ACCOUNT, account),
-        )
+        StorageKey::create_with_uint160(PolicyContract::ID, PREFIX_BLOCKED_ACCOUNT, account)
     }
 
     /// C# `PolicyContract.IsBlocked`: whether the blocked-account key exists.
@@ -443,7 +437,7 @@ impl PolicyContract {
     /// Collects the `Prefix_BlockedAccount` storage entries in forward-seek order,
     /// the backing set for the `getBlockedAccounts` iterator (C# `GetBlockedAccounts`).
     fn blocked_account_entries(&self, snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
-        let prefix_key = StorageKey::new(PolicyContract::ID, vec![PREFIX_BLOCKED_ACCOUNT]);
+        let prefix_key = StorageKey::create(PolicyContract::ID, PREFIX_BLOCKED_ACCOUNT);
         snapshot
             .find(Some(&prefix_key), SeekDirection::Forward)
             .collect()
@@ -506,10 +500,15 @@ impl PolicyContract {
     /// methodDescriptor.Offset)`, whose trailing `int` is big-endian (KeyBuilder
     /// `AddBigEndian(int)`).
     fn whitelist_fee_key(contract_hash: &UInt160, method_offset: i32) -> StorageKey {
-        let mut key_bytes = vec![PREFIX_WHITELISTED_FEE_CONTRACTS];
-        key_bytes.extend_from_slice(&contract_hash.to_bytes());
-        key_bytes.extend_from_slice(&method_offset.to_be_bytes());
-        StorageKey::new(PolicyContract::ID, key_bytes)
+        // Layout: [PREFIX, contract_hash160, method_offset_i32_be] (25 bytes).
+        let mut suffix = Vec::with_capacity(20 + 4);
+        suffix.extend_from_slice(&contract_hash.to_bytes());
+        suffix.extend_from_slice(&method_offset.to_be_bytes());
+        StorageKey::create_with_bytes(
+            PolicyContract::ID,
+            PREFIX_WHITELISTED_FEE_CONTRACTS,
+            &suffix,
+        )
     }
 
     /// Decodes a stored `WhitelistedContract` struct into its fields.
@@ -537,8 +536,7 @@ impl PolicyContract {
     /// forward-seek order, the backing set for the `getWhitelistFeeContracts`
     /// iterator (C# `GetWhitelistFeeContracts`).
     fn whitelist_fee_entries(&self, snapshot: &DataCache) -> Vec<(StorageKey, StorageItem)> {
-        let prefix_key =
-            StorageKey::new(PolicyContract::ID, vec![PREFIX_WHITELISTED_FEE_CONTRACTS]);
+        let prefix_key = StorageKey::create(PolicyContract::ID, PREFIX_WHITELISTED_FEE_CONTRACTS);
         snapshot
             .find(Some(&prefix_key), SeekDirection::Forward)
             .collect()
@@ -592,7 +590,7 @@ impl PolicyContract {
     /// (`OrderBy(p => p)`). Faults when the cache is missing, matching the C#
     /// indexer throw.
     fn read_neo_committee_sorted(&self, snapshot: &DataCache) -> CoreResult<Vec<ECPoint>> {
-        let key = StorageKey::new(crate::NeoToken::ID, vec![NEO_PREFIX_COMMITTEE]);
+        let key = StorageKey::create(crate::NeoToken::ID, NEO_PREFIX_COMMITTEE);
         let item = snapshot.get(&key).ok_or_else(|| {
             CoreError::invalid_operation("NeoToken committee cache is not initialized")
         })?;
@@ -1316,19 +1314,19 @@ impl NativeContract for PolicyContract {
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         snapshot.add(
-            StorageKey::new(Self::ID, vec![PREFIX_FEE_PER_BYTE]),
+            StorageKey::create(Self::ID, PREFIX_FEE_PER_BYTE),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_FEE_PER_BYTE,
             ))),
         );
         snapshot.add(
-            StorageKey::new(Self::ID, vec![PREFIX_EXEC_FEE_FACTOR]),
+            StorageKey::create(Self::ID, PREFIX_EXEC_FEE_FACTOR),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_EXEC_FEE_FACTOR,
             ))),
         );
         snapshot.add(
-            StorageKey::new(Self::ID, vec![PREFIX_STORAGE_PRICE]),
+            StorageKey::create(Self::ID, PREFIX_STORAGE_PRICE),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_STORAGE_PRICE,
             ))),
@@ -2430,11 +2428,7 @@ mod tests {
     fn is_blocked_checks_storage_existence() {
         let cache = DataCache::new(false);
         let account = UInt160::from_bytes(&[3u8; 20]).unwrap();
-        let key = {
-            let mut k = vec![PREFIX_BLOCKED_ACCOUNT];
-            k.extend_from_slice(&account.to_bytes());
-            StorageKey::new(PolicyContract::ID, k)
-        };
+        let key = StorageKey::create_with_uint160(PolicyContract::ID, PREFIX_BLOCKED_ACCOUNT, &account);
         // Not blocked until a record exists.
         assert!(cache.get(&key).is_none());
         cache.add(key.clone(), StorageItem::from_bytes(vec![]));
@@ -3076,9 +3070,9 @@ mod policy_writer_tests {
         let voter = UInt160::from_bytes(&[0x07; 20]).unwrap();
         let candidate_state =
             StackItem::from_struct(vec![StackItem::from_bool(true), StackItem::from_int(100)]);
-        let mut candidate_key = vec![33u8]; // NeoToken Prefix_Candidate
-        candidate_key.extend_from_slice(&candidate.to_bytes());
-        let candidate_key = StorageKey::new(crate::NeoToken::ID, candidate_key);
+        // NeoToken Prefix_Candidate (0x21 = 33).
+        let candidate_key =
+            StorageKey::create_with_uint160(crate::NeoToken::ID, 33u8, &candidate);
         cache.add(
             candidate_key.clone(),
             StorageItem::from_bytes(
@@ -3092,9 +3086,8 @@ mod policy_writer_tests {
             StackItem::from_byte_string(candidate.to_bytes()), // VoteTo
             StackItem::from_int(0),                            // LastGasPerVote
         ]);
-        let mut voter_key = vec![20u8]; // NEP-17 Prefix_Account
-        voter_key.extend_from_slice(&voter.to_bytes());
-        let voter_key = StorageKey::new(crate::NeoToken::ID, voter_key);
+        // NEP-17 Prefix_Account (0x14 = 20).
+        let voter_key = StorageKey::create_with_uint160(crate::NeoToken::ID, 20u8, &voter);
         cache.add(
             voter_key.clone(),
             StorageItem::from_bytes(
@@ -3102,7 +3095,8 @@ mod policy_writer_tests {
                     .unwrap(),
             ),
         );
-        let voters_count_key = StorageKey::new(crate::NeoToken::ID, vec![1u8]);
+        // NeoToken Prefix_VotersCount (0x01).
+        let voters_count_key = StorageKey::create(crate::NeoToken::ID, 1u8);
         cache.add(
             voters_count_key.clone(),
             StorageItem::from_bytes(BigInt::from(100).to_signed_bytes_le()),
@@ -3452,10 +3446,9 @@ mod policy_writer_tests {
     /// Seeds a GAS `AccountState` (`Struct[Balance]`) for `account`.
     fn seed_gas_balance(cache: &DataCache, account: &UInt160, balance: i64) {
         let state = StackItem::from_struct(vec![StackItem::from_int(balance)]);
-        let mut key = vec![crate::NEP17_PREFIX_ACCOUNT];
-        key.extend_from_slice(&account.to_bytes());
+        let key = StorageKey::create_with_uint160(crate::GasToken::ID, crate::NEP17_PREFIX_ACCOUNT, account);
         cache.add(
-            StorageKey::new(crate::GasToken::ID, key),
+            key,
             StorageItem::from_bytes(
                 BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap(),
             ),

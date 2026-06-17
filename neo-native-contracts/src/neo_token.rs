@@ -181,7 +181,7 @@ impl NeoToken {
     }
 
     fn register_price_key() -> StorageKey {
-        StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE])
+        StorageKey::create(NeoToken::ID, PREFIX_REGISTER_PRICE)
     }
 
     /// C# `SetGasPerBlock` storage effect: write a `Prefix_GasPerBlock` record at
@@ -191,10 +191,9 @@ impl NeoToken {
     /// stored key/value as the C# Added path — only the resulting store contents
     /// feed the state root.
     fn put_gas_per_block(&self, snapshot: &DataCache, index: u32, gas_per_block: &BigInt) {
-        let mut key = vec![PREFIX_GAS_PER_BLOCK];
-        key.extend_from_slice(&index.to_be_bytes());
+        let key = StorageKey::create_with_uint32(NeoToken::ID, PREFIX_GAS_PER_BLOCK, index);
         snapshot.update(
-            StorageKey::new(NeoToken::ID, key),
+            key,
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(gas_per_block)),
         );
     }
@@ -203,7 +202,7 @@ impl NeoToken {
     /// `Prefix_GasPerBlock` record whose record index is ≤ `index` (C#
     /// `GetSortedGasRecords(...).First().GasPerBlock`), defaulting to 5 GAS.
     fn gas_per_block_at(&self, snapshot: &DataCache, index: u32) -> BigInt {
-        let prefix = StorageKey::new(NeoToken::ID, vec![PREFIX_GAS_PER_BLOCK]);
+        let prefix = StorageKey::create(NeoToken::ID, PREFIX_GAS_PER_BLOCK);
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
             let key_bytes = key.key();
             if key_bytes.len() >= 5 {
@@ -239,7 +238,7 @@ impl NeoToken {
 
     /// The `Prefix_VotersCount` storage key (a single key, no suffix).
     fn voters_count_key() -> StorageKey {
-        StorageKey::new(NeoToken::ID, vec![PREFIX_VOTERS_COUNT])
+        StorageKey::create(NeoToken::ID, PREFIX_VOTERS_COUNT)
     }
 
     /// Reads the total voted NEO (`Prefix_VotersCount`), defaulting to zero.
@@ -268,9 +267,12 @@ impl NeoToken {
         votes: &BigInt,
     ) -> CoreResult<()> {
         if !registered && *votes == BigInt::from(0) {
-            let mut reward_key = vec![PREFIX_VOTER_REWARD_PER_COMMITTEE];
-            reward_key.extend_from_slice(&pubkey.to_bytes());
-            snapshot.delete(&StorageKey::new(NeoToken::ID, reward_key));
+            let reward_key = StorageKey::create_with_bytes(
+                NeoToken::ID,
+                PREFIX_VOTER_REWARD_PER_COMMITTEE,
+                &pubkey.to_bytes(),
+            );
+            snapshot.delete(&reward_key);
             snapshot.delete(&Self::candidate_key(pubkey));
         } else {
             snapshot.update(
@@ -598,7 +600,7 @@ impl NeoToken {
     /// C# `GetSortedGasRecords(snapshot, end)`: the `Prefix_GasPerBlock` records with
     /// index ≤ `end`, descending by index.
     fn sorted_gas_records(&self, snapshot: &DataCache, end: u32) -> Vec<(u32, BigInt)> {
-        let prefix = StorageKey::new(NeoToken::ID, vec![PREFIX_GAS_PER_BLOCK]);
+        let prefix = StorageKey::create(NeoToken::ID, PREFIX_GAS_PER_BLOCK);
         let mut out = Vec::new();
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
             let key_bytes = key.key();
@@ -615,10 +617,13 @@ impl NeoToken {
 
     /// Reads the accumulated GAS-per-vote for `pubkey` (`Prefix_VoterRewardPerCommittee`).
     fn voter_reward_per_committee(&self, snapshot: &DataCache, pubkey: &ECPoint) -> BigInt {
-        let mut key_bytes = vec![PREFIX_VOTER_REWARD_PER_COMMITTEE];
-        key_bytes.extend_from_slice(&pubkey.to_bytes());
+        let key = StorageKey::create_with_bytes(
+            NeoToken::ID,
+            PREFIX_VOTER_REWARD_PER_COMMITTEE,
+            &pubkey.to_bytes(),
+        );
         snapshot
-            .get(&StorageKey::new(NeoToken::ID, key_bytes))
+            .get(&key)
             .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
             .unwrap_or_else(|| BigInt::from(0))
     }
@@ -684,7 +689,7 @@ impl NeoToken {
         &self,
         snapshot: &DataCache,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>> {
-        let key = StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]);
+        let key = StorageKey::create(NeoToken::ID, PREFIX_COMMITTEE);
         let item = snapshot.get(&key).ok_or_else(|| {
             CoreError::invalid_operation("NeoToken committee cache is not initialized")
         })?;
@@ -837,7 +842,7 @@ impl NeoToken {
             Self::neo_account_key(account),
             StorageItem::from_bytes(Self::encode_neo_account_state(&state)?),
         );
-        let supply_key = StorageKey::new(NeoToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]);
+        let supply_key = StorageKey::create(NeoToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY);
         let supply = snapshot
             .get(&supply_key)
             .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
@@ -910,18 +915,12 @@ impl NeoToken {
 
     /// The `Prefix_Candidate` storage key for `pubkey` (`prefix ++ 33-byte pubkey`).
     fn candidate_key(pubkey: &ECPoint) -> StorageKey {
-        StorageKey::new(
-            NeoToken::ID,
-            crate::keys::prefixed(PREFIX_CANDIDATE, &pubkey.to_bytes()),
-        )
+        StorageKey::create_with_bytes(NeoToken::ID, PREFIX_CANDIDATE, &pubkey.to_bytes())
     }
 
     /// The `Prefix_Account` storage key for `account` (NEP-17 account prefix).
     fn neo_account_key(account: &UInt160) -> StorageKey {
-        StorageKey::new(
-            NeoToken::ID,
-            crate::keys::prefixed_with_hash160(crate::NEP17_PREFIX_ACCOUNT, account),
-        )
+        StorageKey::create_with_uint160(NeoToken::ID, crate::NEP17_PREFIX_ACCOUNT, account)
     }
 
     /// C# `GetCandidatesInternal`: scan `Prefix_Candidate` (key = prefix ++ 33-byte
@@ -933,7 +932,7 @@ impl NeoToken {
         &self,
         snapshot: &DataCache,
     ) -> CoreResult<Vec<(StorageKey, StorageItem)>> {
-        let prefix = StorageKey::new(NeoToken::ID, vec![PREFIX_CANDIDATE]);
+        let prefix = StorageKey::create(NeoToken::ID, PREFIX_CANDIDATE);
         let mut out = Vec::new();
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
             let key_bytes = key.key();
@@ -1030,9 +1029,7 @@ impl NeoToken {
     /// C# `GetCandidateVote`: the votes for `pubkey` if it is a registered candidate,
     /// else -1 (also -1 when there is no candidate entry at all).
     fn candidate_vote(&self, snapshot: &DataCache, pubkey: &ECPoint) -> CoreResult<BigInt> {
-        let mut key_bytes = vec![PREFIX_CANDIDATE];
-        key_bytes.extend_from_slice(&pubkey.to_bytes());
-        match snapshot.get(&StorageKey::new(NeoToken::ID, key_bytes)) {
+        match snapshot.get(&Self::candidate_key(pubkey)) {
             Some(item) => {
                 let (registered, votes) = Self::decode_candidate_state(&item.value_bytes())?;
                 Ok(if registered { votes } else { BigInt::from(-1) })
@@ -1122,9 +1119,7 @@ impl NeoToken {
     /// return shape — so it is returned as-is (the same pattern as
     /// `getDesignatedByRole` / `getContract`).
     fn read_account_state(&self, snapshot: &DataCache, account: &UInt160) -> Option<Vec<u8>> {
-        let mut key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
-        key_bytes.extend_from_slice(&account.to_bytes());
-        let key = StorageKey::new(NeoToken::ID, key_bytes);
+        let key = Self::neo_account_key(account);
         snapshot
             .get(&key)
             .map(|item| item.value_bytes().into_owned())
@@ -1673,7 +1668,7 @@ impl NativeContract for NeoToken {
             .map(|point| (point, BigInt::from(0)))
             .collect();
         snapshot.add(
-            StorageKey::new(Self::ID, vec![PREFIX_COMMITTEE]),
+            StorageKey::create(Self::ID, PREFIX_COMMITTEE),
             StorageItem::from_bytes(Self::encode_committee(&members)?),
         );
         // C# `new StorageItem(Array.Empty<byte>())` — BigInteger zero is stored
@@ -1682,16 +1677,15 @@ impl NativeContract for NeoToken {
             Self::voters_count_key(),
             StorageItem::from_bytes(Vec::new()),
         );
-        let mut gas_record_key = vec![PREFIX_GAS_PER_BLOCK];
-        gas_record_key.extend_from_slice(&0u32.to_be_bytes());
+        let gas_record_key = StorageKey::create_with_uint32(Self::ID, PREFIX_GAS_PER_BLOCK, 0);
         snapshot.add(
-            StorageKey::new(Self::ID, gas_record_key),
+            gas_record_key,
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_GAS_PER_BLOCK,
             ))),
         );
         snapshot.add(
-            StorageKey::new(Self::ID, vec![PREFIX_REGISTER_PRICE]),
+            StorageKey::create(Self::ID, PREFIX_REGISTER_PRICE),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
                 DEFAULT_REGISTER_PRICE,
             ))),
@@ -1726,7 +1720,7 @@ impl NativeContract for NeoToken {
         let prev_committee = self.read_committee_with_votes(&snapshot)?;
         let new_committee = self.compute_committee_members(&snapshot, &settings)?;
         snapshot.update(
-            StorageKey::new(Self::ID, vec![PREFIX_COMMITTEE]),
+            StorageKey::create(Self::ID, PREFIX_COMMITTEE),
             StorageItem::from_bytes(Self::encode_committee(&new_committee)?),
         );
         // Hardfork check for https://github.com/neo-project/neo/pull/3158.
@@ -1805,9 +1799,11 @@ impl NativeContract for NeoToken {
                 let factor = if index < validators_count { 2 } else { 1 };
                 if *votes > BigInt::from(0) {
                     let reward_per_neo = factor * &voter_reward_of_each_committee / votes;
-                    let mut key_bytes = vec![PREFIX_VOTER_REWARD_PER_COMMITTEE];
-                    key_bytes.extend_from_slice(&member.to_bytes());
-                    let key = StorageKey::new(Self::ID, key_bytes);
+                    let key = StorageKey::create_with_bytes(
+                        Self::ID,
+                        PREFIX_VOTER_REWARD_PER_COMMITTEE,
+                        &member.to_bytes(),
+                    );
                     // C# `GetAndChange(key, () => new StorageItem(0)).Add(...)`.
                     let accumulated =
                         self.voter_reward_per_committee(&snapshot, member) + reward_per_neo;
@@ -2387,14 +2383,14 @@ mod tests {
         );
         let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default()).unwrap();
         cache.add(
-            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageKey::create(NeoToken::ID, PREFIX_COMMITTEE),
             StorageItem::from_bytes(bytes),
         );
     }
 
     fn seed_register_price(cache: &DataCache, price: i64) {
         cache.add(
-            StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE]),
+            StorageKey::create(NeoToken::ID, PREFIX_REGISTER_PRICE),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(price))),
         );
     }
@@ -2464,12 +2460,8 @@ mod tests {
             ]);
             let bytes =
                 BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
-            let mut key = vec![PREFIX_CANDIDATE];
-            key.extend_from_slice(&pk.to_bytes());
-            cache.add(
-                StorageKey::new(NeoToken::ID, key),
-                StorageItem::from_bytes(bytes),
-            );
+            let key = StorageKey::create_with_bytes(NeoToken::ID, PREFIX_CANDIDATE, &pk.to_bytes());
+            cache.add(key, StorageItem::from_bytes(bytes));
         }
 
         let candidates = NeoToken::new().read_registered_candidates(&cache).unwrap();
@@ -2592,10 +2584,9 @@ mod tests {
         assert_eq!(NeoToken::new().read_voters_count(&cache), BigInt::from(0));
 
         NeoToken::new().put_gas_per_block(&cache, 7, &BigInt::from(0));
-        let mut key = vec![PREFIX_GAS_PER_BLOCK];
-        key.extend_from_slice(&7u32.to_be_bytes());
+        let key = StorageKey::create_with_uint32(NeoToken::ID, PREFIX_GAS_PER_BLOCK, 7);
         let stored = cache
-            .get(&StorageKey::new(NeoToken::ID, key))
+            .get(&key)
             .expect("entry written");
         assert!(
             stored.value_bytes().is_empty(),
@@ -2841,7 +2832,7 @@ mod tests {
 
         let cache = DataCache::new(false);
         cache.add(
-            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageKey::create(NeoToken::ID, PREFIX_COMMITTEE),
             StorageItem::from_bytes(encoded_committee),
         );
         assert_eq!(
@@ -2994,7 +2985,7 @@ mod tests {
         .unwrap();
         let cache = DataCache::new(false);
         cache.add(
-            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageKey::create(NeoToken::ID, PREFIX_COMMITTEE),
             StorageItem::from_bytes(short_committee),
         );
         let committee_err = NeoToken::new()
@@ -3016,7 +3007,7 @@ mod tests {
         .unwrap();
         let cache = DataCache::new(false);
         cache.add(
-            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageKey::create(NeoToken::ID, PREFIX_COMMITTEE),
             StorageItem::from_bytes(extra_committee),
         );
         assert_eq!(
@@ -3044,12 +3035,8 @@ mod tests {
             ]);
             let bytes =
                 BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
-            let mut key = vec![PREFIX_CANDIDATE];
-            key.extend_from_slice(&pk.to_bytes());
-            cache.add(
-                StorageKey::new(NeoToken::ID, key),
-                StorageItem::from_bytes(bytes),
-            );
+            let key = StorageKey::create_with_bytes(NeoToken::ID, PREFIX_CANDIDATE, &pk.to_bytes());
+            cache.add(key, StorageItem::from_bytes(bytes));
         };
 
         // Registered -> its votes; unregistered -> -1 even with a stored entry.
@@ -3123,7 +3110,7 @@ mod tests {
 
         let cache = DataCache::new(false);
         cache.add(
-            StorageKey::new(NeoToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]),
+            StorageKey::create(NeoToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(42))),
         );
         let mut engine = ApplicationEngine::new(
@@ -3173,10 +3160,9 @@ mod tests {
         );
 
         // gas-per-block backward seek: record at index 10 applies from 10 on.
-        let mut key = vec![PREFIX_GAS_PER_BLOCK];
-        key.extend_from_slice(&10u32.to_be_bytes());
+        let key = StorageKey::create_with_uint32(NeoToken::ID, PREFIX_GAS_PER_BLOCK, 10);
         cache.add(
-            StorageKey::new(NeoToken::ID, key),
+            key,
             StorageItem::from_bytes(BigInt::from(3 * 100_000_000i64).to_signed_bytes_le()),
         );
         assert_eq!(
@@ -3268,12 +3254,8 @@ mod tests {
             StackItem::from_int(0),
         ]);
         let bytes = BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
-        let mut key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
-        key_bytes.extend_from_slice(&account.to_bytes());
-        cache.add(
-            StorageKey::new(NeoToken::ID, key_bytes),
-            StorageItem::from_bytes(bytes.clone()),
-        );
+        let key = StorageKey::create_with_uint160(NeoToken::ID, crate::NEP17_PREFIX_ACCOUNT, account);
+        cache.add(key, StorageItem::from_bytes(bytes.clone()));
         assert_eq!(
             NeoToken::new().read_account_state(&cache, &account),
             Some(bytes.clone())
@@ -3520,9 +3502,11 @@ mod governance_writer_tests {
                 NeoToken::encode_candidate_state(true, &BigInt::from(0)).unwrap(),
             ),
         );
-        let mut reward_key_bytes = vec![PREFIX_VOTER_REWARD_PER_COMMITTEE];
-        reward_key_bytes.extend_from_slice(&pubkey.to_bytes());
-        let reward_key = StorageKey::new(NeoToken::ID, reward_key_bytes);
+        let reward_key = StorageKey::create_with_bytes(
+            NeoToken::ID,
+            PREFIX_VOTER_REWARD_PER_COMMITTEE,
+            &pubkey.to_bytes(),
+        );
         snapshot.add(
             reward_key.clone(),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(123_456))),
@@ -3654,10 +3638,13 @@ mod governance_writer_tests {
         .unwrap();
         assert_eq!(acct.vote_to, Some(candidate));
         // DistributeGas minted the 5000-datoshi CalculateBonus reward to the voter.
-        let mut gas_key_bytes = vec![crate::NEP17_PREFIX_ACCOUNT];
-        gas_key_bytes.extend_from_slice(&voter.to_bytes());
+        let gas_key = StorageKey::create_with_uint160(
+            crate::GasToken::ID,
+            crate::NEP17_PREFIX_ACCOUNT,
+            &voter,
+        );
         let gas_item = snapshot
-            .get(&StorageKey::new(crate::GasToken::ID, gas_key_bytes))
+            .get(&gas_key)
             .expect("voter GAS account written");
         let decoded = BinarySerializer::deserialize(
             &gas_item.value_bytes(),
@@ -3767,9 +3754,7 @@ mod governance_writer_tests {
 
     /// The GAS account storage key `(GasToken.ID, [Prefix_Account, account])`.
     fn gas_account_key(account: &UInt160) -> StorageKey {
-        let mut key = vec![crate::NEP17_PREFIX_ACCOUNT];
-        key.extend_from_slice(&account.to_bytes());
-        StorageKey::new(crate::GasToken::ID, key)
+        StorageKey::create_with_uint160(crate::GasToken::ID, crate::NEP17_PREFIX_ACCOUNT, account)
     }
 
     /// Seeds a GAS balance entry (`Struct[Balance]`) and a matching total supply.
@@ -3778,7 +3763,7 @@ mod governance_writer_tests {
         let bytes = BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
         cache.add(gas_account_key(account), StorageItem::from_bytes(bytes));
         cache.add(
-            StorageKey::new(crate::GasToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]),
+            StorageKey::create(crate::GasToken::ID, crate::NEP17_PREFIX_TOTAL_SUPPLY),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(balance)),
         );
     }
@@ -4139,7 +4124,7 @@ mod committee_recompute_tests {
             .map(|point| (point, BigInt::from(0)))
             .collect();
         cache.add(
-            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageKey::create(NeoToken::ID, PREFIX_COMMITTEE),
             StorageItem::from_bytes(NeoToken::encode_committee(&members).unwrap()),
         );
     }
@@ -4344,7 +4329,7 @@ mod persist_hook_tests {
     }
 
     fn committee_storage_key() -> StorageKey {
-        StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE])
+        StorageKey::create(NeoToken::ID, PREFIX_COMMITTEE)
     }
 
     fn seed_committee_cache(cache: &DataCache, members: &[(ECPoint, BigInt)]) {
@@ -4355,9 +4340,11 @@ mod persist_hook_tests {
     }
 
     fn voter_reward_key(pubkey: &ECPoint) -> StorageKey {
-        let mut key = vec![PREFIX_VOTER_REWARD_PER_COMMITTEE];
-        key.extend_from_slice(&pubkey.to_bytes());
-        StorageKey::new(NeoToken::ID, key)
+        StorageKey::create_with_bytes(
+            NeoToken::ID,
+            PREFIX_VOTER_REWARD_PER_COMMITTEE,
+            &pubkey.to_bytes(),
+        )
     }
 
     fn read_voter_reward(snapshot: &DataCache, pubkey: &ECPoint) -> Option<BigInt> {
@@ -4367,9 +4354,9 @@ mod persist_hook_tests {
     }
 
     fn gas_balance(snapshot: &DataCache, account: &UInt160) -> Option<BigInt> {
-        let mut key = vec![crate::NEP17_PREFIX_ACCOUNT];
-        key.extend_from_slice(&account.to_bytes());
-        let item = snapshot.get(&StorageKey::new(crate::GasToken::ID, key))?;
+        let key =
+            StorageKey::create_with_uint160(crate::GasToken::ID, crate::NEP17_PREFIX_ACCOUNT, account);
+        let item = snapshot.get(&key)?;
         let decoded = BinarySerializer::deserialize(
             &item.value_bytes(),
             &ExecutionEngineLimits::default(),
