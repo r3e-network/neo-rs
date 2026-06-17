@@ -87,14 +87,8 @@ impl GasToken {
         let Some(item) = snapshot.get(&Self::gas_account_key(account)) else {
             return Ok(None);
         };
-        let limits = ExecutionEngineLimits::default();
-        let item = BinarySerializer::deserialize_stack_value_with_limits(
-            &item.value_bytes(),
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("GAS account state: {e}")))?;
-        Ok(Some(crate::AccountState::from_stack_value(item)?.balance))
+        let state = crate::deserialize_account_state(item.value_bytes().as_ref())?;
+        Ok(Some(state.balance))
     }
 
     /// Writes the GAS account state `Struct[Balance]` (C# `GetAndChange(...).Set`).
@@ -104,9 +98,8 @@ impl GasToken {
         account: &UInt160,
         balance: &BigInt,
     ) -> CoreResult<()> {
-        let item = crate::AccountState::new(balance.clone()).to_stack_value();
-        let bytes = BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::serialization(format!("GAS account serialize: {e}")))?;
+        let state = crate::AccountState::new(balance.clone());
+        let bytes = crate::serialize_account_state(&state)?;
         snapshot.update(
             Self::gas_account_key(account),
             StorageItem::from_bytes(bytes),

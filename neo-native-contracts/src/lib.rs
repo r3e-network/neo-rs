@@ -176,6 +176,34 @@ impl AccountState {
 
 neo_vm::impl_interoperable_via_stack_value!(AccountState);
 
+/// Deserializes a stored NEP-17 account-state struct (`Struct[Balance]`) from
+/// its on-chain byte representation. Shared by [`read_nep17_balance`] and the
+/// per-token account readers (`GasToken::read_gas_account`,
+/// `NeoToken::read_account_state`) to avoid duplicating the
+/// `deserialize_stack_value_with_limits` + `AccountState::from_stack_value`
+/// plumbing in every caller.
+pub(crate) fn deserialize_account_state(
+    bytes: &[u8],
+) -> neo_error::CoreResult<AccountState> {
+    let limits = neo_vm_rs::ExecutionEngineLimits::default();
+    let decoded = neo_serialization::BinarySerializer::deserialize_stack_value_with_limits(
+        bytes,
+        limits.max_item_size as usize,
+        limits.max_stack_size as usize,
+    )
+    .map_err(|e| neo_error::CoreError::deserialization(format!("NEP-17 account state: {e}")))?;
+    AccountState::from_stack_value(decoded)
+}
+
+/// Serializes a NEP-17 account-state struct to its on-chain byte form.
+/// Companion of [`deserialize_account_state`].
+pub(crate) fn serialize_account_state(
+    state: &AccountState,
+) -> neo_error::CoreResult<Vec<u8>> {
+    neo_serialization::BinarySerializer::serialize_stack_value_default(&state.to_stack_value())
+        .map_err(|e| neo_error::CoreError::serialization(format!("NEP-17 account state: {e}")))
+}
+
 /// Reads a NEP-17 account balance — the `Balance` field (index 0) of the
 /// account-state struct stored under `(contract_id, [20] ++ account)` — returning
 /// 0 when the account has no entry. Matches C# `FungibleToken.BalanceOf`, which
@@ -186,21 +214,13 @@ pub(crate) fn read_nep17_balance(
     contract_id: i32,
     account: &neo_primitives::UInt160,
 ) -> neo_error::CoreResult<num_bigint::BigInt> {
-    let mut key_bytes = vec![NEP17_PREFIX_ACCOUNT];
-    key_bytes.extend_from_slice(&account.to_bytes());
-    let key = neo_storage::StorageKey::new(contract_id, key_bytes);
+    let key = neo_storage::StorageKey::create_with_uint160(contract_id, NEP17_PREFIX_ACCOUNT, account);
 
     let Some(item) = snapshot.get(&key) else {
         return Ok(num_bigint::BigInt::from(0));
     };
-    let limits = neo_vm_rs::ExecutionEngineLimits::default();
-    let state = neo_serialization::BinarySerializer::deserialize_stack_value_with_limits(
-        &item.value_bytes(),
-        limits.max_item_size as usize,
-        limits.max_stack_size as usize,
-    )
-    .map_err(|e| neo_error::CoreError::deserialization(format!("NEP-17 account state: {e}")))?;
-    Ok(AccountState::from_stack_value(state)?.balance)
+    let state = deserialize_account_state(item.value_bytes().as_ref())?;
+    Ok(state.balance)
 }
 
 #[cfg(test)]
