@@ -4,14 +4,14 @@
 //!
 //! These tests validate the public surface of the reth-style P2P host
 //! services in `neo_network` and the canonical wire-envelope enums
-//! (`MessageCommand`, `MessageFlags`) in `neo_p2p` / `neo_network::wire`. The
+//! (`MessageCommand`, `MessageFlags`) in `neo_network::proto`. The
 //! historical `Message::create(...)` constructor (which produced a
 //! per-message envelope with command + flags + payload) is part of the
 //! Stage 3 wire-envelope extraction — until then the tests focus on
 //! the enum round-trips.
 
-use neo_p2p::VerifyResult;
-use neo_p2p::{message_command::MessageCommand, message_flags::MessageFlags};
+use neo_network::VerifyResult;
+use neo_network::{MessageCommand, MessageFlags};
 
 #[test]
 fn message_command_byte_conversion_round_trips() {

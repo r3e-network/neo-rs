@@ -57,7 +57,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use neo_config::ProtocolSettings;
-use neo_p2p::ChannelsConfig;
+use crate::ChannelsConfig;
 use neo_payloads::{Block, Transaction};
 use neo_runtime::{NetworkEvent as RuntimeNetworkEvent, NetworkService, Service, ServiceError};
 
@@ -382,7 +382,7 @@ impl LocalNodeService {
     /// uncompressed for a deterministic frame.
     async fn handle_broadcast_extensible(&self, payload: &neo_payloads::ExtensiblePayload) {
         let frame = match crate::wire::Message::create(
-            neo_p2p::MessageCommand::Extensible,
+            crate::MessageCommand::Extensible,
             Some(payload),
             false,
         )
@@ -411,7 +411,7 @@ impl LocalNodeService {
     /// items they lack via `GetData`.
     async fn handle_broadcast_inv(
         &self,
-        inventory_type: neo_p2p::InventoryType,
+        inventory_type: crate::InventoryType,
         hashes: Vec<neo_primitives::UInt256>,
     ) {
         if hashes.is_empty() {
@@ -419,7 +419,7 @@ impl LocalNodeService {
         }
         for group in neo_payloads::inv_payload::InvPayload::create_group(inventory_type, hashes) {
             let frame = match crate::wire::Message::create(
-                neo_p2p::MessageCommand::Inv,
+                crate::MessageCommand::Inv,
                 Some(&group),
                 false,
             )

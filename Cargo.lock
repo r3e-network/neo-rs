@@ -2509,7 +2509,6 @@ dependencies = [
  "neo-config",
  "neo-error",
  "neo-io",
- "neo-p2p",
  "neo-payloads",
  "neo-primitives",
  "neo-runtime",
@@ -2545,7 +2544,6 @@ dependencies = [
  "neo-native-contracts",
  "neo-network",
  "neo-oracle-service",
- "neo-p2p",
  "neo-payloads",
  "neo-primitives",
  "neo-rpc",
@@ -2617,24 +2615,6 @@ dependencies = [
  "tonic-build",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "neo-p2p"
-version = "0.8.0"
-dependencies = [
- "async-trait",
- "futures",
- "hex",
- "neo-crypto",
- "neo-io",
- "neo-primitives",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2711,7 +2691,6 @@ dependencies = [
  "neo-native-contracts",
  "neo-network",
  "neo-oracle-service",
- "neo-p2p",
  "neo-payloads",
  "neo-primitives",
  "neo-serialization",
@@ -2899,7 +2878,6 @@ dependencies = [
  "neo-io",
  "neo-native-contracts",
  "neo-network",
- "neo-p2p",
  "neo-payloads",
  "neo-primitives",
  "neo-rpc",

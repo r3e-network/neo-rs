@@ -1,9 +1,9 @@
 // InventoryType now lives in neo-primitives; this module re-exports it and keeps
-// the MessageCommand conversion that is specific to neo-p2p networking.
+// the MessageCommand conversion that is specific to the P2P networking layer.
 
 pub use neo_primitives::InventoryType;
 
-use crate::message_command::MessageCommand;
+use super::message_command::MessageCommand;
 
 impl From<InventoryType> for MessageCommand {
     fn from(inv_type: InventoryType) -> Self {

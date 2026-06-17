@@ -7,7 +7,7 @@
 use super::error::WireResult;
 use super::message::Message;
 use super::protocol_message::ProtocolMessage;
-use neo_p2p::{MessageCommand, MessageFlags};
+use crate::{MessageCommand, MessageFlags};
 
 /// Header metadata attached to every P2P message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

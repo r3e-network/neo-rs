@@ -56,7 +56,7 @@ use tracing::{debug, info, trace, warn};
 
 use crate::wire::{Message, MessageCodec};
 use neo_io::{MemoryReader, Serializable};
-use neo_p2p::MessageCommand;
+use crate::MessageCommand;
 use neo_payloads::p2p_payloads::{
     AddrPayload, GetBlockByIndexPayload, GetBlocksPayload, InvPayload, NetworkAddressWithTime,
     NodeCapability, PingPayload, VersionPayload,

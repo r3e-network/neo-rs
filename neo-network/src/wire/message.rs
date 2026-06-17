@@ -14,7 +14,7 @@
 use super::error::{WireError, WireResult};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_io::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, Lz4};
-use neo_p2p::{MessageCommand, MessageFlags};
+use crate::{MessageCommand, MessageFlags};
 use serde::{Deserialize, Serialize};
 
 /// Maximum payload size (matches `Neo.Network.P2P.Message.PayloadMaxSize` = 32 MiB).

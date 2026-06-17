@@ -9,7 +9,7 @@
 
 use std::net::SocketAddr;
 
-use neo_p2p::InventoryType;
+use crate::InventoryType;
 use neo_payloads::{Block, ExtensiblePayload, Transaction};
 use neo_primitives::UInt256;
 use tokio::sync::oneshot;

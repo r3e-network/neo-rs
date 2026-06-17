@@ -887,7 +887,7 @@ async fn build_node(
                             if reply.result.is_success() {
                                 let _ = relay
                                     .broadcast_inv(
-                                        neo_p2p::InventoryType::Transaction,
+                                        neo_network::InventoryType::Transaction,
                                         vec![reply.hash],
                                     )
                                     .await;
@@ -1064,7 +1064,7 @@ mod tests {
     use super::*;
     use futures::{SinkExt, StreamExt};
     use neo_network::wire::{Message, MessageCodec};
-    use neo_p2p::MessageCommand;
+    use neo_network::MessageCommand;
     use neo_payloads::p2p_payloads::{GetBlockByIndexPayload, NodeCapability, VersionPayload};
     use std::time::Duration;
     use tokio::net::TcpStream;

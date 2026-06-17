@@ -49,9 +49,6 @@ members = [
 
     # Protocol interfaces
 
-    # P2P networking
-    "neo-p2p",
-
     # Protocol types: serialization (compression, binary/json serializers, VM-aware codecs)
     "neo-serialization",
 
@@ -109,7 +106,6 @@ default-members = [
     "neo-crypto",
     "neo-storage",
     "neo-io",
-    "neo-p2p",
     "neo-rpc",
     "neo-consensus",
     "neo-node",
@@ -188,7 +184,6 @@ neo-io = { path = "neo-io", version = "0.8.0" }
 # Core layer
 neo-vm = { path = "neo-vm", version = "0.8.0" }
 neo-vm-rs = { path = "../neo-vm-rs" }
-neo-p2p = { path = "neo-p2p", version = "0.8.0" }
 neo-rpc = { path = "neo-rpc", version = "0.8.0" }
 neo-consensus = { path = "neo-consensus", version = "0.8.0" }
 

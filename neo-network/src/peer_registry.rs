@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 
-use neo_p2p::ChannelsConfig;
+use crate::ChannelsConfig;
 
 use crate::peer_id::PeerId;
 use crate::remote_node::RemoteNodeHandle;

@@ -112,7 +112,7 @@ fn peek_var_int(bytes: &[u8]) -> WireResult<Option<(u64, usize)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_p2p::MessageCommand;
+    use crate::MessageCommand;
     use neo_payloads::ping_payload::PingPayload;
 
     #[test]

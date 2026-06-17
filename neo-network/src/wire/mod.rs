@@ -33,11 +33,11 @@ pub mod protocol_message;
 
 pub mod codec;
 
-// Re-exports from neo-p2p (the canonical home of the wire-command and
-// flag enums and the channel-config types). Consumers can `use
-// neo_network::wire::*` and get everything they need without depending on
-// neo-p2p directly.
-pub use neo_p2p::{
+// Re-exports from the local `proto` submodule (the canonical home of the
+// wire-command and flag enums and the channel-config types). Consumers can
+// `use neo_network::wire::*` and get everything they need without depending
+// on any other crate for these primitives.
+pub use crate::proto::{
     channels_config::ChannelsConfig, message_command::MessageCommand, message_flags::MessageFlags,
     node_capability_type::NodeCapabilityType, timeouts,
 };

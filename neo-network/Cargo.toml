@@ -26,11 +26,6 @@ neo-payloads = { workspace = true }
 # Layer 2 (services we talk to)
 neo-runtime = { workspace = true }
 
-# Legacy actor types — re-exported for back-compat with the existing
-# consumers (neo-rpc, neo-node, neo-consensus). Will be removed in
-# Stage F once consumer migration is complete.
-neo-p2p = { workspace = true }
-
 # Async runtime
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true, features = ["codec"] }

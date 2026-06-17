@@ -17,7 +17,7 @@ use neo_network::{
     ChannelsConfig, ConnectionTimeouts, InboundInventory, LocalIdentity, LocalNodeService,
     NetworkEvent, NetworkHandle, PeerId, PeerRegistry, RemoteNodeService, RemoteNodeState,
 };
-use neo_p2p::MessageCommand;
+use neo_network::MessageCommand;
 use neo_payloads::p2p_payloads::{
     GetBlockByIndexPayload, InvPayload, NodeCapability, PingPayload, VersionPayload,
 };

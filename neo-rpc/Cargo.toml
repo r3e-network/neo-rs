@@ -99,7 +99,6 @@ neo-blockchain = { workspace = true }
 neo-mempool = { workspace = true }
 neo-serialization = { workspace = true }
 
-neo-p2p = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

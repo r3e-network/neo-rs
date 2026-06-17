@@ -107,6 +107,7 @@ pub mod local_identity;
 pub mod local_node;
 pub mod peer_id;
 pub mod peer_registry;
+pub mod proto;
 pub mod remote_node;
 pub mod task_manager;
 pub mod wire;
@@ -124,7 +125,6 @@ pub use handle::{
 };
 pub use local_identity::LocalIdentity;
 pub use local_node::LocalNodeService;
-pub use neo_p2p::ChannelsConfig;
 pub use peer_id::PeerId;
 pub use peer_registry::PeerRegistry;
 pub use remote_node::{
@@ -137,4 +137,20 @@ pub use task_manager::{
 pub use wire::{
     Message, MessageCodec, MessageHeader, NetworkMessage, PAYLOAD_MAX_SIZE, ProtocolMessage,
     WireError, WireResult,
+};
+
+// -----------------------------------------------------------------------------
+// P2P protocol primitives re-export
+//
+// The standalone `neo-p2p` crate was folded into `neo-network` (it was almost
+// entirely a re-export shim over `neo-primitives`). Its types now live under
+// the `proto` submodule and are re-exported here at the crate root for
+// backwards compatibility with the old `neo_p2p::` import paths.
+// -----------------------------------------------------------------------------
+
+pub use proto::{
+    ChannelsConfig, ContainsTransactionType, InvalidWitnessScopeError, InventoryType, MessageCommand,
+    MessageFlags, NodeCapabilityType, OracleResponseCode, P2PError, P2PResult,
+    TransactionAttributeType, TransactionRemovalReason, VerifyResult, WitnessConditionType,
+    WitnessRuleAction, WitnessScope,
 };

@@ -463,7 +463,7 @@ impl NetworkHandle {
     /// freshly-accepted transactions and blocks.
     pub async fn broadcast_inv(
         &self,
-        inventory_type: neo_p2p::InventoryType,
+        inventory_type: crate::InventoryType,
         hashes: Vec<neo_primitives::UInt256>,
     ) -> NetworkResult<()> {
         self.cmd_tx

@@ -74,7 +74,6 @@ mimalloc = { version = "0.1", default-features = false }
 # tokens_tracker module is now at neo-rpc/src/plugins/tokens_tracker/.)
 neo-oracle-service = { workspace = true }
 neo-consensus = { workspace = true }
-neo-p2p = { workspace = true }
 neo-crypto = { workspace = true }
 neo-rpc = { workspace = true, features = ["server"] }
 neo-config = { workspace = true }

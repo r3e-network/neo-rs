@@ -5,7 +5,7 @@
 //! capability shapes (full node, archival, TCP/WS server).
 
 use neo_io::IoResult;
-pub use neo_p2p::NodeCapabilityType;
+pub use crate::NodeCapabilityType;
 pub use neo_payloads::node_capability::{
     MAX_UNKNOWN_CAPABILITY_DATA, NodeCapabilities, NodeCapability,
 };

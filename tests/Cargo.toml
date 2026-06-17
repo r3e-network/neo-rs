@@ -22,7 +22,6 @@ neo-crypto = { workspace = true }
 
 # Layer 2 - Protocol
 neo-consensus = { workspace = true }
-neo-p2p = { workspace = true }
 neo-payloads = { workspace = true }
 
 # Layer 4 - Services
