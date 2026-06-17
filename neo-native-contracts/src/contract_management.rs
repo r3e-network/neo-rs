@@ -26,7 +26,7 @@ use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -48,9 +48,7 @@ const PREFIX_CONTRACT_HASH: u8 = 12;
 /// Storage prefix for the next-available-contract-id counter (matches C#
 /// `ContractManagement.Prefix_NextAvailableId`).
 const PREFIX_NEXT_AVAILABLE_ID: u8 = 15;
-/// C# genesis value for `Prefix_NextAvailableId` (`InitializeAsync` writes 1);
-/// reads fall back to it when the key is absent (pre-genesis / tests), the
-/// same convention `getMinimumDeploymentFee` uses.
+/// C# genesis value for `Prefix_NextAvailableId` (`InitializeAsync` writes 1).
 const DEFAULT_NEXT_AVAILABLE_ID: i64 = 1;
 
 /// C# `PolicyContract.Prefix_BlockedAccount` — written cross-natively here by
@@ -119,17 +117,10 @@ impl ContractManagement {
         id: i32,
     ) -> CoreResult<Option<ContractState>> {
         let id_key = StorageKey::new(Self::ID, Self::contract_id_storage_key(id));
-        let hash_bytes = match snapshot.get(&id_key) {
-            Some(item) => item.value_bytes().into_owned(),
-            None => {
-                // Fall back to the legacy LE encoding for older snapshots.
-                let legacy = StorageKey::new(Self::ID, Self::contract_id_storage_key_legacy(id));
-                match snapshot.get(&legacy) {
-                    Some(item) => item.value_bytes().into_owned(),
-                    None => return Ok(None),
-                }
-            }
+        let Some(item) = snapshot.get(&id_key) else {
+            return Ok(None);
         };
+        let hash_bytes = item.value_bytes().into_owned();
 
         if hash_bytes.is_empty() {
             return Ok(None);
@@ -156,14 +147,6 @@ impl ContractManagement {
         crate::keys::prefixed_with_i32_be(PREFIX_CONTRACT_HASH, id)
     }
 
-    #[inline]
-    fn contract_id_storage_key_legacy(id: i32) -> Vec<u8> {
-        let mut key = Vec::with_capacity(1 + 4);
-        key.push(PREFIX_CONTRACT_HASH);
-        key.extend_from_slice(&id.to_le_bytes());
-        key
-    }
-
     /// Parses the leading `Hash160` argument shared by `getContract`/`isContract`.
     fn parse_hash_arg(args: &[Vec<u8>], method: &str) -> CoreResult<UInt160> {
         crate::args::raw_account(args, &format!("ContractManagement::{method}"))
@@ -181,13 +164,12 @@ impl ContractManagement {
     }
 
     /// Marshals a `ContractState` to the Array return bytes (C# `ToStackItem` +
-    /// `BinarySerializer`) — shared by `getContract` / `getContractById`. A miss is
-    /// the caller's responsibility (an empty payload encodes the C# `null`).
+    /// `BinarySerializer`) via the canonical `StackValue` projection — shared by
+    /// `getContract` / `getContractById`. A miss is the caller's responsibility
+    /// (an empty payload encodes the C# `null`).
     fn contract_state_to_bytes(state: &ContractState, method: &str) -> CoreResult<Vec<u8>> {
-        let item = state.to_stack_item().map_err(|e| {
-            CoreError::invalid_operation(format!("ContractManagement::{method}: stack item: {e}"))
-        })?;
-        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).map_err(|e| {
+        let item = state.to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&item).map_err(|e| {
             CoreError::invalid_operation(format!("ContractManagement::{method}: serialize: {e}"))
         })
     }
@@ -238,43 +220,51 @@ impl ContractManagement {
             .collect();
         for (key, item) in entries {
             snapshot.delete(&key);
-            let decoded = BinarySerializer::deserialize(
+            let limits = ExecutionEngineLimits::default();
+            let decoded = BinarySerializer::deserialize_stack_value_with_limits(
                 &item.value_bytes(),
-                &ExecutionEngineLimits::default(),
-                None,
+                limits.max_item_size as usize,
+                limits.max_stack_size as usize,
             )
             .map_err(|e| {
                 CoreError::invalid_operation(format!(
                     "ContractManagement::destroy: whitelist entry: {e}"
                 ))
             })?;
-            let StackItem::Struct(fields) = decoded else {
+            let StackValue::Struct(_, items) = decoded else {
                 return Err(CoreError::invalid_data(
                     "whitelisted-contract entry is not a struct",
                 ));
             };
-            let items = fields.items();
+            if items.len() < 4 {
+                return Err(CoreError::invalid_data(
+                    "whitelisted-contract entry must have 4 fields",
+                ));
+            }
+            let hash_bytes = items[0].to_byte_string_bytes().ok_or_else(|| {
+                CoreError::invalid_data("whitelisted-contract hash is not byte-like")
+            })?;
+            crate::args::bytes_to_hash160(&hash_bytes, "whitelisted contract hash")?;
             let method = items
                 .get(1)
-                .ok_or_else(|| {
-                    CoreError::invalid_data("whitelisted-contract entry missing method")
-                })?
-                .as_bytes()
-                .map_err(|e| CoreError::invalid_data(format!("whitelist method: {e}")))?;
+                .and_then(neo_vm_rs::stack_value_as_string)
+                .ok_or_else(|| CoreError::invalid_data("whitelist method is not UTF-8"))?;
             let arg_count = items
                 .get(2)
-                .ok_or_else(|| {
-                    CoreError::invalid_data("whitelisted-contract entry missing argCount")
-                })?
-                .as_int()
-                .map_err(|e| CoreError::invalid_data(format!("whitelist argCount: {e}")))?;
+                .and_then(neo_vm_rs::stack_value_as_i64)
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| CoreError::invalid_data("whitelist argCount out of range"))?;
+            let _fixed_fee = items
+                .get(3)
+                .and_then(neo_vm_rs::stack_value_as_i64)
+                .ok_or_else(|| CoreError::invalid_data("whitelist fixedFee out of range"))?;
             engine
                 .send_notification(
                     crate::PolicyContract::script_hash(),
                     "WhitelistFeeChanged".to_string(),
                     vec![
                         StackItem::from_byte_string(contract.hash.to_bytes()),
-                        StackItem::from_byte_string(method),
+                        StackItem::from_byte_string(method.into_bytes()),
                         StackItem::from_int(arg_count),
                         StackItem::Null,
                     ],
@@ -288,29 +278,59 @@ impl ContractManagement {
         Ok(())
     }
 
+    fn read_required_i64_setting(
+        snapshot: &DataCache,
+        prefix: u8,
+        setting: &str,
+    ) -> CoreResult<i64> {
+        let key = StorageKey::new(ContractManagement::ID, vec![prefix]);
+        let Some(item) = snapshot.get(&key) else {
+            return Err(CoreError::invalid_data(format!(
+                "ContractManagement {setting} is missing"
+            )));
+        };
+        BigInt::from_signed_bytes_le(&item.value_bytes())
+            .to_i64()
+            .ok_or_else(|| {
+                CoreError::invalid_operation(format!("ContractManagement {setting} out of range"))
+            })
+    }
+
+    fn read_minimum_deployment_fee(&self, snapshot: &DataCache) -> CoreResult<i64> {
+        Self::read_required_i64_setting(
+            snapshot,
+            PREFIX_MINIMUM_DEPLOYMENT_FEE,
+            "MinimumDeploymentFee",
+        )
+    }
+
+    fn read_next_available_id(&self, snapshot: &DataCache) -> CoreResult<i64> {
+        Self::read_required_i64_setting(snapshot, PREFIX_NEXT_AVAILABLE_ID, "NextAvailableId")
+    }
+
     /// C# `SetMinimumDeploymentFee` storage effect: overwrite
     /// `Prefix_MinimumDeploymentFee` (`GetAndChange(...).Set(value)`). The key is
-    /// genesis-initialised, so `update` (= C# GetAndChange) is the correct primitive;
-    /// the value is stored as the full signed-LE BigInteger (the C# parameter is
-    /// `BigInteger`, not `long`).
-    fn put_minimum_deployment_fee(&self, snapshot: &DataCache, value: &BigInt) {
+    /// genesis-initialised, so absence faults; the value is stored as the full
+    /// signed-LE BigInteger (the C# parameter is `BigInteger`, not `long`).
+    fn put_minimum_deployment_fee(&self, snapshot: &DataCache, value: &BigInt) -> CoreResult<()> {
+        let key = StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]);
+        if snapshot.get(&key).is_none() {
+            return Err(CoreError::invalid_data(
+                "ContractManagement MinimumDeploymentFee is missing",
+            ));
+        }
         snapshot.update(
-            StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            key,
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(value)),
         );
+        Ok(())
     }
 
     /// C# `ContractManagement.GetNextAvailableId`: returns the current
     /// `Prefix_NextAvailableId` value and stores `value + 1`
-    /// (`item.Add(1)`). The key is genesis-initialised to 1; absence (tests /
-    /// pre-genesis snapshots) falls back to that same default.
+    /// (`item.Add(1)`). The key is genesis-initialised to 1; absence faults.
     fn get_next_available_id(&self, snapshot: &DataCache) -> CoreResult<i32> {
-        let value = crate::read_storage_int(
-            snapshot,
-            ContractManagement::ID,
-            PREFIX_NEXT_AVAILABLE_ID,
-            DEFAULT_NEXT_AVAILABLE_ID,
-        )?;
+        let value = self.read_next_available_id(snapshot)?;
         let id = i32::try_from(value).map_err(|_| {
             // C# casts `(int)(BigInteger)item`, which throws on overflow.
             CoreError::invalid_operation("next available contract id out of range")
@@ -480,10 +500,7 @@ impl ContractManagement {
         limits: &ExecutionEngineLimits,
         hash: &UInt160,
     ) -> bool {
-        let Ok(item) = StackItem::try_from(manifest.to_stack_value()) else {
-            return false;
-        };
-        if BinarySerializer::serialize(&item, limits).is_err() {
+        if BinarySerializer::serialize_stack_value(&manifest.to_stack_value(), limits).is_err() {
             return false;
         }
         manifest
@@ -610,12 +627,7 @@ impl ContractManagement {
         let storage_component = i64::from(engine.storage_price())
             .checked_mul(payload_len)
             .ok_or_else(|| CoreError::invalid_operation("deploy storage fee overflow"))?;
-        let minimum_fee = crate::read_storage_int(
-            &snapshot,
-            ContractManagement::ID,
-            PREFIX_MINIMUM_DEPLOYMENT_FEE,
-            DEFAULT_MINIMUM_DEPLOYMENT_FEE,
-        )?;
+        let minimum_fee = self.read_minimum_deployment_fee(&snapshot)?;
         let fee = storage_component.max(minimum_fee);
         engine.charge_execution_fee(u64::try_from(fee).unwrap_or(0))?;
 
@@ -842,7 +854,7 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
         )
         .with_active_in(Hardfork::HfEchidna)
         .with_parameter_names(["hash"]),
-        // HF_Echidna: hasMethod(hash, method, pcount) -> bool.
+        // C# HasMethod is ungated; only IsContract is HF_Echidna-gated.
         NativeMethod::new(
             "hasMethod".to_string(),
             1 << 15,
@@ -855,7 +867,6 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             ],
             ContractParameterType::Boolean,
         )
-        .with_active_in(Hardfork::HfEchidna)
         .with_parameter_names(["hash", "method", "pcount"]),
         // Committee-gated setter: not safe, States, Integer -> Void.
         NativeMethod::new(
@@ -877,9 +888,7 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             ContractParameterType::InteropInterface,
         ),
         // destroy(): the calling contract destroys itself. Not safe,
-        // States|AllowNotify, Void. C# v3.10.0 splits this into DestroyV0
-        // (pre-Gorgon: erase then block the account) and DestroyV1 (from
-        // Gorgon: block the account before erasing) — same ABI, hardfork-gated.
+        // States|AllowNotify, Void.
         NativeMethod::new(
             "destroy".to_string(),
             1 << 15,
@@ -887,17 +896,7 @@ static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(
             (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
             vec![],
             ContractParameterType::Void,
-        )
-        .with_deprecated_in(Hardfork::HfGorgon),
-        NativeMethod::new(
-            "destroy".to_string(),
-            1 << 15,
-            false,
-            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-            vec![],
-            ContractParameterType::Void,
-        )
-        .with_active_in(Hardfork::HfGorgon),
+        ),
         // deploy(nefFile, manifest) / deploy(nefFile, manifest, data): C#
         // [ContractMethod(RequiredCallFlags = CallFlags.States |
         // CallFlags.AllowNotify)] — CpuFee 0 (the deployment fee is charged
@@ -1038,21 +1037,12 @@ impl NativeContract for ContractManagement {
     ///   the NEF + manifest composed for this block height (id and hash
     ///   unchanged), then notify `Update`;
     /// - between the record write and the notification, run
-    ///   `InitializeAsync(engine, hf)` for every hardfork scheduled at this
-    ///   block ([`initialize_native_for_hardfork`]).
-    ///
-    /// Deliberate split from C#: C#'s create-branch also calls
-    /// `InitializeAsync(engine, null)` (genesis seeds) and the `hf ==
-    /// ActiveIn` call performs the activation seeding; the Rust persist
-    /// pipeline (`neo-blockchain/src/native_persist.rs`) already runs the
-    /// equivalent `initialize()` for every native whose activation block is
-    /// this block — immediately before the OnPersist hooks — so re-running it
-    /// here would double-seed. Only the non-`ActiveIn` hardfork
-    /// re-initializations (Policy's Echidna/Faun branches) run here. The
-    /// observable storage outcome is identical; the genesis notification
-    /// ORDER diverges from C# (the initialize-pass `Transfer` mints precede
-    /// every `Deploy` instead of interleaving), which only the pipeline can
-    /// reconcile.
+    ///   `InitializeAsync(engine, null)` for newly-created genesis-active
+    ///   natives and `InitializeAsync(engine, hf)` for every hardfork scheduled
+    ///   at this block. Parameterless [`NativeContract::initialize`] models
+    ///   the C# `hardfork == ActiveIn` branch; [`initialize_native_for_hardfork`]
+    ///   models the non-`ActiveIn` refresh branches such as Policy's
+    ///   Echidna/Faun updates.
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let settings = engine.protocol_settings().clone();
         let block_index = engine
@@ -1092,6 +1082,18 @@ impl NativeContract for ContractManagement {
                         StorageKey::new(Self::ID, Self::contract_id_storage_key(contract.id())),
                         StorageItem::from_bytes(contract.hash().to_bytes().to_vec()),
                     );
+
+                    // C# create branch: if the native is genesis-active,
+                    // `InitializeAsync(engine, null)` runs before the Deploy
+                    // notification for this contract.
+                    if contract.active_in().is_none() {
+                        contract.initialize(engine).map_err(|e| {
+                            CoreError::invalid_operation(format!(
+                                "ContractManagement::on_persist: initialize {} at block {block_index}: {e}",
+                                contract.name()
+                            ))
+                        })?;
+                    }
                 }
                 Some(item) => {
                     // C#: UpdateCounter++ and the NEF/manifest swap on the
@@ -1116,14 +1118,20 @@ impl NativeContract for ContractManagement {
                 }
             }
 
-            // C# `foreach (var hf in hfs) await contract.InitializeAsync(engine,
-            // hf)`. The `hf == ActiveIn` activation seeding already ran as the
-            // pipeline's `initialize()` pass for this block (see above).
+            // C# `foreach (var hf in hfs) await contract.InitializeAsync(engine, hf)`.
+            // The `hf == ActiveIn` branch is represented by `initialize()`;
+            // other hardfork refresh branches are dispatched explicitly.
             for hardfork in &hardforks {
                 if Some(*hardfork) == contract.active_in() {
-                    continue;
+                    contract.initialize(engine).map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "ContractManagement::on_persist: initialize {} for {hardfork:?} at block {block_index}: {e}",
+                            contract.name()
+                        ))
+                    })?;
+                } else {
+                    self.initialize_native_for_hardfork(engine, contract.as_ref(), *hardfork)?;
                 }
-                self.initialize_native_for_hardfork(engine, contract.as_ref(), *hardfork)?;
             }
 
             engine
@@ -1193,12 +1201,7 @@ impl NativeContract for ContractManagement {
                 }
             }
             "getMinimumDeploymentFee" => {
-                let fee = crate::read_storage_int(
-                    &snapshot,
-                    Self::ID,
-                    PREFIX_MINIMUM_DEPLOYMENT_FEE,
-                    DEFAULT_MINIMUM_DEPLOYMENT_FEE,
-                )?;
+                let fee = self.read_minimum_deployment_fee(&snapshot)?;
                 Ok(BigInt::from(fee).to_signed_bytes_le())
             }
             "setMinimumDeploymentFee" => {
@@ -1218,7 +1221,7 @@ impl NativeContract for ContractManagement {
                     ));
                 }
                 crate::committee::assert_committee(engine, "setMinimumDeploymentFee")?;
-                self.put_minimum_deployment_fee(&engine.snapshot_cache(), &value);
+                self.put_minimum_deployment_fee(&engine.snapshot_cache(), &value)?;
                 Ok(Vec::new())
             }
             "getContractHashes" => {
@@ -1243,14 +1246,20 @@ impl NativeContract for ContractManagement {
             }
             "hasMethod" => {
                 let hash = Self::parse_hash_arg(args, "hasMethod")?;
-                let method_name = args
-                    .get(1)
-                    .map(|b| String::from_utf8_lossy(b).into_owned())
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation(
-                            "ContractManagement::hasMethod requires a method name",
-                        )
-                    })?;
+                let method_name = String::from_utf8(
+                    args.get(1)
+                        .ok_or_else(|| {
+                            CoreError::invalid_operation(
+                                "ContractManagement::hasMethod requires a method name",
+                            )
+                        })?
+                        .clone(),
+                )
+                .map_err(|e| {
+                    CoreError::invalid_operation(format!(
+                        "ContractManagement::hasMethod: bad method name: {e}"
+                    ))
+                })?;
                 let pcount = args
                     .get(2)
                     .map(|b| BigInt::from_signed_bytes_le(b))
@@ -1287,14 +1296,6 @@ impl NativeContract for ContractManagement {
                 let Some(contract) = Self::get_contract_from_snapshot(&snapshot, &hash)? else {
                     return Ok(Vec::new());
                 };
-                // C# v3.10.0 DestroyInternal(engine, blockBeforeErase): from
-                // HF_Gorgon the account is blocked + whitelist cleaned BEFORE the
-                // contract state/storage is erased; before Gorgon it stays after.
-                let block_before_erase = engine.is_hardfork_enabled(Hardfork::HfGorgon);
-                if block_before_erase {
-                    crate::PolicyContract::new().block_account_internal(engine, &hash)?;
-                    self.policy_clean_whitelist(engine, &contract)?;
-                }
                 // Delete the per-contract record and the id -> hash index entry.
                 snapshot.delete(&StorageKey::new(
                     Self::ID,
@@ -1314,13 +1315,11 @@ impl NativeContract for ContractManagement {
                 for key in keys {
                     snapshot.delete(&key);
                 }
-                if !block_before_erase {
-                    // C#: `await Policy.BlockAccountInternal(engine, hash)` — lock
-                    // the destroyed contract (the bool result is discarded) — then
-                    // `Policy.CleanWhitelist(engine, contract)`.
-                    crate::PolicyContract::new().block_account_internal(engine, &hash)?;
-                    self.policy_clean_whitelist(engine, &contract)?;
-                }
+                // C#: `await Policy.BlockAccountInternal(engine, hash)` — lock
+                // the destroyed contract (the bool result is discarded) — then
+                // `Policy.CleanWhitelist(engine, contract)`.
+                crate::PolicyContract::new().block_account_internal(engine, &hash)?;
+                self.policy_clean_whitelist(engine, &contract)?;
                 // Emit the Destroy event with the destroyed hash.
                 engine
                     .send_notification(
@@ -1363,7 +1362,6 @@ mod tests {
                 "setMinimumDeploymentFee",
                 "getContractHashes",
                 "destroy",
-                "destroy",
                 "deploy",
                 "deploy",
                 "update",
@@ -1393,7 +1391,7 @@ mod tests {
         assert_eq!(setter.cpu_fee, 1 << 15);
         assert!(setter.active_in.is_none());
         let has_method = c.methods().iter().find(|m| m.name == "hasMethod").unwrap();
-        assert_eq!(has_method.active_in, Some(Hardfork::HfEchidna));
+        assert!(has_method.active_in.is_none());
         assert_eq!(has_method.return_type, ContractParameterType::Boolean);
         assert_eq!(has_method.parameters.len(), 3);
 
@@ -1425,10 +1423,31 @@ mod tests {
         assert_eq!(is_contract.cpu_fee, 1 << 14);
         assert_eq!(is_contract.active_in, Some(Hardfork::HfEchidna));
 
+        let mut hardforks = std::collections::HashMap::new();
+        hardforks.insert(Hardfork::HfEchidna, 100);
+        let settings = neo_config::ProtocolSettings {
+            hardforks,
+            ..neo_config::ProtocolSettings::csharp_default()
+        };
+        let pre_echidna_state =
+            neo_execution::native_contract::build_native_contract_state(&c, &settings, 0);
+        assert!(ContractManagement::abi_has_method(
+            &pre_echidna_state.manifest,
+            "hasMethod",
+            3
+        ));
+        assert!(!ContractManagement::abi_has_method(
+            &pre_echidna_state.manifest,
+            "isContract",
+            1
+        ));
+
         // destroy(): not safe, States|AllowNotify, no params, Void, no hardfork
         // (C# [ContractMethod(CpuFee = 1 << 15,
         // RequiredCallFlags = CallFlags.States | CallFlags.AllowNotify)]).
-        let destroy = c.methods().iter().find(|m| m.name == "destroy").unwrap();
+        let destroys: Vec<_> = c.methods().iter().filter(|m| m.name == "destroy").collect();
+        assert_eq!(destroys.len(), 1);
+        let destroy = destroys[0];
         assert!(!destroy.safe);
         assert_eq!(
             destroy.required_call_flags,
@@ -1438,6 +1457,7 @@ mod tests {
         assert_eq!(destroy.return_type, ContractParameterType::Void);
         assert_eq!(destroy.cpu_fee, 1 << 15);
         assert!(destroy.active_in.is_none());
+        assert!(destroy.deprecated_in.is_none());
 
         // deploy x2 / update x2: C# [ContractMethod(RequiredCallFlags =
         // CallFlags.States | CallFlags.AllowNotify)] — CpuFee/StorageFee 0
@@ -1476,6 +1496,24 @@ mod tests {
                 .iter()
                 .all(|m| m.return_type == ContractParameterType::Void)
         );
+    }
+
+    #[test]
+    fn clean_whitelist_storage_decode_uses_stack_value_projection() {
+        let source = include_str!("contract_management.rs");
+        let start = source
+            .find("fn policy_clean_whitelist")
+            .expect("policy_clean_whitelist exists");
+        let end = source[start..]
+            .find("fn read_required_i64_setting")
+            .map(|offset| start + offset)
+            .expect("following helper exists");
+        let helper = &source[start..end];
+
+        assert!(helper.contains("deserialize_stack_value_with_limits"));
+        assert!(helper.contains("StackValue::Struct"));
+        assert!(!helper.contains("BinarySerializer::deserialize("));
+        assert!(!helper.contains("StackItem::Struct"));
     }
 
     #[test]
@@ -1615,6 +1653,35 @@ mod tests {
     }
 
     #[test]
+    fn get_contract_by_id_ignores_legacy_little_endian_index_like_csharp_v3100() {
+        // C# v3.10 uses StorageKey.Create(id, prefix, int), which appends the
+        // contract id in big-endian form. A little-endian compatibility key is
+        // not a valid v3.10 lookup path.
+        let cache = DataCache::new(false);
+        let hash = UInt160::from_bytes(&[0x24u8; 20]).unwrap();
+        let state = ContractState::new_native(7, hash, "LegacyIndexFixture".to_string());
+        cache.add(
+            StorageKey::new(
+                ContractManagement::ID,
+                ContractManagement::contract_storage_key(&hash),
+            ),
+            StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
+        );
+        let mut legacy_key = vec![PREFIX_CONTRACT_HASH];
+        legacy_key.extend_from_slice(&7i32.to_le_bytes());
+        cache.add(
+            StorageKey::new(ContractManagement::ID, legacy_key),
+            StorageItem::from_bytes(hash.to_bytes().to_vec()),
+        );
+
+        assert!(
+            ContractManagement::get_contract_by_id_from_snapshot(&cache, 7)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn has_method_resolves_contract_from_snapshot() {
         use neo_manifest::{ContractMethodDescriptor, ContractParameterDefinition};
         // The hasMethod invoke arm = GetContract(hash) -> Abi.GetMethod(name,
@@ -1670,6 +1737,36 @@ mod tests {
     }
 
     #[test]
+    fn has_method_rejects_invalid_utf8_method_name_like_csharp() {
+        // C# NativeContract.Invoke converts string parameters through
+        // StackItem.GetString(), so invalid UTF-8 faults instead of being repaired.
+        let cache = DataCache::new(false);
+        let mut engine = ApplicationEngine::new(
+            neo_primitives::TriggerType::Application,
+            None,
+            std::sync::Arc::new(cache),
+            None,
+            neo_config::ProtocolSettings::default(),
+            0,
+            None,
+        )
+        .expect("engine builds");
+        let hash = UInt160::from_bytes(&[0x51u8; 20]).unwrap();
+        let err = ContractManagement::new()
+            .invoke(
+                &mut engine,
+                "hasMethod",
+                &[
+                    hash.to_bytes().to_vec(),
+                    vec![0xFF],
+                    BigInt::from(0).to_signed_bytes_le(),
+                ],
+            )
+            .expect_err("invalid UTF-8 method names must fault");
+        assert!(err.to_string().contains("bad method name"), "{err}");
+    }
+
+    #[test]
     fn is_native_contract_hash_covers_all_eleven_natives() {
         for spec in crate::standard_native_contract_specs() {
             assert!(
@@ -1699,18 +1796,16 @@ mod tests {
         // observed by the getMinimumDeploymentFee reader, matching C#
         // GetAndChange(...).Set(value).
         let cache = DataCache::new(false);
-        assert_eq!(
-            crate::read_storage_int(
-                &cache,
-                ContractManagement::ID,
-                PREFIX_MINIMUM_DEPLOYMENT_FEE,
-                DEFAULT_MINIMUM_DEPLOYMENT_FEE
-            )
-            .unwrap(),
-            DEFAULT_MINIMUM_DEPLOYMENT_FEE
+        cache.add(
+            StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE,
+            ))),
         );
         // Zero is permitted (C# rejects only value < 0).
-        ContractManagement::new().put_minimum_deployment_fee(&cache, &BigInt::from(0));
+        ContractManagement::new()
+            .put_minimum_deployment_fee(&cache, &BigInt::from(0))
+            .unwrap();
         assert_eq!(
             crate::read_storage_int(
                 &cache,
@@ -1722,7 +1817,9 @@ mod tests {
             0
         );
         // Overwrite with a positive fee (GetAndChange semantics).
-        ContractManagement::new().put_minimum_deployment_fee(&cache, &BigInt::from(25_00000000i64));
+        ContractManagement::new()
+            .put_minimum_deployment_fee(&cache, &BigInt::from(25_00000000i64))
+            .unwrap();
         assert_eq!(
             crate::read_storage_int(
                 &cache,
@@ -1788,12 +1885,14 @@ mod tests {
 
     #[test]
     fn contract_state_marshals_to_five_element_array() {
-        // getContract's hit path serializes ContractState.to_stack_item() via the
-        // BinarySerializer; the result must be a 5-field Array (id, updateCounter,
-        // hash, nef, manifest) per C# ContractState.ToStackItem.
+        // getContract's hit path serializes the same 5-field Array
+        // (id, updateCounter, hash, nef, manifest) as C# ContractState.ToStackItem.
         let state = ContractState::default();
-        let item = state.to_stack_item().unwrap();
-        let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
+        let legacy_item = StackItem::try_from(state.to_stack_value()).unwrap();
+        let expected =
+            BinarySerializer::serialize(&legacy_item, &ExecutionEngineLimits::default()).unwrap();
+        let bytes = ContractManagement::contract_state_to_bytes(&state, "test").unwrap();
+        assert_eq!(bytes, expected);
         assert!(!bytes.is_empty());
         let decoded =
             BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
@@ -1801,37 +1900,41 @@ mod tests {
             StackItem::Array(array) => assert_eq!(array.items().len(), 5),
             other => panic!("expected Array, got {other:?}"),
         }
+
+        let source = include_str!("contract_management.rs");
+        let start = source
+            .find("fn contract_state_to_bytes")
+            .expect("contract_state_to_bytes helper exists");
+        let end = source[start..]
+            .find("fn contract_hash_entries")
+            .map(|offset| start + offset)
+            .expect("contract_hash_entries follows contract_state_to_bytes");
+        let helper = &source[start..end];
+
+        assert!(helper.contains("to_stack_value"));
+        assert!(helper.contains("serialize_stack_value_default"));
+        assert!(!helper.contains("to_stack_item"));
+        assert!(!helper.contains("BinarySerializer::serialize("));
     }
 
     #[test]
-    fn minimum_deployment_fee_reads_storage_with_default() {
+    fn minimum_deployment_fee_requires_initialized_storage() {
         let cache = DataCache::new(false);
-        assert_eq!(
-            crate::read_storage_int(
-                &cache,
-                ContractManagement::ID,
-                PREFIX_MINIMUM_DEPLOYMENT_FEE,
-                DEFAULT_MINIMUM_DEPLOYMENT_FEE
-            )
-            .unwrap(),
-            DEFAULT_MINIMUM_DEPLOYMENT_FEE
-        );
+        let mut engine = ApplicationEngine::new(
+            neo_primitives::TriggerType::Application,
+            None,
+            std::sync::Arc::new(cache),
+            None,
+            neo_config::ProtocolSettings::default(),
+            0,
+            None,
+        )
+        .expect("engine builds");
 
-        let key = StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]);
-        cache.add(
-            key,
-            StorageItem::from_bytes(BigInt::from(5_00000000).to_signed_bytes_le()),
-        );
-        assert_eq!(
-            crate::read_storage_int(
-                &cache,
-                ContractManagement::ID,
-                PREFIX_MINIMUM_DEPLOYMENT_FEE,
-                DEFAULT_MINIMUM_DEPLOYMENT_FEE
-            )
-            .unwrap(),
-            5_00000000
-        );
+        let err = ContractManagement::new()
+            .invoke(&mut engine, "getMinimumDeploymentFee", &[])
+            .expect_err("missing minimum deployment fee storage should fault");
+        assert!(err.to_string().contains("MinimumDeploymentFee"), "{err}");
     }
 
     /// A minimal deployable manifest: one `main()` method at offset 0 (the
@@ -1853,10 +1956,20 @@ mod tests {
     }
 
     #[test]
-    fn next_available_id_defaults_to_one_then_increments_and_persists() {
-        // C# GetNextAvailableId: return the stored value, write value + 1; the
-        // genesis InitializeAsync seeds 1, which the absent-key default mirrors.
+    fn next_available_id_requires_initialized_storage_then_increments() {
+        // C# GetNextAvailableId: return the stored value, write value + 1.
         let cache = DataCache::new(false);
+        let err = ContractManagement::new()
+            .get_next_available_id(&cache)
+            .expect_err("missing next available id storage should fault");
+        assert!(err.to_string().contains("NextAvailableId"), "{err}");
+
+        cache.add(
+            StorageKey::new(ContractManagement::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_NEXT_AVAILABLE_ID,
+            ))),
+        );
         assert_eq!(
             ContractManagement::new()
                 .get_next_available_id(&cache)
@@ -2364,16 +2477,39 @@ mod deploy_update_engine_tests {
         );
     }
 
+    fn seed_contract_management_settings(cache: &DataCache) {
+        cache.add(
+            StorageKey::new(ContractManagement::ID, vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_MINIMUM_DEPLOYMENT_FEE,
+            ))),
+        );
+        cache.add(
+            StorageKey::new(ContractManagement::ID, vec![PREFIX_NEXT_AVAILABLE_ID]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_NEXT_AVAILABLE_ID,
+            ))),
+        );
+    }
+
     /// Snapshot seeded with the ContractManagement native record so
     /// `System.Contract.Call` resolves the callee.
     fn seeded_snapshot() -> Arc<DataCache> {
         crate::install();
         let cache = DataCache::new(false);
+        seed_contract_management_settings(&cache);
         put_contract_record(
             &cache,
             &build_native_contract_state(&ContractManagement, &ProtocolSettings::default(), 0),
         );
         Arc::new(cache)
+    }
+
+    fn faun_from_genesis_settings() -> ProtocolSettings {
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfEchidna, 0);
+        settings.hardforks.insert(Hardfork::HfFaun, 0);
+        settings
     }
 
     /// The smallest NEF that parses: a single RET at offset 0.
@@ -2723,6 +2859,80 @@ mod deploy_update_engine_tests {
             .get(&StorageKey::new(1, vec![0x77]))
             .expect("_deploy callback wrote the marker row");
         assert_eq!(row.value_bytes().to_vec(), vec![0xEE]);
+    }
+
+    #[test]
+    fn deploy_callback_local_storage_syscalls_use_csharp_parameter_order() {
+        // HF_Faun local storage syscalls follow the same reflection binder order
+        // as C#: parameter 0 is on top of the stack. Local.Put(key, value) must
+        // pop key before value; Local.Find(prefix, options) must pop prefix
+        // before options.
+        let mut script = ScriptBuilder::new();
+        script.emit_opcode(OpCode::RET);
+        let deploy_offset = script.len() as i32;
+        script.emit_instruction(OpCode::INITSLOT, &[0x00, 0x02]);
+        script.emit_push(&[0xEE]); // value (deeper)
+        script.emit_push(&[0x77]); // key (top)
+        script
+            .emit_syscall("System.Storage.Local.Put")
+            .expect("Local.Put");
+        script.emit_push_int(0); // options (deeper)
+        script.emit_push(&[0x77]); // prefix (top)
+        script
+            .emit_syscall("System.Storage.Local.Find")
+            .expect("Local.Find");
+        script.emit_opcode(OpCode::DROP);
+        script.emit_opcode(OpCode::RET);
+        let nef = NefFile::new("e2e-test".to_string(), script.to_array());
+
+        let mut manifest = deployable_manifest("LocalStorageCallbackFixture");
+        manifest.abi.methods.push(
+            ContractMethodDescriptor::new(
+                "_deploy".to_string(),
+                vec![
+                    ContractParameterDefinition::new(
+                        "data".to_string(),
+                        ContractParameterType::Any,
+                    )
+                    .unwrap(),
+                    ContractParameterDefinition::new(
+                        "update".to_string(),
+                        ContractParameterType::Boolean,
+                    )
+                    .unwrap(),
+                ],
+                ContractParameterType::Void,
+                deploy_offset,
+                false,
+            )
+            .expect("_deploy descriptor"),
+        );
+
+        let snapshot = seeded_snapshot();
+        let sender = UInt160::from_bytes(&SENDER).unwrap();
+        let (state, _) = run_deploy(
+            &snapshot,
+            faun_from_genesis_settings(),
+            sender,
+            &nef.to_bytes(),
+            &manifest_json(&manifest),
+            Some(&[0xAB]),
+            CallFlags::ALL,
+        );
+        assert_eq!(
+            state,
+            VmState::HALT,
+            "local storage callback must follow C# syscall parameter order"
+        );
+
+        let row = snapshot
+            .get(&StorageKey::new(1, vec![0x77]))
+            .expect("Local.Put wrote under the key argument");
+        assert_eq!(row.value_bytes().to_vec(), vec![0xEE]);
+        assert!(
+            snapshot.get(&StorageKey::new(1, vec![0xEE])).is_none(),
+            "Local.Put must not swap key and value"
+        );
     }
 
     #[test]
@@ -3207,11 +3417,49 @@ mod persist_tests {
             "RoleManagement",
             "OracleContract",
         ];
-        // Deploy notifications from the CM hash, in canonical order, carrying
-        // each contract's hash.
+        // C# interleaves native initialization with deployment: the
+        // genesis-active NEO/GAS initializers emit Transfer before their
+        // corresponding Deploy notifications.
         let notifications = engine.notifications();
-        assert_eq!(notifications.len(), genesis_native_names.len());
-        for (notification, contract) in notifications.iter().zip(NATIVE_CONTRACTS.iter()) {
+        assert_eq!(notifications.len(), genesis_native_names.len() + 2);
+        assert_eq!(notifications[0].event_name, "Deploy");
+        assert_eq!(
+            notifications[0].state[0].as_bytes().unwrap(),
+            crate::ContractManagement::script_hash().to_bytes()
+        );
+        assert_eq!(notifications[1].event_name, "Deploy");
+        assert_eq!(
+            notifications[1].state[0].as_bytes().unwrap(),
+            crate::StdLib::script_hash().to_bytes()
+        );
+        assert_eq!(notifications[2].event_name, "Deploy");
+        assert_eq!(
+            notifications[2].state[0].as_bytes().unwrap(),
+            crate::CryptoLib::script_hash().to_bytes()
+        );
+        assert_eq!(notifications[3].event_name, "Deploy");
+        assert_eq!(
+            notifications[3].state[0].as_bytes().unwrap(),
+            crate::LedgerContract::script_hash().to_bytes()
+        );
+        assert_eq!(notifications[4].event_name, "Transfer");
+        assert_eq!(notifications[4].script_hash, crate::NeoToken::script_hash());
+        assert_eq!(notifications[5].event_name, "Deploy");
+        assert_eq!(
+            notifications[5].state[0].as_bytes().unwrap(),
+            crate::NeoToken::script_hash().to_bytes()
+        );
+        assert_eq!(notifications[6].event_name, "Transfer");
+        assert_eq!(notifications[6].script_hash, crate::GasToken::script_hash());
+        assert_eq!(notifications[7].event_name, "Deploy");
+        assert_eq!(
+            notifications[7].state[0].as_bytes().unwrap(),
+            crate::GasToken::script_hash().to_bytes()
+        );
+        let deploy_notifications = notifications
+            .iter()
+            .filter(|notification| notification.event_name == "Deploy");
+        for (notification, contract) in deploy_notifications.zip(NATIVE_CONTRACTS.iter()) {
             assert_eq!(notification.event_name, "Deploy");
             assert_eq!(notification.script_hash, ContractManagement::script_hash());
             assert_eq!(
@@ -3381,16 +3629,14 @@ mod persist_tests {
             "MaxTraceableBlocks migrates from ProtocolSettings"
         );
 
-        // Notary's own ActiveIn seeding is the persist pipeline's initialize()
-        // job, deliberately not run here (it would double-seed): C# would have
-        // written MaxNotValidBeforeDelta inside this OnPersist via
-        // InitializeAsync(HF_Echidna).
+        // Notary's own ActiveIn seeding runs inside ContractManagement
+        // OnPersist, matching C# InitializeAsync(HF_Echidna).
         let notary_initialize_seed = storage_int(
             &snapshot,
             crate::Notary::ID,
             vec![NOTARY_PREFIX_MAX_NOT_VALID_BEFORE_DELTA],
         );
-        assert_eq!(notary_initialize_seed, None);
+        assert_eq!(notary_initialize_seed, Some(BigInt::from(140)));
     }
 
     /// The HF_Faun activation block: Policy's Faun re-initialization

@@ -5,11 +5,16 @@
 use super::*;
 use neo_error::CoreError;
 use neo_primitives::SerializablePayload;
+use neo_vm::InteroperableError;
 use neo_vm_rs::StackValue;
 
 impl SerializablePayload for Transaction {
     fn hash_data(&self) -> Vec<u8> {
         Transaction::hash_data(self)
+    }
+
+    fn hash(&self) -> UInt256 {
+        self.try_hash().unwrap_or_default()
     }
 
     fn witness_count(&self) -> usize {
@@ -47,38 +52,32 @@ impl Transaction {
             })?
             .to_bytes();
 
-        Ok(StackValue::Array(vec![
-            StackValue::ByteString(self.try_hash()?.to_bytes()),
-            StackValue::Integer(i64::from(self.version)),
-            StackValue::Integer(i64::from(self.nonce)),
-            StackValue::ByteString(sender),
-            StackValue::Integer(self.system_fee),
-            StackValue::Integer(self.network_fee),
-            StackValue::Integer(i64::from(self.valid_until_block)),
-            StackValue::ByteString(self.script.clone()),
-        ]))
+        Ok(StackValue::Array(
+            0,
+            vec![
+                StackValue::ByteString(self.try_hash()?.to_bytes()),
+                StackValue::Integer(i64::from(self.version)),
+                StackValue::Integer(i64::from(self.nonce)),
+                StackValue::ByteString(sender),
+                StackValue::Integer(self.system_fee),
+                StackValue::Integer(self.network_fee),
+                StackValue::Integer(i64::from(self.valid_until_block)),
+                StackValue::ByteString(self.script.clone()),
+            ],
+        ))
     }
 }
 
 impl Interoperable for Transaction {
-    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), neo_vm::VmError> {
-        // This operation is not supported for Transaction.
-        // The C# implementation throws NotSupportedException.
-        Err(neo_vm::VmError::invalid_operation_msg(
-            "FromStackItem is not supported for Transaction",
+    fn from_stack_value(&mut self, _value: StackValue) -> Result<(), InteroperableError> {
+        Err(InteroperableError::NotSupported(
+            "Transaction::from_stack_value is not supported".into(),
         ))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {
-        // Build the lean neo-vm-rs StackValue projection first, then adapt it to
-        // the host StackItem. Both steps' errors surface as a single VM error.
-        let to_item =
-            || -> Result<StackItem, CoreError> { Ok(StackItem::try_from(self.to_stack_value()?)?) };
-        to_item().map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert transaction StackValue to StackItem: {error}"
-            ))
-        })
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Transaction::to_stack_value(self)
+            .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {

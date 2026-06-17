@@ -5,7 +5,6 @@ use neo_crypto::Crypto;
 use neo_crypto::{CryptoError, ECCurve, ECPoint, Secp256r1Crypto};
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
-use neo_primitives::Hardfork;
 use neo_vm::VmResult;
 use neo_vm::execution_engine::ExecutionEngine;
 
@@ -145,12 +144,9 @@ impl ApplicationEngine {
 
     /// Verifies a signature using secp256r1.
     ///
-    /// Mirrors C# `CheckSig`: pre-HF_Gorgon it calls `Crypto.VerifySignatureV0`
-    /// (a wrong-length signature returns `false`), and from HF_Gorgon it calls
-    /// the strict `Crypto.VerifySignature` (a wrong-length signature throws a
-    /// `FormatException` -> syscall fault). In both, the public key is decoded
-    /// (`ECPoint.DecodePoint`) *before* the signature length is examined, so an
-    /// invalid public key always faults regardless of the hardfork.
+    /// Mirrors C# v3.10.0 `CheckSig`: `Crypto.VerifySignature(pubkey bytes)`
+    /// decodes the public key first, then returns `false` for a non-64-byte
+    /// signature.
     fn verify_signature(
         &self,
         message: &[u8],
@@ -165,9 +161,6 @@ impl ApplicationEngine {
                     return Ok(false);
                 }
                 return Err(CoreError::other("Invalid public key"));
-            }
-            if self.is_hardfork_enabled(Hardfork::HfGorgon) {
-                return Err(CoreError::other("Signature size should be 64 bytes"));
             }
             return Ok(false);
         }
@@ -279,5 +272,42 @@ impl ApplicationEngine {
             crypto_check_multisig_handler,
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_config::{Hardfork, ProtocolSettings};
+    use neo_primitives::TriggerType;
+    use neo_storage::DataCache;
+    use std::sync::Arc;
+
+    fn engine_with_gorgon_active() -> ApplicationEngine {
+        let mut settings = ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfGorgon, 0);
+        ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            settings,
+            crate::application_engine::TEST_MODE_GAS,
+            None,
+        )
+        .expect("application engine")
+    }
+
+    #[test]
+    fn wrong_length_signature_returns_false_even_with_gorgon_configured_like_csharp_v3100() {
+        let engine = engine_with_gorgon_active();
+        let public_key =
+            hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+                .expect("public key hex");
+
+        assert_eq!(
+            engine.verify_signature(b"message", &public_key, &[0u8; 63]),
+            Ok(false)
+        );
     }
 }

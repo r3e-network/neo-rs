@@ -481,10 +481,7 @@ mod tests {
                 Value::Text("module_id".into()),
                 Value::Text("i-0abc-enc01".into()),
             ),
-            (
-                Value::Text("digest".into()),
-                Value::Text("SHA384".into()),
-            ),
+            (Value::Text("digest".into()), Value::Text("SHA384".into())),
             (
                 Value::Text("timestamp".into()),
                 Value::Integer(1_700_000_000_000u64.into()),
@@ -625,9 +622,10 @@ mod tests {
         // Craft a payload whose PCR0 is the wrong length.
         let payload = synthetic_payload(vec![1u8; 47], vec![2u8; 48], vec![3u8; 48], false);
         let doc = NitroAttestationDoc::parse_payload(&payload).unwrap();
-        assert!(doc
-            .structural_validate(&NitroValidationOptions::default())
-            .is_err());
+        assert!(
+            doc.structural_validate(&NitroValidationOptions::default())
+                .is_err()
+        );
     }
 
     #[test]
@@ -651,25 +649,23 @@ mod tests {
         let map = Value::Map(vec![
             (Value::Text("module_id".into()), Value::Text("m".into())),
             (Value::Text("digest".into()), Value::Text("SHA256".into())),
-            (
-                Value::Text("timestamp".into()),
-                Value::Integer(1u64.into()),
-            ),
+            (Value::Text("timestamp".into()), Value::Integer(1u64.into())),
             (
                 Value::Text("pcrs".into()),
-                Value::Map(vec![(Value::Integer(0.into()), Value::Bytes(vec![1u8; 48]))]),
+                Value::Map(vec![(
+                    Value::Integer(0.into()),
+                    Value::Bytes(vec![1u8; 48]),
+                )]),
             ),
-            (
-                Value::Text("certificate".into()),
-                Value::Bytes(vec![0x30]),
-            ),
+            (Value::Text("certificate".into()), Value::Bytes(vec![0x30])),
         ]);
         let mut buf = Vec::new();
         ciborium::ser::into_writer(&map, &mut buf).unwrap();
         let doc = NitroAttestationDoc::parse_payload(&buf).unwrap();
-        assert!(doc
-            .structural_validate(&NitroValidationOptions::default())
-            .is_err());
+        assert!(
+            doc.structural_validate(&NitroValidationOptions::default())
+                .is_err()
+        );
     }
 
     #[test]
@@ -678,13 +674,13 @@ mod tests {
         let map = Value::Map(vec![
             (Value::Text("module_id".into()), Value::Text("m".into())),
             (Value::Text("digest".into()), Value::Text("SHA384".into())),
-            (
-                Value::Text("timestamp".into()),
-                Value::Integer(1u64.into()),
-            ),
+            (Value::Text("timestamp".into()), Value::Integer(1u64.into())),
             (
                 Value::Text("pcrs".into()),
-                Value::Map(vec![(Value::Integer(0.into()), Value::Bytes(vec![1u8; 48]))]),
+                Value::Map(vec![(
+                    Value::Integer(0.into()),
+                    Value::Bytes(vec![1u8; 48]),
+                )]),
             ),
         ]);
         let mut buf = Vec::new();

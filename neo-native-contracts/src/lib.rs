@@ -70,6 +70,10 @@ pub use role_management::RoleManagement;
 pub use std_lib::StdLib;
 pub use treasury::Treasury;
 
+use neo_vm::Interoperable;
+use neo_vm_rs::StackValue;
+use num_bigint::BigInt;
+
 /// Reads a native-contract integer setting from `snapshot` under
 /// `(contract_id, prefix)`, returning `default` when the key is absent.
 ///
@@ -135,6 +139,43 @@ pub(crate) const NEP17_PREFIX_TOTAL_SUPPLY: u8 = 11;
 /// C# `FungibleToken.Prefix_Account`.
 pub(crate) const NEP17_PREFIX_ACCOUNT: u8 = 20;
 
+/// C# `AccountState`: the base native-token account state
+/// `Struct[Balance]`. `NeoAccountState` extends this shape with governance
+/// fields, but the balance projection is common to NEO and GAS.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AccountState {
+    pub(crate) balance: BigInt,
+}
+
+impl AccountState {
+    pub(crate) fn new(balance: BigInt) -> Self {
+        Self { balance }
+    }
+
+    pub(crate) fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(
+            0,
+            vec![StackValue::BigInteger(self.balance.to_signed_bytes_le())],
+        )
+    }
+
+    pub(crate) fn from_stack_value(stack_value: StackValue) -> neo_error::CoreResult<Self> {
+        let StackValue::Struct(0, items) = stack_value else {
+            return Err(neo_error::CoreError::invalid_data(
+                "NEP-17 account state is not a struct",
+            ));
+        };
+        let balance = items
+            .first()
+            .ok_or_else(|| neo_error::CoreError::invalid_data("NEP-17 account state is empty"))?;
+        let balance = neo_vm_rs::stack_value_as_bigint(balance)
+            .map_err(|e| neo_error::CoreError::invalid_data(format!("NEP-17 balance: {e}")))?;
+        Ok(Self { balance })
+    }
+}
+
+neo_vm::impl_interoperable_via_stack_value!(AccountState);
+
 /// Reads a NEP-17 account balance — the `Balance` field (index 0) of the
 /// account-state struct stored under `(contract_id, [20] ++ account)` — returning
 /// 0 when the account has no entry. Matches C# `FungibleToken.BalanceOf`, which
@@ -152,22 +193,63 @@ pub(crate) fn read_nep17_balance(
     let Some(item) = snapshot.get(&key) else {
         return Ok(num_bigint::BigInt::from(0));
     };
-    let state = neo_serialization::BinarySerializer::deserialize(
+    let limits = neo_vm_rs::ExecutionEngineLimits::default();
+    let state = neo_serialization::BinarySerializer::deserialize_stack_value_with_limits(
         &item.value_bytes(),
-        &neo_vm_rs::ExecutionEngineLimits::default(),
-        None,
+        limits.max_item_size as usize,
+        limits.max_stack_size as usize,
     )
     .map_err(|e| neo_error::CoreError::deserialization(format!("NEP-17 account state: {e}")))?;
-    let neo_vm::StackItem::Struct(fields) = state else {
-        return Err(neo_error::CoreError::invalid_data(
-            "NEP-17 account state is not a struct",
-        ));
-    };
-    let items = fields.items();
-    let balance = items
-        .first()
-        .ok_or_else(|| neo_error::CoreError::invalid_data("NEP-17 account state is empty"))?;
-    balance
-        .as_int()
-        .map_err(|e| neo_error::CoreError::invalid_data(format!("NEP-17 balance: {e}")))
+    Ok(AccountState::from_stack_value(state)?.balance)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AccountState;
+    use neo_vm::Interoperable;
+    use neo_vm_rs::StackValue;
+    use num_bigint::BigInt;
+
+    #[test]
+    fn account_state_interoperable_projection_matches_csharp_shape() {
+        let state = AccountState::new(BigInt::from(12345));
+        let expected_value = StackValue::Struct(
+            0,
+            vec![StackValue::BigInteger(
+                BigInt::from(12345).to_signed_bytes_le(),
+            )],
+        );
+
+        assert_eq!(state.to_stack_value(), expected_value);
+
+        let trait_value = Interoperable::to_stack_value(&state).unwrap();
+        assert_eq!(trait_value, expected_value);
+
+        let mut parsed = AccountState::new(BigInt::from(0));
+        Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+        assert_eq!(parsed, state);
+
+        assert!(AccountState::from_stack_value(StackValue::Array(0, vec![])).is_err());
+        assert!(AccountState::from_stack_value(StackValue::Struct(0, vec![])).is_err());
+    }
+
+    #[test]
+    fn nep17_balance_reader_uses_stack_value_projection() {
+        let source = include_str!("lib.rs");
+        let start = source
+            .find("pub(crate) fn read_nep17_balance(")
+            .expect("read_nep17_balance helper exists");
+        let end = source[start..]
+            .find("#[cfg(test)]")
+            .map(|offset| start + offset)
+            .expect("tests follow read_nep17_balance");
+        let helper = &source[start..end];
+
+        assert!(helper.contains("deserialize_stack_value_with_limits"));
+        assert!(helper.contains("AccountState::from_stack_value"));
+        assert!(!helper.contains("StackValue::Struct"));
+        assert!(!helper.contains("stack_value_as_bigint"));
+        assert!(!helper.contains("BinarySerializer::deserialize("));
+        assert!(!helper.contains("neo_vm::StackItem::Struct"));
+    }
 }

@@ -5,9 +5,9 @@ use crate::pool_item::PoolItem;
 use neo_primitives::UInt256;
 use std::collections::BTreeSet;
 
-/// BTreeSet of [`PoolItem`] ordered by [`PoolItem::compare_to`] (highest
-/// fee-per-byte first). Backed by a `BTreeSet` for O(log n) insert
-/// and ordered iteration.
+/// BTreeSet of [`PoolItem`] ordered by [`PoolItem::compare_to`]. The raw set is
+/// ascending (lowest priority first); public snapshots reverse it for C#'s
+/// highest-priority-first mempool views.
 #[derive(Debug, Default, Clone)]
 pub struct PoolIndex {
     /// Set of pool items.
@@ -75,14 +75,14 @@ impl PoolIndex {
         self.hashes.contains_key(hash)
     }
 
-    /// Returns an iterator over the items in the index, ordered by
-    /// priority (highest first).
+    /// Returns an iterator over the items in raw set order (lowest priority
+    /// first). Use [`Self::to_sorted_vec`] for the public mempool order.
     pub fn iter(&self) -> std::collections::btree_set::Iter<'_, PoolItem> {
         self.items.iter()
     }
 
-    /// Returns a vector of all items in priority order.
+    /// Returns a vector of all items in priority order (highest first).
     pub fn to_sorted_vec(&self) -> Vec<PoolItem> {
-        self.items.iter().cloned().collect()
+        self.items.iter().rev().cloned().collect()
     }
 }

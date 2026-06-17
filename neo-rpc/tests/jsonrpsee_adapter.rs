@@ -1,4 +1,4 @@
-#![cfg(feature = "jsonrpsee-server")]
+#![cfg(feature = "server")]
 
 use neo_config::ProtocolSettings;
 use neo_rpc::server::{
@@ -26,7 +26,9 @@ const JSONRPSEE_SMOKE_METHODS: &[&str] = &[
 ];
 
 fn build_server_with_handlers() -> Arc<RwLock<RpcServer>> {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = Arc::new(
+        Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system to start"),
+    );
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());
@@ -43,10 +45,13 @@ fn find_handler(method: &str) -> RpcHandler {
         .expect("registered handler")
 }
 
-fn direct_handler_result(server: &Arc<RwLock<RpcServer>>, method: &str) -> Value {
+fn direct_handler_result(
+    server: &Arc<RwLock<RpcServer>>,
+    method: &str,
+) -> Result<Value, RpcException> {
     let callback = find_handler(method).callback();
     let server = server.read();
-    callback(&server, &[]).expect("handler result")
+    callback(&server, &[])
 }
 
 async fn raw_response(module: &jsonrpsee::RpcModule<impl Clone>, request: Value) -> Value {
@@ -60,6 +65,16 @@ async fn raw_response(module: &jsonrpsee::RpcModule<impl Clone>, request: Value)
 fn assert_neo_error(response: &Value, error: ServerRpcError) {
     assert_eq!(response["error"]["code"], error.code());
     assert_eq!(response["error"]["message"], error.error_message());
+    if let Some(data) = error.data() {
+        assert_eq!(response["error"]["data"], data);
+    } else {
+        assert!(response["error"].get("data").is_none());
+    }
+}
+
+fn assert_neo_exception(response: &Value, error: &RpcException) {
+    assert_eq!(response["error"]["code"], error.code());
+    assert_eq!(response["error"]["message"], error.to_string());
     if let Some(data) = error.data() {
         assert_eq!(response["error"]["data"], data);
     } else {
@@ -101,7 +116,9 @@ async fn module_registers_public_methods_from_server_registry() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn module_registers_dynamic_public_methods_without_descriptor_api_breaks() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = Arc::new(
+        Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system to start"),
+    );
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     let dynamic_method = ["custom", "method"].join("");
     let protected_method = ["custom", "protected"].join("");
@@ -167,7 +184,10 @@ async fn initial_read_only_methods_match_registered_handlers() {
 
         assert_eq!(response["jsonrpc"], "2.0");
         assert_eq!(response["id"], id);
-        assert_eq!(response["result"], direct_handler_result(&server, method));
+        match direct_handler_result(&server, method) {
+            Ok(result) => assert_eq!(response["result"], result),
+            Err(error) => assert_neo_exception(&response, &error),
+        }
     }
 }
 
@@ -189,7 +209,7 @@ async fn getversion_accepts_omitted_params() {
     assert_eq!(response["id"], 8);
     assert_eq!(
         response["result"],
-        direct_handler_result(&server, "getversion")
+        direct_handler_result(&server, "getversion").expect("getversion result")
     );
 }
 
@@ -256,7 +276,9 @@ async fn unregistered_method_is_rejected_by_jsonrpsee_before_neo_dispatch() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn handler_error_preserves_neo_message_and_data() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = Arc::new(
+        Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system to start"),
+    );
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(vec![RpcHandler::new(
         RpcMethodDescriptor::new("getblockcount"),

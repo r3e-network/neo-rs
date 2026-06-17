@@ -205,11 +205,13 @@ impl TrackerBase {
         let start_key = [prefix_bytes.as_slice(), &start_time.to_be_bytes()].concat();
         let end_key = [prefix_bytes.as_slice(), &end_time.to_be_bytes()].concat();
 
-        let start_vec = start_key.clone();
         let mut results = Vec::new();
 
         let snapshot = self.db.snapshot();
-        for (key_bytes, value_bytes) in snapshot.find(Some(&start_vec), SeekDirection::Forward) {
+        for (key_bytes, value_bytes) in snapshot.find(Some(&prefix_bytes), SeekDirection::Forward) {
+            if key_bytes.as_slice() < start_key.as_slice() {
+                continue;
+            }
             if key_bytes.as_slice() > end_key.as_slice() {
                 break;
             }

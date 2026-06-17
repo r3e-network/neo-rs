@@ -335,16 +335,66 @@ impl RecoveryMessage {
         })
     }
 
-    /// Basic validation: ensures no duplicate validator indices in preparation messages.
-    pub fn validate(&self) -> ConsensusResult<()> {
-        let mut seen = std::collections::HashSet::new();
-        for p in &self.preparation_messages {
-            if !seen.insert(p.validator_index) {
-                return Err(crate::ConsensusError::DuplicateValidator(p.validator_index));
+    /// Validates the message using C# DBFTPlugin `RecoveryMessage.Verify` rules.
+    pub fn validate(
+        &self,
+        validator_count: usize,
+        max_transactions_per_block: u32,
+    ) -> ConsensusResult<()> {
+        validate_compact_validators(
+            self.change_view_messages.iter().map(|p| p.validator_index),
+            validator_count,
+        )?;
+        validate_compact_validators(
+            self.preparation_messages.iter().map(|p| p.validator_index),
+            validator_count,
+        )?;
+        validate_compact_validators(
+            self.commit_messages.iter().map(|p| p.validator_index),
+            validator_count,
+        )?;
+
+        if let Some(request) = &self.prepare_request_message {
+            if request.validator_index as usize >= validator_count {
+                return Err(crate::ConsensusError::InvalidValidatorIndex(
+                    request.validator_index,
+                ));
+            }
+            if request.transaction_hashes.len() > max_transactions_per_block as usize {
+                return Err(crate::ConsensusError::invalid_proposal(
+                    "RecoveryMessage PrepareRequest exceeds MaxTransactionsPerBlock",
+                ));
+            }
+
+            let mut hashes =
+                std::collections::HashSet::with_capacity(request.transaction_hashes.len());
+            for hash in &request.transaction_hashes {
+                if !hashes.insert(*hash) {
+                    return Err(crate::ConsensusError::invalid_proposal(
+                        "RecoveryMessage PrepareRequest transaction hashes are duplicate",
+                    ));
+                }
             }
         }
+
         Ok(())
     }
+}
+
+fn validate_compact_validators<I>(indices: I, validator_count: usize) -> ConsensusResult<()>
+where
+    I: IntoIterator<Item = u8>,
+{
+    let mut seen = std::collections::HashSet::new();
+    for index in indices {
+        if index as usize >= validator_count {
+            return Err(crate::ConsensusError::InvalidValidatorIndex(index));
+        }
+        if !seen.insert(index) {
+            return Err(crate::ConsensusError::DuplicateValidator(index));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -440,5 +490,76 @@ mod tests {
         expected.extend_from_slice(&[0xFF, 0x00]);
 
         assert_eq!(bytes, expected);
+    }
+
+    #[test]
+    fn recovery_validate_rejects_duplicate_compact_validators_like_csharp_dictionary() {
+        let mut msg = RecoveryMessage::new(100, 0, 1);
+        msg.change_view_messages.push(ChangeViewPayloadCompact {
+            validator_index: 2,
+            original_view_number: 0,
+            timestamp: 10,
+            invocation_script: Vec::new(),
+        });
+        msg.change_view_messages.push(ChangeViewPayloadCompact {
+            validator_index: 2,
+            original_view_number: 0,
+            timestamp: 11,
+            invocation_script: Vec::new(),
+        });
+
+        let err = msg.validate(4, 10).unwrap_err();
+        assert!(matches!(err, crate::ConsensusError::DuplicateValidator(2)));
+    }
+
+    #[test]
+    fn recovery_validate_rejects_out_of_range_compact_validators_like_csharp_verify() {
+        let mut msg = RecoveryMessage::new(100, 0, 1);
+        msg.commit_messages.push(CommitPayloadCompact {
+            view_number: 0,
+            validator_index: 4,
+            signature: vec![0x11; 64],
+            invocation_script: Vec::new(),
+        });
+
+        let err = msg.validate(4, 10).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::ConsensusError::InvalidValidatorIndex(4)
+        ));
+    }
+
+    #[test]
+    fn recovery_validate_applies_embedded_prepare_request_verify_subset() {
+        let mut msg = RecoveryMessage::new(100, 0, 1);
+        msg.prepare_request_message = Some(crate::messages::PrepareRequestMessage::new(
+            100,
+            0,
+            4,
+            0,
+            UInt256::zero(),
+            1_000,
+            7,
+            Vec::new(),
+        ));
+        let err = msg.validate(4, 10).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::ConsensusError::InvalidValidatorIndex(4)
+        ));
+
+        let mut msg = RecoveryMessage::new(100, 0, 1);
+        msg.prepare_request_message = Some(crate::messages::PrepareRequestMessage::new(
+            100,
+            0,
+            1,
+            0,
+            UInt256::zero(),
+            1_000,
+            7,
+            vec![UInt256::from([0x01; 32]), UInt256::from([0x02; 32])],
+        ));
+        let err = msg.validate(4, 1).unwrap_err();
+        assert!(matches!(err, crate::ConsensusError::InvalidProposal { .. }));
     }
 }

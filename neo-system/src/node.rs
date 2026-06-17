@@ -24,6 +24,7 @@ use tracing::info;
 use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
 use neo_mempool::MemoryPool;
+use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::NetworkHandle;
 use neo_payloads::{Transaction, VerifyResult};
 use neo_runtime::{BlockExecutor, ConsensusService, NeoEngine};
@@ -267,11 +268,15 @@ impl Node {
     /// Returns a handle to the transaction router used to enqueue
     /// outbound transactions for broadcast / persistence.
     ///
-    /// The full router lives in `neo-mempool` / `neo-network`. The
-    /// stub here is a marker that lets plugins compile against the
-    /// orchestrator without taking a hard dependency on those crates.
+    /// The handle admits into the node's shared `neo-mempool`
+    /// instance and best-effort relays accepted transactions through
+    /// `neo-network`.
     pub fn tx_router_actor(&self) -> TxRouterHandle {
-        TxRouterHandle::new(Arc::clone(&self.mempool), self.network.clone())
+        TxRouterHandle::new(
+            Arc::clone(&self.mempool),
+            self.network.clone(),
+            Arc::clone(&self.settings),
+        )
     }
 }
 
@@ -283,12 +288,21 @@ impl Node {
 pub struct TxRouterHandle {
     mempool: Arc<MemoryPool>,
     network: NetworkHandle,
+    settings: Arc<ProtocolSettings>,
 }
 
 impl TxRouterHandle {
     /// Construct a `TxRouterHandle` over the node's shared mempool + network.
-    pub fn new(mempool: Arc<MemoryPool>, network: NetworkHandle) -> Self {
-        Self { mempool, network }
+    pub fn new(
+        mempool: Arc<MemoryPool>,
+        network: NetworkHandle,
+        settings: Arc<ProtocolSettings>,
+    ) -> Self {
+        Self {
+            mempool,
+            network,
+            settings,
+        }
     }
 
     /// Admit `tx` into the shared memory pool against `snapshot`, and — when
@@ -303,6 +317,32 @@ impl TxRouterHandle {
         relay: bool,
         snapshot: &DataCache,
     ) -> CoreResult<()> {
+        let hash = tx
+            .try_hash()
+            .map_err(|_| CoreError::other(format!("{:?}", VerifyResult::Invalid)))?;
+        let ledger = LedgerContract::new();
+        if ledger
+            .contains_transaction(snapshot, &hash)
+            .unwrap_or(false)
+        {
+            return Err(CoreError::other(format!(
+                "{:?}",
+                VerifyResult::AlreadyExists
+            )));
+        }
+        let max_traceable_blocks = PolicyContract::new()
+            .get_max_traceable_blocks_snapshot(snapshot, self.settings.as_ref())
+            .map_err(|error| CoreError::other(format!("MaxTraceableBlocks: {error}")))?;
+        let signers: Vec<_> = tx.signers().iter().map(|s| s.account).collect();
+        if ledger
+            .contains_conflict_hash(snapshot, &hash, &signers, max_traceable_blocks)
+            .unwrap_or(false)
+        {
+            return Err(CoreError::other(format!(
+                "{:?}",
+                VerifyResult::HasConflicts
+            )));
+        }
         let result = self.mempool.try_add(tx.clone(), snapshot);
         if result != VerifyResult::Succeed {
             return Err(CoreError::other(format!("{result:?}")));

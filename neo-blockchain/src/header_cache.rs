@@ -9,9 +9,8 @@ use neo_payloads::Header;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::VecDeque;
 
-/// Maximum number of headers retained in the cache. Increased for
-/// faster sync.
-pub const MAX_HEADERS: usize = 50_000;
+/// Maximum number of headers retained in the cache (C# `HeaderCache.MaxHeaders`).
+pub const MAX_HEADERS: usize = 10_000;
 
 /// Thread-safe cache that stores headers which have arrived before
 /// their corresponding blocks. Mirrors the behaviour of the C#
@@ -114,6 +113,11 @@ mod tests {
         let cache = HeaderCache::new();
         assert_eq!(cache.count(), 0);
         assert!(cache.last().is_none());
+    }
+
+    #[test]
+    fn max_headers_matches_csharp() {
+        assert_eq!(MAX_HEADERS, 10_000);
     }
 
     #[test]

@@ -118,12 +118,18 @@ impl Default for DataCacheConfig {
 /// Errors returned by DataCache operations.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DataCacheError {
+    /// The cache is read-only and cannot accept mutations.
     #[error("cache is read-only")]
     ReadOnly,
+    /// The requested mutation is not valid for the entry's current tracked state.
+    #[error("element currently has state {0:?}")]
+    InvalidState(TrackState),
+    /// Persisting the tracked change set into the backing store failed.
     #[error("unable to commit changes: {0}")]
     CommitFailed(String),
 }
 
+/// Result type for [`DataCache`](super::cache::DataCache) mutation operations.
 pub type DataCacheResult<T = ()> = Result<T, DataCacheError>;
 
 #[cfg(test)]

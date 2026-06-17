@@ -1,17 +1,17 @@
 //! ApplicationEngine.Helper - matches C# Neo.SmartContract.ApplicationEngine helper methods exactly
 
 use neo_config::hardfork::Hardfork;
-use neo_crypto::Crypto;
+use neo_crypto::{Crypto, ECCurve, ECPoint};
 // Old wrapper types removed - StackValue compounds are flat Vecs now
 use crate::NotifyEventArgs;
 use crate::application_engine::{ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE};
-use crate::interoperable::Interoperable;
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::TriggerType;
 use neo_primitives::UInt160;
 use neo_serialization::BinarySerializer;
 use neo_vm::StackItem;
 use neo_vm::stack_item::{Array as ArrayItem, Map as MapItem, Struct as StructItem};
+use neo_vm_rs::StackValue;
 use neo_vm_rs::VmOrderedDictionary;
 use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
@@ -188,36 +188,20 @@ impl ApplicationEngine {
     }
 
     /// Helper to convert public key to script hash
-    pub fn pubkey_to_hash(&self, pubkey: &[u8]) -> UInt160 {
-        // Create signature redeem script
-        let script = crate::helper::Helper::signature_redeem_script(pubkey);
-        // Hash the script
+    pub fn pubkey_to_hash(&self, pubkey: &[u8]) -> CoreResult<UInt160> {
+        if pubkey.len() != 33 || !matches!(pubkey.first(), Some(0x02 | 0x03)) {
+            return Err(CoreError::other("Invalid public key"));
+        }
+        let point = ECPoint::decode(pubkey, ECCurve::secp256r1())
+            .map_err(|e| CoreError::other(format!("Invalid public key: {e}")))?;
+        let script = crate::helper::Helper::signature_redeem_script(&point.to_bytes());
         let hash_bytes = Crypto::hash160(&script);
-        UInt160::from_bytes(&hash_bytes).expect("hash160 produces 20 bytes")
+        Ok(UInt160::from_bytes(&hash_bytes).expect("hash160 produces 20 bytes"))
     }
 
     /// Helper to get current block time
     pub fn get_current_block_time(&self) -> CoreResult<u64> {
         self.current_block_timestamp()
-    }
-
-    /// Reserves a notification slot, enforcing hardfork limits.
-    pub fn reserve_notification_slot(&mut self) -> CoreResult<()> {
-        let state_arc = self.current_execution_state()?;
-        let mut state = state_arc.lock();
-
-        if self.is_hardfork_enabled(Hardfork::HfEchidna)
-            && self.trigger_type() == TriggerType::Application
-            && state.notification_count >= MAX_NOTIFICATION_COUNT
-        {
-            return Err(CoreError::other(format!(
-                "Maximum number of notifications `{}` is reached.",
-                MAX_NOTIFICATION_COUNT
-            )));
-        }
-
-        state.notification_count = state.notification_count.saturating_add(1);
-        Ok(())
     }
 
     /// Helper to emit log event
@@ -234,8 +218,12 @@ impl ApplicationEngine {
     pub fn ensure_notification_size(&self, state: &[StackItem]) -> CoreResult<()> {
         detect_circular_reference(state)?;
         let limits = self.execution_limits();
-        let serialized =
-            BinarySerializer::serialize(&StackItem::from_array(state.to_vec()), limits)?;
+        let value = notification_state_to_stack_value(state)?;
+        let serialized = BinarySerializer::serialize_stack_value_with_limits(
+            &value,
+            MAX_NOTIFICATION_SIZE,
+            limits.max_stack_size as usize,
+        )?;
         if serialized.len() > MAX_NOTIFICATION_SIZE {
             return Err(CoreError::other(format!(
                 "Notification size {} exceeds maximum allowed size of {} bytes",
@@ -254,6 +242,16 @@ impl ApplicationEngine {
         event_name: String,
         state: Vec<StackItem>,
     ) -> CoreResult<()> {
+        if self.is_hardfork_enabled(Hardfork::HfEchidna)
+            && self.trigger_type() == TriggerType::Application
+            && self.notifications().len() >= MAX_NOTIFICATION_COUNT
+        {
+            return Err(CoreError::other(format!(
+                "Maximum number of notifications `{}` is reached.",
+                MAX_NOTIFICATION_COUNT
+            )));
+        }
+
         // Get optional container (can be None for OnPersist/PostPersist triggers)
         let container = self.script_container().cloned();
 
@@ -266,6 +264,10 @@ impl ApplicationEngine {
             copied,
         );
         self.emit_notify_event(notification);
+        if let Ok(state_arc) = self.current_execution_state() {
+            let mut context_state = state_arc.lock();
+            context_state.notification_count = context_state.notification_count.saturating_add(1);
+        }
         Ok(())
     }
 
@@ -275,17 +277,25 @@ impl ApplicationEngine {
         let mut result = Vec::new();
         for notification in self.notifications() {
             if hash.is_none_or(|expected| notification.script_hash == expected) {
-                result.push(
-                    notification
-                        .to_stack_item()
-                        .map_err(|e| CoreError::other(e.to_string()))?,
-                );
+                result.push(self.notification_to_stack_item(notification)?);
                 if result.len() > limits.max_stack_size as usize {
                     return Err(CoreError::other("Too many notifications"));
                 }
             }
         }
         Ok(result)
+    }
+
+    fn notification_to_stack_item(&self, notification: &NotifyEventArgs) -> CoreResult<StackItem> {
+        let state = if self.is_hardfork_enabled(Hardfork::HfDomovoi) {
+            readonly_array_stack_item(clone_notification_state(&notification.state)?)
+        } else {
+            let value = notification_state_to_stack_value(&notification.state)?;
+            StackItem::try_from(value).map_err(|error| CoreError::other(error.to_string()))?
+        };
+        notification
+            .try_to_stack_item_with_state_array(state)
+            .map_err(|error| CoreError::other(error.to_string()))
     }
 }
 
@@ -303,6 +313,16 @@ fn detect_circular_reference(state: &[StackItem]) -> CoreResult<()> {
         detect_stack_item_cycle(item, &mut visiting, &mut visited)?;
     }
     Ok(())
+}
+
+fn notification_state_to_stack_value(state: &[StackItem]) -> CoreResult<StackValue> {
+    state
+        .iter()
+        .cloned()
+        .map(StackValue::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .map(|items| StackValue::Array(0, items))
+        .map_err(|error| CoreError::other(error.to_string()))
 }
 
 fn detect_stack_item_cycle(
@@ -383,6 +403,12 @@ fn clone_notification_state(state: &[StackItem]) -> CoreResult<Vec<StackItem>> {
     Ok(copied)
 }
 
+fn readonly_array_stack_item(items: Vec<StackItem>) -> StackItem {
+    let array = ArrayItem::new_untracked(items);
+    array.set_read_only(true);
+    StackItem::Array(array)
+}
+
 fn clone_stack_item_as_immutable(
     item: &StackItem,
     seen: &mut HashMap<CompoundKey, StackItem>,
@@ -412,6 +438,7 @@ fn clone_stack_item_as_immutable(
                     .push(child)
                     .map_err(|e| CoreError::other(e.to_string()))?;
             }
+            cloned.set_read_only(true);
             Ok(cloned_item)
         }
         StackItem::Struct(struct_item) => {
@@ -428,6 +455,7 @@ fn clone_stack_item_as_immutable(
                     .push(child)
                     .map_err(|e| CoreError::other(e.to_string()))?;
             }
+            cloned.set_read_only(true);
             Ok(cloned_item)
         }
         StackItem::Map(entries) => {
@@ -445,6 +473,7 @@ fn clone_stack_item_as_immutable(
                     .set(cloned_key, cloned_value)
                     .map_err(|e| CoreError::other(e.to_string()))?;
             }
+            cloned.set_read_only(true);
             Ok(cloned_item)
         }
     }

@@ -185,12 +185,18 @@ impl NativeContractLookup {
         snapshot: &neo_storage::DataCache,
         contract_hash: &neo_primitives::UInt160,
     ) -> neo_error::CoreResult<bool> {
-        let Some(provider) = Self::native_contract_provider() else {
-            return Ok(false);
-        };
-        let Some(policy) = provider.get_native_contract_by_name("PolicyContract") else {
-            return Ok(false);
-        };
+        let provider = Self::native_contract_provider().ok_or_else(|| {
+            neo_error::CoreError::invalid_operation(
+                "PolicyContract lookup requires a native contract provider",
+            )
+        })?;
+        let policy = provider
+            .get_native_contract_by_name("PolicyContract")
+            .ok_or_else(|| {
+                neo_error::CoreError::invalid_operation(
+                    "PolicyContract lookup requires the Policy native contract",
+                )
+            })?;
         policy.is_contract_blocked(snapshot, contract_hash)
     }
 

@@ -304,6 +304,15 @@ pub trait NativeContract: Any + Send + Sync {
         Ok(None)
     }
 
+    /// Returns the trimmed block stored by hash.
+    fn trimmed_block(
+        &self,
+        _snapshot: &neo_storage::DataCache,
+        _block_hash: &neo_primitives::UInt256,
+    ) -> CoreResult<Option<neo_payloads::TrimmedBlock>> {
+        Ok(None)
+    }
+
     /// Returns the default execution fee factor used when no
     /// policy-set value is configured.
     fn default_exec_fee_factor(&self) -> u32 {
@@ -564,24 +573,21 @@ impl HardforkActivable for NativeEvent {
 
 /// Checks whether a hardfork-activable item is active.
 ///
-/// Mirrors C# v3.10.0 `NativeContract.IsActive(...)` (PR #4520/#4524): a
-/// method/event is active **iff** its `ActiveIn` hardfork is active (or unset)
-/// **and** its `DeprecatedIn` hardfork is NOT yet active (or unset). The earlier
-/// OR-form wrongly activated a descriptor whose `DeprecatedIn` had already
-/// passed (when `ActiveIn` also passed) and one whose `ActiveIn`+`DeprecatedIn`
-/// were both still in the future.
+/// Mirrors vendored C# v3.10.x `NativeContract.IsActive(...)`: a method/event
+/// is active when no hardfork is involved, when its `DeprecatedIn` hardfork has
+/// not activated yet, or when its `ActiveIn` hardfork has activated.
 pub fn is_active_for<T: HardforkActivable>(
     item: &T,
     hf_checker: impl Fn(Hardfork, u32) -> bool,
     block_height: u32,
 ) -> bool {
-    let active_in_ok = item
-        .active_in()
-        .is_none_or(|hf| hf_checker(hf, block_height));
-    let not_deprecated = item
-        .deprecated_in()
-        .is_none_or(|hf| !hf_checker(hf, block_height));
-    active_in_ok && not_deprecated
+    item.active_in().is_none() && item.deprecated_in().is_none()
+        || item
+            .deprecated_in()
+            .is_some_and(|hf| !hf_checker(hf, block_height))
+        || item
+            .active_in()
+            .is_some_and(|hf| hf_checker(hf, block_height))
 }
 
 /// Builds a [`ContractState`] for a native contract at the given
@@ -660,12 +666,14 @@ mod tests {
     use neo_error::CoreError;
     use std::collections::HashMap;
 
-    /// Pins the C# v3.10.0 `NativeContract.IsActive` AND-form (PR #4520/#4524):
-    /// a descriptor is active iff `ActiveIn` is active (or unset) AND
-    /// `DeprecatedIn` is NOT active (or unset). The two both-set cases the old
-    /// OR-form wrongly activated must now be INACTIVE.
+    /// Pins the vendored C# v3.10.x `NativeContract.IsActive` OR-form:
+    /// a descriptor is active when no hardfork is involved, or when its
+    /// `DeprecatedIn` hardfork has not activated yet, or when its `ActiveIn`
+    /// hardfork has activated. This matters for latent descriptors carrying
+    /// both attributes because C# keeps them active before and after the
+    /// intended replacement window.
     #[test]
-    fn is_active_for_matches_v3100_and_form() {
+    fn is_active_for_matches_v3100_or_form() {
         fn method(active: Option<Hardfork>, deprecated: Option<Hardfork>) -> NativeMethod {
             let mut m = NativeMethod::new(
                 "m".to_string(),
@@ -698,21 +706,17 @@ mod tests {
         assert!(is_active_for(&method(None, Some(g)), checker(vec![]), 0));
         assert!(!is_active_for(&method(None, Some(g)), checker(vec![g]), 0));
         // Both set: active(c) -> deprecated(g).
-        assert!(!is_active_for(
-            &method(Some(c), Some(g)),
-            checker(vec![]),
-            0
-        )); // divergent: neither passed
+        assert!(is_active_for(&method(Some(c), Some(g)), checker(vec![]), 0)); // C# OR: DeprecatedIn has not passed.
         assert!(is_active_for(
             &method(Some(c), Some(g)),
             checker(vec![c]),
             0
         )); // active window
-        assert!(!is_active_for(
+        assert!(is_active_for(
             &method(Some(c), Some(g)),
             checker(vec![c, g]),
             0
-        )); // divergent: both passed
+        )); // C# OR: ActiveIn has passed.
         assert!(!is_active_for(
             &method(Some(c), Some(g)),
             checker(vec![g]),

@@ -214,7 +214,7 @@ pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
 pub use interop_service::InteropService;
-pub use interoperable::Interoperable;
+pub use interoperable::{Interoperable, InteroperableError};
 pub use jump_table::JumpTable;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
 pub use rpc_json::StackItemRpcJson;

@@ -205,7 +205,11 @@ impl PrepareRequestMessage {
     }
 
     /// Validates the message
-    pub fn validate(&self, expected_primary: u8) -> ConsensusResult<()> {
+    pub fn validate(
+        &self,
+        expected_primary: u8,
+        max_transactions_per_block: u32,
+    ) -> ConsensusResult<()> {
         if self.validator_index != expected_primary {
             return Err(crate::ConsensusError::InvalidPrimary {
                 expected: expected_primary,
@@ -215,6 +219,12 @@ impl PrepareRequestMessage {
         if self.version != 0 {
             return Err(crate::ConsensusError::invalid_proposal(
                 "PrepareRequest version must be 0",
+            ));
+        }
+
+        if self.transaction_hashes.len() > max_transactions_per_block as usize {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "PrepareRequest exceeds MaxTransactionsPerBlock",
             ));
         }
 
@@ -295,7 +305,16 @@ mod tests {
     fn test_prepare_request_validate() {
         let msg = PrepareRequestMessage::new(100, 0, 0, 0, UInt256::zero(), 1000, 1, vec![]);
 
-        assert!(msg.validate(0).is_ok());
-        assert!(msg.validate(1).is_err());
+        assert!(msg.validate(0, 512).is_ok());
+        assert!(msg.validate(1, 512).is_err());
+    }
+
+    #[test]
+    fn test_prepare_request_validate_rejects_too_many_transactions() {
+        let tx_hashes = vec![UInt256::from([0x01; 32]), UInt256::from([0x02; 32])];
+        let msg = PrepareRequestMessage::new(100, 0, 0, 0, UInt256::zero(), 1000, 1, tx_hashes);
+
+        assert!(msg.validate(0, 1).is_err());
+        assert!(msg.validate(0, 2).is_ok());
     }
 }

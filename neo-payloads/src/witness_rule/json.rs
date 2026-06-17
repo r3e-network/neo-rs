@@ -7,6 +7,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Value, json};
 use std::str::FromStr;
 
+fn parse_json_group(value: &str) -> CoreResult<Vec<u8>> {
+    let bytes = parse_group_bytes(value)?;
+    neo_crypto::ECPoint::from_bytes_with_curve(neo_crypto::ECCurve::Secp256r1, &bytes)
+        .and_then(|point| point.encode_compressed())
+        .map_err(|e| CoreError::other(format!("Invalid ECPoint group: {e}")))
+}
+
 impl WitnessCondition {
     pub fn to_json(&self) -> Value {
         match self {
@@ -135,7 +142,7 @@ impl WitnessCondition {
                     .get("group")
                     .and_then(Value::as_str)
                     .ok_or_else(|| CoreError::other("Group condition missing group"))?;
-                let group = parse_group_bytes(group_str)?;
+                let group = parse_json_group(group_str)?;
                 Ok(WitnessCondition::Group { group })
             }
             "CalledByEntry" => Ok(WitnessCondition::CalledByEntry),
@@ -153,7 +160,7 @@ impl WitnessCondition {
                     .get("group")
                     .and_then(Value::as_str)
                     .ok_or_else(|| CoreError::other("CalledByGroup missing group"))?;
-                let group = parse_group_bytes(group_str)?;
+                let group = parse_json_group(group_str)?;
                 Ok(WitnessCondition::CalledByGroup { group })
             }
             other => Err(CoreError::other(format!(

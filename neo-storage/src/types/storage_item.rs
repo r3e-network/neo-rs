@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
 
+use neo_io::serializable::helper::SerializeHelper;
 use neo_primitives::{StorageValue, StorageValueResult};
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +25,7 @@ pub trait CacheProvider: Send + Sync + fmt::Debug {
 /// Represents a value stored in contract storage, optionally backed by a typed
 /// cache (BigInteger / Interoperable) for lazy materialisation.
 ///
-/// Mirrors C# `Neo.SmartContract.StorageItem` (v3.9): a plain value with no
+/// Mirrors C# `Neo.SmartContract.StorageItem` (v3.10): a plain value with no
 /// `IsConstant` flag. Its only serialized form is the raw value bytes
 /// (`StorageItem.Serialize => writer.Write(Value.Span)`).
 #[derive(Serialize, Deserialize)]
@@ -86,10 +87,10 @@ impl StorageItem {
         self.cache = None;
     }
 
-    /// Returns the size of the stored value.
+    /// Returns the C# `StorageItem.Size`: `Value.GetVarSize()`.
     #[must_use]
     pub fn size(&self) -> usize {
-        self.value.len()
+        SerializeHelper::get_var_size_bytes(&self.value_bytes())
     }
 
     /// Sets the opaque cache value.
@@ -157,7 +158,7 @@ impl Clone for StorageItem {
 
 impl PartialEq for StorageItem {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
+        self.value_bytes() == other.value_bytes()
     }
 }
 
@@ -209,7 +210,7 @@ impl From<&[u8]> for StorageItem {
 ///
 /// # Serialization Format
 ///
-/// The storage format is the raw value bytes, matching C# v3.9
+/// The storage format is the raw value bytes, matching C# v3.10
 /// `StorageItem.Serialize => writer.Write(Value.Span)` (no flags or prefixes),
 /// so persisted bytes / state roots stay byte-identical to C#.
 impl StorageValue for StorageItem {
@@ -231,6 +232,29 @@ impl StorageValue for StorageItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone, Debug)]
+    struct BytesCache(Vec<u8>);
+
+    impl CacheProvider for BytesCache {
+        fn to_bytes(&self) -> Vec<u8> {
+            self.0.clone()
+        }
+
+        fn clone_box(&self) -> Box<dyn CacheProvider> {
+            Box::new(self.clone())
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    fn cache_item(bytes: Vec<u8>) -> StorageItem {
+        let mut item = StorageItem::new();
+        item.set_cache(Box::new(BytesCache(bytes)));
+        item
+    }
 
     #[test]
     fn test_storage_item_creation() {
@@ -254,7 +278,16 @@ mod tests {
     #[test]
     fn test_storage_item_size() {
         let item = StorageItem::from_bytes(vec![0x01, 0x02, 0x03, 0x04]);
-        assert_eq!(item.size(), 4);
+        assert_eq!(item.size(), 5);
+    }
+
+    #[test]
+    fn test_storage_item_size_uses_var_size_prefix() {
+        let compact = StorageItem::from_bytes(vec![0; 252]);
+        let expanded = StorageItem::from_bytes(vec![0; 253]);
+
+        assert_eq!(compact.size(), 253);
+        assert_eq!(expanded.size(), 256);
     }
 
     #[test]
@@ -262,7 +295,7 @@ mod tests {
         let item = StorageItem::default();
         let empty: &[u8] = &[];
         assert_eq!(item.value(), empty);
-        assert_eq!(item.size(), 0);
+        assert_eq!(item.size(), 1);
     }
 
     #[test]
@@ -286,6 +319,15 @@ mod tests {
 
         assert_eq!(item1, item2);
         assert_ne!(item1, item3);
+    }
+
+    #[test]
+    fn test_storage_item_equality_uses_materialized_cache_value() {
+        assert_eq!(
+            cache_item(vec![0x01, 0x02]),
+            StorageItem::from_bytes(vec![0x01, 0x02])
+        );
+        assert_ne!(cache_item(vec![0x01]), StorageItem::from_bytes(vec![]));
     }
 
     #[test]

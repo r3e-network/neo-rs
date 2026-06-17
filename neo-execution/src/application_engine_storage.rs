@@ -42,11 +42,6 @@ impl ApplicationEngine {
             return Err(CoreError::other("Read states not allowed"));
         }
 
-        // Check key size
-        if key.len() > neo_primitives::constants::MAX_STORAGE_KEY_SIZE {
-            return Err(CoreError::other("Key too large"));
-        }
-
         Ok(self.get_storage_item(&context, &key))
     }
 
@@ -90,11 +85,6 @@ impl ApplicationEngine {
             return Err(CoreError::other("Write states not allowed"));
         }
 
-        // Check key size
-        if key.len() > neo_primitives::constants::MAX_STORAGE_KEY_SIZE {
-            return Err(CoreError::other("Key too large"));
-        }
-
         self.delete_storage_item(&context, &key)
             .map_err(|err| CoreError::other(err.to_string()))?;
 
@@ -110,11 +100,6 @@ impl ApplicationEngine {
     ) -> CoreResult<StorageIterator> {
         if !self.has_call_flags(CallFlags::READ_STATES) {
             return Err(CoreError::other("Read states not allowed"));
-        }
-
-        // Check prefix size
-        if prefix.len() > neo_primitives::constants::MAX_STORAGE_KEY_SIZE {
-            return Err(CoreError::other("Prefix too large"));
         }
 
         self.find_storage_entries(&context, &prefix, options)
@@ -329,9 +314,8 @@ fn storage_put_local_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let value = pop_storage_bytes(app, "System.Storage.Local.Put", "value")?;
-
     let key = pop_storage_bytes(app, "System.Storage.Local.Put", "key")?;
+    let value = pop_storage_bytes(app, "System.Storage.Local.Put", "value")?;
 
     app.storage_put_local(key, value)
         .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
@@ -354,6 +338,10 @@ fn storage_find_local_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
+    let prefix = app
+        .pop_bytes()
+        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
+
     let options_bits = app
         .pop_integer()
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
@@ -365,10 +353,6 @@ fn storage_find_local_handler(
     })?;
     options
         .validate()
-        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
-
-    let prefix = app
-        .pop_bytes()
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
 
     let iterator = app
@@ -493,5 +477,66 @@ impl ApplicationEngine {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_config::ProtocolSettings;
+    use neo_primitives::TriggerType;
+    use neo_storage::persistence::DataCache;
+    use neo_vm_rs::OpCode;
+    use std::sync::Arc;
+
+    fn storage_engine() -> ApplicationEngine {
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            1_000_000,
+            None,
+        )
+        .expect("engine builds");
+        engine
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+            .expect("script loads");
+        engine
+    }
+
+    #[test]
+    fn storage_get_delete_find_allow_oversized_keys_like_csharp() {
+        let mut engine = storage_engine();
+        let context = StorageContext::read_write(42);
+        let oversized_key = vec![0xAA; neo_primitives::constants::MAX_STORAGE_KEY_SIZE + 1];
+
+        assert_eq!(
+            engine
+                .storage_get(context.clone(), oversized_key.clone())
+                .expect("oversized Storage.Get should not fault"),
+            None
+        );
+        engine
+            .storage_delete(context.clone(), oversized_key.clone())
+            .expect("oversized Storage.Delete should not fault");
+        engine
+            .storage_find(context, oversized_key, FindOptions::None)
+            .expect("oversized Storage.Find prefix should not fault");
+    }
+
+    #[test]
+    fn storage_put_still_enforces_max_key_size() {
+        let mut engine = storage_engine();
+        let context = StorageContext::read_write(42);
+        let oversized_key = vec![0xAA; neo_primitives::constants::MAX_STORAGE_KEY_SIZE + 1];
+
+        assert!(
+            engine
+                .storage_put(context, oversized_key, vec![0x01])
+                .is_err(),
+            "Storage.Put is the C# path that enforces MaxStorageKeySize"
+        );
     }
 }

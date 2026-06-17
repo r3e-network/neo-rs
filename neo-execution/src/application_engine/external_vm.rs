@@ -131,7 +131,7 @@ impl ExternalVmHost<'_> {
                     .engine
                     .current_script_hash()
                     .ok_or_else(|| "No current script".to_string())?;
-                let counter = self.engine.get_invocation_counter(&hash);
+                let counter = self.engine.get_or_init_invocation_counter(&hash);
                 stack.push(VmStackValue::Integer(i64::from(counter)));
                 Ok(())
             }
@@ -156,7 +156,10 @@ impl ExternalVmHost<'_> {
                             .map_err(|e| e.to_string())?
                     }
                     33 => {
-                        let hash = self.engine.pubkey_to_hash(&hash_or_pubkey);
+                        let hash = self
+                            .engine
+                            .pubkey_to_hash(&hash_or_pubkey)
+                            .map_err(|e| e.to_string())?;
                         self.engine
                             .check_witness_hash(&hash)
                             .map_err(|e| e.to_string())?
@@ -204,6 +207,7 @@ impl ExternalVmHost<'_> {
                 };
 
                 stack.push(VmStackValue::Array(
+                    0,
                     transaction
                         .signers()
                         .iter()
@@ -246,15 +250,15 @@ impl ExternalVmHost<'_> {
                 let message = String::from_utf8(message_bytes).map_err(|_| {
                     "Failed to convert byte array to string: Invalid UTF-8 sequence".to_string()
                 })?;
-                let container = self
-                    .engine
-                    .script_container()
-                    .ok_or_else(|| "No script container".to_string())?;
                 let script_hash = self
                     .engine
                     .current_script_hash()
                     .unwrap_or_else(UInt160::zero);
-                let event = LogEventArgs::new(Arc::clone(container), script_hash, message);
+                let event = LogEventArgs::new(
+                    self.engine.script_container().cloned(),
+                    script_hash,
+                    message,
+                );
                 self.engine.emit_log_event(event);
                 Ok(())
             }

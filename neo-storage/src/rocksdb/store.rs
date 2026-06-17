@@ -101,8 +101,10 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+        let prefix_bytes = key_prefix.cloned();
+
         if direction == SeekDirection::Backward {
-            if let Some(prefix) = key_prefix {
+            if let Some(prefix) = prefix_bytes.as_ref() {
                 let iterator = provider::reverse_prefix_iterator(
                     self.db.as_ref(),
                     None,
@@ -119,9 +121,24 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
             }
         }
 
-        let start = key_prefix.map(|k| k.as_slice()).unwrap_or(&[]);
+        let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iterator = self.iterator_from(start, direction);
-        Box::new(iterator.filter_map(|res| res.ok().map(|(k, v)| (k.to_vec(), v.to_vec()))))
+        Box::new(iterator.filter_map(move |res| {
+            let (key, value) = match res {
+                Ok(entry) => entry,
+                Err(err) => {
+                    warn!(target: "neo", error = %err, "rocksdb iterator error");
+                    return None;
+                }
+            };
+            let key_vec = key.to_vec();
+            if let Some(prefix) = &prefix_bytes {
+                if !key_vec.starts_with(prefix) {
+                    return None;
+                }
+            }
+            Some((key_vec, value.to_vec()))
+        }))
     }
 }
 
@@ -346,74 +363,10 @@ impl RocksDbSnapshot {
             &self.read_ahead_config,
         )
     }
-
-    fn pending_change(&self, key: &[u8]) -> Option<Option<Vec<u8>>> {
-        self.pending_changes.lock().get(key).cloned()
-    }
-
-    fn merged_entries(
-        &self,
-        key_prefix: Option<&[u8]>,
-        direction: SeekDirection,
-    ) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
-        let prefix = key_prefix.unwrap_or(&[]);
-        let pending_changes = {
-            let pending = self.pending_changes.lock();
-            if pending.is_empty() {
-                return None;
-            }
-            pending
-                .iter()
-                .filter(|(key, _)| key.starts_with(prefix))
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect::<Vec<_>>()
-        };
-
-        let mut items = BTreeMap::new();
-        let iterator = provider::iterator_from(
-            self.db.as_ref(),
-            Some(self.read_options()),
-            prefix,
-            SeekDirection::Forward,
-            &self.read_ahead_config,
-        );
-        for res in iterator {
-            let (key, value) = match res {
-                Ok(entry) => entry,
-                Err(err) => {
-                    warn!(target: "neo", error = %err, "rocksdb iterator error");
-                    continue;
-                }
-            };
-            let key_vec = key.to_vec();
-            if !prefix.is_empty() && !key_vec.starts_with(prefix) {
-                break;
-            }
-            items.insert(key_vec, value.to_vec());
-        }
-
-        for (key, value) in pending_changes {
-            if let Some(value) = value {
-                items.insert(key, value);
-            } else {
-                items.remove(&key);
-            }
-        }
-
-        let mut entries: Vec<_> = items.into_iter().collect();
-        if direction == SeekDirection::Backward {
-            entries.reverse();
-        }
-        Some(entries)
-    }
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        if let Some(change) = self.pending_change(key.as_slice()) {
-            return change;
-        }
-
         self.db.get_opt(key, &self.read_options()).ok().flatten()
     }
 
@@ -422,12 +375,10 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
-        if let Some(items) = self.merged_entries(key_prefix.map(|k| k.as_slice()), direction) {
-            return Box::new(items.into_iter());
-        }
+        let prefix_bytes = key_prefix.cloned();
 
         if direction == SeekDirection::Backward {
-            if let Some(prefix) = key_prefix {
+            if let Some(prefix) = prefix_bytes.as_ref() {
                 let iterator = provider::reverse_prefix_iterator(
                     self.db.as_ref(),
                     Some(self.read_options()),
@@ -444,7 +395,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             }
         }
 
-        let start = key_prefix.map(|k| k.as_slice()).unwrap_or(&[]);
+        let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iterator = provider::iterator_from(
             self.db.as_ref(),
             Some(self.read_options()),
@@ -452,16 +403,28 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             direction,
             &self.read_ahead_config,
         );
-        Box::new(iterator.filter_map(|res| res.ok().map(|(k, v)| (k.to_vec(), v.to_vec()))))
+        Box::new(iterator.filter_map(move |res| {
+            let (key, value) = match res {
+                Ok(entry) => entry,
+                Err(err) => {
+                    warn!(target: "neo", error = %err, "rocksdb iterator error");
+                    return None;
+                }
+            };
+            let key_vec = key.to_vec();
+            if let Some(prefix) = &prefix_bytes {
+                if !key_vec.starts_with(prefix) {
+                    return None;
+                }
+            }
+            Some((key_vec, value.to_vec()))
+        }))
     }
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw = key.to_array();
-        if let Some(change) = self.pending_change(raw.as_slice()) {
-            return change.map(StorageItem::from_bytes);
-        }
 
         self.db
             .get_opt(&raw, &self.read_options())
@@ -476,14 +439,6 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
-
-        if let Some(items) = self.merged_entries(prefix_bytes.as_deref(), direction) {
-            return Box::new(items.into_iter().map(|(key_vec, value)| {
-                let storage_key = StorageKey::from_bytes(&key_vec);
-                let storage_item = StorageItem::from_bytes(value);
-                (storage_key, storage_item)
-            }));
-        }
 
         if direction == SeekDirection::Backward {
             if let Some(prefix) = prefix_bytes.as_ref() {

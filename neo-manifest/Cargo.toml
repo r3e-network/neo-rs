@@ -11,7 +11,7 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Canonical home for Neo smart-contract manifest / ABI / NEF / CallFlags / MethodToken / ValidatorAttribute data types"
+description = "Protocol types layer: Neo smart-contract manifest / ABI / NEF / CallFlags / MethodToken / ValidatorAttribute. Depends on neo-vm for Interoperable trait."
 
 [dependencies]
 # Foundation layer

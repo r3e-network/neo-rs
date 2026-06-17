@@ -532,7 +532,7 @@ mod tests {
         let script_bytes = vec![
             OpCode::PUSH1.byte(),
             OpCode::JMP.byte(),
-            0x00, // 1: Jump to position 3 (offset from next instruction)
+            0x02, // Jump to position 3 (offset from the JMP instruction)
             OpCode::PUSH2.byte(),
             OpCode::ADD.byte(),
             OpCode::RET.byte(),

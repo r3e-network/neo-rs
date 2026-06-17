@@ -23,7 +23,7 @@ use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
-use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
+use neo_vm_rs::{ExecutionEngineLimits, StackValue, VmState as VMState};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -37,6 +37,53 @@ const PREFIX_BLOCK: u8 = 5;
 const PREFIX_TRANSACTION: u8 = 11;
 /// Storage prefix for the current-block (hash, index) pointer.
 const PREFIX_CURRENT_BLOCK: u8 = 12;
+
+/// C# `HashIndexState`: the current-block pointer persisted as an
+/// interoperable `Struct[Hash.ToArray(), Index]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HashIndexState {
+    hash: UInt256,
+    index: u32,
+}
+
+impl HashIndexState {
+    fn new(hash: UInt256, index: u32) -> Self {
+        Self { hash, index }
+    }
+
+    fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(
+            0,
+            vec![
+                StackValue::ByteString(self.hash.to_bytes()),
+                StackValue::Integer(i64::from(self.index)),
+            ],
+        )
+    }
+
+    fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
+        let StackValue::Struct(0, items) = stack_value else {
+            return Err(CoreError::invalid_data(
+                "HashIndexState record is not a Struct stack item",
+            ));
+        };
+        if items.len() < 2 {
+            return Err(CoreError::invalid_data(
+                "HashIndexState struct is shorter than expected",
+            ));
+        }
+
+        let hash_bytes = items[0]
+            .to_byte_string_bytes()
+            .ok_or_else(|| CoreError::invalid_data("HashIndexState hash is not byte-like"))?;
+        let hash = crate::args::bytes_to_hash256(&hash_bytes, "HashIndexState hash")?;
+        let index = neo_vm_rs::stack_value_as_u32(&items[1])
+            .ok_or_else(|| CoreError::invalid_data("HashIndexState index out of uint range"))?;
+        Ok(Self { hash, index })
+    }
+}
+
+neo_vm::impl_interoperable_via_stack_value!(HashIndexState);
 
 /// Static accessor for the LedgerContract native contract.
 #[derive(Debug, Default, Clone, Copy)]
@@ -66,35 +113,31 @@ impl LedgerContract {
     /// Returns the current block index (height) of the blockchain.
     ///
     /// Reads the current-block pointer (prefix `12`) written by the
-    /// block-persist pipeline. Returns `0` when the pointer is
-    /// missing (e.g. at genesis).
+    /// block-persist pipeline. C# indexes the storage item directly and
+    /// faults if the pointer is absent.
     pub fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
         let key = Self::current_block_storage_key(Self::ID);
-        match snapshot.get(&key) {
-            Some(item) => {
-                let bytes = item.value_bytes().into_owned();
-                let (_, index) = Self::deserialize_hash_index_state(&bytes)?;
-                Ok(index)
-            }
-            None => Ok(0),
-        }
+        let item = snapshot
+            .get(&key)
+            .ok_or_else(|| CoreError::invalid_data("LedgerContract current block is missing"))?;
+        let bytes = item.value_bytes().into_owned();
+        let (_, index) = Self::deserialize_hash_index_state(&bytes)?;
+        Ok(index)
     }
 
     /// Returns the current block hash of the blockchain.
     ///
     /// Reads the current-block pointer (prefix `12`) written by the
-    /// block-persist pipeline. Returns the zero hash when the pointer
-    /// is missing.
+    /// block-persist pipeline. C# indexes the storage item directly and
+    /// faults if the pointer is absent.
     pub fn current_hash(&self, snapshot: &DataCache) -> CoreResult<UInt256> {
         let key = Self::current_block_storage_key(Self::ID);
-        match snapshot.get(&key) {
-            Some(item) => {
-                let bytes = item.value_bytes().into_owned();
-                let (hash, _) = Self::deserialize_hash_index_state(&bytes)?;
-                Ok(hash)
-            }
-            None => Ok(UInt256::default()),
-        }
+        let item = snapshot
+            .get(&key)
+            .ok_or_else(|| CoreError::invalid_data("LedgerContract current block is missing"))?;
+        let bytes = item.value_bytes().into_owned();
+        let (hash, _) = Self::deserialize_hash_index_state(&bytes)?;
+        Ok(hash)
     }
 
     /// Returns the per-transaction state for the given transaction
@@ -260,11 +303,8 @@ impl LedgerContract {
     /// — exactly what C# `StorageItem.GetInteroperable<HashIndexState>()`
     /// round-trips.
     pub fn serialize_hash_index_state(&self, hash: &UInt256, index: u32) -> CoreResult<Vec<u8>> {
-        let item = StackItem::from_struct(vec![
-            StackItem::from_byte_string(hash.to_bytes()),
-            StackItem::from_int(BigInt::from(index)),
-        ]);
-        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        let item = HashIndexState::new(*hash, index).to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::serialization(format!("HashIndexState: {e}")))
     }
 
@@ -278,15 +318,9 @@ impl LedgerContract {
         vm_state: VMState,
         tx: &Transaction,
     ) -> CoreResult<Vec<u8>> {
-        let mut tx_writer = BinaryWriter::new();
-        tx.serialize(&mut tx_writer)
-            .map_err(|e| CoreError::serialization(e.to_string()))?;
-        let item = StackItem::from_struct(vec![
-            StackItem::from_int(BigInt::from(block_index)),
-            StackItem::from_byte_string(tx_writer.into_bytes()),
-            StackItem::from_int(BigInt::from(vm_state.to_byte())),
-        ]);
-        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        let item = neo_payloads::TransactionState::new(block_index, Some(tx.clone()), vm_state)
+            .try_to_stack_value()?;
+        BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::serialization(format!("TransactionState: {e}")))
     }
 
@@ -294,9 +328,39 @@ impl LedgerContract {
     /// interoperable `Struct[Integer(BlockIndex)]` of a `TransactionState`
     /// whose `Transaction` is null (TransactionState.cs `ToStackItem`).
     pub fn serialize_conflict_stub(&self, block_index: u32) -> CoreResult<Vec<u8>> {
-        let item = StackItem::from_struct(vec![StackItem::from_int(BigInt::from(block_index))]);
-        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        let item =
+            neo_payloads::TransactionState::new(block_index, None, VMState::NONE).to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::serialization(format!("TransactionState stub: {e}")))
+    }
+
+    fn transaction_to_bytes(tx: &Transaction, method: &str) -> CoreResult<Vec<u8>> {
+        let item = tx.to_stack_value().map_err(|e| {
+            CoreError::invalid_operation(format!("LedgerContract::{method}: stack value: {e}"))
+        })?;
+        BinarySerializer::serialize_stack_value_default(&item).map_err(|e| {
+            CoreError::invalid_operation(format!("LedgerContract::{method}: serialize: {e}"))
+        })
+    }
+
+    fn signers_to_bytes(signers: &[neo_payloads::Signer], method: &str) -> CoreResult<Vec<u8>> {
+        let item = StackValue::Array(
+            0,
+            signers
+                .iter()
+                .map(neo_payloads::Signer::to_stack_value)
+                .collect::<Vec<_>>(),
+        );
+        BinarySerializer::serialize_stack_value_default(&item).map_err(|e| {
+            CoreError::invalid_operation(format!("LedgerContract::{method}: serialize: {e}"))
+        })
+    }
+
+    fn trimmed_block_to_bytes(block: &TrimmedBlock, method: &str) -> CoreResult<Vec<u8>> {
+        let item = block.to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&item).map_err(|e| {
+            CoreError::invalid_operation(format!("LedgerContract::{method}: serialize: {e}"))
+        })
     }
 
     // ============================================================================
@@ -356,29 +420,16 @@ impl LedgerContract {
     // ============================================================================
 
     fn deserialize_hash_index_state(bytes: &[u8]) -> CoreResult<(UInt256, u32)> {
-        let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+        let limits = ExecutionEngineLimits::default();
+        let item = BinarySerializer::deserialize_stack_value_with_limits(
+            bytes,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::invalid_data(format!("HashIndexState: {e}")))?;
+        let state = HashIndexState::from_stack_value(item)
             .map_err(|e| CoreError::invalid_data(format!("HashIndexState: {e}")))?;
-        let StackItem::Struct(fields) = item else {
-            return Err(CoreError::invalid_data(
-                "HashIndexState record is not a Struct stack item",
-            ));
-        };
-        let items = fields.items();
-        if items.len() < 2 {
-            return Err(CoreError::invalid_data(
-                "HashIndexState struct is shorter than expected",
-            ));
-        }
-        let hash_bytes = items[0]
-            .as_bytes()
-            .map_err(|e| CoreError::invalid_data(format!("HashIndexState hash: {e}")))?;
-        let hash = crate::args::bytes_to_hash256(&hash_bytes, "invalid HashIndexState hash")?;
-        let index = items[1]
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("HashIndexState index: {e}")))?
-            .to_u32()
-            .ok_or_else(|| CoreError::invalid_data("HashIndexState index out of uint range"))?;
-        Ok((hash, index))
+        Ok((state.hash, state.index))
     }
 
     /// Decodes a `Prefix_Transaction` record: the C# `TransactionState`
@@ -386,54 +437,18 @@ impl LedgerContract {
     /// `Struct[Integer]` is a conflict stub (no transaction);
     /// `Struct[Integer, ByteString, Integer]` is a full record.
     fn decode_transaction_state(bytes: &[u8]) -> CoreResult<neo_payloads::TransactionState> {
-        let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+        let limits = ExecutionEngineLimits::default();
+        let item = BinarySerializer::deserialize_stack_value_with_limits(
+            bytes,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::invalid_data(format!("TransactionState: {e}")))?;
+        let mut state = neo_payloads::TransactionState::new(0, None, VMState::NONE);
+        state
+            .from_stack_value(item)
             .map_err(|e| CoreError::invalid_data(format!("TransactionState: {e}")))?;
-        let StackItem::Struct(fields) = item else {
-            return Err(CoreError::invalid_data(
-                "TransactionState record is not a Struct stack item",
-            ));
-        };
-        let items = fields.items();
-        let block_index = items
-            .first()
-            .ok_or_else(|| CoreError::invalid_data("TransactionState struct is empty"))?
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("TransactionState block index: {e}")))?
-            .to_u32()
-            .ok_or_else(|| CoreError::invalid_data("TransactionState block index out of range"))?;
-
-        // C#: `if (@struct.Count == 1) return;` — conflict record.
-        if items.len() == 1 {
-            return Ok(neo_payloads::TransactionState::new(
-                block_index,
-                None,
-                VMState::NONE,
-            ));
-        }
-        if items.len() < 3 {
-            return Err(CoreError::invalid_data(
-                "TransactionState struct has an invalid field count",
-            ));
-        }
-
-        let tx_bytes = items[1]
-            .as_bytes()
-            .map_err(|e| CoreError::invalid_data(format!("TransactionState tx bytes: {e}")))?;
-        let mut tx_reader = MemoryReader::new(&tx_bytes);
-        let tx = Transaction::deserialize(&mut tx_reader)
-            .map_err(|e| CoreError::serialization(e.to_string()))?;
-        let state_byte = items[2]
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("TransactionState vm state: {e}")))?
-            .to_u8()
-            .ok_or_else(|| {
-                CoreError::invalid_data("TransactionState vm state out of byte range")
-            })?;
-        Ok(neo_payloads::TransactionState::new(
-            block_index,
-            Some(tx),
-            VMState::from_byte(state_byte),
-        ))
+        Ok(state)
     }
 
     /// Mirrors C# `LedgerContract.IsTraceableBlock(engine, index)`: resolves the
@@ -568,6 +583,22 @@ impl NativeContract for LedgerContract {
         self
     }
 
+    fn transaction_state(
+        &self,
+        snapshot: &neo_storage::DataCache,
+        tx_hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
+        self.get_transaction_state(snapshot, tx_hash)
+    }
+
+    fn trimmed_block(
+        &self,
+        snapshot: &neo_storage::DataCache,
+        block_hash: &UInt256,
+    ) -> CoreResult<Option<TrimmedBlock>> {
+        self.get_trimmed_block(snapshot, block_hash)
+    }
+
     fn invoke(
         &self,
         engine: &mut ApplicationEngine,
@@ -624,20 +655,7 @@ impl NativeContract for LedgerContract {
                     Some(state) => {
                         if let Some(tx) = &state.transaction {
                             if self.is_traceable_block(engine, state.block_index)? {
-                                let item = tx.to_stack_item().map_err(|e| {
-                                    CoreError::invalid_operation(format!(
-                                        "LedgerContract::getTransaction: stack item: {e}"
-                                    ))
-                                })?;
-                                BinarySerializer::serialize(
-                                    &item,
-                                    &ExecutionEngineLimits::default(),
-                                )
-                                .map_err(|e| {
-                                    CoreError::invalid_operation(format!(
-                                        "LedgerContract::getTransaction: serialize: {e}"
-                                    ))
-                                })
+                                Self::transaction_to_bytes(tx, "getTransaction")
                             } else {
                                 Ok(Vec::new())
                             }
@@ -657,23 +675,7 @@ impl NativeContract for LedgerContract {
                     Some(state) => {
                         if let Some(tx) = &state.transaction {
                             if self.is_traceable_block(engine, state.block_index)? {
-                                let mut items = Vec::with_capacity(tx.signers().len());
-                                for signer in tx.signers() {
-                                    items.push(signer.to_stack_item().map_err(|e| {
-                                        CoreError::invalid_operation(format!(
-                                            "LedgerContract::getTransactionSigners: stack item: {e}"
-                                        ))
-                                    })?);
-                                }
-                                BinarySerializer::serialize(
-                                    &StackItem::from_array(items),
-                                    &ExecutionEngineLimits::default(),
-                                )
-                                .map_err(|e| {
-                                    CoreError::invalid_operation(format!(
-                                        "LedgerContract::getTransactionSigners: serialize: {e}"
-                                    ))
-                                })
+                                Self::signers_to_bytes(tx.signers(), "getTransactionSigners")
                             } else {
                                 Ok(Vec::new())
                             }
@@ -696,17 +698,7 @@ impl NativeContract for LedgerContract {
                 };
                 match self.get_trimmed_block(&snapshot, &hash)? {
                     Some(block) if self.is_traceable_block(engine, block.index())? => {
-                        let item = block.to_stack_item().map_err(|e| {
-                            CoreError::invalid_operation(format!(
-                                "LedgerContract::getBlock: stack item: {e}"
-                            ))
-                        })?;
-                        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                            .map_err(|e| {
-                                CoreError::invalid_operation(format!(
-                                    "LedgerContract::getBlock: serialize: {e}"
-                                ))
-                            })
+                        Self::trimmed_block_to_bytes(&block, "getBlock")
                     }
                     _ => Ok(Vec::new()),
                 }
@@ -752,19 +744,7 @@ impl NativeContract for LedgerContract {
                     .get_transaction_state(&snapshot, &tx_hash)?
                     .and_then(|state| state.transaction);
                 match tx {
-                    Some(tx) => {
-                        let item = tx.to_stack_item().map_err(|e| {
-                            CoreError::invalid_operation(format!(
-                                "LedgerContract::getTransactionFromBlock: stack item: {e}"
-                            ))
-                        })?;
-                        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                            .map_err(|e| {
-                                CoreError::invalid_operation(format!(
-                                    "LedgerContract::getTransactionFromBlock: serialize: {e}"
-                                ))
-                            })
-                    }
+                    Some(tx) => Self::transaction_to_bytes(&tx, "getTransactionFromBlock"),
                     None => Ok(Vec::new()),
                 }
             }
@@ -1081,6 +1061,218 @@ mod tests {
         assert_eq!(decoded_tx.nonce(), 99);
     }
 
+    #[test]
+    fn ledger_public_return_encoders_use_stack_value_projection() {
+        use neo_payloads::{Header, TrimmedBlock};
+
+        fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+            let start_index = source.find(start).expect("start marker exists");
+            let end_index = source[start_index..]
+                .find(end)
+                .map(|offset| start_index + offset)
+                .expect("end marker exists");
+            &source[start_index..end_index]
+        }
+
+        let mut tx = Transaction::new();
+        tx.set_nonce(99);
+        tx.set_script(vec![0x40]);
+        tx.set_signers(vec![neo_payloads::Signer::new(
+            UInt160::from_bytes(&[0x22; 20]).unwrap(),
+            neo_primitives::WitnessScope::NONE,
+        )]);
+        tx.set_witnesses(vec![neo_payloads::Witness::empty()]);
+
+        let expected_tx = BinarySerializer::serialize(
+            &StackItem::try_from(tx.to_stack_value().unwrap()).unwrap(),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            LedgerContract::transaction_to_bytes(&tx, "test").unwrap(),
+            expected_tx
+        );
+
+        let legacy_signers = StackItem::from_array(
+            tx.signers()
+                .iter()
+                .map(|signer| StackItem::try_from(signer.to_stack_value()).unwrap())
+                .collect::<Vec<_>>(),
+        );
+        let expected_signers =
+            BinarySerializer::serialize(&legacy_signers, &ExecutionEngineLimits::default())
+                .unwrap();
+        assert_eq!(
+            LedgerContract::signers_to_bytes(tx.signers(), "test").unwrap(),
+            expected_signers
+        );
+
+        let mut header = Header::new();
+        header.set_index(77);
+        header.set_nonce(u64::MAX);
+        let block = TrimmedBlock::new(
+            header,
+            vec![
+                UInt256::from_bytes(&[0x11u8; 32]).unwrap(),
+                UInt256::from_bytes(&[0x22u8; 32]).unwrap(),
+            ],
+        );
+        let expected_block = BinarySerializer::serialize(
+            &StackItem::try_from(block.to_stack_value()).unwrap(),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            LedgerContract::trimmed_block_to_bytes(&block, "test").unwrap(),
+            expected_block
+        );
+
+        let source = include_str!("ledger_contract.rs");
+        let tx_helper = slice_between(source, "fn transaction_to_bytes", "fn signers_to_bytes");
+        assert!(tx_helper.contains("to_stack_value"));
+        assert!(tx_helper.contains("serialize_stack_value_default"));
+        assert!(!tx_helper.contains("to_stack_item"));
+        assert!(!tx_helper.contains("BinarySerializer::serialize("));
+
+        let signers_helper =
+            slice_between(source, "fn signers_to_bytes", "fn trimmed_block_to_bytes");
+        assert!(signers_helper.contains("StackValue::Array"));
+        assert!(signers_helper.contains("to_stack_value"));
+        assert!(signers_helper.contains("serialize_stack_value_default"));
+        assert!(!signers_helper.contains("StackItem::from_array"));
+        assert!(!signers_helper.contains("BinarySerializer::serialize("));
+
+        let block_helper = slice_between(
+            source,
+            "fn trimmed_block_to_bytes",
+            "// ============================================================================",
+        );
+        assert!(block_helper.contains("to_stack_value"));
+        assert!(block_helper.contains("serialize_stack_value_default"));
+        assert!(!block_helper.contains("to_stack_item"));
+        assert!(!block_helper.contains("BinarySerializer::serialize("));
+    }
+
+    #[test]
+    fn decode_transaction_state_rejects_malformed_full_record() {
+        let record = BinarySerializer::serialize_stack_value_default(&StackValue::Struct(
+            0,
+            vec![
+                StackValue::Integer(7),
+                StackValue::ByteString(vec![0xff]),
+                StackValue::Integer(VMState::HALT.to_byte() as i64),
+            ],
+        ))
+        .unwrap();
+
+        let error = LedgerContract::decode_transaction_state(&record).unwrap_err();
+        assert!(
+            error.to_string().contains("TransactionState transaction"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn hash_index_state_interoperable_projection_matches_csharp_shape() {
+        let hash = UInt256::from_bytes(&[0x77; 32]).unwrap();
+        let state = HashIndexState::new(hash, 1234);
+        let expected_value = StackValue::Struct(
+            0,
+            vec![
+                StackValue::ByteString(hash.to_bytes()),
+                StackValue::Integer(1234),
+            ],
+        );
+
+        assert_eq!(state.to_stack_value(), expected_value);
+
+        let trait_value = Interoperable::to_stack_value(&state).unwrap();
+        assert_eq!(trait_value, expected_value);
+
+        let mut parsed = HashIndexState::new(UInt256::default(), 0);
+        Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+        assert_eq!(parsed, state);
+
+        assert!(HashIndexState::from_stack_value(StackValue::Array(0, vec![])).is_err());
+        assert!(
+            HashIndexState::from_stack_value(StackValue::Struct(
+                0,
+                vec![
+                    StackValue::ByteString(vec![0x77; 31]),
+                    StackValue::Integer(1)
+                ]
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn ledger_storage_codecs_use_stack_value_projection() {
+        fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+            let start_index = source.find(start).expect("start marker exists");
+            let end_index = source[start_index..]
+                .find(end)
+                .map(|offset| start_index + offset)
+                .expect("end marker exists");
+            &source[start_index..end_index]
+        }
+
+        let source = include_str!("ledger_contract.rs");
+        let hash_serializer = slice_between(
+            source,
+            "pub fn serialize_hash_index_state",
+            "pub fn serialize_persisted_transaction_state",
+        );
+        assert!(hash_serializer.contains("HashIndexState::new"));
+        assert!(hash_serializer.contains("to_stack_value"));
+        assert!(hash_serializer.contains("serialize_stack_value_default"));
+        assert!(!hash_serializer.contains("StackValue::Struct"));
+        assert!(!hash_serializer.contains("StackItem::from_struct"));
+        assert!(!hash_serializer.contains("BinarySerializer::serialize("));
+
+        let tx_serializer = slice_between(
+            source,
+            "pub fn serialize_persisted_transaction_state",
+            "pub fn serialize_conflict_stub",
+        );
+        assert!(tx_serializer.contains("to_stack_value"));
+        assert!(tx_serializer.contains("serialize_stack_value_default"));
+        assert!(!tx_serializer.contains("StackItem::from_struct"));
+        assert!(!tx_serializer.contains("BinarySerializer::serialize("));
+
+        let stub_serializer = slice_between(
+            source,
+            "pub fn serialize_conflict_stub",
+            "// ============================================================================",
+        );
+        assert!(stub_serializer.contains("to_stack_value"));
+        assert!(stub_serializer.contains("serialize_stack_value_default"));
+        assert!(!stub_serializer.contains("StackItem::from_struct"));
+        assert!(!stub_serializer.contains("BinarySerializer::serialize("));
+
+        let hash_deserializer = slice_between(
+            source,
+            "fn deserialize_hash_index_state",
+            "fn decode_transaction_state",
+        );
+        assert!(hash_deserializer.contains("deserialize_stack_value_with_limits"));
+        assert!(hash_deserializer.contains("HashIndexState::from_stack_value"));
+        assert!(!hash_deserializer.contains("bytes_to_hash256"));
+        assert!(!hash_deserializer.contains("stack_value_as_u32"));
+        assert!(!hash_deserializer.contains("BinarySerializer::deserialize("));
+
+        let tx_deserializer = slice_between(
+            source,
+            "fn decode_transaction_state",
+            "fn is_traceable_block",
+        );
+        assert!(tx_deserializer.contains("deserialize_stack_value_with_limits"));
+        assert!(tx_deserializer.contains("from_stack_value"));
+        assert!(!tx_deserializer.contains("Transaction::deserialize"));
+        assert!(!tx_deserializer.contains("MemoryReader::new"));
+        assert!(!tx_deserializer.contains("BinarySerializer::deserialize("));
+    }
+
     /// C# `LedgerContract.ContainsConflictHash`: the bare stub must
     /// exist, be a stub, and be traceable; then some signer stub must
     /// exist and be traceable.
@@ -1178,10 +1370,10 @@ mod tests {
         let cache = DataCache::new(false);
         let ledger = LedgerContract::new();
 
-        // Empty ledger: index 0, zero hash (C# returns these when the
-        // current-block pointer is absent).
-        assert_eq!(ledger.current_index(&cache).unwrap(), 0);
-        assert_eq!(ledger.current_hash(&cache).unwrap(), UInt256::default());
+        // Empty ledger: C# indexes Prefix_CurrentBlock directly and faults when
+        // the current-block pointer is absent.
+        assert!(ledger.current_index(&cache).is_err());
+        assert!(ledger.current_hash(&cache).is_err());
 
         // Write a HashIndexState under the current-block key (prefix 12) and
         // read it back, exercising the exact on-disk format the engine uses.

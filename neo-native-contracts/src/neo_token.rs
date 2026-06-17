@@ -23,8 +23,8 @@ use neo_primitives::{CallFlags, ContractParameterType, FindOptions, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::{Interoperable, StackItem};
+use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -153,21 +153,35 @@ impl NeoToken {
 
     /// C# `GetRegisterPrice` = `(long)(BigInteger)snapshot[_registerPrice]`.
     fn register_price(&self, snapshot: &DataCache) -> CoreResult<i64> {
-        crate::read_storage_int(
-            snapshot,
-            NeoToken::ID,
-            PREFIX_REGISTER_PRICE,
-            DEFAULT_REGISTER_PRICE,
-        )
+        let key = Self::register_price_key();
+        let Some(item) = snapshot.get(&key) else {
+            return Err(CoreError::invalid_operation(
+                "NeoToken RegisterPrice storage is missing",
+            ));
+        };
+        BigInt::from_signed_bytes_le(&item.value_bytes())
+            .to_i64()
+            .ok_or_else(|| CoreError::invalid_operation("NeoToken RegisterPrice is out of range"))
     }
 
     /// C# `SetRegisterPrice` storage effect: overwrite `Prefix_RegisterPrice` as a
     /// `BigInteger` (`GetAndChange(_registerPrice).Set(registerPrice)`).
-    fn put_register_price(&self, snapshot: &DataCache, price: i64) {
+    fn put_register_price(&self, snapshot: &DataCache, price: i64) -> CoreResult<()> {
+        let key = Self::register_price_key();
+        if snapshot.get(&key).is_none() {
+            return Err(CoreError::invalid_operation(
+                "NeoToken RegisterPrice storage is missing",
+            ));
+        }
         snapshot.update(
-            StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE]),
+            key,
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(price))),
         );
+        Ok(())
+    }
+
+    fn register_price_key() -> StorageKey {
+        StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE])
     }
 
     /// C# `SetGasPerBlock` storage effect: write a `Prefix_GasPerBlock` record at
@@ -205,65 +219,21 @@ impl NeoToken {
 
     /// Decodes a stored `NeoAccountState` struct into its fields.
     fn decode_neo_account_state(value: &[u8]) -> CoreResult<NeoAccountStateView> {
-        let decoded = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| CoreError::deserialization(format!("neo account state: {e}")))?;
-        let StackItem::Struct(fields) = decoded else {
-            return Err(CoreError::invalid_data("neo account state is not a struct"));
-        };
-        let items = fields.items();
-        let balance = items
-            .first()
-            .ok_or_else(|| CoreError::invalid_data("neo account state missing balance"))?
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("account balance: {e}")))?;
-        let balance_height = match items.get(1) {
-            Some(f) => f
-                .as_int()
-                .map_err(|e| CoreError::invalid_data(format!("account balanceHeight: {e}")))?
-                .to_u32()
-                .unwrap_or(0),
-            None => 0,
-        };
-        let vote_to =
-            match items.get(2) {
-                Some(f) if !matches!(f, StackItem::Null) => {
-                    let bytes = f
-                        .as_bytes()
-                        .map_err(|e| CoreError::invalid_data(format!("account voteTo: {e}")))?;
-                    Some(ECPoint::from_bytes(&bytes).map_err(|e| {
-                        CoreError::invalid_data(format!("account voteTo point: {e}"))
-                    })?)
-                }
-                _ => None,
-            };
-        let last_gas_per_vote = match items.get(3) {
-            Some(f) => f
-                .as_int()
-                .map_err(|e| CoreError::invalid_data(format!("account lastGasPerVote: {e}")))?,
-            None => BigInt::from(0),
-        };
-        Ok(NeoAccountStateView {
-            balance,
-            balance_height,
-            vote_to,
-            last_gas_per_vote,
-        })
+        let limits = ExecutionEngineLimits::default();
+        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
+            value,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::deserialization(format!("neo account state: {e}")))?;
+        NeoAccountStateView::from_stack_value(decoded)
     }
 
     /// Encodes a `NeoAccountState` (`Struct[Balance, BalanceHeight, VoteTo,
     /// LastGasPerVote]`) — the write counterpart of [`decode_neo_account_state`].
     fn encode_neo_account_state(state: &NeoAccountStateView) -> CoreResult<Vec<u8>> {
-        let vote_to = match &state.vote_to {
-            Some(pubkey) => StackItem::from_byte_string(pubkey.to_bytes()),
-            None => StackItem::null(),
-        };
-        let item = StackItem::from_struct(vec![
-            StackItem::from_int(state.balance.clone()),
-            StackItem::from_int(BigInt::from(state.balance_height)),
-            vote_to,
-            StackItem::from_int(state.last_gas_per_vote.clone()),
-        ]);
-        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        let item = state.to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::invalid_operation(format!("encode neo account state: {e}")))
     }
 
@@ -718,38 +688,14 @@ impl NeoToken {
         let item = snapshot.get(&key).ok_or_else(|| {
             CoreError::invalid_operation("NeoToken committee cache is not initialized")
         })?;
-        let decoded = BinarySerializer::deserialize(
+        let limits = ExecutionEngineLimits::default();
+        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
             &item.value_bytes(),
-            &ExecutionEngineLimits::default(),
-            None,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
         )
         .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
-        let StackItem::Array(array) = decoded else {
-            return Err(CoreError::invalid_data("committee cache is not an array"));
-        };
-        let mut members = Vec::with_capacity(array.items().len());
-        for element in array.items() {
-            let StackItem::Struct(fields) = element else {
-                return Err(CoreError::invalid_data("committee element is not a struct"));
-            };
-            let items = fields.items();
-            let pubkey = items
-                .first()
-                .ok_or_else(|| CoreError::invalid_data("committee element is empty"))?;
-            let bytes = pubkey
-                .as_bytes()
-                .map_err(|e| CoreError::invalid_data(format!("committee pubkey: {e}")))?;
-            let point = ECPoint::from_bytes(&bytes)
-                .map_err(|e| CoreError::invalid_data(format!("committee EC point: {e}")))?;
-            let votes = match items.get(1) {
-                Some(f) => f
-                    .as_int()
-                    .map_err(|e| CoreError::invalid_data(format!("committee votes: {e}")))?,
-                None => BigInt::from(0),
-            };
-            members.push((point, votes));
-        }
-        Ok(members)
+        Ok(CachedCommittee::from_stack_value(decoded)?.into_members())
     }
 
     /// Reads only the cached committee public keys, in stored order.
@@ -766,18 +712,8 @@ impl NeoToken {
     /// `CachedCommittee.ToStackItem`), the byte-exact write counterpart of
     /// [`read_committee_with_votes`].
     fn encode_committee(members: &[(ECPoint, BigInt)]) -> CoreResult<Vec<u8>> {
-        let array = StackItem::from_array(
-            members
-                .iter()
-                .map(|(point, votes)| {
-                    StackItem::from_struct(vec![
-                        StackItem::from_byte_string(point.to_bytes()),
-                        StackItem::from_int(votes.clone()),
-                    ])
-                })
-                .collect::<Vec<_>>(),
-        );
-        BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        let array = CachedCommittee::new(members.to_vec()).to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&array)
             .map_err(|e| CoreError::invalid_operation(format!("encode committee cache: {e}")))
     }
 
@@ -953,30 +889,22 @@ impl NeoToken {
     /// Decodes a `CandidateState` storage value — a `Struct[Registered(bool), Votes]`
     /// — into `(registered, votes)`.
     fn decode_candidate_state(value: &[u8]) -> CoreResult<(bool, BigInt)> {
-        let decoded = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| CoreError::deserialization(format!("candidate state: {e}")))?;
-        let StackItem::Struct(fields) = decoded else {
-            return Err(CoreError::invalid_data("candidate state is not a struct"));
-        };
-        let items = fields.items();
-        let registered = items.first().is_some_and(|f| f.as_bool().unwrap_or(false));
-        let votes = match items.get(1) {
-            Some(f) => f
-                .as_int()
-                .map_err(|e| CoreError::invalid_data(format!("candidate votes: {e}")))?,
-            None => BigInt::from(0),
-        };
-        Ok((registered, votes))
+        let limits = ExecutionEngineLimits::default();
+        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
+            value,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::deserialization(format!("candidate state: {e}")))?;
+        let state = CandidateState::from_stack_value(decoded)?;
+        Ok((state.registered, state.votes))
     }
 
     /// Encodes a `CandidateState` storage value — a `Struct[Registered(bool),
     /// Votes]` — the write counterpart of [`decode_candidate_state`].
     fn encode_candidate_state(registered: bool, votes: &BigInt) -> CoreResult<Vec<u8>> {
-        let item = StackItem::from_struct(vec![
-            StackItem::from_bool(registered),
-            StackItem::from_int(votes.clone()),
-        ]);
-        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        let item = CandidateState::new(registered, votes.clone()).to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::invalid_operation(format!("encode candidate state: {e}")))
     }
 
@@ -1116,31 +1044,51 @@ impl NeoToken {
     /// Marshals `(pubkey, votes)` candidate pairs as an Array of `Struct[pubkey,
     /// votes]` (C# `(ECPoint, BigInteger)[]` return shape).
     fn candidates_to_array_bytes(candidates: &[(ECPoint, BigInt)]) -> CoreResult<Vec<u8>> {
-        let array = StackItem::from_array(
+        let array = StackValue::Array(
+            0,
             candidates
                 .iter()
                 .map(|(pk, votes)| {
-                    StackItem::from_struct(vec![
-                        StackItem::from_byte_string(pk.to_bytes()),
-                        StackItem::from_int(votes.clone()),
-                    ])
+                    StackValue::Struct(
+                        0,
+                        vec![
+                            StackValue::ByteString(pk.to_bytes()),
+                            StackValue::BigInteger(votes.to_signed_bytes_le()),
+                        ],
+                    )
                 })
                 .collect::<Vec<_>>(),
         );
-        BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        BinarySerializer::serialize_stack_value_default(&array)
             .map_err(|e| CoreError::invalid_operation(format!("getCandidates: {e}")))
     }
 
     /// Serializes EC points as an Array of compressed (33-byte) byte strings — the
     /// return shape shared by `getCommittee` / `getNextBlockValidators`.
-    fn points_to_array_bytes(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
-        let array = StackItem::from_array(
+    fn points_to_stack_value<'a, I>(points: I) -> StackValue
+    where
+        I: IntoIterator<Item = &'a ECPoint>,
+    {
+        StackValue::Array(
+            0,
             points
-                .iter()
-                .map(|p| StackItem::from_byte_string(p.to_bytes()))
+                .into_iter()
+                .map(|p| StackValue::ByteString(p.to_bytes()))
                 .collect::<Vec<_>>(),
-        );
-        BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        )
+    }
+
+    fn points_to_array_bytes(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
+        let array = Self::points_to_stack_value(points.iter());
+        BinarySerializer::serialize_stack_value_default(&array)
+            .map_err(|e| CoreError::invalid_operation(format!("NeoToken point array: {e}")))
+    }
+
+    fn points_to_stack_item<'a, I>(points: I) -> CoreResult<StackItem>
+    where
+        I: IntoIterator<Item = &'a ECPoint>,
+    {
+        StackItem::try_from(Self::points_to_stack_value(points))
             .map_err(|e| CoreError::invalid_operation(format!("NeoToken point array: {e}")))
     }
 
@@ -1185,12 +1133,177 @@ impl NeoToken {
 
 /// Decoded view of a `NeoAccountState` (`Struct[Balance, BalanceHeight, VoteTo,
 /// LastGasPerVote]`, C# `NeoAccountState.FromStackItem`).
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct NeoAccountStateView {
     balance: BigInt,
     balance_height: u32,
     vote_to: Option<ECPoint>,
     last_gas_per_vote: BigInt,
 }
+
+impl NeoAccountStateView {
+    fn to_stack_value(&self) -> StackValue {
+        let mut items = match crate::AccountState::new(self.balance.clone()).to_stack_value() {
+            StackValue::Struct(0, items) => items,
+            _ => unreachable!("AccountState always projects to Struct"),
+        };
+        items.push(StackValue::Integer(i64::from(self.balance_height)));
+        items.push(match &self.vote_to {
+            Some(pubkey) => StackValue::ByteString(pubkey.to_bytes()),
+            None => StackValue::Null,
+        });
+        items.push(StackValue::BigInteger(
+            self.last_gas_per_vote.to_signed_bytes_le(),
+        ));
+        StackValue::Struct(0, items)
+    }
+
+    fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
+        let StackValue::Struct(0, items) = stack_value else {
+            return Err(CoreError::invalid_data("neo account state is not a struct"));
+        };
+        if items.len() < 4 {
+            return Err(CoreError::invalid_data(
+                "neo account state must have at least 4 fields",
+            ));
+        }
+
+        let balance =
+            crate::AccountState::from_stack_value(StackValue::Struct(0, vec![items[0].clone()]))?
+                .balance;
+        let balance_height = neo_vm_rs::stack_value_as_u32(&items[1]).ok_or_else(|| {
+            CoreError::invalid_data("account balanceHeight: expected uint32 integer")
+        })?;
+        let vote_to = if matches!(items[2], StackValue::Null) {
+            None
+        } else {
+            let bytes = items[2].to_byte_string_bytes().ok_or_else(|| {
+                CoreError::invalid_data("account voteTo: expected byte-compatible value")
+            })?;
+            Some(
+                ECPoint::from_bytes(&bytes)
+                    .map_err(|e| CoreError::invalid_data(format!("account voteTo point: {e}")))?,
+            )
+        };
+        let last_gas_per_vote = neo_vm_rs::stack_value_as_bigint(&items[3])
+            .map_err(|e| CoreError::invalid_data(format!("account lastGasPerVote: {e}")))?;
+        Ok(Self {
+            balance,
+            balance_height,
+            vote_to,
+            last_gas_per_vote,
+        })
+    }
+}
+
+neo_vm::impl_interoperable_via_stack_value!(NeoAccountStateView);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CandidateState {
+    registered: bool,
+    votes: BigInt,
+}
+
+impl CandidateState {
+    fn new(registered: bool, votes: BigInt) -> Self {
+        Self { registered, votes }
+    }
+
+    fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(
+            0,
+            vec![
+                StackValue::Boolean(self.registered),
+                StackValue::BigInteger(self.votes.to_signed_bytes_le()),
+            ],
+        )
+    }
+
+    fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
+        let StackValue::Struct(0, items) = stack_value else {
+            return Err(CoreError::invalid_data("candidate state is not a struct"));
+        };
+        if items.len() < 2 {
+            return Err(CoreError::invalid_data(
+                "candidate state must have at least 2 fields",
+            ));
+        }
+
+        let registered = neo_vm_rs::stack_value_as_bool(&items[0]).ok_or_else(|| {
+            CoreError::invalid_data("candidate registered: expected boolean-compatible value")
+        })?;
+        let votes = neo_vm_rs::stack_value_as_bigint(&items[1])
+            .map_err(|e| CoreError::invalid_data(format!("candidate votes: {e}")))?;
+        Ok(Self { registered, votes })
+    }
+}
+
+neo_vm::impl_interoperable_via_stack_value!(CandidateState);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CachedCommittee {
+    members: Vec<(ECPoint, BigInt)>,
+}
+
+impl CachedCommittee {
+    pub(crate) fn new(members: Vec<(ECPoint, BigInt)>) -> Self {
+        Self { members }
+    }
+
+    pub(crate) fn into_members(self) -> Vec<(ECPoint, BigInt)> {
+        self.members
+    }
+
+    pub(crate) fn to_stack_value(&self) -> StackValue {
+        StackValue::Array(
+            0,
+            self.members
+                .iter()
+                .map(|(point, votes)| {
+                    StackValue::Struct(
+                        0,
+                        vec![
+                            StackValue::ByteString(point.to_bytes()),
+                            StackValue::BigInteger(votes.to_signed_bytes_le()),
+                        ],
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    pub(crate) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
+        let StackValue::Array(0, array) = stack_value else {
+            return Err(CoreError::invalid_data("committee cache is not an array"));
+        };
+        let mut members = Vec::with_capacity(array.len());
+        for element in array {
+            members.push(Self::member_from_stack_value(element)?);
+        }
+        Ok(Self { members })
+    }
+
+    fn member_from_stack_value(stack_value: StackValue) -> CoreResult<(ECPoint, BigInt)> {
+        let StackValue::Struct(0, items) = stack_value else {
+            return Err(CoreError::invalid_data("committee element is not a struct"));
+        };
+        if items.len() < 2 {
+            return Err(CoreError::invalid_data(
+                "committee element must have at least 2 fields",
+            ));
+        }
+        let bytes = items[0]
+            .to_byte_string_bytes()
+            .ok_or_else(|| CoreError::invalid_data("committee pubkey: not bytes"))?;
+        let point = ECPoint::from_bytes(&bytes)
+            .map_err(|e| CoreError::invalid_data(format!("committee EC point: {e}")))?;
+        let votes = neo_vm_rs::stack_value_as_bigint(&items[1])
+            .map_err(|e| CoreError::invalid_data(format!("committee votes: {e}")))?;
+        Ok((point, votes))
+    }
+}
+
+neo_vm::impl_interoperable_via_stack_value!(CachedCommittee);
 
 static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     let read_states = CallFlags::READ_STATES.bits();
@@ -1239,6 +1352,7 @@ static NEO_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ],
             ContractParameterType::Boolean,
         )
+        .with_storage_fee(50)
         .with_parameter_names(["from", "to", "amount", "data"]),
         // Governance reads.
         NativeMethod::new(
@@ -1620,18 +1734,13 @@ impl NativeContract for NeoToken {
             let prev_keys: Vec<&ECPoint> = prev_committee.iter().map(|(point, _)| point).collect();
             let new_keys: Vec<&ECPoint> = new_committee.iter().map(|(point, _)| point).collect();
             if prev_keys != new_keys {
-                let to_array = |keys: &[&ECPoint]| {
-                    StackItem::from_array(
-                        keys.iter()
-                            .map(|point| StackItem::from_byte_string(point.to_bytes()))
-                            .collect::<Vec<_>>(),
-                    )
-                };
+                let prev_key_item = Self::points_to_stack_item(prev_keys.iter().copied())?;
+                let new_key_item = Self::points_to_stack_item(new_keys.iter().copied())?;
                 engine
                     .send_notification(
                         Self::script_hash(),
                         "CommitteeChanged".to_string(),
-                        vec![to_array(&prev_keys), to_array(&new_keys)],
+                        vec![prev_key_item, new_key_item],
                     )
                     .map_err(|e| {
                         CoreError::invalid_operation(format!(
@@ -1722,14 +1831,9 @@ impl NativeContract for NeoToken {
             "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
             "decimals" => Ok(BigInt::from(Self::DECIMALS).to_signed_bytes_le()),
             "totalSupply" => {
-                let snapshot = engine.snapshot_cache();
-                let total = crate::read_storage_int(
-                    &snapshot,
-                    Self::ID,
-                    crate::NEP17_PREFIX_TOTAL_SUPPLY,
-                    0,
-                )?;
-                Ok(BigInt::from(total).to_signed_bytes_le())
+                // C# `NeoToken.TotalSupply` overrides the fungible-token storage
+                // reader and returns the immutable protocol amount.
+                Ok(BigInt::from(NEO_TOTAL_AMOUNT).to_signed_bytes_le())
             }
             "balanceOf" => {
                 let account = crate::args::raw_account(args, "NeoToken::balanceOf")?;
@@ -1779,7 +1883,7 @@ impl NativeContract for NeoToken {
                     )));
                 }
                 crate::committee::assert_committee(engine, "setRegisterPrice")?;
-                self.put_register_price(&engine.snapshot_cache(), price);
+                self.put_register_price(&engine.snapshot_cache(), price)?;
                 Ok(Vec::new())
             }
             "setGasPerBlock" => {
@@ -1931,15 +2035,19 @@ impl NativeContract for NeoToken {
                 // decodes its span as a secp256r1 point, faulting on anything
                 // that is not a valid public key (including Null).
                 let data = args.get(2).map(Vec::as_slice).unwrap_or(&[]);
-                let item =
-                    BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
-                        .map_err(|e| {
-                            CoreError::invalid_operation(format!(
-                                "NeoToken::onNEP17Payment data: {e}"
-                            ))
-                        })?;
-                let pubkey_bytes = item.as_bytes().map_err(|e| {
+                let limits = ExecutionEngineLimits::default();
+                let item = BinarySerializer::deserialize_stack_value_with_limits(
+                    data,
+                    limits.max_item_size as usize,
+                    limits.max_stack_size as usize,
+                )
+                .map_err(|e| {
                     CoreError::invalid_operation(format!("NeoToken::onNEP17Payment data: {e}"))
+                })?;
+                let pubkey_bytes = item.to_byte_string_bytes().ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "NeoToken::onNEP17Payment data: cannot convert to bytes",
+                    )
                 })?;
                 let pubkey = ECPoint::from_bytes(&pubkey_bytes).map_err(|e| {
                     CoreError::invalid_operation(format!(
@@ -2284,6 +2392,13 @@ mod tests {
         );
     }
 
+    fn seed_register_price(cache: &DataCache, price: i64) {
+        cache.add(
+            StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(price))),
+        );
+    }
+
     #[test]
     fn committee_threshold_is_majority() {
         // m = n - (n - 1) / 2.
@@ -2367,6 +2482,96 @@ mod tests {
         assert_eq!(by_key.get(&points[0].to_bytes()), Some(&BigInt::from(100)));
         assert_eq!(by_key.get(&points[2].to_bytes()), Some(&BigInt::from(50)));
         assert!(!by_key.contains_key(&points[1].to_bytes()));
+    }
+
+    #[test]
+    fn neo_public_array_return_encoders_use_stack_value_projection() {
+        fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+            let start_index = source.find(start).expect("start marker exists");
+            let end_index = source[start_index..]
+                .find(end)
+                .map(|offset| start_index + offset)
+                .expect("end marker exists");
+            &source[start_index..end_index]
+        }
+
+        let points = sample_committee();
+        let large_votes = (BigInt::from(i64::MAX) + BigInt::from(1u8)) * BigInt::from(2u8);
+        let candidates = vec![
+            (points[0].clone(), BigInt::from(100)),
+            (points[1].clone(), large_votes.clone()),
+        ];
+
+        let legacy_candidates = StackItem::from_array(vec![
+            StackItem::from_struct(vec![
+                StackItem::from_byte_string(points[0].to_bytes()),
+                StackItem::from_int(100),
+            ]),
+            StackItem::from_struct(vec![
+                StackItem::from_byte_string(points[1].to_bytes()),
+                StackItem::from_int(large_votes),
+            ]),
+        ]);
+        let expected_candidates =
+            BinarySerializer::serialize(&legacy_candidates, &ExecutionEngineLimits::default())
+                .unwrap();
+        assert_eq!(
+            NeoToken::candidates_to_array_bytes(&candidates).unwrap(),
+            expected_candidates
+        );
+
+        let legacy_points = StackItem::from_array(
+            points
+                .iter()
+                .map(|point| StackItem::from_byte_string(point.to_bytes()))
+                .collect::<Vec<_>>(),
+        );
+        let expected_points =
+            BinarySerializer::serialize(&legacy_points, &ExecutionEngineLimits::default()).unwrap();
+        assert_eq!(
+            NeoToken::points_to_array_bytes(&points).unwrap(),
+            expected_points
+        );
+
+        let source = include_str!("neo_token.rs");
+        let candidate_encoder = slice_between(
+            source,
+            "fn candidates_to_array_bytes",
+            "fn points_to_array_bytes",
+        );
+        assert!(candidate_encoder.contains("StackValue::Array"));
+        assert!(candidate_encoder.contains("StackValue::Struct"));
+        assert!(candidate_encoder.contains("serialize_stack_value_default"));
+        assert!(!candidate_encoder.contains("StackItem::from_array"));
+        assert!(!candidate_encoder.contains("BinarySerializer::serialize("));
+
+        let points_value_projector = slice_between(
+            source,
+            "fn points_to_stack_value",
+            "fn points_to_array_bytes",
+        );
+        assert!(points_value_projector.contains("StackValue::Array"));
+        assert!(!points_value_projector.contains("StackItem::from_array"));
+
+        let points_bytes_encoder = slice_between(
+            source,
+            "fn points_to_array_bytes",
+            "fn points_to_stack_item",
+        );
+        assert!(points_bytes_encoder.contains("points_to_stack_value"));
+        assert!(points_bytes_encoder.contains("serialize_stack_value_default"));
+        assert!(!points_bytes_encoder.contains("StackItem::from_array"));
+        assert!(!points_bytes_encoder.contains("BinarySerializer::serialize("));
+
+        let points_item_adapter =
+            slice_between(source, "fn points_to_stack_item", "fn committee_threshold");
+        assert!(points_item_adapter.contains("points_to_stack_value"));
+        assert!(points_item_adapter.contains("StackItem::try_from"));
+        assert!(!points_item_adapter.contains("StackItem::from_array"));
+
+        let on_persist = slice_between(source, "fn on_persist", "fn post_persist");
+        assert!(on_persist.contains("points_to_stack_item"));
+        assert!(!on_persist.contains("StackItem::from_array"));
     }
 
     #[test]
@@ -2485,6 +2690,342 @@ mod tests {
     }
 
     #[test]
+    fn neo_account_state_interoperable_projection_matches_csharp_shape() {
+        let points = sample_committee();
+        let state = NeoAccountStateView {
+            balance: BigInt::from(100),
+            balance_height: 42,
+            vote_to: Some(points[0].clone()),
+            last_gas_per_vote: BigInt::from(-7),
+        };
+        let expected = StackItem::from_struct(vec![
+            StackItem::from_int(BigInt::from(100)),
+            StackItem::from_int(BigInt::from(42)),
+            StackItem::from_byte_string(points[0].to_bytes()),
+            StackItem::from_int(BigInt::from(-7)),
+        ]);
+
+        let trait_value = Interoperable::to_stack_value(&state).unwrap();
+        let expected_bytes =
+            BinarySerializer::serialize(&expected, &ExecutionEngineLimits::default()).unwrap();
+        let trait_bytes = BinarySerializer::serialize_stack_value_default(&trait_value).unwrap();
+        assert_eq!(trait_bytes, expected_bytes);
+
+        let mut parsed = NeoAccountStateView {
+            balance: BigInt::from(0),
+            balance_height: 0,
+            vote_to: None,
+            last_gas_per_vote: BigInt::from(0),
+        };
+        Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+        assert_eq!(parsed.balance, state.balance);
+        assert_eq!(parsed.balance_height, state.balance_height);
+        assert_eq!(parsed.vote_to, state.vote_to);
+        assert_eq!(parsed.last_gas_per_vote, state.last_gas_per_vote);
+    }
+
+    #[test]
+    fn candidate_state_interoperable_projection_matches_csharp_shape() {
+        let state = CandidateState::new(true, BigInt::from(123));
+        let expected = StackItem::from_struct(vec![
+            StackItem::from_bool(true),
+            StackItem::from_int(BigInt::from(123)),
+        ]);
+
+        let trait_value = Interoperable::to_stack_value(&state).unwrap();
+        let expected_bytes =
+            BinarySerializer::serialize(&expected, &ExecutionEngineLimits::default()).unwrap();
+        let trait_bytes = BinarySerializer::serialize_stack_value_default(&trait_value).unwrap();
+        assert_eq!(trait_bytes, expected_bytes);
+
+        let mut parsed = CandidateState::new(false, BigInt::from(0));
+        Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+        assert_eq!(parsed, state);
+    }
+
+    #[test]
+    fn cached_committee_interoperable_projection_matches_csharp_shape() {
+        let points = sample_committee();
+        let members = vec![
+            (points[0].clone(), BigInt::from(100)),
+            (points[1].clone(), BigInt::from(-1)),
+        ];
+        let state = CachedCommittee::new(members.clone());
+        let expected = StackItem::from_array(vec![
+            StackItem::from_struct(vec![
+                StackItem::from_byte_string(points[0].to_bytes()),
+                StackItem::from_int(BigInt::from(100)),
+            ]),
+            StackItem::from_struct(vec![
+                StackItem::from_byte_string(points[1].to_bytes()),
+                StackItem::from_int(BigInt::from(-1)),
+            ]),
+        ]);
+
+        let trait_value = Interoperable::to_stack_value(&state).unwrap();
+        let expected_bytes =
+            BinarySerializer::serialize(&expected, &ExecutionEngineLimits::default()).unwrap();
+        let trait_bytes = BinarySerializer::serialize_stack_value_default(&trait_value).unwrap();
+        assert_eq!(trait_bytes, expected_bytes);
+
+        let mut parsed = CachedCommittee::new(Vec::new());
+        Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+        assert_eq!(parsed.into_members(), members);
+    }
+
+    #[test]
+    fn neo_storage_codecs_match_csharp_stackitem_bytes() {
+        let points = sample_committee();
+        let large_votes = BigInt::parse_bytes(b"9223372036854775808", 10).unwrap();
+        let account = NeoAccountStateView {
+            balance: large_votes.clone(),
+            balance_height: 42,
+            vote_to: Some(points[0].clone()),
+            last_gas_per_vote: BigInt::from(-7),
+        };
+
+        let expected_account = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![
+                StackItem::from_int(account.balance.clone()),
+                StackItem::from_int(BigInt::from(account.balance_height)),
+                StackItem::from_byte_string(points[0].to_bytes()),
+                StackItem::from_int(account.last_gas_per_vote.clone()),
+            ]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        let encoded_account = NeoToken::encode_neo_account_state(&account).unwrap();
+        assert_eq!(encoded_account, expected_account);
+        let decoded_account = NeoToken::decode_neo_account_state(&encoded_account).unwrap();
+        assert_eq!(decoded_account.balance, account.balance);
+        assert_eq!(decoded_account.balance_height, account.balance_height);
+        assert_eq!(decoded_account.vote_to, account.vote_to);
+        assert_eq!(decoded_account.last_gas_per_vote, account.last_gas_per_vote);
+
+        let expected_candidate = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![
+                StackItem::from_bool(true),
+                StackItem::from_int(large_votes.clone()),
+            ]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        let encoded_candidate = NeoToken::encode_candidate_state(true, &large_votes).unwrap();
+        assert_eq!(encoded_candidate, expected_candidate);
+        assert_eq!(
+            NeoToken::decode_candidate_state(&encoded_candidate).unwrap(),
+            (true, large_votes.clone())
+        );
+
+        let members = vec![
+            (points[0].clone(), large_votes.clone()),
+            (points[1].clone(), BigInt::from(-1)),
+        ];
+        let expected_committee = BinarySerializer::serialize(
+            &StackItem::from_array(
+                members
+                    .iter()
+                    .map(|(point, votes)| {
+                        StackItem::from_struct(vec![
+                            StackItem::from_byte_string(point.to_bytes()),
+                            StackItem::from_int(votes.clone()),
+                        ])
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        let encoded_committee = NeoToken::encode_committee(&members).unwrap();
+        assert_eq!(encoded_committee, expected_committee);
+
+        let cache = DataCache::new(false);
+        cache.add(
+            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageItem::from_bytes(encoded_committee),
+        );
+        assert_eq!(
+            NeoToken::new().read_committee_with_votes(&cache).unwrap(),
+            members
+        );
+    }
+
+    #[test]
+    fn neo_storage_codecs_use_stack_value_projection() {
+        fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+            let start_index = source.find(start).expect("start marker exists");
+            let end_index = source[start_index..]
+                .find(end)
+                .map(|offset| start_index + offset)
+                .expect("end marker exists");
+            &source[start_index..end_index]
+        }
+
+        let source = include_str!("neo_token.rs");
+        let account_decoder = slice_between(
+            source,
+            "fn decode_neo_account_state",
+            "fn encode_neo_account_state",
+        );
+        assert!(account_decoder.contains("deserialize_stack_value_with_limits"));
+        assert!(account_decoder.contains("NeoAccountStateView::from_stack_value"));
+        assert!(!account_decoder.contains("StackValue::Struct"));
+        assert!(!account_decoder.contains("stack_value_as_bigint"));
+        assert!(!account_decoder.contains("BinarySerializer::deserialize("));
+
+        let account_encoder =
+            slice_between(source, "fn encode_neo_account_state", "fn voters_count_key");
+        assert!(account_encoder.contains("state.to_stack_value"));
+        assert!(account_encoder.contains("serialize_stack_value_default"));
+        assert!(!account_encoder.contains("StackValue::Struct"));
+        assert!(!account_encoder.contains("StackItem::from_struct"));
+        assert!(!account_encoder.contains("BinarySerializer::serialize("));
+
+        let committee_reader = slice_between(
+            source,
+            "fn read_committee_with_votes",
+            "fn read_committee_points",
+        );
+        assert!(committee_reader.contains("deserialize_stack_value_with_limits"));
+        assert!(committee_reader.contains("CachedCommittee::from_stack_value"));
+        assert!(!committee_reader.contains("StackValue::Array"));
+        assert!(!committee_reader.contains("StackValue::Struct"));
+        assert!(!committee_reader.contains("stack_value_as_bigint"));
+        assert!(!committee_reader.contains("BinarySerializer::deserialize("));
+
+        let committee_encoder =
+            slice_between(source, "fn encode_committee", "fn should_refresh_committee");
+        assert!(committee_encoder.contains("CachedCommittee::new"));
+        assert!(committee_encoder.contains("to_stack_value"));
+        assert!(committee_encoder.contains("serialize_stack_value_default"));
+        assert!(!committee_encoder.contains("StackValue::Array"));
+        assert!(!committee_encoder.contains("StackValue::Struct"));
+        assert!(!committee_encoder.contains("StackItem::from_array"));
+        assert!(!committee_encoder.contains("BinarySerializer::serialize("));
+
+        let candidate_decoder = slice_between(
+            source,
+            "fn decode_candidate_state",
+            "fn encode_candidate_state",
+        );
+        assert!(candidate_decoder.contains("deserialize_stack_value_with_limits"));
+        assert!(candidate_decoder.contains("CandidateState::from_stack_value"));
+        assert!(!candidate_decoder.contains("StackValue::Struct"));
+        assert!(!candidate_decoder.contains("stack_value_as_bigint"));
+        assert!(!candidate_decoder.contains("BinarySerializer::deserialize("));
+
+        let candidate_encoder =
+            slice_between(source, "fn encode_candidate_state", "fn candidate_key");
+        assert!(candidate_encoder.contains("CandidateState::new"));
+        assert!(candidate_encoder.contains("to_stack_value"));
+        assert!(candidate_encoder.contains("serialize_stack_value_default"));
+        assert!(!candidate_encoder.contains("StackValue::Struct"));
+        assert!(!candidate_encoder.contains("StackItem::from_struct"));
+        assert!(!candidate_encoder.contains("BinarySerializer::serialize("));
+    }
+
+    #[test]
+    fn neo_storage_codecs_reject_truncated_records_like_csharp() {
+        let short_account = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![StackItem::from_int(1)]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        let account_err = match NeoToken::decode_neo_account_state(&short_account) {
+            Ok(_) => panic!("NeoAccountState indexes four fields"),
+            Err(err) => err,
+        };
+        assert!(
+            account_err.to_string().contains("at least 4 fields"),
+            "{account_err}"
+        );
+
+        let extra_account = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![
+                StackItem::from_int(1),
+                StackItem::from_int(2),
+                StackItem::null(),
+                StackItem::from_int(3),
+                StackItem::from_int(4),
+            ]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        let account = NeoToken::decode_neo_account_state(&extra_account)
+            .expect("C# NeoAccountState ignores extra fields");
+        assert_eq!(account.balance, BigInt::from(1));
+        assert_eq!(account.balance_height, 2);
+        assert_eq!(account.vote_to, None);
+        assert_eq!(account.last_gas_per_vote, BigInt::from(3));
+
+        let short_candidate = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![StackItem::from_bool(true)]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        let candidate_err = NeoToken::decode_candidate_state(&short_candidate)
+            .expect_err("CandidateState indexes two fields");
+        assert!(
+            candidate_err.to_string().contains("at least 2 fields"),
+            "{candidate_err}"
+        );
+
+        let extra_candidate = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![
+                StackItem::from_bool(false),
+                StackItem::from_int(9),
+                StackItem::from_int(10),
+            ]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            NeoToken::decode_candidate_state(&extra_candidate).unwrap(),
+            (false, BigInt::from(9))
+        );
+
+        let points = sample_committee();
+        let short_committee = BinarySerializer::serialize(
+            &StackItem::from_array(vec![StackItem::from_struct(vec![
+                StackItem::from_byte_string(points[0].to_bytes()),
+            ])]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        let cache = DataCache::new(false);
+        cache.add(
+            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageItem::from_bytes(short_committee),
+        );
+        let committee_err = NeoToken::new()
+            .read_committee_with_votes(&cache)
+            .expect_err("CachedCommittee indexes two fields per element");
+        assert!(
+            committee_err.to_string().contains("at least 2 fields"),
+            "{committee_err}"
+        );
+
+        let extra_committee = BinarySerializer::serialize(
+            &StackItem::from_array(vec![StackItem::from_struct(vec![
+                StackItem::from_byte_string(points[0].to_bytes()),
+                StackItem::from_int(11),
+                StackItem::from_int(12),
+            ])]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        let cache = DataCache::new(false);
+        cache.add(
+            StorageKey::new(NeoToken::ID, vec![PREFIX_COMMITTEE]),
+            StorageItem::from_bytes(extra_committee),
+        );
+        assert_eq!(
+            NeoToken::new().read_committee_with_votes(&cache).unwrap(),
+            vec![(points[0].clone(), BigInt::from(11))]
+        );
+    }
+
+    #[test]
     fn candidate_vote_is_votes_or_minus_one() {
         use neo_storage::StorageItem;
         let cache = DataCache::new(false);
@@ -2577,28 +3118,58 @@ mod tests {
     }
 
     #[test]
-    fn governance_reads_have_defaults_and_read_storage() {
-        use neo_storage::StorageItem;
+    fn total_supply_returns_constant_not_storage_slot() {
+        use std::sync::Arc;
+
+        let cache = DataCache::new(false);
+        cache.add(
+            StorageKey::new(NeoToken::ID, vec![crate::NEP17_PREFIX_TOTAL_SUPPLY]),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(42))),
+        );
+        let mut engine = ApplicationEngine::new(
+            neo_primitives::TriggerType::Application,
+            None,
+            Arc::new(cache),
+            None,
+            ProtocolSettings::default(),
+            10_000_000,
+            None,
+        )
+        .expect("engine builds");
+
+        let result = NativeContract::invoke(&NeoToken::new(), &mut engine, "totalSupply", &[])
+            .expect("totalSupply succeeds");
+
+        assert_eq!(
+            BigInt::from_signed_bytes_le(&result),
+            BigInt::from(NEO_TOTAL_AMOUNT)
+        );
+    }
+
+    #[test]
+    fn register_price_requires_initialized_storage() {
         let cache = DataCache::new(false);
 
-        // Defaults when unset: 1000 GAS register price, 5 GAS per block.
-        assert_eq!(
-            NeoToken::new().register_price(&cache).unwrap(),
-            DEFAULT_REGISTER_PRICE
-        );
-        assert_eq!(
-            NeoToken::new().gas_per_block_at(&cache, 100),
-            BigInt::from(DEFAULT_GAS_PER_BLOCK)
-        );
+        let err = NeoToken::new()
+            .register_price(&cache)
+            .expect_err("missing RegisterPrice storage must fault");
+        assert!(err.to_string().contains("RegisterPrice"));
 
-        // register price reads the prefix-13 BigInteger.
-        cache.add(
-            StorageKey::new(NeoToken::ID, vec![PREFIX_REGISTER_PRICE]),
-            StorageItem::from_bytes(BigInt::from(500 * 100_000_000i64).to_signed_bytes_le()),
-        );
+        seed_register_price(&cache, 500 * 100_000_000);
         assert_eq!(
             NeoToken::new().register_price(&cache).unwrap(),
             500 * 100_000_000
+        );
+    }
+
+    #[test]
+    fn gas_per_block_reads_default_and_storage() {
+        use neo_storage::StorageItem;
+        let cache = DataCache::new(false);
+
+        assert_eq!(
+            NeoToken::new().gas_per_block_at(&cache, 100),
+            BigInt::from(DEFAULT_GAS_PER_BLOCK)
         );
 
         // gas-per-block backward seek: record at index 10 applies from 10 on.
@@ -2624,17 +3195,18 @@ mod tests {
         // observed by the getRegisterPrice reader, matching C#
         // GetAndChange(_registerPrice).Set(price).
         let cache = DataCache::new(false);
-        assert_eq!(
-            NeoToken::new().register_price(&cache).unwrap(),
-            DEFAULT_REGISTER_PRICE
-        );
-        NeoToken::new().put_register_price(&cache, 500 * 100_000_000);
+        seed_register_price(&cache, DEFAULT_REGISTER_PRICE);
+        NeoToken::new()
+            .put_register_price(&cache, 500 * 100_000_000)
+            .unwrap();
         assert_eq!(
             NeoToken::new().register_price(&cache).unwrap(),
             500 * 100_000_000
         );
         // Overwrite (GetAndChange semantics), not insert-once.
-        NeoToken::new().put_register_price(&cache, 2000 * 100_000_000);
+        NeoToken::new()
+            .put_register_price(&cache, 2000 * 100_000_000)
+            .unwrap();
         assert_eq!(
             NeoToken::new().register_price(&cache).unwrap(),
             2000 * 100_000_000
@@ -2871,7 +3443,17 @@ mod governance_writer_tests {
         let cache = DataCache::new(false);
         let neo_state = build_native_contract_state(&NeoToken, &ProtocolSettings::default(), 0);
         deploy_native(&cache, &neo_state);
+        seed_register_price(&cache);
         Arc::new(cache)
+    }
+
+    fn seed_register_price(cache: &DataCache) {
+        cache.add(
+            NeoToken::register_price_key(),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                DEFAULT_REGISTER_PRICE,
+            ))),
+        );
     }
 
     #[test]
@@ -3285,6 +3867,23 @@ mod governance_writer_tests {
     /// the candidate (witnessed by its signature account) and burns the GAS
     /// from NEO's own balance, shrinking the total supply.
     #[test]
+    fn on_nep17_payment_data_parser_uses_stack_value_projection() {
+        let source = include_str!("neo_token.rs");
+        let start = source
+            .find("\"onNEP17Payment\" =>")
+            .expect("onNEP17Payment branch exists");
+        let end = source[start..]
+            .find("\"unregisterCandidate\" =>")
+            .map(|offset| start + offset)
+            .expect("next branch exists");
+        let branch = &source[start..end];
+
+        assert!(branch.contains("deserialize_stack_value_with_limits"));
+        assert!(branch.contains("to_byte_string_bytes"));
+        assert!(!branch.contains("BinarySerializer::deserialize("));
+    }
+
+    #[test]
     fn on_nep17_payment_registers_candidate_and_burns_gas() {
         let pubkey = candidate_pubkey();
         let candidate_account =
@@ -3306,6 +3905,7 @@ mod governance_writer_tests {
             &cache,
             &build_native_contract_state(&crate::GasToken, &settings, 0),
         );
+        seed_register_price(&cache);
         seed_gas(&cache, &sender, &price);
         let snapshot = Arc::new(cache);
 
@@ -3430,7 +4030,9 @@ mod governance_writer_tests {
         let candidate_account =
             UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
         let sender = UInt160::from_bytes(&[0x07; 20]).unwrap();
-        let snapshot = Arc::new(DataCache::new(false));
+        let cache = DataCache::new(false);
+        seed_register_price(&cache);
+        let snapshot = Arc::new(cache);
         let neo = NeoToken::new();
         let pubkey_item = StackItem::from_byte_string(pubkey.to_bytes());
 

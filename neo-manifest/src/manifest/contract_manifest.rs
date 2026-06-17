@@ -15,7 +15,7 @@ use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt160;
 use neo_primitives::constants::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use neo_vm::Interoperable;
-use neo_vm::StackItem;
+use neo_vm::InteroperableError;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
@@ -163,7 +163,16 @@ impl ContractManifest {
 
     /// Creates a manifest from a JSON string.
     pub fn from_json_str(json: &str) -> CoreResult<Self> {
-        serde_json::from_str(json).map_err(|e| CoreError::serialization(e.to_string()))
+        if json.len() > MAX_MANIFEST_LENGTH {
+            return Err(CoreError::invalid_data(format!(
+                "JSON content length {} exceeds maximum allowed size of {} bytes",
+                json.len(),
+                MAX_MANIFEST_LENGTH
+            )));
+        }
+        let value: Value =
+            serde_json::from_str(json).map_err(|e| CoreError::serialization(e.to_string()))?;
+        Self::from_json_value(&value)
     }
 
     /// Alias to maintain backwards compatibility with older code paths.
@@ -175,6 +184,146 @@ impl ContractManifest {
     /// This is an alias for `from_json_str` to match C# `ContractManifest.Parse` exactly.
     pub fn parse(json: &str) -> CoreResult<Self> {
         Self::from_json_str(json)
+    }
+
+    fn from_json_value(json: &Value) -> CoreResult<Self> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected manifest object"))?;
+
+        let name = obj
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| CoreError::other("Missing name"))?
+            .to_string();
+        if name.is_empty() {
+            return Err(CoreError::other("Name in ContractManifest is empty"));
+        }
+
+        let groups = match obj.get("groups") {
+            Some(Value::Array(groups)) => groups
+                .iter()
+                .map(ContractGroup::from_json)
+                .collect::<CoreResult<Vec<_>>>()?,
+            Some(_) => return Err(CoreError::other("ContractManifest groups must be an array")),
+            None => Vec::new(),
+        };
+
+        let features = obj
+            .get("features")
+            .and_then(Value::as_object)
+            .ok_or_else(|| CoreError::other("Features field must be empty"))?;
+        if !features.is_empty() {
+            return Err(CoreError::other("Features field must be empty"));
+        }
+
+        let supported_standards = match obj.get("supportedstandards") {
+            Some(Value::Array(standards)) => standards
+                .iter()
+                .map(|standard| {
+                    let value = standard.as_str().ok_or_else(|| {
+                        CoreError::other("SupportedStandards in ContractManifest must be strings")
+                    })?;
+                    if value.is_empty() {
+                        return Err(CoreError::other(
+                            "SupportedStandards in ContractManifest has empty string",
+                        ));
+                    }
+                    Ok(value.to_string())
+                })
+                .collect::<CoreResult<Vec<_>>>()?,
+            Some(_) => {
+                return Err(CoreError::other(
+                    "SupportedStandards in ContractManifest must be an array",
+                ));
+            }
+            None => Vec::new(),
+        };
+
+        let abi = ContractAbi::from_json(
+            obj.get("abi")
+                .ok_or_else(|| CoreError::other("Missing abi"))?,
+        )?;
+
+        let permissions = match obj.get("permissions") {
+            Some(Value::Array(permissions)) => permissions
+                .iter()
+                .map(ContractPermission::from_json)
+                .collect::<CoreResult<Vec<_>>>()?,
+            Some(_) => {
+                return Err(CoreError::other(
+                    "ContractManifest permissions must be an array",
+                ));
+            }
+            None => Vec::new(),
+        };
+
+        let trusts = WildCardContainer::<ContractPermissionDescriptor>::from_json(
+            obj.get("trusts")
+                .ok_or_else(|| CoreError::other("Missing trusts"))?,
+        )?;
+
+        let extra = match obj.get("extra") {
+            None | Some(Value::Null) => None,
+            Some(value @ Value::Object(_)) => Some(value.clone()),
+            Some(_) => return Err(CoreError::other("ContractManifest extra must be an object")),
+        };
+
+        let manifest = Self {
+            name,
+            groups,
+            features: HashMap::new(),
+            supported_standards,
+            abi,
+            permissions,
+            trusts,
+            extra,
+        };
+
+        manifest.validate_manifest_json_uniqueness()?;
+        Ok(manifest)
+    }
+
+    fn validate_manifest_json_uniqueness(&self) -> CoreResult<()> {
+        let mut group_keys = Vec::new();
+        for group in &self.groups {
+            if group_keys.iter().any(|key| key == &group.pub_key) {
+                return Err(CoreError::other("Duplicate group public key in manifest"));
+            }
+            group_keys.push(group.pub_key.clone());
+        }
+
+        let mut standards = HashSet::new();
+        for standard in &self.supported_standards {
+            if !standards.insert(standard) {
+                return Err(CoreError::other("Supported standards must be unique"));
+            }
+        }
+
+        let mut permission_contracts = Vec::new();
+        for permission in &self.permissions {
+            if permission_contracts
+                .iter()
+                .any(|contract| contract == &permission.contract)
+            {
+                return Err(CoreError::other(
+                    "Duplicate permission contract in manifest",
+                ));
+            }
+            permission_contracts.push(permission.contract.clone());
+        }
+
+        let mut trusts = Vec::new();
+        if let WildCardContainer::List(items) = &self.trusts {
+            for item in items {
+                if trusts.iter().any(|existing| existing == item) {
+                    return Err(CoreError::other("Duplicate trust entry in manifest"));
+                }
+                trusts.push(item.clone());
+            }
+        }
+
+        Ok(())
     }
 
     /// Validates the manifest.
@@ -464,25 +613,13 @@ impl Serializable for ContractManifest {
 }
 
 impl Interoperable for ContractManifest {
-    fn from_stack_item(
-        &mut self,
-        stack_item: StackItem,
-    ) -> std::result::Result<(), neo_vm::VmError> {
-        let sv = StackValue::try_from(stack_item).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "ContractManifest expects Struct stack item: {error}"
-            ))
-        })?;
-        self.from_stack_value(sv)
-            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
+        self.from_stack_value(value)
+            .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> std::result::Result<StackItem, neo_vm::VmError> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "ContractManifest StackValue conversion failed: {error}"
-            ))
-        })
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(self.to_stack_value())
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {
@@ -499,20 +636,6 @@ impl ContractManifest {
             .map(ContractGroup::to_stack_value)
             .collect::<Vec<_>>();
 
-        let mut feature_entries = Vec::with_capacity(self.features.len());
-        for (key, value) in &self.features {
-            let json_bytes =
-                neo_serialization::JsonSerializer::encode_value_csharp_compatible(value);
-            feature_entries.push((
-                StackValue::ByteString(key.as_bytes().to_vec()),
-                StackValue::ByteString(json_bytes),
-            ));
-        }
-        feature_entries.sort_by(|(left, _), (right, _)| {
-            left.to_byte_string_bytes()
-                .cmp(&right.to_byte_string_bytes())
-        });
-
         let standards_items = self
             .supported_standards
             .iter()
@@ -528,6 +651,7 @@ impl ContractManifest {
         let trusts_item = match &self.trusts {
             WildCardContainer::Wildcard => StackValue::Null,
             WildCardContainer::List(trusts) => StackValue::Array(
+                0,
                 trusts
                     .iter()
                     .map(ContractPermissionDescriptor::to_stack_value)
@@ -540,16 +664,20 @@ impl ContractManifest {
             None => b"null".to_vec(),
         };
 
-        StackValue::Struct(vec![
-            StackValue::ByteString(self.name.as_bytes().to_vec()),
-            StackValue::Array(group_items),
-            StackValue::Map(feature_entries),
-            StackValue::Array(standards_items),
-            self.abi.to_stack_value(),
-            StackValue::Array(permission_items),
-            trusts_item,
-            StackValue::ByteString(extra_bytes),
-        ])
+        StackValue::Struct(
+            0,
+            vec![
+                StackValue::ByteString(self.name.as_bytes().to_vec()),
+                StackValue::Array(0, group_items),
+                // C# ContractManifest.ToStackItem always emits an empty features map.
+                StackValue::Map(0, Vec::new()),
+                StackValue::Array(0, standards_items),
+                self.abi.to_stack_value(),
+                StackValue::Array(0, permission_items),
+                trusts_item,
+                StackValue::ByteString(extra_bytes),
+            ],
+        )
     }
 
     /// Populates the manifest from the VM stack-value shape used by native interop.
@@ -557,7 +685,7 @@ impl ContractManifest {
         &mut self,
         stack_value: StackValue,
     ) -> std::result::Result<(), CoreError> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(0, items) = stack_value else {
             return Err(CoreError::invalid_format(
                 "ContractManifest expects Struct stack value",
             ));
@@ -577,10 +705,13 @@ impl ContractManifest {
             .map_err(|_| CoreError::invalid_format("ContractManifest name must be valid UTF-8"))?;
 
         self.groups = match &items[1] {
-            StackValue::Array(groups) => groups
-                .iter()
-                .filter_map(|item| ContractGroup::try_from_stack_value(item.clone()).ok())
-                .collect(),
+            StackValue::Array(0, groups) => {
+                let mut values = Vec::with_capacity(groups.len());
+                for item in groups {
+                    values.push(ContractGroup::try_from_stack_value(item.clone())?);
+                }
+                values
+            }
             _ => {
                 return Err(CoreError::invalid_format(
                     "ContractManifest groups must be an Array",
@@ -588,9 +719,11 @@ impl ContractManifest {
             }
         };
 
-        if let StackValue::Map(features) = &items[2] {
+        if let StackValue::Map(0, features) = &items[2] {
             if !features.is_empty() {
-                tracing::warn!("ContractManifest features map is not empty, ignoring");
+                return Err(CoreError::invalid_format(
+                    "ContractManifest features map must be empty",
+                ));
             }
         } else {
             return Err(CoreError::invalid_format(
@@ -600,13 +733,28 @@ impl ContractManifest {
         self.features.clear();
 
         self.supported_standards = match &items[3] {
-            StackValue::Array(standards) => standards
-                .iter()
-                .filter_map(|item| {
-                    let bytes = item.to_byte_string_bytes()?;
-                    String::from_utf8(bytes).ok()
-                })
-                .collect(),
+            StackValue::Array(0, standards) => {
+                let mut values = Vec::with_capacity(standards.len());
+                for item in standards {
+                    if matches!(item, StackValue::Null) {
+                        return Err(CoreError::invalid_format(
+                            "ContractManifest supported standard must not be null",
+                        ));
+                    }
+                    let bytes = item.to_byte_string_bytes().ok_or_else(|| {
+                        CoreError::invalid_format(
+                            "ContractManifest supported standard must be ByteString",
+                        )
+                    })?;
+                    let standard = String::from_utf8(bytes).map_err(|_| {
+                        CoreError::invalid_format(
+                            "ContractManifest supported standard must be valid UTF-8",
+                        )
+                    })?;
+                    values.push(standard);
+                }
+                values
+            }
             _ => {
                 return Err(CoreError::invalid_format(
                     "ContractManifest supported standards must be an Array",
@@ -619,7 +767,7 @@ impl ContractManifest {
         self.abi = abi;
 
         self.permissions = match &items[5] {
-            StackValue::Array(permissions) => {
+            StackValue::Array(0, permissions) => {
                 let mut values = Vec::new();
                 for item in permissions {
                     let mut permission = ContractPermission::default_wildcard();
@@ -637,14 +785,15 @@ impl ContractManifest {
 
         self.trusts = match &items[6] {
             StackValue::Null => WildCardContainer::create_wildcard(),
-            StackValue::Array(trusts) => WildCardContainer::create(
-                trusts
-                    .iter()
-                    .filter_map(|item| {
-                        ContractPermissionDescriptor::from_stack_value(item.clone()).ok()
-                    })
-                    .collect(),
-            ),
+            StackValue::Array(0, trusts) => {
+                let mut values = Vec::with_capacity(trusts.len());
+                for item in trusts {
+                    values.push(ContractPermissionDescriptor::from_stack_value(
+                        item.clone(),
+                    )?);
+                }
+                WildCardContainer::create(values)
+            }
             _ => {
                 return Err(CoreError::invalid_format(
                     "ContractManifest trusts must be Null or Array",
@@ -653,16 +802,14 @@ impl ContractManifest {
         };
 
         self.extra = match &items[7] {
-            StackValue::Null => None,
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
-                parse_extra_bytes(bytes.as_slice())
+            StackValue::ByteString(bytes) | StackValue::Buffer(0, bytes) => {
+                parse_extra_bytes(bytes.as_slice())?
             }
             other => {
-                tracing::error!(
-                    "ContractManifest extra must be byte string or null, found {:?}",
+                return Err(CoreError::invalid_format(format!(
+                    "ContractManifest extra must be ByteString, found {:?}",
                     other.compact_type_tag()
-                );
-                None
+                )));
             }
         };
 
@@ -685,37 +832,67 @@ impl Default for ContractManifest {
     }
 }
 
-fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
+fn parse_extra_bytes(bytes: &[u8]) -> Result<Option<Value>, CoreError> {
     if bytes.is_empty() {
-        return None;
+        return Err(CoreError::invalid_format(
+            "ContractManifest extra must not be empty",
+        ));
     }
 
     let text = match std::str::from_utf8(bytes) {
         Ok(s) => s,
-        Err(e) => {
-            tracing::error!("ContractManifest extra must be UTF-8: {}", e);
-            return None;
+        Err(_) => {
+            return Err(CoreError::invalid_format(
+                "ContractManifest extra must be valid UTF-8",
+            ));
         }
     };
 
-    if text == "null" {
-        None
-    } else {
-        match serde_json::from_str(text) {
-            Ok(value) => Some(value),
-            Err(e) => {
-                tracing::error!("Invalid JSON in manifest extra: {}", e);
-                None
-            }
-        }
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Null) => Ok(None),
+        Ok(value @ Value::Object(_)) => Ok(Some(value)),
+        Ok(_) => Err(CoreError::invalid_format(
+            "ContractManifest extra must be a JSON object or null",
+        )),
+        Err(e) => Err(CoreError::invalid_format(format!(
+            "Invalid JSON in manifest extra: {e}"
+        ))),
     }
 }
 
 #[cfg(test)]
 mod manifest_extra_escape_tests {
     use super::*;
-    use neo_vm::Interoperable;
     use neo_vm_rs::StackValue;
+
+    fn stack_items_from_manifest(manifest: &ContractManifest) -> Vec<StackValue> {
+        let StackValue::Struct(0, items) = manifest.to_stack_value() else {
+            panic!("expected manifest Struct")
+        };
+        items
+    }
+
+    fn deployable_manifest_json() -> Value {
+        serde_json::json!({
+            "name": "sample",
+            "groups": [],
+            "features": {},
+            "supportedstandards": [],
+            "abi": {
+                "methods": [{
+                    "name": "main",
+                    "parameters": [],
+                    "returntype": "Void",
+                    "offset": 0,
+                    "safe": false
+                }],
+                "events": []
+            },
+            "permissions": [],
+            "trusts": "*",
+            "extra": null
+        })
+    }
 
     /// Bug #10 regression — manifest `extra` JSON must use C# JavaScriptEncoder.Default
     /// escape semantics. serde_json's minimal RFC-8259 escape set produces wrong bytes
@@ -730,17 +907,15 @@ mod manifest_extra_escape_tests {
             })),
             ..Default::default()
         };
-        let stack = m.to_stack_item().expect("to_stack_item");
-        let StackItem::Struct(s) = stack else {
+        let value = m.to_stack_value();
+        let StackValue::Struct(0, items) = value else {
             panic!("expected Struct")
         };
-        let items = s.items();
-        // extra is the last (8th) field per to_stack_item layout.
         let extra_item = &items[7];
-        let extra_bytes = extra_item.as_bytes().expect("extra bytes");
-        let extra_str = std::str::from_utf8(&extra_bytes).expect("utf-8");
-        // Output must contain the escape sequence (6 ASCII chars: \, u, 0, 0, 2, 6)
-        // and must NOT contain a literal `&`.
+        let StackValue::ByteString(extra_bytes) = extra_item else {
+            panic!("expected extra ByteString")
+        };
+        let extra_str = std::str::from_utf8(extra_bytes).expect("utf-8");
         assert!(
             extra_str.contains("\\u0026"),
             "expected `&` to be escaped as `\\u0026`, got: {extra_str}"
@@ -766,33 +941,27 @@ mod manifest_extra_escape_tests {
         }));
 
         let value = manifest.to_stack_value();
-        let StackValue::Struct(items) = value else {
+        let StackValue::Struct(0, items) = value else {
             panic!("expected manifest Struct")
         };
 
         assert_eq!(items[0], StackValue::ByteString(b"sample".to_vec()));
-        assert_eq!(items[1], StackValue::Array(Vec::new()));
-        let StackValue::Map(features) = &items[2] else {
+        assert_eq!(items[1], StackValue::Array(0, Vec::new()));
+        let StackValue::Map(0, features) = &items[2] else {
             panic!("expected features map")
         };
-        assert_eq!(features.len(), 1);
-        assert_eq!(features[0].0, StackValue::ByteString(b"feature".to_vec()));
-        let StackValue::ByteString(feature_bytes) = &features[0].1 else {
-            panic!("expected feature ByteString")
-        };
-        let feature = std::str::from_utf8(feature_bytes).expect("feature utf8");
         assert!(
-            feature.contains("\\u0026"),
-            "feature values should use C# JSON escapes"
+            features.is_empty(),
+            "C# ContractManifest.ToStackItem always emits an empty features map"
         );
         assert_eq!(
             items[3],
-            StackValue::Array(vec![StackValue::ByteString(b"NEP-17".to_vec())])
+            StackValue::Array(0, vec![StackValue::ByteString(b"NEP-17".to_vec())])
         );
         assert_eq!(items[4], manifest.abi.to_stack_value());
         assert_eq!(
             items[5],
-            StackValue::Array(vec![manifest.permissions[0].to_stack_value()])
+            StackValue::Array(0, vec![manifest.permissions[0].to_stack_value()])
         );
         assert_eq!(items[6], StackValue::Null);
         let StackValue::ByteString(extra_bytes) = &items[7] else {
@@ -825,12 +994,83 @@ mod manifest_extra_escape_tests {
     }
 
     #[test]
-    fn contract_manifest_stack_item_projection_matches_stack_value_projection() {
-        let mut manifest = ContractManifest::new("sample".to_string());
-        manifest.supported_standards = vec!["NEP-17".to_string()];
+    fn contract_manifest_parse_uses_csharp_json_field_rules() {
+        let manifest = ContractManifest::parse(&deployable_manifest_json().to_string())
+            .expect("valid manifest parses");
+        assert_eq!(manifest.name, "sample");
 
-        let expected = StackItem::try_from(manifest.to_stack_value()).unwrap();
+        let mut empty_methods_permission = deployable_manifest_json();
+        empty_methods_permission["permissions"] =
+            serde_json::json!([{ "contract": "*", "methods": [] }]);
+        let manifest = ContractManifest::parse(&empty_methods_permission.to_string())
+            .expect("C# permits empty permission method lists");
+        manifest
+            .validate()
+            .expect("empty method list remains valid");
 
-        assert_eq!(manifest.to_stack_item().unwrap(), expected);
+        let mut bad_parameter = deployable_manifest_json();
+        bad_parameter["abi"]["methods"][0]["parameters"] =
+            serde_json::json!([{ "name": "bad", "type": "Void" }]);
+        assert!(ContractManifest::parse(&bad_parameter.to_string()).is_err());
+
+        let mut missing_features = deployable_manifest_json();
+        missing_features.as_object_mut().unwrap().remove("features");
+        assert!(ContractManifest::parse(&missing_features.to_string()).is_err());
+
+        let mut missing_trusts = deployable_manifest_json();
+        missing_trusts.as_object_mut().unwrap().remove("trusts");
+        assert!(ContractManifest::parse(&missing_trusts.to_string()).is_err());
+    }
+
+    #[test]
+    fn contract_manifest_rejects_non_empty_features_stack_value_like_csharp() {
+        let source = ContractManifest::new("sample".to_string());
+        let mut items = stack_items_from_manifest(&source);
+        items[2] = StackValue::Map(
+            0,
+            vec![(
+                StackValue::ByteString(b"feature".to_vec()),
+                StackValue::ByteString(b"{}".to_vec()),
+            )],
+        );
+
+        assert!(
+            ContractManifest::default()
+                .from_stack_value(StackValue::Struct(0, items))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn contract_manifest_rejects_malformed_stack_fields_like_csharp() {
+        let assert_rejected = |mutate: fn(&mut Vec<StackValue>)| {
+            let source = ContractManifest::new("sample".to_string());
+            let mut items = stack_items_from_manifest(&source);
+            mutate(&mut items);
+            assert!(
+                ContractManifest::default()
+                    .from_stack_value(StackValue::Struct(0, items))
+                    .is_err()
+            );
+        };
+
+        assert_rejected(|items| {
+            items[1] = StackValue::Array(0, vec![StackValue::Null]);
+        });
+        assert_rejected(|items| {
+            items[3] = StackValue::Array(0, vec![StackValue::ByteString(vec![0xff])]);
+        });
+        assert_rejected(|items| {
+            items[3] = StackValue::Array(0, vec![StackValue::Null]);
+        });
+        assert_rejected(|items| {
+            items[6] = StackValue::Array(0, vec![StackValue::ByteString(vec![1, 2, 3])]);
+        });
+        assert_rejected(|items| {
+            items[7] = StackValue::Null;
+        });
+        assert_rejected(|items| {
+            items[7] = StackValue::ByteString(b"[]".to_vec());
+        });
     }
 }

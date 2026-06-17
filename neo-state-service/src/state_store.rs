@@ -16,7 +16,9 @@
 
 use crate::mpt_store::MptStore;
 use crate::state_root::StateRoot;
+use neo_crypto::mpt_trie::MptResult;
 use neo_primitives::UInt256;
+use neo_storage::persistence::Store;
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -34,7 +36,7 @@ pub enum StateStoreLookup {
 /// In-memory state store for state roots.
 #[derive(Debug, Default)]
 pub struct StateStore {
-    inner: RwLock<StateStoreInner>,
+    inner: Arc<RwLock<StateStoreInner>>,
     /// Optional persisted MPT backend (trie nodes + local-root
     /// records). `None` reproduces the verification-cache-only
     /// behaviour; composition roots that persist the trie construct
@@ -54,7 +56,7 @@ struct StateStoreInner {
 
 /// Transactional, read-committed view of the [`StateStore`].
 ///
-/// Holds an `Arc` to the underlying store and a snapshot of the
+/// Holds a shared handle to the underlying store and a snapshot of the
 /// candidate set captured at the time the transaction was opened.
 pub struct StateStoreTransaction {
     store: StateStore,
@@ -96,9 +98,17 @@ impl StateStore {
     /// only the current root resolvable.
     pub fn with_mpt(full_state: bool) -> Self {
         Self {
-            inner: RwLock::default(),
+            inner: Arc::new(RwLock::default()),
             mpt: Some(Arc::new(MptStore::new(full_state))),
         }
+    }
+
+    /// Constructs a state store with an MPT backend loaded from a durable store.
+    pub fn with_mpt_store(full_state: bool, backing: Arc<dyn Store>) -> MptResult<Self> {
+        Ok(Self {
+            inner: Arc::new(RwLock::default()),
+            mpt: Some(Arc::new(MptStore::from_store(backing, full_state)?)),
+        })
     }
 
     /// Returns the persisted MPT backend, if this store maintains one.
@@ -187,22 +197,12 @@ impl StateStore {
 impl Clone for StateStore {
     fn clone(&self) -> Self {
         Self {
-            inner: RwLock::new(self.inner.read().clone()),
-            // The MPT backend is shared, not deep-copied: clones (and
-            // the transactions built from them) observe the same
-            // persisted trie, exactly as C# snapshots share the one
-            // underlying `IStore`.
+            // Clones share the same in-memory root indexes/candidate set:
+            // transactions commit against the live store, matching the C#
+            // snapshot contract where Commit publishes to the underlying store.
+            inner: Arc::clone(&self.inner),
+            // The MPT backend is shared, not deep-copied, for the same reason.
             mpt: self.mpt.clone(),
-        }
-    }
-}
-
-impl Clone for StateStoreInner {
-    fn clone(&self) -> Self {
-        Self {
-            by_index: self.by_index.clone(),
-            by_root_hash: self.by_root_hash.clone(),
-            candidates: self.candidates.clone(),
         }
     }
 }
@@ -268,5 +268,17 @@ mod tests {
         store.try_add_state_root(root(2, 0x20));
         let tx = store.begin_transaction();
         assert_eq!(tx.candidates().len(), 2);
+    }
+
+    #[test]
+    fn transaction_commit_updates_original_candidate_set() {
+        let store = StateStore::new();
+        let r = root(1, 0x30);
+        assert!(store.try_add_state_root(r.clone()));
+
+        let tx = store.begin_transaction();
+        tx.commit(&[r]);
+
+        assert_eq!(store.candidate_count(), 0);
     }
 }

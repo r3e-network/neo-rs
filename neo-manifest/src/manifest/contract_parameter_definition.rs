@@ -3,9 +3,13 @@
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::ContractParameterType;
 use neo_vm::Interoperable;
-use neo_vm::StackItem;
+use neo_vm::InteroperableError;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
+
+use crate::manifest::stack_value_helpers::{
+    json_string_to_parameter_type, stack_value_to_parameter_type, stack_value_to_utf8_string,
+};
 
 /// Represents a parameter of an event or method in ABI (matches C# ContractParameterDefinition)
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,7 +53,8 @@ impl ContractParameterDefinition {
             .and_then(|v| v.as_str())
             .ok_or_else(|| CoreError::other("Missing type"))?;
 
-        let param_type = ContractParameterType::from_string(type_str).map_err(CoreError::other)?;
+        let param_type =
+            json_string_to_parameter_type(type_str, "ContractParameterDefinition type")?;
 
         Self::new(name, param_type)
     }
@@ -69,15 +74,18 @@ impl ContractParameterDefinition {
 
     /// Converts to a neo-vm-rs stack value (matches C# `ContractParameterDefinition.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::ByteString(self.name.as_bytes().to_vec()),
-            StackValue::Integer(self.param_type as u8 as i64),
-        ])
+        StackValue::Struct(
+            0,
+            vec![
+                StackValue::ByteString(self.name.as_bytes().to_vec()),
+                StackValue::Integer(self.param_type as u8 as i64),
+            ],
+        )
     }
 
     /// Updates this definition from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_format(
                 "ContractParameterDefinition expects Struct stack value",
             ));
@@ -90,40 +98,22 @@ impl ContractParameterDefinition {
             )));
         }
 
-        if let Some(bytes) = items[0].to_byte_string_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
-        }
-
-        if let Some(integer) = items[1].to_i128() {
-            if let Ok(value) = u8::try_from(integer) {
-                self.param_type =
-                    ContractParameterType::from_byte(value).unwrap_or(ContractParameterType::Any);
-            }
-        }
+        self.name = stack_value_to_utf8_string(&items[0], "ContractParameterDefinition name")?;
+        self.param_type =
+            stack_value_to_parameter_type(&items[1], "ContractParameterDefinition type")?;
 
         Ok(())
     }
 }
 
 impl Interoperable for ContractParameterDefinition {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), neo_vm::VmError> {
-        let sv = StackValue::try_from(stack_item).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractParameterDefinition StackItem to StackValue: {error}"
-            ))
-        })?;
-        self.from_stack_value(sv)
-            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
+        self.from_stack_value(value)
+            .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractParameterDefinition StackValue to StackItem: {error}"
-            ))
-        })
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(self.to_stack_value())
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {
@@ -144,21 +134,14 @@ mod tests {
 
         assert_eq!(
             definition.to_stack_value(),
-            StackValue::Struct(vec![
-                StackValue::ByteString(b"owner".to_vec()),
-                StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
-            ])
+            StackValue::Struct(
+                0,
+                vec![
+                    StackValue::ByteString(b"owner".to_vec()),
+                    StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
+                ]
+            )
         );
-    }
-
-    #[test]
-    fn parameter_definition_stack_item_projection_matches_stack_value_projection() {
-        let definition =
-            ContractParameterDefinition::new("amount".to_string(), ContractParameterType::Integer)
-                .unwrap();
-
-        let expected = StackItem::try_from(definition.to_stack_value()).unwrap();
-        assert_eq!(definition.to_stack_item().unwrap(), expected);
     }
 
     #[test]
@@ -166,10 +149,13 @@ mod tests {
         let mut definition = ContractParameterDefinition::default();
 
         definition
-            .from_stack_value(StackValue::Struct(vec![
-                StackValue::ByteString(b"flag".to_vec()),
-                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-            ]))
+            .from_stack_value(StackValue::Struct(
+                0,
+                vec![
+                    StackValue::ByteString(b"flag".to_vec()),
+                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                ],
+            ))
             .unwrap();
 
         assert_eq!(definition.name, "flag");
@@ -177,19 +163,76 @@ mod tests {
     }
 
     #[test]
-    fn parameter_definition_keeps_invalid_type_fallback() {
+    fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
         let mut definition =
             ContractParameterDefinition::new("initial".to_string(), ContractParameterType::String)
                 .unwrap();
 
-        definition
-            .from_stack_value(StackValue::Struct(vec![
-                StackValue::ByteString(b"changed".to_vec()),
-                StackValue::Integer(0x7f),
-            ]))
-            .unwrap();
+        assert!(
+            definition
+                .from_stack_value(StackValue::Struct(
+                    0,
+                    vec![
+                        StackValue::ByteString(b"changed".to_vec()),
+                        StackValue::Integer(0x7f),
+                    ]
+                ))
+                .is_err()
+        );
+        assert!(
+            definition
+                .from_stack_value(StackValue::Struct(
+                    0,
+                    vec![
+                        StackValue::Null,
+                        StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                    ]
+                ))
+                .is_err()
+        );
+        assert!(
+            definition
+                .from_stack_value(StackValue::Struct(
+                    0,
+                    vec![
+                        StackValue::ByteString(vec![0xff]),
+                        StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                    ]
+                ))
+                .is_err()
+        );
+        assert!(
+            definition
+                .from_stack_value(StackValue::Struct(
+                    0,
+                    vec![
+                        StackValue::ByteString(b"changed".to_vec()),
+                        StackValue::Integer(-1),
+                    ]
+                ))
+                .is_err()
+        );
+    }
 
-        assert_eq!(definition.name, "changed");
-        assert_eq!(definition.param_type, ContractParameterType::Any);
+    #[test]
+    fn parameter_definition_from_json_uses_csharp_enum_parse_rules() {
+        let numeric_boolean = serde_json::json!({
+            "name": "flag",
+            "type": "16"
+        });
+        let definition = ContractParameterDefinition::from_json(&numeric_boolean).unwrap();
+        assert_eq!(definition.param_type, ContractParameterType::Boolean);
+
+        let lowercase_alias = serde_json::json!({
+            "name": "flag",
+            "type": "bool"
+        });
+        assert!(ContractParameterDefinition::from_json(&lowercase_alias).is_err());
+
+        let case_variant = serde_json::json!({
+            "name": "flag",
+            "type": "boolean"
+        });
+        assert!(ContractParameterDefinition::from_json(&case_variant).is_err());
     }
 }

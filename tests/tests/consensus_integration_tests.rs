@@ -11,9 +11,10 @@
 
 use neo_consensus::{
     ConsensusEvent, ConsensusMessageType, ConsensusPayload, ConsensusService, ValidatorInfo,
-    messages::RecoveryMessage,
+    messages::{PrepareResponseMessage, RecoveryMessage},
 };
-use neo_crypto::{ECCurve, ECPoint};
+use neo_crypto::{Crypto, ECCurve, ECPoint, Secp256r1Crypto};
+use neo_io::BinaryWriter;
 use neo_primitives::{UInt160, UInt256};
 use tokio::sync::mpsc;
 
@@ -29,6 +30,59 @@ fn create_test_validators(count: usize) -> Vec<ValidatorInfo> {
             script_hash: UInt160::zero(),
         })
         .collect()
+}
+
+fn script_hash_from_pubkey(pubkey: &[u8]) -> UInt160 {
+    let mut script = Vec::with_capacity(pubkey.len() + 6);
+    script.push(0x0c);
+    script.push(pubkey.len() as u8);
+    script.extend_from_slice(pubkey);
+    script.push(0x41);
+    let syscall_hash = Crypto::sha256(b"System.Crypto.CheckSig");
+    script.extend_from_slice(&syscall_hash[..4]);
+    UInt160::from_bytes(&Crypto::hash160(&script)).expect("script hash")
+}
+
+fn create_validators_with_keys(count: usize) -> (Vec<ValidatorInfo>, Vec<[u8; 32]>) {
+    let mut validators = Vec::with_capacity(count);
+    let mut private_keys = Vec::with_capacity(count);
+    for i in 0..count {
+        let key = [i as u8 + 1; 32];
+        let pubkey = Secp256r1Crypto::derive_public_key(&key).expect("pubkey");
+        let point = ECPoint::new(ECCurve::Secp256r1, pubkey.clone()).expect("ecpoint");
+        validators.push(ValidatorInfo {
+            index: i as u8,
+            public_key: point,
+            script_hash: script_hash_from_pubkey(&pubkey),
+        });
+        private_keys.push(key);
+    }
+    (validators, private_keys)
+}
+
+fn sign_consensus_payload(
+    payload: &mut ConsensusPayload,
+    validators: &[ValidatorInfo],
+    private_key: &[u8; 32],
+) {
+    let sender = validators[payload.validator_index as usize].script_hash;
+    let mut writer = BinaryWriter::new();
+    writer.write_var_string("dBFT").expect("category");
+    writer.write_u32(0).expect("valid start");
+    writer
+        .write_u32(payload.block_index)
+        .expect("valid block end");
+    writer.write_bytes(&sender.to_bytes()).expect("sender");
+    writer
+        .write_var_bytes(&payload.to_message_bytes())
+        .expect("message bytes");
+
+    let payload_hash = Crypto::sha256(&writer.into_bytes());
+    let mut sign_data = Vec::with_capacity(4 + 32);
+    sign_data.extend_from_slice(&payload.network.to_le_bytes());
+    sign_data.extend_from_slice(&payload_hash);
+    let signature = Secp256r1Crypto::sign(&sign_data, private_key).expect("sign payload");
+    payload.set_witness(signature.to_vec());
 }
 
 fn create_consensus_service(
@@ -144,18 +198,23 @@ async fn test_consensus_wrong_block_index_rejected() {
 
 #[tokio::test]
 async fn test_consensus_wrong_view_ignored() {
-    let (mut service, _rx) = create_consensus_service(Some(1), 7);
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(7);
+    let mut service =
+        ConsensusService::new(network, validators.clone(), Some(1), keys[1].to_vec(), tx);
     service.start(100, 1000, UInt256::zero(), 0).unwrap();
 
-    // Create payload for wrong view
-    let payload = ConsensusPayload::new(
-        0x4E454F,
+    let response = PrepareResponseMessage::new(100, 5, 0, UInt256::zero());
+    let mut payload = ConsensusPayload::new(
+        network,
         100,
         0,
         5, // Wrong view number
         ConsensusMessageType::PrepareResponse,
-        vec![],
+        response.serialize(),
     );
+    sign_consensus_payload(&mut payload, &validators, &keys[0]);
 
     let result = service.process_message(payload);
     assert!(result.is_ok());

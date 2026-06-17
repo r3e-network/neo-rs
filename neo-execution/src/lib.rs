@@ -65,6 +65,7 @@ pub mod contract_parameters_context;
 pub mod contract_state;
 pub mod deployed_contract;
 pub mod diagnostic;
+pub mod engine_provider;
 pub mod env_flags;
 pub mod execution_context_state;
 pub mod helper;
@@ -85,7 +86,8 @@ pub use contract_parameter::ContractParameter;
 pub use contract_parameters_context::ContractParametersContext;
 pub use contract_state::ContractState;
 pub use deployed_contract::DeployedContract;
-pub use diagnostic::Diagnostic;
+pub use diagnostic::{Diagnostic, InstructionCounter};
+pub use engine_provider::ApplicationEngineProvider;
 // `env_flag_enabled` stays crate-private to `env_flags` (it is only used inside the engine).
 pub use execution_context_state::ExecutionContextState;
 pub use hardfork_activable::HardforkActivable;

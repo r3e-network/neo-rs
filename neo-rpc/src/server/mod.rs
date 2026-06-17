@@ -57,7 +57,7 @@ pub use rpc_server_wallet::RpcServerWallet;
 pub use rpc_tls::build_tls_config_from_settings;
 pub use session::Session;
 
-#[cfg(feature = "jsonrpsee-server")]
+#[cfg(feature = "server")]
 pub use jsonrpsee_adapter::{
     JsonRpseeContext, build_jsonrpsee_module, build_jsonrpsee_module_with_disabled,
 };

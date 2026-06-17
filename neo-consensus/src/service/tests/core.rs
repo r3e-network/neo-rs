@@ -153,6 +153,36 @@ async fn test_replay_attack_prevention() {
 }
 
 #[tokio::test]
+async fn invalid_signature_does_not_mark_validator_seen() {
+    let (tx, _rx) = mpsc::channel(100);
+    let validators = create_test_validators(7);
+    let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
+
+    service.start(100, 1000, UInt256::zero(), 0).unwrap();
+
+    let payload = ConsensusPayload::new(
+        0x4E454F,
+        100,
+        1,
+        0,
+        ConsensusMessageType::ChangeView,
+        vec![5, 6, 7, 8],
+    );
+
+    let prior_seen = service.context().last_seen_messages.get(&1).copied();
+
+    let result = service.process_message(payload);
+    assert!(matches!(
+        result,
+        Err(ConsensusError::SignatureVerificationFailed { .. })
+    ));
+    assert!(
+        service.context().last_seen_messages.get(&1).copied() == prior_seen,
+        "C# updates LastSeenMessage only for relay-verified consensus payloads"
+    );
+}
+
+#[tokio::test]
 async fn invalid_validator_index_rejected() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);

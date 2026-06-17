@@ -1,6 +1,5 @@
 use super::*;
 use crate::native_contract_provider::NativeContractLookup;
-use neo_payloads::VerifiableExt;
 
 impl ApplicationEngine {
     /// Validates that the provided hash has a matching witness in the current transaction.
@@ -28,26 +27,41 @@ impl ApplicationEngine {
                 _ => None,
             }) {
                 let oracle = NativeContractLookup::lookup_oracle_contract();
-                let Some(request) = oracle.and_then(|o| {
-                    o.oracle_request_url_full(self.snapshot_cache.as_ref(), oracle_id)
-                        .ok()
-                        .flatten()
-                }) else {
-                    return Ok(false);
-                };
+                let request = oracle
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "OracleResponse CheckWitness requires the Oracle native contract",
+                        )
+                    })?
+                    .oracle_request_url_full(self.snapshot_cache.as_ref(), oracle_id)?
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(format!(
+                            "OracleResponse CheckWitness missing request {oracle_id}"
+                        ))
+                    })?;
 
                 let ledger = NativeContractLookup::lookup_ledger_contract();
-                let Some(state) = ledger.and_then(|l| {
-                    l.transaction_state(self.snapshot_cache.as_ref(), &request.original_tx_id)
-                        .ok()
-                        .flatten()
-                }) else {
-                    return Ok(false);
-                };
+                let state = ledger
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(
+                            "OracleResponse CheckWitness requires the Ledger native contract",
+                        )
+                    })?
+                    .transaction_state(self.snapshot_cache.as_ref(), &request.original_tx_id)?
+                    .ok_or_else(|| {
+                        CoreError::invalid_operation(format!(
+                            "OracleResponse CheckWitness missing original transaction {}",
+                            request.original_tx_id
+                        ))
+                    })?;
 
-                if let Some(tx) = state.transaction.as_ref() {
-                    signers = tx.signers().to_vec();
-                }
+                let original_tx = state.transaction.as_ref().ok_or_else(|| {
+                    CoreError::invalid_operation(format!(
+                        "OracleResponse CheckWitness original transaction {} has no payload",
+                        request.original_tx_id
+                    ))
+                })?;
+                signers = original_tx.signers().to_vec();
             }
 
             let Some(signer) = signers.iter().find(|s| s.account == *hash) else {
@@ -70,9 +84,11 @@ impl ApplicationEngine {
             ));
         }
 
-        // Downcast to concrete types to call VerifiableExt::script_hashes_for_verifying
-        let hashes =
-            script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
+        let hashes = crate::helper::known_script_hashes_for_verifying(
+            container.as_ref(),
+            self.snapshot_cache.as_ref(),
+        )?
+        .unwrap_or_default();
         Ok(hashes.contains(hash))
     }
 
@@ -299,7 +315,7 @@ impl ApplicationEngine {
     /// Gets the current value from a storage iterator.
     pub fn iterator_value(&self, iterator_id: u32) -> CoreResult<StackItem> {
         match self.storage_iterators.get(&iterator_id) {
-            Some(iterator) => Ok(iterator.value()),
+            Some(iterator) => iterator.value(),
             None => Err(CoreError::not_found(format!(
                 "Iterator {} not found",
                 iterator_id
@@ -426,11 +442,11 @@ impl ApplicationEngine {
     }
 
     pub fn create_standard_account(&mut self, public_key: &[u8]) -> CoreResult<UInt160> {
-        if public_key.len() != 33 {
-            return Err(CoreError::invalid_operation(
-                "Public key must be 33 bytes".to_string(),
-            ));
-        }
+        let public_key = ECPoint::from_bytes_with_curve(ECCurve::Secp256r1, public_key)
+            .map_err(|err| CoreError::invalid_operation(format!("Invalid public key: {err}")))?;
+        let public_key = public_key
+            .encode_point(true)
+            .map_err(|err| CoreError::invalid_operation(format!("Invalid public key: {err}")))?;
 
         let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
             CHECK_SIG_PRICE
@@ -440,7 +456,7 @@ impl ApplicationEngine {
 
         self.add_cpu_fee(fee)?;
 
-        let script = Helper::signature_redeem_script(public_key);
+        let script = Helper::signature_redeem_script(&public_key);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
             .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {}", e)))?;
 
@@ -452,34 +468,19 @@ impl ApplicationEngine {
         required_signatures: i32,
         public_keys_items: Vec<StackItem>,
     ) -> CoreResult<UInt160> {
-        if required_signatures <= 0 {
-            return Err(CoreError::invalid_operation(
-                "Multisig threshold must be positive".to_string(),
-            ));
-        }
-
-        let m = required_signatures as usize;
-        // C# parity (Contract.CreateMultiSigRedeemScript): up to 1024 pubkeys.
-        if public_keys_items.is_empty()
-            || public_keys_items.len() > 1024
-            || m > public_keys_items.len()
-        {
-            return Err(CoreError::invalid_operation(
-                "Invalid multisig public key count".to_string(),
-            ));
-        }
-
         let mut public_keys: Vec<Vec<u8>> = Vec::with_capacity(public_keys_items.len());
         for item in public_keys_items {
             let bytes = item
                 .as_bytes()
                 .map_err(|_| CoreError::invalid_operation("Cannot convert to bytes".to_string()))?;
-            if bytes.len() != 33 {
-                return Err(CoreError::invalid_operation(
-                    "Each multisig public key must be 33 bytes".to_string(),
-                ));
-            }
-            public_keys.push(bytes.to_vec());
+            let point =
+                ECPoint::from_bytes_with_curve(ECCurve::Secp256r1, &bytes).map_err(|err| {
+                    CoreError::invalid_operation(format!("Invalid public key: {err}"))
+                })?;
+            let encoded = point.encode_point(true).map_err(|err| {
+                CoreError::invalid_operation(format!("Invalid public key: {err}"))
+            })?;
+            public_keys.push(encoded);
         }
 
         let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
@@ -492,7 +493,10 @@ impl ApplicationEngine {
 
         self.add_cpu_fee(fee)?;
 
-        let script = Helper::multi_sig_redeem_script(m, &public_keys);
+        let m = usize::try_from(required_signatures)
+            .map_err(|_| CoreError::invalid_operation("Invalid multisig threshold"))?;
+        let script = Helper::try_multi_sig_redeem_script(m, &public_keys)
+            .map_err(|err| CoreError::invalid_operation(err.to_string()))?;
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
             .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {}", e)))?;
 
@@ -688,29 +692,4 @@ impl ApplicationEngine {
             ),
         }
     }
-}
-
-/// Helper to call `script_hashes_for_verifying` on a `dyn Verifiable` by
-/// downcasting to known concrete types that implement `VerifiableExt`.
-fn script_hashes_for_verifying_dyn(
-    verifiable: &dyn Verifiable,
-    snapshot: &neo_storage::DataCache,
-) -> Vec<UInt160> {
-    use neo_payloads::block::Block as PayloadBlock;
-    use neo_payloads::extensible_payload::ExtensiblePayload;
-    use neo_payloads::header::Header;
-
-    if let Some(tx) = verifiable.as_any().downcast_ref::<Transaction>() {
-        return tx.script_hashes_for_verifying(snapshot);
-    }
-    if let Some(block) = verifiable.as_any().downcast_ref::<PayloadBlock>() {
-        return block.script_hashes_for_verifying(snapshot);
-    }
-    if let Some(header) = verifiable.as_any().downcast_ref::<Header>() {
-        return header.script_hashes_for_verifying(snapshot);
-    }
-    if let Some(payload) = verifiable.as_any().downcast_ref::<ExtensiblePayload>() {
-        return payload.script_hashes_for_verifying(snapshot);
-    }
-    Vec::new()
 }

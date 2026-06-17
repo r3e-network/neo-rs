@@ -133,7 +133,7 @@ pub(super) fn contract_parameter_to_stack_value(
                 .iter()
                 .map(contract_parameter_to_stack_value)
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(StackValue::Array(converted))
+            Ok(StackValue::Array(0, converted))
         }
         ContractParameterValue::Map(entries) => {
             let mut map = Vec::with_capacity(entries.len());
@@ -143,7 +143,7 @@ pub(super) fn contract_parameter_to_stack_value(
                     contract_parameter_to_stack_value(value)?,
                 ));
             }
-            Ok(StackValue::Map(map))
+            Ok(StackValue::Map(0, map))
         }
         ContractParameterValue::InteropInterface => Err(invalid_params(
             "InteropInterface parameters are not supported in invoke RPCs",

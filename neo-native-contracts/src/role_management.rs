@@ -20,8 +20,8 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::{Interoperable, StackItem};
+use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -98,33 +98,22 @@ impl RoleManagement {
     /// Decodes a serialized node-list (a `BinarySerializer` array of compressed
     /// EC-point byte strings) into `ECPoint`s.
     fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
-        let item = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| CoreError::deserialization(format!("RoleManagement node list: {e}")))?;
-        let StackItem::Array(array) = item else {
-            return Err(CoreError::invalid_data(
-                "RoleManagement node list is not an array",
-            ));
-        };
-        let mut points = Vec::new();
-        for entry in array.items() {
-            let bytes = entry
-                .as_bytes()
-                .map_err(|e| CoreError::invalid_data(format!("RoleManagement node bytes: {e}")))?;
-            points.push(ECPoint::from_bytes(&bytes).map_err(|e| {
-                CoreError::invalid_data(format!("RoleManagement node EC point: {e}"))
-            })?);
-        }
-        Ok(points)
+        let limits = ExecutionEngineLimits::default();
+        let value = BinarySerializer::deserialize_stack_value_with_limits(
+            value,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::deserialization(format!("RoleManagement node list: {e}")))?;
+        Ok(NodeList::from_stack_value(value)?.into_nodes())
     }
 
     /// Serializes an empty node list (C# returns an empty `ECPoint[]`, not `null`,
     /// when no designation exists).
     fn empty_node_list() -> CoreResult<Vec<u8>> {
-        BinarySerializer::serialize(
-            &StackItem::from_array(Vec::new()),
-            &ExecutionEngineLimits::default(),
-        )
-        .map_err(|e| CoreError::invalid_operation(format!("RoleManagement empty list: {e}")))
+        let item = NodeList::new(Vec::new()).to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&item)
+            .map_err(|e| CoreError::invalid_operation(format!("RoleManagement empty list: {e}")))
     }
 
     /// The designation storage key `(RoleManagement.ID, [role_byte, index_be])`.
@@ -135,15 +124,17 @@ impl RoleManagement {
         )
     }
 
-    /// Builds a `StackItem::Array` of compressed EC-point byte strings, preserving
-    /// the given order (used for the event's node arrays).
-    fn nodes_to_array(points: &[ECPoint]) -> StackItem {
-        StackItem::from_array(
-            points
-                .iter()
-                .map(|p| StackItem::from_byte_string(p.to_bytes()))
-                .collect::<Vec<_>>(),
-        )
+    /// Builds the persisted `StackValue::Array` representation for C# `NodeList`.
+    fn nodes_to_stack_value(points: &[ECPoint]) -> StackValue {
+        NodeList::new(points.to_vec()).to_stack_value()
+    }
+
+    /// Adapts the canonical node-list `StackValue` projection to the live VM
+    /// notification boundary, preserving the caller-provided order.
+    fn nodes_to_event_array(points: &[ECPoint]) -> CoreResult<StackItem> {
+        StackItem::try_from(Self::nodes_to_stack_value(points)).map_err(|error| {
+            CoreError::invalid_operation(format!("RoleManagement event node list: {error}"))
+        })
     }
 
     /// Serializes a node list as C# `NodeList` stores it: a `BinarySerializer` array
@@ -153,11 +144,8 @@ impl RoleManagement {
     fn encode_node_list(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
         let mut sorted = points.to_vec();
         sorted.sort();
-        BinarySerializer::serialize(
-            &Self::nodes_to_array(&sorted),
-            &ExecutionEngineLimits::default(),
-        )
-        .map_err(|e| CoreError::invalid_operation(format!("RoleManagement node list: {e}")))
+        BinarySerializer::serialize_stack_value_default(&Self::nodes_to_stack_value(&sorted))
+            .map_err(|e| CoreError::invalid_operation(format!("RoleManagement node list: {e}")))
     }
 
     /// Decodes + validates the `nodes` Array argument: 1..=32 compressed EC points
@@ -184,18 +172,63 @@ impl RoleManagement {
         echidna: bool,
         old_nodes: &[ECPoint],
         new_nodes: &[ECPoint],
-    ) -> Vec<StackItem> {
+    ) -> CoreResult<Vec<StackItem>> {
         let mut state = vec![
             StackItem::from_int(i64::from(role_byte)),
             StackItem::from_int(i64::from(block_index)),
         ];
         if echidna {
-            state.push(Self::nodes_to_array(old_nodes));
-            state.push(Self::nodes_to_array(new_nodes));
+            state.push(Self::nodes_to_event_array(old_nodes)?);
+            state.push(Self::nodes_to_event_array(new_nodes)?);
         }
-        state
+        Ok(state)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NodeList {
+    nodes: Vec<ECPoint>,
+}
+
+impl NodeList {
+    fn new(nodes: Vec<ECPoint>) -> Self {
+        Self { nodes }
+    }
+
+    fn into_nodes(self) -> Vec<ECPoint> {
+        self.nodes
+    }
+
+    fn to_stack_value(&self) -> StackValue {
+        StackValue::Array(
+            0,
+            self.nodes
+                .iter()
+                .map(|point| StackValue::ByteString(point.to_bytes()))
+                .collect(),
+        )
+    }
+
+    fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
+        let StackValue::Array(0, items) = stack_value else {
+            return Err(CoreError::invalid_data(
+                "RoleManagement node list is not an array",
+            ));
+        };
+        let mut nodes = Vec::with_capacity(items.len());
+        for entry in items {
+            let bytes = entry.to_byte_string_bytes().ok_or_else(|| {
+                CoreError::invalid_data("RoleManagement node entry is not byte-like")
+            })?;
+            nodes.push(ECPoint::from_bytes(&bytes).map_err(|e| {
+                CoreError::invalid_data(format!("RoleManagement node EC point: {e}"))
+            })?);
+        }
+        Ok(Self { nodes })
+    }
+}
+
+neo_vm::impl_interoperable_via_stack_value!(NodeList);
 
 static ROLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
     vec![
@@ -407,7 +440,7 @@ impl NativeContract for RoleManagement {
                     echidna,
                     &old_nodes,
                     &nodes,
-                );
+                )?;
                 engine
                     .send_notification(Self::script_hash(), "Designation".to_string(), state)
                     .map_err(|e| {
@@ -475,22 +508,82 @@ mod tests {
         .unwrap();
         let input = vec![a.clone(), b.clone()];
         // encode_node_list stores them sorted; decode_node_list reads them back.
-        let decoded =
-            RoleManagement::decode_node_list(&RoleManagement::encode_node_list(&input).unwrap())
-                .unwrap();
+        let encoded = RoleManagement::encode_node_list(&input).unwrap();
         let mut expected = input.clone();
         expected.sort();
+        let expected_value = StackValue::Array(
+            expected
+                .iter()
+                .map(|point| StackValue::ByteString(point.to_bytes()))
+                .collect(),
+        );
+        let expected_encoded = BinarySerializer::serialize_stack_value_default(&expected_value)
+            .expect("expected node-list StackValue serializes");
+        assert_eq!(encoded, expected_encoded);
+        let decoded = RoleManagement::decode_node_list(&encoded).unwrap();
         assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn node_list_interoperable_projection_matches_csharp_shape() {
+        let a = sample_point();
+        let b = ECPoint::from_bytes(&hex_to_bytes(
+            "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093",
+        ))
+        .unwrap();
+        let nodes = vec![a.clone(), b.clone()];
+        let state = NodeList::new(nodes.clone());
+        let expected_value = StackValue::Array(
+            0,
+            vec![
+                StackValue::ByteString(a.to_bytes()),
+                StackValue::ByteString(b.to_bytes()),
+            ],
+        );
+
+        let trait_value = Interoperable::to_stack_value(&state).unwrap();
+        assert_eq!(trait_value, expected_value);
+
+        let mut parsed = NodeList::new(Vec::new());
+        Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+        assert_eq!(parsed.into_nodes(), nodes);
+    }
+
+    #[test]
+    fn node_list_storage_codecs_use_stack_value_projection() {
+        fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+            let start_index = source.find(start).expect("start marker exists");
+            let end_index = source[start_index..]
+                .find(end)
+                .map(|offset| start_index + offset)
+                .expect("end marker exists");
+            &source[start_index..end_index]
+        }
+
+        let source = include_str!("role_management.rs");
+        let decoder = slice_between(source, "fn decode_node_list", "fn empty_node_list");
+        assert!(decoder.contains("deserialize_stack_value_with_limits"));
+        assert!(decoder.contains("NodeList::from_stack_value"));
+        assert!(!decoder.contains("StackValue::Array"));
+
+        let empty_encoder = slice_between(source, "fn empty_node_list", "fn designation_key");
+        assert!(empty_encoder.contains("NodeList::new"));
+        assert!(empty_encoder.contains("to_stack_value"));
+        assert!(empty_encoder.contains("serialize_stack_value_default"));
+        assert!(!empty_encoder.contains("StackValue::Array"));
+
+        let projector = slice_between(source, "fn nodes_to_stack_value", "fn nodes_to_event_array");
+        assert!(projector.contains("NodeList::new"));
+        assert!(projector.contains("to_stack_value"));
+        assert!(!projector.contains("StackValue::Array"));
     }
 
     #[test]
     fn parse_nodes_arg_enforces_1_to_32() {
         // Empty array -> rejected.
-        let empty = BinarySerializer::serialize(
-            &StackItem::from_array(Vec::<StackItem>::new()),
-            &ExecutionEngineLimits::default(),
-        )
-        .unwrap();
+        let empty =
+            BinarySerializer::serialize_stack_value_default(&StackValue::Array(0, Vec::new()))
+                .unwrap();
         assert!(RoleManagement::parse_nodes_arg(&empty).is_err());
         // One valid node -> accepted.
         let one = RoleManagement::encode_node_list(&[sample_point()]).unwrap();
@@ -503,13 +596,15 @@ mod tests {
         let old_nodes: Vec<ECPoint> = Vec::new();
 
         // Pre-Echidna: [role, blockIndex].
-        let pre = RoleManagement::designation_event_state(8, 41, false, &old_nodes, &new_nodes);
+        let pre =
+            RoleManagement::designation_event_state(8, 41, false, &old_nodes, &new_nodes).unwrap();
         assert_eq!(pre.len(), 2);
         assert_eq!(pre[0].as_int().unwrap(), num_bigint::BigInt::from(8));
         assert_eq!(pre[1].as_int().unwrap(), num_bigint::BigInt::from(41));
 
         // Echidna: [role, blockIndex, oldNodes(Array), newNodes(Array)].
-        let post = RoleManagement::designation_event_state(8, 41, true, &old_nodes, &new_nodes);
+        let post =
+            RoleManagement::designation_event_state(8, 41, true, &old_nodes, &new_nodes).unwrap();
         assert_eq!(post.len(), 4);
         assert!(matches!(post[2], StackItem::Array(_)));
         match &post[3] {
@@ -532,10 +627,10 @@ mod tests {
         );
 
         // Designate the Oracle role at index 10 (a 1-element node list).
-        let list = BinarySerializer::serialize(
-            &StackItem::from_array(vec![StackItem::from_byte_string(point.to_bytes())]),
-            &ExecutionEngineLimits::default(),
-        )
+        let list = BinarySerializer::serialize_stack_value_default(&StackValue::Array(
+            0,
+            vec![StackValue::ByteString(point.to_bytes())],
+        ))
         .unwrap();
         cache.add(
             RoleManagement::designation_key(Role::Oracle.as_byte(), 10),

@@ -37,7 +37,6 @@ mod serialization;
 // Stack projection lives in neo-core (depends on the VM crate) so neo-io stays
 // free of any VM dependency.
 mod stack_projection;
-pub use stack_projection::ToStackItem;
 
 pub use neo_primitives::WitnessConditionType;
 pub use neo_primitives::WitnessRuleAction;

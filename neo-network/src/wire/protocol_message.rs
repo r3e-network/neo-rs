@@ -142,24 +142,15 @@ impl ProtocolMessage {
     pub fn deserialize_payload(command: MessageCommand, data: &[u8]) -> WireResult<Self> {
         let msg = match command {
             MessageCommand::Version => Self::Version(deserialize_payload(data)?),
-            MessageCommand::Verack => {
-                ensure_empty(command, data)?;
-                Self::Verack
-            }
-            MessageCommand::GetAddr => {
-                ensure_empty(command, data)?;
-                Self::GetAddr
-            }
+            MessageCommand::Verack => Self::Verack,
+            MessageCommand::GetAddr => Self::GetAddr,
             MessageCommand::Addr => Self::Addr(deserialize_payload(data)?),
             MessageCommand::Ping => Self::Ping(deserialize_payload(data)?),
             MessageCommand::Pong => Self::Pong(deserialize_payload(data)?),
             MessageCommand::GetHeaders => Self::GetHeaders(deserialize_payload(data)?),
             MessageCommand::Headers => Self::Headers(deserialize_payload(data)?),
             MessageCommand::GetBlocks => Self::GetBlocks(deserialize_payload(data)?),
-            MessageCommand::Mempool => {
-                ensure_empty(command, data)?;
-                Self::Mempool
-            }
+            MessageCommand::Mempool => Self::Mempool,
             MessageCommand::Inv => Self::Inv(deserialize_payload(data)?),
             MessageCommand::GetData => Self::GetData(deserialize_payload(data)?),
             MessageCommand::GetBlockByIndex => Self::GetBlockByIndex(deserialize_payload(data)?),
@@ -169,10 +160,7 @@ impl ProtocolMessage {
             MessageCommand::Extensible => Self::Extensible(deserialize_payload(data)?),
             MessageCommand::FilterLoad => Self::FilterLoad(deserialize_payload(data)?),
             MessageCommand::FilterAdd => Self::FilterAdd(deserialize_payload(data)?),
-            MessageCommand::FilterClear => {
-                ensure_empty(command, data)?;
-                Self::FilterClear
-            }
+            MessageCommand::FilterClear => Self::FilterClear,
             MessageCommand::MerkleBlock => Self::MerkleBlock(deserialize_payload(data)?),
             MessageCommand::Alert => Self::Alert(data.to_vec()),
             MessageCommand::Reject => Self::Reject(data.to_vec()),
@@ -213,20 +201,10 @@ fn deserialize_payload<T: Serializable>(bytes: &[u8]) -> WireResult<T> {
     Ok(payload)
 }
 
-fn ensure_empty(command: MessageCommand, bytes: &[u8]) -> WireResult<()> {
-    if bytes.is_empty() {
-        Ok(())
-    } else {
-        Err(WireError::InvalidMessage(format!(
-            "command {command:?} does not carry a payload but {} byte(s) supplied",
-            bytes.len()
-        )))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wire::NetworkMessage;
 
     #[test]
     fn protocol_message_command_matches_variant() {
@@ -243,6 +221,26 @@ mod tests {
         let decoded = ProtocolMessage::deserialize_payload(MessageCommand::Verack, &payload)
             .expect("deserialize");
         matches!(decoded, ProtocolMessage::Verack);
+    }
+
+    #[test]
+    fn no_payload_commands_ignore_extra_payload_like_csharp_reflection_cache() {
+        let frame = crate::wire::Message::from_payload_bytes(
+            MessageCommand::Verack,
+            vec![0xCA, 0xFE],
+            false,
+        )
+        .expect("message")
+        .to_bytes()
+        .expect("wire bytes");
+
+        let decoded = NetworkMessage::from_bytes(&frame)
+            .expect("C# ReflectionCache leaves undecorated command payloads untyped");
+        assert!(matches!(decoded.payload, ProtocolMessage::Verack));
+
+        let decoded = ProtocolMessage::deserialize_payload(MessageCommand::Mempool, &[1, 2, 3])
+            .expect("Mempool is undecorated in C# MessageCommand");
+        assert!(matches!(decoded, ProtocolMessage::Mempool));
     }
 
     #[test]

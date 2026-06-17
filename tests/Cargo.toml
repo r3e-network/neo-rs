@@ -15,6 +15,7 @@ neo-primitives = { workspace = true }
 neo-io = { workspace = true }
 neo-serialization = { workspace = true }
 neo-storage = { workspace = true }
+neo-config = { workspace = true }
 
 # Layer 1 - Crypto
 neo-crypto = { workspace = true }
@@ -25,6 +26,7 @@ neo-p2p = { workspace = true }
 neo-payloads = { workspace = true }
 
 # Layer 4 - Services
+neo-blockchain = { workspace = true }
 neo-rpc = { workspace = true }
 neo-vm-rs = { workspace = true }
 

@@ -4,7 +4,7 @@ use crate::manifest::stack_value_helpers::{decode_stack_value_objects, required_
 use crate::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
 use neo_error::{CoreError, CoreResult};
 use neo_vm::Interoperable;
-use neo_vm::StackItem;
+use neo_vm::InteroperableError;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -93,25 +93,23 @@ impl ContractAbi {
             .as_object()
             .ok_or_else(|| CoreError::other("Expected object"))?;
 
-        let methods: Vec<ContractMethodDescriptor> = obj
-            .get("methods")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|m| ContractMethodDescriptor::from_json(m).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let methods: Vec<ContractMethodDescriptor> = match obj.get("methods") {
+            Some(serde_json::Value::Array(arr)) => arr
+                .iter()
+                .map(ContractMethodDescriptor::from_json)
+                .collect::<CoreResult<Vec<_>>>()?,
+            Some(_) => return Err(CoreError::other("ContractAbi methods must be an array")),
+            None => Vec::new(),
+        };
 
-        let events: Vec<ContractEventDescriptor> = obj
-            .get("events")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|e| ContractEventDescriptor::from_json(e).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let events: Vec<ContractEventDescriptor> = match obj.get("events") {
+            Some(serde_json::Value::Array(arr)) => arr
+                .iter()
+                .map(ContractEventDescriptor::from_json)
+                .collect::<CoreResult<Vec<_>>>()?,
+            Some(_) => return Err(CoreError::other("ContractAbi events must be an array")),
+            None => Vec::new(),
+        };
 
         if methods.is_empty() {
             return Err(CoreError::other("ABI must have at least one method"));
@@ -137,20 +135,25 @@ impl ContractAbi {
 
     /// Converts to a neo-vm-rs stack value (matches C# `ContractAbi.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::Array(
-                self.methods
-                    .iter()
-                    .map(ContractMethodDescriptor::to_stack_value)
-                    .collect(),
-            ),
-            StackValue::Array(
-                self.events
-                    .iter()
-                    .map(ContractEventDescriptor::to_stack_value)
-                    .collect(),
-            ),
-        ])
+        StackValue::Struct(
+            0,
+            vec![
+                StackValue::Array(
+                    0,
+                    self.methods
+                        .iter()
+                        .map(ContractMethodDescriptor::to_stack_value)
+                        .collect(),
+                ),
+                StackValue::Array(
+                    0,
+                    self.events
+                        .iter()
+                        .map(ContractEventDescriptor::to_stack_value)
+                        .collect(),
+                ),
+            ],
+        )
     }
 
     /// Updates this ABI from a neo-vm-rs stack value.
@@ -166,12 +169,8 @@ impl ContractAbi {
             ContractEventDescriptor::from_stack_value,
         )?;
 
-        if let Some(methods) = methods {
-            self.methods = methods;
-        }
-        if let Some(events) = events {
-            self.events = events;
-        }
+        self.methods = methods;
+        self.events = events;
         self.method_dictionary = None;
 
         Ok(())
@@ -187,22 +186,13 @@ impl ContractAbi {
 }
 
 impl Interoperable for ContractAbi {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), neo_vm::VmError> {
-        let sv = StackValue::try_from(stack_item).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractAbi StackItem to StackValue: {error}"
-            ))
-        })?;
-        self.from_stack_value(sv)
-            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
+        self.from_stack_value(value)
+            .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractAbi StackValue to StackItem: {error}"
-            ))
-        })
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(self.to_stack_value())
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {
@@ -237,28 +227,35 @@ mod tests {
 
         assert_eq!(
             abi.to_stack_value(),
-            StackValue::Struct(vec![
-                StackValue::Array(vec![StackValue::Struct(vec![
-                    StackValue::ByteString(b"main".to_vec()),
-                    StackValue::Array(Vec::new()),
-                    StackValue::Integer(ContractParameterType::Void as u8 as i64),
-                    StackValue::Integer(7),
-                    StackValue::Boolean(true),
-                ])]),
-                StackValue::Array(vec![StackValue::Struct(vec![
-                    StackValue::ByteString(b"Notify".to_vec()),
-                    StackValue::Array(Vec::new()),
-                ])]),
-            ])
+            StackValue::Struct(
+                0,
+                vec![
+                    StackValue::Array(
+                        0,
+                        vec![StackValue::Struct(
+                            0,
+                            vec![
+                                StackValue::ByteString(b"main".to_vec()),
+                                StackValue::Array(0, Vec::new()),
+                                StackValue::Integer(ContractParameterType::Void as u8 as i64),
+                                StackValue::Integer(7),
+                                StackValue::Boolean(true),
+                            ]
+                        )]
+                    ),
+                    StackValue::Array(
+                        0,
+                        vec![StackValue::Struct(
+                            0,
+                            vec![
+                                StackValue::ByteString(b"Notify".to_vec()),
+                                StackValue::Array(0, Vec::new()),
+                            ]
+                        )]
+                    ),
+                ]
+            )
         );
-    }
-
-    #[test]
-    fn contract_abi_stack_item_projection_matches_stack_value_projection() {
-        let abi = ContractAbi::new(vec![method("transfer")], Vec::new());
-        let expected = StackItem::try_from(abi.to_stack_value()).unwrap();
-
-        assert_eq!(abi.to_stack_item().unwrap(), expected);
     }
 
     #[test]
@@ -266,10 +263,13 @@ mod tests {
         let mut abi = ContractAbi::new(vec![method("old")], Vec::new());
         assert!(abi.get_method("old", 0).is_some());
 
-        abi.from_stack_value(StackValue::Struct(vec![
-            StackValue::Array(vec![method("new").to_stack_value()]),
-            StackValue::Array(vec![event("Updated").to_stack_value()]),
-        ]))
+        abi.from_stack_value(StackValue::Struct(
+            0,
+            vec![
+                StackValue::Array(0, vec![method("new").to_stack_value()]),
+                StackValue::Array(0, vec![event("Updated").to_stack_value()]),
+            ],
+        ))
         .unwrap();
 
         assert!(abi.get_method("old", 0).is_none());
@@ -278,16 +278,64 @@ mod tests {
     }
 
     #[test]
-    fn contract_abi_reads_struct_sequences_from_neo_vm_rs_stack_value() {
+    fn contract_abi_rejects_struct_sequences_like_csharp() {
         let mut abi = ContractAbi::default();
 
-        abi.from_stack_value(StackValue::Struct(vec![
-            StackValue::Struct(vec![method("main").to_stack_value()]),
-            StackValue::Struct(vec![event("Notify").to_stack_value()]),
-        ]))
-        .unwrap();
+        assert!(
+            abi.from_stack_value(StackValue::Struct(
+                0,
+                vec![
+                    StackValue::Struct(0, vec![method("main").to_stack_value()]),
+                    StackValue::Array(0, vec![event("Notify").to_stack_value()]),
+                ]
+            ))
+            .is_err()
+        );
+        assert!(
+            abi.from_stack_value(StackValue::Struct(
+                0,
+                vec![
+                    StackValue::Array(0, vec![method("main").to_stack_value()]),
+                    StackValue::Struct(0, vec![event("Notify").to_stack_value()]),
+                ]
+            ))
+            .is_err()
+        );
+    }
 
-        assert_eq!(abi.methods, vec![method("main")]);
-        assert_eq!(abi.events, vec![event("Notify")]);
+    #[test]
+    fn contract_abi_from_json_rejects_malformed_children_like_csharp() {
+        let invalid_method = serde_json::json!({
+            "methods": [{
+                "name": "broken",
+                "parameters": [{"name": "bad", "type": "Void"}],
+                "returntype": "Void",
+                "offset": 0,
+                "safe": false
+            }],
+            "events": []
+        });
+        assert!(ContractAbi::from_json(&invalid_method).is_err());
+
+        let invalid_event = serde_json::json!({
+            "methods": [{
+                "name": "main",
+                "parameters": [],
+                "returntype": "Void",
+                "offset": 0,
+                "safe": false
+            }],
+            "events": [{
+                "name": "Notify",
+                "parameters": [{"name": "", "type": "String"}]
+            }]
+        });
+        assert!(ContractAbi::from_json(&invalid_event).is_err());
+
+        let non_array = serde_json::json!({
+            "methods": {},
+            "events": []
+        });
+        assert!(ContractAbi::from_json(&non_array).is_err());
     }
 }

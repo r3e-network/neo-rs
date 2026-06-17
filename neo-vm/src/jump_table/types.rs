@@ -134,10 +134,10 @@ fn stack_item_type_probe_value(item_type: StackItemType) -> StackValue {
         StackItemType::Boolean => StackValue::Boolean(false),
         StackItemType::Integer => StackValue::Integer(0),
         StackItemType::ByteString => StackValue::ByteString(Vec::new()),
-        StackItemType::Buffer => StackValue::Buffer(Vec::new()),
-        StackItemType::Array => StackValue::Array(Vec::new()),
-        StackItemType::Struct => StackValue::Struct(Vec::new()),
-        StackItemType::Map => StackValue::Map(Vec::new()),
+        StackItemType::Buffer => StackValue::Buffer(0, Vec::new()),
+        StackItemType::Array => StackValue::Array(0, Vec::new()),
+        StackItemType::Struct => StackValue::Struct(0, Vec::new()),
+        StackItemType::Map => StackValue::Map(0, Vec::new()),
         StackItemType::InteropInterface => StackValue::Interop(0),
     }
 }

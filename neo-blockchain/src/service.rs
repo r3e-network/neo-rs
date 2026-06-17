@@ -299,6 +299,16 @@ pub trait MempoolLike: std::fmt::Debug + Send + Sync {
     /// pooled transactions that conflict with the persisted ones. Default no-op
     /// for test mocks without a real pool.
     fn block_persisted(&self, _block: &neo_payloads::Block) {}
+
+    /// Reverify the highest-priority unverified transactions against the live
+    /// post-persist snapshot. Returns `true` when unverified transactions remain.
+    fn reverify_top_unverified(
+        &self,
+        _snapshot: &neo_storage::DataCache,
+        _max_count: usize,
+    ) -> bool {
+        false
+    }
 }
 
 /// Production [`MempoolLike`] over the real [`neo_mempool::MemoryPool`]:
@@ -318,6 +328,10 @@ impl MempoolLike for neo_mempool::MemoryPool {
 
     fn block_persisted(&self, block: &neo_payloads::Block) {
         let _ = self.update_pool_for_block_persisted(&block.transactions);
+    }
+
+    fn reverify_top_unverified(&self, snapshot: &neo_storage::DataCache, max_count: usize) -> bool {
+        neo_mempool::MemoryPool::reverify_top_unverified(self, snapshot, max_count)
     }
 }
 
@@ -342,6 +356,10 @@ impl MempoolLike for SharedMempool {
 
     fn block_persisted(&self, block: &neo_payloads::Block) {
         let _ = self.0.update_pool_for_block_persisted(&block.transactions);
+    }
+
+    fn reverify_top_unverified(&self, snapshot: &neo_storage::DataCache, max_count: usize) -> bool {
+        self.0.reverify_top_unverified(snapshot, max_count)
     }
 }
 

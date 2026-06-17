@@ -39,6 +39,17 @@ pub trait VerifiableExt: neo_primitives::Verifiable {
         None
     }
 
+    /// Returns the actual payload object to install as
+    /// `ApplicationEngine.ScriptContainer` during witness verification.
+    ///
+    /// C# `Helper.VerifyWitness` passes the `IVerifiable` itself into the
+    /// verification engine. Payloads that can cheaply clone themselves should
+    /// override this so verification scripts observe the same script container
+    /// through `GetScriptContainer`, `CurrentSigners`, and `CheckWitness`.
+    fn to_verifiable_container(&self) -> Option<std::sync::Arc<dyn neo_primitives::Verifiable>> {
+        None
+    }
+
     /// Verifies witnesses against the provided protocol settings and snapshot.
     fn verify_witnesses(
         &self,

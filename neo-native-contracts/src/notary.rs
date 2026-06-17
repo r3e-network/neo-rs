@@ -21,8 +21,8 @@ use neo_primitives::{
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::Interoperable;
+use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -40,6 +40,47 @@ const PREFIX_MAX_NOT_VALID_BEFORE_DELTA: u8 = 10;
 const DEFAULT_MAX_NOT_VALID_BEFORE_DELTA: i64 = 140;
 /// C# `Notary.Prefix_Deposit` — per-account deposit (`Struct[Amount, Till]`).
 const PREFIX_DEPOSIT: u8 = 1;
+
+/// C# `Notary.Deposit`: `Struct[Amount, Till]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DepositState {
+    amount: BigInt,
+    till: u32,
+}
+
+impl DepositState {
+    fn new(amount: BigInt, till: u32) -> Self {
+        Self { amount, till }
+    }
+
+    fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(
+            0,
+            vec![
+                StackValue::BigInteger(self.amount.to_signed_bytes_le()),
+                StackValue::Integer(i64::from(self.till)),
+            ],
+        )
+    }
+
+    fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
+        let StackValue::Struct(0, items) = stack_value else {
+            return Err(CoreError::invalid_data("Notary deposit is not a struct"));
+        };
+        let amount_value = items
+            .first()
+            .ok_or_else(|| CoreError::invalid_data("Notary deposit Amount missing"))?;
+        let amount = neo_vm_rs::stack_value_as_bigint(amount_value)
+            .map_err(|e| CoreError::invalid_data(format!("Notary deposit Amount: {e}")))?;
+        let till = items
+            .get(1)
+            .and_then(neo_vm_rs::stack_value_as_u32)
+            .ok_or_else(|| CoreError::invalid_data("Notary deposit Till out of range"))?;
+        Ok(Self { amount, till })
+    }
+}
+
+neo_vm::impl_interoperable_via_stack_value!(DepositState);
 
 /// The Notary native contract.
 #[derive(Debug, Default, Clone, Copy)]
@@ -82,22 +123,13 @@ impl Notary {
         let Some(item) = snapshot.get(&key) else {
             return Ok(BigInt::from(0));
         };
-        let state = BinarySerializer::deserialize(
-            &item.value_bytes(),
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
-        let StackItem::Struct(fields) = state else {
-            return Err(CoreError::invalid_data("Notary deposit is not a struct"));
-        };
-        let items = fields.items();
-        let field = items
-            .get(index)
-            .ok_or_else(|| CoreError::invalid_data("Notary deposit field is missing"))?;
-        field
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("Notary deposit field: {e}")))
+        let bytes = item.value_bytes();
+        let (amount, till) = Self::decode_deposit(bytes.as_ref())?;
+        match index {
+            0 => Ok(amount),
+            1 => Ok(BigInt::from(till)),
+            _ => Err(CoreError::invalid_data("Notary deposit field is missing")),
+        }
     }
 
     /// The deposit storage key `(Notary.ID, [Prefix_Deposit, account])`.
@@ -106,6 +138,19 @@ impl Notary {
             Notary::ID,
             crate::keys::prefixed_with_hash160(PREFIX_DEPOSIT, account),
         )
+    }
+
+    fn decode_deposit(bytes: &[u8]) -> CoreResult<(BigInt, u32)> {
+        let limits = ExecutionEngineLimits::default();
+        let state = BinarySerializer::deserialize_stack_value_with_limits(
+            bytes,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
+        let deposit = DepositState::from_stack_value(state)
+            .map_err(|e| CoreError::invalid_data(format!("Notary deposit: {e}")))?;
+        Ok((deposit.amount, deposit.till))
     }
 
     /// Reads the full `Deposit` `(Amount, Till)` for `account`, or `None` when the
@@ -118,29 +163,8 @@ impl Notary {
         let Some(item) = snapshot.get(&Self::deposit_key(account)) else {
             return Ok(None);
         };
-        let state = BinarySerializer::deserialize(
-            &item.value_bytes(),
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
-        let StackItem::Struct(fields) = state else {
-            return Err(CoreError::invalid_data("Notary deposit is not a struct"));
-        };
-        let items = fields.items();
-        let amount = items
-            .first()
-            .ok_or_else(|| CoreError::invalid_data("Notary deposit Amount missing"))?
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("Notary deposit Amount: {e}")))?;
-        let till = items
-            .get(1)
-            .ok_or_else(|| CoreError::invalid_data("Notary deposit Till missing"))?
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("Notary deposit Till: {e}")))?
-            .to_u32()
-            .ok_or_else(|| CoreError::invalid_data("Notary deposit Till out of range"))?;
-        Ok(Some((amount, till)))
+        let bytes = item.value_bytes();
+        Self::decode_deposit(bytes.as_ref()).map(Some)
     }
 
     /// Deletes the deposit entry for `account` (C# `RemoveDepositFor`).
@@ -157,11 +181,8 @@ impl Notary {
         amount: &BigInt,
         till: u32,
     ) -> CoreResult<()> {
-        let item = StackItem::from_struct(vec![
-            StackItem::from_int(amount.clone()),
-            StackItem::from_int(till),
-        ]);
-        let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        let item = DepositState::new(amount.clone(), till).to_stack_value();
+        let bytes = BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::serialization(format!("Notary deposit serialize: {e}")))?;
         snapshot.update(Self::deposit_key(account), StorageItem::from_bytes(bytes));
         Ok(())
@@ -192,36 +213,37 @@ impl Notary {
     /// `[to, till]` where `to` is `Null` (use the GAS sender `from`) or a `UInt160`,
     /// and `till` is the requested lock height.
     fn parse_onnep17_data(from: &UInt160, data: &[u8]) -> CoreResult<(UInt160, u32)> {
-        let item = BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| {
-                CoreError::invalid_operation(format!("Notary::onNEP17Payment data: {e}"))
-            })?;
-        let StackItem::Array(arr) = item else {
+        let limits = ExecutionEngineLimits::default();
+        let item = BinarySerializer::deserialize_stack_value_with_limits(
+            data,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment data: {e}")))?;
+        let StackValue::Array(0, items) = item else {
             return Err(CoreError::invalid_operation(
                 "Notary::onNEP17Payment data must be an array of 2 elements",
             ));
         };
-        let items = arr.items();
         if items.len() != 2 {
             return Err(CoreError::invalid_operation(
                 "Notary::onNEP17Payment data must be an array of 2 elements",
             ));
         }
-        let to = if matches!(items[0], StackItem::Null) {
+        let to = if matches!(items[0], StackValue::Null) {
             *from
         } else {
-            let bytes = items[0].as_bytes().map_err(|e| {
-                CoreError::invalid_operation(format!("Notary::onNEP17Payment to: {e}"))
+            let bytes = items[0].to_byte_string_bytes().ok_or_else(|| {
+                CoreError::invalid_operation("Notary::onNEP17Payment to: cannot convert to bytes")
             })?;
             crate::args::bytes_to_hash160(&bytes, "Notary::onNEP17Payment to: bad hash")?
         };
-        let till = items[1]
-            .as_int()
-            .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment till: {e}")))?
-            .to_u32()
-            .ok_or_else(|| {
-                CoreError::invalid_operation("Notary::onNEP17Payment till out of uint range")
-            })?;
+        let till_value = items[1].to_i128().ok_or_else(|| {
+            CoreError::invalid_operation("Notary::onNEP17Payment till: cannot convert to integer")
+        })?;
+        let till = u32::try_from(till_value).map_err(|_| {
+            CoreError::invalid_operation("Notary::onNEP17Payment till out of uint range")
+        })?;
         Ok((to, till))
     }
 
@@ -277,8 +299,24 @@ impl Notary {
     fn put_max_not_valid_before_delta(&self, snapshot: &DataCache, value: i64) {
         snapshot.update(
             StorageKey::new(Notary::ID, vec![PREFIX_MAX_NOT_VALID_BEFORE_DELTA]),
-            StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
         );
+    }
+
+    /// C# `GetMaxNotValidBeforeDelta` directly indexes the initialized setting
+    /// storage item; a missing key faults instead of silently using the default.
+    fn read_max_not_valid_before_delta(&self, snapshot: &DataCache) -> CoreResult<i64> {
+        let key = StorageKey::new(Notary::ID, vec![PREFIX_MAX_NOT_VALID_BEFORE_DELTA]);
+        let Some(item) = snapshot.get(&key) else {
+            return Err(CoreError::invalid_data(
+                "Notary MaxNotValidBeforeDelta is missing",
+            ));
+        };
+        BigInt::from_signed_bytes_le(&item.value_bytes())
+            .to_i64()
+            .ok_or_else(|| {
+                CoreError::invalid_operation("Notary MaxNotValidBeforeDelta out of range")
+            })
     }
 
     /// Parses the leading `Hash160` account argument for the deposit reads.
@@ -561,12 +599,7 @@ impl NativeContract for Notary {
         let snapshot = engine.snapshot_cache();
         match method {
             "getMaxNotValidBeforeDelta" => {
-                let delta = crate::read_storage_int(
-                    &snapshot,
-                    Self::ID,
-                    PREFIX_MAX_NOT_VALID_BEFORE_DELTA,
-                    DEFAULT_MAX_NOT_VALID_BEFORE_DELTA,
-                )?;
+                let delta = self.read_max_not_valid_before_delta(&snapshot)?;
                 Ok(BigInt::from(delta).to_signed_bytes_le())
             }
             "balanceOf" => {
@@ -804,8 +837,9 @@ impl NativeContract for Notary {
                 // ProtocolSettings.Default.ValidatorsCount = 0). On a network whose
                 // ValidatorsCount > 0 this now rejects small deltas the old check
                 // let through — a tx-validity divergence.
-                let upper =
-                    crate::PolicyContract::new().read_max_valid_until_block_increment(engine)? / 2;
+                let upper = crate::PolicyContract::new()
+                    .system_max_valid_until_block_increment(engine)?
+                    / 2;
                 let lower = i64::from(engine.protocol_settings().validators_count);
                 if i64::from(value) > upper || i64::from(value) < lower {
                     return Err(CoreError::invalid_operation(format!(
@@ -828,6 +862,7 @@ mod tests {
     use super::*;
     use neo_storage::persistence::DataCache;
     use neo_storage::{StorageItem, StorageKey};
+    use neo_vm::StackItem;
 
     #[test]
     fn native_contract_surface() {
@@ -937,6 +972,19 @@ mod tests {
         Notary::new()
             .write_deposit(&cache, &account, &BigInt::from(1000), 150)
             .unwrap();
+        let expected = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![StackItem::from_int(1000), StackItem::from_int(150)]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            cache
+                .get(&Notary::deposit_key(&account))
+                .unwrap()
+                .value_bytes()
+                .as_ref(),
+            expected.as_slice()
+        );
         assert_eq!(
             Notary::new().read_deposit(&cache, &account).unwrap(),
             Some((BigInt::from(1000), 150))
@@ -970,6 +1018,66 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn deposit_state_interoperable_projection_matches_csharp_shape() {
+        let state = DepositState::new(BigInt::from(1000), 42);
+        let expected_value = StackValue::Struct(
+            0,
+            vec![
+                StackValue::BigInteger(BigInt::from(1000).to_signed_bytes_le()),
+                StackValue::Integer(42),
+            ],
+        );
+
+        assert_eq!(state.to_stack_value(), expected_value);
+
+        let trait_value = Interoperable::to_stack_value(&state).unwrap();
+        assert_eq!(trait_value, expected_value);
+
+        let mut parsed = DepositState::new(BigInt::from(0), 0);
+        Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+        assert_eq!(parsed, state);
+
+        assert!(DepositState::from_stack_value(StackValue::Array(0, vec![])).is_err());
+        assert!(
+            DepositState::from_stack_value(StackValue::Struct(
+                0,
+                vec![StackValue::BigInteger(
+                    BigInt::from(1000).to_signed_bytes_le()
+                )]
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn deposit_storage_uses_stack_value_projection() {
+        fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+            let start_index = source.find(start).expect("start marker exists");
+            let end_index = source[start_index..]
+                .find(end)
+                .map(|offset| start_index + offset)
+                .expect("end marker exists");
+            &source[start_index..end_index]
+        }
+
+        let source = include_str!("notary.rs");
+        let writer = slice_between(source, "fn write_deposit(", "fn lock_deposit_decision");
+        assert!(writer.contains("DepositState::new"));
+        assert!(writer.contains("to_stack_value"));
+        assert!(writer.contains("serialize_stack_value_default"));
+        assert!(!writer.contains("StackValue::Struct"));
+        assert!(!writer.contains("StackItem::from_struct"));
+        assert!(!writer.contains("BinarySerializer::serialize("));
+
+        let reader = slice_between(source, "fn decode_deposit(", "fn delete_deposit");
+        assert!(reader.contains("deserialize_stack_value_with_limits"));
+        assert!(reader.contains("DepositState::from_stack_value"));
+        assert!(!reader.contains("stack_value_as_bigint"));
+        assert!(!reader.contains("stack_value_as_u32"));
+        assert!(!reader.contains("BinarySerializer::deserialize("));
     }
 
     #[test]
@@ -1041,6 +1149,25 @@ mod tests {
         let bad_bytes =
             BinarySerializer::serialize(&bad, &ExecutionEngineLimits::default()).unwrap();
         assert!(Notary::parse_onnep17_data(&from, &bad_bytes).is_err());
+
+        // C# Notary.OnNEP17Payment (Notary.cs:146-152) only inspects the
+        // incoming StackItem's array/null/bytes/integer shape. The Rust parser
+        // should use the shared StackValue projection rather than materializing
+        // neo_vm::StackItem for this non-VM-inspection path.
+        let source = include_str!("notary.rs");
+        let start = source
+            .find("fn parse_onnep17_data")
+            .expect("parser source exists");
+        let end = source[start..]
+            .find("fn compute_deposit")
+            .map(|offset| start + offset)
+            .expect("next helper marker exists");
+        let parser = &source[start..end];
+        assert!(parser.contains("deserialize_stack_value_with_limits"));
+        assert!(parser.contains("StackValue::Array"));
+        assert!(parser.contains("StackValue::Null"));
+        assert!(!parser.contains("BinarySerializer::deserialize("));
+        assert!(!parser.contains("StackItem::Array"));
     }
 
     #[test]
@@ -1049,16 +1176,6 @@ mod tests {
         // observed by the getMaxNotValidBeforeDelta reader, matching C#
         // GetAndChange(...).Set(value).
         let cache = DataCache::new(false);
-        assert_eq!(
-            crate::read_storage_int(
-                &cache,
-                Notary::ID,
-                PREFIX_MAX_NOT_VALID_BEFORE_DELTA,
-                DEFAULT_MAX_NOT_VALID_BEFORE_DELTA
-            )
-            .unwrap(),
-            DEFAULT_MAX_NOT_VALID_BEFORE_DELTA
-        );
         Notary::new().put_max_not_valid_before_delta(&cache, 250);
         assert_eq!(
             crate::read_storage_int(
@@ -1118,23 +1235,23 @@ mod tests {
     }
 
     #[test]
-    fn max_not_valid_before_delta_reads_storage_with_default() {
+    fn max_not_valid_before_delta_requires_initialized_storage() {
         let cache = DataCache::new(false);
-        assert_eq!(
-            crate::read_storage_int(&cache, Notary::ID, PREFIX_MAX_NOT_VALID_BEFORE_DELTA, 140)
-                .unwrap(),
-            140
-        );
-        let key = StorageKey::new(Notary::ID, vec![PREFIX_MAX_NOT_VALID_BEFORE_DELTA]);
-        cache.add(
-            key,
-            StorageItem::from_bytes(BigInt::from(200).to_signed_bytes_le()),
-        );
-        assert_eq!(
-            crate::read_storage_int(&cache, Notary::ID, PREFIX_MAX_NOT_VALID_BEFORE_DELTA, 140)
-                .unwrap(),
-            200
-        );
+        let mut engine = ApplicationEngine::new(
+            neo_primitives::TriggerType::Application,
+            None,
+            std::sync::Arc::new(cache),
+            None,
+            ProtocolSettings::default(),
+            0,
+            None,
+        )
+        .expect("engine builds");
+
+        let err = Notary::new()
+            .invoke(&mut engine, "getMaxNotValidBeforeDelta", &[])
+            .expect_err("missing Notary max delta storage should fault");
+        assert!(err.to_string().contains("MaxNotValidBeforeDelta"), "{err}");
     }
 }
 
@@ -1163,7 +1280,8 @@ mod verify_dispatch_tests {
     use neo_execution::native_contract::build_native_contract_state;
     use neo_io::{BinaryWriter, Serializable};
     use neo_payloads::{Block, Header, NotaryAssisted, Signer, TransactionAttribute, Witness};
-    use neo_primitives::{TriggerType, Verifiable};
+    use neo_primitives::{TriggerType, UInt256, Verifiable};
+    use neo_vm::StackItem;
     use neo_vm::script_builder::ScriptBuilder;
     use neo_vm_rs::{OpCode, VmState};
     use std::sync::Arc;
@@ -1187,11 +1305,22 @@ mod verify_dispatch_tests {
         );
     }
 
+    fn seed_current_block(cache: &DataCache, index: u32) {
+        let value = LedgerContract::new()
+            .serialize_hash_index_state(&UInt256::default(), index)
+            .expect("current block pointer");
+        cache.add(
+            StorageKey::new(LedgerContract::ID, vec![12]),
+            StorageItem::from_bytes(value),
+        );
+    }
+
     /// A snapshot with the Notary native deployed and (optionally) the given
     /// compressed public keys designated as P2PNotary nodes from genesis.
     fn seeded_snapshot(notary_pubkeys: &[Vec<u8>]) -> Arc<DataCache> {
         crate::install();
         let cache = DataCache::new(false);
+        seed_current_block(&cache, 0);
         deploy_native(
             &cache,
             &build_native_contract_state(&Notary, &echidna_settings(), 0),

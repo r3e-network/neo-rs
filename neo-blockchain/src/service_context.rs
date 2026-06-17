@@ -20,6 +20,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use neo_config::ProtocolSettings;
+use neo_state_service::StateStore;
 
 /// Trait object giving the [`crate::service::BlockchainService`]
 /// access to the system it is orchestrating.
@@ -44,6 +45,14 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// against it for every persisted block; committing the snapshot to the
     /// backing store remains the implementation's responsibility.
     fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        None
+    }
+
+    /// Returns the state-service store, when the node has enabled the
+    /// StateService plugin. The blockchain persistence loop uses this to feed
+    /// the MPT state-root store from the same tracked storage changes it just
+    /// applied to the canonical snapshot.
+    fn state_store(&self) -> Option<Arc<StateStore>> {
         None
     }
 

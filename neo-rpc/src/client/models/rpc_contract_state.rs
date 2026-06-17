@@ -140,9 +140,25 @@ mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
     use base64::{Engine as _, engine::general_purpose};
-    use neo_manifest::ContractManifest;
     use neo_manifest::NefFile;
+    use neo_manifest::{ContractManifest, ContractMethodDescriptor};
+    use neo_primitives::ContractParameterType;
     use neo_serialization::json::{JArray, JToken};
+
+    fn valid_manifest(name: &str) -> ContractManifest {
+        let mut manifest = ContractManifest::new(name.to_string());
+        manifest.abi.methods.push(
+            ContractMethodDescriptor::new(
+                "verify".to_string(),
+                Vec::new(),
+                ContractParameterType::Boolean,
+                0,
+                true,
+            )
+            .expect("valid method descriptor"),
+        );
+        manifest
+    }
 
     #[test]
     fn rpc_contract_state_parses_minimal_contract() {
@@ -172,7 +188,7 @@ mod tests {
         nef_json.insert("checksum".to_string(), JToken::Number(nef.checksum as f64));
         json.insert("nef".to_string(), JToken::Object(nef_json));
 
-        let manifest = ContractManifest::new("TestContract".into());
+        let manifest = valid_manifest("TestContract");
         let manifest_value = manifest.to_json().expect("manifest json");
         let manifest_token =
             JToken::parse(&manifest_value.to_string(), 128).expect("neo-serialization::json parse");
@@ -198,7 +214,7 @@ mod tests {
             script: vec![1, 2, 3],
             checksum: 321,
         };
-        let manifest = ContractManifest::new("Contract".into());
+        let manifest = valid_manifest("Contract");
         let state = RpcContractState {
             contract_state: ContractState {
                 id: 5,

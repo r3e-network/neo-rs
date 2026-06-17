@@ -30,6 +30,17 @@ impl ConsensusService {
         self.context.expected_block_time = expected_block_time_ms;
     }
 
+    /// Sets the protocol `MaxTransactionsPerBlock` consensus limit.
+    pub fn set_max_transactions_per_block(&mut self, max_transactions_per_block: u32) {
+        self.max_transactions_per_block = max_transactions_per_block;
+    }
+
+    /// Returns the configured protocol `MaxTransactionsPerBlock` consensus limit.
+    #[must_use]
+    pub const fn max_transactions_per_block(&self) -> u32 {
+        self.max_transactions_per_block
+    }
+
     /// Updates the private key used for signing consensus messages.
     /// The key is wrapped in `Zeroizing` so it is wiped from memory on drop.
     pub fn set_private_key(&mut self, private_key: Vec<u8>) {

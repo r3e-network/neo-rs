@@ -90,22 +90,14 @@ impl GasToken {
         let Some(item) = snapshot.get(&Self::gas_account_key(account)) else {
             return Ok(None);
         };
-        let state = BinarySerializer::deserialize(
+        let limits = ExecutionEngineLimits::default();
+        let item = BinarySerializer::deserialize_stack_value_with_limits(
             &item.value_bytes(),
-            &ExecutionEngineLimits::default(),
-            None,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
         )
         .map_err(|e| CoreError::deserialization(format!("GAS account state: {e}")))?;
-        let StackItem::Struct(fields) = state else {
-            return Err(CoreError::invalid_data("GAS account state is not a struct"));
-        };
-        let balance = fields
-            .items()
-            .first()
-            .ok_or_else(|| CoreError::invalid_data("GAS account Balance missing"))?
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("GAS account Balance: {e}")))?;
-        Ok(Some(balance))
+        Ok(Some(crate::AccountState::from_stack_value(item)?.balance))
     }
 
     /// Writes the GAS account state `Struct[Balance]` (C# `GetAndChange(...).Set`).
@@ -115,8 +107,8 @@ impl GasToken {
         account: &UInt160,
         balance: &BigInt,
     ) -> CoreResult<()> {
-        let item = StackItem::from_struct(vec![StackItem::from_int(balance.clone())]);
-        let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        let item = crate::AccountState::new(balance.clone()).to_stack_value();
+        let bytes = BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::serialization(format!("GAS account serialize: {e}")))?;
         snapshot.update(
             Self::gas_account_key(account),
@@ -765,6 +757,19 @@ mod tests {
         GasToken::new()
             .write_gas_account(&cache, &account, &BigInt::from(12345))
             .unwrap();
+        let expected = BinarySerializer::serialize(
+            &StackItem::from_struct(vec![StackItem::from_int(BigInt::from(12345))]),
+            &ExecutionEngineLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            cache
+                .get(&GasToken::gas_account_key(&account))
+                .unwrap()
+                .value_bytes()
+                .as_ref(),
+            expected.as_slice()
+        );
         assert_eq!(
             GasToken::new().read_gas_account(&cache, &account).unwrap(),
             Some(BigInt::from(12345))
@@ -781,6 +786,36 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn gas_account_storage_uses_stack_value_projection() {
+        let source = include_str!("gas_token.rs");
+        let read_start = source
+            .find("fn read_gas_account(")
+            .expect("read_gas_account helper exists");
+        let start = source
+            .find("fn write_gas_account(")
+            .expect("write_gas_account helper exists");
+        let end = source[start..]
+            .find("fn delete_gas_account")
+            .map(|offset| start + offset)
+            .expect("delete_gas_account follows write_gas_account");
+        let reader = &source[read_start..start];
+        let helper = &source[start..end];
+
+        assert!(reader.contains("deserialize_stack_value_with_limits"));
+        assert!(reader.contains("AccountState::from_stack_value"));
+        assert!(!reader.contains("StackValue::Struct"));
+        assert!(!reader.contains("stack_value_as_bigint"));
+        assert!(!reader.contains("BinarySerializer::deserialize("));
+
+        assert!(helper.contains("AccountState::new"));
+        assert!(helper.contains("to_stack_value"));
+        assert!(helper.contains("serialize_stack_value_default"));
+        assert!(!helper.contains("StackValue::Struct"));
+        assert!(!helper.contains("StackItem::from_struct"));
+        assert!(!helper.contains("BinarySerializer::serialize("));
     }
 
     #[test]

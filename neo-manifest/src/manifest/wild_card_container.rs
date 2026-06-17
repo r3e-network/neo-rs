@@ -6,6 +6,10 @@ use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::manifest::stack_value_helpers::stack_value_to_utf8_string;
+
+use neo_vm::impl_interoperable_via_stack_value;
+
 /// A list that supports wildcard (matches C# WildcardContainer\<T>)
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -110,11 +114,7 @@ impl WildCardContainer<String> {
     fn strings_from_stack_values(items: Vec<StackValue>) -> CoreResult<Vec<String>> {
         let mut values = Vec::with_capacity(items.len());
         for element in items {
-            let bytes = element
-                .to_byte_string_bytes()
-                .ok_or_else(|| CoreError::other("Expected byte string element"))?;
-            let value = String::from_utf8(bytes)
-                .map_err(|_| CoreError::other("Invalid UTF-8 string in wildcard container"))?;
+            let value = stack_value_to_utf8_string(&element, "Wildcard string element")?;
             values.push(value);
         }
         Ok(values)
@@ -124,8 +124,9 @@ impl WildCardContainer<String> {
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),
-            StackValue::Array(items) => Ok(Self::create(Self::strings_from_stack_values(items)?)),
-            StackValue::Struct(items) => Ok(Self::create(Self::strings_from_stack_values(items)?)),
+            StackValue::Array(0, items) => {
+                Ok(Self::create(Self::strings_from_stack_values(items)?))
+            }
             _ => Err(CoreError::other(
                 "Unsupported stack value for wildcard container",
             )),
@@ -145,6 +146,7 @@ impl WildCardContainer<String> {
         match self {
             Self::Wildcard => StackValue::Null,
             Self::List(values) => StackValue::Array(
+                0,
                 values
                     .iter()
                     .map(|value| StackValue::ByteString(value.as_bytes().to_vec()))
@@ -159,6 +161,8 @@ impl WildCardContainer<String> {
             .expect("wildcard container StackValue projection must be StackItem-compatible")
     }
 }
+
+impl_interoperable_via_stack_value!(WildCardContainer<String>);
 
 fn serialize_wildcard<S>(serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -198,10 +202,13 @@ mod tests {
 
         assert_eq!(
             container.to_stack_value(),
-            StackValue::Array(vec![
-                StackValue::ByteString(b"transfer".to_vec()),
-                StackValue::ByteString(b"balanceOf".to_vec()),
-            ])
+            StackValue::Array(
+                0,
+                vec![
+                    StackValue::ByteString(b"transfer".to_vec()),
+                    StackValue::ByteString(b"balanceOf".to_vec()),
+                ]
+            )
         );
     }
 
@@ -224,24 +231,43 @@ mod tests {
     #[test]
     fn string_list_reads_from_neo_vm_rs_array() {
         assert_eq!(
-            WildCardContainer::<String>::from_stack_value(StackValue::Array(vec![
-                StackValue::ByteString(b"mint".to_vec()),
-                StackValue::ByteString(b"burn".to_vec()),
-            ]))
+            WildCardContainer::<String>::from_stack_value(StackValue::Array(
+                0,
+                vec![
+                    StackValue::ByteString(b"mint".to_vec()),
+                    StackValue::ByteString(b"burn".to_vec()),
+                ]
+            ))
             .unwrap(),
             WildCardContainer::create(vec!["mint".to_string(), "burn".into()])
         );
     }
 
     #[test]
-    fn string_list_reads_from_neo_vm_rs_struct_for_compatibility() {
-        assert_eq!(
-            WildCardContainer::<String>::from_stack_value(StackValue::Struct(vec![
-                StackValue::ByteString(b"verify".to_vec()),
-                StackValue::ByteString(b"onNEP17Payment".to_vec()),
-            ]))
-            .unwrap(),
-            WildCardContainer::create(vec!["verify".to_string(), "onNEP17Payment".into()])
+    fn string_list_rejects_struct_and_invalid_strings_like_csharp() {
+        assert!(
+            WildCardContainer::<String>::from_stack_value(StackValue::Struct(
+                0,
+                vec![
+                    StackValue::ByteString(b"verify".to_vec()),
+                    StackValue::ByteString(b"onNEP17Payment".to_vec()),
+                ]
+            ))
+            .is_err()
+        );
+        assert!(
+            WildCardContainer::<String>::from_stack_value(StackValue::Array(
+                0,
+                vec![StackValue::Null]
+            ))
+            .is_err()
+        );
+        assert!(
+            WildCardContainer::<String>::from_stack_value(StackValue::Array(
+                0,
+                vec![StackValue::ByteString(vec![0xff])]
+            ))
+            .is_err()
         );
     }
 }

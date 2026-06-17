@@ -171,6 +171,26 @@ const PREFIX_CONTRACT: u8 = 8;
 const PREFIX_CONTRACT_HASH: u8 = 12;
 /// `ContractManagement::ID`.
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
+/// `ContractManagement.Prefix_MinimumDeploymentFee`.
+const CONTRACT_MANAGEMENT_PREFIX_MINIMUM_DEPLOYMENT_FEE: u8 = 20;
+/// `ContractManagement.Prefix_NextAvailableId`.
+const CONTRACT_MANAGEMENT_PREFIX_NEXT_AVAILABLE_ID: u8 = 15;
+/// C# `ContractManagement.DefaultMinimumDeploymentFee` (10 GAS in datoshi).
+const CONTRACT_MANAGEMENT_DEFAULT_MINIMUM_DEPLOYMENT_FEE: i64 = 10_0000_0000;
+/// C# genesis value for `ContractManagement.Prefix_NextAvailableId`.
+const CONTRACT_MANAGEMENT_DEFAULT_NEXT_AVAILABLE_ID: i64 = 1;
+/// `PolicyContract.Prefix_FeePerByte`.
+const POLICY_PREFIX_FEE_PER_BYTE: u8 = 10;
+/// `PolicyContract.Prefix_ExecFeeFactor`.
+const POLICY_PREFIX_EXEC_FEE_FACTOR: u8 = 18;
+/// `PolicyContract.Prefix_StoragePrice`.
+const POLICY_PREFIX_STORAGE_PRICE: u8 = 19;
+/// C# `PolicyContract.DefaultFeePerByte`.
+const POLICY_DEFAULT_FEE_PER_BYTE: i64 = 1000;
+/// C# `PolicyContract.DefaultExecFeeFactor`.
+const POLICY_DEFAULT_EXEC_FEE_FACTOR: i64 = 30;
+/// C# `PolicyContract.DefaultStoragePrice`.
+const POLICY_DEFAULT_STORAGE_PRICE: i64 = 100_000;
 
 /// Seeds the deployed-contract records for every standard native
 /// contract, mirroring the post-genesis chain state so
@@ -299,6 +319,47 @@ fn seed_genesis_state(node: &Node) {
     let mut store = node.store_cache();
 
     let signed_le = |value: i64| BigInt::from(value).to_signed_bytes_le();
+
+    // --- ContractManagement.Initialize / PolicyContract.Initialize ---
+    // Genesis-active native initializers seed scalar settings before contract
+    // calls and transaction verification can read them.
+    store.update(
+        StorageKey::new(
+            CONTRACT_MANAGEMENT_ID,
+            vec![CONTRACT_MANAGEMENT_PREFIX_MINIMUM_DEPLOYMENT_FEE],
+        ),
+        StorageItem::from_bytes(signed_le(
+            CONTRACT_MANAGEMENT_DEFAULT_MINIMUM_DEPLOYMENT_FEE,
+        )),
+    );
+    store.update(
+        StorageKey::new(
+            CONTRACT_MANAGEMENT_ID,
+            vec![CONTRACT_MANAGEMENT_PREFIX_NEXT_AVAILABLE_ID],
+        ),
+        StorageItem::from_bytes(signed_le(CONTRACT_MANAGEMENT_DEFAULT_NEXT_AVAILABLE_ID)),
+    );
+    store.update(
+        StorageKey::new(
+            neo_native_contracts::PolicyContract::ID,
+            vec![POLICY_PREFIX_FEE_PER_BYTE],
+        ),
+        StorageItem::from_bytes(signed_le(POLICY_DEFAULT_FEE_PER_BYTE)),
+    );
+    store.update(
+        StorageKey::new(
+            neo_native_contracts::PolicyContract::ID,
+            vec![POLICY_PREFIX_EXEC_FEE_FACTOR],
+        ),
+        StorageItem::from_bytes(signed_le(POLICY_DEFAULT_EXEC_FEE_FACTOR)),
+    );
+    store.update(
+        StorageKey::new(
+            neo_native_contracts::PolicyContract::ID,
+            vec![POLICY_PREFIX_STORAGE_PRICE],
+        ),
+        StorageItem::from_bytes(signed_le(POLICY_DEFAULT_STORAGE_PRICE)),
+    );
 
     // --- NeoToken.Initialize (C# v3.10.0) ---
     // Committee cache: Array of Struct[pubkey, votes = 0] in standby

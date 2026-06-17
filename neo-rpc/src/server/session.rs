@@ -28,7 +28,7 @@ use crate::server::diagnostic::Diagnostic;
 /// Trait representing an iterator stored within an RPC session.
 pub trait SessionIterator: Send {
     fn next(&mut self) -> bool;
-    fn value(&self) -> StackItem;
+    fn value(&self) -> CoreResult<StackItem>;
     fn dispose(&mut self);
 }
 
@@ -42,7 +42,7 @@ impl IteratorEntry {
         self.inner.next()
     }
 
-    fn value(&self) -> StackItem {
+    fn value(&self) -> CoreResult<StackItem> {
         self.inner.value()
     }
 
@@ -84,7 +84,7 @@ impl SessionIterator for StorageSessionIterator {
         self.iterator.next()
     }
 
-    fn value(&self) -> StackItem {
+    fn value(&self) -> CoreResult<StackItem> {
         self.iterator.value()
     }
 
@@ -222,7 +222,7 @@ impl Session {
         let mut remaining = count;
         let mut values = Vec::new();
         while remaining > 0 && entry.next() {
-            values.push(entry.value());
+            values.push(entry.value().map_err(|error| error.to_string())?);
             remaining -= 1;
         }
         Ok(values)

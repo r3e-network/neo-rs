@@ -16,7 +16,7 @@
 //! v3.9.1 (including the ascending public-key sort in multi-sig scripts, which
 //! matches C# `ECPoint.CompareTo`).
 
-use neo_crypto::ECPoint;
+use neo_crypto::{ECCurve, ECPoint};
 use neo_vm_rs::OpCode;
 
 use super::ScriptBuilder;
@@ -154,7 +154,7 @@ impl RedeemScript {
     ) -> Result<Vec<u8>, RedeemScriptError> {
         let mut points = Vec::with_capacity(public_keys.len());
         for key in public_keys {
-            let point = ECPoint::from_bytes(key).map_err(|e| {
+            let point = ECPoint::from_bytes_with_curve(ECCurve::Secp256r1, key).map_err(|e| {
                 RedeemScriptError::invalid_operation(format!("Invalid public key: {e}"))
             })?;
             points.push(point);
@@ -189,7 +189,11 @@ impl RedeemScript {
             if script.len() <= offset + 35 || script[offset + 1] != 33 {
                 return None;
             }
-            public_keys.push(script[offset + 2..offset + 35].to_vec());
+            let public_key = &script[offset + 2..offset + 35];
+            if ECPoint::from_bytes(public_key).is_err() {
+                return None;
+            }
+            public_keys.push(public_key.to_vec());
             offset += 35;
         }
 
@@ -358,6 +362,24 @@ mod tests {
         assert!(RedeemScript::multi_sig_redeem_script_from_keys(0, &[key_a()]).is_err());
         assert!(RedeemScript::multi_sig_redeem_script_from_keys(3, &[key_a(), key_b()]).is_err());
         assert!(RedeemScript::multi_sig_redeem_script_from_points(1, &[]).is_err());
+    }
+
+    #[test]
+    fn multisig_recognizer_rejects_invalid_public_key_points() {
+        let mut script = Vec::new();
+        script.push(OpCode::PUSH1.byte());
+        script.push(OpCode::PUSHDATA1.byte());
+        script.push(33);
+        script.extend_from_slice(&[0u8; 33]);
+        script.push(OpCode::PUSH1.byte());
+        script.push(OpCode::SYSCALL.byte());
+        script.extend_from_slice(&RedeemScript::check_multisig_hash());
+
+        assert!(
+            RedeemScript::parse_multi_sig_contract(&script).is_none(),
+            "C# Helper.IsMultiSigContract decodes every ECPoint and rejects invalid public keys"
+        );
+        assert!(!RedeemScript::is_multi_sig_contract(&script));
     }
 
     /// C# `Contract.CreateMultiSigRedeemScript` allows up to 1024 keys; the

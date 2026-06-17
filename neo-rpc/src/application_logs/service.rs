@@ -1,5 +1,6 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::NotifyEventArgs;
 use neo_payloads::ApplicationExecuted;
@@ -10,11 +11,11 @@ use neo_primitives::UInt256;
 use neo_primitives::panic_message;
 use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
 use neo_system::Node;
-use neo_vm::StackItem;
 use neo_vm::rpc_json::StackItemRpcJson;
-use neo_vm_rs::VmState as VMState;
+use neo_vm_rs::{StackValue, VmState as VMState};
+use num_bigint::BigInt;
 use parking_lot::Mutex;
-use serde_json::{Map, Value};
+use serde_json::{Map, Number as JsonNumber, Value};
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
@@ -176,11 +177,7 @@ impl ApplicationLogsService {
         );
 
         let mut exception = include_exception.then(|| exec.exception.clone()).flatten();
-        let stack_items: &[StackItem] = &exec.stack;
-        match StackItemRpcJson::stack_items_rpc_json_per_item(
-            stack_items,
-            self.settings.max_stack_size,
-        ) {
+        match stack_values_rpc_json_per_item(&exec.stack, self.settings.max_stack_size) {
             Ok(stack) => {
                 trigger.insert("stack".to_string(), Value::Array(stack));
             }
@@ -310,6 +307,119 @@ fn vm_state_to_string(state: VMState) -> &'static str {
         VMState::HALT => "HALT",
         VMState::FAULT => "FAULT",
         VMState::BREAK => "BREAK",
+    }
+}
+
+struct StackValueJsonBudget {
+    remaining: isize,
+}
+
+fn stack_values_rpc_json_per_item(items: &[StackValue], max_size: usize) -> CoreResult<Vec<Value>> {
+    items
+        .iter()
+        .map(|item| stack_value_rpc_json(item, max_size))
+        .collect()
+}
+
+fn stack_value_rpc_json(item: &StackValue, max_size: usize) -> CoreResult<Value> {
+    let mut budget = StackValueJsonBudget {
+        remaining: isize::try_from(max_size).unwrap_or(isize::MAX),
+    };
+    render_stack_value(item, &mut budget)
+}
+
+fn render_stack_value(item: &StackValue, budget: &mut StackValueJsonBudget) -> CoreResult<Value> {
+    let type_name = stack_value_type_name(item);
+    let mut obj = Map::new();
+    obj.insert("type".to_string(), Value::String(type_name.to_string()));
+    budget.subtract(11 + type_name.len() as isize)?;
+
+    let value = match item {
+        StackValue::Null | StackValue::Interop(_) | StackValue::Iterator(_) => None,
+        StackValue::Boolean(value) => {
+            budget.subtract(if *value { 4 } else { 5 })?;
+            Some(Value::Bool(*value))
+        }
+        StackValue::Integer(value) => {
+            let text = value.to_string();
+            budget.subtract(2 + text.len() as isize)?;
+            Some(Value::String(text))
+        }
+        StackValue::BigInteger(bytes) => {
+            let text = BigInt::from_signed_bytes_le(bytes).to_string();
+            budget.subtract(2 + text.len() as isize)?;
+            Some(Value::String(text))
+        }
+        StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
+            let encoded = BASE64_STANDARD.encode(bytes);
+            budget.subtract(2 + encoded.len() as isize)?;
+            Some(Value::String(encoded))
+        }
+        StackValue::Pointer(position) => {
+            budget.subtract(position.to_string().len() as isize)?;
+            Some(Value::Number(JsonNumber::from(*position)))
+        }
+        StackValue::Array(_, items) | StackValue::Struct(_, items) => {
+            budget.subtract(2 + items.len().saturating_sub(1) as isize)?;
+            let values = items
+                .iter()
+                .map(|entry| render_stack_value(entry, budget))
+                .collect::<CoreResult<Vec<_>>>()?;
+            Some(Value::Array(values))
+        }
+        StackValue::Map(_, entries) => {
+            budget.subtract(2 + entries.len().saturating_sub(1) as isize)?;
+            let values = entries
+                .iter()
+                .map(|(key, value)| {
+                    budget.subtract(17)?;
+                    let key = render_stack_value(key, budget)?;
+                    let value = render_stack_value(value, budget)?;
+                    let mut entry = Map::new();
+                    entry.insert("key".to_string(), key);
+                    entry.insert("value".to_string(), value);
+                    Ok(Value::Object(entry))
+                })
+                .collect::<CoreResult<Vec<_>>>()?;
+            Some(Value::Array(values))
+        }
+    };
+
+    if let Some(value) = value {
+        budget.subtract(9)?;
+        obj.insert("value".to_string(), value);
+    }
+
+    budget.check()?;
+    Ok(Value::Object(obj))
+}
+
+fn stack_value_type_name(item: &StackValue) -> &'static str {
+    match item {
+        StackValue::Null => "Any",
+        StackValue::Boolean(_) => "Boolean",
+        StackValue::Integer(_) | StackValue::BigInteger(_) => "Integer",
+        StackValue::ByteString(_) => "ByteString",
+        StackValue::Buffer(_, _) => "Buffer",
+        StackValue::Array(_, _) => "Array",
+        StackValue::Struct(_, _) => "Struct",
+        StackValue::Map(_, _) => "Map",
+        StackValue::Pointer(_) => "Pointer",
+        StackValue::Interop(_) | StackValue::Iterator(_) => "InteropInterface",
+    }
+}
+
+impl StackValueJsonBudget {
+    fn subtract(&mut self, amount: isize) -> CoreResult<()> {
+        self.remaining = self.remaining.checked_sub(amount).unwrap_or(-1);
+        self.check()
+    }
+
+    fn check(&self) -> CoreResult<()> {
+        if self.remaining < 0 {
+            return Err(CoreError::other("Max size reached"));
+        }
+        Ok(())
     }
 }
 
@@ -461,6 +571,61 @@ mod tests {
             exception_policy,
             ..ApplicationLogsSettings::default()
         }
+    }
+
+    #[test]
+    fn application_executed_stack_renders_from_stack_value_without_legacy_stack_item() {
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::Ignore),
+            Arc::new(FailingStore),
+        );
+        let exec = ApplicationExecuted::new(
+            None,
+            TriggerType::APPLICATION,
+            VMState::HALT,
+            None,
+            0,
+            vec![StackValue::Struct(vec![
+                StackValue::Integer(1),
+                StackValue::ByteString(b"neo".to_vec()),
+            ])],
+        );
+
+        let json = service.transaction_log_json(&UInt256::zero(), &exec);
+        let stack = json["executions"][0]["stack"]
+            .as_array()
+            .expect("stack array");
+
+        assert_eq!(stack[0]["type"], Value::String("Struct".to_string()));
+        let fields = stack[0]["value"].as_array().expect("struct fields");
+        assert_eq!(fields[0]["type"], Value::String("Integer".to_string()));
+        assert_eq!(fields[0]["value"], Value::String("1".to_string()));
+        assert_eq!(fields[1]["type"], Value::String("ByteString".to_string()));
+        assert_eq!(fields[1]["value"], Value::String("bmVv".to_string()));
+    }
+
+    #[test]
+    fn application_executed_stack_value_renderer_preserves_csharp_max_size_error() {
+        let mut settings = settings(UnhandledExceptionPolicy::Ignore);
+        settings.max_stack_size = 4;
+        let service = ApplicationLogsService::new(settings, Arc::new(FailingStore));
+        let exec = ApplicationExecuted::new(
+            None,
+            TriggerType::APPLICATION,
+            VMState::HALT,
+            None,
+            0,
+            vec![StackValue::ByteString(vec![0xaa; 16])],
+        );
+
+        let json = service.transaction_log_json(&UInt256::zero(), &exec);
+        let execution = &json["executions"][0];
+
+        assert_eq!(
+            execution["exception"],
+            Value::String("Max size reached".to_string())
+        );
+        assert!(execution.get("stack").is_none());
     }
 
     #[test]

@@ -35,11 +35,6 @@ impl MemorySnapshot {
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        // Check write batch first
-        if let Some(batch_value) = self.write_batch.read().get(key) {
-            return batch_value.clone();
-        }
-        // Then check immutable data
         self.immutable_data.get(key).cloned()
     }
 
@@ -48,29 +43,16 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
-        // Merge immutable data with write batch
-        let mut merged = self.immutable_data.clone();
-
-        // Apply write batch changes
-        for (key, value) in self.write_batch.read().iter() {
-            if let Some(v) = value {
-                merged.insert(key.clone(), v.clone());
-            } else {
-                merged.remove(key);
-            }
-        }
-
-        let iter: Vec<_> = match (key_prefix, direction) {
-            (Some(prefix), SeekDirection::Forward) => merged
-                .range(prefix.clone()..)
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            (Some(prefix), SeekDirection::Backward) => merged
-                .range(..=prefix.clone())
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            (None, _) => merged.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        };
+        let iter: Vec<_> = self
+            .immutable_data
+            .iter()
+            .filter(|(key, _)| {
+                key_prefix
+                    .map(|prefix| key.starts_with(prefix))
+                    .unwrap_or(true)
+            })
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         if direction == SeekDirection::Backward {
             Box::new(iter.into_iter().rev())

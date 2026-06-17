@@ -8,7 +8,7 @@ use neo_error::CoreError;
 use neo_error::CoreResult;
 use neo_primitives::UInt160;
 use neo_vm::Interoperable;
-use neo_vm::StackItem;
+use neo_vm::InteroperableError;
 // Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,39 @@ impl ContractPermission {
             contract: ContractPermissionDescriptor::Group(public_key),
             methods,
         }
+    }
+
+    /// Creates from JSON.
+    pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
+        let obj = json
+            .as_object()
+            .ok_or_else(|| CoreError::other("Expected object"))?;
+        let contract = ContractPermissionDescriptor::from_json(
+            obj.get("contract")
+                .ok_or_else(|| CoreError::other("Missing contract"))?,
+        )?;
+        let methods = WildCardContainer::<String>::from_json(
+            obj.get("methods")
+                .ok_or_else(|| CoreError::other("Missing methods"))?,
+        )?;
+
+        if let WildCardContainer::List(methods_list) = &methods {
+            if methods_list.iter().any(String::is_empty) {
+                return Err(CoreError::other(
+                    "Methods in ContractPermission has empty string",
+                ));
+            }
+            let mut seen = std::collections::HashSet::new();
+            for method in methods_list {
+                if !seen.insert(method) {
+                    return Err(CoreError::other(
+                        "Methods in ContractPermission must be unique",
+                    ));
+                }
+            }
+        }
+
+        Ok(Self { contract, methods })
     }
 
     /// Checks if this permission allows interacting with the supplied contract hash and method.
@@ -103,10 +136,6 @@ impl ContractPermission {
         match &self.methods {
             WildCardContainer::Wildcard => {}
             WildCardContainer::List(methods) => {
-                if methods.is_empty() {
-                    return Err(CoreError::invalid_data("Method list cannot be empty"));
-                }
-
                 if methods.iter().any(|m| m.is_empty()) {
                     return Err(CoreError::invalid_data("Method name cannot be empty"));
                 }
@@ -118,15 +147,18 @@ impl ContractPermission {
 
     /// Converts to a neo-vm-rs stack value (matches C# `ContractPermission.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            self.contract.to_stack_value(),
-            self.methods.to_stack_value(),
-        ])
+        StackValue::Struct(
+            0,
+            vec![
+                self.contract.to_stack_value(),
+                self.methods.to_stack_value(),
+            ],
+        )
     }
 
     /// Updates this permission from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(0, items) = stack_value else {
             return Err(CoreError::invalid_format(
                 "ContractPermission expects Struct stack value",
             ));
@@ -156,25 +188,13 @@ impl ContractPermission {
 }
 
 impl Interoperable for ContractPermission {
-    fn from_stack_item(
-        &mut self,
-        stack_item: StackItem,
-    ) -> std::result::Result<(), neo_vm::VmError> {
-        let sv = StackValue::try_from(stack_item).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractPermission StackItem to StackValue: {error}"
-            ))
-        })?;
-        self.from_stack_value(sv)
-            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
+        self.from_stack_value(value)
+            .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> std::result::Result<StackItem, neo_vm::VmError> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractPermission StackValue to StackItem: {error}"
-            ))
-        })
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(self.to_stack_value())
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {
@@ -185,7 +205,6 @@ impl Interoperable for ContractPermission {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm::Interoperable;
     use neo_vm_rs::StackValue;
 
     #[test]
@@ -198,22 +217,20 @@ mod tests {
 
         assert_eq!(
             permission.to_stack_value(),
-            StackValue::Struct(vec![
-                StackValue::ByteString(hash.to_bytes()),
-                StackValue::Array(vec![
-                    StackValue::ByteString(b"transfer".to_vec()),
-                    StackValue::ByteString(b"balanceOf".to_vec()),
-                ]),
-            ])
+            StackValue::Struct(
+                0,
+                vec![
+                    StackValue::ByteString(hash.to_bytes()),
+                    StackValue::Array(
+                        0,
+                        vec![
+                            StackValue::ByteString(b"transfer".to_vec()),
+                            StackValue::ByteString(b"balanceOf".to_vec()),
+                        ]
+                    ),
+                ]
+            )
         );
-    }
-
-    #[test]
-    fn contract_permission_stack_item_projection_matches_stack_value_projection() {
-        let permission = ContractPermission::default_wildcard();
-        let expected = StackItem::try_from(permission.to_stack_value()).unwrap();
-
-        assert_eq!(permission.to_stack_item().unwrap(), expected);
     }
 
     #[test]
@@ -222,10 +239,13 @@ mod tests {
         let mut permission = ContractPermission::default_wildcard();
 
         permission
-            .from_stack_value(StackValue::Struct(vec![
-                StackValue::ByteString(hash.to_bytes()),
-                StackValue::Array(vec![StackValue::ByteString(b"mint".to_vec())]),
-            ]))
+            .from_stack_value(StackValue::Struct(
+                0,
+                vec![
+                    StackValue::ByteString(hash.to_bytes()),
+                    StackValue::Array(0, vec![StackValue::ByteString(b"mint".to_vec())]),
+                ],
+            ))
             .unwrap();
 
         assert_eq!(
@@ -236,5 +256,36 @@ mod tests {
             permission.methods,
             WildCardContainer::create(vec!["mint".to_string()])
         );
+    }
+
+    #[test]
+    fn contract_permission_from_json_allows_empty_method_list_like_csharp() {
+        let json = serde_json::json!({
+            "contract": "*",
+            "methods": []
+        });
+
+        let permission = ContractPermission::from_json(&json).unwrap();
+        assert_eq!(permission.contract, ContractPermissionDescriptor::Wildcard);
+        assert_eq!(
+            permission.methods,
+            WildCardContainer::create(Vec::<String>::new())
+        );
+        assert!(permission.validate().is_ok());
+    }
+
+    #[test]
+    fn contract_permission_from_json_rejects_empty_or_duplicate_methods_like_csharp() {
+        let empty_method = serde_json::json!({
+            "contract": "*",
+            "methods": [""]
+        });
+        assert!(ContractPermission::from_json(&empty_method).is_err());
+
+        let duplicate_method = serde_json::json!({
+            "contract": "*",
+            "methods": ["mint", "mint"]
+        });
+        assert!(ContractPermission::from_json(&duplicate_method).is_err());
     }
 }

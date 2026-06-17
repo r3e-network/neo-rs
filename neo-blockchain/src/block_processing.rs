@@ -14,13 +14,54 @@
 use std::sync::Arc;
 
 use neo_payloads::Block;
+use neo_state_service::mpt_store::MptChange;
+use neo_storage::TrackState;
 use tracing::{debug, error, warn};
 
 use crate::internal::UnverifiedBlock;
 use crate::service::BlockchainService;
+use crate::service_context::SystemContext;
 
 const DRAIN_BATCH_SIZE: usize = 50;
 const MAX_UNVERIFIED_CACHE_SIZE: usize = 20_000;
+const LEDGER_CONTRACT_ID: i32 = -4;
+
+fn state_root_changes(snapshot: &neo_storage::DataCache) -> Vec<MptChange> {
+    snapshot
+        .tracked_items()
+        .into_iter()
+        .filter(|(key, _)| key.id() != LEDGER_CONTRACT_ID)
+        .filter_map(|(key, trackable)| match trackable.state {
+            TrackState::Added | TrackState::Changed => Some(MptChange::Put {
+                key: key.to_array(),
+                value: trackable.item.value_bytes().into_owned(),
+            }),
+            TrackState::Deleted => Some(MptChange::Delete {
+                key: key.to_array(),
+            }),
+            TrackState::None | TrackState::NotFound => None,
+        })
+        .collect()
+}
+
+pub(crate) fn apply_state_root_changes(
+    system: &dyn SystemContext,
+    block_index: u32,
+    snapshot: &neo_storage::DataCache,
+) -> bool {
+    let Some(mpt) = system.state_store().and_then(|store| store.mpt()) else {
+        return true;
+    };
+
+    let changes = state_root_changes(snapshot);
+    let root_before = mpt.current_local_root_hash();
+    if let Err(err) = mpt.apply_block_changes(block_index, root_before, &changes) {
+        error!(target: "neo", %err, "state-root MPT update failed");
+        return false;
+    }
+
+    true
+}
 
 impl BlockchainService {
     pub(crate) fn park_unverified_block(
@@ -80,8 +121,16 @@ impl BlockchainService {
             return true;
         };
         let settings = self.system.settings();
-        match crate::native_persist::persist_block_natives(snapshot, block, settings.as_ref()) {
+        match crate::native_persist::persist_block_natives(
+            Arc::clone(&snapshot),
+            Arc::clone(&block),
+            settings.as_ref(),
+        ) {
             Ok(outcome) => {
+                if !apply_state_root_changes(self.system.as_ref(), block.index(), &snapshot) {
+                    return false;
+                }
+
                 debug!(
                     target: "neo",
                     initialized = ?outcome.initialized,
@@ -132,6 +181,7 @@ impl BlockchainService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_storage::{DataCache, StorageItem, StorageKey};
 
     #[test]
     fn constants_have_expected_values() {
@@ -139,5 +189,29 @@ mod tests {
         // predictable.
         assert!(DRAIN_BATCH_SIZE > 0);
         assert!(MAX_UNVERIFIED_CACHE_SIZE >= DRAIN_BATCH_SIZE);
+    }
+
+    #[test]
+    fn state_root_changes_filter_ledger_and_project_track_states() {
+        let snapshot = DataCache::new(false);
+        let changed_key = StorageKey::new(5, vec![0xAA]);
+        let deleted_key = StorageKey::new(6, vec![0xBB]);
+        let ledger_key = StorageKey::new(LEDGER_CONTRACT_ID, vec![0xCC]);
+
+        snapshot.add(deleted_key.clone(), StorageItem::from_bytes(vec![0x00]));
+        snapshot.commit();
+        snapshot.add(changed_key.clone(), StorageItem::from_bytes(vec![0x01]));
+        snapshot.delete(&deleted_key);
+        snapshot.add(ledger_key, StorageItem::from_bytes(vec![0x02]));
+
+        let changes = state_root_changes(&snapshot);
+        assert_eq!(changes.len(), 2);
+        assert!(changes.contains(&MptChange::Put {
+            key: changed_key.to_array(),
+            value: vec![0x01],
+        }));
+        assert!(changes.contains(&MptChange::Delete {
+            key: deleted_key.to_array(),
+        }));
     }
 }

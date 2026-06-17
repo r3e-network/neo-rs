@@ -1,8 +1,7 @@
-#![cfg(feature = "wip")]
 //! Integration test for block assembly logic
 
 use neo_consensus::BlockData;
-use neo_crypto::{ECCurve, ecc::generate_keypair};
+use neo_crypto::{ECCurve, ecc::EcdsaVerify};
 use neo_payloads::Block;
 use neo_vm_rs::OpCode;
 
@@ -12,7 +11,7 @@ async fn test_complete_block_assembly_workflow() {
     let mut validator_pubkeys = Vec::new();
 
     for _ in 0..4 {
-        let (_private_key, public_key) = generate_keypair(ECCurve::Secp256r1).unwrap();
+        let (_private_key, public_key) = EcdsaVerify::generate_keypair(ECCurve::Secp256r1).unwrap();
         validator_pubkeys.push(public_key);
     }
 

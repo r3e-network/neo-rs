@@ -52,10 +52,10 @@ members = [
     # P2P networking
     "neo-p2p",
 
-    # Foundation layer: serialization (compression, binary/json serializers, providers)
+    # Protocol types: serialization (compression, binary/json serializers, VM-aware codecs)
     "neo-serialization",
 
-    # Foundation layer: manifest (ABI, NEF, CallFlags, MethodToken, ValidatorAttribute)
+    # Protocol types: manifest (ABI, NEF, CallFlags, MethodToken, ValidatorAttribute)
     "neo-manifest",
     
     # Canonical home for Neo P2P payload types (Block, Header, Transaction, etc.)

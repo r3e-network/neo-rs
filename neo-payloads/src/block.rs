@@ -37,13 +37,10 @@ impl Block {
     pub fn verify_no_duplicate_transactions(&self) -> bool {
         let mut seen: std::collections::HashSet<UInt256> = std::collections::HashSet::new();
         for tx in &self.transactions {
-            let data = tx.hash_data();
-            if data.len() != 32 {
-                return false;
-            }
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(&data);
-            let h = neo_primitives::UInt256::from_bytes(&bytes).unwrap_or_default();
+            let h = match tx.try_hash() {
+                Ok(hash) => hash,
+                Err(_) => return false,
+            };
             if !seen.insert(h) {
                 return false;
             }
@@ -54,7 +51,7 @@ impl Block {
     /// Creates a new block.
     /// Serialize without witnesses (delegates to header).
     pub fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        <Header as Serializable>::serialize(&self.header, writer)
+        self.header.serialize_unsigned(writer)
     }
 
     /// Creates an empty block with a default header.
@@ -216,11 +213,33 @@ impl Inventory for Block {
     }
 }
 
-impl crate::VerifiableExt for Block {}
+impl crate::VerifiableExt for Block {
+    /// C# `Block.GetScriptHashesForVerifying`: the single hash to verify is
+    /// `Header.NextConsensus` — the address of the committee that must sign the block.
+    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+        vec![*self.header.next_consensus()]
+    }
+
+    fn witnesses(&self) -> Vec<&crate::Witness> {
+        vec![&self.header.witness]
+    }
+
+    fn witnesses_mut(&mut self) -> Vec<&mut crate::Witness> {
+        vec![&mut self.header.witness]
+    }
+
+    fn to_verifiable_container(&self) -> Option<std::sync::Arc<dyn neo_primitives::Verifiable>> {
+        Some(std::sync::Arc::new(self.clone()))
+    }
+}
 
 impl neo_primitives::SerializablePayload for Block {
     fn hash_data(&self) -> Vec<u8> {
         self.header.hash_data()
+    }
+
+    fn hash(&self) -> UInt256 {
+        self.try_hash().unwrap_or_default()
     }
 
     fn witness_count(&self) -> usize {
@@ -331,8 +350,31 @@ impl Serializable for Block {
             return Err(IoError::invalid_data("Too many transactions"));
         }
         let mut transactions = Vec::with_capacity(tx_count);
+        let mut hashes = Vec::with_capacity(tx_count);
+        let mut seen = std::collections::HashSet::with_capacity(tx_count);
         for _ in 0..tx_count {
-            transactions.push(<Transaction as neo_io::Serializable>::deserialize(reader)?);
+            let tx = <Transaction as neo_io::Serializable>::deserialize(reader)?;
+            let hash = tx
+                .try_hash()
+                .map_err(|err| IoError::invalid_data(format!("Transaction hash failed: {err}")))?;
+            if !seen.insert(hash) {
+                return Err(IoError::invalid_data(format!(
+                    "duplicate transaction hash {hash}"
+                )));
+            }
+            hashes.push(hash);
+            transactions.push(tx);
+        }
+        let merkle_root = if hashes.is_empty() {
+            UInt256::default()
+        } else {
+            neo_crypto::MerkleTree::compute_root(&hashes)
+                .ok_or_else(|| IoError::invalid_data("Merkle root could not be computed"))?
+        };
+        if merkle_root != *header.merkle_root() {
+            return Err(IoError::invalid_data(
+                "Merkle root mismatch in block transactions",
+            ));
         }
         Ok(Self {
             header,
@@ -345,6 +387,7 @@ impl Serializable for Block {
 mod tests {
     use super::super::signer::Signer;
     use super::*;
+    use neo_crypto::Crypto;
     use neo_primitives::WitnessScope;
     use neo_vm_rs::OpCode;
 
@@ -383,6 +426,29 @@ mod tests {
         tx
     }
 
+    fn valid_transaction(nonce: u32, signer_seed: u8) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(nonce);
+        tx.set_system_fee(1);
+        tx.set_network_fee(100_000_000);
+        tx.set_valid_until_block(42);
+        tx.set_signers(vec![Signer::new(
+            UInt160::from_bytes(&[signer_seed; 20]).expect("signer"),
+            WitnessScope::NONE,
+        )]);
+        tx.set_attributes(Vec::new());
+        tx.set_script(vec![OpCode::RET.byte()]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
+
+    fn serialize_block(block: &Block) -> Vec<u8> {
+        let mut writer = BinaryWriter::new();
+        <Block as Serializable>::serialize(block, &mut writer).expect("serialize block");
+        writer.into_bytes()
+    }
+
     #[test]
     fn block_try_hash_delegates_to_header() {
         let block = sample_block();
@@ -417,6 +483,48 @@ mod tests {
     }
 
     #[test]
+    fn block_hash_is_single_sha256_of_unsigned_header_data() {
+        let block = sample_block();
+        let unsigned = block.try_get_hash_data().expect("block hash data");
+        let first_digest = Crypto::sha256(&unsigned);
+        let second_digest = Crypto::sha256(&first_digest);
+        let expected_single = UInt256::from(first_digest);
+
+        assert_eq!(block.try_hash().expect("block hash"), expected_single);
+        assert_eq!(
+            <Block as neo_primitives::SerializablePayload>::hash(&block),
+            expected_single
+        );
+        assert_ne!(
+            block.try_hash().expect("block hash"),
+            UInt256::from(second_digest),
+            "C# Block.IVerifiable.SerializeUnsigned delegates to Header.SerializeUnsigned and Helper.CalculateHash applies one SHA256"
+        );
+    }
+
+    #[test]
+    fn verifiable_block_hash_data_matches_header_unsigned_hash_data() {
+        let block = sample_block();
+        let full_header_bytes = {
+            let mut writer = BinaryWriter::new();
+            <Header as Serializable>::serialize(&block.header, &mut writer)
+                .expect("serialize full header");
+            writer.into_bytes()
+        };
+
+        assert_eq!(
+            <Block as neo_primitives::Verifiable>::hash_data(&block),
+            block.header.try_get_hash_data().expect("header hash data"),
+            "C# Block.IVerifiable.SerializeUnsigned delegates to Header.IVerifiable.SerializeUnsigned"
+        );
+        assert_ne!(
+            <Block as neo_primitives::Verifiable>::hash_data(&block),
+            full_header_bytes,
+            "block hash data must not include the header witness"
+        );
+    }
+
+    #[test]
     fn try_rebuild_merkle_root_rejects_unserializable_transaction_hash() {
         let mut block = sample_block();
         block.transactions.push(transaction_with_oversized_script());
@@ -439,5 +547,53 @@ mod tests {
         block.transactions.push(transaction_with_oversized_script());
 
         assert!(!block.verify_no_duplicate_transactions());
+    }
+
+    #[test]
+    fn duplicate_transaction_check_uses_transaction_hashes() {
+        let mut distinct = sample_block();
+        distinct.transactions.push(valid_transaction(1, 1));
+        distinct.transactions.push(valid_transaction(2, 2));
+        assert!(distinct.verify_no_duplicate_transactions());
+
+        let tx = valid_transaction(3, 3);
+        let mut duplicate = sample_block();
+        duplicate.transactions.push(tx.clone());
+        duplicate.transactions.push(tx);
+        assert!(!duplicate.verify_no_duplicate_transactions());
+    }
+
+    #[test]
+    fn deserialize_rejects_duplicate_transaction_hashes_like_csharp() {
+        let tx = valid_transaction(7, 7);
+        let mut block = sample_block();
+        block.transactions.push(tx.clone());
+        block.transactions.push(tx);
+        block.try_rebuild_merkle_root().expect("merkle root");
+
+        let bytes = serialize_block(&block);
+        let mut reader = MemoryReader::new(&bytes);
+        let err = <Block as Serializable>::deserialize(&mut reader)
+            .expect_err("C# Block.Deserialize rejects duplicate transaction hashes");
+        assert!(
+            err.to_string().contains("duplicate transaction"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_merkle_root_mismatch_like_csharp() {
+        let mut block = sample_block();
+        block.transactions.push(valid_transaction(8, 8));
+        block.header.set_merkle_root(UInt256::zero());
+
+        let bytes = serialize_block(&block);
+        let mut reader = MemoryReader::new(&bytes);
+        let err = <Block as Serializable>::deserialize(&mut reader)
+            .expect_err("C# Block.Deserialize rejects mismatched Merkle roots");
+        assert!(
+            err.to_string().contains("Merkle root"),
+            "unexpected error: {err}"
+        );
     }
 }

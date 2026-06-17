@@ -174,9 +174,10 @@ pub trait WalletChangedHandler: Send + Sync {
     );
 }
 
-/// Minimal wallet interface used by [`WalletChangedHandler`]. The trait is
-/// intentionally narrow; the full wallet API lives in `neo-wallets`.
-pub trait WalletProvider: Send + Sync {
+/// Minimal signing interface used by [`WalletChangedHandler`]. The trait is
+/// intentionally narrow; the full wallet API lives in `neo-wallets` as
+/// `WalletProvider`. This trait focuses only on account lookup and signing.
+pub trait SignerProvider: Send + Sync {
     /// Get an account by script hash.
     fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn AccountLike>>;
     /// Sign arbitrary data with the account's private key.
@@ -314,7 +315,7 @@ mod tests {
     struct MockWallet {
         account: UInt160,
     }
-    impl WalletProvider for MockWallet {
+    impl SignerProvider for MockWallet {
         fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn AccountLike>> {
             (*script_hash == self.account).then(|| {
                 Arc::new(MockAccount {
@@ -335,7 +336,7 @@ mod tests {
     fn wallet_provider_lookup_and_sign() {
         let acct = UInt160::from_bytes(&[5u8; 20]).unwrap();
         let other = UInt160::from_bytes(&[6u8; 20]).unwrap();
-        let wallet: Arc<dyn WalletProvider> = Arc::new(MockWallet { account: acct });
+        let wallet: Arc<dyn SignerProvider> = Arc::new(MockWallet { account: acct });
         assert!(wallet.contains(&acct));
         assert!(!wallet.contains(&other));
         assert!(wallet.get_account(&acct).is_some());

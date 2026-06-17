@@ -89,6 +89,8 @@ struct NodeConfig {
     blockchain: BlockchainSection,
     #[serde(default)]
     mempool: MempoolSection,
+    #[serde(default)]
+    state_service: StateServiceSection,
 }
 
 /// `[network]`: which Neo network the node joins.
@@ -265,6 +267,22 @@ struct MempoolSection {
     max_transactions: Option<i32>,
 }
 
+/// `[state_service]`: state-root/MPT support used by Neo's StateService plugin.
+#[derive(Debug, Default, Deserialize)]
+struct StateServiceSection {
+    /// Whether to start the state-service store and expose state RPC methods.
+    #[serde(default, alias = "Enabled")]
+    enabled: bool,
+    /// Whether to retain historical trie nodes for old-root proofs/state reads.
+    #[serde(default, alias = "FullState")]
+    full_state: bool,
+    /// Configured state-root store path. The current Rust `MptStore` is
+    /// memory-backed; this is parsed so shipped C#-style configs are accepted
+    /// and can be honored when a durable state-root backend lands.
+    #[serde(default, alias = "Path")]
+    path: Option<PathBuf>,
+}
+
 /// [`neo_blockchain::service_context::SystemContext`] for the daemon:
 /// protocol settings plus the canonical store snapshot the blockchain
 /// service persists blocks into (and verifies transactions against).
@@ -276,6 +294,7 @@ struct DaemonContext {
     /// snapshot through to the durable backing store — the write-through the
     /// blockchain service triggers via `commit_to_store()` after each block.
     store_cache: parking_lot::Mutex<neo_storage::persistence::StoreCache>,
+    state_store: Option<Arc<neo_state_service::StateStore>>,
 }
 
 impl std::fmt::Debug for DaemonContext {
@@ -299,6 +318,10 @@ impl neo_blockchain::service_context::SystemContext for DaemonContext {
 
     fn store_snapshot(&self) -> Option<Arc<neo_storage::persistence::DataCache>> {
         Some(Arc::clone(&self.snapshot))
+    }
+
+    fn state_store(&self) -> Option<Arc<neo_state_service::StateStore>> {
+        self.state_store.as_ref().map(Arc::clone)
     }
 
     fn commit_to_store(&self) {
@@ -665,6 +688,32 @@ fn open_store(
     Ok(store)
 }
 
+fn state_service_store_path(path: &Path, network: u32) -> PathBuf {
+    let raw = path.to_string_lossy();
+    if raw.contains("{0}") {
+        PathBuf::from(raw.replace("{0}", &format!("{network:08X}")))
+    } else {
+        path.to_path_buf()
+    }
+}
+
+fn open_state_service_store(
+    path: &Path,
+) -> anyhow::Result<Arc<dyn neo_storage::persistence::store::Store>> {
+    use neo_storage::persistence::StoreProvider;
+    use neo_storage::persistence::storage::StorageConfig;
+    use neo_storage::rocksdb::RocksDBStoreProvider;
+
+    info!(target: "neo", path = %path.display(), "opening StateService RocksDB store");
+    let cfg = StorageConfig {
+        path: path.to_path_buf(),
+        ..Default::default()
+    };
+    RocksDBStoreProvider::new(cfg)
+        .get_store("")
+        .map_err(|err| anyhow::anyhow!("failed to open StateService RocksDB store: {err}"))
+}
+
 /// Constructs the [`neo_system::Node`] with a live blockchain service
 /// and a spawned [`neo_network::LocalNodeService`].
 async fn build_node(
@@ -706,6 +755,32 @@ async fn build_node(
         ledger_ctx.record_tip(durable_tip);
     }
 
+    let state_store = if config.state_service.enabled {
+        let state_store = if let Some(path) = &config.state_service.path {
+            let path = state_service_store_path(path, settings.network);
+            let backing = open_state_service_store(&path)?;
+            Arc::new(
+                neo_state_service::StateStore::with_mpt_store(
+                    config.state_service.full_state,
+                    backing,
+                )
+                .with_context(|| format!("opening StateService MPT store at {}", path.display()))?,
+            )
+        } else {
+            Arc::new(neo_state_service::StateStore::with_mpt(
+                config.state_service.full_state,
+            ))
+        };
+        info!(
+            target: "neo",
+            full_state = config.state_service.full_state,
+            "state service MPT store enabled"
+        );
+        Some(state_store)
+    } else {
+        None
+    };
+
     // A second handle on the shared snapshot serves peers' block requests, and
     // the shared mempool answers `Inv`/`Mempool`/`GetData` for unconfirmed txs.
     let block_source: Arc<dyn neo_network::BlockSource> = Arc::new(LedgerBlockSource {
@@ -717,6 +792,7 @@ async fn build_node(
         settings: Arc::clone(&settings),
         snapshot,
         store_cache: parking_lot::Mutex::new(store_cache),
+        state_store: state_store.clone(),
     });
     let mempool_like: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(
         neo_blockchain::service::SharedMempool(Arc::clone(&mempool)),
@@ -902,6 +978,11 @@ async fn build_node(
         }));
     }
 
+    let services = neo_system::ServiceRegistry::new();
+    if let Some(state_store) = &state_store {
+        services.register(Arc::clone(state_store));
+    }
+
     let node = neo_system::Node::builder()
         .with_settings(settings)
         .with_storage(store)
@@ -909,6 +990,7 @@ async fn build_node(
         .with_network(network.clone())
         .with_mempool(mempool)
         .with_header_cache(header_cache)
+        .with_services(services)
         .build()
         .map_err(|e| anyhow::anyhow!("node build failed: {e}"))?;
 
@@ -1241,6 +1323,11 @@ MaxKnownHashes = 77
 [dbft]
 enabled = true
 private_key_hex = "012345"
+
+[state_service]
+Enabled = true
+Path = "StateRoot"
+FullState = true
 "#;
         let config: NodeConfig = toml::from_str(toml).expect("parses aliases");
 
@@ -1258,6 +1345,24 @@ private_key_hex = "012345"
         assert_eq!(channels.max_known_hashes, 77);
         assert!(config.consensus.enabled);
         assert_eq!(config.consensus.private_key_hex.as_deref(), Some("012345"));
+        assert!(config.state_service.enabled);
+        assert_eq!(
+            config.state_service.path.as_deref(),
+            Some(std::path::Path::new("StateRoot"))
+        );
+        assert!(config.state_service.full_state);
+    }
+
+    #[test]
+    fn state_service_path_formats_network_placeholder() {
+        assert_eq!(
+            state_service_store_path(Path::new("Data_MPT_{0}"), 0x004F_454Eu32),
+            PathBuf::from("Data_MPT_004F454E")
+        );
+        assert_eq!(
+            state_service_store_path(Path::new("StateRoot"), 0x004F_454Eu32),
+            PathBuf::from("StateRoot")
+        );
     }
 
     #[test]
@@ -1470,6 +1575,7 @@ backend = "rocksdb"
             settings: Arc::new(ProtocolSettings::default()),
             snapshot: Arc::clone(&snapshot),
             store_cache: parking_lot::Mutex::new(store_cache),
+            state_store: None,
         };
 
         // Stage a write into the shared snapshot (the blockchain persist path).

@@ -1,5 +1,5 @@
 use super::{WitnessCondition, WitnessRule};
-use neo_vm::StackItem;
+use neo_vm::{Interoperable, InteroperableError};
 use neo_vm_rs::StackValue;
 
 /// Projects witness-rule types to the lean neo-vm-rs [`StackValue`] form.
@@ -27,7 +27,7 @@ impl WitnessCondition {
                     .iter()
                     .map(WitnessCondition::to_stack_value)
                     .collect::<Vec<_>>();
-                items.push(StackValue::Array(expressions));
+                items.push(StackValue::Array(0, expressions));
             }
             WitnessCondition::ScriptHash { hash } | WitnessCondition::CalledByContract { hash } => {
                 items.push(StackValue::ByteString(hash.to_bytes()));
@@ -38,38 +38,51 @@ impl WitnessCondition {
             WitnessCondition::CalledByEntry => {}
         }
 
-        StackValue::Array(items)
+        StackValue::Array(0, items)
     }
 }
 
 impl WitnessRule {
     /// Converts to a neo-vm-rs stack value (matches C# `WitnessRule.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(vec![
-            StackValue::Integer(i64::from(self.action.to_byte())),
-            self.condition.to_stack_value(),
-        ])
+        StackValue::Array(
+            0,
+            vec![
+                StackValue::Integer(i64::from(self.action.to_byte())),
+                self.condition.to_stack_value(),
+            ],
+        )
     }
 }
 
-/// Extension trait for projecting witness-rule types to a VM [`StackItem`].
-pub trait ToStackItem {
-    /// Converts to a VM stack item.
-    fn to_stack_item(&self) -> StackItem;
-}
+impl Interoperable for WitnessCondition {
+    fn from_stack_value(&mut self, _value: StackValue) -> Result<(), InteroperableError> {
+        Err(InteroperableError::NotSupported(
+            "WitnessCondition::from_stack_value is not supported".into(),
+        ))
+    }
 
-impl ToStackItem for WitnessCondition {
-    /// Converts the witness condition to a VM stack item (matches C# `WitnessCondition.ToStackItem`).
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::try_from(self.to_stack_value())
-            .expect("witness rule StackValue projection uses only VM StackItem-compatible values")
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(self.to_stack_value())
+    }
+
+    fn clone_box(&self) -> Box<dyn Interoperable> {
+        Box::new(self.clone())
     }
 }
 
-impl ToStackItem for WitnessRule {
-    /// Converts the witness rule to a VM stack item (matches C# `WitnessRule.ToStackItem`).
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::try_from(self.to_stack_value())
-            .expect("witness rule StackValue projection uses only VM StackItem-compatible values")
+impl Interoperable for WitnessRule {
+    fn from_stack_value(&mut self, _value: StackValue) -> Result<(), InteroperableError> {
+        Err(InteroperableError::NotSupported(
+            "WitnessRule::from_stack_value is not supported".into(),
+        ))
+    }
+
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(self.to_stack_value())
+    }
+
+    fn clone_box(&self) -> Box<dyn Interoperable> {
+        Box::new(self.clone())
     }
 }

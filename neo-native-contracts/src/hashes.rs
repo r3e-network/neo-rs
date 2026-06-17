@@ -78,7 +78,7 @@ pub static NOTARY_HASH: LazyLock<UInt160> = LazyLock::new(|| {
 ///
 /// Computed identically to the other native contracts as
 /// `get_contract_hash(UInt160::ZERO, 0, "Treasury")`. Verified against the
-/// C# Neo v3.9.1 reference (`UT_NativeContract.cs`, which pins
+/// C# Neo v3.10.0 reference (`UT_NativeContract.cs`, which pins
 /// `"hash":"0x156326f25b1b5d839a4d326aeaa75383c9563ac1"` for Treasury).
 pub static TREASURY_HASH: LazyLock<UInt160> = LazyLock::new(|| {
     UInt160::parse("0x156326f25b1b5d839a4d326aeaa75383c9563ac1")
@@ -94,7 +94,7 @@ mod parity_tests {
     /// Verifies our consensus-critical contract-hash derivation reproduces every
     /// canonical Neo N3 native-contract hash.
     ///
-    /// In C# Neo v3.9.1 each native contract sets
+    /// In C# Neo v3.10.0 each native contract sets
     /// `Hash = Helper.GetContractHash(UInt160.Zero, 0, Name)`, where
     /// `Name => GetType().Name` (the class name). `GetContractHash` emits
     /// `ABORT, push(sender), push(nefCheckSum), push(name)` and takes the script
@@ -133,7 +133,7 @@ mod parity_tests {
 
     /// Native-contract ids must match the canonical Neo N3 values. The id is
     /// part of native storage-key derivation, so a wrong id silently diverges
-    /// consensus. Pinned against the C# v3.9.1 reference (UT_NativeContract.cs).
+    /// consensus. Pinned against the C# v3.10.0 reference (UT_NativeContract.cs).
     #[test]
     fn native_contract_ids_match_csharp() {
         assert_eq!(

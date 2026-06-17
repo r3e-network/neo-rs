@@ -22,8 +22,8 @@
 //!   separately so a caller cannot mistake "structurally valid" for "attested".
 
 use crate::error::{TeeError, TeeResult};
-use crate::mempool::tee_mempool::OrderingProof as SequencerProof;
 use crate::mempool::TeeMempool;
+use crate::mempool::tee_mempool::OrderingProof as SequencerProof;
 use crate::nitro::vsock::OrderTxEntry;
 use neo_crypto::Secp256r1Crypto;
 use serde::{Deserialize, Serialize};
@@ -160,7 +160,8 @@ impl OrderingVerification {
 /// ([`OrderingVerification::is_fully_trusted`] vs `is_internally_consistent`).
 #[must_use]
 pub fn verify_ordering_proof(proof: &OrderingProof) -> OrderingVerification {
-    let merkle_root_matches = merkle_root(&proof.ordered_hashes) == proof.sequencer_proof.merkle_root;
+    let merkle_root_matches =
+        merkle_root(&proof.ordered_hashes) == proof.sequencer_proof.merkle_root;
 
     let signature_valid = verify_sequencer_signature(&proof.sequencer_proof);
 
@@ -185,7 +186,11 @@ fn merkle_root(hashes: &[[u8; 32]]) -> [u8; 32] {
     while level.len() > 1 {
         let mut next = Vec::with_capacity(level.len().div_ceil(2));
         for chunk in level.chunks(2) {
-            let right = if chunk.len() > 1 { &chunk[1] } else { &chunk[0] };
+            let right = if chunk.len() > 1 {
+                &chunk[1]
+            } else {
+                &chunk[0]
+            };
             let mut data = [0u8; 64];
             data[..32].copy_from_slice(&chunk[0]);
             data[32..].copy_from_slice(right);

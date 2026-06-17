@@ -129,7 +129,7 @@ impl ApplicationEngine {
             .storage_iterators
             .get(&iterator_id)
             .ok_or_else(|| CoreError::other(format!("Iterator {} not found", iterator_id)))?;
-        Ok(iterator.value())
+        iterator.value()
     }
 
     pub(crate) fn load_script_with_state<F>(
@@ -148,7 +148,7 @@ impl ApplicationEngine {
         let script = Script::from(script_bytes)
             .map_err(|e| CoreError::invalid_operation(format!("Invalid script: {e}")))?;
 
-        {
+        let (context, call_flags, invocation_counter_hash) = {
             let engine = self.vm_engine.engine_mut();
             let context = engine.create_context(script, rvcount, initial_position);
 
@@ -156,7 +156,7 @@ impl ApplicationEngine {
                 .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            let call_flags = {
+            let (call_flags, invocation_counter_hash) = {
                 let mut state = state_arc.lock();
                 // Match Neo C#: each loaded context receives an isolated clone of
                 // the current snapshot cache and commits into its parent on unload.
@@ -165,9 +165,23 @@ impl ApplicationEngine {
                 if state.script_hash.is_none() {
                     state.script_hash = Some(script_hash);
                 }
-                state.call_flags
+                (
+                    state.call_flags,
+                    state.script_hash.expect("script hash set"),
+                )
             };
+            (context, call_flags, invocation_counter_hash)
+        };
 
+        // C# ApplicationEngine.LoadContext initializes the counter with
+        // ExecutionContextState.ScriptHash, which may be a logical contract or
+        // witness hash rather than the raw script hash.
+        self.invocation_counter
+            .entry(invocation_counter_hash)
+            .or_insert(1);
+
+        {
+            let engine = self.vm_engine.engine_mut();
             engine
                 .load_context(context)
                 .map_err(|e| CoreError::invalid_operation(e.to_string()))?;

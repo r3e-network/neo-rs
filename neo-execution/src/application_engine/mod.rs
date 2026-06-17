@@ -69,7 +69,7 @@
 //! module boundary (matching the C# layout).
 
 use neo_config::hardfork::Hardfork;
-use neo_crypto::{Crypto, Murmur3};
+use neo_crypto::{Crypto, ECCurve, ECPoint, Murmur3};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::Block;
 use neo_primitives::constants::HASH_SIZE;

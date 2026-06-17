@@ -240,7 +240,8 @@ fn deploy_verify_contract(system: &Arc<neo_system::Node>) -> UInt160 {
         BinarySerializer::deserialize(&contract_bytes, &ExecutionEngineLimits::default(), None)
             .expect("contract stack item");
     let mut contract = ContractState::default();
-    let _ = contract.from_stack_item(item);
+    let sv = neo_vm_rs::StackValue::try_from(item).expect("stack item to stack value");
+    let _ = contract.from_stack_value(sv);
 
     let tracked = engine.snapshot_cache().tracked_items();
     store_cache.apply_tracked_items(tracked);

@@ -103,7 +103,7 @@ fn snapshot_commit_invalidates_read_cache_for_updated_keys() {
 }
 
 #[test]
-fn snapshot_reads_overlay_pending_writes_and_deletes() {
+fn snapshot_reads_ignore_pending_writes_until_reopened_after_commit() {
     let tmp = TempDir::new().expect("tempdir");
     let db_path = tmp.path().join("rocksdb-snapshot-overlay");
     let cfg = StorageConfig {
@@ -127,12 +127,14 @@ fn snapshot_reads_overlay_pending_writes_and_deletes() {
     writer.commit();
 
     let mut snapshot = store.snapshot();
-    let snapshot_mut = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
-    snapshot_mut.delete(existing_key.clone()).unwrap();
-    snapshot_mut.put(added_key.clone(), vec![0xBB]).unwrap();
+    {
+        let snapshot_mut = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
+        snapshot_mut.delete(existing_key.clone()).unwrap();
+        snapshot_mut.put(added_key.clone(), vec![0xBB]).unwrap();
+    }
 
-    assert_eq!(snapshot.try_get(&existing_key), None);
-    assert_eq!(snapshot.try_get(&added_key), Some(vec![0xBB]));
+    assert_eq!(snapshot.try_get(&existing_key), Some(vec![0xAA]));
+    assert_eq!(snapshot.try_get(&added_key), None);
 
     let entries: Vec<_> = snapshot
         .find(
@@ -140,7 +142,19 @@ fn snapshot_reads_overlay_pending_writes_and_deletes() {
             SeekDirection::Forward,
         )
         .collect();
-    assert_eq!(entries, vec![(added_key, vec![0xBB])]);
+    assert_eq!(entries, vec![(existing_key.clone(), vec![0xAA])]);
+
+    Arc::get_mut(&mut snapshot)
+        .expect("exclusive snapshot")
+        .try_commit()
+        .expect("snapshot commit");
+
+    assert_eq!(snapshot.try_get(&existing_key), Some(vec![0xAA]));
+    assert_eq!(snapshot.try_get(&added_key), None);
+
+    let reopened = store.snapshot();
+    assert_eq!(reopened.try_get(&existing_key), None);
+    assert_eq!(reopened.try_get(&added_key), Some(vec![0xBB]));
 }
 
 #[test]
@@ -186,7 +200,7 @@ fn backward_prefix_find_returns_expected_rows_in_store_and_snapshot_views() {
 }
 
 #[test]
-fn backward_raw_prefix_find_uses_rocksdb_prefix_bounds() {
+fn raw_prefix_find_uses_rocksdb_prefix_bounds_in_both_directions() {
     let tmp = TempDir::new().expect("tempdir");
     let cfg = StorageConfig {
         path: tmp.path().join("rocksdb-raw-prefix-bounds"),
@@ -205,18 +219,31 @@ fn backward_raw_prefix_find_uses_rocksdb_prefix_bounds() {
     }
 
     let prefix = b"a".to_vec();
-    let expected = vec![b"a\xff".to_vec(), b"a\x00".to_vec()];
+    let forward_expected = vec![b"a\x00".to_vec(), b"a\xff".to_vec()];
+    let backward_expected = vec![b"a\xff".to_vec(), b"a\x00".to_vec()];
+
+    let store_forward_keys: Vec<_> = store
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(store_forward_keys, forward_expected);
+
+    let snapshot = store.snapshot();
+    let snapshot_forward_keys: Vec<_> = snapshot
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(snapshot_forward_keys, forward_expected);
 
     let store_keys: Vec<_> = store
         .find(Some(&prefix), SeekDirection::Backward)
         .map(|(key, _)| key)
         .collect();
-    assert_eq!(store_keys, expected);
+    assert_eq!(store_keys, backward_expected);
 
-    let snapshot = store.snapshot();
     let snapshot_keys: Vec<_> = snapshot
         .find(Some(&prefix), SeekDirection::Backward)
         .map(|(key, _)| key)
         .collect();
-    assert_eq!(snapshot_keys, expected);
+    assert_eq!(snapshot_keys, backward_expected);
 }

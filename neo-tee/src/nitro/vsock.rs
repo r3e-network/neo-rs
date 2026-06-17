@@ -371,8 +371,13 @@ mod tests {
 
     #[test]
     fn real_vsock_transport_is_experimental_stub() {
-        let transport = RealVsockTransport::new(VsockAddr { cid: 16, port: 5005 });
-        let err = transport.request(&EnclaveRequest::GetPublicKey).unwrap_err();
+        let transport = RealVsockTransport::new(VsockAddr {
+            cid: 16,
+            port: 5005,
+        });
+        let err = transport
+            .request(&EnclaveRequest::GetPublicKey)
+            .unwrap_err();
         assert!(matches!(err, TeeError::FeatureNotEnabled(_)));
     }
 }

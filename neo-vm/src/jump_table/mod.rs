@@ -74,10 +74,8 @@ impl JumpTable {
         DEFAULT.get_or_init(Self::new).clone()
     }
 
-    /// The pre-`HF_Gorgon` jump table (C# `ApplicationEngine.ComposeNotGorgonJumpTable`):
-    /// the default table with the pre-543 compound handlers (HASKEY/PICKITEM/
-    /// SETITEM/REMOVE) and the vulnerable SHL/SHR restored. Selected for blocks
-    /// before HF_Gorgon when HF_Echidna is active.
+    /// A pre-Gorgon compatibility table kept for tests/future protocol work. Neo
+    /// v3.10.0's `ApplicationEngine.Create` does not select this table.
     pub fn not_gorgon() -> Self {
         NOT_GORGON
             .get_or_init(|| {
@@ -93,15 +91,13 @@ impl JumpTable {
             .clone()
     }
 
-    /// The pre-`HF_Echidna` jump table (C# `ApplicationEngine.ComposeNotEchidnaJumpTable`
-    /// = NotGorgon + VulnerableSubStr). The pre-Echidna `VulnerableSubStr` is
-    /// observably equivalent to the fixed SUBSTR for consensus — both fault
-    /// uncatchably on an out-of-range or `i32`-overflowing `index + count` and
-    /// produce the same slice for valid inputs (the original difference was an
-    /// uninitialized-memory read a memory-safe VM cannot reproduce) — so the
-    /// NotGorgon table is reused unchanged.
+    /// The pre-`HF_Echidna` jump table. C# v3.10.0 overrides only SUBSTR with
+    /// `ApplicationEngine.VulnerableSubStr`; the memory-unsafe distinction is
+    /// not reproducible here and is consensus-equivalent for valid results and
+    /// faulting cases, so this table intentionally keeps every handler at the
+    /// default implementation.
     pub fn not_echidna() -> Self {
-        Self::not_gorgon()
+        Self::default()
     }
 
     /// Registers a handler for an opcode.
@@ -374,14 +370,15 @@ mod tests {
                 assert!(same, "{opcode:?} should match the default table");
             }
         }
-        // NotEchidna reuses NotGorgon (the VulnerableSubStr override is a
-        // consensus no-op vs the fixed SUBSTR).
+        // C# v3.10.0 `ComposeNotEchidnaJumpTable` only changes SUBSTR. Rust does
+        // not reproduce the memory-unsafe SUBSTR distinction, so NotEchidna must
+        // not inherit the unrelated pre-Gorgon overrides.
         let not_echidna = JumpTable::not_echidna();
         for opcode in OpCode::ALL {
             assert_eq!(
                 not_echidna.get(opcode).map(|h| h as usize),
-                not_gorgon.get(opcode).map(|h| h as usize),
-                "not_echidna must equal not_gorgon for {opcode:?}"
+                default.get(opcode).map(|h| h as usize),
+                "not_echidna must equal the default table for {opcode:?}"
             );
         }
     }

@@ -2,7 +2,8 @@ use super::helpers::{encode_hex, parse_group_bytes};
 use super::*;
 use neo_primitives::ADDRESS_SIZE;
 use neo_primitives::UInt160;
-use neo_vm::StackItem;
+use neo_vm::Interoperable;
+use neo_vm_rs::StackValue;
 
 #[test]
 fn test_witness_rule_action_values() {
@@ -82,6 +83,22 @@ fn boolean_condition_json_matches_csharp_structure() {
 }
 
 #[test]
+fn witness_rule_json_action_is_case_sensitive_like_csharp_v3100() {
+    let json = serde_json::json!({
+        "action": "allow",
+        "condition": {
+            "type": "Boolean",
+            "expression": true,
+        },
+    });
+
+    assert!(
+        WitnessRule::from_json(&json).is_err(),
+        "C# WitnessRule.FromJson uses case-sensitive Enum.Parse<WitnessRuleAction>"
+    );
+}
+
+#[test]
 fn group_condition_json_roundtrip_without_prefix() {
     let bytes =
         parse_group_bytes("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
@@ -94,6 +111,39 @@ fn group_condition_json_roundtrip_without_prefix() {
     assert_eq!(json["group"], encode_hex(&bytes));
     let decoded = WitnessCondition::from_json(&json).unwrap();
     assert_eq!(decoded, condition);
+}
+
+#[test]
+fn group_condition_json_accepts_uncompressed_ecpoint_like_csharp() {
+    let compressed =
+        parse_group_bytes("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+            .unwrap();
+    let point =
+        neo_crypto::ECPoint::from_bytes_with_curve(neo_crypto::ECCurve::Secp256r1, &compressed)
+            .unwrap();
+    let uncompressed = point.encode_point(false).unwrap();
+    assert_eq!(uncompressed.len(), 65);
+
+    let json = serde_json::json!({
+        "type": "Group",
+        "group": encode_hex(&uncompressed),
+    });
+
+    let decoded = WitnessCondition::from_json(&json).unwrap();
+    match &decoded {
+        WitnessCondition::Group { group } => assert_eq!(
+            group, &compressed,
+            "C# ECPoint.Parse accepts uncompressed points and stores the compressed form"
+        ),
+        other => panic!("expected Group, got {other:?}"),
+    }
+
+    let mut writer = neo_io::BinaryWriter::new();
+    <WitnessCondition as neo_io::Serializable>::serialize(&decoded, &mut writer)
+        .expect("normalized group must serialize");
+    let mut expected = vec![WitnessConditionType::Group.to_byte()];
+    expected.extend_from_slice(&compressed);
+    assert_eq!(writer.into_bytes(), expected);
 }
 
 #[test]
@@ -139,31 +189,46 @@ fn witness_rule_projects_to_neo_vm_rs_stack_value() {
 
     assert_eq!(
         rule.to_stack_value(),
-        neo_vm_rs::StackValue::Array(vec![
-            neo_vm_rs::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
-            neo_vm_rs::StackValue::Array(vec![
-                neo_vm_rs::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
-                neo_vm_rs::StackValue::Array(vec![
-                    neo_vm_rs::StackValue::Array(vec![
-                        neo_vm_rs::StackValue::Integer(
-                            WitnessConditionType::Boolean.to_byte().into()
+        neo_vm_rs::StackValue::Array(
+            0,
+            vec![
+                neo_vm_rs::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
+                neo_vm_rs::StackValue::Array(
+                    0,
+                    vec![
+                        neo_vm_rs::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
+                        neo_vm_rs::StackValue::Array(
+                            0,
+                            vec![
+                                neo_vm_rs::StackValue::Array(
+                                    0,
+                                    vec![
+                                        neo_vm_rs::StackValue::Integer(
+                                            WitnessConditionType::Boolean.to_byte().into()
+                                        ),
+                                        neo_vm_rs::StackValue::Boolean(true),
+                                    ]
+                                ),
+                                neo_vm_rs::StackValue::Array(
+                                    0,
+                                    vec![
+                                        neo_vm_rs::StackValue::Integer(
+                                            WitnessConditionType::ScriptHash.to_byte().into()
+                                        ),
+                                        neo_vm_rs::StackValue::ByteString(hash.to_bytes()),
+                                    ]
+                                ),
+                            ]
                         ),
-                        neo_vm_rs::StackValue::Boolean(true),
-                    ]),
-                    neo_vm_rs::StackValue::Array(vec![
-                        neo_vm_rs::StackValue::Integer(
-                            WitnessConditionType::ScriptHash.to_byte().into()
-                        ),
-                        neo_vm_rs::StackValue::ByteString(hash.to_bytes()),
-                    ]),
-                ]),
-            ]),
-        ])
+                    ]
+                ),
+            ]
+        )
     );
 }
 
 #[test]
-fn witness_rule_stack_item_projection_matches_stack_value_projection() {
+fn witness_rule_interoperable_to_stack_value_matches_inherent() {
     let rule = WitnessRule::new(
         WitnessRuleAction::Deny,
         WitnessCondition::Not {
@@ -171,6 +236,27 @@ fn witness_rule_stack_item_projection_matches_stack_value_projection() {
         },
     );
 
-    let expected = StackItem::try_from(rule.to_stack_value()).unwrap();
-    assert_eq!(rule.to_stack_item(), expected);
+    let expected = rule.to_stack_value();
+    assert_eq!(Interoperable::to_stack_value(&rule).unwrap(), expected);
+}
+
+#[test]
+fn witness_condition_interoperable_to_stack_value_matches_inherent() {
+    let condition = WitnessCondition::Boolean { value: true };
+
+    let expected = condition.to_stack_value();
+    assert_eq!(Interoperable::to_stack_value(&condition).unwrap(), expected);
+}
+
+#[test]
+fn witness_rule_from_stack_value_is_unsupported_like_csharp_v3100() {
+    let mut rule = WitnessRule::new(
+        WitnessRuleAction::Allow,
+        WitnessCondition::Boolean { value: true },
+    );
+
+    assert!(
+        Interoperable::from_stack_value(&mut rule, StackValue::Null).is_err(),
+        "C# WitnessRule.IInteroperable.FromStackItem throws NotSupportedException"
+    );
 }

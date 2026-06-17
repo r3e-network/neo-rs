@@ -33,6 +33,25 @@ fn consensus_merkle_root_matches_core_merkle_tree() {
     }
 }
 
+fn proposed_block_hash(
+    service: &ConsensusService,
+    tx_hashes: &[UInt256],
+    timestamp: u64,
+    nonce: u64,
+) -> UInt256 {
+    let merkle_root = ConsensusBlockFields::compute_merkle_root(tx_hashes);
+    ConsensusBlockFields::compute_header_hash(
+        service.context().version,
+        service.context().prev_hash,
+        merkle_root,
+        timestamp,
+        nonce,
+        service.context().block_index,
+        service.context().primary_index(),
+        service.context().next_consensus,
+    )
+}
+
 #[tokio::test]
 async fn backup_prepare_request_with_transactions_requests_exact_hashes() {
     let network = 0x4E454F;
@@ -66,6 +85,166 @@ async fn backup_prepare_request_with_transactions_requests_exact_hashes() {
         } if transaction_hashes == tx_hashes
     ));
     assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn backup_rejects_prepare_request_above_protocol_transaction_limit() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+    service.set_max_transactions_per_block(1);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let tx_hashes = vec![UInt256::from([0x31; 32]), UInt256::from([0x32; 32])];
+    let prepare = PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), 1_001, 99, tx_hashes);
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        0,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        prepare.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[0]);
+
+    let result = service.process_message(payload);
+    assert!(matches!(
+        result,
+        Err(ConsensusError::InvalidProposal { message }) if message.contains("MaxTransactionsPerBlock")
+    ));
+    assert!(!service.context().prepare_request_received);
+}
+
+#[tokio::test]
+async fn backup_rejects_prepare_request_not_after_previous_timestamp() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+
+    service
+        .start_with_previous_timestamp(0, 1_000, UInt256::zero(), 5_000, 0)
+        .unwrap();
+
+    let prepare = PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), 5_000, 99, Vec::new());
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        0,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        prepare.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[0]);
+
+    let result = service.process_message(payload);
+    assert!(matches!(
+        result,
+        Err(ConsensusError::InvalidProposal { message }) if message.contains("timestamp")
+    ));
+    assert!(!service.context().prepare_request_received);
+}
+
+#[tokio::test]
+async fn backup_rejects_prepare_request_too_far_in_future() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+    service.set_expected_block_time(1_000);
+
+    service
+        .start_with_previous_timestamp(0, current_timestamp(), UInt256::zero(), 0, 0)
+        .unwrap();
+
+    let future_timestamp = current_timestamp().saturating_add(9_000);
+    let prepare = PrepareRequestMessage::new(
+        0,
+        0,
+        0,
+        0,
+        UInt256::zero(),
+        future_timestamp,
+        99,
+        Vec::new(),
+    );
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        0,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        prepare.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[0]);
+
+    let result = service.process_message(payload);
+    assert!(matches!(
+        result,
+        Err(ConsensusError::InvalidProposal { message }) if message.contains("timestamp")
+    ));
+    assert!(!service.context().prepare_request_received);
+}
+
+#[tokio::test]
+async fn backup_rejects_prepare_request_with_wrong_prev_hash() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+
+    let expected_prev_hash = UInt256::from([0xAA; 32]);
+    let wrong_prev_hash = UInt256::from([0xBB; 32]);
+    service
+        .start_with_previous_timestamp(0, 1_000, expected_prev_hash, 0, 0)
+        .unwrap();
+
+    let prepare = PrepareRequestMessage::new(0, 0, 0, 0, wrong_prev_hash, 1_001, 99, Vec::new());
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        0,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        prepare.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[0]);
+
+    let result = service.process_message(payload);
+    assert!(matches!(
+        result,
+        Err(ConsensusError::InvalidProposal { message }) if message.contains("prev_hash")
+    ));
+    assert_eq!(service.context().prev_hash, expected_prev_hash);
+    assert!(!service.context().prepare_request_received);
+}
+
+#[tokio::test]
+async fn primary_requests_configured_transaction_limit() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    service.set_max_transactions_per_block(2);
+    service.set_expected_block_time(1_000);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    let deadline = service
+        .context()
+        .view_start_time
+        .saturating_add(service.context().prepare_request_delay());
+    service.on_timer_tick(deadline).unwrap();
+
+    let event = rx.try_recv().expect("transaction request");
+    assert!(matches!(
+        event,
+        ConsensusEvent::RequestTransactions {
+            block_index: 0,
+            max_count: 2,
+        }
+    ));
 }
 
 #[tokio::test]
@@ -232,13 +411,13 @@ async fn prepare_response_rejects_mismatched_hash() {
 async fn prepare_response_with_wrong_view_ignored() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
-    let (validators, _keys) = create_validators_with_keys(4);
+    let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(0), vec![], tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
     let response = PrepareResponseMessage::new(0, 1, 1, UInt256::zero());
-    let payload = ConsensusPayload::new(
+    let mut payload = ConsensusPayload::new(
         network,
         0,
         1,
@@ -246,10 +425,252 @@ async fn prepare_response_with_wrong_view_ignored() {
         ConsensusMessageType::PrepareResponse,
         response.serialize(),
     );
+    sign_payload(&service, &mut payload, &keys[1]);
 
     let result = service.process_message(payload);
     assert!(result.is_ok());
     assert!(service.context().prepare_responses.is_empty());
+}
+
+#[tokio::test]
+async fn other_view_commit_without_witness_is_rejected_and_not_cached() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let commit = CommitMessage::new(0, 1, 1, vec![0x11; 64]);
+    let payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        1,
+        ConsensusMessageType::Commit,
+        commit.serialize(),
+    );
+
+    let result = service.process_message(payload);
+    assert!(matches!(
+        result,
+        Err(ConsensusError::SignatureVerificationFailed { .. })
+    ));
+    assert!(!service.context().commits.contains_key(&1));
+}
+
+#[tokio::test]
+async fn current_view_commit_before_prepare_request_is_cached_and_revalidated() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(2), keys[2].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let tx_hashes = Vec::new();
+    let timestamp = 1_001;
+    let nonce = 99;
+    let block_hash = proposed_block_hash(&service, &tx_hashes, timestamp, nonce);
+    let signature = sign_commit(network, &block_hash, &keys[1]);
+    let commit = CommitMessage::new(0, 0, 1, signature.clone());
+    let mut commit_payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::Commit,
+        commit.serialize(),
+    );
+    sign_payload(&service, &mut commit_payload, &keys[1]);
+
+    assert!(service.process_message(commit_payload).is_ok());
+    assert_eq!(service.context().proposed_block_hash, None);
+    assert_eq!(service.context().commits.get(&1), Some(&signature));
+    assert!(service.context().commit_invocations.contains_key(&1));
+
+    let prepare =
+        PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), timestamp, nonce, tx_hashes);
+    let mut prepare_payload = ConsensusPayload::new(
+        network,
+        0,
+        0,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        prepare.serialize(),
+    );
+    sign_payload(&service, &mut prepare_payload, &keys[0]);
+
+    service.process_message(prepare_payload).unwrap();
+
+    assert_eq!(service.context().proposed_block_hash, Some(block_hash));
+    assert_eq!(service.context().commits.get(&1), Some(&signature));
+    assert!(service.context().commit_invocations.contains_key(&1));
+}
+
+#[tokio::test]
+async fn commit_with_trailing_body_bytes_uses_first_64_signature_bytes() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    service.on_transactions_received(Vec::new()).unwrap();
+
+    let block_hash = service.context().proposed_block_hash.expect("block hash");
+    let signature = sign_commit(network, &block_hash, &keys[1]);
+    let mut body = signature.clone();
+    body.extend_from_slice(&[0xAA, 0xBB]);
+    let mut payload = ConsensusPayload::new(network, 0, 1, 0, ConsensusMessageType::Commit, body);
+    sign_payload(&service, &mut payload, &keys[1]);
+
+    service.process_message(payload).unwrap();
+
+    assert_eq!(service.context().commits.get(&1), Some(&signature));
+}
+
+#[tokio::test]
+async fn invalid_cached_current_view_commit_is_removed_after_prepare_request() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(2), keys[2].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let tx_hashes = Vec::new();
+    let timestamp = 1_001;
+    let nonce = 99;
+    let wrong_block_hash = UInt256::from([0xEE; 32]);
+    let invalid_signature = sign_commit(network, &wrong_block_hash, &keys[1]);
+    let commit = CommitMessage::new(0, 0, 1, invalid_signature.clone());
+    let mut commit_payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::Commit,
+        commit.serialize(),
+    );
+    sign_payload(&service, &mut commit_payload, &keys[1]);
+
+    assert!(service.process_message(commit_payload).is_ok());
+    assert_eq!(service.context().commits.get(&1), Some(&invalid_signature));
+    assert!(service.context().commit_invocations.contains_key(&1));
+
+    let prepare =
+        PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), timestamp, nonce, tx_hashes);
+    let mut prepare_payload = ConsensusPayload::new(
+        network,
+        0,
+        0,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        prepare.serialize(),
+    );
+    sign_payload(&service, &mut prepare_payload, &keys[0]);
+
+    service.process_message(prepare_payload).unwrap();
+
+    assert!(!service.context().commits.contains_key(&1));
+    assert!(!service.context().commit_view_numbers.contains_key(&1));
+    assert!(!service.context().commit_invocations.contains_key(&1));
+}
+
+#[tokio::test]
+async fn prepare_response_with_trailing_body_bytes_uses_first_hash() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    service.on_transactions_received(Vec::new()).unwrap();
+
+    let preparation_hash = service
+        .context()
+        .preparation_hash
+        .expect("preparation hash");
+    let mut body = preparation_hash.as_bytes().to_vec();
+    body.push(0xCC);
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::PrepareResponse,
+        body,
+    );
+    sign_payload(&service, &mut payload, &keys[1]);
+
+    service.process_message(payload).unwrap();
+
+    assert_eq!(
+        service.context().prepare_response_hashes.get(&1),
+        Some(&preparation_hash)
+    );
+}
+
+#[tokio::test]
+async fn commit_threshold_waits_for_all_proposal_transactions() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(2), keys[2].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let tx_hashes = vec![UInt256::from([0x31; 32])];
+    let timestamp = 1_001;
+    let nonce = 99;
+    let block_hash = proposed_block_hash(&service, &tx_hashes, timestamp, nonce);
+    let prepare = PrepareRequestMessage::new(
+        0,
+        0,
+        0,
+        0,
+        UInt256::zero(),
+        timestamp,
+        nonce,
+        tx_hashes.clone(),
+    );
+    let mut prepare_payload = ConsensusPayload::new(
+        network,
+        0,
+        0,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        prepare.serialize(),
+    );
+    sign_payload(&service, &mut prepare_payload, &keys[0]);
+
+    service.process_message(prepare_payload).unwrap();
+    assert!(service.context().has_missing_proposed_transactions());
+
+    for validator_index in [0u8, 1, 3] {
+        let signature = sign_commit(network, &block_hash, &keys[validator_index as usize]);
+        let commit = CommitMessage::new(0, 0, validator_index, signature);
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::Commit,
+            commit.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service.process_message(payload).unwrap();
+    }
+
+    assert!(service.context().has_enough_commits());
+    assert!(service.context().has_missing_proposed_transactions());
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, ConsensusEvent::BlockCommitted { .. }),
+            "must not commit until proposed transactions are available"
+        );
+    }
 }
 
 #[tokio::test]
@@ -448,6 +869,43 @@ async fn primary_broadcasts_prepare_request_with_transactions() {
         service.context().proposed_block_hash,
         Some(expected_block_hash)
     );
+}
+
+#[tokio::test]
+async fn primary_truncates_prepare_request_to_protocol_transaction_limit() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    service.set_max_transactions_per_block(1);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let tx_hashes = vec![UInt256::from([0x11; 32]), UInt256::from([0x22; 32])];
+    service.on_transactions_received(tx_hashes.clone()).unwrap();
+
+    let mut prepare_payload = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event {
+            if payload.message_type == ConsensusMessageType::PrepareRequest {
+                prepare_payload = Some(payload);
+                break;
+            }
+        }
+    }
+
+    let payload = prepare_payload.expect("prepare request payload");
+    let msg = PrepareRequestMessage::deserialize_body(
+        &payload.data,
+        payload.block_index,
+        payload.view_number,
+        payload.validator_index,
+    )
+    .expect("prepare request message");
+
+    assert_eq!(msg.transaction_hashes, vec![tx_hashes[0]]);
+    assert_eq!(service.context().proposed_tx_hashes, vec![tx_hashes[0]]);
 }
 
 #[tokio::test]

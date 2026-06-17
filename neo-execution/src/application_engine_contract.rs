@@ -222,7 +222,7 @@ fn contract_create_multisig_account_handler(
     })?;
 
     let result = (|| -> CoreResult<()> {
-        if m < 0 || m > i32::MAX as i64 {
+        if m < i32::MIN as i64 || m > i32::MAX as i64 {
             return Err(CoreError::other("Invalid multisig threshold"));
         }
 
@@ -501,6 +501,75 @@ fn contract_native_post_persist_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_config::ProtocolSettings;
+    use neo_primitives::TriggerType;
+    use neo_storage::persistence::DataCache;
+    use std::sync::Arc;
+
+    fn test_engine() -> ApplicationEngine {
+        ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            1_000_000,
+            None,
+        )
+        .expect("engine builds")
+    }
+
+    fn valid_public_key() -> Vec<u8> {
+        hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+            .expect("valid key hex")
+    }
+
+    fn invalid_public_key() -> Vec<u8> {
+        let mut key = vec![0x04; 33];
+        key[1] = 0x01;
+        key
+    }
+
+    #[test]
+    fn create_standard_account_rejects_invalid_ecpoint_before_dynamic_fee() {
+        let mut engine = test_engine();
+
+        assert!(
+            engine
+                .create_standard_account(&invalid_public_key())
+                .is_err()
+        );
+        assert_eq!(
+            engine.fee_consumed(),
+            0,
+            "C# converts ECPoint before entering CreateStandardAccount"
+        );
+    }
+
+    #[test]
+    fn create_multisig_account_rejects_invalid_ecpoint_before_dynamic_fee() {
+        let mut engine = test_engine();
+        let keys = vec![StackItem::from_byte_string(invalid_public_key())];
+
+        assert!(engine.create_multisig_account(1, keys).is_err());
+        assert_eq!(
+            engine.fee_consumed(),
+            0,
+            "C# converts ECPoint[] before entering CreateMultisigAccount"
+        );
+    }
+
+    #[test]
+    fn create_multisig_account_charges_fee_before_invalid_threshold_fault() {
+        let mut engine = test_engine();
+        let keys = vec![StackItem::from_byte_string(valid_public_key())];
+
+        assert!(engine.create_multisig_account(-1, keys).is_err());
+        assert!(
+            engine.fee_consumed() > 0,
+            "C# charges inside CreateMultisigAccount before m/n validation"
+        );
+    }
 
     #[test]
     fn decode_native_result_array_empty_is_null() {

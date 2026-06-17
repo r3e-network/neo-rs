@@ -833,7 +833,8 @@ impl PeerSession {
                     CloseReason::ProtocolViolation(format!("invalid ping payload: {err}"))
                 })?;
                 self.peer_last_block_index = payload.last_block_index;
-                let pong = PingPayload::create(self.identity.block_height());
+                let pong =
+                    PingPayload::create_with_nonce(self.identity.block_height(), payload.nonce);
                 let message = Message::create(
                     MessageCommand::Pong,
                     Some(&pong),
@@ -995,6 +996,7 @@ impl PeerSession {
                     CloseReason::ProtocolViolation(format!("invalid getdata payload: {err}"))
                 })?;
                 if let Some(source) = self.block_source.clone() {
+                    let mut not_found = Vec::new();
                     for hash in &payload.hashes {
                         match payload.inventory_type {
                             InventoryType::Block => {
@@ -1012,6 +1014,8 @@ impl PeerSession {
                                     framed.send(served).await.map_err(|err| {
                                         CloseReason::Transport(format!("send getdata block: {err}"))
                                     })?;
+                                } else {
+                                    not_found.push(*hash);
                                 }
                             }
                             InventoryType::Transaction => {
@@ -1027,6 +1031,8 @@ impl PeerSession {
                                     framed.send(served).await.map_err(|err| {
                                         CloseReason::Transport(format!("send getdata tx: {err}"))
                                     })?;
+                                } else {
+                                    not_found.push(*hash);
                                 }
                             }
                             InventoryType::Extensible => {
@@ -1049,6 +1055,19 @@ impl PeerSession {
                                 }
                             }
                         }
+                    }
+                    for group in InvPayload::create_group(payload.inventory_type, not_found) {
+                        let not_found = Message::create(
+                            MessageCommand::NotFound,
+                            Some(&group),
+                            self.peer_allows_compression,
+                        )
+                        .map_err(|err| {
+                            CloseReason::Transport(format!("encode getdata notfound: {err}"))
+                        })?;
+                        framed.send(not_found).await.map_err(|err| {
+                            CloseReason::Transport(format!("send getdata notfound: {err}"))
+                        })?;
                     }
                 }
                 Ok(())

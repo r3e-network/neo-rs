@@ -3,6 +3,7 @@
 
 #[cfg(test)]
 mod mpt_tests {
+    use crate::mpt_trie::node::MAX_KEY_LENGTH;
     use crate::mpt_trie::{MptCache, MptResult, MptStoreSnapshot, Node, NodeType, Trie};
     use neo_io::{BinaryWriter, MemoryReader, Serializable};
     use neo_primitives::UInt256;
@@ -63,6 +64,17 @@ mod mpt_tests {
     fn deserialize_node(data: &[u8]) -> Node {
         let mut reader = MemoryReader::new(data);
         Node::deserialize(&mut reader).unwrap()
+    }
+
+    fn malicious_nested_extension_entry(depth: usize) -> Vec<u8> {
+        let mut entry = Vec::with_capacity((depth * 3) + 1);
+        for _ in 0..depth {
+            entry.push(NodeType::ExtensionNode as u8);
+            entry.push(0x00);
+        }
+        entry.push(NodeType::Empty as u8);
+        entry.extend(std::iter::repeat(0x00).take(depth));
+        entry
     }
 
     // Helper functions matching Helper.cs
@@ -171,6 +183,8 @@ mod mpt_tests {
         let branch2 = branch1.clone();
         assert_eq!(branch1.node_type, branch2.node_type);
         assert_eq!(branch1.hash(), branch2.hash());
+        assert_eq!(branch2.children[2].node_type, NodeType::HashNode);
+        assert_eq!(branch2.children[2].hash(), branch1.children[2].hash());
     }
 
     #[test]
@@ -181,6 +195,12 @@ mod mpt_tests {
         assert_eq!(ext1.node_type, ext2.node_type);
         assert_eq!(ext1.key, ext2.key);
         assert_eq!(ext1.hash(), ext2.hash());
+        let next = ext2.next.as_ref().expect("cloned extension keeps child");
+        assert_eq!(next.node_type, NodeType::HashNode);
+        assert_eq!(
+            next.hash(),
+            ext1.next.as_ref().expect("source extension child").hash()
+        );
     }
 
     #[test]
@@ -249,6 +269,16 @@ mod mpt_tests {
         let leaf = Node::new_leaf(vec![]);
         assert_eq!(leaf.node_type, NodeType::LeafNode);
         assert!(!leaf.is_empty());
+    }
+
+    #[test]
+    fn deserialize_rejects_nesting_deeper_than_max_key_length_like_csharp_v3100() {
+        let entry = malicious_nested_extension_entry(MAX_KEY_LENGTH + 1);
+        let mut reader = MemoryReader::new(&entry);
+        assert!(
+            Node::deserialize(&mut reader).is_err(),
+            "C# Neo.Cryptography.MPT 3.10.0 rejects MPT node nesting deeper than MaxKeyLength"
+        );
     }
 
     // ============================================================================

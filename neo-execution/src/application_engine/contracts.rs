@@ -168,6 +168,13 @@ impl ApplicationEngine {
         has_return_value: bool,
         args: &[StackItem],
     ) -> CoreResult<ExecutionContext> {
+        if self.is_contract_blocked(&contract.hash)? {
+            return Err(CoreError::invalid_operation(format!(
+                "The contract {} has been blocked.",
+                contract.hash
+            )));
+        }
+
         if args.len() != method.parameters.len() {
             return Err(CoreError::invalid_operation(format!(
                 "Method '{}' expects {} arguments but received {}.",
@@ -181,13 +188,6 @@ impl ApplicationEngine {
             return Err(CoreError::invalid_operation(
                 "The return value type does not match.".to_string(),
             ));
-        }
-
-        if self.is_contract_blocked(&contract.hash)? {
-            return Err(CoreError::invalid_operation(format!(
-                "The contract {} has been blocked.",
-                contract.hash
-            )));
         }
 
         let previous_context = self
@@ -600,6 +600,7 @@ impl ApplicationEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
     use neo_manifest::{
         ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
         ContractPermission, NefFile, WildCardContainer,
@@ -608,6 +609,110 @@ mod tests {
     use neo_vm_rs::OpCode;
     use parking_lot::Mutex as PlMutex;
     use std::collections::HashMap;
+    use std::sync::MutexGuard;
+
+    static PROVIDER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_provider() -> MutexGuard<'static, ()> {
+        PROVIDER_TEST_LOCK.lock().expect("provider test lock")
+    }
+
+    struct BlockingPolicy {
+        blocked_hash: UInt160,
+    }
+
+    impl NativeContract for BlockingPolicy {
+        fn id(&self) -> i32 {
+            -7
+        }
+
+        fn hash(&self) -> UInt160 {
+            UInt160::from_bytes(&[0xCC; 20]).expect("policy hash")
+        }
+
+        fn name(&self) -> &str {
+            "PolicyContract"
+        }
+
+        fn methods(&self) -> &[crate::NativeMethod] {
+            &[]
+        }
+
+        fn invoke(
+            &self,
+            _engine: &mut ApplicationEngine,
+            _method: &str,
+            _args: &[Vec<u8>],
+        ) -> CoreResult<Vec<u8>> {
+            Err(CoreError::invalid_operation("test policy is metadata-only"))
+        }
+
+        fn is_contract_blocked(
+            &self,
+            _snapshot: &DataCache,
+            contract_hash: &UInt160,
+        ) -> CoreResult<bool> {
+            Ok(contract_hash == &self.blocked_hash)
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    struct BlockingProvider {
+        policy: Arc<BlockingPolicy>,
+    }
+
+    impl NativeContractProvider for BlockingProvider {
+        fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+            (&self.policy.hash() == hash).then(|| self.policy.clone() as Arc<dyn NativeContract>)
+        }
+
+        fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
+            name.eq_ignore_ascii_case("PolicyContract")
+                .then(|| self.policy.clone() as Arc<dyn NativeContract>)
+        }
+
+        fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+            vec![self.policy.clone() as Arc<dyn NativeContract>]
+        }
+
+        fn all_native_contract_hashes(&self) -> Vec<UInt160> {
+            vec![self.policy.hash()]
+        }
+    }
+
+    fn install_blocking_policy(blocked_hash: UInt160) {
+        NativeContractLookup::install_provider(Arc::new(BlockingProvider {
+            policy: Arc::new(BlockingPolicy { blocked_hash }),
+        }));
+    }
+
+    fn install_allowing_policy() {
+        let never_blocked = UInt160::from_bytes(&[0xEE; 20]).expect("non-target hash");
+        install_blocking_policy(never_blocked);
+    }
+
+    struct EmptyProvider;
+
+    impl NativeContractProvider for EmptyProvider {
+        fn get_native_contract(&self, _hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+            None
+        }
+
+        fn get_native_contract_by_name(&self, _name: &str) -> Option<Arc<dyn NativeContract>> {
+            None
+        }
+
+        fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+            Vec::new()
+        }
+
+        fn all_native_contract_hashes(&self) -> Vec<UInt160> {
+            Vec::new()
+        }
+    }
 
     /// Builds a small synthetic contract with a single `balanceOf(account)`
     /// method that returns immediately. Used by the dynamic-call tests so
@@ -648,6 +753,9 @@ mod tests {
 
     #[test]
     fn call_contract_uses_execution_state_script_hash_for_caller() {
+        let _provider_guard = lock_provider();
+        install_allowing_policy();
+
         let snapshot = Arc::new(DataCache::new(false));
 
         // Pre-load a mock contract directly into the engine so the test
@@ -713,6 +821,150 @@ mod tests {
         );
     }
 
+    #[test]
+    fn call_contract_dynamic_rejects_policy_blocked_target() {
+        let _provider_guard = lock_provider();
+
+        let target_hash =
+            UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030405").expect("target hash");
+        install_blocking_policy(target_hash);
+
+        let mut contracts: HashMap<UInt160, ContractState> = HashMap::new();
+        contracts.insert(target_hash, build_mock_contract(target_hash));
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new_with_preloaded_native(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            contracts,
+            Arc::new(PlMutex::new(NativeContractsCache::default())),
+            None,
+        )
+        .expect("engine");
+
+        engine
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+            .expect("load entry script");
+
+        let err = engine
+            .call_contract_dynamic(
+                &target_hash,
+                "balanceOf",
+                CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
+                vec![StackItem::from_byte_string(UInt160::zero().to_bytes())],
+            )
+            .expect_err("blocked contract call must fault before loading callee");
+
+        assert!(
+            err.to_string()
+                .contains(&format!("The contract {target_hash} has been blocked.")),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            engine.invocation_stack().len(),
+            1,
+            "blocked target must not be loaded onto the invocation stack"
+        );
+    }
+
+    #[test]
+    fn call_contract_internal_checks_policy_before_return_type_mismatch() {
+        let _provider_guard = lock_provider();
+
+        let target_hash =
+            UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030407").expect("target hash");
+        install_blocking_policy(target_hash);
+
+        let contract = build_mock_contract(target_hash);
+        let method = contract
+            .manifest
+            .abi
+            .get_method_ref("balanceOf", 1)
+            .cloned()
+            .expect("balanceOf method");
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new_with_preloaded_native(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            HashMap::new(),
+            Arc::new(PlMutex::new(NativeContractsCache::default())),
+            None,
+        )
+        .expect("engine");
+
+        let result = engine.call_contract_internal(
+            &contract,
+            &method,
+            CallFlags::ALL,
+            false,
+            &[StackItem::from_byte_string(UInt160::zero().to_bytes())],
+        );
+        let err = match result {
+            Ok(_) => panic!("blocked target must be rejected before return type validation"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string()
+                .contains(&format!("The contract {target_hash} has been blocked.")),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn call_contract_dynamic_faults_when_policy_provider_is_missing() {
+        let _provider_guard = lock_provider();
+        NativeContractLookup::install_provider(Arc::new(EmptyProvider));
+
+        let target_hash =
+            UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030406").expect("target hash");
+        let mut contracts: HashMap<UInt160, ContractState> = HashMap::new();
+        contracts.insert(target_hash, build_mock_contract(target_hash));
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new_with_preloaded_native(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            contracts,
+            Arc::new(PlMutex::new(NativeContractsCache::default())),
+            None,
+        )
+        .expect("engine");
+
+        engine
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+            .expect("load entry script");
+
+        let err = engine
+            .call_contract_dynamic(
+                &target_hash,
+                "balanceOf",
+                CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
+                vec![StackItem::from_byte_string(UInt160::zero().to_bytes())],
+            )
+            .expect_err("missing Policy native contract must not fail open");
+
+        assert!(
+            err.to_string().contains("PolicyContract"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            engine.invocation_stack().len(),
+            1,
+            "target contract must not be loaded when the policy gate cannot run"
+        );
+    }
+
     /// Builds a synthetic contract whose single method executes `script` from
     /// offset 0. Used by the `call_from_native_contract_returning` tests.
     fn build_returning_mock(
@@ -772,6 +1024,9 @@ mod tests {
     /// callee script returns `System.Runtime.GetCallingScriptHash`.
     #[test]
     fn returning_call_yields_result_and_native_calling_hash() {
+        let _provider_guard = lock_provider();
+        install_allowing_policy();
+
         let target_hash = UInt160::from_bytes(&[0xCD; 20]).expect("hash");
         let calling_hash = UInt160::from_bytes(&[0xAB; 20]).expect("hash");
 
@@ -819,6 +1074,9 @@ mod tests {
     /// `Void` callee is rejected with "The return value type does not match."
     #[test]
     fn returning_call_rejects_void_method() {
+        let _provider_guard = lock_provider();
+        install_allowing_policy();
+
         let target_hash = UInt160::from_bytes(&[0xCE; 20]).expect("hash");
         let mut contracts = HashMap::new();
         contracts.insert(
@@ -846,11 +1104,55 @@ mod tests {
         );
     }
 
+    /// C# `CallFromNativeContractAsync<T>` funnels through
+    /// `CallContractInternal`, so the Policy blocked-contract gate must reject
+    /// native-to-contract calls before the callee context is loaded.
+    #[test]
+    fn returning_call_rejects_policy_blocked_target() {
+        let _provider_guard = lock_provider();
+
+        // Share the dynamic-call blocked hash so the global test provider
+        // remains compatible when Rust runs these tests in parallel.
+        let target_hash =
+            UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030405").expect("target hash");
+        install_blocking_policy(target_hash);
+
+        let mut contracts = HashMap::new();
+        contracts.insert(
+            target_hash,
+            build_returning_mock(
+                target_hash,
+                "answer",
+                ContractParameterType::Integer,
+                vec![OpCode::PUSH1.byte(), OpCode::RET.byte()],
+            ),
+        );
+        let mut engine = engine_with_entry(contracts);
+
+        let err = engine
+            .call_from_native_contract_returning(&UInt160::zero(), &target_hash, "answer", vec![])
+            .expect_err("blocked native call must be rejected");
+
+        assert!(
+            err.to_string()
+                .contains(&format!("The contract {target_hash} has been blocked.")),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            engine.invocation_stack().len(),
+            1,
+            "blocked native call must not load the callee context"
+        );
+    }
+
     /// A callee that throws (and nothing inside the callee catches) faults the
     /// whole engine — the primitive surfaces an error and the VM is FAULTed,
     /// mirroring C#'s `VMUnhandledException` for `contractTasks` contexts.
     #[test]
     fn returning_call_propagates_callee_throw_as_engine_fault() {
+        let _provider_guard = lock_provider();
+        install_allowing_policy();
+
         let target_hash = UInt160::from_bytes(&[0xCF; 20]).expect("hash");
         let mut contracts = HashMap::new();
         contracts.insert(
@@ -903,6 +1205,9 @@ mod tests {
     /// boundary would run the CATCH and HALT with `2` on the result stack).
     #[test]
     fn returning_call_exception_cannot_be_caught_below_native_frame() {
+        let _provider_guard = lock_provider();
+        install_allowing_policy();
+
         let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
         let mut contracts = HashMap::new();
         contracts.insert(

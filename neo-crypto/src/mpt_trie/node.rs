@@ -60,10 +60,8 @@ impl Default for Node {
 }
 
 impl Clone for Node {
-    /// Clone the node with structural sharing of subtrees.
-    ///
-    /// Instead of deep-cloning children, this clones the Arc pointers,
-    /// enabling O(1) subtree sharing while the data itself remains immutable.
+    /// Clone the node using the C# MPT representation: embedded branch,
+    /// extension, and leaf children are replaced by hash-only child nodes.
     fn clone(&self) -> Self {
         let cached_hash = *self.hash.read();
         match self.node_type {
@@ -71,7 +69,11 @@ impl Clone for Node {
                 node_type: self.node_type,
                 reference: self.reference,
                 hash: RwLock::new(None),
-                children: self.children.iter().map(Arc::clone).collect(),
+                children: self
+                    .children
+                    .iter()
+                    .map(|child| Arc::new(child.clone_as_child()))
+                    .collect(),
                 key: Vec::new(),
                 next: None,
                 value: Vec::new(),
@@ -82,7 +84,10 @@ impl Clone for Node {
                 hash: RwLock::new(None),
                 children: Vec::new(),
                 key: self.key.clone(),
-                next: self.next.as_ref().map(Arc::clone),
+                next: self
+                    .next
+                    .as_ref()
+                    .map(|next| Arc::new(next.clone_as_child())),
                 value: Vec::new(),
             },
             NodeType::LeafNode => Self {
@@ -90,7 +95,7 @@ impl Clone for Node {
                 reference: self.reference,
                 hash: RwLock::new(None),
                 children: Vec::new(),
-                key: self.key.clone(),
+                key: Vec::new(),
                 next: None,
                 value: self.value.clone(),
             },
@@ -390,17 +395,20 @@ impl Node {
         writer.write_bytes(&hash.to_bytes())
     }
 
-    fn deserialize_branch(reader: &mut MemoryReader) -> IoResult<Vec<Arc<Self>>> {
+    fn deserialize_branch(reader: &mut MemoryReader, depth: usize) -> IoResult<Vec<Arc<Self>>> {
         let mut children = Vec::with_capacity(BRANCH_CHILD_COUNT);
         for _ in 0..BRANCH_CHILD_COUNT {
-            children.push(Arc::new(Self::deserialize(reader)?));
+            children.push(Arc::new(Self::deserialize_with_depth(reader, depth + 1)?));
         }
         Ok(children)
     }
 
-    fn deserialize_extension(reader: &mut MemoryReader) -> IoResult<(Vec<u8>, Arc<Self>)> {
+    fn deserialize_extension(
+        reader: &mut MemoryReader,
+        depth: usize,
+    ) -> IoResult<(Vec<u8>, Arc<Self>)> {
         let key = reader.read_var_bytes(MAX_KEY_LENGTH)?;
-        let next = Arc::new(Self::deserialize(reader)?);
+        let next = Arc::new(Self::deserialize_with_depth(reader, depth + 1)?);
         Ok((key, next))
     }
 
@@ -412,15 +420,19 @@ impl Node {
         let bytes = reader.read_bytes(UINT256_SIZE)?;
         UInt256::from_bytes(&bytes).map_err(|e| IoError::invalid_data(e.to_string()))
     }
-}
 
-impl Serializable for Node {
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+    fn deserialize_with_depth(reader: &mut MemoryReader, depth: usize) -> IoResult<Self> {
+        if depth > MAX_KEY_LENGTH {
+            return Err(IoError::invalid_data(
+                "MPT node nesting depth exceeds the maximum allowed limit",
+            ));
+        }
+
         let node_type = NodeType::from_byte(reader.read_byte()?)
             .map_err(|e| IoError::invalid_data(e.to_string()))?;
         match node_type {
             NodeType::BranchNode => {
-                let children = Self::deserialize_branch(reader)?;
+                let children = Self::deserialize_branch(reader, depth)?;
                 let reference = reader.read_var_uint()? as u32;
                 Ok(Self {
                     node_type,
@@ -433,7 +445,7 @@ impl Serializable for Node {
                 })
             }
             NodeType::ExtensionNode => {
-                let (key, next) = Self::deserialize_extension(reader)?;
+                let (key, next) = Self::deserialize_extension(reader, depth)?;
                 let reference = reader.read_var_uint()? as u32;
                 Ok(Self {
                     node_type,
@@ -472,6 +484,12 @@ impl Serializable for Node {
             }
             NodeType::Empty => Ok(Self::default()),
         }
+    }
+}
+
+impl Serializable for Node {
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        Self::deserialize_with_depth(reader, 0)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

@@ -16,7 +16,7 @@
 //! │  ─ public_key:  [u8;33]         │  Cmd    │  ─ Session                        │
 //! │  ─ tx: mpsc::Sender<Cmd>  ────────────────►  ─ ObjectHandle (priv key)        │
 //! │                                 │  Reply  │                                   │
-//! │  sign() → recv_timeout() ◄──────────────── session.sign(Mechanism::Ecdsa,..) │
+//! │  sign() → recv_timeout() ◄──────────────── session.sign(Mechanism::Ecdsa,..)  │
 //! └─────────────────────────────────┘         └───────────────────────────────────┘
 //! ```
 //!

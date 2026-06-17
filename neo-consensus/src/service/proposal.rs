@@ -26,7 +26,7 @@ impl ConsensusService {
         self.context.transaction_request_sent_at = Some(timestamp);
         self.send_event(ConsensusEvent::RequestTransactions {
             block_index: self.context.block_index,
-            max_count: 500, // Max transactions per block
+            max_count: self.max_transactions_per_block as usize,
         })?;
 
         Ok(())
@@ -50,6 +50,11 @@ impl ConsensusService {
 
             let timestamp = prepare_request_timestamp(now, self.context.previous_block_timestamp);
             let nonce = generate_nonce();
+
+            let tx_hashes: Vec<UInt256> = tx_hashes
+                .into_iter()
+                .take(self.max_transactions_per_block as usize)
+                .collect();
 
             // Store proposal data
             self.context.proposed_timestamp = timestamp;
@@ -97,6 +102,7 @@ impl ConsensusService {
                 self.context.primary_index(),
                 self.context.next_consensus,
             ));
+            self.revalidate_current_view_commits();
 
             self.broadcast(payload)?;
 

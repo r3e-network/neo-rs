@@ -119,11 +119,7 @@ impl Buffer {
     /// Converts the buffer to an integer.
     pub fn to_integer(&self) -> VmResult<BigInt> {
         self.with_data(|data| {
-            if data.is_empty() {
-                return Ok(BigInt::from(0));
-            }
-            // Matches C# `new BigInteger(byte[])`: signed little-endian two's complement.
-            Ok(BigInt::from_signed_bytes_le(data))
+            neo_vm_rs::decode_integer_bytes(data).map_err(VmError::invalid_type_simple)
         })
     }
 
@@ -161,5 +157,19 @@ impl Ord for Buffer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let self_data = self.data();
         other.with_data(|other_data| self_data.as_slice().cmp(other_data))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_integer_follows_vm_integer_size_and_signed_bytes() {
+        let negative = Buffer::new(vec![0x00, 0x80]);
+        assert_eq!(negative.to_integer().unwrap(), BigInt::from(-32768));
+
+        let too_large = Buffer::new(vec![0; 33]);
+        assert!(too_large.to_integer().is_err());
     }
 }

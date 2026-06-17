@@ -67,6 +67,7 @@ sysinfo = { workspace = true }
 rand = { workspace = true }
 url = { workspace = true }
 num_cpus = { workspace = true }
+num-bigint = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
 
 # The node workspace crates. (neo-tokens-tracker was merged into neo-rpc; its
@@ -95,6 +96,7 @@ neo-mempool = { workspace = true }
 
 [dev-dependencies]
 neo-io = { workspace = true }
+neo-serialization = { workspace = true }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
 

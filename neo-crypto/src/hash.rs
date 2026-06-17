@@ -30,6 +30,31 @@ pub enum HashAlgorithm {
     Blake2s,
 }
 
+impl HashAlgorithm {
+    /// Returns the C# `Neo.Cryptography.HashAlgorithm` byte, if this algorithm is
+    /// part of that protocol enum.
+    #[must_use]
+    pub const fn to_neo_byte(self) -> Option<u8> {
+        match self {
+            Self::Sha256 => Some(0x00),
+            Self::Keccak256 => Some(0x01),
+            Self::Sha512 => Some(0x02),
+            Self::Ripemd160 | Self::Blake2b | Self::Blake2s => None,
+        }
+    }
+
+    /// Decodes a C# `Neo.Cryptography.HashAlgorithm` byte.
+    #[must_use]
+    pub const fn from_neo_byte(value: u8) -> Option<Self> {
+        match value {
+            0x00 => Some(Self::Sha256),
+            0x01 => Some(Self::Keccak256),
+            0x02 => Some(Self::Sha512),
+            _ => None,
+        }
+    }
+}
+
 /// Cryptographic hash functions for Neo blockchain.
 ///
 /// This struct provides static methods for all hash functions used in Neo.
@@ -529,6 +554,31 @@ mod tests {
 
         assert!(Crypto::blake2b_256(b"abc", Some(&[0u8; 15])).is_err());
         assert!(Crypto::blake2b_256(b"abc", Some(&[0u8; 17])).is_err());
+    }
+
+    #[test]
+    fn hash_algorithm_neo_protocol_bytes_match_csharp_v3_10() {
+        assert_eq!(HashAlgorithm::Sha256.to_neo_byte(), Some(0x00));
+        assert_eq!(HashAlgorithm::Keccak256.to_neo_byte(), Some(0x01));
+        assert_eq!(HashAlgorithm::Sha512.to_neo_byte(), Some(0x02));
+
+        assert_eq!(
+            HashAlgorithm::from_neo_byte(0x00),
+            Some(HashAlgorithm::Sha256)
+        );
+        assert_eq!(
+            HashAlgorithm::from_neo_byte(0x01),
+            Some(HashAlgorithm::Keccak256)
+        );
+        assert_eq!(
+            HashAlgorithm::from_neo_byte(0x02),
+            Some(HashAlgorithm::Sha512)
+        );
+
+        assert_eq!(HashAlgorithm::Ripemd160.to_neo_byte(), None);
+        assert_eq!(HashAlgorithm::Blake2b.to_neo_byte(), None);
+        assert_eq!(HashAlgorithm::Blake2s.to_neo_byte(), None);
+        assert_eq!(HashAlgorithm::from_neo_byte(0x03), None);
     }
 
     #[test]

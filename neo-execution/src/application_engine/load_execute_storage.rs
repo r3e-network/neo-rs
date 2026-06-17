@@ -12,16 +12,12 @@ impl ApplicationEngine {
         // evaluation stack items (`rvcount = -1`) so that witness invocation
         // scripts can pass parameters to verification scripts and invocation
         // results are preserved on `ResultStack`.
-        let context = self.load_script_with_state(script, -1, 0, move |state| {
+        self.load_script_with_state(script, -1, 0, move |state| {
             state.call_flags = call_flags;
             if let Some(hash) = script_hash {
                 state.script_hash = Some(hash);
             }
         })?;
-
-        let script_hash = UInt160::from_bytes(&context.script_hash())
-            .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
-        self.increment_invocation_counter(&script_hash);
         Ok(())
     }
 

@@ -158,7 +158,7 @@ pub use block::Block;
 pub use conflicts::Conflicts;
 pub use event_handlers::{
     AccountLike, CommittedHandler, CommittingHandler, MessageLike, MessageReceivedHandler,
-    PluginEvent, WalletChangedHandler, WalletProvider, WitnessType,
+    PluginEvent, SignerProvider, WalletChangedHandler, WitnessType,
 };
 pub use extensible_payload::ExtensiblePayload;
 pub use header::{Header as BlockHeader, Header};
@@ -191,6 +191,4 @@ pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 // Re-exports of the protocol enums.
 pub use neo_primitives::{InventoryType, OracleResponseCode, TransactionAttributeType};
 pub use verify_result::VerifyResult;
-pub use witness_rule::{
-    ToStackItem, WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction,
-};
+pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};

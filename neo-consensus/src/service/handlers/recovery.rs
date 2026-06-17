@@ -108,7 +108,10 @@ impl ConsensusService {
         )?;
 
         // Validate the recovery message
-        recovery.validate()?;
+        recovery.validate(
+            self.context.validator_count(),
+            self.max_transactions_per_block,
+        )?;
 
         info!(
             block_index = payload.block_index,

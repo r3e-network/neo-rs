@@ -16,70 +16,33 @@
 //!
 //! Policy/Gas/Ledger state is read through the `neo-native-contracts`
 //! readers where they exist (`LedgerContract`, `OracleContract`,
-//! `RoleManagement`, `NeoToken::committee_address`) and through the
-//! documented storage layouts where they do not (Policy fee-per-byte /
-//! exec-fee-factor / blocked accounts / attribute fees, GAS balances) —
-//! each such constant is pinned to its C# `PolicyContract` definition.
+//! `RoleManagement`, `PolicyContract`, `NeoToken::committee_address`) and
+//! through the documented storage layouts where they do not (Policy blocked
+//! accounts, GAS balances) — each such constant is pinned to
+//! its C# `PolicyContract` definition.
 
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_execution::helper::Helper;
 use neo_native_contracts::ledger_contract::LedgerContract;
-use neo_native_contracts::{GasToken, NeoToken, Notary, OracleContract, RoleManagement};
+use neo_native_contracts::{
+    GasToken, NeoToken, Notary, OracleContract, PolicyContract, RoleManagement,
+};
 use neo_payloads::{MAX_TRANSACTION_SIZE, OracleResponse, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
 use neo_primitives::Witness as _;
 use neo_storage::DataCache;
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
-
-/// C# `PolicyContract.Prefix_FeePerByte` (10).
-const POLICY_PREFIX_FEE_PER_BYTE: u8 = 10;
-/// C# `PolicyContract.Prefix_BlockedAccount` (15).
-const POLICY_PREFIX_BLOCKED_ACCOUNT: u8 = 15;
-/// C# `PolicyContract.Prefix_ExecFeeFactor` (18).
-const POLICY_PREFIX_EXEC_FEE_FACTOR: u8 = 18;
-/// C# `PolicyContract.Prefix_AttributeFee` (20).
-const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
-/// C# `PolicyContract.Prefix_MaxValidUntilBlockIncrement` (22, HF_Echidna).
-const POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT: u8 = 22;
-/// C# `PolicyContract.Prefix_MaxTraceableBlocks`.
-const POLICY_PREFIX_MAX_TRACEABLE_BLOCKS: u8 = 23;
-/// C# `PolicyContract.ID` (-7).
-const POLICY_CONTRACT_ID: i32 = -7;
-/// C# `PolicyContract.DefaultFeePerByte` (1000 datoshi).
-const DEFAULT_FEE_PER_BYTE: i64 = 1_000;
-/// C# `PolicyContract.DefaultExecFeeFactor` (30).
-const DEFAULT_EXEC_FEE_FACTOR: i64 = 30;
-/// C# `PolicyContract.DefaultAttributeFee` (0).
-const DEFAULT_ATTRIBUTE_FEE: i64 = 0;
-/// Shared NEP-17 `Prefix_Account` (20) — the GAS balance records.
-const NEP17_PREFIX_ACCOUNT: u8 = 20;
 
 /// Stateless reader of `PolicyContract` storage and the derived protocol
 /// limits the mempool needs during transaction admission.
 pub struct PolicyReader;
 
 impl PolicyReader {
-    /// Reads a Policy storage value as a little-endian `BigInteger`,
-    /// falling back to the C# default when the key is absent (C#
-    /// `snapshot.TryGet(key, out item) ? (long)(BigInteger)item : default`).
-    fn policy_int(snapshot: &DataCache, key: Vec<u8>, default: i64) -> i64 {
-        snapshot
-            .get(&neo_storage::StorageKey::new(POLICY_CONTRACT_ID, key))
-            .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
-            .and_then(|v| v.to_i64())
-            .unwrap_or(default)
-    }
-
     /// C# `PolicyContract.IsBlocked` — key existence under
     /// `Prefix_BlockedAccount + account`.
     fn policy_is_blocked(snapshot: &DataCache, account: &UInt160) -> bool {
-        let mut key = vec![POLICY_PREFIX_BLOCKED_ACCOUNT];
-        key.extend_from_slice(&account.to_bytes());
-        snapshot
-            .get(&neo_storage::StorageKey::new(POLICY_CONTRACT_ID, key))
-            .is_some()
+        PolicyContract::is_blocked_snapshot(snapshot, account)
     }
 
     /// C# `NeoSystemExtensions.GetMaxValidUntilBlockIncrement(snapshot,
@@ -89,36 +52,8 @@ impl PolicyReader {
     fn max_valid_until_block_increment(
         snapshot: &DataCache,
         settings: &ProtocolSettings,
-        height: u32,
-    ) -> u32 {
-        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
-            return settings.max_valid_until_block_increment;
-        }
-        let stored = PolicyReader::policy_int(
-            snapshot,
-            vec![POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT],
-            i64::from(settings.max_valid_until_block_increment),
-        );
-        u32::try_from(stored).unwrap_or(settings.max_valid_until_block_increment)
-    }
-
-    /// The effective `MaxTraceableBlocks` (C# `NeoSystem.GetMaxTraceableBlocks`):
-    /// the static protocol setting before `HF_Echidna`, the committee-adjustable
-    /// Policy storage value (prefix 23) from `HF_Echidna` onward.
-    fn max_traceable_blocks_effective(
-        snapshot: &DataCache,
-        settings: &ProtocolSettings,
-        height: u32,
-    ) -> u32 {
-        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
-            return settings.max_traceable_blocks;
-        }
-        let stored = PolicyReader::policy_int(
-            snapshot,
-            vec![POLICY_PREFIX_MAX_TRACEABLE_BLOCKS],
-            i64::from(settings.max_traceable_blocks),
-        );
-        u32::try_from(stored).unwrap_or(settings.max_traceable_blocks)
+    ) -> neo_error::CoreResult<u32> {
+        PolicyContract::new().get_max_valid_until_block_increment_snapshot(snapshot, settings)
     }
 }
 
@@ -275,17 +210,17 @@ pub fn verify_state_dependent(
         return VerifyResult::UnableToVerify;
     };
 
-    // Validity window. C# v3.10.0 `Transaction.VerifyStateDependent` splits the
-    // two failure modes: an already-passed `ValidUntilBlock` is `Expired`, while
-    // one more than `MaxValidUntilBlockIncrement` ahead of the tip is
-    // `NotYetValid`. The accept range (`height < VUB <= height + increment`) is
-    // unchanged; only the rejection classification differs.
-    let max_increment = PolicyReader::max_valid_until_block_increment(snapshot, settings, height);
-    if tx.valid_until_block() <= height {
+    // Validity window. C# v3.10.0 `Transaction.VerifyStateDependent` rejects
+    // both an already-passed `ValidUntilBlock` and one more than
+    // `MaxValidUntilBlockIncrement` ahead of the tip as `Expired`.
+    let Ok(max_increment) = PolicyReader::max_valid_until_block_increment(snapshot, settings)
+    else {
+        return VerifyResult::UnableToVerify;
+    };
+    if tx.valid_until_block() <= height
+        || tx.valid_until_block() > height.saturating_add(max_increment)
+    {
         return VerifyResult::Expired;
-    }
-    if tx.valid_until_block() > height.saturating_add(max_increment) {
-        return VerifyResult::NotYetValid;
     }
 
     // Blocked accounts.
@@ -294,17 +229,6 @@ pub fn verify_state_dependent(
         if PolicyReader::policy_is_blocked(snapshot, hash) {
             return VerifyResult::PolicyFail;
         }
-    }
-
-    // C# Blockchain.OnNewTransaction: a traceable on-chain conflict record for
-    // this hash, registered by a persisted transaction sharing at least one
-    // signer, blocks admission (`ContainsConflictHash` -> HasConflicts).
-    let mtb = PolicyReader::max_traceable_blocks_effective(snapshot, settings, height);
-    if LedgerContract::new()
-        .contains_conflict_hash(snapshot, &tx.hash(), &hashes, mtb)
-        .unwrap_or(false)
-    {
-        return VerifyResult::HasConflicts;
     }
 
     // Sender GAS balance (C# TransactionVerificationContext.CheckTransaction;
@@ -338,11 +262,10 @@ pub fn verify_state_dependent(
     }
 
     // Net fee left for witness verification.
-    let fee_per_byte = PolicyReader::policy_int(
-        snapshot,
-        vec![POLICY_PREFIX_FEE_PER_BYTE],
-        DEFAULT_FEE_PER_BYTE,
-    );
+    let policy = PolicyContract::new();
+    let Ok(fee_per_byte) = policy.get_fee_per_byte_snapshot(snapshot).map(i64::from) else {
+        return VerifyResult::UnableToVerify;
+    };
     let mut net_fee = tx.network_fee() - (tx.size() as i64) * fee_per_byte - attributes_fee;
     if net_fee < 0 {
         return VerifyResult::InsufficientFunds;
@@ -351,11 +274,12 @@ pub fn verify_state_dependent(
         net_fee = Helper::MAX_VERIFICATION_GAS;
     }
 
-    let exec_fee_factor = PolicyReader::policy_int(
-        snapshot,
-        vec![POLICY_PREFIX_EXEC_FEE_FACTOR],
-        DEFAULT_EXEC_FEE_FACTOR,
-    );
+    let Ok(exec_fee_factor) = policy
+        .get_exec_fee_factor_snapshot(snapshot, settings, height)
+        .map(i64::from)
+    else {
+        return VerifyResult::UnableToVerify;
+    };
     let witnesses = tx.witnesses();
     if witnesses.len() < hashes.len() {
         return VerifyResult::Invalid;
@@ -416,26 +340,12 @@ fn verify_attribute(
         }
         // C# NotValidBefore.Verify: `CurrentIndex >= Height`.
         TransactionAttribute::NotValidBefore(attr) => height >= attr.height,
-        // C# v3.10.0 Conflicts.Verify: reject if the transaction carries
-        // duplicate Conflicts attributes referencing the same hash, then
-        // require the conflicting hash not be an on-chain transaction.
-        TransactionAttribute::Conflicts(attr) => {
-            let mut seen = std::collections::HashSet::new();
-            let has_duplicate = tx
-                .attributes()
-                .iter()
-                .filter_map(|a| match a {
-                    TransactionAttribute::Conflicts(c) => Some(c.hash),
-                    _ => None,
-                })
-                .any(|hash| !seen.insert(hash));
-            if has_duplicate {
-                return false;
-            }
-            !LedgerContract::new()
-                .contains_transaction(snapshot, &attr.hash)
-                .unwrap_or(true)
-        }
+        // C# Conflicts.Verify: only require the conflicting hash not be an
+        // on-chain transaction. `Conflicts.AllowMultiple` is true, so duplicate
+        // attributes are left to the same later mempool accounting C# uses.
+        TransactionAttribute::Conflicts(attr) => !LedgerContract::new()
+            .contains_transaction(snapshot, &attr.hash)
+            .unwrap_or(true),
         // C# OracleResponse.Verify.
         TransactionAttribute::OracleResponse(attr) => {
             if tx
@@ -452,7 +362,7 @@ fn verify_attribute(
             let Ok(Some(request)) = OracleContract::new().get_request(snapshot, attr.id) else {
                 return false;
             };
-            if tx.network_fee() + tx.system_fee() != request.gas_for_response {
+            if !oracle_response_gas_matches(tx, request.gas_for_response) {
                 return false;
             }
             let Ok(oracles) = RoleManagement::new().get_designated_by_role_at(
@@ -479,29 +389,17 @@ fn verify_attribute(
     }
 }
 
-/// C# `TransactionAttribute.CalculateNetworkFee` dispatch: the Policy
-/// per-type attribute fee (default 0), times the signer count for
-/// `Conflicts` and times `NKeys + 1` for `NotaryAssisted`.
+fn oracle_response_gas_matches(tx: &Transaction, gas_for_response: i64) -> bool {
+    tx.network_fee().wrapping_add(tx.system_fee()) == gas_for_response
+}
+
+/// C# `TransactionAttribute.CalculateNetworkFee` dispatch.
 fn attribute_network_fee(
     snapshot: &DataCache,
     tx: &Transaction,
     attribute: &TransactionAttribute,
 ) -> i64 {
-    let base = PolicyReader::policy_int(
-        snapshot,
-        vec![
-            POLICY_PREFIX_ATTRIBUTE_FEE,
-            attribute.attribute_type() as u8,
-        ],
-        DEFAULT_ATTRIBUTE_FEE,
-    );
-    match attribute {
-        TransactionAttribute::Conflicts(_) => base.saturating_mul(tx.signers().len() as i64),
-        TransactionAttribute::NotaryAssisted(attr) => {
-            base.saturating_mul(i64::from(attr.nkeys) + 1)
-        }
-        _ => base,
-    }
+    attribute.calculate_network_fee(snapshot, tx)
 }
 
 /// C# `Contract.GetBFTAddress(pubkeys)` — `m = n - (n - 1) / 3` multisig
@@ -517,4 +415,143 @@ fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> Option<UInt160> {
         )
         .ok()?;
     Some(UInt160::from_script(&script))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_payloads::{Signer, Witness};
+    use neo_primitives::{UInt256, WitnessScope};
+    use neo_serialization::BinarySerializer;
+    use neo_storage::{StorageItem, StorageKey};
+    use neo_vm::StackItem;
+    use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+
+    fn seed_current_ledger(snapshot: &DataCache, index: u32) {
+        let hash = UInt256::from_bytes(&[0u8; 32]).expect("zero hash");
+        let bytes = LedgerContract::new()
+            .serialize_hash_index_state(&hash, index)
+            .expect("hash index state");
+        snapshot.add(
+            StorageKey::new(LedgerContract::ID, vec![12]),
+            StorageItem::from_bytes(bytes),
+        );
+    }
+
+    fn mint_gas(snapshot: &DataCache, account: &UInt160, datoshi: i64) {
+        let item = StackItem::from_struct(vec![StackItem::from_int(BigInt::from(datoshi))]);
+        let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
+        let mut key = vec![20u8];
+        key.extend_from_slice(&account.to_bytes());
+        snapshot.add(
+            StorageKey::new(GasToken::ID, key),
+            StorageItem::from_bytes(bytes),
+        );
+    }
+
+    fn standard_shape_transaction(account: UInt160) -> Transaction {
+        let public_key = [2u8; 33];
+        let verification =
+            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+                &public_key,
+            );
+        let mut invocation = vec![OpCode::PUSHDATA1.byte(), 64];
+        invocation.extend_from_slice(&[0u8; 64]);
+
+        let mut tx = Transaction::new();
+        tx.set_nonce(1);
+        tx.set_system_fee(100);
+        tx.set_network_fee(3_000_000);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
+        tx.set_signers(vec![Signer::new(account, WitnessScope::NONE)]);
+        tx.set_witnesses(vec![Witness::new_with_scripts(invocation, verification)]);
+        tx
+    }
+
+    #[test]
+    fn oracle_response_fee_sum_uses_csharp_unchecked_long_arithmetic() {
+        let mut tx = Transaction::new();
+        tx.set_system_fee(i64::MAX);
+        tx.set_network_fee(1);
+
+        assert!(oracle_response_gas_matches(&tx, i64::MIN));
+        assert!(!oracle_response_gas_matches(&tx, i64::MAX));
+    }
+
+    #[test]
+    fn missing_core_policy_fee_settings_fail_closed() {
+        let snapshot = DataCache::new(false);
+        seed_current_ledger(&snapshot, 0);
+        let public_key = [2u8; 33];
+        let account = UInt160::from_script(
+            &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+                &public_key,
+            ),
+        );
+        mint_gas(&snapshot, &account, 100_000_000);
+        let tx = standard_shape_transaction(account);
+
+        assert_eq!(
+            verify_state_dependent(
+                &tx,
+                &snapshot,
+                &ProtocolSettings::default(),
+                &BigInt::from(0),
+                false,
+            ),
+            VerifyResult::UnableToVerify,
+            "C# Policy.GetFeePerByte/GetExecFeeFactor index initialized storage; missing keys must not fall back to defaults and admit a transaction"
+        );
+    }
+
+    #[test]
+    fn policy_blocked_reader_uses_native_contract_projection() {
+        let source = include_str!("verification.rs");
+        let start = source.find("fn policy_is_blocked").expect("reader exists");
+        let end = source[start..]
+            .find("fn max_valid_until_block_increment")
+            .map(|offset| start + offset)
+            .expect("next reader exists");
+        let reader = &source[start..end];
+
+        assert!(reader.contains("PolicyContract::is_blocked_snapshot"));
+        assert!(!reader.contains("POLICY_PREFIX_BLOCKED_ACCOUNT"));
+        assert!(!reader.contains("StorageKey::new(POLICY_CONTRACT_ID"));
+    }
+
+    #[test]
+    fn max_valid_until_block_increment_uses_native_policy_reader() {
+        let source = include_str!("verification.rs");
+        let start = source
+            .find("fn max_valid_until_block_increment")
+            .expect("reader exists");
+        let end = source[start..]
+            .find("/// C# `NativeContract.GAS.BalanceOf")
+            .map(|offset| start + offset)
+            .expect("next helper exists");
+        let reader = &source[start..end];
+
+        assert!(reader.contains("get_max_valid_until_block_increment_snapshot"));
+        assert!(!reader.contains("StorageKey::new(POLICY_CONTRACT_ID"));
+        assert!(!reader.contains("POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT"));
+    }
+
+    #[test]
+    fn attribute_network_fee_delegates_to_payload_attribute_formula() {
+        let source = include_str!("verification.rs");
+        let start = source
+            .find("fn attribute_network_fee")
+            .expect("attribute fee helper exists");
+        let end = source[start..]
+            .find("fn bft_address")
+            .map(|offset| start + offset)
+            .expect("next helper exists");
+        let helper = &source[start..end];
+
+        assert!(helper.contains("attribute.calculate_network_fee(snapshot, tx)"));
+        assert!(!helper.contains("saturating_mul"));
+        assert!(!helper.contains("TransactionAttribute::Conflicts"));
+        assert!(!helper.contains("TransactionAttribute::NotaryAssisted"));
+    }
 }

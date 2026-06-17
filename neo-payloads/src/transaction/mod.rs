@@ -10,7 +10,6 @@ use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::Interoperable;
-use neo_vm::StackItem;
 use parking_lot::Mutex;
 use rand::RngCore;
 use rand::rngs::OsRng;
@@ -134,10 +133,10 @@ impl crate::VerifiableExt for Transaction {
         self.signers().iter().map(|s| s.account).collect()
     }
     fn witnesses(&self) -> Vec<&crate::Witness> {
-        Vec::new()
+        self.witnesses.iter().collect()
     }
     fn witnesses_mut(&mut self) -> Vec<&mut crate::Witness> {
-        Vec::new()
+        self.witnesses.iter_mut().collect()
     }
     /// A transaction is its own verification script container. Returning `Some`
     /// here makes witness verification install the real `Transaction` (with its
@@ -149,6 +148,10 @@ impl crate::VerifiableExt for Transaction {
     /// witness-rule, and OracleResponse transactions that C# accepts.
     fn as_transaction(&self) -> Option<&crate::Transaction> {
         Some(self)
+    }
+
+    fn to_verifiable_container(&self) -> Option<std::sync::Arc<dyn neo_primitives::Verifiable>> {
+        Some(std::sync::Arc::new(self.clone()))
     }
 }
 mod serialization;

@@ -56,6 +56,7 @@ use crate::Keys;
 use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Trie};
 use neo_primitives::{UINT256_SIZE, UInt256};
+use neo_storage::persistence::{SeekDirection, Store};
 use parking_lot::{Mutex, RwLock};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -111,6 +112,8 @@ pub struct MptStore {
     /// `false`, applying a block prunes the nodes the change set made
     /// unreachable, so only the *current* root stays resolvable.
     full_state: bool,
+    /// Optional durable backend for the same flat C# byte namespace.
+    backing: Option<Arc<dyn Store>>,
 }
 
 /// Immutable, point-in-time view of an [`MptStore`] — the analogue of
@@ -235,7 +238,24 @@ impl MptStore {
             kv: RwLock::new(Arc::new(BTreeMap::new())),
             write_gate: Mutex::new(()),
             full_state,
+            backing: None,
         }
+    }
+
+    /// Opens a store over an existing durable byte namespace.
+    ///
+    /// The backing store is read into the in-process generation map on
+    /// construction, and every later block overlay is committed through a
+    /// backing snapshot before the live generation advances.
+    pub fn from_store(backing: Arc<dyn Store>, full_state: bool) -> MptResult<Self> {
+        let snapshot = backing.snapshot();
+        let map = snapshot.find(None, SeekDirection::Forward).collect();
+        Ok(Self {
+            kv: RwLock::new(Arc::new(map)),
+            write_gate: Mutex::new(()),
+            full_state,
+            backing: Some(backing),
+        })
     }
 
     /// Returns whether historical trie versions are retained.
@@ -347,6 +367,8 @@ impl MptStore {
         // instead of cloning the map.
         drop(batch);
 
+        self.commit_overlay_to_backing(&overlay)?;
+
         let mut kv = self.kv.write();
         let map = Arc::make_mut(&mut *kv);
         for (key, value) in overlay {
@@ -360,6 +382,35 @@ impl MptStore {
             }
         }
         Ok(new_root)
+    }
+
+    fn commit_overlay_to_backing(
+        &self,
+        overlay: &BTreeMap<Vec<u8>, Option<Vec<u8>>>,
+    ) -> MptResult<()> {
+        let Some(backing) = self.backing.as_ref() else {
+            return Ok(());
+        };
+        if overlay.is_empty() {
+            return Ok(());
+        }
+
+        let mut snapshot = backing.snapshot();
+        let writer = Arc::get_mut(&mut snapshot).ok_or_else(|| {
+            MptError::storage("unable to obtain mutable state-service backing snapshot for commit")
+        })?;
+        for (key, value) in overlay {
+            match value {
+                Some(value) => writer.put(key.clone(), value.clone()),
+                None => writer.delete(key.clone()),
+            }
+            .map_err(|err| {
+                MptError::storage(format!("state-service backing write failed: {err}"))
+            })?;
+        }
+        writer
+            .try_commit()
+            .map_err(|err| MptError::storage(format!("state-service backing commit failed: {err}")))
     }
 
     /// Returns the state-root record persisted for `index`, if any.
@@ -630,6 +681,29 @@ mod tests {
         let (_, root1_c, root2_c) = two_block_store(false);
         assert_eq!(root1_a, root1_c);
         assert_eq!(root2_a, root2_c);
+    }
+
+    #[test]
+    fn backed_store_reopens_local_state_root_records() {
+        use neo_storage::persistence::providers::memory_store::MemoryStore;
+        use neo_storage::persistence::store::Store;
+
+        let backing: Arc<dyn Store> = Arc::new(MemoryStore::new());
+        let store = Arc::new(MptStore::from_store(Arc::clone(&backing), true).expect("open store"));
+        let root1 = store
+            .apply_block_changes(1, None, &[put(5, &[0xAA, 0x01], b"v1")])
+            .expect("block 1 applies");
+
+        let reopened = MptStore::from_store(Arc::clone(&backing), true).expect("reopen store");
+        assert_eq!(reopened.current_local_root_index(), Some(1));
+        assert_eq!(reopened.current_local_root_hash(), Some(root1));
+        assert_eq!(
+            reopened
+                .get_state_root(1)
+                .expect("reopened state root")
+                .root_hash(),
+            &root1
+        );
     }
 
     #[test]

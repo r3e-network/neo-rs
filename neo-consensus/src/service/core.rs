@@ -5,6 +5,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use zeroize::Zeroizing;
 
+/// Neo N3 v3.10.0 `ProtocolSettings.Default.MaxTransactionsPerBlock`.
+pub(super) const DEFAULT_MAX_TRANSACTIONS_PER_BLOCK: u32 = 512;
+
 /// The main consensus service implementing dBFT 2.0
 pub struct ConsensusService {
     /// Consensus context
@@ -18,6 +21,8 @@ pub struct ConsensusService {
     pub(super) signer: Option<Arc<dyn ConsensusSigner>>,
     /// Event sender
     pub(super) event_tx: mpsc::Sender<ConsensusEvent>,
+    /// Protocol `MaxTransactionsPerBlock` limit used for proposal assembly and validation.
+    pub(super) max_transactions_per_block: u32,
     /// Whether the service is running
     pub(super) running: bool,
 }
@@ -38,6 +43,7 @@ impl ConsensusService {
             private_key: Zeroizing::new(private_key),
             signer: None,
             event_tx,
+            max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
             running: false,
         }
     }
@@ -56,6 +62,7 @@ impl ConsensusService {
             private_key: Zeroizing::new(private_key),
             signer: None,
             event_tx,
+            max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
             running: false,
         }
     }

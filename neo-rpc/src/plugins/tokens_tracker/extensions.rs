@@ -63,11 +63,26 @@ where
     TKey: Serializable,
     TValue: Serializable,
 {
-    let start_vec = start_key.to_vec();
+    if start_key > end_key {
+        return Ok(Vec::new());
+    }
+
+    let shared_prefix_len = start_key
+        .iter()
+        .zip(end_key.iter())
+        .take_while(|(left, right)| left == right)
+        .count();
+    let shared_prefix = start_key[..shared_prefix_len].to_vec();
     let mut results = Vec::new();
 
     let snapshot = db.snapshot();
-    for (key_bytes, value_bytes) in snapshot.find(Some(&start_vec), SeekDirection::Forward) {
+    for (key_bytes, value_bytes) in snapshot.find(
+        (!shared_prefix.is_empty()).then_some(&shared_prefix),
+        SeekDirection::Forward,
+    ) {
+        if key_bytes.as_slice() < start_key {
+            continue;
+        }
         if key_bytes.as_slice() > end_key {
             break;
         }

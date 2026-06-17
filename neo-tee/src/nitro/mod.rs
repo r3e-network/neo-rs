@@ -44,15 +44,15 @@ pub mod signer;
 pub mod vsock;
 
 pub use attestation::{
-    parse_cose_sign1, verify_pki_chain, CoseSign1, NitroAttestationDoc, NitroValidationOptions,
-    PkiVerification, NITRO_ROOT_G1_SHA256_FINGERPRINT,
+    CoseSign1, NITRO_ROOT_G1_SHA256_FINGERPRINT, NitroAttestationDoc, NitroValidationOptions,
+    PkiVerification, parse_cose_sign1, verify_pki_chain,
 };
 pub use ordering::{
-    build_ordering_proof, verify_ordering_proof, OrderingProof, OrderingVerification,
+    OrderingProof, OrderingVerification, build_ordering_proof, verify_ordering_proof,
 };
 pub use platform::{PlatformKind, TeePlatform};
-pub use signer::{script_hash_from_public_key, NitroEnclaveSigner};
+pub use signer::{NitroEnclaveSigner, script_hash_from_public_key};
 pub use vsock::{
-    decode_frame, encode_frame, EnclaveRequest, EnclaveResponse, MockTransport, OrderTxEntry,
-    RealVsockTransport, VsockAddr, VsockTransport, MAX_FRAME_LEN, PROTOCOL_VERSION,
+    EnclaveRequest, EnclaveResponse, MAX_FRAME_LEN, MockTransport, OrderTxEntry, PROTOCOL_VERSION,
+    RealVsockTransport, VsockAddr, VsockTransport, decode_frame, encode_frame,
 };

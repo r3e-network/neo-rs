@@ -310,6 +310,32 @@ mod tests {
             "must return the transaction itself"
         );
         assert_eq!(as_tx.signers().len(), 1);
+        assert_eq!(tx.witnesses().len(), 1);
+        assert_eq!(
+            crate::VerifiableExt::witnesses(&tx).len(),
+            1,
+            "verification helpers must see Transaction.Witnesses like C#"
+        );
+    }
+
+    #[test]
+    fn serializable_payload_hash_is_single_sha256_of_unsigned_transaction() {
+        let tx = transaction_with_script(vec![OpCode::RET.byte()]);
+        let unsigned = tx.try_get_hash_data().expect("unsigned transaction");
+        let first_digest = Crypto::sha256(&unsigned);
+        let second_digest = Crypto::sha256(&first_digest);
+        let expected_single = UInt256::from(first_digest);
+        let unexpected_double = UInt256::from(second_digest);
+
+        assert_eq!(
+            <Transaction as neo_primitives::SerializablePayload>::hash(&tx),
+            expected_single
+        );
+        assert_eq!(tx.try_hash().expect("transaction hash"), expected_single);
+        assert_ne!(
+            <Transaction as neo_primitives::SerializablePayload>::hash(&tx),
+            unexpected_double
+        );
     }
 
     #[test]
@@ -331,6 +357,20 @@ mod tests {
         let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
 
         assert!(tx.try_hash().is_err());
+        assert!(!matches!(*tx._hash.lock(), Some(hash) if hash == UInt256::zero()));
+    }
+
+    #[test]
+    fn serializable_payload_hash_fails_closed_for_oversized_script() {
+        let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+        let empty_hash = UInt256::from(Crypto::sha256(&[]));
+        let trait_hash = <Transaction as neo_primitives::SerializablePayload>::hash(&tx);
+
+        assert_eq!(trait_hash, UInt256::zero());
+        assert_ne!(
+            trait_hash, empty_hash,
+            "invalid transactions must not be assigned SHA256(empty) by the infallible SerializablePayload API"
+        );
         assert!(!matches!(*tx._hash.lock(), Some(hash) if hash == UInt256::zero()));
     }
 

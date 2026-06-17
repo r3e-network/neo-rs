@@ -238,10 +238,9 @@ impl PartialOrd for StorageKey {
 
 impl Ord for StorageKey {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.id.cmp(&other.id) {
-            std::cmp::Ordering::Equal => self.key.cmp(&other.key),
-            other => other,
-        }
+        let left = self.as_bytes();
+        let right = other.as_bytes();
+        left.as_ref().cmp(right.as_ref())
     }
 }
 
@@ -354,13 +353,16 @@ mod tests {
     }
 
     #[test]
-    fn test_storage_key_ordering() {
+    fn test_storage_key_ordering_matches_serialized_bytes() {
         let key1 = StorageKey::new(-1, vec![0x01]);
         let key2 = StorageKey::new(-1, vec![0x02]);
         let key3 = StorageKey::new(0, vec![0x01]);
 
         assert!(key1 < key2);
-        assert!(key1 < key3);
+        assert!(
+            key3 < key1,
+            "C# DataCache orders StorageKey.ToArray() with ByteArrayComparer, so little-endian id bytes drive cross-contract ordering"
+        );
     }
 
     #[test]
@@ -379,7 +381,28 @@ mod tests {
         let key1 = StorageKey::new(-5, vec![0xFF]);
         let key2 = StorageKey::new(10, vec![0x00]);
 
-        assert!(key1 < key2);
+        assert!(key2 < key1);
+    }
+
+    #[test]
+    fn storage_key_ord_matches_csharp_v310_byte_array_comparer() {
+        let mut keys = vec![
+            StorageKey::new(-5, vec![0x01]),
+            StorageKey::new(10, vec![0x01]),
+            StorageKey::new(0, vec![0xFF]),
+            StorageKey::new(-1, vec![0x00]),
+        ];
+
+        let mut expected: Vec<_> = keys.iter().map(StorageKey::to_array).collect();
+        expected.sort();
+
+        keys.sort();
+
+        assert_eq!(
+            keys.iter().map(StorageKey::to_array).collect::<Vec<_>>(),
+            expected,
+            "C# v3.10 DataCache.Seek orders p.Key.ToArray() using ByteArrayComparer.SequenceCompareTo"
+        );
     }
 
     #[test]

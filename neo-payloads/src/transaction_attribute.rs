@@ -5,8 +5,14 @@ use super::{
 };
 use base64::{Engine as _, engine::general_purpose};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_storage::DataCache;
+use neo_storage::{DataCache, StorageKey};
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
+
+const POLICY_CONTRACT_ID: i32 = -7;
+const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
+const DEFAULT_ATTRIBUTE_FEE: i64 = 0;
 
 /// Represents an attribute of a transaction.
 /// Matches C# TransactionAttribute abstract class.
@@ -140,8 +146,13 @@ impl TransactionAttribute {
 
     /// Calculate the network fee for this attribute.
     /// Matches C# CalculateNetworkFee method.
-    pub fn calculate_network_fee(&self, _snapshot: &DataCache, _tx: &Transaction) -> i64 {
-        0
+    pub fn calculate_network_fee(&self, snapshot: &DataCache, tx: &Transaction) -> i64 {
+        let base = policy_attribute_fee(snapshot, self.type_id());
+        match self {
+            Self::Conflicts(_) => tx.signers().len() as i64 * base,
+            Self::NotaryAssisted(attr) => (i64::from(attr.nkeys) + 1) * base,
+            _ => base,
+        }
     }
 
     /// Converts the attribute to a JSON object.
@@ -184,10 +195,23 @@ impl TransactionAttribute {
     }
 }
 
+fn policy_attribute_fee(snapshot: &DataCache, attribute_type: TransactionAttributeType) -> i64 {
+    let key = StorageKey::new(
+        POLICY_CONTRACT_ID,
+        vec![POLICY_PREFIX_ATTRIBUTE_FEE, attribute_type.to_byte()],
+    );
+    snapshot
+        .get(&key)
+        .and_then(|item| BigInt::from_signed_bytes_le(&item.value_bytes()).to_i64())
+        .unwrap_or(DEFAULT_ATTRIBUTE_FEE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_primitives::UInt256;
+    use neo_primitives::{TransactionAttributeType, UInt160, UInt256, WitnessScope};
+    use neo_storage::{DataCache, StorageItem, StorageKey};
+    use num_bigint::BigInt;
 
     fn sample_attributes() -> Vec<TransactionAttribute> {
         vec![
@@ -234,5 +258,29 @@ mod tests {
 
         assert!(TransactionAttribute::Conflicts(Conflicts::new(UInt256::zero())).allow_multiple());
         assert!(!TransactionAttribute::NotaryAssisted(NotaryAssisted::new(1)).allow_multiple());
+    }
+
+    #[test]
+    fn network_fee_uses_policy_attribute_fee_like_csharp() {
+        let snapshot = DataCache::new(false);
+        snapshot.add(
+            StorageKey::new(
+                -7,
+                vec![20, TransactionAttributeType::NotaryAssisted.to_byte()],
+            ),
+            StorageItem::from_bytes(BigInt::from(1_000_000i64).to_signed_bytes_le()),
+        );
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![crate::Signer::new(
+            UInt160::zero(),
+            WitnessScope::NONE,
+        )]);
+        let attribute = TransactionAttribute::NotaryAssisted(NotaryAssisted::new(4));
+
+        assert_eq!(
+            attribute.calculate_network_fee(&snapshot, &tx),
+            5_000_000,
+            "C# NotaryAssisted.CalculateNetworkFee returns (NKeys + 1) * Policy.GetAttributeFeeV1"
+        );
     }
 }

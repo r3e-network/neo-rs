@@ -168,8 +168,15 @@ impl Helper {
 
         let max_gas = max_gas.min(Self::MAX_VERIFICATION_GAS);
 
-        // Get script hashes to verify
-        let hashes = verifiable.script_hashes_for_verifying(snapshot);
+        // Get script hashes to verify. For known Neo payloads, resolve through
+        // the execution-layer provider so Header/Block can mirror C#'s
+        // Ledger-backed `GetScriptHashesForVerifying` without making
+        // `neo-payloads` depend on native contracts.
+        let hashes = match known_script_hashes_for_verifying(verifiable, snapshot) {
+            Ok(Some(hashes)) => hashes,
+            Ok(None) => verifiable.script_hashes_for_verifying(snapshot),
+            Err(_) => return false,
+        };
 
         // Get witnesses
         let witnesses = verifiable.witnesses();
@@ -236,15 +243,13 @@ impl Helper {
         let container_hash = verifiable
             .hash()
             .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
-        let container: Arc<dyn Verifiable> = if let Some(transaction) = verifiable.as_transaction()
-        {
-            Arc::new(transaction.clone())
-        } else {
-            Arc::new(VerifiableHashContainer {
-                hash: container_hash,
-                hash_data: verifiable.hash_data(),
-            })
-        };
+        let container: Arc<dyn Verifiable> =
+            verifiable.to_verifiable_container().unwrap_or_else(|| {
+                Arc::new(VerifiableHashContainer {
+                    hash: container_hash,
+                    hash_data: verifiable.hash_data(),
+                })
+            });
         let mut engine = ApplicationEngine::new(
             TriggerType::Verification,
             Some(container),
@@ -361,16 +366,57 @@ impl Helper {
     /// Validates that a script doesn't contain invalid opcodes.
     /// Basic validation to catch obviously malformed scripts.
     fn is_valid_script(script: &[u8]) -> bool {
-        // Empty scripts are valid (for contract verification)
-        if script.is_empty() {
-            return true;
-        }
-
-        // Script must be readable (basic sanity check)
-        // Full validation would require parsing all opcodes
-        // Validate minimum script length for meaningful operations
-        true
+        neo_vm_rs::validate_strict_script(script).is_ok()
     }
+}
+
+/// Resolves C# `IVerifiable.GetScriptHashesForVerifying` for payloads whose
+/// verifying hashes need execution-layer native-contract state.
+pub(crate) fn known_script_hashes_for_verifying(
+    verifiable: &dyn Verifiable,
+    snapshot: &DataCache,
+) -> CoreResult<Option<Vec<UInt160>>> {
+    if let Some(tx) = verifiable
+        .as_any()
+        .downcast_ref::<neo_payloads::Transaction>()
+    {
+        return Ok(Some(tx.script_hashes_for_verifying(snapshot)));
+    }
+    if let Some(payload) = verifiable
+        .as_any()
+        .downcast_ref::<neo_payloads::ExtensiblePayload>()
+    {
+        return Ok(Some(payload.script_hashes_for_verifying(snapshot)));
+    }
+    if let Some(header) = verifiable.as_any().downcast_ref::<neo_payloads::Header>() {
+        return header_script_hashes_for_verifying(header, snapshot).map(Some);
+    }
+    if let Some(block) = verifiable.as_any().downcast_ref::<neo_payloads::Block>() {
+        return header_script_hashes_for_verifying(&block.header, snapshot).map(Some);
+    }
+    Ok(None)
+}
+
+fn header_script_hashes_for_verifying(
+    header: &neo_payloads::Header,
+    snapshot: &DataCache,
+) -> CoreResult<Vec<UInt160>> {
+    if *header.prev_hash() == UInt256::zero() {
+        return Ok(vec![header.witness.script_hash()]);
+    }
+
+    let ledger = crate::native_contract_provider::NativeContractLookup::lookup_ledger_contract()
+        .ok_or_else(|| {
+            CoreError::invalid_operation(
+                "Header witness verification requires the Ledger native contract",
+            )
+        })?;
+    let previous = ledger
+        .trimmed_block(snapshot, header.prev_hash())?
+        .ok_or_else(|| {
+            CoreError::invalid_operation(format!("Block {} was not found", header.prev_hash()))
+        })?;
+    Ok(vec![*previous.header.next_consensus()])
 }
 
 /// Minimal script container wrapper used during witness verification.
@@ -412,5 +458,289 @@ impl VerifiableExt for VerifiableHashContainer {
 
     fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_payloads::{Block, Header, OracleResponse, Signer, Transaction, TransactionAttribute};
+    use neo_primitives::{OracleResponseCode, WitnessScope};
+
+    #[test]
+    fn verify_witnesses_uses_transaction_witnesses_for_count_check() {
+        let witness = Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1.byte()]);
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_signers(vec![Signer::new(witness.script_hash(), WitnessScope::NONE)]);
+        tx.set_script(vec![OpCode::RET.byte()]);
+        tx.set_witnesses(vec![witness]);
+
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        assert!(
+            Helper::verify_witnesses(&tx, &settings, &snapshot, Helper::MAX_VERIFICATION_GAS),
+            "transactions must expose their witnesses before the engine executes, matching C# Transaction.Witnesses"
+        );
+    }
+
+    #[test]
+    fn verify_witnesses_uses_genesis_header_witnesses() {
+        let witness = Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1.byte()]);
+        let mut header = Header::new();
+        header.set_prev_hash(UInt256::zero());
+        header.witness = witness;
+
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        assert!(
+            Helper::verify_witnesses(&header, &settings, &snapshot, Helper::MAX_VERIFICATION_GAS),
+            "C# Header.IVerifiable exposes exactly one witness and uses Witness.ScriptHash for genesis headers"
+        );
+    }
+
+    #[test]
+    fn verify_witnesses_uses_genesis_block_header_witnesses() {
+        let witness = Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1.byte()]);
+        let mut block = Block::new();
+        block.header.set_prev_hash(UInt256::zero());
+        block.header.witness = witness;
+
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        assert!(
+            Helper::verify_witnesses(&block, &settings, &snapshot, Helper::MAX_VERIFICATION_GAS),
+            "C# Block.IVerifiable delegates witnesses and verifying hashes to Header"
+        );
+    }
+
+    #[test]
+    fn verify_witness_uses_verifiable_container_hook() {
+        let source = include_str!("helper.rs");
+        let start = source
+            .find("pub fn verify_witness<V: VerifiableExt>")
+            .expect("verify_witness function exists");
+        let end = source[start..]
+            .find("let mut engine = ApplicationEngine::new")
+            .map(|offset| start + offset)
+            .expect("engine construction exists");
+        let setup = &source[start..end];
+
+        assert!(
+            setup.contains("to_verifiable_container()"),
+            "Helper.VerifyWitness should install the actual C# IVerifiable-equivalent payload through VerifiableExt"
+        );
+        assert!(
+            !setup.contains("as_transaction()"),
+            "verification container selection must not regress to a transaction-only special case"
+        );
+    }
+
+    #[test]
+    fn verify_witness_uses_transaction_container_for_check_witness() {
+        let delegated_signer =
+            UInt160::parse("0x0102030405060708090a0b0c0d0e0f1011121314").unwrap();
+
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push(&delegated_signer.to_array());
+        builder
+            .emit_syscall("System.Runtime.CheckWitness")
+            .expect("CheckWitness syscall");
+        let witness = Witness::new_with_scripts(Vec::new(), builder.to_array());
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_script(vec![OpCode::RET.byte()]);
+        tx.set_signers(vec![
+            Signer::new(witness.script_hash(), WitnessScope::GLOBAL),
+            Signer::new(delegated_signer, WitnessScope::GLOBAL),
+        ]);
+        tx.set_witnesses(vec![witness.clone(), Witness::empty()]);
+
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        Helper::verify_witness(
+            &tx,
+            &settings,
+            &snapshot,
+            &witness.script_hash(),
+            &witness,
+            Helper::MAX_VERIFICATION_GAS,
+        )
+        .expect(
+            "CheckWitness inside transaction witness verification must see the real Transaction container",
+        );
+    }
+
+    #[test]
+    fn verify_witness_uses_transaction_container_for_current_signers() {
+        let second_signer = UInt160::parse("0x14131211100f0e0d0c0b0a090807060504030201").unwrap();
+
+        let mut builder = ScriptBuilder::new();
+        builder
+            .emit_syscall("System.Runtime.CurrentSigners")
+            .expect("CurrentSigners syscall");
+        builder.emit_opcode(OpCode::SIZE);
+        builder.emit_opcode(OpCode::PUSH2);
+        builder.emit_opcode(OpCode::NUMEQUAL);
+        let witness = Witness::new_with_scripts(Vec::new(), builder.to_array());
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_script(vec![OpCode::RET.byte()]);
+        tx.set_signers(vec![
+            Signer::new(witness.script_hash(), WitnessScope::NONE),
+            Signer::new(second_signer, WitnessScope::GLOBAL),
+        ]);
+        tx.set_witnesses(vec![witness.clone(), Witness::empty()]);
+
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        Helper::verify_witness(
+            &tx,
+            &settings,
+            &snapshot,
+            &witness.script_hash(),
+            &witness,
+            Helper::MAX_VERIFICATION_GAS,
+        )
+        .expect(
+            "CurrentSigners inside transaction witness verification must see the real Transaction container",
+        );
+    }
+
+    #[test]
+    fn verify_witness_uses_transaction_container_for_get_script_container() {
+        let mut builder = ScriptBuilder::new();
+        builder
+            .emit_syscall("System.Runtime.GetScriptContainer")
+            .expect("GetScriptContainer syscall");
+        builder.emit_push_int(2);
+        builder.emit_opcode(OpCode::PICKITEM);
+        builder.emit_push_int(0x0102_0304);
+        builder.emit_opcode(OpCode::NUMEQUAL);
+        let witness = Witness::new_with_scripts(Vec::new(), builder.to_array());
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_script(vec![OpCode::RET.byte()]);
+        tx.set_signers(vec![Signer::new(witness.script_hash(), WitnessScope::NONE)]);
+        tx.set_witnesses(vec![witness.clone()]);
+
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        Helper::verify_witness(
+            &tx,
+            &settings,
+            &snapshot,
+            &witness.script_hash(),
+            &witness,
+            Helper::MAX_VERIFICATION_GAS,
+        )
+        .expect(
+            "GetScriptContainer inside transaction witness verification must expose the real Transaction",
+        );
+    }
+
+    #[test]
+    fn oracle_response_check_witness_faults_when_request_is_missing() {
+        let delegated_signer =
+            UInt160::parse("0x0102030405060708090a0b0c0d0e0f1011121314").unwrap();
+
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push(&delegated_signer.to_array());
+        builder
+            .emit_syscall("System.Runtime.CheckWitness")
+            .expect("CheckWitness syscall");
+        builder.emit_opcode(OpCode::NOT);
+        let witness = Witness::new_with_scripts(Vec::new(), builder.to_array());
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_script(vec![OpCode::RET.byte()]);
+        tx.set_attributes(vec![TransactionAttribute::OracleResponse(
+            OracleResponse::new(7, OracleResponseCode::Success, Vec::new()),
+        )]);
+        tx.set_signers(vec![Signer::new(witness.script_hash(), WitnessScope::NONE)]);
+        tx.set_witnesses(vec![witness.clone()]);
+
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        assert!(
+            Helper::verify_witness(
+                &tx,
+                &settings,
+                &snapshot,
+                &witness.script_hash(),
+                &witness,
+                Helper::MAX_VERIFICATION_GAS,
+            )
+            .is_err(),
+            "C# CheckWitnessInternal faults when an OracleResponse request lookup is missing"
+        );
+    }
+
+    #[test]
+    fn verify_witness_rejects_strictly_invalid_verification_script_before_execution() {
+        let verification_script = vec![
+            OpCode::PUSH1.byte(),
+            OpCode::RET.byte(),
+            OpCode::JMP.byte(),
+            0x7f,
+        ];
+        let witness = Witness::new_with_scripts(Vec::new(), verification_script);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_script(vec![OpCode::RET.byte()]);
+        tx.set_signers(vec![Signer::new(witness.script_hash(), WitnessScope::NONE)]);
+        tx.set_witnesses(vec![witness.clone()]);
+
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        assert!(
+            Helper::verify_witness(
+                &tx,
+                &settings,
+                &snapshot,
+                &witness.script_hash(),
+                &witness,
+                Helper::MAX_VERIFICATION_GAS,
+            )
+            .is_err(),
+            "C# Helper.VerifyWitness constructs Script(verification, strict: true) before execution"
+        );
     }
 }

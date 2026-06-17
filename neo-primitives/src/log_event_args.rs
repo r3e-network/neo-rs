@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct LogEventArgs {
     /// The container that containing the executed script
-    pub script_container: Arc<dyn Verifiable>,
+    pub script_container: Option<Arc<dyn Verifiable>>,
 
     /// The script hash of the contract that sends the log
     pub script_hash: UInt160,
@@ -19,9 +19,13 @@ pub struct LogEventArgs {
 
 impl LogEventArgs {
     /// Initializes a new instance
-    pub fn new(container: Arc<dyn Verifiable>, script_hash: UInt160, message: String) -> Self {
+    pub fn new(
+        container: impl Into<Option<Arc<dyn Verifiable>>>,
+        script_hash: UInt160,
+        message: String,
+    ) -> Self {
         Self {
-            script_container: container,
+            script_container: container.into(),
             script_hash,
             message,
         }

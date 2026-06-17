@@ -43,22 +43,16 @@
 //! genesis NEO/GAS mints, Oracle price, …) happens inside
 //! `ContractManagement.OnPersistAsync`, which calls
 //! `contract.InitializeAsync(engine, hardfork)` for every native whose
-//! activation block is being persisted. The Rust
-//! `ContractManagement::on_persist` hook does not perform that yet, so
-//! [`persist_block_natives`] runs the equivalent
-//! [`NativeContract::initialize`] pass itself, immediately before the
-//! `OnPersist` hooks — the same observable order as C#, where
-//! ContractManagement is the first native in the OnPersist sequence.
-//! Similarly, the Rust `LedgerContract::on_persist`/`post_persist`
-//! hooks are read-only no-ops, so the block/transaction records C#
-//! writes there come from [`crate::ledger_records`] at the same stage
-//! boundaries.
+//! activation block is being persisted. Rust keeps the same observable
+//! ordering in `ContractManagement::on_persist`.
+//!
+//! The Rust `LedgerContract::on_persist`/`post_persist` hooks are
+//! read-only no-ops to avoid a crate cycle, so the block/transaction
+//! records C# writes there come from [`crate::ledger_records`] when the
+//! direct native hook loop reaches the Ledger contract's canonical slot.
 //!
 //! ## Remaining gaps (documented)
 //!
-//! - The native deploy *records* (`ContractManagement` `Prefix_Contract`
-//!   entries + `Deploy` notifications) are ContractManagement's job and
-//!   are not written here.
 //! - C# `GasToken.OnPersist` burns each transaction's system+network
 //!   fee from its sender and mints the network fees to the primary;
 //!   the Rust `GasToken` does not override `on_persist` yet, so fee
@@ -79,6 +73,7 @@ use neo_storage::DataCache;
 use neo_storage::StorageKey;
 use neo_storage::persistence::SeekDirection;
 use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use neo_vm_rs::VmState as VMState;
 
 /// C# genesis timestamp: `2016-07-15T15:08:21Z` in Unix milliseconds.
@@ -202,12 +197,32 @@ fn run_native_persist_hooks(
     contracts: &[Arc<dyn neo_execution::NativeContract>],
     engine: &mut ApplicationEngine,
     settings: &ProtocolSettings,
+    block: &Block,
+    block_hash: &UInt256,
     block_index: u32,
 ) -> CoreResult<()> {
     let trigger = engine.trigger_type();
     for contract in contracts {
         if !contract.is_active(settings, block_index) {
             continue;
+        }
+        if contract.id() == LEDGER_CONTRACT_ID {
+            let snapshot = engine.snapshot_cache();
+            match trigger {
+                TriggerType::OnPersist => {
+                    crate::ledger_records::LedgerRecords::write_on_persist_records(
+                        &snapshot, block, block_hash,
+                    )?;
+                }
+                TriggerType::PostPersist => {
+                    crate::ledger_records::LedgerRecords::write_post_persist_record(
+                        &snapshot,
+                        block_hash,
+                        block_index,
+                    )?;
+                }
+                _ => {}
+            }
         }
         let result = match trigger {
             TriggerType::OnPersist => contract.on_persist(engine),
@@ -280,24 +295,10 @@ pub fn persist_block_natives(
         None,
     )?;
 
-    // Native deployment-block initialization (C# ContractManagement
-    // .OnPersistAsync calling `InitializeAsync(engine, hardfork)` with
-    // `hardfork == ActiveIn`): run `initialize()` for every native
-    // whose activation block is this block. Genesis-active natives
-    // (ActiveIn == None) initialize at block 0; hardfork-activated
-    // natives initialize at their scheduled activation height. An
-    // UNCONFIGURED ActiveIn hardfork never initializes: C#
-    // IsInitializeBlock skips unconfigured hardforks ("treated as
-    // disabled"), even though C# IsActive treats the same contract as
-    // genesis-active — such a native runs its (no-op) hooks but is
-    // never deployed/initialized, and the Rust pipeline matches that.
-    //
-    // `NativeContract::is_initialize_block` is deliberately NOT used
-    // here: it also fires on later method-hardfork blocks (C# passes
-    // those hardforks to `InitializeAsync(engine, hf)`, which is a
-    // no-op unless `hf == ActiveIn`), but the parameterless Rust
-    // `initialize()` hook only models the `hf == ActiveIn` seeding —
-    // re-running it on such blocks would wrongly re-seed genesis state.
+    // Record which activation initializers will run inside
+    // ContractManagement.OnPersist. The execution itself must stay there so
+    // deploy records, InitializeAsync side-effects, and Deploy notifications
+    // retain the exact C# order.
     for contract in &contracts {
         let activation_height = match contract.active_in() {
             None => 0,
@@ -307,27 +308,18 @@ pub fn persist_block_natives(
             },
         };
         if activation_height == block_index {
-            contract.initialize(&mut engine).map_err(|e| {
-                CoreError::invalid_operation(format!(
-                    "native initialize for {} at block {block_index} failed: {e}",
-                    contract.name()
-                ))
-            })?;
             outcome.initialized.push(contract.name().to_string());
         }
     }
 
-    // LedgerContract.OnPersistAsync record writes (the Rust ledger
-    // hook is a read-only no-op; see `ledger_records`): the block-hash
-    // index entry, the trimmed block, the per-transaction records
-    // (VMState::NONE until executed), and the conflict stubs.
-    crate::ledger_records::LedgerRecords::write_on_persist_records(
-        &block_cache,
+    run_native_persist_hooks(
+        &contracts,
+        &mut engine,
+        settings,
         &block,
         &block_hash,
+        block_index,
     )?;
-
-    run_native_persist_hooks(&contracts, &mut engine, settings, block_index)?;
     outcome.on_persist_notifications = collect_notifications(&engine);
     outcome
         .application_executed
@@ -388,15 +380,16 @@ pub fn persist_block_natives(
         TriggerType::PostPersist,
         None,
         Arc::clone(&block_cache),
-        Some(block),
+        Some(Arc::clone(&block)),
         settings.clone(),
         0,
         None,
     )?;
-    run_native_persist_hooks(&contracts, &mut engine, settings, block_index)?;
-    // LedgerContract.PostPersistAsync: the current-block pointer.
-    crate::ledger_records::LedgerRecords::write_post_persist_record(
-        &block_cache,
+    run_native_persist_hooks(
+        &contracts,
+        &mut engine,
+        settings,
+        &block,
         &block_hash,
         block_index,
     )?;
@@ -428,11 +421,52 @@ fn application_executed(
         vm_state,
         engine.fault_exception().map(str::to_owned),
         engine.fee_consumed(),
-        engine.result_stack().iter().cloned().collect(),
+        engine
+            .result_stack()
+            .iter()
+            .map(stack_value_snapshot)
+            .collect(),
     );
     executed.notifications = engine.notifications().to_vec();
     executed.logs = engine.logs().to_vec();
     executed
+}
+
+fn stack_value_snapshot(item: &StackItem) -> StackValue {
+    match item {
+        StackItem::Null => StackValue::Null,
+        StackItem::Boolean(value) => StackValue::Boolean(*value),
+        StackItem::Integer(value) => match value.to_i64() {
+            Some(value) => StackValue::Integer(value),
+            None => StackValue::BigInteger(value.to_signed_bytes_le()),
+        },
+        StackItem::ByteString(bytes) => StackValue::ByteString(bytes.clone()),
+        StackItem::Buffer(buffer) => StackValue::Buffer(0, buffer.data()),
+        StackItem::Array(array) => StackValue::Array(
+            0,
+            array
+                .iter()
+                .map(|item| stack_value_snapshot(&item))
+                .collect(),
+        ),
+        StackItem::Struct(structure) => StackValue::Struct(
+            0,
+            structure
+                .iter()
+                .map(|item| stack_value_snapshot(&item))
+                .collect(),
+        ),
+        StackItem::Map(map) => StackValue::Map(
+            0,
+            map.iter()
+                .map(|(key, value)| (stack_value_snapshot(&key), stack_value_snapshot(&value)))
+                .collect(),
+        ),
+        StackItem::Pointer(pointer) => {
+            StackValue::Pointer(i64::try_from(pointer.position()).unwrap_or(i64::MAX))
+        }
+        StackItem::InteropInterface(_) => StackValue::Interop(0),
+    }
 }
 
 /// Copies the engine's emitted notifications into the outcome shape.
@@ -621,6 +655,26 @@ mod tests {
             transfer.state[2].as_int().expect("amount"),
             BigInt::from(100_000_000),
             "amount = the full NEO TotalAmount"
+        );
+        let first_on_persist_notification = outcome
+            .on_persist_notifications
+            .first()
+            .expect("genesis OnPersist emits native deploy notifications");
+        assert_eq!(
+            first_on_persist_notification.event_name, "Deploy",
+            "C# ContractManagement.OnPersist deploys genesis natives before NEO/GAS initialize Transfer events"
+        );
+        assert_eq!(
+            first_on_persist_notification.script_hash,
+            neo_native_contracts::ContractManagement::script_hash(),
+            "Deploy is emitted by ContractManagement"
+        );
+        assert_eq!(
+            first_on_persist_notification.state[0]
+                .as_bytes()
+                .expect("deployed native hash"),
+            neo_native_contracts::ContractManagement::script_hash().to_bytes(),
+            "the first genesis deployment is ContractManagement itself"
         );
         // No CommitteeChanged at genesis: the recomputed committee equals the
         // seeded standby committee.
@@ -842,10 +896,12 @@ mod tests {
         assert_eq!(tx2_exec.vm_state, neo_vm_rs::VmState::HALT);
         // PUSH1 leaves the integer 1 on the result stack.
         assert_eq!(tx2_exec.stack.len(), 1);
-        assert_eq!(
-            tx2_exec.stack[0].as_int().expect("stack int"),
-            BigInt::from(1)
-        );
+        let actual = match &tx2_exec.stack[0] {
+            StackValue::Integer(value) => BigInt::from(*value),
+            StackValue::BigInteger(bytes) => BigInt::from_signed_bytes_le(bytes),
+            item => panic!("expected integer stack value, got {item:?}"),
+        };
+        assert_eq!(actual, BigInt::from(1));
 
         // Ledger records carry the final VM states (C# mutates the
         // TransactionState stored by Ledger.OnPersist) and the block

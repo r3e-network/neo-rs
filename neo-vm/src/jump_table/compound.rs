@@ -394,7 +394,7 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
             byte_sequence_has_key(neo_vm_rs::StackValue::ByteString(bytes.clone()), &key)?
         }
         StackItem::Buffer(buffer) => {
-            byte_sequence_has_key(neo_vm_rs::StackValue::Buffer(buffer.data()), &key)?
+            byte_sequence_has_key(neo_vm_rs::StackValue::Buffer(0, buffer.data()), &key)?
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -621,7 +621,7 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         )?,
         StackItem::Buffer(buffer) => {
             let idx = normalize_index("Buffer", &key.as_integer()?, buffer.len())?;
-            pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(buffer.data()), idx)?
+            pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(0, buffer.data()), idx)?
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -873,7 +873,7 @@ pub(crate) fn pick_item_before543(
         }
         StackItem::Buffer(buffer) => {
             let idx = before543_checked_index("Buffer", &key, buffer.len())?;
-            pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(buffer.data()), idx)?
+            pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(0, buffer.data()), idx)?
         }
         _ => {
             return Err(VmError::invalid_type_simple(

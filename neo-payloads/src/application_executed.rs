@@ -10,7 +10,7 @@
 
 use crate::{NotifyEventArgs, Transaction};
 use neo_primitives::{LogEventArgs, TriggerType, UInt160};
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use neo_vm_rs::VmState as VMState;
 
 /// Result of executing a single transaction (mirrors C# ApplicationExecuted).
@@ -27,7 +27,7 @@ pub struct ApplicationExecuted {
     /// GAS consumed.
     pub gas_consumed: i64,
     /// Resulting evaluation stack.
-    pub stack: Vec<StackItem>,
+    pub stack: Vec<StackValue>,
     /// Notification events emitted by the contract.
     pub notifications: Vec<NotifyEventArgs>,
     /// Log events emitted by the contract.
@@ -42,7 +42,7 @@ impl ApplicationExecuted {
         vm_state: VMState,
         exception: Option<String>,
         gas_consumed: i64,
-        stack: Vec<StackItem>,
+        stack: Vec<StackValue>,
     ) -> Self {
         Self {
             transaction,

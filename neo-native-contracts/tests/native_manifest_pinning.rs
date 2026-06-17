@@ -4,7 +4,7 @@
 //! One test per native contract asserting the COMPOSED manifest ABI (via
 //! `build_native_contract_state`, the same path that produces the stored,
 //! consensus-observable native contract state) against hand-written
-//! expectations derived from the C# v3.9.1 sources — the `[ContractMethod]`
+//! expectations derived from the vendored C# v3.10.0 sources — the `[ContractMethod]`
 //! reflection parameter names and the `[ContractEvent]` constructor
 //! attributes — NOT from the Rust method/event tables the implementation
 //! itself uses.
@@ -202,6 +202,7 @@ mod native_handle_api {
         ContractManagement, CryptoLib, GasToken, LedgerContract, NeoToken, Notary, OracleContract,
         PolicyContract, RoleManagement, StdLib, Treasury,
     };
+    use neo_primitives::UInt160;
 
     #[test]
     fn native_contract_handle_hash_accessors_are_uniform() {
@@ -219,6 +220,71 @@ mod native_handle_api {
         assert_eq!(OracleContract::new().hash(), OracleContract::script_hash());
         assert_eq!(Notary::new().hash(), Notary::script_hash());
         assert_eq!(Treasury::new().hash(), Treasury::script_hash());
+    }
+
+    #[test]
+    fn native_contract_hashes_match_csharp_v3_10_fixture() {
+        let expected = [
+            (
+                ContractManagement::NAME,
+                ContractManagement::script_hash(),
+                "0xfffdc93764dbaddd97c48f252a53ea4643faa3fd",
+            ),
+            (
+                StdLib::NAME,
+                StdLib::script_hash(),
+                "0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0",
+            ),
+            (
+                CryptoLib::NAME,
+                CryptoLib::script_hash(),
+                "0x726cb6e0cd8628a1350a611384688911ab75f51b",
+            ),
+            (
+                LedgerContract::NAME,
+                LedgerContract::script_hash(),
+                "0xda65b600f7124ce6c79950c1772a36403104f2be",
+            ),
+            (
+                NeoToken::NAME,
+                NeoToken::script_hash(),
+                "0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5",
+            ),
+            (
+                GasToken::NAME,
+                GasToken::script_hash(),
+                "0xd2a4cff31913016155e38e474a2c06d08be276cf",
+            ),
+            (
+                PolicyContract::NAME,
+                PolicyContract::script_hash(),
+                "0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b",
+            ),
+            (
+                RoleManagement::NAME,
+                RoleManagement::script_hash(),
+                "0x49cf4e5378ffcd4dec034fd98a174c5491e395e2",
+            ),
+            (
+                OracleContract::NAME,
+                OracleContract::script_hash(),
+                "0xfe924b7cfe89ddd271abaf7210a80a7e11178758",
+            ),
+            (
+                Notary::NAME,
+                Notary::script_hash(),
+                "0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b",
+            ),
+            (
+                Treasury::NAME,
+                Treasury::script_hash(),
+                "0x156326f25b1b5d839a4d326aeaa75383c9563ac1",
+            ),
+        ];
+
+        for (name, actual, expected_hex) in expected {
+            assert_eq!(actual, UInt160::parse(expected_hex).unwrap(), "{name}");
+        }
     }
 }
 
@@ -601,7 +667,7 @@ fn notary_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // Notary declares no [ContractEvent] in C# v3.9.1.
+    // Notary declares no [ContractEvent] in C# v3.10.0.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -624,7 +690,7 @@ fn ledger_contract_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // LedgerContract declares no [ContractEvent] in C# v3.9.1.
+    // LedgerContract declares no [ContractEvent] in C# v3.10.0.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -667,7 +733,7 @@ fn std_lib_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // StdLib declares no [ContractEvent] in C# v3.9.1.
+    // StdLib declares no [ContractEvent] in C# v3.10.0.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -721,7 +787,7 @@ fn crypto_lib_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // CryptoLib declares no [ContractEvent] in C# v3.9.1.
+    // CryptoLib declares no [ContractEvent] in C# v3.10.0.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -741,7 +807,7 @@ fn treasury_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // Treasury declares no [ContractEvent] in C# v3.9.1.
+    // Treasury declares no [ContractEvent] in C# v3.10.0.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -771,6 +837,155 @@ fn native_method_safe_flags_follow_csharp_derivation() {
             );
         }
     }
+}
+
+/// C# `FungibleToken.Transfer` is inherited by both NEO and GAS and is
+/// annotated with `CpuFee = 1 << 17`, `StorageFee = 50`, and
+/// `RequiredCallFlags = States | AllowCall | AllowNotify`
+/// (`neo_csharp/.../Native/FungibleToken.cs`). The storage fee is charged by
+/// `NativeContract.Invoke` before dispatch, so omitting it on one token is a
+/// consensus fee divergence.
+#[test]
+fn fungible_token_transfer_fees_match_csharp_attribute() {
+    let required = (CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY).bits();
+    for (name, contract) in [
+        (
+            "NeoToken",
+            Box::new(NeoToken::new()) as Box<dyn NativeContract>,
+        ),
+        (
+            "GasToken",
+            Box::new(GasToken::new()) as Box<dyn NativeContract>,
+        ),
+    ] {
+        let transfer = contract
+            .methods()
+            .iter()
+            .find(|method| method.name == "transfer")
+            .expect("transfer method");
+        assert_eq!(transfer.cpu_fee, 1 << 17, "{name} transfer CpuFee");
+        assert_eq!(transfer.storage_fee, 50, "{name} transfer StorageFee");
+        assert_eq!(
+            transfer.required_call_flags, required,
+            "{name} transfer RequiredCallFlags"
+        );
+    }
+}
+
+/// C# v3.10.0 `PolicyContract.RecoverFund` is
+/// `[ContractMethod(Hardfork.HF_Faun, CpuFee = 1 << 15,
+/// RequiredCallFlags = CallFlags.States | CallFlags.AllowNotify)]`
+/// (`PolicyContract.cs:630`). Requiring `AllowCall` at the invocation gate
+/// would be stricter than C# and reject otherwise valid recoveries.
+#[test]
+fn policy_recover_fund_call_flags_match_csharp_attribute() {
+    let recover_fund = PolicyContract::new()
+        .methods()
+        .iter()
+        .find(|method| method.name == "recoverFund")
+        .expect("recoverFund method")
+        .clone();
+    assert_eq!(recover_fund.cpu_fee, 1 << 15);
+    assert_eq!(recover_fund.active_in, Some(Hardfork::HfFaun));
+    assert_eq!(
+        recover_fund.required_call_flags,
+        (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+    );
+}
+
+/// C# v3.10.0 keeps `getAttributeFee` and `setAttributeFee` as pre/post
+/// Echidna descriptor pairs: V0 is `DeprecatedIn HF_Echidna`, V1 is
+/// `ActiveIn HF_Echidna`. The ABI is unchanged, but the native method metadata
+/// is hardfork-gated and feeds the native method cache.
+#[test]
+fn policy_attribute_fee_method_gates_match_csharp_v3_10() {
+    let contract = PolicyContract::new();
+
+    let get_versions: Vec<_> = contract
+        .methods()
+        .iter()
+        .filter(|method| method.name == "getAttributeFee")
+        .collect();
+    assert_eq!(get_versions.len(), 2);
+    assert_eq!(get_versions[0].active_in, None);
+    assert_eq!(get_versions[0].deprecated_in, Some(Hardfork::HfEchidna));
+    assert_eq!(get_versions[0].cpu_fee, 1 << 15);
+    assert_eq!(
+        get_versions[0].required_call_flags,
+        CallFlags::READ_STATES.bits()
+    );
+    assert_eq!(get_versions[1].active_in, Some(Hardfork::HfEchidna));
+    assert_eq!(get_versions[1].deprecated_in, None);
+    assert_eq!(get_versions[1].cpu_fee, 1 << 15);
+    assert_eq!(
+        get_versions[1].required_call_flags,
+        CallFlags::READ_STATES.bits()
+    );
+
+    let set_versions: Vec<_> = contract
+        .methods()
+        .iter()
+        .filter(|method| method.name == "setAttributeFee")
+        .collect();
+    assert_eq!(set_versions.len(), 2);
+    assert_eq!(set_versions[0].active_in, None);
+    assert_eq!(set_versions[0].deprecated_in, Some(Hardfork::HfEchidna));
+    assert_eq!(set_versions[0].cpu_fee, 1 << 15);
+    assert_eq!(
+        set_versions[0].required_call_flags,
+        CallFlags::STATES.bits()
+    );
+    assert_eq!(set_versions[1].active_in, Some(Hardfork::HfEchidna));
+    assert_eq!(set_versions[1].deprecated_in, None);
+    assert_eq!(set_versions[1].cpu_fee, 1 << 15);
+    assert_eq!(
+        set_versions[1].required_call_flags,
+        CallFlags::STATES.bits()
+    );
+}
+
+/// Vendored C# v3.10.0 `CryptoLib.cs` has two `verifyWithECDsa`
+/// registrations (genesis V0 deprecated at Cockatrice, Cockatrice V1) and one
+/// `verifyWithEd25519` registration (active at Echidna). There is no
+/// `HF_Gorgon` native CryptoLib registration in the v3.10.0 reference, so
+/// Rust must not refresh CryptoLib or change its verification behavior at
+/// Gorgon.
+#[test]
+fn crypto_lib_signature_method_gates_match_csharp_v3_10() {
+    let contract = CryptoLib::new();
+
+    let ed25519: Vec<_> = contract
+        .methods()
+        .iter()
+        .filter(|method| method.name == "verifyWithEd25519")
+        .collect();
+    assert_eq!(ed25519.len(), 1);
+    assert_eq!(ed25519[0].active_in, Some(Hardfork::HfEchidna));
+    assert_eq!(ed25519[0].deprecated_in, None);
+
+    let ecdsa: Vec<_> = contract
+        .methods()
+        .iter()
+        .filter(|method| method.name == "verifyWithECDsa")
+        .collect();
+    assert_eq!(ecdsa.len(), 2);
+    assert_eq!(ecdsa[0].active_in, None);
+    assert_eq!(ecdsa[0].deprecated_in, Some(Hardfork::HfCockatrice));
+    assert_eq!(
+        ecdsa[0].parameter_names,
+        ["message", "pubkey", "signature", "curve"]
+    );
+    assert_eq!(ecdsa[1].active_in, Some(Hardfork::HfCockatrice));
+    assert_eq!(ecdsa[1].deprecated_in, None);
+    assert_eq!(
+        ecdsa[1].parameter_names,
+        ["message", "pubkey", "signature", "curveHash"]
+    );
+
+    assert!(
+        !contract.used_hardforks().contains(&Hardfork::HfGorgon),
+        "CryptoLib must not gain a Rust-only Gorgon refresh"
+    );
 }
 
 /// Pins the SAFE-method set of every composed native manifest against the

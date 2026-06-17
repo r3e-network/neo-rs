@@ -1,10 +1,12 @@
 //! ContractEventDescriptor - matches C# Neo.SmartContract.Manifest.ContractEventDescriptor exactly
 
 use crate::manifest::ContractParameterDefinition;
-use crate::manifest::stack_value_helpers::{decode_stack_value_objects, required_struct_fields};
+use crate::manifest::stack_value_helpers::{
+    decode_stack_value_objects, required_struct_fields, stack_value_to_utf8_string,
+};
 use neo_error::{CoreError, CoreResult};
 use neo_vm::Interoperable;
-use neo_vm::StackItem;
+use neo_vm::InteroperableError;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 
@@ -54,12 +56,10 @@ impl ContractEventDescriptor {
         let parameters = obj
             .get("parameters")
             .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|p| ContractParameterDefinition::from_json(p).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+            .ok_or_else(|| CoreError::other("Missing parameters"))?
+            .iter()
+            .map(ContractParameterDefinition::from_json)
+            .collect::<CoreResult<Vec<_>>>()?;
 
         Self::new(name, parameters)
     }
@@ -80,55 +80,44 @@ impl ContractEventDescriptor {
 
     /// Converts to a neo-vm-rs stack value (matches C# `ContractEventDescriptor.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::ByteString(self.name.as_bytes().to_vec()),
-            StackValue::Array(
-                self.parameters
-                    .iter()
-                    .map(ContractParameterDefinition::to_stack_value)
-                    .collect(),
-            ),
-        ])
+        StackValue::Struct(
+            0,
+            vec![
+                StackValue::ByteString(self.name.as_bytes().to_vec()),
+                StackValue::Array(
+                    0,
+                    self.parameters
+                        .iter()
+                        .map(ContractParameterDefinition::to_stack_value)
+                        .collect(),
+                ),
+            ],
+        )
     }
 
     /// Updates this event descriptor from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = required_struct_fields(stack_value, "ContractEventDescriptor", 2)?;
 
-        if let Some(bytes) = items[0].to_byte_string_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
-        }
+        self.name = stack_value_to_utf8_string(&items[0], "ContractEventDescriptor name")?;
 
-        if let Some(parameters) = decode_stack_value_objects(
+        self.parameters = decode_stack_value_objects(
             items[1].clone(),
             ContractParameterDefinition::from_stack_value,
-        )? {
-            self.parameters = parameters;
-        }
+        )?;
 
         Ok(())
     }
 }
 
 impl Interoperable for ContractEventDescriptor {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), neo_vm::VmError> {
-        let sv = StackValue::try_from(stack_item).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractEventDescriptor StackItem to StackValue: {error}"
-            ))
-        })?;
-        self.from_stack_value(sv)
-            .map_err(|e| neo_vm::VmError::invalid_operation_msg(e.to_string()))
+    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
+        self.from_stack_value(value)
+            .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, neo_vm::VmError> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            neo_vm::VmError::invalid_operation_msg(format!(
-                "Failed to convert ContractEventDescriptor StackValue to StackItem: {error}"
-            ))
-        })
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(self.to_stack_value())
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {
@@ -159,32 +148,36 @@ mod tests {
 
         assert_eq!(
             event.to_stack_value(),
-            StackValue::Struct(vec![
-                StackValue::ByteString(b"Transfer".to_vec()),
-                StackValue::Array(vec![
-                    StackValue::Struct(vec![
-                        StackValue::ByteString(b"from".to_vec()),
-                        StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
-                    ]),
-                    StackValue::Struct(vec![
-                        StackValue::ByteString(b"amount".to_vec()),
-                        StackValue::Integer(ContractParameterType::Integer as u8 as i64),
-                    ]),
-                ]),
-            ])
+            StackValue::Struct(
+                0,
+                vec![
+                    StackValue::ByteString(b"Transfer".to_vec()),
+                    StackValue::Array(
+                        0,
+                        vec![
+                            StackValue::Struct(
+                                0,
+                                vec![
+                                    StackValue::ByteString(b"from".to_vec()),
+                                    StackValue::Integer(
+                                        ContractParameterType::Hash160 as u8 as i64
+                                    ),
+                                ]
+                            ),
+                            StackValue::Struct(
+                                0,
+                                vec![
+                                    StackValue::ByteString(b"amount".to_vec()),
+                                    StackValue::Integer(
+                                        ContractParameterType::Integer as u8 as i64
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
+            )
         );
-    }
-
-    #[test]
-    fn event_descriptor_stack_item_projection_matches_stack_value_projection() {
-        let event = ContractEventDescriptor::new(
-            "Notify".to_string(),
-            vec![parameter("flag", ContractParameterType::Boolean)],
-        )
-        .unwrap();
-
-        let expected = StackItem::try_from(event.to_stack_value()).unwrap();
-        assert_eq!(event.to_stack_item().unwrap(), expected);
     }
 
     #[test]
@@ -192,13 +185,22 @@ mod tests {
         let mut event = ContractEventDescriptor::default();
 
         event
-            .from_stack_value(StackValue::Struct(vec![
-                StackValue::ByteString(b"Approval".to_vec()),
-                StackValue::Array(vec![StackValue::Struct(vec![
-                    StackValue::ByteString(b"spender".to_vec()),
-                    StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
-                ])]),
-            ]))
+            .from_stack_value(StackValue::Struct(
+                0,
+                vec![
+                    StackValue::ByteString(b"Approval".to_vec()),
+                    StackValue::Array(
+                        0,
+                        vec![StackValue::Struct(
+                            0,
+                            vec![
+                                StackValue::ByteString(b"spender".to_vec()),
+                                StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
+                            ],
+                        )],
+                    ),
+                ],
+            ))
             .unwrap();
 
         assert_eq!(event.name, "Approval");
@@ -209,22 +211,69 @@ mod tests {
     }
 
     #[test]
-    fn event_descriptor_reads_struct_parameter_sequence() {
+    fn event_descriptor_rejects_struct_parameter_sequence_like_csharp() {
         let mut event = ContractEventDescriptor::default();
 
-        event
-            .from_stack_value(StackValue::Struct(vec![
-                StackValue::ByteString(b"Vote".to_vec()),
-                StackValue::Struct(vec![StackValue::Struct(vec![
-                    StackValue::ByteString(b"candidate".to_vec()),
-                    StackValue::Integer(ContractParameterType::PublicKey as u8 as i64),
-                ])]),
-            ]))
-            .unwrap();
-
-        assert_eq!(
-            event.parameters,
-            vec![parameter("candidate", ContractParameterType::PublicKey)]
+        assert!(
+            event
+                .from_stack_value(StackValue::Struct(
+                    0,
+                    vec![
+                        StackValue::ByteString(b"Vote".to_vec()),
+                        StackValue::Struct(
+                            0,
+                            vec![StackValue::Struct(
+                                0,
+                                vec![
+                                    StackValue::ByteString(b"candidate".to_vec()),
+                                    StackValue::Integer(
+                                        ContractParameterType::PublicKey as u8 as i64
+                                    ),
+                                ]
+                            )]
+                        ),
+                    ]
+                ))
+                .is_err()
         );
+    }
+
+    #[test]
+    fn event_descriptor_rejects_invalid_name_like_csharp() {
+        let mut event = ContractEventDescriptor::default();
+
+        assert!(
+            event
+                .from_stack_value(StackValue::Struct(
+                    0,
+                    vec![StackValue::Null, StackValue::Array(0, Vec::new()),]
+                ))
+                .is_err()
+        );
+        assert!(
+            event
+                .from_stack_value(StackValue::Struct(
+                    0,
+                    vec![
+                        StackValue::ByteString(vec![0xff]),
+                        StackValue::Array(0, Vec::new()),
+                    ]
+                ))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn event_descriptor_from_json_rejects_missing_or_invalid_parameters_like_csharp() {
+        let missing_parameters = serde_json::json!({
+            "name": "Notify"
+        });
+        assert!(ContractEventDescriptor::from_json(&missing_parameters).is_err());
+
+        let invalid_parameter = serde_json::json!({
+            "name": "Notify",
+            "parameters": [{"name": "bad", "type": "Void"}]
+        });
+        assert!(ContractEventDescriptor::from_json(&invalid_parameter).is_err());
     }
 }

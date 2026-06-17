@@ -9,6 +9,8 @@ use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use neo_vm::impl_interoperable_via_stack_value;
+
 /// Describes what contract or group a permission applies to (matches C# ContractPermissionDescriptor)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractPermissionDescriptor {
@@ -64,18 +66,20 @@ impl ContractPermissionDescriptor {
     /// Creates from JSON
     pub fn from_json(json: &serde_json::Value) -> CoreResult<Self> {
         if let Some(s) = json.as_str() {
-            if s == "*" {
-                return Ok(ContractPermissionDescriptor::Wildcard);
-            }
-            // Try to parse as hash
-            if let Ok(hash) = UInt160::parse(s) {
-                return Ok(ContractPermissionDescriptor::Hash(hash));
-            }
-            // Try to parse as public key
-            if let Ok(bytes) = hex::decode(s) {
-                let key =
-                    ECPoint::from_bytes(&bytes).map_err(|e| CoreError::other(e.to_string()))?;
-                return Ok(ContractPermissionDescriptor::Group(key));
+            match s.len() {
+                1 if s == "*" => return Ok(ContractPermissionDescriptor::Wildcard),
+                42 => {
+                    return UInt160::parse(s)
+                        .map(ContractPermissionDescriptor::Hash)
+                        .map_err(|e| CoreError::other(e.to_string()));
+                }
+                66 => {
+                    let bytes = hex::decode(s).map_err(|e| CoreError::other(e.to_string()))?;
+                    return ECPoint::decode_secp256r1(&bytes)
+                        .map(ContractPermissionDescriptor::Group)
+                        .map_err(|e| CoreError::other(e.to_string()));
+                }
+                _ => {}
             }
         }
         Err(CoreError::other("Invalid permission descriptor"))
@@ -118,7 +122,9 @@ impl ContractPermissionDescriptor {
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Self::from_bytes(&bytes),
+            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
+                Self::from_bytes(&bytes)
+            }
             other => Err(CoreError::other(format!(
                 "Unsupported stack value type for ContractPermissionDescriptor: {:?}",
                 other
@@ -138,18 +144,14 @@ impl ContractPermissionDescriptor {
 
     /// Builds a descriptor from raw bytes.
     pub fn from_bytes(bytes: &[u8]) -> CoreResult<Self> {
-        // C# encodes Wildcard as ByteString("*") (single byte 0x2A)
-        if bytes == b"*" {
-            return Ok(Self::create_wildcard());
-        }
         match bytes.len() {
-            0 => Ok(Self::create_wildcard()),
             20 => Ok(Self::create_hash(UInt160::from_bytes(bytes).map_err(
                 |e| CoreError::other(format!("Invalid UInt160 bytes: {}", e)),
             )?)),
-            33 => Ok(Self::create_group(ECPoint::from_bytes(bytes).map_err(
-                |e| CoreError::other(format!("Invalid ECPoint bytes: {}", e)),
-            )?)),
+            33 => Ok(Self::create_group(
+                ECPoint::decode_secp256r1(bytes)
+                    .map_err(|e| CoreError::other(format!("Invalid ECPoint bytes: {}", e)))?,
+            )),
             len => Err(CoreError::other(format!(
                 "Invalid descriptor byte length: {}",
                 len
@@ -192,10 +194,12 @@ impl<'de> Deserialize<'de> for ContractPermissionDescriptor {
     }
 }
 
+impl_interoperable_via_stack_value!(ContractPermissionDescriptor);
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_crypto::{ECPoint, Secp256r1Crypto};
+    use neo_crypto::{ECPoint, Secp256k1Crypto, Secp256r1Crypto};
     use neo_vm_rs::StackValue;
 
     fn group_key() -> ECPoint {
@@ -249,14 +253,69 @@ mod tests {
             ContractPermissionDescriptor::Hash(hash)
         );
         assert_eq!(
-            ContractPermissionDescriptor::from_stack_value(StackValue::Buffer(group_bytes))
+            ContractPermissionDescriptor::from_stack_value(StackValue::Buffer(0, group_bytes))
                 .unwrap(),
             ContractPermissionDescriptor::Group(group)
         );
-        assert_eq!(
+    }
+
+    #[test]
+    fn permission_descriptor_rejects_invalid_stack_byte_lengths_like_csharp() {
+        assert!(
+            ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(Vec::new()))
+                .is_err()
+        );
+        assert!(
             ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(b"*".to_vec()))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn permission_descriptor_from_json_uses_csharp_lengths_and_curve() {
+        let hash = UInt160::from_bytes(&[0x44; 20]).expect("hash");
+        assert_eq!(
+            ContractPermissionDescriptor::from_json(&serde_json::Value::String(hash.to_string()))
                 .unwrap(),
-            ContractPermissionDescriptor::Wildcard
+            ContractPermissionDescriptor::Hash(hash)
+        );
+        assert!(
+            ContractPermissionDescriptor::from_json(&serde_json::Value::String(
+                hash.to_string().trim_start_matches("0x").to_string()
+            ))
+            .is_err()
+        );
+
+        let group = group_key();
+        let compressed = group.encode_point(true).expect("compressed group");
+        assert_eq!(
+            ContractPermissionDescriptor::from_json(&serde_json::Value::String(hex::encode(
+                &compressed
+            )))
+            .unwrap(),
+            ContractPermissionDescriptor::Group(group.clone())
+        );
+
+        let uncompressed = group.encode_point(false).expect("uncompressed group");
+        assert!(
+            ContractPermissionDescriptor::from_json(&serde_json::Value::String(hex::encode(
+                uncompressed
+            )))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn permission_descriptor_rejects_non_secp256r1_stack_group_like_csharp() {
+        let private_key = [2u8; 32];
+        let k1_group =
+            Secp256k1Crypto::derive_public_key(&private_key).expect("secp256k1 public key");
+
+        assert!(
+            ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(
+                k1_group.to_vec()
+            ))
+            .is_err()
         );
     }
 }

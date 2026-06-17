@@ -1,6 +1,6 @@
 //! WitnessRuleAction — matches C# Neo.Network.P2P.Payloads.WitnessRuleAction exactly.
 
-use crate::{impl_protocol_enum_from_str, protocol_enum};
+use crate::protocol_enum;
 
 protocol_enum! {
     all;
@@ -15,12 +15,16 @@ protocol_enum! {
     }
 }
 
-impl_protocol_enum_from_str! {
-    WitnessRuleAction {
-        error = |value: &str| format!(
-            "Invalid witness rule action: {}",
-            value.to_ascii_lowercase()
-        );
+impl std::str::FromStr for WitnessRuleAction {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        for candidate in Self::ALL {
+            if value == candidate.as_str() {
+                return Ok(candidate);
+            }
+        }
+        Err(format!("Invalid witness rule action: {value}"))
     }
 }
 
@@ -75,10 +79,7 @@ mod tests {
             "Allow".parse::<WitnessRuleAction>().unwrap(),
             WitnessRuleAction::Allow
         );
-        assert_eq!(
-            "allow".parse::<WitnessRuleAction>().unwrap(),
-            WitnessRuleAction::Allow
-        );
+        assert!("allow".parse::<WitnessRuleAction>().is_err());
         assert!("Invalid".parse::<WitnessRuleAction>().is_err());
     }
 

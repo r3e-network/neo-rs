@@ -570,7 +570,8 @@ async fn silent_peer_is_disconnected_after_handshake_timeout() {
 }
 
 /// C# `RemoteNode.ProtocolHandler.OnPingMessageReceived`: a post-handshake
-/// `ping` is answered with a `pong` carrying the node's own block height.
+/// `ping` is answered with a `pong` carrying the node's own block height and
+/// echoing the ping nonce.
 #[tokio::test]
 async fn ping_is_answered_with_pong_carrying_local_height() {
     let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
@@ -579,9 +580,11 @@ async fn ping_is_answered_with_pong_carrying_local_height() {
     complete_handshake(&mut fake, network, 0xfa4e_0002, 20333).await;
 
     // The fake peer pings advertising height 99; the node must reply with a
-    // pong carrying its own (genesis) height 0.
-    let ping = Message::create(MessageCommand::Ping, Some(&PingPayload::create(99)), false)
-        .expect("encode ping");
+    // pong carrying its own (genesis) height 0 and the ping nonce.
+    let ping_nonce = 0x4e30_0001;
+    let ping_payload = PingPayload::create_with_nonce(99, ping_nonce);
+    let ping =
+        Message::create(MessageCommand::Ping, Some(&ping_payload), false).expect("encode ping");
     fake.send(ping).await.expect("send ping");
 
     let pong = loop {
@@ -597,6 +600,7 @@ async fn ping_is_answered_with_pong_carrying_local_height() {
         payload.last_block_index, 0,
         "pong reports the local genesis height"
     );
+    assert_eq!(payload.nonce, ping_nonce, "pong echoes the ping nonce");
 
     handle.shutdown().await.expect("shutdown");
 }
@@ -755,6 +759,13 @@ impl neo_network::BlockSource for StubBlockSource {
     }
 }
 
+struct EmptyBlockSource;
+impl neo_network::BlockSource for EmptyBlockSource {
+    fn block_by_index(&self, _index: u32) -> Option<neo_payloads::Block> {
+        None
+    }
+}
+
 struct ExtensibleStubSource {
     payload: neo_payloads::ExtensiblePayload,
     hash: UInt256,
@@ -837,6 +848,22 @@ async fn local_node_with_block_source(nonce: u32) -> (NetworkHandle, FakeFramed)
     (handle, fake)
 }
 
+async fn local_node_with_empty_source(nonce: u32) -> (NetworkHandle, FakeFramed) {
+    let settings = Arc::new(ProtocolSettings::default());
+    let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
+    let service = service.with_block_source(Arc::new(EmptyBlockSource));
+    tokio::spawn(service.run());
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
+    let port = handle.local_node_info().port();
+    let network = ProtocolSettings::default().network;
+    let mut fake = fake_dial(port).await;
+    complete_handshake(&mut fake, network, nonce, 20333).await;
+    (handle, fake)
+}
+
 /// C# `OnGetHeadersMessageReceived`: a `GetHeaders` request is answered with
 /// a `headers` frame carrying the available headers from the start index.
 #[tokio::test]
@@ -888,6 +915,64 @@ async fn node_serves_getdata_block_from_the_block_source() {
     let mut reader = neo_io::MemoryReader::new(&block_frame.payload_raw);
     <neo_payloads::Block as neo_io::Serializable>::deserialize(&mut reader)
         .expect("served block round-trips");
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// C# `OnGetDataMessageReceived`: missing block/tx inventory is answered with
+/// a grouped `NotFound` payload instead of being silently ignored.
+#[tokio::test]
+async fn node_replies_notfound_for_missing_getdata_block() {
+    let (handle, mut fake) = local_node_with_empty_source(0xfa4e_000e).await;
+
+    let missing_hash = UInt256::zero();
+    let request = InvPayload::create(InventoryType::Block, &[missing_hash]);
+    fake.send(
+        Message::create(MessageCommand::GetData, Some(&request), false).expect("encode getdata"),
+    )
+    .await
+    .expect("send getdata");
+
+    let notfound_frame = loop {
+        let frame = recv_frame(&mut fake).await.expect("notfound frame");
+        if frame.command == MessageCommand::NotFound {
+            break frame;
+        }
+    };
+    let mut reader = neo_io::MemoryReader::new(&notfound_frame.payload_raw);
+    let payload =
+        <InvPayload as neo_io::Serializable>::deserialize(&mut reader).expect("decode notfound");
+    assert_eq!(payload.inventory_type, InventoryType::Block);
+    assert_eq!(payload.hashes, vec![missing_hash]);
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// C# `OnGetDataMessageReceived`: missing transaction inventory is also
+/// grouped into a `NotFound` response.
+#[tokio::test]
+async fn node_replies_notfound_for_missing_getdata_transaction() {
+    let (handle, mut fake) = local_node_with_empty_source(0xfa4e_000f).await;
+
+    let missing_hash = UInt256::zero();
+    let request = InvPayload::create(InventoryType::Transaction, &[missing_hash]);
+    fake.send(
+        Message::create(MessageCommand::GetData, Some(&request), false).expect("encode getdata"),
+    )
+    .await
+    .expect("send getdata");
+
+    let notfound_frame = loop {
+        let frame = recv_frame(&mut fake).await.expect("notfound frame");
+        if frame.command == MessageCommand::NotFound {
+            break frame;
+        }
+    };
+    let mut reader = neo_io::MemoryReader::new(&notfound_frame.payload_raw);
+    let payload =
+        <InvPayload as neo_io::Serializable>::deserialize(&mut reader).expect("decode notfound");
+    assert_eq!(payload.inventory_type, InventoryType::Transaction);
+    assert_eq!(payload.hashes, vec![missing_hash]);
 
     handle.shutdown().await.expect("shutdown");
 }

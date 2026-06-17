@@ -1,5 +1,4 @@
-use super::super::helpers::ConsensusBlockFields;
-use super::super::helpers::InvocationScript;
+use super::super::helpers::{ConsensusBlockFields, InvocationScript, current_timestamp};
 use super::super::{ConsensusEvent, ConsensusService};
 use crate::context::ConsensusState;
 use crate::messages::{
@@ -68,7 +67,29 @@ impl ConsensusService {
             payload.view_number,
             payload.validator_index,
         )?;
-        prepare_request.validate(expected_primary)?;
+        prepare_request.validate(expected_primary, self.max_transactions_per_block)?;
+        if prepare_request.version != self.context.version {
+            return Err(ConsensusError::invalid_proposal(
+                "PrepareRequest version does not match block context",
+            ));
+        }
+        if prepare_request.prev_hash != self.context.prev_hash {
+            return Err(ConsensusError::invalid_proposal(
+                "PrepareRequest prev_hash does not match block context",
+            ));
+        }
+        if prepare_request.timestamp <= self.context.previous_block_timestamp {
+            return Err(ConsensusError::invalid_proposal(
+                "PrepareRequest timestamp must be greater than previous block timestamp",
+            ));
+        }
+        let max_timestamp = current_timestamp()
+            .saturating_add(self.context.prepare_request_delay().saturating_mul(8));
+        if prepare_request.timestamp > max_timestamp {
+            return Err(ConsensusError::invalid_proposal(
+                "PrepareRequest timestamp too far in the future",
+            ));
+        }
 
         // Mark prepare request as received and store proposal fields.
         self.context.prepare_request_received = true;
@@ -111,6 +132,7 @@ impl ConsensusService {
             self.context.next_consensus,
         );
         self.context.proposed_block_hash = Some(block_hash);
+        self.revalidate_current_view_commits();
 
         // If there are no transactions, respond immediately.
         if self.context.proposed_tx_hashes.is_empty() {

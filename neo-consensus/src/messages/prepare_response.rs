@@ -53,12 +53,12 @@ impl PrepareResponseMessage {
         view_number: u8,
         validator_index: u8,
     ) -> ConsensusResult<Self> {
-        if data.len() != 32 {
+        if data.len() < 32 {
             return Err(crate::ConsensusError::invalid_proposal(
                 "PrepareResponse invalid hash length",
             ));
         }
-        let preparation_hash = UInt256::from_bytes(data).map_err(|_| {
+        let preparation_hash = UInt256::from_bytes(&data[..32]).map_err(|_| {
             crate::ConsensusError::invalid_proposal("PrepareResponse invalid hash bytes")
         })?;
         Ok(Self {

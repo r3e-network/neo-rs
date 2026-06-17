@@ -10,7 +10,8 @@
 
 use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
-use neo_vm::{Interoperable, StackItem, VmError};
+use neo_vm::{Interoperable, InteroperableError};
+use neo_vm_rs::StackValue;
 
 use crate::block::Block;
 use crate::header::Header;
@@ -64,23 +65,30 @@ impl TrimmedBlock {
     /// so the full unsigned range is preserved (never truncated through `i64`),
     /// which is consensus-relevant — a nonce `>= 2^63` would otherwise serialize
     /// as a different integer.
-    fn to_array_item(&self) -> StackItem {
-        StackItem::from_array(vec![
-            // Computed property: Header.Hash.ToArray().
-            StackItem::from_byte_string(self.header.hash().to_bytes()),
-            // BlockBase properties.
-            StackItem::from_int(self.header.version()),
-            StackItem::from_byte_string(self.header.prev_hash().to_bytes()),
-            StackItem::from_byte_string(self.header.merkle_root().to_bytes()),
-            StackItem::from_int(self.header.timestamp()),
-            StackItem::from_int(self.header.nonce()),
-            StackItem::from_int(self.header.index()),
-            StackItem::from_int(self.header.primary_index()),
-            StackItem::from_byte_string(self.header.next_consensus().to_bytes()),
-            // Block property: Hashes.Length (C# `int`; always non-negative and
-            // bounded by MAX_TRANSACTION_HASHES).
-            StackItem::from_int(self.hashes.len() as u64),
-        ])
+    pub fn to_stack_value(&self) -> StackValue {
+        let unsigned_integer = |value: u64| {
+            StackValue::BigInteger(num_bigint::BigInt::from(value).to_signed_bytes_le())
+        };
+
+        StackValue::Array(
+            0,
+            vec![
+                // Computed property: Header.Hash.ToArray().
+                StackValue::ByteString(self.header.hash().to_bytes()),
+                // BlockBase properties.
+                StackValue::Integer(i64::from(self.header.version())),
+                StackValue::ByteString(self.header.prev_hash().to_bytes()),
+                StackValue::ByteString(self.header.merkle_root().to_bytes()),
+                unsigned_integer(self.header.timestamp()),
+                unsigned_integer(self.header.nonce()),
+                StackValue::Integer(i64::from(self.header.index())),
+                StackValue::Integer(i64::from(self.header.primary_index())),
+                StackValue::ByteString(self.header.next_consensus().to_bytes()),
+                // Block property: Hashes.Length (C# `int`; always non-negative and
+                // bounded by MAX_TRANSACTION_HASHES).
+                StackValue::Integer(self.hashes.len() as i64),
+            ],
+        )
     }
 }
 
@@ -115,15 +123,14 @@ impl Serializable for TrimmedBlock {
 }
 
 impl Interoperable for TrimmedBlock {
-    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), VmError> {
-        // C# `TrimmedBlock.FromStackItem` throws `NotSupportedException`.
-        Err(VmError::invalid_operation_msg(
-            "TrimmedBlock::from_stack_item is not supported",
+    fn from_stack_value(&mut self, _value: StackValue) -> Result<(), InteroperableError> {
+        Err(InteroperableError::NotSupported(
+            "TrimmedBlock::from_stack_value is not supported".into(),
         ))
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, VmError> {
-        Ok(self.to_array_item())
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(self.to_stack_value())
     }
 
     fn clone_box(&self) -> Box<dyn Interoperable> {
@@ -141,7 +148,7 @@ mod tests {
     /// is `u64::MAX` (well above `i64::MAX`) to guard the unsigned projection.
     fn sample_header() -> Header {
         let mut header = Header::new();
-        header.set_version(7);
+        header.set_version(0);
         header.set_prev_hash(UInt256::from_bytes(&[0xA1u8; 32]).unwrap());
         header.set_merkle_root(UInt256::from_bytes(&[0xB2u8; 32]).unwrap());
         header.set_timestamp(0x0123_4567_89AB_CDEF);
@@ -175,7 +182,7 @@ mod tests {
 
         // Header has no PartialEq (interior-mutable hash cache), so compare the
         // observable fields plus the computed hash.
-        assert_eq!(decoded.header.version(), 7);
+        assert_eq!(decoded.header.version(), 0);
         assert_eq!(decoded.header.timestamp(), 0x0123_4567_89AB_CDEF);
         assert_eq!(decoded.header.nonce(), u64::MAX);
         assert_eq!(decoded.header.index(), 123_456);
@@ -198,48 +205,64 @@ mod tests {
     }
 
     #[test]
-    fn to_stack_item_matches_csharp_layout() {
+    fn interoperable_to_stack_value_matches_inherent() {
         let header = sample_header();
         let hashes = sample_hashes();
         let block = TrimmedBlock::new(header, hashes);
 
-        let item = Interoperable::to_stack_item(&block).unwrap();
-        let fields = item.as_array().unwrap();
-        assert_eq!(fields.len(), 10, "C# ToStackItem produces a 10-field Array");
-
-        assert_eq!(
-            fields[0].as_bytes().unwrap(),
-            block.header.hash().to_bytes()
-        );
-        assert_eq!(fields[1].as_int().unwrap(), BigInt::from(7));
-        assert_eq!(
-            fields[2].as_bytes().unwrap(),
-            block.header.prev_hash().to_bytes()
-        );
-        assert_eq!(
-            fields[3].as_bytes().unwrap(),
-            block.header.merkle_root().to_bytes()
-        );
-        assert_eq!(
-            fields[4].as_int().unwrap(),
-            BigInt::from(0x0123_4567_89AB_CDEFu64)
-        );
-        // Nonce is u64::MAX: must stay a positive BigInteger, not wrap to -1.
-        assert_eq!(fields[5].as_int().unwrap(), BigInt::from(u64::MAX));
-        assert_eq!(fields[6].as_int().unwrap(), BigInt::from(123_456));
-        assert_eq!(fields[7].as_int().unwrap(), BigInt::from(3));
-        assert_eq!(
-            fields[8].as_bytes().unwrap(),
-            block.header.next_consensus().to_bytes()
-        );
-        assert_eq!(fields[9].as_int().unwrap(), BigInt::from(2));
+        let trait_value = Interoperable::to_stack_value(&block).unwrap();
+        let inherent_value = block.to_stack_value();
+        assert_eq!(trait_value, inherent_value);
     }
 
     #[test]
-    fn from_stack_item_is_unsupported() {
+    fn to_stack_value_matches_csharp_layout() {
+        let header = sample_header();
+        let hashes = sample_hashes();
+        let block = TrimmedBlock::new(header, hashes);
+
+        let neo_vm_rs::StackValue::Array(0, fields) = block.to_stack_value() else {
+            panic!("TrimmedBlock projects to an Array");
+        };
+        assert_eq!(fields.len(), 10, "C# ToStackItem produces a 10-field Array");
+
+        assert_eq!(
+            fields[0],
+            neo_vm_rs::StackValue::ByteString(block.header.hash().to_bytes())
+        );
+        assert_eq!(fields[1], neo_vm_rs::StackValue::Integer(0));
+        assert_eq!(
+            fields[2],
+            neo_vm_rs::StackValue::ByteString(block.header.prev_hash().to_bytes())
+        );
+        assert_eq!(
+            fields[3],
+            neo_vm_rs::StackValue::ByteString(block.header.merkle_root().to_bytes())
+        );
+        assert_eq!(
+            fields[4],
+            neo_vm_rs::StackValue::BigInteger(
+                BigInt::from(0x0123_4567_89AB_CDEFu64).to_signed_bytes_le()
+            )
+        );
+        assert_eq!(
+            fields[5],
+            neo_vm_rs::StackValue::BigInteger(BigInt::from(u64::MAX).to_signed_bytes_le())
+        );
+        assert_eq!(fields[6], neo_vm_rs::StackValue::Integer(123_456));
+        assert_eq!(fields[7], neo_vm_rs::StackValue::Integer(3));
+        assert_eq!(
+            fields[8],
+            neo_vm_rs::StackValue::ByteString(block.header.next_consensus().to_bytes())
+        );
+        assert_eq!(fields[9], neo_vm_rs::StackValue::Integer(2));
+    }
+
+    #[test]
+    fn from_stack_value_is_unsupported() {
         let mut block = TrimmedBlock::new(sample_header(), sample_hashes());
-        let probe = StackItem::from_int(0);
-        assert!(Interoperable::from_stack_item(&mut block, probe).is_err());
+        let probe = StackValue::Integer(0);
+        assert!(Interoperable::from_stack_value(&mut block, probe).is_err());
     }
 
     #[test]

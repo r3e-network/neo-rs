@@ -341,7 +341,7 @@ impl StackItem {
                 if buf.is_empty() {
                     return Ok(BigInt::from(0));
                 }
-                buf.with_data(|data| Ok(Self::bytes_to_bigint(data)))
+                buf.with_data(Self::bytes_to_bigint)
             }
             _ => Err(VmError::invalid_type_simple("Cannot convert to Integer")),
         }
@@ -368,25 +368,15 @@ impl StackItem {
                 if buf.is_empty() {
                     return Ok(BigInt::from(0));
                 }
-                Ok(buf.with_data(Self::bytes_to_bigint))
+                buf.with_data(Self::bytes_to_bigint)
             }
             _ => Err(VmError::invalid_type_simple("Cannot convert to Integer")),
         }
     }
 
-    /// Shared helper: convert byte slice to BigInt with sign handling.
-    fn bytes_to_bigint(data: &[u8]) -> BigInt {
-        let is_negative = (data[data.len() - 1] & 0x80) != 0;
-        if is_negative {
-            let mut bytes_copy = data.to_vec();
-            let len = bytes_copy.len();
-            bytes_copy[len - 1] &= 0x7F;
-            let positive_value = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
-            let sign_bit_value = BigInt::from(1) << (len * 8 - 1);
-            -(sign_bit_value - positive_value)
-        } else {
-            BigInt::from_bytes_le(num_bigint::Sign::Plus, data)
-        }
+    /// Shared helper: convert byte slice to BigInt with NeoVM integer rules.
+    fn bytes_to_bigint(data: &[u8]) -> VmResult<BigInt> {
+        neo_vm_rs::decode_integer_bytes(data).map_err(VmError::invalid_type_simple)
     }
 
     /// Shared helper: convert ByteString (Vec<u8>) to BigInt.
@@ -399,7 +389,7 @@ impl StackItem {
         if b.is_empty() {
             return Ok(BigInt::from(0));
         }
-        Ok(Self::bytes_to_bigint(b))
+        Self::bytes_to_bigint(b)
     }
 
     /// Returns the boolean value represented by the stack item.
@@ -956,26 +946,28 @@ impl TryFrom<neo_vm_rs::StackValue> for StackItem {
         match value {
             neo_vm_rs::StackValue::Integer(value) => Ok(Self::from_i64(value)),
             neo_vm_rs::StackValue::BigInteger(bytes) => {
-                Ok(Self::from_int(BigInt::from_signed_bytes_le(&bytes)))
+                let value = neo_vm_rs::decode_integer_bytes(&bytes)
+                    .map_err(VmError::invalid_type_simple)?;
+                Ok(Self::from_int(value))
             }
             neo_vm_rs::StackValue::ByteString(bytes) => Ok(Self::from_byte_string(bytes)),
-            neo_vm_rs::StackValue::Buffer(bytes) => Ok(Self::from_buffer(bytes)),
+            neo_vm_rs::StackValue::Buffer(_, bytes) => Ok(Self::from_buffer(bytes)),
             neo_vm_rs::StackValue::Boolean(value) => Ok(Self::from_bool(value)),
-            neo_vm_rs::StackValue::Array(items) => {
+            neo_vm_rs::StackValue::Array(_, items) => {
                 let items = items
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
                 Ok(Self::from_array(items))
             }
-            neo_vm_rs::StackValue::Struct(items) => {
+            neo_vm_rs::StackValue::Struct(_, items) => {
                 let items = items
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
                 Ok(Self::from_struct(items))
             }
-            neo_vm_rs::StackValue::Map(entries) => {
+            neo_vm_rs::StackValue::Map(_, entries) => {
                 let mut map = VmOrderedDictionary::with_capacity(entries.len());
                 for (key, value) in entries {
                     map.insert(Self::try_from(key)?, Self::try_from(value)?);
@@ -1005,14 +997,14 @@ impl TryFrom<StackItem> for neo_vm_rs::StackValue {
                 None => Ok(Self::BigInteger(value.to_signed_bytes_le())),
             },
             StackItem::ByteString(bytes) => Ok(Self::ByteString(bytes)),
-            StackItem::Buffer(buffer) => Ok(Self::Buffer(buffer.data())),
+            StackItem::Buffer(buffer) => Ok(Self::Buffer(0, buffer.data())),
             StackItem::Array(array) => {
                 let items = array
                     .items()
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Array(items))
+                Ok(Self::Array(0, items))
             }
             StackItem::Struct(structure) => {
                 let items = structure
@@ -1020,14 +1012,14 @@ impl TryFrom<StackItem> for neo_vm_rs::StackValue {
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Struct(items))
+                Ok(Self::Struct(0, items))
             }
             StackItem::Map(map) => {
                 let entries = map
                     .iter()
                     .map(|(key, value)| Ok((Self::try_from(key)?, Self::try_from(value)?)))
                     .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Map(entries))
+                Ok(Self::Map(0, entries))
             }
             StackItem::Pointer(pointer) => {
                 let position = i64::try_from(pointer.position()).map_err(|_| {
@@ -1171,6 +1163,16 @@ mod tests {
 
         let zero_item = StackItem::from_int(0);
         assert!(!zero_item.as_bool().expect("Failed to convert"));
+    }
+
+    #[test]
+    fn stack_value_big_integer_conversion_enforces_vm_integer_max_size() {
+        let negative = StackItem::try_from(neo_vm_rs::StackValue::BigInteger(vec![0xff]))
+            .expect("valid BigInteger bytes should convert");
+        assert_eq!(negative.as_int().unwrap(), BigInt::from(-1));
+
+        let too_large = neo_vm_rs::StackValue::BigInteger(vec![0x01; VM_INTEGER_MAX_SIZE + 1]);
+        assert!(StackItem::try_from(too_large).is_err());
     }
 
     #[test]

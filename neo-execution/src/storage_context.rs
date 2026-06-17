@@ -1,7 +1,8 @@
 //! StorageContext - matches C# Neo.SmartContract.StorageContext exactly
 
 use neo_error::{CoreError, CoreResult};
-use neo_vm::StackItem;
+use neo_vm::{Interoperable, InteroperableError, StackItem};
+use neo_vm_rs::StackValue;
 use num_traits::ToPrimitive;
 
 /// The storage context used to read and write data in smart contracts (matches C# StorageContext)
@@ -69,9 +70,7 @@ impl StorageContext {
 
         Ok(Self { id, is_read_only })
     }
-}
 
-impl StorageContext {
     /// Converts the context to a stack item representation used on the VM stack.
     pub fn to_stack_item(&self) -> StackItem {
         StackItem::from_byte_string(self.to_bytes().to_vec())
@@ -114,5 +113,26 @@ impl StorageContext {
         };
 
         Ok(Self { id, is_read_only })
+    }
+}
+
+impl Interoperable for StorageContext {
+    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
+        let bytes = value.to_byte_string_bytes().ok_or_else(|| {
+            InteroperableError::InvalidType("StorageContext must be bytes".to_string())
+        })?;
+        let ctx = Self::from_bytes(&bytes).map_err(|error| {
+            InteroperableError::InvalidData(format!("Invalid StorageContext: {error}"))
+        })?;
+        *self = ctx;
+        Ok(())
+    }
+
+    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
+        Ok(StackValue::ByteString(self.to_bytes().to_vec()))
+    }
+
+    fn clone_box(&self) -> Box<dyn Interoperable> {
+        Box::new(self.clone())
     }
 }

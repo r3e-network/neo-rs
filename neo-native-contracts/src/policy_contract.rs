@@ -15,8 +15,8 @@ use neo_primitives::{
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::{Interoperable, StackItem};
+use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -76,39 +76,139 @@ impl PolicyContract {
         *POLICY_CONTRACT_HASH
     }
 
-    /// Reads the max valid-until-block increment from the snapshot, falling
-    /// back to the protocol-setting default (pre-Echidna) or the on-disk
-    /// `Prefix_MaxValidUntilBlockIncrement` value (HF_Echidna+).
+    fn setting_key(prefix: u8) -> StorageKey {
+        StorageKey::new(PolicyContract::ID, vec![prefix])
+    }
+
+    fn read_optional_i64_setting(
+        snapshot: &DataCache,
+        prefix: u8,
+        setting: &str,
+    ) -> CoreResult<Option<i64>> {
+        match snapshot.get(&Self::setting_key(prefix)) {
+            Some(item) => BigInt::from_signed_bytes_le(&item.value_bytes())
+                .to_i64()
+                .map(Some)
+                .ok_or_else(|| {
+                    CoreError::invalid_operation(format!(
+                        "PolicyContract {setting} storage integer out of range"
+                    ))
+                }),
+            None => Ok(None),
+        }
+    }
+
+    fn read_required_i64_setting(
+        snapshot: &DataCache,
+        prefix: u8,
+        setting: &str,
+    ) -> CoreResult<i64> {
+        Self::read_optional_i64_setting(snapshot, prefix, setting)?.ok_or_else(|| {
+            CoreError::invalid_operation(format!("PolicyContract {setting} storage is missing"))
+        })
+    }
+
+    fn put_required_i64_setting(
+        snapshot: &DataCache,
+        prefix: u8,
+        setting: &str,
+        value: i64,
+    ) -> CoreResult<()> {
+        let key = Self::setting_key(prefix);
+        if snapshot.get(&key).is_none() {
+            return Err(CoreError::invalid_operation(format!(
+                "PolicyContract {setting} storage is missing"
+            )));
+        }
+        snapshot.update(
+            key,
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
+        );
+        Ok(())
+    }
+
+    /// Reads the max valid-until-block increment with C# `NeoSystemExtensions`
+    /// semantics. Before `HF_Echidna` this is the static protocol setting; from
+    /// `HF_Echidna` onward it is the Policy storage value under prefix 22, with
+    /// the C# pre-genesis missing-key fallback to `ProtocolSettings`.
     pub fn get_max_valid_until_block_increment_snapshot(
         &self,
         snapshot: &neo_storage::persistence::DataCache,
         settings: &neo_config::ProtocolSettings,
     ) -> neo_error::CoreResult<u32> {
-        let default = i64::from(settings.max_valid_until_block_increment);
-        Ok(crate::read_storage_int(
+        let default = settings.max_valid_until_block_increment;
+        let height = match crate::LedgerContract::new().current_index(snapshot) {
+            Ok(height) => height,
+            Err(err) if err.to_string().contains("current block is missing") => return Ok(default),
+            Err(err) => return Err(err),
+        };
+        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
+            return Ok(default);
+        }
+        let value = match Self::read_optional_i64_setting(
             snapshot,
-            PolicyContract::ID,
             PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
-            default,
-        )? as u32)
+            "MaxValidUntilBlockIncrement",
+        )? {
+            Some(value) => value,
+            None => return Ok(default),
+        };
+        u32::try_from(value).map_err(|_| {
+            CoreError::invalid_operation("MaxValidUntilBlockIncrement out of u32 range")
+        })
     }
 
-    /// Reads the execution fee factor from the snapshot, or
-    /// `Ok(DEFAULT_EXEC_FEE_FACTOR)` if not configured. `height` is reserved
-    /// for future hardfork-aware scaling (HF_Faun pico-GAS); today the
-    /// snapshot value is the post-Faun stored `BigInteger` and we return it
-    /// verbatim.
+    /// Returns the effective `MaxTraceableBlocks` for snapshot-only callers.
+    ///
+    /// Mirrors C# `NeoSystemExtensions.GetMaxTraceableBlocks`: before
+    /// `HF_Echidna` this is the static protocol setting; from `HF_Echidna`
+    /// onward it is the Policy storage value under prefix 23, with the C#
+    /// pre-genesis missing-key fallback to `ProtocolSettings`.
+    pub fn get_max_traceable_blocks_snapshot(
+        &self,
+        snapshot: &neo_storage::persistence::DataCache,
+        settings: &neo_config::ProtocolSettings,
+    ) -> neo_error::CoreResult<u32> {
+        let default = settings.max_traceable_blocks;
+        let height = match crate::LedgerContract::new().current_index(snapshot) {
+            Ok(height) => height,
+            Err(err) if err.to_string().contains("current block is missing") => return Ok(default),
+            Err(err) => return Err(err),
+        };
+        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
+            return Ok(default);
+        }
+        let value = match Self::read_optional_i64_setting(
+            snapshot,
+            PREFIX_MAX_TRACEABLE_BLOCKS,
+            "MaxTraceableBlocks",
+        )? {
+            Some(value) => value,
+            None => return Ok(default),
+        };
+        u32::try_from(value)
+            .map_err(|_| CoreError::invalid_operation("MaxTraceableBlocks out of u32 range"))
+    }
+
+    /// Reads the execution fee factor from the snapshot using C#'s
+    /// `GetExecFeeFactor(settings, snapshot, index)` view. From HF_Faun onward
+    /// the stored value is pico-GAS, so callers that estimate verification fees
+    /// receive the legacy factor by dividing by `ApplicationEngine.FeeFactor`.
     pub fn get_exec_fee_factor_snapshot(
         &self,
         snapshot: &neo_storage::persistence::DataCache,
-        _settings: &neo_config::ProtocolSettings,
-        _height: u32,
+        settings: &neo_config::ProtocolSettings,
+        height: u32,
     ) -> neo_error::CoreResult<u32> {
-        Ok(self.exec_fee_factor_raw(snapshot)? as u32)
+        let raw =
+            Self::read_required_i64_setting(snapshot, PREFIX_EXEC_FEE_FACTOR, "ExecFeeFactor")?;
+        let faun_enabled = settings.is_hardfork_enabled(Hardfork::HfFaun, height);
+        let value = if faun_enabled { raw / FEE_FACTOR } else { raw };
+        u32::try_from(value)
+            .map_err(|_| CoreError::invalid_operation("ExecFeeFactor out of u32 range"))
     }
 
-    /// Reads the fee-per-byte from the snapshot, or `Ok(DEFAULT_FEE_PER_BYTE)`
-    /// if not configured.
+    /// Reads the fee-per-byte from the snapshot.
     pub fn get_fee_per_byte_snapshot(
         &self,
         snapshot: &neo_storage::persistence::DataCache,
@@ -118,22 +218,12 @@ impl PolicyContract {
 
     /// C# `GetFeePerByte` = `(long)(BigInteger)snapshot[_feePerByte]`.
     fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<i64> {
-        crate::read_storage_int(
-            snapshot,
-            PolicyContract::ID,
-            PREFIX_FEE_PER_BYTE,
-            i64::from(DEFAULT_FEE_PER_BYTE),
-        )
+        Self::read_required_i64_setting(snapshot, PREFIX_FEE_PER_BYTE, "FeePerByte")
     }
 
     /// C# `GetStoragePrice` = `(uint)(BigInteger)snapshot[_storagePrice]`.
     fn storage_price(&self, snapshot: &DataCache) -> CoreResult<i64> {
-        crate::read_storage_int(
-            snapshot,
-            PolicyContract::ID,
-            PREFIX_STORAGE_PRICE,
-            DEFAULT_STORAGE_PRICE,
-        )
+        Self::read_required_i64_setting(snapshot, PREFIX_STORAGE_PRICE, "StoragePrice")
     }
 
     /// C# `SetFeePerByte` range guard: the value must be in `[0, MAX_FEE_PER_BYTE]`.
@@ -148,12 +238,8 @@ impl PolicyContract {
 
     /// Writes the fee-per-byte to `Prefix_FeePerByte` as a `BigInteger`, mirroring
     /// C# `GetAndChange(_feePerByte).Set(value)` (overwrite-as-Changed semantics).
-    fn put_fee_per_byte(&self, snapshot: &DataCache, value: i64) {
-        let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_FEE_PER_BYTE]);
-        snapshot.update(
-            key,
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
-        );
+    fn put_fee_per_byte(&self, snapshot: &DataCache, value: i64) -> CoreResult<()> {
+        Self::put_required_i64_setting(snapshot, PREFIX_FEE_PER_BYTE, "FeePerByte", value)
     }
 
     /// C# `SetStoragePrice` range guard: the value must be in `[1, MAX_STORAGE_PRICE]`
@@ -169,24 +255,14 @@ impl PolicyContract {
 
     /// Writes the storage price to `Prefix_StoragePrice` as a `BigInteger`
     /// (C# `GetAndChange(_storagePrice).Set(value)`).
-    fn put_storage_price(&self, snapshot: &DataCache, value: i64) {
-        let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_STORAGE_PRICE]);
-        snapshot.update(
-            key,
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
-        );
+    fn put_storage_price(&self, snapshot: &DataCache, value: i64) -> CoreResult<()> {
+        Self::put_required_i64_setting(snapshot, PREFIX_STORAGE_PRICE, "StoragePrice", value)
     }
 
-    /// Reads the raw stored exec fee factor (`Prefix_ExecFeeFactor`), defaulting to
-    /// `DEFAULT_EXEC_FEE_FACTOR`. The value is the on-disk `BigInteger`; callers apply
-    /// the HF_Faun pico-GAS scaling.
+    /// Reads the raw stored exec fee factor (`Prefix_ExecFeeFactor`). The value is
+    /// the on-disk `BigInteger`; callers apply the HF_Faun pico-GAS scaling.
     fn exec_fee_factor_raw(&self, snapshot: &DataCache) -> CoreResult<i64> {
-        crate::read_storage_int(
-            snapshot,
-            PolicyContract::ID,
-            PREFIX_EXEC_FEE_FACTOR,
-            i64::from(DEFAULT_EXEC_FEE_FACTOR),
-        )
+        Self::read_required_i64_setting(snapshot, PREFIX_EXEC_FEE_FACTOR, "ExecFeeFactor")
     }
 
     /// C# `SetExecFeeFactor` range guard. The upper bound is `MaxExecFeeFactor`
@@ -209,12 +285,8 @@ impl PolicyContract {
 
     /// Writes the exec fee factor to `Prefix_ExecFeeFactor` as a `BigInteger`
     /// (C# `GetAndChange(_execFeeFactor).Set(value)`).
-    fn put_exec_fee_factor(&self, snapshot: &DataCache, value: i64) {
-        let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_EXEC_FEE_FACTOR]);
-        snapshot.update(
-            key,
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
-        );
+    fn put_exec_fee_factor(&self, snapshot: &DataCache, value: i64) -> CoreResult<()> {
+        Self::put_required_i64_setting(snapshot, PREFIX_EXEC_FEE_FACTOR, "ExecFeeFactor", value)
     }
 
     /// C# attribute-type guard shared by get/setAttributeFee: the byte must be a
@@ -353,11 +425,19 @@ impl PolicyContract {
 
     /// The blocked-account storage key `(PolicyContract.ID, [Prefix_BlockedAccount,
     /// account])`, shared by `isBlocked` / `blockAccount` / `unblockAccount`.
-    pub(crate) fn blocked_account_key(account: &UInt160) -> StorageKey {
+    pub fn blocked_account_key(account: &UInt160) -> StorageKey {
         StorageKey::new(
             PolicyContract::ID,
             crate::keys::prefixed_with_hash160(PREFIX_BLOCKED_ACCOUNT, account),
         )
+    }
+
+    /// C# `PolicyContract.IsBlocked`: whether the blocked-account key exists.
+    ///
+    /// Exposed for transaction verification so mempool admission uses the same
+    /// storage layout as the native contract rather than duplicating the prefix.
+    pub fn is_blocked_snapshot(snapshot: &DataCache, account: &UInt160) -> bool {
+        snapshot.get(&Self::blocked_account_key(account)).is_some()
     }
 
     /// Collects the `Prefix_BlockedAccount` storage entries in forward-seek order,
@@ -434,61 +514,22 @@ impl PolicyContract {
 
     /// Decodes a stored `WhitelistedContract` struct into its fields.
     fn decode_whitelisted_contract(value: &[u8]) -> CoreResult<WhitelistedContractView> {
-        let decoded = BinarySerializer::deserialize(value, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| CoreError::deserialization(format!("whitelisted contract: {e}")))?;
-        let StackItem::Struct(fields) = decoded else {
-            return Err(CoreError::invalid_data(
-                "whitelisted contract is not a struct",
-            ));
-        };
-        let items = fields.items();
-        let hash_bytes = items
-            .first()
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing hash"))?
-            .as_bytes()
-            .map_err(|e| CoreError::invalid_data(format!("whitelisted contract hash: {e}")))?;
-        let contract_hash =
-            crate::args::bytes_to_hash160(&hash_bytes, "whitelisted contract hash")?;
-        let method_bytes = items
-            .get(1)
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing method"))?
-            .as_bytes()
-            .map_err(|e| CoreError::invalid_data(format!("whitelisted contract method: {e}")))?;
-        let method = String::from_utf8(method_bytes.to_vec())
-            .map_err(|e| CoreError::invalid_data(format!("whitelisted contract method: {e}")))?;
-        let arg_count = items
-            .get(2)
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing argCount"))?
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("whitelisted contract argCount: {e}")))?
-            .to_i32()
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract argCount out of range"))?;
-        let fixed_fee = items
-            .get(3)
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing fixedFee"))?
-            .as_int()
-            .map_err(|e| CoreError::invalid_data(format!("whitelisted contract fixedFee: {e}")))?
-            .to_i64()
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract fixedFee out of range"))?;
-        Ok(WhitelistedContractView {
-            contract_hash,
-            method,
-            arg_count,
-            fixed_fee,
-        })
+        let limits = ExecutionEngineLimits::default();
+        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
+            value,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+        .map_err(|e| CoreError::deserialization(format!("whitelisted contract: {e}")))?;
+        WhitelistedContractView::from_stack_value(decoded)
     }
 
     /// Encodes a `WhitelistedContract` (`Struct[ContractHash, Method, ArgCount,
     /// FixedFee]`, C# `WhitelistedContract.ToStackItem`) — the write counterpart of
     /// [`decode_whitelisted_contract`].
     fn encode_whitelisted_contract(view: &WhitelistedContractView) -> CoreResult<Vec<u8>> {
-        let item = StackItem::from_struct(vec![
-            StackItem::from_byte_string(view.contract_hash.to_bytes()),
-            StackItem::from_byte_string(view.method.as_bytes().to_vec()),
-            StackItem::from_int(BigInt::from(view.arg_count)),
-            StackItem::from_int(BigInt::from(view.fixed_fee)),
-        ]);
-        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+        let item = view.to_stack_value();
+        BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::invalid_operation(format!("encode whitelisted contract: {e}")))
     }
 
@@ -555,31 +596,19 @@ impl PolicyContract {
         let item = snapshot.get(&key).ok_or_else(|| {
             CoreError::invalid_operation("NeoToken committee cache is not initialized")
         })?;
-        let decoded = BinarySerializer::deserialize(
+        let limits = ExecutionEngineLimits::default();
+        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
             &item.value_bytes(),
-            &ExecutionEngineLimits::default(),
-            None,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
         )
         .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
-        let StackItem::Array(array) = decoded else {
-            return Err(CoreError::invalid_data("committee cache is not an array"));
-        };
-        let mut points = Vec::with_capacity(array.items().len());
-        for element in array.items() {
-            let StackItem::Struct(fields) = element else {
-                return Err(CoreError::invalid_data("committee element is not a struct"));
-            };
-            let pubkey = fields
-                .items()
-                .first()
-                .ok_or_else(|| CoreError::invalid_data("committee element is empty"))?
-                .as_bytes()
-                .map_err(|e| CoreError::invalid_data(format!("committee pubkey: {e}")))?;
-            points.push(
-                ECPoint::from_bytes(&pubkey)
-                    .map_err(|e| CoreError::invalid_data(format!("committee EC point: {e}")))?,
-            );
-        }
+        let committee = crate::neo_token::CachedCommittee::from_stack_value(decoded)?;
+        let mut points = committee
+            .into_members()
+            .into_iter()
+            .map(|(point, _votes)| point)
+            .collect::<Vec<_>>();
         points.sort();
         Ok(points)
     }
@@ -672,28 +701,27 @@ impl PolicyContract {
         Ok(())
     }
 
-    /// C# `GetMillisecondsPerBlock`: the stored `Prefix_MillisecondsPerBlock`, or the
-    /// `ProtocolSettings` value written at HF_Echidna activation. Shared by the getter
-    /// and the setter (which reads the old value for its change event).
+    /// C# `GetMillisecondsPerBlock`: direct indexed read of stored
+    /// `Prefix_MillisecondsPerBlock`. Shared by the getter and setter (which reads
+    /// the old value for its change event).
     fn read_milliseconds_per_block(&self, engine: &ApplicationEngine) -> CoreResult<i64> {
-        let default = i64::from(engine.protocol_settings().milliseconds_per_block);
         let snapshot = engine.snapshot_cache();
-        crate::read_storage_int(
+        Self::read_required_i64_setting(
             &snapshot,
-            PolicyContract::ID,
             PREFIX_MILLISECONDS_PER_BLOCK,
-            default,
+            "MillisecondsPerBlock",
         )
     }
 
     /// Writes the milliseconds-per-block to `Prefix_MillisecondsPerBlock`
     /// (C# `GetAndChange(_millisecondsPerBlock).Set(value)`).
-    fn put_milliseconds_per_block(&self, snapshot: &DataCache, value: i64) {
-        let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_MILLISECONDS_PER_BLOCK]);
-        snapshot.update(
-            key,
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
-        );
+    fn put_milliseconds_per_block(&self, snapshot: &DataCache, value: i64) -> CoreResult<()> {
+        Self::put_required_i64_setting(
+            snapshot,
+            PREFIX_MILLISECONDS_PER_BLOCK,
+            "MillisecondsPerBlock",
+            value,
+        )
     }
 
     /// C# `SetMaxValidUntilBlockIncrement` range guard: `[1, 86400]`.
@@ -716,46 +744,66 @@ impl PolicyContract {
         Ok(())
     }
 
-    /// C# `GetMaxValidUntilBlockIncrement`: stored `Prefix_MaxValidUntilBlockIncrement`,
-    /// defaulting to the `ProtocolSettings` value (written at HF_Echidna activation).
+    /// C# `GetMaxValidUntilBlockIncrement`: before `HF_Echidna`, callers use the
+    /// protocol setting; from `HF_Echidna`, the native getter direct-indexes
+    /// `Prefix_MaxValidUntilBlockIncrement`.
     ///
-    /// Exposed `pub(crate)` so other native contracts (e.g. `Notary`) can reuse the
-    /// hardfork-aware source, matching the C# extension
-    /// `IReadOnlyStore.GetMaxValidUntilBlockIncrement(ProtocolSettings)` (pre-Echidna
-    /// the protocol setting; from Echidna the Policy storage value).
+    /// Exposed `pub(crate)` for native Policy call paths that mirror
+    /// `PolicyContract.GetMaxValidUntilBlockIncrement` from `HF_Echidna` onward.
     pub(crate) fn read_max_valid_until_block_increment(
         &self,
         engine: &ApplicationEngine,
     ) -> CoreResult<i64> {
         let default = i64::from(engine.protocol_settings().max_valid_until_block_increment);
+        if !engine.is_hardfork_enabled(Hardfork::HfEchidna) {
+            return Ok(default);
+        }
         let snapshot = engine.snapshot_cache();
-        crate::read_storage_int(
+        Self::read_required_i64_setting(
             &snapshot,
-            PolicyContract::ID,
             PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
-            default,
+            "MaxValidUntilBlockIncrement",
         )
     }
 
+    /// C# `IReadOnlyStore.GetMaxValidUntilBlockIncrement(ProtocolSettings)`:
+    /// protocol setting before `HF_Echidna`, Policy storage after it, and the
+    /// extension's pre-genesis missing-key fallback to protocol settings.
+    pub(crate) fn system_max_valid_until_block_increment(
+        &self,
+        engine: &ApplicationEngine,
+    ) -> CoreResult<i64> {
+        let snapshot = engine.snapshot_cache();
+        Ok(i64::from(
+            self.get_max_valid_until_block_increment_snapshot(
+                &snapshot,
+                engine.protocol_settings(),
+            )?,
+        ))
+    }
+
     /// Writes `Prefix_MaxValidUntilBlockIncrement` (C# `GetAndChange(...).Set(value)`).
-    fn put_max_valid_until_block_increment(&self, snapshot: &DataCache, value: i64) {
-        let key = StorageKey::new(
-            PolicyContract::ID,
-            vec![PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT],
-        );
-        snapshot.update(
-            key,
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
-        );
+    fn put_max_valid_until_block_increment(
+        &self,
+        snapshot: &DataCache,
+        value: i64,
+    ) -> CoreResult<()> {
+        Self::put_required_i64_setting(
+            snapshot,
+            PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
+            "MaxValidUntilBlockIncrement",
+            value,
+        )
     }
 
     /// Writes `Prefix_MaxTraceableBlocks` (C# `GetAndChange(_maxTraceableBlocks).Set(value)`).
-    fn put_max_traceable_blocks(&self, snapshot: &DataCache, value: i64) {
-        let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_MAX_TRACEABLE_BLOCKS]);
-        snapshot.update(
-            key,
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
-        );
+    fn put_max_traceable_blocks(&self, snapshot: &DataCache, value: i64) -> CoreResult<()> {
+        Self::put_required_i64_setting(
+            snapshot,
+            PREFIX_MAX_TRACEABLE_BLOCKS,
+            "MaxTraceableBlocks",
+            value,
+        )
     }
 
     /// Returns the effective `MaxTraceableBlocks` for traceability checks, mirroring
@@ -773,11 +821,10 @@ impl PolicyContract {
             return Ok(default);
         }
         let snapshot = engine.snapshot_cache();
-        let value = crate::read_storage_int(
+        let value = Self::read_required_i64_setting(
             &snapshot,
-            PolicyContract::ID,
             PREFIX_MAX_TRACEABLE_BLOCKS,
-            i64::from(default),
+            "MaxTraceableBlocks",
         )?;
         u32::try_from(value)
             .map_err(|_| CoreError::invalid_operation("MaxTraceableBlocks out of u32 range"))
@@ -818,12 +865,63 @@ use crate::committee::assert_committee;
 /// Decoded view of a stored `WhitelistedContract` (C#
 /// `Struct[ContractHash, Method, ArgCount, FixedFee]`,
 /// `WhitelistedContract.FromStackItem`).
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct WhitelistedContractView {
     contract_hash: UInt160,
     method: String,
     arg_count: i32,
     fixed_fee: i64,
 }
+
+impl WhitelistedContractView {
+    fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
+        let StackValue::Struct(_, items) = stack_value else {
+            return Err(CoreError::invalid_data(
+                "whitelisted contract is not a struct",
+            ));
+        };
+        let hash_bytes = items
+            .first()
+            .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing hash"))?
+            .to_byte_string_bytes()
+            .ok_or_else(|| CoreError::invalid_data("whitelisted contract hash is not byte-like"))?;
+        let contract_hash =
+            crate::args::bytes_to_hash160(&hash_bytes, "whitelisted contract hash")?;
+        let method = items
+            .get(1)
+            .and_then(neo_vm_rs::stack_value_as_string)
+            .ok_or_else(|| CoreError::invalid_data("whitelisted contract method is not UTF-8"))?;
+        let arg_count = items
+            .get(2)
+            .and_then(neo_vm_rs::stack_value_as_i64)
+            .and_then(|value| i32::try_from(value).ok())
+            .ok_or_else(|| CoreError::invalid_data("whitelisted contract argCount out of range"))?;
+        let fixed_fee = items
+            .get(3)
+            .and_then(neo_vm_rs::stack_value_as_i64)
+            .ok_or_else(|| CoreError::invalid_data("whitelisted contract fixedFee out of range"))?;
+        Ok(Self {
+            contract_hash,
+            method,
+            arg_count,
+            fixed_fee,
+        })
+    }
+
+    fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(
+            0,
+            vec![
+                StackValue::ByteString(self.contract_hash.to_bytes()),
+                StackValue::ByteString(self.method.as_bytes().to_vec()),
+                StackValue::Integer(i64::from(self.arg_count)),
+                StackValue::Integer(self.fixed_fee),
+            ],
+        )
+    }
+}
+
+neo_vm::impl_interoperable_via_stack_value!(WhitelistedContractView);
 
 /// C# `NeoToken.Prefix_Committee` (the committee cache NeoToken owns). Policy
 /// reads it for `AssertAlmostFullCommittee`, exactly as C# Policy reaches into
@@ -905,11 +1003,11 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ContractParameterType::Void,
         )
         .with_parameter_names(["value"]),
-        // getAttributeFee / setAttributeFee: present from genesis (C# V0) with a
-        // V1 from HF_Echidna that only differs by allowing the NotaryAssisted
-        // attribute type. The ABI signature is identical across versions, so a
-        // single always-active registration is manifest-equivalent; the
-        // NotaryAssisted gate is applied in invoke via the HF_Echidna check.
+        // getAttributeFee / setAttributeFee: dual C# descriptor registrations.
+        // V0 is genesis-active and DeprecatedIn HF_Echidna; V1 is ActiveIn
+        // HF_Echidna. The ABI signature is identical across versions, but the
+        // native method cache and hardfork-gated descriptors should stay
+        // literal to C#.
         NativeMethod::new(
             "getAttributeFee".to_string(),
             1 << 15,
@@ -918,6 +1016,17 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             vec![ContractParameterType::Integer],
             ContractParameterType::Integer,
         )
+        .with_deprecated_in(Hardfork::HfEchidna)
+        .with_parameter_names(["attributeType"]),
+        NativeMethod::new(
+            "getAttributeFee".to_string(),
+            1 << 15,
+            true,
+            read_states,
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Integer,
+        )
+        .with_active_in(Hardfork::HfEchidna)
         .with_parameter_names(["attributeType"]),
         NativeMethod::new(
             "setAttributeFee".to_string(),
@@ -930,6 +1039,20 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             ],
             ContractParameterType::Void,
         )
+        .with_deprecated_in(Hardfork::HfEchidna)
+        .with_parameter_names(["attributeType", "value"]),
+        NativeMethod::new(
+            "setAttributeFee".to_string(),
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![
+                ContractParameterType::Integer,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Void,
+        )
+        .with_active_in(Hardfork::HfEchidna)
         .with_parameter_names(["attributeType", "value"]),
         // getBlockedAccounts() -> Iterator over blocked account hashes (HF_Faun).
         NativeMethod::new(
@@ -1092,9 +1215,10 @@ static POLICY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
             "recoverFund".to_string(),
             1 << 15,
             false,
-            // C# v3.10.0: CallFlags.All (adds AllowCall) so the inner GAS
-            // transfer to Treasury may invoke GasToken (was States|AllowNotify).
-            CallFlags::ALL.bits(),
+            // C# v3.10.0 `PolicyContract.RecoverFund` requires only
+            // States|AllowNotify; the native-to-native transfer below does not
+            // add an AllowCall requirement at Policy's invocation gate.
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
             vec![
                 ContractParameterType::Hash160,
                 ContractParameterType::Hash160,
@@ -1264,14 +1388,14 @@ impl NativeContract for PolicyContract {
                 let value = Self::setter_int_arg(args, "setFeePerByte")?;
                 Self::validate_fee_per_byte(value)?;
                 assert_committee(engine, "setFeePerByte")?;
-                self.put_fee_per_byte(&engine.snapshot_cache(), value);
+                self.put_fee_per_byte(&engine.snapshot_cache(), value)?;
                 Ok(Vec::new())
             }
             "setStoragePrice" => {
                 let value = Self::setter_int_arg(args, "setStoragePrice")?;
                 Self::validate_storage_price(value)?;
                 assert_committee(engine, "setStoragePrice")?;
-                self.put_storage_price(&engine.snapshot_cache(), value);
+                self.put_storage_price(&engine.snapshot_cache(), value)?;
                 Ok(Vec::new())
             }
             "getExecFeeFactor" => {
@@ -1293,7 +1417,7 @@ impl NativeContract for PolicyContract {
                 let value = Self::setter_int_arg(args, "setExecFeeFactor")?;
                 self.validate_exec_fee_factor(engine, value)?;
                 assert_committee(engine, "setExecFeeFactor")?;
-                self.put_exec_fee_factor(&engine.snapshot_cache(), value);
+                self.put_exec_fee_factor(&engine.snapshot_cache(), value)?;
                 Ok(Vec::new())
             }
             "getAttributeFee" => {
@@ -1375,7 +1499,7 @@ impl NativeContract for PolicyContract {
                 Self::validate_milliseconds_per_block(value)?;
                 assert_committee(engine, "setMillisecondsPerBlock")?;
                 let old = self.read_milliseconds_per_block(engine)?;
-                self.put_milliseconds_per_block(&engine.snapshot_cache(), value);
+                self.put_milliseconds_per_block(&engine.snapshot_cache(), value)?;
                 engine
                     .send_notification(
                         Self::script_hash(),
@@ -1398,7 +1522,7 @@ impl NativeContract for PolicyContract {
                     )));
                 }
                 assert_committee(engine, "setMaxValidUntilBlockIncrement")?;
-                self.put_max_valid_until_block_increment(&engine.snapshot_cache(), value);
+                self.put_max_valid_until_block_increment(&engine.snapshot_cache(), value)?;
                 Ok(Vec::new())
             }
             "setMaxTraceableBlocks" => {
@@ -1419,7 +1543,7 @@ impl NativeContract for PolicyContract {
                     )));
                 }
                 assert_committee(engine, "setMaxTraceableBlocks")?;
-                self.put_max_traceable_blocks(&engine.snapshot_cache(), value);
+                self.put_max_traceable_blocks(&engine.snapshot_cache(), value)?;
                 Ok(Vec::new())
             }
             "getMaxValidUntilBlockIncrement" => Ok(BigInt::from(
@@ -1723,7 +1847,25 @@ impl NativeContract for PolicyContract {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_primitives::UInt256;
     use neo_storage::StorageItem;
+
+    fn seed_current_block(cache: &DataCache, index: u32) {
+        let value = crate::LedgerContract::new()
+            .serialize_hash_index_state(&UInt256::default(), index)
+            .expect("current block pointer");
+        cache.add(
+            StorageKey::new(crate::LedgerContract::ID, vec![12]),
+            StorageItem::from_bytes(value),
+        );
+    }
+
+    fn seed_policy_setting(cache: &DataCache, prefix: u8, value: i64) {
+        cache.add(
+            PolicyContract::setting_key(prefix),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
+        );
+    }
 
     #[test]
     fn native_contract_surface() {
@@ -1740,6 +1882,8 @@ mod tests {
                 "getExecPicoFeeFactor",
                 "setExecFeeFactor",
                 "getAttributeFee",
+                "getAttributeFee",
+                "setAttributeFee",
                 "setAttributeFee",
                 "getBlockedAccounts",
                 "setMillisecondsPerBlock",
@@ -1833,31 +1977,46 @@ mod tests {
         assert_eq!(set_exec.parameters, vec![ContractParameterType::Integer]);
         assert_eq!(set_exec.return_type, ContractParameterType::Void);
         assert!(set_exec.active_in.is_none());
-        // getAttributeFee is a safe Integer read; setAttributeFee is a non-safe
-        // States writer taking (attributeType, value). Both are always-active.
-        let get_af = c
+        // getAttributeFee/setAttributeFee are dual C# registrations around
+        // HF_Echidna. The ABI shape is unchanged, but exactly one descriptor is
+        // active at a given height.
+        let get_af_versions: Vec<&NativeMethod> = c
             .methods()
             .iter()
-            .find(|m| m.name == "getAttributeFee")
-            .unwrap();
-        assert!(get_af.safe && get_af.active_in.is_none());
-        assert_eq!(get_af.parameters, vec![ContractParameterType::Integer]);
-        assert_eq!(get_af.return_type, ContractParameterType::Integer);
-        let set_af = c
+            .filter(|m| m.name == "getAttributeFee")
+            .collect();
+        assert_eq!(get_af_versions.len(), 2);
+        for m in &get_af_versions {
+            assert!(m.safe);
+            assert_eq!(m.cpu_fee, 1 << 15);
+            assert_eq!(m.required_call_flags, CallFlags::READ_STATES.bits());
+            assert_eq!(m.parameters, vec![ContractParameterType::Integer]);
+            assert_eq!(m.return_type, ContractParameterType::Integer);
+        }
+        assert_eq!(get_af_versions[0].deprecated_in, Some(Hardfork::HfEchidna));
+        assert_eq!(get_af_versions[1].active_in, Some(Hardfork::HfEchidna));
+
+        let set_af_versions: Vec<&NativeMethod> = c
             .methods()
             .iter()
-            .find(|m| m.name == "setAttributeFee")
-            .unwrap();
-        assert!(!set_af.safe && set_af.active_in.is_none());
-        assert_eq!(set_af.required_call_flags, CallFlags::STATES.bits());
-        assert_eq!(
-            set_af.parameters,
-            vec![
-                ContractParameterType::Integer,
-                ContractParameterType::Integer
-            ]
-        );
-        assert_eq!(set_af.return_type, ContractParameterType::Void);
+            .filter(|m| m.name == "setAttributeFee")
+            .collect();
+        assert_eq!(set_af_versions.len(), 2);
+        for m in &set_af_versions {
+            assert!(!m.safe);
+            assert_eq!(m.cpu_fee, 1 << 15);
+            assert_eq!(m.required_call_flags, CallFlags::STATES.bits());
+            assert_eq!(
+                m.parameters,
+                vec![
+                    ContractParameterType::Integer,
+                    ContractParameterType::Integer
+                ]
+            );
+            assert_eq!(m.return_type, ContractParameterType::Void);
+        }
+        assert_eq!(set_af_versions[0].deprecated_in, Some(Hardfork::HfEchidna));
+        assert_eq!(set_af_versions[1].active_in, Some(Hardfork::HfEchidna));
         // getBlockedAccounts is an HF_Faun-gated, safe, no-arg iterator reader.
         let blocked = c
             .methods()
@@ -1958,7 +2117,10 @@ mod tests {
             .unwrap();
         assert!(!recover.safe);
         assert_eq!(recover.active_in, Some(Hardfork::HfFaun));
-        assert_eq!(recover.required_call_flags, CallFlags::ALL.bits());
+        assert_eq!(
+            recover.required_call_flags,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
+        );
         assert_eq!(
             recover.parameters,
             vec![
@@ -1984,7 +2146,7 @@ mod tests {
             PolicyContract::blocked_account_key(&a2),
             StorageItem::from_bytes(Vec::new()),
         );
-        PolicyContract::new().put_fee_per_byte(&cache, 1234); // Prefix_FeePerByte, must be excluded
+        seed_policy_setting(&cache, PREFIX_FEE_PER_BYTE, 1234); // Prefix_FeePerByte, must be excluded
 
         let entries = PolicyContract::new().blocked_account_entries(&cache);
         assert_eq!(entries.len(), 2);
@@ -2043,20 +2205,70 @@ mod tests {
         // Pre-Faun the reader returns the raw stored value; the writer's effect
         // is observed by the reader.
         let cache = DataCache::new(false);
+        let err = PolicyContract::new()
+            .exec_fee_factor_raw(&cache)
+            .expect_err("missing ExecFeeFactor storage should fault");
+        assert!(err.to_string().contains("ExecFeeFactor"), "{err}");
+
+        seed_policy_setting(
+            &cache,
+            PREFIX_EXEC_FEE_FACTOR,
+            i64::from(DEFAULT_EXEC_FEE_FACTOR),
+        );
         assert_eq!(
             PolicyContract::new().exec_fee_factor_raw(&cache).unwrap(),
             i64::from(DEFAULT_EXEC_FEE_FACTOR)
         );
-        PolicyContract::new().put_exec_fee_factor(&cache, 50);
+        PolicyContract::new()
+            .put_exec_fee_factor(&cache, 50)
+            .unwrap();
         assert_eq!(
             PolicyContract::new().exec_fee_factor_raw(&cache).unwrap(),
             50
         );
         // Overwrite (GetAndChange semantics).
-        PolicyContract::new().put_exec_fee_factor(&cache, 100);
+        PolicyContract::new()
+            .put_exec_fee_factor(&cache, 100)
+            .unwrap();
         assert_eq!(
             PolicyContract::new().exec_fee_factor_raw(&cache).unwrap(),
             100
+        );
+    }
+
+    #[test]
+    fn snapshot_exec_fee_factor_divides_post_faun_pico_storage() {
+        let cache = DataCache::new(false);
+        let mut settings = neo_config::ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfFaun, 0);
+
+        seed_policy_setting(
+            &cache,
+            PREFIX_EXEC_FEE_FACTOR,
+            i64::from(DEFAULT_EXEC_FEE_FACTOR) * FEE_FACTOR,
+        );
+
+        assert_eq!(
+            PolicyContract::new()
+                .get_exec_fee_factor_snapshot(&cache, &settings, 0)
+                .unwrap(),
+            DEFAULT_EXEC_FEE_FACTOR
+        );
+    }
+
+    #[test]
+    fn snapshot_max_valid_until_ignores_policy_storage_before_echidna() {
+        let cache = DataCache::new(false);
+        let mut settings = neo_config::ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfEchidna, 100);
+        seed_policy_setting(&cache, PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT, 42);
+        seed_current_block(&cache, 0);
+
+        assert_eq!(
+            PolicyContract::new()
+                .get_max_valid_until_block_increment_snapshot(&cache, &settings)
+                .unwrap(),
+            settings.max_valid_until_block_increment
         );
     }
 
@@ -2089,10 +2301,15 @@ mod tests {
         let cache = DataCache::new(false);
         // Writing via the setter's storage effect is observed by the getter,
         // exercising the GetAndChange (overwrite-as-Changed) semantics.
-        PolicyContract::new().put_fee_per_byte(&cache, 4242);
+        seed_policy_setting(&cache, PREFIX_FEE_PER_BYTE, i64::from(DEFAULT_FEE_PER_BYTE));
+        PolicyContract::new()
+            .put_fee_per_byte(&cache, 4242)
+            .unwrap();
         assert_eq!(PolicyContract::new().fee_per_byte(&cache).unwrap(), 4242);
         // Overwriting an existing value is read back as the new value.
-        PolicyContract::new().put_fee_per_byte(&cache, 5000);
+        PolicyContract::new()
+            .put_fee_per_byte(&cache, 5000)
+            .unwrap();
         assert_eq!(PolicyContract::new().fee_per_byte(&cache).unwrap(), 5000);
     }
 
@@ -2108,12 +2325,17 @@ mod tests {
     #[test]
     fn storage_price_write_then_read_round_trips() {
         let cache = DataCache::new(false);
-        PolicyContract::new().put_storage_price(&cache, 250_000);
+        seed_policy_setting(&cache, PREFIX_STORAGE_PRICE, DEFAULT_STORAGE_PRICE);
+        PolicyContract::new()
+            .put_storage_price(&cache, 250_000)
+            .unwrap();
         assert_eq!(
             PolicyContract::new().storage_price(&cache).unwrap(),
             250_000
         );
-        PolicyContract::new().put_storage_price(&cache, 1_000_000);
+        PolicyContract::new()
+            .put_storage_price(&cache, 1_000_000)
+            .unwrap();
         assert_eq!(
             PolicyContract::new().storage_price(&cache).unwrap(),
             1_000_000
@@ -2137,7 +2359,10 @@ mod tests {
     #[test]
     fn milliseconds_per_block_write_persists_to_storage() {
         let cache = DataCache::new(false);
-        PolicyContract::new().put_milliseconds_per_block(&cache, 7_000);
+        seed_policy_setting(&cache, PREFIX_MILLISECONDS_PER_BLOCK, 15_000);
+        PolicyContract::new()
+            .put_milliseconds_per_block(&cache, 7_000)
+            .unwrap();
         // Read back the raw storage value (the engine-aware getter adds the
         // ProtocolSettings default, which isn't needed once a value is stored).
         assert_eq!(
@@ -2176,7 +2401,10 @@ mod tests {
     #[test]
     fn max_chain_param_writes_persist_to_storage() {
         let cache = DataCache::new(false);
-        PolicyContract::new().put_max_valid_until_block_increment(&cache, 5_000);
+        seed_policy_setting(&cache, PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT, 5_760);
+        PolicyContract::new()
+            .put_max_valid_until_block_increment(&cache, 5_000)
+            .unwrap();
         assert_eq!(
             crate::read_storage_int(
                 &cache,
@@ -2187,7 +2415,10 @@ mod tests {
             .unwrap(),
             5_000
         );
-        PolicyContract::new().put_max_traceable_blocks(&cache, 1_000_000);
+        seed_policy_setting(&cache, PREFIX_MAX_TRACEABLE_BLOCKS, 2_102_400);
+        PolicyContract::new()
+            .put_max_traceable_blocks(&cache, 1_000_000)
+            .unwrap();
         assert_eq!(
             crate::read_storage_int(&cache, PolicyContract::ID, PREFIX_MAX_TRACEABLE_BLOCKS, 0)
                 .unwrap(),
@@ -2236,34 +2467,80 @@ mod tests {
     #[test]
     fn fee_per_byte_reads_storage_with_default() {
         let cache = DataCache::new(false);
-        // Absent -> default 1000 (C# writes this at initialization).
-        assert_eq!(PolicyContract::new().fee_per_byte(&cache).unwrap(), 1000);
+        let err = PolicyContract::new()
+            .fee_per_byte(&cache)
+            .expect_err("missing FeePerByte storage should fault");
+        assert!(err.to_string().contains("FeePerByte"), "{err}");
 
         // A configured value is read back from the BigInteger storage item.
-        let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_FEE_PER_BYTE]);
-        cache.add(
-            key,
-            StorageItem::from_bytes(BigInt::from(4242).to_signed_bytes_le()),
-        );
+        seed_policy_setting(&cache, PREFIX_FEE_PER_BYTE, 4242);
         assert_eq!(PolicyContract::new().fee_per_byte(&cache).unwrap(), 4242);
     }
 
     #[test]
     fn storage_price_reads_storage_with_default() {
         let cache = DataCache::new(false);
-        assert_eq!(
-            PolicyContract::new().storage_price(&cache).unwrap(),
-            DEFAULT_STORAGE_PRICE
-        );
+        let err = PolicyContract::new()
+            .storage_price(&cache)
+            .expect_err("missing StoragePrice storage should fault");
+        assert!(err.to_string().contains("StoragePrice"), "{err}");
 
-        let key = StorageKey::new(PolicyContract::ID, vec![PREFIX_STORAGE_PRICE]);
-        cache.add(
-            key,
-            StorageItem::from_bytes(BigInt::from(250_000).to_signed_bytes_le()),
-        );
+        seed_policy_setting(&cache, PREFIX_STORAGE_PRICE, 250_000);
         assert_eq!(
             PolicyContract::new().storage_price(&cache).unwrap(),
             250_000
+        );
+    }
+
+    #[test]
+    fn echidna_policy_settings_require_initialized_storage() {
+        let cache = DataCache::new(false);
+        seed_current_block(&cache, 0);
+        let mut settings = neo_config::ProtocolSettings::default();
+        settings.hardforks.insert(Hardfork::HfEchidna, 0);
+        let engine = ApplicationEngine::new(
+            neo_primitives::TriggerType::Application,
+            None,
+            std::sync::Arc::new(cache),
+            None,
+            settings.clone(),
+            0,
+            None,
+        )
+        .expect("engine builds");
+
+        for (name, result) in [
+            (
+                "MillisecondsPerBlock",
+                PolicyContract::new().read_milliseconds_per_block(&engine),
+            ),
+            (
+                "MaxValidUntilBlockIncrement",
+                PolicyContract::new().read_max_valid_until_block_increment(&engine),
+            ),
+            (
+                "MaxTraceableBlocks",
+                PolicyContract::new()
+                    .max_traceable_blocks(&engine)
+                    .map(i64::from),
+            ),
+        ] {
+            let err = result.expect_err("missing Echidna policy storage should fault");
+            assert!(err.to_string().contains(name), "{err}");
+        }
+
+        let snapshot = engine.snapshot_cache();
+        assert_eq!(
+            PolicyContract::new()
+                .get_max_valid_until_block_increment_snapshot(&snapshot, &settings)
+                .unwrap(),
+            settings.max_valid_until_block_increment
+        );
+        assert_eq!(
+            PolicyContract::new()
+                .get_max_traceable_blocks_snapshot(&snapshot, &settings)
+                .unwrap(),
+            settings.max_traceable_blocks
         );
     }
 
@@ -2278,11 +2555,87 @@ mod tests {
             fixed_fee: 123_456,
         };
         let bytes = PolicyContract::encode_whitelisted_contract(&view).unwrap();
+        let expected_item = StackItem::from_struct(vec![
+            StackItem::from_byte_string(view.contract_hash.to_bytes()),
+            StackItem::from_byte_string(view.method.as_bytes().to_vec()),
+            StackItem::from_int(BigInt::from(view.arg_count)),
+            StackItem::from_int(BigInt::from(view.fixed_fee)),
+        ]);
+        let expected =
+            BinarySerializer::serialize(&expected_item, &ExecutionEngineLimits::default()).unwrap();
+        assert_eq!(bytes, expected);
         let decoded = PolicyContract::decode_whitelisted_contract(&bytes).unwrap();
-        assert_eq!(decoded.contract_hash, view.contract_hash);
-        assert_eq!(decoded.method, view.method);
-        assert_eq!(decoded.arg_count, view.arg_count);
-        assert_eq!(decoded.fixed_fee, view.fixed_fee);
+        assert_eq!(decoded, view);
+        assert_eq!(
+            Interoperable::to_stack_value(&view).unwrap(),
+            StackValue::try_from(expected_item.clone()).unwrap()
+        );
+
+        let mut trait_decoded = WhitelistedContractView {
+            contract_hash: UInt160::from_bytes(&[0x00; 20]).unwrap(),
+            method: String::new(),
+            arg_count: 0,
+            fixed_fee: 0,
+        };
+        Interoperable::from_stack_value(
+            &mut trait_decoded,
+            StackValue::try_from(expected_item).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(trait_decoded, view);
+    }
+
+    #[test]
+    fn whitelisted_contract_storage_uses_stack_value_projection() {
+        fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+            let start_index = source.find(start).expect("start marker exists");
+            let end_index = source[start_index..]
+                .find(end)
+                .map(|offset| start_index + offset)
+                .expect("end marker exists");
+            &source[start_index..end_index]
+        }
+
+        let source = include_str!("policy_contract.rs");
+        let decoder = slice_between(
+            source,
+            "fn decode_whitelisted_contract",
+            "fn encode_whitelisted_contract",
+        );
+        assert!(decoder.contains("deserialize_stack_value_with_limits"));
+        assert!(decoder.contains("WhitelistedContractView::from_stack_value"));
+        assert!(!decoder.contains("BinarySerializer::deserialize("));
+
+        let encoder = slice_between(
+            source,
+            "fn encode_whitelisted_contract",
+            "fn whitelist_fee_entries",
+        );
+        assert!(encoder.contains("to_stack_value"));
+        assert!(encoder.contains("serialize_stack_value_default"));
+        assert!(!encoder.contains("StackItem::from_struct"));
+        assert!(!encoder.contains("BinarySerializer::serialize("));
+    }
+
+    #[test]
+    fn committee_cache_reader_uses_stack_value_projection() {
+        let source = include_str!("policy_contract.rs");
+        let start = source
+            .find("fn read_neo_committee_sorted")
+            .expect("committee reader exists");
+        let end = source[start..]
+            .find("fn assert_almost_full_committee")
+            .map(|offset| start + offset)
+            .expect("assert_almost_full_committee follows committee reader");
+        let helper = &source[start..end];
+
+        assert!(helper.contains("deserialize_stack_value_with_limits"));
+        assert!(helper.contains("CachedCommittee::from_stack_value"));
+        assert!(!helper.contains("StackValue::Array"));
+        assert!(!helper.contains("StackValue::Struct"));
+        assert!(!helper.contains("BinarySerializer::deserialize("));
+        assert!(!helper.contains("StackItem::Array"));
+        assert!(!helper.contains("StackItem::Struct"));
     }
 
     #[test]
@@ -2402,6 +2755,7 @@ mod policy_writer_tests {
     use neo_config::ProtocolSettings;
     use neo_execution::contract_state::ContractState;
     use neo_execution::native_contract::build_native_contract_state;
+    use neo_manifest::{ContractManifest, ContractMethodDescriptor, NefFile};
     use neo_payloads::signer::Signer;
     use neo_payloads::transaction::Transaction;
     use neo_payloads::witness::Witness;
@@ -2491,6 +2845,82 @@ mod policy_writer_tests {
             .ok()
             .and_then(|item| item.as_bool().ok());
         (state, top)
+    }
+
+    fn returning_user_contract(hash: UInt160) -> ContractState {
+        let nef = NefFile::new(
+            "policy-blocked-call-test".to_string(),
+            vec![
+                neo_vm_rs::OpCode::PUSH1.byte(),
+                neo_vm_rs::OpCode::RET.byte(),
+            ],
+        );
+        let mut manifest = ContractManifest::new("BlockedCallFixture".to_string());
+        manifest.abi.methods.push(
+            ContractMethodDescriptor::new(
+                "answer".to_string(),
+                Vec::new(),
+                ContractParameterType::Integer,
+                0,
+                true,
+            )
+            .expect("method descriptor"),
+        );
+        ContractState::new(7, hash, nef, manifest)
+    }
+
+    #[test]
+    fn real_policy_blocked_storage_rejects_system_contract_call_target() {
+        crate::install();
+        let settings = ProtocolSettings::default();
+        let cache = DataCache::new(false);
+        let target_hash = UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030405").unwrap();
+        deploy_native(&cache, &returning_user_contract(target_hash));
+        cache.add(
+            PolicyContract::blocked_account_key(&target_hash),
+            StorageItem::from_bytes(Vec::new()),
+        );
+
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push_int(0);
+        builder.emit_pack();
+        builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
+        builder.emit_push("answer".as_bytes());
+        builder.emit_push(&target_hash.to_array());
+        builder
+            .emit_syscall("System.Contract.Call")
+            .expect("System.Contract.Call");
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            Some(container),
+            Arc::new(cache),
+            None,
+            settings,
+            2000_00000000,
+            None,
+        )
+        .expect("engine builds");
+        engine
+            .load_script(builder.to_array(), CallFlags::ALL, None)
+            .expect("script loads");
+
+        let state = engine.execute_allow_fault();
+        assert_eq!(
+            state,
+            VmState::FAULT,
+            "C# ApplicationEngine.CallContractInternal rejects Policy-blocked contracts before invocation"
+        );
+        assert_eq!(
+            engine.invocation_stack().len(),
+            1,
+            "blocked contract target must not be loaded as an invocation context"
+        );
     }
 
     /// Pre-Faun blockAccount (the V0 registration): committee-gated, writes an

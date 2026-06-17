@@ -152,6 +152,20 @@ impl ConsensusService {
             });
         }
 
+        if payload.witness.is_empty() {
+            return Err(ConsensusError::signature_failed(
+                "Consensus payload missing witness",
+            ));
+        }
+        let mut sign_data = Vec::with_capacity(4 + 32);
+        sign_data.extend_from_slice(&self.network.to_le_bytes());
+        sign_data.extend_from_slice(&msg_hash.as_bytes());
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
+            return Err(ConsensusError::signature_failed(
+                "Consensus payload signature invalid",
+            ));
+        }
+
         // Update last seen message for this validator
         // This is used to track failed/lost nodes for recovery logic
         self.context

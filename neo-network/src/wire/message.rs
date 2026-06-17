@@ -118,15 +118,19 @@ impl Message {
     /// Decodes a `Message` from a complete wire byte sequence.
     pub fn from_bytes(bytes: &[u8]) -> WireResult<Self> {
         let mut reader = MemoryReader::new(bytes);
-        let flags = MessageFlags::from_bits(reader.read_u8()?)
-            .ok_or_else(|| WireError::InvalidMessage("invalid flags byte".to_string()))?;
+        // C# casts the first byte directly to `[Flags] MessageFlags`, so
+        // unknown/reserved bits are preserved and only the compressed bit has
+        // current behavior.
+        let flags = MessageFlags::from_byte(reader.read_u8()?);
         let command = MessageCommand::from_byte(reader.read_u8()?)
             .map_err(|e| WireError::InvalidMessage(format!("invalid command byte: {e}")))?;
         let payload_compressed = reader
             .read_var_bytes(PAYLOAD_MAX_SIZE)
             .map_err(|e| WireError::InvalidMessage(format!("invalid payload length: {e}")))?;
 
-        let payload_raw = if flags.contains(MessageFlags::COMPRESSED) {
+        let payload_raw = if payload_compressed.is_empty() {
+            Vec::new()
+        } else if flags.contains(MessageFlags::COMPRESSED) {
             Lz4::decompress_lz4(&payload_compressed, PAYLOAD_MAX_SIZE)
                 .map_err(|e| WireError::Compression(e.to_string()))?
         } else {
@@ -207,5 +211,33 @@ mod tests {
         let err = Message::from_payload_bytes(MessageCommand::Block, payload, false)
             .expect_err("must reject");
         assert!(matches!(err, WireError::PayloadTooLarge(_, _)));
+    }
+
+    #[test]
+    fn message_preserves_unknown_flag_bits_like_csharp() {
+        // C# Message.Deserialize casts the raw byte to the [Flags] enum and
+        // then checks HasFlag(Compressed); reserved bits do not reject the
+        // frame.
+        let bytes = [0x80, MessageCommand::Verack.to_byte(), 0x00];
+        let decoded = Message::from_bytes(&bytes).expect("decode");
+        assert_eq!(decoded.flags.to_byte(), 0x80);
+        assert!(!decoded.flags.is_compressed());
+        assert!(decoded.payload_raw.is_empty());
+    }
+
+    #[test]
+    fn message_accepts_empty_payload_with_compressed_flag_like_csharp() {
+        // C# Message.DecompressPayload returns immediately when
+        // _payloadCompressed.Length == 0, even if the compressed bit is set.
+        let bytes = [
+            MessageFlags::COMPRESSED.to_byte(),
+            MessageCommand::Verack.to_byte(),
+            0x00,
+        ];
+
+        let decoded = Message::from_bytes(&bytes).expect("decode");
+        assert_eq!(decoded.flags, MessageFlags::COMPRESSED);
+        assert!(decoded.payload_compressed.is_empty());
+        assert!(decoded.payload_raw.is_empty());
     }
 }

@@ -43,11 +43,11 @@ macro_rules! define_witness_scope {
 
             fn parse_named(part: &str) -> Result<Self, String> {
                 $(
-                    if part.eq_ignore_ascii_case($display) {
+                    if part == $display {
                         return Ok(Self::$const_name);
                     }
                 )+
-                Err(format!("Unknown witness scope: {}", part.to_ascii_lowercase()))
+                Err(format!("Unknown witness scope: {part}"))
             }
 
             fn single_name(self) -> Option<&'static str> {
@@ -189,16 +189,15 @@ impl FromStr for WitnessScope {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let trimmed = s.trim();
         if trimmed.is_empty() {
-            return Ok(Self::NONE);
+            return Err("Unknown witness scope: ".to_string());
         }
 
         let mut scope = Self::NONE;
         let mut has_parts = false;
-        for part in trimmed
-            .split(['|', ','])
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-        {
+        for part in trimmed.split(',').map(str::trim) {
+            if part.is_empty() {
+                return Err("Unknown witness scope: ".to_string());
+            }
             has_parts = true;
             let flag = Self::parse_named(part)?;
 
@@ -239,7 +238,7 @@ impl fmt::Display for WitnessScope {
         if parts.is_empty() {
             write!(f, "None")
         } else {
-            write!(f, "{}", parts.join(" | "))
+            write!(f, "{}", parts.join(", "))
         }
     }
 }
@@ -381,7 +380,7 @@ mod tests {
                 "{}",
                 WitnessScope::CALLED_BY_ENTRY | WitnessScope::CUSTOM_CONTRACTS
             ),
-            "CalledByEntry | CustomContracts"
+            "CalledByEntry, CustomContracts"
         );
     }
 
@@ -396,8 +395,14 @@ mod tests {
             WitnessScope::from_str("Global").unwrap(),
             WitnessScope::GLOBAL
         );
+        assert_eq!(
+            WitnessScope::from_str("CalledByEntry, CustomContracts").unwrap(),
+            WitnessScope::CALLED_BY_ENTRY | WitnessScope::CUSTOM_CONTRACTS
+        );
         assert!(WitnessScope::from_str("Invalid").is_err());
+        assert!(WitnessScope::from_str("calledbyentry").is_err());
         assert!(WitnessScope::from_str("Global | CalledByEntry").is_err());
+        assert!(WitnessScope::from_str("").is_err());
     }
 
     #[test]

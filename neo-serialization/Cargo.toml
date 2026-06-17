@@ -11,7 +11,7 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Canonical home for Neo's pure serialization helpers: compression, binary stack-item codec, JSON stack-item codec, in-memory storage providers"
+description = "Protocol types layer: Neo serialization (compression, binary/json stack-item codecs, in-memory storage providers). Depends on neo-vm for StackValue types."
 
 [dependencies]
 hex = { workspace = true }

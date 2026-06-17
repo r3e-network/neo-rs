@@ -1,37 +1,31 @@
 //! Cache-aware `StorageItem` extension.
 //!
 //! `StorageItem` itself is canonical in `neo-storage` (a leaf storage crate).
-//! This module adds the cache-aware BigInteger/Interoperable extension trait,
-//! which depends on smart-contract VM interop (`BinarySerializer`,
-//! `Interoperable`). Keeping it here — rather than in `persistence` — means the
-//! storage/persistence layer carries no edge back into the smart-contract layer.
+//! This module adds the cache-aware BigInteger extension trait. Keeping it here
+//! — rather than in `persistence` — means the storage/persistence layer carries
+//! no edge back into the smart-contract layer.
 
-use crate::interoperable::Interoperable;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{IoResult, MemoryReader};
-use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::types::storage_item::CacheProvider;
-use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::any::Any;
 
 // ---------------------------------------------------------------------------
-// StorageCache – internal enum for BigInteger / Interoperable payloads
+// StorageCache – internal enum for BigInteger payloads
 // ---------------------------------------------------------------------------
 
 #[allow(dead_code)]
 #[derive(Debug)]
 enum StorageCache {
     BigInteger(BigInt),
-    Interoperable(Box<dyn Interoperable>),
 }
 
 impl Clone for StorageCache {
     fn clone(&self) -> Self {
         match self {
             StorageCache::BigInteger(value) => StorageCache::BigInteger(value.clone()),
-            StorageCache::Interoperable(value) => StorageCache::Interoperable(value.clone_box()),
         }
     }
 }
@@ -40,17 +34,15 @@ impl CacheProvider for StorageCache {
     fn to_bytes(&self) -> Vec<u8> {
         match self {
             StorageCache::BigInteger(value) => {
-                let mut bytes = value.to_signed_bytes_le();
-                if bytes.is_empty() {
-                    bytes.push(0);
+                // C# `BigInteger.ToByteArrayStandard()` stores zero as an
+                // empty byte array, not `[0x00]`. These raw bytes feed state
+                // root calculation when cache-backed items are sealed.
+                if value == &BigInt::ZERO {
+                    Vec::new()
+                } else {
+                    value.to_signed_bytes_le()
                 }
-                bytes
             }
-            StorageCache::Interoperable(interoperable) => match interoperable.to_stack_item() {
-                Ok(item) => BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                    .unwrap_or_default(),
-                Err(_) => Vec::new(),
-            },
         }
     }
 
@@ -132,5 +124,38 @@ impl StorageItemExt for StorageItem {
         let data = reader.read_to_end()?.to_vec();
         self.deserialize_from_bytes(&data);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_backed_zero_bigint_materializes_as_empty_bytes() {
+        let item = StorageItem::from_bigint(BigInt::from(0));
+
+        assert!(item.value_bytes().is_empty());
+        assert_eq!(item.to_value(), Vec::<u8>::new());
+        assert_eq!(item.serialized_size(), 1);
+    }
+
+    #[test]
+    fn set_bigint_zero_clears_previous_bytes() {
+        let mut item = StorageItem::from_bytes(vec![0x01]);
+
+        item.set_bigint(BigInt::from(0));
+
+        assert!(item.value().is_empty());
+        assert!(item.value_bytes().is_empty());
+        assert_eq!(item.to_bigint(), BigInt::from(0));
+    }
+
+    #[test]
+    fn nonzero_bigint_materializes_as_signed_little_endian() {
+        let value = BigInt::from(128);
+        let item = StorageItem::from_bigint(value.clone());
+
+        assert_eq!(item.value_bytes().as_ref(), value.to_signed_bytes_le());
     }
 }
