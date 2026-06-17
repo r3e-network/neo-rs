@@ -330,6 +330,15 @@ pub trait NativeContract: Any + Send + Sync {
 }
 
 /// Lightweight oracle request descriptor used by the engine.
+///
+/// This lives in `neo-execution` (not next to `OracleContract` in
+/// `neo-native-contracts`) because it is part of the [`NativeContract`]
+/// trait's `post_persist` method signature (see the `oracle_request`
+/// parameter below). Moving it would require either moving the trait or
+/// creating a cycle (`neo-native-contracts` already depends on
+/// `neo-execution`). The actual `OracleRequest` storage record — the
+/// persisted state — is co-located with the contract in
+/// `neo-native-contracts/src/oracle_contract.rs`.
 #[derive(Clone, Debug)]
 pub struct OracleRequestDetails {
     /// The URL the oracle was asked to fetch.

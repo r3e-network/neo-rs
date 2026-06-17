@@ -1,7 +1,25 @@
 //! Contract state management for Neo smart contracts.
 //!
-//! This module provides the ContractState struct which represents the state
-//! of a deployed smart contract in the Neo blockchain.
+//! This module provides the [`ContractState`] struct, which represents the
+//! state of a deployed smart contract in the Neo blockchain (the Rust
+//! counterpart of C# `Neo.SmartContract.ContractState`).
+//!
+//! # Why this lives in `neo-execution`, not `neo-native-contracts`
+//!
+//! `ContractState` is read and written by the `ContractManagement` native
+//! contract (in `neo-native-contracts`), so at first glance it looks like it
+//! belongs next to that contract. It cannot move there, however, because it is
+//! deeply coupled to the execution engine: it depends on [`crate::helper::Helper`],
+//! [`crate::interoperable::Interoperable`], and the VM stack-item types
+//! ([`neo_vm::StackItem`] / [`neo_vm_rs::StackValue`]) for its (de)serialization
+//! to/from the on-chain `Struct` representation. `neo-native-contracts` depends
+//! on `neo-execution` (for the `NativeContract` trait and the engine), so
+//! moving `ContractState` the other way would create a dependency cycle.
+//!
+//! The C# reference confirms this placement: `ContractState` lives in the
+//! `Neo.SmartContract` namespace (the execution layer), not in
+//! `Neo.SmartContract.Native` (where `ContractManagement` lives). The Rust
+//! layering mirrors that split.
 
 use crate::helper::Helper;
 use crate::interoperable::Interoperable;
