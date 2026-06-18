@@ -394,11 +394,21 @@ impl ApplicationEngine {
     }
 
     /// Returns the timestamp of the block currently being persisted.
+    ///
+    /// Mirrors C# `ApplicationEngine.Time`, which reads the persisting block's
+    /// timestamp. Fails when there is no persisting block — i.e. the engine was
+    /// constructed without one (for example a verification-trigger or a bare
+    /// test harness). The C# message frames this as a trigger-type guard
+    /// ("Time can only be called with Application trigger"), but the actual
+    /// precondition is the presence of a persisting block, which is why we
+    /// phrase the error in those terms.
     pub fn current_block_timestamp(&self) -> CoreResult<u64> {
         self.persisting_block
             .as_deref()
             .map(|block| block.header.timestamp())
-            .ok_or_else(|| CoreError::other("GetTime can only be called with Application trigger."))
+            .ok_or_else(|| {
+                CoreError::other("GetTime requires a persisting block (no persisting block on this engine)")
+            })
     }
 
     /// Returns the block currently being persisted, if any.

@@ -2936,11 +2936,19 @@ mod policy_writer_tests {
         let signer = committee_address(&committee);
         let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
 
+        // blockAccount's pre-Faun path records the persisting block timestamp
+        // (Faun onwards stores GetTime()), so the engine needs a persisting
+        // block fixture. Height 0 is pre-Faun on MainNet defaults.
+        let mut persisting_header = BlockHeader::default();
+        persisting_header.set_index(0);
+        persisting_header.set_timestamp(1_700_000_000_000);
+        let persisting_block = Some(Block::from_parts(persisting_header, vec![]));
+
         let (state, result) = call_policy(
             Arc::clone(&snapshot),
             signer,
             settings.clone(),
-            None,
+            persisting_block,
             "blockAccount",
             1,
             &|b| {

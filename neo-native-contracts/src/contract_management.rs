@@ -2190,7 +2190,14 @@ mod destroy_engine_tests {
 
         // Default MainNet schedules Faun at 8,800,000, so height 0 runs the
         // pre-Faun BlockAccountInternal branch (empty blocked value).
-        let mut engine = engine_for(Arc::clone(&snapshot), None, ProtocolSettings::default());
+        // The destroy path reads the persisting block's timestamp, so the
+        // engine needs a persisting block fixture (height 0, pre-Faun).
+        let mut persisting_header = BlockHeader::default();
+        persisting_header.set_index(0);
+        persisting_header.set_timestamp(1_700_000_000_000);
+        let persisting_block = Some(Block::from_parts(persisting_header, vec![]));
+        let mut engine =
+            engine_for(Arc::clone(&snapshot), persisting_block, ProtocolSettings::default());
         engine
             .load_script(script, CallFlags::ALL, Some(self_hash))
             .expect("script loads");
