@@ -794,18 +794,21 @@ mod tests {
         let reader = &source[read_start..start];
         let helper = &source[start..end];
 
-        assert!(reader.contains("deserialize_stack_value_with_limits"));
-        assert!(reader.contains("AccountState::from_stack_value"));
+        // After the FungibleToken-helper extraction, the gas account readers
+        // delegate (de)serialization to the shared crate::deserialize_account_state
+        // / serialize_account_state helpers instead of inlining the plumbing.
+        assert!(reader.contains("crate::deserialize_account_state"));
         assert!(!reader.contains("StackValue::Struct"));
         assert!(!reader.contains("stack_value_as_bigint"));
         assert!(!reader.contains("BinarySerializer::deserialize("));
+        assert!(!reader.contains("deserialize_stack_value_with_limits"));
 
-        assert!(helper.contains("AccountState::new"));
-        assert!(helper.contains("to_stack_value"));
-        assert!(helper.contains("serialize_stack_value_default"));
+        assert!(helper.contains("crate::AccountState::new"));
+        assert!(helper.contains("crate::serialize_account_state"));
         assert!(!helper.contains("StackValue::Struct"));
         assert!(!helper.contains("StackItem::from_struct"));
         assert!(!helper.contains("BinarySerializer::serialize("));
+        assert!(!helper.contains("serialize_stack_value_default"));
     }
 
     #[test]

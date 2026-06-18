@@ -1541,10 +1541,7 @@ mod tests {
             StorageItem::from_bytes(vec![0xBB; 20]),
         );
         cache.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_storage_key(&UInt160::zero()),
-            ),
+            ContractManagement::contract_storage_key(&UInt160::zero()),
             StorageItem::from_bytes(vec![1]),
         );
 
@@ -1595,17 +1592,11 @@ mod tests {
         let hash = UInt160::from_bytes(&[0x42u8; 20]).unwrap();
         let state = ContractState::new_native(7, hash, "TestUserContract".to_string());
         cache.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_storage_key(&hash),
-            ),
+            ContractManagement::contract_storage_key(&hash),
             StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
         );
         cache.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_id_storage_key(7),
-            ),
+            ContractManagement::contract_id_storage_key(7),
             StorageItem::from_bytes(hash.to_bytes().to_vec()),
         );
 
@@ -1631,10 +1622,7 @@ mod tests {
         let hash = UInt160::from_bytes(&[0x24u8; 20]).unwrap();
         let state = ContractState::new_native(7, hash, "LegacyIndexFixture".to_string());
         cache.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_storage_key(&hash),
-            ),
+            ContractManagement::contract_storage_key(&hash),
             StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
         );
         // Legacy entry written with a LITTLE-endian id suffix (historical bug);
@@ -1670,10 +1658,7 @@ mod tests {
             ..Default::default()
         });
         cache.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_storage_key(&hash),
-            ),
+            ContractManagement::contract_storage_key(&hash),
             StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
         );
 
@@ -1849,10 +1834,7 @@ mod tests {
         let hash = UInt160::from_bytes(&[8u8; 20]).unwrap();
         assert!(!ContractManagement::is_contract(&cache, &hash));
         cache.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_storage_key(&hash),
-            ),
+            ContractManagement::contract_storage_key(&hash),
             StorageItem::from_bytes(vec![1]),
         );
         assert!(ContractManagement::is_contract(&cache, &hash));
@@ -2116,10 +2098,7 @@ mod destroy_engine_tests {
     /// Writes a serialized contract record under `Prefix_Contract ++ hash`.
     fn put_contract_record(cache: &DataCache, state: &ContractState) {
         cache.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_storage_key(&state.hash),
-            ),
+            ContractManagement::contract_storage_key(&state.hash),
             StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
         );
     }
@@ -2177,10 +2156,7 @@ mod destroy_engine_tests {
         let self_hash = UInt160::from_script(&script);
         let user = ContractState::new_native(7, self_hash, "SelfDestructFixture".to_string());
         put_contract_record(&cache, &user);
-        let index_key = StorageKey::new(
-            ContractManagement::ID,
-            ContractManagement::contract_id_storage_key(7),
-        );
+        let index_key = ContractManagement::contract_id_storage_key(7);
         cache.add(
             index_key.clone(),
             StorageItem::from_bytes(self_hash.to_bytes().to_vec()),
@@ -2227,10 +2203,7 @@ mod destroy_engine_tests {
         // The contract record, id index, and contract storage are gone.
         assert!(
             snapshot
-                .get(&StorageKey::new(
-                    ContractManagement::ID,
-                    ContractManagement::contract_storage_key(&self_hash)
-                ))
+                .get(&ContractManagement::contract_storage_key(&self_hash))
                 .is_none(),
             "contract record deleted"
         );
@@ -2444,10 +2417,7 @@ mod deploy_update_engine_tests {
     /// Writes a serialized contract record under `Prefix_Contract ++ hash`.
     fn put_contract_record(cache: &DataCache, state: &ContractState) {
         cache.add(
-            StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_storage_key(&state.hash),
-            ),
+            ContractManagement::contract_storage_key(&state.hash),
             StorageItem::from_bytes(
                 ContractManagement::serialize_contract_record(state).expect("record bytes"),
             ),
@@ -2666,10 +2636,7 @@ mod deploy_update_engine_tests {
 
         // The big-endian id -> hash index entry.
         let index = snapshot
-            .get(&StorageKey::new(
-                ContractManagement::ID,
-                ContractManagement::contract_id_storage_key(1),
-            ))
+            .get(&ContractManagement::contract_id_storage_key(1))
             .expect("id index entry written");
         assert_eq!(
             index.value_bytes().to_vec(),
@@ -3085,10 +3052,7 @@ mod deploy_update_engine_tests {
             deployable_manifest("SelfUpdateFixture"),
         );
         put_contract_record(&cache, &fixture);
-        let index_key = StorageKey::new(
-            ContractManagement::ID,
-            ContractManagement::contract_id_storage_key(7),
-        );
+        let index_key = ContractManagement::contract_id_storage_key(7);
         cache.add(
             index_key.clone(),
             StorageItem::from_bytes(self_hash.to_bytes().to_vec()),

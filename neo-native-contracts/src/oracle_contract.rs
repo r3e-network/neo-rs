@@ -1348,6 +1348,7 @@ mod oracle_native_tests {
         let ids = vec![0u64, 7, u64::MAX];
         let state = OracleIdList::new(ids.clone());
         let expected_value = StackValue::Array(
+            0,
             ids.iter()
                 .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
                 .collect::<Vec<_>>(),
@@ -1671,10 +1672,11 @@ mod oracle_request_finish_tests {
         );
 
         // gasForResponse was minted to the Oracle account (GAS Struct[balance]).
+        let oracle_addr = OracleContract::script_hash();
         let gas_key = StorageKey::create_with_uint160(
             crate::GasToken::ID,
             crate::NEP17_PREFIX_ACCOUNT,
-            OracleContract::script_hash(),
+            &oracle_addr,
         );
         let gas_item = snapshot
             .get(&gas_key)

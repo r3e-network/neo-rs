@@ -3070,9 +3070,9 @@ mod policy_writer_tests {
         let voter = UInt160::from_bytes(&[0x07; 20]).unwrap();
         let candidate_state =
             StackItem::from_struct(vec![StackItem::from_bool(true), StackItem::from_int(100)]);
-        // NeoToken Prefix_Candidate (0x21 = 33).
+        // NeoToken Prefix_Candidate (0x21 = 33); the suffix is the 33-byte ECPoint.
         let candidate_key =
-            StorageKey::create_with_uint160(crate::NeoToken::ID, 33u8, &candidate);
+            StorageKey::create_with_bytes(crate::NeoToken::ID, 33u8, &candidate.to_bytes());
         cache.add(
             candidate_key.clone(),
             StorageItem::from_bytes(

@@ -265,8 +265,12 @@ mod tests {
             .expect("tests follow read_nep17_balance");
         let helper = &source[start..end];
 
-        assert!(helper.contains("deserialize_stack_value_with_limits"));
-        assert!(helper.contains("AccountState::from_stack_value"));
+        // After the FungibleToken-helper extraction, read_nep17_balance delegates
+        // (de)serialization to the shared deserialize_account_state helper rather
+        // than inlining the BinarySerializer plumbing. The contract here is that
+        // the reader stays a thin wrapper: key build + get + shared helper.
+        assert!(helper.contains("deserialize_account_state"));
+        assert!(helper.contains("StorageKey::create_with_uint160"));
         assert!(!helper.contains("StackValue::Struct"));
         assert!(!helper.contains("stack_value_as_bigint"));
         assert!(!helper.contains("BinarySerializer::deserialize("));

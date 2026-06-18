@@ -509,6 +509,7 @@ mod tests {
         let mut expected = input.clone();
         expected.sort();
         let expected_value = StackValue::Array(
+            0,
             expected
                 .iter()
                 .map(|point| StackValue::ByteString(point.to_bytes()))

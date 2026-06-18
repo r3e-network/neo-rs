@@ -3254,7 +3254,7 @@ mod tests {
             StackItem::from_int(0),
         ]);
         let bytes = BinarySerializer::serialize(&state, &ExecutionEngineLimits::default()).unwrap();
-        let key = StorageKey::create_with_uint160(NeoToken::ID, crate::NEP17_PREFIX_ACCOUNT, account);
+        let key = StorageKey::create_with_uint160(NeoToken::ID, crate::NEP17_PREFIX_ACCOUNT, &account);
         cache.add(key, StorageItem::from_bytes(bytes.clone()));
         assert_eq!(
             NeoToken::new().read_account_state(&cache, &account),

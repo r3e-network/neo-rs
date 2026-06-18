@@ -1208,7 +1208,7 @@ mod tests {
         let bytes =
             BinarySerializer::serialize(&deposit, &ExecutionEngineLimits::default()).unwrap();
         cache.add(
-            StorageKey::create_with_uint160(Notary::ID, PREFIX_DEPOSIT, account),
+            StorageKey::create_with_uint160(Notary::ID, PREFIX_DEPOSIT, &account),
             StorageItem::from_bytes(bytes),
         );
 
