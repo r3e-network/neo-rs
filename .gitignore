@@ -18,8 +18,27 @@ neo_csharp_vm/
 
 # AI assistant tooling artifacts (never part of the project)
 .agents/
+.autoclaude/
+.autopilot/
+.cargo-ai/
 .claude/
 .cursor/
+.hive-mind/
 .aider*
 .opencode/
 CLAUDE.local.md
+
+# Generated artifacts (build outputs, test dumps, scratch binaries)
+# — these have been committed before; do not re-commit them.
+test_results/
+/test_syscall
+/test_protocol
+/test_vm_basic
+/rust_out
+/debug_handshake
+/node/debug_handshake
+/test_connection
+/test_connection_with_checksum
+/test_real_connection
+/test_corrected_neo3
+/test_corrected_neo3_final
