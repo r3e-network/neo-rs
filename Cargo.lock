@@ -2231,10 +2231,6 @@ name = "neo-blockchain"
 version = "0.8.0"
 dependencies = [
  "async-trait",
- "dashmap",
- "futures",
- "hashbrown 0.14.5",
- "hex",
  "lru",
  "neo-config",
  "neo-crypto",
@@ -2255,7 +2251,6 @@ dependencies = [
  "num-bigint",
  "parking_lot",
  "serde",
- "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2409,6 +2404,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-indexer"
+version = "0.8.0"
+dependencies = [
+ "base64 0.22.1",
+ "neo-error",
+ "neo-payloads",
+ "neo-primitives",
+ "neo-storage",
+ "neo-vm",
+ "neo-vm-rs",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "neo-io"
 version = "0.8.0"
 dependencies = [
@@ -2455,7 +2469,6 @@ dependencies = [
 name = "neo-mempool"
 version = "0.8.0"
 dependencies = [
- "hex",
  "neo-config",
  "neo-crypto",
  "neo-error",
@@ -2469,11 +2482,7 @@ dependencies = [
  "neo-vm",
  "neo-vm-rs",
  "num-bigint",
- "num-traits",
  "parking_lot",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2505,15 +2514,14 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "hex",
  "neo-config",
- "neo-error",
  "neo-io",
  "neo-payloads",
  "neo-primitives",
  "neo-runtime",
  "parking_lot",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -2538,6 +2546,7 @@ dependencies = [
  "neo-crypto",
  "neo-execution",
  "neo-hsm",
+ "neo-indexer",
  "neo-io",
  "neo-manifest",
  "neo-mempool",
@@ -2685,6 +2694,7 @@ dependencies = [
  "neo-crypto",
  "neo-error",
  "neo-execution",
+ "neo-indexer",
  "neo-io",
  "neo-manifest",
  "neo-mempool",
@@ -2718,6 +2728,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-rustls 0.24.1",
+ "tower 0.4.13",
  "tracing",
  "uuid",
  "zeroize",
@@ -2728,14 +2739,11 @@ name = "neo-runtime"
 version = "0.8.0"
 dependencies = [
  "async-trait",
- "futures",
  "neo-payloads",
  "neo-primitives",
- "parking_lot",
  "serde",
  "thiserror 2.0.18",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2759,7 +2767,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "tokio",
  "tracing",
  "zstd",
 ]
@@ -2770,18 +2777,15 @@ version = "0.8.0"
 dependencies = [
  "hex",
  "lru",
- "neo-config",
  "neo-crypto",
  "neo-error",
  "neo-io",
  "neo-payloads",
  "neo-primitives",
  "neo-storage",
- "neo-vm-rs",
  "parking_lot",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -2811,20 +2815,13 @@ dependencies = [
 name = "neo-system"
 version = "0.8.0"
 dependencies = [
- "async-trait",
- "futures",
  "neo-blockchain",
  "neo-config",
- "neo-crypto",
  "neo-error",
- "neo-execution",
- "neo-io",
- "neo-manifest",
  "neo-mempool",
  "neo-native-contracts",
  "neo-network",
  "neo-payloads",
- "neo-primitives",
  "neo-runtime",
  "neo-state-service",
  "neo-storage",
@@ -2888,6 +2885,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]

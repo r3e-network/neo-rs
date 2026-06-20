@@ -1,16 +1,16 @@
-version: '3.8'
-
 services:
   neo-node:
     build:
       context: .
       dockerfile: Dockerfile
+      additional_contexts:
+        neo-vm-rs: ../neo-vm-rs
       args:
         - BUILDKIT_INLINE_CACHE=1
     image: neo-rust-node:latest
     container_name: neo-rust-node
     restart: unless-stopped
-    
+
     # Port mappings for both networks
     ports:
       # TestNet P2P
@@ -21,9 +21,11 @@ services:
       - "10333:10333"
       # MainNet RPC (when using mainnet)
       - "10332:10332"
-      # Health/metrics port (if enabled via NEO_HEALTH_PORT)
-      - "${NEO_HEALTH_PORT:-8080}:${NEO_HEALTH_PORT:-8080}"
-    
+      # MainNet service-profile metrics/health endpoints
+      - "${NEO_MAINNET_METRICS_PORT:-19090}:9090"
+      # TestNet service-profile metrics/health endpoints
+      - "${NEO_TESTNET_METRICS_PORT:-19091}:9091"
+
     # Volume mounts for persistence
     volumes:
       # Named volume for blockchain data
@@ -32,10 +34,11 @@ services:
       - ${NEO_CONFIG_HOST_PATH:-/dev/null}:/config/custom.toml:ro
       # Optional: Bind mount for logs
       - ${NEO_LOGS_HOST_PATH:-neo-logs}:/data/Logs
-    
+
     # Environment configuration
     environment:
       - NEO_NETWORK=${NEO_NETWORK:-testnet}
+      - NEO_PROFILE=${NEO_PROFILE:-}
       - NEO_CONFIG=${NEO_CONFIG:-}
       - NEO_STORAGE=${NEO_STORAGE:-}
       - NEO_BACKEND=${NEO_BACKEND:-rocksdb}
@@ -48,7 +51,11 @@ services:
       # Optional: RPC credentials
       - NEO_RPC_USER=${NEO_RPC_USER:-}
       - NEO_RPC_PASS=${NEO_RPC_PASS:-}
-    
+      # Optional: observability provider credentials referenced by token_env / headers_env
+      - BETTER_STACK_SOURCE_TOKEN=${BETTER_STACK_SOURCE_TOKEN:-}
+      - GOOGLE_ERROR_REPORTING_TOKEN=${GOOGLE_ERROR_REPORTING_TOKEN:-}
+      - SENTRY_AUTH_HEADER=${SENTRY_AUTH_HEADER:-}
+
     # Health check using JSON-RPC getversion
     healthcheck:
       test:
@@ -56,13 +63,13 @@ services:
           "CMD",
           "/bin/sh",
           "-c",
-          "port_file=/tmp/neo_rpc_port; if [ -f \"$port_file\" ]; then port=$(cat \"$port_file\"); else port=${NEO_RPC_PORT:-}; fi; if [ -z \"$port\" ]; then port=20332; case \"${NEO_NETWORK:-testnet}\" in [Mm]ain*) port=10332 ;; esac; fi; curl -sf -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getversion\",\"params\":[]}' http://127.0.0.1:$${port}",
+          "port_file=/tmp/neo_rpc_port; if [ -f \"$$port_file\" ]; then port=$$(cat \"$$port_file\"); else port=$${NEO_RPC_PORT:-}; fi; if [ -z \"$$port\" ]; then port=20332; case \"$${NEO_NETWORK:-testnet}\" in [Mm]ain*) port=10332 ;; esac; fi; curl -sf -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getversion\",\"params\":[]}' http://127.0.0.1:$$port",
         ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
-    
+
     # Resource limits
     deploy:
       resources:
@@ -72,25 +79,25 @@ services:
         reservations:
           cpus: '${NEO_CPU_RESERVE:-2}'
           memory: ${NEO_MEMORY_RESERVE:-4G}
-    
+
     # Security options
     security_opt:
       - no-new-privileges:true
-    
+
     # Read-only root filesystem
     read_only: true
-    
+
     # Temporary filesystems for writable areas
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
-    
+
     # User (should match Dockerfile)
     user: "neo"
-    
+
     # Networks
     networks:
       - neo-network
-    
+
     # Ulimits for production
     ulimits:
       nofile:
@@ -102,7 +109,7 @@ services:
       memlock:
         soft: -1
         hard: -1
-    
+
     # Logging configuration
     logging:
       driver: "json-file"

@@ -1,103 +1,78 @@
 [workspace]
 resolver = "2"
 members = [
-    # === Foundation Layer (no neo-* dependencies) ===
-    # Primitive types (UInt160, UInt256, BigDecimal)
+    # === Foundation Layer ===
+    # Primitive value types (`UInt160`, `UInt256`, `BigDecimal`).
     "neo-primitives",
 
-    # Config (zero cross-module deps)
+    # === Infrastructure Layer ===
+    # Node and protocol configuration.
     "neo-config",
-
-    # Cryptography (hashing, ECC, signatures)
+    # Cryptography: hashing, ECC, signatures, BLS12-381.
     "neo-crypto",
-
-    # Storage traits and abstractions
+    # Storage traits, `DataCache`, RocksDB, and in-memory stores.
     "neo-storage",
-
-    # IO (matches C# Neo.IO)
+    # Binary IO helpers (matches C# Neo.IO).
     "neo-io",
-
-    # === VM Host Layer ===
-    # Stateful NeoVM host (execution engine, stack items, jump tables) over the
-        "neo-vm",
-
-        # CoreError authority (foundation Layer 0)
+    # Stateful NeoVM host over the sibling `neo-vm-rs` semantics crate.
+    "neo-vm",
+    # Authoritative `CoreError` / `CoreResult` vocabulary.
     "neo-error",
-
-    # Block validation + blockchain orchestration (service layer)
-    "neo-blockchain",
-
-    # Smart-contract execution engine 
-    "neo-execution",
-
-    # Ledger state management
-    "neo-state-service",
-
-    # Native contracts (NEP-17, governance, etc.)
-    "neo-native-contracts",
-
-    # Wallet/key management
-    "neo-wallets",
-
-    # System service layer
-    "neo-system",
-
-    # Transaction pool
-    "neo-mempool",
-
-    # RPC client + server
-
-    # Protocol interfaces
-
-    # Protocol types: serialization (compression, binary/json serializers, VM-aware codecs)
+    # Compression, binary/JSON serializers, and VM-aware codecs.
     "neo-serialization",
-
-    # Protocol types: manifest (ABI, NEF, CallFlags, MethodToken, ValidatorAttribute)
+    # Contract ABI, NEF, call flags, method tokens, and validator attributes.
     "neo-manifest",
-    
-    # Canonical home for Neo P2P payload types (Block, Header, Transaction, etc.)
+
+    # === Protocol Layer ===
+    # Canonical Neo P2P payload types (`Block`, `Header`, `Transaction`, ...).
     "neo-payloads",
-    
-    # Canonical home for Neo P2P network host (LocalNode, RemoteNode, connections)
-    "neo-network",
-
-    # RPC server and client
-    "neo-rpc",
-
-    # dBFT consensus
+    # dBFT consensus payloads and protocol engine.
     "neo-consensus",
-
-    # TokensTracker plugin (NEP-11/NEP-17 balance + transfer indexing)
-    # was merged into neo-rpc in the 2026-06-13-comprehensive-refactoring
-    # change (Phase E3). See neo-rpc/src/plugins/tokens_tracker/.
-
-    # Oracle plugin (HTTPS + NeoFS oracle request fulfilment)
-    "neo-oracle-service",
-
-    # NOTE: remaining C# Neo plugins still inlined; extraction in progress:
-    #   DBFTPlugin      → neo-consensus
-    #   RpcServer       → neo-rpc/src/server
-
-    # HSM (Hardware Security Module) support
-    # Optional feature-gated integration via neo-node (`--features hsm`)
+    # Optional HSM-backed consensus signing support.
     "neo-hsm",
 
-    # TEE (Trusted Execution Environment) support
-    # Optional feature-gated integration via neo-node (`--features tee`)
+    # === Domain Service Layer ===
+    # Reth-style service traits, events, and shared service errors.
+    "neo-runtime",
+    # Smart-contract execution engine.
+    "neo-execution",
+    # Native contracts (NEO, GAS, Policy, Oracle, Notary, ...).
+    "neo-native-contracts",
+    # Ledger state-root service and MPT store.
+    "neo-state-service",
+    # Transaction memory pool and admission/reverification logic.
+    "neo-mempool",
+
+    # === Node Service Layer ===
+    # Block validation, persistence, ledger context, and header cache service.
+    "neo-blockchain",
+    # P2P network host (`LocalNode`, `RemoteNode`, `TaskManager`).
+    "neo-network",
+    # Wallet/key management.
+    "neo-wallets",
+    # Read-side block, transaction, account, and notification indexing.
+    "neo-indexer",
+    # Optional Trusted Execution Environment support.
     "neo-tee",
 
-    # Reth-style service architecture (service traits + Node builder).
-    # Depends on foundation crates: neo-primitives and neo-payloads.
-    "neo-runtime",
+    # === Composition Layer ===
+    # Embeddable node composition root.
+    "neo-system",
+
+    # === Plugin / RPC Boundary ===
+    # JSON-RPC server/client plus ApplicationLogs, TokensTracker, NeoIndexer, and Oracle groups.
+    "neo-rpc",
+    # Oracle request fulfilment over HTTPS and NeoFS.
+    "neo-oracle-service",
 
     # === Application Layer ===
-    # Node daemon (standalone RPC server)
+    # Node daemon binary.
     "neo-node",
 
-    # === Integration Tests ===
+    # === Development-only crates ===
+    # Cross-crate integration tests.
     "tests",
-
-    # === Benchmarks ===
+    # Criterion benchmarks.
     "benches-package",
 ]
 default-members = [
@@ -107,6 +82,7 @@ default-members = [
     "neo-storage",
     "neo-io",
     "neo-rpc",
+    "neo-indexer",
     "neo-consensus",
     "neo-node",
 ]
@@ -177,47 +153,50 @@ approx_constant = "allow"
 # === Internal crates ===
 # Foundation layer
 neo-primitives = { path = "neo-primitives", version = "0.8.0" }
+
+# Infrastructure layer
 neo-config = { path = "neo-config", version = "0.8.0" }
 neo-crypto = { path = "neo-crypto", version = "0.8.0" }
 neo-storage = { path = "neo-storage", version = "0.8.0" }
 neo-io = { path = "neo-io", version = "0.8.0" }
-# Core layer
 neo-vm = { path = "neo-vm", version = "0.8.0" }
 neo-vm-rs = { path = "../neo-vm-rs" }
-neo-rpc = { path = "neo-rpc", version = "0.8.0" }
-neo-consensus = { path = "neo-consensus", version = "0.8.0" }
-
 neo-error = { path = "neo-error", version = "0.8.0" }
-neo-blockchain = { path = "neo-blockchain", version = "0.8.0" }
-neo-state-service = { path = "neo-state-service", version = "0.8.0" }
-neo-execution = { path = "neo-execution", version = "0.8.0" }
-neo-system = { path = "neo-system", version = "0.8.0" }
-neo-wallets = { path = "neo-wallets", version = "0.8.0" }
-neo-mempool = { path = "neo-mempool", version = "0.8.0" }
-neo-native-contracts = { path = "neo-native-contracts", version = "0.8.0" }
 neo-serialization = { path = "neo-serialization", version = "0.8.0" }
 neo-manifest = { path = "neo-manifest", version = "0.8.0" }
+
+# Protocol layer
 neo-payloads = { path = "neo-payloads", version = "0.8.0" }
-neo-network = { path = "neo-network", version = "0.8.0" }
-# Infrastructure layer
+neo-consensus = { path = "neo-consensus", version = "0.8.0" }
 neo-hsm = { path = "neo-hsm", version = "0.8.0" }
+
+# Domain service layer
+neo-runtime = { path = "neo-runtime", version = "0.8.0" }
+neo-execution = { path = "neo-execution", version = "0.8.0" }
+neo-native-contracts = { path = "neo-native-contracts", version = "0.8.0" }
+neo-state-service = { path = "neo-state-service", version = "0.8.0" }
+neo-mempool = { path = "neo-mempool", version = "0.8.0" }
+
+# Node service layer
+neo-blockchain = { path = "neo-blockchain", version = "0.8.0" }
+neo-network = { path = "neo-network", version = "0.8.0" }
+neo-wallets = { path = "neo-wallets", version = "0.8.0" }
+neo-indexer = { path = "neo-indexer", version = "0.8.0" }
 neo-tee = { path = "neo-tee", version = "0.8.0" }
 
-# Actor runtime
-# Reth-style service architecture
-neo-runtime = { path = "neo-runtime", version = "0.8.0" }
+# Composition layer
+neo-system = { path = "neo-system", version = "0.8.0" }
 
-# Plugins
+# Plugin / RPC boundary
+neo-rpc = { path = "neo-rpc", version = "0.8.0" }
 neo-oracle-service = { path = "neo-oracle-service", version = "0.8.0" }
 
 # Application layer
-# neo-cli removed: functionality merged into neo-node
 neo-node = { path = "neo-node", version = "0.8.0" }
 
 # === Core dependencies ===
 # Async runtime
-# TODO: Reduce tokio features per-crate for faster compilation
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.35", default-features = false }
 tokio-util = "0.7"
 async-trait = "0.1"
 futures = "0.3"
@@ -288,7 +267,7 @@ rocksdb = { version = "0.21", default-features = false, features = ["snappy", "l
 
 # === Network ===
 # HTTP and JSON-RPC
-hyper = { version = "0.14", features = ["full"] }
+hyper = { version = "0.14", default-features = false, features = ["http1", "runtime", "server"] }
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "gzip"] }
 # Low-level networking
 socket2 = "0.5"

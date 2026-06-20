@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Neo Rust Node
 # R3E Network <jimmy@r3e.network>
 
-FROM rust:1.76-bullseye as builder
+FROM rust:1.85-bullseye AS builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -25,29 +25,46 @@ RUN apt-get update && apt-get install -y \
 # Set environment variables for libclang
 ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 
-# Create app directory
-WORKDIR /app
+# Create app directory. Keep neo-rs and neo-vm-rs as siblings because the
+# workspace intentionally depends on `../neo-vm-rs`.
+WORKDIR /workspace/neo-rs
 
 # Copy manifests and workspace crates (kept explicit for better Docker layer caching).
 COPY Cargo.toml Cargo.lock ./
+COPY --from=neo-vm-rs . ../neo-vm-rs/
 COPY neo-primitives/ neo-primitives/
+COPY neo-config/ neo-config/
 COPY neo-crypto/ neo-crypto/
 COPY neo-storage/ neo-storage/
 COPY neo-io/ neo-io/
-COPY neo-json/ neo-json/
-COPY neo-core/ neo-core/
-COPY neo-p2p/ neo-p2p/
-COPY neo-rpc/ neo-rpc/
+COPY neo-vm/ neo-vm/
+COPY neo-error/ neo-error/
+COPY neo-serialization/ neo-serialization/
+COPY neo-manifest/ neo-manifest/
+COPY neo-payloads/ neo-payloads/
 COPY neo-consensus/ neo-consensus/
-COPY neo-tee/ neo-tee/
 COPY neo-hsm/ neo-hsm/
-COPY neo-telemetry/ neo-telemetry/
+COPY neo-runtime/ neo-runtime/
+COPY neo-execution/ neo-execution/
+COPY neo-native-contracts/ neo-native-contracts/
+COPY neo-state-service/ neo-state-service/
+COPY neo-mempool/ neo-mempool/
+COPY neo-blockchain/ neo-blockchain/
+COPY neo-network/ neo-network/
+COPY neo-wallets/ neo-wallets/
+COPY neo-indexer/ neo-indexer/
+COPY neo-tee/ neo-tee/
+COPY neo-system/ neo-system/
+COPY neo-rpc/ neo-rpc/
+COPY neo-oracle-service/ neo-oracle-service/
 COPY neo-node/ neo-node/
+COPY tests/ tests/
+COPY benches-package/ benches-package/
 COPY scripts/ scripts/
 COPY neo_mainnet_node.toml neo_testnet_node.toml neo_production_node.toml ./
 
-# Build the node daemon (the runnable daemon is behind the `wip` feature).
-RUN cargo build --release --locked -p neo-node --features wip
+# Build the node daemon.
+RUN cargo build --release --locked -p neo-node
 
 # Runtime stage
 FROM debian:bullseye-slim
@@ -73,12 +90,13 @@ RUN groupadd -r neo && useradd -r -g neo -d /home/neo neo \
 RUN mkdir -p /data /data/blocks /data/Logs /data/logs && chown -R neo:neo /data
 
 # Copy binaries from builder stage
-COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
+COPY --from=builder /workspace/neo-rs/target/release/neo-node /usr/local/bin/neo-node
 
 # Copy default configs and entrypoint
 COPY neo_mainnet_node.toml /etc/neo/neo_mainnet_node.toml
 COPY neo_testnet_node.toml /etc/neo/neo_testnet_node.toml
 COPY neo_production_node.toml /etc/neo/neo_production_node.toml
+COPY config/*.toml /etc/neo/config/
 COPY scripts/docker-entrypoint.sh /usr/local/bin/neo-entrypoint.sh
 RUN chmod +x /usr/local/bin/neo-entrypoint.sh && chown -R neo:neo /etc/neo
 
@@ -97,6 +115,8 @@ EXPOSE 20332 20333
 EXPOSE 10332 10333
 # Private network ports
 EXPOSE 30332 30333
+# Telemetry / health endpoints used by service-provider presets
+EXPOSE 9090 9091
 
 # Health check - JSON-RPC getversion on the configured RPC port
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

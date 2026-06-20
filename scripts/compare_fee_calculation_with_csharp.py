@@ -4,7 +4,7 @@ Compare neo-rs fee calculation with C# reference implementation.
 Tests CRITICAL-004: Transaction Fee Calculation
 """
 
-# Test vectors from C# Neo v3.9.1
+# Test vectors matching C# Neo v3.10.0 witness-fee behavior.
 test_cases = [
     {
         "name": "Single signature transaction",
@@ -64,7 +64,7 @@ def verify_fee_calculation(test_case):
 
 if __name__ == "__main__":
     print("Transaction Fee Calculation Verification")
-    print("Comparing neo-rs with C# Neo v3.9.1\n")
+    print("Comparing neo-rs with C# Neo v3.10.0\n")
     
     passed = 0
     failed = 0
