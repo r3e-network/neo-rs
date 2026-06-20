@@ -43,9 +43,9 @@ class FileSizeLimitTests(unittest.TestCase):
         paths = [
             REPO_ROOT / "neo-native-contracts" / "src" / "lib.rs",
             REPO_ROOT / "neo-native-contracts" / "src" / "oracle_contract.rs",
-            REPO_ROOT / "neo-native-contracts" / "src" / "policy_contract" / "mod.rs",
+            REPO_ROOT / "neo-native-contracts" / "src" / "policy_contract.rs",
             REPO_ROOT / "neo-native-contracts" / "src" / "policy_contract" / "tests" / "tests.rs",
-            REPO_ROOT / "neo-native-contracts" / "src" / "neo_token" / "mod.rs",
+            REPO_ROOT / "neo-native-contracts" / "src" / "neo_token.rs",
             REPO_ROOT / "neo-blockchain" / "src" / "handlers.rs",
             REPO_ROOT / "neo-crypto" / "src" / "mpt_trie" / "trie.rs",
             REPO_ROOT / "neo-blockchain" / "src" / "native_persist.rs",
@@ -614,7 +614,7 @@ class FileSizeLimitTests(unittest.TestCase):
 
     def test_neo_token_entrypoint_keeps_invoke_dispatch_split(self):
         limits = {
-            REPO_ROOT / "neo-native-contracts" / "src" / "neo_token" / "mod.rs": 560,
+            REPO_ROOT / "neo-native-contracts" / "src" / "neo_token.rs": 560,
             REPO_ROOT / "neo-native-contracts" / "src" / "neo_token" / "invoke.rs": 430,
         }
 
@@ -813,7 +813,7 @@ class FileSizeLimitTests(unittest.TestCase):
 
     def test_contract_management_keeps_metadata_descriptors_split(self):
         limits = {
-            REPO_ROOT / "neo-native-contracts" / "src" / "contract_management" / "mod.rs": 430,
+            REPO_ROOT / "neo-native-contracts" / "src" / "contract_management.rs": 430,
             REPO_ROOT
             / "neo-native-contracts"
             / "src"

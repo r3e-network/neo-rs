@@ -28,7 +28,7 @@
 //! | `Consensus`             | [`ConsensusService`]          | `Arc<dyn ConsensusService>` |
 //! | `Engine`                | [`NeoEngine`]                 | `Arc<dyn NeoEngine>`     |
 
-use crate::errors::ServiceError;
+use crate::error::ServiceError;
 use crate::outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
 use async_trait::async_trait;
 use neo_payloads::{Block, Transaction};

@@ -88,7 +88,7 @@
 #![doc(html_root_url = "https://docs.rs/neo-runtime/0.8.0")]
 
 pub mod blockchain;
-pub mod errors;
+pub mod error;
 pub mod outcome;
 pub mod services;
 
@@ -98,6 +98,6 @@ pub mod services;
 // exported here so the docstring "use neo_runtime::BlockExecutor"
 // import path resolves.
 pub use blockchain::{BlockchainEvent, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY};
-pub use errors::{ServiceError, ServiceResult};
+pub use error::{ServiceError, ServiceResult};
 pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
 pub use services::{BlockExecutor, ConsensusService, NeoEngine, NetworkService, Service, TxHash};

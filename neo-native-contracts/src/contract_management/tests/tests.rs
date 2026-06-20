@@ -430,7 +430,7 @@ fn invoke_argument_parsing_uses_shared_raw_helpers() {
         &source[start..end]
     }
 
-    let source = include_str!("../mod.rs");
+    let source = include_str!("../../contract_management.rs");
     let by_id = arm_between(
         source,
         "\"getContractById\" =>",

@@ -19,7 +19,7 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../contract_management/metadata.rs"),
                 "\n",
-                include_str!("../contract_management/mod.rs"),
+                include_str!("../contract_management.rs"),
             ),
         ),
         (
@@ -67,7 +67,7 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../neo_token/invoke.rs"),
                 "\n",
-                include_str!("../neo_token/mod.rs"),
+                include_str!("../neo_token.rs"),
             ),
         ),
         (
@@ -89,7 +89,7 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../policy_contract/metadata.rs"),
                 "\n",
-                include_str!("../policy_contract/mod.rs"),
+                include_str!("../policy_contract.rs"),
             ),
         ),
         (

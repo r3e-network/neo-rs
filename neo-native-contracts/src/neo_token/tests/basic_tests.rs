@@ -354,7 +354,7 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
     );
 
     let storage_source = include_str!("../storage.rs");
-    let mod_source = include_str!("../mod.rs");
+    let mod_source = include_str!("../../neo_token.rs");
     let candidate_encoder = slice_between(
         storage_source,
         "fn candidates_to_array_bytes",
