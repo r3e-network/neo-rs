@@ -71,7 +71,7 @@ fn malicious_nested_extension_entry(depth: usize) -> Vec<u8> {
         entry.push(0x00);
     }
     entry.push(NodeType::Empty as u8);
-    entry.extend(std::iter::repeat(0x00).take(depth));
+    entry.extend(std::iter::repeat_n(0x00, depth));
     entry
 }
 
