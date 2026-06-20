@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 
 impl OracleService {
+    /// Create a new oracle service bound to the given node system.
     pub fn new(
         settings: OracleServiceSettings,
         system: Arc<Node>,
@@ -40,18 +41,22 @@ impl OracleService {
         })
     }
 
+    /// Store a weak self-reference used by internal background workers.
     pub fn set_self_ref(self: &Arc<Self>) {
         *self.self_ref.write() = Arc::downgrade(self);
     }
 
+    /// Return the normalized oracle service settings.
     pub fn settings(&self) -> &OracleServiceSettings {
         &self.settings
     }
 
+    /// Return the current oracle service status.
     pub fn status(&self) -> OracleStatus {
         OracleStatus::from_u8(self.status.load(Ordering::SeqCst))
     }
 
+    /// Return whether the oracle service is currently running.
     pub fn is_running(&self) -> bool {
         self.status() == OracleStatus::Running
     }

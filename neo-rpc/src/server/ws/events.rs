@@ -64,6 +64,7 @@ macro_rules! ws_event_types {
 }
 
 ws_event_types! {
+    /// WebSocket event types that clients can subscribe to.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
     #[serde(rename_all = "snake_case")]
     pub enum WsEventType {

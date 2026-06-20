@@ -43,7 +43,7 @@ impl RpcApplicationLog {
             .and_then(|s| UInt256::parse(&s).ok());
 
         let executions = parse_object_array_lossy(json, "executions", |obj| {
-            Execution::from_json(obj, protocol_settings).map_err(|e| e.to_string())
+            Execution::from_json(obj, protocol_settings)
         });
 
         Ok(Self {
@@ -116,7 +116,7 @@ impl Execution {
         let stack = stack_items_from_json_field(json, "stack");
 
         let notifications = parse_object_array_lossy(json, "notifications", |obj| {
-            RpcNotifyEventArgs::from_json(obj, protocol_settings).map_err(|e| e.to_string())
+            RpcNotifyEventArgs::from_json(obj, protocol_settings)
         });
 
         Ok(Self {

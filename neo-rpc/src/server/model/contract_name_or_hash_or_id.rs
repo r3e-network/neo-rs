@@ -2,43 +2,54 @@ use neo_primitives::UInt160;
 
 use crate::server::rpc_error::RpcError;
 
+/// RPC parameter that can refer to a contract by id, hash, or manifest name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ContractNameOrHashOrId {
+    /// Native/contract id.
     Id(i32),
+    /// Contract script hash.
     Hash(UInt160),
+    /// Contract manifest name.
     Name(String),
 }
 
 impl ContractNameOrHashOrId {
+    /// Construct a contract reference from an id.
     #[must_use]
     pub const fn from_id(id: i32) -> Self {
         Self::Id(id)
     }
 
+    /// Construct a contract reference from a script hash.
     #[must_use]
     pub const fn from_hash(hash: UInt160) -> Self {
         Self::Hash(hash)
     }
 
+    /// Construct a contract reference from a manifest name.
     pub fn from_name(name: impl Into<String>) -> Self {
         Self::Name(name.into())
     }
 
+    /// Return whether this reference is a contract id.
     #[must_use]
     pub const fn is_id(&self) -> bool {
         matches!(self, Self::Id(_))
     }
 
+    /// Return whether this reference is a contract hash.
     #[must_use]
     pub const fn is_hash(&self) -> bool {
         matches!(self, Self::Hash(_))
     }
 
+    /// Return whether this reference is a contract name.
     #[must_use]
     pub const fn is_name(&self) -> bool {
         matches!(self, Self::Name(_))
     }
 
+    /// Parse an id, UInt160 hash, or non-empty name from an RPC string parameter.
     #[must_use]
     pub fn try_parse(value: &str) -> Option<Self> {
         if let Ok(id) = value.parse::<i32>() {
@@ -59,6 +70,7 @@ impl ContractNameOrHashOrId {
         None
     }
 
+    /// Return the contract id or an RPC invalid-params error.
     pub fn as_id(&self) -> Result<i32, RpcError> {
         match self {
             Self::Id(id) => Ok(*id),
@@ -67,6 +79,7 @@ impl ContractNameOrHashOrId {
         }
     }
 
+    /// Return the contract hash or an RPC invalid-params error.
     pub fn as_hash(&self) -> Result<UInt160, RpcError> {
         match self {
             Self::Hash(hash) => Ok(*hash),
@@ -75,6 +88,7 @@ impl ContractNameOrHashOrId {
         }
     }
 
+    /// Return the contract name or an RPC invalid-params error.
     pub fn as_name(&self) -> Result<&str, RpcError> {
         match self {
             Self::Name(name) => Ok(name.as_str()),

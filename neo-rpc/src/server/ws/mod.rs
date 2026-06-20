@@ -6,17 +6,14 @@
 //! - `transaction_removed` - Transaction removed from mempool
 //! - `notification` - Contract notification events
 //!
-//! The `handler.rs` module (legacy `warp::ws`-based per-connection loop)
-//! was removed in the `2026-06-13-comprehensive-refactoring` change
-//! (Phase C1). WebSocket subscriptions are now served by `jsonrpsee`'s
-//! built-in WS transport; this module retains the event-broadcast
-//! primitives and `SubscriptionManager` that the new transport still
-//! consumes.
+//! The legacy per-connection WebSocket loop was removed in the
+//! `2026-06-13-comprehensive-refactoring` change (Phase C1). This module now
+//! retains the event-broadcast primitives used by higher-level services;
+//! per-client JSON-RPC subscription routing belongs in the active `jsonrpsee`
+//! transport layer.
 
 mod bridge;
 mod events;
-mod subscription;
 
 pub use bridge::{SharedWsEventBridge, WsEventBridge};
 pub use events::{WsEvent, WsEventType, WsNotification};
-pub use subscription::{SubscriptionId, SubscriptionManager};

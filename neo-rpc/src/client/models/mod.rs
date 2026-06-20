@@ -20,60 +20,95 @@ mod vm_state_utils;
 pub(crate) mod test_fixtures;
 
 // Core RPC types
+/// JSON-RPC request payload model.
 pub mod rpc_request;
+/// JSON-RPC response payload model.
 pub mod rpc_response;
 
 // Generic response wrapper (new)
+/// Generic JSON-RPC response wrapper model.
 pub mod rpc_response_wrapper;
 
 // Block and transaction types
+/// Block response model.
 pub mod rpc_block;
+/// Block header response model.
 pub mod rpc_block_header;
+/// Transaction response model.
 pub mod rpc_transaction;
 
 // Contract and execution types
+/// Contract state response model.
 pub mod rpc_contract_state;
+/// Contract invocation result model.
 pub mod rpc_invoke_result;
+/// Contract method token model.
 pub mod rpc_method_token;
+/// NEF file response model.
 pub mod rpc_nef_file;
+/// VM stack item response model.
 pub mod rpc_stack;
 
 // NEP17 token types
+/// NEP-17 balance response models.
 pub mod rpc_nep17_balances;
+/// NEP-17 token information model.
 pub mod rpc_nep17_token_info;
+/// NEP-17 transfer response models.
 pub mod rpc_nep17_transfers;
 
 // NEP11 token types
+/// NEP-11 balance response models.
 pub mod rpc_nep11_balances;
+/// NEP-11 transfer response models.
 pub mod rpc_nep11_transfers;
 
 // State service types
+/// State service search response model.
 pub mod rpc_found_states;
+/// State root response model.
 pub mod rpc_state_root;
 
 // Network and peer types
+/// Peer list response models.
 pub mod rpc_peers;
+/// Plugin information model.
 pub mod rpc_plugin;
+/// Node version response model.
 pub mod rpc_version;
 
 // Application and execution types
+/// Application log response models.
 pub mod rpc_application_log;
+/// Raw mempool response model.
 pub mod rpc_raw_mem_pool;
 
 // Account and wallet types
+/// Wallet account response model.
 pub mod rpc_account;
+/// Wallet transfer output model.
 pub mod rpc_transfer_out;
+/// Unclaimed GAS response model.
 pub mod rpc_unclaimed_gas;
+/// Address validation response model.
 pub mod rpc_validate_address_result;
+/// Validator response model.
 pub mod rpc_validator;
 
 // Optional/legacy modules (kept for compatibility)
+/// Legacy get-peers response model.
 pub mod rpc_get_peers;
+/// Legacy accepted-mempool response model.
 pub mod rpc_mempool_accepted;
+/// Legacy unverified-mempool response model.
 pub mod rpc_mempool_unverified;
+/// Legacy method invocation model.
 pub mod rpc_method_invocation;
+/// Legacy notification event model.
 pub mod rpc_notification_event;
+/// Oracle response model.
 pub mod rpc_oracle_response;
+/// Legacy plugin information model.
 pub mod rpc_plugin_info;
 
 // Re-export main types

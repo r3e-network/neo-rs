@@ -4,7 +4,7 @@ use super::super::utility::{
 };
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_primitives::UInt160;
+use neo_primitives::{UInt160, strip_hex_prefix};
 use neo_serialization::json::{JObject, JToken};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,7 @@ pub struct RpcNep11Balance {
 }
 
 impl RpcNep11Balance {
+    /// Convert this asset balance to its Neo JSON-RPC representation.
     #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
@@ -78,6 +79,7 @@ impl RpcNep11Balance {
         json
     }
 
+    /// Parse an asset balance from its Neo JSON-RPC representation.
     pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let asset_hash_str =
             required_string(json, "assethash").map_err(|e| CoreError::other(e.to_string()))?;
@@ -101,9 +103,7 @@ impl RpcNep11Balance {
                 .map_or(0, |n| n as u8),
         };
 
-        let tokens = parse_object_array_lossy(json, "tokens", |obj| {
-            RpcNep11TokenBalance::from_json(obj).map_err(|e| e.to_string())
-        });
+        let tokens = parse_object_array_lossy(json, "tokens", RpcNep11TokenBalance::from_json);
 
         Ok(Self {
             asset_hash,
@@ -127,6 +127,7 @@ pub struct RpcNep11TokenBalance {
 }
 
 impl RpcNep11TokenBalance {
+    /// Convert this token balance to its Neo JSON-RPC representation.
     #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
@@ -144,10 +145,11 @@ impl RpcNep11TokenBalance {
         json
     }
 
+    /// Parse a token balance from its Neo JSON-RPC representation.
     pub fn from_json(json: &JObject) -> CoreResult<Self> {
         let token_id_str =
             required_string(json, "tokenid").map_err(|e| CoreError::other(e.to_string()))?;
-        let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
+        let token_id = hex::decode(strip_hex_prefix(&token_id_str))
             .map_err(|_| CoreError::other(format!("Invalid tokenid: {token_id_str}")))?;
 
         let fields = parse_nep_balance_fields(json)?;
@@ -173,7 +175,8 @@ mod tests {
             amount: BigInt::from(42),
             last_updated_block: 7,
         };
-        let json = entry.to_json();
+        let mut json = entry.to_json();
+        json.insert("tokenid".to_string(), JToken::String("0X01".to_string()));
         let parsed = RpcNep11TokenBalance::from_json(&json).unwrap();
         assert_eq!(parsed.token_id, entry.token_id);
         assert_eq!(parsed.amount, entry.amount);

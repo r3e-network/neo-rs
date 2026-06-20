@@ -3,7 +3,6 @@ use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
 use base64::{Engine as _, engine::general_purpose};
 use mockito::{Matcher, Server};
 use neo_native_contracts::GasToken;
-use neo_native_contracts::NativeContract;
 use neo_serialization::json::{JArray, JObject, JToken};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
@@ -208,10 +207,8 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
             contract
         } else {
             // `NativeRegistry::new()` is empty by design; resolve native
-            // contract names through the canonical provider instead.
-            use neo_execution::native_contract_provider::NativeContractProvider;
-            neo_native_contracts::StandardNativeProvider::new()
-                .all_native_contracts()
+            // contract names through the canonical standard-contract catalog.
+            neo_native_contracts::standard_native_contracts()
                 .into_iter()
                 .find(|native| native.name().eq_ignore_ascii_case(&contract))
                 .map(|native| native.hash().to_string())

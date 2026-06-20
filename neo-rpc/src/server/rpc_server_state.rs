@@ -1,9 +1,10 @@
 //! State service RPC endpoints (parity with C# `StateService` RPC plugin,
 //! vendored at `neo_csharp/src/Plugins/StateService/StatePlugin.cs`).
 //!
-//! - `getstateheight` / `getstateroot` are served from the
-//!   `neo_state_service::StateStore` state-root verification cache
-//!   (validated roots by index / by hash).
+//! - `getstateheight` / `getstateroot` first consult the
+//!   `neo_state_service::StateStore` verification cache and then fall
+//!   back to the live [`neo_state_service::MptStore`] that the block
+//!   persistence pipeline updates.
 //! - `verifyproof` is self-contained: it replays the supplied proof
 //!   nodes against the supplied root hash via
 //!   [`neo_crypto::mpt_trie::Trie::verify_proof`].
@@ -19,7 +20,7 @@
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::expect_base64_param_with_message;
+use crate::server::rpc_helpers::{expect_base64_param_with_message, expect_u32_param_with_message};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -74,9 +75,11 @@ impl MptStoreSnapshot for ProofVerifySnapshot {
     }
 }
 
+/// RPC handler group for StateService methods.
 pub struct RpcServerState;
 
 impl RpcServerState {
+    /// Register StateService RPC handlers.
     pub fn register_handlers() -> Vec<RpcHandler> {
         super::rpc_handlers![
             "getstateheight" => Self::get_state_height,
@@ -426,29 +429,29 @@ impl RpcServerState {
     }
 
     fn parse_uint256(params: &[Value], idx: usize, method: &str) -> Result<UInt256, RpcException> {
-        let value = params.get(idx).and_then(Value::as_str).ok_or_else(|| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("{method} expects UInt256 parameter at index {idx}")),
-            )
-        })?;
-        UInt256::parse(value).map_err(|_| {
-            RpcException::from(
-                RpcError::invalid_params().with_data("failed to parse UInt256 parameter"),
-            )
-        })
+        Self::parse_uint_parameter(params, idx, method, "UInt256", UInt256::parse)
     }
 
     fn parse_uint160(params: &[Value], idx: usize, method: &str) -> Result<UInt160, RpcException> {
+        Self::parse_uint_parameter(params, idx, method, "UInt160", UInt160::parse)
+    }
+
+    fn parse_uint_parameter<T, E>(
+        params: &[Value],
+        idx: usize,
+        method: &str,
+        type_name: &str,
+        parse: impl FnOnce(&str) -> Result<T, E>,
+    ) -> Result<T, RpcException> {
         let value = params.get(idx).and_then(Value::as_str).ok_or_else(|| {
+            RpcException::from(RpcError::invalid_params().with_data(format!(
+                "{method} expects {type_name} parameter at index {idx}"
+            )))
+        })?;
+        parse(value).map_err(|_| {
             RpcException::from(
                 RpcError::invalid_params()
-                    .with_data(format!("{method} expects UInt160 parameter at index {idx}")),
-            )
-        })?;
-        UInt160::parse(value).map_err(|_| {
-            RpcException::from(
-                RpcError::invalid_params().with_data("failed to parse UInt160 parameter"),
+                    .with_data(format!("failed to parse {type_name} parameter")),
             )
         })
     }
@@ -552,16 +555,11 @@ impl RpcServerState {
     }
 
     fn expect_u32(params: &[Value], idx: usize, method: &str) -> Result<u32, RpcException> {
-        params
-            .get(idx)
-            .and_then(Value::as_u64)
-            .and_then(|v| u32::try_from(v).ok())
-            .ok_or_else(|| {
-                RpcException::from(
-                    RpcError::invalid_params()
-                        .with_data(format!("{method} expects unsigned integer parameter")),
-                )
-            })
+        expect_u32_param_with_message(
+            params,
+            idx,
+            format!("{method} expects unsigned integer parameter"),
+        )
     }
 
     fn state_root_to_json(root: &StateRoot) -> Value {

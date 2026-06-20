@@ -2,7 +2,7 @@ use neo_config::ProtocolSettings;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::{WitnessCondition, WitnessRule};
-use neo_primitives::WitnessRuleAction;
+use neo_primitives::{WitnessRuleAction, strip_hex_prefix};
 use neo_serialization::json::{JArray, JObject};
 
 pub fn rule_from_json(
@@ -157,7 +157,7 @@ fn parse_composite(
 }
 
 fn parse_group_bytes(value: &str) -> CoreResult<Vec<u8>> {
-    let value = value.strip_prefix("0x").unwrap_or(value);
+    let value = strip_hex_prefix(value);
     let bytes =
         hex::decode(value).map_err(|err| CoreError::other(format!("Invalid hex string: {err}")))?;
     let point = ECPoint::decode(&bytes, ECCurve::secp256r1())
@@ -224,6 +224,11 @@ mod tests {
         let keypair = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
             .expect("keypair");
         let group = keypair.compressed_public_key();
+        let uppercase_prefixed_group = format!("0X{}", hex::encode(&group));
+        assert_eq!(
+            parse_group_bytes(&uppercase_prefixed_group).expect("group"),
+            group
+        );
 
         assert_rule_roundtrip(WitnessRule::new(
             action,

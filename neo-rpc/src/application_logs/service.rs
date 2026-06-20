@@ -1,21 +1,15 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_error::{CoreError, CoreResult};
-use neo_execution::NotifyEventArgs;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
-use neo_primitives::TriggerType;
 use neo_primitives::UInt256;
 use neo_primitives::panic_message;
 use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
 use neo_system::Node;
-use neo_vm::rpc_json::StackItemRpcJson;
-use neo_vm_rs::{StackValue, VmState as VMState};
-use num_bigint::BigInt;
 use parking_lot::Mutex;
-use serde_json::{Map, Number as JsonNumber, Value};
+use serde_json::Value;
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
@@ -137,87 +131,21 @@ impl ApplicationLogsService {
     }
 
     fn block_log_json(&self, block_hash: &UInt256, executions: &[ApplicationExecuted]) -> Value {
-        let block_executions = executions
-            .iter()
-            .filter(|exec| exec.transaction.is_none())
-            .map(|exec| self.execution_to_json(exec, false))
-            .collect::<Vec<_>>();
-        let mut obj = Map::new();
-        obj.insert(
-            "blockhash".to_string(),
-            Value::String(block_hash.to_string()),
-        );
-        obj.insert("executions".to_string(), Value::Array(block_executions));
-        Value::Object(obj)
+        super::rendering::block_log_json(
+            block_hash,
+            executions,
+            self.settings.debug,
+            self.settings.max_stack_size,
+        )
     }
 
     fn transaction_log_json(&self, tx_hash: &UInt256, exec: &ApplicationExecuted) -> Value {
-        let mut obj = Map::new();
-        obj.insert("txid".to_string(), Value::String(tx_hash.to_string()));
-        obj.insert(
-            "executions".to_string(),
-            Value::Array(vec![self.execution_to_json(exec, true)]),
-        );
-        Value::Object(obj)
-    }
-
-    fn execution_to_json(&self, exec: &ApplicationExecuted, include_exception: bool) -> Value {
-        let mut trigger = Map::new();
-        trigger.insert(
-            "trigger".to_string(),
-            Value::String(trigger_to_string(exec.trigger).to_string()),
-        );
-        trigger.insert(
-            "vmstate".to_string(),
-            Value::String(vm_state_to_string(exec.vm_state).to_string()),
-        );
-        trigger.insert(
-            "gasconsumed".to_string(),
-            Value::String(exec.gas_consumed.to_string()),
-        );
-
-        let mut exception = include_exception.then(|| exec.exception.clone()).flatten();
-        match stack_values_rpc_json_per_item(&exec.stack, self.settings.max_stack_size) {
-            Ok(stack) => {
-                trigger.insert("stack".to_string(), Value::Array(stack));
-            }
-            Err(err) => {
-                exception = Some(err.to_string());
-            }
-        }
-
-        if include_exception || exception.is_some() {
-            trigger.insert(
-                "exception".to_string(),
-                exception.map(Value::String).unwrap_or(Value::Null),
-            );
-        }
-
-        let notifications = exec
-            .notifications
-            .iter()
-            .map(notification_to_json)
-            .collect::<Vec<_>>();
-        trigger.insert("notifications".to_string(), Value::Array(notifications));
-
-        if self.settings.debug {
-            let logs = exec
-                .logs
-                .iter()
-                .map(|log| {
-                    let mut obj = Map::new();
-                    obj.insert(
-                        "contract".to_string(),
-                        Value::String(log.script_hash.to_string()),
-                    );
-                    obj.insert("message".to_string(), Value::String(log.message.clone()));
-                    Value::Object(obj)
-                })
-                .collect();
-            trigger.insert("logs".to_string(), Value::Array(logs));
-        }
-
-        Value::Object(trigger)
+        super::rendering::transaction_log_json(
+            tx_hash,
+            exec,
+            self.settings.debug,
+            self.settings.max_stack_size,
+        )
     }
 }
 
@@ -283,180 +211,10 @@ impl CommittedHandler for ApplicationLogsService {
     }
 }
 
-fn trigger_to_string(trigger: TriggerType) -> &'static str {
-    if trigger == TriggerType::ON_PERSIST {
-        "OnPersist"
-    } else if trigger == TriggerType::POST_PERSIST {
-        "PostPersist"
-    } else if trigger == TriggerType::VERIFICATION {
-        "Verification"
-    } else if trigger == TriggerType::APPLICATION {
-        "Application"
-    } else if trigger == TriggerType::SYSTEM {
-        "System"
-    } else if trigger == TriggerType::ALL {
-        "All"
-    } else {
-        "Unknown"
-    }
-}
-
-fn vm_state_to_string(state: VMState) -> &'static str {
-    match state {
-        VMState::NONE => "NONE",
-        VMState::HALT => "HALT",
-        VMState::FAULT => "FAULT",
-        VMState::BREAK => "BREAK",
-    }
-}
-
-struct StackValueJsonBudget {
-    remaining: isize,
-}
-
-fn stack_values_rpc_json_per_item(items: &[StackValue], max_size: usize) -> CoreResult<Vec<Value>> {
-    items
-        .iter()
-        .map(|item| stack_value_rpc_json(item, max_size))
-        .collect()
-}
-
-fn stack_value_rpc_json(item: &StackValue, max_size: usize) -> CoreResult<Value> {
-    let mut budget = StackValueJsonBudget {
-        remaining: isize::try_from(max_size).unwrap_or(isize::MAX),
-    };
-    render_stack_value(item, &mut budget)
-}
-
-fn render_stack_value(item: &StackValue, budget: &mut StackValueJsonBudget) -> CoreResult<Value> {
-    let type_name = stack_value_type_name(item);
-    let mut obj = Map::new();
-    obj.insert("type".to_string(), Value::String(type_name.to_string()));
-    budget.subtract(11 + type_name.len() as isize)?;
-
-    let value = match item {
-        StackValue::Null | StackValue::Interop(_) | StackValue::Iterator(_) => None,
-        StackValue::Boolean(value) => {
-            budget.subtract(if *value { 4 } else { 5 })?;
-            Some(Value::Bool(*value))
-        }
-        StackValue::Integer(value) => {
-            let text = value.to_string();
-            budget.subtract(2 + text.len() as isize)?;
-            Some(Value::String(text))
-        }
-        StackValue::BigInteger(bytes) => {
-            let text = BigInt::from_signed_bytes_le(bytes).to_string();
-            budget.subtract(2 + text.len() as isize)?;
-            Some(Value::String(text))
-        }
-        StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
-            let encoded = BASE64_STANDARD.encode(bytes);
-            budget.subtract(2 + encoded.len() as isize)?;
-            Some(Value::String(encoded))
-        }
-        StackValue::Pointer(position) => {
-            budget.subtract(position.to_string().len() as isize)?;
-            Some(Value::Number(JsonNumber::from(*position)))
-        }
-        StackValue::Array(_, items) | StackValue::Struct(_, items) => {
-            budget.subtract(2 + items.len().saturating_sub(1) as isize)?;
-            let values = items
-                .iter()
-                .map(|entry| render_stack_value(entry, budget))
-                .collect::<CoreResult<Vec<_>>>()?;
-            Some(Value::Array(values))
-        }
-        StackValue::Map(_, entries) => {
-            budget.subtract(2 + entries.len().saturating_sub(1) as isize)?;
-            let values = entries
-                .iter()
-                .map(|(key, value)| {
-                    budget.subtract(17)?;
-                    let key = render_stack_value(key, budget)?;
-                    let value = render_stack_value(value, budget)?;
-                    let mut entry = Map::new();
-                    entry.insert("key".to_string(), key);
-                    entry.insert("value".to_string(), value);
-                    Ok(Value::Object(entry))
-                })
-                .collect::<CoreResult<Vec<_>>>()?;
-            Some(Value::Array(values))
-        }
-    };
-
-    if let Some(value) = value {
-        budget.subtract(9)?;
-        obj.insert("value".to_string(), value);
-    }
-
-    budget.check()?;
-    Ok(Value::Object(obj))
-}
-
-fn stack_value_type_name(item: &StackValue) -> &'static str {
-    match item {
-        StackValue::Null => "Any",
-        StackValue::Boolean(_) => "Boolean",
-        StackValue::Integer(_) | StackValue::BigInteger(_) => "Integer",
-        StackValue::ByteString(_) => "ByteString",
-        StackValue::Buffer(_, _) => "Buffer",
-        StackValue::Array(_, _) => "Array",
-        StackValue::Struct(_, _) => "Struct",
-        StackValue::Map(_, _) => "Map",
-        StackValue::Pointer(_) => "Pointer",
-        StackValue::Interop(_) | StackValue::Iterator(_) => "InteropInterface",
-    }
-}
-
-impl StackValueJsonBudget {
-    fn subtract(&mut self, amount: isize) -> CoreResult<()> {
-        self.remaining = self.remaining.checked_sub(amount).unwrap_or(-1);
-        self.check()
-    }
-
-    fn check(&self) -> CoreResult<()> {
-        if self.remaining < 0 {
-            return Err(CoreError::other("Max size reached"));
-        }
-        Ok(())
-    }
-}
-
-fn notification_to_json(event: &NotifyEventArgs) -> Value {
-    let mut notification = Map::new();
-    notification.insert(
-        "contract".to_string(),
-        Value::String(event.script_hash.to_string()),
-    );
-    notification.insert(
-        "eventname".to_string(),
-        Value::String(event.event_name.clone()),
-    );
-
-    let state_values = event
-        .state
-        .iter()
-        .map(|item| StackItemRpcJson::stack_item_rpc_json(item, None))
-        .collect::<Result<Vec<_>, _>>();
-
-    let state = match state_values {
-        Ok(values) => {
-            let mut state_obj = Map::new();
-            state_obj.insert("type".to_string(), Value::String("Array".to_string()));
-            state_obj.insert("value".to_string(), Value::Array(values));
-            Value::Object(state_obj)
-        }
-        Err(_) => Value::String("error: recursive reference".to_string()),
-    };
-    notification.insert("state".to_string(), state);
-
-    Value::Object(notification)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_primitives::TriggerType;
     use neo_primitives::UnhandledExceptionPolicy;
     use neo_storage::persistence::{
         SeekDirection,
@@ -466,6 +224,7 @@ mod tests {
         write_store::WriteStore,
     };
     use neo_storage::{StorageItem, StorageKey};
+    use neo_vm_rs::{StackValue, VmState as VMState};
 
     #[derive(Clone)]
     struct FailingStore;
@@ -585,10 +344,13 @@ mod tests {
             VMState::HALT,
             None,
             0,
-            vec![StackValue::Struct(vec![
-                StackValue::Integer(1),
-                StackValue::ByteString(b"neo".to_vec()),
-            ])],
+            vec![StackValue::Struct(
+                0,
+                vec![
+                    StackValue::Integer(1),
+                    StackValue::ByteString(b"neo".to_vec()),
+                ],
+            )],
         );
 
         let json = service.transaction_log_json(&UInt256::zero(), &exec);

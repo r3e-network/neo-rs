@@ -225,7 +225,7 @@ mod tests {
             script: "00".to_string(),
             state: VmState::Halt,
             gas_consumed: 1,
-            stack: vec![StackValue::Array(vec![StackValue::Boolean(true)])],
+            stack: vec![StackValue::Array(0, vec![StackValue::Boolean(true)])],
             tx: None,
             exception: None,
             session: None,

@@ -25,11 +25,13 @@ mod tests;
 
 use helpers::*;
 
+/// RPC handler group for NEP-11 and NEP-17 token tracker methods.
 pub struct RpcServerTokensTracker;
 
 const NEP11_PROPERTIES: [&str; 4] = ["name", "description", "image", "tokenURI"];
 
 impl RpcServerTokensTracker {
+    /// Register token tracker RPC handlers.
     pub fn register_handlers() -> Vec<RpcHandler> {
         super::rpc_handlers![
             "getnep11balances" => Self::get_nep11_balances,
@@ -60,7 +62,7 @@ impl RpcServerTokensTracker {
 
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
-        let max_results = service.settings().max_results as usize;
+        let max_results = service.settings().max_results_limit();
 
         let mut grouped: HashMap<UInt160, Vec<(String, TokenBalance)>> = HashMap::new();
         let mut count = 0usize;
@@ -146,7 +148,7 @@ impl RpcServerTokensTracker {
         }
 
         let (_, sent_prefix, received_prefix) = Nep11Tracker::rpc_prefixes();
-        let max_results = service.settings().max_results as usize;
+        let max_results = service.settings().max_results_limit();
 
         let sent = collect_nep11_transfers(
             service.store().as_ref(),
@@ -285,7 +287,7 @@ impl RpcServerTokensTracker {
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
         let mut results = Vec::new();
-        let max_results = service.settings().max_results as usize;
+        let max_results = service.settings().max_results_limit();
 
         for (key, value) in balances {
             if results.len() >= max_results {
@@ -345,7 +347,7 @@ impl RpcServerTokensTracker {
         }
 
         let (_, sent_prefix, received_prefix) = Nep17Tracker::rpc_prefixes();
-        let max_results = service.settings().max_results as usize;
+        let max_results = service.settings().max_results_limit();
 
         let sent = collect_transfers(
             service.store().as_ref(),

@@ -1,0 +1,309 @@
+use super::*;
+use neo_payloads::Header;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_best_block_hash_reflects_current_state() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getbestblockhash");
+
+    let mut store = system.store_cache();
+    let hash = UInt256::zero();
+    let index = 100u32;
+    // C# `HashIndexState` interoperable stack item, matching the reader.
+    let current_bytes = neo_native_contracts::LedgerContract::new()
+        .serialize_hash_index_state(&hash, index)
+        .expect("serialize HashIndexState pointer");
+    let key = StorageKey::new(LedgerContract::ID, vec![0x0c]);
+    store.add(key, StorageItem::from_bytes(current_bytes));
+    store.commit();
+
+    let result = (handler.callback())(&server, &[]).expect("get best block hash");
+    assert_eq!(result.as_str().expect("hash"), hash.to_string());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_count_defaults_to_one() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblockcount");
+
+    let result = (handler.callback())(&server, &[]).expect("get block count");
+    assert_eq!(result.as_u64().unwrap_or_default(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_header_count_defaults_to_one() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblockheadercount");
+
+    let result = (handler.callback())(&server, &[]).expect("get block header count");
+    assert_eq!(result.as_u64().unwrap_or_default(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_sys_fee_sums_transaction_fees() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblocksysfee");
+
+    let mut tx1 = make_transaction(1);
+    tx1.set_system_fee(100_000_000);
+    let mut tx2 = make_transaction(2);
+    tx2.set_system_fee(200_000_000);
+    let block = make_ledger_block(&system.store_cache(), 100, vec![tx1, tx2]);
+    let mut store = system.store_cache();
+    store_block(&mut store, &block);
+
+    let params = [Value::Number(100u32.into())];
+    let result = (handler.callback())(&server, &params).expect("get block sys fee");
+    assert_eq!(result.as_str().expect("sys fee"), "300000000");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_sys_fee_rejects_invalid_param() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblocksysfee");
+
+    let params = [Value::String("not-a-number".to_string())];
+    let err = (handler.callback())(&server, &params).expect_err("invalid params");
+    assert_eq!(err.code(), RpcError::invalid_params().code());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_sys_fee_reports_unknown_height() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblocksysfee");
+
+    let params = [Value::Number(1u32.into())];
+    let err = (handler.callback())(&server, &params).expect_err("unknown height");
+    assert_eq!(err.code(), RpcError::unknown_height().code());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_hash_reports_hash_for_height() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblockhash");
+
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(1)]);
+    let mut store = system.store_cache();
+    store_block(&mut store, &block);
+
+    let params = [Value::Number(1u32.into())];
+    let result = (handler.callback())(&server, &params).expect("get block hash");
+    assert_eq!(result.as_str().expect("hash"), block.hash().to_string());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_roundtrips_by_hash_and_index() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblock");
+
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(1)]);
+    let mut store = system.store_cache();
+    store_block(&mut store, &block);
+
+    let hash_params = [Value::String(block.hash().to_string())];
+    let result = (handler.callback())(&server, &hash_params).expect("get block by hash");
+    let bytes = BASE64_STANDARD
+        .decode(result.as_str().expect("base64"))
+        .expect("decode");
+    let mut reader = MemoryReader::new(&bytes);
+    let decoded = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
+    let decoded_clone = decoded.clone();
+    assert_eq!(Block::hash(&decoded_clone), block.hash());
+
+    let index_params = [Value::Number(1u32.into())];
+    let result = (handler.callback())(&server, &index_params).expect("get block by index");
+    let bytes = BASE64_STANDARD
+        .decode(result.as_str().expect("base64"))
+        .expect("decode");
+    let mut reader = MemoryReader::new(&bytes);
+    let decoded = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
+    let decoded_clone = decoded.clone();
+    assert_eq!(Block::hash(&decoded_clone), block.hash());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_genesis_roundtrips_and_reports_empty_txs() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblock");
+
+    // The reth-style Node does not synthesise a genesis block at
+    // construction (no genesis builder exists in-tree yet); persist a
+    // synthetic empty block 0 with the same ledger records instead.
+    let mut store = system.store_cache();
+    let genesis = make_ledger_block(&store, 0, Vec::new());
+    store_block(&mut store, &genesis);
+    let genesis_hash = genesis.hash();
+
+    let params = [Value::Number(0u32.into())];
+    let result = (handler.callback())(&server, &params).expect("get genesis block");
+    let bytes = BASE64_STANDARD
+        .decode(result.as_str().expect("base64"))
+        .expect("decode");
+    let mut reader = MemoryReader::new(&bytes);
+    let decoded = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
+    let decoded_clone = decoded.clone();
+    assert_eq!(Block::hash(&decoded_clone), genesis_hash);
+    assert!(decoded.transactions.is_empty());
+
+    let params = [Value::Number(0u32.into()), Value::Bool(true)];
+    let result = (handler.callback())(&server, &params).expect("get genesis verbose");
+    let obj = result.as_object().expect("object");
+    assert_eq!(
+        obj.get("hash").and_then(Value::as_str).unwrap(),
+        genesis_hash.to_string()
+    );
+    let txs = obj.get("tx").and_then(Value::as_array).expect("tx array");
+    assert!(txs.is_empty());
+    assert_eq!(
+        obj.get("confirmations")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_no_transactions_reports_empty_txs() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblock");
+
+    let block = make_ledger_block(&system.store_cache(), 1, Vec::new());
+    let mut store = system.store_cache();
+    store_block(&mut store, &block);
+
+    let params = [Value::Number(1u32.into())];
+    let result = (handler.callback())(&server, &params).expect("get block");
+    let bytes = BASE64_STANDARD
+        .decode(result.as_str().expect("base64"))
+        .expect("decode");
+    let mut reader = MemoryReader::new(&bytes);
+    let decoded = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
+    let decoded_clone = decoded.clone();
+    assert_eq!(Block::hash(&decoded_clone), block.hash());
+    assert!(decoded.transactions.is_empty());
+
+    let params = [Value::Number(1u32.into()), Value::Bool(true)];
+    let result = (handler.callback())(&server, &params).expect("get block verbose");
+    let obj = result.as_object().expect("object");
+    assert_eq!(
+        obj.get("hash").and_then(Value::as_str).unwrap(),
+        block.hash().to_string()
+    );
+    let txs = obj.get("tx").and_then(Value::as_array).expect("tx array");
+    assert!(txs.is_empty());
+    assert_eq!(
+        obj.get("confirmations")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_verbose_reports_confirmations() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblock");
+
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(2)]);
+    let mut store = system.store_cache();
+    store_block(&mut store, &block);
+
+    let params = [Value::Number(1u32.into()), Value::Bool(true)];
+    let result = (handler.callback())(&server, &params).expect("get block verbose");
+    let obj = result.as_object().expect("object");
+    assert_eq!(
+        obj.get("hash").and_then(Value::as_str).unwrap(),
+        block.hash().to_string()
+    );
+    assert_eq!(
+        obj.get("confirmations")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        1
+    );
+    let txs = obj.get("tx").and_then(Value::as_array).expect("tx array");
+    assert_eq!(txs.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_rejects_null_identifier() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblock");
+
+    let params = [Value::Null];
+    let err = (handler.callback())(&server, &params).expect_err("null params");
+    let rpc_error: RpcError = err.into();
+    assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_header_roundtrips() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblockheader");
+
+    let block = make_ledger_block(&system.store_cache(), 1, vec![make_transaction(3)]);
+    let mut store = system.store_cache();
+    store_block(&mut store, &block);
+
+    let params = [Value::String(block.hash().to_string())];
+    let result = (handler.callback())(&server, &params).expect("get block header");
+    let bytes = BASE64_STANDARD
+        .decode(result.as_str().expect("base64"))
+        .expect("decode");
+    let mut reader = MemoryReader::new(&bytes);
+    let decoded = <Header as Serializable>::deserialize(&mut reader).expect("header");
+    assert_eq!(decoded.index(), 1);
+
+    let params = [Value::String(block.hash().to_string()), Value::Bool(true)];
+    let result = (handler.callback())(&server, &params).expect("get block header verbose");
+    let obj = result.as_object().expect("object");
+    assert_eq!(
+        obj.get("hash").and_then(Value::as_str).unwrap(),
+        block.hash().to_string()
+    );
+    assert_eq!(
+        obj.get("confirmations")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_block_header_rejects_null_identifier() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getblockheader");
+
+    let params = [Value::Null];
+    let err = (handler.callback())(&server, &params).expect_err("null params");
+    let rpc_error: RpcError = err.into();
+    assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
+}

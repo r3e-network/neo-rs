@@ -31,9 +31,7 @@ impl RpcNefFile {
             .and_then(neo_serialization::json::JToken::as_string)
             .ok_or_else(|| CoreError::other("Missing or invalid 'source' field"))?;
 
-        let tokens = parse_object_array_lossy(json, "tokens", |obj| {
-            RpcMethodToken::from_json(obj).map_err(|e| e.to_string())
-        });
+        let tokens = parse_object_array_lossy(json, "tokens", RpcMethodToken::from_json);
 
         let script = json
             .get("script")

@@ -1,7 +1,7 @@
 use super::models::RpcTransaction;
 use crate::{Nep17Api, RpcClient, RpcError, RpcUtility};
 use neo_crypto::ECPoint;
-use neo_execution::{Contract, NativeContract};
+use neo_execution::Contract;
 use neo_native_contracts::{GasToken, NeoToken};
 use neo_payloads::Transaction;
 use neo_primitives::BigDecimal;

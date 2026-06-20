@@ -4,7 +4,7 @@ use super::super::utility::{
 };
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_primitives::{UInt160, UInt256};
+use neo_primitives::{UInt160, UInt256, strip_hex_prefix};
 use neo_serialization::json::{JObject, JToken};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
@@ -98,7 +98,7 @@ impl RpcNep11Transfer {
             .get("tokenid")
             .and_then(neo_serialization::json::JToken::as_string)
             .ok_or_else(|| CoreError::other("Missing or invalid 'tokenid' field"))?;
-        let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
+        let token_id = hex::decode(strip_hex_prefix(&token_id_str))
             .map_err(|_| CoreError::other(format!("Invalid tokenid: {token_id_str}")))?;
 
         let fields = parse_nep_transfer_fields(json, protocol_settings)?;
@@ -133,7 +133,11 @@ mod tests {
             transfer_notify_index: 1,
             tx_hash: UInt256::zero(),
         };
-        let json = entry.to_json(&settings);
+        let mut json = entry.to_json(&settings);
+        json.insert(
+            "tokenid".to_string(),
+            JToken::String("0X010203".to_string()),
+        );
         let parsed = RpcNep11Transfer::from_json(&json, &settings).unwrap();
         assert_eq!(parsed.token_id, entry.token_id);
         assert_eq!(parsed.timestamp_ms, entry.timestamp_ms);

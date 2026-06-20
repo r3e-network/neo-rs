@@ -1,3 +1,5 @@
+//! Integration tests for websocket event notification JSON shapes.
+
 use neo_primitives::UInt256;
 use neo_rpc::server::{WsEvent, WsEventType, WsNotification};
 use serde_json::json;

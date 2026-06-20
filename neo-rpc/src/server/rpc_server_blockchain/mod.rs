@@ -1,31 +1,32 @@
 //! Blockchain RPC endpoints (`RpcServer.Blockchain.cs`).
 
-use crate::client::models::RpcContractState;
 use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
-use crate::server::model::contract_name_or_hash_or_id::ContractNameOrHashOrId;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
+use crate::server::rpc_helpers::{
+    expect_base64_param_with_messages, internal_error, serialize_to_base64,
+};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
-use neo_execution::contract_state::ContractState;
-use neo_io::Serializable;
 use neo_native_contracts::{LedgerContract, contract_management::ContractManagement};
-use neo_payloads::{Header, block::Block};
-use neo_primitives::{UInt160, UInt256};
 use neo_storage::StorageKey;
 use neo_storage::persistence::SeekDirection;
 use num_traits::ToPrimitive;
 
 use crate::server::ledger_queries;
 use crate::server::native_queries;
-use serde_json::{Map, Value, json};
-use std::str::FromStr;
+use serde_json::{Value, json};
 
+mod request_helpers;
+mod responses;
+use responses::{block_to_json, contract_state_to_json, header_to_json};
+
+/// RPC handler group for blockchain query methods.
 pub struct RpcServerBlockchain;
 
 impl RpcServerBlockchain {
+    /// Register blockchain RPC handlers.
     pub fn register_handlers() -> Vec<RpcHandler> {
         super::rpc_handlers![
             "getbestblockhash" => Self::get_best_block_hash,
@@ -117,12 +118,7 @@ impl RpcServerBlockchain {
             let next_hash = ledger
                 .get_block_hash(store.data_cache(), block.header.index().saturating_add(1))
                 .map_err(internal_error)?;
-            return Ok(Self::block_to_json(
-                server,
-                &block,
-                current_index,
-                next_hash,
-            ));
+            return Ok(block_to_json(server, &block, current_index, next_hash));
         }
 
         Ok(Value::String(serialize_to_base64(&block)?))
@@ -142,12 +138,7 @@ impl RpcServerBlockchain {
             let next_hash = ledger
                 .get_block_hash(store.data_cache(), header.index().saturating_add(1))
                 .map_err(internal_error)?;
-            return Ok(Self::header_to_json(
-                server,
-                header,
-                current_index,
-                next_hash,
-            ));
+            return Ok(header_to_json(server, header, current_index, next_hash));
         }
 
         Ok(Value::String(serialize_to_base64(header)?))
@@ -307,16 +298,12 @@ impl RpcServerBlockchain {
 
     fn get_storage(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let identifier = Self::parse_contract_identifier(params, "getstorage")?;
-        let key = params.get(1).and_then(Value::as_str).ok_or_else(|| {
-            RpcException::from(
-                RpcError::invalid_params().with_data("getstorage requires Base64 key parameter"),
-            )
-        })?;
-        let key_bytes = BASE64_STANDARD.decode(key).map_err(|_| {
-            RpcException::from(
-                RpcError::invalid_params().with_data(format!("invalid Base64 storage key: {key}")),
-            )
-        })?;
+        let key_bytes = expect_base64_param_with_messages(
+            params,
+            1,
+            "getstorage requires Base64 key parameter",
+            |key| format!("invalid Base64 storage key: {key}"),
+        )?;
 
         let store = server.system().store_cache();
         let contract_id = Self::resolve_contract_id(&store, &identifier)?;
@@ -329,18 +316,12 @@ impl RpcServerBlockchain {
 
     fn find_storage(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let identifier = Self::parse_contract_identifier(params, "findstorage")?;
-        let prefix = params.get(1).and_then(Value::as_str).ok_or_else(|| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data("findstorage requires Base64 prefix parameter"),
-            )
-        })?;
-        let prefix_bytes = BASE64_STANDARD.decode(prefix).map_err(|_| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("invalid Base64 storage prefix: {prefix}")),
-            )
-        })?;
+        let prefix_bytes = expect_base64_param_with_messages(
+            params,
+            1,
+            "findstorage requires Base64 prefix parameter",
+            |prefix| format!("invalid Base64 storage prefix: {prefix}"),
+        )?;
         let start = match params.get(2) {
             None => 0usize,
             Some(Value::Number(number)) => number
@@ -483,35 +464,8 @@ impl RpcServerBlockchain {
                 RpcError::internal_server_error().with_data("Can't get next block validators."),
             )
         })?;
-        // C# `NeoToken.GetCandidatesInternal` also drops candidates whose
-        // signature-contract script hash is blocked in the PolicyContract.
-        // The native `getCandidates` read in this tree does not yet carry
-        // that filter, so apply it here; once the native side gains it the
-        // filter below becomes an idempotent no-op.
-        let policy_hash = neo_native_contracts::PolicyContract::script_hash();
         let mut result = Vec::with_capacity(candidates.len());
         for (point, votes) in &candidates {
-            let ec_point = neo_crypto::ECPoint::from_bytes(point).map_err(|_| {
-                RpcException::from(
-                    RpcError::internal_server_error().with_data("Can't get candidates."),
-                )
-            })?;
-            let account =
-                neo_execution::Contract::create_signature_contract(ec_point).script_hash();
-            let blocked = native_queries::NativeQueries::policy_is_blocked(
-                server,
-                std::sync::Arc::clone(&snapshot),
-                &policy_hash,
-                &account,
-            )
-            .map_err(|_| {
-                RpcException::from(
-                    RpcError::internal_server_error().with_data("Can't get candidates."),
-                )
-            })?;
-            if blocked {
-                continue;
-            }
             let active = validators.iter().any(|validator| validator == point);
             result.push(json!({
                 "publickey": hex::encode(point),
@@ -548,259 +502,6 @@ impl RpcServerBlockchain {
             .map(|point| Value::String(hex::encode(point)))
             .collect();
         Ok(Value::Array(members))
-    }
-
-    fn parse_block_identifier(
-        params: &[Value],
-        method: &str,
-    ) -> Result<RpcBlockHashOrIndex, RpcException> {
-        let token = params.first().ok_or_else(|| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("{method} requires at least one parameter")),
-            )
-        })?;
-
-        match token {
-            Value::Number(number) => {
-                let value = number
-                    .as_u64()
-                    .and_then(|value| u32::try_from(value).ok())
-                    .ok_or_else(|| {
-                        RpcException::from(
-                            RpcError::invalid_params()
-                                .with_data(format!("{method} index is out of range")),
-                        )
-                    })?;
-                Ok(RpcBlockHashOrIndex::from_index(value))
-            }
-            Value::String(text) => RpcBlockHashOrIndex::try_parse(text).ok_or_else(|| {
-                RpcException::from(RpcError::invalid_params().with_data(format!(
-                    "{method} expects block hash or index, got '{text}'"
-                )))
-            }),
-            _ => Err(RpcException::from(RpcError::invalid_params().with_data(
-                format!("{method} expects the first parameter to be hash or index"),
-            ))),
-        }
-    }
-
-    fn parse_verbose(arg: Option<&Value>) -> Result<bool, RpcException> {
-        match arg {
-            None => Ok(false),
-            Some(Value::Bool(value)) => Ok(*value),
-            Some(Value::Number(number)) => match number.as_u64() {
-                Some(0) => Ok(false),
-                Some(1) => Ok(true),
-                _ => Err(RpcException::from(
-                    RpcError::invalid_params().with_data("verbose flag must be a boolean or 0/1"),
-                )),
-            },
-            _ => Err(RpcException::from(
-                RpcError::invalid_params().with_data("verbose flag must be a boolean"),
-            )),
-        }
-    }
-
-    fn fetch_payload_block(
-        store: &neo_storage::persistence::StoreCache,
-        identifier: &RpcBlockHashOrIndex,
-    ) -> Result<Block, RpcException> {
-        ledger_queries::get_full_block(store.data_cache(), identifier)
-            .map_err(internal_error)?
-            .ok_or_else(|| RpcException::from(RpcError::unknown_block()))
-    }
-
-    fn block_to_json(
-        server: &RpcServer,
-        block: &Block,
-        current_index: u32,
-        next_hash: Option<UInt256>,
-    ) -> Value {
-        let mut json = Self::header_fields_to_map(server, &block.header, current_index, next_hash);
-        json.insert("size".to_string(), json!(block.size()));
-        let system = server.system();
-        let settings = system.settings();
-        let transactions: Vec<Value> = block
-            .transactions
-            .iter()
-            .map(|tx| tx.to_json(&settings))
-            .collect();
-        json.insert("tx".to_string(), Value::Array(transactions));
-        Value::Object(json)
-    }
-
-    fn header_to_json(
-        server: &RpcServer,
-        header: &Header,
-        current_index: u32,
-        next_hash: Option<UInt256>,
-    ) -> Value {
-        Value::Object(Self::header_fields_to_map(
-            server,
-            header,
-            current_index,
-            next_hash,
-        ))
-    }
-
-    fn header_fields_to_map(
-        server: &RpcServer,
-        header: &Header,
-        current_index: u32,
-        next_hash: Option<UInt256>,
-    ) -> Map<String, Value> {
-        // Canonical header wire-JSON is owned by neo-core `Header::to_json`
-        // (single source of truth shared with the RPC client); the server adds
-        // only the contextual confirmations / nextblockhash on top.
-        let system = server.system();
-        let settings = system.settings();
-        let mut json = header.to_json(&settings);
-        let confirmations = current_index.saturating_sub(header.index()) + 1;
-        json.insert("confirmations".to_string(), json!(confirmations));
-        if let Some(hash) = next_hash {
-            json.insert("nextblockhash".to_string(), Value::String(hash.to_string()));
-        }
-        json
-    }
-
-    fn expect_u32_param(params: &[Value], index: usize, method: &str) -> Result<u32, RpcException> {
-        params
-            .get(index)
-            .and_then(Value::as_u64)
-            .and_then(|value| u32::try_from(value).ok())
-            .ok_or_else(|| {
-                RpcException::from(RpcError::invalid_params().with_data(format!(
-                    "{} expects numeric parameter {}",
-                    method,
-                    index + 1
-                )))
-            })
-    }
-
-    fn expect_hash_param(
-        params: &[Value],
-        index: usize,
-        method: &str,
-    ) -> Result<UInt256, RpcException> {
-        params
-            .get(index)
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                RpcException::from(RpcError::invalid_params().with_data(format!(
-                    "{} expects string parameter {}",
-                    method,
-                    index + 1
-                )))
-            })
-            .and_then(|text| {
-                UInt256::from_str(text).map_err(|err| {
-                    RpcException::from(
-                        RpcError::invalid_params()
-                            .with_data(format!("invalid hash '{text}': {err}")),
-                    )
-                })
-            })
-    }
-
-    fn parse_contract_identifier(
-        params: &[Value],
-        method: &str,
-    ) -> Result<ContractNameOrHashOrId, RpcException> {
-        let token = params.first().ok_or_else(|| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("{method} requires at least one parameter")),
-            )
-        })?;
-
-        match token {
-            Value::Number(number) => {
-                let value = number
-                    .as_i64()
-                    .and_then(|value| i32::try_from(value).ok())
-                    .ok_or_else(|| {
-                        RpcException::from(
-                            RpcError::invalid_params()
-                                .with_data(format!("{method} contract id out of range")),
-                        )
-                    })?;
-                Ok(ContractNameOrHashOrId::from_id(value))
-            }
-            Value::String(text) => ContractNameOrHashOrId::try_parse(text).ok_or_else(|| {
-                RpcException::from(
-                    RpcError::invalid_params()
-                        .with_data(format!("invalid contract identifier '{text}'")),
-                )
-            }),
-            _ => Err(RpcException::from(RpcError::invalid_params().with_data(
-                format!("{method} expects contract identifier as string or integer"),
-            ))),
-        }
-    }
-
-    fn load_contract_state(
-        store: &neo_storage::persistence::StoreCache,
-        identifier: &ContractNameOrHashOrId,
-    ) -> Result<Option<ContractState>, RpcException> {
-        match identifier {
-            ContractNameOrHashOrId::Id(id) => {
-                ContractManagement::get_contract_by_id_from_snapshot(store.data_cache(), *id)
-                    .map_err(internal_error)
-            }
-            ContractNameOrHashOrId::Hash(hash) => {
-                ContractManagement::get_contract_from_snapshot(store.data_cache(), hash)
-                    .map_err(internal_error)
-            }
-            ContractNameOrHashOrId::Name(name) => {
-                let hash = Self::contract_name_to_hash(name)?;
-                ContractManagement::get_contract_from_snapshot(store.data_cache(), &hash)
-                    .map_err(internal_error)
-            }
-        }
-    }
-
-    fn contract_name_to_hash(name: &str) -> Result<UInt160, RpcException> {
-        let registry = crate::server::native_queries::NativeQueries::native_registry();
-        if let Some(contract) = registry.get_by_name(name) {
-            return Ok(contract.hash());
-        }
-        UInt160::from_str(name).map_err(|err| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("invalid contract identifier '{name}': {err}")),
-            )
-        })
-    }
-
-    fn resolve_contract_id(
-        store: &neo_storage::persistence::StoreCache,
-        identifier: &ContractNameOrHashOrId,
-    ) -> Result<i32, RpcException> {
-        if let ContractNameOrHashOrId::Id(id) = identifier {
-            let state =
-                ContractManagement::get_contract_by_id_from_snapshot(store.data_cache(), *id)
-                    .map_err(internal_error)?;
-            state
-                .map(|contract| contract.id)
-                .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))
-        } else {
-            let contract = Self::load_contract_state(store, identifier)?
-                .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
-            Ok(contract.id)
-        }
-    }
-}
-
-fn contract_state_to_json(contract: &ContractState) -> Value {
-    let rpc_contract = RpcContractState {
-        contract_state: contract.clone(),
-    };
-
-    match rpc_contract.to_json() {
-        Ok(jobj) => serde_json::from_str(&jobj.to_string())
-            .unwrap_or_else(|err| json!({"error": err.to_string()})),
-        Err(err) => json!({"error": err.to_string()}),
     }
 }
 

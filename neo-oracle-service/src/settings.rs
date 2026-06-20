@@ -12,22 +12,39 @@ pub const DEFAULT_ORACLE_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Oracle service configuration settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OracleServiceSettings {
+    /// Neo network magic this oracle service is configured for.
     pub network: u32,
+    /// Seed or RPC nodes the oracle service may use for coordination.
     pub nodes: Vec<String>,
+    /// Maximum lifetime for a queued oracle task.
     pub max_task_timeout: Duration,
+    /// Maximum timeout for an oracle request execution.
     pub max_oracle_timeout: Duration,
+    /// Whether private or loopback hosts are allowed in request URLs.
     pub allow_private_host: bool,
+    /// Allowed HTTP response content types for HTTPS oracle requests.
     pub allowed_content_types: Vec<String>,
+    /// Timeout for HTTPS oracle fetches.
     pub https_timeout: Duration,
+    /// NeoFS endpoint used by the oracle NeoFS protocol adapter.
     pub neofs_endpoint: String,
+    /// Timeout for NeoFS oracle requests.
     pub neofs_timeout: Duration,
+    /// Optional bearer token for NeoFS requests.
     pub neofs_bearer_token: Option<String>,
+    /// Optional bearer signature for NeoFS requests.
     pub neofs_bearer_signature: Option<String>,
+    /// Optional key used to produce NeoFS bearer signatures.
     pub neofs_bearer_signature_key: Option<String>,
+    /// Whether NeoFS wallet-connect style bearer handling is enabled.
     pub neofs_wallet_connect: bool,
+    /// Whether the service should automatically sign NeoFS bearer tokens.
     pub neofs_auto_sign_bearer: bool,
+    /// Whether to use the gRPC NeoFS client when the feature is available.
     pub neofs_use_grpc: bool,
+    /// Whether the oracle service should start automatically with the node.
     pub auto_start: bool,
+    /// Policy for unexpected oracle service failures.
     pub exception_policy: UnhandledExceptionPolicy,
     /// URL whitelist - only these URLs/patterns are allowed (empty = allow all non-blocked).
     pub url_whitelist: Vec<String>,

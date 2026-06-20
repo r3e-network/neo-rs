@@ -4,6 +4,7 @@ use neo_crypto::ECPoint;
 use neo_native_contracts::{OracleContract, Role, RoleManagement};
 
 impl OracleService {
+    /// Submit a signed oracle response for aggregation into the response transaction.
     pub fn submit_oracle_response(
         &self,
         oracle_pub: ECPoint,

@@ -2,17 +2,19 @@ use crate::plugins::tokens_tracker::trackers::tracker_base::TokenTransferKeyView
 use crate::plugins::tokens_tracker::{
     Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, find_range,
 };
-use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, invalid_params};
+use crate::server::rpc_helpers::{
+    expect_script_hash_or_address_param, internal_error, invalid_params, optional_u64_param,
+};
 use neo_execution::application_engine::TEST_MODE_GAS;
+use neo_io::Serializable;
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,7 +26,7 @@ pub(super) fn tracker_service(
     server
         .system()
         .get_service::<TokensTrackerService>()
-        .ok_or_else(|| RpcException::from(RpcError::method_not_found()))
+        .ok_or_else(|| internal_error("TokensTracker service not available"))
 }
 
 pub(super) fn parse_address_param(
@@ -33,37 +35,11 @@ pub(super) fn parse_address_param(
     method: &str,
     address_version: u8,
 ) -> Result<UInt160, RpcException> {
-    let text = params
-        .get(index)
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| invalid_params(format!("{method} requires address parameter")))?;
-
-    let mut parsed = None;
-    if UInt160::try_parse(text, &mut parsed) {
-        if let Some(value) = parsed {
-            return Ok(value);
-        }
-    }
-
-    neo_wallets::wallet_helper::WalletAddress::to_script_hash(text, address_version)
-        .map_err(|_| invalid_params(format!("Invalid address: {text}")))
+    expect_script_hash_or_address_param(params, index, method, address_version)
 }
 
 pub(super) fn parse_optional_u64(value: Option<&Value>) -> Result<u64, RpcException> {
-    let Some(value) = value else {
-        return Ok(0);
-    };
-    match value {
-        Value::Null => Ok(0),
-        Value::Number(num) => num
-            .as_u64()
-            .ok_or_else(|| invalid_params("Expected unsigned integer")),
-        Value::String(text) => text
-            .trim()
-            .parse::<u64>()
-            .map_err(|_| invalid_params("Expected unsigned integer")),
-        _ => Err(invalid_params("Expected unsigned integer")),
-    }
+    optional_u64_param(value, 0, "Expected unsigned integer")
 }
 
 pub(super) fn parse_token_id_param(
@@ -87,50 +63,16 @@ pub(super) fn collect_transfers(
     address_version: u8,
     max_results: usize,
 ) -> Result<Value, RpcException> {
-    let mut prefix_bytes = Vec::with_capacity(1 + UInt160::LENGTH);
-    prefix_bytes.push(prefix);
-    prefix_bytes.extend_from_slice(&script_hash.to_bytes());
-
-    let start_key = [prefix_bytes.as_slice(), &start.to_be_bytes()].concat();
-    let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
-
-    let pairs = find_range::<Nep17TransferKey, TokenTransfer>(store, &start_key, &end_key)
-        .map_err(internal_error)?;
-
-    let mut limited = pairs
-        .into_iter()
-        .take(max_results)
-        .enumerate()
-        .collect::<Vec<_>>();
-    limited.sort_by(|(left_index, left), (right_index, right)| {
-        let left_ts = left.0.timestamp_ms();
-        let right_ts = right.0.timestamp_ms();
-        right_ts
-            .cmp(&left_ts)
-            .then_with(|| left_index.cmp(right_index))
-    });
-
-    let mut entries = Vec::new();
-    for (_, (key, value)) in limited {
-        let transfer_address = if value.user_script_hash == UInt160::zero() {
-            Value::Null
-        } else {
-            Value::String(neo_wallets::wallet_helper::WalletAddress::to_address(
-                &value.user_script_hash,
-                address_version,
-            ))
-        };
-        entries.push(json!({
-            "timestamp": key.timestamp_ms(),
-            "assethash": key.asset_script_hash().to_string(),
-            "transferaddress": transfer_address,
-            "amount": value.amount.to_string(),
-            "blockindex": value.block_index,
-            "transfernotifyindex": key.block_xfer_notification_index(),
-            "txhash": value.tx_hash.to_string()}));
-    }
-
-    Ok(Value::Array(entries))
+    collect_transfer_entries::<Nep17TransferKey, _>(
+        store,
+        prefix,
+        script_hash,
+        start,
+        end,
+        address_version,
+        max_results,
+        |_, _| {},
+    )
 }
 
 pub(super) fn collect_nep11_transfers(
@@ -142,6 +84,37 @@ pub(super) fn collect_nep11_transfers(
     address_version: u8,
     max_results: usize,
 ) -> Result<Value, RpcException> {
+    collect_transfer_entries::<Nep11TransferKey, _>(
+        store,
+        prefix,
+        script_hash,
+        start,
+        end,
+        address_version,
+        max_results,
+        |key, entry| {
+            entry.insert(
+                "tokenid".to_string(),
+                Value::String(hex::encode(&key.token)),
+            );
+        },
+    )
+}
+
+fn collect_transfer_entries<K, F>(
+    store: &dyn neo_storage::persistence::Store,
+    prefix: u8,
+    script_hash: &UInt160,
+    start: u64,
+    end: u64,
+    address_version: u8,
+    max_results: usize,
+    add_extra_fields: F,
+) -> Result<Value, RpcException>
+where
+    K: Serializable + TokenTransferKeyView,
+    F: Fn(&K, &mut Map<String, Value>),
+{
     let mut prefix_bytes = Vec::with_capacity(1 + UInt160::LENGTH);
     prefix_bytes.push(prefix);
     prefix_bytes.extend_from_slice(&script_hash.to_bytes());
@@ -149,8 +122,8 @@ pub(super) fn collect_nep11_transfers(
     let start_key = [prefix_bytes.as_slice(), &start.to_be_bytes()].concat();
     let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
 
-    let pairs = find_range::<Nep11TransferKey, TokenTransfer>(store, &start_key, &end_key)
-        .map_err(internal_error)?;
+    let pairs =
+        find_range::<K, TokenTransfer>(store, &start_key, &end_key).map_err(internal_error)?;
 
     let mut limited = pairs
         .into_iter()
@@ -167,26 +140,52 @@ pub(super) fn collect_nep11_transfers(
 
     let mut entries = Vec::new();
     for (_, (key, value)) in limited {
-        let transfer_address = if value.user_script_hash == UInt160::zero() {
-            Value::Null
-        } else {
-            Value::String(neo_wallets::wallet_helper::WalletAddress::to_address(
-                &value.user_script_hash,
-                address_version,
-            ))
-        };
-        entries.push(json!({
-            "timestamp": key.timestamp_ms(),
-            "assethash": key.asset_script_hash().to_string(),
-            "transferaddress": transfer_address,
-            "amount": value.amount.to_string(),
-            "blockindex": value.block_index,
-            "transfernotifyindex": key.block_xfer_notification_index(),
-            "txhash": value.tx_hash.to_string(),
-            "tokenid": hex::encode(&key.token)}));
+        let mut entry = transfer_entry_to_json(&key, &value, address_version);
+        add_extra_fields(&key, &mut entry);
+        entries.push(Value::Object(entry));
     }
 
     Ok(Value::Array(entries))
+}
+
+fn transfer_entry_to_json<K>(
+    key: &K,
+    value: &TokenTransfer,
+    address_version: u8,
+) -> Map<String, Value>
+where
+    K: TokenTransferKeyView,
+{
+    let transfer_address = if value.user_script_hash == UInt160::zero() {
+        Value::Null
+    } else {
+        Value::String(neo_wallets::wallet_helper::WalletAddress::to_address(
+            &value.user_script_hash,
+            address_version,
+        ))
+    };
+
+    let mut entry = Map::new();
+    entry.insert("timestamp".to_string(), json!(key.timestamp_ms()));
+    entry.insert(
+        "assethash".to_string(),
+        Value::String(key.asset_script_hash().to_string()),
+    );
+    entry.insert("transferaddress".to_string(), transfer_address);
+    entry.insert(
+        "amount".to_string(),
+        Value::String(value.amount.to_string()),
+    );
+    entry.insert("blockindex".to_string(), json!(value.block_index));
+    entry.insert(
+        "transfernotifyindex".to_string(),
+        json!(key.block_xfer_notification_index()),
+    );
+    entry.insert(
+        "txhash".to_string(),
+        Value::String(value.tx_hash.to_string()),
+    );
+    entry
 }
 
 pub(super) fn query_asset_metadata(

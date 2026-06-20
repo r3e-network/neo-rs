@@ -13,14 +13,17 @@ pub struct TokensTrackerService {
 }
 
 impl TokensTrackerService {
+    /// Create a token tracker service over the given storage backend.
     pub fn new(settings: TokensTrackerSettings, store: Arc<dyn Store>) -> Self {
         Self { settings, store }
     }
 
+    /// Return the token tracker configuration.
     pub fn settings(&self) -> &TokensTrackerSettings {
         &self.settings
     }
 
+    /// Return the storage backend used by token tracker queries.
     pub fn store(&self) -> Arc<dyn Store> {
         Arc::clone(&self.store)
     }

@@ -11,9 +11,11 @@ mod tests;
 
 use crate::server::rpc_server::RpcHandler;
 
+/// RPC handler group for smart-contract invocation methods.
 pub struct RpcServerSmartContract;
 
 impl RpcServerSmartContract {
+    /// Register smart-contract RPC handlers.
     pub fn register_handlers() -> Vec<RpcHandler> {
         super::rpc_handlers![
             "invokefunction" => invocation::invoke_function,

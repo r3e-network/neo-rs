@@ -1,3 +1,4 @@
+//! Integration tests for the `validateaddress` RPC helper surface.
 #![cfg(feature = "server")]
 
 use neo_config::ProtocolSettings;

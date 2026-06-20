@@ -1,3 +1,5 @@
+//! Build script for optional NeoFS gRPC client bindings.
+
 use std::env;
 use std::path::PathBuf;
 

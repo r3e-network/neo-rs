@@ -4,16 +4,22 @@ use std::time::Duration;
 /// Outcome and timing for a single RPC call.
 #[derive(Debug, Clone)]
 pub struct RpcRequestOutcome {
+    /// RPC method name.
     pub method: String,
+    /// Total elapsed time for the request.
     pub elapsed: Duration,
+    /// Whether the request completed successfully.
     pub success: bool,
+    /// Timeout configured for the request.
     pub timeout: Duration,
+    /// JSON-RPC error code, when the call returned an RPC error.
     pub error_code: Option<i32>,
 }
 
 /// Hooks that can be used to observe RPC requests for logging/metrics.
 type RpcObserverFn = dyn Fn(&RpcRequestOutcome) + Send + Sync;
 
+/// Observability hooks for RPC client requests.
 #[derive(Clone, Default)]
 pub struct RpcClientHooks {
     observer: Option<Arc<RpcObserverFn>>,

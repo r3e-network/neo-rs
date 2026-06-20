@@ -1,6 +1,6 @@
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_primitives::UInt160;
+use neo_primitives::{UInt160, strip_hex_prefix};
 use neo_serialization::json::{JObject, JToken};
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use serde::{Deserialize, Serialize};
@@ -44,7 +44,7 @@ impl RpcTransferOut {
             .and_then(neo_serialization::json::JToken::as_string)
             .ok_or_else(|| CoreError::other("Missing or invalid 'asset' field"))?;
 
-        let asset = if asset_str.starts_with("0x") || asset_str.len() == 40 {
+        let asset = if is_hex_or_prefixed_hash(&asset_str) {
             UInt160::parse(&asset_str)
                 .map_err(|_| CoreError::other(format!("Invalid asset: {asset_str}")))?
         } else {
@@ -66,7 +66,7 @@ impl RpcTransferOut {
             })
             .ok_or_else(|| CoreError::other("Missing or invalid 'address' field"))?;
 
-        let script_hash = if address.len() == 40 || address.starts_with("0x") {
+        let script_hash = if is_hex_or_prefixed_hash(&address) {
             UInt160::parse(&address).map_err(|_| {
                 CoreError::other(format!("Invalid address or scripthash: {address}"))
             })?
@@ -82,6 +82,10 @@ impl RpcTransferOut {
             value,
         })
     }
+}
+
+fn is_hex_or_prefixed_hash(value: &str) -> bool {
+    value.len() == 40 || strip_hex_prefix(value) != value
 }
 
 #[cfg(test)]
@@ -102,16 +106,20 @@ mod tests {
             value: "42".to_string(),
         };
 
-        let json = transfer.to_json(&settings);
+        let mut json = transfer.to_json(&settings);
+        json.insert(
+            "asset".to_string(),
+            JToken::String(format!("0X{}", strip_hex_prefix(&asset.to_string()))),
+        );
+        json.insert(
+            "address".to_string(),
+            JToken::String(format!("0X{}", strip_hex_prefix(&script_hash.to_string()))),
+        );
         let parsed = RpcTransferOut::from_json(&json, &settings).expect("parse");
 
         assert_eq!(parsed.asset, transfer.asset);
         assert_eq!(parsed.script_hash, transfer.script_hash);
         assert_eq!(parsed.value, transfer.value);
-        assert_eq!(
-            json.get("address").and_then(|t| t.as_string()).unwrap(),
-            WalletHelper::to_address(&transfer.script_hash, settings.address_version)
-        );
     }
 
     #[test]

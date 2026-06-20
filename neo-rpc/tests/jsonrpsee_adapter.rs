@@ -1,16 +1,19 @@
+//! Integration tests for the jsonrpsee RPC server adapter.
 #![cfg(feature = "server")]
 
 use neo_config::ProtocolSettings;
 use neo_rpc::server::{
     RpcException, RpcHandler, RpcMethodDescriptor, RpcServer, RpcServerBlockchain, RpcServerConfig,
-    RpcServerNode, RpcServerUtilities, ServerRpcError, build_jsonrpsee_module,
+    RpcServerIndexer, RpcServerNode, RpcServerUtilities, ServerRpcError, build_jsonrpsee_module,
     build_jsonrpsee_module_with_disabled,
 };
 use neo_system::Node;
 use parking_lot::RwLock;
 use serde_json::{Value, json};
 use std::collections::HashSet;
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::sync::Arc;
+use std::time::Duration;
 
 const JSONRPSEE_SMOKE_METHODS: &[&str] = &[
     "getbestblockhash",
@@ -22,7 +25,9 @@ const JSONRPSEE_SMOKE_METHODS: &[&str] = &[
     "getconnectioncount",
     "getrawmempool",
     "getversion",
+    "getindexerstatus",
     "listplugins",
+    "listservices",
 ];
 
 fn build_server_with_handlers() -> Arc<RwLock<RpcServer>> {
@@ -33,7 +38,20 @@ fn build_server_with_handlers() -> Arc<RwLock<RpcServer>> {
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());
     server.register_handlers(RpcServerUtilities::register_handlers());
+    server.register_handlers(RpcServerIndexer::register_handlers());
     Arc::new(RwLock::new(server))
+}
+
+fn build_server_with_config(config: RpcServerConfig) -> RpcServer {
+    let system = Arc::new(
+        Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system to start"),
+    );
+    RpcServer::new(system, config)
+}
+
+fn unused_local_port() -> u16 {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind free local port");
+    listener.local_addr().expect("local address").port()
 }
 
 fn find_handler(method: &str) -> RpcHandler {
@@ -41,6 +59,7 @@ fn find_handler(method: &str) -> RpcHandler {
         .into_iter()
         .chain(RpcServerNode::register_handlers())
         .chain(RpcServerUtilities::register_handlers())
+        .chain(RpcServerIndexer::register_handlers())
         .find(|handler| handler.descriptor().name.eq_ignore_ascii_case(method))
         .expect("registered handler")
 }
@@ -105,12 +124,18 @@ async fn module_registers_public_methods_from_server_registry() {
         .into_iter()
         .chain(RpcServerNode::register_handlers())
         .chain(RpcServerUtilities::register_handlers())
+        .chain(RpcServerIndexer::register_handlers())
         .filter(|handler| !handler.descriptor().requires_auth())
         .map(|handler| handler.descriptor().name.clone())
         .collect::<HashSet<_>>();
 
     assert_eq!(methods, expected);
     assert!(methods.contains("getblockhash"));
+    assert!(methods.contains("getindexerstatus"));
+    assert!(methods.contains("getblockindexes"));
+    assert!(methods.contains("getblocktransactions"));
+    assert!(methods.contains("getcontracttransactions"));
+    assert!(methods.contains("getaddressnotifications"));
     assert!(methods.contains("validateaddress"));
 }
 
@@ -163,6 +188,227 @@ async fn module_registers_dynamic_public_methods_without_descriptor_api_breaks()
         &response,
         ServerRpcError::invalid_params().with_data("dynamic"),
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn module_registers_protected_methods_when_rpc_auth_is_configured() {
+    let mut config = RpcServerConfig {
+        rpc_user: "neo".to_string(),
+        rpc_pass: "secret".to_string(),
+        ..RpcServerConfig::default()
+    };
+    config.port = unused_local_port();
+    let protected_method = "customprotected".to_string();
+    let mut server = build_server_with_config(config);
+    server.register_handlers(vec![RpcHandler::new(
+        RpcMethodDescriptor {
+            name: protected_method.clone(),
+            requires_auth: true,
+        },
+        Arc::new(|_, _| Ok(json!(true))),
+    )]);
+
+    let server = Arc::new(RwLock::new(server));
+    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let methods = module.method_names().collect::<HashSet<_>>();
+
+    assert!(methods.contains(protected_method.as_str()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn protected_method_without_transport_auth_returns_access_denied() {
+    let config = RpcServerConfig {
+        rpc_user: "neo".to_string(),
+        rpc_pass: "secret".to_string(),
+        ..RpcServerConfig::default()
+    };
+    let protected_method = "customprotected".to_string();
+    let mut server = build_server_with_config(config);
+    server.register_handlers(vec![RpcHandler::new(
+        RpcMethodDescriptor {
+            name: protected_method.clone(),
+            requires_auth: true,
+        },
+        Arc::new(|_, _| Ok(json!(true))),
+    )]);
+
+    let server = Arc::new(RwLock::new(server));
+    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+    let response = raw_response(
+        &module,
+        json!({
+            "jsonrpc": "2.0",
+            "method": protected_method,
+            "params": [],
+            "id": 14
+        }),
+    )
+    .await;
+
+    assert_neo_error(&response, ServerRpcError::access_denied());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_transport_enforces_basic_auth_when_configured() {
+    let port = unused_local_port();
+    let config = RpcServerConfig {
+        bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        port,
+        rpc_user: "neo".to_string(),
+        rpc_pass: "secret".to_string(),
+        ..RpcServerConfig::default()
+    };
+    let mut server = build_server_with_config(config);
+    server.register_handlers(vec![RpcHandler::new(
+        RpcMethodDescriptor::new("getblockcount"),
+        Arc::new(|_, _| Ok(json!(42))),
+    )]);
+    let server = Arc::new(RwLock::new(server));
+    server
+        .write()
+        .start_rpc_server(Arc::downgrade(&server), None);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{port}");
+    let request = json!({
+        "jsonrpc": "2.0",
+        "method": "getblockcount",
+        "params": [],
+        "id": 15
+    });
+
+    let unauthorized = client
+        .post(&url)
+        .json(&request)
+        .send()
+        .await
+        .expect("unauthorized request");
+    assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let authorized: Value = client
+        .post(&url)
+        .basic_auth("neo", Some("secret"))
+        .json(&request)
+        .send()
+        .await
+        .expect("authorized request")
+        .json()
+        .await
+        .expect("json response");
+    assert_eq!(authorized["result"], json!(42));
+
+    server.write().stop_rpc_server();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_transport_emits_cors_headers_for_allowed_origin() {
+    let port = unused_local_port();
+    let origin = "https://dapp.example";
+    let config = RpcServerConfig {
+        bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        port,
+        enable_cors: true,
+        allow_origins: vec![origin.to_string()],
+        ..RpcServerConfig::default()
+    };
+    let mut server = build_server_with_config(config);
+    server.register_handlers(vec![RpcHandler::new(
+        RpcMethodDescriptor::new("getblockcount"),
+        Arc::new(|_, _| Ok(json!(42))),
+    )]);
+    let server = Arc::new(RwLock::new(server));
+    server
+        .write()
+        .start_rpc_server(Arc::downgrade(&server), None);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{port}");
+    let response = client
+        .post(&url)
+        .header("origin", origin)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "getblockcount",
+            "params": [],
+            "id": 16
+        }))
+        .send()
+        .await
+        .expect("cors request");
+
+    assert_eq!(response.headers()["access-control-allow-origin"], origin);
+    let body: Value = response.json().await.expect("json response");
+    assert_eq!(body["result"], json!(42));
+
+    server.write().stop_rpc_server();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_transport_answers_cors_preflight_without_basic_auth() {
+    let port = unused_local_port();
+    let origin = "https://wallet.example";
+    let config = RpcServerConfig {
+        bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        port,
+        rpc_user: "neo".to_string(),
+        rpc_pass: "secret".to_string(),
+        enable_cors: true,
+        allow_origins: vec![origin.to_string()],
+        ..RpcServerConfig::default()
+    };
+    let mut server = build_server_with_config(config);
+    server.register_handlers(vec![RpcHandler::new(
+        RpcMethodDescriptor::new("getblockcount"),
+        Arc::new(|_, _| Ok(json!(42))),
+    )]);
+    let server = Arc::new(RwLock::new(server));
+    server
+        .write()
+        .start_rpc_server(Arc::downgrade(&server), None);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{port}");
+    let preflight = client
+        .request(reqwest::Method::OPTIONS, &url)
+        .header("origin", origin)
+        .header("access-control-request-method", "POST")
+        .header(
+            "access-control-request-headers",
+            "content-type, authorization",
+        )
+        .send()
+        .await
+        .expect("cors preflight");
+
+    assert_eq!(preflight.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(preflight.headers()["access-control-allow-origin"], origin);
+    assert_eq!(
+        preflight.headers()["access-control-allow-headers"],
+        "content-type, authorization"
+    );
+
+    let unauthorized = client
+        .post(&url)
+        .header("origin", origin)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "getblockcount",
+            "params": [],
+            "id": 17
+        }))
+        .send()
+        .await
+        .expect("unauthorized cors request");
+    assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        unauthorized.headers()["access-control-allow-origin"],
+        origin
+    );
+
+    server.write().stop_rpc_server();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -249,6 +495,37 @@ async fn disabled_method_uses_neo_access_denied() {
     .await;
 
     assert_neo_error(&response, ServerRpcError::access_denied());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dispatch_enforces_configured_process_rate_limit() {
+    let config = RpcServerConfig {
+        max_requests_per_second: 1,
+        rate_limit_burst: 1,
+        ..RpcServerConfig::default()
+    };
+    let mut server = build_server_with_config(config);
+    server.register_handlers(vec![RpcHandler::new(
+        RpcMethodDescriptor::new("getblock"),
+        Arc::new(|_, _| Ok(json!("ok"))),
+    )]);
+    let server = Arc::new(RwLock::new(server));
+    let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
+
+    let request = |id| {
+        json!({
+            "jsonrpc": "2.0",
+            "method": "getblock",
+            "params": [],
+            "id": id
+        })
+    };
+
+    let first = raw_response(&module, request(1)).await;
+    assert_eq!(first["result"], json!("ok"));
+
+    let second = raw_response(&module, request(2)).await;
+    assert_neo_error(&second, ServerRpcError::too_many_requests());
 }
 
 #[tokio::test(flavor = "multi_thread")]

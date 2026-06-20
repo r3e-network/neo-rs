@@ -12,6 +12,32 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
+fn optional_unsigned_param<T>(
+    value: Option<&Value>,
+    default: T,
+    message: impl Into<String>,
+) -> Result<T, RpcException>
+where
+    T: Copy + TryFrom<u64> + FromStr,
+{
+    let message = message.into();
+    let Some(value) = value else {
+        return Ok(default);
+    };
+    match value {
+        Value::Null => Ok(default),
+        Value::Number(number) => number
+            .as_u64()
+            .and_then(|value| T::try_from(value).ok())
+            .ok_or_else(|| invalid_params(message)),
+        Value::String(text) => text
+            .trim()
+            .parse::<T>()
+            .map_err(|_| invalid_params(message)),
+        _ => Err(invalid_params(message)),
+    }
+}
+
 /// Creates an RpcException for invalid parameters.
 #[inline]
 pub fn invalid_params(message: impl Into<String>) -> RpcException {
@@ -40,11 +66,70 @@ pub fn expect_string_param(
     index: usize,
     method: &str,
 ) -> Result<String, RpcException> {
+    expect_string_param_with_message(
+        params,
+        index,
+        format!("{} expects string parameter {}", method, index + 1),
+    )
+}
+
+/// Extracts a string parameter from JSON-RPC params with a custom error message.
+#[inline]
+pub fn expect_string_param_with_message(
+    params: &[Value],
+    index: usize,
+    message: impl Into<String>,
+) -> Result<String, RpcException> {
+    let message = message.into();
     params
         .get(index)
         .and_then(|v| v.as_str())
         .map(ToString::to_string)
-        .ok_or_else(|| invalid_params(format!("{} expects string parameter {}", method, index + 1)))
+        .ok_or_else(|| invalid_params(message))
+}
+
+/// Parses a UInt160 script hash or wallet address using the configured address version.
+#[inline]
+pub fn parse_script_hash_or_address(
+    text: &str,
+    address_version: u8,
+) -> Result<UInt160, RpcException> {
+    parse_script_hash_or_address_with_error(text, address_version, |_| {
+        invalid_params(format!("Invalid address: {text}"))
+    })
+}
+
+/// Parses a UInt160 script hash or wallet address with caller-owned address errors.
+#[inline]
+pub fn parse_script_hash_or_address_with_error(
+    text: &str,
+    address_version: u8,
+    map_address_error: impl FnOnce(neo_error::CoreError) -> RpcException,
+) -> Result<UInt160, RpcException> {
+    let mut parsed = None;
+    if UInt160::try_parse(text, &mut parsed) {
+        if let Some(value) = parsed {
+            return Ok(value);
+        }
+    }
+
+    neo_wallets::wallet_helper::WalletAddress::to_script_hash(text, address_version)
+        .map_err(map_address_error)
+}
+
+/// Extracts a UInt160 script hash or wallet address parameter.
+#[inline]
+pub fn expect_script_hash_or_address_param(
+    params: &[Value],
+    index: usize,
+    method: &str,
+    address_version: u8,
+) -> Result<UInt160, RpcException> {
+    let text = params
+        .get(index)
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid_params(format!("{method} expects address parameter")))?;
+    parse_script_hash_or_address(text, address_version)
 }
 
 /// Extracts and decodes a trimmed base64 parameter using the standard RPC byte error.
@@ -70,6 +155,19 @@ pub fn expect_base64_param_with_decode_message(
 ) -> Result<Vec<u8>, RpcException> {
     let text = expect_string_param(params, index, method)?;
     decode_trimmed_base64_text(&text, decode_error)
+}
+
+/// Extracts and decodes an exact base64 parameter with distinct missing
+/// and invalid-value error messages.
+#[inline]
+pub fn expect_base64_param_with_messages(
+    params: &[Value],
+    index: usize,
+    missing_message: impl Into<String>,
+    decode_error: impl FnOnce(&str) -> String,
+) -> Result<Vec<u8>, RpcException> {
+    let text = expect_string_param_with_message(params, index, missing_message)?;
+    decode_base64_text(&text, decode_error(&text))
 }
 
 /// Extracts and decodes an exact base64 parameter where missing and invalid
@@ -111,23 +209,28 @@ pub fn decode_trimmed_base64_text(
 /// Extracts a u32 parameter from JSON-RPC params.
 #[inline]
 pub fn expect_u32_param(params: &[Value], index: usize, method: &str) -> Result<u32, RpcException> {
-    let value = params.get(index).ok_or_else(|| {
-        invalid_params(format!(
-            "{} expects integer parameter {}",
-            method,
-            index + 1
-        ))
-    })?;
+    expect_u32_param_with_message(
+        params,
+        index,
+        format!("{} expects integer parameter {}", method, index + 1),
+    )
+}
+
+/// Extracts a u32 parameter from JSON-RPC params with a custom error message.
+#[inline]
+pub fn expect_u32_param_with_message(
+    params: &[Value],
+    index: usize,
+    message: impl Into<String>,
+) -> Result<u32, RpcException> {
+    let message = message.into();
+    let value = params
+        .get(index)
+        .ok_or_else(|| invalid_params(message.clone()))?;
     value
         .as_u64()
         .and_then(|n| u32::try_from(n).ok())
-        .ok_or_else(|| {
-            invalid_params(format!(
-                "{} expects integer parameter {}",
-                method,
-                index + 1
-            ))
-        })
+        .ok_or_else(|| invalid_params(message))
 }
 
 /// Extracts a u64 parameter from JSON-RPC params.
@@ -149,6 +252,28 @@ pub fn expect_u64_param(params: &[Value], index: usize, method: &str) -> Result<
     })
 }
 
+/// Extracts an optional u64 parameter, accepting JSON numbers, numeric strings,
+/// or null/missing for the supplied default.
+#[inline]
+pub fn optional_u64_param(
+    value: Option<&Value>,
+    default: u64,
+    message: impl Into<String>,
+) -> Result<u64, RpcException> {
+    optional_unsigned_param(value, default, message)
+}
+
+/// Extracts an optional usize parameter, accepting JSON numbers, numeric
+/// strings, or null/missing for the supplied default.
+#[inline]
+pub fn optional_usize_param(
+    value: Option<&Value>,
+    default: usize,
+    message: impl Into<String>,
+) -> Result<usize, RpcException> {
+    optional_unsigned_param(value, default, message)
+}
+
 /// Parses a UInt160 from JSON-RPC params.
 #[inline]
 pub fn parse_uint160(
@@ -161,6 +286,24 @@ pub fn parse_uint160(
         .map_err(|err| invalid_params(format!("invalid UInt160 '{}': {}", text, err)))
 }
 
+/// Parses a UInt160 text value with an error label such as "script hash" or "UInt160".
+#[inline]
+pub fn parse_uint160_text_with_label(text: &str, label: &str) -> Result<UInt160, RpcException> {
+    UInt160::from_str(text).map_err(|err| invalid_params(format!("invalid {label}: {err}")))
+}
+
+/// Extracts and parses a UInt160 parameter using caller-owned RPC error text.
+#[inline]
+pub fn expect_uint160_param_with_message(
+    params: &[Value],
+    index: usize,
+    message: impl Into<String>,
+    label: &str,
+) -> Result<UInt160, RpcException> {
+    let text = expect_string_param_with_message(params, index, message)?;
+    parse_uint160_text_with_label(&text, label)
+}
+
 /// Parses a UInt256 from JSON-RPC params.
 #[inline]
 pub fn parse_uint256(
@@ -168,9 +311,31 @@ pub fn parse_uint256(
     index: usize,
     method: &str,
 ) -> Result<UInt256, RpcException> {
-    let text = expect_string_param(params, index, method)?;
-    UInt256::from_str(&text)
-        .map_err(|err| invalid_params(format!("invalid UInt256 '{}': {}", text, err)))
+    expect_uint256_param_with_message(
+        params,
+        index,
+        format!("{} expects string parameter {}", method, index + 1),
+        "UInt256",
+    )
+}
+
+/// Parses a UInt256 text value with an error label such as "hash" or "UInt256".
+#[inline]
+pub fn parse_uint256_text_with_label(text: &str, label: &str) -> Result<UInt256, RpcException> {
+    UInt256::from_str(text)
+        .map_err(|err| invalid_params(format!("invalid {label} '{text}': {err}")))
+}
+
+/// Extracts and parses a UInt256 parameter using caller-owned RPC error text.
+#[inline]
+pub fn expect_uint256_param_with_message(
+    params: &[Value],
+    index: usize,
+    message: impl Into<String>,
+    label: &str,
+) -> Result<UInt256, RpcException> {
+    let text = expect_string_param_with_message(params, index, message)?;
+    parse_uint256_text_with_label(&text, label)
 }
 
 /// Parses a hash (UInt256) parameter, accepting both hex and base64.
@@ -208,5 +373,138 @@ pub fn parse_verbose(param: Option<&Value>) -> Result<bool, RpcException> {
         Some(Value::Bool(b)) => Ok(*b),
         Some(Value::Number(n)) => Ok(n.as_i64().map(|v| v != 0).unwrap_or(false)),
         Some(_) => Err(invalid_params("verbose must be a boolean")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expect_uint256_param_with_message_parses_valid_hash() {
+        let hash = UInt256::zero();
+        let params = [Value::String(hash.to_string())];
+
+        let parsed = expect_uint256_param_with_message(&params, 0, "method expects hash", "hash")
+            .expect("valid hash");
+
+        assert_eq!(parsed, hash);
+    }
+
+    #[test]
+    fn expect_uint256_param_with_message_uses_custom_missing_message() {
+        let err = expect_uint256_param_with_message(&[], 0, "method expects hash", "hash")
+            .expect_err("missing hash");
+
+        assert!(err.to_string().contains("method expects hash"), "{err}");
+    }
+
+    #[test]
+    fn expect_uint256_param_with_message_uses_custom_invalid_label() {
+        let params = [Value::String("not-a-hash".to_string())];
+
+        let err =
+            expect_uint256_param_with_message(&params, 0, "method expects hash", "block hash")
+                .expect_err("invalid hash");
+
+        assert!(err.to_string().contains("invalid block hash"), "{err}");
+    }
+
+    #[test]
+    fn expect_uint160_param_with_message_parses_valid_hash() {
+        let hash = UInt160::zero();
+        let params = [Value::String(hash.to_string())];
+
+        let parsed = expect_uint160_param_with_message(
+            &params,
+            0,
+            "method expects script hash",
+            "script hash",
+        )
+        .expect("valid script hash");
+
+        assert_eq!(parsed, hash);
+    }
+
+    #[test]
+    fn expect_uint160_param_with_message_uses_custom_missing_message() {
+        let err =
+            expect_uint160_param_with_message(&[], 0, "method expects script hash", "script hash")
+                .expect_err("missing script hash");
+
+        assert!(
+            err.to_string().contains("method expects script hash"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn expect_uint160_param_with_message_uses_custom_invalid_label() {
+        let params = [Value::String("not-a-script-hash".to_string())];
+
+        let err = expect_uint160_param_with_message(
+            &params,
+            0,
+            "method expects script hash",
+            "script hash",
+        )
+        .expect_err("invalid script hash");
+
+        assert!(err.to_string().contains("invalid script hash"), "{err}");
+    }
+
+    #[test]
+    fn parse_script_hash_or_address_accepts_wallet_address() {
+        let hash = UInt160::zero();
+        let address_version = 0x35;
+        let address = neo_wallets::wallet_helper::WalletAddress::to_address(&hash, address_version);
+
+        let parsed =
+            parse_script_hash_or_address(&address, address_version).expect("valid address");
+
+        assert_eq!(parsed, hash);
+    }
+
+    #[test]
+    fn parse_script_hash_or_address_with_error_uses_custom_address_error() {
+        let err = parse_script_hash_or_address_with_error("not-an-address", 0x35, |_| {
+            invalid_params("wallet address error")
+        })
+        .expect_err("invalid address");
+
+        assert!(err.to_string().contains("wallet address error"), "{err}");
+    }
+
+    #[test]
+    fn expect_base64_param_with_messages_uses_custom_missing_message() {
+        let err =
+            expect_base64_param_with_messages(&[], 0, "method requires Base64 payload", |text| {
+                format!("invalid Base64 payload: {text}")
+            })
+            .expect_err("missing base64");
+
+        assert!(
+            err.to_string().contains("method requires Base64 payload"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn expect_base64_param_with_messages_uses_input_aware_decode_message() {
+        let params = [Value::String("not-base64".to_string())];
+
+        let err = expect_base64_param_with_messages(
+            &params,
+            0,
+            "method requires Base64 payload",
+            |text| format!("invalid Base64 payload: {text}"),
+        )
+        .expect_err("invalid base64");
+
+        assert!(
+            err.to_string()
+                .contains("invalid Base64 payload: not-base64"),
+            "{err}"
+        );
     }
 }

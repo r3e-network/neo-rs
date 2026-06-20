@@ -198,11 +198,9 @@ const POLICY_DEFAULT_STORAGE_PRICE: i64 = 100_000;
 /// resolve the natives (genesis performs these deployments on a real
 /// chain).
 fn seed_native_contract_records(node: &Node) {
-    use neo_execution::native_contract_provider::NativeContractProvider;
-
     let settings = node.settings();
     let mut store = node.store_cache();
-    for contract in neo_native_contracts::StandardNativeProvider::new().all_native_contracts() {
+    for contract in neo_native_contracts::standard_native_contracts() {
         let Some(state) = contract.contract_state(&settings, 0) else {
             continue;
         };

@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
@@ -26,7 +25,7 @@ use neo_vm_rs::VmState as VMState;
 
 use super::helpers::{
     build_dynamic_call_script, diagnostic_invocation_to_json, diagnostic_storage_changes,
-    expect_string_param, final_rpc_vm_state_string, internal_error, invalid_params,
+    expect_script_hash_param, expect_string_param, final_rpc_vm_state_string, internal_error,
     notification_to_json, parse_contract_parameters, parse_signers_and_witnesses,
     stack_item_to_json,
 };
@@ -46,10 +45,7 @@ struct PendingSignatureItem {
 }
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-    let script_hash = expect_string_param(params, 0, "invokefunction")?;
-    let script_hash = UInt160::from_str(&script_hash)
-        .map_err(|err| invalid_params(format!("invalid script hash: {err}")))?;
-
+    let script_hash = expect_script_hash_param(params, 0, "invokefunction")?;
     let operation = expect_string_param(params, 1, "invokefunction")?;
     let parameters = parse_contract_parameters(params.get(2))?;
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(3))?;

@@ -76,11 +76,10 @@ impl NativeQueries {
     /// Builds a [`neo_execution::NativeRegistry`] populated with the
     /// standard native contracts. `NativeRegistry::new()` is *empty* by
     /// design; the canonical contract set lives in
-    /// [`neo_native_contracts::StandardNativeProvider`].
+    /// [`neo_native_contracts::standard_native_contracts`].
     pub(crate) fn native_registry() -> neo_execution::NativeRegistry {
-        use neo_execution::native_contract_provider::NativeContractProvider;
         let mut registry = neo_execution::NativeRegistry::new();
-        for contract in neo_native_contracts::StandardNativeProvider::new().all_native_contracts() {
+        for contract in neo_native_contracts::standard_native_contracts() {
             registry.register(contract);
         }
         registry
@@ -209,26 +208,6 @@ impl NativeQueries {
             candidates.push((pubkey, votes));
         }
         Ok(candidates)
-    }
-
-    /// `Policy.isBlocked(account)` — whether the account is on the
-    /// `PolicyContract` block list.
-    pub(crate) fn policy_is_blocked(
-        server: &RpcServer,
-        snapshot: Arc<DataCache>,
-        policy_hash: &UInt160,
-        account: &UInt160,
-    ) -> CoreResult<bool> {
-        let account_bytes = account.to_bytes();
-        let item = NativeQueries::invoke_native_read(
-            server,
-            snapshot,
-            policy_hash,
-            "isBlocked",
-            &[NativeArg::Bytes(account_bytes.as_slice())],
-        )?;
-        item.as_bool()
-            .map_err(|err| CoreError::other(err.to_string()))
     }
 
     /// `NEO.getCandidateVote(pubkey)` — the candidate's vote count, or `-1`

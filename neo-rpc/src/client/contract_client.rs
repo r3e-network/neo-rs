@@ -97,9 +97,8 @@ impl ContractClient {
     }
 }
 
-// NOTE: Script byte layout parity tests live with the VM compatibility module
-// in neo-core, so they run in CI without requiring the optional `neo-rpc/client`
-// feature.
+// NOTE: Script byte layout parity is covered by the VM/native-contract
+// compatibility tests, so this optional client module only checks RPC assembly.
 
 #[cfg(test)]
 mod tests {
@@ -109,7 +108,7 @@ mod tests {
     use mockito::{Matcher, Server};
     use neo_config::ProtocolSettings;
     use neo_manifest::ContractManifest;
-    use neo_native_contracts::{GasToken, NativeContract};
+    use neo_native_contracts::GasToken;
     use neo_primitives::UInt160;
     use neo_serialization::json::{JArray, JObject, JToken};
     use neo_vm::script_builder::ScriptBuilder;
@@ -348,7 +347,7 @@ mod tests {
             .await
             .expect("invoke");
 
-        let StackValue::Map(map) = &result.stack[0] else {
+        let StackValue::Map(_, map) = &result.stack[0] else {
             panic!("expected map");
         };
         assert_eq!(map.len(), 1);
@@ -359,7 +358,7 @@ mod tests {
             BigInt::from(42)
         );
 
-        let StackValue::Struct(structure) = &result.stack[1] else {
+        let StackValue::Struct(_, structure) = &result.stack[1] else {
             panic!("expected struct");
         };
         assert_eq!(structure.len(), 2);

@@ -1,7 +1,10 @@
+mod blockchain;
 mod builder;
 mod client;
 mod helpers;
 mod hooks;
+mod tokens;
+mod transactions;
 mod wallet;
 
 #[cfg(test)]

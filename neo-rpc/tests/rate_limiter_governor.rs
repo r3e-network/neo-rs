@@ -1,3 +1,4 @@
+//! Integration tests for the Governor-backed RPC rate limiter.
 #![cfg(feature = "server")]
 
 use neo_rpc::server::middleware::{
@@ -28,10 +29,9 @@ fn governor_limiter_keeps_per_ip_buckets_independent() {
     let second_ip: IpAddr = "127.0.0.2".parse().unwrap();
 
     assert_eq!(limiter.check(first_ip), RateLimitCheckResult::Allowed);
-    assert_eq!(limiter.check(first_ip), RateLimitCheckResult::Allowed);
     assert_eq!(limiter.check(first_ip), RateLimitCheckResult::Blocked);
     assert_eq!(limiter.check(second_ip), RateLimitCheckResult::Allowed);
-    assert_eq!(limiter.check(second_ip), RateLimitCheckResult::Allowed);
+    assert_eq!(limiter.check(second_ip), RateLimitCheckResult::Blocked);
     assert_eq!(limiter.tracked_ips(), 2);
 }
 
@@ -67,6 +67,10 @@ fn governor_limiter_preserves_method_tiers() {
         burst: 100,
     });
     assert!(limiter.tier_config(RateLimitTier::Cheap).unwrap().max_rps > 100);
+    assert_eq!(
+        limiter.tier_config(RateLimitTier::Standard).unwrap().burst,
+        100
+    );
     assert!(
         limiter
             .tier_config(RateLimitTier::Expensive)

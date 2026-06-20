@@ -27,8 +27,11 @@ use crate::server::diagnostic::Diagnostic;
 
 /// Trait representing an iterator stored within an RPC session.
 pub trait SessionIterator: Send {
+    /// Advance the iterator to the next item.
     fn next(&mut self) -> bool;
+    /// Return the current item.
     fn value(&self) -> CoreResult<StackItem>;
+    /// Release any resources owned by the iterator.
     fn dispose(&mut self);
 }
 
@@ -94,6 +97,10 @@ impl SessionIterator for StorageSessionIterator {
 }
 
 impl Session {
+    /// Create and execute a new invocation session.
+    ///
+    /// The session owns the executed engine, a storage snapshot, any diagnostic
+    /// output, and later any VM iterators exposed by the invocation result.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         system: Arc<Node>,
@@ -157,30 +164,39 @@ impl Session {
         })
     }
 
+    /// Return the script executed by this session.
     pub fn script(&self) -> &[u8] {
         &self.script
     }
 
+    /// Lock and return the session's application engine.
     pub fn engine(&self) -> MutexGuard<'_, ApplicationEngine> {
         self.engine.lock()
     }
 
+    /// Lock and return the session's application engine for mutable use.
     pub fn engine_mut(&self) -> MutexGuard<'_, ApplicationEngine> {
         self.engine()
     }
 
+    /// Return a clone of the diagnostic information captured during execution.
     pub fn diagnostic(&self) -> Option<Diagnostic> {
         self.diagnostic.lock().clone()
     }
 
+    /// Return the storage snapshot associated with this session.
     pub const fn snapshot(&self) -> &StoreCache {
         &self.snapshot
     }
 
+    /// Return whether this session currently retains any iterators.
     pub fn has_iterators(&self) -> bool {
         !self.iterators.lock().is_empty()
     }
 
+    /// Register a VM iterator interface and return the stable RPC iterator id.
+    ///
+    /// Re-registering the same VM iterator returns its existing UUID.
     pub fn register_iterator_interface(
         &self,
         interface: &Arc<dyn VmInteropInterface>,
@@ -209,6 +225,7 @@ impl Session {
         Some(uuid)
     }
 
+    /// Read up to `count` items from a previously registered iterator.
     pub fn traverse_iterator(
         &self,
         iterator_id: &Uuid,
@@ -228,11 +245,13 @@ impl Session {
         Ok(values)
     }
 
+    /// Reset the session expiration timer to the current instant.
     pub fn reset_expiration(&self) {
         let mut start_time = self.start_time.lock();
         *start_time = Instant::now();
     }
 
+    /// Return whether the session has lived for at least `expiration`.
     pub fn is_expired(&self, expiration: Duration) -> bool {
         self.start_time.lock().elapsed() >= expiration
     }

@@ -86,9 +86,11 @@ fn dynamic_policy_value(
     }
 }
 
+/// RPC handler group for node status and relay methods.
 pub struct RpcServerNode;
 
 impl RpcServerNode {
+    /// Register node RPC handlers.
     pub fn register_handlers() -> Vec<RpcHandler> {
         super::rpc_handlers![
             "getconnectioncount" => Self::get_connection_count,

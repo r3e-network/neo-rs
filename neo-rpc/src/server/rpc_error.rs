@@ -120,6 +120,7 @@ impl RpcError {
         JToken::Object(obj)
     }
 
+    /// Error for a contract that has no compatible `verify` method.
     pub fn invalid_contract_verification_hash(contract_hash: &UInt160, pcount: i32) -> RpcError {
         RpcError::invalid_contract_verification().with_data(format!(
             "The smart contract {contract_hash} haven't got verify method with {pcount} input parameters."

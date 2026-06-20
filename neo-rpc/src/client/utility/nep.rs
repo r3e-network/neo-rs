@@ -39,8 +39,7 @@ pub(crate) fn parse_balance_list<T>(
     protocol_settings: &ProtocolSettings,
     mut parse: impl FnMut(&JObject) -> CoreResult<T>,
 ) -> CoreResult<(Vec<T>, UInt160)> {
-    let balances =
-        parse_object_array_lossy(json, "balance", |obj| parse(obj).map_err(|e| e.to_string()));
+    let balances = parse_object_array_lossy(json, "balance", |obj| parse(obj));
     let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
     Ok((balances, user_script_hash))
 }
@@ -118,12 +117,8 @@ pub(crate) fn parse_transfer_lists<T>(
     protocol_settings: &ProtocolSettings,
     mut parse: impl FnMut(&JObject, &ProtocolSettings) -> CoreResult<T>,
 ) -> CoreResult<(Vec<T>, Vec<T>, UInt160)> {
-    let sent = parse_object_array_lossy(json, "sent", |obj| {
-        parse(obj, protocol_settings).map_err(|e| e.to_string())
-    });
-    let received = parse_object_array_lossy(json, "received", |obj| {
-        parse(obj, protocol_settings).map_err(|e| e.to_string())
-    });
+    let sent = parse_object_array_lossy(json, "sent", |obj| parse(obj, protocol_settings));
+    let received = parse_object_array_lossy(json, "received", |obj| parse(obj, protocol_settings));
     let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
     Ok((sent, received, user_script_hash))
 }

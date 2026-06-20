@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 use tracing::{info, warn};
 
 impl OracleService {
+    /// Start the oracle service with the wallet that owns a designated oracle key.
     pub fn start(self: &Arc<Self>, wallet: Arc<dyn Wallet>) {
         if self.is_running() {
             return;
@@ -61,6 +62,7 @@ impl OracleService {
         info!(target: "neo::oracle", "oracle service started");
     }
 
+    /// Stop the oracle service and cancel its background tasks.
     pub fn stop(&self) {
         self.cancel.store(true, Ordering::SeqCst);
         *self.wallet.write() = None;

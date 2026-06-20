@@ -7,9 +7,11 @@ use neo_oracle_service::{OracleService, OracleServiceError};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+/// RPC handler group for Oracle service methods.
 pub struct RpcServerOracle;
 
 impl RpcServerOracle {
+    /// Register Oracle RPC handlers.
     pub fn register_handlers() -> Vec<RpcHandler> {
         super::rpc_handlers![
             "submitoracleresponse" => Self::submit_oracle_response,

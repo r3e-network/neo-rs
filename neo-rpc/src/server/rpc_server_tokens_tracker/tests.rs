@@ -666,3 +666,21 @@ async fn get_nep17_balances_requires_enabled_tracker() {
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::method_not_found().code());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn token_tracker_methods_require_registered_service() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system, RpcServerConfig::default());
+    let handlers = RpcServerTokensTracker::register_handlers();
+    let handler = find_handler(&handlers, "getnep17balances");
+
+    let params = [Value::String(UInt160::zero().to_address())];
+    let err = (handler.callback())(&server, &params).expect_err("service should be required");
+    let rpc_error: RpcError = err.into();
+
+    assert_eq!(rpc_error.code(), RpcError::internal_server_error().code());
+    assert_eq!(
+        rpc_error.data(),
+        Some("TokensTracker service not available")
+    );
+}

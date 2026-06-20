@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
@@ -9,7 +8,6 @@ use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
 use neo_primitives::ContractParameterType;
-use neo_primitives::UInt160;
 use rand::random;
 use serde_json::{Value, json};
 
@@ -20,7 +18,7 @@ use crate::server::rpc_server::RpcServer;
 use neo_vm_rs::OpCode;
 
 use super::helpers::{
-    final_rpc_vm_state_string, internal_error, invalid_params, parse_contract_parameters,
+    expect_script_hash_param, final_rpc_vm_state_string, internal_error, parse_contract_parameters,
     parse_signers_and_witnesses, stack_item_to_json_limited,
 };
 
@@ -28,10 +26,7 @@ pub(super) fn invoke_contract_verify(
     server: &RpcServer,
     params: &[Value],
 ) -> Result<Value, RpcException> {
-    let script_hash = super::helpers::expect_string_param(params, 0, "invokecontractverify")?;
-    let script_hash = UInt160::from_str(&script_hash)
-        .map_err(|err| invalid_params(format!("invalid script hash: {err}")))?;
-
+    let script_hash = expect_script_hash_param(params, 0, "invokecontractverify")?;
     let parameters = parse_contract_parameters(params.get(1))?;
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(2))?;
 

@@ -1,6 +1,6 @@
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
 use neo_crypto::ECPoint;
-use neo_execution::{Contract, ContractParametersContext, NativeContract};
+use neo_execution::{Contract, ContractParametersContext};
 use neo_native_contracts::GasToken;
 use neo_payloads::{
     Signer, Transaction, TransactionAttribute, VerifiableExt, Witness, get_sign_data_vec,

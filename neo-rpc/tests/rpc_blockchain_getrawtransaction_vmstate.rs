@@ -1,3 +1,4 @@
+//! Integration tests for `getrawtransaction` VM-state response compatibility.
 #![cfg(feature = "server")]
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};

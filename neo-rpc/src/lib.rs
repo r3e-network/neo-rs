@@ -51,7 +51,9 @@
 //! - `server`: Enable RPC server functionality (HTTP/WebSocket endpoints)
 //! - `client`: Enable RPC client functionality (typed API, builders)
 //!
-//! Default: both features enabled.
+//! Default: no optional features are enabled. The node daemon depends on
+//! `neo-rpc` with the `server` feature, while library users can enable
+//! `client`, `server`, or both explicitly.
 //!
 //! ## RPC Server
 //!

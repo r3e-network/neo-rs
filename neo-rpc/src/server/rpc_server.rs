@@ -1,3 +1,5 @@
+mod http_policy;
+
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
 use rustls::ServerConfig;
@@ -9,11 +11,14 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
+use self::http_policy::RpcHttpLayer;
 use super::jsonrpsee_adapter::build_jsonrpsee_module_with_methods;
+use super::middleware::{GovernorRateLimiter, RateLimitCheckResult, RateLimitConfig};
+use super::rpc_error::RpcError;
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
@@ -22,18 +27,21 @@ use crate::server::rpc_transport::log_join_error;
 use neo_system::Node;
 use neo_wallets::Wallet;
 
+/// Callback signature used by registered RPC handlers.
 pub type RpcCallback =
     dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
 
 /// Type alias for wallet change callback to reduce complexity.
 pub type WalletChangeCallback = Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>;
 
+/// Registered RPC method descriptor and callback.
 pub struct RpcHandler {
     descriptor: RpcMethodDescriptor,
     callback: Arc<RpcCallback>,
 }
 
 impl RpcHandler {
+    /// Create an RPC handler from a method descriptor and callback.
     pub fn new(descriptor: RpcMethodDescriptor, callback: Arc<RpcCallback>) -> Self {
         Self {
             descriptor,
@@ -41,11 +49,13 @@ impl RpcHandler {
         }
     }
 
+    /// Return this handler's method descriptor.
     #[must_use]
     pub const fn descriptor(&self) -> &RpcMethodDescriptor {
         &self.descriptor
     }
 
+    /// Return a clone of this handler's callback.
     #[must_use]
     pub fn callback(&self) -> Arc<RpcCallback> {
         Arc::clone(&self.callback)
@@ -66,6 +76,7 @@ pub(crate) fn protected_rpc_handler(
     RpcHandler::new(RpcMethodDescriptor::new_protected(name), Arc::new(func))
 }
 
+/// Total number of RPC requests dispatched by this process.
 pub static RPC_REQ_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     let counter =
         Counter::new("neo_rpc_requests_total", "Total RPC requests").unwrap_or_else(|_| {
@@ -77,6 +88,8 @@ pub static RPC_REQ_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     }
     counter
 });
+
+/// Total number of RPC requests that returned an RPC error.
 pub static RPC_ERR_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     let counter = Counter::new("neo_rpc_errors_total", "Total RPC errors").unwrap_or_else(|_| {
         Counter::new("neo_rpc_errors_total_invalid", "Invalid")
@@ -88,6 +101,7 @@ pub static RPC_ERR_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter
 });
 
+/// JSON-RPC server for a Neo node.
 pub struct RpcServer {
     system: Arc<Node>,
     settings: RpcServerConfig,
@@ -109,12 +123,14 @@ pub struct RpcServer {
     self_handle: Option<Weak<RwLock<Self>>>,
     /// WebSocket event bridge for real-time subscriptions
     ws_bridge: Option<Arc<super::ws::WsEventBridge>>,
-    /// WebSocket subscription manager
-    ws_subscription_mgr: Option<Arc<super::ws::SubscriptionManager>>,
+    /// Process-wide fallback limiter for RPC transports that do not expose client IPs.
+    rate_limiter: Arc<GovernorRateLimiter>,
 }
 
 impl RpcServer {
+    /// Create an RPC server with the given node system and server settings.
     pub fn new(system: Arc<Node>, settings: RpcServerConfig) -> Self {
+        let rate_limiter = Arc::new(rate_limiter_from_settings(&settings));
         Self {
             system,
             settings,
@@ -129,22 +145,37 @@ impl RpcServer {
             session_purge_shutdown: None,
             self_handle: None,
             ws_bridge: None,
-            ws_subscription_mgr: None,
+            rate_limiter,
         }
     }
 
+    /// Return this server's current settings.
     #[must_use]
     pub const fn settings(&self) -> &RpcServerConfig {
         &self.settings
     }
 
+    /// Replace this server's settings.
     pub fn update_settings(&mut self, settings: RpcServerConfig) {
+        self.rate_limiter = Arc::new(rate_limiter_from_settings(&settings));
         self.settings = settings;
     }
 
+    /// Return the node system served by this RPC instance.
     #[must_use]
     pub fn system(&self) -> Arc<Node> {
         Arc::clone(&self.system)
+    }
+
+    /// Apply configured server-side rate limiting for one RPC method call.
+    pub(crate) fn check_rate_limit(&self, method: &str) -> Result<(), RpcError> {
+        match self
+            .rate_limiter
+            .check_for_method(global_rate_limit_key(), method)
+        {
+            RateLimitCheckResult::Allowed | RateLimitCheckResult::Disabled => Ok(()),
+            RateLimitCheckResult::Blocked => Err(RpcError::too_many_requests()),
+        }
     }
 
     /// Enable WebSocket subscriptions
@@ -159,9 +190,7 @@ impl RpcServer {
     /// The event bridge that should be used to publish events
     pub fn enable_websocket(&mut self, capacity: usize) -> Arc<super::ws::WsEventBridge> {
         let bridge = Arc::new(super::ws::WsEventBridge::new(capacity));
-        let subscription_mgr = Arc::new(super::ws::SubscriptionManager::new());
         self.ws_bridge = Some(Arc::clone(&bridge));
-        self.ws_subscription_mgr = Some(subscription_mgr);
         bridge
     }
 
@@ -177,6 +206,7 @@ impl RpcServer {
         self.ws_bridge.is_some()
     }
 
+    /// Start the jsonrpsee RPC server.
     pub fn start_rpc_server(
         &mut self,
         handle: Weak<RwLock<Self>>,
@@ -188,8 +218,16 @@ impl RpcServer {
 
         self.self_handle = Some(handle.clone());
 
-        // Security warning for production deployments without TLS
-        let has_auth = !self.settings.rpc_user.trim().is_empty();
+        let auth_credentials = match self.rpc_auth_credentials() {
+            Ok(credentials) => credentials,
+            Err(err) => {
+                error!("invalid RPC authentication configuration: {}", err);
+                return;
+            }
+        };
+
+        // Security warning for production deployments without TLS.
+        let has_auth = auth_credentials.is_some();
         let is_localhost = self.settings.bind_address.is_loopback();
         if has_auth && !is_localhost {
             warn!(
@@ -206,8 +244,8 @@ impl RpcServer {
         // The current jsonrpsee 0.24 transport does not yet support
         // in-process TLS termination; the recommendation is to put
         // the node behind a TLS-terminating reverse proxy. The
-        // `_tls_config` argument is retained for API compatibility
-        // with the previous warp-based glue.
+        // `_tls_config` argument is retained for API compatibility with the
+        // previous in-process TLS hook.
         let _ = _tls_config;
 
         let disabled_methods: Arc<HashSet<String>> = Arc::new(
@@ -244,7 +282,7 @@ impl RpcServer {
         // this method runs under the outer write lock
         // (`server.write().start_rpc_server(...)`); re-locking it here would
         // deadlock RPC startup.
-        let methods = self.public_method_names();
+        let methods = self.transport_method_names();
         let module = match build_jsonrpsee_module_with_methods(handle, disabled_methods, methods) {
             Ok(m) => m,
             Err(err) => {
@@ -254,19 +292,14 @@ impl RpcServer {
         };
 
         // Apply the configured DoS limits to the jsonrpsee builder. These are
-        // native builder knobs (no extra HTTP middleware): the request-body
-        // cap, the concurrent-connection cap, the batch-request cap, and WS
-        // keep-alive pings close the principal amplification / resource
-        // exhaustion vectors. Without these the server ran on jsonrpsee
-        // defaults (10 MiB bodies, unlimited batches, no idle reaping) and the
-        // configured `RpcServerConfig` limits were silently ignored.
-        //
-        // CORS and per-IP rate limiting are intentionally NOT wired here:
-        // jsonrpsee 0.24's `build_from_tcp` cannot expose the client IP to the
-        // HTTP middleware layer (so the existing `GovernorRateLimiter` cannot
-        // be keyed per-IP without replacing the accept loop), and the CORS
-        // tower layer carries a fragile response-body type bound. Both are
-        // tracked as follow-ups in docs/RPC_HARDENING.md.
+        // native builder knobs plus a small HTTP policy middleware: the
+        // request-body cap, concurrent-connection cap, batch-request cap, WS
+        // keep-alive pings, Basic auth, and CORS headers cover the HTTP
+        // resource exhaustion and browser-access surfaces. Per-method rate
+        // limiting is enforced in the dispatch path, where JSON-RPC method
+        // names are available. jsonrpsee 0.24's `build_from_tcp` still does
+        // not expose client IPs to that path, so this process-local limiter is
+        // a server-side fallback; use an edge proxy for true per-client limits.
         let max_body = u32::try_from(self.settings.max_request_body_size).unwrap_or(u32::MAX);
         let max_conns = u32::try_from(self.settings.max_concurrent_connections).unwrap_or(u32::MAX);
         let batch_cfg = match u32::try_from(self.settings.max_batch_size).unwrap_or(u32::MAX) {
@@ -285,15 +318,19 @@ impl RpcServer {
             ping_cfg = ping_cfg.inactive_limit(keep_alive);
         }
 
+        let http_middleware = tower::ServiceBuilder::new()
+            .layer(RpcHttpLayer::new(&self.settings, auth_credentials.clone()));
+
         // jsonrpsee's `build_from_tcp` accepts the pre-bound
         // `std::net::TcpListener` and constructs the HTTP+WS server on top of
-        // it. This replaces the ~225 lines of warp/hyper glue that previously
-        // lived in this method.
+        // it. This keeps the HTTP+WS lifecycle in the canonical transport
+        // builder instead of hand-rolled server glue.
         let server = match jsonrpsee::server::Server::builder()
             .max_request_body_size(max_body)
             .max_connections(max_conns)
             .set_batch_request_config(batch_cfg)
             .enable_ws_ping(ping_cfg)
+            .set_http_middleware(http_middleware)
             .build_from_tcp(std_listener)
         {
             Ok(s) => s,
@@ -328,11 +365,10 @@ impl RpcServer {
             let (purge_tx, mut purge_rx) = oneshot::channel();
             // `handle` was consumed above by `build_jsonrpsee_module_with_disabled`.
             // The session-purge task re-acquires the live `RpcServer` via a
-            // channel-based approach: rather than storing a `Weak<RwLock<Self>>`
-            // (which was a workaround for the previous warp-based glue), the
-            // daemon-level `stop_rpc_server` already sends a shutdown signal to
-            // both the server task and the purge task, so the purge loop can
-            // safely just sleep and exit on signal.
+            // channel-based approach: the daemon-level `stop_rpc_server`
+            // already sends a shutdown signal to both the server task and the
+            // purge task, so the purge loop can safely just sleep and exit on
+            // signal.
             let _ = self.self_handle.clone(); // kept for symmetry with prior code
             let purge_task = tokio::spawn(async move {
                 loop {
@@ -357,6 +393,7 @@ impl RpcServer {
         );
     }
 
+    /// Stop the RPC server, purge sessions, and detach the active wallet.
     pub fn stop_rpc_server(&mut self) {
         if !self.started {
             return;
@@ -391,22 +428,26 @@ impl RpcServer {
         self.started = false;
     }
 
+    /// Register a single RPC handler.
     pub fn register_method(&mut self, handler: RpcHandler) {
         let key = handler.descriptor().name.to_ascii_lowercase();
         self.handler_lookup.write().insert(key, Arc::new(handler));
     }
 
+    /// Register multiple RPC handlers.
     pub fn register_handlers(&mut self, handlers: Vec<RpcHandler>) {
         for handler in handlers {
             self.register_method(handler);
         }
     }
 
+    /// Return whether the RPC server has been started.
     #[must_use]
     pub const fn is_started(&self) -> bool {
         self.started
     }
 
+    /// Stop the server and clear all registered runtime state.
     pub fn dispose(&mut self) {
         self.stop_rpc_server();
         self.handler_lookup.write().clear();
@@ -414,6 +455,7 @@ impl RpcServer {
         self.sessions.lock().clear();
     }
 
+    /// Set or clear the wallet exposed to wallet RPC methods.
     pub fn set_wallet(&self, wallet: Option<Arc<dyn Wallet>>) {
         *self.wallet.write() = wallet;
         if let Some(callback) = &self.wallet_change_callback {
@@ -421,11 +463,13 @@ impl RpcServer {
         }
     }
 
+    /// Return the wallet currently exposed to wallet RPC methods.
     #[must_use]
     pub fn wallet(&self) -> Option<Arc<dyn Wallet>> {
         self.wallet.read().clone()
     }
 
+    /// Install a callback invoked whenever the active wallet changes.
     pub fn set_wallet_change_callback(&mut self, callback: Option<WalletChangeCallback>) {
         self.wallet_change_callback = callback;
     }
@@ -434,11 +478,13 @@ impl RpcServer {
         Duration::from_secs(self.settings.session_expiration_time)
     }
 
+    /// Return whether invoke sessions are enabled.
     #[must_use]
     pub const fn session_enabled(&self) -> bool {
         self.settings.session_enabled
     }
 
+    /// Remove expired RPC invoke sessions.
     pub fn purge_expired_sessions(&self) {
         if !self.session_enabled() {
             return;
@@ -448,12 +494,14 @@ impl RpcServer {
         guard.retain(|_, session| !session.is_expired(expiration));
     }
 
+    /// Store an invoke session and return its generated id.
     pub fn store_session(&self, session: Session) -> Uuid {
         let id = Uuid::new_v4();
         self.sessions.lock().insert(id, session);
         id
     }
 
+    /// Mutably access a stored session by id.
     pub fn with_session_mut<F, R>(&self, id: &Uuid, func: F) -> Option<R>
     where
         F: FnOnce(&mut Session) -> R,
@@ -462,6 +510,7 @@ impl RpcServer {
         guard.get_mut(id).map(func)
     }
 
+    /// Remove a stored session by id.
     #[must_use]
     pub fn terminate_session(&self, id: &Uuid) -> bool {
         self.sessions.lock().remove(id).is_some()
@@ -478,14 +527,48 @@ impl RpcServer {
     /// read lock) and by `RpcServer::start_rpc_server` (which already holds the
     /// outer write lock and therefore cannot acquire the outer read lock).
     pub fn public_method_names(&self) -> Vec<String> {
+        self.method_names(false)
+    }
+
+    /// Collects the sorted, deduplicated names of handlers exposed by the
+    /// configured transport. Protected methods are only exposed when complete
+    /// RPC credentials are configured; the transport middleware still enforces
+    /// Basic auth before those handlers execute.
+    pub fn transport_method_names(&self) -> Vec<String> {
+        self.method_names(self.rpc_auth_configured())
+    }
+
+    /// Return whether complete HTTP Basic RPC credentials are configured.
+    #[must_use]
+    pub fn rpc_auth_configured(&self) -> bool {
+        !self.settings.rpc_user.trim().is_empty() && !self.settings.rpc_pass.trim().is_empty()
+    }
+
+    fn method_names(&self, include_protected: bool) -> Vec<String> {
         let handlers = self.handlers_guard();
         let mut methods = handlers
             .values()
-            .filter(|handler| !handler.descriptor().requires_auth())
+            .filter(|handler| include_protected || !handler.descriptor().requires_auth())
             .map(|handler| handler.descriptor().name.clone())
             .collect::<Vec<_>>();
         methods.sort_unstable();
         methods.dedup();
         methods
     }
+
+    fn rpc_auth_credentials(&self) -> Result<Option<Arc<http_policy::RpcBasicAuth>>, &'static str> {
+        http_policy::auth_credentials_from_settings(&self.settings)
+            .map(|credentials| credentials.map(Arc::new))
+    }
+}
+
+fn rate_limiter_from_settings(settings: &RpcServerConfig) -> GovernorRateLimiter {
+    GovernorRateLimiter::new(RateLimitConfig {
+        max_rps: settings.max_requests_per_second,
+        burst: settings.rate_limit_burst,
+    })
+}
+
+fn global_rate_limit_key() -> IpAddr {
+    IpAddr::V4(Ipv4Addr::UNSPECIFIED)
 }

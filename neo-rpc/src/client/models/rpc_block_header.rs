@@ -3,7 +3,7 @@ use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_io::Serializable;
 use neo_payloads::BlockHeader;
-use neo_primitives::UInt256;
+use neo_primitives::{UInt256, strip_hex_prefix};
 use neo_serialization::json::{JObject, JToken};
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ impl RpcBlockHeader {
             .get("nonce")
             .and_then(neo_serialization::json::JToken::as_string)
             .ok_or_else(|| CoreError::other("Missing or invalid 'nonce' field"))?;
-        let nonce = u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
+        let nonce = u64::from_str_radix(strip_hex_prefix(&nonce_str), 16)
             .map_err(|_| CoreError::other(format!("Invalid nonce value: {nonce_str}")))?;
 
         let index = json
@@ -219,7 +219,7 @@ mod tests {
         json.insert("time".to_string(), JToken::Number(123.0));
         json.insert(
             "nonce".to_string(),
-            JToken::String(format!("{:016x}", 42u64)),
+            JToken::String(format!("0X{:016x}", 42u64)),
         );
         json.insert("index".to_string(), JToken::Number(5.0));
         json.insert("primary".to_string(), JToken::Number(3.0));

@@ -207,9 +207,7 @@ pub fn stack_items_to_json(items: &[StackValue]) -> CoreResult<JToken> {
 }
 
 pub fn stack_items_from_json_field(json: &JObject, field: &str) -> Vec<StackValue> {
-    parse_object_array_lossy(json, field, |obj| {
-        stack_item_from_json(obj).map_err(|e| e.to_string())
-    })
+    parse_object_array_lossy(json, field, stack_item_from_json)
 }
 
 fn fallback_text_or_null(json: &JObject) -> StackValue {

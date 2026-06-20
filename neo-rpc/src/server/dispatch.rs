@@ -1,10 +1,8 @@
 //! RPC dispatch core: handler lookup + panic-safe invocation.
 //!
-//! Extracted from the legacy warp-based `routes/handlers.rs` so the
-//! same dispatch logic is reused by both the warp glue (deprecated) and
-//! the `jsonrpsee`-based server in `super::jsonrpsee_adapter`. Once the
-//! `routes/` directory is deleted, this module is the single home for
-//! the dispatch path.
+//! Extracted from the legacy HTTP routing layer so the same dispatch logic is
+//! reused by the `jsonrpsee`-based server in `super::jsonrpsee_adapter` and
+//! any future transport.
 
 use super::rpc_error::RpcError;
 use super::rpc_server::{RpcHandler, RpcServer};
@@ -64,6 +62,7 @@ impl Dispatch {
     ) -> Result<serde_json::Value, RpcError> {
         let policy = RpcServerSettings::current().exception_policy();
         let callback = handler.callback();
+        server_arc.read().check_rate_limit(method)?;
         let call_result = panic::catch_unwind(AssertUnwindSafe(|| {
             let server_guard = server_arc.read();
             (callback)(&server_guard, params)

@@ -26,13 +26,13 @@ neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-config = { workspace = true, optional = true }
 neo-oracle-service = { workspace = true, optional = true }
+neo-indexer = { workspace = true, optional = true }
 neo-execution = { workspace = true, optional = true }
 neo-payloads = { workspace = true, optional = true }
 neo-vm-rs = { workspace = true, optional = true }
-# neo-config merged into neo-core
 
 # Async runtime
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
 async-trait = { workspace = true }
 futures = { workspace = true, optional = true }
 
@@ -50,10 +50,11 @@ tracing = { workspace = true }
 
 # Web server (server feature)
 # jsonrpsee is the canonical JSON-RPC transport for the server.
-# The legacy warp-based glue has been removed; see the
+# The legacy HTTP routing glue has been removed; see the
 # `2026-06-13-comprehensive-refactoring` change (Phase C1) for the
 # migration history.
 jsonrpsee = { version = "0.24.10", optional = true, default-features = false, features = ["server"] }
+tower = { version = "0.4", optional = true }
 
 # TLS (server feature)
 tokio-rustls = { version = "0.24", optional = true }
@@ -101,7 +102,6 @@ neo-serialization = { workspace = true }
 
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util", "macros"] }
 mockito = "1.0"
 
 [features]
@@ -109,8 +109,10 @@ default = []
 server = [
     "client",  # Server uses client models for JSON serialization
     "dep:jsonrpsee",
+    "dep:tower",
     "dep:neo-config",
     "dep:neo-oracle-service",
+    "dep:neo-indexer",
     "dep:neo-vm-rs",
     "dep:neo-execution",
     "dep:neo-payloads",

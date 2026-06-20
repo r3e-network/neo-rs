@@ -23,6 +23,7 @@ pub struct RpcClientBuilder {
 }
 
 impl RpcClientBuilder {
+    /// Create a builder for the provided RPC endpoint URL.
     #[must_use]
     pub fn new(base_address: Url) -> Self {
         Self {
@@ -73,6 +74,7 @@ impl RpcClientBuilder {
         self
     }
 
+    /// Build the configured [`RpcClient`].
     pub fn build(self) -> Result<RpcClient, RpcError> {
         let mut client_builder = Client::builder().no_proxy().timeout(self.timeout);
 

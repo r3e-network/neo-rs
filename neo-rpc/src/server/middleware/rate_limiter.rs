@@ -189,6 +189,16 @@ fn resolved_tier_config(
         })
 }
 
+fn scale_tier_value(default_value: u32, configured_value: u32, standard_default: u32) -> u32 {
+    if configured_value == 0 {
+        return 0;
+    }
+
+    let scaled = u64::from(default_value).saturating_mul(u64::from(configured_value))
+        / u64::from(standard_default);
+    u32::try_from(scaled).unwrap_or(u32::MAX)
+}
+
 /// Concurrent per-IP rate limiter using keyed `governor` limiters.
 ///
 /// Uses `governor`'s GCRA rate limiter with automatic cleanup of stale entries.
@@ -208,18 +218,11 @@ impl GovernorRateLimiter {
         let enabled = config.max_rps > 0;
         let mut tier_configs = HashMap::new();
 
-        // Initialize tier configs based on default, scaled relative to the default config
-        let scale_factor = if config.max_rps > 0 {
-            config.max_rps as f64 / 100.0 // 100 is the default standard RPS
-        } else {
-            1.0
-        };
-
         for tier in RATE_LIMIT_TIERS {
             let default_tier_config = tier.default_config();
             let tier_config = RateLimitConfig {
-                max_rps: ((default_tier_config.max_rps as f64) * scale_factor) as u32,
-                burst: ((default_tier_config.burst as f64) * scale_factor) as u32,
+                max_rps: scale_tier_value(default_tier_config.max_rps, config.max_rps, 100),
+                burst: scale_tier_value(default_tier_config.burst, config.burst, 200),
             };
             tier_configs.insert(tier, tier_config);
         }

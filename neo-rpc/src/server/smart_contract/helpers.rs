@@ -19,7 +19,8 @@ use crate::server::model::signers_and_witnesses::SignersAndWitnesses;
 use crate::server::parameter_converter::{ConversionContext, ParameterConverter};
 use crate::server::rpc_exception::RpcException;
 pub(super) use crate::server::rpc_helpers::{
-    expect_string_param, expect_u32_param, internal_error, invalid_params,
+    expect_string_param, expect_u32_param, expect_uint160_param_with_message, internal_error,
+    invalid_params,
 };
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
@@ -71,6 +72,19 @@ pub(super) fn parse_signers_and_witnesses(
         Some(parsed.witnesses().to_vec())
     };
     Ok((signers, witnesses))
+}
+
+pub(super) fn expect_script_hash_param(
+    params: &[Value],
+    index: usize,
+    method: &str,
+) -> Result<UInt160, RpcException> {
+    expect_uint160_param_with_message(
+        params,
+        index,
+        format!("{} expects string parameter {}", method, index + 1),
+        "script hash",
+    )
 }
 
 pub(super) fn build_dynamic_call_script(
