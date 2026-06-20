@@ -87,7 +87,6 @@ pub static TREASURY_HASH: LazyLock<UInt160> = LazyLock::new(|| {
 
 #[cfg(test)]
 mod parity_tests {
-    use super::*;
     use neo_execution::Helper;
     use neo_primitives::UInt160;
 
@@ -131,29 +130,20 @@ mod parity_tests {
         }
     }
 
-    /// Native-contract ids must match the canonical Neo N3 values. The id is
-    /// part of native storage-key derivation, so a wrong id silently diverges
-    /// consensus. Pinned against the C# v3.10.0 reference (UT_NativeContract.cs).
+    /// Native-contract ids must be the contiguous negative sequence assigned by
+    /// C# in canonical catalog order. The id is part of native storage-key
+    /// derivation, so a wrong id silently diverges consensus.
     #[test]
-    fn native_contract_ids_match_csharp() {
-        assert_eq!(
-            crate::standard_native_contract_specs()
-                .iter()
-                .map(|spec| (spec.name, spec.id))
-                .collect::<Vec<_>>(),
-            vec![
-                ("ContractManagement", -1),
-                ("StdLib", -2),
-                ("CryptoLib", -3),
-                ("LedgerContract", -4),
-                ("NeoToken", -5),
-                ("GasToken", -6),
-                ("PolicyContract", -7),
-                ("RoleManagement", -8),
-                ("OracleContract", -9),
-                ("Notary", -10),
-                ("Treasury", -11),
-            ]
-        );
+    fn native_contract_ids_are_contiguous_in_csharp_order() {
+        let specs = crate::standard_native_contract_specs();
+        assert_eq!(specs.len(), crate::STANDARD_NATIVE_CONTRACT_COUNT);
+        for (index, spec) in specs.iter().enumerate() {
+            let expected_id = -((index as i32) + 1);
+            assert_eq!(
+                spec.id, expected_id,
+                "{} id must match its canonical C# order",
+                spec.name
+            );
+        }
     }
 }

@@ -9,51 +9,34 @@
 //! it with a descending prefix scan. The committee-gated `designateAsRole`
 //! writer lives in the runtime, which writes the entries this module reads.
 
-use std::any::Any;
-use std::sync::LazyLock;
+mod metadata;
+mod node_list;
+mod storage;
 
 use neo_config::Hardfork;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
-use neo_primitives::{CallFlags, ContractParameterType, UInt160};
-use neo_serialization::BinarySerializer;
-use neo_storage::persistence::{DataCache, SeekDirection};
-use neo_storage::{StorageItem, StorageKey};
-use neo_vm::{Interoperable, StackItem};
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
-use num_bigint::BigInt;
-use num_traits::ToPrimitive;
+use neo_storage::StorageItem;
+use neo_storage::persistence::DataCache;
+use neo_vm::StackItem;
 
 use crate::LedgerContract;
 use crate::hashes::ROLE_MANAGEMENT_HASH;
 use crate::role::Role;
 
-/// The RoleManagement native contract.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct RoleManagement;
+pub(crate) const ROLE_DESIGNATION_EVENT: &str = "Designation";
+
+native_contract_handle!(
+    /// The RoleManagement native contract.
+    pub struct RoleManagement {
+        id: -8,
+        contract_name: "RoleManagement",
+        hash: ROLE_MANAGEMENT_HASH,
+    }
+);
 
 impl RoleManagement {
-    /// Stable native contract id (matches C# `RoleManagement`).
-    pub const ID: i32 = -8;
-    /// Stable native contract name (matches C# `RoleManagement.Name`).
-    pub const NAME: &'static str = "RoleManagement";
-
-    /// Construct a new `RoleManagement` handle.
-    pub fn new() -> Self {
-        Self
-    }
-
-    /// Returns the RoleManagement script hash.
-    pub fn hash(&self) -> UInt160 {
-        Self::script_hash()
-    }
-
-    /// Returns the RoleManagement script hash.
-    pub fn script_hash() -> UInt160 {
-        *ROLE_MANAGEMENT_HASH
-    }
-
     /// Looks up the public keys designated for `role`, effective at block
     /// `height` (the most recent designation with index ≤ `height`).
     pub fn get_designated_by_role_at(
@@ -62,100 +45,27 @@ impl RoleManagement {
         role: Role,
         height: u32,
     ) -> CoreResult<Vec<ECPoint>> {
-        match self.find_designation_value(snapshot, role.as_byte(), height) {
-            Some(value) => Self::decode_node_list(&value),
+        match storage::find_designation_value(snapshot, role.as_byte(), height) {
+            Some(value) => node_list::decode_node_list(&value),
             None => Ok(Vec::new()),
         }
     }
 
-    /// Finds the serialized node-list value for `role_byte` effective at `index`:
-    /// the entry with the greatest designation index that is ≤ `index`.
-    ///
-    /// Designations are stored under key `(RoleManagement.ID, [role_byte, index_be])`.
-    /// A `Backward` prefix scan yields them in descending designation-index order, so
-    /// the first one with `designation_index <= index` is the effective designation —
-    /// equivalent to C#'s `FindRange((role, index), (role), Backward).FirstOrDefault`.
-    fn find_designation_value(
-        &self,
-        snapshot: &DataCache,
-        role_byte: u8,
-        index: u32,
-    ) -> Option<Vec<u8>> {
-        let prefix = StorageKey::create(RoleManagement::ID, role_byte);
-        for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
-            let key_bytes = key.key();
-            if key_bytes.len() >= 5 {
-                let designation_index =
-                    u32::from_be_bytes([key_bytes[1], key_bytes[2], key_bytes[3], key_bytes[4]]);
-                if designation_index <= index {
-                    return Some(item.value_bytes().into_owned());
-                }
-            }
-        }
-        None
-    }
-
-    /// Decodes a serialized node-list (a `BinarySerializer` array of compressed
-    /// EC-point byte strings) into `ECPoint`s.
-    fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
-        let limits = ExecutionEngineLimits::default();
-        let value = BinarySerializer::deserialize_stack_value_with_limits(
-            value,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("RoleManagement node list: {e}")))?;
-        Ok(NodeList::from_stack_value(value)?.into_nodes())
-    }
-
-    /// Serializes an empty node list (C# returns an empty `ECPoint[]`, not `null`,
-    /// when no designation exists).
-    fn empty_node_list() -> CoreResult<Vec<u8>> {
-        let item = NodeList::new(Vec::new()).to_stack_value();
-        BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::invalid_operation(format!("RoleManagement empty list: {e}")))
-    }
-
     /// The designation storage key `(RoleManagement.ID, [role_byte, index_be])`.
-    fn designation_key(role_byte: u8, index: u32) -> StorageKey {
-        StorageKey::create_with_uint32(RoleManagement::ID, role_byte, index)
+    pub(crate) fn designation_key(role_byte: u8, index: u32) -> neo_storage::StorageKey {
+        storage::designation_key(role_byte, index)
     }
 
-    /// Builds the persisted `StackValue::Array` representation for C# `NodeList`.
-    fn nodes_to_stack_value(points: &[ECPoint]) -> StackValue {
-        NodeList::new(points.to_vec()).to_stack_value()
-    }
-
-    /// Adapts the canonical node-list `StackValue` projection to the live VM
-    /// notification boundary, preserving the caller-provided order.
-    fn nodes_to_event_array(points: &[ECPoint]) -> CoreResult<StackItem> {
-        StackItem::try_from(Self::nodes_to_stack_value(points)).map_err(|error| {
-            CoreError::invalid_operation(format!("RoleManagement event node list: {error}"))
-        })
-    }
-
-    /// Serializes a node list as C# `NodeList` stores it: a `BinarySerializer` array
-    /// of compressed EC-point byte strings, with the points sorted ascending
-    /// (`list.Sort()`). The stored order differs from the event's `newNodes` order
-    /// (which preserves the caller's input order).
-    fn encode_node_list(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
-        let mut sorted = points.to_vec();
-        sorted.sort();
-        BinarySerializer::serialize_stack_value_default(&Self::nodes_to_stack_value(&sorted))
-            .map_err(|e| CoreError::invalid_operation(format!("RoleManagement node list: {e}")))
-    }
-
-    /// Decodes + validates the `nodes` Array argument: 1..=32 compressed EC points
-    /// (C# `nodes.Length == 0 || nodes.Length > 32` guard).
-    fn parse_nodes_arg(bytes: &[u8]) -> CoreResult<Vec<ECPoint>> {
-        let points = Self::decode_node_list(bytes)?;
-        if points.is_empty() || points.len() > 32 {
-            return Err(CoreError::invalid_operation(format!(
-                "RoleManagement: nodes count {} must be between 1 and 32",
-                points.len()
-            )));
-        }
-        Ok(points)
+    /// Parses the VM integer role argument through the shared Neo N3 role mapping.
+    fn parse_role_arg(role_value: u32) -> CoreResult<Role> {
+        u8::try_from(role_value)
+            .ok()
+            .and_then(Role::from_byte)
+            .ok_or_else(|| {
+                CoreError::invalid_operation(format!(
+                    "RoleManagement: role {role_value} is not valid"
+                ))
+            })
     }
 
     /// Builds the `Designation` event state, mirroring C# `DesignateAsRole`'s
@@ -175,138 +85,22 @@ impl RoleManagement {
             StackItem::from_int(i64::from(block_index)),
         ];
         if echidna {
-            state.push(Self::nodes_to_event_array(old_nodes)?);
-            state.push(Self::nodes_to_event_array(new_nodes)?);
+            state.push(node_list::nodes_to_event_array(old_nodes)?);
+            state.push(node_list::nodes_to_event_array(new_nodes)?);
         }
         Ok(state)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct NodeList {
-    nodes: Vec<ECPoint>,
-}
-
-impl NodeList {
-    fn new(nodes: Vec<ECPoint>) -> Self {
-        Self { nodes }
-    }
-
-    fn into_nodes(self) -> Vec<ECPoint> {
-        self.nodes
-    }
-
-    fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(
-            0,
-            self.nodes
-                .iter()
-                .map(|point| StackValue::ByteString(point.to_bytes()))
-                .collect(),
-        )
-    }
-
-    fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(0, items) = stack_value else {
-            return Err(CoreError::invalid_data(
-                "RoleManagement node list is not an array",
-            ));
-        };
-        let mut nodes = Vec::with_capacity(items.len());
-        for entry in items {
-            let bytes = entry.to_byte_string_bytes().ok_or_else(|| {
-                CoreError::invalid_data("RoleManagement node entry is not byte-like")
-            })?;
-            nodes.push(ECPoint::from_bytes(&bytes).map_err(|e| {
-                CoreError::invalid_data(format!("RoleManagement node EC point: {e}"))
-            })?);
-        }
-        Ok(Self { nodes })
-    }
-}
-
-neo_vm::impl_interoperable_via_stack_value!(NodeList);
-
-static ROLE_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
-    vec![
-        NativeMethod::new(
-            "getDesignatedByRole".to_string(),
-            1 << 15,
-            true,
-            CallFlags::READ_STATES.bits(),
-            vec![
-                ContractParameterType::Integer,
-                ContractParameterType::Integer,
-            ],
-            ContractParameterType::Array,
-        )
-        .with_parameter_names(["role", "index"]),
-        // Committee-gated writer that emits a Designation event (States|AllowNotify).
-        NativeMethod::new(
-            "designateAsRole".to_string(),
-            1 << 15,
-            false,
-            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-            vec![ContractParameterType::Integer, ContractParameterType::Array],
-            ContractParameterType::Void,
-        )
-        .with_parameter_names(["role", "nodes"]),
-    ]
-});
-
-/// The dual `Designation` event registration (RoleManagement.cs:27-37): both
-/// share order 0 and exactly one is active at any height. V0
-/// `(Role, BlockIndex)` is genesis-active and DeprecatedIn `HF_Echidna`
-/// (the trailing ctor argument); V1 adds the `Old`/`New` node arrays and is
-/// ActiveIn `HF_Echidna`.
-static ROLE_EVENTS: LazyLock<Vec<NativeEvent>> = LazyLock::new(|| {
-    vec![
-        NativeEvent::new(
-            0,
-            "Designation",
-            &[
-                ("Role", ContractParameterType::Integer),
-                ("BlockIndex", ContractParameterType::Integer),
-            ],
-        )
-        .with_deprecated_in(Hardfork::HfEchidna),
-        NativeEvent::new(
-            0,
-            "Designation",
-            &[
-                ("Role", ContractParameterType::Integer),
-                ("BlockIndex", ContractParameterType::Integer),
-                ("Old", ContractParameterType::Array),
-                ("New", ContractParameterType::Array),
-            ],
-        )
-        .with_active_in(Hardfork::HfEchidna),
-    ]
-});
-
 impl NativeContract for RoleManagement {
-    fn id(&self) -> i32 {
-        Self::ID
-    }
-
-    fn hash(&self) -> UInt160 {
-        Self::script_hash()
-    }
-
-    fn name(&self) -> &str {
-        Self::NAME
-    }
+    native_contract_identity!(RoleManagement);
 
     fn methods(&self) -> &[NativeMethod] {
-        &ROLE_METHODS
+        &metadata::ROLE_MANAGEMENT_METHODS
     }
 
     fn event_descriptors(&self) -> &[NativeEvent] {
-        &ROLE_EVENTS
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+        &metadata::ROLE_MANAGEMENT_EVENTS
     }
 
     fn invoke(
@@ -317,29 +111,18 @@ impl NativeContract for RoleManagement {
     ) -> CoreResult<Vec<u8>> {
         match method {
             "getDesignatedByRole" => {
-                let role_value = args
-                    .first()
-                    .map(|b| BigInt::from_signed_bytes_le(b))
-                    .and_then(|b| b.to_u32())
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation("RoleManagement: missing/invalid role")
-                    })?;
+                let role_value =
+                    crate::args::raw_u32_arg(args, 0, "RoleManagement::getDesignatedByRole")
+                        .map_err(|_| {
+                            CoreError::invalid_operation("RoleManagement: missing/invalid role")
+                        })?;
                 // C# validates the role against the Role enum.
-                let role_byte = match role_value {
-                    4 | 8 | 16 | 32 => role_value as u8,
-                    _ => {
-                        return Err(CoreError::invalid_operation(format!(
-                            "RoleManagement: role {role_value} is not valid"
-                        )));
-                    }
-                };
-                let index = args
-                    .get(1)
-                    .map(|b| BigInt::from_signed_bytes_le(b))
-                    .and_then(|b| b.to_u32())
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation("RoleManagement: missing/invalid index")
-                    })?;
+                let role_byte = Self::parse_role_arg(role_value)?.as_byte();
+                let index =
+                    crate::args::raw_u32_arg(args, 1, "RoleManagement::getDesignatedByRole")
+                        .map_err(|_| {
+                            CoreError::invalid_operation("RoleManagement: missing/invalid index")
+                        })?;
 
                 let snapshot = engine.snapshot_cache();
                 // C# throws when index > currentIndex + 1.
@@ -351,36 +134,26 @@ impl NativeContract for RoleManagement {
                     )));
                 }
 
-                match self.find_designation_value(&snapshot, role_byte, index) {
+                match storage::find_designation_value(&snapshot, role_byte, index) {
                     // The stored value is already the BinarySerializer-encoded
                     // node-list array — exactly the Array return wants.
                     Some(value) => Ok(value),
-                    None => Self::empty_node_list(),
+                    None => node_list::empty_node_list(),
                 }
             }
             "designateAsRole" => {
                 // C# order: validate nodes (1..32) -> validate role ->
                 // AssertCommittee -> require persisting block -> reject duplicate
                 // -> store sorted -> emit Designation event.
-                let role_value = args
-                    .first()
-                    .map(|b| BigInt::from_signed_bytes_le(b))
-                    .and_then(|b| b.to_u32())
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation("RoleManagement: missing/invalid role")
-                    })?;
+                let role_value =
+                    crate::args::raw_u32_arg(args, 0, "RoleManagement::designateAsRole").map_err(
+                        |_| CoreError::invalid_operation("RoleManagement: missing/invalid role"),
+                    )?;
                 let nodes_bytes = args.get(1).ok_or_else(|| {
                     CoreError::invalid_operation("RoleManagement: missing nodes argument")
                 })?;
-                let nodes = Self::parse_nodes_arg(nodes_bytes)?;
-                let role_byte = match role_value {
-                    4 | 8 | 16 | 32 => role_value as u8,
-                    _ => {
-                        return Err(CoreError::invalid_operation(format!(
-                            "RoleManagement: role {role_value} is not valid"
-                        )));
-                    }
-                };
+                let nodes = node_list::parse_nodes_arg(nodes_bytes)?;
+                let role_byte = Self::parse_role_arg(role_value)?.as_byte();
 
                 // C# AssertCommittee.
                 crate::committee::assert_committee(engine, "designateAsRole")?;
@@ -417,15 +190,15 @@ impl NativeContract for RoleManagement {
                 }
                 snapshot.add(
                     key,
-                    StorageItem::from_bytes(Self::encode_node_list(&nodes)?),
+                    StorageItem::from_bytes(node_list::encode_node_list(&nodes)?),
                 );
 
                 // Emit the Designation event; from HF_Echidna it also carries the
                 // previously-effective (at block_index) and new node lists.
                 let echidna = engine.is_hardfork_enabled(Hardfork::HfEchidna);
                 let old_nodes = if echidna {
-                    match self.find_designation_value(&snapshot, role_byte, block_index) {
-                        Some(value) => Self::decode_node_list(&value)?,
+                    match storage::find_designation_value(&snapshot, role_byte, block_index) {
+                        Some(value) => node_list::decode_node_list(&value)?,
                         None => Vec::new(),
                     }
                 } else {
@@ -439,7 +212,11 @@ impl NativeContract for RoleManagement {
                     &nodes,
                 )?;
                 engine
-                    .send_notification(Self::script_hash(), "Designation".to_string(), state)
+                    .send_notification(
+                        Self::script_hash(),
+                        ROLE_DESIGNATION_EVENT.to_owned(),
+                        state,
+                    )
                     .map_err(|e| {
                         CoreError::invalid_operation(format!("designateAsRole notify: {e}"))
                     })?;
@@ -454,8 +231,14 @@ impl NativeContract for RoleManagement {
 
 #[cfg(test)]
 mod tests {
+    use super::node_list::{self, NodeList};
+    use super::storage;
     use super::*;
+    use neo_primitives::{CallFlags, ContractParameterType};
+    use neo_serialization::BinarySerializer;
     use neo_storage::StorageItem;
+    use neo_vm::Interoperable;
+    use neo_vm_rs::StackValue;
 
     fn sample_point() -> ECPoint {
         // A genesis-validator public key (valid compressed EC point).
@@ -496,6 +279,55 @@ mod tests {
     }
 
     #[test]
+    fn designation_storage_key_helpers_match_csharp_layout() {
+        let role = Role::Oracle.as_byte();
+        let prefix = storage::designation_prefix_key(role);
+        assert_eq!(prefix.id(), RoleManagement::ID);
+        assert_eq!(prefix.suffix(), &[role]);
+
+        let key = RoleManagement::designation_key(role, 0x0102_0304);
+        assert_eq!(key.id(), RoleManagement::ID);
+        assert_eq!(key.suffix(), &[role, 1, 2, 3, 4]);
+        assert!(key.suffix().starts_with(prefix.suffix()));
+    }
+
+    #[test]
+    fn parse_role_arg_uses_shared_role_mapping() {
+        for role in [
+            Role::StateValidator,
+            Role::Oracle,
+            Role::NeoFsAlphabetNode,
+            Role::P2PNotary,
+        ] {
+            assert_eq!(
+                RoleManagement::parse_role_arg(u32::from(role.as_byte())).unwrap(),
+                role
+            );
+        }
+
+        assert!(RoleManagement::parse_role_arg(0).is_err());
+        assert!(RoleManagement::parse_role_arg(5).is_err());
+        assert!(RoleManagement::parse_role_arg(256).is_err());
+    }
+
+    #[test]
+    fn invoke_role_integer_args_use_shared_raw_parser() {
+        let source = include_str!("role_management.rs");
+        let start = source
+            .find("fn invoke(")
+            .expect("RoleManagement invoke exists");
+        let end = source[start..]
+            .find("other => Err")
+            .map(|offset| start + offset)
+            .expect("invoke default arm exists");
+        let invoke = &source[start..end];
+
+        assert!(invoke.contains("crate::args::raw_u32_arg"));
+        assert!(!invoke.contains("BigInt::from_signed_bytes_le(args"));
+        assert!(!invoke.contains("BigInt::from_signed_bytes_le(b)"));
+    }
+
+    #[test]
     fn encode_node_list_sorts_and_round_trips() {
         // Two distinct valid points, given in non-sorted order.
         let a = sample_point();
@@ -505,7 +337,7 @@ mod tests {
         .unwrap();
         let input = vec![a.clone(), b.clone()];
         // encode_node_list stores them sorted; decode_node_list reads them back.
-        let encoded = RoleManagement::encode_node_list(&input).unwrap();
+        let encoded = node_list::encode_node_list(&input).unwrap();
         let mut expected = input.clone();
         expected.sort();
         let expected_value = StackValue::Array(
@@ -518,7 +350,7 @@ mod tests {
         let expected_encoded = BinarySerializer::serialize_stack_value_default(&expected_value)
             .expect("expected node-list StackValue serializes");
         assert_eq!(encoded, expected_encoded);
-        let decoded = RoleManagement::decode_node_list(&encoded).unwrap();
+        let decoded = node_list::decode_node_list(&encoded).unwrap();
         assert_eq!(decoded, expected);
     }
 
@@ -558,13 +390,17 @@ mod tests {
             &source[start_index..end_index]
         }
 
-        let source = include_str!("role_management.rs");
+        let source = include_str!("role_management/node_list.rs");
         let decoder = slice_between(source, "fn decode_node_list", "fn empty_node_list");
         assert!(decoder.contains("deserialize_stack_value_with_limits"));
         assert!(decoder.contains("NodeList::from_stack_value"));
         assert!(!decoder.contains("StackValue::Array"));
 
-        let empty_encoder = slice_between(source, "fn empty_node_list", "fn designation_key");
+        let empty_encoder = slice_between(
+            source,
+            "fn empty_node_list",
+            "/// Builds the persisted `StackValue::Array`",
+        );
         assert!(empty_encoder.contains("NodeList::new"));
         assert!(empty_encoder.contains("to_stack_value"));
         assert!(empty_encoder.contains("serialize_stack_value_default"));
@@ -582,10 +418,10 @@ mod tests {
         let empty =
             BinarySerializer::serialize_stack_value_default(&StackValue::Array(0, Vec::new()))
                 .unwrap();
-        assert!(RoleManagement::parse_nodes_arg(&empty).is_err());
+        assert!(node_list::parse_nodes_arg(&empty).is_err());
         // One valid node -> accepted.
-        let one = RoleManagement::encode_node_list(&[sample_point()]).unwrap();
-        assert_eq!(RoleManagement::parse_nodes_arg(&one).unwrap().len(), 1);
+        let one = node_list::encode_node_list(&[sample_point()]).unwrap();
+        assert_eq!(node_list::parse_nodes_arg(&one).unwrap().len(), 1);
     }
 
     #[test]

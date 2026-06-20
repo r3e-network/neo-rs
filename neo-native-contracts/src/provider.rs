@@ -6,9 +6,8 @@
 //! `System.Contract.Call` to a native contract without `neo-execution`
 //! depending on `neo-native-contracts` (which would be a crate cycle).
 //!
-//! Only contracts that implement the [`NativeContract`] trait are registered;
-//! contracts still being ported are simply absent from the provider until their
-//! `invoke`/`methods` are implemented.
+//! The canonical catalog in [`crate::catalog`] is the single source of truth for
+//! standard-contract order, id, name, hash, and construction.
 
 use std::sync::Arc;
 
@@ -17,21 +16,33 @@ use neo_execution::native_contract_provider::{NativeContractLookup, NativeContra
 use neo_primitives::UInt160;
 
 use crate::LedgerContract;
-use crate::catalog::standard_native_contracts;
+use crate::catalog::{
+    StandardNativeContractSpec, standard_native_contract_hashes,
+    standard_native_contract_spec_by_hash, standard_native_contract_spec_by_name,
+    standard_native_contracts,
+};
 
-/// Provider over the implemented standard native contracts, in canonical
-/// (ascending-id-magnitude) registration order.
+/// Provider over every standard native contract, in canonical C# id order.
 pub struct StandardNativeProvider {
     contracts: Vec<Arc<dyn NativeContract>>,
 }
 
 impl StandardNativeProvider {
-    /// Builds the provider with every native contract that currently
-    /// implements the [`NativeContract`] trait.
+    /// Builds the provider from the canonical standard native-contract catalog.
     pub fn new() -> Self {
         Self {
             contracts: standard_native_contracts(),
         }
+    }
+
+    fn contract_for_spec(
+        &self,
+        spec: StandardNativeContractSpec,
+    ) -> Option<Arc<dyn NativeContract>> {
+        self.contracts
+            .iter()
+            .find(|contract| contract.id() == spec.id)
+            .cloned()
     }
 }
 
@@ -39,14 +50,11 @@ neo_io::impl_default_via_new!(StandardNativeProvider);
 
 impl NativeContractProvider for StandardNativeProvider {
     fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-        self.contracts.iter().find(|c| &c.hash() == hash).cloned()
+        standard_native_contract_spec_by_hash(hash).and_then(|spec| self.contract_for_spec(spec))
     }
 
     fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
-        self.contracts
-            .iter()
-            .find(|c| c.name().eq_ignore_ascii_case(name))
-            .cloned()
+        standard_native_contract_spec_by_name(name).and_then(|spec| self.contract_for_spec(spec))
     }
 
     fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
@@ -54,7 +62,7 @@ impl NativeContractProvider for StandardNativeProvider {
     }
 
     fn all_native_contract_hashes(&self) -> Vec<UInt160> {
-        self.contracts.iter().map(|c| c.hash()).collect()
+        standard_native_contract_hashes().into_iter().collect()
     }
 
     fn current_block_index(&self, snapshot: &neo_storage::DataCache) -> neo_error::CoreResult<u32> {
@@ -75,6 +83,43 @@ mod tests {
     use crate::hashes::CRYPTO_LIB_HASH;
 
     #[test]
+    fn provider_registers_exact_standard_catalog() {
+        let provider = StandardNativeProvider::new();
+        let specs = crate::standard_native_contract_specs();
+        let contracts = provider.all_native_contracts();
+
+        assert_eq!(contracts.len(), crate::STANDARD_NATIVE_CONTRACT_COUNT);
+        assert_eq!(contracts.len(), specs.len());
+
+        for (contract, spec) in contracts.iter().zip(specs) {
+            assert_eq!(contract.id(), spec.id, "{} id", spec.name);
+            assert_eq!(contract.name(), spec.name, "{} name", spec.name);
+            assert_eq!(contract.hash(), spec.hash, "{} hash", spec.name);
+            assert_eq!(
+                provider
+                    .get_native_contract(&spec.hash)
+                    .expect("hash lookup")
+                    .name(),
+                spec.name,
+                "{} hash lookup",
+                spec.name
+            );
+            assert_eq!(
+                provider
+                    .get_native_contract_by_name(spec.name)
+                    .expect("name lookup")
+                    .hash(),
+                spec.hash,
+                "{} name lookup",
+                spec.name
+            );
+        }
+
+        let expected_hashes = specs.iter().map(|spec| spec.hash).collect::<Vec<_>>();
+        assert_eq!(provider.all_native_contract_hashes(), expected_hashes);
+    }
+
+    #[test]
     fn provider_resolves_cryptolib_by_name_and_hash() {
         let provider = StandardNativeProvider::new();
 
@@ -90,12 +135,6 @@ mod tests {
         assert_eq!(by_hash.name(), "CryptoLib");
 
         assert!(provider.get_native_contract_by_name("crypTOlib").is_some());
-
-        // Both implemented contracts are registered (StdLib + CryptoLib).
-        let hashes = provider.all_native_contract_hashes();
-        assert!(hashes.contains(&*CRYPTO_LIB_HASH));
-        assert!(hashes.contains(&*crate::hashes::STDLIB_HASH));
-        assert!(provider.get_native_contract_by_name("StdLib").is_some());
     }
 
     #[test]
@@ -119,15 +158,15 @@ mod tests {
         use neo_execution::ApplicationEngine;
         use neo_payloads::Block;
         use neo_primitives::{TriggerType, UInt256};
+        use neo_storage::StorageItem;
         use neo_storage::persistence::DataCache;
-        use neo_storage::{StorageItem, StorageKey};
         use std::sync::Arc;
 
         install();
         let cache = Arc::new(DataCache::new(false));
         let current_hash = UInt256::from_bytes(&[0x34; 32]).unwrap();
         cache.add(
-            StorageKey::new(LedgerContract::ID, vec![12]),
+            LedgerContract::current_block_storage_key(),
             StorageItem::from_bytes(
                 LedgerContract::new()
                     .serialize_hash_index_state(&current_hash, 1234)

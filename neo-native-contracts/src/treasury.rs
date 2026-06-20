@@ -7,93 +7,25 @@
 //! `verify`, the committee witness check that gates Treasury-signed
 //! transactions (`CheckCommittee(engine)`).
 
-use std::any::Any;
-use std::sync::LazyLock;
-
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
-use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 
 use crate::hashes::TREASURY_HASH;
 
-/// The Treasury native contract.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Treasury;
+mod metadata;
 
-impl Treasury {
-    /// Stable native contract id (matches C# `Treasury`).
-    pub const ID: i32 = -11;
-    /// Stable native contract name (matches C# `Treasury.Name`).
-    pub const NAME: &'static str = "Treasury";
-
-    /// Construct a new `Treasury` handle.
-    pub fn new() -> Self {
-        Self
+native_contract_handle!(
+    /// The Treasury native contract.
+    pub struct Treasury {
+        id: -11,
+        contract_name: "Treasury",
+        hash: TREASURY_HASH,
     }
-
-    /// Returns the Treasury script hash.
-    pub fn hash(&self) -> UInt160 {
-        Self::script_hash()
-    }
-
-    /// Returns the Treasury script hash.
-    pub fn script_hash() -> UInt160 {
-        *TREASURY_HASH
-    }
-}
-
-static TREASURY_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
-    use ContractParameterType::{Any as AnyType, ByteArray, Hash160, Integer, Void};
-    // C# `[ContractMethod(CpuFee = 1 << 5, RequiredCallFlags = CallFlags.None)]`
-    // (Treasury.cs OnNEP17Payment/OnNEP11Payment). ContractMethodMetadata
-    // derives `Safe = (None & ~CallFlags.ReadOnly) == 0`, so both payment
-    // callbacks are manifest-safe (unlike Notary's, which requires States).
-    vec![
-        NativeMethod::new(
-            "onNEP17Payment".to_string(),
-            1 << 5,
-            true,
-            0,
-            vec![Hash160, Integer, AnyType],
-            Void,
-        )
-        .with_parameter_names(["from", "amount", "data"]),
-        NativeMethod::new(
-            "onNEP11Payment".to_string(),
-            1 << 5,
-            true,
-            0,
-            vec![Hash160, Integer, ByteArray, AnyType],
-            Void,
-        )
-        .with_parameter_names(["from", "amount", "tokenId", "data"]),
-        // C# `[ContractMethod(CpuFee = 1 << 5, RequiredCallFlags =
-        // CallFlags.ReadStates)] private bool Verify(ApplicationEngine engine)`
-        // (Treasury.cs:41-42): ReadStates ⊆ ReadOnly -> manifest-safe.
-        NativeMethod::new(
-            "verify".to_string(),
-            1 << 5,
-            true,
-            CallFlags::READ_STATES.bits(),
-            vec![],
-            ContractParameterType::Boolean,
-        ),
-    ]
-});
+);
 
 impl NativeContract for Treasury {
-    fn id(&self) -> i32 {
-        Self::ID
-    }
-
-    fn hash(&self) -> UInt160 {
-        Self::script_hash()
-    }
-
-    fn name(&self) -> &str {
-        Self::NAME
-    }
+    native_contract_identity!(Treasury);
 
     // C# `Treasury.Activations => [Hardfork.HF_Faun]` (Treasury.cs:29): the
     // contract does not exist before HF_Faun. Without this override Treasury
@@ -105,22 +37,22 @@ impl NativeContract for Treasury {
         Some(Hardfork::HfFaun)
     }
 
+    fn activations(&self) -> &'static [Hardfork] {
+        &[Hardfork::HfFaun]
+    }
+
     /// C# `Treasury.OnManifestCompose` (Treasury.cs:31-34): unconditional —
     /// the contract only exists from HF_Faun onwards.
     fn supported_standards(&self, _settings: &ProtocolSettings, _block_height: u32) -> Vec<String> {
-        vec![
-            "NEP-26".to_string(),
-            "NEP-27".to_string(),
-            "NEP-30".to_string(),
-        ]
+        crate::native_supported_standards(&[
+            crate::NEP26_STANDARD,
+            crate::NEP27_STANDARD,
+            crate::NEP30_STANDARD,
+        ])
     }
 
     fn methods(&self) -> &[NativeMethod] {
-        &TREASURY_METHODS
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+        &metadata::TREASURY_METHODS
     }
 
     fn invoke(
@@ -132,7 +64,7 @@ impl NativeContract for Treasury {
         match method {
             // Both callbacks are no-ops in C# (empty bodies); they return Void,
             // so an empty payload pushes nothing onto the stack.
-            "onNEP17Payment" | "onNEP11Payment" => Ok(Vec::new()),
+            crate::NEP17_PAYMENT_METHOD | crate::NEP11_PAYMENT_METHOD => Ok(Vec::new()),
             // C# `Treasury.Verify` (Treasury.cs:41-42) = `CheckCommittee(engine)`:
             // true iff the committee multi-sig address witnesses the current
             // container — the witness seam for Treasury-signed transactions.
@@ -151,6 +83,7 @@ impl NativeContract for Treasury {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_primitives::{CallFlags, ContractParameterType};
 
     #[test]
     fn native_contract_surface() {
@@ -223,18 +156,13 @@ mod verify_witness_tests {
     use super::*;
     use std::sync::Arc;
 
-    use crate::test_support::{
-        CM_PREFIX_CONTRACT, NEO_PREFIX_COMMITTEE, committee_address, deploy_native, hex,
-        sample_committee, seed_committee,
-    };
-    use neo_crypto::ECPoint;
-    use neo_execution::contract_state::ContractState;
+    use crate::test_support::{committee_address, deploy_native, sample_committee, seed_committee};
     use neo_execution::native_contract::build_native_contract_state;
     use neo_payloads::signer::Signer;
     use neo_payloads::transaction::Transaction;
     use neo_payloads::witness::Witness;
     use neo_payloads::{Block, Header};
-    use neo_primitives::{TriggerType, Verifiable, WitnessScope};
+    use neo_primitives::{CallFlags, TriggerType, UInt160, Verifiable, WitnessScope};
     use neo_storage::persistence::DataCache;
     use neo_vm::script_builder::ScriptBuilder;
     use neo_vm_rs::VmState;

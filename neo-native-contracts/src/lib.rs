@@ -10,6 +10,7 @@
 //!
 //! - the well-known script hash ([`hashes`])
 //! - a stable integer id (`Self::ID`)
+//! - a stable contract name (`Self::NAME`)
 //! - the storage-query surface needed by external plugins and
 //!   services (`get_request`, `get_designated_by_role_at`, …)
 //!
@@ -19,15 +20,70 @@
 //! byte-compatible with the canonical C# node.
 
 #![allow(dead_code)]
-// Several module-level imports are consumed only by the `#[cfg(test)]` modules
-// (via `use super::*`); they read as unused in the non-test build, so this
-// keeps the crate warning-clean without scattering `#[cfg(test)]` on imports.
-#![allow(unused_imports)]
-
 pub use neo_execution::{
     HardforkActivable, NativeContract, NativeContractsCache, NativeContractsCacheEntry,
     NativeEvent, NativeMethod, NativeRegistry, is_active_for,
 };
+
+macro_rules! native_contract_handle {
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $name:ident {
+            id: $id:expr,
+            contract_name: $contract_name:expr,
+            hash: $hash:expr $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Default, Clone, Copy)]
+        $vis struct $name;
+
+        impl $name {
+            #[doc = concat!("Stable native contract id (matches C# `", $contract_name, "`).")]
+            pub const ID: i32 = $id;
+            #[doc = concat!("Stable native contract name (matches C# `", $contract_name, ".Name`).")]
+            pub const NAME: &'static str = $contract_name;
+
+            #[doc = concat!("Construct a new `", stringify!($name), "` handle.")]
+            #[must_use]
+            pub const fn new() -> Self {
+                Self
+            }
+
+            #[doc = concat!("Returns the ", $contract_name, " script hash.")]
+            #[must_use]
+            pub fn hash(&self) -> neo_primitives::UInt160 {
+                Self::script_hash()
+            }
+
+            #[doc = concat!("Returns the ", $contract_name, " script hash.")]
+            #[must_use]
+            pub fn script_hash() -> neo_primitives::UInt160 {
+                *($hash)
+            }
+        }
+    };
+}
+
+macro_rules! native_contract_identity {
+    ($contract:ident) => {
+        fn id(&self) -> i32 {
+            $contract::ID
+        }
+
+        fn hash(&self) -> neo_primitives::UInt160 {
+            $contract::script_hash()
+        }
+
+        fn name(&self) -> &str {
+            $contract::NAME
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    };
+}
 
 mod catalog;
 pub mod contract_management;
@@ -55,7 +111,13 @@ pub mod std_lib;
 pub(crate) mod test_support;
 pub mod treasury;
 
-pub use catalog::{StandardNativeContractSpec, standard_native_contract_specs};
+pub use catalog::{
+    STANDARD_NATIVE_CONTRACT_COUNT, StandardNativeContractHashes, StandardNativeContractSpec,
+    StandardNativeContractSpecs, is_standard_native_contract_hash, standard_native_contract_hashes,
+    standard_native_contract_spec_by_hash, standard_native_contract_spec_by_id,
+    standard_native_contract_spec_by_name, standard_native_contract_specs,
+    standard_native_contracts,
+};
 pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
 pub use gas_token::GasToken;
@@ -70,35 +132,9 @@ pub use role_management::RoleManagement;
 pub use std_lib::StdLib;
 pub use treasury::Treasury;
 
-use neo_vm::Interoperable;
+use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
-
-/// Reads a native-contract integer setting from `snapshot` under
-/// `(contract_id, prefix)`, returning `default` when the key is absent.
-///
-/// Native settings (fee-per-byte, storage price, oracle price, …) are stored as
-/// C# `BigInteger` values in signed little-endian bytes; C# reads them via
-/// `(long)(BigInteger)snapshot[key]`. The value is written at contract
-/// initialization, so absence only happens pre-genesis / in tests, where the
-/// caller supplies the same default the init routine would write.
-pub(crate) fn read_storage_int(
-    snapshot: &neo_storage::persistence::DataCache,
-    contract_id: i32,
-    prefix: u8,
-    default: i64,
-) -> neo_error::CoreResult<i64> {
-    use num_traits::ToPrimitive;
-    let key = neo_storage::StorageKey::create(contract_id, prefix);
-    match snapshot.get(&key) {
-        Some(item) => num_bigint::BigInt::from_signed_bytes_le(&item.value_bytes())
-            .to_i64()
-            .ok_or_else(|| {
-                neo_error::CoreError::invalid_operation("native storage integer out of range")
-            }),
-        None => Ok(default),
-    }
-}
 
 /// Encodes a `BigInteger` for native-contract storage exactly like C#
 /// `StorageItem`/`BigInteger.ToByteArrayStandard()`: **empty bytes for zero**,
@@ -121,11 +157,15 @@ pub(crate) fn bigint_to_storage_bytes(value: &num_bigint::BigInt) -> Vec<u8> {
 /// (FungibleToken.cs:59-62) and inherited — via the base-type constructor
 /// concat in `NativeContract`'s reflection — by both NEO and GAS at order 0:
 /// `Transfer(from: Hash160, to: Hash160, amount: Integer)`, ungated.
+pub(crate) const NEP17_TRANSFER_EVENT: &str = "Transfer";
+pub(crate) const NEP17_PAYMENT_METHOD: &str = "onNEP17Payment";
+pub(crate) const NEP11_PAYMENT_METHOD: &str = "onNEP11Payment";
+
 pub(crate) fn fungible_token_transfer_event() -> NativeEvent {
     use neo_primitives::ContractParameterType;
     NativeEvent::new(
         0,
-        "Transfer",
+        NEP17_TRANSFER_EVENT,
         &[
             ("from", ContractParameterType::Hash160),
             ("to", ContractParameterType::Hash160),
@@ -134,10 +174,175 @@ pub(crate) fn fungible_token_transfer_event() -> NativeEvent {
     )
 }
 
+fn nep17_transfer_account_item(account: Option<&neo_primitives::UInt160>) -> StackItem {
+    match account {
+        Some(account) => StackItem::from_byte_string(account.to_bytes()),
+        None => StackItem::null(),
+    }
+}
+
+pub(crate) fn nep17_transfer_notification_state(
+    from: Option<&neo_primitives::UInt160>,
+    to: Option<&neo_primitives::UInt160>,
+    amount: &BigInt,
+) -> Vec<StackItem> {
+    vec![
+        nep17_transfer_account_item(from),
+        nep17_transfer_account_item(to),
+        StackItem::from_int(amount.clone()),
+    ]
+}
+
+pub(crate) fn nep17_payment_callback_args(
+    from: Option<&neo_primitives::UInt160>,
+    amount: &BigInt,
+    data: StackItem,
+) -> Vec<StackItem> {
+    vec![
+        nep17_transfer_account_item(from),
+        StackItem::from_int(amount.clone()),
+        data,
+    ]
+}
+
+pub(crate) fn nep17_payment_data_item(
+    data: &[u8],
+    context: &str,
+) -> neo_error::CoreResult<StackItem> {
+    if data.is_empty() {
+        return Ok(StackItem::null());
+    }
+    neo_serialization::BinarySerializer::deserialize_default(data)
+        .map_err(|e| neo_error::CoreError::deserialization(format!("{context}: {e}")))
+}
+
+pub(crate) fn nep17_symbol_method() -> NativeMethod {
+    NativeMethod::new(
+        "symbol",
+        0,
+        true,
+        0,
+        Vec::new(),
+        neo_primitives::ContractParameterType::String,
+    )
+}
+
+pub(crate) fn nep17_decimals_method() -> NativeMethod {
+    NativeMethod::new(
+        "decimals",
+        0,
+        true,
+        0,
+        Vec::new(),
+        neo_primitives::ContractParameterType::Integer,
+    )
+}
+
+pub(crate) fn nep17_total_supply_method(read_states: u8) -> NativeMethod {
+    NativeMethod::new(
+        "totalSupply",
+        1 << 15,
+        true,
+        read_states,
+        Vec::new(),
+        neo_primitives::ContractParameterType::Integer,
+    )
+}
+
+pub(crate) fn nep17_balance_of_method(read_states: u8) -> NativeMethod {
+    NativeMethod::new(
+        "balanceOf",
+        1 << 15,
+        true,
+        read_states,
+        vec![neo_primitives::ContractParameterType::Hash160],
+        neo_primitives::ContractParameterType::Integer,
+    )
+    .with_parameter_names(["account"])
+}
+
+pub(crate) fn nep17_transfer_method() -> NativeMethod {
+    use neo_primitives::ContractParameterType::{Any, Boolean, Hash160, Integer};
+    NativeMethod::new(
+        "transfer",
+        1 << 17,
+        false,
+        (neo_primitives::CallFlags::STATES
+            | neo_primitives::CallFlags::ALLOW_CALL
+            | neo_primitives::CallFlags::ALLOW_NOTIFY)
+            .bits(),
+        vec![Hash160, Hash160, Integer, Any],
+        Boolean,
+    )
+    .with_storage_fee(50)
+    .with_parameter_names(["from", "to", "amount", "data"])
+}
+
+pub(crate) fn nep17_payment_method(
+    cpu_fee: i64,
+    safe: bool,
+    required_call_flags: u8,
+) -> NativeMethod {
+    use neo_primitives::ContractParameterType::{Any, Hash160, Integer, Void};
+    NativeMethod::new(
+        NEP17_PAYMENT_METHOD.to_owned(),
+        cpu_fee,
+        safe,
+        required_call_flags,
+        vec![Hash160, Integer, Any],
+        Void,
+    )
+    .with_parameter_names(["from", "amount", "data"])
+}
+
+pub(crate) fn nep11_payment_method(
+    cpu_fee: i64,
+    safe: bool,
+    required_call_flags: u8,
+) -> NativeMethod {
+    use neo_primitives::ContractParameterType::{Any, ByteArray, Hash160, Integer, Void};
+    NativeMethod::new(
+        NEP11_PAYMENT_METHOD.to_owned(),
+        cpu_fee,
+        safe,
+        required_call_flags,
+        vec![Hash160, Integer, ByteArray, Any],
+        Void,
+    )
+    .with_parameter_names(["from", "amount", "tokenId", "data"])
+}
+
+pub(crate) const NEP17_STANDARD: &str = "NEP-17";
+pub(crate) const NEP26_STANDARD: &str = "NEP-26";
+pub(crate) const NEP27_STANDARD: &str = "NEP-27";
+pub(crate) const NEP30_STANDARD: &str = "NEP-30";
+
+pub(crate) fn native_supported_standards(standards: &[&str]) -> Vec<String> {
+    standards
+        .iter()
+        .map(|standard| (*standard).to_owned())
+        .collect()
+}
+
 /// C# `FungibleToken.Prefix_TotalSupply`.
 pub(crate) const NEP17_PREFIX_TOTAL_SUPPLY: u8 = 11;
 /// C# `FungibleToken.Prefix_Account`.
 pub(crate) const NEP17_PREFIX_ACCOUNT: u8 = 20;
+
+/// The shared NEP-17 total-supply storage key
+/// `(contract_id, [Prefix_TotalSupply])`.
+pub(crate) fn nep17_total_supply_key(contract_id: i32) -> neo_storage::StorageKey {
+    crate::keys::prefixed_key(contract_id, NEP17_PREFIX_TOTAL_SUPPLY, &[])
+}
+
+/// The shared NEP-17 account storage key
+/// `(contract_id, [Prefix_Account] ++ account)`.
+pub(crate) fn nep17_account_key(
+    contract_id: i32,
+    account: &neo_primitives::UInt160,
+) -> neo_storage::StorageKey {
+    crate::keys::prefixed_hash160_key(contract_id, NEP17_PREFIX_ACCOUNT, account)
+}
 
 /// C# `AccountState`: the base native-token account state
 /// `Struct[Balance]`. `NeoAccountState` extends this shape with governance
@@ -182,9 +387,7 @@ neo_vm::impl_interoperable_via_stack_value!(AccountState);
 /// `NeoToken::read_account_state`) to avoid duplicating the
 /// `deserialize_stack_value_with_limits` + `AccountState::from_stack_value`
 /// plumbing in every caller.
-pub(crate) fn deserialize_account_state(
-    bytes: &[u8],
-) -> neo_error::CoreResult<AccountState> {
+pub(crate) fn deserialize_account_state(bytes: &[u8]) -> neo_error::CoreResult<AccountState> {
     let limits = neo_vm_rs::ExecutionEngineLimits::default();
     let decoded = neo_serialization::BinarySerializer::deserialize_stack_value_with_limits(
         bytes,
@@ -197,9 +400,7 @@ pub(crate) fn deserialize_account_state(
 
 /// Serializes a NEP-17 account-state struct to its on-chain byte form.
 /// Companion of [`deserialize_account_state`].
-pub(crate) fn serialize_account_state(
-    state: &AccountState,
-) -> neo_error::CoreResult<Vec<u8>> {
+pub(crate) fn serialize_account_state(state: &AccountState) -> neo_error::CoreResult<Vec<u8>> {
     neo_serialization::BinarySerializer::serialize_stack_value_default(&state.to_stack_value())
         .map_err(|e| neo_error::CoreError::serialization(format!("NEP-17 account state: {e}")))
 }
@@ -214,7 +415,7 @@ pub(crate) fn read_nep17_balance(
     contract_id: i32,
     account: &neo_primitives::UInt160,
 ) -> neo_error::CoreResult<num_bigint::BigInt> {
-    let key = neo_storage::StorageKey::create_with_uint160(contract_id, NEP17_PREFIX_ACCOUNT, account);
+    let key = nep17_account_key(contract_id, account);
 
     let Some(item) = snapshot.get(&key) else {
         return Ok(num_bigint::BigInt::from(0));
@@ -223,57 +424,19 @@ pub(crate) fn read_nep17_balance(
     Ok(state.balance)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::AccountState;
-    use neo_vm::Interoperable;
-    use neo_vm_rs::StackValue;
-    use num_bigint::BigInt;
-
-    #[test]
-    fn account_state_interoperable_projection_matches_csharp_shape() {
-        let state = AccountState::new(BigInt::from(12345));
-        let expected_value = StackValue::Struct(
-            0,
-            vec![StackValue::BigInteger(
-                BigInt::from(12345).to_signed_bytes_le(),
-            )],
-        );
-
-        assert_eq!(state.to_stack_value(), expected_value);
-
-        let trait_value = Interoperable::to_stack_value(&state).unwrap();
-        assert_eq!(trait_value, expected_value);
-
-        let mut parsed = AccountState::new(BigInt::from(0));
-        Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
-        assert_eq!(parsed, state);
-
-        assert!(AccountState::from_stack_value(StackValue::Array(0, vec![])).is_err());
-        assert!(AccountState::from_stack_value(StackValue::Struct(0, vec![])).is_err());
-    }
-
-    #[test]
-    fn nep17_balance_reader_uses_stack_value_projection() {
-        let source = include_str!("lib.rs");
-        let start = source
-            .find("pub(crate) fn read_nep17_balance(")
-            .expect("read_nep17_balance helper exists");
-        let end = source[start..]
-            .find("#[cfg(test)]")
-            .map(|offset| start + offset)
-            .expect("tests follow read_nep17_balance");
-        let helper = &source[start..end];
-
-        // After the FungibleToken-helper extraction, read_nep17_balance delegates
-        // (de)serialization to the shared deserialize_account_state helper rather
-        // than inlining the BinarySerializer plumbing. The contract here is that
-        // the reader stays a thin wrapper: key build + get + shared helper.
-        assert!(helper.contains("deserialize_account_state"));
-        assert!(helper.contains("StorageKey::create_with_uint160"));
-        assert!(!helper.contains("StackValue::Struct"));
-        assert!(!helper.contains("stack_value_as_bigint"));
-        assert!(!helper.contains("BinarySerializer::deserialize("));
-        assert!(!helper.contains("neo_vm::StackItem::Struct"));
-    }
+/// Reads the NEP-17 total supply stored under `(contract_id, [11])`, returning
+/// 0 when the supply key is absent. Matches C# `FungibleToken.TotalSupply`,
+/// which reads the raw `StorageItem` as a `BigInteger`.
+pub(crate) fn read_nep17_total_supply(
+    snapshot: &neo_storage::persistence::DataCache,
+    contract_id: i32,
+) -> num_bigint::BigInt {
+    let key = nep17_total_supply_key(contract_id);
+    snapshot
+        .get(&key)
+        .map(|item| num_bigint::BigInt::from_signed_bytes_le(&item.value_bytes()))
+        .unwrap_or_else(|| num_bigint::BigInt::from(0))
 }
+
+#[cfg(test)]
+mod tests;

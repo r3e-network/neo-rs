@@ -1,10 +1,8 @@
 //! Shared test helpers for the native-contract test modules.
 //!
 //! Prior to this module, identical helpers (`hex`, `sample_committee`,
-//! `deploy_native`, `committee_address`, …) and constants
-//! (`CM_PREFIX_CONTRACT`, `NEO_PREFIX_COMMITTEE`,
-//! `POLICY_PREFIX_ATTRIBUTE_FEE`) were duplicated 3-6 times across the
-//! 11 native-contract test modules. This module is the single home for
+//! `deploy_native`, `committee_address`, …) were duplicated 3-6 times across
+//! the 11 native-contract test modules. This module is the single home for
 //! the canonical versions.
 //!
 //! Only compiled under `#[cfg(test)]` so it has zero impact on the
@@ -13,17 +11,10 @@
 use neo_crypto::ECPoint;
 use neo_primitives::UInt160;
 use neo_serialization::BinarySerializer;
+use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
-
-/// ContractManagement per-contract storage prefix (C# `ContractManagement.Prefix_Contract`).
-pub const CM_PREFIX_CONTRACT: u8 = 8;
-/// C# `NeoToken.Prefix_Committee` — the committee cache storage key prefix.
-pub const NEO_PREFIX_COMMITTEE: u8 = 14;
-/// C# `PolicyContract.Prefix_AttributeFee`.
-pub const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
 
 /// Hex-decodes a string of hex digits into a `Vec<u8>`. Panics on invalid
 /// input (caller is responsible for supplying a valid string).
@@ -63,16 +54,14 @@ pub fn committee_address(points: &[ECPoint]) -> UInt160 {
     UInt160::from_script(&script)
 }
 
-/// Stores `state` in `cache` under the `(ContractManagement, [CM_PREFIX_CONTRACT] ++ state.hash)` key,
+/// Stores `state` in `cache` under the ContractManagement per-contract key,
 /// matching the C# `ContractManagement.PutContractState` write path. Lets
 /// a native contract's test find its own contract state via the
 /// standard `lookup_contract_state` call rather than reimplementing the
 /// lookup.
 pub fn deploy_native(cache: &DataCache, state: &neo_execution::ContractState) {
-    let mut key = vec![CM_PREFIX_CONTRACT];
-    key.extend_from_slice(&state.hash.to_bytes());
     cache.add(
-        StorageKey::new(crate::ContractManagement::ID, key),
+        crate::ContractManagement::contract_storage_key(&state.hash),
         StorageItem::from_bytes(state.serialize_contract_record().expect("record bytes")),
     );
 }
@@ -93,7 +82,7 @@ pub fn seed_committee(cache: &DataCache, points: &[ECPoint]) {
     );
     let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default()).unwrap();
     cache.add(
-        StorageKey::new(crate::NeoToken::ID, vec![NEO_PREFIX_COMMITTEE]),
+        crate::NeoToken::committee_key(),
         StorageItem::from_bytes(bytes),
     );
 }

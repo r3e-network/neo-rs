@@ -14,7 +14,7 @@ readme.workspace = true
 description = "Canonical home for Neo's native contracts (NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, etc.) and the shared NativeContract infrastructure"
 
 [dependencies]
-# Foundation / VM layer
+# Lower protocol, execution, storage, and VM layers
 neo-primitives = { workspace = true }
 neo-error = { workspace = true }
 neo-io = { workspace = true }
