@@ -1,0 +1,30 @@
+use std::sync::Arc;
+
+use neo_config::ProtocolSettings;
+use neo_primitives::UInt256;
+
+pub(super) fn test_node() -> neo_system::Node {
+    neo_system::Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("node")
+}
+
+pub(super) fn seed_ledger_height(node: &neo_system::Node, height: u32) {
+    let pointer = neo_native_contracts::LedgerContract::new()
+        .serialize_hash_index_state(&UInt256::zero(), height)
+        .expect("serialize current ledger pointer");
+    let mut store = node.store_cache();
+    store.add(
+        neo_storage::StorageKey::new(neo_native_contracts::LedgerContract::ID, vec![12]),
+        neo_storage::StorageItem::from_bytes(pointer),
+    );
+    store.commit();
+}
+
+pub(super) fn indexed_service_at(height: u32) -> Arc<neo_indexer::IndexerService> {
+    let indexer = Arc::new(neo_indexer::IndexerService::new());
+    let mut header = neo_payloads::Header::new();
+    header.set_index(height);
+    indexer
+        .index_block(&neo_payloads::Block::from_parts(header, Vec::new()))
+        .expect("index block");
+    indexer
+}

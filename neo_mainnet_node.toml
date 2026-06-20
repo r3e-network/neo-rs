@@ -38,6 +38,26 @@ max_gas_invoke = 50000000
 max_iterator_results = 100
 disabled_methods = ["openwallet"]
 
+[indexer]
+enabled = true
+backfill_on_startup = true
+store_path = "./data/mainnet/indexer"
+
+[application_logs]
+enabled = true
+path = "./data/mainnet/application-logs"
+max_stack_size = 65535
+debug = false
+exception_policy = "Ignore"
+
+[tokens_tracker]
+enabled = true
+db_path = "./data/mainnet/tokens"
+track_history = true
+max_results = 1000
+enabled_trackers = ["NEP-17", "NEP-11"]
+exception_policy = "StopPlugin"
+
 [consensus]
 enabled = false
 auto_start = false
@@ -47,10 +67,33 @@ auto_start = false
 enabled = false
 port = 9090
 bind_address = "127.0.0.1"
+path = "/metrics"
+
+[observability]
+enabled = false
+service_name = "neo-node-mainnet"
+environment = "production"
+capture_panics = true
+request_timeout_ms = 5000
+heartbeat_interval_seconds = 60
+# [[observability.error_endpoints]]
+# kind = "google_error_reporting"
+# project_id = "your-gcp-project"
+# token_env = "GOOGLE_ERROR_REPORTING_TOKEN"
+# [[observability.error_endpoints]]
+# kind = "sentry"
+# url = "https://sentry.example.com/api/your-project-id/store/"
+# [observability.error_endpoints.headers_env]
+# X-Sentry-Auth = "SENTRY_AUTH_HEADER"
+# [[observability.heartbeat_endpoints]]
+# name = "better-stack"
+# url = "https://uptime.betterstack.com/api/v1/heartbeat/your-heartbeat-id"
+# method = "GET"
 
 [logging]
 level = "info"
 format = "json"
+console_output = true
 file_path = "./logs/neo-node-mainnet.log"
 max_file_size = "100MB"
 max_files = 10

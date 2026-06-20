@@ -1,17 +1,18 @@
-# Neo N3 TestNet Node Configuration
-# Professional development and testing configuration
+# Neo N3 TestNet Service Provider Configuration
+# Runs a durable RPC + NeoIndexer stack for NeoFura-style query workloads.
+# Bind public HTTPS/TLS at a reverse proxy and keep this daemon on localhost.
 
 [network]
-network_type = "testnet"  # Must be set for correct genesis block
-network_magic = 0x3554334E  # TestNet magic number
+network_type = "TestNet"
+network_magic = 0x3554334E
 
 [storage]
-path = "./data/testnet"
-Engine = "rocksdb"
+backend = "rocksdb"
+data_dir = "./data/testnet"
 read_only = false
 
 [p2p]
-listen_port = 20333
+port = 20333
 max_connections = 40
 min_desired_connections = 10
 max_connections_per_address = 3
@@ -33,8 +34,22 @@ bind_address = "127.0.0.1"
 cors_enabled = true
 auth_enabled = false
 max_gas_invoke = 50000000
-max_iterator_result_items = 100
-disabled_methods = []
+max_iterator_results = 100
+max_stack_size = 2048
+max_request_body_size = 4194304
+max_batch_size = 32
+max_concurrent_connections = 2048
+max_requests_per_second = 100
+rate_limit_burst = 200
+find_storage_page_size = 100
+keep_alive_timeout = 30
+request_headers_timeout = 10
+disabled_methods = ["openwallet"]
+
+[state_service]
+enabled = true
+full_state = true
+path = "./data/testnet/state-root-{0}"
 
 [indexer]
 enabled = true
@@ -56,28 +71,37 @@ max_results = 1000
 enabled_trackers = ["NEP-17", "NEP-11"]
 exception_policy = "StopPlugin"
 
-[dbft]
+[consensus]
 enabled = false
 auto_start = false
 
 [telemetry]
 [telemetry.metrics]
-enabled = false
-port = 9090
+enabled = true
+port = 9091
 bind_address = "127.0.0.1"
 path = "/metrics"
 
 [observability]
 enabled = false
-service_name = "neo-node-testnet"
+service_name = "neo-node-testnet-service"
 environment = "testnet"
 capture_panics = true
 request_timeout_ms = 5000
 heartbeat_interval_seconds = 60
 # [[observability.error_endpoints]]
+# kind = "better_stack_logs"
+# url = "https://in.logs.betterstack.com"
+# token_env = "BETTER_STACK_SOURCE_TOKEN"
+# [[observability.error_endpoints]]
 # kind = "google_error_reporting"
 # project_id = "your-gcp-project"
 # token_env = "GOOGLE_ERROR_REPORTING_TOKEN"
+# [[observability.error_endpoints]]
+# kind = "sentry"
+# url = "https://sentry.example.com/api/your-project-id/store/"
+# [observability.error_endpoints.headers_env]
+# X-Sentry-Auth = "SENTRY_AUTH_HEADER"
 # [[observability.heartbeat_endpoints]]
 # name = "better-stack"
 # url = "https://uptime.betterstack.com/api/v1/heartbeat/your-heartbeat-id"
@@ -85,12 +109,15 @@ heartbeat_interval_seconds = 60
 
 [logging]
 level = "info"
-format = "pretty"
+format = "json"
 console_output = true
-file_path = "./logs/neo-node-testnet.log"
+file_path = "./logs/neo-node-testnet-service.log"
 max_file_size = "50MB"
 max_files = 5
 
 [blockchain]
-block_time = 15000  # 15 seconds in milliseconds
+block_time = 15000
 max_transactions_per_block = 5000
+
+[mempool]
+max_transactions = 50000

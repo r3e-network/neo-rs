@@ -8,7 +8,7 @@ Standalone Neo N3 blockchain node daemon with built-in RPC server.
 - Synchronizes with the Neo network
 - Provides a JSON-RPC API for external clients
 - Manages the blockchain database
-- Supports built-in services (RpcServer, ApplicationLogs, TokensTracker, StateService when enabled). Consensus (dBFT) can be enabled via DBFTPlugin settings and a validator wallet.
+- Supports built-in services (RpcServer, NeoIndexer, ApplicationLogs, TokensTracker, StateService when enabled). Consensus (dBFT) can be enabled via DBFTPlugin settings and a validator wallet.
 
 ## Installation
 
@@ -73,6 +73,31 @@ enabled = true
 bind_address = "127.0.0.1"
 port = 10332
 
+[indexer]
+enabled = true
+store_path = "./data/mainnet/indexer"
+backfill_on_startup = true
+
+[application_logs]
+enabled = true
+path = "ApplicationLogs_{0}"
+
+[tokens_tracker]
+enabled = true
+db_path = "TokensTracker_{0}"
+enabled_trackers = ["NEP-17", "NEP-11"]
+
+[telemetry.metrics]
+enabled = true
+bind_address = "127.0.0.1"
+port = 9090
+path = "/metrics"
+
+[observability]
+enabled = false
+service_name = "neo-node-mainnet"
+environment = "production"
+
 [logging]
 active = true
 level = "info"
@@ -94,8 +119,11 @@ console_output = true
 │  ┌─────────────────────────────────────────────────────┐│
 │  │                    Plugins                          ││
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐   ││
-│  │  │ RpcServer  │  │ AppLogs    │  │ TokenTrack │   ││
+│  │  │ RpcServer  │  │ NeoIndexer │  │ AppLogs    │   ││
 │  │  └────────────┘  └────────────┘  └────────────┘   ││
+│  │  ┌────────────┐  ┌────────────┐                  ││
+│  │  │ TokenTrack │  │ StateRoot  │                  ││
+│  │  └────────────┘  └────────────┘                  ││
 │  └─────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────┘
                            │
