@@ -52,8 +52,8 @@ fn oracle_response_fee_sum_uses_csharp_unchecked_long_arithmetic() {
     tx.set_system_fee(i64::MAX);
     tx.set_network_fee(1);
 
-    assert!(oracle_response_gas_matches(&tx, i64::MIN));
-    assert!(!oracle_response_gas_matches(&tx, i64::MAX));
+    assert!(super::attributes::oracle_response_gas_matches(&tx, i64::MIN));
+    assert!(!super::attributes::oracle_response_gas_matches(&tx, i64::MAX));
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn max_valid_until_block_increment_uses_native_policy_reader() {
     let end = source[start..]
         .find("/// C# `NativeContract.GAS.BalanceOf")
         .map(|offset| start + offset)
-        .expect("next helper exists");
+        .expect("test module follows the helper");
     let reader = &source[start..end];
 
     assert!(reader.contains("get_max_valid_until_block_increment_snapshot"));
@@ -119,9 +119,9 @@ fn attribute_network_fee_delegates_to_payload_attribute_formula() {
         .find("fn attribute_network_fee")
         .expect("attribute fee helper exists");
     let end = source[start..]
-        .find("fn bft_address")
+        .find("#[cfg(test)]")
         .map(|offset| start + offset)
-        .expect("next helper exists");
+        .expect("test module follows the helper");
     let helper = &source[start..end];
 
     assert!(helper.contains("attribute.calculate_network_fee(snapshot, tx)"));
