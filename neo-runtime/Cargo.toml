@@ -11,21 +11,18 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Reth-style async service architecture for Neo (service traits, command channels, Node builder)"
+description = "Reth-style async service vocabulary for Neo (service traits, events, and shared errors)"
 
 [dependencies]
-# Foundation layer
+# Lower protocol / foundation layers
 neo-primitives = { workspace = true }
 neo-payloads = { workspace = true }
 
 # External
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 async-trait = { workspace = true }
-futures = { workspace = true }
-parking_lot = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 
 [lints]
 workspace = true

@@ -75,11 +75,17 @@ impl WriteBatchStats {
 /// Snapshot of write batch statistics.
 #[derive(Debug, Clone, Copy)]
 pub struct WriteBatchStatsSnapshot {
+    /// Number of write batches flushed to RocksDB.
     pub batches_flushed: u64,
+    /// Number of individual put/delete operations written.
     pub operations_written: u64,
+    /// Approximate payload bytes written through the batch buffer.
     pub bytes_written: u64,
+    /// Cumulative time spent flushing batches.
     pub total_flush_duration_ms: u64,
+    /// Number of flush attempts that timed out.
     pub flush_timeouts: u64,
+    /// Number of operations currently buffered but not yet flushed.
     pub pending_operations: usize,
 }
 

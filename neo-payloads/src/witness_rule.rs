@@ -30,6 +30,7 @@
 use neo_io::serializable::helper::SerializeHelper;
 
 mod display;
+/// Constructors and parsing helpers for witness conditions and rules.
 pub mod helpers;
 mod json;
 mod serialization;
@@ -49,23 +50,47 @@ mod tests;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessCondition {
     /// Boolean condition with a fixed value.
-    Boolean { value: bool },
+    Boolean {
+        /// Fixed boolean result for this condition.
+        value: bool,
+    },
     /// Not condition that negates another condition.
-    Not { condition: Box<WitnessCondition> },
+    Not {
+        /// Condition whose result is negated.
+        condition: Box<WitnessCondition>,
+    },
     /// And condition that requires all sub-conditions to be true.
-    And { conditions: Vec<WitnessCondition> },
+    And {
+        /// Conditions that must all evaluate to true.
+        conditions: Vec<WitnessCondition>,
+    },
     /// Or condition that requires at least one sub-condition to be true.
-    Or { conditions: Vec<WitnessCondition> },
+    Or {
+        /// Conditions where at least one must evaluate to true.
+        conditions: Vec<WitnessCondition>,
+    },
     /// Script hash condition that checks if the current script hash matches.
-    ScriptHash { hash: neo_primitives::UInt160 },
+    ScriptHash {
+        /// Script hash to compare with the current script.
+        hash: neo_primitives::UInt160,
+    },
     /// Group condition that checks if the current group matches.
-    Group { group: Vec<u8> }, // ECPoint serialized as bytes (matches C# ECPoint exactly)
+    Group {
+        /// Compressed secp256r1 ECPoint bytes identifying the group.
+        group: Vec<u8>,
+    },
     /// Called by entry condition.
     CalledByEntry,
     /// Called by contract condition that checks if called by a specific contract.
-    CalledByContract { hash: neo_primitives::UInt160 },
+    CalledByContract {
+        /// Calling contract script hash.
+        hash: neo_primitives::UInt160,
+    },
     /// Called by group condition that checks if called by a specific group.
-    CalledByGroup { group: Vec<u8> }, // ECPoint serialized as bytes (matches C# ECPoint exactly)
+    CalledByGroup {
+        /// Compressed secp256r1 ECPoint bytes identifying the calling group.
+        group: Vec<u8>,
+    },
 }
 
 /// Size of UInt160 in bytes (matches C# UInt160.Length).
@@ -164,6 +189,7 @@ impl WitnessRule {
         self.condition.is_valid(WitnessCondition::MAX_NESTING_DEPTH)
     }
 
+    /// Calculates the serialized size of the rule.
     pub fn size(&self) -> usize {
         1 + self.condition.size()
     }

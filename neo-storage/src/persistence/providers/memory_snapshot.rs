@@ -10,6 +10,7 @@ use std::sync::Arc;
 /// On-chain write operations on a snapshot cannot be concurrent.
 type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
 
+/// Point-in-time snapshot over an in-memory store.
 pub struct MemorySnapshot {
     store: Arc<dyn Store>,
     immutable_data: BTreeMap<Vec<u8>, Vec<u8>>,

@@ -8,27 +8,30 @@
 //!
 //! ## Layering
 //!
-//! Sits in Layer 0 (foundation). Depends only on `neo-primitives` (for
-//! `PrimitiveError`) and `thiserror`. No other `neo-*` dependency.
+//! Sits in the infrastructure layer, directly above `neo-primitives` and
+//! `neo-io`. It depends on `neo-primitives` for `PrimitiveError` conversion and
+//! on `neo-io` for `IoError` conversion, but must not depend on storage,
+//! execution, networking, RPC, or node-composition crates.
 //!
-//! ## Why a foundation crate
+//! ## Why a low-level error crate
 //!
-//! A foundation crate is the right home for the error type because every
-//! layer above it needs to talk about errors, and pulling an error enum
-//! from a service-layer crate (for example the blockchain service) into a
-//! primitive crate (e.g. `neo-primitives` or `neo-io`) would invert the
-//! dependency order. Putting `CoreError` in its own `neo-error` crate
-//! keeps the layering clean and matches the polkadot-sdk and reth
-//! convention of a top-level `errors` / `error` crate.
+//! A low infrastructure crate is the right home for the error type because
+//! every higher layer needs to talk about errors, and pulling an error enum from
+//! a service-layer crate (for example the blockchain service) into
+//! infrastructure crates would invert the dependency order. Putting
+//! `CoreError` in its own `neo-error` crate keeps the layering clean and
+//! matches the polkadot-sdk and reth convention of a top-level `errors` /
+//! `error` crate.
 //!
 //! ## Cross-crate `From` impls
 //!
 //! This crate is the *only* place that may implement `From<X> for CoreError`
-//! for an external type `X`. Add new impls here when you need to lift a
-//! lower-layer error into `CoreError`; lower-layer crates must not depend
-//! on `neo-error` and so cannot add their own.
+//! for a lower-layer or external type `X`. Add new impls here when you need to
+//! lift a lower-layer error into `CoreError`; higher-layer crates must implement
+//! their local conversions in their own crate so `neo-error` does not grow
+//! upward dependencies.
 
-#![doc(html_root_url = "https://docs.rs/neo-error/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-error/0.8.0")]
 
 pub mod error;
 

@@ -237,7 +237,7 @@ mod tests {
         let expected = notification.to_stack_value().unwrap();
 
         assert_eq!(
-            Interoperable::to_stack_value(notification).unwrap(),
+            Interoperable::to_stack_value(&notification).unwrap(),
             expected
         );
     }

@@ -25,6 +25,7 @@ impl ApplicationEngine {
         }
     }
 
+    /// Creates a new application engine using an owned optional persisting block.
     pub fn new(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
@@ -45,6 +46,7 @@ impl ApplicationEngine {
         )
     }
 
+    /// Creates a new application engine using a shared optional persisting block.
     pub fn new_with_shared_block(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
@@ -120,6 +122,7 @@ impl ApplicationEngine {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Creates a new engine with preloaded native contract state and cache.
     pub fn new_with_preloaded_native(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
@@ -407,7 +410,9 @@ impl ApplicationEngine {
             .as_deref()
             .map(|block| block.header.timestamp())
             .ok_or_else(|| {
-                CoreError::other("GetTime requires a persisting block (no persisting block on this engine)")
+                CoreError::other(
+                    "GetTime requires a persisting block (no persisting block on this engine)",
+                )
             })
     }
 
@@ -456,6 +461,7 @@ impl ApplicationEngine {
     }
 
     #[must_use]
+    /// Returns the raw execution fee factor cached from the Policy contract.
     pub const fn exec_fee_factor_raw(&self) -> u32 {
         self.exec_fee_factor
     }
@@ -465,10 +471,12 @@ impl ApplicationEngine {
         self.storage_price
     }
 
+    /// Returns the VM fault exception message, if execution has faulted.
     pub fn fault_exception(&self) -> Option<&str> {
         self.fault_exception.as_deref()
     }
 
+    /// Returns the VM result stack.
     pub fn result_stack(&self) -> &EvaluationStack {
         self.vm_engine.engine().result_stack()
     }
@@ -482,18 +490,22 @@ impl ApplicationEngine {
             .map(|ctx| ctx.evaluation_stack())
     }
 
+    /// Returns the protocol settings used by this engine.
     pub fn protocol_settings(&self) -> &ProtocolSettings {
         &self.protocol_settings
     }
 
+    /// Returns the script container associated with this execution, if any.
     pub fn script_container(&self) -> Option<&Arc<dyn Verifiable>> {
         self.script_container.as_ref()
     }
 
+    /// Returns the VM execution limits active for this engine.
     pub fn execution_limits(&self) -> &ExecutionEngineLimits {
         self.vm_engine.engine().limits()
     }
 
+    /// Returns a display name for a deployed or native contract hash.
     pub fn contract_display_name(&self, hash: &UInt160) -> Option<String> {
         if let Some(contract) = self.contracts.get(hash) {
             return Some(contract.manifest.name.clone());
@@ -509,6 +521,7 @@ impl ApplicationEngine {
         self.native_registry.is_native(hash)
     }
 
+    /// Records a log event emitted by runtime interop.
     pub fn push_log(&mut self, event: LogEventArgs) {
         // The runtime context is type-erased; downcasting is not done here.
         // Callers that want log notification can iterate `logs()` after
@@ -517,12 +530,14 @@ impl ApplicationEngine {
         self.logs.push(event);
     }
 
+    /// Records a notification event emitted by runtime interop.
     pub fn push_notification(&mut self, event: NotifyEventArgs) {
         // See `push_log` — runtime context is type-erased.
         let _ = self.runtime_context.as_ref();
         self.notifications.push(event);
     }
 
+    /// Returns all notification events emitted during execution.
     pub fn notifications(&self) -> &[NotifyEventArgs] {
         &self.notifications
     }
@@ -537,6 +552,7 @@ impl ApplicationEngine {
         self.runtime_context = context;
     }
 
+    /// Returns how many times a script hash has been invoked in this engine.
     pub fn get_invocation_counter(&self, script_hash: &UInt160) -> u32 {
         self.invocation_counter
             .get(script_hash)
@@ -558,10 +574,12 @@ impl ApplicationEngine {
         Arc::clone(&self.native_contract_cache)
     }
 
+    /// Returns a shared handle to the native-contract cache.
     pub fn native_contract_cache_handle(&self) -> Arc<Mutex<NativeContractsCache>> {
         Arc::clone(&self.native_contract_cache)
     }
 
+    /// Returns a cloned snapshot of contract states known to this engine.
     pub fn contracts_snapshot(&self) -> HashMap<UInt160, ContractState> {
         self.contracts.clone()
     }
@@ -626,312 +644,4 @@ impl ApplicationEngine {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use neo_vm_rs::OpCode;
-
-    fn handler_id(table: &JumpTable, opcode: OpCode) -> usize {
-        table
-            .get(opcode)
-            .expect("opcode handler should be registered") as usize
-    }
-
-    fn registered_services(engine: &ApplicationEngine) -> Vec<(String, i64, u8)> {
-        let mut services: Vec<_> = engine
-            .host_syscall_registrations
-            .iter()
-            .map(|(name, price, flags)| (name.clone(), *price, flags.bits()))
-            .collect();
-        services.sort();
-        services
-    }
-
-    #[test]
-    fn echidna_selects_default_jump_table_like_csharp_v3100() {
-        let mut settings = ProtocolSettings::default();
-        settings.hardforks.clear();
-        settings.hardforks.insert(Hardfork::HfEchidna, 0);
-        let snapshot = DataCache::new(false);
-
-        let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot);
-        let default = JumpTable::default();
-
-        for opcode in [OpCode::SHL, OpCode::SHR, OpCode::HASKEY, OpCode::PICKITEM] {
-            assert_eq!(
-                handler_id(&selected, opcode),
-                handler_id(&default, opcode),
-                "{opcode:?} should use the default post-Echidna handler"
-            );
-        }
-    }
-
-    fn expected_base_services() -> Vec<(String, i64, u8)> {
-        let mut services = vec![
-            (
-                "System.Contract.Call".to_string(),
-                1 << 15,
-                (CallFlags::READ_STATES | CallFlags::ALLOW_CALL).bits(),
-            ),
-            (
-                "System.Contract.CallNative".to_string(),
-                0,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Contract.CreateMultisigAccount".to_string(),
-                0,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Contract.CreateStandardAccount".to_string(),
-                0,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Contract.GetCallFlags".to_string(),
-                1 << 10,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Contract.NativeOnPersist".to_string(),
-                0,
-                CallFlags::STATES.bits(),
-            ),
-            (
-                "System.Contract.NativePostPersist".to_string(),
-                0,
-                CallFlags::STATES.bits(),
-            ),
-            (
-                "System.Crypto.CheckMultisig".to_string(),
-                0,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Crypto.CheckSig".to_string(),
-                1 << 15,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Iterator.Next".to_string(),
-                1 << 15,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Iterator.Value".to_string(),
-                1 << 4,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.BurnGas".to_string(),
-                1 << 4,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.CheckWitness".to_string(),
-                1 << 10,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.CurrentSigners".to_string(),
-                1 << 4,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GasLeft".to_string(),
-                1 << 4,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetAddressVersion".to_string(),
-                1 << 3,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetCallingScriptHash".to_string(),
-                1 << 4,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetEntryScriptHash".to_string(),
-                1 << 4,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetExecutingScriptHash".to_string(),
-                1 << 4,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetInvocationCounter".to_string(),
-                1 << 4,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetNetwork".to_string(),
-                1 << 3,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetNotifications".to_string(),
-                1 << 12,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetRandom".to_string(),
-                0,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetScriptContainer".to_string(),
-                1 << 3,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetTime".to_string(),
-                1 << 3,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.GetTrigger".to_string(),
-                1 << 3,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Runtime.LoadScript".to_string(),
-                1 << 15,
-                CallFlags::ALLOW_CALL.bits(),
-            ),
-            (
-                "System.Runtime.Log".to_string(),
-                1 << 15,
-                CallFlags::ALLOW_NOTIFY.bits(),
-            ),
-            (
-                "System.Runtime.Notify".to_string(),
-                1 << 15,
-                CallFlags::ALLOW_NOTIFY.bits(),
-            ),
-            (
-                "System.Runtime.Platform".to_string(),
-                1 << 3,
-                CallFlags::NONE.bits(),
-            ),
-            (
-                "System.Storage.AsReadOnly".to_string(),
-                1 << 4,
-                CallFlags::READ_STATES.bits(),
-            ),
-            (
-                "System.Storage.Delete".to_string(),
-                1 << 15,
-                CallFlags::WRITE_STATES.bits(),
-            ),
-            (
-                "System.Storage.Find".to_string(),
-                1 << 15,
-                CallFlags::READ_STATES.bits(),
-            ),
-            (
-                "System.Storage.Get".to_string(),
-                1 << 15,
-                CallFlags::READ_STATES.bits(),
-            ),
-            (
-                "System.Storage.GetContext".to_string(),
-                1 << 4,
-                CallFlags::READ_STATES.bits(),
-            ),
-            (
-                "System.Storage.GetReadOnlyContext".to_string(),
-                1 << 4,
-                CallFlags::READ_STATES.bits(),
-            ),
-            (
-                "System.Storage.Put".to_string(),
-                1 << 15,
-                CallFlags::WRITE_STATES.bits(),
-            ),
-        ];
-        services.sort();
-        services
-    }
-
-    fn expected_faun_services() -> Vec<(String, i64, u8)> {
-        let mut services = expected_base_services();
-        services.extend([
-            (
-                "System.Storage.Local.Delete".to_string(),
-                1 << 15,
-                CallFlags::WRITE_STATES.bits(),
-            ),
-            (
-                "System.Storage.Local.Find".to_string(),
-                1 << 15,
-                CallFlags::READ_STATES.bits(),
-            ),
-            (
-                "System.Storage.Local.Get".to_string(),
-                1 << 15,
-                CallFlags::READ_STATES.bits(),
-            ),
-            (
-                "System.Storage.Local.Put".to_string(),
-                1 << 15,
-                CallFlags::WRITE_STATES.bits(),
-            ),
-        ]);
-        services.sort();
-        services
-    }
-
-    fn engine_with_settings(settings: ProtocolSettings) -> ApplicationEngine {
-        ApplicationEngine::new(
-            TriggerType::Application,
-            None,
-            Arc::new(DataCache::new(false)),
-            None,
-            settings,
-            TEST_MODE_GAS,
-            None,
-        )
-        .expect("application engine")
-    }
-
-    fn engine_with_settings_at_block(
-        settings: ProtocolSettings,
-        block_index: u32,
-    ) -> ApplicationEngine {
-        let mut block = Block::new();
-        block.header.set_index(block_index);
-        ApplicationEngine::new(
-            TriggerType::Application,
-            None,
-            Arc::new(DataCache::new(false)),
-            Some(block),
-            settings,
-            TEST_MODE_GAS,
-            None,
-        )
-        .expect("application engine")
-    }
-
-    #[test]
-    fn interop_registry_matches_csharp_v3100_before_faun() {
-        let engine = engine_with_settings_at_block(ProtocolSettings::default(), 0);
-
-        assert_eq!(registered_services(&engine), expected_base_services());
-    }
-
-    #[test]
-    fn interop_registry_matches_csharp_v3100_from_faun() {
-        let mut settings = ProtocolSettings::default();
-        for hardfork in Hardfork::all() {
-            settings.hardforks.insert(hardfork, 0);
-        }
-
-        let engine = engine_with_settings(settings);
-
-        assert_eq!(registered_services(&engine), expected_faun_services());
-    }
-}
+mod tests;

@@ -96,6 +96,7 @@ impl ApplicationEngine {
         self.add_fee_pico(pico_gas)
     }
 
+    /// Charges an execution fee in datoshi.
     pub fn charge_execution_fee(&mut self, fee: u64) -> CoreResult<()> {
         self.add_fee_datoshi(
             i64::try_from(fee)
@@ -282,6 +283,7 @@ impl ApplicationEngine {
         Ok(result)
     }
 
+    /// Runs `on_persist` for every active native contract.
     pub fn native_on_persist(&mut self) -> CoreResult<()> {
         if self.trigger != TriggerType::OnPersist {
             return Err(CoreError::invalid_operation(
@@ -347,6 +349,7 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Runs `post_persist` for every active native contract.
     pub fn native_post_persist(&mut self) -> CoreResult<()> {
         if self.trigger != TriggerType::PostPersist {
             return Err(CoreError::invalid_operation(

@@ -1,3 +1,5 @@
+//! Integration coverage for Neo JSON token and serializer modules.
+
 #[path = "json_jarray_tests.rs"]
 mod jarray_tests;
 #[path = "json_jobject_tests.rs"]

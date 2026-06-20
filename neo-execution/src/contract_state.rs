@@ -27,7 +27,6 @@ use neo_error::{CoreError, CoreResult};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_manifest::{ContractManifest, NefFile};
 use neo_primitives::UInt160;
-use neo_vm::StackItem;
 use neo_vm_rs::{OpCode, StackValue};
 use num_traits::ToPrimitive;
 use serde_json::{Value, json};
@@ -205,6 +204,7 @@ impl Interoperable for ContractState {
 }
 
 impl ContractState {
+    /// Converts the contract state into the persisted VM stack-value shape.
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
             0,
@@ -218,6 +218,7 @@ impl ContractState {
         )
     }
 
+    /// Updates this contract state from the persisted VM stack-value shape.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = match stack_value {
             StackValue::Array(0, items) => items,
@@ -308,6 +309,7 @@ impl Serializable for ContractState {
 mod tests {
     use super::*;
     use neo_manifest::ContractManifest;
+    use neo_vm::StackItem;
     use neo_vm_rs::StackValue;
 
     #[test]

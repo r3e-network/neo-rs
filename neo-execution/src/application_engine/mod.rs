@@ -124,11 +124,17 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+/// GAS limit used for test-mode invocations, in datoshi.
 pub const TEST_MODE_GAS: i64 = 20_000_000_000;
+/// Maximum native/runtime event name length.
 pub const MAX_EVENT_NAME: usize = 32;
+/// Maximum serialized notification payload size.
 pub const MAX_NOTIFICATION_SIZE: usize = 1024;
+/// Maximum number of notifications emitted by one engine execution.
 pub const MAX_NOTIFICATION_COUNT: usize = 512;
+/// Execution fee charged for signature verification after Aspidochelone.
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
+/// PicoGAS-to-datoshi fee scale factor used by C# `ApplicationEngine`.
 pub const FEE_FACTOR: i64 = 10000;
 
 type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
@@ -211,6 +217,7 @@ struct PendingNativeCall {
     args: Vec<StackItem>,
 }
 
+/// Neo N3 application engine that hosts VM execution, syscalls, and native contracts.
 pub struct ApplicationEngine {
     trigger: TriggerType,
     script_container: Option<Arc<dyn Verifiable>>,

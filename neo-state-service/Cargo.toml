@@ -19,18 +19,15 @@ neo-storage = { workspace = true }
 neo-payloads = { workspace = true }
 neo-crypto = { workspace = true }
 neo-error = { workspace = true }
-neo-config = { workspace = true }
 neo-io = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
+serde = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
-thiserror = { workspace = true }
 lru = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
-neo-vm-rs = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

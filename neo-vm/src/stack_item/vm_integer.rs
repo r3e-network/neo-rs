@@ -14,11 +14,14 @@ use num_traits::{ToPrimitive, Zero};
 /// VM integer that avoids heap allocation for values fitting in i64.
 #[derive(Debug, Clone)]
 pub enum VmInteger {
+    /// Integer value that fits in a machine `i64` without heap allocation.
     Small(i64),
+    /// Arbitrary-precision integer used when the value exceeds `i64`.
     Large(BigInt),
 }
 
 impl VmInteger {
+    /// Creates a VM integer, storing it inline when it fits in `i64`.
     #[inline]
     pub fn from_bigint(value: BigInt) -> Self {
         match value.to_i64() {
@@ -27,6 +30,7 @@ impl VmInteger {
         }
     }
 
+    /// Returns the value as an owned arbitrary-precision integer.
     #[inline]
     pub fn to_bigint(&self) -> BigInt {
         match self {
@@ -35,6 +39,7 @@ impl VmInteger {
         }
     }
 
+    /// Consumes the VM integer and returns its arbitrary-precision value.
     #[inline]
     pub fn into_bigint(self) -> BigInt {
         match self {
@@ -43,6 +48,7 @@ impl VmInteger {
         }
     }
 
+    /// Returns `true` when the integer is exactly zero.
     #[inline]
     pub fn is_zero(&self) -> bool {
         match self {
@@ -51,6 +57,7 @@ impl VmInteger {
         }
     }
 
+    /// Returns `true` when the integer is exactly one.
     #[inline]
     pub fn is_one(&self) -> bool {
         match self {
@@ -59,6 +66,7 @@ impl VmInteger {
         }
     }
 
+    /// Returns `true` when the integer is greater than zero.
     #[inline]
     pub fn is_positive(&self) -> bool {
         match self {
@@ -67,6 +75,7 @@ impl VmInteger {
         }
     }
 
+    /// Returns `true` when the integer is less than zero.
     #[inline]
     pub fn is_negative(&self) -> bool {
         match self {
@@ -75,10 +84,12 @@ impl VmInteger {
         }
     }
 
+    /// Encodes the integer as signed little-endian two's-complement bytes.
     pub fn to_signed_bytes_le(&self) -> Vec<u8> {
         self.to_bigint().to_signed_bytes_le()
     }
 
+    /// Returns the value as `i64` when it fits.
     pub fn to_i64(&self) -> Option<i64> {
         match self {
             Self::Small(v) => Some(*v),
@@ -86,6 +97,7 @@ impl VmInteger {
         }
     }
 
+    /// Returns the numeric sign of the integer.
     pub fn sign(&self) -> num_bigint::Sign {
         match self {
             Self::Small(v) if *v > 0 => num_bigint::Sign::Plus,
@@ -95,6 +107,7 @@ impl VmInteger {
         }
     }
 
+    /// Converts the integer to the compact `neo-vm-rs` stack-value form.
     #[inline]
     pub fn vm_integer_stack_value(&self) -> StackValue {
         match self.to_i64() {

@@ -1,19 +1,15 @@
-//! Placeholder outcome / payload types shared by the reth-style services.
+//! Outcome / payload types shared by the service traits.
 //!
-//! The execution, validation, and network-event payloads in the runtime
-//! service traits are deliberately *minimal* in this stage. The full
-//! per-block execution result (logs, notifications, GAS consumed, state
-//! root) will be sourced from `neo-execution` once those concrete
-//! implementations land in later stages. Defining the placeholder types
-//! here keeps the service traits stable while the real data flows in:
-//! the trait signatures will not change, only the bodies of the
-//! `ExecutionOutcome` / `ExecutionPayload` / `ValidationResult` structs.
+//! The execution, validation, and network-event payloads in this crate are
+//! deliberately compact service-boundary DTOs. Rich per-subsystem details
+//! remain in concrete implementation crates such as `neo-execution`,
+//! `neo-blockchain`, and `neo-network`; this crate carries only the fields
+//! that cross trait-object boundaries.
 //!
 //! `NetworkEvent` is a sealed-style sum type covering the events a
 //! `NetworkService` is expected to broadcast on its `broadcast::Sender`.
-//! Concrete `neo-network` work in a later stage will replace the inner
-//! fields with the canonical network-event types from `neo-network::wire` /
-//! `neo-payloads`.
+//! Concrete `neo-network` code translates its richer internal events into
+//! these stable runtime events before broadcasting across the service layer.
 
 use std::net::SocketAddr;
 
@@ -23,11 +19,10 @@ use serde::{Deserialize, Serialize};
 /// Result of executing a block via the [`crate::NeoEngine`] /
 /// [`crate::BlockExecutor`] services.
 ///
-/// In the steady state this will be sourced from `neo-execution` and carry
-/// the per-block GAS consumed, state-root delta, and the emitted
-/// `ApplicationExecuted` log. For Stage A it is a struct holding the block
-/// hash and a placeholder `ok` flag so the service trait signatures are
-/// usable end-to-end.
+/// This is the compact summary returned across runtime service boundaries.
+/// Rich execution artifacts such as `ApplicationExecuted` records stay in
+/// `neo-execution` / `neo-blockchain`, while callers here receive the block
+/// identity, success flag, and total GAS consumed.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionOutcome {
     /// Hash of the block the outcome corresponds to.
@@ -36,8 +31,7 @@ pub struct ExecutionOutcome {
     pub block_height: u32,
     /// `true` when the block executed without a VM fault.
     pub ok: bool,
-    /// Total GAS consumed by the block (placeholder; populated by the
-    /// concrete engine implementation in a later stage).
+    /// Total GAS consumed by the block.
     pub gas_consumed: u64,
 }
 
@@ -67,9 +61,9 @@ impl ExecutionOutcome {
 ///
 /// In reth this is the typed return value of `engine_executePayload`; in
 /// neo-rs it is the analogous blob returned by [`crate::NeoEngine::execute_block`].
-/// For Stage A the payload is just an `ExecutionOutcome`; future stages
-/// will extend it with the raw execution notifications and the post-state
-/// root.
+/// The payload currently wraps the compact [`ExecutionOutcome`]. Raw
+/// execution notifications and state-root artifacts remain owned by the
+/// concrete execution and blockchain crates.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionPayload {
     /// The execution outcome for the block.
@@ -120,8 +114,7 @@ impl ValidationResult {
 pub enum NetworkEvent {
     /// A new peer has joined the connected set.
     PeerConnected {
-        /// Stable identifier for the peer (currently a placeholder string
-        /// until `neo-network::wire` defines a peer-id type).
+        /// Stable identifier for the peer as exposed by the network service.
         peer_id: String,
         /// Reported endpoint of the peer, mirroring the
         /// `Remote.Address` / `ListenerTcpPort` pair C#'s

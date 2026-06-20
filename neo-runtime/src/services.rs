@@ -4,8 +4,8 @@
 //! stack, consensus, engine API, blockchain orchestrator) is modelled as
 //! an `async_trait` *service*. A service is a `Send + Sync` value that
 //! exposes its capabilities as plain `async fn`s on a trait object
-//! (`Arc<dyn ServiceTrait>`). The concrete node that wires these services
-//! together lives in `neo-system` (`neo_system::Node`).
+//! (`Arc<dyn ServiceTrait>`). Concrete composition lives above this crate in
+//! `neo-system` and the runnable `neo-node` daemon.
 //!
 //! The choice of trait objects (vs. generics) is deliberate: it matches
 //! the reth convention, makes each service cheap to clone behind an
@@ -16,8 +16,8 @@
 //!
 //! The transaction pool is intentionally *not* modelled as a service
 //! trait here: the concrete mempool (`neo-mempool`) is reached through
-//! the transaction-router handle on `neo_system::Node`, not an
-//! `Arc<dyn MempoolService>`.
+//! the blockchain/node-service wiring rather than an
+//! `Arc<dyn MempoolService>` vocabulary type.
 //!
 //! ## Pattern cheat-sheet
 //!

@@ -14,14 +14,20 @@
 //!
 //! Mirrors the C# `StateService.Storage.StateStore` shape.
 
-use crate::mpt_store::MptStore;
+use crate::mpt_store::{MptChange, MptStore};
 use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::MptResult;
 use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
+use neo_storage::{DataCache, TrackState};
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
+
+/// C# `NativeContract.Ledger.Id`. Ledger native-contract bookkeeping is
+/// excluded from the StateService MPT just like the C# plugin's
+/// `Blockchain_Committing_Handler` filter.
+const LEDGER_CONTRACT_ID: i32 = -4;
 
 /// The kind of [`StateStore`] record a [`StateStore::get_state_root`]
 /// query should return.
@@ -114,6 +120,45 @@ impl StateStore {
     /// Returns the persisted MPT backend, if this store maintains one.
     pub fn mpt(&self) -> Option<Arc<MptStore>> {
         self.mpt.clone()
+    }
+
+    /// Applies the storage changes tracked in `snapshot` to the persisted MPT
+    /// backend and records the local state root for `block_index`.
+    ///
+    /// Returns `Ok(None)` when this store has no MPT backend. The conversion
+    /// mirrors C# `StateService.StatePlugin.Blockchain_Committing_Handler`:
+    /// skip Ledger native-contract records, ignore `TrackState.None`, write
+    /// added/changed items, and delete removed items.
+    pub fn apply_snapshot_changes(
+        &self,
+        block_index: u32,
+        snapshot: &DataCache,
+    ) -> MptResult<Option<UInt256>> {
+        let Some(mpt) = self.mpt.as_ref() else {
+            return Ok(None);
+        };
+        let root_before = mpt.current_local_root_hash();
+        let changes = Self::mpt_changes_from_snapshot(snapshot);
+        mpt.apply_block_changes(block_index, root_before, &changes)
+            .map(Some)
+    }
+
+    fn mpt_changes_from_snapshot(snapshot: &DataCache) -> Vec<MptChange> {
+        snapshot
+            .tracked_items()
+            .into_iter()
+            .filter(|(key, _)| key.id() != LEDGER_CONTRACT_ID)
+            .filter_map(|(key, trackable)| match trackable.state {
+                TrackState::Added | TrackState::Changed => Some(MptChange::Put {
+                    key: key.to_array(),
+                    value: trackable.item.value_bytes().into_owned(),
+                }),
+                TrackState::Deleted => Some(MptChange::Delete {
+                    key: key.to_array(),
+                }),
+                TrackState::None | TrackState::NotFound => None,
+            })
+            .collect()
     }
 
     /// Returns the number of state roots currently in the store.
@@ -210,6 +255,7 @@ impl Clone for StateStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_storage::{StorageItem, StorageKey};
 
     fn root(index: u32, byte: u8) -> StateRoot {
         StateRoot::new_current(index, UInt256::from([byte; 32]))
@@ -280,5 +326,54 @@ mod tests {
         tx.commit(&[r]);
 
         assert_eq!(store.candidate_count(), 0);
+    }
+
+    #[test]
+    fn mpt_changes_filter_ledger_and_project_track_states() {
+        let snapshot = DataCache::new(false);
+        let changed_key = StorageKey::new(5, vec![0xAA]);
+        let deleted_key = StorageKey::new(6, vec![0xBB]);
+        let ledger_key = StorageKey::new(LEDGER_CONTRACT_ID, vec![0xCC]);
+
+        snapshot.add(deleted_key.clone(), StorageItem::from_bytes(vec![0x00]));
+        snapshot.commit();
+        snapshot.add(changed_key.clone(), StorageItem::from_bytes(vec![0x01]));
+        snapshot.delete(&deleted_key);
+        snapshot.add(ledger_key, StorageItem::from_bytes(vec![0x02]));
+
+        let changes = StateStore::mpt_changes_from_snapshot(&snapshot);
+        assert_eq!(changes.len(), 2);
+        assert!(changes.contains(&MptChange::Put {
+            key: changed_key.to_array(),
+            value: vec![0x01],
+        }));
+        assert!(changes.contains(&MptChange::Delete {
+            key: deleted_key.to_array(),
+        }));
+    }
+
+    #[test]
+    fn apply_snapshot_changes_updates_mpt_when_backend_exists() {
+        let store = StateStore::with_mpt(false);
+        let snapshot = DataCache::new(false);
+        snapshot.add(
+            StorageKey::new(5, vec![0xAA]),
+            StorageItem::from_bytes(vec![0x01]),
+        );
+
+        let root = store
+            .apply_snapshot_changes(1, &snapshot)
+            .expect("MPT apply succeeds")
+            .expect("MPT backend returns a root");
+        let mpt = store.mpt().expect("MPT backend");
+        assert_eq!(mpt.current_local_root_hash(), Some(root));
+        assert!(mpt.get_state_root(1).is_some());
+    }
+
+    #[test]
+    fn apply_snapshot_changes_is_noop_without_mpt_backend() {
+        let store = StateStore::new();
+        let snapshot = DataCache::new(false);
+        assert_eq!(store.apply_snapshot_changes(1, &snapshot).unwrap(), None);
     }
 }

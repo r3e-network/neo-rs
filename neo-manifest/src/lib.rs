@@ -37,7 +37,7 @@
 //! the `Interoperable` trait to a foundation-layer crate and then
 //! extract the manifest types from `neo-core` into this crate.
 
-#![doc(html_root_url = "https://docs.rs/neo-manifest/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-manifest/0.8.0")]
 
 pub mod call_flags;
 pub mod manifest;

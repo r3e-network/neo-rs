@@ -62,7 +62,7 @@
 //! | `NotifyEventArgs` | `notify_event_args` |
 //! | `TransactionState` | `transaction_state` |
 
-#![doc(html_root_url = "https://docs.rs/neo-payloads/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-payloads/0.8.0")]
 
 // ── P2P wire payload types (relocated from neo-p2p) ───────────────────
 

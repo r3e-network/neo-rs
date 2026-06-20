@@ -22,7 +22,7 @@ neo-io = { workspace = true }
 neo-vm-rs = { workspace = true }
 
 # Async runtime
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 
 # Serialization
 serde = { workspace = true }

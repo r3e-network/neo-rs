@@ -24,19 +24,19 @@
 //!
 //! ## Layering
 //!
-//! Sits in **Layer 2 (service)**. Depends on:
+//! Sits in **Layer 3 (Domain services)**. Depends on:
 //!
-//! - `neo-payloads` (Layer 1) — for the `Transaction` data type.
+//! - `neo-payloads` (Layer 2) — for the `Transaction` data type.
 //! - `neo-storage` (Layer 1) — for the `DataCache` used during
 //!   state-dependent verification.
-//! - `neo-execution` (Layer 1) — for `ApplicationEngine` used during
-//!   witness verification (via the mempool's reverify path).
-//! - `neo-config` (Layer 0) — for `ProtocolSettings`.
+//! - `neo-execution` / `neo-native-contracts` (Layer 3) — for native state
+//!   readers and verification helpers used during transaction admission.
+//! - `neo-config` (Layer 1) — for `ProtocolSettings`.
 //!
-//! Must **not** depend on `neo-core` (deleted), `neo-network`
-//! (Layer 2), or any stateful runtime crate.
+//! Must **not** depend on `neo-network` (Layer 4), `neo-system` (Layer 5), or
+//! any plugin/RPC/application crate.
 
-#![doc(html_root_url = "https://docs.rs/neo-mempool/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-mempool/0.8.0")]
 
 pub mod memory_pool;
 pub mod new_transaction_event_args;

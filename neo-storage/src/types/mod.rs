@@ -6,9 +6,13 @@
 //! - `SeekDirection`: Direction for storage iteration
 //! - `TrackState`: Cache tracking states for storage entries
 
+/// Storage iteration direction.
 pub mod seek;
+/// Value stored in contract storage.
 pub mod storage_item;
+/// Contract storage key representation.
 pub mod storage_key;
+/// Cache tracking state for a storage entry.
 pub mod track;
 
 pub use seek::SeekDirection;

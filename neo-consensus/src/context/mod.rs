@@ -5,7 +5,6 @@ use lru::LruCache;
 #[cfg(test)]
 use neo_crypto::ECPoint;
 use neo_primitives::{UInt160, UInt256};
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::num::NonZeroUsize;
@@ -26,58 +25,13 @@ pub const MAX_VALIDATORS: usize = 21;
 /// Matches C# `DBFTPlugin`'s message caching behavior
 pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
 
+mod persistence;
 mod state;
 mod validator_info;
 
+use persistence::{PersistedConsensusState, decode_state, encode_state};
 pub use state::ConsensusState;
 pub use validator_info::ValidatorInfo;
-
-/// Persisted consensus state for crash recovery
-/// Contains only the essential state needed to resume consensus after a restart
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct PersistedConsensusState {
-    /// Current block index being proposed
-    block_index: u32,
-    /// Current view number (increments on view change)
-    view_number: u8,
-    /// Proposed block hash (from `PrepareRequest`)
-    proposed_block_hash: Option<UInt256>,
-    /// Hash of the primary `PrepareRequest` payload (ExtensiblePayload.Hash)
-    #[serde(default)]
-    preparation_hash: Option<UInt256>,
-    /// Proposed block timestamp
-    proposed_timestamp: u64,
-    /// Proposed transaction hashes
-    proposed_tx_hashes: Vec<UInt256>,
-    /// Nonce for the block
-    nonce: u64,
-    /// `PrepareRequest` received from primary
-    prepare_request_received: bool,
-    /// `PrepareResponse` signatures (`validator_index` -> signature)
-    prepare_responses: HashMap<u8, Vec<u8>>,
-    /// `PrepareResponse` hashes (`validator_index` -> `preparation_hash`)
-    #[serde(default)]
-    prepare_response_hashes: HashMap<u8, UInt256>,
-    /// Commit signatures (`validator_index` -> signature)
-    commits: HashMap<u8, Vec<u8>>,
-    /// Commit view numbers (`validator_index` -> `view_number`)
-    #[serde(default)]
-    commit_view_numbers: HashMap<u8, u8>,
-    /// `ChangeView` requests (`validator_index` -> (`new_view`, reason))
-    change_views: HashMap<u8, (u8, ChangeViewReason)>,
-    /// Primary `PrepareRequest` invocation script (payload witness).
-    #[serde(default)]
-    prepare_request_invocation: Option<Vec<u8>>,
-    /// `ChangeView` invocation script per validator (payload witness).
-    #[serde(default)]
-    change_view_invocations: HashMap<u8, Vec<u8>>,
-    /// `ChangeView` timestamp per validator.
-    #[serde(default)]
-    change_view_timestamps: HashMap<u8, u64>,
-    /// Commit invocation script per validator (payload witness).
-    #[serde(default)]
-    commit_invocations: HashMap<u8, Vec<u8>>,
-}
 
 /// Consensus context holding all state for the current consensus round
 #[derive(Debug)]
@@ -688,7 +642,7 @@ impl ConsensusContext {
             commit_invocations: self.commit_invocations.clone(),
         };
 
-        let encoded = Self::encode_state(&state)?;
+        let encoded = encode_state(&state)?;
 
         // Atomic write: write to temp file first
         let temp_path = path.with_extension("tmp");
@@ -728,7 +682,7 @@ impl ConsensusContext {
             change_view_timestamps: self.last_change_view_timestamps.clone(),
             commit_invocations: self.commit_invocations.clone(),
         };
-        Self::encode_state(&state)
+        encode_state(&state)
     }
 
     /// Loads the consensus state from disk for crash recovery
@@ -767,7 +721,7 @@ impl ConsensusContext {
         validators: Vec<ValidatorInfo>,
         my_index: Option<u8>,
     ) -> ConsensusResult<Self> {
-        let state = Self::decode_state(encoded)?;
+        let state = decode_state(encoded)?;
 
         tracing::info!(
             "Loaded consensus state: block={}, view={}, prepare_responses={}, commits={}, change_views={}",
@@ -814,14 +768,6 @@ impl ConsensusContext {
             last_seen_messages: HashMap::new(), // Not persisted
             seen_message_hashes: Self::new_seen_message_cache(), // Not persisted
         })
-    }
-
-    fn encode_state(state: &PersistedConsensusState) -> ConsensusResult<Vec<u8>> {
-        Ok(bincode::serialize(state)?)
-    }
-
-    fn decode_state(encoded: &[u8]) -> ConsensusResult<PersistedConsensusState> {
-        Ok(bincode::deserialize(encoded)?)
     }
 }
 

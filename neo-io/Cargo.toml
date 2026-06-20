@@ -22,7 +22,7 @@ hashbrown = { workspace = true }
 indexmap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 async-trait = { workspace = true }
 futures = { workspace = true }
 parking_lot = { workspace = true }
@@ -43,7 +43,6 @@ default = []
 tracing = ["dep:tracing"]
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
 
 [lints]

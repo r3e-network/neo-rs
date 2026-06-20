@@ -1,6 +1,7 @@
 use super::*;
 
 impl ApplicationEngine {
+    /// Reads a raw storage item from the snapshot using a storage context and key.
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         self.snapshot_cache
@@ -48,6 +49,7 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Writes a raw storage item and charges dynamic storage fees when applicable.
     pub fn put_storage_item(
         &mut self,
         context: &StorageContext,
@@ -94,18 +96,21 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Deletes a raw storage item from the snapshot.
     pub fn delete_storage_item(&mut self, context: &StorageContext, key: &[u8]) -> CoreResult<()> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         self.snapshot_cache.delete(&storage_key);
         Ok(())
     }
 
+    /// Pushes an interop container placeholder onto the VM stack.
     pub fn push_interop_container(&mut self, _container: Arc<dyn Verifiable>) -> CoreResult<()> {
         // Iterator/interop handles are carried as integer stack items; the
         // concrete object lives in the engine-side `storage_iterators` table.
         self.push(StackItem::from_i64(0))
     }
 
+    /// Pops and validates a storage iterator identifier from the VM stack.
     pub fn pop_iterator_id(&mut self) -> CoreResult<u32> {
         let item = self.pop()?;
         let identifier = item
@@ -116,6 +121,7 @@ impl ApplicationEngine {
         Ok(identifier)
     }
 
+    /// Advances a registered storage iterator.
     pub fn iterator_next_internal(&mut self, iterator_id: u32) -> CoreResult<bool> {
         let iterator = self
             .storage_iterators
@@ -124,6 +130,7 @@ impl ApplicationEngine {
         Ok(iterator.next())
     }
 
+    /// Returns the current value of a registered storage iterator.
     pub fn iterator_value_internal(&self, iterator_id: u32) -> CoreResult<StackItem> {
         let iterator = self
             .storage_iterators

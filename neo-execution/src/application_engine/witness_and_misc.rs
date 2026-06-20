@@ -441,6 +441,7 @@ impl ApplicationEngine {
         ))
     }
 
+    /// Creates the standard single-signature account hash for a compressed public key.
     pub fn create_standard_account(&mut self, public_key: &[u8]) -> CoreResult<UInt160> {
         let public_key = ECPoint::from_bytes_with_curve(ECCurve::Secp256r1, public_key)
             .map_err(|err| CoreError::invalid_operation(format!("Invalid public key: {err}")))?;
@@ -463,6 +464,7 @@ impl ApplicationEngine {
         Ok(hash)
     }
 
+    /// Creates a multisignature account hash from the required signature count and public keys.
     pub fn create_multisig_account(
         &mut self,
         required_signatures: i32,

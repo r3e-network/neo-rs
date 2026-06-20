@@ -17,7 +17,7 @@
 //! consensus engine: this is the pure wire/storage serializer set, exactly
 //! the role `parity-scale-codec` and `ssz` play in their respective stacks.
 
-#![doc(html_root_url = "https://docs.rs/neo-serialization/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-serialization/0.8.0")]
 
 pub mod binary_serializer;
 pub mod compression;

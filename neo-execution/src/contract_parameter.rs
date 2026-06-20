@@ -20,18 +20,31 @@ pub struct ContractParameter {
 /// Possible values for a contract parameter
 #[derive(Clone, Debug)]
 pub enum ContractParameterValue {
+    /// No concrete value is provided.
     Any,
+    /// 64-byte signature parameter.
     Signature(Vec<u8>),
+    /// Boolean parameter.
     Boolean(bool),
+    /// Arbitrary-precision integer parameter.
     Integer(BigInt),
+    /// UInt160 hash parameter.
     Hash160(UInt160),
+    /// UInt256 hash parameter.
     Hash256(UInt256),
+    /// Raw byte-array parameter.
     ByteArray(Vec<u8>),
+    /// Elliptic-curve public key parameter.
     PublicKey(ECPoint),
+    /// UTF-8 string parameter.
     String(String),
+    /// Ordered array of contract parameters.
     Array(Vec<ContractParameter>),
+    /// Ordered map represented as key/value contract parameter pairs.
     Map(Vec<(ContractParameter, ContractParameter)>),
+    /// Interop-interface parameter placeholder.
     InteropInterface,
+    /// Void return value.
     Void,
 }
 

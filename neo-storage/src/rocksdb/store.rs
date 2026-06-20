@@ -19,6 +19,7 @@ use tracing::{debug, error, warn};
 
 use super::provider::{self, BatchCommitter, ReadAheadConfig};
 
+/// Persistent RocksDB implementation of the Neo storage traits.
 pub struct RocksDbStore {
     pub(crate) db: Arc<DB>,
     pub(crate) on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
@@ -305,6 +306,7 @@ impl Drop for RocksDbStore {
     }
 }
 
+/// Mutable point-in-time snapshot over a RocksDB store.
 pub struct RocksDbSnapshot {
     store: Arc<RocksDbStore>,
     db: Arc<DB>,

@@ -15,6 +15,7 @@ fn parse_json_group(value: &str) -> CoreResult<Vec<u8>> {
 }
 
 impl WitnessCondition {
+    /// Converts the condition to Neo's JSON witness-condition shape.
     pub fn to_json(&self) -> Value {
         match self {
             WitnessCondition::Boolean { value } => json!({
@@ -55,10 +56,12 @@ impl WitnessCondition {
         }
     }
 
+    /// Parses a witness condition from Neo's JSON representation.
     pub fn from_json(json: &Value) -> CoreResult<Self> {
         Self::from_json_with_depth(json, Self::MAX_NESTING_DEPTH)
     }
 
+    /// Parses a witness condition from JSON while enforcing a remaining nesting depth.
     pub fn from_json_with_depth(json: &Value, max_depth: usize) -> CoreResult<Self> {
         if max_depth == 0 {
             return Err(CoreError::other("Max nesting depth exceeded"));
@@ -171,6 +174,7 @@ impl WitnessCondition {
 }
 
 impl WitnessRule {
+    /// Converts the witness rule to Neo's JSON representation.
     pub fn to_json(&self) -> Value {
         json!({
             "action": self.action.to_string(),
@@ -178,10 +182,12 @@ impl WitnessRule {
         })
     }
 
+    /// Parses a witness rule from Neo's JSON representation.
     pub fn from_json(value: &Value) -> CoreResult<Self> {
         Self::from_json_with_depth(value, WitnessCondition::MAX_NESTING_DEPTH)
     }
 
+    /// Parses a witness rule from JSON while enforcing a remaining condition depth.
     pub fn from_json_with_depth(value: &Value, max_depth: usize) -> CoreResult<Self> {
         let action_str = value
             .get("action")

@@ -18,6 +18,7 @@ type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
 type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
 
+/// Read-through contract storage cache with Neo-style change tracking.
 pub struct StoreCache {
     data_cache: DataCache,
     store: Option<Arc<dyn Store>>,
@@ -204,6 +205,7 @@ impl StoreCache {
     }
 }
 
+/// Applies tracked cache entries to a raw byte-oriented writer.
 pub fn apply_tracked<T>(
     tracked: &[(StorageKey, super::data_cache::Trackable)],
     writer: &mut T,

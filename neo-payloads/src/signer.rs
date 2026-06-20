@@ -6,8 +6,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_io::macros::{OptionExt, ValidateLength};
 use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_primitives::WitnessScope;
-use neo_primitives::{UINT160_SIZE, UInt160};
+use neo_primitives::{UINT160_SIZE, UInt160, WitnessScope, strip_hex_prefix};
 use neo_vm::{Interoperable, InteroperableError};
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
@@ -214,7 +213,7 @@ impl Signer {
                     let text = value
                         .as_str()
                         .ok_or_else(|| CoreError::other("allowedgroups items must be strings"))?;
-                    let trimmed = text.trim_start_matches("0x");
+                    let trimmed = strip_hex_prefix(text);
                     let bytes = hex_decode(trimmed)
                         .map_err(|e| CoreError::other(format!("Invalid ECPoint hex: {e}")))?;
                     ECPoint::from_bytes(&bytes)
@@ -532,6 +531,24 @@ mod tests {
             "scopes": "CalledByEntry | CustomContracts",
         });
         assert!(Signer::from_json(&pipe_separated).is_err());
+    }
+
+    #[test]
+    fn signer_from_json_accepts_uppercase_hex_prefix_for_allowed_groups() {
+        let account = UInt160::from_bytes(&[0x56; UINT160_SIZE]).unwrap();
+        let group =
+            hex_decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+                .unwrap();
+        let json = serde_json::json!({
+            "account": account.to_string(),
+            "scopes": "CustomGroups",
+            "allowedgroups": [format!("0X{}", hex_encode(&group))],
+        });
+
+        let signer = Signer::from_json(&json).unwrap();
+
+        assert_eq!(signer.allowed_groups.len(), 1);
+        assert_eq!(signer.allowed_groups[0].to_bytes(), group);
     }
 
     #[test]

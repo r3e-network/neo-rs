@@ -18,6 +18,7 @@ pub struct NetworkAddressWithTime {
 }
 
 impl NetworkAddressWithTime {
+    /// Creates a timestamped network address with the advertised node capabilities.
     pub fn new(timestamp: u32, address: IpAddr, capabilities: Vec<NodeCapability>) -> Self {
         Self {
             timestamp,

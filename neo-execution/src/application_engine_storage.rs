@@ -105,21 +105,25 @@ impl ApplicationEngine {
         self.find_storage_entries(&context, &prefix, options)
     }
 
+    /// Reads storage from the current contract's read-only context.
     pub fn storage_get_local(&mut self, key: Vec<u8>) -> CoreResult<Option<Vec<u8>>> {
         let context = self.storage_get_read_only_context()?;
         self.storage_get(context, key)
     }
 
+    /// Writes storage in the current contract's context.
     pub fn storage_put_local(&mut self, key: Vec<u8>, value: Vec<u8>) -> CoreResult<()> {
         let context = self.storage_get_context()?;
         self.storage_put(context, key, value)
     }
 
+    /// Deletes storage in the current contract's context.
     pub fn storage_delete_local(&mut self, key: Vec<u8>) -> CoreResult<()> {
         let context = self.storage_get_context()?;
         self.storage_delete(context, key)
     }
 
+    /// Finds storage entries in the current contract's read-only context.
     pub fn storage_find_local(
         &mut self,
         prefix: Vec<u8>,

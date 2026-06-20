@@ -29,7 +29,7 @@ neo-config = { workspace = true }
 # Scripting
 
 # Async runtime
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 # Serialization
 serde = { workspace = true }
@@ -53,9 +53,6 @@ num-traits = { workspace = true }
 
 # Random
 rand = { workspace = true }
-
-[dev-dependencies]
-hex = { workspace = true }
 
 [features]
 default = []

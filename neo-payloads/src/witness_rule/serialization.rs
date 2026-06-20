@@ -80,6 +80,7 @@ impl WitnessCondition {
             .map_err(|e| IoError::invalid_data(format!("Invalid ECPoint in witness group: {e}")))
     }
 
+    /// Deserializes a witness condition while enforcing a remaining nesting depth.
     pub fn deserialize_with_depth(reader: &mut MemoryReader, max_depth: usize) -> IoResult<Self> {
         if max_depth == 0 {
             return Err(IoError::invalid_data("Max nesting depth exceeded"));

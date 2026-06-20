@@ -36,9 +36,5 @@ indexmap = { workspace = true }
 zstd = "0.13"
 bincode = { workspace = true }
 
-[dev-dependencies]
-hex = { workspace = true }
-tokio = { workspace = true }
-
 [lints]
 workspace = true

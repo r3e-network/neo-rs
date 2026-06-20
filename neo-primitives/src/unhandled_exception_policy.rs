@@ -2,6 +2,11 @@
 
 use serde::Deserialize;
 use std::any::Any;
+use std::str::FromStr;
+
+/// Error returned when parsing an unknown unhandled-exception policy name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseUnhandledExceptionPolicyError;
 
 /// Exception handling policy for plugin-style services.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -20,6 +25,19 @@ pub enum UnhandledExceptionPolicy {
 }
 
 impl UnhandledExceptionPolicy {
+    /// Parses a policy name using the case-insensitive names used by Neo plugin
+    /// configuration files.
+    pub fn from_name(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "ignore" => Some(Self::Ignore),
+            "stopplugin" => Some(Self::StopPlugin),
+            "stopnode" => Some(Self::StopNode),
+            "continue" => Some(Self::Continue),
+            "terminate" => Some(Self::Terminate),
+            _ => None,
+        }
+    }
+
     /// Applies the process/service-level effect of this policy.
     ///
     /// Returns `true` when the caller may continue processing. `StopPlugin`
@@ -35,6 +53,14 @@ impl UnhandledExceptionPolicy {
             Self::StopNode => std::process::exit(1),
             Self::Terminate => std::process::abort(),
         }
+    }
+}
+
+impl FromStr for UnhandledExceptionPolicy {
+    type Err = ParseUnhandledExceptionPolicyError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_name(value).ok_or(ParseUnhandledExceptionPolicyError)
     }
 }
 
@@ -79,6 +105,31 @@ mod tests {
 
         assert!(!should_continue);
         assert!(stopped.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn parses_policy_names_case_insensitively() {
+        assert_eq!(
+            " ignore ".parse::<UnhandledExceptionPolicy>(),
+            Ok(UnhandledExceptionPolicy::Ignore)
+        );
+        assert_eq!(
+            "STOPPLUGIN".parse::<UnhandledExceptionPolicy>(),
+            Ok(UnhandledExceptionPolicy::StopPlugin)
+        );
+        assert_eq!(
+            "StopNode".parse::<UnhandledExceptionPolicy>(),
+            Ok(UnhandledExceptionPolicy::StopNode)
+        );
+        assert_eq!(
+            "continue".parse::<UnhandledExceptionPolicy>(),
+            Ok(UnhandledExceptionPolicy::Continue)
+        );
+        assert_eq!(
+            "Terminate".parse::<UnhandledExceptionPolicy>(),
+            Ok(UnhandledExceptionPolicy::Terminate)
+        );
+        assert!("missing".parse::<UnhandledExceptionPolicy>().is_err());
     }
 
     #[test]

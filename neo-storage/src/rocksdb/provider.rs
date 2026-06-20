@@ -17,6 +17,7 @@ pub use crate::rocksdb::write_batch_buffer::{
     WriteBatchStatsSnapshot as BatchCommitStatsSnapshot,
 };
 
+/// Buffered batch committer used by RocksDB snapshots.
 pub struct BatchCommitter {
     pub(crate) buffer: WriteBatchBuffer,
 }
@@ -42,6 +43,7 @@ pub struct RocksDBStoreProvider {
 }
 
 impl RocksDBStoreProvider {
+    /// Creates a provider with the supplied base storage configuration.
     pub fn new(base_config: StorageConfig) -> Self {
         Self {
             base_config,
@@ -52,21 +54,25 @@ impl RocksDBStoreProvider {
         }
     }
 
+    /// Overrides the write-batch commit strategy.
     pub fn with_batch_config(mut self, config: BatchCommitConfig) -> Self {
         self.batch_config = config;
         self
     }
 
+    /// Enables or disables RocksDB bloom filters for SST files.
     pub fn with_bloom_filters(mut self, enable: bool) -> Self {
         self.enable_bloom_filters = enable;
         self
     }
 
+    /// Enables or disables read-ahead for sequential scans.
     pub fn with_read_ahead(mut self, enable: bool) -> Self {
         self.enable_read_ahead = enable;
         self
     }
 
+    /// Returns shared write-batch statistics for stores created by this provider.
     pub fn batch_stats(&self) -> Arc<BatchCommitStats> {
         Arc::clone(&self.batch_stats)
     }

@@ -43,6 +43,7 @@
 pub mod error;
 pub mod hash_utils;
 pub mod key_builder;
+/// Persistence traits, caches, snapshots, and in-memory store providers.
 pub mod persistence;
 pub mod rocksdb;
 pub mod types;

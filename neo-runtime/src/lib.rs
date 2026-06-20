@@ -5,30 +5,39 @@
 //! This crate is the **service pattern** for the rest of the workspace.
 //! Every long-running component of a Neo node (block executor, network
 //! stack, consensus, engine API, blockchain orchestrator) is modelled as
-//! an `async_trait` service trait. There is no actor
-//! framework, no `ActorRef`, no mailbox — the runtime is just `async` +
-//! `tokio::sync::mpsc` + `tokio::sync::broadcast` + `tokio::sync::oneshot`,
-//! which is what reth and polkadot-sdk do.
+//! an `async_trait` service trait. The runtime surface is plain `async` plus
+//! the channel primitives used by the concrete service crates
+//! (`tokio::sync::mpsc`, `tokio::sync::broadcast`, and
+//! `tokio::sync::oneshot`).
 //!
 //! ## Layering
 //!
-//! Sits in **Layer 1 (runtime)**. Depends only on:
+//! Sits in **Layer 3 (Domain services)**. It defines the shared
+//! service vocabulary used by higher node-service and composition
+//! crates, while depending only on lower protocol / foundation crates:
 //!
 //! - `neo-primitives` (Layer 0) — for `UInt256`.
-//! - `neo-payloads` (Layer 1) — for `Block` and `Transaction`.
-//! - `neo-payloads` (Layer 1) — protocol payload data types
-//!   types carried in events.
-//! - `tokio`, `async-trait`, `futures`, `parking_lot`, `thiserror`,
-//!   `tracing` — external async / utility crates.
+//! - `neo-payloads` (Layer 2) — for `Block` and `Transaction`.
+//! - `tokio`, `async-trait`, `serde`, `thiserror` — external async /
+//!   serialization / error crates.
 //!
-//! Concrete service implementations live in their respective domain
-//! crates (e.g. `neo-blockchain` owns the blockchain service
-//! implementing [`BlockExecutor`]). This crate owns the service
-//! *traits*, the [`BlockchainEvent`] broadcast type, and the
-//! [`ServiceError`] vocabulary. The concrete node **composition root**
-//! — the single owner of all wired services that the `neo-node` binary
-//! constructs at startup — lives in `neo-system` (`neo_system::Node`),
-//! which depends on this crate for the trait vocabulary.
+//! Concrete service implementations live in their respective domain and
+//! node-service crates (for example `neo-blockchain` owns the blockchain
+//! command loop, and `neo-network` owns the P2P service). This crate owns the
+//! service *traits*, the [`BlockchainEvent`] broadcast type, and the
+//! [`ServiceError`] vocabulary shared at service boundaries. The concrete
+//! composition roots live above this layer (`neo-system` for embeddable
+//! composition and `neo-node` for the runnable daemon).
+//!
+//! ## Crate shape
+//!
+//! `neo-runtime` is intentionally small and independent. Merging it into
+//! `neo-system` would force lower service crates to depend upward on the
+//! composition layer; merging it into `neo-blockchain` or `neo-network` would
+//! make unrelated services depend on a concrete implementation crate just to
+//! share trait vocabulary. Keeping this crate separate preserves an acyclic
+//! boundary: service implementations depend on the shared contracts, and
+//! composition crates depend on both.
 //!
 //! ## Re-export index
 //!
@@ -48,8 +57,7 @@
 //! ## Quick start
 //!
 //! Each subsystem implements a service trait from this crate; the
-//! concrete node composition that wires them together lives in
-//! `neo-system`.
+//! concrete node composition that wires them together lives above this crate.
 //!
 //! ```no_run
 //! use std::sync::Arc;
@@ -71,13 +79,13 @@
 //! }
 //!
 //! # async fn run() -> Result<(), ServiceError> {
-//! // Services are stored and called as trait objects — no ActorRef, no mailbox.
+//! // Services are stored and called as trait objects.
 //! let executor: Arc<dyn BlockExecutor> = Arc::new(StubExecutor);
 //! let _outcome = executor.execute(&Block::new()).await?;
 //! # Ok(()) }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/neo-runtime/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-runtime/0.8.0")]
 
 pub mod blockchain;
 pub mod errors;

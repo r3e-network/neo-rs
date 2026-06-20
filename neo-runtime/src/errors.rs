@@ -25,7 +25,7 @@ pub enum ServiceError {
     /// The targeted service is not running, the command channel is closed,
     /// or the underlying service has been shut down.
     ///
-    /// Callers can usually recover by recreating the node (`neo_system::Node`)
+    /// Callers can usually recover by recreating the composed node services
     /// and re-issuing the request.
     #[error("service unavailable: {0}")]
     ServiceUnavailable(String),

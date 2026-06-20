@@ -17,10 +17,9 @@
 //!
 //! This is a **Layer 2 (Service)** crate. It depends on the foundation
 //! crates (`neo-vm`, `neo-primitives`, `neo-crypto`, `neo-config`,
-//! `neo-storage`, `neo-io`, `neo-error`, `neo-storage`,
-//! `neo-serialization`, `neo-manifest`, `neo-payloads`,
-//! `neo-payloads`) and the [`neo_native_contracts`] crate provides
-//! the concrete `NativeContract` implementations.
+//! `neo-storage`, `neo-io`, `neo-error`, `neo-serialization`,
+//! `neo-manifest`, `neo-payloads`) and the [`neo_native_contracts`]
+//! crate provides the concrete `NativeContract` implementations.
 
 #![allow(dead_code)]
 
@@ -50,6 +49,7 @@ pub mod iterators;
 // ============================================================================
 pub mod hardfork_activable;
 pub mod native_contract;
+/// Cached native-contract state used while composing native manifests and storage.
 pub mod native_contract_cache;
 pub mod native_contract_provider;
 pub mod native_registry;
@@ -66,6 +66,7 @@ pub mod contract_state;
 pub mod deployed_contract;
 pub mod diagnostic;
 pub mod engine_provider;
+/// Environment flag helpers used by execution diagnostics and optional profiling.
 pub mod env_flags;
 pub mod execution_context_state;
 pub mod helper;

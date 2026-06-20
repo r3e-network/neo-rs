@@ -447,7 +447,15 @@ crate::impl_error_from! {
     CoreError,
     std::io::Error => io,
     std::fmt::Error => serialization,
-    neo_io::IoError => serialization,
+}
+
+impl From<neo_io::IoError> for CoreError {
+    fn from(error: neo_io::IoError) -> Self {
+        match error {
+            neo_io::IoError::Io(source) => CoreError::io(source.to_string()),
+            source => CoreError::serialization(source.to_string()),
+        }
+    }
 }
 
 impl From<PrimitiveError> for CoreError {
@@ -472,16 +480,17 @@ impl From<PrimitiveError> for CoreError {
 // `neo_script_builder::ScriptBuilderError`, and
 // `neo_script_builder::RedeemScriptError`) used to live here when `CoreError`
 // was owned by the `neo-core` monolith. They were removed when `CoreError`
-// was extracted into the `neo-error` foundation crate, because a Layer 0
-// crate must not depend on Layer 1+ crates. Each owning crate must provide
-// its own `impl From<its_error> for neo_error::CoreError` instead — see
-// `neo-storage`, `neo-vm`, and `neo-script-builder`.
+// was extracted into the `neo-error` low infrastructure crate, because it must
+// not depend on storage, execution, RPC, or other higher-layer crates. Each
+// owning crate must provide its own `impl From<its_error> for
+// neo_error::CoreError` instead — see `neo-storage`, `neo-vm`, and
+// `neo-script-builder`.
 
 // The cross-crate `From<OtherError> for CoreError` impls now live in their
 // owning crates (`neo-storage`, `neo-vm`, `neo-script-builder`), each
 // implementing `From<LocalError> for
-// neo_error::CoreError`. This keeps `neo-error` at the foundation layer
-// (it depends only on `neo-primitives` + `neo-io`), per the reth-style
+// neo_error::CoreError`. This keeps `neo-error` at the lower infrastructure
+// boundary (it depends only on `neo-primitives` + `neo-io`), per the reth-style
 // per-crate error model.
 
 // Type conversion errors (require custom handling)
@@ -572,5 +581,19 @@ mod tests {
         let parse_error = "abc".parse::<i32>().unwrap_err();
         let core_error = CoreError::from(parse_error);
         assert!(matches!(core_error, CoreError::TypeConversion { .. }));
+    }
+
+    #[test]
+    fn test_from_neo_io_errors_preserves_error_category() {
+        let format_error = CoreError::from(neo_io::IoError::Format);
+        assert!(matches!(format_error, CoreError::Codec { .. }));
+        assert_eq!(format_error.category(), "serialization");
+
+        let io_error = CoreError::from(neo_io::IoError::Io(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "socket closed",
+        )));
+        assert!(matches!(io_error, CoreError::Io { .. }));
+        assert_eq!(io_error.category(), "io");
     }
 }

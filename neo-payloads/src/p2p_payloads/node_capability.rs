@@ -13,18 +13,29 @@ pub const MAX_UNKNOWN_CAPABILITY_DATA: usize = 1024;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NodeCapability {
     /// The node is listening on a TCP port.
-    TcpServer { port: u16 },
+    TcpServer {
+        /// TCP listening port.
+        port: u16,
+    },
     /// The node is listening on a WebSocket port.
-    WsServer { port: u16 },
+    WsServer {
+        /// WebSocket listening port.
+        port: u16,
+    },
     /// The node disables peer-to-peer compression.
     DisableCompression,
     /// The node maintains the full current state.
-    FullNode { start_height: u32 },
+    FullNode {
+        /// First block height available from this full node.
+        start_height: u32,
+    },
     /// The node stores full historical blocks.
     ArchivalNode,
     /// Any capability not recognised by this implementation.
     Unknown {
+        /// Raw capability type identifier.
         ty: NodeCapabilityType,
+        /// Raw capability payload bytes.
         data: Vec<u8>,
     },
 }
@@ -94,6 +105,7 @@ impl NodeCapability {
         }
     }
 
+    /// Deserializes a single node capability from `reader`.
     pub fn deserialize_from(reader: &mut MemoryReader) -> IoResult<Self> {
         <Self as Serializable>::deserialize(reader)
     }
@@ -114,10 +126,12 @@ impl NodeCapability {
 pub struct NodeCapabilities;
 
 impl NodeCapabilities {
+    /// Returns the serialized size of a capability vector.
     pub fn node_capabilities_size(capabilities: &[NodeCapability]) -> usize {
         helper::SerializeHelper::get_var_size_serializable_slice(capabilities)
     }
 
+    /// Serializes a capability vector using Neo's var-array encoding.
     pub fn serialize_node_capabilities(
         capabilities: &[NodeCapability],
         writer: &mut BinaryWriter,
@@ -125,6 +139,7 @@ impl NodeCapabilities {
         helper::SerializeHelper::serialize_array(capabilities, writer)
     }
 
+    /// Deserializes a capability vector and rejects duplicate known capability types.
     pub fn deserialize_node_capabilities(
         reader: &mut MemoryReader,
         max: usize,

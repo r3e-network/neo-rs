@@ -4,7 +4,9 @@
 //! traits over RocksDB. Lifted out of `neo-core` so the heavyweight `rocksdb`
 //! dependency stays optional and confined to nodes that select this backend.
 
+/// RocksDB store provider and tuning options.
 pub mod provider;
+/// Concrete RocksDB store and snapshot implementations.
 pub mod store;
 pub mod write_batch_buffer;
 
