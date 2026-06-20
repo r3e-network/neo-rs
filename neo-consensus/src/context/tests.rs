@@ -189,6 +189,41 @@ fn test_timeout_calculation() {
 }
 
 #[test]
+fn extend_timer_by_factor_pushes_the_change_view_deadline_later() {
+    let validators = create_test_validators(7);
+    // my_index = Some(0): a validator (not watch-only), M = 7 - f(2) = 5.
+    let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
+    let m = ctx.m() as u64;
+    assert_eq!(m, 5);
+    ctx.view_start_time = 1_000;
+    let base_deadline = 1_000 + ctx.get_timeout();
+    assert!(ctx.is_timed_out(base_deadline));
+    assert!(!ctx.is_timed_out(base_deadline - 1));
+
+    // C# ExtendTimerByFactor(2): deadline moves later by 2 * base_block_time / M.
+    ctx.extend_timer_by_factor(2);
+    let ext2 = 2 * BLOCK_TIME_MS / m;
+    assert_eq!(ctx.timer_extension, ext2);
+    assert!(!ctx.is_timed_out(base_deadline));
+    assert!(ctx.is_timed_out(base_deadline + ext2));
+
+    // Never decreases: a smaller factor leaves it unchanged; a larger one grows it.
+    ctx.extend_timer_by_factor(1);
+    assert_eq!(ctx.timer_extension, ext2);
+    ctx.extend_timer_by_factor(4);
+    assert_eq!(ctx.timer_extension, 4 * BLOCK_TIME_MS / m);
+
+    // A watch-only node (no my_index) never extends.
+    let mut watcher = ConsensusContext::new(0, create_test_validators(7), None, None);
+    watcher.extend_timer_by_factor(4);
+    assert_eq!(watcher.timer_extension, 0);
+
+    // Reset on a new view.
+    ctx.reset_for_new_view(1, 2_000);
+    assert_eq!(ctx.timer_extension, 0);
+}
+
+#[test]
 fn test_save_and_load_roundtrip() {
     use std::env;
 

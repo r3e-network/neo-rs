@@ -48,6 +48,10 @@ pub struct ConsensusContext {
     pub state: ConsensusState,
     /// Timestamp when this view started
     pub view_start_time: u64,
+    /// Extra milliseconds added to the current view's change-view deadline by
+    /// `extend_timer_by_factor` (C# `ExtendTimerByFactor`). Reset to 0 on every
+    /// new view/block. Never decreases within a view.
+    pub timer_extension: u64,
     /// Expected block time
     pub expected_block_time: u64,
 
@@ -137,6 +141,7 @@ impl ConsensusContext {
             my_index,
             state: ConsensusState::Initial,
             view_start_time: 0,
+            timer_extension: 0,
             expected_block_time: effective_block_time,
             version: 0,
             prev_hash: UInt256::zero(),
@@ -261,6 +266,7 @@ impl ConsensusContext {
     pub fn reset_for_new_view(&mut self, new_view: u8, timestamp: u64) {
         self.view_number = new_view;
         self.view_start_time = timestamp;
+        self.timer_extension = 0;
         self.state = if self.is_primary() {
             ConsensusState::Primary
         } else {
@@ -292,6 +298,7 @@ impl ConsensusContext {
         self.block_index = block_index;
         self.view_number = 0;
         self.view_start_time = timestamp;
+        self.timer_extension = 0;
         self.state = if self.is_primary() {
             ConsensusState::Primary
         } else {
@@ -416,8 +423,15 @@ impl ConsensusContext {
     /// Gets the timeout duration for the current view
     #[must_use]
     pub fn get_timeout(&self) -> u64 {
-        // Base timeout + exponential backoff for view changes.
-        // Use configured expected_block_time when provided (mirrors C# TimePerBlock overrides).
+        // Base timeout + exponential backoff for view changes, matching C#
+        // `TimePerBlock << (ViewNumber + 1)`. The exponent is capped at 5 (a
+        // deliberate, safe deviation): C# performs a 32-bit `int` shift that
+        // overflows into garbage from ~view 17 and wraps from view 31, whereas an
+        // unbounded `u64` shift here would panic. The cap only differs from C# at
+        // view >= 5 — a severely degraded consensus that does not occur in
+        // practice, and where C#'s own value is already nonsensical — so it does
+        // not affect block production or state, only liveness timing in an
+        // unreachable regime.
         self.base_block_time() << (self.view_number + 1).min(5)
     }
 
@@ -463,6 +477,9 @@ impl ConsensusContext {
     #[must_use]
     pub fn change_view_retry_delay(&self) -> u64 {
         let expected_view = self.view_number.saturating_add(1);
+        // Exponent capped at 5 for the same safety reason as `get_timeout`: an
+        // unbounded `u64` shift would panic, and the cap only diverges from C#'s
+        // overflow-prone 32-bit int shift at the unreachable view >= 4 regime.
         self.base_block_time() << (expected_view + 1).min(5)
     }
 
@@ -477,7 +494,33 @@ impl ConsensusContext {
     /// Checks if the current view has timed out
     #[must_use]
     pub fn is_timed_out(&self, current_time: u64) -> bool {
-        current_time >= self.view_start_time + self.get_timeout()
+        current_time >= self.view_start_time + self.get_timeout() + self.timer_extension
+    }
+
+    /// Whether this node has already broadcast its Commit for the current view.
+    #[must_use]
+    pub fn commit_sent(&self) -> bool {
+        match self.my_index {
+            Some(index) => {
+                self.commits.contains_key(&index)
+                    && self.commit_view_numbers.get(&index) == Some(&self.view_number)
+            }
+            None => false,
+        }
+    }
+
+    /// C# `ExtendTimerByFactor`: push the current view's change-view deadline
+    /// later by `max_delay_in_block_times * TimePerBlock / M` (never earlier), so
+    /// a round that is making progress (prepare/response/commit received) is not
+    /// abandoned to a view change prematurely. No-op for watch-only nodes, while
+    /// view-changing, or after this node has sent its commit.
+    pub fn extend_timer_by_factor(&mut self, max_delay_in_block_times: u64) {
+        if self.my_index.is_none() || self.view_changing() || self.commit_sent() {
+            return;
+        }
+        let m = self.m().max(1) as u64;
+        let extension = max_delay_in_block_times.saturating_mul(self.base_block_time()) / m;
+        self.timer_extension = self.timer_extension.max(extension);
     }
 
     /// Collects all commit signatures for block finalization
@@ -740,6 +783,7 @@ impl ConsensusContext {
             my_index,
             state: ConsensusState::Initial, // Caller should update based on role
             view_start_time: 0,             // Caller should update to current time
+            timer_extension: 0,
             expected_block_time: 0,         // Caller should update
             version: 0,
             prev_hash: UInt256::zero(),

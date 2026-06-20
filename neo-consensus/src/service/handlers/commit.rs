@@ -102,6 +102,12 @@ impl ConsensusService {
         )?;
         self.cache_commit_invocation(payload);
 
+        // C# OnCommitReceived: a commit for the current view extends the
+        // change-view timer (factor 4).
+        if payload.view_number == self.context.view_number {
+            self.context.extend_timer_by_factor(4);
+        }
+
         self.check_commits()?;
 
         Ok(())

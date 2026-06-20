@@ -243,7 +243,10 @@ async fn backup_timeout_with_missing_transactions_uses_tx_not_found_reason() {
         .expect("partial transaction set");
     while rx.try_recv().is_ok() {}
 
-    service.on_timer_tick(12_000).unwrap();
+    // Receiving the PrepareRequest extends the change-view timer (C#
+    // ExtendTimerByFactor(2)): deadline = 10_000 + 2_000 + 2*1_000/M(3) = 12_666,
+    // so tick past the extended deadline.
+    service.on_timer_tick(13_000).unwrap();
 
     let mut change_view = None;
     while let Ok(event) = rx.try_recv() {

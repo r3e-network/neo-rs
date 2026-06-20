@@ -134,6 +134,10 @@ impl ConsensusService {
         self.context.proposed_block_hash = Some(block_hash);
         self.revalidate_current_view_commits();
 
+        // C# OnPrepareRequestReceived / CheckPrepareRequest: a prepare request
+        // received with success extends the change-view timer (factor 2).
+        self.context.extend_timer_by_factor(2);
+
         // If there are no transactions, respond immediately.
         if self.context.proposed_tx_hashes.is_empty() {
             self.send_prepare_response()?;
@@ -213,6 +217,10 @@ impl ConsensusService {
             invocation_script,
             Some(msg.preparation_hash),
         )?;
+
+        // C# OnPrepareResponseReceived: a prepare response received with success
+        // extends the change-view timer (factor 2).
+        self.context.extend_timer_by_factor(2);
 
         self.check_prepare_responses()?;
 
