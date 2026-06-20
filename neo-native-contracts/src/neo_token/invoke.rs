@@ -157,10 +157,12 @@ impl NeoToken {
                     .to_signed_bytes_le())
             }
             "registerCandidate" => {
-                // C# RegisterCandidate (Echidna V1) + RegisterInternal: charge the
-                // register price, then require a witness from the candidate's
-                // signature-contract account; create/flip the CandidateState to
-                // Registered and (post-Echidna) emit CandidateStateChanged.
+                // C# RegisterCandidate: pre-HF_Echidna a failed witness returns
+                // false WITHOUT charging the register fee (the early check is
+                // skipped from Echidna because RegisterInternal repeats it); the
+                // fee is charged only after that gate. RegisterInternal then
+                // (re)checks the witness, creates/flips the CandidateState to
+                // Registered, and (post-Echidna) emits CandidateStateChanged.
                 let pubkey_bytes = args.first().ok_or_else(|| {
                     CoreError::invalid_operation(
                         "NeoToken::registerCandidate requires a public key",
@@ -171,8 +173,21 @@ impl NeoToken {
                         "NeoToken::registerCandidate: bad public key: {e}"
                     ))
                 })?;
-                // engine.AddFee(GetRegisterPrice * FeeFactor) — charged before the
-                // witness check, matching the V1 ordering.
+                // Pre-Echidna only: a missing witness returns false before any fee.
+                if !engine.is_hardfork_enabled(Hardfork::HfEchidna) {
+                    let account = UInt160::from_script(
+                        &Contract::create_signature_redeem_script(pubkey.clone()),
+                    );
+                    let authorized = engine.check_witness_hash(&account).map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "NeoToken::registerCandidate: witness: {e}"
+                        ))
+                    })?;
+                    if !authorized {
+                        return Ok(vec![0]);
+                    }
+                }
+                // engine.AddFee(GetRegisterPrice * FeeFactor).
                 let price = self.register_price(&engine.snapshot_cache())?;
                 engine
                     .charge_execution_fee(u64::try_from(price).unwrap_or(0))
