@@ -91,7 +91,7 @@ A hardfork is enabled at a given block when the block index is greater than or e
 | NEP-11 | Non-fungible token interface support |
 | NEP-6 | Wallet format with BIP-32/BIP-39 key derivation (`neo-wallets`) |
 | Oracle | HTTPS and NeoFS oracle request fulfilment (`neo-oracle-service`) |
-| P2P | Neo N3 TCP wire protocol: version/verack handshake, inv/getdata, blocks, headers, addr, mempool relay (`neo-p2p`, `neo-network`) |
+| P2P | Neo N3 TCP wire protocol: version/verack handshake, inv/getdata, blocks, headers, addr, mempool relay (`neo-network`) |
 | RPC | jsonrpsee JSON-RPC server and client (~55 methods); see the RPC reference |
 
 ```mermaid

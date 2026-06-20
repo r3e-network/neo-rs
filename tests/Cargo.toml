@@ -6,42 +6,46 @@ rust-version.workspace = true
 publish = false
 description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"
 
-# This is a test-only crate, not part of the main workspace
+# This is a workspace member used only for cross-crate verification. It is not
+# linked into the running node or published as a crate.
 # Run with: cargo test -p neo-tests
 
 [dependencies]
-# Layer 0 - Foundation
+# Foundation
 neo-primitives = { workspace = true }
+
+# Infrastructure
 neo-io = { workspace = true }
 neo-serialization = { workspace = true }
 neo-storage = { workspace = true }
 neo-config = { workspace = true }
-
-# Layer 1 - Crypto
 neo-crypto = { workspace = true }
 
-# Layer 2 - Protocol
+# Protocol
 neo-consensus = { workspace = true }
 neo-payloads = { workspace = true }
 
-# Layer 4 - Services
+# Domain / node / RPC crates exercised by integration tests
+neo-native-contracts = { workspace = true }
 neo-blockchain = { workspace = true }
+neo-network = { workspace = true }
 neo-rpc = { workspace = true }
+
+# External sibling VM semantics crate
 neo-vm-rs = { workspace = true }
 
 # Utilities
 num-bigint = { workspace = true }
 hex = { workspace = true }
-tokio = { workspace = true, features = ["full", "test-util"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "test-util", "time"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+toml = { workspace = true }
 
-neo-network = { workspace = true }
-neo-native-contracts = { workspace = true }
 [dev-dependencies]
-criterion = { workspace = true, features = ["html_reports"] }
+criterion = { workspace = true }
 
 [[test]]
 name = "layer_boundary_tests"

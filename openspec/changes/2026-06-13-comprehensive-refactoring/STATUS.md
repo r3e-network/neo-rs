@@ -94,7 +94,7 @@ silently returned hardcoded constants instead of reading from the snapshot:
 
 | Method | Before | After |
 |---|---|---|
-| `get_max_valid_until_block_increment_snapshot` | `Ok(DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT)` | `crate::read_storage_int(snapshot, …, PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT, default)` |
+| `get_max_valid_until_block_increment_snapshot` | `Ok(DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT)` | Policy storage-key helper read with pre-genesis fallback to protocol settings |
 | `get_exec_fee_factor_snapshot` | `Ok(DEFAULT_EXEC_FEE_FACTOR)` | `exec_fee_factor_raw(snapshot) as u32` |
 | `get_fee_per_byte_snapshot` | `Ok(DEFAULT_FEE_PER_BYTE)` | `fee_per_byte(snapshot) as u32` |
 

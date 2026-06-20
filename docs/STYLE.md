@@ -258,7 +258,7 @@ All code examples in documentation must be testable:
 
 | Item | Convention | Example |
 |------|------------|---------|
-| Crates | `kebab-case` | `neo-core`, `neo-primitives` |
+| Crates | `kebab-case` | `neo-runtime`, `neo-primitives` |
 | Modules | `snake_case` | `smart_contract`, `block_header` |
 | Types (structs, enums, traits) | `PascalCase` | `Block`, `Transaction`, `IVerifiable` |
 | Functions | `snake_case` | `get_block`, `verify_witness` |

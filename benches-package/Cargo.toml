@@ -6,8 +6,12 @@ rust-version.workspace = true
 publish = false
 description = "Criterion benchmarks for the neo-rs workspace"
 
+# This is a workspace member used only for benchmark targets. It is not linked
+# into the running node or published as a crate.
+# Run with: cargo bench -p neo-benches
+
 [dependencies]
-criterion = { workspace = true, features = ["html_reports"] }
+criterion = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-primitives = { workspace = true }

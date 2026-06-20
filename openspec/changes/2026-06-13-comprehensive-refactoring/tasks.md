@@ -107,7 +107,7 @@
   - `neo-rpc/src/server/wallet_compat.rs:108, :164`
   - `neo-rpc/src/server/rpc_server_wallet/mod.rs:871`
   - `neo-oracle-service/src/service/transactions/response.rs:50, :135, :156`
-- [ ] B3.2 (Option A) **Implement**: use `crate::read_storage_int(snapshot, Self::ID, key)` to read the live on-chain value. Drop the `_snapshot` underscore prefix.
+- [ ] B3.2 (Option A) **Implement**: use PolicyContract's typed storage-key helpers to read the live on-chain value. Drop the `_snapshot` underscore prefix.
 - [ ] B3.3 (Option B) **Delete the stubs and migrate callers** to call the contract methods directly via `ApplicationEngine`.
 - [ ] B3.4 Document the chosen approach in code comments
 - [ ] B3.5 `cargo test --workspace --lib` passes

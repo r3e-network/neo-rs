@@ -59,7 +59,9 @@ presets under `config/`:
 | File | Network | Notes |
 |------|---------|-------|
 | `config/testnet.toml` | TestNet | Sets `network_type = "testnet"`, TestNet seeds, P2P `20333`, RPC `20332`. |
+| `config/testnet-service.toml` | TestNet | Service-provider preset: RPC, NeoIndexer, ApplicationLogs, TokensTracker, StateService, metrics, and JSON file logs. |
 | `config/mainnet.toml` | MainNet | MainNet magic, MainNet seeds, P2P `10333`, RPC `10332`. |
+| `config/mainnet-service.toml` | MainNet | Service-provider preset for NeoFura-style workloads behind a reverse proxy. |
 | `config/mainnet-stateroot.toml` | MainNet | MainNet variant with the state-root service enabled. |
 
 The `--config` flag defaults to `neo_testnet_node.toml` (in the current working
@@ -94,6 +96,22 @@ Stop the node with `Ctrl-C`; it shuts down gracefully.
 
 `config/mainnet.toml` binds RPC to `127.0.0.1:10332` and listens for P2P on
 `10333`. Expect a long initial sync from genesis.
+
+## Run a service endpoint
+
+Use the `*-service.toml` presets when you want one daemon to provide a
+NeoFura-style endpoint with durable RPC indexes, token history, ApplicationLogs,
+state proofs, `/metrics`, `/healthz`, and `/readyz`:
+
+```bash
+./target/release/neo-node --config config/testnet-service.toml
+# or
+./target/release/neo-node --config config/mainnet-service.toml
+```
+
+These presets bind RPC and telemetry to `127.0.0.1`; expose them through your
+reverse proxy or tunnel rather than binding the daemon directly to the public
+internet.
 
 ## Point at a data directory
 
@@ -174,27 +192,30 @@ Compose). Useful targets:
 | Target | Action |
 |--------|--------|
 | `make build-release` | Release build of the workspace. |
-| `make preflight` | Run `--check-all` for the bundled MainNet and TestNet configs. |
+| `make run-testnet` / `make run-mainnet` | Run `neo-node` with the standard TestNet or MainNet preset. |
+| `make run-service-testnet` / `make run-service-mainnet` | Run `neo-node` with the service-provider presets. |
+| `make preflight` | Run preflight checks for the bundled MainNet and TestNet configs. |
 | `make test` | `cargo test --workspace`. |
 | `make fmt` / `make clippy` | Format / lint. |
 | `make compose-up` / `make compose-down` | Start / stop the Docker Compose stack. |
-
-> Note: some `run`/Docker `Makefile` targets reference an older `neo-cli` binary
-> name. Run the daemon directly with `./target/release/neo-node --config <FILE>`
-> as shown above.
+| `make compose-service` | Start Docker Compose with `NEO_PROFILE=service`. |
 
 ## Run with Docker
 
 A multi-stage Docker build and a Compose file are provided. The container
-selects a bundled config from the `NEO_NETWORK` environment variable.
+selects a bundled config from `NEO_NETWORK`; set `NEO_PROFILE=service` to use
+`config/testnet-service.toml` or `config/mainnet-service.toml` inside the image.
+The workspace currently expects the shared VM crate at `../neo-vm-rs`; Compose
+wires that sibling checkout automatically through a named build context.
 
 ```bash
-docker build -t neo-rs .
+docker build --build-context neo-vm-rs=../neo-vm-rs -t neo-rs .
 
 docker run -d --name neo-node \
-  -p 20332:20332 -p 20333:20333 \
+  -p 20332:20332 -p 20333:20333 -p 19091:9091 \
   -v "$(pwd)/data:/data" \
   -e NEO_NETWORK=testnet \
+  -e NEO_PROFILE=service \
   neo-rs
 ```
 
@@ -203,18 +224,33 @@ Key environment knobs:
 | Variable | Meaning |
 |----------|---------|
 | `NEO_NETWORK` | `testnet` (default) or `mainnet`; picks the bundled config. |
+| `NEO_PROFILE` | Empty/`node` for the standard bundled config, or `service` for the RPC/indexer service-provider preset. |
 | `NEO_STORAGE` | RocksDB path inside the container. |
 | `NEO_CONFIG` | Path to a custom config if you bind-mount your own TOML. |
-| `RUST_LOG` | Log filter (e.g. `info`, `debug`). |
+| `NEO_RPC_BIND_ADDRESS` | Runtime RPC bind address used for bundled service profiles; defaults to `0.0.0.0` in the container. |
+| `NEO_METRICS_BIND_ADDRESS` | Runtime telemetry bind address used for bundled service profiles; defaults to `NEO_RPC_BIND_ADDRESS`. |
+| `NEO_MAINNET_METRICS_PORT` / `NEO_TESTNET_METRICS_PORT` | Host ports used by Compose for container telemetry ports `9090` / `9091`. |
+| `NEO_LOGS_DIR` | Log directory created by the entrypoint; defaults to `/data/Logs`. |
+| `BETTER_STACK_SOURCE_TOKEN` | Optional Better Stack log bearer token referenced by `token_env`. |
+| `GOOGLE_ERROR_REPORTING_TOKEN` | Optional Google Error Reporting bearer token referenced by `token_env`. |
+| `SENTRY_AUTH_HEADER` | Optional full Sentry auth header value referenced by `headers_env`. |
+| `RUST_LOG` | Temporary log filter override (e.g. `info`, `debug`). |
+
+For bundled service profiles, the entrypoint writes a temporary config copy that
+rebinds RPC and telemetry from the file's loopback defaults to container-facing
+addresses. It also maps bundled service data paths from `./data/<network>/...`
+to `NEO_STORAGE/...` and bundled log files to `NEO_LOGS_DIR/...`, so indexer,
+ApplicationLogs, TokensTracker, StateService, and log output land on the
+container volumes you configured. Explicit `NEO_CONFIG` files are used as-is.
 
 The container health check calls `getversion` on the detected RPC port. For a
 Compose-based setup, see `docker-compose.yml` and the `make compose-*` targets.
 
 ## Logging
 
-The daemon logs via `tracing` and honors the `RUST_LOG` environment variable
-(for example `RUST_LOG=info` or `RUST_LOG=debug` while diagnosing). When
-`RUST_LOG` is unset it defaults to `info,neo=debug`.
+The daemon logs via `tracing`. Default filters and formatting come from the
+TOML `[logging]` section; set `RUST_LOG=info` or `RUST_LOG=debug` to override
+the TOML level temporarily while diagnosing.
 
 ## Next steps
 

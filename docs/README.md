@@ -19,10 +19,10 @@ every page to what you will learn from it.
 | Doc | What you'll learn |
 |-----|-------------------|
 | [getting-started.md](./getting-started.md) | Install prerequisites, build `neo-node`, run a TestNet or MainNet node, point it at a data directory, and smoke-test it over JSON-RPC. Includes Docker and Makefile shortcuts. |
-| [configuration.md](./configuration.md) | Every TOML section and key the daemon reads (`[network]`, `[storage]`, `[p2p]`, `[rpc]`, `[consensus]`, `[blockchain]`, `[mempool]`), preset-plus-override behavior, environment variables, and which shipped keys are parsed but not yet consumed. |
+| [configuration.md](./configuration.md) | Every TOML section and key the daemon reads (`[network]`, `[storage]`, `[p2p]`, `[rpc]`, `[consensus]`, `[blockchain]`, `[mempool]`, `[state_service]`, `[indexer]`, `[application_logs]`, `[tokens_tracker]`, `[telemetry.metrics]`, `[logging]`, `[observability]`), preset-plus-override behavior, environment variables, and operational overrides. |
 | [operations.md](./operations.md) | Running in production: systemd and Docker deployment, storage sizing, health checks via RPC, observability, security hardening, backups, upgrades, and incident response. |
 | [rpc-api.md](./rpc-api.md) | The JSON-RPC 2.0 surface (~55 methods) grouped by domain — blockchain, smart-contract invocation, state and MPT proofs, node/network, wallet, plugins — with parameters, request/response shape, and curl examples. |
-| [architecture.md](./architecture.md) | The 27-crate, four-layer design (Foundation → Protocol/VM/State → Service → Application), a crate reference table, and the key design decisions (two-tier VM, async services, single error type, pluggable storage, C# parity). |
+| [architecture.md](./architecture.md) | The layered workspace design (Foundation → Infrastructure → Protocol → Domain service → Node service → Composition → Plugin/RPC boundary → Application), a crate reference table, and the key design decisions (two-tier VM, async services, single error type, pluggable storage, C# parity). |
 | [dataflow.md](./dataflow.md) | How data and control move at runtime: startup/composition, block ingestion, transaction lifecycle, a dBFT consensus round, RPC request handling, and the state/storage overlay model — each with a diagram. |
 | [protocol-compatibility.md](./protocol-compatibility.md) | What "byte-for-byte C# parity" means, the 11 native contracts, the 7 hardforks with MainNet/TestNet activation heights, supported subsystems (consensus, VM, NEP standards, P2P), and the cryptography stack. |
 

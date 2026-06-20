@@ -3,14 +3,17 @@
 //! Validates the architectural layering of the neo-rs workspace:
 //!
 //! ```text
-//! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-serialization, neo-storage, neo-io, neo-config
-//! Layer 1 (Crypto): neo-crypto (depends on Layer 0)
-//! Layer 2 (Protocol): neo-core, neo-p2p, neo-consensus
-//! Layer 3 (Services): neo-rpc, neo-tee
-//! Layer 4 (Application): neo-node, neo-cli
+//! Layer 0 (Foundation): neo-primitives
+//! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-config, neo-vm, neo-serialization, neo-manifest
+//! Layer 2 (Protocol): neo-payloads, neo-consensus, neo-hsm
+//! Layer 3 (Domain services): neo-execution, neo-native-contracts, neo-mempool, neo-state-service, neo-runtime
+//! Layer 4 (Node services): neo-blockchain, neo-network, neo-wallets, neo-indexer, neo-tee
+//! Layer 5 (Composition): neo-system
+//! Layer 6 (Plugin/RPC boundary): neo-oracle-service, neo-rpc
+//! Layer 7 (Applications): neo-node, neo-gui
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -18,83 +21,102 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Layer {
     Foundation = 0,
+    Infrastructure = 1,
     Protocol = 2,
-    Services = 3,
-    Application = 4,
+    DomainServices = 3,
+    NodeServices = 4,
+    Composition = 5,
+    PluginBoundary = 6,
+    Application = 7,
 }
 
 impl Layer {
     fn from_crate_name(name: &str) -> Option<Self> {
         match name {
-            // Layer 0: Foundation (no neo-* dependencies allowed)
-            "neo-primitives" | "neo-serialization" | "neo-storage" | "neo-config" => {
-                Some(Layer::Foundation)
+            // Layer 0: Foundation (no neo-* dependencies allowed).
+            "neo-primitives" => Some(Layer::Foundation),
+            // Layer 1: Infrastructure and shared data tooling.
+            "neo-io" | "neo-error" | "neo-crypto" | "neo-storage" | "neo-config" | "neo-vm"
+            | "neo-serialization" | "neo-manifest" => Some(Layer::Infrastructure),
+            // Layer 2: Protocol payloads and consensus message vocabulary.
+            "neo-payloads" | "neo-consensus" | "neo-hsm" => Some(Layer::Protocol),
+            // Layer 3: Domain logic with no node composition dependency.
+            "neo-execution"
+            | "neo-native-contracts"
+            | "neo-mempool"
+            | "neo-state-service"
+            | "neo-runtime" => Some(Layer::DomainServices),
+            // Layer 4: Long-running or queryable node services.
+            "neo-blockchain" | "neo-network" | "neo-wallets" | "neo-indexer" | "neo-tee" => {
+                Some(Layer::NodeServices)
             }
-            // neo-io is special: can depend on neo-primitives only
-            "neo-io" => Some(Layer::Foundation),
-            // Layer 1: Crypto (depends on Layer 0 only).
-            // `neo-crypto` is treated as a foundation crate here:
-            // its only neo-* dependency is `neo-primitives`, and
-            // `neo-config` re-uses `ECPoint` from it. Reclassifying
-            // it as Foundation is the only way to avoid the
-            // neo-config -> neo-crypto upward-dep edge that
-            // otherwise violates the no-upward-deps rule.
-            "neo-crypto" => Some(Layer::Foundation),
-            // Layer 2: Protocol (includes extracted sub-crates)
-            "neo-p2p" | "neo-consensus" | "neo-core" => Some(Layer::Protocol),
-            // Layer 3: Services
-            "neo-rpc" | "neo-tee" => Some(Layer::Services),
-            // Layer 5: Application
-            "neo-node" | "neo-cli" => Some(Layer::Application),
+            // Layer 5: Node composition root.
+            "neo-system" => Some(Layer::Composition),
+            // Layer 6: Optional plugin/RPC-facing service boundary.
+            "neo-oracle-service" | "neo-rpc" => Some(Layer::PluginBoundary),
+            // Layer 7: Binaries and UI clients.
+            "neo-node" | "neo-gui" => Some(Layer::Application),
             _ => None,
         }
     }
 }
 
-/// Parse Cargo.toml to extract neo-* dependencies
+fn read_toml_manifest(cargo_toml_path: &Path) -> toml::Value {
+    let content = fs::read_to_string(cargo_toml_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", cargo_toml_path.display()));
+    content
+        .parse::<toml::Value>()
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", cargo_toml_path.display()))
+}
+
+fn package_name_from_manifest(manifest: &toml::Value, cargo_toml_path: &Path) -> String {
+    manifest
+        .get("package")
+        .and_then(|package| package.get("name"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or_else(|| {
+            panic!(
+                "{} should declare [package].name",
+                cargo_toml_path.display()
+            )
+        })
+        .to_string()
+}
+
+fn collect_neo_dependencies_from_table(table: Option<&toml::Value>, deps: &mut BTreeSet<String>) {
+    let Some(table) = table.and_then(toml::Value::as_table) else {
+        return;
+    };
+
+    for (dep_name, dep_spec) in table {
+        let package_name = dep_spec
+            .as_table()
+            .and_then(|spec| spec.get("package"))
+            .and_then(toml::Value::as_str)
+            .unwrap_or(dep_name);
+
+        if package_name.starts_with("neo-") {
+            deps.insert(package_name.to_string());
+        }
+    }
+}
+
+/// Parse Cargo.toml to extract runtime/build neo-* dependencies.
 fn parse_neo_dependencies(cargo_toml_path: &Path) -> Vec<String> {
-    let content = fs::read_to_string(cargo_toml_path).expect("Failed to read Cargo.toml");
-    let mut deps = Vec::new();
+    let manifest = read_toml_manifest(cargo_toml_path);
+    let mut deps = BTreeSet::new();
 
-    let mut in_dependencies = false;
-    let mut in_dev_dependencies = false;
+    collect_neo_dependencies_from_table(manifest.get("dependencies"), &mut deps);
+    collect_neo_dependencies_from_table(manifest.get("build-dependencies"), &mut deps);
 
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        // Track section headers
-        if trimmed.starts_with("[dependencies]") {
-            in_dependencies = true;
-            in_dev_dependencies = false;
-            continue;
-        }
-        if trimmed.starts_with("[dev-dependencies]") {
-            in_dependencies = false;
-            in_dev_dependencies = true;
-            continue;
-        }
-        if trimmed.starts_with('[') {
-            in_dependencies = false;
-            in_dev_dependencies = false;
-            continue;
-        }
-
-        // Only check [dependencies], not [dev-dependencies]
-        if in_dependencies && !in_dev_dependencies {
-            // Match lines like: neo-primitives = { workspace = true }
-            // or: neo-p2p = { path = "../neo-p2p" }
-            if trimmed.starts_with("neo-") {
-                if let Some(name) = trimmed.split('=').next() {
-                    let dep_name = name.trim().to_string();
-                    if dep_name.starts_with("neo-") {
-                        deps.push(dep_name);
-                    }
-                }
-            }
+    if let Some(targets) = manifest.get("target").and_then(toml::Value::as_table) {
+        for target in targets.values() {
+            collect_neo_dependencies_from_table(target.get("dependencies"), &mut deps);
+            collect_neo_dependencies_from_table(target.get("build-dependencies"), &mut deps);
         }
     }
 
-    deps
+    deps.into_iter().collect()
 }
 
 /// Get all crate directories in the workspace
@@ -117,6 +139,28 @@ fn get_workspace_crates(workspace_root: &Path) -> Vec<String> {
     }
 
     crates
+}
+
+fn parse_workspace_string_array(workspace_root: &Path, key: &str) -> Vec<String> {
+    let cargo_toml_path = workspace_root.join("Cargo.toml");
+    let manifest = read_toml_manifest(&cargo_toml_path);
+    let values = manifest
+        .get("workspace")
+        .and_then(|workspace| workspace.get(key))
+        .and_then(toml::Value::as_array)
+        .unwrap_or_else(|| panic!("root Cargo.toml should declare [workspace].{key} as an array"));
+
+    values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .unwrap_or_else(|| {
+                    panic!("root Cargo.toml [workspace].{key} should contain only strings")
+                })
+                .to_string()
+        })
+        .collect()
 }
 
 #[test]
@@ -216,6 +260,236 @@ fn test_crypto_only_depends_on_layer_0() {
 }
 
 #[test]
+fn test_all_neo_crates_are_classified() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let crates = get_workspace_crates(workspace_root);
+    let unclassified = crates
+        .into_iter()
+        .filter(|crate_name| Layer::from_crate_name(crate_name).is_none())
+        .collect::<Vec<_>>();
+
+    assert!(
+        unclassified.is_empty(),
+        "Every neo-* crate with a Cargo.toml should have an explicit architecture layer: {:?}",
+        unclassified
+    );
+}
+
+#[test]
+fn test_development_workspace_crates_are_not_publishable() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let dev_crates = [
+        ("tests/Cargo.toml", "neo-tests"),
+        ("benches-package/Cargo.toml", "neo-benches"),
+    ];
+
+    for (relative_path, package_name) in dev_crates {
+        let path = workspace_root.join(relative_path);
+        let manifest = read_toml_manifest(&path);
+        let package = manifest
+            .get("package")
+            .and_then(toml::Value::as_table)
+            .unwrap_or_else(|| panic!("{relative_path} should declare [package]"));
+
+        assert_eq!(
+            package.get("name").and_then(toml::Value::as_str),
+            Some(package_name),
+            "{relative_path} should declare the expected package name"
+        );
+        assert_eq!(
+            package.get("publish").and_then(toml::Value::as_bool),
+            Some(false),
+            "{relative_path} is a development-only workspace member and must stay unpublished"
+        );
+    }
+}
+
+#[test]
+fn test_workspace_members_use_central_lint_policy() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let workspace_members = parse_workspace_string_array(workspace_root, "members");
+    let mut violations = Vec::new();
+
+    for member in workspace_members {
+        let manifest_path = workspace_root.join(&member).join("Cargo.toml");
+        let manifest = read_toml_manifest(&manifest_path);
+        let uses_workspace_lints = manifest
+            .get("lints")
+            .and_then(|lints| lints.get("workspace"))
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false);
+
+        if !uses_workspace_lints {
+            violations.push(member);
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Every workspace member should opt into [workspace.lints] with `[lints] workspace = true`: {:?}",
+        violations
+    );
+}
+
+#[test]
+fn test_workspace_dependencies_match_runtime_workspace_members() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let root_manifest = read_toml_manifest(&workspace_root.join("Cargo.toml"));
+    let workspace_members = parse_workspace_string_array(workspace_root, "members");
+    let member_paths = workspace_members
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let workspace_version = root_manifest
+        .get("workspace")
+        .and_then(|workspace| workspace.get("package"))
+        .and_then(|package| package.get("version"))
+        .and_then(toml::Value::as_str)
+        .expect("root Cargo.toml should declare [workspace.package].version");
+    let workspace_dependencies = root_manifest
+        .get("workspace")
+        .and_then(|workspace| workspace.get("dependencies"))
+        .and_then(toml::Value::as_table)
+        .expect("root Cargo.toml should declare [workspace.dependencies]");
+    let development_member_paths = ["tests", "benches-package"];
+
+    for member in &workspace_members {
+        if development_member_paths.contains(&member.as_str()) {
+            continue;
+        }
+
+        let manifest_path = workspace_root.join(member).join("Cargo.toml");
+        let member_manifest = read_toml_manifest(&manifest_path);
+        let package_name = package_name_from_manifest(&member_manifest, &manifest_path);
+
+        if !package_name.starts_with("neo-") {
+            continue;
+        }
+
+        let dependency = workspace_dependencies
+            .get(&package_name)
+            .and_then(toml::Value::as_table)
+            .unwrap_or_else(|| {
+                panic!("{package_name} should be declared in [workspace.dependencies]")
+            });
+
+        assert_eq!(
+            dependency.get("path").and_then(toml::Value::as_str),
+            Some(member.as_str()),
+            "{package_name} should use its workspace member path in [workspace.dependencies]"
+        );
+        assert_eq!(
+            dependency.get("version").and_then(toml::Value::as_str),
+            Some(workspace_version),
+            "{package_name} should use the workspace package version in [workspace.dependencies]"
+        );
+    }
+
+    let mut stale_internal_dependencies = Vec::new();
+
+    for (dependency_name, dependency_spec) in workspace_dependencies {
+        if !dependency_name.starts_with("neo-") {
+            continue;
+        }
+
+        let Some(path) = dependency_spec
+            .as_table()
+            .and_then(|dependency| dependency.get("path"))
+            .and_then(toml::Value::as_str)
+        else {
+            continue;
+        };
+
+        if path.starts_with("../") {
+            continue;
+        }
+
+        if !member_paths.contains(path) {
+            stale_internal_dependencies.push(format!("{dependency_name} -> {path}"));
+            continue;
+        }
+
+        let manifest_path = workspace_root.join(path).join("Cargo.toml");
+        let member_manifest = read_toml_manifest(&manifest_path);
+        let package_name = package_name_from_manifest(&member_manifest, &manifest_path);
+
+        assert_eq!(
+            dependency_name, &package_name,
+            "[workspace.dependencies].{dependency_name} should match package name at {path}"
+        );
+    }
+
+    assert!(
+        stale_internal_dependencies.is_empty(),
+        "Internal neo-* workspace dependencies should point at active workspace members: {:?}",
+        stale_internal_dependencies
+    );
+}
+
+#[test]
+fn test_development_workspace_crates_are_not_default_members() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let workspace_members = parse_workspace_string_array(workspace_root, "members");
+    let default_members = parse_workspace_string_array(workspace_root, "default-members");
+    let development_members = ["tests", "benches-package"];
+
+    for default_member in &default_members {
+        assert!(
+            workspace_members.contains(default_member),
+            "default workspace member `{default_member}` must also be listed in [workspace].members"
+        );
+    }
+
+    for development_member in development_members {
+        assert!(
+            workspace_members
+                .iter()
+                .any(|member| member == development_member),
+            "development-only crate `{development_member}` should remain an explicit workspace member"
+        );
+        assert!(
+            !default_members
+                .iter()
+                .any(|member| member == development_member),
+            "development-only crate `{development_member}` must stay out of default-members"
+        );
+    }
+
+    for runtime_entrypoint in ["neo-indexer", "neo-rpc", "neo-node"] {
+        assert!(
+            default_members
+                .iter()
+                .any(|member| member == runtime_entrypoint),
+            "runtime-facing crate `{runtime_entrypoint}` should stay in default-members"
+        );
+    }
+}
+
+#[test]
+fn test_standalone_directories_remain_excluded_from_workspace() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let workspace_members = parse_workspace_string_array(workspace_root, "members");
+    let excluded_entries = parse_workspace_string_array(workspace_root, "exclude");
+    let required_excludes = ["neo-gui", "fuzz", "examples", "docs", "neo_csharp"];
+
+    for excluded_entry in &excluded_entries {
+        assert!(
+            !workspace_members.contains(excluded_entry),
+            "`{excluded_entry}` cannot be both a workspace member and an excluded standalone path"
+        );
+    }
+
+    for required_exclude in required_excludes {
+        assert!(
+            excluded_entries
+                .iter()
+                .any(|entry| entry == required_exclude),
+            "`{required_exclude}` should stay excluded from the core Rust workspace"
+        );
+    }
+}
+
+#[test]
 fn test_no_upward_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let crates = get_workspace_crates(workspace_root);
@@ -249,6 +523,138 @@ fn test_no_upward_dependencies() {
     assert!(
         violations.is_empty(),
         "Found upward dependency violations:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn test_runtime_vocabulary_stays_below_composition_root() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+
+    let runtime_deps =
+        parse_neo_dependencies(&workspace_root.join("neo-runtime").join("Cargo.toml"));
+    assert!(
+        runtime_deps
+            .iter()
+            .all(|dep| matches!(Layer::from_crate_name(dep), Some(layer) if layer < Layer::DomainServices)),
+        "neo-runtime must stay a shared lower-layer vocabulary crate, but it depends on: {:?}",
+        runtime_deps
+    );
+
+    let system_deps = parse_neo_dependencies(&workspace_root.join("neo-system").join("Cargo.toml"));
+    assert!(
+        system_deps.iter().any(|dep| dep == "neo-runtime"),
+        "neo-system should consume neo-runtime service traits instead of owning that vocabulary"
+    );
+
+    for service_crate in ["neo-network", "neo-blockchain", "neo-mempool"] {
+        let deps = parse_neo_dependencies(&workspace_root.join(service_crate).join("Cargo.toml"));
+        assert!(
+            !deps.iter().any(|dep| dep == "neo-system"),
+            "{service_crate} must not depend on neo-system; shared service vocabulary belongs in neo-runtime"
+        );
+    }
+}
+
+#[test]
+fn test_indexer_remains_reusable_node_service_not_rpc_submodule() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    assert_eq!(
+        Layer::from_crate_name("neo-indexer"),
+        Some(Layer::NodeServices),
+        "neo-indexer should stay classified as a node service, not as an RPC plugin"
+    );
+
+    let indexer_deps =
+        parse_neo_dependencies(&workspace_root.join("neo-indexer").join("Cargo.toml"));
+    let forbidden_owners = ["neo-rpc", "neo-system", "neo-node"];
+    for forbidden_owner in forbidden_owners {
+        assert!(
+            !indexer_deps.iter().any(|dep| dep == forbidden_owner),
+            "neo-indexer must not depend on {forbidden_owner}; it should remain reusable by RPC, node, and future service surfaces"
+        );
+    }
+
+    let same_or_higher_layer_deps = indexer_deps
+        .iter()
+        .filter(|dep| {
+            matches!(
+                Layer::from_crate_name(dep),
+                Some(layer) if layer >= Layer::NodeServices
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        same_or_higher_layer_deps.is_empty(),
+        "neo-indexer should index persisted protocol data and depend only on lower layers, but found: {:?}",
+        same_or_higher_layer_deps
+    );
+
+    let rpc_deps = parse_neo_dependencies(&workspace_root.join("neo-rpc").join("Cargo.toml"));
+    assert!(
+        rpc_deps.iter().any(|dep| dep == "neo-indexer"),
+        "neo-rpc should expose NeoIndexer methods by consuming the node-service crate"
+    );
+
+    let node_deps = parse_neo_dependencies(&workspace_root.join("neo-node").join("Cargo.toml"));
+    assert!(
+        node_deps.iter().any(|dep| dep == "neo-indexer"),
+        "neo-node should own the live indexer lifecycle and register it for RPC"
+    );
+}
+
+#[test]
+fn test_active_architecture_docs_do_not_reference_retired_crates() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let checked_files = [
+        "Cargo.toml",
+        "README.md",
+        "docs/architecture.md",
+        "docs/protocol-compatibility.md",
+        "docs/STYLE.md",
+        "neo-runtime/Cargo.toml",
+        "neo-runtime/src/lib.rs",
+        "neo-rpc/Cargo.toml",
+        "neo-rpc/src/client/contract_client.rs",
+        "neo-rpc/src/server/rpc_server_blockchain/mod.rs",
+        "neo-rpc/src/server/rpc_server_node/tests.rs",
+        "neo-system/Cargo.toml",
+        "neo-system/src/lib.rs",
+        "neo-network/Cargo.toml",
+        "neo-network/src/lib.rs",
+        "neo-network/src/wire/mod.rs",
+        "neo-network/src/proto/mod.rs",
+        "neo-network/src/task_manager.rs",
+    ];
+
+    let retired_terms = [
+        "neo-core",
+        "neo-p2p",
+        "Layer 1 (runtime)",
+        "Layer 1 (service)",
+        "Layer 1 (protocol types)",
+        "Layer 2 (services we talk to)",
+        "Stage A",
+        "Stage B/C",
+        "Actor runtime",
+    ];
+    let mut violations = Vec::new();
+
+    for relative_path in checked_files {
+        let path = workspace_root.join(relative_path);
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+
+        for term in retired_terms {
+            if content.contains(term) {
+                violations.push(format!("{relative_path} still references `{term}`"));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Active architecture documentation should use the current crate/layer vocabulary:\n{}",
         violations.join("\n")
     );
 }

@@ -46,8 +46,8 @@ fn bench_hash160(c: &mut Criterion) {
     group.finish();
 }
 
-// TODO: Add MPT trie insert/lookup benchmarks once a simpler in-memory
-// MptStoreSnapshot implementation is available for benchmarking.
+// MPT trie insert/lookup benchmarks belong in a dedicated state-service suite
+// once the benchmark harness can create compact in-memory MPT snapshots.
 
 criterion_group!(benches, bench_sha256, bench_hash256, bench_hash160,);
 criterion_main!(benches);

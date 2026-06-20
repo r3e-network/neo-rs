@@ -24,7 +24,7 @@ runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
 neo-rs is a production node implementation that speaks Neo N3's wire protocol,
 executes its virtual machine, and maintains its ledger and state exactly as the
 canonical C# node does — so the two are interchangeable on the same network. It
-is organized as a layered Rust workspace of 27 focused crates, built on mature
+is organized as a layered Rust workspace of focused crates, built on mature
 libraries (RocksDB, jsonrpsee, the RustCrypto suite) with the protocol-defining
 parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
 
@@ -53,8 +53,8 @@ crates know nothing of the services above them.
 ```mermaid
 flowchart TD
     APP["<b>Application</b><br/>neo-node (daemon)"]
-    SVC["<b>Services</b><br/>neo-system · neo-runtime · neo-blockchain · neo-consensus<br/>neo-network · neo-rpc · neo-wallets · neo-oracle-service"]
-    MID["<b>VM / Execution / State / Protocol</b><br/>neo-vm · neo-execution · neo-native-contracts · neo-state-service<br/>neo-mempool · neo-payloads · neo-p2p · neo-manifest"]
+    SVC["<b>Services</b><br/>neo-system · neo-runtime · neo-blockchain · neo-network<br/>neo-rpc · neo-indexer · neo-wallets · neo-oracle-service"]
+    MID["<b>VM / Execution / State / Protocol</b><br/>neo-vm · neo-execution · neo-native-contracts · neo-state-service<br/>neo-mempool · neo-payloads · neo-consensus · neo-manifest"]
     FND["<b>Foundation</b><br/>neo-primitives · neo-io · neo-crypto · neo-config<br/>neo-error · neo-serialization · neo-storage"]
     APP --> SVC --> MID --> FND
 ```
@@ -79,6 +79,17 @@ cargo build --release -p neo-node
 
 # ...or MainNet
 ./target/release/neo-node --config config/mainnet.toml
+
+# RPC/indexer service-provider preset
+./target/release/neo-node --config config/testnet-service.toml
+
+# Same idea in Docker
+docker run -d --name neo-node \
+  -p 20332:20332 -p 20333:20333 -p 19091:9091 \
+  -v "$(pwd)/data:/data" \
+  -e NEO_NETWORK=testnet \
+  -e NEO_PROFILE=service \
+  neo-rs
 ```
 
 Query a running node over JSON-RPC (default MainNet port `10332`):
@@ -91,8 +102,19 @@ curl -s localhost:10332 -H 'Content-Type: application/json' \
 # Current block height
 curl -s localhost:10332 -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
+
+# Built-in indexer status (enabled in the shipped node configs)
+curl -s localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getindexerstatus","params":[]}'
 ```
 
+The shipped `config/*.toml` and `neo_*_node.toml` presets start the RPC,
+NeoIndexer, ApplicationLogs, and TokensTracker service stack with durable
+paths. Use `config/*-service.toml` when you want a NeoFura-style RPC/indexer
+endpoint with StateService, metrics, health checks, and JSON file logs enabled.
+In Docker, set `NEO_PROFILE=service`; the entrypoint uses the same presets and
+rewrites bind addresses and service data paths in a temporary config copy so
+published ports and mounted volumes work.
 The full RPC surface is in [docs/rpc-api.md](./docs/rpc-api.md).
 
 ## Documentation
@@ -103,7 +125,7 @@ you can understand the whole node without reading source.
 | Doc | What you'll learn |
 |-----|-------------------|
 | [Getting started](./docs/getting-started.md) | Install, build, and run your first node |
-| [Architecture](./docs/architecture.md) | The 27-crate layered design and key decisions |
+| [Architecture](./docs/architecture.md) | The layered workspace design and key decisions |
 | [Dataflow](./docs/dataflow.md) | How blocks, transactions, consensus, and state move through the node |
 | [Configuration](./docs/configuration.md) | Every TOML section and key, with defaults |
 | [RPC API](./docs/rpc-api.md) | All JSON-RPC methods, grouped, with examples |
@@ -119,16 +141,17 @@ developers → *architecture → dataflow → protocol-compatibility → rpc-api
 neo-rs/
 ├── neo-primitives, neo-io, neo-crypto, neo-config,   # Foundation layer
 │   neo-error, neo-serialization, neo-storage
-├── neo-payloads, neo-p2p, neo-manifest,              # Protocol / VM / state
+├── neo-payloads, neo-consensus, neo-manifest,        # Protocol / VM / state
 │   neo-vm, neo-execution, neo-native-contracts,
 │   neo-state-service, neo-mempool
-├── neo-blockchain, neo-consensus, neo-network,       # Services
-│   neo-runtime, neo-system, neo-wallets,
-│   neo-rpc, neo-oracle-service, neo-tee
+├── neo-blockchain, neo-network, neo-runtime,         # Services
+│   neo-system, neo-wallets, neo-rpc,
+│   neo-oracle-service, neo-indexer, neo-tee
 ├── neo-node                                          # Application (daemon)
 ├── config/                                           # mainnet/testnet TOML configs
 ├── docs/                                             # the documentation system
-└── tests/, benches-package/, fuzz/                   # tests, benchmarks, fuzzing
+└── tests/ (neo-tests), benches-package/ (neo-benches), fuzz/
+                                                       # tests, benchmarks, fuzzing
 ```
 
 ## Build and test

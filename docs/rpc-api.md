@@ -18,7 +18,7 @@ flowchart LR
   Dispatch --> Contract["VM invocation"]
   Dispatch --> State["State &amp; MPT proofs"]
   Dispatch --> Wallet["Wallet (opened required)"]
-  Dispatch --> Plugins["Plugin groups<br/>(logs, tokens, oracle)"]
+  Dispatch --> Plugins["Plugin groups<br/>(logs, tokens, indexer, oracle)"]
 ```
 
 ## Request and response shape
@@ -36,23 +36,33 @@ parameters, and disabled methods all return JSON-RPC errors.
 ## Endpoint configuration
 
 The endpoint is governed by the `[rpc]` config section. The node daemon wires
-through only these three keys:
+the listen address plus the RPC hardening and resource-limit keys into the
+embedded server configuration:
 
 | Key | Shipped configs | Purpose |
 |-----|-----------------|---------|
 | `enabled` | `true` | Whether the RPC server starts (omitted ⇒ off) |
 | `bind_address` | `127.0.0.1` | Listen address |
 | `port` | `10332` (MainNet) / `20332` (TestNet) | Listen port |
+| `rpc_user` / `rpc_pass` / `auth_enabled` | MainNet preset sets credentials | Basic authentication |
+| `cors_enabled` / `allow_origins` | Optional | Browser CORS headers and preflight handling |
+| `disabled_methods` | MainNet disables `openwallet` | Per-endpoint method deny-list |
+| `max_gas_invoke`, `max_iterator_results` | Shipped configs set bounded values | Invoke and iterator response limits |
+| `max_request_body_size`, `max_batch_size`, rate-limit keys | Optional | Request-size and batch controls; rate-limit keys are parsed, but public deployments should rate-limit at the proxy |
 
-The deeper RPC knobs (`rpc_user`/`rpc_pass`, `disabled_methods`, CORS, request
-limits) live in the RPC server's own settings model and the server-enforced DoS
-limits described in [operations.md](./operations.md); they are documented in
+The full `[rpc]` key list is documented in
 [configuration.md](./configuration.md), which is the authoritative config
 reference. Notes on the supported surface:
 
 - **TLS** is not terminated in-process; bind to localhost or place the node
   behind a TLS-terminating reverse proxy for remote access (see
   [operations.md](./operations.md)).
+- **Basic authentication** is enforced for every HTTP RPC request when
+  `rpc_user`/`rpc_pass` are configured. Clients must send an
+  `Authorization: Basic ...` header.
+- **CORS** is emitted by the HTTP transport when `cors_enabled` is true. Empty
+  `allow_origins` allows any origin; a non-empty list only echoes matching
+  origins.
 - **Wallet methods** require an opened wallet and are intended to be disabled on
   untrusted networks (`openwallet` is in `disabled_methods` in the shipped
   configs).
@@ -183,8 +193,10 @@ match C# for tooling compatibility.
 
 ## Plugin method groups
 
-The daemon registers three C#-optional plugin groups by default so the full RPC
-surface is available out of the box.
+The daemon registers optional plugin method groups on the same JSON-RPC
+endpoint as the standard methods. Their backing services are enabled in TOML;
+when a service is not running, its methods return a service-unavailable error
+instead of silently disappearing from the transport.
 
 ### Application logs
 
@@ -202,6 +214,25 @@ surface is available out of the box.
 | `getnep11transfers` | `address`, `start?`, `end?` | NEP-11 transfer history | |
 | `getnep11properties` | `contract`, `tokenid` | NEP-11 token properties | |
 
+### NeoIndexer
+
+| Method | Parameters | Returns | Notes |
+|--------|------------|---------|-------|
+| `getindexerstatus` | none | Indexed tip hash/height, chain lag, record counts, ApplicationLogs availability, and persistence mode | Requires `[indexer] enabled = true`; returns `ledgerheight`, `blocksbehind`, `synced`, `applicationlogs`, `persistent`, `persistencemode` (`memory`, `json-snapshot`, or `service-store`), `snapshotpath`, and `storepath`. |
+| `getblockindex` | `hash`\|`height` | Indexed block summary or `null` | |
+| `getblockindexes` | `skip?`, `limit?` | Indexed block summaries | Returns blocks in ascending height order. |
+| `gettransactionindex` | `txid` | Indexed transaction summary or `null` | Includes signer accounts and addresses. |
+| `getblocktransactions` | `hash`\|`height`, `skip?`, `limit?` | Indexed transactions for a block | Returns transaction summaries in block order. |
+| `getaddresstransactions` | `address`, `skip?`, `limit?` | Signer-account transaction records | Limit is capped by the server. |
+| `getcontracttransactions` | `contract`, `event?`, `skip?`, `limit?` | Transactions that emitted matching contract notifications | De-duplicates transactions with multiple matching notifications. |
+| `getaddressnotifications` | `address`, `skip?`, `limit?` | Transfer notifications involving the address | Uses indexed notification participants, not only signer accounts. |
+| `getblocknotifications` | `hash`\|`height`, `skip?`, `limit?` | Indexed notifications for a block | Live imports include notifications. Startup backfill reconstructs block/tx/account records from stored blocks; historical notification backfill requires `[application_logs]` records. |
+| `gettransactionnotifications` | `txid`, `skip?`, `limit?` | Indexed notifications for a transaction | |
+| `getcontractnotifications` | `contract`, `event?`, `skip?`, `limit?` | Indexed notifications for a contract | `contract` accepts script hash or address. |
+
+For paged NeoIndexer methods, the default page size is 100 and the maximum page size is 1000; larger limits are capped server-side.
+`synced` is true only when `indexedheight` exactly matches `ledgerheight`; an indexer store ahead of the current ledger is reported as unsynced.
+
 ### Oracle
 
 | Method | Parameters | Returns | Notes |
@@ -213,7 +244,8 @@ surface is available out of the box.
 | Method | Parameters | Returns | Notes |
 |--------|------------|---------|-------|
 | `validateaddress` | `address` | Validity + script hash | |
-| `listplugins` | none | Loaded plugins | |
+| `listplugins` | none | Loaded plugins | C#-compatible `name`, `version`, `interfaces` objects. |
+| `listservices` | none | Runtime service directory | Rust node operator view with `enabled`, `ready`, `interfaces`, `methods`, and lightweight `status` fields for RPC, StateService, ApplicationLogs, TokensTracker, NeoIndexer, and OracleService. |
 
 ## Error handling
 
