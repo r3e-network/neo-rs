@@ -14,33 +14,26 @@ readme.workspace = true
 description = "Neo node orchestrator (Node builder) — reth-style service composition root"
 
 [dependencies]
-# Foundation layer
-neo-primitives = { workspace = true }
+# Lower layers wired by the composition root
 neo-error = { workspace = true }
-neo-io = { workspace = true }
-neo-crypto = { workspace = true }
 neo-storage = { workspace = true }
 neo-payloads = { workspace = true }
-neo-manifest = { workspace = true }
 
-# Service-layer crates (Stage B/C deliverables)
+# Node and domain service crates
 neo-blockchain = { workspace = true }
 neo-mempool = { workspace = true }
 neo-state-service = { workspace = true }
 neo-network = { workspace = true }
 neo-wallets = { workspace = true }
-neo-execution = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-config = { workspace = true }
 
-# Runtime service traits + NodeBuilder composition (Stage A)
+# Runtime service traits
 neo-runtime = { workspace = true }
 
 # External
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync"] }
 tokio-util = { workspace = true }
-async-trait = { workspace = true }
-futures = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }

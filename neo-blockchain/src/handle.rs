@@ -97,10 +97,9 @@ impl BlockchainHandle {
         self.event_tx.subscribe()
     }
 
-    /// Send a [`BlockchainCommand`] without awaiting a reply. This is
-    /// the legacy actor-style API; new code should prefer the typed
+    /// Send a [`BlockchainCommand`] without awaiting a reply. Prefer the typed
     /// request/response methods ([`Self::import_block`],
-    /// [`Self::get_block`], …).
+    /// [`Self::get_block`], …) when the command has a natural reply.
     pub async fn tell(
         &self,
         command: BlockchainCommand,
@@ -108,8 +107,7 @@ impl BlockchainHandle {
         self.cmd_tx.send(command).await
     }
 
-    /// Try to send a command without awaiting the channel. Mirrors the
-    /// `try_tell` helper of the legacy actor handle.
+    /// Try to send a command without awaiting the channel.
     pub fn try_tell(
         &self,
         command: BlockchainCommand,

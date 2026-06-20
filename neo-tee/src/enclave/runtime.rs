@@ -123,9 +123,13 @@ pub enum EnclaveState {
 /// Detailed initialization result
 #[derive(Debug, Clone)]
 pub struct InitResult {
+    /// Final enclave lifecycle state after initialization completed.
     pub state: EnclaveState,
+    /// Whether the enclave sealing key was derived successfully.
     pub sealing_key_derived: bool,
+    /// Whether the monotonic replay-protection counter was loaded.
     pub counter_loaded: bool,
+    /// Whether hardware attestation is available for this runtime.
     pub hardware_attestation_available: bool,
 }
 

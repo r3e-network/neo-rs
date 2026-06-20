@@ -63,11 +63,6 @@ pub struct UnverifiedBlocksList {
 }
 
 impl UnverifiedBlocksList {
-    /// Construct an empty FIFO list.
-    pub(super) fn new() -> Self {
-        Self::default()
-    }
-
     pub(super) fn push_back(&mut self, block: UnverifiedBlock) {
         self.blocks.push_back(block);
     }

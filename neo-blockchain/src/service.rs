@@ -38,31 +38,25 @@ pub use crate::command::AddTransactionReply as _AddTransactionReplyAlias;
 /// Reth-style blockchain service.
 ///
 /// The service owns the command channel (mpsc), the event channel
-/// (broadcast), and the heavy state the legacy actor used to hold
-/// (ledger context, header cache, mempool handle, …). Construction
-/// goes through [`BlockchainService::new`], which returns the
-/// `(service, handle)` pair; the service is moved into a
-/// `tokio::spawn`'d task that calls [`BlockchainService::run`].
+/// (broadcast), and the node-service state required for canonical ledger
+/// progression (ledger context, header cache, mempool handle, …).
+/// Construction goes through [`BlockchainService::new`], which returns the
+/// `(service, handle)` pair; the service is moved into a `tokio::spawn`'d
+/// task that calls [`BlockchainService::run`].
 pub struct BlockchainService {
     /// System context: trait object giving the service access to the
-    /// ledger, the mempool, the storage backend, and the network
-    /// event stream. The trait is implemented by `neo_core::neo_system`.
+    /// ledger, the mempool, the storage backend, and lifecycle hooks. The
+    /// production implementation is provided by `neo-node`.
     pub(crate) system: Arc<dyn SystemContext>,
-    /// In-memory ledger cache. The actor's old struct held this
-    /// directly; we keep it on the service so a single
-    /// `Arc<BlockchainService>` is still the only owner of the
-    /// canonical ledger state.
+    /// In-memory ledger cache owned by the service loop.
     pub(crate) ledger: Arc<LedgerContext>,
     /// Header cache (headers received ahead of their blocks).
     pub(crate) header_cache: Arc<HeaderCache>,
     /// Command receiver half. The producer end lives on the
     /// [`BlockchainHandle`].
     pub(crate) cmd_rx: mpsc::Receiver<BlockchainCommand>,
-    /// Event broadcast sender. The actor's old implementation
-    /// published events through the actor-system event stream; the
-    /// new implementation publishes through a `broadcast::Sender`
-    /// that subscribers (RPC server, plugins, …) attach to via
-    /// [`BlockchainHandle::subscribe`].
+    /// Event broadcast sender that subscribers (RPC server, plugins, …) attach
+    /// to via [`BlockchainHandle::subscribe`].
     pub(crate) event_tx: broadcast::Sender<crate::RuntimeEvent>,
     /// Mempool access (used by the high-level `add_transaction` API).
     pub(crate) mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>>,
@@ -146,9 +140,8 @@ impl BlockchainService {
     ///
     /// Every command is dispatched to a synchronous handler method
     /// on the service struct; the loop itself is just
-    /// `while let Some(cmd) = self.cmd_rx.recv().await`. This is the
-    /// equivalent of the legacy actor's `handle()` method, but
-    /// expressed as a normal `async fn` rather than a trait object.
+    /// `while let Some(cmd) = self.cmd_rx.recv().await`, expressed as a normal
+    /// `async fn` over typed channels.
     pub async fn run(mut self) {
         tracing::debug!(target: "neo", "blockchain service run loop started");
         while let Some(cmd) = self.cmd_rx.recv().await {

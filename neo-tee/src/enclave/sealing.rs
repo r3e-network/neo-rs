@@ -216,10 +216,12 @@ pub struct SecureKey {
 
 #[allow(dead_code)]
 impl SecureKey {
+    /// Create a secure key wrapper from raw key material.
     pub fn new(key: [u8; 32]) -> Self {
         Self { key }
     }
 
+    /// Return the raw key bytes for cryptographic operations.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.key
     }

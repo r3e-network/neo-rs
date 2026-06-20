@@ -4,8 +4,8 @@
 //! this module re-exports it alongside helper constructors for common
 //! capability shapes (full node, archival, TCP/WS server).
 
-use neo_io::IoResult;
 pub use crate::NodeCapabilityType;
+use neo_io::IoResult;
 pub use neo_payloads::node_capability::{
     MAX_UNKNOWN_CAPABILITY_DATA, NodeCapabilities, NodeCapability,
 };

@@ -12,9 +12,9 @@
 //! the compression bit is set in `Flags`, the LZ4-compressed payload.
 
 use super::error::{WireError, WireResult};
+use crate::{MessageCommand, MessageFlags};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_io::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, Lz4};
-use crate::{MessageCommand, MessageFlags};
 use serde::{Deserialize, Serialize};
 
 /// Maximum payload size (matches `Neo.Network.P2P.Message.PayloadMaxSize` = 32 MiB).

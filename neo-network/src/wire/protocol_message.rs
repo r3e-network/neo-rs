@@ -7,8 +7,8 @@
 //! C# `Neo.Network.P2P.Message` round-trip.
 
 use super::error::{WireError, WireResult};
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::MessageCommand;
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_payloads::p2p_payloads::{
     AddrPayload, FilterAddPayload, FilterLoadPayload, GetBlockByIndexPayload, GetBlocksPayload,
     InvPayload, PingPayload, VersionPayload,

@@ -84,20 +84,27 @@ pub struct Nep6Account {
 /// NEP-6 contract wrapper (C# `NEP6Contract`).
 #[derive(Debug, Clone)]
 pub struct Nep6Contract {
+    /// Verification contract associated with the NEP-6 account.
     pub contract: Contract,
+    /// Contract parameter names in verification parameter order.
     pub parameter_names: Vec<String>,
+    /// Whether the contract is already deployed on chain.
     pub deployed: bool,
 }
 
 /// Scrypt parameters used for NEP-2 encryption (C# `ScryptParameters`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScryptParameters {
+    /// CPU/memory cost parameter.
     pub n: u32,
+    /// Block-size parameter.
     pub r: u32,
+    /// Parallelization parameter.
     pub p: u32,
 }
 
 impl ScryptParameters {
+    /// Return the NEP-6 default scrypt parameters.
     pub fn default_nep6() -> Self {
         Self {
             n: 16384,
@@ -114,6 +121,7 @@ impl Default for ScryptParameters {
 }
 
 impl Nep6Wallet {
+    /// Create an empty NEP-6 wallet bound to the given protocol settings.
     pub fn new(
         name: Option<String>,
         path: Option<String>,
@@ -130,6 +138,7 @@ impl Nep6Wallet {
         }
     }
 
+    /// Load a NEP-6 wallet file and unlock encrypted accounts with `password`.
     pub fn from_file(
         path: &str,
         password: &str,
@@ -138,6 +147,7 @@ impl Nep6Wallet {
         Self::from_file_with_password(path, Some(password), settings)
     }
 
+    /// Load a NEP-6 wallet file, optionally leaving encrypted accounts locked.
     pub fn from_file_with_password(
         path: &str,
         password: Option<&str>,
@@ -185,6 +195,7 @@ impl Nep6Wallet {
         })
     }
 
+    /// Persist the wallet back to its configured file path.
     pub fn persist(&self) -> WalletResult<()> {
         let path = self
             .path

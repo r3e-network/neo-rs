@@ -5,13 +5,10 @@
 //! requests, schedules new requests, and notifies the local node
 //! when an inventory item has been fully fetched from a peer.
 //!
-//! In the legacy actor code the task manager owns a complex state
-//! machine (sessions, known-hash cache, scheduling counters, …
-//! — see `neo-core/src/network/p2p/task_manager/`). This Stage C
-//! foundation delivers the *shape*: the right struct, the right
-//! command / event types, the right `run()` loop, and a no-op
-//! handler for each command variant. The port of the actual
-//! scheduling logic is deferred to a follow-up commit.
+//! The task manager owns the in-memory set of active sync tasks and exposes a
+//! typed command handle for adding, cancelling, completing, and listing them.
+//! More advanced peer scheduling can build on the existing `peers` map without
+//! changing the command surface.
 
 use std::collections::HashMap;
 use std::fmt;

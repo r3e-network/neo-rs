@@ -56,8 +56,8 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
-use neo_config::ProtocolSettings;
 use crate::ChannelsConfig;
+use neo_config::ProtocolSettings;
 use neo_payloads::{Block, Transaction};
 use neo_runtime::{NetworkEvent as RuntimeNetworkEvent, NetworkService, Service, ServiceError};
 
@@ -418,19 +418,16 @@ impl LocalNodeService {
             return;
         }
         for group in neo_payloads::inv_payload::InvPayload::create_group(inventory_type, hashes) {
-            let frame = match crate::wire::Message::create(
-                crate::MessageCommand::Inv,
-                Some(&group),
-                false,
-            )
-            .and_then(|message| message.to_bytes())
-            {
-                Ok(bytes) => bytes,
-                Err(err) => {
-                    warn!(target: "neo_network", %err, "failed to encode inv announcement");
-                    return;
-                }
-            };
+            let frame =
+                match crate::wire::Message::create(crate::MessageCommand::Inv, Some(&group), false)
+                    .and_then(|message| message.to_bytes())
+                {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        warn!(target: "neo_network", %err, "failed to encode inv announcement");
+                        return;
+                    }
+                };
             for (peer_id, handle) in self.registry.handles() {
                 if let Err(err) = handle.try_send_raw(frame.clone()) {
                     warn!(

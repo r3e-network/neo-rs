@@ -23,8 +23,11 @@ pub fn inc_write_timeout() {
 /// Snapshot of timeout counters (best-effort, relaxed ordering).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeoutStats {
+    /// Number of peer handshakes that timed out.
     pub handshake: usize,
+    /// Number of peer reads that timed out.
     pub read: usize,
+    /// Number of peer writes that timed out.
     pub write: usize,
 }
 

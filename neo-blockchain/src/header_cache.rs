@@ -1,9 +1,7 @@
 //! In-memory header cache used by the blockchain service.
 //!
-//! Moved verbatim from `neo-core::ledger::header_cache` in Stage 4
-//! of the kill-neo-core refactor. The service is the single owner
-//! of the canonical tip, so this cache lives on the service struct
-//! rather than in a global `NeoSystem` singleton.
+//! The service is the single owner of the canonical tip, so this cache lives
+//! on the service state rather than in a process-wide singleton.
 
 use neo_payloads::Header;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};

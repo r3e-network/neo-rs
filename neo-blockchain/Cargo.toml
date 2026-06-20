@@ -14,7 +14,7 @@ readme.workspace = true
 description = "Reth-style blockchain service for Neo (canonical home of Blockchain, LedgerContext, HeaderCache)"
 
 [dependencies]
-# Foundation
+# Lower protocol, infrastructure, and domain layers
 neo-primitives = { workspace = true }
 neo-error = { workspace = true }
 neo-io = { workspace = true }
@@ -36,18 +36,13 @@ neo-execution = { workspace = true }
 neo-native-contracts = { workspace = true }
 
 # External
-tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 async-trait = { workspace = true }
-futures = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-hex = { workspace = true }
-hashbrown = { workspace = true }
 lru = { workspace = true }
-dashmap = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 
 [dev-dependencies]
 num-bigint = { workspace = true }

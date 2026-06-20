@@ -8,10 +8,11 @@
 //!
 //! ## Layering
 //!
-//! Sits in **Layer 2 (service composition)**. Depends on the
-//! service-layer crates (`neo-blockchain`, `neo-network`,
-//! `neo-mempool`, `neo-execution`, …) and on the runtime service
-//! traits (`neo-runtime`). The crate does **not** contain any
+//! Sits in **Layer 5 (Composition)**. Depends on the node-service
+//! crates (`neo-blockchain`, `neo-network`, `neo-wallets`, …), domain
+//! service crates (`neo-mempool`, `neo-execution`, `neo-runtime`, …),
+//! and lower protocol / infrastructure crates needed to wire them
+//! together. The crate does **not** contain any
 //! Akka-style actor code: every service interaction is a plain
 //! `async fn` on a trait object, backed by a `mpsc::Sender<T>` and
 //! optionally a `oneshot::Sender<Reply>` for request/response
@@ -55,7 +56,7 @@
 //! | Wallet provider | [`WalletProvider`] | Thread-safe wallet handle |
 //! | Node error | [`NodeError`] | Builder / lifecycle error vocabulary |
 
-#![doc(html_root_url = "https://docs.rs/neo-system/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-system/0.8.0")]
 
 pub mod builder;
 pub mod error;

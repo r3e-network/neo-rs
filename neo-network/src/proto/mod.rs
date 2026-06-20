@@ -1,17 +1,16 @@
 //! P2P protocol primitives — message commands, flags, channels config,
 //! timeouts, and the low-level protocol error vocabulary.
 //!
-//! These types were previously in the standalone `neo-p2p` crate, which has
-//! been folded into `neo-network` (it was almost entirely a re-export shim
-//! over `neo-primitives`). They are collected here under a `proto` submodule
-//! and re-exported from the crate root for backwards compatibility.
+//! These types were previously in a standalone P2P shim crate, which has been
+//! folded into `neo-network` (it was almost entirely a re-export layer over
+//! `neo-primitives`). They are collected here under a `proto` submodule and
+//! re-exported from the crate root.
 
 /// Channel configuration for P2P node bootstrap.
 pub mod channels_config;
 
 /// Transaction containment type enumeration.
 pub mod contains_transaction_type {
-    //! Re-exported from `neo-primitives`.
     pub use neo_primitives::ContainsTransactionType;
 }
 
@@ -30,13 +29,11 @@ pub mod message_flags;
 
 /// Node capability type enumeration.
 pub mod node_capability_type {
-    //! Re-exported from `neo-primitives`.
     pub use neo_primitives::NodeCapabilityType;
 }
 
 /// Oracle response code enumeration.
 pub mod oracle_response_code {
-    //! Re-exported from `neo-primitives`.
     pub use neo_primitives::OracleResponseCode;
 }
 
@@ -45,30 +42,26 @@ pub mod timeouts;
 
 /// Transaction removal reason enumeration.
 pub mod transaction_removal_reason {
-    //! Re-exported from `neo-primitives`.
     pub use neo_primitives::TransactionRemovalReason;
 }
 
 /// Verification result enumeration.
 pub mod verify_result {
-    //! Re-exported from `neo-primitives`.
     pub use neo_primitives::VerifyResult;
 }
 
 /// Witness condition type enumeration.
 pub mod witness_condition_type {
-    //! Re-exported from `neo-primitives`.
     pub use neo_primitives::WitnessConditionType;
 }
 
 /// Witness rule action enumeration.
 pub mod witness_rule_action {
-    //! Re-exported from `neo-primitives`.
     pub use neo_primitives::WitnessRuleAction;
 }
 
 // ---------------------------------------------------------------------------
-// Public re-exports (mirror the old `neo_p2p` surface).
+// Public re-exports for callers that need the P2P primitive surface.
 // ---------------------------------------------------------------------------
 
 pub use channels_config::ChannelsConfig;

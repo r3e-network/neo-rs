@@ -8,6 +8,7 @@ use neo_crypto::{Bip32Crypto, CryptoError, ECC, ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
 use zeroize::Zeroize;
 
+/// BIP-32 extended private key with public key and chain code.
 #[derive(Clone, Zeroize)]
 #[zeroize(drop)]
 pub struct ExtendedKey {
@@ -46,6 +47,7 @@ impl ExtendedKey {
         &self.chain_code
     }
 
+    /// Create the master extended key from a seed.
     pub fn create(seed: &[u8], curve: Option<ECCurve>) -> CoreResult<Self> {
         let curve = curve.unwrap_or(ECCurve::Secp256r1);
         if matches!(curve, ECCurve::Ed25519) {
@@ -67,6 +69,7 @@ impl ExtendedKey {
         })
     }
 
+    /// Create an extended key and derive it along a BIP-32 path.
     pub fn create_with_path(seed: &[u8], path: &str, curve: Option<ECCurve>) -> CoreResult<Self> {
         let key_path = KeyPath::parse(path)?;
         let mut ext_key = Self::create(seed, curve)?;
@@ -76,6 +79,7 @@ impl ExtendedKey {
         Ok(ext_key)
     }
 
+    /// Derive a child extended key by index.
     pub fn derive(&self, index: u32) -> CoreResult<Self> {
         let mut data = [0u8; 37];
         if index >= 0x8000_0000 {

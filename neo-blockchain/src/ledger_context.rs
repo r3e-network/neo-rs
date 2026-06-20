@@ -1,9 +1,7 @@
 //! In-memory ledger cache used by the blockchain service.
 //!
-//! Moved verbatim from `neo-core::ledger::ledger_context` in
-//! Stage 4 of the kill-neo-core refactor. The service is the
-//! single owner of the canonical tip, so this cache lives on the
-//! service struct rather than in a global `NeoSystem` singleton.
+//! The service is the single owner of the canonical tip, so this cache lives
+//! on the service state rather than in a process-wide singleton.
 
 use std::collections::HashMap;
 use std::num::NonZeroUsize;

@@ -15,25 +15,21 @@
 //! The trait-level contract is in
 //! [`neo_runtime::NetworkService`]; the concrete implementations in
 //! this crate are the only `impl NetworkService` the rest of the
-//! workspace should depend on. The legacy Akka-style actor types
-//! that lived in `neo_core::network::p2p::{local_node, remote_node,
-//! task_manager}` are **re-exported** below for back-compat with the
-//! existing consumers (neo-rpc, neo-node, neo-consensus) and will
-//! be removed in Stage F once consumer migration is complete.
+//! workspace should depend on. Low-level P2P protocol primitives live
+//! in [`proto`] and the wire envelope lives in [`wire`], so callers do
+//! not need a separate P2P crate.
 //!
 //! ## Layering
 //!
-//! Sits in **Layer 1 (service)**. Depends on:
+//! Sits in **Layer 4 (Node services)**. Depends on:
 //!
-//! - `neo-runtime` (Layer 0 / 1) — `NetworkService` trait, `Service`
+//! - `neo-runtime` (Layer 3) — `NetworkService` trait, `Service`
 //!   marker, `ServiceError`, `NetworkEvent`.
-//! - `neo-payloads` / `neo-primitives` (Layer 1)
-//!   — `Block`, `Transaction`, `UInt256`.
-//! - `neo-config` — `ProtocolSettings`.
-//! - `neo-blockchain` / `neo-mempool` (Layer 2) — the services the
+//! - `neo-payloads` (Layer 2) / `neo-primitives` (Layer 0) —
+//!   `Block`, `Transaction`, `UInt256`.
+//! - `neo-config` (Layer 1) — `ProtocolSettings`.
+//! - `neo-blockchain` (Layer 4) / `neo-mempool` (Layer 3) — services the
 //!   network host talks to when receiving blocks / transactions.
-//! - `neo-core` (legacy) — re-exports of the actor types; removed
-//!   in Stage F.
 //! - `tokio`, `async-trait`, `futures`, `parking_lot`, `tracing`,
 //!   `thiserror` — external async / utility crates.
 //!
@@ -70,17 +66,6 @@
 //! | Network handle | [`handle::NetworkHandle`] | Cheap-to-clone service handle |
 //! | Network error | [`error::NetworkError`] | Service-specific error type |
 //!
-//! ## Back-compat (Stage F will remove)
-//!
-//! The legacy Akka-style actor types are re-exported so the existing
-//! consumers keep compiling unchanged.
-//!
-//! | Legacy type | New type |
-//! |-------------|----------|
-//! | `neo_core::network::p2p::local_node::LocalNodeHandle` | [`handle::NetworkHandle`] |
-//! | `neo_core::network::p2p::remote_node::RemoteNodeHandle` | [`remote_node::RemoteNodeHandle`] |
-//! | `neo_core::network::p2p::task_manager::TaskManagerHandle` | [`task_manager::TaskManagerHandle`] |
-//!
 //! ## Quick start
 //!
 //! ```no_run
@@ -96,7 +81,7 @@
 //! # Ok(()) }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/neo-network/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-network/0.8.0")]
 
 pub mod command;
 pub mod connection_timeouts;
@@ -142,15 +127,14 @@ pub use wire::{
 // -----------------------------------------------------------------------------
 // P2P protocol primitives re-export
 //
-// The standalone `neo-p2p` crate was folded into `neo-network` (it was almost
-// entirely a re-export shim over `neo-primitives`). Its types now live under
-// the `proto` submodule and are re-exported here at the crate root for
-// backwards compatibility with the old `neo_p2p::` import paths.
+// The former standalone P2P shim was folded into `neo-network` (it was almost
+// entirely a re-export layer over `neo-primitives`). Its types now live under
+// the `proto` submodule and are re-exported here at the crate root.
 // -----------------------------------------------------------------------------
 
 pub use proto::{
-    ChannelsConfig, ContainsTransactionType, InvalidWitnessScopeError, InventoryType, MessageCommand,
-    MessageFlags, NodeCapabilityType, OracleResponseCode, P2PError, P2PResult,
+    ChannelsConfig, ContainsTransactionType, InvalidWitnessScopeError, InventoryType,
+    MessageCommand, MessageFlags, NodeCapabilityType, OracleResponseCode, P2PError, P2PResult,
     TransactionAttributeType, TransactionRemovalReason, VerifyResult, WitnessConditionType,
     WitnessRuleAction, WitnessScope,
 };

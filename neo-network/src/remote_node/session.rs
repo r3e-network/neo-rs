@@ -1,0 +1,532 @@
+use std::fmt;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+
+use futures::{SinkExt, StreamExt};
+use tokio::sync::{broadcast, mpsc};
+use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, info, warn};
+
+use super::{
+    BlockSource, InboundInventory, InventoryItem, PeerFramed, RemoteNodeCommand, RemoteNodeState,
+};
+use crate::MessageCommand;
+use crate::connection_timeouts::ConnectionTimeouts;
+use crate::event::NetworkEvent;
+use crate::local_identity::LocalIdentity;
+use crate::peer_id::PeerId;
+use crate::peer_registry::PeerRegistry;
+use crate::wire::Message;
+use neo_io::{MemoryReader, Serializable};
+use neo_payloads::p2p_payloads::{
+    GetBlockByIndexPayload, NodeCapability, PingPayload, VersionPayload,
+};
+
+mod messages;
+
+/// Why the per-peer session ended. Carried only for logging; every
+/// variant tears the connection down the same way.
+pub(super) enum CloseReason {
+    /// The remote closed the connection (clean EOF).
+    RemoteClosed,
+    /// No frame arrived within the inactivity timeout.
+    TimedOut,
+    /// Local node is shutting down.
+    LocalShutdown,
+    /// Explicit `Shutdown` command (or all handles dropped).
+    ShutdownRequested,
+    /// The peer violated the protocol (bad handshake order, invalid
+    /// payload, network mismatch, self-connection, duplicate).
+    ProtocolViolation(String),
+    /// Transport-level failure (read/decode/write error).
+    Transport(String),
+}
+
+impl fmt::Display for CloseReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RemoteClosed => write!(f, "connection closed by peer"),
+            Self::TimedOut => write!(f, "connection timed out"),
+            Self::LocalShutdown => write!(f, "local node shutting down"),
+            Self::ShutdownRequested => write!(f, "shutdown requested"),
+            Self::ProtocolViolation(detail) => write!(f, "protocol violation: {detail}"),
+            Self::Transport(detail) => write!(f, "transport error: {detail}"),
+        }
+    }
+}
+
+/// Live per-connection protocol state, owned by the running task.
+///
+/// Split from [`RemoteNodeService`] so the read loop can borrow the
+/// framed transport and the command receiver independently of the
+/// protocol state.
+pub(super) struct PeerSession {
+    pub(super) peer_id: PeerId,
+    pub(super) remote_addr: SocketAddr,
+    pub(super) identity: Arc<LocalIdentity>,
+    pub(super) registry: Arc<PeerRegistry>,
+    pub(super) event_tx: broadcast::Sender<NetworkEvent>,
+    pub(super) state: RemoteNodeState,
+    /// The peer's version payload (C# `RemoteNode.Version`); `None`
+    /// until the version message has been received and validated.
+    pub(super) peer_version: Option<VersionPayload>,
+    /// Whether the peer's `verack` has been received
+    /// (C# `RemoteNode._verack`).
+    pub(super) verack_received: bool,
+    /// Listener port advertised via the `TcpServer` capability
+    /// (C# `RemoteNode.ListenerTcpPort`; `0` when the peer is not a
+    /// server).
+    pub(super) listener_port: u16,
+    /// Whether the peer advertised the `FullNode` capability
+    /// (C# `RemoteNode.IsFullNode`).
+    pub(super) peer_is_full_node: bool,
+    /// The peer's last known block height (C# `RemoteNode.LastBlockIndex`):
+    /// seeded from the `FullNode` capability's `StartHeight` and refreshed
+    /// by each `ping`/`pong` exchange. Drives the block-sync gate
+    /// (`block.Index > LastBlockIndex`) once sync is wired.
+    pub(super) peer_last_block_index: u32,
+    /// Highest block index already requested from this peer (the in-flight
+    /// high-water mark, C# `TaskSession` assigned tasks). `0` = nothing
+    /// requested yet. Lets sync pipeline forward without re-requesting the
+    /// same range each tick.
+    pub(super) sync_requested_to: u32,
+    /// Persisted height observed at the last sync tick, for stall detection.
+    pub(super) sync_last_local_height: u32,
+    /// Consecutive sync ticks with no persisted-height progress while still
+    /// trailing the peer; a run of these rewinds the in-flight cursor so a
+    /// dropped batch is re-requested (C# `TaskManager` task-timeout reassign).
+    pub(super) sync_stall_ticks: u32,
+    /// Whether outbound frames to this peer may be compressed
+    /// (C# `VersionPayload.AllowCompression`: no `DisableCompression`
+    /// capability present).
+    pub(super) peer_allows_compression: bool,
+    /// Outbound messages queued while the handshake is still in
+    /// flight, flushed on `verack` (C# `RemoteNode` queues messages
+    /// until `_verack` is set).
+    pub(super) pending_outbound: Vec<Message>,
+    /// Optional sink for blocks/transactions decoded from this peer.
+    pub(super) inbound_tx: Option<mpsc::Sender<InboundInventory>>,
+    /// Optional read-only ledger view for serving block requests.
+    pub(super) block_source: Option<Arc<dyn BlockSource>>,
+}
+
+impl PeerSession {
+    /// Run the connection: send our version, then loop over inbound
+    /// frames, outbound commands, the inactivity deadline, and the
+    /// local shutdown token.
+    pub(super) async fn drive(
+        &mut self,
+        framed: &mut PeerFramed,
+        cmd_rx: &mut mpsc::Receiver<RemoteNodeCommand>,
+        shutdown: &CancellationToken,
+        timeouts: ConnectionTimeouts,
+    ) -> CloseReason {
+        // C# sends the version message immediately on connect for
+        // both inbound and outbound connections
+        // (LocalNode.OnTcpConnected → StartProtocol).
+        if let Err(reason) = self.send_version(framed).await {
+            return reason;
+        }
+        self.state = RemoteNodeState::Versioned;
+
+        // C# Connection.cs arms a 10 s timer at construction and
+        // re-arms a 60 s timer after every receive.
+        let mut deadline = Instant::now() + timeouts.initial;
+        // C# `RemoteNode.ProtocolHandler` arms a 30 s repeating timer
+        // (`TimerInterval`) whose tick sends a `ping`; the first tick is
+        // scheduled one interval out so we never ping mid-handshake.
+        let ping_interval = Duration::from_secs(30);
+        let mut ping_timer =
+            tokio::time::interval_at(Instant::now() + ping_interval, ping_interval);
+        // Block-sync runs on its own fast cadence (decoupled from the 30 s
+        // keepalive ping): each tick pipelines the next batch forward while the
+        // ledger trails the peer, instead of one batch per keepalive interval.
+        let sync_interval = Duration::from_secs(1);
+        let mut sync_timer =
+            tokio::time::interval_at(Instant::now() + sync_interval, sync_interval);
+        loop {
+            tokio::select! {
+                _ = shutdown.cancelled() => {
+                    return CloseReason::LocalShutdown;
+                }
+                _ = tokio::time::sleep_until(deadline) => {
+                    return CloseReason::TimedOut;
+                }
+                _ = ping_timer.tick() => {
+                    if let Err(reason) = self.send_ping(framed).await {
+                        return reason;
+                    }
+                }
+                _ = sync_timer.tick() => {
+                    // C# `TaskManager` timer: keep the block-sync pipeline full
+                    // while the ledger trails the peer.
+                    if let Err(reason) = self.request_blocks_if_behind(framed).await {
+                        return reason;
+                    }
+                }
+                cmd = cmd_rx.recv() => match cmd {
+                    Some(RemoteNodeCommand::SendInventory(item)) => {
+                        if let Err(reason) = self.on_send_inventory(framed, item).await {
+                            return reason;
+                        }
+                    }
+                    Some(RemoteNodeCommand::SendRaw(bytes)) => {
+                        if let Err(reason) = self.on_send_raw(framed, bytes).await {
+                            return reason;
+                        }
+                    }
+                    Some(RemoteNodeCommand::Shutdown) | None => {
+                        return CloseReason::ShutdownRequested;
+                    }
+                },
+                frame = framed.next() => match frame {
+                    Some(Ok(message)) => {
+                        deadline = Instant::now() + timeouts.idle;
+                        if let Err(reason) = self.on_message(framed, message).await {
+                            return reason;
+                        }
+                    }
+                    Some(Err(err)) => {
+                        return CloseReason::Transport(format!("frame decode failed: {err}"));
+                    }
+                    None => {
+                        return CloseReason::RemoteClosed;
+                    }
+                },
+            }
+        }
+    }
+
+    /// Send our `version` message (C# `RemoteNode.OnStartProtocol`).
+    /// Never compressed: C# passes `Version?.AllowCompression ?? false`
+    /// to `Message.ToArray`, and the peer's version is unknown here.
+    async fn send_version(&mut self, framed: &mut PeerFramed) -> Result<(), CloseReason> {
+        let payload = self.identity.version_payload();
+        let message = Message::create(MessageCommand::Version, Some(&payload), false)
+            .map_err(|err| CloseReason::Transport(format!("encode version: {err}")))?;
+        framed
+            .send(message)
+            .await
+            .map_err(|err| CloseReason::Transport(format!("send version: {err}")))?;
+        debug!(
+            target: "neo_network",
+            peer_id = %self.peer_id,
+            "version sent"
+        );
+        Ok(())
+    }
+
+    /// C# `RemoteNode.ProtocolHandler.OnTimer`: once the handshake has
+    /// completed, send a periodic `ping` carrying our current block height
+    /// so an idle-but-healthy connection is not dropped by the peer's 60 s
+    /// idle timer. A no-op while the handshake is still in flight.
+    async fn send_ping(&mut self, framed: &mut PeerFramed) -> Result<(), CloseReason> {
+        if !self.verack_received {
+            return Ok(());
+        }
+        let payload = PingPayload::create(self.identity.block_height());
+        let message = Message::create(
+            MessageCommand::Ping,
+            Some(&payload),
+            self.peer_allows_compression,
+        )
+        .map_err(|err| CloseReason::Transport(format!("encode ping: {err}")))?;
+        framed
+            .send(message)
+            .await
+            .map_err(|err| CloseReason::Transport(format!("send ping: {err}")))?;
+        Ok(())
+    }
+
+    /// C# `TaskManager` block-sync request: while this peer is ahead of our
+    /// ledger, request the next batch of blocks by index
+    /// (`GetBlockByIndex`). The peer replies with `block` frames, which the
+    /// inbound-inventory sink forwards to the blockchain service; as the
+    /// ledger advances and the shared height updates, the next request asks
+    /// for the new tip. Redundant requests across peers are deduplicated by
+    /// the blockchain service (already-persisted blocks are dropped), so a
+    /// per-peer trigger needs no cross-peer range assignment to be correct.
+    async fn request_blocks_if_behind(
+        &mut self,
+        framed: &mut PeerFramed,
+    ) -> Result<(), CloseReason> {
+        if !self.verack_received {
+            return Ok(());
+        }
+        let local_height = self.identity.block_height();
+        let peer_height = self.peer_last_block_index;
+
+        // Caught up: reset the in-flight cursor + stall tracker so a future
+        // divergence restarts the pipeline cleanly.
+        if peer_height <= local_height {
+            self.sync_requested_to = local_height;
+            self.sync_last_local_height = local_height;
+            self.sync_stall_ticks = 0;
+            return Ok(());
+        }
+
+        // Stall detection: if the persisted height has not advanced across
+        // several ticks while we still trail the peer, the in-flight batch was
+        // lost — rewind the cursor to re-request the gap (C# `TaskManager`
+        // reassigns a timed-out task to another peer).
+        if local_height == self.sync_last_local_height {
+            self.sync_stall_ticks = self.sync_stall_ticks.saturating_add(1);
+        } else {
+            self.sync_stall_ticks = 0;
+            self.sync_last_local_height = local_height;
+        }
+        const STALL_LIMIT: u32 = 5;
+        if self.sync_stall_ticks >= STALL_LIMIT {
+            self.sync_requested_to = local_height;
+            self.sync_stall_ticks = 0;
+        }
+
+        // Pipeline forward from the in-flight high-water mark (C# `TaskManager.
+        // RequestTasks`, TaskManager.cs:400-409): request the next contiguous run
+        // the peer holds, never behind the persisted tip, never past the peer's
+        // advertised height, and never more than `MaxHashesCount` (500) ahead of
+        // the persisted tip — the back-pressure that keeps look-ahead bounded.
+        // `count = Math.Min(endHeight - startHeight, MaxHashesCount)`.
+        const MAX_HASHES: u32 = 500;
+        let start = (local_height + 1).max(self.sync_requested_to + 1);
+        if start > peer_height || start >= local_height.saturating_add(MAX_HASHES) {
+            return Ok(());
+        }
+        let upper = peer_height.min(local_height.saturating_add(MAX_HASHES));
+        let count = (upper - start + 1).min(MAX_HASHES);
+        let payload = GetBlockByIndexPayload::create(start, count as i16);
+        let message = Message::create(
+            MessageCommand::GetBlockByIndex,
+            Some(&payload),
+            self.peer_allows_compression,
+        )
+        .map_err(|err| CloseReason::Transport(format!("encode getblockbyindex: {err}")))?;
+        framed
+            .send(message)
+            .await
+            .map_err(|err| CloseReason::Transport(format!("send getblockbyindex: {err}")))?;
+        self.sync_requested_to = start + count - 1;
+        debug!(
+            target: "neo_network",
+            peer_id = %self.peer_id,
+            from = start,
+            count,
+            peer_height,
+            "requesting block batch from peer"
+        );
+        Ok(())
+    }
+
+    /// C# `RemoteNode.ProtocolHandler.OnVersionMessageReceived` +
+    /// `LocalNode.AllowNewConnection`.
+    async fn on_version_message(
+        &mut self,
+        framed: &mut PeerFramed,
+        payload_raw: &[u8],
+    ) -> Result<(), CloseReason> {
+        let mut reader = MemoryReader::new(payload_raw);
+        let payload = VersionPayload::deserialize(&mut reader).map_err(|err| {
+            CloseReason::ProtocolViolation(format!("invalid version payload: {err}"))
+        })?;
+
+        // Capability capture (OnVersionMessageReceived loop).
+        for capability in &payload.capabilities {
+            match capability {
+                NodeCapability::FullNode { start_height } => {
+                    self.peer_is_full_node = true;
+                    // C# `RemoteNode.LastBlockIndex = StartHeight` on the
+                    // FullNode capability (RemoteNode.ProtocolHandler.cs:403).
+                    self.peer_last_block_index = *start_height;
+                }
+                NodeCapability::TcpServer { port } => {
+                    self.listener_port = *port;
+                }
+                _ => {}
+            }
+        }
+        // C# `VersionPayload.AllowCompression` is derived from the
+        // capability list on deserialize.
+        self.peer_allows_compression = !payload
+            .capabilities
+            .iter()
+            .any(|c| matches!(c, NodeCapability::DisableCompression));
+
+        // C# LocalNode.AllowNewConnection, in order.
+        if payload.network != self.identity.network() {
+            return Err(CloseReason::ProtocolViolation(format!(
+                "network mismatch: peer {} != local {}",
+                payload.network,
+                self.identity.network()
+            )));
+        }
+        if payload.nonce == self.identity.nonce() {
+            return Err(CloseReason::ProtocolViolation(
+                "self-connection rejected (version nonce equals local nonce)".to_string(),
+            ));
+        }
+        if !self
+            .registry
+            .record_version_nonce(self.peer_id, payload.nonce)
+        {
+            return Err(CloseReason::ProtocolViolation(format!(
+                "duplicate connection from {} with version nonce {}",
+                self.remote_addr.ip(),
+                payload.nonce
+            )));
+        }
+
+        // Address upgrade: C# replaces the transport endpoint with
+        // `node.Listener` when the advertised listener port differs
+        // (`ConnectedPeers.TryUpdate(actor, node.Listener, node.Remote)`),
+        // which is what `getpeers` ultimately reports. The handle-side
+        // tracker folds a repeated `PeerConnected` for a known peer id
+        // as an address update, not a new peer.
+        if self.listener_port != 0 && self.listener_port != self.remote_addr.port() {
+            let upgraded = SocketAddr::new(self.remote_addr.ip(), self.listener_port);
+            let _ = self.event_tx.send(NetworkEvent::PeerConnected {
+                peer_id: self.peer_id.to_string(),
+                address: Some(upgraded),
+            });
+        }
+
+        // Record the advertised listener endpoint so this peer can be gossiped
+        // in `GetAddr` responses (C# `RemoteNode.Listener`).
+        if self.listener_port != 0 {
+            self.registry.record_listener_addr(
+                self.peer_id,
+                SocketAddr::new(self.remote_addr.ip(), self.listener_port),
+            );
+        }
+
+        info!(
+            target: "neo_network",
+            peer_id = %self.peer_id,
+            remote_addr = %self.remote_addr,
+            user_agent = %payload.user_agent,
+            nonce = payload.nonce,
+            listener_port = self.listener_port,
+            full_node = self.peer_is_full_node,
+            "version received"
+        );
+        self.peer_version = Some(payload);
+
+        // Respond with verack (end of OnVersionMessageReceived).
+        let verack = Message::from_payload_bytes(MessageCommand::Verack, Vec::new(), false)
+            .map_err(|err| CloseReason::Transport(format!("encode verack: {err}")))?;
+        framed
+            .send(verack)
+            .await
+            .map_err(|err| CloseReason::Transport(format!("send verack: {err}")))?;
+        Ok(())
+    }
+
+    /// C# `RemoteNode.ProtocolHandler.OnVerackMessageReceived`: mark
+    /// the data plane open and flush messages queued mid-handshake.
+    async fn on_verack_message(&mut self, framed: &mut PeerFramed) -> Result<(), CloseReason> {
+        self.verack_received = true;
+        self.state = RemoteNodeState::Ready;
+        debug!(
+            target: "neo_network",
+            peer_id = %self.peer_id,
+            "handshake complete"
+        );
+        let pending = std::mem::take(&mut self.pending_outbound);
+        for message in pending {
+            framed
+                .send(message)
+                .await
+                .map_err(|err| CloseReason::Transport(format!("flush queued message: {err}")))?;
+        }
+        // C# `TaskManager` kicks off block sync as soon as a peer is ready:
+        // if this peer is ahead of our ledger, request the first batch now
+        // rather than waiting for the periodic timer.
+        self.request_blocks_if_behind(framed).await?;
+        Ok(())
+    }
+
+    /// C# `RemoteNode.OnSend`: inventory is only relayed to full
+    /// nodes (so anything arriving before the peer's version is
+    /// dropped — `IsFullNode` is still `false` then, exactly like
+    /// C#), and queued until `verack` once the version is known.
+    async fn on_send_inventory(
+        &mut self,
+        framed: &mut PeerFramed,
+        item: InventoryItem,
+    ) -> Result<(), CloseReason> {
+        if !self.peer_is_full_node {
+            debug!(
+                target: "neo_network",
+                peer_id = %self.peer_id,
+                "dropping inventory: peer has not advertised the FullNode capability"
+            );
+            return Ok(());
+        }
+        let message = match &item {
+            InventoryItem::Block(block) => Message::create(
+                MessageCommand::Block,
+                Some(block),
+                self.peer_allows_compression,
+            ),
+            InventoryItem::Transaction(tx) => Message::create(
+                MessageCommand::Transaction,
+                Some(tx),
+                self.peer_allows_compression,
+            ),
+        }
+        .map_err(|err| CloseReason::Transport(format!("encode inventory: {err}")))?;
+        self.send_or_queue(framed, message).await
+    }
+
+    /// Handler for [`RemoteNodeCommand::SendRaw`]: the bytes must be
+    /// a complete wire frame, which is re-framed through the codec so
+    /// a malformed buffer can never corrupt the stream framing. A
+    /// malformed buffer is a local caller bug, so it is logged and
+    /// dropped rather than blamed on the peer.
+    async fn on_send_raw(
+        &mut self,
+        framed: &mut PeerFramed,
+        bytes: Vec<u8>,
+    ) -> Result<(), CloseReason> {
+        if bytes.is_empty() {
+            warn!(
+                target: "neo_network",
+                peer_id = %self.peer_id,
+                "send_raw called with empty payload"
+            );
+            return Ok(());
+        }
+        match Message::from_bytes(&bytes) {
+            Ok(message) => self.send_or_queue(framed, message).await,
+            Err(err) => {
+                warn!(
+                    target: "neo_network",
+                    peer_id = %self.peer_id,
+                    %err,
+                    "send_raw dropped: bytes are not a valid wire frame"
+                );
+                Ok(())
+            }
+        }
+    }
+
+    /// Write a message now when the handshake is complete, otherwise
+    /// queue it for the `verack` flush (C# `EnqueueMessage` +
+    /// `CheckMessageQueue` gating on `_verack`).
+    async fn send_or_queue(
+        &mut self,
+        framed: &mut PeerFramed,
+        message: Message,
+    ) -> Result<(), CloseReason> {
+        if self.state == RemoteNodeState::Ready {
+            framed
+                .send(message)
+                .await
+                .map_err(|err| CloseReason::Transport(format!("send message: {err}")))?;
+        } else {
+            self.pending_outbound.push(message);
+        }
+        Ok(())
+    }
+}

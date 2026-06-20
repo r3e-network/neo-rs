@@ -16,39 +16,51 @@ pub type WalletResult<T> = std::result::Result<T, WalletError>;
 /// Wallet-specific errors
 #[derive(thiserror::Error, Debug)]
 pub enum WalletError {
+    /// Password verification failed.
     #[error("Invalid password")]
     InvalidPassword,
 
+    /// The requested account script hash is not present in the wallet.
     #[error("Account not found: {0}")]
     AccountNotFound(UInt160),
 
+    /// The wallet file could not be found at the requested path.
     #[error("Wallet file not found: {0}")]
     WalletFileNotFound(String),
 
+    /// The wallet file exists but does not match the expected format.
     #[error("Invalid wallet format")]
     InvalidWalletFormat,
 
+    /// The wallet is locked and the requested operation requires unlocked keys.
     #[error("Wallet is locked")]
     WalletLocked,
 
+    /// The selected account is locked and cannot sign or export keys.
     #[error("Account is locked")]
     AccountLocked,
 
+    /// The wallet does not have enough spendable balance for the operation.
     #[error("Insufficient funds")]
     InsufficientFunds,
 
+    /// Transaction construction failed.
     #[error("Transaction creation failed: {0}")]
     TransactionCreationFailed(String),
 
+    /// Signing failed for the requested account or payload.
     #[error("Signing failed: {0}")]
     SigningFailed(String),
 
+    /// Error propagated from shared Neo core functionality.
     #[error("Core error: {0}")]
     Core(#[from] neo_error::CoreError),
 
+    /// Error propagated from filesystem or stream operations.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Miscellaneous wallet error that does not fit a more specific variant.
     #[error("Other error: {0}")]
     Other(String),
 }

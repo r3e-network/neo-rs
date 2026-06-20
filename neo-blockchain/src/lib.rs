@@ -8,10 +8,8 @@
 //! [`BlockchainHandle`] that wraps a `tokio::sync::mpsc::Sender<BlockchainCommand>`
 //! and a `tokio::sync::broadcast::Sender<BlockchainEvent>`.
 //!
-//! The service pattern replaces the previous Akka-style actor implementation
-//! that used to live in `neo-core/src/ledger/blockchain`. The actor trait
-//! implementation, the `Actor` / `ActorContext` plumbing, and the per-message
-//! `tell()` / `ask()` boilerplate have all been replaced with:
+//! The service pattern keeps the ordering guarantees Neo needs without hiding
+//! protocol state behind a framework. The public surface is:
 //!
 //! 1. A plain `struct BlockchainService` that owns the command channel and
 //!    the broadcast channel.
@@ -28,13 +26,22 @@
 //! | Module | Purpose |
 //! |--------|---------|
 //! | [`blockchain`] | Re-exports of the runtime's [`BlockchainCommand`] / [`BlockchainEvent`] / [`BlockchainHandle`] |
-//! | [`command`]    | The actor's *internal* command enum (the comprehensive set the actor's old mailbox used) |
+//! | [`command`]    | The internal command enum consumed by the single service loop |
 //! | [`handle`]     | The service handle — `BlockchainHandle::new()` returns a fresh `(handle, cmd_rx, event_tx)` triple |
 //! | [`internal`]   | Internal types: `UnverifiedBlocksList`, `ImportDisposition`, classify helpers |
 //! | [`block_processing`] | Block verification + persistence loop |
 //! | [`handlers`]   | The `impl BlockchainService` block that wires command variants to async fn handlers |
 //! | [`import`], [`import_completed`], [`fill_memory_pool`], [`fill_completed`], [`persist_completed`], [`relay_result`], [`reverify`], [`inventory_payload`] | Per-message types used by the command enum |
 //! | [`ledger_context`], [`header_cache`] | The in-memory ledger caches the service uses for hot lookups |
+//!
+//! ## Layering
+//!
+//! `neo-blockchain` is a Layer 4 node-service crate. It may orchestrate
+//! lower protocol/infrastructure crates (`neo-primitives`, `neo-payloads`,
+//! `neo-storage`, `neo-vm`, `neo-io`, `neo-crypto`) and domain services
+//! (`neo-runtime`, `neo-mempool`, `neo-state-service`, `neo-execution`,
+//! `neo-native-contracts`). It must not depend on application or adapter
+//! layers such as `neo-system`, RPC, plugins, or node binaries.
 //!
 //! ## Service contract
 //!
@@ -47,11 +54,10 @@
 //!
 //! The `BlockchainService` is a *single* owner of the command channel. All
 //! state mutations (block import, mempool fill, reverify, …) are processed
-//! sequentially by the `run()` loop, which is the property the old actor
-//! gave us, but expressed in plain `async` / `await` rather than an actor
-//! framework.
+//! sequentially by the `run()` loop, expressed in plain `async` / `await`
+//! over typed channels.
 
-#![doc(html_root_url = "https://docs.rs/neo-blockchain/0.7.2")]
+#![doc(html_root_url = "https://docs.rs/neo-blockchain/0.8.0")]
 
 pub mod block_processing;
 pub mod block_validation;

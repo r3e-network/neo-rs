@@ -5,9 +5,7 @@
 //! submit, a reverify tick, …) is sent through the same `mpsc::Sender`
 //! as a `BlockchainCommand`. The `run()` loop in [`crate::service`]
 //! dispatches each command to an `async fn` handler on the service
-//! struct, so the dispatch is a single `match` against the enum rather
-//! than the per-message `tell()` / `ask()` boilerplate the old actor
-//! model used.
+//! struct, so the dispatch is a single typed `match` against the enum.
 //!
 //! This is the canonical command set the blockchain service loop drives.
 //! The shared cross-crate event type ([`neo_runtime::BlockchainEvent`]) and

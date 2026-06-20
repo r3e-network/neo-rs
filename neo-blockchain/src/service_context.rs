@@ -10,17 +10,15 @@
 //! daemon context in `neo-node` exposes the canonical store snapshot and commit
 //! hook, while tests can provide smaller in-memory contexts.
 //!
-//! The trait surface is intentionally narrow — it covers the
-//! operations the service *actually* uses. New methods can be added
-//! in later stages as the actor's legacy handler logic is
-//! progressively ported over.
+//! The trait surface is intentionally narrow: it covers the operations the
+//! service actually uses and keeps node/application wiring outside this crate.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
 use neo_config::ProtocolSettings;
-use neo_state_service::StateStore;
+use neo_payloads::{ApplicationExecuted, Block};
 
 /// Trait object giving the [`crate::service::BlockchainService`]
 /// access to the system it is orchestrating.
@@ -48,12 +46,20 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         None
     }
 
-    /// Returns the state-service store, when the node has enabled the
-    /// StateService plugin. The blockchain persistence loop uses this to feed
-    /// the MPT state-root store from the same tracked storage changes it just
-    /// applied to the canonical snapshot.
-    fn state_store(&self) -> Option<Arc<StateStore>> {
-        None
+    /// Called after a block's native persistence pipeline has produced its
+    /// `ApplicationExecuted` records but before the canonical store is
+    /// committed. This mirrors the C# `ICommittingHandler` plugin hook and lets
+    /// stateful plugins consume the same snapshot that will be committed to the
+    /// canonical store. Returning `false` aborts block persistence; handlers
+    /// should reserve that for consensus-critical failures (for example
+    /// StateService local MPT updates).
+    fn block_committing(
+        &self,
+        _block: &Block,
+        _snapshot: &neo_storage::DataCache,
+        _application_executed_list: &[ApplicationExecuted],
+    ) -> bool {
+        true
     }
 
     /// Flushes the writes accumulated in [`SystemContext::store_snapshot`] (after
@@ -62,6 +68,10 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// (mirroring C# `snapshot.Commit()` at the end of `Blockchain.Persist`).
     /// The default is a no-op for store-less / in-memory test contexts.
     fn commit_to_store(&self) {}
+
+    /// Called after the block's writes have been committed to the canonical
+    /// store. This mirrors the C# `ICommittedHandler` plugin hook.
+    fn block_committed(&self, _block: &Block) {}
 }
 
 /// Async variant of [`SystemContext`]; the trait object behind the
