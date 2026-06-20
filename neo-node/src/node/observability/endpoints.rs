@@ -173,14 +173,42 @@ pub(super) fn error_endpoint_name(endpoint: &ObservabilityErrorEndpoint) -> Stri
 }
 
 pub(super) fn heartbeat_endpoint_name(endpoint: &ObservabilityHeartbeatEndpoint) -> String {
-    endpoint
+    if let Some(name) = endpoint
         .name
         .as_deref()
         .map(str::trim)
         .filter(|name| !name.is_empty())
-        .or(endpoint.url.as_deref())
-        .unwrap_or("heartbeat")
-        .to_string()
+    {
+        return name.to_string();
+    }
+    // Never fall back to the raw URL: heartbeat URLs embed a secret token in the
+    // path (e.g. Better Stack `.../heartbeat/<id>`) that would otherwise leak into
+    // logs and into error reports forwarded to other providers. Use a redacted
+    // scheme://host label instead.
+    match endpoint.url.as_deref() {
+        Some(url) => redact_url(url),
+        None => "heartbeat".to_string(),
+    }
+}
+
+/// Returns a log-safe label for a URL: `scheme://host[:port]`, with any userinfo
+/// credentials and the secret-bearing path/query/fragment removed. Used wherever a
+/// destination URL would otherwise be written into logs or outbound error reports.
+pub(super) fn redact_url(url: &str) -> String {
+    let url = url.trim();
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return "<redacted-url>".to_string();
+    };
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    let host = match authority.rsplit_once('@') {
+        Some((_credentials, host)) => host,
+        None => authority,
+    };
+    if host.is_empty() {
+        return "<redacted-url>".to_string();
+    }
+    format!("{scheme}://{host}")
 }
 
 pub(super) fn trimmed(value: Option<&str>) -> Option<String> {

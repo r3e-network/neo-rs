@@ -13,8 +13,8 @@ use tracing::{info, warn};
 use self::config_validation::validate_runtime_config;
 use self::endpoints::{
     apply_async_auth_and_headers, apply_blocking_auth_and_headers, error_endpoint_name,
-    error_endpoint_url, heartbeat_endpoint_name, heartbeat_endpoint_url, normalized_kind, trimmed,
-    trimmed_or_default,
+    error_endpoint_url, heartbeat_endpoint_name, heartbeat_endpoint_url, normalized_kind,
+    redact_url, trimmed, trimmed_or_default,
 };
 use self::health::node_health_payload;
 use self::payloads::{
@@ -321,7 +321,7 @@ impl ObservabilityInner {
         let response = request
             .send()
             .await
-            .with_context(|| format!("posting error report to {url}"))?;
+            .with_context(|| format!("posting error report to {}", redact_url(&url)))?;
         let status = response.status();
         if !status.is_success() {
             anyhow::bail!("error report endpoint returned HTTP {status}");
@@ -364,7 +364,7 @@ impl ObservabilityInner {
         let response = request
             .send()
             .await
-            .with_context(|| format!("sending heartbeat to {url}"))?;
+            .with_context(|| format!("sending heartbeat to {}", redact_url(url)))?;
         let status = response.status();
         if !status.is_success() {
             anyhow::bail!("heartbeat endpoint returned HTTP {status}");
