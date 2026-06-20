@@ -5,9 +5,17 @@ use super::endpoints::normalized_kind;
 
 pub(super) fn validate_runtime_config(config: &ObservabilitySection) -> anyhow::Result<()> {
     validate_runtime_destinations(config)?;
+    validate_runtime_send_attempts(config)?;
     validate_runtime_error_endpoint_kinds(config)?;
     validate_runtime_heartbeat_intervals(config)?;
     validate_runtime_heartbeat_methods(config)
+}
+
+fn validate_runtime_send_attempts(config: &ObservabilitySection) -> anyhow::Result<()> {
+    if config.max_send_attempts == 0 {
+        anyhow::bail!("[observability].max_send_attempts must be at least 1");
+    }
+    Ok(())
 }
 
 fn validate_runtime_destinations(config: &ObservabilitySection) -> anyhow::Result<()> {

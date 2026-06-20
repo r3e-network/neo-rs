@@ -88,6 +88,8 @@ service_name = "neo-node-testnet-service"
 environment = "testnet"
 capture_panics = true
 request_timeout_ms = 5000
+max_send_attempts = 3
+retry_backoff_ms = 250
 heartbeat_interval_seconds = 60
 # [[observability.error_endpoints]]
 # kind = "better_stack_logs"

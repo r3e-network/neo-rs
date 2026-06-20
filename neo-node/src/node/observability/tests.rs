@@ -2,6 +2,7 @@ mod endpoints;
 mod health;
 mod payloads;
 mod redaction;
+mod retry;
 mod runtime_config;
 mod runtime_config_validation;
 mod runtime_errors;

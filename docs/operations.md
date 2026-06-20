@@ -305,6 +305,13 @@ kind = "custom_json"
 url = "https://errors.example.com/neo-node"
 ```
 
+Delivery is best-effort but resilient: each report is retried with exponential
+backoff so a transient network blip does not silently drop a crash. Tune this
+with `request_timeout_ms` (per-attempt HTTP timeout, default `5000`),
+`max_send_attempts` (total attempts per endpoint, default `3`, must be `>= 1`),
+and `retry_backoff_ms` (base backoff that doubles each retry, capped at 30s,
+default `250`).
+
 Supported error endpoint kinds:
 
 | Kind | Behavior |

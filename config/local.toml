@@ -64,6 +64,8 @@ service_name = "neo-node-local"
 environment = "local"
 capture_panics = true
 request_timeout_ms = 5000
+max_send_attempts = 3
+retry_backoff_ms = 250
 heartbeat_interval_seconds = 60
 # [[observability.error_endpoints]]
 # kind = "custom_json"

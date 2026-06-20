@@ -26,6 +26,21 @@ pub(in crate::node) struct ObservabilitySection {
         alias = "RequestTimeoutMs"
     )]
     pub(in crate::node) request_timeout_ms: u64,
+    /// Total attempts per error report before giving up (>=1). A transient
+    /// network failure should not silently drop a crash/panic report, so the
+    /// reporter retries with exponential backoff up to this many attempts.
+    #[serde(
+        default = "default_observability_max_send_attempts",
+        alias = "MaxSendAttempts"
+    )]
+    pub(in crate::node) max_send_attempts: u32,
+    /// Base backoff between error-report retries, in milliseconds. The delay
+    /// doubles each attempt (capped) so the first retry waits this long.
+    #[serde(
+        default = "default_observability_retry_backoff_ms",
+        alias = "RetryBackoffMs"
+    )]
+    pub(in crate::node) retry_backoff_ms: u64,
     /// Default heartbeat cadence when an endpoint does not override it.
     #[serde(
         default = "default_observability_heartbeat_interval_seconds",
@@ -49,6 +64,8 @@ impl Default for ObservabilitySection {
             node_id: None,
             capture_panics: true,
             request_timeout_ms: default_observability_request_timeout_ms(),
+            max_send_attempts: default_observability_max_send_attempts(),
+            retry_backoff_ms: default_observability_retry_backoff_ms(),
             heartbeat_interval_seconds: default_observability_heartbeat_interval_seconds(),
             error_endpoints: Vec::new(),
             heartbeat_endpoints: Vec::new(),
@@ -154,6 +171,14 @@ impl Default for ObservabilityHeartbeatEndpoint {
 
 const fn default_observability_request_timeout_ms() -> u64 {
     5_000
+}
+
+const fn default_observability_max_send_attempts() -> u32 {
+    3
+}
+
+const fn default_observability_retry_backoff_ms() -> u64 {
+    250
 }
 
 const fn default_observability_heartbeat_interval_seconds() -> u64 {

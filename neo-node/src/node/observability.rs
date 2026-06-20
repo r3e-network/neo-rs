@@ -285,7 +285,7 @@ impl ObservabilityInner {
             .iter()
             .filter(|endpoint| endpoint.enabled)
         {
-            if let Err(err) = self.send_error_async(endpoint, report).await {
+            if let Err(err) = self.send_error_async_with_retry(endpoint, report).await {
                 failures.push(format!("{}: {err}", error_endpoint_name(endpoint)));
             }
         }
@@ -295,6 +295,25 @@ impl ObservabilityInner {
         } else {
             anyhow::bail!(failures.join("; "))
         }
+    }
+
+    async fn send_error_async_with_retry(
+        &self,
+        endpoint: &ObservabilityErrorEndpoint,
+        report: &ErrorReport,
+    ) -> anyhow::Result<()> {
+        let attempts = self.config.max_send_attempts.max(1);
+        let mut last_error = None;
+        for attempt in 0..attempts {
+            if attempt > 0 {
+                tokio::time::sleep(retry_backoff(self.config.retry_backoff_ms, attempt)).await;
+            }
+            match self.send_error_async(endpoint, report).await {
+                Ok(()) => return Ok(()),
+                Err(err) => last_error = Some(err),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("no observability send attempts made")))
     }
 
     async fn send_error_async(
@@ -399,7 +418,8 @@ fn report_error_with_blocking_client(
         .iter()
         .filter(|endpoint| endpoint.enabled)
     {
-        if let Err(err) = send_error_blocking(client, metadata, endpoint, report) {
+        if let Err(err) = send_error_blocking_with_retry(client, config, metadata, endpoint, report)
+        {
             failures.push(format!("{}: {err}", error_endpoint_name(endpoint)));
         }
     }
@@ -409,6 +429,37 @@ fn report_error_with_blocking_client(
     } else {
         anyhow::bail!(failures.join("; "))
     }
+}
+
+/// Exponential backoff for error-report retries. `attempt` is the 0-based loop
+/// index; the first retry (attempt 1) waits `base_ms`, doubling each retry, with
+/// a 30s ceiling so a misconfigured base cannot stall the reporter indefinitely.
+fn retry_backoff(base_ms: u64, attempt: u32) -> Duration {
+    let base = base_ms.max(1);
+    let shift = attempt.saturating_sub(1).min(6);
+    let millis = base.saturating_mul(1u64 << shift).min(30_000);
+    Duration::from_millis(millis)
+}
+
+fn send_error_blocking_with_retry(
+    client: &reqwest::blocking::Client,
+    config: &ObservabilitySection,
+    metadata: &ObservabilityMetadata,
+    endpoint: &ObservabilityErrorEndpoint,
+    report: &ErrorReport,
+) -> anyhow::Result<()> {
+    let attempts = config.max_send_attempts.max(1);
+    let mut last_error = None;
+    for attempt in 0..attempts {
+        if attempt > 0 {
+            std::thread::sleep(retry_backoff(config.retry_backoff_ms, attempt));
+        }
+        match send_error_blocking(client, metadata, endpoint, report) {
+            Ok(()) => return Ok(()),
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("no observability send attempts made")))
 }
 
 fn send_error_blocking(

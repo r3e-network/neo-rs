@@ -34,6 +34,28 @@ fn runtime_rejects_unknown_error_endpoint_kind_before_reporting() {
 }
 
 #[test]
+fn runtime_rejects_zero_max_send_attempts() {
+    let config = ObservabilitySection {
+        enabled: true,
+        capture_panics: true,
+        max_send_attempts: 0,
+        error_endpoints: vec![ObservabilityErrorEndpoint {
+            kind: Some("custom_json".to_string()),
+            url: Some("https://errors.example.com/neo-node".to_string()),
+            ..ObservabilityErrorEndpoint::default()
+        }],
+        ..ObservabilitySection::default()
+    };
+
+    let error = expect_runtime_config_error(&config);
+
+    assert!(
+        error.contains("[observability].max_send_attempts must be at least 1"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn runtime_rejects_unknown_heartbeat_method_before_spawning_tasks() {
     let config = ObservabilitySection {
         enabled: true,
