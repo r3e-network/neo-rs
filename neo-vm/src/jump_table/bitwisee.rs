@@ -1,29 +1,14 @@
 //! Bitwise operations for the Neo Virtual Machine.
 
 use crate::error::{VmError, VmResult};
-use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, numeric_operand, register_jump_handlers};
+use crate::jump_table::{
+    JumpTable, numeric_operand, push_stack_value, register_jump_handlers, require_context,
+    semantics_error,
+};
 use crate::stack_item::StackItem;
 use neo_vm_rs::semantics::arithmetic;
 use neo_vm_rs::{Instruction, OpCode, StackValue};
-
-#[inline]
-fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
-    engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
-}
-
-#[inline]
-fn semantics_error(error: String) -> VmError {
-    VmError::invalid_operation_msg(error)
-}
-
-#[inline]
-fn push_stack_value(ctx: &mut ExecutionContext, value: StackValue) -> VmResult<()> {
-    ctx.push(StackItem::try_from(value)?)
-}
 
 /// Registers the bitwise operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {

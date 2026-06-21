@@ -2,19 +2,10 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
-use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
-
-/// Helper to get current context or return error.
-#[inline]
-fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
-    engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
-}
 
 /// Registers the slot operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {

@@ -14,6 +14,7 @@ pub mod types; // Matches JumpTable.Types.cs
 
 use crate::error::VmError;
 use crate::error::VmResult;
+use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
 use crate::stack_item::StackItem;
 use neo_vm_rs::Instruction;
@@ -65,6 +66,31 @@ pub(crate) fn numeric_operand(item: StackItem) -> VmResult<StackValue> {
         )),
         item => StackValue::try_from(item),
     }
+}
+
+/// The engine's current execution context, or a fault if there is none.
+///
+/// Shared by every opcode-family handler module so the "No current context"
+/// guard reads identically across the jump table.
+#[inline]
+pub(crate) fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
+    engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
+}
+
+/// Maps an error string raised by the `neo_vm_rs` semantics layer into a VM
+/// fault, matching how the reference VM surfaces an arithmetic/type failure.
+#[inline]
+pub(crate) fn semantics_error(error: String) -> VmError {
+    VmError::invalid_operation_msg(error)
+}
+
+/// Pushes a typed [`StackValue`] result back onto the evaluation stack,
+/// converting it into the engine's [`StackItem`] representation.
+#[inline]
+pub(crate) fn push_stack_value(ctx: &mut ExecutionContext, value: StackValue) -> VmResult<()> {
+    ctx.push(StackItem::try_from(value)?)
 }
 
 macro_rules! register_jump_handlers {
