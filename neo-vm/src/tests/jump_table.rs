@@ -175,6 +175,42 @@ fn count_opcodes_fault_on_buffer_operand_like_csharp() {
 }
 
 #[test]
+fn collection_key_opcodes_fault_on_buffer_key_like_csharp() {
+    // C# pops the collection key via Pop<PrimitiveType>(); a Buffer is not a
+    // PrimitiveType, so PICKITEM/SETITEM/HASKEY/REMOVE and the PACKMAP entries
+    // fault on a Buffer key. The gate runs right after the key is popped (before
+    // the collection), so the dummy beneath the key is never examined.
+    let jt = JumpTable::default();
+    let buf_key = || StackItem::from_buffer(vec![0x01]);
+    let dummy = || StackItem::from_i64(0);
+
+    // PICKITEM/HASKEY/REMOVE: stack = [collection, key]; Buffer key on top.
+    for op in [OpCode::PICKITEM, OpCode::HASKEY, OpCode::REMOVE] {
+        let mut e = engine_with_items(vec![dummy(), buf_key()]);
+        assert!(
+            jt.execute(&mut e, &Instruction::new(op, &[])).is_err(),
+            "{op:?} with a Buffer key must fault"
+        );
+    }
+
+    // SETITEM: stack = [collection, key, value]; value on top, Buffer key below.
+    let mut e = engine_with_items(vec![dummy(), buf_key(), dummy()]);
+    assert!(
+        jt.execute(&mut e, &Instruction::new(OpCode::SETITEM, &[]))
+            .is_err(),
+        "SETITEM with a Buffer key must fault"
+    );
+
+    // PACKMAP size=1: stack = [value, key, size]; pops size, then the Buffer key.
+    let mut e = engine_with_items(vec![dummy(), buf_key(), StackItem::from_i64(1)]);
+    assert!(
+        jt.execute(&mut e, &Instruction::new(OpCode::PACKMAP, &[]))
+            .is_err(),
+        "PACKMAP with a Buffer key must fault"
+    );
+}
+
+#[test]
 fn test_jump_table_invalid_opcode() {
     let jump_table = JumpTable::new();
 

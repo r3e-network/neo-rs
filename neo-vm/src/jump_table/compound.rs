@@ -30,6 +30,29 @@ fn normalize_index(type_name: &str, index: &BigInt, length: usize) -> VmResult<u
     )))
 }
 
+/// C# `engine.Pop<PrimitiveType>()` for a collection KEY (PICKITEM, SETITEM,
+/// HASKEY, REMOVE and the PACKMAP entries).
+///
+/// The popped key must be a `PrimitiveType` — `Integer`, `Boolean` or
+/// `ByteString`. A `Buffer` is NOT a `PrimitiveType` (and neither are `Null`,
+/// `Array`, `Struct`, `Map`, pointers or interop values), so the reference VM
+/// throws `InvalidCastException` and FAULTS the VM UNCATCHABLY. This is NOT a
+/// catchable error: it must use `invalid_type_simple`, never
+/// `catchable_exception_msg` (only the in-range out-of-bounds index errors are
+/// catchable, matching C#'s `CatchableException`).
+fn require_primitive_key(key: &StackItem) -> VmResult<()> {
+    if matches!(
+        key,
+        StackItem::Integer(_) | StackItem::Boolean(_) | StackItem::ByteString(_)
+    ) {
+        Ok(())
+    } else {
+        Err(VmError::invalid_type_simple(
+            "key is not a PrimitiveType (C# Pop<PrimitiveType> faults)",
+        ))
+    }
+}
+
 fn byte_sequence_key_value(key: &StackItem) -> VmResult<neo_vm_rs::StackValue> {
     let index = key
         .as_int()?
@@ -267,6 +290,7 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
+    require_primitive_key(&key)?;
     let collection = context.pop()?;
 
     match collection {
@@ -374,6 +398,7 @@ fn has_key(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
+    require_primitive_key(&key)?;
     let collection = context.pop()?;
 
     let invalid_index = |index: usize| {
@@ -487,6 +512,7 @@ fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 
     for _ in 0..count {
         let key = context.pop()?;
+        require_primitive_key(&key)?;
         let value = context.pop()?;
         map_item.set(key, value)?;
     }
@@ -601,6 +627,7 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     let key = context.pop()?;
+    require_primitive_key(&key)?;
     let collection = context.pop()?;
 
     let result = match collection {
@@ -652,6 +679,7 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
 
     let mut value = context.pop()?;
     let key = context.pop()?;
+    require_primitive_key(&key)?;
     let collection = context.pop()?;
 
     if matches!(value, StackItem::Struct(_)) {
