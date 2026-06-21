@@ -52,7 +52,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
@@ -594,6 +594,3 @@ async fn accept_loop(
     }
     info!(target: "neo_network", "accept loop exited");
 }
-
-#[allow(dead_code)]
-fn _force_reply_link(_r: oneshot::Sender<NetworkResult<()>>) {}

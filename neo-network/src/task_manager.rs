@@ -7,8 +7,6 @@
 //!
 //! The task manager owns the in-memory set of active sync tasks and exposes a
 //! typed command handle for adding, cancelling, completing, and listing them.
-//! More advanced peer scheduling can build on the existing `peers` map without
-//! changing the command surface.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -23,7 +21,6 @@ use neo_primitives::UInt256;
 use crate::error::{NetworkError, NetworkResult};
 use crate::event::NetworkEvent;
 use crate::peer_id::PeerId;
-use crate::remote_node::RemoteNodeHandle;
 
 /// Stable identifier for a single in-flight sync task.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -205,11 +202,6 @@ pub struct TaskManagerService {
     /// shutdown.
     #[allow(dead_code)]
     shutdown: CancellationToken,
-    /// Registered per-peer handles, keyed by peer id. The task
-    /// manager uses these to dispatch the actual `GetData`
-    /// requests to the right peer service.
-    #[allow(dead_code)]
-    peers: HashMap<PeerId, RemoteNodeHandle>,
 }
 
 impl fmt::Debug for TaskManagerService {
@@ -236,7 +228,6 @@ impl TaskManagerService {
             event_tx,
             active: HashMap::new(),
             shutdown: CancellationToken::new(),
-            peers: HashMap::new(),
         };
         (service, handle)
     }
@@ -269,15 +260,6 @@ impl TaskManagerService {
             }
         }
         info!(target: "neo_network", "task manager service run loop exited");
-    }
-
-    /// Register a [`RemoteNodeHandle`] as a candidate for outbound
-    /// task dispatches. Stored on the service so the port of the
-    /// legacy `send_mempool` / request_flow logic has the peer
-    /// registry in place.
-    #[allow(dead_code)]
-    pub(crate) fn register_peer(&mut self, peer_id: PeerId, handle: RemoteNodeHandle) {
-        self.peers.insert(peer_id, handle);
     }
 
     // -----------------------------------------------------------------

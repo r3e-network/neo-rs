@@ -16,7 +16,6 @@ use std::any::Any;
 // StorageCache – internal enum for BigInteger payloads
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)]
 #[derive(Debug)]
 enum StorageCache {
     BigInteger(BigInt),

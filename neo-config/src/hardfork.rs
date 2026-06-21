@@ -35,9 +35,7 @@
 //! The `Hardfork` enum is defined in [`neo_primitives`] and re-exported here.
 //! This module provides the `HardforkManager` for managing hardfork activation heights.
 
-use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::LazyLock;
 
 // Re-export Hardfork from neo-primitives (single source of truth)
 pub use neo_primitives::{Hardfork, HardforkParseError};
@@ -47,9 +45,6 @@ pub use neo_primitives::{Hardfork, HardforkParseError};
 pub struct HardforkManager {
     hardforks: HashMap<Hardfork, u32>,
 }
-
-static INSTANCE: LazyLock<RwLock<HardforkManager>> =
-    LazyLock::new(|| RwLock::new(HardforkManager::new()));
 
 impl HardforkManager {
     /// Returns every known hardfork in declaration order.
@@ -97,15 +92,6 @@ impl HardforkManager {
         Self { hardforks }
     }
 
-    /// Gets the global instance of the HardforkManager.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the global HardforkManager instance.
-    pub fn instance() -> &'static RwLock<HardforkManager> {
-        &INSTANCE
-    }
-
     /// Registers a hardfork (matches C# ProtocolSettings hardfork registration exactly).
     ///
     /// # Arguments
@@ -145,23 +131,7 @@ impl Default for HardforkManager {
     }
 }
 
-/// Checks if a hardfork is active at the specified block height (matches C# ProtocolSettings.IsHardforkEnabled exactly).
-///
-/// # Arguments
-///
-/// * `hardfork` - The hardfork to check.
-/// * `block_height` - The block height to check.
-///
-/// # Returns
-///
-/// A boolean indicating whether the hardfork is active.
-pub fn is_hardfork_enabled(hardfork: Hardfork, block_height: u32) -> bool {
-    let manager = HardforkManager::instance().read();
-    manager.is_enabled(hardfork, block_height)
-}
-
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
     use super::*;
 
@@ -214,17 +184,5 @@ mod tests {
         );
         // HfGorgon is not scheduled in Neo v3.10.0 TestNet config.
         assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
-    }
-    #[test]
-    fn test_global_hardfork_manager() {
-        // This test modifies the global instance, so it should be run in isolation
-        {
-            let mut manager = HardforkManager::instance().write();
-            // Register a hardfork
-            manager.register(Hardfork::HfAspidochelone, 300);
-        }
-        assert!(!is_hardfork_enabled(Hardfork::HfAspidochelone, 299));
-        assert!(is_hardfork_enabled(Hardfork::HfAspidochelone, 300));
-        assert!(is_hardfork_enabled(Hardfork::HfAspidochelone, 301));
     }
 }

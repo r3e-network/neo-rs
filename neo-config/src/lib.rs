@@ -26,7 +26,7 @@ mod protocol;
 
 pub use error::{ConfigError, ConfigResult};
 pub use genesis::{GenesisConfig, GenesisValidator};
-pub use hardfork::{Hardfork, HardforkManager, HardforkParseError, is_hardfork_enabled};
+pub use hardfork::{Hardfork, HardforkManager, HardforkParseError};
 pub use network_type::NetworkType;
 pub use protocol::ProtocolSettings;
 
