@@ -41,14 +41,14 @@ fn run_bool(
 
 /// Pre-HF_Gorgon vulnerable SHL (neo-vm#567): a zero shift returns WITHOUT
 /// popping the value operand, so the value is left on the stack untouched —
-/// whereas the fixed handler pops the value, validates + normalizes it (e.g.
-/// a Buffer becomes its Integer interpretation) and re-pushes it. The
-/// observable difference (the surviving stack item) is the live divergence.
+/// whereas the fixed handler pops the value and coerces it via GetInteger().
+/// For a Buffer value the fixed handler now FAULTS (C# Buffer has no GetInteger
+/// override → InvalidCastException), so the two paths diverge observably.
 #[test]
 fn vulnerable_shl_diverges_from_fixed_on_zero_shift() {
     let buffer = || StackItem::from_buffer(vec![0x07]);
 
-    // Vulnerable: the Buffer is left untouched on the stack.
+    // Vulnerable: a zero shift returns without popping the value -> Buffer left.
     let mut engine = engine_with_stack(vec![buffer(), StackItem::from_i64(0)]);
     shl_vulnerable(&mut engine, &instruction(OpCode::SHL))
         .expect("vulnerable SHL must not fault on a zero shift");
@@ -57,77 +57,69 @@ fn vulnerable_shl_diverges_from_fixed_on_zero_shift() {
         "the value operand is left untouched (still a Buffer)"
     );
 
-    // Fixed: the value is popped, normalized (Buffer -> integer), re-pushed.
+    // Fixed: pops the value and coerces via GetInteger(); a Buffer FAULTS.
     let mut engine = engine_with_stack(vec![buffer(), StackItem::from_i64(0)]);
-    shl(&mut engine, &instruction(OpCode::SHL)).expect("fixed SHL ok");
-    let top = pop(&mut engine);
     assert!(
-        !matches!(top, StackItem::Buffer(_)),
-        "fixed SHL normalizes the value (no longer a Buffer)"
+        shl(&mut engine, &instruction(OpCode::SHL)).is_err(),
+        "fixed SHL faults on a Buffer value (C# GetInteger faults on Buffer)"
     );
-    assert_eq!(top.as_int().unwrap(), BigInt::from(7));
 
     // Both agree on a zero shift over an integer (identity).
     let mut engine = engine_with_stack(vec![StackItem::from_i64(7), StackItem::from_i64(0)]);
     shl_vulnerable(&mut engine, &instruction(OpCode::SHL)).expect("vulnerable SHL ok");
     assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(7));
+    let mut engine = engine_with_stack(vec![StackItem::from_i64(7), StackItem::from_i64(0)]);
+    shl(&mut engine, &instruction(OpCode::SHL)).expect("fixed SHL ok on integer");
+    assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(7));
 }
 
 #[test]
-fn add_accepts_buffer_as_byte_string_operand() {
+fn add_faults_on_buffer_operand_like_csharp() {
+    // C# ADD calls GetInteger() on each operand; a Buffer (no GetInteger
+    // override) throws InvalidCastException -> FAULT. Rust must not coerce it.
     let mut engine = engine_with_stack(vec![
         StackItem::from_buffer(vec![0x02]),
         StackItem::from_i64(3),
     ]);
-
-    add(&mut engine, &instruction(OpCode::ADD)).expect("ADD succeeds");
-
-    assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(5));
+    assert!(
+        add(&mut engine, &instruction(OpCode::ADD)).is_err(),
+        "ADD with a Buffer operand must fault (C# GetInteger faults on Buffer)"
+    );
 }
 
 #[test]
-fn ordered_comparisons_keep_core_null_policy() {
+fn ordered_comparisons_push_false_for_any_null_like_csharp() {
+    // C# Lt/Le/Gt/Ge: `if (x1.IsNull || x2.IsNull) Push(false)` — ANY null -> false.
+    assert!(!run_bool(StackItem::Null, StackItem::from_i64(1), OpCode::LT, lt));
+    assert!(!run_bool(StackItem::from_i64(1), StackItem::Null, OpCode::LT, lt));
+    assert!(!run_bool(StackItem::Null, StackItem::Null, OpCode::LE, le));
+    assert!(!run_bool(StackItem::from_i64(1), StackItem::Null, OpCode::GT, gt));
+    assert!(!run_bool(StackItem::Null, StackItem::Null, OpCode::GE, ge));
+    // Non-null comparisons still work.
     assert!(run_bool(
-        StackItem::Null,
         StackItem::from_i64(1),
+        StackItem::from_i64(2),
         OpCode::LT,
         lt
     ));
-    assert!(!run_bool(
-        StackItem::from_i64(1),
-        StackItem::Null,
-        OpCode::LT,
-        lt
-    ));
-    assert!(run_bool(StackItem::Null, StackItem::Null, OpCode::LE, le));
-    assert!(run_bool(
-        StackItem::from_i64(1),
-        StackItem::Null,
-        OpCode::GT,
-        gt
-    ));
-    assert!(run_bool(StackItem::Null, StackItem::Null, OpCode::GE, ge));
 }
 
 #[test]
-fn numeric_equality_preserves_null_special_cases() {
+fn numeric_equality_faults_on_null_like_csharp() {
+    // C# NumEqual/NumNotEqual call GetInteger() directly (no null check); a
+    // Null operand faults.
+    let mut e = engine_with_stack(vec![StackItem::Null, StackItem::Null]);
+    assert!(numequal(&mut e, &instruction(OpCode::NUMEQUAL)).is_err());
+    let mut e = engine_with_stack(vec![StackItem::Null, StackItem::from_i64(0)]);
+    assert!(numequal(&mut e, &instruction(OpCode::NUMEQUAL)).is_err());
+    let mut e = engine_with_stack(vec![StackItem::Null, StackItem::from_i64(0)]);
+    assert!(numnotequal(&mut e, &instruction(OpCode::NUMNOTEQUAL)).is_err());
+    // Non-null equality still works.
     assert!(run_bool(
-        StackItem::Null,
-        StackItem::Null,
+        StackItem::from_i64(1),
+        StackItem::from_i64(1),
         OpCode::NUMEQUAL,
         numequal
-    ));
-    assert!(!run_bool(
-        StackItem::Null,
-        StackItem::from_i64(0),
-        OpCode::NUMEQUAL,
-        numequal
-    ));
-    assert!(run_bool(
-        StackItem::Null,
-        StackItem::from_i64(0),
-        OpCode::NUMNOTEQUAL,
-        numnotequal
     ));
 }
 

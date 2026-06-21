@@ -24,7 +24,17 @@ fn semantics_error(error: String) -> VmError {
 #[inline]
 fn value_from_stack_item(item: StackItem) -> VmResult<StackValue> {
     match item {
-        StackItem::Buffer(buffer) => Ok(StackValue::ByteString(buffer.data())),
+        // C# numeric/comparison/arithmetic opcodes coerce operands via
+        // StackItem.GetInteger(). Buffer (not a PrimitiveType, no GetInteger
+        // override) and Null both hit the base `GetInteger() => throw
+        // InvalidCastException` and FAULT — they are NOT numeric operands.
+        // (The CONVERT opcode uses a separate ConvertTo path, unaffected.)
+        StackItem::Buffer(_) => Err(VmError::invalid_type_simple(
+            "Buffer is not a valid numeric operand (C# GetInteger faults)",
+        )),
+        StackItem::Null => Err(VmError::invalid_type_simple(
+            "Null is not a valid numeric operand (C# GetInteger faults)",
+        )),
         item => StackValue::try_from(item),
     }
 }
@@ -266,11 +276,11 @@ fn within(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     ctx.push(StackItem::from_bool(result))
 }
 
-fn compare_with_null(
+/// C# `JumpTable.Numeric` Lt/Le/Gt/Ge: `if (x1.IsNull || x2.IsNull) Push(false)`
+/// — ANY null operand pushes false; otherwise compare `GetInteger()` of each
+/// (which faults on Buffer / non-numeric via `value_from_stack_item`).
+fn compare(
     engine: &mut ExecutionEngine,
-    null_null: bool,
-    null_other: bool,
-    other_null: bool,
     op: fn(&StackValue, &StackValue) -> Result<bool, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
@@ -280,57 +290,48 @@ fn compare_with_null(
     let right = ctx.pop()?;
     let left = ctx.pop()?;
 
-    let result = match (&left, &right) {
-        (StackItem::Null, StackItem::Null) => null_null,
-        (StackItem::Null, _) => null_other,
-        (_, StackItem::Null) => other_null,
-        _ => {
-            let left = value_from_stack_item(left)?;
-            let right = value_from_stack_item(right)?;
-            op(&left, &right).map_err(semantics_error)?
-        }
+    let result = if matches!(left, StackItem::Null) || matches!(right, StackItem::Null) {
+        false
+    } else {
+        let left = value_from_stack_item(left)?;
+        let right = value_from_stack_item(right)?;
+        op(&left, &right).map_err(semantics_error)?
     };
     ctx.push(StackItem::from_bool(result))
 }
 
 #[inline]
 fn lt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(engine, false, true, false, comparison::less_than_values)
+    compare(engine, comparison::less_than_values)
 }
 
 #[inline]
 fn le(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(engine, true, true, false, comparison::less_or_equal_values)
+    compare(engine, comparison::less_or_equal_values)
 }
 
 #[inline]
 fn gt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(engine, false, false, true, comparison::greater_than_values)
+    compare(engine, comparison::greater_than_values)
 }
 
 #[inline]
 fn ge(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(
-        engine,
-        true,
-        false,
-        true,
-        comparison::greater_or_equal_values,
-    )
+    compare(engine, comparison::greater_or_equal_values)
 }
 
 fn numequal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    numeric_equality(engine, true, false, comparison::num_equal_values)
+    numeric_equality(engine, comparison::num_equal_values)
 }
 
 fn numnotequal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    numeric_equality(engine, false, true, comparison::num_not_equal_values)
+    numeric_equality(engine, comparison::num_not_equal_values)
 }
 
+/// C# `JumpTable.Numeric` NumEqual/NumNotEqual: `Pop().GetInteger()` on each with
+/// NO null check — a Null (or Buffer) operand FAULTS via `GetInteger`.
 fn numeric_equality(
     engine: &mut ExecutionEngine,
-    null_null: bool,
-    null_other: bool,
     op: fn(&StackValue, &StackValue) -> Result<bool, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
@@ -340,15 +341,9 @@ fn numeric_equality(
     let right = ctx.pop()?;
     let left = ctx.pop()?;
 
-    let result = match (&left, &right) {
-        (StackItem::Null, StackItem::Null) => null_null,
-        (StackItem::Null, _) | (_, StackItem::Null) => null_other,
-        _ => {
-            let left = value_from_stack_item(left)?;
-            let right = value_from_stack_item(right)?;
-            op(&left, &right).map_err(semantics_error)?
-        }
-    };
+    let left = value_from_stack_item(left)?;
+    let right = value_from_stack_item(right)?;
+    let result = op(&left, &right).map_err(semantics_error)?;
     ctx.push(StackItem::from_bool(result))
 }
 
