@@ -162,7 +162,7 @@ impl NeoToken {
                 // skipped from Echidna because RegisterInternal repeats it); the
                 // fee is charged only after that gate. RegisterInternal then
                 // (re)checks the witness, creates/flips the CandidateState to
-                // Registered, and (post-Echidna) emits CandidateStateChanged.
+                // Registered, and emits CandidateStateChanged.
                 let pubkey_bytes = args.first().ok_or_else(|| {
                     CoreError::invalid_operation(
                         "NeoToken::registerCandidate requires a public key",
@@ -320,23 +320,23 @@ impl NeoToken {
                 // a stale reward record — a state-root divergence). Retain as
                 // unregistered when votes remain.
                 self.check_candidate(&snapshot, &pubkey, false, &votes)?;
-                if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
-                    engine
-                        .send_notification(
-                            Self::script_hash(),
-                            NEO_CANDIDATE_STATE_CHANGED_EVENT.to_owned(),
-                            vec![
-                                StackItem::from_byte_string(pubkey.to_bytes()),
-                                StackItem::from_bool(false),
-                                StackItem::from_int(votes),
-                            ],
-                        )
-                        .map_err(|e| {
-                            CoreError::invalid_operation(format!(
-                                "NeoToken::unregisterCandidate: notify: {e}"
-                            ))
-                        })?;
-                }
+                // C# UnregisterCandidate (NeoToken.cs:444) sends CandidateStateChanged
+                // unconditionally; native SendNotification ignores AllowNotify.
+                engine
+                    .send_notification(
+                        Self::script_hash(),
+                        NEO_CANDIDATE_STATE_CHANGED_EVENT.to_owned(),
+                        vec![
+                            StackItem::from_byte_string(pubkey.to_bytes()),
+                            StackItem::from_bool(false),
+                            StackItem::from_int(votes),
+                        ],
+                    )
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "NeoToken::unregisterCandidate: notify: {e}"
+                        ))
+                    })?;
                 Ok(vec![1u8])
             }
             "vote" => {

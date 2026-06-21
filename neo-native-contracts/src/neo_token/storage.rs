@@ -461,9 +461,10 @@ impl NeoToken {
     /// and the Echidna `onNEP17Payment` GAS-payment path: requires a witness from
     /// the candidate's signature-contract account (returning `false` without one),
     /// creates/flips the CandidateState to Registered, and emits
-    /// `CandidateStateChanged` for a fresh registration (post-Echidna, matching the
-    /// V1 `registerCandidate` registration's AllowNotify). `method` labels errors
-    /// with the invoking ABI method.
+    /// `CandidateStateChanged` for a fresh registration unconditionally — C#
+    /// `RegisterInternal` calls `SendNotification` with no hardfork guard, and
+    /// native `SendNotification` ignores the method's AllowNotify call flag.
+    /// `method` labels errors with the invoking ABI method.
     pub(super) fn register_internal(
         &self,
         engine: &mut ApplicationEngine,
@@ -491,21 +492,19 @@ impl NeoToken {
             key,
             StorageItem::from_bytes(Self::encode_candidate_state(true, &votes)?),
         );
-        if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
-            engine
-                .send_notification(
-                    NeoToken::script_hash(),
-                    NEO_CANDIDATE_STATE_CHANGED_EVENT.to_owned(),
-                    vec![
-                        StackItem::from_byte_string(pubkey.to_bytes()),
-                        StackItem::from_bool(true),
-                        StackItem::from_int(votes),
-                    ],
-                )
-                .map_err(|e| {
-                    CoreError::invalid_operation(format!("NeoToken::{method}: notify: {e}"))
-                })?;
-        }
+        engine
+            .send_notification(
+                NeoToken::script_hash(),
+                NEO_CANDIDATE_STATE_CHANGED_EVENT.to_owned(),
+                vec![
+                    StackItem::from_byte_string(pubkey.to_bytes()),
+                    StackItem::from_bool(true),
+                    StackItem::from_int(votes),
+                ],
+            )
+            .map_err(|e| {
+                CoreError::invalid_operation(format!("NeoToken::{method}: notify: {e}"))
+            })?;
         Ok(true)
     }
 
