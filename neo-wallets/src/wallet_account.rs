@@ -9,7 +9,6 @@ use crate::wallet::{WalletError, WalletResult};
 use crate::wallet_helper::WalletAddress;
 use neo_config::ProtocolSettings;
 use neo_execution::Contract;
-use neo_execution::Helper;
 use neo_payloads::Transaction;
 use neo_payloads::Witness;
 use neo_primitives::UInt160;

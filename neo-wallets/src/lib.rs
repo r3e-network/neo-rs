@@ -32,8 +32,6 @@
 //! primitives independent of the node runtime that consumes them.
 
 #![doc(html_root_url = "https://docs.rs/neo-wallets/0.8.0")]
-#![allow(dead_code)]
-#![allow(unused_imports)]
 
 // ============================================================================
 // Wallet data model

@@ -12,7 +12,6 @@ use crate::wallet_helper::WalletAddress;
 use async_trait::async_trait;
 use neo_config::ProtocolSettings;
 use neo_execution::Contract;
-use neo_execution::Helper;
 use neo_payloads::{Transaction, Witness};
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
