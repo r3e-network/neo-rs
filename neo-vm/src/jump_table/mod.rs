@@ -18,6 +18,7 @@ use crate::execution_engine::ExecutionEngine;
 use crate::stack_item::StackItem;
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
+use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 
 /// A handler for a VM instruction.
@@ -48,6 +49,22 @@ pub(crate) fn get_integer(item: StackItem) -> VmResult<BigInt> {
         ));
     }
     item.into_int()
+}
+
+/// C# `StackItem.GetInteger()` for an arithmetic/bitwise VALUE operand, returning
+/// the typed [`StackValue`] the semantics layer expects.
+///
+/// Like [`get_integer`], a `Buffer` (not a `PrimitiveType`) and `Null` fault —
+/// the numeric/comparison/bitwise opcodes (ADD/SUB/.../AND/OR/XOR/INVERT) read
+/// their operands via `GetInteger()`, which throws on a non-integer. Only the
+/// CONVERT opcode coerces a `Buffer`, via a separate `ConvertTo` path.
+pub(crate) fn numeric_operand(item: StackItem) -> VmResult<StackValue> {
+    match item {
+        StackItem::Buffer(_) | StackItem::Null => Err(VmError::invalid_type_simple(
+            "operand is not a numeric value (C# GetInteger faults on Buffer/Null)",
+        )),
+        item => StackValue::try_from(item),
+    }
 }
 
 macro_rules! register_jump_handlers {

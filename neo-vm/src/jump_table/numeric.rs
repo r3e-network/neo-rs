@@ -3,7 +3,7 @@
 use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{JumpTable, numeric_operand, register_jump_handlers};
 use crate::stack_item::StackItem;
 use neo_vm_rs::semantics::{arithmetic, comparison};
 use neo_vm_rs::{Instruction, OpCode, StackValue};
@@ -19,24 +19,6 @@ fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionConte
 #[inline]
 fn semantics_error(error: String) -> VmError {
     VmError::invalid_operation_msg(error)
-}
-
-#[inline]
-fn value_from_stack_item(item: StackItem) -> VmResult<StackValue> {
-    match item {
-        // C# numeric/comparison/arithmetic opcodes coerce operands via
-        // StackItem.GetInteger(). Buffer (not a PrimitiveType, no GetInteger
-        // override) and Null both hit the base `GetInteger() => throw
-        // InvalidCastException` and FAULT — they are NOT numeric operands.
-        // (The CONVERT opcode uses a separate ConvertTo path, unaffected.)
-        StackItem::Buffer(_) => Err(VmError::invalid_type_simple(
-            "Buffer is not a valid numeric operand (C# GetInteger faults)",
-        )),
-        StackItem::Null => Err(VmError::invalid_type_simple(
-            "Null is not a valid numeric operand (C# GetInteger faults)",
-        )),
-        item => StackValue::try_from(item),
-    }
 }
 
 #[inline]
@@ -63,7 +45,7 @@ fn unary_numeric(
     op: fn(StackValue) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = value_from_stack_item(ctx.pop()?)?;
+    let value = numeric_operand(ctx.pop()?)?;
     let result = op(value).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
@@ -73,8 +55,8 @@ fn binary_numeric(
     op: fn(StackValue, StackValue) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let right = value_from_stack_item(ctx.pop()?)?;
-    let left = value_from_stack_item(ctx.pop()?)?;
+    let right = numeric_operand(ctx.pop()?)?;
+    let left = numeric_operand(ctx.pop()?)?;
     let result = op(left, right).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
@@ -84,9 +66,9 @@ fn ternary_numeric(
     op: fn(StackValue, StackValue, StackValue) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let third = value_from_stack_item(ctx.pop()?)?;
-    let second = value_from_stack_item(ctx.pop()?)?;
-    let first = value_from_stack_item(ctx.pop()?)?;
+    let third = numeric_operand(ctx.pop()?)?;
+    let second = numeric_operand(ctx.pop()?)?;
+    let first = numeric_operand(ctx.pop()?)?;
     let result = op(first, second, third).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
@@ -155,14 +137,14 @@ fn sqrt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn not(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = value_from_stack_item(ctx.pop()?)?;
+    let value = numeric_operand(ctx.pop()?)?;
     let result = comparison::not_value(&value).map_err(semantics_error)?;
     ctx.push(StackItem::from_bool(result))
 }
 
 fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = value_from_stack_item(ctx.pop()?)?;
+    let value = numeric_operand(ctx.pop()?)?;
     let result = comparison::nz_value(&value).map_err(semantics_error)?;
     ctx.push(StackItem::from_bool(result))
 }
@@ -201,8 +183,8 @@ fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     limits
         .assert_shift(exponent_i32)
         .map_err(VmError::invalid_operation_msg)?;
-    let base = value_from_stack_item(ctx.pop()?)?;
-    let exponent = value_from_stack_item(StackItem::from_int(exponent_i32))?;
+    let base = numeric_operand(ctx.pop()?)?;
+    let exponent = numeric_operand(StackItem::from_int(exponent_i32))?;
     let result = arithmetic::pow_values(base, exponent).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
@@ -222,7 +204,7 @@ fn shift(
     let limits = *engine.limits();
     let ctx = require_context(engine)?;
     let shift_item = ctx.pop()?;
-    let value = value_from_stack_item(ctx.pop()?)?;
+    let value = numeric_operand(ctx.pop()?)?;
     let shift_i32 = shift_operand_to_i32(shift_item)?;
     limits
         .assert_shift(shift_i32)
@@ -259,7 +241,7 @@ fn shift_vulnerable(
     if shift_i32 == 0 {
         return Ok(());
     }
-    let value = value_from_stack_item(ctx.pop()?)?;
+    let value = numeric_operand(ctx.pop()?)?;
     let result = op(value, i64::from(shift_i32)).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
@@ -274,16 +256,16 @@ fn max(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn within(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let upper = value_from_stack_item(ctx.pop()?)?;
-    let lower = value_from_stack_item(ctx.pop()?)?;
-    let value = value_from_stack_item(ctx.pop()?)?;
+    let upper = numeric_operand(ctx.pop()?)?;
+    let lower = numeric_operand(ctx.pop()?)?;
+    let value = numeric_operand(ctx.pop()?)?;
     let result = arithmetic::within_values(value, lower, upper).map_err(semantics_error)?;
     ctx.push(StackItem::from_bool(result))
 }
 
 /// C# `JumpTable.Numeric` Lt/Le/Gt/Ge: `if (x1.IsNull || x2.IsNull) Push(false)`
 /// — ANY null operand pushes false; otherwise compare `GetInteger()` of each
-/// (which faults on Buffer / non-numeric via `value_from_stack_item`).
+/// (which faults on Buffer / non-numeric via `numeric_operand`).
 fn compare(
     engine: &mut ExecutionEngine,
     op: fn(&StackValue, &StackValue) -> Result<bool, String>,
@@ -298,8 +280,8 @@ fn compare(
     let result = if matches!(left, StackItem::Null) || matches!(right, StackItem::Null) {
         false
     } else {
-        let left = value_from_stack_item(left)?;
-        let right = value_from_stack_item(right)?;
+        let left = numeric_operand(left)?;
+        let right = numeric_operand(right)?;
         op(&left, &right).map_err(semantics_error)?
     };
     ctx.push(StackItem::from_bool(result))
@@ -346,8 +328,8 @@ fn numeric_equality(
     let right = ctx.pop()?;
     let left = ctx.pop()?;
 
-    let left = value_from_stack_item(left)?;
-    let right = value_from_stack_item(right)?;
+    let left = numeric_operand(left)?;
+    let right = numeric_operand(right)?;
     let result = op(&left, &right).map_err(semantics_error)?;
     ctx.push(StackItem::from_bool(result))
 }
