@@ -73,13 +73,10 @@ fn sender(tx: &Transaction) -> Option<UInt160> {
     tx.signers().first().map(|s| s.account)
 }
 
-/// C# `IVerifiable.GetSignData(network)` — `network (u32 LE) ‖ hash`.
+/// C# `IVerifiable.GetSignData(network)` — `network (u32 LE) ‖ hash`. Single
+/// canonical preimage builder lives in `neo_payloads`.
 fn sign_data(tx: &Transaction, network: u32) -> Option<Vec<u8>> {
-    let hash = tx.try_hash().ok()?;
-    let mut data = Vec::with_capacity(36);
-    data.extend_from_slice(&network.to_le_bytes());
-    data.extend_from_slice(&hash.to_bytes());
-    Some(data)
+    neo_payloads::get_sign_data_vec(tx, network).ok()
 }
 
 /// C# `Transaction.IsSingleSignatureInvocationScript` —

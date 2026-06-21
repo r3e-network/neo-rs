@@ -4,7 +4,6 @@ use neo_crypto::{Crypto, ECPoint};
 use neo_error::CoreError;
 use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
-use neo_primitives::base58_check::Base58Check;
 use neo_vm::script_builder::ScriptBuilder;
 use std::sync::OnceLock;
 
@@ -116,9 +115,8 @@ impl Contract {
 
     /// Gets the address of the contract
     pub fn get_address(&self) -> String {
-        Base58Check::encode_address_payload(
+        self.script_hash().to_address_with_version(
             neo_config::ProtocolSettings::default_settings().address_version,
-            &self.script_hash().to_array(),
         )
     }
 }

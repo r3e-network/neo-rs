@@ -35,8 +35,11 @@ impl Decoder for MessageCodec {
             return Ok(None);
         }
 
-        // Peek at the length prefix without consuming the buffer.
-        let Some((payload_len, payload_len_size)) = peek_var_int(&src[2..])? else {
+        // Peek at the length prefix without consuming the buffer, reusing the
+        // canonical var-int prefix reader from neo-io.
+        let Some((payload_len, payload_len_size)) =
+            neo_io::var_int::VarInt::read_var_int_prefix(&src[2..])
+        else {
             return Ok(None);
         };
 
@@ -69,43 +72,6 @@ impl Encoder<Message> for MessageCodec {
         dst.reserve(bytes.len());
         dst.put_slice(&bytes);
         Ok(())
-    }
-}
-
-/// Decodes a Neo `var_int` from a byte slice without consuming it.
-/// Returns `Ok(None)` if more bytes are needed to fully decode the
-/// value.
-fn peek_var_int(bytes: &[u8]) -> WireResult<Option<(u64, usize)>> {
-    let Some(&first) = bytes.first() else {
-        return Ok(None);
-    };
-
-    match first {
-        0xFD => {
-            if bytes.len() < 3 {
-                return Ok(None);
-            }
-            let mut v = [0u8; 2];
-            v.copy_from_slice(&bytes[1..3]);
-            Ok(Some((u16::from_le_bytes(v) as u64, 3)))
-        }
-        0xFE => {
-            if bytes.len() < 5 {
-                return Ok(None);
-            }
-            let mut v = [0u8; 4];
-            v.copy_from_slice(&bytes[1..5]);
-            Ok(Some((u32::from_le_bytes(v) as u64, 5)))
-        }
-        0xFF => {
-            if bytes.len() < 9 {
-                return Ok(None);
-            }
-            let mut v = [0u8; 8];
-            v.copy_from_slice(&bytes[1..9]);
-            Ok(Some((u64::from_le_bytes(v), 9)))
-        }
-        _ => Ok(Some((first as u64, 1))),
     }
 }
 

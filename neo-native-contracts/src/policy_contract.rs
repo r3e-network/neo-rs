@@ -68,8 +68,8 @@ const MAX_STORAGE_PRICE: i64 = 10_000_000;
 /// C# `ApplicationEngine.FeeFactor` (10000): from the HF_Faun hardfork the exec
 /// fee factor is stored in pico-GAS (the raw value carries this extra scaling),
 /// so the legacy `getExecFeeFactor` divides it out and the bound is widened.
-/// Mirrors `neo_execution::FEE_FACTOR`.
-const FEE_FACTOR: i64 = 10_000;
+/// Single-sourced from `neo_execution` (C# `ApplicationEngine.FeeFactor`).
+pub(crate) use neo_execution::application_engine::FEE_FACTOR;
 /// C# `PolicyContract.MaxExecFeeFactor`.
 const MAX_EXEC_FEE_FACTOR: i64 = 100;
 

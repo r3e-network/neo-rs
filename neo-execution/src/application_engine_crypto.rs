@@ -8,8 +8,9 @@ use neo_manifest::CallFlags;
 use neo_vm::VmResult;
 use neo_vm::execution_engine::ExecutionEngine;
 
-/// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040)
-pub const CHECK_SIG_PRICE: i64 = 1 << 15;
+/// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040). Re-exported
+/// from `application_engine` so the value has a single source of truth.
+pub use crate::application_engine::CHECK_SIG_PRICE;
 
 /// The base price of CheckMultisig is zero (matches C# InteropDescriptor).
 /// The syscall charges `CHECK_SIG_PRICE * n` where `n` is the number of public keys.
@@ -82,15 +83,9 @@ impl ApplicationEngine {
         let container = self
             .get_script_container()
             .ok_or_else(|| CoreError::other("No script container available"))?;
-        let hash = container
-            .hash()
-            .map_err(|e| CoreError::other(e.to_string()))?;
         let network = self.protocol_settings().network;
-
-        let mut sign_data = Vec::with_capacity(36);
-        sign_data.extend_from_slice(&network.to_le_bytes());
-        sign_data.extend_from_slice(&hash.as_bytes());
-        Ok(sign_data)
+        // Single canonical `network (u32 LE) ‖ hash` preimage builder.
+        neo_payloads::get_sign_data_vec(container.as_ref(), network)
     }
 
     /// Pop signature elements from stack - handles both Array format and N+items format

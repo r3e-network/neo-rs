@@ -579,8 +579,9 @@ impl NeoToken {
     }
 
     /// The committee multisig threshold `m = n - (n - 1) / 2` (committee majority,
-    /// matching C# `GetCommitteeAddress`). `n` must be non-zero.
-    pub(super) fn committee_threshold(n: usize) -> usize {
+    /// matching C# `GetCommitteeAddress`). `n` must be non-zero. The single source
+    /// of this term; `PolicyContract::assert_almost_full_committee` reuses it.
+    pub(crate) fn committee_threshold(n: usize) -> usize {
         n - (n - 1) / 2
     }
 

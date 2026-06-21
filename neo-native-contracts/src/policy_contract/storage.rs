@@ -387,8 +387,7 @@ impl PolicyContract {
             let stored = snapshot
                 .get(&factor_key)
                 .ok_or_else(|| CoreError::invalid_operation("Policy was not initialized"))?;
-            let factor = BigInt::from_signed_bytes_le(&stored.value_bytes())
-                * neo_execution::application_engine::FEE_FACTOR;
+            let factor = BigInt::from_signed_bytes_le(&stored.value_bytes()) * FEE_FACTOR;
             snapshot.update(
                 factor_key,
                 StorageItem::from_bytes(crate::bigint_to_storage_bytes(&factor)),

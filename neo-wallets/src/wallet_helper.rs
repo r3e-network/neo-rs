@@ -17,7 +17,7 @@ pub struct WalletAddress;
 impl WalletAddress {
     /// Convert a script hash + address version byte to a base58 address string.
     pub fn to_address(script_hash: &UInt160, version: u8) -> String {
-        Base58Check::encode_address_payload(version, &script_hash.to_array())
+        script_hash.to_address_with_version(version)
     }
 
     /// Convert a base58 address string back to a script hash, validating the

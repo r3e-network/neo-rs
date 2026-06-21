@@ -50,12 +50,14 @@ impl PolicyContract {
     ) -> CoreResult<UInt160> {
         let snapshot = engine.snapshot_cache();
         let committees = self.read_neo_committee_sorted(&snapshot)?;
-        let n = i64::try_from(committees.len())
-            .map_err(|_| CoreError::invalid_operation("committee is too large"))?;
-        let min = std::cmp::max(1, n - (n - 1) / 2);
-        let m = std::cmp::max(min, n - 2);
-        let m = usize::try_from(m)
-            .map_err(|_| CoreError::invalid_operation("invalid committee threshold"))?;
+        // C# AssertAlmostFullCommittee: m = max(max(1, committee majority), n - 2).
+        // The `n - (n - 1) / 2` majority term is single-sourced in NeoToken;
+        // `n.max(1)` reproduces the original `max(1, …)` guard without underflow.
+        let n = committees.len();
+        let m = std::cmp::max(
+            crate::NeoToken::committee_threshold(n.max(1)),
+            n.saturating_sub(2),
+        );
         let script =
             neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
                 m,
