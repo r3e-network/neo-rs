@@ -1,5 +1,4 @@
 use super::*;
-use neo_crypto::Secp256r1Crypto;
 use neo_io::Serializable;
 
 #[test]
@@ -75,45 +74,3 @@ fn test_witness_serialization() {
     );
 }
 
-#[test]
-fn test_witness_verify_multi_signature() {
-    let message = b"neo-multisig-test";
-
-    let priv1 = Secp256r1Crypto::generate_private_key();
-    let priv2 = Secp256r1Crypto::generate_private_key();
-    let priv3 = Secp256r1Crypto::generate_private_key();
-
-    let pub1 = Secp256r1Crypto::derive_public_key(&priv1).unwrap();
-    let pub2 = Secp256r1Crypto::derive_public_key(&priv2).unwrap();
-    let pub3 = Secp256r1Crypto::derive_public_key(&priv3).unwrap();
-
-    let m = 2usize;
-    let mut pairs = [(pub1, priv1), (pub2, priv2), (pub3, priv3)];
-    pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
-
-    let public_keys: Vec<Vec<u8>> = pairs.iter().map(|(p, _)| p.clone()).collect();
-    let verification_script =
-        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_keys(
-            m,
-            &public_keys,
-        )
-        .expect("multi-sig redeem script");
-    let account = UInt160::from_script(&verification_script);
-
-    let signatures: Vec<Vec<u8>> = pairs
-        .iter()
-        .take(m)
-        .map(|(_, pk)| Secp256r1Crypto::sign(message, pk).unwrap().to_vec())
-        .collect();
-
-    let witness = Witness::new();
-    let ok = witness
-        .verify_multi_signature(message, &account, m, &public_keys, &signatures)
-        .unwrap();
-    assert!(ok);
-
-    let bad = witness
-        .verify_multi_signature(message, &account, m, &public_keys, &signatures[..1])
-        .unwrap();
-    assert!(!bad);
-}

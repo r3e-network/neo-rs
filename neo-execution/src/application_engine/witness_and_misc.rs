@@ -151,27 +151,38 @@ impl ApplicationEngine {
                 Ok(calling_state.calling_context.is_none())
             }
             WitnessCondition::Group { group } => {
-                let current_hash = self
-                    .current_script_hash()
-                    .ok_or_else(|| CoreError::invalid_operation("No current script hash"))?;
-                self.contract_matches_group(&current_hash, group)
+                // C# GroupCondition.Match: ValidateCallFlags(ReadStates) FIRST,
+                // then a null CurrentScriptHash resolves to false (GetContract(null)
+                // is null), not an error.
+                if !self.has_call_flags(CallFlags::READ_STATES) {
+                    return Err(CoreError::invalid_operation(
+                        "Read states not allowed".to_string(),
+                    ));
+                }
+                match self.current_script_hash() {
+                    Some(hash) => self.contract_matches_group(&hash, group),
+                    None => Ok(false),
+                }
             }
             WitnessCondition::CalledByGroup { group } => {
-                let Some(calling_hash) = self.get_calling_script_hash() else {
-                    return Ok(false);
-                };
-                self.contract_matches_group(&calling_hash, group)
+                // C# CalledByGroupCondition.Match: ValidateCallFlags(ReadStates)
+                // FIRST, then a null CallingScriptHash resolves to false.
+                if !self.has_call_flags(CallFlags::READ_STATES) {
+                    return Err(CoreError::invalid_operation(
+                        "Read states not allowed".to_string(),
+                    ));
+                }
+                match self.get_calling_script_hash() {
+                    Some(hash) => self.contract_matches_group(&hash, group),
+                    None => Ok(false),
+                }
             }
         }
     }
 
+    /// Group match for a witness Group/CalledByGroup condition. Callers validate
+    /// the ReadStates call flag first, matching C# GroupCondition.Match ordering.
     fn contract_matches_group(&self, contract_hash: &UInt160, group: &[u8]) -> CoreResult<bool> {
-        if !self.has_call_flags(CallFlags::READ_STATES) {
-            return Err(CoreError::invalid_operation(
-                "Read states not allowed".to_string(),
-            ));
-        }
-
         let Some(contract) = NativeContractLookup::lookup_contract_management(
             self.snapshot_cache.as_ref(),
             contract_hash,
