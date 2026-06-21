@@ -19,7 +19,6 @@
 //! serialization) so the Rust native-contract surface is
 //! byte-compatible with the canonical C# node.
 
-#![allow(dead_code)]
 pub use neo_execution::{
     HardforkActivable, NativeContract, NativeContractsCache, NativeContractsCacheEntry,
     NativeEvent, NativeMethod, NativeRegistry, is_active_for,

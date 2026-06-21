@@ -21,8 +21,6 @@
 //! `neo-manifest`, `neo-payloads`) and the [`neo_native_contracts`]
 //! crate provides the concrete `NativeContract` implementations.
 
-#![allow(dead_code)]
-
 // ============================================================================
 // Application engine
 // ============================================================================

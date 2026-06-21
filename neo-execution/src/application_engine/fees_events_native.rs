@@ -376,16 +376,6 @@ impl ApplicationEngine {
         Ok(())
     }
 
-    /// Ensures gas usage stays within configured limits.
-    fn update_vm_gas_counter(&mut self, _gas: i64) -> CoreResult<()> {
-        if self.gas_consumed > self.gas_limit {
-            return Err(CoreError::invalid_operation(
-                "VM exceeded gas limit during execution".to_string(),
-            ));
-        }
-
-        Ok(())
-    }
 
     /// Gets the script container (transaction or block).
     pub fn get_script_container(&self) -> Option<&Arc<dyn Verifiable>> {

@@ -199,31 +199,6 @@ fn storage_key_helpers_match_csharp_layout() {
 
 use crate::test_support::{hex, sample_committee, seed_committee};
 
-/// Stores a committee cache (Array of `Struct[pubkey, votes]`) under
-/// `Prefix_Committee`, mirroring C# `CachedCommittee.ToStackItem`.
-fn seed_committee_local(cache: &DataCache, points: &[ECPoint]) {
-    use neo_storage::StorageItem;
-    let array = StackItem::from_array(
-        points
-            .iter()
-            .map(|p| {
-                StackItem::from_struct(vec![
-                    StackItem::from_byte_string(p.to_bytes()),
-                    StackItem::from_int(0),
-                ])
-            })
-            .collect::<Vec<_>>(),
-    );
-    let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default()).unwrap();
-    cache.add(NeoToken::committee_key(), StorageItem::from_bytes(bytes));
-}
-
-fn seed_register_price(cache: &DataCache, price: i64) {
-    cache.add(
-        NeoToken::register_price_key(),
-        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(price))),
-    );
-}
 
 #[test]
 fn committee_threshold_is_majority() {

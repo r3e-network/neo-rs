@@ -71,7 +71,6 @@ impl ApplicationEngine {
             script_container,
             persisting_block,
             protocol_settings,
-            gas_limit,
             gas_consumed: 0,
             fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
@@ -149,7 +148,6 @@ impl ApplicationEngine {
             script_container,
             persisting_block,
             protocol_settings,
-            gas_limit,
             gas_consumed: 0,
             fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
@@ -299,11 +297,6 @@ impl ApplicationEngine {
             .remove(&TypeId::of::<T>())
             .and_then(|boxed| boxed.downcast::<T>().ok())
             .map(|boxed| *boxed)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn force_vm_state(&mut self, state: VMState) {
-        self.vm_engine.engine_mut().set_state(state);
     }
 
     /// Records the VM state for a transaction in the ledger state tracker.
@@ -481,15 +474,6 @@ impl ApplicationEngine {
         self.vm_engine.engine().result_stack()
     }
 
-    pub(crate) fn current_evaluation_stack(
-        &self,
-    ) -> Option<parking_lot::MutexGuard<'_, EvaluationStack>> {
-        self.vm_engine
-            .engine()
-            .current_context()
-            .map(|ctx| ctx.evaluation_stack())
-    }
-
     /// Returns the protocol settings used by this engine.
     pub fn protocol_settings(&self) -> &ProtocolSettings {
         &self.protocol_settings
@@ -589,20 +573,12 @@ impl ApplicationEngine {
         Arc::clone(&self.snapshot_cache)
     }
 
-    pub(crate) fn original_snapshot_cache(&self) -> Arc<DataCache> {
-        Arc::clone(&self.original_snapshot_cache)
-    }
-
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
         let policy_hash =
             crate::native_contract_provider::NativeContractLookup::lookup_policy_contract()
                 .map(|c| c.hash())
                 .unwrap_or(neo_primitives::UInt160::zero());
         self.native_registry.get(&policy_hash)
-    }
-
-    pub(crate) fn native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
-        self.native_registry.contracts().collect()
     }
 
     pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {

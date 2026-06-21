@@ -79,7 +79,7 @@ use neo_vm::interop_service::InteropHost;
 use neo_vm::jump_table::JumpTable;
 use neo_vm::script::Script;
 // InteropInterface trait removed - StackValue::Interop(u64) is used instead
-// VerifiableInterop is now stored via the interop host registry, not inline in the VM stack
+// Verifiable script containers are passed via the interop host registry, not inline in the VM stack
 use crate::contract_state::ContractState;
 use crate::diagnostic::Diagnostic;
 use crate::execution_context_state::ExecutionContextState;
@@ -121,7 +121,6 @@ use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::fmt;
 use std::sync::Arc;
 
 /// GAS limit used for test-mode invocations, in datoshi.
@@ -179,29 +178,6 @@ impl VmEngineHost {
     }
 }
 
-#[derive(Clone)]
-struct VerifiableInterop {
-    container: Arc<dyn Verifiable>,
-}
-
-impl VerifiableInterop {
-    fn new(container: Arc<dyn Verifiable>) -> Self {
-        Self { container }
-    }
-}
-
-impl fmt::Debug for VerifiableInterop {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "VerifiableInterop")
-    }
-}
-
-impl VerifiableInterop {
-    fn interface_type(&self) -> &str {
-        "Verifiable"
-    }
-}
-
 /// Represents a contract call queued by a native contract.
 ///
 /// Native contracts sometimes need to invoke a user contract (e.g., NEP-17
@@ -223,7 +199,6 @@ pub struct ApplicationEngine {
     script_container: Option<Arc<dyn Verifiable>>,
     persisting_block: Option<Arc<Block>>,
     protocol_settings: ProtocolSettings,
-    gas_limit: i64,
     gas_consumed: i64,
     fee_amount: i64,
     fee_consumed: i64,
