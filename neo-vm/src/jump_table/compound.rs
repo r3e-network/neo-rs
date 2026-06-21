@@ -370,8 +370,10 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 }
 
 /// Implements the HASKEY operation.
-fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+fn has_key(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+    // C# HasKey faults when the index is out of `[0, MaxItemSize)` BEFORE
+    // comparing against the collection's actual length (VMArray/Buffer/ByteString).
+    let max_item_size = engine.limits().max_item_size as usize;
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -380,12 +382,22 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     let key = context.pop()?;
     let collection = context.pop()?;
 
+    let invalid_index = |index: usize| {
+        VmError::invalid_operation_msg(format!(
+            "The index {index} is invalid for OpCode {:?}",
+            instruction.opcode()
+        ))
+    };
+
     let result = match &collection {
         StackItem::Array(array) => {
             let index = key
                 .as_int()?
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
+            if index >= max_item_size {
+                return Err(invalid_index(index));
+            }
             index < array.len()
         }
         StackItem::Struct(structure) => {
@@ -393,6 +405,9 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
                 .as_int()?
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
+            if index >= max_item_size {
+                return Err(invalid_index(index));
+            }
             index < structure.len()
         }
         StackItem::Map(map) => map.contains_key(&key)?,
