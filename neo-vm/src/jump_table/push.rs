@@ -144,6 +144,16 @@ fn push_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 /// The instruction already contains the parsed operand data.
 fn push_data(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let data = instruction.operand();
+    // C# JumpTable.Push PushData1/2/4 each call engine.Limits.AssertMaxItemSize
+    // on the operand length BEFORE pushing — a larger operand faults.
+    let max_item_size = engine.limits().max_item_size as usize;
+    if data.len() > max_item_size {
+        return Err(VmError::invalid_operation_msg(format!(
+            "MaxItemSize exceed: {}/{}",
+            data.len(),
+            max_item_size
+        )));
+    }
     require_context(engine)?.push(StackItem::from_byte_string(data.to_vec()))
 }
 
