@@ -98,33 +98,3 @@ async fn on_new_transaction_reports_has_conflicts_for_traceable_ledger_conflict(
         "C# Blockchain.OnNewTransaction rejects traceable ledger conflicts before mempool admission"
     );
 }
-
-#[tokio::test]
-async fn inventory_block_respects_effective_protocol_transaction_limit() {
-    let mut settings = neo_config::ProtocolSettings::default();
-    settings.max_transactions_per_block = 1;
-    let (service, _handle) = fixture_with_protocol_settings(settings);
-
-    let mut tx_a = Transaction::new();
-    tx_a.set_nonce(1);
-    tx_a.set_script(vec![0x51]);
-    let mut tx_b = Transaction::new();
-    tx_b.set_nonce(2);
-    tx_b.set_script(vec![0x51]);
-
-    let mut header = Header::new();
-    header.set_index(1);
-    let mut block = Block::from_parts(header, vec![tx_a, tx_b]);
-    block.try_rebuild_merkle_root().expect("valid merkle root");
-
-    let error = service
-        .handle_block_inventory(Arc::new(block), false, true)
-        .await
-        .expect_err("block above the effective protocol transaction cap is rejected");
-
-    assert!(
-        error.to_string().contains("exceeds the transaction limit"),
-        "{error}"
-    );
-    assert!(error.to_string().contains("maximum 1"), "{error}");
-}

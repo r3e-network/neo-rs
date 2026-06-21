@@ -407,17 +407,10 @@ impl BlockchainService {
                 "block {index} has an invalid version: {error}"
             )));
         }
-        let settings = self.system.settings();
-        if let Err(error) =
-            crate::block_validation::BlockValidator::validate_transaction_count_raw_with_limit(
-                block.transactions.len(),
-                settings.max_transactions_per_block as usize,
-            )
-        {
-            return Err(CoreError::other(format!(
-                "block {index} exceeds the transaction limit: {error}"
-            )));
-        }
+        // C# Block.Verify delegates to Header.Verify only; MaxTransactionsPerBlock
+        // is a dBFT primary-side build limit, not a block-validity rule, so a peer
+        // block is NOT rejected on tx count here (matching C# v3.10.0). The P2P
+        // message-size limit already bounds how many transactions a block can carry.
         let tx_hashes: Vec<neo_primitives::UInt256> =
             block.transactions.iter().map(|tx| tx.hash()).collect();
         if let Err(error) = crate::block_validation::BlockValidator::validate_merkle_root(
