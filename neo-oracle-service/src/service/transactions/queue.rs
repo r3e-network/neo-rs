@@ -160,7 +160,7 @@ impl OracleService {
             return false;
         }
 
-        let needed_threshold = oracle_nodes.len() - (oracle_nodes.len() - 1) / 3;
+        let needed_threshold = neo_vm::script_builder::RedeemScript::bft_threshold(oracle_nodes.len());
         if signs.len() < needed_threshold {
             return false;
         }

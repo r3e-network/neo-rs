@@ -24,10 +24,8 @@
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_execution::helper::Helper;
 use neo_native_contracts::ledger_contract::LedgerContract;
-use neo_native_contracts::{
-    GasToken, NeoToken, Notary, OracleContract, PolicyContract, RoleManagement,
-};
-use neo_payloads::{MAX_TRANSACTION_SIZE, OracleResponse, Transaction, TransactionAttribute};
+use neo_native_contracts::{GasToken, PolicyContract};
+use neo_payloads::{MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
 use neo_primitives::Witness as _;

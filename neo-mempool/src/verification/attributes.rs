@@ -3,8 +3,8 @@
 use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_native_contracts::{NeoToken, Notary, OracleContract, RoleManagement};
 use neo_payloads::{OracleResponse, Transaction, TransactionAttribute};
-use neo_primitives::UInt160;
 use neo_storage::DataCache;
+use neo_vm::script_builder::RedeemScript;
 
 use super::sender;
 
@@ -74,7 +74,7 @@ pub(super) fn verify_attribute(
             ) else {
                 return false;
             };
-            let Some(oracle_account) = bft_address(&oracles) else {
+            let Some(oracle_account) = RedeemScript::bft_address(&oracles) else {
                 return false;
             };
             tx.signers().iter().any(|s| s.account == oracle_account)
@@ -93,19 +93,4 @@ pub(super) fn verify_attribute(
 
 pub(super) fn oracle_response_gas_matches(tx: &Transaction, gas_for_response: i64) -> bool {
     tx.network_fee().wrapping_add(tx.system_fee()) == gas_for_response
-}
-
-/// C# `Contract.GetBFTAddress(pubkeys)` — `m = n - (n - 1) / 3` multisig
-/// script hash; `None` for an empty designation.
-fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> Option<UInt160> {
-    if pubkeys.is_empty() {
-        return None;
-    }
-    let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-    let script =
-        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
-            m, pubkeys,
-        )
-        .ok()?;
-    Some(UInt160::from_script(&script))
 }

@@ -17,6 +17,7 @@
 //! matches C# `ECPoint.CompareTo`).
 
 use neo_crypto::{ECCurve, ECPoint};
+use neo_primitives::UInt160;
 use neo_vm_rs::OpCode;
 
 use super::ScriptBuilder;
@@ -49,6 +50,33 @@ impl From<RedeemScriptError> for neo_error::CoreError {
 pub struct RedeemScript;
 
 impl RedeemScript {
+    /// The dBFT agreement threshold `M = N - (N - 1) / 3` for `n` consensus
+    /// nodes (C# `Contract.GetBFTAddress` / `(Validators.Length - (n - 1) / 3)`).
+    /// Returns 0 for `n == 0`. The single source of truth for this
+    /// consensus-critical formula across the workspace.
+    #[must_use]
+    pub fn bft_threshold(n: usize) -> usize {
+        if n == 0 {
+            0
+        } else {
+            n - (n - 1) / 3
+        }
+    }
+
+    /// C# `Contract.GetBFTAddress(pubkeys)`: the script hash of the
+    /// `bft_threshold(N)`-of-`N` multi-signature contract over `pubkeys`
+    /// (validators or oracle nodes). Returns `None` for an empty set or when the
+    /// multi-sig script cannot be built.
+    #[must_use]
+    pub fn bft_address(pubkeys: &[ECPoint]) -> Option<UInt160> {
+        if pubkeys.is_empty() {
+            return None;
+        }
+        let m = Self::bft_threshold(pubkeys.len());
+        let script = Self::multi_sig_redeem_script_from_points(m, pubkeys).ok()?;
+        Some(UInt160::from_script(&script))
+    }
+
     /// Creates a signature redeem script from a raw (compressed) public key.
     ///
     /// Layout (40 bytes): `PUSHDATA1 0x21 <33-byte pubkey> SYSCALL <CheckSig hash>`.
@@ -306,6 +334,29 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn bft_threshold_matches_csharp_formula() {
+        // C# `M = N - (N - 1) / 3`.
+        assert_eq!(RedeemScript::bft_threshold(0), 0);
+        assert_eq!(RedeemScript::bft_threshold(1), 1);
+        assert_eq!(RedeemScript::bft_threshold(4), 3);
+        assert_eq!(RedeemScript::bft_threshold(7), 5);
+        assert_eq!(RedeemScript::bft_threshold(21), 15);
+    }
+
+    #[test]
+    fn bft_address_is_the_multisig_script_hash_or_none() {
+        let keys: Vec<ECPoint> = [key_a(), key_b()]
+            .iter()
+            .map(|k| ECPoint::from_bytes(k).expect("valid key"))
+            .collect();
+        let addr = RedeemScript::bft_address(&keys).expect("non-empty -> Some");
+        let m = RedeemScript::bft_threshold(keys.len());
+        let script = RedeemScript::multi_sig_redeem_script_from_points(m, &keys).unwrap();
+        assert_eq!(addr, neo_primitives::UInt160::from_script(&script));
+        assert_eq!(RedeemScript::bft_address(&[]), None);
     }
 
     #[test]

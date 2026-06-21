@@ -81,7 +81,7 @@ pub(super) struct ProposalTransactionAvailability {
 
 /// The BFT threshold `M = N - (N-1)/3` used by C# dBFT.
 fn dbft_bft_threshold(n: usize) -> usize {
-    if n == 0 { 0 } else { n - (n - 1) / 3 }
+    RedeemScript::bft_threshold(n)
 }
 
 fn dbft_multisig_verification_script(validators: &[ValidatorInfo]) -> Vec<u8> {

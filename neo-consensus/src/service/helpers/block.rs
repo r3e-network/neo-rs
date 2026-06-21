@@ -11,7 +11,7 @@ impl ConsensusBlockFields {
     /// The BFT threshold `M = N - (N-1)/3` for `n` validators (`0` for an
     /// empty set).
     pub(in crate::service) fn bft_threshold(n: usize) -> usize {
-        if n == 0 { 0 } else { n - (n - 1) / 3 }
+        neo_vm::script_builder::RedeemScript::bft_threshold(n)
     }
 
     /// The `M`-of-`N` multi-sig verification script over the validator public

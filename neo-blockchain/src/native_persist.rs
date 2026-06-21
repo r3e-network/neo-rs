@@ -166,20 +166,12 @@ pub fn genesis_block(settings: &ProtocolSettings) -> CoreResult<Block> {
 }
 
 /// C# `Contract.GetBFTAddress(pubkeys)`: the script hash of the
-/// `m`-of-`n` multisig over `pubkeys` with `m = n - (n - 1) / 3`.
+/// C# `Contract.GetBFTAddress(pubkeys)`: the `m = n - (n - 1) / 3` multisig
+/// script hash. Delegates to the single workspace implementation.
 pub(crate) fn bft_address(pubkeys: &[neo_crypto::ECPoint]) -> CoreResult<UInt160> {
-    if pubkeys.is_empty() {
-        return Err(CoreError::invalid_operation(
-            "BFT address requires at least one validator",
-        ));
-    }
-    let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-    let script =
-        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
-            m, pubkeys,
-        )
-        .map_err(|e| CoreError::invalid_operation(format!("BFT multisig script: {e}")))?;
-    Ok(UInt160::from_script(&script))
+    neo_vm::script_builder::RedeemScript::bft_address(pubkeys).ok_or_else(|| {
+        CoreError::invalid_operation("BFT address requires at least one validator")
+    })
 }
 
 /// Runs the per-block native hook matching `engine`'s trigger

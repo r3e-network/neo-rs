@@ -40,7 +40,7 @@ impl OracleService {
                 "oracle nodes not designated".to_string(),
             ));
         }
-        let m = n - (n - 1) / 3;
+        let m = neo_vm::script_builder::RedeemScript::bft_threshold(n);
         let oracle_sign_contract = Contract::create_multi_sig_contract(m, oracle_nodes);
 
         let height = ledger.current_index(snapshot).unwrap_or(0);

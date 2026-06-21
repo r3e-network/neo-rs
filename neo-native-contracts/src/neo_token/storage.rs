@@ -339,18 +339,8 @@ impl NeoToken {
     /// `GasToken::initialize` can mint the initial GAS distribution to the
     /// standby-validator BFT address (C# GasToken.cs:33).
     pub(crate) fn bft_address(pubkeys: &[ECPoint]) -> CoreResult<UInt160> {
-        if pubkeys.is_empty() {
-            return Err(CoreError::invalid_operation(
-                "BFT address requires at least one key",
-            ));
-        }
-        let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-        let script =
-            neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
-                m, pubkeys,
-            )
-                .map_err(|e| CoreError::invalid_operation(format!("BFT multisig script: {e}")))?;
-        Ok(UInt160::from_script(&script))
+        neo_vm::script_builder::RedeemScript::bft_address(pubkeys)
+            .ok_or_else(|| CoreError::invalid_operation("BFT address requires at least one key"))
     }
 
     /// C# `GetCommittee` = committee public keys sorted ascending (`OrderBy(p => p)`).
