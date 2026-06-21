@@ -178,7 +178,12 @@ pub(super) fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcExcepti
             "CustomGroups" => WitnessScope::CUSTOM_GROUPS.bits(),
             "WitnessRules" => WitnessScope::WITNESS_RULES.bits(),
             "Global" => WitnessScope::GLOBAL.bits(),
-            other => return Err(invalid_params(format!("Unknown witness scope: {other}"))),
+            // C# Signer.FromJson uses Enum.Parse<WitnessScope>, which also accepts
+            // a numeric (decimal) string such as "1" or "128"; mirror that for
+            // client interop. from_byte below still validates the combination.
+            other => other
+                .parse::<u8>()
+                .map_err(|_| invalid_params(format!("Unknown witness scope: {other}")))?,
         };
 
         if flag == WitnessScope::GLOBAL.bits() && value != 0 {
@@ -191,4 +196,36 @@ pub(super) fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcExcepti
 
     WitnessScope::from_byte(value)
         .ok_or_else(|| invalid_params(format!("Invalid witness scope combination: {text}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_witness_scope_accepts_names_and_numeric_strings_like_csharp() {
+        // Names (existing behavior).
+        assert_eq!(
+            parse_witness_scope("CalledByEntry").unwrap(),
+            WitnessScope::CALLED_BY_ENTRY
+        );
+        assert_eq!(parse_witness_scope("Global").unwrap(), WitnessScope::GLOBAL);
+        assert_eq!(
+            parse_witness_scope("CalledByEntry,CustomContracts").unwrap(),
+            WitnessScope::from_byte(0x11).unwrap()
+        );
+        // Numeric strings, as C# Enum.Parse<WitnessScope> accepts.
+        assert_eq!(
+            parse_witness_scope("1").unwrap(),
+            WitnessScope::CALLED_BY_ENTRY
+        );
+        assert_eq!(parse_witness_scope("128").unwrap(), WitnessScope::GLOBAL);
+        assert_eq!(
+            parse_witness_scope("17").unwrap(),
+            WitnessScope::from_byte(0x11).unwrap()
+        );
+        // Invalid combinations / tokens still rejected.
+        assert!(parse_witness_scope("129").is_err()); // Global cannot combine
+        assert!(parse_witness_scope("notascope").is_err());
+    }
 }
