@@ -848,5 +848,4 @@ fn hash_bytes(bytes: &[u8]) -> i32 {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests;

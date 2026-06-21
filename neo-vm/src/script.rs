@@ -435,5 +435,4 @@ impl AsRef<[u8]> for Script {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests;

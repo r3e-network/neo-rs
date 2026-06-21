@@ -264,7 +264,6 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -401,5 +401,4 @@ impl fmt::Display for Witness {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests;

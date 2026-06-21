@@ -43,7 +43,6 @@ pub use neo_primitives::WitnessConditionType;
 pub use neo_primitives::WitnessRuleAction;
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests;
 
 /// Represents a witness condition (matches C# WitnessCondition exactly).

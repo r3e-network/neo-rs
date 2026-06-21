@@ -520,7 +520,6 @@ impl From<std::str::Utf8Error> for CoreError {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
     use super::*;
 

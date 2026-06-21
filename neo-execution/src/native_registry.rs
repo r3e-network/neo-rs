@@ -109,7 +109,6 @@ impl NativeRegistry {
 neo_io::impl_default_via_new!(NativeRegistry);
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
     use super::*;
 

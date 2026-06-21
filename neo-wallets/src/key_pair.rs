@@ -421,7 +421,6 @@ impl PartialEq for KeyPair {
 impl Eq for KeyPair {}
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
     use super::*;
     use neo_primitives::HASH_SIZE;
