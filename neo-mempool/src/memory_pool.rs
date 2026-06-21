@@ -191,6 +191,26 @@ fn conflict_target_hashes(tx: &Transaction) -> Vec<UInt256> {
         .collect()
 }
 
+/// C# `TransactionVerificationContext.CheckTransaction` conflict rebate: the
+/// summed system+network fees of the conflicts that will be evicted and whose
+/// Sender (`Signers[0].Account`) equals `tx_sender`. Those fees no longer count
+/// against the sender's pooled-fee allowance. Conflicts with a different first
+/// signer (or none) are not rebated, mirroring C#'s
+/// `conflictingTxs.Where(c => c.Sender.Equals(tx.Sender))`.
+fn conflict_rebate(conflicts: &[PoolItem], tx_sender: Option<UInt160>) -> BigInt {
+    conflicts
+        .iter()
+        .filter(|c| {
+            tx_sender.is_some_and(|sender| {
+                c.transaction.signers().first().map(|s| s.account) == Some(sender)
+            })
+        })
+        .map(|c| {
+            BigInt::from(c.transaction.system_fee()) + BigInt::from(c.transaction.network_fee())
+        })
+        .sum()
+}
+
 /// Returns the `OracleResponse` attribute id of `tx`, if any.
 fn oracle_response_id(tx: &Transaction) -> Option<u64> {
     tx.attributes().iter().find_map(|attr| match attr {
@@ -508,22 +528,7 @@ impl MemoryPool {
                     .and_then(|s| guard.sender_fees.get(&s.account).cloned())
                     .unwrap_or_default();
                 let tx_sender = tx.signers().first().map(|s| s.account);
-                let rebate: BigInt = conflicts_to_remove
-                    .iter()
-                    .filter(|conflict| {
-                        tx_sender.is_some_and(|sender| {
-                            conflict
-                                .transaction
-                                .signers()
-                                .iter()
-                                .any(|signer| signer.account == sender)
-                        })
-                    })
-                    .map(|conflict| {
-                        BigInt::from(conflict.transaction.system_fee())
-                            + BigInt::from(conflict.transaction.network_fee())
-                    })
-                    .sum();
+                let rebate = conflict_rebate(&conflicts_to_remove, tx_sender);
                 let effective_pooled_fee = &pooled_sender_fee - &rebate;
                 let oracle_duplicate = oracle_response_id(&tx)
                     .is_some_and(|id| guard.oracle_responses.contains_key(&id));
@@ -637,20 +642,10 @@ impl MemoryPool {
                 .and_then(|s| guard.sender_fees.get(&s.account).cloned())
                 .unwrap_or_default();
             // Conflict-fee rebate (C# VerifyStateDependent receives conflictsList):
-            // the conflicting txs sharing this sender will be evicted, so their
-            // fees no longer count against the sender's pooled-fee allowance.
+            // the conflicting txs with this sender will be evicted, so their fees
+            // no longer count against the sender's pooled-fee allowance.
             let tx_sender = transaction.signers().first().map(|s| s.account);
-            let rebate: BigInt = conflicts_to_remove
-                .iter()
-                .filter(|c| {
-                    tx_sender
-                        .is_some_and(|s| c.transaction.signers().iter().any(|sig| sig.account == s))
-                })
-                .map(|c| {
-                    BigInt::from(c.transaction.system_fee())
-                        + BigInt::from(c.transaction.network_fee())
-                })
-                .sum();
+            let rebate = conflict_rebate(&conflicts_to_remove, tx_sender);
             let effective_pooled_fee = &pooled_sender_fee - &rebate;
             let oracle_duplicate = oracle_response_id(&transaction)
                 .is_some_and(|id| guard.oracle_responses.contains_key(&id));

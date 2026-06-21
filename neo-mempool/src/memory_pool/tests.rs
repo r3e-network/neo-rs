@@ -751,3 +751,48 @@ fn reverify_with_empty_unverified_is_noop() {
     assert_eq!(pool.verified_count(), 1);
     assert_eq!(pool.unverified_count(), 0);
 }
+
+fn tx_with_signers_and_fees(nonce: u32, sys: i64, net: i64, accounts: &[UInt160]) -> Transaction {
+    let mut tx = Transaction::new();
+    tx.set_nonce(nonce);
+    tx.set_system_fee(sys);
+    tx.set_network_fee(net);
+    tx.set_script(vec![OpCode::RET.byte()]);
+    tx.set_signers(
+        accounts
+            .iter()
+            .map(|a| Signer::new(*a, WitnessScope::NONE))
+            .collect(),
+    );
+    tx.set_witnesses(accounts.iter().map(|_| Witness::empty()).collect());
+    tx
+}
+
+/// C# `TransactionVerificationContext.CheckTransaction` rebates a conflict's
+/// fees only when `conflictTx.Sender == tx.Sender`, and `Sender` is
+/// `Signers[0].Account`. A conflict that merely lists the sender as a later
+/// (non-first) signer must NOT be rebated.
+#[test]
+fn conflict_rebate_keys_on_first_signer_like_csharp() {
+    let sender = UInt160::from_bytes(&[1u8; 20]).expect("sender");
+    let other = UInt160::from_bytes(&[2u8; 20]).expect("other");
+
+    // (a) first signer IS the sender -> rebated (7 + 3 = 10)
+    let first_is_sender = PoolItem::new(tx_with_signers_and_fees(1, 7, 3, &[sender, other]));
+    // (b) first signer is someone else, sender appears later -> NOT rebated
+    //     (the pre-fix bug rebated this because it matched ANY signer)
+    let later_is_sender = PoolItem::new(tx_with_signers_and_fees(2, 100, 100, &[other, sender]));
+    // (c) sender absent entirely -> not rebated
+    let unrelated = PoolItem::new(tx_with_signers_and_fees(3, 100, 100, &[other]));
+
+    let conflicts = vec![first_is_sender, later_is_sender, unrelated];
+    assert_eq!(
+        conflict_rebate(&conflicts, Some(sender)),
+        num_bigint::BigInt::from(10),
+    );
+    // No sender -> no rebate.
+    assert_eq!(
+        conflict_rebate(&conflicts, None),
+        num_bigint::BigInt::from(0),
+    );
+}
