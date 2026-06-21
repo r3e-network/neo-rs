@@ -31,9 +31,7 @@ fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the size from the stack
-    let size = context
-        .pop()?
-        .into_int()?
+    let size = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid buffer size"))?;
 
@@ -57,20 +55,14 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
     // Pop the values from the stack
     // Pop order matches C#: count, src_index, src, dst_index, dst
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
-    let src_offset = context
-        .pop()?
-        .into_int()?
+    let src_offset = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid source offset"))?;
     let src = context.pop()?;
-    let dst_offset = context
-        .pop()?
-        .into_int()?
+    let dst_offset = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid destination offset"))?;
     let dst = context.pop()?;
@@ -137,14 +129,10 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
-    let offset = context
-        .pop()?
-        .into_int()?
+    let offset = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid offset"))?;
     let value = context.pop()?;
@@ -165,9 +153,7 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
@@ -187,9 +173,7 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;

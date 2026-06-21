@@ -108,9 +108,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
@@ -128,9 +126,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
@@ -176,9 +172,7 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
@@ -485,9 +479,7 @@ fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid map size"))?;
 
@@ -512,9 +504,7 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
@@ -537,9 +527,7 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context
-        .pop()?
-        .into_int()?
+    let count = super::get_integer(context.pop()?)?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 

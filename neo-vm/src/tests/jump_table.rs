@@ -115,6 +115,65 @@ fn not_gorgon_table_overrides_pre_fork_opcodes() {
     }
 }
 
+fn engine_with_items(items: Vec<StackItem>) -> ExecutionEngine {
+    use crate::script::Script;
+    let mut engine = ExecutionEngine::new(None);
+    engine
+        .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), -1, 0)
+        .expect("load test script");
+    let ctx = engine.current_context_mut().expect("current context");
+    for item in items {
+        ctx.push(item).expect("push test item");
+    }
+    engine
+}
+
+#[test]
+fn get_integer_faults_on_buffer_and_null_like_csharp() {
+    // C# StackItem.GetInteger(): a Buffer is not a PrimitiveType (no GetInteger
+    // override) and faults; Null faults; the Integer/Boolean/ByteString
+    // primitives convert. Rust's into_int() instead coerces a <=32-byte Buffer.
+    assert!(get_integer(StackItem::from_buffer(vec![0x05])).is_err());
+    assert!(get_integer(StackItem::Null).is_err());
+    assert_eq!(get_integer(StackItem::from_i64(7)).unwrap(), BigInt::from(7));
+    assert_eq!(get_integer(StackItem::from_bool(true)).unwrap(), BigInt::from(1));
+}
+
+#[test]
+fn count_opcodes_fault_on_buffer_operand_like_csharp() {
+    // NEWBUFFER (splice), PICK (stack) and NEWARRAY (compound) each read their
+    // size/index/count operand via GetInteger, which faults on a Buffer in the
+    // reference VM. Rust previously coerced a <=32-byte Buffer to an integer and
+    // proceeded, diverging from C#.
+    let jt = JumpTable::default();
+    let buf = || StackItem::from_buffer(vec![0x01]);
+
+    let mut e = engine_with_items(vec![buf()]);
+    assert!(
+        jt.execute(&mut e, &Instruction::new(OpCode::NEWBUFFER, &[]))
+            .is_err(),
+        "NEWBUFFER with a Buffer size operand must fault"
+    );
+
+    let mut e = engine_with_items(vec![
+        StackItem::from_i64(1),
+        StackItem::from_i64(2),
+        buf(),
+    ]);
+    assert!(
+        jt.execute(&mut e, &Instruction::new(OpCode::PICK, &[]))
+            .is_err(),
+        "PICK with a Buffer index operand must fault"
+    );
+
+    let mut e = engine_with_items(vec![buf()]);
+    assert!(
+        jt.execute(&mut e, &Instruction::new(OpCode::NEWARRAY, &[]))
+            .is_err(),
+        "NEWARRAY with a Buffer count operand must fault"
+    );
+}
+
 #[test]
 fn test_jump_table_invalid_opcode() {
     let jump_table = JumpTable::new();
