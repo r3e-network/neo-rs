@@ -109,13 +109,5 @@ impl NativeRegistry {
 neo_io::impl_default_via_new!(NativeRegistry);
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_native_registry_starts_empty() {
-        let registry = NativeRegistry::new();
-        assert!(registry.all_hashes().is_empty());
-        assert_eq!(registry.contracts().count(), 0);
-    }
-}
+#[path = "tests/native_registry.rs"]
+mod tests;

@@ -79,6 +79,5 @@ pub use signature::{
 };
 
 #[cfg(test)]
-mod tests {
-    // Tests are inline within source files
-}
+#[path = "tests/lib.rs"]
+mod tests;

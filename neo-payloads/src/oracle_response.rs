@@ -98,21 +98,5 @@ impl Serializable for OracleResponse {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fixed_script_matches_csharp_dynamic_call_finish() {
-        let expected = [
-            0xc2, // NEWARRAY0
-            0x1f, // PUSH15 (CallFlags.All)
-            0x0c, 0x06, b'f', b'i', b'n', b'i', b's', b'h', 0x0c,
-            0x14, // Oracle native contract hash
-            0x58, 0x87, 0x17, 0x11, 0x7e, 0x0a, 0xa8, 0x10, 0x72, 0xaf, 0xab, 0x71, 0xd2, 0xdd,
-            0x89, 0xfe, 0x7c, 0x4b, 0x92, 0xfe, 0x41, 0x62, 0x7d, 0x5b,
-            0x52, // SYSCALL System.Contract.Call
-        ];
-
-        assert_eq!(OracleResponse::get_fixed_script().as_slice(), expected);
-    }
-}
+#[path = "tests/oracle_response.rs"]
+mod tests;
