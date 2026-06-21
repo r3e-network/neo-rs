@@ -23,19 +23,6 @@ impl SystemContext for TestContext {
     }
 }
 
-#[derive(Debug)]
-struct ConfiguredTestContext {
-    settings: Arc<neo_config::ProtocolSettings>,
-}
-impl SystemContext for ConfiguredTestContext {
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
-    fn current_height(&self) -> u32 {
-        0
-    }
-}
-
 #[derive(Debug, Default)]
 struct TestMempool;
 impl MempoolLike for TestMempool {
@@ -102,18 +89,6 @@ fn fixture_with_mempool_result(result: VerifyResult) -> (BlockchainService, Bloc
     let header_cache = Arc::new(HeaderCache::default());
     let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> =
         Arc::new(Mutex::new(FixedResultMempool { result }));
-    BlockchainService::with_defaults(system, ledger, header_cache, mempool)
-}
-
-fn fixture_with_protocol_settings(
-    settings: neo_config::ProtocolSettings,
-) -> (BlockchainService, BlockchainHandle) {
-    let system: Arc<dyn SystemContext> = Arc::new(ConfiguredTestContext {
-        settings: Arc::new(settings),
-    });
-    let ledger = Arc::new(LedgerContext::default());
-    let header_cache = Arc::new(HeaderCache::default());
-    let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
     BlockchainService::with_defaults(system, ledger, header_cache, mempool)
 }
 
