@@ -29,15 +29,31 @@ fn pop(engine: &mut ExecutionEngine) -> StackItem {
 }
 
 #[test]
-fn and_accepts_buffer_via_byte_string_semantics() {
+fn and_faults_on_buffer_operand_like_csharp_getinteger() {
+    // C# `And` reads operands via `Pop().GetInteger()`. `Buffer` is not a
+    // `PrimitiveType`, so its base `GetInteger()` throws `InvalidCastException`
+    // and the opcode faults — it does NOT coerce the Buffer to a ByteString.
     let mut engine = engine_with_stack(vec![
         StackItem::from_buffer(vec![0xff]),
         StackItem::from_byte_string(vec![0x00, 0x80]),
     ]);
 
-    and(&mut engine, &instruction(OpCode::AND)).expect("AND succeeds");
+    assert!(and(&mut engine, &instruction(OpCode::AND)).is_err());
+}
 
-    assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(-32768));
+#[test]
+fn invert_faults_on_buffer_operand_like_csharp_getinteger() {
+    let mut engine = engine_with_stack(vec![StackItem::from_buffer(vec![0xff])]);
+
+    assert!(invert(&mut engine, &instruction(OpCode::INVERT)).is_err());
+}
+
+#[test]
+fn invert_faults_on_null_operand_like_csharp_getinteger() {
+    // `Null` is likewise not a `PrimitiveType`; `Null.GetInteger()` throws.
+    let mut engine = engine_with_stack(vec![StackItem::Null]);
+
+    assert!(invert(&mut engine, &instruction(OpCode::INVERT)).is_err());
 }
 
 #[test]

@@ -3,7 +3,7 @@
 use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{JumpTable, numeric_operand, register_jump_handlers};
 use crate::stack_item::StackItem;
 use neo_vm_rs::semantics::arithmetic;
 use neo_vm_rs::{Instruction, OpCode, StackValue};
@@ -18,14 +18,6 @@ fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionConte
 #[inline]
 fn semantics_error(error: String) -> VmError {
     VmError::invalid_operation_msg(error)
-}
-
-#[inline]
-fn value_from_stack_item(item: StackItem) -> VmResult<StackValue> {
-    match item {
-        StackItem::Buffer(buffer) => Ok(StackValue::ByteString(buffer.data())),
-        item => StackValue::try_from(item),
-    }
 }
 
 #[inline]
@@ -48,7 +40,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 
 fn invert(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = value_from_stack_item(ctx.pop()?)?;
+    let value = numeric_operand(ctx.pop()?)?;
     let result = arithmetic::invert_value(value).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
@@ -58,8 +50,8 @@ fn binary_bitwise(
     op: fn(StackValue, StackValue) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let right = value_from_stack_item(ctx.pop()?)?;
-    let left = value_from_stack_item(ctx.pop()?)?;
+    let right = numeric_operand(ctx.pop()?)?;
+    let left = numeric_operand(ctx.pop()?)?;
     let result = op(left, right).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
