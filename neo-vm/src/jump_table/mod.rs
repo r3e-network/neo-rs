@@ -15,11 +15,40 @@ pub mod types; // Matches JumpTable.Types.cs
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
+use crate::stack_item::StackItem;
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
+use num_bigint::BigInt;
 
 /// A handler for a VM instruction.
 pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;
+
+/// C# `StackItem.GetInteger()` semantics for an integer operand read off the
+/// evaluation stack (a count, index, size or shift a script controls).
+///
+/// In the reference VM a `Buffer` is NOT a `PrimitiveType` and has no
+/// `GetInteger` override, so `GetInteger()` hits the base
+/// `=> throw new InvalidCastException()` and FAULTS — even for a short buffer.
+/// `Null` and compound items (`Array`/`Struct`/`Map`/pointer/interop) fault too;
+/// only the `Integer`/`Boolean`/`ByteString` primitives yield a value.
+///
+/// This deliberately differs from [`StackItem::into_int`], which coerces a
+/// `Buffer` of up to `VM_INTEGER_MAX_SIZE` bytes to its little-endian integer
+/// value. That coercion is the `ConvertTo(Integer)` path (the CONVERT opcode);
+/// the GetInteger path used by count/index/shift operands faults on a `Buffer`.
+///
+/// Callers still narrow the returned `BigInt` (e.g. `to_i32`/`to_i64`/`to_usize`)
+/// and a value outside the target range faults — matching C#'s `(int)BigInteger`
+/// cast, which throws `OverflowException` (it does NOT truncate) before the
+/// per-opcode sign/bounds checks run.
+pub(crate) fn get_integer(item: StackItem) -> VmResult<BigInt> {
+    if matches!(item, StackItem::Buffer(_)) {
+        return Err(VmError::invalid_type_simple(
+            "operand is not an integer (C# GetInteger faults on Buffer)",
+        ));
+    }
+    item.into_int()
+}
 
 macro_rules! register_jump_handlers {
     ($jump_table:expr_2021; $($opcode:expr_2021 => $handler:expr_2021),+ $(,)?) => {

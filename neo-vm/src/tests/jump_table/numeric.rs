@@ -142,3 +142,47 @@ fn shift_rejects_values_above_engine_limit() {
 
     assert!(shl(&mut engine, &instruction(OpCode::SHL)).is_err());
 }
+
+#[test]
+fn shift_rejects_out_of_i32_operand_like_csharp() {
+    // C# reads the shift as `(int)Pop().GetInteger()`. The `(int)BigInteger` cast
+    // throws OverflowException for a value outside i32 range — it does NOT
+    // truncate — so SHL by 2^32 FAULTS (it is not an identity shift).
+    let two_pow_32 = BigInt::from(1u64 << 32);
+    let mut engine = engine_with_stack(vec![
+        StackItem::from_i64(7),
+        StackItem::from_int(two_pow_32),
+    ]);
+    assert!(
+        shl(&mut engine, &instruction(OpCode::SHL)).is_err(),
+        "SHL by 2^32 must fault (C# (int) cast throws OverflowException)"
+    );
+}
+
+#[test]
+fn pow_rejects_out_of_i32_exponent_like_csharp() {
+    // C# casts the exponent with `(int)`, which throws OverflowException for a
+    // value outside i32 range — POW by 2^32 faults, it does not collapse to ^0.
+    let two_pow_32 = BigInt::from(1u64 << 32);
+    let mut engine = engine_with_stack(vec![
+        StackItem::from_i64(5),
+        StackItem::from_int(two_pow_32),
+    ]);
+    assert!(
+        pow(&mut engine, &instruction(OpCode::POW)).is_err(),
+        "POW with a 2^32 exponent must fault (C# (int) cast throws OverflowException)"
+    );
+}
+
+#[test]
+fn shift_faults_on_buffer_operand_like_csharp() {
+    // C# `(int)Pop().GetInteger()` faults on a Buffer (no GetInteger override).
+    let mut engine = engine_with_stack(vec![
+        StackItem::from_i64(1),
+        StackItem::from_buffer(vec![0x01]),
+    ]);
+    assert!(
+        shl(&mut engine, &instruction(OpCode::SHL)).is_err(),
+        "SHL with a Buffer shift operand must fault"
+    );
+}
