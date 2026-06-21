@@ -171,11 +171,19 @@ impl MemoryPoolInner {
             self.verified.remove(&hash);
         }
         let dropped = (*item.transaction).clone();
-        self.context_remove(&dropped);
-        self.conflicts.retain(|_, set| {
-            set.remove(&hash);
-            !set.is_empty()
-        });
+        // C# RemoveOverCapacity gates the verification-context + conflict cleanup
+        // on `ReferenceEquals(sortedPool, _sortedTransactions)` — i.e. it runs only
+        // for a verified-queue eviction. Unverified items are never tracked in
+        // sender_fees / conflicts (those maps are cleared on block-persist and only
+        // repopulated for verified admissions), so this is a no-op for them; gating
+        // it mirrors C# exactly and documents the invariant.
+        if !from_unverified {
+            self.context_remove(&dropped);
+            self.conflicts.retain(|_, set| {
+                set.remove(&hash);
+                !set.is_empty()
+            });
+        }
         Some(dropped)
     }
 }
