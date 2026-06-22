@@ -10,6 +10,7 @@ mod parse;
 mod proto;
 
 #[cfg(test)]
+#[path = "../tests/neofs.rs"]
 mod tests;
 
 use super::OracleServiceSettings;

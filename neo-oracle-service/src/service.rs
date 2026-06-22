@@ -7,6 +7,7 @@ mod transactions;
 mod utils;
 
 #[cfg(test)]
+#[path = "tests/service.rs"]
 mod tests;
 
 use neo_crypto::ECPoint;
