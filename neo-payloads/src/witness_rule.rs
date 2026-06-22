@@ -43,6 +43,7 @@ pub use neo_primitives::WitnessConditionType;
 pub use neo_primitives::WitnessRuleAction;
 
 #[cfg(test)]
+#[path = "tests/witness_rule.rs"]
 mod tests;
 
 /// Represents a witness condition (matches C# WitnessCondition exactly).

@@ -384,4 +384,5 @@ impl Serializable for Block {
 }
 
 #[cfg(test)]
+#[path = "tests/block.rs"]
 mod tests;

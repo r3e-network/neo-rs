@@ -332,4 +332,5 @@ impl fmt::Display for Witness {
 }
 
 #[cfg(test)]
+#[path = "tests/witness.rs"]
 mod tests;

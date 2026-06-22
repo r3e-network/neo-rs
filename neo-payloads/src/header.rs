@@ -451,4 +451,5 @@ impl Serializable for Header {
 }
 
 #[cfg(test)]
+#[path = "tests/header.rs"]
 mod tests;
