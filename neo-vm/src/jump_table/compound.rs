@@ -473,26 +473,45 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 }
 
 /// Implements the VALUES operation.
+///
+/// C# `Values` (JumpTable.Compound.cs:343-358) accepts BOTH an Array (including a
+/// `Struct`, since `Struct : Array`) and a Map as the source, deep-clones each
+/// `Struct` element via `Struct.Clone(engine.Limits)` (which faults past the
+/// per-clone subitem limit), and adds every other element by reference. The Rust
+/// handler previously accepted only a Map and shallow-cloned its values, so a
+/// VALUES over an Array/Struct faulted and the result aliased the source Structs.
 fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+    let limits = *engine.limits();
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the map from the stack
-    let map = context.pop()?;
-
-    // Get the values from the map
-    match map {
+    let source = context.pop()?;
+    let source_items: Vec<StackItem> = match source {
+        StackItem::Array(array) => array.items(),
+        StackItem::Struct(structure) => structure.items(),
         StackItem::Map(map) => {
-            let values: Vec<StackItem> =
-                map.with_items(|items| items.iter().map(|(_, v)| v.clone()).collect());
-            let array = Array::new(values, Some(context.reference_counter().clone()))?;
-            context.push(StackItem::Array(array))?;
+            map.with_items(|items| items.iter().map(|(_, v)| v.clone()).collect())
         }
-        _ => return Err(VmError::invalid_type_simple("Expected Map")),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Invalid type for VALUES (expected Array, Struct or Map)",
+            ));
+        }
+    };
+
+    // C#: `if (item is Struct s) newArray.Add(s.Clone(engine.Limits)); else newArray.Add(item);`
+    let mut values = Vec::with_capacity(source_items.len());
+    for item in source_items {
+        if matches!(item, StackItem::Struct(_)) {
+            values.push(item.deep_copy(&limits)?);
+        } else {
+            values.push(item);
+        }
     }
 
+    let array = Array::new(values, Some(context.reference_counter().clone()))?;
+    context.push(StackItem::Array(array))?;
     Ok(())
 }
 
@@ -778,3 +797,7 @@ fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../tests/jump_table/compound.rs"]
+mod tests;
