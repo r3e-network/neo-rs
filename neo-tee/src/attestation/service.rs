@@ -450,4 +450,5 @@ impl AttestationService {
 }
 
 #[cfg(test)]
+#[path = "../tests/attestation/service.rs"]
 mod tests;

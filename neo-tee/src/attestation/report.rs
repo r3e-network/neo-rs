@@ -634,4 +634,5 @@ impl Quote {
 }
 
 #[cfg(test)]
+#[path = "../tests/attestation/report.rs"]
 mod tests;

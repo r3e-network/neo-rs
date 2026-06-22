@@ -459,4 +459,5 @@ fn missing(field: &str) -> TeeError {
 }
 
 #[cfg(test)]
+#[path = "../tests/nitro/attestation.rs"]
 mod tests;
