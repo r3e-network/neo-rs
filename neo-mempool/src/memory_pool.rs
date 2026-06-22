@@ -778,4 +778,5 @@ impl std::fmt::Debug for MemoryPool {
 pub type SharedMemoryPool = Arc<MemoryPool>;
 
 #[cfg(test)]
+#[path = "tests/memory_pool.rs"]
 mod tests;

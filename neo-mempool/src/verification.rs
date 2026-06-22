@@ -331,4 +331,5 @@ fn attribute_network_fee(
 }
 
 #[cfg(test)]
+#[path = "tests/verification.rs"]
 mod tests;
