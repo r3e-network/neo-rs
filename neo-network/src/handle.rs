@@ -513,4 +513,5 @@ pub const DEFAULT_EVENT_CAPACITY: usize = 1024;
 pub type SharedNetworkHandle = Arc<NetworkHandle>;
 
 #[cfg(test)]
+#[path = "tests/handle.rs"]
 mod tests;
