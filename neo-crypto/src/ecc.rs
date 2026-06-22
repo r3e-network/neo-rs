@@ -758,4 +758,5 @@ impl EcdsaVerify {
 }
 
 #[cfg(test)]
+#[path = "tests/ecc.rs"]
 mod tests;

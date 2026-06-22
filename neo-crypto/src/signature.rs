@@ -564,4 +564,5 @@ impl Crypto {
 }
 
 #[cfg(test)]
+#[path = "tests/signature.rs"]
 mod tests;

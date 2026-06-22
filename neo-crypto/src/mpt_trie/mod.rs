@@ -11,6 +11,7 @@ mod node_type;
 mod trie;
 
 #[cfg(test)]
+#[path = "../tests/mpt_trie.rs"]
 mod tests;
 
 pub use cache::{MptCache, MptStoreSnapshot};

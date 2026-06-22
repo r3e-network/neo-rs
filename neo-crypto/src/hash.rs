@@ -378,4 +378,5 @@ impl CtCompare {
 }
 
 #[cfg(test)]
+#[path = "tests/hash.rs"]
 mod tests;

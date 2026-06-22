@@ -91,8 +91,13 @@ fn prepare_mpt_node3() -> Node {
     branch
 }
 
+#[path = "mpt_trie/cache.rs"]
 mod cache;
+#[path = "mpt_trie/diagnostics.rs"]
 mod diagnostics;
+#[path = "mpt_trie/find_limited.rs"]
 mod find_limited;
+#[path = "mpt_trie/node.rs"]
 mod node;
+#[path = "mpt_trie/trie.rs"]
 mod trie;
