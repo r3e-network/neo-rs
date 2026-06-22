@@ -11,6 +11,7 @@ mod lifecycle;
 mod proposal;
 
 #[cfg(test)]
+#[path = "../tests/service.rs"]
 mod tests;
 
 pub use block_data::BlockData;

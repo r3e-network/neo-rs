@@ -750,4 +750,5 @@ impl ConsensusContext {
 }
 
 #[cfg(test)]
+#[path = "../tests/context.rs"]
 mod tests;

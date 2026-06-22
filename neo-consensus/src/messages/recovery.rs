@@ -398,4 +398,5 @@ where
 }
 
 #[cfg(test)]
+#[path = "../tests/messages/recovery.rs"]
 mod tests;

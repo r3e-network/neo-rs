@@ -52,8 +52,13 @@ fn proposed_block_hash(
     )
 }
 
+#[path = "prepare/backup_request.rs"]
 mod backup_request;
+#[path = "prepare/commit_flow.rs"]
 mod commit_flow;
+#[path = "prepare/initial_round.rs"]
 mod initial_round;
+#[path = "prepare/primary_proposal.rs"]
 mod primary_proposal;
+#[path = "prepare/response_and_cache.rs"]
 mod response_and_cache;
