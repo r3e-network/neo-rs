@@ -63,3 +63,41 @@ fn test_change_view_deserialize_too_short() {
     let result = ChangeViewMessage::deserialize(&data, 100, 0, 1);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_change_view_tx_invalid_round_trips_rejected_hashes() {
+    // C# v3.10.0 ChangeView serializes RejectedHashes (UInt256[]) ONLY for the
+    // TxRejectedByPolicy/TxInvalid reasons: timestamp(8) + reason(1) + var-int
+    // count + 32 bytes per hash.
+    let hashes = vec![
+        neo_primitives::UInt256::from_bytes(&[0x11u8; 32]).unwrap(),
+        neo_primitives::UInt256::from_bytes(&[0x22u8; 32]).unwrap(),
+    ];
+    let msg = ChangeViewMessage::new(7, 2, 3, 0xDEAD_BEEF, ChangeViewReason::TxInvalid)
+        .with_rejected_hashes(hashes.clone());
+    let data = msg.serialize();
+    assert_eq!(
+        data.len(),
+        8 + 1 + 1 + 2 * 32,
+        "ts + reason + var-int(2) + 2 hashes"
+    );
+
+    let parsed = ChangeViewMessage::deserialize(&data, 7, 2, 3).unwrap();
+    assert_eq!(parsed.reason, ChangeViewReason::TxInvalid);
+    assert_eq!(parsed.rejected_hashes, hashes);
+}
+
+#[test]
+fn test_change_view_non_tx_reason_omits_rejected_hashes() {
+    // A non-TxInvalid reason must NOT serialize RejectedHashes even if set
+    // (C# only writes them for TxRejectedByPolicy/TxInvalid) — wire compat.
+    let msg = ChangeViewMessage::new(7, 2, 3, 1000, ChangeViewReason::Timeout)
+        .with_rejected_hashes(vec![
+            neo_primitives::UInt256::from_bytes(&[0x33u8; 32]).unwrap(),
+        ]);
+    let data = msg.serialize();
+    assert_eq!(data.len(), 9, "Timeout serializes only timestamp + reason");
+
+    let parsed = ChangeViewMessage::deserialize(&data, 7, 2, 3).unwrap();
+    assert!(parsed.rejected_hashes.is_empty());
+}
