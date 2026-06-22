@@ -73,38 +73,34 @@ fn not_on_integer_preserves_boolean_negation() {
     assert!(!pop(&mut engine).as_bool().unwrap(), "NOT(5) => false");
 }
 
-/// Pre-HF_Gorgon vulnerable SHL (neo-vm#567): a zero shift returns WITHOUT
-/// popping the value operand, so the value is left on the stack untouched —
-/// whereas the fixed handler pops the value and coerces it via GetInteger().
-/// For a Buffer value the fixed handler now FAULTS (C# Buffer has no GetInteger
-/// override → InvalidCastException), so the two paths diverge observably.
+/// C# `Shl`/`Shr` (JumpTable.Numeric.cs:237-261) do `if (shift == 0) return;`
+/// BEFORE popping the value operand, so a zero shift leaves the value untouched
+/// on the stack and never reads it — a non-integer value does NOT fault. There
+/// is no `HF_Gorgon` split in the C# VM, so the single live handler must behave
+/// this way.
 #[test]
-fn vulnerable_shl_diverges_from_fixed_on_zero_shift() {
-    let buffer = || StackItem::from_buffer(vec![0x07]);
-
-    // Vulnerable: a zero shift returns without popping the value -> Buffer left.
-    let mut engine = engine_with_stack(vec![buffer(), StackItem::from_i64(0)]);
-    shl_vulnerable(&mut engine, &instruction(OpCode::SHL))
-        .expect("vulnerable SHL must not fault on a zero shift");
+fn shl_zero_shift_leaves_value_untouched_like_csharp() {
+    // A zero shift returns without popping/validating the value: a Buffer value
+    // does NOT fault and stays on the stack.
+    let mut engine = engine_with_stack(vec![StackItem::from_buffer(vec![0x07]), StackItem::from_i64(0)]);
+    shl(&mut engine, &instruction(OpCode::SHL))
+        .expect("SHL by 0 over a Buffer must not fault (C# returns before reading the value)");
     assert!(
         matches!(pop(&mut engine), StackItem::Buffer(_)),
         "the value operand is left untouched (still a Buffer)"
     );
 
-    // Fixed: pops the value and coerces via GetInteger(); a Buffer FAULTS.
-    let mut engine = engine_with_stack(vec![buffer(), StackItem::from_i64(0)]);
+    // A zero shift over an integer is the identity.
+    let mut engine = engine_with_stack(vec![StackItem::from_i64(7), StackItem::from_i64(0)]);
+    shl(&mut engine, &instruction(OpCode::SHL)).expect("SHL by 0 over an integer is identity");
+    assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(7));
+
+    // A non-zero shift DOES read the value, so a Buffer value faults (GetInteger).
+    let mut engine = engine_with_stack(vec![StackItem::from_buffer(vec![0x07]), StackItem::from_i64(1)]);
     assert!(
         shl(&mut engine, &instruction(OpCode::SHL)).is_err(),
-        "fixed SHL faults on a Buffer value (C# GetInteger faults on Buffer)"
+        "SHL by a non-zero amount over a Buffer faults (C# GetInteger faults on Buffer)"
     );
-
-    // Both agree on a zero shift over an integer (identity).
-    let mut engine = engine_with_stack(vec![StackItem::from_i64(7), StackItem::from_i64(0)]);
-    shl_vulnerable(&mut engine, &instruction(OpCode::SHL)).expect("vulnerable SHL ok");
-    assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(7));
-    let mut engine = engine_with_stack(vec![StackItem::from_i64(7), StackItem::from_i64(0)]);
-    shl(&mut engine, &instruction(OpCode::SHL)).expect("fixed SHL ok on integer");
-    assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(7));
 }
 
 #[test]

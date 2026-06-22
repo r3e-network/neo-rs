@@ -185,43 +185,17 @@ fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     shift(engine, arithmetic::shr_value)
 }
 
+/// SHL/SHR. C# `Shl`/`Shr` (JumpTable.Numeric.cs:237-261) pop the shift, narrow
+/// it to `int`, `AssertShift`, then `if (shift == 0) return;` BEFORE popping the
+/// value operand — so a zero shift leaves the value untouched on the stack and
+/// never reads it (a non-integer value does NOT fault). There is no `HF_Gorgon`
+/// split in the C# VM; this single early-return behavior is authoritative.
 fn shift(
     engine: &mut ExecutionEngine,
     op: fn(StackValue, i64) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let limits = *engine.limits();
     let ctx = require_context(engine)?;
-    let shift_item = ctx.pop()?;
-    let value = numeric_operand(ctx.pop()?)?;
-    let shift_i32 = shift_operand_to_i32(shift_item)?;
-    limits
-        .assert_shift(shift_i32)
-        .map_err(VmError::invalid_operation_msg)?;
-    let result = op(value, i64::from(shift_i32)).map_err(semantics_error)?;
-    push_stack_value(ctx, result)
-}
-
-/// Pre-`HF_Gorgon` (neo-vm#567) vulnerable SHL. Unlike the fixed [`shift`], it
-/// does NOT pop/validate the value operand when the shift is zero — it returns
-/// with the value still on the stack (C# `ApplicationEngine.VulnerableSHL`).
-pub(crate) fn shl_vulnerable(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    shift_vulnerable(engine, arithmetic::shl_value)
-}
-
-/// Pre-`HF_Gorgon` (neo-vm#567) vulnerable SHR (see [`shl_vulnerable`]).
-pub(crate) fn shr_vulnerable(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    shift_vulnerable(engine, arithmetic::shr_value)
-}
-
-fn shift_vulnerable(
-    engine: &mut ExecutionEngine,
-    op: fn(StackValue, i64) -> Result<StackValue, String>,
-) -> VmResult<()> {
-    let limits = *engine.limits();
-    let ctx = require_context(engine)?;
-    // C# VulnerableSHL/SHR: pop shift, assert, and on zero shift return WITHOUT
-    // popping the value operand (so a non-primitive value is never validated and
-    // stays on the stack) — the divergence from the fixed handler.
     let shift_i32 = shift_operand_to_i32(ctx.pop()?)?;
     limits
         .assert_shift(shift_i32)

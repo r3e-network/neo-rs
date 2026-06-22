@@ -146,8 +146,12 @@ impl JumpTable {
         DEFAULT.get_or_init(Self::new).clone()
     }
 
-    /// A pre-Gorgon compatibility table kept for tests/future protocol work. Neo
+    /// A pre-543 compatibility table kept for tests/future protocol work. Neo
     /// v3.10.0's `ApplicationEngine.Create` does not select this table.
+    ///
+    /// SHL/SHR are NOT overridden here: the C# VM has a single SHL/SHR behavior
+    /// (the `shift == 0` early-return), with no `HF_Gorgon` split, so the default
+    /// handler is already correct for every protocol version.
     pub fn not_gorgon() -> Self {
         NOT_GORGON
             .get_or_init(|| {
@@ -156,8 +160,6 @@ impl JumpTable {
                 table.set(OpCode::PICKITEM, compound::pick_item_before543);
                 table.set(OpCode::SETITEM, compound::set_item_before543);
                 table.set(OpCode::REMOVE, compound::remove_before543);
-                table.set(OpCode::SHR, numeric::shr_vulnerable);
-                table.set(OpCode::SHL, numeric::shl_vulnerable);
                 table
             })
             .clone()

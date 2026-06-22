@@ -75,15 +75,14 @@ fn test_jump_table_default() {
     }
 }
 
-/// The pre-HF_Gorgon table overrides SHL/SHR + HASKEY/PICKITEM/SETITEM/REMOVE
-/// with the pre-fork handlers, and leaves every other opcode as the default.
+/// The pre-543 table overrides HASKEY/PICKITEM/SETITEM/REMOVE with the pre-fork
+/// handlers, and leaves every other opcode as the default. SHL/SHR are NOT
+/// overridden: the C# VM has a single SHL/SHR behavior (no `HF_Gorgon` split).
 #[test]
 fn not_gorgon_table_overrides_pre_fork_opcodes() {
     let default = JumpTable::default();
     let not_gorgon = JumpTable::not_gorgon();
     let overridden = [
-        OpCode::SHL,
-        OpCode::SHR,
         OpCode::HASKEY,
         OpCode::PICKITEM,
         OpCode::SETITEM,
