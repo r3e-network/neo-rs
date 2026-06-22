@@ -6,6 +6,8 @@
 //! - Block/transaction serialization
 //! - Chain state operations
 
+#![allow(missing_docs)] // benchmark/integration-test harness: not public API
+
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};

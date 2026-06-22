@@ -1,3 +1,4 @@
+#![allow(missing_docs)] // benchmark/integration-test harness: not public API
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_payloads::Header;

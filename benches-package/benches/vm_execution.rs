@@ -1,3 +1,4 @@
+#![allow(missing_docs)] // benchmark/integration-test harness: not public API
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, StackValue, VmState, interpret, validate_strict_script};

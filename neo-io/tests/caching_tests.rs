@@ -1,3 +1,4 @@
+#![allow(missing_docs)] // benchmark/integration-test harness: not public API
 use neo_io::{Cache, FIFOCache, HashSetCache, InventoryHash, IoCache, RelayCache};
 use std::hash::{Hash, Hasher};
 

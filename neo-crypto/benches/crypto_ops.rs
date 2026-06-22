@@ -3,6 +3,8 @@
 //! Benchmarks for signature verification, hash operations, and other
 //! cryptographic primitives used in the Neo blockchain.
 
+#![allow(missing_docs)] // benchmark/integration-test harness: not public API
+
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use neo_crypto::{Crypto, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto};
 use rand::{RngCore, rngs::OsRng};
