@@ -502,4 +502,5 @@ impl std::fmt::Debug for MptStore {
 }
 
 #[cfg(test)]
+#[path = "tests/mpt_store.rs"]
 mod tests;
