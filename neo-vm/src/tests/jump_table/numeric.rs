@@ -39,6 +39,40 @@ fn run_bool(
     pop(&mut engine).as_bool().expect("boolean result")
 }
 
+/// C# `Not` reads its operand via `GetBoolean()` (JumpTable.Numeric.cs:271-274),
+/// which never faults on type — unlike `GetInteger()`. So NOT over a Buffer or
+/// Null operand must NOT fault (it must produce a boolean), the opposite of the
+/// numeric arithmetic opcodes which fault on Buffer/Null.
+#[test]
+fn not_uses_getboolean_semantics_not_getinteger() {
+    // Buffer is truthy under GetBoolean => NOT => false (no fault).
+    let mut engine = engine_with_stack(vec![StackItem::from_buffer(vec![0x00])]);
+    not(&mut engine, &instruction(OpCode::NOT)).expect("NOT(Buffer) must not fault");
+    assert!(
+        !pop(&mut engine).as_bool().unwrap(),
+        "NOT(Buffer) => false (Buffer is truthy)"
+    );
+
+    // Null is falsy under GetBoolean => NOT => true (no fault).
+    let mut engine = engine_with_stack(vec![StackItem::Null]);
+    not(&mut engine, &instruction(OpCode::NOT)).expect("NOT(Null) must not fault");
+    assert!(
+        pop(&mut engine).as_bool().unwrap(),
+        "NOT(Null) => true (Null is falsy)"
+    );
+}
+
+#[test]
+fn not_on_integer_preserves_boolean_negation() {
+    let mut engine = engine_with_stack(vec![StackItem::from_i64(0)]);
+    not(&mut engine, &instruction(OpCode::NOT)).expect("NOT(0)");
+    assert!(pop(&mut engine).as_bool().unwrap(), "NOT(0) => true");
+
+    let mut engine = engine_with_stack(vec![StackItem::from_i64(5)]);
+    not(&mut engine, &instruction(OpCode::NOT)).expect("NOT(5)");
+    assert!(!pop(&mut engine).as_bool().unwrap(), "NOT(5) => false");
+}
+
 /// Pre-HF_Gorgon vulnerable SHL (neo-vm#567): a zero shift returns WITHOUT
 /// popping the value operand, so the value is left on the stack untouched —
 /// whereas the fixed handler pops the value and coerces it via GetInteger().

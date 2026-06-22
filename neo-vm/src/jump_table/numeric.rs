@@ -121,10 +121,13 @@ fn sqrt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 }
 
 fn not(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+    // C# `Not` reads the operand via `GetBoolean()` (JumpTable.Numeric.cs:271-274),
+    // which never faults on type: Null=>false, Buffer/Array/Struct/Map/Pointer/
+    // Interop=>true, ByteString size-checked. Do NOT route through `numeric_operand`
+    // (the GetInteger path) — that would wrongly fault on a Buffer/Null operand.
     let ctx = require_context(engine)?;
-    let value = numeric_operand(ctx.pop()?)?;
-    let result = comparison::not_value(&value).map_err(semantics_error)?;
-    ctx.push(StackItem::from_bool(result))
+    let value = ctx.pop()?.as_bool()?;
+    ctx.push(StackItem::from_bool(!value))
 }
 
 fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
