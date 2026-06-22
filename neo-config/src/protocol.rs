@@ -566,4 +566,5 @@ struct ProtocolConfiguration {
 }
 
 #[cfg(test)]
+#[path = "tests/protocol.rs"]
 mod tests;
