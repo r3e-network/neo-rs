@@ -533,3 +533,61 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
         "C# CheckPrepareResponse requests BlockRejectedByPolicy before sending PrepareResponse"
     );
 }
+
+/// C# `ConsensusContext._witnessSize` builds the block witness InvocationScript
+/// as M pushes of a 64-byte buffer (the M commit signatures). The Rust base
+/// block-size estimate must include that invocation — omitting it (an empty
+/// invocation) under-counts the base by ~66*M bytes, letting the primary
+/// over-pack a near-MaxBlockSize block vs C# and fork.
+#[test]
+fn expected_base_block_size_includes_commit_signature_invocation() {
+    let (validators, _keys) = consensus_test_validators(7);
+    let n = validators.len();
+    let m = n - (n - 1) / 3; // dBFT M = N - (N-1)/3 = 5 for N = 7
+    assert_eq!(m, 5);
+
+    let base = expected_dbft_block_size_without_transactions(0, &validators);
+
+    // Rebuild the witness exactly as C# does: M EmitPush(byte[64]) invocation +
+    // the multisig verification script (validator order). `base` must equal this;
+    // it would NOT if the invocation were left empty (the prior bug).
+    let mut sb = neo_vm::script_builder::ScriptBuilder::new();
+    for _ in 0..m {
+        sb.emit_push(&[0u8; 64]);
+    }
+    let invocation = sb.to_array();
+    assert_eq!(
+        invocation.len(),
+        m * 66,
+        "each EmitPush(byte[64]) is PUSHDATA1 + len + 64 = 66 bytes"
+    );
+
+    let keys: Vec<_> = validators.iter().map(|v| v.public_key.clone()).collect();
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            m, &keys,
+        )
+        .expect("multisig verification script");
+
+    let header_without_witness = 4 + 32 + 32 + 8 + 8 + 4 + 1 + 20;
+    let with_invocation = Witness::new_with_scripts(invocation, verification.clone());
+    let expected = header_without_witness
+        + 1
+        + with_invocation.size()
+        + neo_io::serializable::helper::SerializeHelper::get_var_size_usize(0);
+    assert_eq!(
+        base, expected,
+        "base block size must include the M commit-signature invocation"
+    );
+
+    // And it must exceed the buggy empty-invocation estimate.
+    let empty = Witness::new_with_scripts(Vec::new(), verification);
+    let buggy = header_without_witness
+        + 1
+        + empty.size()
+        + neo_io::serializable::helper::SerializeHelper::get_var_size_usize(0);
+    assert!(
+        base > buggy,
+        "fixed base ({base}) must exceed the empty-invocation base ({buggy})"
+    );
+}

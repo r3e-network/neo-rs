@@ -11,7 +11,7 @@ use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_payloads::{Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, UInt256, VerifyResult};
 use neo_storage::persistence::DataCache;
-use neo_vm::script_builder::RedeemScript;
+use neo_vm::script_builder::{RedeemScript, ScriptBuilder};
 use num_bigint::BigInt;
 use tracing::warn;
 
@@ -97,13 +97,34 @@ fn dbft_multisig_verification_script(validators: &[ValidatorInfo]) -> Vec<u8> {
         .expect("valid dBFT validator set")
 }
 
+/// C# `ConsensusContext._witnessSize` InvocationScript: `M = N - (N-1)/3` pushes
+/// of a 64-byte buffer — the M commit signatures the final block witness carries
+/// (`ConsensusContext.cs`: `for (x < M) sb.EmitPush(new byte[64])`). Omitting it
+/// (an empty invocation) under-counts the expected base block size by ~66*M bytes,
+/// which would let the Rust primary over-pack a near-`MaxBlockSize` block relative
+/// to a C# primary and fork the chain.
+fn dbft_expected_witness_invocation(validators: &[ValidatorInfo]) -> Vec<u8> {
+    if validators.is_empty() {
+        return Vec::new();
+    }
+    let m = dbft_bft_threshold(validators.len());
+    let mut builder = ScriptBuilder::new();
+    let signature_placeholder = [0u8; 64];
+    for _ in 0..m {
+        builder.emit_push(&signature_placeholder);
+    }
+    builder.to_array()
+}
+
 /// Mirrors C# `ConsensusContext.GetExpectedBlockSizeWithoutTransactions`.
 pub(super) fn expected_dbft_block_size_without_transactions(
     expected_transactions: usize,
     validators: &[ValidatorInfo],
 ) -> usize {
-    let witness =
-        Witness::new_with_scripts(Vec::new(), dbft_multisig_verification_script(validators));
+    let witness = Witness::new_with_scripts(
+        dbft_expected_witness_invocation(validators),
+        dbft_multisig_verification_script(validators),
+    );
     4 + 32
         + 32
         + 8
