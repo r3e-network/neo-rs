@@ -121,5 +121,7 @@ fn service_indexes_blocks() {
     assert_eq!(service.block_by_hash(&record.hash), Some(record));
 }
 
+#[path = "service/persistence.rs"]
 mod persistence;
+#[path = "service/store_backed.rs"]
 mod store_backed;

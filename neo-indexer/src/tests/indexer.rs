@@ -88,6 +88,9 @@ fn state_json(state: &[StackItem]) -> Vec<serde_json::Value> {
         .collect()
 }
 
+#[path = "indexer/blocks.rs"]
 mod blocks;
+#[path = "indexer/notifications.rs"]
 mod notifications;
+#[path = "indexer/snapshots.rs"]
 mod snapshots;

@@ -286,4 +286,5 @@ impl IndexerService {
 }
 
 #[cfg(test)]
+#[path = "tests/service.rs"]
 mod tests;

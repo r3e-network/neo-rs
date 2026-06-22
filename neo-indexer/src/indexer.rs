@@ -202,4 +202,5 @@ fn prepare_block(block: &Block) -> IndexerResult<PreparedBlock> {
 }
 
 #[cfg(test)]
+#[path = "tests/indexer.rs"]
 mod tests;
