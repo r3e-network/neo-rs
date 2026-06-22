@@ -237,8 +237,11 @@ fn seed_conflict_record(
     );
 }
 
+#[path = "handlers/block_flow.rs"]
 mod block_flow;
+#[path = "handlers/extensible_headers.rs"]
 mod extensible_headers;
+#[path = "handlers/transactions.rs"]
 mod transactions;
 
 #[test]

@@ -428,4 +428,5 @@ impl BlockValidator {
 // pub use neo_primitives::BlockLike; // already imported at the top of the file
 
 #[cfg(test)]
+#[path = "tests/block_validation.rs"]
 mod tests;

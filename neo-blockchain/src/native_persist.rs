@@ -475,4 +475,5 @@ fn collect_notifications(engine: &ApplicationEngine) -> Vec<NativePersistNotific
 }
 
 #[cfg(test)]
+#[path = "tests/native_persist.rs"]
 mod tests;

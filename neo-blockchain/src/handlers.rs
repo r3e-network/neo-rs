@@ -723,4 +723,5 @@ impl BlockchainService {
 // Tests
 // =============================================================================
 #[cfg(test)]
+#[path = "tests/handlers.rs"]
 mod tests;
