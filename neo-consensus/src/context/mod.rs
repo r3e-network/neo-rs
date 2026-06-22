@@ -101,6 +101,13 @@ pub struct ConsensusContext {
     pub commit_view_numbers: HashMap<u8, u8>,
     /// `ChangeView` requests (`validator_index` -> (`new_view`, reason))
     pub change_views: HashMap<u8, (u8, ChangeViewReason)>,
+    /// Transactions reported invalid this block round (C# `InvalidTransactions`):
+    /// tx hash -> set of validator indices that flagged it via a
+    /// `TxRejectedByPolicy`/`TxInvalid` `ChangeView`. The primary skips a tx
+    /// whose count exceeds `F`. Keyed by index (1:1 with the C# `ECPoint` set
+    /// within a round, so the count — and the skip decision — is identical).
+    /// Accumulates across views; cleared on a new block.
+    pub invalid_transactions: HashMap<UInt256, HashSet<u8>>,
     /// Primary `PrepareRequest` invocation script (payload witness).
     pub prepare_request_invocation: Option<Vec<u8>>,
     /// `ChangeView` invocation script per validator (payload witness).
@@ -164,6 +171,7 @@ impl ConsensusContext {
             commits: HashMap::new(),
             commit_view_numbers: HashMap::new(),
             change_views: HashMap::new(),
+            invalid_transactions: HashMap::new(),
             prepare_request_invocation: None,
             change_view_invocations: HashMap::new(),
             commit_invocations: HashMap::new(),
@@ -196,6 +204,31 @@ impl ConsensusContext {
     #[must_use]
     pub fn m(&self) -> usize {
         self.validator_count().saturating_sub(self.f())
+    }
+
+    /// Records that `validator_index` reported `hashes` as invalid (from a
+    /// `TxRejectedByPolicy`/`TxInvalid` `ChangeView`). C# `InvalidTransactions`
+    /// population (ConsensusService.OnMessage).
+    pub fn record_invalid_transactions(&mut self, validator_index: u8, hashes: &[UInt256]) {
+        for hash in hashes {
+            self.invalid_transactions
+                .entry(*hash)
+                .or_default()
+                .insert(validator_index);
+        }
+    }
+
+    /// Transaction hashes that MORE THAN `F` validators have reported invalid —
+    /// the primary must skip these when building the block (C#
+    /// `EnsureMaxBlockLimitation`: `if (InvalidTransactions[hash].Count > F) continue`).
+    #[must_use]
+    pub fn invalid_tx_hashes_over_f(&self) -> Vec<UInt256> {
+        let f = self.f();
+        self.invalid_transactions
+            .iter()
+            .filter(|(_, reporters)| reporters.len() > f)
+            .map(|(hash, _)| *hash)
+            .collect()
     }
 
     /// Returns the primary (speaker) index for the current view
@@ -327,6 +360,7 @@ impl ConsensusContext {
         self.commits.clear();
         self.commit_view_numbers.clear();
         self.change_views.clear();
+        self.invalid_transactions.clear();
         self.prepare_request_invocation = None;
         self.change_view_invocations.clear();
         self.commit_invocations.clear();
@@ -703,6 +737,8 @@ impl ConsensusContext {
             commits: state.commits,
             commit_view_numbers: state.commit_view_numbers,
             change_views: state.change_views,
+            // Ephemeral per-round state, not persisted — restarts empty on reload.
+            invalid_transactions: HashMap::new(),
             prepare_request_invocation: state.prepare_request_invocation,
             change_view_invocations: state.change_view_invocations,
             commit_invocations: state.commit_invocations,

@@ -181,14 +181,24 @@ pub(super) fn select_primary_proposal_transactions(
     cache: &mut HashMap<UInt256, Arc<Transaction>>,
     validators: &[ValidatorInfo],
     settings: &ProtocolSettings,
+    invalid_tx_hashes: &[UInt256],
 ) -> Vec<UInt256> {
     let candidates: Vec<PoolItem> = candidates.into_iter().take(max_count).collect();
+    // C# v3.10.0 `EnsureMaxBlockLimitation` skips a candidate that more than F
+    // validators reported invalid (`InvalidTransactions[hash].Count > F`); the
+    // already-thresholded hashes are passed in by the consensus context.
+    let skip: HashSet<&UInt256> = invalid_tx_hashes.iter().collect();
     let mut block_size =
         expected_dbft_block_size_without_transactions(candidates.len(), validators);
     let mut system_fee = 0i128;
     let mut hashes = Vec::with_capacity(candidates.len());
 
     for item in candidates {
+        let hash = item.hash();
+        if skip.contains(&hash) {
+            continue;
+        }
+
         let next_block_size = block_size.saturating_add(<Transaction as Serializable>::size(
             item.transaction.as_ref(),
         ));
@@ -203,7 +213,6 @@ pub(super) fn select_primary_proposal_transactions(
 
         block_size = next_block_size;
         system_fee = next_system_fee;
-        let hash = item.hash();
         cache.insert(hash, Arc::clone(&item.transaction));
         hashes.push(hash);
     }

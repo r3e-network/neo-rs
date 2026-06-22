@@ -414,7 +414,11 @@ impl ConsensusDriver {
                     let _ = self.network.broadcast_extensible(ext).await;
                 }
             }
-            ConsensusEvent::RequestTransactions { max_count, .. } => {
+            ConsensusEvent::RequestTransactions {
+                max_count,
+                invalid_tx_hashes,
+                ..
+            } => {
                 let hashes = {
                     let validators = self.validators.read();
                     select_primary_proposal_transactions(
@@ -423,6 +427,7 @@ impl ConsensusDriver {
                         &mut self.proposal_txs,
                         &validators,
                         &self.settings,
+                        &invalid_tx_hashes,
                     )
                 };
                 if let Err(err) = self.service.on_transactions_received(hashes) {

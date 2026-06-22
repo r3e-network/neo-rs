@@ -760,3 +760,29 @@ fn test_message_cache_duplicate_and_contains_do_not_refresh_lru_order() {
     assert!(ctx.has_seen_message(&second_hash));
     assert!(ctx.has_seen_message(&overflow_hash));
 }
+
+#[test]
+fn invalid_transactions_skip_set_uses_f_threshold_and_clears_per_block() {
+    // 4 validators => F = (4-1)/3 = 1, so a tx must be reported by MORE THAN 1
+    // distinct validator (>= 2) before the primary skips it (C# count > F).
+    let mut ctx = ConsensusContext::new(10, create_test_validators(4), Some(0), None);
+    assert_eq!(ctx.f(), 1);
+    let tx = message_hash(0xAB);
+
+    // One reporter: not over F.
+    ctx.record_invalid_transactions(0, &[tx]);
+    assert!(ctx.invalid_tx_hashes_over_f().is_empty());
+
+    // The same validator re-reporting does not raise the distinct count.
+    ctx.record_invalid_transactions(0, &[tx]);
+    assert!(ctx.invalid_tx_hashes_over_f().is_empty());
+
+    // A second distinct validator => 2 > F=1 => skipped.
+    ctx.record_invalid_transactions(1, &[tx]);
+    assert_eq!(ctx.invalid_tx_hashes_over_f(), vec![tx]);
+
+    // Accumulated reports clear on a new block (they persist across views).
+    ctx.reset_for_new_block(11, 1_000);
+    assert!(ctx.invalid_transactions.is_empty());
+    assert!(ctx.invalid_tx_hashes_over_f().is_empty());
+}

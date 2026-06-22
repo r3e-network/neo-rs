@@ -22,6 +22,7 @@ async fn primary_requests_configured_transaction_limit() {
         ConsensusEvent::RequestTransactions {
             block_index: 0,
             max_count: 2,
+            ..
         }
     ));
 }

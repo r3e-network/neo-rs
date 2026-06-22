@@ -31,6 +31,10 @@ pub enum ConsensusEvent {
         block_index: u32,
         /// Maximum number of transactions to request.
         max_count: usize,
+        /// Transaction hashes more than `F` validators reported invalid this
+        /// round; the primary must exclude these from the proposal (C# v3.10.0
+        /// `EnsureMaxBlockLimitation` `InvalidTransactions` F-skip).
+        invalid_tx_hashes: Vec<UInt256>,
     },
     /// Request the exact transactions referenced by a primary proposal.
     RequestProposalTransactions {

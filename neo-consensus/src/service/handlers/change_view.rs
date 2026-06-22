@@ -48,6 +48,20 @@ impl ConsensusService {
         let timestamp = change_view_msg.timestamp;
         let reason = change_view_msg.reason;
 
+        // C# `ConsensusService.OnMessage`: a `TxRejectedByPolicy`/`TxInvalid`
+        // ChangeView records its `RejectedHashes` against the sending validator,
+        // feeding the primary's `InvalidTransactions` F-skip when it builds a
+        // block. Record before any early-return so reports always accumulate.
+        if matches!(
+            reason,
+            ChangeViewReason::TxRejectedByPolicy | ChangeViewReason::TxInvalid
+        ) {
+            self.context.record_invalid_transactions(
+                payload.validator_index,
+                &change_view_msg.rejected_hashes,
+            );
+        }
+
         debug!(
             block_index = self.context.block_index,
             validator = payload.validator_index,

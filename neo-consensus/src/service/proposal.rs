@@ -27,6 +27,7 @@ impl ConsensusService {
         self.send_event(ConsensusEvent::RequestTransactions {
             block_index: self.context.block_index,
             max_count: self.max_transactions_per_block as usize,
+            invalid_tx_hashes: self.context.invalid_tx_hashes_over_f(),
         })?;
 
         Ok(())
