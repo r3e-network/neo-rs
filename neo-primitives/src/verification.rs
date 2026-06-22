@@ -248,4 +248,5 @@ pub trait BlockchainSnapshot: Send + Sync {
 }
 
 #[cfg(test)]
+#[path = "tests/verification.rs"]
 mod tests;
