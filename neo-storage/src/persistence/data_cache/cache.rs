@@ -707,4 +707,5 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
 }
 
 #[cfg(test)]
+#[path = "../../tests/persistence/data_cache/cache.rs"]
 mod tests;

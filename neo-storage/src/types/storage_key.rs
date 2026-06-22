@@ -277,4 +277,5 @@ impl fmt::Display for StorageKey {
 }
 
 #[cfg(test)]
+#[path = "../tests/types/storage_key.rs"]
 mod tests;

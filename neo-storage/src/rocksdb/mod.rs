@@ -11,6 +11,7 @@ pub mod store;
 pub mod write_batch_buffer;
 
 #[cfg(test)]
+#[path = "../tests/rocksdb.rs"]
 mod tests;
 
 pub use provider::{
