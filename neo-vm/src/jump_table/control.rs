@@ -2,7 +2,7 @@
 
 use crate::error::{VmError, VmResult};
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{JumpTable, get_integer, register_jump_handlers};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
@@ -117,9 +117,15 @@ pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
 }
 
 /// JMPEQ - Jump if equal
+///
+/// C# reads both operands via `StackItem.GetInteger()`, which faults on a
+/// `Buffer` (not a `PrimitiveType`, no `GetInteger` override) — so the JMP*
+/// comparison family uses [`get_integer`], NOT `into_int` (the latter coerces a
+/// <=32-byte Buffer to an integer, diverging from C#). All JMP comparisons below
+/// follow the same rule.
 pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let x2 = engine.pop()?.into_int()?;
-    let x1 = engine.pop()?.into_int()?;
+    let x2 = get_integer(engine.pop()?)?;
+    let x1 = get_integer(engine.pop()?)?;
     if x1 == x2 {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -129,8 +135,8 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
 /// `JMPEQ_L` - Jump if equal (32-bit)
 pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let x2 = engine.pop()?.into_int()?;
-    let x1 = engine.pop()?.into_int()?;
+    let x2 = get_integer(engine.pop()?)?;
+    let x1 = get_integer(engine.pop()?)?;
     if x1 == x2 {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -140,8 +146,8 @@ pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 
 /// JMPNE - Jump if not equal
 pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let x2 = engine.pop()?.into_int()?;
-    let x1 = engine.pop()?.into_int()?;
+    let x2 = get_integer(engine.pop()?)?;
+    let x1 = get_integer(engine.pop()?)?;
     if x1 != x2 {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -151,8 +157,8 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
 /// `JMPNE_L` - Jump if not equal (32-bit)
 pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let x2 = engine.pop()?.into_int()?;
-    let x1 = engine.pop()?.into_int()?;
+    let x2 = get_integer(engine.pop()?)?;
+    let x1 = get_integer(engine.pop()?)?;
     if x1 != x2 {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -164,8 +170,8 @@ pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.into_int()?;
-    let b_int = b.into_int()?;
+    let a_int = get_integer(a)?;
+    let b_int = get_integer(b)?;
     if a_int > b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -177,8 +183,8 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.into_int()?;
-    let b_int = b.into_int()?;
+    let a_int = get_integer(a)?;
+    let b_int = get_integer(b)?;
     if a_int > b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -190,8 +196,8 @@ pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.into_int()?;
-    let b_int = b.into_int()?;
+    let a_int = get_integer(a)?;
+    let b_int = get_integer(b)?;
     if a_int >= b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -203,8 +209,8 @@ pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.into_int()?;
-    let b_int = b.into_int()?;
+    let a_int = get_integer(a)?;
+    let b_int = get_integer(b)?;
     if a_int >= b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -216,8 +222,8 @@ pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.into_int()?;
-    let b_int = b.into_int()?;
+    let a_int = get_integer(a)?;
+    let b_int = get_integer(b)?;
     if a_int < b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -229,8 +235,8 @@ pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.into_int()?;
-    let b_int = b.into_int()?;
+    let a_int = get_integer(a)?;
+    let b_int = get_integer(b)?;
     if a_int < b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -242,8 +248,8 @@ pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.into_int()?;
-    let b_int = b.into_int()?;
+    let a_int = get_integer(a)?;
+    let b_int = get_integer(b)?;
     if a_int <= b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -255,8 +261,8 @@ pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.into_int()?;
-    let b_int = b.into_int()?;
+    let a_int = get_integer(a)?;
+    let b_int = get_integer(b)?;
     if a_int <= b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -339,9 +345,14 @@ pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 
 /// ASSERTMSG - Assert condition with message
 pub fn assertmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // C# reads the message via `GetString()` (JumpTable.Types.cs:91-96), which
+    // decodes with STRICT UTF-8 (DecoderFallback.ExceptionFallback) and FAULTS on
+    // invalid bytes BEFORE the boolean is evaluated. A lossy decode would let an
+    // invalid-UTF8 message with a true condition continue, diverging from C#.
     let msg_item = engine.pop()?;
     let msg_bytes = msg_item.into_bytes()?;
-    let msg = String::from_utf8_lossy(&msg_bytes).into_owned();
+    let msg = String::from_utf8(msg_bytes)
+        .map_err(|_| VmError::invalid_type_simple("ASSERTMSG message is not valid UTF-8"))?;
     if !engine.pop()?.as_boolean()? {
         return Err(VmError::AssertFailedMsg(msg));
     }
@@ -497,3 +508,7 @@ pub mod exception_handling {
         super::throw(engine, instruction)
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/jump_table/control.rs"]
+mod tests;
