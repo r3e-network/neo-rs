@@ -14,6 +14,7 @@ use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 
+#[path = "consensus/proposal.rs"]
 mod proposal;
 
 /// The dBFT extensible codec round-trips a consensus payload: encode a

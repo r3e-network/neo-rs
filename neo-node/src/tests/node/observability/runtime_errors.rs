@@ -56,7 +56,7 @@ fn runtime_error_report_is_provider_payload_compatible() {
 
 #[test]
 fn node_runtime_sources_report_seed_connection_failures_to_observability() {
-    let seeds_source = include_str!("../../seeds.rs");
+    let seeds_source = include_str!("../../../node/seeds.rs");
     let seed_dial_branch = seeds_source
         .split("seed dial failed")
         .nth(1)

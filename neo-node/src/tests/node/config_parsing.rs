@@ -442,5 +442,7 @@ backend = "rockdb"
     assert!(err.to_string().contains("unsupported [storage].backend"));
 }
 
+#[path = "config_parsing/observability.rs"]
 mod observability;
+#[path = "config_parsing/services.rs"]
 mod services;

@@ -561,4 +561,5 @@ pub fn consensus_driver_task(
 }
 
 #[cfg(test)]
+#[path = "tests/consensus.rs"]
 mod tests;

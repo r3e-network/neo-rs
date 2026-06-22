@@ -32,6 +32,7 @@ mod health;
 mod payloads;
 
 #[cfg(test)]
+#[path = "../tests/node/observability.rs"]
 mod tests;
 
 #[derive(Clone)]

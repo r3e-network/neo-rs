@@ -33,7 +33,7 @@ fn node_long_running_background_tasks_are_spawned_under_observability_monitoring
 
 #[test]
 fn heartbeat_tasks_are_spawned_under_observability_monitoring() {
-    let observability_source = include_str!("../../observability.rs");
+    let observability_source = include_str!("../../../node/observability.rs");
     let heartbeat_source = observability_source
         .split("pub(super) fn spawn_heartbeat_tasks")
         .nth(1)

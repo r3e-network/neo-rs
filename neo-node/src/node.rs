@@ -580,4 +580,5 @@ async fn build_node(
 }
 
 #[cfg(test)]
+#[path = "tests/node.rs"]
 mod tests;

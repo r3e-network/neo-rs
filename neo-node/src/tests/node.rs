@@ -124,6 +124,9 @@ async fn rpc_post_json(port: u16, request: serde_json::Value) -> serde_json::Val
         .expect("parse RPC response JSON")
 }
 
+#[path = "node/config_parsing.rs"]
 mod config_parsing;
+#[path = "node/config_validation.rs"]
 mod config_validation;
+#[path = "node/runtime.rs"]
 mod runtime;

@@ -18,6 +18,7 @@ mod http;
 mod readiness;
 
 #[cfg(test)]
+#[path = "../tests/node/telemetry.rs"]
 mod tests;
 
 pub(super) fn metrics_server_task(

@@ -402,4 +402,5 @@ fn should_enrich_notifications(
 }
 
 #[cfg(test)]
+#[path = "../tests/node/indexer_runtime.rs"]
 mod tests;
