@@ -283,4 +283,5 @@ impl Drop for EvaluationStack {
 }
 
 #[cfg(test)]
+#[path = "tests/evaluation_stack.rs"]
 mod tests;

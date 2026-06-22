@@ -270,4 +270,5 @@ mod stack;
 mod stubs;
 
 #[cfg(test)]
+#[path = "../tests/execution_engine.rs"]
 mod tests;

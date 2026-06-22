@@ -526,4 +526,5 @@ impl Clone for ExecutionContext {
 }
 
 #[cfg(test)]
+#[path = "../tests/execution_context/context.rs"]
 mod tests;

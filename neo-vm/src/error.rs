@@ -744,4 +744,5 @@ impl From<VmError> for neo_error::CoreError {
 }
 
 #[cfg(test)]
+#[path = "tests/error.rs"]
 mod tests;

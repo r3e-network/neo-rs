@@ -460,4 +460,5 @@ impl ItemRecord {
 }
 
 #[cfg(test)]
+#[path = "tests/reference_counter.rs"]
 mod tests;

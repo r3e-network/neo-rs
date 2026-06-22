@@ -848,4 +848,5 @@ fn hash_bytes(bytes: &[u8]) -> i32 {
 }
 
 #[cfg(test)]
+#[path = "../tests/stack_item/stack_item.rs"]
 mod tests;

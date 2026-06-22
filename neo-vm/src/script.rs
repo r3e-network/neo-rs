@@ -435,4 +435,5 @@ impl AsRef<[u8]> for Script {
 }
 
 #[cfg(test)]
+#[path = "tests/script.rs"]
 mod tests;
