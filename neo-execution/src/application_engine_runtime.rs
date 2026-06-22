@@ -771,4 +771,5 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
 }
 
 #[cfg(test)]
+#[path = "tests/application_engine_runtime.rs"]
 mod tests;

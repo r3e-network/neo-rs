@@ -670,4 +670,5 @@ pub fn build_native_contract_state<T: NativeContract + ?Sized>(
 }
 
 #[cfg(test)]
+#[path = "tests/native_contract.rs"]
 mod tests;

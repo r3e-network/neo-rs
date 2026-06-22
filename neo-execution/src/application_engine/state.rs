@@ -620,4 +620,5 @@ impl ApplicationEngine {
 }
 
 #[cfg(test)]
+#[path = "../tests/application_engine/state.rs"]
 mod tests;

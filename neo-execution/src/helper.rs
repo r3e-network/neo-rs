@@ -462,4 +462,5 @@ impl VerifiableExt for VerifiableHashContainer {
 }
 
 #[cfg(test)]
+#[path = "tests/helper.rs"]
 mod tests;
