@@ -125,10 +125,17 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
         ));
     }
 
-    if static_count > 0 {
-        let rc = ctx.evaluation_stack().reference_counter().clone();
-        ctx.set_static_fields(Some(crate::slot::Slot::new(static_count, rc)));
+    // C# `InitSSlot` faults on a zero operand (a zero-sized static slot is
+    // meaningless) AFTER the twice-guard, then installs the slot unconditionally.
+    // JumpTable.Slot.cs:31-33. The sibling INITSLOT handler already does this.
+    if static_count == 0 {
+        return Err(VmError::invalid_operation_msg(
+            "The operand is invalid for OpCode.INITSSLOT",
+        ));
     }
+
+    let rc = ctx.evaluation_stack().reference_counter().clone();
+    ctx.set_static_fields(Some(crate::slot::Slot::new(static_count, rc)));
 
     Ok(())
 }
@@ -234,3 +241,7 @@ fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     store_argument_n(engine, index)
 }
+
+#[cfg(test)]
+#[path = "../tests/jump_table/slot.rs"]
+mod tests;
