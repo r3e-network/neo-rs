@@ -62,9 +62,15 @@ impl MptStoreSnapshot for MemoryMptStore {
     }
 }
 
+#[path = "rpc_server_state/basics.rs"]
 mod basics;
+#[path = "rpc_server_state/find_states.rs"]
 mod find_states;
+#[path = "rpc_server_state/mpt_fixture.rs"]
 mod mpt_fixture;
+#[path = "rpc_server_state/proof.rs"]
 mod proof;
+#[path = "rpc_server_state/state_gates.rs"]
 mod state_gates;
+#[path = "rpc_server_state/state_queries.rs"]
 mod state_queries;

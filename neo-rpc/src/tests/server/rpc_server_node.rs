@@ -211,13 +211,13 @@ fn persist_transaction_record(store: &mut StoreCache, tx: &Transaction, block_in
     store.commit();
 }
 
-#[path = "tests/connection_count.rs"]
+#[path = "rpc_server_node/connection_count.rs"]
 mod connection_count;
-#[path = "tests/get_peers.rs"]
+#[path = "rpc_server_node/get_peers.rs"]
 mod get_peers;
-#[path = "tests/get_version.rs"]
+#[path = "rpc_server_node/get_version.rs"]
 mod get_version;
-#[path = "tests/send_raw_transaction.rs"]
+#[path = "rpc_server_node/send_raw_transaction.rs"]
 mod send_raw_transaction;
-#[path = "tests/submit_block.rs"]
+#[path = "rpc_server_node/submit_block.rs"]
 mod submit_block;

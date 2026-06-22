@@ -506,4 +506,5 @@ impl RpcServerBlockchain {
 }
 
 #[cfg(test)]
+#[path = "../../tests/server/rpc_server_blockchain.rs"]
 mod tests;

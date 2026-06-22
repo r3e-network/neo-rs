@@ -351,4 +351,5 @@ pub fn witness_from_json(json: &JObject) -> CoreResult<Witness> {
 }
 
 #[cfg(test)]
+#[path = "../tests/client/utility.rs"]
 mod tests;

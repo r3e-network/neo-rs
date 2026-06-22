@@ -434,4 +434,5 @@ pub struct WalletAccountState {
 }
 
 #[cfg(test)]
+#[path = "../tests/client/wallet_api.rs"]
 mod tests;

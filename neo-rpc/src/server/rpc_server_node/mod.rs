@@ -22,7 +22,7 @@ use num_traits::ToPrimitive;
 use serde_json::{Map, Value, json};
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "../../tests/server/rpc_server_node.rs"]
 mod tests;
 
 /// C# `LedgerContract.Prefix_CurrentBlock` — the current-block pointer

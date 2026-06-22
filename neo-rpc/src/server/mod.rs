@@ -35,6 +35,7 @@ mod rpc_transport;
 mod session;
 pub mod smart_contract;
 #[cfg(test)]
+#[path = "../tests/server/test_support.rs"]
 pub(crate) mod test_support;
 mod wallet_compat;
 pub mod ws;

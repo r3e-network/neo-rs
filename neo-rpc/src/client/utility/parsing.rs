@@ -571,4 +571,5 @@ pub fn jtoken_to_serde(token: &JToken) -> CoreResult<JsonValue> {
 }
 
 #[cfg(test)]
+#[path = "../../tests/client/utility/parsing.rs"]
 mod tests;

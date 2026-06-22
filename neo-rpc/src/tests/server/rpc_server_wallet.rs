@@ -217,9 +217,15 @@ fn persist_transaction_record(store: &mut neo_storage::persistence::StoreCache, 
     store.commit();
 }
 
+#[path = "rpc_server_wallet/cancel_transaction.rs"]
 mod cancel_transaction;
+#[path = "rpc_server_wallet/lifecycle.rs"]
 mod lifecycle;
+#[path = "rpc_server_wallet/network_fee.rs"]
 mod network_fee;
+#[path = "rpc_server_wallet/send_from.rs"]
 mod send_from;
+#[path = "rpc_server_wallet/send_many.rs"]
 mod send_many;
+#[path = "rpc_server_wallet/send_to_address.rs"]
 mod send_to_address;

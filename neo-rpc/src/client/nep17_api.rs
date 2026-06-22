@@ -460,4 +460,5 @@ impl Nep17Api {
 }
 
 #[cfg(test)]
+#[path = "../tests/client/nep17_api.rs"]
 mod tests;

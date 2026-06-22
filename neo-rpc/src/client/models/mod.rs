@@ -17,6 +17,7 @@
 mod vm_state_utils;
 
 #[cfg(test)]
+#[path = "../../tests/client/models/test_fixtures.rs"]
 pub(crate) mod test_fixtures;
 
 // Core RPC types

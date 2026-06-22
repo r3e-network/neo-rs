@@ -170,9 +170,15 @@ async fn start_slow_server(
     (addr, shutdown_tx)
 }
 
+#[path = "rpc_client/blockchain_basic.rs"]
 mod blockchain_basic;
+#[path = "rpc_client/blockchain_verbose.rs"]
 mod blockchain_verbose;
+#[path = "rpc_client/node.rs"]
 mod node;
+#[path = "rpc_client/transport.rs"]
 mod transport;
+#[path = "rpc_client/wallet.rs"]
 mod wallet;
+#[path = "rpc_client/wallet_and_nep17.rs"]
 mod wallet_and_nep17;

@@ -579,4 +579,5 @@ impl RpcServerState {
 }
 
 #[cfg(test)]
+#[path = "../tests/server/rpc_server_state.rs"]
 mod tests;

@@ -344,4 +344,5 @@ impl RpcServerWallet {
 }
 
 #[cfg(test)]
+#[path = "../../tests/server/rpc_server_wallet.rs"]
 mod tests;

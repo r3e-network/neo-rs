@@ -264,4 +264,5 @@ enum BlockSelector {
 }
 
 #[cfg(test)]
+#[path = "../tests/server/rpc_server_indexer.rs"]
 mod tests;

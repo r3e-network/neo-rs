@@ -313,10 +313,17 @@ fn make_contract_state(id: i32, hash: UInt160, name: &str) -> ContractState {
     ContractState::new(id, hash, nef, manifest)
 }
 
+#[path = "rpc_server_blockchain/blocks.rs"]
 mod blocks;
+#[path = "rpc_server_blockchain/contracts.rs"]
 mod contracts;
+#[path = "rpc_server_blockchain/mempool.rs"]
 mod mempool;
+#[path = "rpc_server_blockchain/native_and_errors.rs"]
 mod native_and_errors;
+#[path = "rpc_server_blockchain/storage.rs"]
 mod storage;
+#[path = "rpc_server_blockchain/transactions.rs"]
 mod transactions;
+#[path = "rpc_server_blockchain/validators.rs"]
 mod validators;

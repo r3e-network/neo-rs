@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 mod helpers;
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "../../tests/server/rpc_server_tokens_tracker.rs"]
 mod tests;
 
 use helpers::*;

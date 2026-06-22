@@ -66,4 +66,5 @@ impl RpcServer {
 }
 
 #[cfg(test)]
+#[path = "../tests/server/rpc_server_utilities.rs"]
 mod tests;

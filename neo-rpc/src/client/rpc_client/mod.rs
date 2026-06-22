@@ -8,6 +8,7 @@ mod transactions;
 mod wallet;
 
 #[cfg(test)]
+#[path = "../../tests/client/rpc_client.rs"]
 mod tests;
 
 use regex::Regex;

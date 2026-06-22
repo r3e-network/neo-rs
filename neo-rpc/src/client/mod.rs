@@ -12,6 +12,7 @@ mod policy_api;
 mod rpc_client;
 mod state_api;
 #[cfg(test)]
+#[path = "../tests/client/test_helpers.rs"]
 mod test_helpers;
 mod transaction_manager;
 mod transaction_manager_factory;

@@ -253,8 +253,13 @@ fn deploy_verify_contract(system: &Arc<neo_system::Node>) -> UInt160 {
     contract.hash
 }
 
+#[path = "smart_contract/contract_verify.rs"]
 mod contract_verify;
+#[path = "smart_contract/script_and_function_invocation.rs"]
 mod script_and_function_invocation;
+#[path = "smart_contract/sessions.rs"]
 mod sessions;
+#[path = "smart_contract/validation_errors.rs"]
 mod validation_errors;
+#[path = "smart_contract/wallet_and_gas.rs"]
 mod wallet_and_gas;

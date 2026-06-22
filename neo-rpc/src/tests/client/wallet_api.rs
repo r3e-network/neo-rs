@@ -13,8 +13,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[path = "wallet_api/balances.rs"]
 mod balances;
+#[path = "wallet_api/transfers.rs"]
 mod transfers;
+#[path = "wallet_api/wait.rs"]
 mod wait;
 
 fn load_rpc_case_result(name: &str) -> Option<JObject> {

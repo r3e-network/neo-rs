@@ -7,6 +7,7 @@ mod iterators;
 mod unclaimed_gas;
 
 #[cfg(test)]
+#[path = "../../tests/server/smart_contract.rs"]
 mod tests;
 
 use crate::server::rpc_server::RpcHandler;
