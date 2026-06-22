@@ -548,4 +548,5 @@ fn signature_redeem_script(compressed_pubkey: &[u8; 33]) -> Vec<u8> {
 }
 
 #[cfg(test)]
+#[path = "tests/pkcs11.rs"]
 mod tests;
