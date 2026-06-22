@@ -861,4 +861,5 @@ fn parse_extra_bytes(bytes: &[u8]) -> Result<Option<Value>, CoreError> {
 }
 
 #[cfg(test)]
+#[path = "../tests/manifest/contract_manifest.rs"]
 mod tests;
