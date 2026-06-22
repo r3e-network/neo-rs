@@ -609,4 +609,5 @@ impl BinarySerializer {
 }
 
 #[cfg(test)]
+#[path = "tests/binary_serializer.rs"]
 mod tests;
