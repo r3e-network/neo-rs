@@ -111,7 +111,12 @@ fn push_a(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     let context = require_context(engine)?;
     let offset = instruction.read_i32_operand()?;
     let current_ip = context.instruction_pointer();
-    let address = current_ip as i32 + offset;
+    // C# `PushA` computes `checked(InstructionPointer + TokenI32)` (Push.cs:126),
+    // faulting via OverflowException before the bounds check. Use checked_add so
+    // an i32 overflow is a clean VM fault, not a debug-build panic / release wrap.
+    let address = (current_ip as i32)
+        .checked_add(offset)
+        .ok_or_else(|| VmError::invalid_operation_msg("PUSHA address overflow"))?;
     let script_len = context.script().len();
 
     if address < 0 || address > script_len as i32 {
@@ -232,3 +237,7 @@ fn push_t(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 fn push_f(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_bool(false))
 }
+
+#[cfg(test)]
+#[path = "../tests/jump_table/push.rs"]
+mod tests;
