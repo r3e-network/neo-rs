@@ -617,7 +617,7 @@ fn test_active_architecture_docs_do_not_reference_retired_crates() {
         "neo-rpc/Cargo.toml",
         "neo-rpc/src/client/contract_client.rs",
         "neo-rpc/src/server/rpc_server_blockchain/mod.rs",
-        "neo-rpc/src/server/rpc_server_node/tests.rs",
+        "neo-rpc/src/tests/server/rpc_server_node.rs",
         "neo-system/Cargo.toml",
         "neo-system/src/lib.rs",
         "neo-network/Cargo.toml",
