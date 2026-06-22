@@ -18,6 +18,25 @@ fn collection_stack_item(value: Result<neo_vm_rs::StackValue, String>) -> VmResu
     StackItem::try_from(value.map_err(VmError::invalid_operation_msg)?)
 }
 
+/// Validates a NEWARRAY/NEWARRAY_T/NEWSTRUCT size operand exactly like C#:
+/// `var n = (int)Pop().GetInteger(); if (n < 0 || n > MaxStackSize) throw;`
+/// (JumpTable.Compound.cs). The `(int)` cast faults on a count outside `i32`
+/// range, and the `MaxStackSize` bound faults BEFORE allocating — so a malicious
+/// large count faults cheaply instead of triggering a multi-GB `Vec` allocation
+/// (the unbounded `to_i64` path could OOM-abort the node before the post-execute
+/// reference-counter check). For an in-range count both paths converge.
+fn collection_count(count: BigInt, max_stack_size: u32, kind: &str) -> VmResult<i64> {
+    let n = count.to_i32().ok_or_else(|| {
+        VmError::invalid_operation_msg(format!("The {kind} size is out of valid range"))
+    })?;
+    if n < 0 || n as u32 > max_stack_size {
+        return Err(VmError::invalid_operation_msg(format!(
+            "The {kind} size is out of valid range, {n}/[0, {max_stack_size}]."
+        )));
+    }
+    Ok(i64::from(n))
+}
+
 fn normalize_index(type_name: &str, index: &BigInt, length: usize) -> VmResult<usize> {
     if let Some(idx) = index.to_usize() {
         if idx < length {
@@ -123,13 +142,11 @@ fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 
 /// Implements the NEWARRAY operation.
 fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+    let max_stack_size = engine.limits().max_stack_size;
     let context = require_context(engine)?;
 
-    // Pop the count from the stack
-    let count = super::get_integer(context.pop()?)?
-        .to_i64()
-        .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
+    // C# bounds the count by MaxStackSize and faults before allocating.
+    let count = collection_count(super::get_integer(context.pop()?)?, max_stack_size, "array")?;
 
     let array = collection_stack_item(neo_vm_rs::semantics::collections::new_array(count))?;
     context.push(array)?;
@@ -139,13 +156,11 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
 /// Implements the `NewarrayT` operation.
 fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+    let max_stack_size = engine.limits().max_stack_size;
     let context = require_context(engine)?;
 
-    // Pop the count from the stack
-    let count = super::get_integer(context.pop()?)?
-        .to_i64()
-        .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
+    // C# bounds the count by MaxStackSize and faults before reading the type/allocating.
+    let count = collection_count(super::get_integer(context.pop()?)?, max_stack_size, "array")?;
 
     // Get the type from the instruction
     let type_byte = instruction
@@ -181,13 +196,11 @@ fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 
 /// Implements the NEWSTRUCT operation.
 fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+    let max_stack_size = engine.limits().max_stack_size;
     let context = require_context(engine)?;
 
-    // Pop the count from the stack
-    let count = super::get_integer(context.pop()?)?
-        .to_i64()
-        .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
+    // C# bounds the count by MaxStackSize and faults before allocating.
+    let count = collection_count(super::get_integer(context.pop()?)?, max_stack_size, "struct")?;
 
     let structure = collection_stack_item(neo_vm_rs::semantics::collections::new_struct(count))?;
     context.push(structure)?;

@@ -61,6 +61,47 @@ fn values_faults_on_non_collection_source() {
     );
 }
 
+/// C# `NewArray` faults on `n < 0 || n > MaxStackSize` BEFORE allocating
+/// (JumpTable.Compound.cs:150-152). A count over the limit must fault.
+#[test]
+fn new_array_faults_when_count_exceeds_max_stack_size() {
+    let mut engine = engine_with_stack(vec![StackItem::from_i64(3000)]);
+    assert!(
+        new_array(&mut engine, &instruction(OpCode::NEWARRAY)).is_err(),
+        "NEWARRAY count > MaxStackSize must fault"
+    );
+}
+
+/// A count outside `i32` range must fault cheaply (C# `(int)` cast throws), not
+/// attempt a multi-GB allocation.
+#[test]
+fn new_array_faults_on_out_of_i32_count_without_allocating() {
+    let mut engine = engine_with_stack(vec![StackItem::from_i64(i64::MAX)]);
+    assert!(
+        new_array(&mut engine, &instruction(OpCode::NEWARRAY)).is_err(),
+        "NEWARRAY with an out-of-i32 count must fault"
+    );
+}
+
+#[test]
+fn new_array_allows_in_range_count() {
+    let mut engine = engine_with_stack(vec![StackItem::from_i64(3)]);
+    new_array(&mut engine, &instruction(OpCode::NEWARRAY)).expect("NEWARRAY 3 succeeds");
+    match pop(&mut engine) {
+        StackItem::Array(a) => assert_eq!(a.len(), 3),
+        other => panic!("expected Array result, got {other:?}"),
+    }
+}
+
+#[test]
+fn new_struct_faults_when_count_exceeds_max_stack_size() {
+    let mut engine = engine_with_stack(vec![StackItem::from_i64(3000)]);
+    assert!(
+        new_struct(&mut engine, &instruction(OpCode::NEWSTRUCT)).is_err(),
+        "NEWSTRUCT count > MaxStackSize must fault"
+    );
+}
+
 /// Each Struct element of the source is deep-cloned (C# `s.Clone`), so the result
 /// holds a Struct that does not alias the source.
 #[test]
