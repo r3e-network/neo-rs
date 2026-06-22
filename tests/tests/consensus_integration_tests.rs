@@ -265,6 +265,7 @@ async fn test_primary_requests_transactions_on_prepare_timer() {
         ConsensusEvent::RequestTransactions {
             block_index,
             max_count,
+            ..
         } => {
             assert_eq!(block_index, 0);
             assert!(max_count > 0);
