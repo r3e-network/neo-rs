@@ -5,7 +5,7 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
 use crate::stack_item::StackItem;
 use neo_vm_rs::{Instruction, OpCode, semantics::splice as splice_rules};
 use num_traits::ToPrimitive;
@@ -26,9 +26,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 /// Implements the NEWBUFFER operation.
 fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the size from the stack
     let size = super::get_integer(context.pop()?)?
@@ -49,9 +47,7 @@ fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 /// Implements the MEMCPY operation.
 fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the values from the stack
     // Pop order matches C#: count, src_index, src, dst_index, dst
@@ -96,9 +92,7 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// memory exhaustion attacks via incremental `ByteString` building.
 fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     let max_item_size = engine.limits().max_item_size as usize;
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let x2 = neo_vm_rs::StackValue::try_from(context.pop()?)
         .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible CAT operand"))?;
@@ -124,9 +118,7 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 /// Implements the SUBSTR operation.
 fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the values from the stack
     let count = super::get_integer(context.pop()?)?
@@ -148,9 +140,7 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// Implements the LEFT operation.
 fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the values from the stack
     let count = super::get_integer(context.pop()?)?
@@ -168,9 +158,7 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 /// Implements the RIGHT operation.
 fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the values from the stack
     let count = super::get_integer(context.pop()?)?

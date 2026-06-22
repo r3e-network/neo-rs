@@ -5,7 +5,7 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
 use crate::stack_item::{Array, StackItem, Struct};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::StackItemType;
@@ -24,9 +24,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 /// Implements the CONVERT operation.
 fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Get the type from the instruction
     let type_byte = instruction
@@ -96,9 +94,7 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
 /// Implements the ISTYPE operation.
 fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Get the type from the instruction
     let type_byte = instruction
@@ -145,9 +141,7 @@ fn stack_item_type_probe_value(item_type: StackItemType) -> StackValue {
 /// Implements the ISNULL operation.
 fn is_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the item on the stack
     let item = context.pop()?;

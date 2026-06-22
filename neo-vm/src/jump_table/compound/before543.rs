@@ -12,6 +12,7 @@ use neo_vm_rs::Instruction;
 use num_traits::ToPrimitive;
 
 use super::pick_byte_sequence_item;
+use crate::jump_table::require_context;
 
 /// C# `(int)key.GetInteger()`: a 32-bit index whose overflow is an uncatchable fault.
 fn before543_index(key: &StackItem) -> VmResult<i32> {
@@ -38,9 +39,7 @@ pub(crate) fn remove_before543(
     engine: &mut ExecutionEngine,
     _instruction: &Instruction,
 ) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
     let key = context.pop()?;
     let collection = context.pop()?;
     match collection {
@@ -82,9 +81,7 @@ pub(crate) fn has_key_before543(
     engine: &mut ExecutionEngine,
     instruction: &Instruction,
 ) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
     let key = context.pop()?;
     let collection = context.pop()?;
 
@@ -140,9 +137,7 @@ pub(crate) fn pick_item_before543(
     engine: &mut ExecutionEngine,
     _instruction: &Instruction,
 ) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
     let key = context.pop()?;
     let collection = context.pop()?;
 
@@ -191,9 +186,7 @@ pub(crate) fn set_item_before543(
     engine: &mut ExecutionEngine,
     instruction: &Instruction,
 ) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
     let mut value = context.pop()?;
     let key = context.pop()?;
     let collection = context.pop()?;

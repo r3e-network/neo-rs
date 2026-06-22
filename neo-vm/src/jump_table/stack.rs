@@ -5,7 +5,7 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
 use crate::stack_item::StackItem;
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
@@ -47,18 +47,14 @@ fn dup(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 #[inline]
 fn swap(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Swap in-place — no pop/push, no reference counter churn.
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
     context.evaluation_stack_mut().swap(0, 1)
 }
 
 /// Implements the TUCK operation.
 fn tuck(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
@@ -75,9 +71,7 @@ fn tuck(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 /// Implements the OVER operation.
 fn over(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
@@ -97,9 +91,7 @@ fn rot(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // ROT: [... a b c] → [... b c a]
     // Remove item at index 2 from top (a) and push to top.
     // 2 RC ops instead of 6.
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     if context.evaluation_stack().len() < 3 {
         return Err(VmError::stack_underflow_msg(0, 0));
@@ -112,9 +104,7 @@ fn rot(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 /// Implements the DEPTH operation.
 fn depth(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Get the stack depth
     let depth = context.evaluation_stack().len();
@@ -136,9 +126,7 @@ fn drop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 /// Implements the NIP operation.
 fn nip(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // NIP: remove the second-to-top item. 1 RC op instead of 3.
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
@@ -151,9 +139,7 @@ fn nip(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 /// Implements the XDROP operation.
 fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // XDROP: remove the item at index n from top. 2 RC ops instead of 2n+1.
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let n = super::get_integer(context.pop()?)?
         .to_usize()
@@ -170,9 +156,7 @@ fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
 /// Implements the CLEAR operation.
 fn clear(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Clear the stack
     context.evaluation_stack_mut().clear();
@@ -183,9 +167,7 @@ fn clear(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
 /// Implements the PICK operation.
 fn pick(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the index from the stack
     let n = super::get_integer(context.pop()?)?
@@ -209,9 +191,7 @@ fn pick(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // ROLL: remove the item at index n from top and push it to the top.
     // 3 RC ops instead of 2n+2.
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let n = super::get_integer(context.pop()?)?;
 
@@ -240,9 +220,7 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 /// Implements the REVERSE3 operation.
 fn reverse3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     context.evaluation_stack_mut().reverse(3)?;
 
@@ -252,9 +230,7 @@ fn reverse3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 /// Implements the REVERSE4 operation.
 fn reverse4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     context.evaluation_stack_mut().reverse(4)?;
 
@@ -264,9 +240,7 @@ fn reverse4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 /// Implements the REVERSEN operation.
 fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the count from the stack
     let n = super::get_integer(context.pop()?)?;

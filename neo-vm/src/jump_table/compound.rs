@@ -5,7 +5,7 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
 use crate::stack_item::{Array, Map, StackItem, Struct};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
@@ -113,9 +113,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 /// Implements the NEWARRAY0 operation.
 fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let array = collection_stack_item(neo_vm_rs::semantics::collections::new_array(0))?;
     context.push(array)?;
@@ -126,9 +124,7 @@ fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 /// Implements the NEWARRAY operation.
 fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the count from the stack
     let count = super::get_integer(context.pop()?)?
@@ -144,9 +140,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 /// Implements the `NewarrayT` operation.
 fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the count from the stack
     let count = super::get_integer(context.pop()?)?
@@ -177,9 +171,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 /// Implements the NEWSTRUCT0 operation.
 fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let structure = collection_stack_item(neo_vm_rs::semantics::collections::new_struct(0))?;
     context.push(structure)?;
@@ -190,9 +182,7 @@ fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 /// Implements the NEWSTRUCT operation.
 fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the count from the stack
     let count = super::get_integer(context.pop()?)?
@@ -208,9 +198,7 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 /// Implements the NEWMAP operation.
 fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let map_value = neo_vm_rs::semantics::collections::pack_map(Vec::new());
     let map = collection_stack_item(Ok(map_value))?;
@@ -221,9 +209,7 @@ fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 
 /// Implements the APPEND operation.
 fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let mut item = context.pop()?;
     let collection = context.pop()?;
@@ -253,9 +239,7 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// Implements the REVERSE operation.
 fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the array from the stack
     let array = context.pop()?;
@@ -284,9 +268,7 @@ fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 /// Implements the REMOVE operation.
 fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
@@ -334,9 +316,7 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// Implements the CLEARITEMS operation.
 fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
@@ -365,9 +345,7 @@ fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 /// Implements the POPITEM operation.
 fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
@@ -392,9 +370,7 @@ fn has_key(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     // C# HasKey faults when the index is out of `[0, MaxItemSize)` BEFORE
     // comparing against the collection's actual length (VMArray/Buffer/ByteString).
     let max_item_size = engine.limits().max_item_size as usize;
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
@@ -451,9 +427,7 @@ fn has_key(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
 /// Implements the KEYS operation.
 fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the map from the stack
     let map = context.pop()?;
@@ -482,9 +456,7 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 /// VALUES over an Array/Struct faulted and the result aliased the source Structs.
 fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     let limits = *engine.limits();
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let source = context.pop()?;
     let source_items: Vec<StackItem> = match source {
@@ -518,9 +490,7 @@ fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// Implements the PACKMAP operation.
 fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the count from the stack
     let count = super::get_integer(context.pop()?)?
@@ -544,9 +514,7 @@ fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 /// Implements the PACKSTRUCT operation.
 fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the count from the stack
     let count = super::get_integer(context.pop()?)?
@@ -567,9 +535,7 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 /// Implements the PACK operation.
 fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the count from the stack
     let count = super::get_integer(context.pop()?)?
@@ -591,9 +557,7 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 /// Implements the UNPACK operation.
 fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the array from the stack
     let array = context.pop()?;
@@ -641,9 +605,7 @@ fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
 /// Implements the PICKITEM operation.
 fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let key = context.pop()?;
     require_primitive_key(&key)?;
@@ -692,9 +654,7 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
 /// Implements the SETITEM operation.
 fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     let mut value = context.pop()?;
     let key = context.pop()?;
@@ -761,9 +721,7 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
 /// Implements the SIZE operation.
 fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = require_context(engine)?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
