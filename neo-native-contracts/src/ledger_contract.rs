@@ -443,4 +443,5 @@ impl NativeContract for LedgerContract {
 }
 
 #[cfg(test)]
+#[path = "tests/ledger_contract.rs"]
 mod tests;

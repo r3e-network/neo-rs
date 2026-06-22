@@ -387,4 +387,5 @@ impl NativeContract for ContractManagement {
 }
 
 #[cfg(test)]
+#[path = "tests/contract_management.rs"]
 mod tests;

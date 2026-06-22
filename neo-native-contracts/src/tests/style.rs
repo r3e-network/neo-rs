@@ -3,6 +3,7 @@ use crate::{
     STANDARD_NATIVE_CONTRACT_COUNT,
 };
 
+#[path = "style/events.rs"]
 mod events;
 
 pub(super) fn standard_contract_sources()

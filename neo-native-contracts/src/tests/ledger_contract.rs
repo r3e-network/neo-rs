@@ -252,7 +252,7 @@ fn storage_key_layouts_match_csharp_keybuilder() {
 
 #[test]
 fn storage_key_helpers_use_shared_builders() {
-    let helpers = include_str!("storage.rs");
+    let helpers = include_str!("../ledger_contract/storage.rs");
 
     assert!(helpers.contains("prefixed_key("));
     assert!(helpers.contains("prefixed_u32_be_key("));
@@ -409,7 +409,7 @@ fn ledger_public_return_encoders_use_stack_value_projection() {
         expected_block
     );
 
-    let source = include_str!("wire.rs");
+    let source = include_str!("../ledger_contract/wire.rs");
     let tx_helper = slice_between(source, "fn transaction_to_bytes", "fn signers_to_bytes");
     assert!(tx_helper.contains("to_stack_value"));
     assert!(tx_helper.contains("serialize_stack_value_default"));
@@ -498,7 +498,7 @@ fn ledger_storage_codecs_use_stack_value_projection() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("wire.rs");
+    let source = include_str!("../ledger_contract/wire.rs");
     let hash_serializer = slice_between(
         source,
         "pub fn serialize_hash_index_state",

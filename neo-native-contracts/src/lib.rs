@@ -107,6 +107,7 @@ pub mod role;
 pub mod role_management;
 pub mod std_lib;
 #[cfg(test)]
+#[path = "tests/test_support.rs"]
 pub(crate) mod test_support;
 pub mod treasury;
 
@@ -438,4 +439,5 @@ pub(crate) fn read_nep17_total_supply(
 }
 
 #[cfg(test)]
+#[path = "tests/lib.rs"]
 mod tests;

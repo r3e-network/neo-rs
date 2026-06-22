@@ -198,7 +198,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("../storage.rs");
+    let source = include_str!("../../neo_token/storage.rs");
     let account_decoder = slice_between(
         source,
         "fn decode_neo_account_state",

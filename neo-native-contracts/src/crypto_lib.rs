@@ -287,4 +287,5 @@ impl NativeContract for CryptoLib {
 }
 
 #[cfg(test)]
+#[path = "tests/crypto_lib.rs"]
 mod tests;

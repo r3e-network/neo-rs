@@ -421,4 +421,5 @@ impl NativeContract for StdLib {
 }
 
 #[cfg(test)]
+#[path = "tests/std_lib.rs"]
 mod tests;

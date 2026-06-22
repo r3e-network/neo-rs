@@ -514,4 +514,5 @@ impl NativeContract for GasToken {
 }
 
 #[cfg(test)]
+#[path = "tests/gas_token.rs"]
 mod tests;

@@ -53,7 +53,7 @@ fn payment_args(from: &UInt160, amount: i64, data: &StackItem) -> Vec<Vec<u8>> {
 
 #[test]
 fn on_nep17_payment_data_parser_uses_stack_value_projection() {
-    let source = include_str!("../../invoke.rs");
+    let source = include_str!("../../../neo_token/invoke.rs");
     let start = source
         .find("crate::NEP17_PAYMENT_METHOD =>")
         .expect("onNEP17Payment branch exists");

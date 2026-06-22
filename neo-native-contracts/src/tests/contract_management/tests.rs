@@ -183,7 +183,7 @@ fn storage_key_helpers_match_csharp_layout() {
 
 #[test]
 fn clean_whitelist_storage_decode_uses_stack_value_projection() {
-    let source = include_str!("../operations/storage.rs");
+    let source = include_str!("../../contract_management/operations/storage.rs");
     let start = source
         .find("fn policy_clean_whitelist")
         .expect("policy_clean_whitelist exists");
@@ -564,7 +564,7 @@ fn contract_state_marshals_to_five_element_array() {
         other => panic!("expected Array, got {other:?}"),
     }
 
-    let source = include_str!("../operations/storage.rs");
+    let source = include_str!("../../contract_management/operations/storage.rs");
     let start = source
         .find("fn contract_state_to_bytes")
         .expect("contract_state_to_bytes helper exists");

@@ -522,7 +522,7 @@ fn whitelisted_contract_storage_uses_stack_value_projection() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("../storage/whitelist.rs");
+    let source = include_str!("../../policy_contract/storage/whitelist.rs");
     let decoder = slice_between(
         source,
         "fn decode_whitelisted_contract",
@@ -545,7 +545,7 @@ fn whitelisted_contract_storage_uses_stack_value_projection() {
 
 #[test]
 fn committee_cache_reader_uses_stack_value_projection() {
-    let source = include_str!("../storage/recovery.rs");
+    let source = include_str!("../../policy_contract/storage/recovery.rs");
     let start = source
         .find("fn read_neo_committee_sorted")
         .expect("committee reader exists");

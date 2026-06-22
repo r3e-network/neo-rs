@@ -632,4 +632,5 @@ impl NativeContract for PolicyContract {
 }
 
 #[cfg(test)]
+#[path = "tests/policy_contract.rs"]
 mod tests;

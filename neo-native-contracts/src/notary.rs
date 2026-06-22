@@ -462,6 +462,7 @@ impl NativeContract for Notary {
 }
 
 #[cfg(test)]
+#[path = "tests/notary.rs"]
 mod tests;
 
 /// End-to-end coverage of `verify` through the VM dispatch (the proven
@@ -470,4 +471,5 @@ mod tests;
 /// RoleManagement storage layout, and `verify(signature)` is exercised through
 /// `System.Contract.Call` against NotaryAssisted transaction containers.
 #[cfg(test)]
+#[path = "tests/notary_verify_dispatch_tests.rs"]
 mod verify_dispatch_tests;

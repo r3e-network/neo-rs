@@ -354,4 +354,5 @@ impl NativeContract for NeoToken {
 }
 
 #[cfg(test)]
+#[path = "tests/neo_token.rs"]
 mod tests;

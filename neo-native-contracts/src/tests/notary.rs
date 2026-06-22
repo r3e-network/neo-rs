@@ -221,7 +221,7 @@ fn deposit_storage_uses_stack_value_projection() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("storage.rs");
+    let source = include_str!("../notary/storage.rs");
     let writer = slice_between(source, "fn write_deposit(", "fn lock_deposit_decision");
     assert!(writer.contains("DepositState::new"));
     assert!(writer.contains("to_stack_value"));
@@ -306,7 +306,7 @@ fn parse_onnep17_data_handles_null_and_explicit_to() {
     // incoming StackItem's array/null/bytes/integer shape. The Rust parser
     // should use the shared StackValue projection rather than materializing
     // neo_vm::StackItem for this non-VM-inspection path.
-    let source = include_str!("storage.rs");
+    let source = include_str!("../notary/storage.rs");
     let start = source
         .find("fn parse_onnep17_data")
         .expect("parser source exists");
