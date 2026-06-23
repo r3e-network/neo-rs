@@ -44,9 +44,7 @@ fn signer_to_json_keeps_empty_scope_arrays_like_csharp() {
     let account = UInt160::from_bytes(&[0x44; UINT160_SIZE]).unwrap();
     let signer = Signer::new(
         account,
-        WitnessScope::CUSTOM_CONTRACTS
-            | WitnessScope::CUSTOM_GROUPS
-            | WitnessScope::WITNESS_RULES,
+        WitnessScope::CUSTOM_CONTRACTS | WitnessScope::CUSTOM_GROUPS | WitnessScope::WITNESS_RULES,
     );
 
     let json = signer.to_json();
@@ -105,8 +103,7 @@ fn signer_from_json_scope_is_case_sensitive_and_comma_separated_like_csharp_v310
 fn signer_from_json_accepts_uppercase_hex_prefix_for_allowed_groups() {
     let account = UInt160::from_bytes(&[0x56; UINT160_SIZE]).unwrap();
     let group =
-        hex_decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
-            .unwrap();
+        hex_decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c").unwrap();
     let json = serde_json::json!({
         "account": account.to_string(),
         "scopes": "CustomGroups",
@@ -168,8 +165,7 @@ fn signer_deserialize_rejects_too_many_rules() {
 #[test]
 fn signer_deserialize_accepts_uncompressed_allowed_group_like_csharp_v3100() {
     let compressed =
-        hex_decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
-            .unwrap();
+        hex_decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c").unwrap();
     let point = ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &compressed).unwrap();
     let uncompressed = point.encode_point(false).unwrap();
     assert_eq!(uncompressed.len(), 65);

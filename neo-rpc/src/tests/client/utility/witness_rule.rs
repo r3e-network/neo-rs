@@ -7,8 +7,7 @@ fn assert_rule_roundtrip(rule: WitnessRule) {
     let json = rule.to_json();
     let token = JToken::parse(&json.to_string(), 128).expect("parse rule json");
     let obj = token.as_object().expect("rule object");
-    let parsed =
-        rule_from_json(obj, &ProtocolSettings::default_settings()).expect("rule parse");
+    let parsed = rule_from_json(obj, &ProtocolSettings::default_settings()).expect("rule parse");
     assert_eq!(parsed.to_json(), json);
 }
 
@@ -50,8 +49,8 @@ fn rule_from_json_roundtrip_matches_csharp_cases() {
         },
     ));
 
-    let keypair = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
-        .expect("keypair");
+    let keypair =
+        KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p").expect("keypair");
     let group = keypair.compressed_public_key();
     let uppercase_prefixed_group = format!("0X{}", hex::encode(&group));
     assert_eq!(

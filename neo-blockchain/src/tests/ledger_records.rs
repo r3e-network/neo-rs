@@ -24,8 +24,7 @@ fn records_round_trip_through_the_ledger_contract_readers() {
 
     LedgerRecords::write_on_persist_records(&cache, &block, &block_hash)
         .expect("on-persist records");
-    LedgerRecords::write_post_persist_record(&cache, &block_hash, 7)
-        .expect("post-persist record");
+    LedgerRecords::write_post_persist_record(&cache, &block_hash, 7).expect("post-persist record");
 
     // Block-hash index + trimmed block.
     assert_eq!(
@@ -147,14 +146,8 @@ fn persisted_records_pin_csharp_key_and_value_bytes() {
     );
 
     // After execution the record is rewritten with HALT (= 1).
-    LedgerRecords::update_transaction_vm_state(
-        &cache,
-        0x0102_0304,
-        &tx,
-        &tx_hash,
-        VMState::HALT,
-    )
-    .unwrap();
+    LedgerRecords::update_transaction_vm_state(&cache, 0x0102_0304, &tx, &tx_hash, VMState::HALT)
+        .unwrap();
     let mut expected_halt = vec![
         0x41,
         0x03,

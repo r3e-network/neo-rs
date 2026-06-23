@@ -1,12 +1,12 @@
 use super::Bls12381Crypto;
 
 const PRIVATE_KEY: [u8; 32] = [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-    26, 27, 28, 29, 30, 31, 32,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27, 28, 29, 30, 31, 32,
 ];
 const SECOND_PRIVATE_KEY: [u8; 32] = [
-    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
-    56, 57, 58, 59, 60, 61, 62, 63, 64,
+    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56,
+    57, 58, 59, 60, 61, 62, 63, 64,
 ];
 const MESSAGE: &[u8] = b"neo-rs bls compatibility";
 
@@ -20,8 +20,7 @@ fn bls12381_compatibility_vector() {
     let signature = Bls12381Crypto::sign(MESSAGE, &PRIVATE_KEY).unwrap();
     let second_public_key = Bls12381Crypto::derive_public_key(&SECOND_PRIVATE_KEY).unwrap();
     let second_signature = Bls12381Crypto::sign(MESSAGE, &SECOND_PRIVATE_KEY).unwrap();
-    let aggregated =
-        Bls12381Crypto::aggregate_signatures(&[signature, second_signature]).unwrap();
+    let aggregated = Bls12381Crypto::aggregate_signatures(&[signature, second_signature]).unwrap();
 
     assert_eq!(
         public_key,
@@ -47,12 +46,8 @@ fn bls12381_compatibility_vector() {
     );
     assert!(Bls12381Crypto::verify(MESSAGE, &signature, &public_key).unwrap());
     assert!(
-        Bls12381Crypto::verify_aggregated(
-            MESSAGE,
-            &aggregated,
-            &[public_key, second_public_key],
-        )
-        .unwrap()
+        Bls12381Crypto::verify_aggregated(MESSAGE, &aggregated, &[public_key, second_public_key],)
+            .unwrap()
     );
 }
 

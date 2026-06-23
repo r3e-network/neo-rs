@@ -20,14 +20,11 @@ fn empty_command_round_trip() {
 
 #[test]
 fn no_payload_commands_ignore_extra_payload_like_csharp_reflection_cache() {
-    let frame = crate::wire::Message::from_payload_bytes(
-        MessageCommand::Verack,
-        vec![0xCA, 0xFE],
-        false,
-    )
-    .expect("message")
-    .to_bytes()
-    .expect("wire bytes");
+    let frame =
+        crate::wire::Message::from_payload_bytes(MessageCommand::Verack, vec![0xCA, 0xFE], false)
+            .expect("message")
+            .to_bytes()
+            .expect("wire bytes");
 
     let decoded = NetworkMessage::from_bytes(&frame)
         .expect("C# ReflectionCache leaves undecorated command payloads untyped");
@@ -42,8 +39,8 @@ fn no_payload_commands_ignore_extra_payload_like_csharp_reflection_cache() {
 fn ping_round_trip() {
     let ping = ProtocolMessage::Ping(PingPayload::create(7));
     let bytes = ping.serialize_payload().expect("serialize");
-    let decoded = ProtocolMessage::deserialize_payload(MessageCommand::Ping, &bytes)
-        .expect("deserialize");
+    let decoded =
+        ProtocolMessage::deserialize_payload(MessageCommand::Ping, &bytes).expect("deserialize");
     match decoded {
         ProtocolMessage::Ping(p) => assert_eq!(p.last_block_index, 7),
         other => panic!("unexpected variant: {other:?}"),

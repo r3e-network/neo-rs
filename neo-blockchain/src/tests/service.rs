@@ -37,8 +37,7 @@ async fn run_loop_processes_simple_command() {
     let ledger = Arc::new(LedgerContext::default());
     let header_cache = Arc::new(HeaderCache::default());
     let mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(TestMempool));
-    let (service, handle) =
-        BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
 
     let task = tokio::spawn(service.run());
 

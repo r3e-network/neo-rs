@@ -40,8 +40,7 @@ fn test_prepare_request_wire_format_bytes() {
     let timestamp = 0x0A0B_0C0D_0102_0304u64;
     let nonce = 0x1122_3344_5566_7788u64;
 
-    let msg =
-        PrepareRequestMessage::new(100, 0, 0, 0, prev_hash, timestamp, nonce, vec![tx1, tx2]);
+    let msg = PrepareRequestMessage::new(100, 0, 0, 0, prev_hash, timestamp, nonce, vec![tx1, tx2]);
     let data = msg.serialize();
 
     let mut expected = Vec::new();

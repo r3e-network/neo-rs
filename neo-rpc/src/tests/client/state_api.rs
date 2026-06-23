@@ -223,8 +223,7 @@ async fn state_api_find_states_parses_results_and_proofs() {
 fn state_api_make_find_states_params_handles_defaults() {
     let root_hash = UInt256::zero();
     let script_hash = UInt160::zero();
-    let params =
-        StateApi::make_find_states_params(&root_hash, &script_hash, b"prefix", None, None);
+    let params = StateApi::make_find_states_params(&root_hash, &script_hash, b"prefix", None, None);
 
     assert_eq!(params.len(), 4);
     assert_eq!(params[0].as_string().unwrap(), root_hash.to_string());

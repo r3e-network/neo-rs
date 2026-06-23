@@ -716,7 +716,7 @@ impl ConsensusContext {
             state: ConsensusState::Initial, // Caller should update based on role
             view_start_time: 0,             // Caller should update to current time
             timer_extension: 0,
-            expected_block_time: 0,         // Caller should update
+            expected_block_time: 0, // Caller should update
             version: 0,
             prev_hash: UInt256::zero(),
             previous_block_timestamp: 0,

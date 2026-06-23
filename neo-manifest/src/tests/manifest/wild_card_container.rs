@@ -69,11 +69,8 @@ fn string_list_rejects_struct_and_invalid_strings_like_csharp() {
         .is_err()
     );
     assert!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Array(
-            0,
-            vec![StackValue::Null]
-        ))
-        .is_err()
+        WildCardContainer::<String>::from_stack_value(StackValue::Array(0, vec![StackValue::Null]))
+            .is_err()
     );
     assert!(
         WildCardContainer::<String>::from_stack_value(StackValue::Array(

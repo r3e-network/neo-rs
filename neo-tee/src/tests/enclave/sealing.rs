@@ -19,8 +19,7 @@ fn test_seal_unseal_with_context() {
     let aad = b"additional data";
 
     // Seal with specific context
-    let sealed =
-        Sealing::seal_data_with_context(plaintext, &key, aad, 1, "wallet-key").unwrap();
+    let sealed = Sealing::seal_data_with_context(plaintext, &key, aad, 1, "wallet-key").unwrap();
     assert_eq!(sealed.context, Some("wallet-key".to_string()));
 
     // Should unseal with same key
@@ -34,10 +33,8 @@ fn test_context_domain_separation() {
     let plaintext = b"secret data";
 
     // Seal with different contexts
-    let sealed1 =
-        Sealing::seal_data_with_context(plaintext, &key, &[], 1, "context-a").unwrap();
-    let sealed2 =
-        Sealing::seal_data_with_context(plaintext, &key, &[], 1, "context-b").unwrap();
+    let sealed1 = Sealing::seal_data_with_context(plaintext, &key, &[], 1, "context-a").unwrap();
+    let sealed2 = Sealing::seal_data_with_context(plaintext, &key, &[], 1, "context-b").unwrap();
 
     // Ciphertexts should be different due to different derived keys
     // (even with same nonce would fail, but with different nonces definitely)

@@ -28,8 +28,7 @@ fn compress_lz4_large_data() {
 fn compress_zstd_roundtrip() {
     let data = b"Hello, Neo blockchain! This is test data for zstd.".to_vec();
     let compressed = Compression::compress(&data, CompressionAlgorithm::Zstd).unwrap();
-    let decompressed =
-        Compression::decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
+    let decompressed = Compression::decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
     assert_eq!(decompressed, data);
 }
 
@@ -37,8 +36,7 @@ fn compress_zstd_roundtrip() {
 fn compress_zstd_empty_data() {
     let data: Vec<u8> = vec![];
     let compressed = Compression::compress(&data, CompressionAlgorithm::Zstd).unwrap();
-    let decompressed =
-        Compression::decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
+    let decompressed = Compression::decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
     assert_eq!(decompressed, data);
 }
 
@@ -84,8 +82,7 @@ fn estimate_compressed_size_zstd_returns_smaller_estimate() {
 #[test]
 fn estimate_compressed_size_empty_data() {
     let data: Vec<u8> = vec![];
-    let estimated_none =
-        Compression::estimate_compressed_size(&data, CompressionAlgorithm::None);
+    let estimated_none = Compression::estimate_compressed_size(&data, CompressionAlgorithm::None);
     let estimated_lz4 = Compression::estimate_compressed_size(&data, CompressionAlgorithm::Lz4);
     assert_eq!(estimated_none, 0);
     assert_eq!(estimated_lz4, 4);

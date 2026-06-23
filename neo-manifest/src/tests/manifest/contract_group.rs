@@ -1,9 +1,8 @@
 use super::*;
 
 fn sample_group() -> ContractGroup {
-    let encoded =
-        hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
-            .expect("hex");
+    let encoded = hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+        .expect("hex");
     let pub_key = ECPoint::decode(&encoded, ECCurve::secp256r1()).expect("valid ECPoint");
 
     ContractGroup::new(pub_key, vec![0xAB; 64])

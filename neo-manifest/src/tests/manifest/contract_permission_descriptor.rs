@@ -53,8 +53,7 @@ fn permission_descriptor_reads_from_neo_vm_rs_stack_value() {
         ContractPermissionDescriptor::Hash(hash)
     );
     assert_eq!(
-        ContractPermissionDescriptor::from_stack_value(StackValue::Buffer(0, group_bytes))
-            .unwrap(),
+        ContractPermissionDescriptor::from_stack_value(StackValue::Buffer(0, group_bytes)).unwrap(),
         ContractPermissionDescriptor::Group(group)
     );
 }
@@ -62,8 +61,7 @@ fn permission_descriptor_reads_from_neo_vm_rs_stack_value() {
 #[test]
 fn permission_descriptor_rejects_invalid_stack_byte_lengths_like_csharp() {
     assert!(
-        ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(Vec::new()))
-            .is_err()
+        ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(Vec::new())).is_err()
     );
     assert!(
         ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(b"*".to_vec()))
@@ -108,13 +106,10 @@ fn permission_descriptor_from_json_uses_csharp_lengths_and_curve() {
 #[test]
 fn permission_descriptor_rejects_non_secp256r1_stack_group_like_csharp() {
     let private_key = [2u8; 32];
-    let k1_group =
-        Secp256k1Crypto::derive_public_key(&private_key).expect("secp256k1 public key");
+    let k1_group = Secp256k1Crypto::derive_public_key(&private_key).expect("secp256k1 public key");
 
     assert!(
-        ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(
-            k1_group.to_vec()
-        ))
-        .is_err()
+        ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(k1_group.to_vec()))
+            .is_err()
     );
 }

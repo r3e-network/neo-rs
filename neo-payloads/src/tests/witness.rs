@@ -73,4 +73,3 @@ fn test_witness_serialization() {
         deserialized.verification_script
     );
 }
-

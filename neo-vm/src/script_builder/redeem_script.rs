@@ -56,11 +56,7 @@ impl RedeemScript {
     /// consensus-critical formula across the workspace.
     #[must_use]
     pub fn bft_threshold(n: usize) -> usize {
-        if n == 0 {
-            0
-        } else {
-            n - (n - 1) / 3
-        }
+        if n == 0 { 0 } else { n - (n - 1) / 3 }
     }
 
     /// C# `Contract.GetBFTAddress(pubkeys)`: the script hash of the

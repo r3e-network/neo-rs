@@ -55,8 +55,7 @@ fn max_file_size_parser_accepts_common_units() {
 fn size_rotating_writer_rolls_active_file_and_retains_archives() {
     let temp = tempfile::tempdir().expect("temp log dir");
     let path = temp.path().join("neo-node.log");
-    let mut writer =
-        SizeRotatingFileWriter::open(&path, 8, 2).expect("open rotating log writer");
+    let mut writer = SizeRotatingFileWriter::open(&path, 8, 2).expect("open rotating log writer");
 
     writer.write_all(b"12345678").expect("write first line");
     writer

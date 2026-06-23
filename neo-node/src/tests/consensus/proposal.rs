@@ -269,10 +269,24 @@ fn primary_proposal_skips_invalid_transactions_over_f() {
     let (validators, _) = consensus_test_validators(4);
     let (private, public, account) = signing_account(0x71);
     let keep = signed_tx_with_fees(
-        &settings, &private, &public, account, 0x7100_0001, 1, 0, Vec::new(),
+        &settings,
+        &private,
+        &public,
+        account,
+        0x7100_0001,
+        1,
+        0,
+        Vec::new(),
     );
     let drop = signed_tx_with_fees(
-        &settings, &private, &public, account, 0x7100_0002, 1, 0, Vec::new(),
+        &settings,
+        &private,
+        &public,
+        account,
+        0x7100_0002,
+        1,
+        0,
+        Vec::new(),
     );
     let keep_hash = keep.hash();
     let drop_hash = drop.hash();
@@ -287,7 +301,11 @@ fn primary_proposal_skips_invalid_transactions_over_f() {
         &[drop_hash],
     );
 
-    assert_eq!(hashes, vec![keep_hash], "the >F-invalid tx is skipped, others kept");
+    assert_eq!(
+        hashes,
+        vec![keep_hash],
+        "the >F-invalid tx is skipped, others kept"
+    );
     assert!(cache.contains_key(&keep_hash));
     assert!(!cache.contains_key(&drop_hash));
 }

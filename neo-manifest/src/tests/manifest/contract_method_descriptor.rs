@@ -92,9 +92,7 @@ fn method_descriptor_rejects_struct_parameter_sequence_like_csharp() {
                             0,
                             vec![
                                 StackValue::ByteString(b"signature".to_vec()),
-                                StackValue::Integer(
-                                    ContractParameterType::Signature as u8 as i64
-                                ),
+                                StackValue::Integer(ContractParameterType::Signature as u8 as i64),
                             ]
                         )]
                     ),

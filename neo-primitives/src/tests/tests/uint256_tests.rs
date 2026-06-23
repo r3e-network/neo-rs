@@ -84,13 +84,11 @@ fn test_parse() {
     assert_eq!(UInt256::zero(), result);
 
     assert!(
-        UInt256::parse("00000000000000000000000000000000000000000000000000000000000000")
-            .is_err()
+        UInt256::parse("00000000000000000000000000000000000000000000000000000000000000").is_err()
     );
 
     let result1 =
-        UInt256::parse("0000000000000000000000000000000000000000000000000000000000000000")
-            .unwrap();
+        UInt256::parse("0000000000000000000000000000000000000000000000000000000000000000").unwrap();
     assert_eq!(UInt256::zero(), result1);
 }
 
@@ -123,9 +121,8 @@ fn test_try_parse() {
 #[test]
 fn test_get_hash_code() {
     let a = UInt256::zero();
-    let b =
-        UInt256::parse("0x0000000000000000000000000000000000000000000000000000000000000001")
-            .unwrap();
+    let b = UInt256::parse("0x0000000000000000000000000000000000000000000000000000000000000001")
+        .unwrap();
 
     assert_eq!(a.hash_code(), UInt256::zero().hash_code());
     assert_ne!(a.hash_code(), b.hash_code());

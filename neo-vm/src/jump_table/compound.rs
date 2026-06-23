@@ -200,7 +200,11 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
     let context = require_context(engine)?;
 
     // C# bounds the count by MaxStackSize and faults before allocating.
-    let count = collection_count(super::get_integer(context.pop()?)?, max_stack_size, "struct")?;
+    let count = collection_count(
+        super::get_integer(context.pop()?)?,
+        max_stack_size,
+        "struct",
+    )?;
 
     let structure = collection_stack_item(neo_vm_rs::semantics::collections::new_struct(count))?;
     context.push(structure)?;

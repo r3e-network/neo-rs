@@ -12,8 +12,7 @@ fn balance_roundtrip() {
         last_updated_block: 10,
     };
     let json = entry.to_json();
-    let parsed =
-        RpcNep17Balance::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
+    let parsed = RpcNep17Balance::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
     assert_eq!(parsed.asset_hash, entry.asset_hash);
     assert_eq!(parsed.amount, entry.amount);
     assert_eq!(parsed.last_updated_block, entry.last_updated_block);
@@ -31,8 +30,7 @@ fn balances_roundtrip() {
         balances: vec![entry.clone()],
     };
     let json = balances.to_json(&ProtocolSettings::default_settings());
-    let parsed =
-        RpcNep17Balances::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
+    let parsed = RpcNep17Balances::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
 
     assert_eq!(parsed.user_script_hash, balances.user_script_hash);
     assert_eq!(parsed.balances.len(), 1);

@@ -154,8 +154,7 @@ async fn sign_adds_signature_and_sets_fees() {
     let invocation = tx.witnesses()[0].invocation_script();
     assert_eq!(invocation.len(), 66);
     let signature = &invocation[2..];
-    let sign_data =
-        get_sign_data_vec(&tx, client.protocol_settings.network).expect("sign data");
+    let sign_data = get_sign_data_vec(&tx, client.protocol_settings.network).expect("sign data");
     assert!(key.verify(&sign_data, signature).expect("verify signature"));
 }
 

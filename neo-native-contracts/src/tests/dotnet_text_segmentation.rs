@@ -36,8 +36,7 @@ fn matches_dotnet_oracle_fixture() {
         total += 1;
         let got = text_element_count(&s);
         if got != expected {
-            let scalars: Vec<String> =
-                s.chars().map(|c| format!("U+{:04X}", c as u32)).collect();
+            let scalars: Vec<String> = s.chars().map(|c| format!("U+{:04X}", c as u32)).collect();
             mismatches.push(format!(
                 "[{}] expected {expected}, got {got}",
                 scalars.join(" ")

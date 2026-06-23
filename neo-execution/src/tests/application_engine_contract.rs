@@ -96,8 +96,8 @@ fn decode_native_result_any_invalid_payload_preserves_raw_bytes() {
 #[test]
 fn decode_native_result_any_deserializes_stack_item_payloads() {
     let original = StackItem::from_array(vec![StackItem::from_int(BigInt::from(1u8))]);
-    let encoded = BinarySerializer::serialize(&original, &ExecutionEngineLimits::default())
-        .expect("encode");
+    let encoded =
+        BinarySerializer::serialize(&original, &ExecutionEngineLimits::default()).expect("encode");
     let decoded = decode_native_result(ContractParameterType::Any, encoded)
         .expect("decode")
         .expect("stack item");
@@ -107,8 +107,8 @@ fn decode_native_result_any_deserializes_stack_item_payloads() {
 #[test]
 fn decode_native_result_array_payload_roundtrips() {
     let original = StackItem::from_array(vec![StackItem::from_int(BigInt::from(1u8))]);
-    let encoded = BinarySerializer::serialize(&original, &ExecutionEngineLimits::default())
-        .expect("encode");
+    let encoded =
+        BinarySerializer::serialize(&original, &ExecutionEngineLimits::default()).expect("encode");
     let decoded = decode_native_result(ContractParameterType::Array, encoded)
         .expect("decode")
         .expect("stack item");

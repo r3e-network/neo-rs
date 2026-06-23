@@ -54,8 +54,7 @@ fn serialize_rejects_out_of_safe_range_integer() {
     // C# throws when the integer leaves the JS safe-integer range.
     let too_big = BigInt::from(JsonSerializer::MAX_SAFE_INTEGER) + 1;
     assert!(
-        JsonSerializer::serialize_to_byte_array(&StackItem::from_int(too_big), 1 << 20)
-            .is_err()
+        JsonSerializer::serialize_to_byte_array(&StackItem::from_int(too_big), 1 << 20).is_err()
     );
 }
 

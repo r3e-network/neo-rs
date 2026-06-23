@@ -26,8 +26,10 @@ fn instruction(opcode: OpCode) -> Instruction {
 /// integer). JumpTable.Control.cs:134-135.
 #[test]
 fn jmpeq_faults_on_buffer_operand_like_csharp_getinteger() {
-    let mut engine =
-        engine_with_stack(vec![StackItem::from_i64(1), StackItem::from_buffer(vec![0x01])]);
+    let mut engine = engine_with_stack(vec![
+        StackItem::from_i64(1),
+        StackItem::from_buffer(vec![0x01]),
+    ]);
     assert!(
         jmpeq(&mut engine, &instruction(OpCode::JMPEQ)).is_err(),
         "JMPEQ faults on a Buffer operand (C# GetInteger faults on Buffer)"
@@ -36,8 +38,10 @@ fn jmpeq_faults_on_buffer_operand_like_csharp_getinteger() {
 
 #[test]
 fn jmplt_faults_on_buffer_operand_like_csharp_getinteger() {
-    let mut engine =
-        engine_with_stack(vec![StackItem::from_i64(1), StackItem::from_buffer(vec![0x01])]);
+    let mut engine = engine_with_stack(vec![
+        StackItem::from_i64(1),
+        StackItem::from_buffer(vec![0x01]),
+    ]);
     assert!(
         jmplt(&mut engine, &instruction(OpCode::JMPLT)).is_err(),
         "JMPLT faults on a Buffer operand"

@@ -1,5 +1,5 @@
-use super::*;
 use super::request::OracleIdList;
+use super::*;
 use crate::test_support::deploy_native as deploy_contract;
 use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;

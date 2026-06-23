@@ -52,8 +52,14 @@ fn oracle_response_fee_sum_uses_csharp_unchecked_long_arithmetic() {
     tx.set_system_fee(i64::MAX);
     tx.set_network_fee(1);
 
-    assert!(super::attributes::oracle_response_gas_matches(&tx, i64::MIN));
-    assert!(!super::attributes::oracle_response_gas_matches(&tx, i64::MAX));
+    assert!(super::attributes::oracle_response_gas_matches(
+        &tx,
+        i64::MIN
+    ));
+    assert!(!super::attributes::oracle_response_gas_matches(
+        &tx,
+        i64::MAX
+    ));
 }
 
 #[test]

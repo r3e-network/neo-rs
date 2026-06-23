@@ -14,8 +14,7 @@ fn rpc_method_invocation_defaults_parameters() {
 
 #[test]
 fn rpc_method_invocation_parses_parameters() {
-    let json =
-        r#"{"script": "00c56b", "parameters": [ {"type": "String", "value": "hello"} ]}"#;
+    let json = r#"{"script": "00c56b", "parameters": [ {"type": "String", "value": "hello"} ]}"#;
     let parsed: RpcMethodInvocation = serde_json::from_str(json).expect("deserialize");
     assert_eq!(parsed.parameters.len(), 1);
 }

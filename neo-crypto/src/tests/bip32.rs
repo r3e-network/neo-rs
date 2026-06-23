@@ -22,14 +22,12 @@ fn add_private_keys_mod_order_adds_small_scalars() {
     let mut parent = [0u8; 32];
     parent[31] = 2;
 
-    let child =
-        Bip32Crypto::add_private_keys_mod_order(&left_factor, &parent, ECCurve::Secp256r1)
-            .expect("secp256r1 child");
+    let child = Bip32Crypto::add_private_keys_mod_order(&left_factor, &parent, ECCurve::Secp256r1)
+        .expect("secp256r1 child");
     assert_eq!(child[31], 3);
 
-    let child =
-        Bip32Crypto::add_private_keys_mod_order(&left_factor, &parent, ECCurve::Secp256k1)
-            .expect("secp256k1 child");
+    let child = Bip32Crypto::add_private_keys_mod_order(&left_factor, &parent, ECCurve::Secp256k1)
+        .expect("secp256k1 child");
     assert_eq!(child[31], 3);
 }
 

@@ -175,9 +175,9 @@ impl NeoToken {
                 })?;
                 // Pre-Echidna only: a missing witness returns false before any fee.
                 if !engine.is_hardfork_enabled(Hardfork::HfEchidna) {
-                    let account = UInt160::from_script(
-                        &Contract::create_signature_redeem_script(pubkey.clone()),
-                    );
+                    let account = UInt160::from_script(&Contract::create_signature_redeem_script(
+                        pubkey.clone(),
+                    ));
                     let authorized = engine.check_witness_hash(&account).map_err(|e| {
                         CoreError::invalid_operation(format!(
                             "NeoToken::registerCandidate: witness: {e}"

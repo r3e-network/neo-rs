@@ -183,8 +183,7 @@ fn node_list_storage_codecs_use_stack_value_projection() {
 fn parse_nodes_arg_enforces_1_to_32() {
     // Empty array -> rejected.
     let empty =
-        BinarySerializer::serialize_stack_value_default(&StackValue::Array(0, Vec::new()))
-            .unwrap();
+        BinarySerializer::serialize_stack_value_default(&StackValue::Array(0, Vec::new())).unwrap();
     assert!(node_list::parse_nodes_arg(&empty).is_err());
     // One valid node -> accepted.
     let one = node_list::encode_node_list(&[sample_point()]).unwrap();

@@ -19,10 +19,7 @@ fn test_jump_table_register() -> Result<(), Box<dyn std::error::Error>> {
     let mut jump_table = JumpTable::new();
 
     // Define a custom handler
-    fn custom_handler(
-        _engine: &mut ExecutionEngine,
-        _instruction: &Instruction,
-    ) -> VmResult<()> {
+    fn custom_handler(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
         Ok(())
     }
 
@@ -42,10 +39,7 @@ fn test_jump_table_index() -> Result<(), Box<dyn std::error::Error>> {
     let mut jump_table = JumpTable::new();
 
     // Define a custom handler
-    fn custom_handler(
-        _engine: &mut ExecutionEngine,
-        _instruction: &Instruction,
-    ) -> VmResult<()> {
+    fn custom_handler(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
         Ok(())
     }
 
@@ -93,8 +87,8 @@ fn not_gorgon_table_overrides_pre_fork_opcodes() {
             not_gorgon.get(opcode).is_some(),
             "missing handler: {opcode:?}"
         );
-        let same = not_gorgon.get(opcode).map(|h| h as usize)
-            == default.get(opcode).map(|h| h as usize);
+        let same =
+            not_gorgon.get(opcode).map(|h| h as usize) == default.get(opcode).map(|h| h as usize);
         if overridden.contains(&opcode) {
             assert!(!same, "{opcode:?} should be overridden in not_gorgon");
         } else {
@@ -134,8 +128,14 @@ fn get_integer_faults_on_buffer_and_null_like_csharp() {
     // primitives convert. Rust's into_int() instead coerces a <=32-byte Buffer.
     assert!(get_integer(StackItem::from_buffer(vec![0x05])).is_err());
     assert!(get_integer(StackItem::Null).is_err());
-    assert_eq!(get_integer(StackItem::from_i64(7)).unwrap(), BigInt::from(7));
-    assert_eq!(get_integer(StackItem::from_bool(true)).unwrap(), BigInt::from(1));
+    assert_eq!(
+        get_integer(StackItem::from_i64(7)).unwrap(),
+        BigInt::from(7)
+    );
+    assert_eq!(
+        get_integer(StackItem::from_bool(true)).unwrap(),
+        BigInt::from(1)
+    );
 }
 
 #[test]
@@ -154,11 +154,7 @@ fn count_opcodes_fault_on_buffer_operand_like_csharp() {
         "NEWBUFFER with a Buffer size operand must fault"
     );
 
-    let mut e = engine_with_items(vec![
-        StackItem::from_i64(1),
-        StackItem::from_i64(2),
-        buf(),
-    ]);
+    let mut e = engine_with_items(vec![StackItem::from_i64(1), StackItem::from_i64(2), buf()]);
     assert!(
         jt.execute(&mut e, &Instruction::new(OpCode::PICK, &[]))
             .is_err(),

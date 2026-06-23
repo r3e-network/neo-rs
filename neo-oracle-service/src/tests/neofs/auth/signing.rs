@@ -5,8 +5,8 @@ fn wallet_connect_signature_uses_shared_p256_signer() {
     let key = KeyPair::from_private_key(&[7u8; 32]).expect("test key");
     let data = b"wallet-connect payload";
 
-    let output = NeoFsBearerSigner::sign_neofs_wallet_connect(data, &key)
-        .expect("wallet connect signature");
+    let output =
+        NeoFsBearerSigner::sign_neofs_wallet_connect(data, &key).expect("wallet connect signature");
 
     assert_eq!(output.len(), 80);
     let signature: [u8; 64] = output[..64].try_into().expect("signature length");

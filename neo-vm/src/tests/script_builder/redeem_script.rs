@@ -55,8 +55,7 @@ fn signature_script_has_csharp_layout() {
 #[test]
 fn multisig_script_from_keys_matches_points() {
     let keys = vec![key_a(), key_b()];
-    let from_keys =
-        RedeemScript::multi_sig_redeem_script_from_keys(2, &keys).expect("from keys");
+    let from_keys = RedeemScript::multi_sig_redeem_script_from_keys(2, &keys).expect("from keys");
 
     let points: Vec<ECPoint> = keys
         .iter()
@@ -80,10 +79,8 @@ fn multisig_script_from_keys_matches_points() {
 #[test]
 fn multisig_key_order_is_canonical() {
     // Output must be independent of input order (keys are sorted ascending).
-    let forward =
-        RedeemScript::multi_sig_redeem_script_from_keys(2, &[key_a(), key_b()]).unwrap();
-    let reverse =
-        RedeemScript::multi_sig_redeem_script_from_keys(2, &[key_b(), key_a()]).unwrap();
+    let forward = RedeemScript::multi_sig_redeem_script_from_keys(2, &[key_a(), key_b()]).unwrap();
+    let reverse = RedeemScript::multi_sig_redeem_script_from_keys(2, &[key_b(), key_a()]).unwrap();
     assert_eq!(forward, reverse);
 }
 
@@ -137,8 +134,7 @@ fn multisig_from_keys_allows_more_than_16_keys() {
     let from_points = RedeemScript::multi_sig_redeem_script_from_points(11, &points).unwrap();
     assert_eq!(script, from_points, "from_keys must equal from_points");
     // The recognizer must round-trip a >16-of-n script (m and n via PUSHINT8).
-    let (m, parsed) =
-        RedeemScript::parse_multi_sig_contract(&script).expect("recognize 11-of-17");
+    let (m, parsed) = RedeemScript::parse_multi_sig_contract(&script).expect("recognize 11-of-17");
     assert_eq!(m, 11);
     assert_eq!(parsed.len(), 17);
 }

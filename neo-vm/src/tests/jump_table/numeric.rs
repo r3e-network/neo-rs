@@ -82,7 +82,10 @@ fn not_on_integer_preserves_boolean_negation() {
 fn shl_zero_shift_leaves_value_untouched_like_csharp() {
     // A zero shift returns without popping/validating the value: a Buffer value
     // does NOT fault and stays on the stack.
-    let mut engine = engine_with_stack(vec![StackItem::from_buffer(vec![0x07]), StackItem::from_i64(0)]);
+    let mut engine = engine_with_stack(vec![
+        StackItem::from_buffer(vec![0x07]),
+        StackItem::from_i64(0),
+    ]);
     shl(&mut engine, &instruction(OpCode::SHL))
         .expect("SHL by 0 over a Buffer must not fault (C# returns before reading the value)");
     assert!(
@@ -96,7 +99,10 @@ fn shl_zero_shift_leaves_value_untouched_like_csharp() {
     assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(7));
 
     // A non-zero shift DOES read the value, so a Buffer value faults (GetInteger).
-    let mut engine = engine_with_stack(vec![StackItem::from_buffer(vec![0x07]), StackItem::from_i64(1)]);
+    let mut engine = engine_with_stack(vec![
+        StackItem::from_buffer(vec![0x07]),
+        StackItem::from_i64(1),
+    ]);
     assert!(
         shl(&mut engine, &instruction(OpCode::SHL)).is_err(),
         "SHL by a non-zero amount over a Buffer faults (C# GetInteger faults on Buffer)"
@@ -120,10 +126,25 @@ fn add_faults_on_buffer_operand_like_csharp() {
 #[test]
 fn ordered_comparisons_push_false_for_any_null_like_csharp() {
     // C# Lt/Le/Gt/Ge: `if (x1.IsNull || x2.IsNull) Push(false)` — ANY null -> false.
-    assert!(!run_bool(StackItem::Null, StackItem::from_i64(1), OpCode::LT, lt));
-    assert!(!run_bool(StackItem::from_i64(1), StackItem::Null, OpCode::LT, lt));
+    assert!(!run_bool(
+        StackItem::Null,
+        StackItem::from_i64(1),
+        OpCode::LT,
+        lt
+    ));
+    assert!(!run_bool(
+        StackItem::from_i64(1),
+        StackItem::Null,
+        OpCode::LT,
+        lt
+    ));
     assert!(!run_bool(StackItem::Null, StackItem::Null, OpCode::LE, le));
-    assert!(!run_bool(StackItem::from_i64(1), StackItem::Null, OpCode::GT, gt));
+    assert!(!run_bool(
+        StackItem::from_i64(1),
+        StackItem::Null,
+        OpCode::GT,
+        gt
+    ));
     assert!(!run_bool(StackItem::Null, StackItem::Null, OpCode::GE, ge));
     // Non-null comparisons still work.
     assert!(run_bool(

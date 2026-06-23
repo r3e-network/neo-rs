@@ -108,8 +108,7 @@ impl StoreSnapshot for FailingSnapshot {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tracker_base_commit_propagates_snapshot_try_commit_failure() {
-    let system =
-        Node::new(Arc::new(ProtocolSettings::mainnet()), None, None).expect("neo system");
+    let system = Node::new(Arc::new(ProtocolSettings::mainnet()), None, None).expect("neo system");
     let mut tracker = TrackerBase::new(Arc::new(FailingStore), 100, true, Arc::new(system));
     tracker.reset_batch();
 

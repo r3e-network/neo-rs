@@ -14,8 +14,7 @@ fn transfer_roundtrip() {
         tx_hash: UInt256::zero(),
     };
     let json = entry.to_json(&ProtocolSettings::default_settings());
-    let parsed =
-        RpcNep17Transfer::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
+    let parsed = RpcNep17Transfer::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
     assert_eq!(parsed.timestamp_ms, entry.timestamp_ms);
     assert_eq!(parsed.asset_hash, entry.asset_hash);
     assert_eq!(parsed.user_script_hash, entry.user_script_hash);
@@ -65,8 +64,7 @@ fn nep17_transfers_to_json_matches_rpc_test_case() {
 
 #[test]
 fn nep17_transfers_null_address_matches_rpc_test_case() {
-    let Some(expected) = rpc_case_result("getnep17transfersasync_with_null_transferaddress")
-    else {
+    let Some(expected) = rpc_case_result("getnep17transfersasync_with_null_transferaddress") else {
         return;
     };
     let settings = ProtocolSettings::default_settings();

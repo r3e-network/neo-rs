@@ -76,8 +76,8 @@ fn sign_forwards_and_returns_canonical_signature() {
     let digest = Crypto::sha256(data);
     let sig_arr: [u8; 64] = sig.as_slice().try_into().unwrap();
     // Verify against the prehash path the enclave used.
-    let verifying =
-        Secp256r1Crypto::verify(&digest, &sig_arr, &pk_for_handler).unwrap_or(false) || {
+    let verifying = Secp256r1Crypto::verify(&digest, &sig_arr, &pk_for_handler).unwrap_or(false)
+        || {
             // Some backends sign over the message directly; accept either as a
             // valid signature of the same logical content for this skeleton.
             Secp256r1Crypto::verify(data, &sig_arr, &pk_for_handler).unwrap_or(false)

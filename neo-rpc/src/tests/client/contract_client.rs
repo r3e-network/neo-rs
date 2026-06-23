@@ -90,13 +90,9 @@ fn mock_calculate_network_fee(server: &mut Server, fee: i64) {
 #[test]
 fn dynamic_call_script_matches_emit_dynamic_call_shape() {
     let script_hash = UInt160::zero();
-    let script = ContractClient::build_dynamic_call_script(
-        &script_hash,
-        "balanceOf",
-        &[],
-        CallFlags::ALL,
-    )
-    .expect("script");
+    let script =
+        ContractClient::build_dynamic_call_script(&script_hash, "balanceOf", &[], CallFlags::ALL)
+            .expect("script");
 
     let mut expected = ScriptBuilder::new();
     expected.emit_opcode(OpCode::NEWARRAY0);
@@ -114,13 +110,9 @@ fn dynamic_call_script_matches_emit_dynamic_call_shape() {
 fn dynamic_call_script_packs_arguments() {
     let script_hash = UInt160::zero();
     let args = vec![serde_json::json!(1), serde_json::json!("hi")];
-    let script = ContractClient::build_dynamic_call_script(
-        &script_hash,
-        "transfer",
-        &args,
-        CallFlags::ALL,
-    )
-    .expect("script");
+    let script =
+        ContractClient::build_dynamic_call_script(&script_hash, "transfer", &args, CallFlags::ALL)
+            .expect("script");
 
     let mut expected = ScriptBuilder::new();
     expected.emit_push("hi".as_bytes());
@@ -146,13 +138,9 @@ async fn test_invoke_reads_integer_from_bytestring_stack_item() {
     let script_hash = GasToken::new().hash();
     let account = UInt160::zero();
     let args = vec![serde_json::json!(account.to_string())];
-    let script = ContractClient::build_dynamic_call_script(
-        &script_hash,
-        "balanceOf",
-        &args,
-        CallFlags::ALL,
-    )
-    .expect("script");
+    let script =
+        ContractClient::build_dynamic_call_script(&script_hash, "balanceOf", &args, CallFlags::ALL)
+            .expect("script");
     let script_b64 = general_purpose::STANDARD.encode(script);
 
     let bytes = [0x00u8, 0xe0, 0x57, 0xeb, 0x48, 0x1b];
@@ -171,9 +159,8 @@ async fn test_invoke_reads_integer_from_bytestring_stack_item() {
         .await
         .expect("invoke");
 
-    let value =
-        crate::RpcUtility::stack_value_to_bigint(result.stack.first().expect("stack item"))
-            .expect("integer");
+    let value = crate::RpcUtility::stack_value_to_bigint(result.stack.first().expect("stack item"))
+        .expect("integer");
     assert_eq!(value, BigInt::from(30_000_000_000_000i64));
 }
 
@@ -228,8 +215,7 @@ async fn test_invoke_parses_map_and_struct_stack_items() {
         ])),
     );
 
-    let response =
-        invoke_response(vec![JToken::Object(map_obj), JToken::Object(struct_obj)], 0);
+    let response = invoke_response(vec![JToken::Object(map_obj), JToken::Object(struct_obj)], 0);
 
     let mut server = Server::new_async().await;
     mock_invokescript(&mut server, &script_b64, &response);

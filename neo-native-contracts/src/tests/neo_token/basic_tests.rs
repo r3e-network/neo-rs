@@ -199,7 +199,6 @@ fn storage_key_helpers_match_csharp_layout() {
 
 use crate::test_support::{hex, sample_committee, seed_committee};
 
-
 #[test]
 fn committee_threshold_is_majority() {
     // m = n - (n - 1) / 2.

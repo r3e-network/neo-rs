@@ -124,9 +124,8 @@ fn deferred_size_check_preserves_rpc_circular_reference_precedence() {
 
 #[test]
 fn deferred_size_check_still_reports_max_size() {
-    let err =
-        StackItemRpcJson::stack_item_rpc_json_deferred_size_check(&StackItem::Null, Some(13))
-            .unwrap_err();
+    let err = StackItemRpcJson::stack_item_rpc_json_deferred_size_check(&StackItem::Null, Some(13))
+        .unwrap_err();
 
     assert!(err.to_string().contains("Max size reached"));
 }

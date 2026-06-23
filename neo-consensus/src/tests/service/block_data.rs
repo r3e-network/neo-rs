@@ -25,9 +25,9 @@ fn assemble_block_builds_header_and_multisig_witness() {
         signatures: vec![(0u8, signature.clone())],
         validator_pubkeys: vec![pubkey.clone()],
         required_signatures: 1,
-        next_consensus: UInt160::from_script(
-            &ConsensusBlockFields::multisig_verification_script(std::slice::from_ref(&pubkey)),
-        ),
+        next_consensus: UInt160::from_script(&ConsensusBlockFields::multisig_verification_script(
+            std::slice::from_ref(&pubkey),
+        )),
     };
 
     let block = data
@@ -84,8 +84,7 @@ fn assemble_block_rejects_insufficient_signatures() {
 #[test]
 fn assemble_block_uses_committed_next_consensus_address() {
     let pubkey = test_pubkey(1);
-    let committed_next_consensus =
-        UInt160::from_bytes(&[0x42; 20]).expect("test next consensus");
+    let committed_next_consensus = UInt160::from_bytes(&[0x42; 20]).expect("test next consensus");
     let data = BlockData {
         block_index: 3,
         timestamp: 12_345,

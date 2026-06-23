@@ -88,8 +88,7 @@ fn test_save_load_sealed_key() {
     let public_key = [0x02u8; 33];
     let script_hash = [0xABu8; 20];
 
-    let sealed =
-        SealedKey::seal(&enclave, &private_key, &public_key, &script_hash, None).unwrap();
+    let sealed = SealedKey::seal(&enclave, &private_key, &public_key, &script_hash, None).unwrap();
 
     let key_path = temp.path().join("test_key.json");
     sealed.save_to_file(&key_path).unwrap();

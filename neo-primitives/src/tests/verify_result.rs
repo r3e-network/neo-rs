@@ -24,10 +24,7 @@ fn test_verify_result_values() {
 fn test_verify_result_from_byte() {
     assert_eq!(VerifyResult::from_byte(0), Some(VerifyResult::Succeed));
     assert_eq!(VerifyResult::from_byte(5), Some(VerifyResult::Invalid));
-    assert_eq!(
-        VerifyResult::from_byte(11),
-        Some(VerifyResult::NotYetValid)
-    );
+    assert_eq!(VerifyResult::from_byte(11), Some(VerifyResult::NotYetValid));
     assert_eq!(VerifyResult::from_byte(15), Some(VerifyResult::Unknown));
     assert_eq!(VerifyResult::from_byte(16), None);
     assert_eq!(VerifyResult::from_byte(255), None);

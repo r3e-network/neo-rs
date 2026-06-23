@@ -30,18 +30,14 @@ fn event_descriptor_projects_to_neo_vm_rs_stack_value() {
                             0,
                             vec![
                                 StackValue::ByteString(b"from".to_vec()),
-                                StackValue::Integer(
-                                    ContractParameterType::Hash160 as u8 as i64
-                                ),
+                                StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
                             ]
                         ),
                         StackValue::Struct(
                             0,
                             vec![
                                 StackValue::ByteString(b"amount".to_vec()),
-                                StackValue::Integer(
-                                    ContractParameterType::Integer as u8 as i64
-                                ),
+                                StackValue::Integer(ContractParameterType::Integer as u8 as i64),
                             ]
                         ),
                     ]
@@ -97,9 +93,7 @@ fn event_descriptor_rejects_struct_parameter_sequence_like_csharp() {
                             0,
                             vec![
                                 StackValue::ByteString(b"candidate".to_vec()),
-                                StackValue::Integer(
-                                    ContractParameterType::PublicKey as u8 as i64
-                                ),
+                                StackValue::Integer(ContractParameterType::PublicKey as u8 as i64),
                             ]
                         )]
                     ),
