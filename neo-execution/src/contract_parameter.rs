@@ -99,7 +99,13 @@ impl ContractParameter {
                 ContractParameterValue::Hash256(val)
             }
             ContractParameterType::ByteArray => {
-                let bytes = hex::decode(text).map_err(|e| CoreError::other(e.to_string()))?;
+                // C# ContractParameter.FromJson decodes ByteArray (and Signature)
+                // via Convert.FromBase64String — base64, NOT hex. This also matches
+                // to_json above, which encodes ByteArray as base64; decoding as hex
+                // broke round-trips and rejected standard base64 RPC params.
+                let bytes = general_purpose::STANDARD
+                    .decode(text)
+                    .map_err(|e| CoreError::other(e.to_string()))?;
                 ContractParameterValue::ByteArray(bytes)
             }
             ContractParameterType::PublicKey => {

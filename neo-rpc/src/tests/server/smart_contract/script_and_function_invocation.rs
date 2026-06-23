@@ -102,7 +102,8 @@ async fn invokefunction_cryptolib_sha256_with_argument_halts() {
     let params = [
         Value::String(crypto_hash),
         Value::String("sha256".to_string()),
-        json!([{"type": "ByteArray", "value": "68656c6c6f"}]),
+        // ByteArray param values are base64 (C# Convert.FromBase64String); "aGVsbG8=" == b"hello".
+        json!([{"type": "ByteArray", "value": "aGVsbG8="}]),
     ];
     let result = (invokefunction.callback())(&server, &params).expect("invoke cryptolib sha256");
 
