@@ -62,6 +62,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+    - name: Checkout neo-vm-rs (sibling path dependency)
+      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
     - name: Install system dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  cmake \\\n  curl \\\n  jq \\\n  libbz2-dev\
