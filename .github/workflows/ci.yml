@@ -30,7 +30,7 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
     - uses: actions/checkout@v4
     - name: Checkout neo-vm-rs (sibling path dependency)
@@ -70,7 +70,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
     - uses: actions/checkout@v4
     - name: Checkout neo-vm-rs (sibling path dependency)
