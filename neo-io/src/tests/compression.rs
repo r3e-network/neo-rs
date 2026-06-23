@@ -27,3 +27,19 @@ fn decompress_rejects_short_data() {
         other => panic!("expected error, got {other:?}"),
     }
 }
+
+#[test]
+fn decompress_does_not_panic_on_malformed_block() {
+    // Regression for a fuzzer-found DoS (fuzz_message_parse, crash
+    // //8IAAAAAAAAAPs=): a crafted compressed P2P payload made lz4_flex 0.10.0
+    // panic inside its decode sink instead of returning an error. With
+    // panic = "abort" in release, that crashes the whole node — peer-reachable
+    // via the compressed-message path. The decompressor must reject malformed
+    // input gracefully. This payload declares size 0 but carries trailing block
+    // bytes the decoder would otherwise try to emit.
+    let malformed = [0u8, 0, 0, 0, 0, 0, 0, 0xFB];
+    assert!(
+        Lz4::decompress_lz4(&malformed, 0x0200_0000).is_err(),
+        "malformed LZ4 block must return Err, not panic"
+    );
+}

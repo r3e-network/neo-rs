@@ -286,8 +286,12 @@ mockall = "0.12"
 # === Profiling ===
 pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
 
-# Compression and metrics (always enabled)
-lz4_flex = "=0.10.0"
+# Compression and metrics (always enabled).
+# >=0.11 hardens the safe decoder to return Err instead of panicking on
+# malformed input (0.10.0 panicked in sink.rs on crafted compressed payloads —
+# a peer-reachable DoS via the P2P message compression path). LZ4 block format
+# is unchanged across these versions, so cross-node/C# compatibility holds.
+lz4_flex = "=0.13.1"
 prometheus = "0.14"
 sysinfo = "0.29"
 
