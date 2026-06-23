@@ -1,11 +1,12 @@
-name: Neo v3.9.1 Consistency
+name: Neo v3.10.0 Consistency
 on:
   push:
     branches:
     - main
     - master
     paths:
-    - .github/workflows/compatibility-v391.yml
+    - .github/workflows/compatibility-v310.yml
+    - scripts/validate-v310-consistency.sh
     - scripts/validate-v391-consistency.sh
     - neo-core/**
     - neo-node/**
@@ -16,7 +17,8 @@ on:
     - main
     - master
     paths:
-    - .github/workflows/compatibility-v391.yml
+    - .github/workflows/compatibility-v310.yml
+    - scripts/validate-v310-consistency.sh
     - scripts/validate-v391-consistency.sh
     - neo-core/**
     - neo-node/**
@@ -74,7 +76,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
     - name: Cache cargo
       uses: Swatinem/rust-cache@v2
-    - name: Run Neo v3.9.1 consistency validation
+    - name: Run Neo v3.10.0 consistency validation
       env:
         TARGET_NETWORK: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.network
           || 'all' }}
@@ -87,14 +89,14 @@ jobs:
         \ matrix.network }}\" ]; then\n  echo \"Skipping matrix lane '${{ matrix.network\
         \ }}' for requested network '$TARGET_NETWORK'\"\n  exit 0\nfi\n\nargs=(--network\
         \ \"${{ matrix.network }}\" --profile \"$PROFILE\")\nif [ \"$SKIP_BASELINE\"\
-        \ = \"true\" ]; then\n  args+=(--skip-baseline)\nfi\n\nbash scripts/validate-v391-consistency.sh\
+        \ = \"true\" ]; then\n  args+=(--skip-baseline)\nfi\n\nbash scripts/validate-v310-consistency.sh\
         \ \"${args[@]}\"\n"
     - name: Upload consistency artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: v391-consistency-${{ matrix.network }}
-        path: 'reports/compat-v391/**
+        name: v310-consistency-${{ matrix.network }}
+        path: 'reports/compat-v310/**
 
           '
         retention-days: 14

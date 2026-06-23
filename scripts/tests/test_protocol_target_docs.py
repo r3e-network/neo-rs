@@ -72,6 +72,30 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         self.assertIn("height pre-classification (v3.10.0)", text)
         self.assertNotIn("height pre-classification (v3.9.1)", text)
 
+    def test_consistency_workflow_names_current_neo_n3_target(self):
+        workflows = REPO_ROOT / ".github" / "workflows"
+        canonical = workflows / "compatibility-v310.yml"
+        legacy = workflows / "compatibility-v391.yml"
+
+        self.assertTrue(
+            canonical.exists(),
+            "compatibility-v310.yml must be the canonical consistency workflow",
+        )
+        self.assertFalse(
+            legacy.exists(),
+            "compatibility-v391.yml must be removed in favour of compatibility-v310.yml",
+        )
+
+        text = canonical.read_text(encoding="utf-8")
+        self.assertIn("Neo v3.10.0 Consistency", text)
+        self.assertIn("validate-v310-consistency.sh", text)
+        # The artifact upload path must match the directory the validator writes
+        # to (reports/compat-v310); a stale compat-v391 path silently drops them.
+        self.assertIn("reports/compat-v310", text)
+        self.assertNotIn("Neo v3.9.1 Consistency", text)
+        self.assertNotIn("compat-v391", text)
+        self.assertNotIn("v391-consistency-", text)
+
 
 if __name__ == "__main__":
     unittest.main()
