@@ -220,6 +220,11 @@ port = 40332
 bind_address = "127.0.0.1"
 cors_enabled = true
 auth_enabled = false
+# Disable RPC rate limiting for this loopback validation harness. The consistency
+# run fires hundreds of invoke* calls in a burst; the default per-tier limiter
+# would reject the tail with "Too many requests" (-32001), turning legitimate
+# HALTs into ERRORs and corrupting the comparison. 0 = unlimited (loopback only).
+max_requests_per_second = 0
 max_gas_invoke = 50000000
 max_iterator_results = 100
 disabled_methods = []
@@ -271,6 +276,11 @@ port = 41332
 bind_address = "127.0.0.1"
 cors_enabled = true
 auth_enabled = false
+# Disable RPC rate limiting for this loopback validation harness. The consistency
+# run fires hundreds of invoke* calls in a burst; the default per-tier limiter
+# would reject the tail with "Too many requests" (-32001), turning legitimate
+# HALTs into ERRORs and corrupting the comparison. 0 = unlimited (loopback only).
+max_requests_per_second = 0
 max_gas_invoke = 50000000
 max_iterator_results = 100
 disabled_methods = []
