@@ -4,56 +4,26 @@
 
 //! Fuzz target for P2P message parsing.
 //!
-//! This fuzzer targets the P2P message deserialization to find:
+//! This fuzzer targets the inbound P2P message pipeline to find:
 //! - Malformed message headers that cause panics
 //! - Invalid compression that causes crashes
 //! - Payload size attacks causing OOM
-//! - Invalid command types causing crashes
+//! - Invalid command types / malformed typed payloads causing crashes
 
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use neo_io::{MemoryReader, Serializable};
-use neo_core::network::p2p::message::Message;
+use neo_network::wire::NetworkMessage;
 
 fuzz_target!(|data: &[u8]| {
-    // Fuzz P2P message deserialization
-    // The Message structure contains:
-    // - flags (1 byte): compression flags
-    // - command (1 byte): message type
-    // - payload: variable-length byte array (potentially compressed)
-    
-    // Minimum size for a valid message header:
-    // - 1 byte flags
-    // - 1 byte command
-    // - 1 byte payload length (minimum)
-    if data.len() < 3 {
-        return;
-    }
-    
-    let mut reader = MemoryReader::new(data);
-    
-    // Attempt to deserialize a message from fuzzed input
-    // This exercises:
-    // - Message header parsing
-    // - Compression/decompression (LZ4)
-    // - Payload length validation
-    let result = <Message as Serializable>::deserialize(&mut reader);
-    
-    match result {
-        Ok(message) => {
-            // If we successfully parsed a message, try to access its properties
-            // and convert to protocol message
-            let _ = message.is_compressed();
-            let _ = message.payload();
-            let _ = message.to_protocol_message();
-            
-            // Try to serialize it back
-            let _ = message.to_bytes(false);
-        }
-        Err(_) => {
-            // Error is expected for malformed input
-            // We just want to ensure no panics occur
-        }
+    // `NetworkMessage::from_bytes` exercises the full inbound parse:
+    // - envelope parsing (flags, command, var-int payload length)
+    // - LZ4 decompression with the 0x02000000 size bound (OOM guard)
+    // - the typed payload decode (ProtocolMessage::deserialize_payload)
+    // It should return an error for malformed input but never panic.
+    if let Ok(message) = NetworkMessage::from_bytes(data) {
+        // Round-trip serialize, both with and without compression.
+        let _ = message.to_bytes(false);
+        let _ = message.to_bytes(true);
     }
 });

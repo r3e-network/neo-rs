@@ -11,7 +11,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use neo_io::{MemoryReader, Serializable};
-use neo_core::network::p2p::payloads::transaction::Transaction;
+use neo_payloads::Transaction;
 
 fuzz_target!(|data: &[u8]| {
     // Fuzz transaction deserialization from raw bytes

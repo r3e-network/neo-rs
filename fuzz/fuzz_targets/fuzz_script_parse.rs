@@ -12,7 +12,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use neo_core::script_validation::validate_script;
+use neo_vm_rs::validate_script;
 
 fuzz_target!(|data: &[u8]| {
     // Relaxed validation parses opcode boundaries and operand widths.
