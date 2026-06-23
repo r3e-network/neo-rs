@@ -106,7 +106,7 @@ fn test_storage_key_ordering_different_id() {
 
 #[test]
 fn storage_key_ord_matches_csharp_v310_byte_array_comparer() {
-    let mut keys = vec![
+    let mut keys = [
         StorageKey::new(-5, vec![0x01]),
         StorageKey::new(10, vec![0x01]),
         StorageKey::new(0, vec![0xFF]),

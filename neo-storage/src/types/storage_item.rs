@@ -74,10 +74,9 @@ impl StorageItem {
     /// cache materialisation when the raw bytes are empty.
     #[must_use]
     pub fn value_bytes(&self) -> Cow<'_, [u8]> {
-        if !self.value.is_empty() || self.cache.is_none() {
-            Cow::Borrowed(&self.value)
-        } else {
-            Cow::Owned(self.cache.as_ref().unwrap().to_bytes())
+        match &self.cache {
+            Some(cache) if self.value.is_empty() => Cow::Owned(cache.to_bytes()),
+            _ => Cow::Borrowed(&self.value),
         }
     }
 

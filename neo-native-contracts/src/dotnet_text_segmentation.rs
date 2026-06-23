@@ -170,11 +170,9 @@ fn first_cluster_len(classes: &[GraphemeBreakClass]) -> usize {
                     i += 1; // the ZWJ still attaches (GB9); the chain ends here
                 }
             }
-            C::RegionalIndicator => {
-                // GB12/GB13: regional indicators join in pairs.
-                if i < n && classes[i] == C::RegionalIndicator {
-                    i += 1;
-                }
+            // GB12/GB13: regional indicators join in pairs.
+            C::RegionalIndicator if i < n && classes[i] == C::RegionalIndicator => {
+                i += 1;
             }
             _ => {}
         }

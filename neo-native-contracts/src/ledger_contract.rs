@@ -293,12 +293,11 @@ impl NativeContract for LedgerContract {
                 // `Transaction` is null), and `getTransactionHeight` returns -1 for
                 // an absent or untraceable transaction; otherwise `(int)BlockIndex`.
                 let height = match self.get_transaction_state(&snapshot, &hash)? {
-                    Some(state) if state.transaction.is_some() => {
-                        if self.is_traceable_block(engine, state.block_index)? {
-                            i64::from(state.block_index as i32)
-                        } else {
-                            -1
-                        }
+                    Some(state)
+                        if state.transaction.is_some()
+                            && self.is_traceable_block(engine, state.block_index)? =>
+                    {
+                        i64::from(state.block_index as i32)
                     }
                     _ => -1,
                 };
