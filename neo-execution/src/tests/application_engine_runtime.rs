@@ -281,3 +281,40 @@ fn invocation_counter_uses_explicit_context_script_hash_like_csharp() {
         .expect("integer result");
     assert_eq!(result, 1.into());
 }
+
+#[test]
+fn external_vm_pointer_result_halts_like_local_engine() {
+    // A pure `PUSHA <offset>; RET` script HALTs with a Pointer on the result
+    // stack. The neo-vm-rs fast path cannot represent a Pointer as a stateful
+    // StackItem, so it must DECLINE and let the local engine HALT with the
+    // Pointer (matching C#/the local engine) rather than FAULT — otherwise a
+    // crafted transaction would HALT on C# but FAULT on the fast path, which is
+    // a consensus divergence.
+    let script = vec![
+        OpCode::PUSHA.byte(),
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        OpCode::RET.byte(),
+    ];
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        None,
+    )
+    .expect("application engine");
+    engine
+        .load_script(script, CallFlags::NONE, None)
+        .expect("load script");
+
+    assert_eq!(engine.execute_allow_fault(), VMState::HALT);
+    assert!(matches!(
+        engine.result_stack().peek(0),
+        Ok(neo_vm::stack_item::StackItem::Pointer(_))
+    ));
+}

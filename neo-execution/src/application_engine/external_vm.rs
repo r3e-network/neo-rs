@@ -292,7 +292,22 @@ impl ApplicationEngine {
         };
 
         match result {
-            Ok(result) => Some(self.apply_external_vm_result(result, instructions_executed)),
+            Ok(result) => {
+                // Decline the fast path (so the local engine re-executes) if a
+                // HALT result holds an item that cannot be represented as a
+                // neo-vm StackItem — notably a `Pointer` left on the stack by a
+                // pure `PUSHA` script. The local engine and C# HALT with such a
+                // result, so faulting here would be a consensus divergence.
+                if result.state == VMState::HALT
+                    && result
+                        .stack
+                        .iter()
+                        .any(|value| StackItem::try_from(value.clone()).is_err())
+                {
+                    return None;
+                }
+                Some(self.apply_external_vm_result(result, instructions_executed))
+            }
             Err(message) => Some(self.apply_external_vm_fault(message, instructions_executed)),
         }
     }
