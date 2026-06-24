@@ -22,11 +22,10 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for libclang. Bullseye ships LLVM 11; resolve the
-# actual install path at build time so bindgen (RocksDB bindings) finds libclang.
-RUN LLVM_DIR=$(ls -d /usr/lib/llvm-* 2>/dev/null | head -1) && \
-    echo "export LIBCLANG_PATH=${LLVM_DIR}" >> /etc/bash.bashrc
-ENV LIBCLANG_PATH=/usr/lib/llvm-11
+# libclang for bindgen (RocksDB bindings). Bullseye ships LLVM 11; the
+# libclang-dev package puts libclang.so under /usr/lib/llvm-11/lib. The ENV
+# must be set directly (not via bashrc) so it's visible to the RUN cargo build.
+ENV LIBCLANG_PATH=/usr/lib/llvm-11/lib
 
 # Create app directory. Keep neo-rs and neo-vm-rs as siblings because the
 # workspace intentionally depends on `../neo-vm-rs`.
