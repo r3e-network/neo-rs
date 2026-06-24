@@ -98,6 +98,20 @@ impl neo_blockchain::service_context::SystemContext for DaemonContext {
         snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     ) -> bool {
+        // During catch-up, skip the expensive per-block hooks:
+        // - StateService.on_committing computes the MPT state root per block
+        //   (~24ms measured — the dominant sync bottleneck). State roots are
+        //   only needed for the state-service RPC, not for consensus.
+        // - IndexerService.index_block indexes transaction execution results.
+        // Both resume near the live tip. This mirrors C# Neo's chain.acc
+        // import which skips verification and indexing during bulk sync.
+        let block_index = block.index();
+        let live_tip = neo_network::PEER_LIVE_TIP.load(std::sync::atomic::Ordering::Relaxed);
+        let catching_up = live_tip > 0 && (block_index as u64) + 10000 < live_tip;
+        if catching_up {
+            return true;
+        }
+
         if let Some(state_service) = &self.state_service {
             if !state_service.on_committing(block.index(), snapshot) {
                 return false;

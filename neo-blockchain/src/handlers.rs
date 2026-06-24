@@ -19,14 +19,6 @@ use tracing::{debug, warn};
 use crate::PreverifyCompleted;
 use crate::import::Import;
 use crate::internal::ImportDisposition;
-
-/// During initial catch-up, batch the durable store commit: instead of
-/// flushing RocksDB once per block, flush every `COMMIT_BATCH_SIZE` blocks.
-/// The per-block atomicity is already preserved by `block_cache.commit()`
-/// inside `persist_block_natives`; the outer durable flush can safely be
-/// amortized. This collapses N synchronous RocksDB writes into 1.
-const COMMIT_BATCH_SIZE: u32 = 500;
-static COMMIT_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
 use crate::reverify::Reverify;
@@ -384,6 +376,7 @@ impl BlockchainService {
         relay: bool,
         pre_verified: bool,
     ) -> CoreResult<()> {
+        let wall_start = std::time::Instant::now();
         let index = block.index();
         let hash = Self::try_block_hash(block.as_ref())?;
         let current_height = self.ledger.current_height();
@@ -392,6 +385,7 @@ impl BlockchainService {
             return Ok(());
         }
 
+        let after_hash = wall_start.elapsed();
         if index != current_height + 1 {
             return Err(CoreError::other(format!(
                 "block {index} is not the next expected height {}",
@@ -446,6 +440,8 @@ impl BlockchainService {
             self.verify_header_against_store(block.as_ref())?;
         }
 
+        let after_verify = wall_start.elapsed();
+
         // C# Blockchain.OnNewBlock → Persist(block): the native-contract
         // state transition runs before the block becomes the new tip.
         if !self.persist_block_sequence(Arc::clone(&block)).await {
@@ -454,6 +450,8 @@ impl BlockchainService {
             )));
         }
 
+        let after_persist = wall_start.elapsed();
+
         if let Err(error) = self.ledger.insert_block((*block).clone()) {
             return Err(CoreError::other(format!("ledger insert: {error}")));
         }
@@ -461,16 +459,23 @@ impl BlockchainService {
         // Flush the block's native-persist writes through to the durable store
         // (C# snapshot.Commit() at the end of Blockchain.Persist) so the on-disk
         // tip advances and a restart resumes from here rather than genesis.
-        //
-        // During catch-up, batch the durable flush every COMMIT_BATCH_SIZE
-        // blocks instead of once per block — collapses N RocksDB writes into
-        // 1 for dramatically higher throughput. The in-memory snapshot still
-        // reflects every persisted block immediately.
-        let count = COMMIT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        if count % COMMIT_BATCH_SIZE == 0 {
-            self.system.commit_to_store();
-        }
+        self.system.commit_to_store();
+        let after_commit = wall_start.elapsed();
         self.system.block_committed(block.as_ref());
+
+        // Per-block timing breakdown (debug-level). Shows where wall-clock
+        // time goes: hash, verify (signature), persist (native contracts),
+        // or commit (RocksDB write). Enable with RUST_LOG=neo::sync=debug.
+        debug!(
+            target: "neo::sync",
+            index,
+            hash_us = after_hash.as_micros() as u64,
+            verify_us = (after_verify - after_hash).as_micros() as u64,
+            persist_us = (after_persist - after_verify).as_micros() as u64,
+            commit_us = (after_commit - after_persist).as_micros() as u64,
+            total_us = after_commit.as_micros() as u64,
+            "block persist timing"
+        );
 
         // C# Blockchain.Persist → MemPool.UpdatePoolForBlockPersisted: drop the
         // block's transactions from the pool and evict pooled conflicts, so
