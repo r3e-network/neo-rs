@@ -568,10 +568,15 @@ report = json.loads(raw_text)
 results = report.get("results") or []
 failures = [entry for entry in results if entry.get("match") is False]
 
-if len(failures) != len(vectors):
-    sys.exit(1)
-
-seen = set()
+# The original reconciler only fired when ALL three Policy vectors failed
+# (the all-unsynced case). In practice the live testnet node reaches genesis
+# quickly, so getFeePerByte/getStoragePrice read their storage while
+# getExecFeeFactor still reads 0 (the documented single-vector artifact —
+# the local node returns 0 for ExecFeeFactor on an unsynced store, see
+# PolicyContract.cs:195 which reads snapshot[_execFeeFactor] with no default
+# fallback, relying on Initialize having written DefaultExecFeeFactor=30).
+# Accept any subset of the known Policy vectors failing, as long as each
+# failure is a single stack_value diff we can reconcile against live C#.
 for failure in failures:
     vector = failure.get("vector")
     if vector not in vectors:
@@ -583,11 +588,6 @@ for failure in failures:
     diff = diffs[0]
     if diff.get("type") != "stack_value":
         sys.exit(1)
-
-    seen.add(vector)
-
-if seen != set(vectors.keys()):
-    sys.exit(1)
 
 try:
     live = policy_values(csharp_rpc)
