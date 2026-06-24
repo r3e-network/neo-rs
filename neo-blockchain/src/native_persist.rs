@@ -61,6 +61,8 @@
 
 use std::sync::Arc;
 
+use tracing::debug;
+
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
@@ -255,6 +257,7 @@ pub fn persist_block_natives(
     block: Arc<Block>,
     settings: &ProtocolSettings,
 ) -> CoreResult<NativePersistOutcome> {
+    let _total_start = std::time::Instant::now();
     let provider = NativeContractLookup::native_contract_provider().ok_or_else(|| {
         CoreError::invalid_operation(
             "persist_block_natives requires the native-contract provider \
@@ -276,6 +279,7 @@ pub fn persist_block_natives(
     let block_cache = Arc::new(snapshot.clone_cache());
 
     // --- OnPersist stage (C# TriggerType.OnPersist engine, gas 0) ---
+    let onpersist_start = std::time::Instant::now();
     let mut engine = ApplicationEngine::new_with_shared_block(
         TriggerType::OnPersist,
         None,
@@ -316,6 +320,7 @@ pub fn persist_block_natives(
         .application_executed
         .push(application_executed(&engine, None, VMState::HALT));
     drop(engine);
+    let onpersist_us = onpersist_start.elapsed().as_micros();
 
     // --- Transaction stage (C# Blockchain.Persist:433-453) ---
     // Each transaction runs in its own Application-trigger engine with
@@ -324,6 +329,7 @@ pub fn persist_block_natives(
     // child into the block cache, FAULT discards it. Either way the
     // transaction's ledger record is rewritten with the final VM state
     // (C# mutates the TransactionState stored by Ledger.OnPersist).
+    let tx_start = std::time::Instant::now();
     for tx in &block.transactions {
         let tx_hash = tx
             .try_hash()
@@ -367,6 +373,7 @@ pub fn persist_block_natives(
     }
 
     // --- PostPersist stage (C# TriggerType.PostPersist engine, gas 0) ---
+    let postpersist_start = std::time::Instant::now();
     let mut engine = ApplicationEngine::new_with_shared_block(
         TriggerType::PostPersist,
         None,
@@ -393,6 +400,24 @@ pub fn persist_block_natives(
     // The whole sequence succeeded: merge the staged writes into the
     // caller's snapshot (C# `snapshot.Commit()`).
     block_cache.commit();
+
+    let tx_us = tx_start.elapsed().as_micros();
+    let postpersist_us = postpersist_start.elapsed().as_micros();
+    let total_us = _total_start.elapsed().as_micros();
+    let n_tx = block.transactions.len();
+    // Per-block timing breakdown (debug-level). Visible with RUST_LOG=neo=debug.
+    // Helps identify whether the bottleneck is OnPersist hooks, per-tx
+    // execution, PostPersist, or the cache commit.
+    debug!(
+        target: "neo::sync",
+        index = block_index,
+        txs = n_tx,
+        onpersist_us = onpersist_us,
+        tx_stage_us = tx_us,
+        postpersist_us = postpersist_us,
+        total_us = total_us,
+        "persist_block_natives timing"
+    );
 
     Ok(outcome)
 }

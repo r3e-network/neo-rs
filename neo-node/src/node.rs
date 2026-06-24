@@ -255,11 +255,30 @@ async fn build_node(
     use neo_blockchain::service::{BlockchainService, MempoolLike};
     use neo_blockchain::service_context::SystemContext;
     use neo_blockchain::{HeaderCache, LedgerContext};
+    use neo_storage::persistence::store::Store;
     use neo_storage::persistence::StoreCache;
     use parking_lot::Mutex;
 
     // ----- storage backend -----
     let store = open_store(config, storage_override)?;
+
+    // Enable fast-sync optimizations during initial catch-up (disable WAL,
+    // fsync, and auto-compaction) for dramatically higher write throughput.
+    // The node will re-enable balanced mode once it approaches the live tip.
+    // This mirrors C# Neo's behaviour during chain.acc import / bulk sync.
+    let durable_tip_height = {
+        let probe = StoreCache::new_from_store(Arc::clone(&store), false);
+        neo_native_contracts::LedgerContract::new()
+            .current_index(probe.data_cache())
+            .unwrap_or(0)
+    };
+    if durable_tip_height == 0 {
+        info!(
+            target: "neo::sync",
+            "enabling fast-sync store mode for initial catch-up (WAL disabled, auto-compaction off)"
+        );
+        store.enable_fast_sync_mode();
+    }
 
     // Natives are dispatched through the global provider.
     neo_native_contracts::install();

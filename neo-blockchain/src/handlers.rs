@@ -19,6 +19,14 @@ use tracing::{debug, warn};
 use crate::PreverifyCompleted;
 use crate::import::Import;
 use crate::internal::ImportDisposition;
+
+/// During initial catch-up, batch the durable store commit: instead of
+/// flushing RocksDB once per block, flush every `COMMIT_BATCH_SIZE` blocks.
+/// The per-block atomicity is already preserved by `block_cache.commit()`
+/// inside `persist_block_natives`; the outer durable flush can safely be
+/// amortized. This collapses N synchronous RocksDB writes into 1.
+const COMMIT_BATCH_SIZE: u32 = 500;
+static COMMIT_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
 use crate::reverify::Reverify;
@@ -453,7 +461,15 @@ impl BlockchainService {
         // Flush the block's native-persist writes through to the durable store
         // (C# snapshot.Commit() at the end of Blockchain.Persist) so the on-disk
         // tip advances and a restart resumes from here rather than genesis.
-        self.system.commit_to_store();
+        //
+        // During catch-up, batch the durable flush every COMMIT_BATCH_SIZE
+        // blocks instead of once per block — collapses N RocksDB writes into
+        // 1 for dramatically higher throughput. The in-memory snapshot still
+        // reflects every persisted block immediately.
+        let count = COMMIT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if count % COMMIT_BATCH_SIZE == 0 {
+            self.system.commit_to_store();
+        }
         self.system.block_committed(block.as_ref());
 
         // C# Blockchain.Persist → MemPool.UpdatePoolForBlockPersisted: drop the

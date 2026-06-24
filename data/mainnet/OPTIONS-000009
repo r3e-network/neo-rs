@@ -128,7 +128,7 @@
   prefix_extractor=nullptr
   max_bytes_for_level_multiplier=10.000000
   write_buffer_size=268435456
-  disable_auto_compactions=false
+  disable_auto_compactions=true
   max_compaction_bytes=1677721600
   compression_opts={use_zstd_dict_trainer=true;enabled=false;parallel_threads=1;zstd_max_train_bytes=0;max_dict_bytes=0;strategy=0;max_dict_buffer_bytes=0;level=32767;window_bits=-14;}
   hard_pending_compaction_bytes_limit=274877906944
