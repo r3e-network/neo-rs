@@ -100,16 +100,18 @@ jobs:
         if [ "$SKIP_BASELINE" = "true" ]; then
           args+=(--skip-baseline)
         fi
+        rc=1
         for attempt in 1 2 3; do
           echo "=== consistency attempt $attempt/3 ==="
           if bash scripts/validate-v310-consistency.sh "${args[@]}"; then
-            exit 0
+            rc=0
+            break
           fi
           rc=$?
           echo "attempt $attempt failed (rc=$rc)" >&2
           [ "$attempt" -lt 3 ] && sleep 15
         done
-        exit $rc
+        exit "$rc"
     - name: Upload consistency artifacts
       if: always()
       uses: actions/upload-artifact@v4
