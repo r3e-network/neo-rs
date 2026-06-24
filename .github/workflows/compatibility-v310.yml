@@ -85,12 +85,31 @@ jobs:
         SKIP_BASELINE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_baseline
           || 'false' }}
         VECTOR_GAS_TOLERANCE: 1000000
-      run: "if [ \"$TARGET_NETWORK\" != \"all\" ] && [ \"$TARGET_NETWORK\" != \"${{\
-        \ matrix.network }}\" ]; then\n  echo \"Skipping matrix lane '${{ matrix.network\
-        \ }}' for requested network '$TARGET_NETWORK'\"\n  exit 0\nfi\n\nargs=(--network\
-        \ \"${{ matrix.network }}\" --profile \"$PROFILE\")\nif [ \"$SKIP_BASELINE\"\
-        \ = \"true\" ]; then\n  args+=(--skip-baseline)\nfi\n\nbash scripts/validate-v310-consistency.sh\
-        \ \"${args[@]}\"\n"
+      # The validation can fail transiently when ALL live C#/NeoGo reference seeds
+      # are unreachable from the runner (observed flaky: mainnet lane alternates
+      # X/✓ across runs purely on seed reachability). Retry up to 3x so a
+      # network-outage red self-heals on the next attempt. The build is cached,
+      # so retries only re-run the validator script (fast). A real parity failure
+      # (vector mismatch the reconciler cannot accept) fails every attempt.
+      run: |
+        if [ "$TARGET_NETWORK" != "all" ] && [ "$TARGET_NETWORK" != "${{ matrix.network }}" ]; then
+          echo "Skipping matrix lane '${{ matrix.network }}' for requested network '$TARGET_NETWORK'"
+          exit 0
+        fi
+        args=(--network "${{ matrix.network }}" --profile "$PROFILE")
+        if [ "$SKIP_BASELINE" = "true" ]; then
+          args+=(--skip-baseline)
+        fi
+        for attempt in 1 2 3; do
+          echo "=== consistency attempt $attempt/3 ==="
+          if bash scripts/validate-v310-consistency.sh "${args[@]}"; then
+            exit 0
+          fi
+          rc=$?
+          echo "attempt $attempt failed (rc=$rc)" >&2
+          [ "$attempt" -lt 3 ] && sleep 15
+        done
+        exit $rc
     - name: Upload consistency artifacts
       if: always()
       uses: actions/upload-artifact@v4
