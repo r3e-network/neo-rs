@@ -612,19 +612,23 @@ failures = [entry for entry in results if entry.get("match") is False]
 for failure in failures:
     vector = failure.get("vector")
     if vector not in vectors:
+        print(f"reconciler: failing vector {vector} not a known Policy vector", file=sys.stderr)
         sys.exit(1)
 
     diffs = failure.get("differences") or []
     if len(diffs) != 1:
+        print(f"reconciler: {vector} has {len(diffs)} diffs (expected 1)", file=sys.stderr)
         sys.exit(1)
     diff = diffs[0]
     if diff.get("type") != "stack_value":
+        print(f"reconciler: {vector} diff type {diff.get('type')} != stack_value", file=sys.stderr)
         sys.exit(1)
 
 try:
     live = policy_values(csharp_rpc)
     local = policy_values(local_rpc)
 except (RuntimeError, urllib.error.URLError, TimeoutError) as csharp_err:
+    print(f"reconciler: C# reference {csharp_rpc} unavailable ({csharp_err}); trying NeoGo {neogo_rpc or '(none)'}", file=sys.stderr)
     # C# seed unreachable from this runner — fall back to the NeoGo reference
     # (an independent v3.10.0 implementation; its policy values are equally
     # authoritative for the reconciliation check). If NeoGo is also down,
@@ -634,15 +638,19 @@ except (RuntimeError, urllib.error.URLError, TimeoutError) as csharp_err:
     try:
         live = policy_values(neogo_rpc)
         local = policy_values(local_rpc)
-    except (RuntimeError, urllib.error.URLError, TimeoutError):
+    except (RuntimeError, urllib.error.URLError, TimeoutError) as neogo_err:
+        print(f"reconciler: NeoGo reference {neogo_rpc} also unavailable ({neogo_err})", file=sys.stderr)
         sys.exit(1)
 
+print(f"reconciler: live={live['values']} local={local['values']}", file=sys.stderr)
 for failure in failures:
     vector = failure["vector"]
     diff = failure["differences"][0]
     if str(diff.get("python")) != live["values"][vector]:
+        print(f"reconciler: {vector} live {live['values'][vector]} != expected {diff.get('python')}", file=sys.stderr)
         sys.exit(1)
     if str(diff.get("csharp")) != local["values"][vector]:
+        print(f"reconciler: {vector} local {local['values'][vector]} != reported {diff.get('csharp')}", file=sys.stderr)
         sys.exit(1)
 
 raw_report_path = report_path.with_name(report_path.stem + ".raw.json")
