@@ -135,38 +135,28 @@ run_check() {
   our_comm=$(rpc "$OUR_RPC" invokefunction "[\"$NEO_HASH\",\"getCommittee\"]" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-r=d.get('result',{})
-stack=r.get('stack',[])
-if stack and isinstance(stack[0],dict) and stack[0].get('type')=='Array':
-    vals=[i.get('value','') for i in stack[0].get('value',[]) if isinstance(i,dict)]
-    # committee is Array of Struct[pubkey,votes]; extract pubkeys
-    pubkeys=[]
-    for item in stack[0]['value']:
-        if isinstance(item,dict) and item.get('type')=='Struct':
-            inner=item.get('value',[])
-            if inner and isinstance(inner[0],dict):
-                pubkeys.append(inner[0].get('value','')[:20])
-    print(len(pubkeys),'members')
+s=d.get('result',{}).get('stack',[])
+if s and isinstance(s[0],dict) and s[0].get('type')=='Array':
+    print(len(s[0].get('value',[])),'members')
 else:
     print('parse-fail')
 " 2>/dev/null)
   live_comm=$(rpc_live invokefunction "[\"$NEO_HASH\",\"getCommittee\"]" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-r=d.get('result',{})
-stack=r.get('stack',[])
-if stack and isinstance(stack[0],dict) and stack[0].get('type')=='Array':
-    pubkeys=[]
-    for item in stack[0]['value']:
-        if isinstance(item,dict) and item.get('type')=='Struct':
-            inner=item.get('value',[])
-            if inner and isinstance(inner[0],dict):
-                pubkeys.append(inner[0].get('value','')[:20])
-    print(len(pubkeys),'members')
+s=d.get('result',{}).get('stack',[])
+if s and isinstance(s[0],dict) and s[0].get('type')=='Array':
+    print(len(s[0].get('value',[])),'members')
 else:
     print('parse-fail')
 " 2>/dev/null)
-  echo "  our committee: $our_comm | live: $live_comm"
+  if [[ "$our_comm" = "$live_comm" ]]; then
+    echo "  ✓ committee: $our_comm"
+    ((pass++))
+  else
+    echo "  ✗ committee: our=$our_comm live=$live_comm"
+    ((fail++))
+  fi
 
   echo "--- Summary: $pass pass, $fail fail, $skip skip (hardfork-boundary) ---"
   echo ""
