@@ -486,6 +486,7 @@ run_vector_diff() {
   local network_dir="$2"
   local local_rpc="$3"
   local csharp_rpc="$4"
+  local neogo_rpc="${5:-}"
 
   echo "[$network] running vector diff against local neo-rs"
   local report="$network_dir/neo-rs-vectors.json"
@@ -505,7 +506,7 @@ run_vector_diff() {
   ) || rc=$?
 
   if [[ "$rc" -ne 0 && "${ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH:-true}" == "true" ]]; then
-    if python3 - "$report" "$local_rpc" "$csharp_rpc" "$network_dir" <<'PY'
+    if python3 - "$report" "$local_rpc" "$csharp_rpc" "$network_dir" "$neogo_rpc" <<'PY'
 import json
 import sys
 import gzip
@@ -519,6 +520,11 @@ report_path = Path(sys.argv[1])
 local_rpc = sys.argv[2]
 csharp_rpc = sys.argv[3]
 network_dir = Path(sys.argv[4])
+# Optional NeoGo endpoint — a second independent v3.10.0 reference. Used as a
+# fallback for the live policy read when the C# seed is unreachable from the
+# CI runner (RemoteDisconnected / connect-refused are common against the
+# Cloudflare-fronted neo.org seeds).
+neogo_rpc = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else ""
 
 vectors = {
     "Policy_getFeePerByte": "getFeePerByte",
@@ -618,8 +624,18 @@ for failure in failures:
 try:
     live = policy_values(csharp_rpc)
     local = policy_values(local_rpc)
-except (RuntimeError, urllib.error.URLError, TimeoutError):
-    sys.exit(1)
+except (RuntimeError, urllib.error.URLError, TimeoutError) as csharp_err:
+    # C# seed unreachable from this runner — fall back to the NeoGo reference
+    # (an independent v3.10.0 implementation; its policy values are equally
+    # authoritative for the reconciliation check). If NeoGo is also down,
+    # we cannot reconcile and must fail honestly.
+    if not neogo_rpc:
+        sys.exit(1)
+    try:
+        live = policy_values(neogo_rpc)
+        local = policy_values(local_rpc)
+    except (RuntimeError, urllib.error.URLError, TimeoutError):
+        sys.exit(1)
 
 for failure in failures:
     vector = failure["vector"]
@@ -796,7 +812,7 @@ run_network_validation() {
 
   start_node "$network" "$config_path" "$rpc_port" "$node_log"
   check_protocol_parity "$network" "$network_dir" "$local_rpc" "$csharp_rpc" "$neogo_rpc" "$expected_network" "$expected_msperblock"
-  run_vector_diff "$network" "$network_dir" "$local_rpc" "$csharp_rpc"
+  run_vector_diff "$network" "$network_dir" "$local_rpc" "$csharp_rpc" "$neogo_rpc"
 
   if [[ "$SKIP_BASELINE" != "true" ]]; then
     run_baseline_compat "$network" "$network_dir" "$csharp_rpc" "$neogo_rpc" "$neogo_candidates" "$expected_network" "$expected_msperblock"
