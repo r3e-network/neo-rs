@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y \
     cmake \
     make \
     pkg-config \
-    llvm-14 \
-    libclang-14-dev \
-    clang-14 \
+    llvm \
+    libclang-dev \
+    clang \
     libsnappy-dev \
     liblz4-dev \
     libzstd-dev \
@@ -22,8 +22,11 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for libclang
-ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
+# Set environment variables for libclang. Bullseye ships LLVM 11; resolve the
+# actual install path at build time so bindgen (RocksDB bindings) finds libclang.
+RUN LLVM_DIR=$(ls -d /usr/lib/llvm-* 2>/dev/null | head -1) && \
+    echo "export LIBCLANG_PATH=${LLVM_DIR}" >> /etc/bash.bashrc
+ENV LIBCLANG_PATH=/usr/lib/llvm-11
 
 # Create app directory. Keep neo-rs and neo-vm-rs as siblings because the
 # workspace intentionally depends on `../neo-vm-rs`.
