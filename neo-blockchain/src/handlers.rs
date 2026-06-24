@@ -466,16 +466,23 @@ impl BlockchainService {
         // Per-block timing breakdown (debug-level). Shows where wall-clock
         // time goes: hash, verify (signature), persist (native contracts),
         // or commit (RocksDB write). Enable with RUST_LOG=neo::sync=debug.
+        let total_us = after_commit.as_micros() as u64;
+        let verify_us = (after_verify - after_hash).as_micros() as u64;
+        let persist_us = (after_persist - after_verify).as_micros() as u64;
+        let commit_us = (after_commit - after_persist).as_micros() as u64;
         debug!(
             target: "neo::sync",
             index,
             hash_us = after_hash.as_micros() as u64,
-            verify_us = (after_verify - after_hash).as_micros() as u64,
-            persist_us = (after_persist - after_verify).as_micros() as u64,
-            commit_us = (after_commit - after_persist).as_micros() as u64,
-            total_us = after_commit.as_micros() as u64,
+            verify_us,
+            persist_us,
+            commit_us,
+            total_us,
             "block persist timing"
         );
+        // Feed the sync metrics system for the Prometheus /metrics endpoint
+        // and the rolling throughput window.
+        neo_runtime::sync_metrics::record_block(index as u64, verify_us, persist_us, commit_us, total_us);
 
         // C# Blockchain.Persist → MemPool.UpdatePoolForBlockPersisted: drop the
         // block's transactions from the pool and evict pooled conflicts, so

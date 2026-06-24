@@ -2556,6 +2556,7 @@ dependencies = [
  "neo-payloads",
  "neo-primitives",
  "neo-rpc",
+ "neo-runtime",
  "neo-serialization",
  "neo-state-service",
  "neo-storage",

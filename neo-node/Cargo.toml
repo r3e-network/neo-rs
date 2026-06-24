@@ -85,6 +85,7 @@ neo-native-contracts = { workspace = true }
 neo-network = { workspace = true }
 neo-payloads = { workspace = true }
 neo-primitives = { workspace = true }
+neo-runtime = { workspace = true }
 neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
 neo-system = { workspace = true }

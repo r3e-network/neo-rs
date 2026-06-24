@@ -33,6 +33,7 @@ use tracing::{info, warn};
 mod config;
 mod context;
 mod indexer_runtime;
+mod sync_metrics;
 mod ledger_source;
 mod logging;
 mod observability;

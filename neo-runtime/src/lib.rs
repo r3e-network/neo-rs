@@ -91,6 +91,7 @@ pub mod blockchain;
 pub mod error;
 pub mod outcome;
 pub mod services;
+pub mod sync_metrics;
 
 // Re-exports for the public surface of the crate.
 //

@@ -175,6 +175,11 @@ impl MetricsExporter {
         TextEncoder::new()
             .encode(&metric_families, &mut buffer)
             .context("encoding Prometheus metrics")?;
+
+        // Append the sync-pipeline metrics (lock-free atomics, not Prometheus
+        // collectors) so /metrics exposes per-stage timing + throughput.
+        buffer.extend_from_slice(crate::node::sync_metrics::render_prometheus().as_bytes());
+
         Ok(buffer)
     }
 
