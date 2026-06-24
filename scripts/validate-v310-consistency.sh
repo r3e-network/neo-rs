@@ -140,8 +140,20 @@ select_rpc() {
 
   for rpc in $candidates; do
     echo "[$network] probing $label endpoint: $rpc" >&2
-    local response
-    response="$(curl --compressed -sS --max-time 12 -H 'Content-Type: application/json' -d "$json_payload" "$rpc" || true)"
+    local response=""
+    # Retry each candidate up to 3 times: GitHub Actions runners sometimes
+    # hit transient RemoteDisconnected / connect-refused on the first hit
+    # (especially the neo.org seeds behind Cloudflare). A short backoff turns
+    # a flaky-seed red into a healthy-seed green without weakening the
+    # protocol check below (each attempt still validates the full useragent/
+    # network/msperblock contract).
+    for attempt in 1 2 3; do
+      response="$(curl --compressed -sS --max-time 15 -H 'Content-Type: application/json' -d "$json_payload" "$rpc" 2>/dev/null || true)"
+      if [[ -n "$response" ]]; then
+        break
+      fi
+      sleep 2
+    done
     if [[ -z "$response" ]]; then
       continue
     fi
@@ -497,6 +509,8 @@ run_vector_diff() {
 import json
 import sys
 import gzip
+import time
+import http.client
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -514,14 +528,26 @@ vectors = {
 
 def rpc_call(rpc: str, method: str, params: list):
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode("utf-8")
-    req = urllib.request.Request(
-        rpc,
-        data=payload,
-        headers={"Content-Type": "application/json", "Accept-Encoding": "identity"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        raw = resp.read()
+    # Retry transient seed-RPC failures (RemoteDisconnected / timeout), which
+    # are common from CI runners behind Cloudflare-fronted seeds. A real RPC
+    # error (JSON "error" field) is raised immediately, not retried.
+    last_err = None
+    for attempt in range(4):
+        req = urllib.request.Request(
+            rpc,
+            data=payload,
+            headers={"Content-Type": "application/json", "Accept-Encoding": "identity"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = resp.read()
+            break
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.RemoteDisconnected) as e:
+            last_err = e
+            time.sleep(2)
+    else:
+        raise RuntimeError(f"rpc {method} to {rpc} failed after retries: {last_err}")
     if raw.startswith(b"\x1f\x8b"):
         raw = gzip.decompress(raw)
     parsed = json.loads(raw.decode("utf-8"))
@@ -787,7 +813,7 @@ if [[ "$NETWORK" == "all" || "$NETWORK" == "mainnet" ]]; then
     mainnet \
     860833102 \
     15000 \
-    "${MAINNET_CSHARP_CANDIDATES:-http://seed1.neo.org:10332 http://seed2.neo.org:10332 http://seed3.neo.org:10332 http://seed4.neo.org:10332 http://seed5.neo.org:10332}" \
+    "${MAINNET_CSHARP_CANDIDATES:-http://seed1.neo.org:10332 http://seed2.neo.org:10332 http://seed3.neo.org:10332 http://seed4.neo.org:10332 http://seed5.neo.org:10332 https://rpc3.n3.nspcc.ru:10331 http://rpc1.n3.nspcc.ru:10332 https://mainnet1.neo.coz.io:443 https://mainnet2.neo.coz.io:443 http://mainnet1.neo.coz.io:80 http://mainnet2.neo.coz.io:80}" \
     "${MAINNET_NEOGO_CANDIDATES:-http://rpc3.n3.nspcc.ru:10332 https://rpc3.n3.nspcc.ru:10331 http://rpc2.n3.nspcc.ru:10332 https://rpc2.n3.nspcc.ru:10331 http://rpc1.n3.nspcc.ru:10332 https://rpc1.n3.nspcc.ru:10331}" \
     40332
 fi
@@ -797,7 +823,7 @@ if [[ "$NETWORK" == "all" || "$NETWORK" == "testnet" ]]; then
     testnet \
     894710606 \
     3000 \
-    "${TESTNET_CSHARP_CANDIDATES:-http://seed1t5.neo.org:20332 http://seed2t5.neo.org:20332 http://seed3t5.neo.org:20332 http://seed4t5.neo.org:20332 http://seed5t5.neo.org:20332}" \
+    "${TESTNET_CSHARP_CANDIDATES:-http://seed1t5.neo.org:20332 http://seed2t5.neo.org:20332 http://seed3t5.neo.org:20332 http://seed4t5.neo.org:20332 http://seed5t5.neo.org:20332 https://rpc.t5.n3.nspcc.ru:20331 http://rpc1.t5.n3.nspcc.ru:20332 https://testnet1.neo.coz.io:443 https://testnet2.neo.coz.io:443 http://testnet1.neo.coz.io:80 http://testnet2.neo.coz.io:80}" \
     "${TESTNET_NEOGO_CANDIDATES:-http://rpc.t5.n3.nspcc.ru:20332 https://rpc.t5.n3.nspcc.ru:20331 http://rpc1.t5.n3.nspcc.ru:20332 http://rpc2.t5.n3.nspcc.ru:20332 http://rpc3.t5.n3.nspcc.ru:20332}" \
     41332
 fi
