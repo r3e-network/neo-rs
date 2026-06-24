@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Neo Rust Node
 # R3E Network <jimmy@r3e.network>
 
-FROM rust:1.85-bullseye AS builder
+FROM rust:1.88-bullseye AS builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
