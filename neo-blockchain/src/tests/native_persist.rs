@@ -128,6 +128,32 @@ fn genesis_persist_seeds_native_state_and_mints() {
         Some(BigInt::from(100_000_000_000i64).to_signed_bytes_le())
     );
 
+    // --- PolicyContract.Initialize seeds (byte-exact) ---
+    // Policy is genesis-active (ActiveIn == null) and its Initialize writes
+    // FeePerByte=1000, ExecFeeFactor=30, StoragePrice=100000 at block 0
+    // (PolicyContract.cs:141-143). These MUST be committed by genesis persist,
+    // otherwise getExecFeeFactor reads empty storage and returns 0 (the
+    // v3.10.0 consistency testnet failure: Policy_getExecFeeFactor).
+    const POLICY_PREFIX_FEE_PER_BYTE: u8 = 10;
+    const POLICY_PREFIX_EXEC_FEE_FACTOR: u8 = 18;
+    const POLICY_PREFIX_STORAGE_PRICE: u8 = 19;
+    let policy_id = neo_native_contracts::PolicyContract::ID;
+    assert_eq!(
+        get(&snapshot, policy_id, vec![POLICY_PREFIX_FEE_PER_BYTE]),
+        Some(BigInt::from(1000i64).to_signed_bytes_le()),
+        "Policy FeePerByte must be initialized at genesis"
+    );
+    assert_eq!(
+        get(&snapshot, policy_id, vec![POLICY_PREFIX_EXEC_FEE_FACTOR]),
+        Some(BigInt::from(30i64).to_signed_bytes_le()),
+        "Policy ExecFeeFactor must be initialized at genesis (v3.10.0 parity)"
+    );
+    assert_eq!(
+        get(&snapshot, policy_id, vec![POLICY_PREFIX_STORAGE_PRICE]),
+        Some(BigInt::from(100_000i64).to_signed_bytes_le()),
+        "Policy StoragePrice must be initialized at genesis"
+    );
+
     // --- The genesis NEO mint: 100M NEO to the standby-validator BFT address ---
     let bft = bft_address(&settings.standby_validators()).unwrap();
     let mut account_key = vec![NEP17_PREFIX_ACCOUNT];
