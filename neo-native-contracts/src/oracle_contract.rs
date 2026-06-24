@@ -522,5 +522,5 @@ impl NativeContract for OracleContract {
 }
 
 #[cfg(test)]
-#[path = "tests/oracle_contract.rs"]
+#[path = "tests/oracle_contract/mod.rs"]
 mod tests;
