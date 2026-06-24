@@ -326,7 +326,35 @@ start_node() {
   for _ in $(seq 1 60); do
     if curl --compressed -sS --max-time 2 -H 'Content-Type: application/json' -d "$json_payload" "$rpc_url" >/dev/null 2>&1; then
       echo "[$network] rpc is ready at $rpc_url"
-      return 0
+      # RPC up does NOT imply the genesis block is persisted yet: the native
+      # Policy/NEO/GAS OnPersist initializers (which write getExecFeeFactor=30,
+      # the NEO committee cache, etc.) run during Blockchain::initialize, and
+      # the HTTP server can accept requests before that completes. Probing a
+      # Policy getter in that window reads an empty store and returns 0
+      # instead of the C# default 30 — a false consistency failure.
+      #
+      # C# guarantees genesis is persisted before any RPC is served (the
+      # LedgerBlockchain ctor runs it synchronously). Mirror that invariant by
+      # waiting for getblockcount >= 1 (genesis block indexed) before returning.
+      local height_payload='{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
+      for _ in $(seq 1 60); do
+        local height
+        height=$(curl --compressed -sS --max-time 2 -H 'Content-Type: application/json' \
+          -d "$height_payload" "$rpc_url" 2>/dev/null | sed -n 's/.*"result"[[:space:]]*:[[:space:]]*\([0-9]\+\).*/\1/p')
+        if [[ "$height" =~ ^[0-9]+$ ]] && [[ "$height" -ge 1 ]]; then
+          echo "[$network] genesis persisted (block count = $height)"
+          return 0
+        fi
+        if ! kill -0 "$pid" >/dev/null 2>&1; then
+          echo "[$network] neo-node exited before genesis was persisted" >&2
+          tail -n 200 "$log_path" || true
+          return 1
+        fi
+        sleep 1
+      done
+      echo "[$network] rpc is up but genesis was not persisted in time (Policy store empty)" >&2
+      tail -n 200 "$log_path" || true
+      return 1
     fi
 
     if ! kill -0 "$pid" >/dev/null 2>&1; then
