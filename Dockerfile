@@ -29,9 +29,15 @@ ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 # workspace intentionally depends on `../neo-vm-rs`.
 WORKDIR /workspace/neo-rs
 
+# The neo-vm-rs sibling crate is a path dependency (../neo-vm-rs). It is not
+# published as a Docker image, so clone it directly into the build context
+# (the same way the CI workflows do). Pinned to the v0.9.0-compatible tag.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git /workspace/neo-vm-rs \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy manifests and workspace crates (kept explicit for better Docker layer caching).
 COPY Cargo.toml Cargo.lock ./
-COPY --from=neo-vm-rs . ../neo-vm-rs/
 COPY neo-primitives/ neo-primitives/
 COPY neo-config/ neo-config/
 COPY neo-crypto/ neo-crypto/
