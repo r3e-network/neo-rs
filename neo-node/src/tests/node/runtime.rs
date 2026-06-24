@@ -43,6 +43,67 @@ fn commit_to_store_flushes_snapshot_writes_to_durable_store() {
     );
 }
 
+/// Reproduces the v3.10.0 consistency testnet failure
+/// (`Policy_getExecFeeFactor`: Python 30 vs local node 0).
+///
+/// The live RPC `invokefunction(Policy.getExecFeeFactor)` path builds its
+/// engine over a FRESH `system.store_cache()` (see Session::new), NOT over
+/// the genesis-persist shared snapshot. So this test runs the genesis
+/// native-persist pipeline into the shared snapshot, commits via
+/// `commit_to_store`, then reads Policy storage through a brand-new
+/// `store_cache` view — exactly the live read path. If the genesis
+/// `ExecFeeFactor=30` write is visible there, the live node must return 30.
+#[test]
+fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
+    use neo_blockchain::native_persist::{chain_state_initialized, genesis_block, persist_block_natives};
+    use neo_blockchain::service_context::SystemContext;
+    use neo_native_contracts::PolicyContract;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_storage::persistence::{StoreCache, store::Store};
+    use neo_storage::{StorageItem, StorageKey};
+    use num_bigint::BigInt;
+
+    neo_native_contracts::install();
+    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let ctx = DaemonContext::new(
+        Arc::new(ProtocolSettings::default()),
+        Arc::clone(&snapshot),
+        store_cache,
+        None,
+        None,
+        None,
+    );
+
+    // Sanity: empty store is not yet initialized.
+    assert!(!chain_state_initialized(&snapshot));
+
+    // Run the genesis native-persist pipeline into the shared snapshot, then
+    // flush to the durable store — exactly handlers.rs::initialize().
+    let settings = ProtocolSettings::default();
+    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    persist_block_natives(Arc::clone(&snapshot), Arc::clone(&genesis), &settings)
+        .expect("genesis persist");
+    ctx.commit_to_store();
+
+    // The live RPC read path: a FRESH store_cache over the same backing store.
+    let read_cache = StoreCache::new_from_store(Arc::clone(&store), false);
+    // Policy ExecFeeFactor prefix (PolicyContract.cs:93 Prefix_ExecFeeFactor = 18).
+    let key = StorageKey::new(PolicyContract::ID, vec![18u8]);
+    let value = read_cache
+        .data_cache()
+        .get(&key)
+        .map(|item| item.value_bytes().into_owned());
+    assert_eq!(
+        value,
+        Some(BigInt::from(30i64).to_signed_bytes_le()),
+        "Policy ExecFeeFactor=30 must be visible through a fresh store_cache \
+         after genesis persist + commit_to_store (the live RPC read path). \
+         This is the v3.10.0 Policy_getExecFeeFactor parity requirement."
+    );
+}
+
 #[test]
 fn daemon_context_indexes_application_executed_notifications() {
     use neo_blockchain::service_context::SystemContext;
