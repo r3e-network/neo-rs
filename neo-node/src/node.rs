@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{info, warn};
 
+mod chain_acc;
 mod config;
 mod context;
 mod indexer_runtime;
@@ -84,6 +85,14 @@ pub struct NodeCli {
     /// Run all preflight checks and exit.
     #[arg(long)]
     pub check_all: bool,
+
+    /// Import blocks from a chain.acc dump file before starting the node.
+    /// The file is the C# Neo block-dump format (u32 count, then repeated
+    /// i32-size + serialized-Block). Blocks are imported with verify=false
+    /// (trusted source, like C# Neo's chain.acc import). After import, the
+    /// node starts normally and continues syncing from the network.
+    #[arg(long, value_name = "PATH")]
+    pub import_chain: Option<PathBuf>,
 }
 
 /// The composed, running node and the handles that keep it alive.
@@ -151,6 +160,27 @@ pub async fn run() -> anyhow::Result<()> {
         mut handles,
     } = running_node;
     info!(target: "neo", "neo-system Node built; blockchain service running");
+
+    // Optional: import blocks from a chain.acc file before starting live sync.
+    if let Some(import_path) = &cli.import_chain {
+        let blockchain = node.blockchain();
+        match chain_acc::import_chain_acc(&blockchain, import_path, false).await {
+            Ok(count) => {
+                info!(
+                    target: "neo",
+                    imported = count,
+                    "chain.acc import completed successfully; continuing with network sync"
+                );
+            }
+            Err(err) => {
+                warn!(
+                    target: "neo",
+                    error = %err,
+                    "chain.acc import failed; continuing with network sync"
+                );
+            }
+        }
+    }
 
     match telemetry::metrics_server_task(&config.telemetry.metrics, Arc::clone(&node)) {
         Ok(Some(task)) => spawn_daemon_task_result(
