@@ -58,7 +58,7 @@ impl DaemonContext {
     /// Returns the best-known live chain tip height reported by peers.
     /// Returns 0 if no peer has reported a height yet.
     pub fn live_tip_height(&self) -> u64 {
-        neo_network::PEER_LIVE_TIP.load(std::sync::atomic::Ordering::Relaxed)
+        neo_runtime::sync_metrics::peer_live_tip()
     }
 
     pub(super) fn set_tokens_tracker(
@@ -106,7 +106,7 @@ impl neo_blockchain::service_context::SystemContext for DaemonContext {
         // Both resume near the live tip. This mirrors C# Neo's chain.acc
         // import which skips verification and indexing during bulk sync.
         let block_index = block.index();
-        let live_tip = neo_network::PEER_LIVE_TIP.load(std::sync::atomic::Ordering::Relaxed);
+        let live_tip = neo_runtime::sync_metrics::peer_live_tip();
         let catching_up = live_tip > 0 && (block_index as u64) + 10000 < live_tip;
         if catching_up {
             return true;

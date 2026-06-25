@@ -341,8 +341,7 @@ impl PeerSession {
                     self.peer_last_block_index = *start_height;
                     // Update the global peer-reported live tip so the daemon's
                     // indexer-gate can detect catch-up vs near-tip operation.
-                    crate::PEER_LIVE_TIP
-                        .fetch_max(*start_height as u64, std::sync::atomic::Ordering::Relaxed);
+                    neo_runtime::sync_metrics::set_peer_live_tip(*start_height as u64);
                 }
                 NodeCapability::TcpServer { port } => {
                     self.listener_port = *port;

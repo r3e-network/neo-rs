@@ -81,7 +81,7 @@ pub(crate) async fn run_live_indexer(
                 // 200+ WITHOUT). Instead, skip the missed events during catch-up
                 // — the indexer will catch up naturally as sync slows near the
                 // live tip, where the event rate drops to ~1 block/15s.
-                let live_tip = neo_network::PEER_LIVE_TIP.load(std::sync::atomic::Ordering::Relaxed);
+                let live_tip = neo_runtime::sync_metrics::peer_live_tip();
                 let our_height = match blockchain.get_height().await {
                     Ok(h) => h as u64,
                     Err(_) => 0,

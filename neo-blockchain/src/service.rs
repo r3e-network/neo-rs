@@ -142,10 +142,22 @@ impl BlockchainService {
     /// on the service struct; the loop itself is just
     /// `while let Some(cmd) = self.cmd_rx.recv().await`, expressed as a normal
     /// `async fn` over typed channels.
+    ///
+    /// After processing the first command, drains ALL pending commands in the
+    /// channel without awaiting between them. This is critical for sync
+    /// throughput: when 500+ blocks arrive in a batch, processing them
+    /// one-at-a-time with an `await` yield between each causes the unverified
+    /// block cache to overflow and drop blocks. Batching the drain keeps the
+    /// cache from filling and sustains network-speed processing.
     pub async fn run(mut self) {
         tracing::debug!(target: "neo", "blockchain service run loop started");
         while let Some(cmd) = self.cmd_rx.recv().await {
             self.dispatch(cmd).await;
+            // Drain all remaining pending commands without yielding to the
+            // runtime — keeps the pipeline full during catch-up bursts.
+            while let Ok(cmd) = self.cmd_rx.try_recv() {
+                self.dispatch(cmd).await;
+            }
         }
         tracing::debug!(target: "neo", "blockchain service run loop exited");
     }

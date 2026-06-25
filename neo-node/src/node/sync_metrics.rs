@@ -10,11 +10,9 @@
 /// Render sync metrics as Prometheus-format text.
 pub fn render_prometheus() -> String {
     use neo_runtime::sync_metrics as m;
-    use neo_network::PEER_LIVE_TIP;
-    use std::sync::atomic::Ordering;
 
     let height = m::height();
-    let peer_tip = PEER_LIVE_TIP.load(Ordering::Relaxed);
+    let peer_tip = m::peer_live_tip();
     let blocks = m::blocks_persisted();
 
     format!(

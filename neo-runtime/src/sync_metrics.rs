@@ -7,6 +7,24 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Global best-known live chain tip height reported by connected peers.
+/// Set from the network layer (neo-network session) when peers report their
+/// chain height in the version handshake. Read by the blockchain service to
+/// gate expensive operations (witness verification, indexer, StateService MPT)
+/// during catch-up.
+static PEER_LIVE_TIP: AtomicU64 = AtomicU64::new(0);
+
+/// Update the global peer-reported live tip height. Called from the network
+/// layer when a peer reports its chain height via the version handshake.
+pub fn set_peer_live_tip(height: u64) {
+    PEER_LIVE_TIP.fetch_max(height, Ordering::Relaxed);
+}
+
+/// Read the global peer-reported live tip height.
+pub fn peer_live_tip() -> u64 {
+    PEER_LIVE_TIP.load(Ordering::Relaxed)
+}
+
 static BLOCKS_PERSISTED: AtomicU64 = AtomicU64::new(0);
 static HEIGHT: AtomicU64 = AtomicU64::new(0);
 static AVG_TOTAL_US: AtomicU64 = AtomicU64::new(0);

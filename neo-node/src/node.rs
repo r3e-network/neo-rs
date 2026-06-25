@@ -583,7 +583,7 @@ async fn build_node(
         // (indexes all transaction execution results). During catch-up it
         // dominates sync time (measured: 25 blocks/min WITH vs 200+ WITHOUT).
         // Gate it: only spawn when the node starts near the live tip.
-        let peer_tip = neo_network::PEER_LIVE_TIP.load(std::sync::atomic::Ordering::Relaxed);
+        let peer_tip = neo_runtime::sync_metrics::peer_live_tip();
         // Start the indexer if the node is resuming from a non-zero height
         // (already synced, just catching up a small gap). On a cold store
         // (durable_tip=0) the node will sync millions of blocks; defer the

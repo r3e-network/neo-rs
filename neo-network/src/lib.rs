@@ -89,11 +89,6 @@ pub mod handle;
 pub mod local_identity;
 pub mod local_node;
 pub mod peer_id;
-
-/// Global best-known live chain tip height reported by connected peers.
-/// Updated from the remote-node session when peers send their version/start_height.
-/// Used by the daemon (neo-node) to gate expensive indexer handlers during catch-up.
-pub static PEER_LIVE_TIP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub mod peer_registry;
 pub mod proto;
 pub mod remote_node;
