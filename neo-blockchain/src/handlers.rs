@@ -475,15 +475,10 @@ impl BlockchainService {
         }
 
         // Flush the block's native-persist writes through to the durable store.
-        // During catch-up, batch the durable flush every 2000 blocks instead of
-        // once per block — the in-memory snapshot reflects every block immediately,
-        // and the on-disk tip catches up periodically. This eliminates per-block
-        // RocksDB write latency from the sync critical path.
-        static COMMIT_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-        let count = COMMIT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        if count % 2000 == 0 {
-            self.system.commit_to_store();
-        }
+        // Per-block commit is memory-safe (no unbounded DataCache growth) and
+        // with fast-sync store mode (WAL disabled) the RocksDB write is only
+        // ~17µs — negligible compared to the 0.5ms native-contract persist.
+        self.system.commit_to_store();
         let after_commit = wall_start.elapsed();
         self.system.block_committed(block.as_ref());
 

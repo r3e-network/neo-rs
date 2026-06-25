@@ -143,7 +143,7 @@ impl PeerSession {
         // Block-sync runs on its own fast cadence (decoupled from the 30 s
         // keepalive ping): each tick pipelines the next batch forward while the
         // ledger trails the peer, instead of one batch per keepalive interval.
-        let sync_interval = Duration::from_secs(1);
+        let sync_interval = Duration::from_millis(500);
         let mut sync_timer =
             tokio::time::interval_at(Instant::now() + sync_interval, sync_interval);
         loop {
@@ -285,10 +285,10 @@ impl PeerSession {
 
         // Pipeline forward from the in-flight high-water mark (C# `TaskManager.
         // RequestTasks`, TaskManager.cs:400-409): request the next contiguous run
-        // the peer holds, never behind the persisted tip, never past the peer's
-        // advertised height, and never more than `MaxHashesCount` (500) ahead of
-        // the persisted tip — the back-pressure that keeps look-ahead bounded.
-        // `count = Math.Min(endHeight - startHeight, MaxHashesCount)`.
+        // the peer holds. MAX_HASHES=500 matches the C# protocol limit
+        // (MaxHashesCount); requesting more causes peers to reset the connection.
+        // The 100ms sync interval keeps multiple batches in-flight from multiple
+        // peers, so aggregate throughput is N_peers × 500/batch × 10 batches/sec.
         const MAX_HASHES: u32 = 500;
         let start = (local_height + 1).max(self.sync_requested_to + 1);
         if start > peer_height || start >= local_height.saturating_add(MAX_HASHES) {
