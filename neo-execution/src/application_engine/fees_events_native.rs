@@ -262,11 +262,17 @@ impl ApplicationEngine {
                 self.add_cpu_fee(method_meta.cpu_fee)?;
             }
             if method_meta.storage_fee != 0 {
-                let storage_fee = method_meta
+                // C# NativeContract.Invoke: AddFee(StoragePrice * StorageFee)
+                // where AddFee takes picoGas directly. StoragePrice *
+                // StorageFee is already in the correct pico unit (e.g.
+                // 100000 * 50 = 5,000,000 pico). Using add_fee_datoshi here
+                // would multiply by FEE_FACTOR again (5M * 10000 = 50B pico),
+                // overcharging 10000x. Use add_fee_pico to match C# exactly.
+                let storage_fee_pico = method_meta
                     .storage_fee
                     .checked_mul(i64::from(self.storage_price))
                     .ok_or_else(|| CoreError::invalid_operation("Native storage fee overflow"))?;
-                self.add_fee_datoshi(storage_fee)?;
+                self.add_fee_pico(storage_fee_pico)?;
             }
         }
 
