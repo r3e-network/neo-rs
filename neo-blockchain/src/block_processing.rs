@@ -19,8 +19,8 @@ use tracing::{debug, error, warn};
 use crate::internal::UnverifiedBlock;
 use crate::service::BlockchainService;
 
-const DRAIN_BATCH_SIZE: usize = 50;
-const MAX_UNVERIFIED_CACHE_SIZE: usize = 20_000;
+const DRAIN_BATCH_SIZE: usize = 500;
+const MAX_UNVERIFIED_CACHE_SIZE: usize = 50_000;
 
 impl BlockchainService {
     pub(crate) fn park_unverified_block(
@@ -30,12 +30,27 @@ impl BlockchainService {
         pre_verified: bool,
     ) -> bool {
         if self.unverified_block_count() >= MAX_UNVERIFIED_CACHE_SIZE {
-            warn!(
-                target: "neo",
-                index = block.index(),
-                "unverified block cache is full; dropping future block"
-            );
-            return false;
+            // Cache is full. Clear the oldest entries (highest heights) to make
+            // room — this prevents a permanent stall where the cache is full of
+            // future blocks that can't be processed because the node is waiting
+            // for a specific missing block. The cleared blocks will be
+            // re-requested by the network layer's sync timer.
+            let mut cache = self.unverified_blocks.lock();
+            let count_before = cache.values().map(|v| v.len()).sum::<usize>();
+            if count_before >= MAX_UNVERIFIED_CACHE_SIZE {
+                // Drop the top 25% of entries (highest block heights).
+                let keys_to_drop: Vec<u32> = cache.keys().rev().take(count_before / 4).copied().collect();
+                for k in keys_to_drop {
+                    cache.remove(&k);
+                }
+                let dropped = count_before - cache.values().map(|v| v.len()).sum::<usize>();
+                warn!(
+                    target: "neo",
+                    index = block.index(),
+                    dropped,
+                    "unverified block cache overflow; evicted oldest 25% to prevent permanent stall"
+                );
+            }
         }
 
         let index = block.index();
