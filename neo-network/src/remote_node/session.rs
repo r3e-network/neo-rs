@@ -277,8 +277,24 @@ impl PeerSession {
             self.sync_stall_ticks = 0;
             self.sync_last_local_height = local_height;
         }
-        const STALL_LIMIT: u32 = 5;
-        if self.sync_stall_ticks >= STALL_LIMIT {
+        // After STALL_LIMIT ticks with no progress, reset the high-water mark
+        // to the current tip so missing blocks get re-requested. Also reset
+        // when the back-pressure window is exhausted (sync_requested_to is far
+        // ahead of local_height but no new blocks have arrived — the requested
+        // range was lost or evicted from the cache).
+        const STALL_LIMIT: u32 = 3;
+        if self.sync_stall_ticks >= STALL_LIMIT
+            || self.sync_requested_to > local_height + MAX_HASHES_AHEAD
+        {
+            if self.sync_requested_to > local_height {
+                debug!(
+                    target: "neo_network",
+                    local_height,
+                    requested_to = self.sync_requested_to,
+                    stall_ticks = self.sync_stall_ticks,
+                    "resetting sync cursor to re-request missing blocks"
+                );
+            }
             self.sync_requested_to = local_height;
             self.sync_stall_ticks = 0;
         }
@@ -290,6 +306,11 @@ impl PeerSession {
         // The 100ms sync interval keeps multiple batches in-flight from multiple
         // peers, so aggregate throughput is N_peers × 500/batch × 10 batches/sec.
         const MAX_HASHES: u32 = 500;
+        /// How far ahead of local_height the sync cursor can be before we
+        /// reset it. If sync_requested_to is more than this many blocks ahead
+        /// of the persisted tip, the requested range was likely lost (evicted
+        /// from cache, peer didn't respond, etc.) — reset and re-request.
+        const MAX_HASHES_AHEAD: u32 = 1000;
         let start = (local_height + 1).max(self.sync_requested_to + 1);
         if start > peer_height || start >= local_height.saturating_add(MAX_HASHES) {
             return Ok(());
