@@ -51,3 +51,6 @@ test_results/
 /test_real_connection
 /test_corrected_neo3
 /test_corrected_neo3_final
+
+# Local sync checkpoints created by scripts/checkpoint.sh
+checkpoints/
