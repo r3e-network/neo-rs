@@ -8,6 +8,15 @@ mod views;
 pub(crate) use views::CachedCommittee;
 pub(super) use views::{CandidateState, NeoAccountStateView};
 
+/// Process-global memoization for the deserialized committee, keyed by the exact
+/// `Prefix_Committee` storage bytes. A pure function of those bytes (same bytes
+/// always deserialize to the same members), so it is correct across snapshots,
+/// heights, and reverts. Eliminates the per-block EC-point decompression of the
+/// committee pubkeys on the hot path. See [`NeoToken::read_committee_with_votes`].
+static COMMITTEE_DESERIALIZE_CACHE: std::sync::Mutex<
+    Option<(Vec<u8>, Vec<(ECPoint, BigInt)>)>,
+> = std::sync::Mutex::new(None);
+
 impl NeoToken {
     /// C# `GetRegisterPrice` = `(long)(BigInteger)snapshot[_registerPrice]`.
     pub(super) fn register_price(&self, snapshot: &DataCache) -> CoreResult<i64> {
@@ -248,14 +257,38 @@ impl NeoToken {
         let item = snapshot.get(&key).ok_or_else(|| {
             CoreError::invalid_operation("NeoToken committee cache is not initialized")
         })?;
+        let raw = item.value_bytes();
+
+        // Memoize the deserialized committee keyed by the exact stored bytes.
+        // `read_committee_with_votes` is on the per-block hot path (GasToken
+        // OnPersist primary reward, extensible-witness whitelist), and each
+        // deserialization EC-point-decompresses all committee pubkeys — the
+        // single dominant CPU cost during catch-up. The committee bytes only
+        // change on a refresh block (every `committee_count` blocks), so this is
+        // a pure function of the bytes (same bytes => same members): correct
+        // across snapshots/heights/reverts, mirroring C#'s in-memory committee
+        // cache (`GetCommitteeFromCache`).
+        {
+            let cache = COMMITTEE_DESERIALIZE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((cached_bytes, cached_members)) = cache.as_ref() {
+                if cached_bytes.as_slice() == raw.as_ref() {
+                    return Ok(cached_members.clone());
+                }
+            }
+        }
+
         let limits = ExecutionEngineLimits::default();
         let decoded = BinarySerializer::deserialize_stack_value_with_limits(
-            &item.value_bytes(),
+            &raw,
             limits.max_item_size as usize,
             limits.max_stack_size as usize,
         )
         .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
-        Ok(CachedCommittee::from_stack_value(decoded)?.into_members())
+        let members = CachedCommittee::from_stack_value(decoded)?.into_members();
+
+        let mut cache = COMMITTEE_DESERIALIZE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        *cache = Some((raw.into_owned(), members.clone()));
+        Ok(members)
     }
 
     /// Reads only the cached committee public keys, in stored order.
@@ -414,7 +447,7 @@ impl NeoToken {
     pub(super) fn registered_candidate_entries(
         &self,
         snapshot: &DataCache,
-    ) -> CoreResult<Vec<(StorageKey, StorageItem)>> {
+    ) -> CoreResult<Vec<(ECPoint, BigInt, StorageKey, StorageItem)>> {
         let prefix = Self::candidate_prefix_key();
         let mut out = Vec::new();
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
@@ -425,15 +458,19 @@ impl NeoToken {
             let Ok(pubkey) = ECPoint::from_bytes(&key_bytes[1..34]) else {
                 continue;
             };
-            let (registered, _votes) = Self::decode_candidate_state(&item.value_bytes())?;
+            // Decode the pubkey + votes ONCE here and carry them through, so
+            // `read_registered_candidates` (the committee/getCandidates path) does
+            // not EC-point-decompress every candidate a second time.
+            let (registered, votes) = Self::decode_candidate_state(&item.value_bytes())?;
             if registered {
-                let account =
-                    UInt160::from_script(&Contract::create_signature_redeem_script(pubkey));
+                let account = UInt160::from_script(&Contract::create_signature_redeem_script(
+                    pubkey.clone(),
+                ));
                 if snapshot
                     .get(&crate::PolicyContract::blocked_account_key(&account))
                     .is_none()
                 {
-                    out.push((key, item));
+                    out.push((pubkey, votes, key, item));
                 }
             }
         }
@@ -446,15 +483,11 @@ impl NeoToken {
         &self,
         snapshot: &DataCache,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>> {
-        self.registered_candidate_entries(snapshot)?
+        Ok(self
+            .registered_candidate_entries(snapshot)?
             .into_iter()
-            .map(|(key, item)| {
-                let pubkey = ECPoint::from_bytes(&key.key()[1..34])
-                    .map_err(|e| CoreError::invalid_data(format!("candidate key: {e}")))?;
-                let (_registered, votes) = Self::decode_candidate_state(&item.value_bytes())?;
-                Ok((pubkey, votes))
-            })
-            .collect()
+            .map(|(pubkey, votes, _key, _item)| (pubkey, votes))
+            .collect())
     }
 
     /// C# `RegisterInternal` (NeoToken.cs:411-423), shared by `registerCandidate`

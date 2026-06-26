@@ -209,7 +209,11 @@ impl NeoToken {
                 // length 1 — each element is Struct[33-byte pubkey, Votes]. The
                 // 4-byte iterator id is decoded back into an InteropInterface
                 // by the dispatcher.
-                let results = self.registered_candidate_entries(&engine.snapshot_cache())?;
+                let results = self
+                    .registered_candidate_entries(&engine.snapshot_cache())?
+                    .into_iter()
+                    .map(|(_pubkey, _votes, key, item)| (key, item))
+                    .collect::<Vec<_>>();
                 let iterator_id = engine
                     .create_storage_iterator_with_options(
                         results,

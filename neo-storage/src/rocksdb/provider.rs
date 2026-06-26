@@ -257,9 +257,15 @@ pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: boo
     options.set_level_zero_stop_writes_trigger(48);
     options.set_max_total_wal_size(512 * 1024 * 1024); // 512MB WAL cap
 
-    // Configure block cache and bloom filters
-    let cache_size = config.cache_size.unwrap_or(256 * 1024 * 1024);
-    options.optimize_for_point_lookup((cache_size / 2) as u64);
+    // Configure block cache and bloom filters. A larger default block cache
+    // keeps hot decompressed SST blocks (account balances, ledger records,
+    // candidate entries) resident, cutting the SST re-reads + LZ4 decompression
+    // that dominated read self-time during catch-up sync. `optimize_for_point_lookup`
+    // was removed: it created a throwaway block cache and a hash data-block index
+    // that the explicit `set_block_based_table_factory` below overrode anyway,
+    // while leaving scan-unfriendly memtable residue (the node also does prefix
+    // scans for committee/voter-reward enumeration).
+    let cache_size = config.cache_size.unwrap_or(1024 * 1024 * 1024);
     let cache = Cache::new_lru_cache(cache_size);
     let row_cache_size = (cache_size / 4).clamp(64 * 1024 * 1024, 512 * 1024 * 1024);
     let row_cache = Cache::new_lru_cache(row_cache_size);
