@@ -448,7 +448,13 @@ impl BlockchainService {
         // verifies — matching C#'s behavior where live blocks are fully verified.
         if !pre_verified {
             let live_tip = neo_runtime::sync_metrics::peer_live_tip();
-            let near_tip = live_tip > 0 && (index as u64) + 10000 >= live_tip;
+            // Only skip witness verification when we KNOW we are far behind the
+            // live tip (bulk catch-up). An unknown tip (no peer has reported a
+            // height yet) is NOT evidence of being far behind, so verify
+            // conservatively rather than accepting an unverified consensus
+            // witness. `set_peer_live_tip` is populated from the P2P version
+            // handshake, so this only affects the brief pre-handshake window.
+            let near_tip = live_tip == 0 || (index as u64) + 10000 >= live_tip;
             if near_tip {
                 self.verify_header_against_store(block.as_ref())?;
             } else {
