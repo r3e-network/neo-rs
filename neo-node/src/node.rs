@@ -260,14 +260,39 @@ pub async fn run() -> anyhow::Result<()> {
         handles.extend(observability.spawn_heartbeat_tasks(Arc::clone(&node)));
     }
 
-    if let Err(err) = tokio::signal::ctrl_c().await {
-        warn!(target: "neo", error = %err, "ctrl-c handler failed; falling back to pending forever");
-        if let Some(observability) = &observability {
-            observability.report_runtime_error("shutdown_signal", &err);
+    // Wait for a shutdown signal, handling SIGTERM as well as Ctrl-C (SIGINT)
+    // so `kill`/`pkill`, Docker, and systemd all stop the node gracefully. The
+    // graceful path drops the RocksDB handle, which flushes the memtable to
+    // disk; an ungraceful SIGTERM kill would otherwise leave recent blocks only
+    // in the un-fsync'd memtable, so the next start would resume well behind the
+    // last in-memory height.
+    #[cfg(unix)]
+    let shutdown_signalled: std::io::Result<&str> = {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut sigterm) => tokio::select! {
+                res = tokio::signal::ctrl_c() => res.map(|()| "Ctrl-C"),
+                _ = sigterm.recv() => Ok("SIGTERM"),
+            },
+            Err(_) => tokio::signal::ctrl_c().await.map(|()| "Ctrl-C"),
         }
-        std::future::pending::<()>().await;
+    };
+    #[cfg(not(unix))]
+    let shutdown_signalled: std::io::Result<&str> =
+        tokio::signal::ctrl_c().await.map(|()| "Ctrl-C");
+
+    match shutdown_signalled {
+        Ok(signal_name) => {
+            info!(target: "neo", signal = signal_name, "shutdown signal received; shutting down")
+        }
+        Err(err) => {
+            warn!(target: "neo", error = %err, "shutdown-signal handler failed; falling back to pending forever");
+            if let Some(observability) = &observability {
+                observability.report_runtime_error("shutdown_signal", &err);
+            }
+            std::future::pending::<()>().await;
+        }
     }
-    info!(target: "neo", "Ctrl-C received; shutting down");
 
     for handle in handles {
         handle.abort();
