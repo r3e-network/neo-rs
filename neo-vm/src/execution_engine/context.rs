@@ -76,10 +76,9 @@ impl ExecutionEngine {
         // Unload the context
         self.unload_context(&mut context)?;
 
-        // Check for zero-referenced items and clean them up. The return value is the count
-        // of items checked, which is informational and doesn't require handling.
-        let _ = self.reference_counter.check_zero_referred();
-
+        // C# v3.10.0 has no zero-referred GC sweep: the recursive stack-reference
+        // count is exact and self-maintaining as stack/slot references are
+        // released during unload_context.
         Ok(context)
     }
 

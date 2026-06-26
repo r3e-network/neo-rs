@@ -3,7 +3,7 @@
 //! This module provides the Array stack item implementation used in the Neo VM.
 
 use crate::error::{VmError, VmResult};
-use crate::reference_counter::{CompoundParent, ReferenceCounter};
+use crate::reference_counter::{CompoundId, ReferenceCounter};
 use crate::stack_item::StackItem;
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::next_stack_item_id;
@@ -40,6 +40,9 @@ impl Array {
             }
         }
 
+        // C# v3.10.0: constructing a compound does NOT reference-count its
+        // children — they are counted via the AddStackReference recursion only
+        // when the compound first becomes stack-referenced (e.g. on Push).
         let array = Self {
             inner: Arc::new(Mutex::new(ArrayInner {
                 items,
@@ -48,10 +51,6 @@ impl Array {
                 is_read_only: false,
             })),
         };
-
-        if let Some(rc) = array.reference_counter() {
-            array.add_reference_for_items(&rc)?;
-        }
 
         Ok(array)
     }
@@ -121,15 +120,24 @@ impl Array {
 
         Self::ensure_mutable(&inner)?;
 
-        if let Some(rc) = &inner.reference_counter {
+        // C# SETITEM (JumpTable.Compound): gated on the array being stack-
+        // referenced — release the replaced element, store, then add the new one.
+        let id = inner.id;
+        let rc_opt = inner.reference_counter.clone();
+        if let Some(rc) = &rc_opt {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
-            let parent = CompoundParent::Array(inner.id);
-            rc.remove_compound_reference(&inner.items[index], parent);
-            rc.add_compound_reference(&item, parent);
+            let referenced = rc.is_stack_referenced_id(CompoundId::Array(id));
+            if referenced {
+                rc.remove_stack_reference(&inner.items[index]);
+            }
+            inner.items[index] = item;
+            if referenced {
+                rc.add_stack_reference(&inner.items[index], 1);
+            }
+        } else {
+            inner.items[index] = item;
         }
-
-        inner.items[index] = item;
         Ok(())
     }
 
@@ -138,10 +146,15 @@ impl Array {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
 
-        if let Some(rc) = &inner.reference_counter {
+        // C# APPEND: `array.Add(item); if (array.IsStackReferenced) AddStackReference(item);`
+        let id = inner.id;
+        let rc_opt = inner.reference_counter.clone();
+        if let Some(rc) = &rc_opt {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
-            rc.add_compound_reference(&item, CompoundParent::Array(inner.id));
+            if rc.is_stack_referenced_id(CompoundId::Array(id)) {
+                rc.add_stack_reference(&item, 1);
+            }
         }
 
         inner.items.push(item);
@@ -157,8 +170,12 @@ impl Array {
             .pop()
             .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))?;
 
+        // C# POPITEM: `if (x.IsStackReferenced) RemoveStackReference(item);`
+        let id = inner.id;
         if let Some(rc) = &inner.reference_counter {
-            rc.remove_compound_reference(&item, CompoundParent::Array(inner.id));
+            if rc.is_stack_referenced_id(CompoundId::Array(id)) {
+                rc.remove_stack_reference(&item);
+            }
         }
 
         Ok(item)
@@ -180,10 +197,13 @@ impl Array {
     pub fn clear(&self) -> VmResult<()> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Array(inner.id);
-            for item in &inner.items {
-                rc.remove_compound_reference(item, parent);
+        // C# CLEARITEMS: `if (x.IsStackReferenced) foreach sub RemoveStackReference(sub); x.Clear();`
+        let id = inner.id;
+        if let Some(rc) = inner.reference_counter.clone() {
+            if rc.is_stack_referenced_id(CompoundId::Array(id)) {
+                for item in &inner.items {
+                    rc.remove_stack_reference(item);
+                }
             }
         }
         inner.items.clear();
@@ -215,10 +235,14 @@ impl Array {
 
         Self::ensure_mutable(&inner)?;
 
-        if let Some(rc) = &inner.reference_counter {
+        let id = inner.id;
+        let rc_opt = inner.reference_counter.clone();
+        if let Some(rc) = &rc_opt {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
-            rc.add_compound_reference(&item, CompoundParent::Array(inner.id));
+            if rc.is_stack_referenced_id(CompoundId::Array(id)) {
+                rc.add_stack_reference(&item, 1);
+            }
         }
 
         inner.items.insert(index, item);
@@ -237,8 +261,12 @@ impl Array {
         Self::ensure_mutable(&inner)?;
         let removed = inner.items.remove(index);
 
+        // C# REMOVE: `if (array.IsStackReferenced) RemoveStackReference(item);`
+        let id = inner.id;
         if let Some(rc) = &inner.reference_counter {
-            rc.remove_compound_reference(&removed, CompoundParent::Array(inner.id));
+            if rc.is_stack_referenced_id(CompoundId::Array(id)) {
+                rc.remove_stack_reference(&removed);
+            }
         }
 
         Ok(removed)
@@ -285,16 +313,6 @@ impl Array {
         }
     }
 
-    fn add_reference_for_items(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let inner = self.inner.lock();
-        let parent = CompoundParent::Array(inner.id);
-        for item in &inner.items {
-            Self::validate_compound_reference(rc, item)?;
-            rc.add_compound_reference(item, parent);
-        }
-        Ok(())
-    }
-
     fn validate_compound_reference(rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
         match item {
             StackItem::Array(inner) => match inner.reference_counter() {
@@ -339,7 +357,8 @@ impl Array {
             inner.reference_counter = Some(rc.clone());
         }
 
-        self.add_reference_for_items(rc)?;
+        // No reference counting on attach: children are counted via the
+        // AddStackReference recursion when this compound becomes stack-referenced.
         Ok(())
     }
 }

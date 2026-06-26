@@ -5,7 +5,7 @@
 //! This module provides the Map stack item implementation used in the Neo VM.
 
 use crate::error::{VmError, VmResult};
-use crate::reference_counter::{CompoundParent, ReferenceCounter};
+use crate::reference_counter::{CompoundId, ReferenceCounter};
 use crate::stack_item::StackItem;
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::VmOrderedDictionary;
@@ -46,6 +46,7 @@ impl Map {
             }
         }
 
+        // C# v3.10.0: no reference counting on construction (see Array::new).
         let map = Self {
             inner: Arc::new(Mutex::new(MapInner {
                 items,
@@ -54,10 +55,6 @@ impl Map {
                 is_read_only: false,
             })),
         };
-
-        if let Some(rc) = map.reference_counter() {
-            map.add_reference_for_entries(&rc)?;
-        }
 
         Ok(map)
     }
@@ -130,18 +127,21 @@ impl Map {
         Self::ensure_mutable(&inner)?;
         self.validate_key(&key)?;
 
-        if let Some(rc) = &inner.reference_counter {
+        // C# SETITEM (map): gated on IsStackReferenced — a new key gains a
+        // reference, a replaced value loses its old reference, and the new value
+        // always gains one.
+        let id = inner.id;
+        let rc_opt = inner.reference_counter.clone();
+        if let Some(rc) = &rc_opt {
             value.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &value)?;
-
-            let parent = CompoundParent::Map(inner.id);
-            if let Some(old_value) = inner.items.get(&key) {
-                rc.remove_compound_reference(old_value, parent);
-            } else {
-                rc.add_compound_reference(&key, parent);
+            if rc.is_stack_referenced_id(CompoundId::Map(id)) {
+                match inner.items.get(&key) {
+                    None => rc.add_stack_reference(&key, 1),
+                    Some(old_value) => rc.remove_stack_reference(old_value),
+                }
+                rc.add_stack_reference(&value, 1);
             }
-
-            rc.add_compound_reference(&value, parent);
         }
 
         inner.items.insert(key, value);
@@ -159,10 +159,14 @@ impl Map {
             .remove(key)
             .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
 
+        // C# REMOVE (map): `if (old != null && map.IsStackReferenced) {
+        // RemoveStackReference(key); RemoveStackReference(old); }`
+        let id = inner.id;
         if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Map(inner.id);
-            rc.remove_compound_reference(key, parent);
-            rc.remove_compound_reference(&value, parent);
+            if rc.is_stack_referenced_id(CompoundId::Map(id)) {
+                rc.remove_stack_reference(key);
+                rc.remove_stack_reference(&value);
+            }
         }
 
         Ok(value)
@@ -190,11 +194,15 @@ impl Map {
     pub fn clear(&self) -> VmResult<()> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Map(inner.id);
-            for (key, value) in inner.items.iter() {
-                rc.remove_compound_reference(key, parent);
-                rc.remove_compound_reference(value, parent);
+        // C# CLEARITEMS: when stack-referenced, release every sub-item
+        // (Map.SubItems = Keys.Concat(Values)).
+        let id = inner.id;
+        if let Some(rc) = inner.reference_counter.clone() {
+            if rc.is_stack_referenced_id(CompoundId::Map(id)) {
+                for (key, value) in inner.items.iter() {
+                    rc.remove_stack_reference(key);
+                    rc.remove_stack_reference(value);
+                }
             }
         }
         inner.items.clear();
@@ -247,17 +255,6 @@ impl Map {
         } else {
             Ok(())
         }
-    }
-
-    fn add_reference_for_entries(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let inner = self.inner.lock();
-        let parent = CompoundParent::Map(inner.id);
-        for (key, value) in inner.items.iter() {
-            Self::validate_compound_reference(rc, value)?;
-            rc.add_compound_reference(key, parent);
-            rc.add_compound_reference(value, parent);
-        }
-        Ok(())
     }
 
     fn validate_key(&self, key: &StackItem) -> VmResult<()> {
@@ -319,7 +316,7 @@ impl Map {
             inner.reference_counter = Some(rc.clone());
         }
 
-        self.add_reference_for_entries(rc)?;
+        // No reference counting on attach (see Array::attach_reference_counter).
         Ok(())
     }
 }

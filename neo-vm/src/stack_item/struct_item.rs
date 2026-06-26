@@ -3,7 +3,7 @@
 //! This module provides the Struct stack item implementation used in the Neo VM.
 
 use crate::error::{VmError, VmResult};
-use crate::reference_counter::{CompoundParent, ReferenceCounter};
+use crate::reference_counter::{CompoundId, ReferenceCounter};
 use crate::stack_item::StackItem;
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::next_stack_item_id;
@@ -41,6 +41,7 @@ impl Struct {
             }
         }
 
+        // C# v3.10.0: no reference counting on construction (see Array::new).
         let structure = Self {
             inner: Arc::new(Mutex::new(StructInner {
                 items,
@@ -49,10 +50,6 @@ impl Struct {
                 is_read_only: false,
             })),
         };
-
-        if let Some(rc) = structure.reference_counter() {
-            structure.add_reference_for_items(&rc)?;
-        }
 
         Ok(structure)
     }
@@ -125,15 +122,22 @@ impl Struct {
         }
 
         Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
+        let id = inner.id;
+        let rc_opt = inner.reference_counter.clone();
+        if let Some(rc) = &rc_opt {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
-            let parent = CompoundParent::Struct(inner.id);
-            rc.remove_compound_reference(&inner.items[index], parent);
-            rc.add_compound_reference(&item, parent);
+            let referenced = rc.is_stack_referenced_id(CompoundId::Struct(id));
+            if referenced {
+                rc.remove_stack_reference(&inner.items[index]);
+            }
+            inner.items[index] = item;
+            if referenced {
+                rc.add_stack_reference(&inner.items[index], 1);
+            }
+        } else {
+            inner.items[index] = item;
         }
-
-        inner.items[index] = item;
         Ok(())
     }
 
@@ -141,10 +145,14 @@ impl Struct {
     pub fn push(&self, mut item: StackItem) -> VmResult<()> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
+        let id = inner.id;
+        let rc_opt = inner.reference_counter.clone();
+        if let Some(rc) = &rc_opt {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
-            rc.add_compound_reference(&item, CompoundParent::Struct(inner.id));
+            if rc.is_stack_referenced_id(CompoundId::Struct(id)) {
+                rc.add_stack_reference(&item, 1);
+            }
         }
         inner.items.push(item);
         Ok(())
@@ -159,8 +167,11 @@ impl Struct {
             .pop()
             .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))?;
 
+        let id = inner.id;
         if let Some(rc) = &inner.reference_counter {
-            rc.remove_compound_reference(&item, CompoundParent::Struct(inner.id));
+            if rc.is_stack_referenced_id(CompoundId::Struct(id)) {
+                rc.remove_stack_reference(&item);
+            }
         }
 
         Ok(item)
@@ -178,8 +189,11 @@ impl Struct {
         Self::ensure_mutable(&inner)?;
         let removed = inner.items.remove(index);
 
+        let id = inner.id;
         if let Some(rc) = &inner.reference_counter {
-            rc.remove_compound_reference(&removed, CompoundParent::Struct(inner.id));
+            if rc.is_stack_referenced_id(CompoundId::Struct(id)) {
+                rc.remove_stack_reference(&removed);
+            }
         }
 
         Ok(removed)
@@ -201,10 +215,12 @@ impl Struct {
     pub fn clear(&self) -> VmResult<()> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
-        if let Some(rc) = &inner.reference_counter {
-            let parent = CompoundParent::Struct(inner.id);
-            for item in &inner.items {
-                rc.remove_compound_reference(item, parent);
+        let id = inner.id;
+        if let Some(rc) = inner.reference_counter.clone() {
+            if rc.is_stack_referenced_id(CompoundId::Struct(id)) {
+                for item in &inner.items {
+                    rc.remove_stack_reference(item);
+                }
             }
         }
         inner.items.clear();
@@ -307,16 +323,6 @@ impl Struct {
         }
     }
 
-    fn add_reference_for_items(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let inner = self.inner.lock();
-        let parent = CompoundParent::Struct(inner.id);
-        for item in &inner.items {
-            Self::validate_compound_reference(rc, item)?;
-            rc.add_compound_reference(item, parent);
-        }
-        Ok(())
-    }
-
     fn validate_compound_reference(rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
         match item {
             StackItem::Array(inner) => match inner.reference_counter() {
@@ -361,7 +367,7 @@ impl Struct {
             inner.reference_counter = Some(rc.clone());
         }
 
-        self.add_reference_for_items(rc)?;
+        // No reference counting on attach (see Array::attach_reference_counter).
         Ok(())
     }
 }

@@ -216,7 +216,7 @@ pub use execution_engine::ExecutionEngine;
 pub use interop_service::InteropService;
 pub use interoperable::{Interoperable, InteroperableError};
 pub use jump_table::JumpTable;
-pub use reference_counter::{CompoundParent, ReferenceCounter};
+pub use reference_counter::{CompoundId, ReferenceCounter};
 pub use rpc_json::StackItemRpcJson;
 pub use script::Script;
 pub use slot::Slot;

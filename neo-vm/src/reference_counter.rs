@@ -1,31 +1,78 @@
-//! Reference counting implementation for the Neo VM.
+//! Reference counting for the Neo VM — the C# v3.10.0 recursive
+//! stack-reference model (`Neo.VM.ReferenceCounter`, neo-vm v3.10.0).
 //!
-//! This module mirrors the behaviour of `Neo.VM.ReferenceCounter` from the C#
-//! codebase as closely as possible without relying on a managed runtime. The
-//! Rust port keeps bookkeeping data in `ReferenceCounterInner` rather than on
-//! the stack items themselves.
+//! The total count moves ONLY through [`ReferenceCounter::add_stack_reference`]
+//! and [`ReferenceCounter::remove_stack_reference`], which recurse into a
+//! compound's sub-items on the `0 <-> count` stack-reference boundary (a
+//! compound's children are counted exactly while the compound is itself
+//! reachable from an evaluation-stack / slot root). There is no parent/child
+//! edge counting and no garbage-collection sweep: a compound whose own
+//! `StackReferences` is non-zero gates per-opcode child mutations, and
+//! [`ReferenceCounter::count`] exceeding `MaxStackSize` is a protocol fault
+//! (`ExecutionEngine.PostExecuteInstruction`).
+//!
+//! The `== count` (add) and `== 0` (remove) recursion guards are what make this
+//! terminate on shared sub-trees and cycles without a Tarjan pass — the count
+//! produced is byte-for-byte the C# v3.10.0 quantity.
 //!
 //! # Thread Safety
 //!
-//! The reference counter uses `parking_lot::Mutex` for thread-safe access
-//! without the risk of mutex poisoning that comes with `std::sync::Mutex`.
+//! Per-compound stack-reference bookkeeping is held in a `parking_lot::Mutex`
+//! so the counter can be shared (`Arc`) across the engine; the running total is
+//! a lock-free atomic so primitive push/pop never touches the map.
 
 use crate::stack_item::StackItem;
-use neo_vm_rs::Tarjan;
 use parking_lot::Mutex;
-use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicIsize, Ordering};
 
-/// Shared state for a reference counter instance.
+/// Identity of a tracked compound. Only Array/Struct/Map participate; `Buffer`
+/// is not a `CompoundType` in v3.10.0 and is never tracked here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum CompoundId {
+    /// An [`crate::stack_item::array::Array`] identified by its stable id.
+    Array(usize),
+    /// A [`crate::stack_item::struct_item::Struct`] identified by its stable id.
+    Struct(usize),
+    /// A [`crate::stack_item::map::Map`] identified by its stable id.
+    Map(usize),
+}
+
+impl CompoundId {
+    /// Returns the compound identity of `item`, or `None` for non-compound items.
+    #[inline]
+    fn from_item(item: &StackItem) -> Option<Self> {
+        match item {
+            StackItem::Array(array) => Some(Self::Array(array.id())),
+            StackItem::Struct(structure) => Some(Self::Struct(structure.id())),
+            StackItem::Map(map) => Some(Self::Map(map.id())),
+            _ => None,
+        }
+    }
+}
+
+/// The sub-items of a compound, in the C# `SubItems` order (Array/Struct = the
+/// list; Map = keys then values, mirroring `Keys.Concat(Values)`).
+#[inline]
+fn compound_sub_items(item: &StackItem) -> Vec<StackItem> {
+    match item {
+        StackItem::Array(array) => array.items(),
+        StackItem::Struct(structure) => structure.items(),
+        StackItem::Map(map) => {
+            let dict = map.items();
+            dict.keys().cloned().chain(dict.values().cloned()).collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
 struct ReferenceCounterState {
-    /// Total reference count — separated from the mutex so that push/pop of
-    /// primitive items (Null, Boolean, Integer, ByteString) can update it with
-    /// a single atomic operation instead of acquiring the mutex.
-    references_count: AtomicUsize,
-    /// Compound-item tracking data, protected by a mutex.
-    tracked: Mutex<TrackedItems>,
+    /// Running total reference count (C# `_referencesCount`). Lock-free so
+    /// primitive push/pop updates avoid the mutex.
+    references_count: AtomicIsize,
+    /// Per-compound stack-reference counts (C# `CompoundType.StackReferences`).
+    stack_references: Mutex<HashMap<CompoundId, isize>>,
 }
 
 impl std::fmt::Debug for ReferenceCounterState {
@@ -39,243 +86,121 @@ impl std::fmt::Debug for ReferenceCounterState {
     }
 }
 
-/// Tracks references to VM stack items.
+/// Tracks references to VM stack items (C# `Neo.VM.ReferenceCounter`).
 #[derive(Clone, Debug)]
 pub struct ReferenceCounter {
     state: Arc<ReferenceCounterState>,
 }
 
 impl ReferenceCounter {
-    /// Creates a new reference counter.
+    /// Creates a new, empty reference counter.
     #[must_use]
     pub fn new() -> Self {
         Self {
             state: Arc::new(ReferenceCounterState {
-                references_count: AtomicUsize::new(0),
-                tracked: Mutex::new(TrackedItems::default()),
+                references_count: AtomicIsize::new(0),
+                stack_references: Mutex::new(HashMap::new()),
             }),
         }
     }
 
-    /// Returns the total number of references currently tracked.
+    /// Returns the total number of references currently tracked (C# `Count`).
     #[inline]
     #[must_use]
     pub fn count(&self) -> usize {
-        self.state.references_count.load(Ordering::Relaxed)
+        self.state.references_count.load(Ordering::Relaxed).max(0) as usize
     }
 
     /// Resets the counter to an empty state.
     pub fn clear(&self) {
         self.state.references_count.store(0, Ordering::Relaxed);
-        let mut tracked = self.state.tracked.lock();
-        *tracked = TrackedItems::default();
+        self.state.stack_references.lock().clear();
     }
 
-    /// Adds `count` stack references for the supplied item.
-    #[inline]
+    /// C# `AddStackReference(item, count)`: raises the total by `count` and, for
+    /// a compound, raises its `StackReferences` by `count`; when that compound
+    /// first becomes stack-referenced (`0 -> count`), each sub-item gains one
+    /// stack reference recursively.
     pub fn add_stack_reference(&self, item: &StackItem, count: usize) {
         if count == 0 {
             return;
         }
-        // Always bump the global counter (lock-free).
+        let count = count as isize;
         self.state
             .references_count
             .fetch_add(count, Ordering::Relaxed);
 
-        // Only acquire the mutex when the item is a compound type that needs tracking.
-        if let Some(id) = ItemId::from(item) {
-            let mut tracked = self.state.tracked.lock();
-            let record = tracked.ensure_record(id);
-            record.stack_references += count;
-            tracked.zero_referred.remove(&id);
-        }
-    }
-
-    /// Removes a single stack reference from the supplied item.
-    #[inline]
-    pub fn remove_stack_reference(&self, item: &StackItem) {
-        // Always decrement the global counter (lock-free).
-        self.state.references_count.fetch_sub(1, Ordering::Relaxed);
-
-        // Only acquire the mutex when the item is a compound type that needs tracking.
-        if let Some(id) = ItemId::from(item) {
-            let mut tracked = self.state.tracked.lock();
-            if let Some(record) = tracked.tracked_items.get_mut(&id) {
-                if record.stack_references > 0 {
-                    record.stack_references -= 1;
-                }
-                if record.stack_references == 0 || record.total_references() == 0 {
-                    tracked.zero_referred.insert(id);
+        if let Some(id) = CompoundId::from_item(item) {
+            let recurse = {
+                let mut refs = self.state.stack_references.lock();
+                let entry = refs.entry(id).or_insert(0);
+                *entry += count;
+                // C#: `if (StackReferences == count)` — true only on the first
+                // (`0 -> count`) transition. Drop the lock before recursing
+                // (parking_lot is not re-entrant).
+                *entry == count
+            };
+            if recurse {
+                for sub_item in compound_sub_items(item) {
+                    self.add_stack_reference(&sub_item, 1);
                 }
             }
         }
     }
 
-    /// Adds a parent/child reference relationship.
-    #[inline]
-    pub fn add_reference(&self, item: &StackItem, parent: &StackItem) {
-        if let Some(parent_id) = ItemId::from(parent) {
-            self.add_reference_with_parent_id(item, parent_id);
-        } else {
-            self.state.references_count.fetch_add(1, Ordering::Relaxed);
+    /// C# `RemoveStackReference(item)`: lowers the total by one and, for a
+    /// compound, lowers its `StackReferences`; when that reaches zero each
+    /// sub-item loses one stack reference recursively.
+    pub fn remove_stack_reference(&self, item: &StackItem) {
+        self.state
+            .references_count
+            .fetch_sub(1, Ordering::Relaxed);
+
+        if let Some(id) = CompoundId::from_item(item) {
+            let recurse = {
+                let mut refs = self.state.stack_references.lock();
+                match refs.get_mut(&id) {
+                    Some(entry) => {
+                        *entry -= 1;
+                        // C#: `if (StackReferences == 0)`. Removing the entry at
+                        // zero is equivalent to a stored zero (absent == 0).
+                        if *entry == 0 {
+                            refs.remove(&id);
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    None => false,
+                }
+            };
+            if recurse {
+                for sub_item in compound_sub_items(item) {
+                    self.remove_stack_reference(&sub_item);
+                }
+            }
         }
     }
 
-    /// Removes a previously tracked parent/child reference.
-    #[inline]
-    pub fn remove_reference(&self, item: &StackItem, parent: &StackItem) {
-        if let Some(parent_id) = ItemId::from(parent) {
-            self.remove_reference_with_parent_id(item, parent_id);
-        } else {
-            self.state.references_count.fetch_sub(1, Ordering::Relaxed);
-        }
-    }
-
-    /// Adds an item to the zero-referred set so it can be collected later.
-    #[inline]
-    pub fn add_zero_referred(&self, item: &StackItem) {
-        if let Some(id) = ItemId::from(item) {
-            let mut tracked = self.state.tracked.lock();
-            tracked.ensure_record(id);
-            tracked.zero_referred.insert(id);
-        }
-    }
-
-    /// Processes zero-referred items, matching the behaviour of the C# counter.
+    /// Whether `item` is a compound currently reachable from a stack/slot root
+    /// (C# `CompoundType.IsStackReferenced`). Non-compound items are never
+    /// "stack referenced" in this sense.
     #[inline]
     #[must_use]
-    pub fn check_zero_referred(&self) -> usize {
-        let mut tracked = self.state.tracked.lock();
-        if tracked.zero_referred.is_empty() {
-            return self.state.references_count.load(Ordering::Relaxed);
-        }
-
-        let candidate_filter: HashSet<ItemId> = tracked.zero_referred.drain().collect();
-
-        let mut tarjan = Tarjan::new();
-        for id in tracked.tracked_items.keys() {
-            tarjan.add_vertex(*id);
-        }
-        for (parent_id, record) in &tracked.tracked_items {
-            for (child_id, count) in &record.children {
-                if *count > 0 {
-                    tarjan.add_edge(*parent_id, *child_id);
-                }
-            }
-        }
-
-        let mut components_to_remove: Vec<Vec<ItemId>> = Vec::with_capacity(candidate_filter.len());
-        for component in tarjan.find_components().iter().cloned() {
-            if !component.iter().any(|id| candidate_filter.contains(id)) {
-                continue;
-            }
-
-            let component_set: HashSet<ItemId> = component.iter().copied().collect();
-            let mut keep = false;
-
-            for id in &component {
-                if let Some(record) = tracked.tracked_items.get(id) {
-                    if record.stack_references > 0 {
-                        keep = true;
-                        break;
-                    }
-
-                    if record
-                        .parents
-                        .iter()
-                        .any(|(parent_id, count)| *count > 0 && !component_set.contains(parent_id))
-                    {
-                        keep = true;
-                        break;
-                    }
-                }
-            }
-
-            if !keep {
-                components_to_remove.push(component);
-            }
-        }
-
-        for component in components_to_remove {
-            let component_set: HashSet<ItemId> = component.iter().copied().collect();
-            let mut released_internal = 0usize;
-            let mut external_parent_updates: Vec<(ItemId, ItemId, usize)> =
-                Vec::with_capacity(component.len());
-            let mut external_child_updates: Vec<(ItemId, ItemId, usize)> =
-                Vec::with_capacity(component.len());
-
-            for id in &component {
-                if let Some(record) = tracked.tracked_items.get(id) {
-                    released_internal += record.stack_references;
-
-                    for (parent_id, count) in &record.parents {
-                        if *count == 0 {
-                            continue;
-                        }
-                        if component_set.contains(parent_id) {
-                            released_internal += *count;
-                        } else {
-                            external_parent_updates.push((*parent_id, *id, *count));
-                        }
-                    }
-
-                    for (child_id, count) in &record.children {
-                        if *count == 0 {
-                            continue;
-                        }
-                        if !component_set.contains(child_id) {
-                            external_child_updates.push((*child_id, *id, *count));
-                        }
-                    }
-                }
-            }
-
-            for (parent_id, child_id, count) in external_parent_updates {
-                if let Some(parent_record) = tracked.tracked_items.get_mut(&parent_id) {
-                    for _ in 0..count {
-                        parent_record.remove_child(&child_id);
-                    }
-                }
-                self.state
-                    .references_count
-                    .fetch_sub(count, Ordering::Relaxed);
-            }
-
-            for (child_id, parent_id, count) in external_child_updates {
-                if let Some(child_record) = tracked.tracked_items.get_mut(&child_id) {
-                    for _ in 0..count {
-                        child_record.remove_parent(&parent_id);
-                    }
-                    if child_record.total_references() == 0 {
-                        tracked.zero_referred.insert(child_id);
-                    }
-                }
-                self.state
-                    .references_count
-                    .fetch_sub(count, Ordering::Relaxed);
-            }
-
-            self.state
-                .references_count
-                .fetch_sub(released_internal, Ordering::Relaxed);
-
-            for id in &component {
-                tracked.zero_referred.remove(id);
-                tracked.tracked_items.remove(id);
-            }
-        }
-
-        self.state.references_count.load(Ordering::Relaxed)
+    pub fn is_stack_referenced(&self, item: &StackItem) -> bool {
+        CompoundId::from_item(item).is_some_and(|id| self.is_stack_referenced_id(id))
     }
 
-    /// Adds a parent reference using the parent's tracked identity.
-    pub fn add_compound_reference(&self, item: &StackItem, parent: CompoundParent) {
-        self.add_reference_with_parent_id(item, parent.into());
-    }
-
-    /// Removes a parent reference using the parent's tracked identity.
-    pub fn remove_compound_reference(&self, item: &StackItem, parent: CompoundParent) {
-        self.remove_reference_with_parent_id(item, parent.into());
+    /// Whether the compound identified by `id` is currently stack-referenced.
+    /// Used by the compound mutation methods to gate child reference counting.
+    #[inline]
+    #[must_use]
+    pub fn is_stack_referenced_id(&self, id: CompoundId) -> bool {
+        self.state
+            .stack_references
+            .lock()
+            .get(&id)
+            .is_some_and(|&n| n != 0)
     }
 
     /// Returns true when both counters share the same underlying state.
@@ -283,181 +208,9 @@ impl ReferenceCounter {
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.state, &other.state)
     }
-
-    fn add_reference_with_parent_id(&self, item: &StackItem, parent_id: ItemId) {
-        self.state.references_count.fetch_add(1, Ordering::Relaxed);
-
-        let mut tracked = self.state.tracked.lock();
-        if let Some(item_id) = ItemId::from(item) {
-            {
-                let record = tracked.ensure_record(item_id);
-                record.add_parent(parent_id);
-                tracked.zero_referred.remove(&item_id);
-            }
-            {
-                let parent_record = tracked.ensure_record(parent_id);
-                parent_record.add_child(item_id);
-            }
-        } else {
-            tracked.ensure_record(parent_id);
-        }
-    }
-
-    fn remove_reference_with_parent_id(&self, item: &StackItem, parent_id: ItemId) {
-        self.state.references_count.fetch_sub(1, Ordering::Relaxed);
-
-        let mut tracked = self.state.tracked.lock();
-        if let Some(item_id) = ItemId::from(item) {
-            if let Some(record) = tracked.tracked_items.get_mut(&item_id) {
-                record.remove_parent(&parent_id);
-                if record.stack_references == 0 {
-                    tracked.zero_referred.insert(item_id);
-                }
-            }
-
-            if let Some(parent_record) = tracked.tracked_items.get_mut(&parent_id) {
-                parent_record.remove_child(&item_id);
-            }
-        }
-    }
 }
 
 neo_io::impl_default_via_new!(ReferenceCounter);
-
-/// Identifies a tracked parent compound item.
-#[derive(Clone, Copy, Debug)]
-pub enum CompoundParent {
-    /// Array parent reference
-    Array(usize),
-    /// Struct parent reference
-    Struct(usize),
-    /// Map parent reference
-    Map(usize),
-    /// Buffer parent reference
-    Buffer(usize),
-}
-
-#[derive(Default, Debug)]
-struct TrackedItems {
-    tracked_items: HashMap<ItemId, ItemRecord>,
-    zero_referred: HashSet<ItemId>,
-}
-
-impl TrackedItems {
-    fn ensure_record(&mut self, id: ItemId) -> &mut ItemRecord {
-        self.tracked_items.entry(id).or_default()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq)]
-enum ItemId {
-    Array(usize),
-    Struct(usize),
-    Map(usize),
-    Buffer(usize),
-}
-
-impl ItemId {
-    fn from(item: &StackItem) -> Option<Self> {
-        match item {
-            StackItem::Array(inner) => Some(Self::Array(inner.id())),
-            StackItem::Struct(inner) => Some(Self::Struct(inner.id())),
-            StackItem::Map(inner) => Some(Self::Map(inner.id())),
-            StackItem::Buffer(inner) => Some(Self::Buffer(inner.id())),
-            _ => None,
-        }
-    }
-}
-
-impl From<CompoundParent> for ItemId {
-    fn from(parent: CompoundParent) -> Self {
-        match parent {
-            CompoundParent::Array(id) => Self::Array(id),
-            CompoundParent::Struct(id) => Self::Struct(id),
-            CompoundParent::Map(id) => Self::Map(id),
-            CompoundParent::Buffer(id) => Self::Buffer(id),
-        }
-    }
-}
-
-impl PartialEq for ItemId {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (Self::Array(a), Self::Array(b))
-                | (Self::Struct(a), Self::Struct(b))
-                | (Self::Map(a), Self::Map(b))
-                | (Self::Buffer(a), Self::Buffer(b))
-                if a == b
-        )
-    }
-}
-
-impl Hash for ItemId {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Self::Array(id) => {
-                0u8.hash(state);
-                id.hash(state);
-            }
-            Self::Struct(id) => {
-                1u8.hash(state);
-                id.hash(state);
-            }
-            Self::Map(id) => {
-                2u8.hash(state);
-                id.hash(state);
-            }
-            Self::Buffer(id) => {
-                3u8.hash(state);
-                id.hash(state);
-            }
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-struct ItemRecord {
-    stack_references: usize,
-    parents: HashMap<ItemId, usize>,
-    children: HashMap<ItemId, usize>,
-}
-
-impl ItemRecord {
-    fn total_references(&self) -> usize {
-        self.stack_references + self.parents.values().copied().sum::<usize>()
-    }
-
-    fn add_parent(&mut self, parent: ItemId) {
-        *self.parents.entry(parent).or_insert(0) += 1;
-    }
-
-    fn remove_parent(&mut self, parent: &ItemId) {
-        if let Some(count) = self.parents.get_mut(parent) {
-            if *count > 0 {
-                *count -= 1;
-            }
-            if *count == 0 {
-                self.parents.remove(parent);
-            }
-        }
-    }
-
-    fn add_child(&mut self, child: ItemId) {
-        *self.children.entry(child).or_insert(0) += 1;
-    }
-
-    fn remove_child(&mut self, child: &ItemId) {
-        if let Some(count) = self.children.get_mut(child) {
-            if *count > 0 {
-                *count -= 1;
-            }
-            if *count == 0 {
-                self.children.remove(child);
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 #[path = "tests/reference_counter.rs"]

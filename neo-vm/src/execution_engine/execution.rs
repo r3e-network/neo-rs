@@ -224,25 +224,16 @@ impl ExecutionEngine {
     /// - Malicious scripts from exploiting the execution-to-check gap
     #[inline(always)]
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
-        if self.reference_counter.count() < self.limits.max_stack_size as usize {
-            if let Some(host) = self.interop_host {
-                host.post_execute_instruction(self, instruction)?;
-            }
-            return Ok(());
-        }
-
-        // Stack is at or over the fast-path limit: run the thorough GC pass
-        // (drops zero-referred items) and re-validate, matching C#
-        // ExecutionEngine.PostExecuteInstruction. Exceeding MaxStackSize after
-        // GC is a protocol fault, not a recoverable condition.
-        let current = self.reference_counter.check_zero_referred();
-        // C# faults only when STRICTLY greater than MaxStackSize
-        // (ExecutionEngine.cs:303-304). Reaching exactly MaxStackSize (2048) is
-        // valid in C#; using >= would FAULT a contract that C# HALTs.
-        if current > self.limits.max_stack_size as usize {
+        // C# v3.10.0 ExecutionEngine.PostExecuteInstruction → ReferenceCounter
+        // .PostExecuteInstruction: the recursive stack-reference count is exact
+        // (no GC sweep), so faulting is a plain `Count > MaxStackSize` check.
+        // C# faults only when STRICTLY greater than MaxStackSize; reaching
+        // exactly MaxStackSize is valid (`>=` would fault a contract C# HALTs).
+        if self.reference_counter.count() > self.limits.max_stack_size as usize {
             return Err(VmError::invalid_operation_msg(format!(
                 "MaxStackSize exceed: {}/{}",
-                current, self.limits.max_stack_size
+                self.reference_counter.count(),
+                self.limits.max_stack_size
             )));
         }
 
