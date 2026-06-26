@@ -574,11 +574,17 @@ impl ApplicationEngine {
     }
 
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
-        let policy_hash =
-            crate::native_contract_provider::NativeContractLookup::lookup_policy_contract()
-                .map(|c| c.hash())
-                .unwrap_or(neo_primitives::UInt160::zero());
-        self.native_registry.get(&policy_hash)
+        // Native contracts are served by the globally-installed provider; the
+        // engine's own `native_registry` is empty in the normal execution path
+        // (only `call_native_contract` consulted the provider as a fallback).
+        // Without the same fallback here, `policy_contract()` returns `None`,
+        // `refresh_policy_settings` silently no-ops, and execution keeps the
+        // hardcoded default ExecFeeFactor/StoragePrice instead of the values in
+        // state — a consensus divergence once governance changes them (e.g.
+        // MainNet lowered ExecFeeFactor 30 -> 15).
+        let policy =
+            crate::native_contract_provider::NativeContractLookup::lookup_policy_contract()?;
+        Some(self.native_registry.get(&policy.hash()).unwrap_or(policy))
     }
 
     pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {
