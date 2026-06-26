@@ -312,6 +312,12 @@ panic = "abort"
 strip = true
 incremental = false
 
+# Release-equivalent codegen with debug symbols kept, for profiling (samply).
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+strip = false
+
 [profile.dev]
 opt-level = 0
 debug = true
