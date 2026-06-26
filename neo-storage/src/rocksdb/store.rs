@@ -124,22 +124,29 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
 
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iterator = self.iterator_from(start, direction);
-        Box::new(iterator.filter_map(move |res| {
-            let (key, value) = match res {
-                Ok(entry) => entry,
-                Err(err) => {
-                    warn!(target: "neo", error = %err, "rocksdb iterator error");
-                    return None;
-                }
-            };
-            let key_vec = key.to_vec();
-            if let Some(prefix) = &prefix_bytes {
-                if !key_vec.starts_with(prefix) {
-                    return None;
-                }
-            }
-            Some((key_vec, value.to_vec()))
-        }))
+        Box::new(
+            iterator
+                .filter_map(|res| match res {
+                    Ok(entry) => Some(entry),
+                    Err(err) => {
+                        warn!(target: "neo", error = %err, "rocksdb iterator error");
+                        None
+                    }
+                })
+                // Stop as soon as the scan leaves the prefix range. Keys are
+                // stored sorted, so the prefix-matching keys are contiguous from
+                // the seek position; the previous `filter_map` only *skipped*
+                // non-matching keys and kept advancing the unbounded iterator to
+                // the END OF THE DB, turning every forward prefix scan (e.g. the
+                // every-21-block committee candidate enumeration) into a full-DB
+                // scan whose cost grew with chain height.
+                .take_while(move |(key, _value)| {
+                    prefix_bytes
+                        .as_ref()
+                        .is_none_or(|prefix| key.starts_with(prefix.as_slice()))
+                })
+                .map(|(key, value)| (key.to_vec(), value.to_vec())),
+        )
     }
 }
 
