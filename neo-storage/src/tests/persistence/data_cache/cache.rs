@@ -118,3 +118,69 @@ fn try_add_after_deleted_cached_entry_becomes_changed_like_csharp() {
     assert_eq!(trackable.state, TrackState::Changed);
     assert_eq!(trackable.item.value_bytes().as_ref(), &[0xBB]);
 }
+
+#[test]
+fn update_after_deleted_cached_entry_becomes_changed_not_added() {
+    // Regression for the MainNet block-166739 GAS over-credit: a store-backed
+    // key that is deleted (balance burned to exactly zero) and then re-created
+    // via `update` (re-credited) must transition Deleted -> Changed, mirroring
+    // C# `DataCache.GetAndChange`. The prior Rust behaviour used Added, which
+    // makes the later commit go through `add()` and get swallowed when the
+    // parent has the key read-cached as `None`.
+    let key = StorageKey::new(7, vec![0x05]);
+    let stored_key = key.clone();
+    let store_get: Arc<StoreGetFn> = Arc::new(move |lookup: &StorageKey| {
+        if lookup == &stored_key {
+            Some(StorageItem::from_bytes(vec![0xAA]))
+        } else {
+            None
+        }
+    });
+    let cache = DataCache::new_with_store(false, Some(store_get), None);
+
+    cache.delete(&key);
+    cache.update(key.clone(), StorageItem::from_bytes(vec![0xBB]));
+
+    let tracked = cache.tracked_items();
+    let (_, trackable) = tracked
+        .iter()
+        .find(|(tracked_key, _)| tracked_key == &key)
+        .expect("tracked key");
+    assert_eq!(trackable.state, TrackState::Changed);
+    assert_eq!(trackable.item.value_bytes().as_ref(), &[0xBB]);
+}
+
+#[test]
+fn delete_then_recreate_persists_through_layered_commit() {
+    // End-to-end reproduction of the consensus bug across the production cache
+    // hierarchy store -> block snapshot -> block cache (as in
+    // `persist_block_natives`): a key present in the store, read by an upper
+    // layer (so it is cached as `None`), then deleted and re-created via
+    // `update` in the child, must persist the new value down to the store —
+    // not the stale pre-deletion value.
+    let key = StorageKey::new(-6, vec![0x14, 0x01]);
+
+    let store = DataCache::new(false);
+    store.add(key.clone(), StorageItem::from_bytes(vec![0xAA]));
+
+    let snapshot = store.clone_cache();
+    let block_cache = snapshot.clone_cache();
+
+    // Read through both overlays — populates the read cache as `None`.
+    assert_eq!(
+        block_cache.get(&key).map(|i| i.value_bytes().to_vec()),
+        Some(vec![0xAA])
+    );
+
+    block_cache.delete(&key);
+    block_cache.update(key.clone(), StorageItem::from_bytes(vec![0xBB]));
+
+    block_cache.commit();
+    snapshot.commit();
+
+    assert_eq!(
+        store.get(&key).map(|i| i.value_bytes().to_vec()),
+        Some(vec![0xBB]),
+        "delete-then-recreate must persist the new value, not the stale original"
+    );
+}

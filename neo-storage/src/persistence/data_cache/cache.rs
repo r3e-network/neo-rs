@@ -373,10 +373,25 @@ impl DataCache {
             .get(key)
             .map(|t| t.state)
             .unwrap_or(TrackState::NotFound);
+        // Re-writing a previously `Deleted` entry must restore it as
+        // `Changed` — the key still exists in the backing store, so the
+        // net effect is a value change, exactly as C#
+        // `DataCache.GetAndChange` does (Persistence/DataCache.cs:
+        // `Deleted -> Changed`). The prior Rust behaviour used `Added`
+        // here, which makes a delete-then-recreate within one commit
+        // cycle (e.g. a GAS balance burned to exactly zero then
+        // re-credited in the same block) merge via `add()` into a parent
+        // that read-cached the key as `None`; that fails `apply_add`
+        // (InvalidState) and is silently swallowed, leaving the stale
+        // pre-deletion value in the store. `NotFound` stays `Changed`
+        // (rather than C#'s `Added`): it is consensus-identical for the
+        // committed value but always merges via `update()`, avoiding the
+        // same `add()`-into-`None` swallow for blind writes (`Storage.Put`
+        // on an unread, store-present key).
         let new_state = match prev_state {
             TrackState::Added => TrackState::Added,
             TrackState::Changed | TrackState::None => TrackState::Changed,
-            TrackState::Deleted => TrackState::Added,
+            TrackState::Deleted => TrackState::Changed,
             TrackState::NotFound => TrackState::Changed,
         };
         log_watched_storage_event(
