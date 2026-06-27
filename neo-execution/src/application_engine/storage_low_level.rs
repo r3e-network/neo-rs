@@ -113,6 +113,17 @@ impl ApplicationEngine {
     /// Pops and validates a storage iterator identifier from the VM stack.
     pub fn pop_iterator_id(&mut self) -> CoreResult<u32> {
         let item = self.pop()?;
+        // C# represents a storage iterator as an `InteropInterface` wrapping a
+        // `StorageIterator` (System.Storage.Find / native methods that return an
+        // iterator both push that form — see `storage_find` and
+        // `decode_native_result`). Our engine keeps the concrete iterator in the
+        // `storage_iterators` table keyed by a u32 id and carries that id in an
+        // `IteratorInterop` interop handle, so the id must be read back from the
+        // interop. Falling through to `into_int` keeps any bare-integer handle
+        // path working.
+        if let Ok(iterator) = item.as_interface::<crate::iterators::IteratorInterop>() {
+            return Ok(iterator.id());
+        }
         let identifier = item
             .into_int()
             .map_err(|e| CoreError::other(e.to_string()))?
