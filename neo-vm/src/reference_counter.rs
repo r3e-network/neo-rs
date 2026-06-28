@@ -152,9 +152,7 @@ impl ReferenceCounter {
     /// compound, lowers its `StackReferences`; when that reaches zero each
     /// sub-item loses one stack reference recursively.
     pub fn remove_stack_reference(&self, item: &StackItem) {
-        self.state
-            .references_count
-            .fetch_sub(1, Ordering::Relaxed);
+        self.state.references_count.fetch_sub(1, Ordering::Relaxed);
 
         if let Some(id) = CompoundId::from_item(item) {
             let recurse = {

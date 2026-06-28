@@ -57,6 +57,31 @@ fn renders_node_metrics_payload() {
     assert!(text.contains("neo_node_indexer_indexed_height -1"));
     assert!(text.contains("neo_node_indexer_blocks_behind -1"));
     assert!(text.contains("neo_node_indexer_synced 0"));
+    assert!(text.contains("neo_sync_native_persist_blocks_total"));
+    assert!(text.contains("neo_sync_native_persist_avg_onpersist_us"));
+    assert!(text.contains("neo_sync_native_persist_avg_tx_us"));
+    assert!(text.contains("neo_sync_native_persist_avg_cache_commit_us"));
+    assert!(text.contains("neo_sync_native_contract_hook_calls_total"));
+    assert!(text.contains(
+        "neo_sync_native_contract_hook_avg_us{trigger=\"onpersist\",contract=\"GasToken\",id=\"-6\"}"
+    ));
+    assert!(text.contains("neo_sync_neotoken_onpersist_stage_calls_total"));
+    assert!(text.contains("neo_sync_neotoken_onpersist_stage_avg_us{stage=\"compute_committee\"}"));
+    assert!(text.contains("neo_sync_neotoken_committee_compute_stage_calls_total"));
+    assert!(text.contains(
+        "neo_sync_neotoken_committee_compute_stage_avg_us{stage=\"candidate_state_decode\"}"
+    ));
+    assert!(text.contains("neo_sync_neotoken_committee_candidate_scan_items_total"));
+    assert!(text.contains(
+        "neo_sync_neotoken_committee_candidate_scan_avg_items{kind=\"eligible_candidates\"}"
+    ));
+    assert!(text.contains("neo_state_service_mpt_apply_blocks_total"));
+    assert!(text.contains("neo_state_service_mpt_apply_avg_total_us"));
+    assert!(text.contains("neo_state_service_mpt_apply_avg_changes"));
+    assert!(text.contains("neo_state_service_mpt_apply_stage_calls_total"));
+    assert!(text.contains("neo_state_service_mpt_apply_stage_avg_us{stage=\"trie_commit\"}"));
+    assert!(text.contains("neo_state_service_mpt_apply_items_total"));
+    assert!(text.contains("neo_state_service_mpt_apply_avg_items{kind=\"overlay_entries\"}"));
 }
 
 #[test]

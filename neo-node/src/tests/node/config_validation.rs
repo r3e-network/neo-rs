@@ -653,8 +653,49 @@ backend = "rocksdb"
     )
     .expect("parse config");
 
-    let err = validate_storage(&config, None).expect_err("missing path fails");
+    let err = validate_storage(&config, None, 0x334F_454E).expect_err("missing path fails");
     assert!(err.to_string().contains("requires a data directory"));
+}
+
+#[test]
+fn validate_storage_rejects_state_service_mpt_height_mismatch() {
+    use neo_storage::persistence::StoreProvider;
+    use neo_storage::persistence::storage::StorageConfig;
+    use neo_storage::rocksdb::RocksDBStoreProvider;
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let chain_path = temp.path().join("chain");
+    let state_path_template = temp.path().join("StateRoot_{0}");
+    let settings = ProtocolSettings::default();
+    seed_rocksdb_tip(&chain_path, &settings, 1).expect("seed chain tip");
+
+    let state_path = temp
+        .path()
+        .join(format!("StateRoot_{:08X}", settings.network));
+    let provider = RocksDBStoreProvider::new(StorageConfig {
+        path: state_path,
+        ..StorageConfig::default()
+    });
+    let state_store = provider.get_store("").expect("open state store");
+    let mut snapshot = state_store.snapshot();
+    let writer = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
+    writer
+        .put(vec![0x02], 0u32.to_le_bytes().to_vec())
+        .expect("write current root index");
+    writer.try_commit().expect("commit state root height");
+
+    let mut config = NodeConfig::default();
+    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.data_dir = Some(chain_path);
+    config.state_service.enabled = true;
+    config.state_service.path = Some(state_path_template);
+
+    let err = validate_storage(&config, None, settings.network)
+        .expect_err("mismatched StateRoot height should fail");
+    assert!(
+        err.to_string().contains("does not match chain height 1"),
+        "{err}"
+    );
 }
 
 /// Default P2P ports follow the network magic.

@@ -13,6 +13,10 @@ pub(in crate::node) struct StateServiceSection {
     /// Whether to retain historical trie nodes for old-root proofs/state reads.
     #[serde(default, alias = "FullState")]
     pub(in crate::node) full_state: bool,
+    /// Whether StateService should keep computing local MPT roots while the
+    /// node is still far behind the peer-reported live tip.
+    #[serde(default, alias = "TrackDuringCatchup")]
+    pub(in crate::node) track_during_catchup: bool,
     /// Configured state-root store path.
     #[serde(default, alias = "Path")]
     pub(in crate::node) path: Option<PathBuf>,

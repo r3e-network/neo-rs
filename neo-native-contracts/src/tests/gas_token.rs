@@ -4,6 +4,82 @@ use neo_serialization::BinarySerializer;
 use neo_vm_rs::ExecutionEngineLimits;
 
 #[test]
+fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
+    use neo_execution::native_contract::build_native_contract_state;
+    use neo_payloads::{Signer, Transaction};
+    use neo_primitives::{TriggerType, WitnessScope};
+    use std::sync::Arc;
+
+    crate::install();
+
+    let cache = DataCache::new(false);
+    let contract_account = UInt160::from_bytes(&[0x48; 20]).unwrap();
+    let recipient = UInt160::from_bytes(&[0x23; 20]).unwrap();
+    GasToken::new()
+        .write_gas_account(&cache, &contract_account, &BigInt::from(1_000))
+        .unwrap();
+    crate::test_support::deploy_native(
+        &cache,
+        &build_native_contract_state(&GasToken, &ProtocolSettings::default(), 0),
+    );
+
+    let mut tx = Transaction::new();
+    tx.set_signers(vec![Signer::new(
+        UInt160::from_bytes(&[0x99; 20]).unwrap(),
+        WitnessScope::NONE,
+    )]);
+
+    let snapshot = Arc::new(cache);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        Some(Arc::new(tx)),
+        Arc::clone(&snapshot),
+        None,
+        ProtocolSettings::default(),
+        10_000_000,
+        None,
+    )
+    .expect("engine builds");
+
+    engine
+        .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
+        .expect("load calling contract context");
+    let entry = engine.current_context().cloned().expect("entry context");
+    let state = entry.get_state_with_factory::<neo_execution::ExecutionContextState, _>(
+        neo_execution::ExecutionContextState::new,
+    );
+    state.lock().script_hash = Some(contract_account);
+
+    engine
+        .call_contract_dynamic(
+            &GasToken::script_hash(),
+            "transfer",
+            CallFlags::ALL,
+            vec![
+                StackItem::from_byte_string(contract_account.to_bytes()),
+                StackItem::from_byte_string(recipient.to_bytes()),
+                StackItem::from_int(BigInt::from(375)),
+                StackItem::null(),
+            ],
+        )
+        .expect("load GAS transfer");
+
+    assert_eq!(engine.execute_allow_fault(), neo_vm_rs::VmState::HALT);
+    assert_eq!(
+        GasToken::new()
+            .read_gas_account(&snapshot, &contract_account)
+            .unwrap(),
+        Some(BigInt::from(625))
+    );
+    assert_eq!(
+        GasToken::new()
+            .read_gas_account(&snapshot, &recipient)
+            .unwrap(),
+        Some(BigInt::from(375))
+    );
+}
+
+#[test]
 fn native_contract_surface() {
     let c = GasToken::new();
     let names: Vec<&str> = c.methods().iter().map(|m| m.name.as_str()).collect();

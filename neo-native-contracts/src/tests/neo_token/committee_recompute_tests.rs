@@ -68,6 +68,14 @@ fn standby_fallback_below_turnout_zips_registered_votes() {
     let cache = DataCache::new(false);
     seed_voters_count(&cache, 19_999_999);
     seed_candidate(&cache, &standby[1], 42); // a standby member is a candidate
+    seed_candidate(&cache, &standby[2], 77); // blocked standby candidate counts as zero
+    let blocked_account = UInt160::from_script(&Contract::create_signature_redeem_script(
+        standby[2].clone(),
+    ));
+    cache.add(
+        crate::PolicyContract::blocked_account_key(&blocked_account),
+        StorageItem::from_bytes(Vec::new()),
+    );
     seed_candidate(&cache, &all[3], 1000);
     seed_candidate(&cache, &all[4], 900);
     seed_candidate(&cache, &all[5], 800);
@@ -82,7 +90,7 @@ fn standby_fallback_below_turnout_zips_registered_votes() {
             (standby[1].clone(), BigInt::from(42)),
             (standby[2].clone(), BigInt::from(0)),
         ],
-        "standby order is preserved; votes come from the candidate records"
+        "standby order is preserved; votes come from non-blocked candidate records"
     );
 }
 

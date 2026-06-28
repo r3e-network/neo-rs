@@ -8,13 +8,15 @@ use crate::iterators::IteratorInterop;
 use neo_crypto::bls12381_point::{G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE};
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
+use neo_payloads::Transaction;
 use neo_primitives::ContractParameterType;
-use neo_primitives::UInt160;
+use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
+use std::str::FromStr;
 use std::sync::OnceLock;
 
 const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
@@ -52,6 +54,70 @@ impl ApplicationEngine {
 fn native_call_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| env_flag_enabled("NEO_TRACE_CALL_NATIVE", false))
+}
+
+fn contract_call_trace_filter_matches(
+    tx_filter: Option<UInt256>,
+    trace_all: bool,
+    tx_hash: Option<UInt256>,
+) -> bool {
+    trace_all || matches!((tx_filter, tx_hash), (Some(filter), Some(hash)) if filter == hash)
+}
+
+fn contract_call_trace_tx_filter() -> Option<UInt256> {
+    std::env::var("NEO_TRACE_CONTRACT_CALL_TX")
+        .ok()
+        .and_then(|raw| UInt256::from_str(raw.trim()).ok())
+}
+
+fn current_transaction_hash(app: &ApplicationEngine) -> Option<UInt256> {
+    app.script_container()
+        .and_then(|container| container.as_any().downcast_ref::<Transaction>())
+        .map(Transaction::hash)
+}
+
+fn contract_call_trace_enabled(app: &ApplicationEngine) -> bool {
+    contract_call_trace_filter_matches(
+        contract_call_trace_tx_filter(),
+        env_flag_enabled("NEO_TRACE_CONTRACT_CALL", false),
+        current_transaction_hash(app),
+    )
+}
+
+fn trace_hex_prefix(bytes: &[u8]) -> String {
+    let prefix_len = bytes.len().min(32);
+    let mut text = hex::encode(&bytes[..prefix_len]);
+    if bytes.len() > prefix_len {
+        text.push_str("...");
+    }
+    text
+}
+
+fn trace_stack_item_summary(item: &StackItem) -> String {
+    match item {
+        StackItem::Null => "Null".to_string(),
+        StackItem::Boolean(value) => format!("Boolean({value})"),
+        StackItem::Integer(value) => format!("Integer({})", value.to_bigint()),
+        StackItem::ByteString(bytes) => {
+            format!(
+                "ByteString(len={},hex={})",
+                bytes.len(),
+                trace_hex_prefix(bytes)
+            )
+        }
+        StackItem::Buffer(buffer) => buffer.with_data(|bytes| {
+            format!(
+                "Buffer(len={},hex={})",
+                bytes.len(),
+                trace_hex_prefix(bytes)
+            )
+        }),
+        StackItem::Array(items) => format!("Array(len={})", items.len()),
+        StackItem::Struct(items) => format!("Struct(len={})", items.len()),
+        StackItem::Map(items) => format!("Map(len={})", items.len()),
+        StackItem::Pointer(_) => "Pointer".to_string(),
+        StackItem::InteropInterface(_) => "InteropInterface".to_string(),
+    }
 }
 
 impl ApplicationEngine {
@@ -144,6 +210,26 @@ fn contract_call_handler(
         service: "System.Contract.Call".to_string(),
         error: e.to_string(),
     })?;
+
+    if contract_call_trace_enabled(app) {
+        let tx_hash = current_transaction_hash(app)
+            .map(|hash| hash.to_string())
+            .unwrap_or_else(|| "none".to_string());
+        let args_summary = args
+            .iter()
+            .enumerate()
+            .map(|(index, item)| format!("#{index}:{}", trace_stack_item_summary(item)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!(
+            "trace contract.call: tx={} target_raw={} method={} flags={} args=[{}]",
+            tx_hash,
+            hex::encode(&hash_bytes),
+            method,
+            call_flags_value,
+            args_summary
+        );
+    }
 
     let result = (|| -> CoreResult<()> {
         if hash_bytes.len() != 20 {

@@ -62,6 +62,8 @@ pub struct BlockchainService {
     pub(crate) mempool: Arc<Mutex<dyn MempoolLike + Send + Sync>>,
     /// Future blocks grouped by index until their parent is persisted.
     pub(crate) unverified_blocks: Arc<Mutex<BTreeMap<u32, UnverifiedBlocksList>>>,
+    /// Optional validation-mode upper bound for persisted blocks.
+    pub(crate) stop_at_height: Option<u32>,
 }
 
 impl fmt::Debug for BlockchainService {
@@ -106,8 +108,14 @@ impl BlockchainService {
             event_tx,
             mempool,
             unverified_blocks: Arc::new(Mutex::new(BTreeMap::new())),
+            stop_at_height: None,
         };
         (service, handle)
+    }
+
+    /// Configure an optional validation stop height.
+    pub fn set_stop_at_height(&mut self, stop_at_height: Option<u32>) {
+        self.stop_at_height = stop_at_height;
     }
 
     pub(crate) fn unverified_block_count(&self) -> usize {

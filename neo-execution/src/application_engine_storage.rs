@@ -10,6 +10,80 @@ use neo_primitives::FindOptions;
 use neo_vm::error::VmError;
 use neo_vm::{ExecutionEngine, StackItem, VmResult};
 
+fn storage_trace_enabled(app: &ApplicationEngine, legacy_env: &str) -> bool {
+    if std::env::var_os(legacy_env).is_some() {
+        return true;
+    }
+    let Ok(raw) = std::env::var("NEO_TRACE_STORAGE_TX") else {
+        return false;
+    };
+    let Some(container) = app.get_script_container() else {
+        return false;
+    };
+    let Some(transaction) = container
+        .as_any()
+        .downcast_ref::<neo_payloads::Transaction>()
+    else {
+        return false;
+    };
+    let Ok(hash) = transaction.try_hash() else {
+        return false;
+    };
+    let hash = hash.to_string();
+    raw.split(',').any(|entry| {
+        let entry = entry.trim();
+        entry == "*" || entry.eq_ignore_ascii_case("all") || entry.eq_ignore_ascii_case(&hash)
+    })
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn parse_trace_key_hex(raw: &str) -> Option<Vec<u8>> {
+    let trimmed = raw.trim().strip_prefix("0x").unwrap_or(raw.trim());
+    if trimmed.is_empty() || trimmed.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(trimmed.len() / 2);
+    for pair in trimmed.as_bytes().chunks_exact(2) {
+        bytes.push((hex_nibble(pair[0])? << 4) | hex_nibble(pair[1])?);
+    }
+    Some(bytes)
+}
+
+fn storage_trace_key_enabled(key: &[u8]) -> bool {
+    let Ok(raw) = std::env::var("NEO_TRACE_STORAGE_KEY_HEX") else {
+        return false;
+    };
+    raw.split(',').any(|entry| {
+        parse_trace_key_hex(entry).is_some_and(|needle| key == needle || key.starts_with(&needle))
+    })
+}
+
+fn storage_trace_scope(app: &ApplicationEngine) -> String {
+    let block = app
+        .persisting_block()
+        .map(|block| block.index().to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let tx = app
+        .get_script_container()
+        .and_then(|container| {
+            container
+                .as_any()
+                .downcast_ref::<neo_payloads::Transaction>()
+        })
+        .and_then(|tx| tx.try_hash().ok())
+        .map(|hash| hash.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    format!("block={block} tx={tx}")
+}
+
 impl ApplicationEngine {
     /// Gets storage context for reading
     pub fn storage_get_context(&mut self) -> CoreResult<StorageContext> {
@@ -200,7 +274,8 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
 
     let key = pop_storage_bytes(app, "System.Storage.Get", "key")?;
-    let trace_enabled = std::env::var_os("NEO_TRACE_STORAGE_GET").is_some();
+    let trace_enabled =
+        storage_trace_enabled(app, "NEO_TRACE_STORAGE_GET") || storage_trace_key_enabled(&key);
     let trace_context_id = context.id;
     let trace_context_read_only = context.is_read_only;
     let trace_key_len = key.len();
@@ -221,7 +296,8 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
 
     if trace_enabled {
         eprintln!(
-            "trace storage.get: ctx_id={} readonly={} key_len={} key_prefix={} hit={} value_len={}",
+            "trace storage.get: {} ctx_id={} readonly={} key_len={} key_prefix={} hit={} value_len={}",
+            storage_trace_scope(app),
             trace_context_id,
             trace_context_read_only,
             trace_key_len,
@@ -254,19 +330,26 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
 
     let value = pop_storage_bytes(app, "System.Storage.Put", "value")?;
 
-    if std::env::var_os("NEO_TRACE_STORAGE_PUT").is_some() {
+    if storage_trace_enabled(app, "NEO_TRACE_STORAGE_PUT") || storage_trace_key_enabled(&key) {
         let key_preview = key
             .iter()
-            .take(16)
+            .take(32)
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let value_preview = value
+            .iter()
+            .take(32)
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         eprintln!(
-            "trace storage.put: ctx_id={} readonly={} key_len={} value_len={} key_prefix={}",
+            "trace storage.put: {} ctx_id={} readonly={} key_len={} value_len={} key_prefix={} value_prefix={}",
+            storage_trace_scope(app),
             context.id,
             context.is_read_only,
             key.len(),
             value.len(),
             key_preview,
+            value_preview,
         );
     }
 
@@ -286,6 +369,22 @@ fn storage_delete_handler(
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
 
     let key = pop_storage_bytes(app, "System.Storage.Delete", "key")?;
+
+    if storage_trace_enabled(app, "NEO_TRACE_STORAGE_DELETE") || storage_trace_key_enabled(&key) {
+        let key_preview = key
+            .iter()
+            .take(32)
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        eprintln!(
+            "trace storage.delete: {} ctx_id={} readonly={} key_len={} key_prefix={}",
+            storage_trace_scope(app),
+            context.id,
+            context.is_read_only,
+            key.len(),
+            key_preview,
+        );
+    }
 
     app.storage_delete(context, key)
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
@@ -397,6 +496,23 @@ fn storage_find_handler(
     options
         .validate()
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
+
+    if storage_trace_enabled(app, "NEO_TRACE_STORAGE_FIND") || storage_trace_key_enabled(&prefix) {
+        let prefix_preview = prefix
+            .iter()
+            .take(32)
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        eprintln!(
+            "trace storage.find: {} ctx_id={} readonly={} prefix_len={} prefix={} options={:?}",
+            storage_trace_scope(app),
+            context.id,
+            context.is_read_only,
+            prefix.len(),
+            prefix_preview,
+            options,
+        );
+    }
 
     let iterator = app
         .storage_find(context, prefix.clone(), options)

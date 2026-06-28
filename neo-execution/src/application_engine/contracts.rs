@@ -553,6 +553,103 @@ impl ApplicationEngine {
         self.pop()
     }
 
+    /// Calls a void method on `contract_hash` from a native contract context
+    /// and drives the VM until the callee frame unwinds.
+    ///
+    /// This is the void counterpart of
+    /// [`Self::call_from_native_contract_returning`] and mirrors C#'s
+    /// non-generic `ApplicationEngine.CallFromNativeContractAsync`: the callee
+    /// is loaded with `hasReturnValue: false`, faults cross the native boundary,
+    /// and the native caller resumes only after the callee context has returned.
+    pub fn call_from_native_contract_void(
+        &mut self,
+        calling_script_hash: &UInt160,
+        contract_hash: &UInt160,
+        method: &str,
+        args: Vec<StackItem>,
+    ) -> CoreResult<()> {
+        let target_depth = self.vm_engine.engine().invocation_stack().len();
+        if target_depth == 0 {
+            return Err(CoreError::invalid_operation(
+                "A contract call from a native frame requires a live execution context",
+            ));
+        }
+
+        let contract = self.fetch_contract(contract_hash)?;
+        let method_descriptor = contract
+            .manifest
+            .abi
+            .get_method_ref(method, args.len())
+            .cloned()
+            .ok_or_else(|| {
+                CoreError::invalid_operation(format!(
+                    "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
+                    method,
+                    args.len(),
+                    contract_hash
+                ))
+            })?;
+
+        let context = self.call_contract_internal(
+            &contract,
+            &method_descriptor,
+            CallFlags::ALL,
+            false,
+            &args,
+        )?;
+
+        let state_arc =
+            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
+        self.refresh_context_tracking()?;
+
+        if self.vm_engine.engine().interop_service().is_none() {
+            let mut service = neo_vm::interop_service::InteropService::new();
+            for (name, price, flags) in &self.host_syscall_registrations {
+                service
+                    .register_host_descriptor(name, *price, *flags)
+                    .map_err(|e| {
+                        CoreError::invalid_operation(format!(
+                            "rebuilding the interop registry for a nested native call: {e}"
+                        ))
+                    })?;
+            }
+            self.vm_engine.engine_mut().set_interop_service(service);
+        }
+
+        let boundary_id = Arc::as_ptr(&state_arc) as usize;
+        self.native_call_boundary_contexts.push(boundary_id);
+
+        let vm_state = self.execute_until_invocation_stack_depth(target_depth);
+
+        self.native_call_boundary_contexts
+            .retain(|id| *id != boundary_id);
+
+        if vm_state == VMState::FAULT {
+            let message = self.fault_exception.clone().unwrap_or_else(|| {
+                format!("Contract call from a native frame to {contract_hash}::{method} faulted")
+            });
+            return Err(CoreError::invalid_operation(message));
+        }
+
+        let depth_after = self.vm_engine.engine().invocation_stack().len();
+        if depth_after != target_depth {
+            let message = format!(
+                "Contract call from a native frame to {contract_hash}::{method} unwound past the native frame"
+            );
+            self.vm_engine
+                .engine_mut()
+                .set_uncaught_exception(Some(StackItem::from_byte_string(
+                    message.clone().into_bytes(),
+                )));
+            self.vm_engine.engine_mut().set_state(VMState::FAULT);
+            self.fault_exception = Some(message.clone());
+            return Err(CoreError::invalid_operation(message));
+        }
+
+        Ok(())
+    }
+
     /// Queues a contract call requested by a native contract.
     ///
     /// The queued call will be loaded after the current native syscall finishes,

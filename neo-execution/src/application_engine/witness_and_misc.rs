@@ -1,16 +1,136 @@
 use super::*;
 use crate::native_contract_provider::NativeContractLookup;
 
+fn witness_trace_enabled(app: &ApplicationEngine) -> bool {
+    let Ok(raw) = std::env::var("NEO_TRACE_WITNESS_TX") else {
+        return false;
+    };
+    let Some(container) = app.script_container.as_ref() else {
+        return false;
+    };
+    let Some(tx) = container
+        .as_any()
+        .downcast_ref::<neo_payloads::Transaction>()
+    else {
+        return false;
+    };
+    let Ok(hash) = tx.try_hash() else {
+        return false;
+    };
+    let hash = hash.to_string();
+    raw.split(',').any(|entry| {
+        let entry = entry.trim();
+        entry == "*" || entry.eq_ignore_ascii_case("all") || entry.eq_ignore_ascii_case(&hash)
+    })
+}
+
+fn trace_hash(hash: Option<UInt160>) -> String {
+    hash.map(|hash| hash.to_string())
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn trace_context_state(context: &ExecutionContext) -> String {
+    let state_arc =
+        context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+    let (
+        script_hash,
+        calling_script_hash,
+        native_calling_script_hash,
+        method_name,
+        is_dynamic_call,
+        has_calling_context,
+        calling_context,
+    ) = {
+        let state = state_arc.lock();
+        (
+            state.script_hash,
+            state.calling_script_hash,
+            state.native_calling_script_hash,
+            state.method_name.clone(),
+            state.is_dynamic_call,
+            state.calling_context.is_some(),
+            state.calling_context.clone(),
+        )
+    };
+
+    let calling_context_summary = calling_context
+        .as_ref()
+        .map(|ctx| {
+            let ctx_state_arc = ctx
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let (ctx_script_hash, ctx_calling_script_hash, ctx_has_calling, ctx_method) = {
+                let ctx_state = ctx_state_arc.lock();
+                (
+                    ctx_state
+                        .script_hash
+                        .or_else(|| UInt160::from_bytes(&ctx.script_hash()).ok()),
+                    ctx_state.calling_script_hash,
+                    ctx_state.calling_context.is_some(),
+                    ctx_state.method_name.clone(),
+                )
+            };
+            format!(
+                " calling_ctx.script={} calling_ctx.calling={} calling_ctx.has_calling={} calling_ctx.method={}",
+                trace_hash(ctx_script_hash),
+                trace_hash(ctx_calling_script_hash),
+                ctx_has_calling,
+                ctx_method.as_deref().unwrap_or("none")
+            )
+        })
+        .unwrap_or_default();
+
+    format!(
+        "script={} calling={} native_calling={} method={} dynamic={} has_calling_ctx={}{}",
+        trace_hash(script_hash.or_else(|| UInt160::from_bytes(&context.script_hash()).ok())),
+        trace_hash(calling_script_hash),
+        trace_hash(native_calling_script_hash),
+        method_name.as_deref().unwrap_or("none"),
+        is_dynamic_call,
+        has_calling_context,
+        calling_context_summary,
+    )
+}
+
 impl ApplicationEngine {
     /// Validates that the provided hash has a matching witness in the current transaction.
     /// This matches C# ApplicationEngine.CheckWitnessInternal exactly, including witness rules.
     fn check_witness_internal(&self, hash: &UInt160) -> CoreResult<bool> {
+        let trace = witness_trace_enabled(self);
+        if trace {
+            let context_summary = self
+                .vm_engine
+                .engine()
+                .current_context()
+                .map(trace_context_state)
+                .unwrap_or_else(|| "no current context".to_string());
+            eprintln!(
+                "trace witness: target={} current={} calling={} entry={} {}",
+                hash,
+                trace_hash(self.current_script_hash),
+                trace_hash(self.calling_script_hash),
+                trace_hash(self.entry_script_hash),
+                context_summary,
+            );
+        }
+
         // 1. Calling script hash always succeeds.
         if self.get_calling_script_hash() == Some(*hash) {
+            if trace {
+                eprintln!(
+                    "trace witness.result: target={} matched=calling-script",
+                    hash
+                );
+            }
             return Ok(true);
         }
 
         let Some(container) = self.script_container.as_ref() else {
+            if trace {
+                eprintln!(
+                    "trace witness.result: target={} matched=false no-container",
+                    hash
+                );
+            }
             return Ok(false);
         };
 
@@ -65,15 +185,50 @@ impl ApplicationEngine {
             }
 
             let Some(signer) = signers.iter().find(|s| s.account == *hash) else {
+                if trace {
+                    eprintln!(
+                        "trace witness.result: target={} matched=false signer-not-found signers={:?}",
+                        hash,
+                        signers
+                            .iter()
+                            .map(|signer| signer.account.to_string())
+                            .collect::<Vec<_>>()
+                    );
+                }
                 return Ok(false);
             };
 
+            if trace {
+                eprintln!(
+                    "trace witness.signer: account={} scopes={}",
+                    signer.account, signer.scopes
+                );
+            }
             for rule in signer.get_all_rules() {
-                if self.match_witness_condition(&rule.condition)? {
+                let matched = self.match_witness_condition(&rule.condition)?;
+                if trace {
+                    eprintln!(
+                        "trace witness.rule: account={} action={:?} condition={:?} matched={}",
+                        signer.account, rule.action, rule.condition, matched
+                    );
+                }
+                if matched {
+                    if trace {
+                        eprintln!(
+                            "trace witness.result: target={} matched=true action={:?}",
+                            hash, rule.action
+                        );
+                    }
                     return Ok(rule.action == WitnessRuleAction::Allow);
                 }
             }
 
+            if trace {
+                eprintln!(
+                    "trace witness.result: target={} matched=false no-rule",
+                    hash
+                );
+            }
             return Ok(false);
         }
 

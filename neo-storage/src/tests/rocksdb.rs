@@ -182,21 +182,35 @@ fn backward_prefix_find_returns_expected_rows_in_store_and_snapshot_views() {
     writer.commit();
 
     let prefix = StorageKey::create(-5, 0x1d);
-    let expected = vec![key_b.to_array(), key_a.to_array()];
+    let forward_expected = vec![key_a.to_array(), key_b.to_array()];
+    let backward_expected = vec![key_b.to_array(), key_a.to_array()];
 
-    let store_keys: Vec<Vec<u8>> = store
+    let store_forward_keys: Vec<Vec<u8>> = store
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(k, _)| k.to_array())
+        .collect();
+    assert_eq!(store_forward_keys, forward_expected);
+
+    let store_backward_keys: Vec<Vec<u8>> = store
         .find(Some(&prefix), SeekDirection::Backward)
         .map(|(k, _)| k.to_array())
         .collect();
-    assert_eq!(store_keys, expected);
+    assert_eq!(store_backward_keys, backward_expected);
 
     let snapshot_cache = StoreCache::new_from_snapshot(store.snapshot());
-    let snapshot_keys: Vec<Vec<u8>> = snapshot_cache
+    let snapshot_forward_keys: Vec<Vec<u8>> = snapshot_cache
+        .data_cache()
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(k, _)| k.to_array())
+        .collect();
+    assert_eq!(snapshot_forward_keys, forward_expected);
+
+    let snapshot_backward_keys: Vec<Vec<u8>> = snapshot_cache
         .data_cache()
         .find(Some(&prefix), SeekDirection::Backward)
         .map(|(k, _)| k.to_array())
         .collect();
-    assert_eq!(snapshot_keys, expected);
+    assert_eq!(snapshot_backward_keys, backward_expected);
 }
 
 #[test]

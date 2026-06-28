@@ -1,7 +1,8 @@
 use super::*;
 use neo_config::ProtocolSettings;
-use neo_primitives::TriggerType;
+use neo_primitives::{TriggerType, UInt256};
 use neo_storage::persistence::DataCache;
+use std::str::FromStr;
 use std::sync::Arc;
 
 fn test_engine() -> ApplicationEngine {
@@ -26,6 +27,33 @@ fn invalid_public_key() -> Vec<u8> {
     let mut key = vec![0x04; 33];
     key[1] = 0x01;
     key
+}
+
+#[test]
+fn contract_call_trace_filter_matches_exact_transaction_hash() {
+    let target =
+        UInt256::from_str("0x5e0cbae4dcfd0e97084b7a79fb29e2dbec2ba860d34717948f5e3809d9ccb4d3")
+            .expect("target hash");
+    let other =
+        UInt256::from_str("0xdb40cbead625dc9211712875f3e69d17550c1d6b0452efd548809525577f14bd")
+            .expect("other hash");
+
+    assert!(contract_call_trace_filter_matches(
+        Some(target),
+        false,
+        Some(target),
+    ));
+    assert!(!contract_call_trace_filter_matches(
+        Some(target),
+        false,
+        Some(other),
+    ));
+    assert!(contract_call_trace_filter_matches(None, true, Some(other)));
+    assert!(!contract_call_trace_filter_matches(
+        None,
+        false,
+        Some(other)
+    ));
 }
 
 #[test]

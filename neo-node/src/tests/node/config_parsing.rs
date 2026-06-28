@@ -147,6 +147,7 @@ private_key_hex = "012345"
 Enabled = true
 Path = "StateRoot"
 FullState = true
+TrackDuringCatchup = true
 
 [indexer]
 Enabled = true
@@ -188,6 +189,7 @@ BackfillOnStartup = false
         Some(std::path::Path::new("StateRoot"))
     );
     assert!(config.state_service.full_state);
+    assert!(config.state_service.track_during_catchup);
     assert!(config.indexer.enabled);
     assert_eq!(
         config.indexer.path.as_deref(),
@@ -416,6 +418,8 @@ fn node_cli_accepts_preflight_flags() {
         "./data/custom",
         "--network-magic",
         "1234",
+        "--stop-at-height",
+        "665603",
         "--check-all",
     ])
     .expect("preflight args parse");
@@ -423,6 +427,7 @@ fn node_cli_accepts_preflight_flags() {
     assert_eq!(cli.config, PathBuf::from("custom.toml"));
     assert_eq!(cli.storage_path, Some(PathBuf::from("./data/custom")));
     assert_eq!(cli.network_magic, Some(1234));
+    assert_eq!(cli.stop_at_height, Some(665603));
     assert!(cli.check_all);
     assert!(!cli.check_config);
     assert!(!cli.check_storage);

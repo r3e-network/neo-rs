@@ -20,6 +20,9 @@ set -euo pipefail
 #   --max <K>               retain at most K checkpoints (default 10)
 #   --rpc <url>             RPC endpoint (default http://localhost:10332/)
 #   --data-dir <path>       neo-rs data root (default ./data)
+#   --chain-db <path>       explicit chain RocksDB path (default <data-dir>/mainnet)
+#   --stateroot-db <path>   explicit StateRoot RocksDB path (default <data-dir>/Plugins/mainnet/StateRoot)
+#   --chain-only            snapshot only the chain DB (for bounded replay DBs without StateService)
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
 #   --once                  take a single checkpoint at current height and exit
 #   --height <N>            override RPC; use N as the height label (for --once)
@@ -39,8 +42,11 @@ MAX_CHECKPOINTS="${NEO_CHECKPOINT_MAX:-10}"
 RPC_URL="${NEO_RPC_URL:-http://localhost:10332/}"
 DATA_DIR="${NEO_DATA_DIR:-./data}"
 CHECKPOINT_ROOT="${NEO_CHECKPOINT_ROOT:-}"
+CHAIN_DB_OVERRIDE="${NEO_CHAIN_DB:-}"
+STATEROOT_DB_OVERRIDE="${NEO_STATEROOT_DB:-}"
 ONCE=0
 HEIGHT_OVERRIDE=""
+CHAIN_ONLY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -48,6 +54,9 @@ while [[ $# -gt 0 ]]; do
     --max)      MAX_CHECKPOINTS="$2"; shift 2;;
     --rpc)      RPC_URL="$2"; shift 2;;
     --data-dir) DATA_DIR="$2"; shift 2;;
+    --chain-db) CHAIN_DB_OVERRIDE="$2"; shift 2;;
+    --stateroot-db) STATEROOT_DB_OVERRIDE="$2"; shift 2;;
+    --chain-only) CHAIN_ONLY=1; shift;;
     --root)     CHECKPOINT_ROOT="$2"; shift 2;;
     --once)     ONCE=1; shift;;
     --height)   HEIGHT_OVERRIDE="$2"; shift 2;;
@@ -58,18 +67,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$WRITER_PID" ]]; then
-  echo "Usage: $0 <writer_pid|none> [--interval N] [--max K] [--rpc URL] [--data-dir PATH] [--root PATH] [--once]" >&2
+  echo "Usage: $0 <writer_pid|none> [--interval N] [--max K] [--rpc URL] [--data-dir PATH] [--chain-db PATH] [--stateroot-db PATH] [--root PATH] [--once]" >&2
   exit 1
 fi
 
-CHAIN_DB="${DATA_DIR}/mainnet"
-STATEROOT_DB="${DATA_DIR}/Plugins/mainnet/StateRoot"
+CHAIN_DB="${CHAIN_DB_OVERRIDE:-${DATA_DIR}/mainnet}"
+STATEROOT_DB="${STATEROOT_DB_OVERRIDE:-${DATA_DIR}/Plugins/mainnet/StateRoot}"
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-${DATA_DIR}/checkpoints}"
 
 if [[ ! -d "$CHAIN_DB" ]]; then
   echo "chain DB not found: $CHAIN_DB" >&2; exit 1
 fi
-if [[ ! -d "$STATEROOT_DB" ]]; then
+if [[ "$CHAIN_ONLY" -eq 0 && ! -d "$STATEROOT_DB" ]]; then
   echo "StateRoot DB not found: $STATEROOT_DB" >&2; exit 1
 fi
 
@@ -140,7 +149,9 @@ take_snapshot() {
 
   # cp -al = archive + hardlink. Falls back to copy if cross-FS.
   cp -al "$CHAIN_DB" "${tmp}/mainnet" 2>/dev/null || cp -a "$CHAIN_DB" "${tmp}/mainnet"
-  cp -al "$STATEROOT_DB" "${tmp}/StateRoot" 2>/dev/null || cp -a "$STATEROOT_DB" "${tmp}/StateRoot"
+  if [[ "$CHAIN_ONLY" -eq 0 ]]; then
+    cp -al "$STATEROOT_DB" "${tmp}/StateRoot" 2>/dev/null || cp -a "$STATEROOT_DB" "${tmp}/StateRoot"
+  fi
 
   if has_writer; then
     kill -CONT "$WRITER_PID"; paused=0
@@ -152,7 +163,13 @@ take_snapshot() {
     echo "height=${height}"
     echo "writer_pid=${WRITER_PID}"
     echo "chain_db=${CHAIN_DB}"
-    echo "stateroot_db=${STATEROOT_DB}"
+    if [[ "$CHAIN_ONLY" -eq 0 ]]; then
+      echo "stateroot_db=${STATEROOT_DB}"
+      echo "state_root_included=true"
+    else
+      echo "stateroot_db=none"
+      echo "state_root_included=false"
+    fi
   } >"${tmp}/CHECKPOINT_INFO"
   rm -f "${tmp}/CHECKPOINT_IN_PROGRESS"
   mv "$tmp" "$target"
@@ -161,7 +178,10 @@ take_snapshot() {
 
 prune_old() {
   local -a dirs
-  mapfile -t dirs < <(ls -1d "${CHECKPOINT_ROOT}"/h[0-9]* 2>/dev/null | sort -t h -k2,2n)
+  dirs=()
+  while IFS= read -r dir; do
+    dirs+=("$dir")
+  done < <(sorted_height_checkpoints)
   local count="${#dirs[@]}"
   if [[ "$count" -le "$MAX_CHECKPOINTS" ]]; then return; fi
   local to_prune=$((count - MAX_CHECKPOINTS))
@@ -170,6 +190,19 @@ prune_old() {
     echo "pruning old checkpoint: ${dirs[$i]}"
     rm -rf "${dirs[$i]}"
   done
+}
+
+sorted_height_checkpoints() {
+  local dir base height
+  find "$CHECKPOINT_ROOT" -maxdepth 1 -mindepth 1 -type d -name 'h[0-9]*' 2>/dev/null |
+    while IFS= read -r dir; do
+      base=$(basename "$dir")
+      [[ "$base" =~ ^h([0-9]+)$ ]] || continue
+      height="${BASH_REMATCH[1]}"
+      printf '%s\t%s\n' "$height" "$dir"
+    done |
+    sort -n -k1,1 |
+    cut -f2-
 }
 
 # ----- main loop -----
@@ -193,7 +226,7 @@ fi
 echo "watching pid=$WRITER_PID interval=${INTERVAL_BLOCKS} blocks max=$MAX_CHECKPOINTS rpc=$RPC_URL root=$CHECKPOINT_ROOT"
 last_height=-1
 # seed last_height from highest existing checkpoint so we don't re-checkpoint h<X> immediately after restart
-if last_ckpt=$(ls -1d "${CHECKPOINT_ROOT}"/h[0-9]* 2>/dev/null | sort -t h -k2,2n | tail -1); then
+if last_ckpt=$(sorted_height_checkpoints | tail -1); then
   if [[ -n "$last_ckpt" ]]; then
     last_height=$(basename "$last_ckpt" | sed 's/^h//')
     echo "resuming after last checkpoint h${last_height}"

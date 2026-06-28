@@ -2,25 +2,31 @@
 set -euo pipefail
 
 # Restore live mainnet chain DB + StateRoot DB from a previously-taken
-# checkpoint. Hardlinks the SST files back into place, which is cheap on the
-# same filesystem (the source checkpoint files are not touched — they remain
-# the canonical copies if you ever need to re-restore).
+# checkpoint. Chain-only checkpoints created for bounded replay DBs are also
+# supported when CHECKPOINT_INFO records state_root_included=false. Hardlinks
+# the SST files back into place, which is cheap on the same filesystem (the
+# source checkpoint files are not touched — they remain the canonical copies if
+# you ever need to re-restore).
 #
 # Usage:
-#   scripts/restore-checkpoint.sh <height|latest|--at-or-below N> [options]
+#   scripts/restore-checkpoint.sh <height|label|latest|--at-or-below N> [options]
 #
 # Options:
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
 #   --data-dir <path>       neo-rs data root (default ./data)
+#   --chain-db <path>       explicit chain RocksDB target (default <data-dir>/mainnet)
+#   --stateroot-db <path>   explicit StateRoot target (default <data-dir>/Plugins/mainnet/StateRoot)
 #   --keep-current          keep current data/mainnet & StateRoot as
 #                           data/mainnet.prerestore-<TS> instead of deleting
 #   --dry-run               print what would happen, do nothing
 #   -y, --yes               do not prompt for confirmation
 #
-# Refuses to run while a neo-node writer is running against the data dir.
+# Refuses to run when the target RocksDB LOCK file is held by another process.
 
 DATA_DIR="${NEO_DATA_DIR:-./data}"
 CHECKPOINT_ROOT="${NEO_CHECKPOINT_ROOT:-}"
+CHAIN_DB_OVERRIDE="${NEO_CHAIN_DB:-}"
+STATEROOT_DB_OVERRIDE="${NEO_STATEROOT_DB:-}"
 KEEP_CURRENT=0
 DRY_RUN=0
 YES=0
@@ -28,7 +34,7 @@ YES=0
 TARGET="${1:-}"
 shift || true
 if [[ -z "$TARGET" ]]; then
-  sed -n '3,18p' "$0"; exit 1
+  sed -n '3,24p' "$0"; exit 1
 fi
 
 # `--at-or-below N` means "pick the highest checkpoint with height <= N"
@@ -42,6 +48,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --root)         CHECKPOINT_ROOT="$2"; shift 2;;
     --data-dir)     DATA_DIR="$2"; shift 2;;
+    --chain-db)     CHAIN_DB_OVERRIDE="$2"; shift 2;;
+    --stateroot-db) STATEROOT_DB_OVERRIDE="$2"; shift 2;;
     --keep-current) KEEP_CURRENT=1; shift;;
     --dry-run)      DRY_RUN=1; shift;;
     -y|--yes)       YES=1; shift;;
@@ -50,31 +58,76 @@ while [[ $# -gt 0 ]]; do
 done
 
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-${DATA_DIR}/checkpoints}"
-CHAIN_DB="${DATA_DIR}/mainnet"
-STATEROOT_DB="${DATA_DIR}/Plugins/mainnet/StateRoot"
+CHAIN_DB="${CHAIN_DB_OVERRIDE:-${DATA_DIR}/mainnet}"
+STATEROOT_DB="${STATEROOT_DB_OVERRIDE:-${DATA_DIR}/Plugins/mainnet/StateRoot}"
 
 if [[ ! -d "$CHECKPOINT_ROOT" ]]; then
   echo "no checkpoint root at $CHECKPOINT_ROOT" >&2; exit 1
 fi
 
 # ----- pick checkpoint dir -----
+dir_height() {
+  local dir="$1"
+  local base info_height
+  base=$(basename "$dir")
+  case "$base" in
+    h[0-9]*)
+      printf '%s\n' "${base#h}"
+      return
+      ;;
+  esac
+  if [[ -f "$dir/CHECKPOINT_INFO" ]]; then
+    info_height=$(sed -n 's/^height=//p' "$dir/CHECKPOINT_INFO" | head -1)
+    case "$info_height" in
+      ''|*[!0-9]*) return 1;;
+      *) printf '%s\n' "$info_height"; return;;
+    esac
+  fi
+  return 1
+}
+
+checkpoint_dirs_by_height() {
+  local d height
+  while IFS= read -r d; do
+    height=$(dir_height "$d" || true)
+    if [[ -n "$height" ]]; then
+      printf '%s\t%s\n' "$height" "$d"
+    fi
+  done < <(find "$CHECKPOINT_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+}
+
+print_available_checkpoints() {
+  local height d found=0
+  while IFS=$'\t' read -r height d; do
+    found=1
+    printf '  h%s\t%s\n' "$height" "$d" >&2
+  done < <(checkpoint_dirs_by_height | sort -n -k1,1)
+  if [[ "$found" -eq 0 ]]; then
+    echo "  (none)" >&2
+  fi
+}
+
 pick_dir() {
   local req="$1"
   if [[ "$req" == "latest" ]]; then
-    ls -1d "${CHECKPOINT_ROOT}"/h[0-9]* 2>/dev/null | sort -t h -k2,2n | tail -1
+    checkpoint_dirs_by_height | sort -n -k1,1 | tail -1 | cut -f2-
     return
   fi
   if [[ -n "$AT_OR_BELOW" ]]; then
-    local picked=""
-    while read -r d; do
-      h=$(basename "$d" | sed 's/^h//')
-      if (( h <= AT_OR_BELOW )); then picked="$d"; fi
-    done < <(ls -1d "${CHECKPOINT_ROOT}"/h[0-9]* 2>/dev/null | sort -t h -k2,2n)
+    local height d picked=""
+    while IFS=$'\t' read -r height d; do
+      if (( height <= AT_OR_BELOW )); then picked="$d"; fi
+    done < <(checkpoint_dirs_by_height | sort -n -k1,1)
     printf '%s\n' "$picked"
     return
   fi
   # exact height
-  local d="${CHECKPOINT_ROOT}/h${req}"
+  local d
+  if [[ "$req" == *[!0-9]* ]]; then
+    d="${CHECKPOINT_ROOT}/${req}"
+  else
+    d="${CHECKPOINT_ROOT}/h${req}"
+  fi
   if [[ -d "$d" ]]; then printf '%s\n' "$d"; fi
 }
 
@@ -83,39 +136,72 @@ if [[ "$TARGET" == "--at-or-below" ]]; then
 elif [[ "$TARGET" == "latest" ]]; then
   SOURCE=$(pick_dir latest)
 else
-  case "$TARGET" in
-    ''|*[!0-9]*) echo "<height> must be a non-negative integer, 'latest', or '--at-or-below N'"; exit 1;;
-  esac
   SOURCE=$(pick_dir "$TARGET")
 fi
 
 if [[ -z "$SOURCE" || ! -d "$SOURCE" ]]; then
   echo "no matching checkpoint found in $CHECKPOINT_ROOT" >&2
   echo "available:" >&2
-  ls -1d "${CHECKPOINT_ROOT}"/h[0-9]* 2>/dev/null | sed 's|^|  |' >&2 || echo "  (none)" >&2
+  print_available_checkpoints
   exit 1
 fi
 
-SOURCE_HEIGHT=$(basename "$SOURCE" | sed 's/^h//')
-if [[ ! -d "$SOURCE/mainnet" || ! -d "$SOURCE/StateRoot" ]]; then
-  echo "checkpoint $SOURCE is incomplete (missing mainnet/ or StateRoot/)" >&2; exit 1
+metadata_value() {
+  local key="$1"
+  local file="$SOURCE/CHECKPOINT_INFO"
+  [[ -f "$file" ]] || return 1
+  sed -n "s/^${key}=//p" "$file" | head -1
+}
+
+SOURCE_BASENAME=$(basename "$SOURCE")
+SOURCE_HEIGHT=$(printf '%s' "$SOURCE_BASENAME" | sed -n 's/^h\([0-9][0-9]*\)$/\1/p')
+if [[ -z "$SOURCE_HEIGHT" ]]; then
+  SOURCE_HEIGHT=$(metadata_value height || true)
+fi
+if [[ -z "$SOURCE_HEIGHT" ]]; then
+  echo "checkpoint $SOURCE is missing a numeric height in its name or CHECKPOINT_INFO" >&2; exit 1
+fi
+
+SOURCE_HAS_STATEROOT=1
+SOURCE_CHAIN_DIR=""
+if [[ -d "$SOURCE/mainnet" ]]; then
+  SOURCE_CHAIN_DIR="$SOURCE/mainnet"
+elif [[ -d "$SOURCE/data" ]] && [[ "$(metadata_value mode || true)" == "storage-sample" ]]; then
+  SOURCE_CHAIN_DIR="$SOURCE/data"
+else
+  echo "checkpoint $SOURCE is incomplete (missing mainnet/)" >&2; exit 1
+fi
+if [[ ! -d "$SOURCE/StateRoot" ]]; then
+  if [[ -f "$SOURCE/CHECKPOINT_INFO" ]] && {
+    grep -qx 'state_root_included=false' "$SOURCE/CHECKPOINT_INFO" ||
+      grep -qx 'mpt_dir=missing-mpt' "$SOURCE/CHECKPOINT_INFO"
+  }; then
+    SOURCE_HAS_STATEROOT=0
+  else
+    echo "checkpoint $SOURCE is incomplete (missing StateRoot/)" >&2; exit 1
+  fi
 fi
 if [[ -f "$SOURCE/CHECKPOINT_IN_PROGRESS" ]]; then
   echo "checkpoint $SOURCE was not finalized (CHECKPOINT_IN_PROGRESS marker present)" >&2; exit 1
 fi
 
-# ----- safety: refuse if writer is live -----
-PIDS=$(pgrep -f 'neo-node|neo-cli' || true)
-if [[ -n "$PIDS" ]]; then
-  echo "ERROR: a neo-node/neo-cli process appears to be running:" >&2
-  ps -fp $PIDS >&2 || true
-  echo "Stop it first, then re-run." >&2
-  exit 1
-fi
+lock_is_held() {
+  local lock="$1"
+  if command -v fuser >/dev/null 2>&1; then
+    fuser "$lock" >/dev/null 2>&1
+    return
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof "$lock" >/dev/null 2>&1
+    return
+  fi
+  return 1
+}
 
-# Optional lock-file from the syncer
+# Refuse only when the target store's lock file is actively held. Other
+# neo-node processes may legitimately be running against unrelated data dirs.
 for lock in "$CHAIN_DB/LOCK" "$STATEROOT_DB/LOCK"; do
-  if [[ -f "$lock" ]] && fuser "$lock" >/dev/null 2>&1; then
+  if [[ -f "$lock" ]] && lock_is_held "$lock"; then
     echo "ERROR: $lock is held by another process; refusing to restore." >&2
     exit 1
   fi
@@ -123,7 +209,11 @@ done
 
 echo "restoring from checkpoint h${SOURCE_HEIGHT} (${SOURCE})"
 echo "  -> $CHAIN_DB"
-echo "  -> $STATEROOT_DB"
+if [[ "$SOURCE_HAS_STATEROOT" -eq 1 ]]; then
+  echo "  -> $STATEROOT_DB"
+else
+  echo "  -> state DB skipped (chain-only checkpoint); stale target StateRoot will be removed"
+fi
 if [[ "$KEEP_CURRENT" -eq 1 ]]; then
   TS=$(date +%Y%m%d-%H%M%S)
   echo "  current dirs will be renamed to .prerestore-${TS}/ (not deleted)"
@@ -152,10 +242,17 @@ stash_or_rm() {
 stash_or_rm "$CHAIN_DB"
 stash_or_rm "$STATEROOT_DB"
 
-mkdir -p "$(dirname "$CHAIN_DB")" "$(dirname "$STATEROOT_DB")"
-cp -al "$SOURCE/mainnet"   "$CHAIN_DB"     2>/dev/null || cp -a "$SOURCE/mainnet"   "$CHAIN_DB"
-cp -al "$SOURCE/StateRoot" "$STATEROOT_DB" 2>/dev/null || cp -a "$SOURCE/StateRoot" "$STATEROOT_DB"
+mkdir -p "$(dirname "$CHAIN_DB")"
+cp -al "$SOURCE_CHAIN_DIR" "$CHAIN_DB"     2>/dev/null || cp -a "$SOURCE_CHAIN_DIR" "$CHAIN_DB"
+if [[ "$SOURCE_HAS_STATEROOT" -eq 1 ]]; then
+  mkdir -p "$(dirname "$STATEROOT_DB")"
+  cp -al "$SOURCE/StateRoot" "$STATEROOT_DB" 2>/dev/null || cp -a "$SOURCE/StateRoot" "$STATEROOT_DB"
+fi
 
-echo "restore complete. chain & state DB are now at height ~${SOURCE_HEIGHT}."
+if [[ "$SOURCE_HAS_STATEROOT" -eq 1 ]]; then
+  echo "restore complete. chain & state DB are now at height ~${SOURCE_HEIGHT}."
+else
+  echo "restore complete. chain DB is now at height ~${SOURCE_HEIGHT}; state DB skipped."
+fi
 echo "Run print_height to confirm:"
 echo "  cargo run -p neo-core --example print_height --release -- $CHAIN_DB"

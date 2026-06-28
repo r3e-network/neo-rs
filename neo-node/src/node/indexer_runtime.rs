@@ -18,6 +18,141 @@ use application_logs::{
     parse_application_log_executions,
 };
 
+const INDEXER_RUNTIME_ACTIVATION_WINDOW: u64 = 10_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum IndexerRuntimeStartMode {
+    StartNow,
+    Deferred,
+}
+
+pub(crate) fn indexer_runtime_start_mode(
+    local_height: u64,
+    peer_tip: u64,
+) -> IndexerRuntimeStartMode {
+    if local_height > 0
+        && (peer_tip == 0
+            || local_height.saturating_add(INDEXER_RUNTIME_ACTIVATION_WINDOW) >= peer_tip)
+    {
+        IndexerRuntimeStartMode::StartNow
+    } else {
+        IndexerRuntimeStartMode::Deferred
+    }
+}
+
+fn indexer_runtime_activation_reached(
+    start_mode: IndexerRuntimeStartMode,
+    local_height: u64,
+    peer_tip: u64,
+) -> bool {
+    if start_mode == IndexerRuntimeStartMode::StartNow {
+        return true;
+    }
+    peer_tip > 0 && local_height.saturating_add(INDEXER_RUNTIME_ACTIVATION_WINDOW) >= peer_tip
+}
+
+fn indexer_should_backfill_on_activation(
+    backfill_on_startup: bool,
+    start_mode: IndexerRuntimeStartMode,
+) -> bool {
+    backfill_on_startup || start_mode == IndexerRuntimeStartMode::Deferred
+}
+
+pub(crate) async fn run_live_indexer_when_ready(
+    blockchain: BlockchainHandle,
+    indexer: Arc<IndexerService>,
+    application_logs: Option<Arc<ApplicationLogsService>>,
+    backfill_on_startup: bool,
+    startup_height: u64,
+) {
+    let start_mode =
+        indexer_runtime_start_mode(startup_height, neo_runtime::sync_metrics::peer_live_tip());
+    if !wait_until_indexer_runtime_ready(&blockchain, startup_height, start_mode).await {
+        return;
+    }
+    let backfill_on_startup =
+        indexer_should_backfill_on_activation(backfill_on_startup, start_mode);
+
+    run_live_indexer(blockchain, indexer, application_logs, backfill_on_startup).await;
+}
+
+async fn wait_until_indexer_runtime_ready(
+    blockchain: &BlockchainHandle,
+    startup_height: u64,
+    start_mode: IndexerRuntimeStartMode,
+) -> bool {
+    let mut local_height = startup_height;
+    let initial_peer_tip = neo_runtime::sync_metrics::peer_live_tip();
+    if start_mode == IndexerRuntimeStartMode::StartNow {
+        info!(
+            target: "neo::indexer",
+            local_height,
+            peer_tip = initial_peer_tip,
+            "starting indexer runtime"
+        );
+        return true;
+    }
+
+    info!(
+        target: "neo::indexer",
+        local_height,
+        peer_tip = initial_peer_tip,
+        activation_window = INDEXER_RUNTIME_ACTIVATION_WINDOW,
+        "indexer runtime deferred during catch-up; supervisor will start it near peer tip"
+    );
+
+    let mut events = blockchain.subscribe();
+    loop {
+        match events.recv().await {
+            Ok(RuntimeEvent::Imported { height, .. })
+            | Ok(RuntimeEvent::TipChanged { height, .. }) => {
+                local_height = u64::from(height);
+            }
+            Ok(RuntimeEvent::Reverted { height, .. }) => {
+                local_height = u64::from(height.saturating_sub(1));
+            }
+            Ok(RuntimeEvent::Shutdown) => {
+                info!(
+                    target: "neo::indexer",
+                    "indexer runtime supervisor stopped before activation"
+                );
+                return false;
+            }
+            Err(RecvError::Lagged(skipped)) => match blockchain.get_height().await {
+                Ok(height) => {
+                    local_height = u64::from(height);
+                    debug!(
+                        target: "neo::indexer",
+                        skipped,
+                        local_height,
+                        "indexer activation supervisor caught up after lagged events"
+                    );
+                }
+                Err(err) => {
+                    warn!(
+                        target: "neo::indexer",
+                        skipped,
+                        error = %err,
+                        "indexer activation supervisor failed to read chain height"
+                    );
+                }
+            },
+            Err(RecvError::Closed) => return false,
+        }
+
+        let peer_tip = neo_runtime::sync_metrics::peer_live_tip();
+        if indexer_runtime_activation_reached(start_mode, local_height, peer_tip) {
+            info!(
+                target: "neo::indexer",
+                local_height,
+                peer_tip,
+                "indexer runtime activation window reached"
+            );
+            return true;
+        }
+    }
+}
+
 /// Background task that follows canonical-chain events.
 pub(crate) async fn run_live_indexer(
     blockchain: BlockchainHandle,

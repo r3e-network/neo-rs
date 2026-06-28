@@ -14,9 +14,10 @@
 //!
 //! Mirrors the C# `StateService.Storage.StateStore` shape.
 
+use crate::StateRootApplyMetrics;
 use crate::mpt_store::{MptChange, MptStore};
 use crate::state_root::StateRoot;
-use neo_crypto::mpt_trie::MptResult;
+use neo_crypto::mpt_trie::{MptError, MptResult};
 use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
 use neo_storage::{DataCache, TrackState};
@@ -134,13 +135,72 @@ impl StateStore {
         block_index: u32,
         snapshot: &DataCache,
     ) -> MptResult<Option<UInt256>> {
+        let total_start = std::time::Instant::now();
         let Some(mpt) = self.mpt.as_ref() else {
             return Ok(None);
         };
-        let root_before = mpt.current_local_root_hash();
+        let project_start = std::time::Instant::now();
+        let root_before = match Self::contiguous_root_before(mpt, block_index) {
+            Ok(root_before) => root_before,
+            Err(err) => {
+                StateRootApplyMetrics::record_apply(
+                    block_index,
+                    0,
+                    elapsed_us(project_start),
+                    0,
+                    elapsed_us(total_start),
+                    false,
+                );
+                return Err(err);
+            }
+        };
         let changes = Self::mpt_changes_from_snapshot(snapshot);
-        mpt.apply_block_changes(block_index, root_before, &changes)
-            .map(Some)
+        let project_us = elapsed_us(project_start);
+        let apply_start = std::time::Instant::now();
+        match mpt.apply_block_changes(block_index, root_before, &changes) {
+            Ok(root_hash) => {
+                StateRootApplyMetrics::record_apply(
+                    block_index,
+                    changes.len(),
+                    project_us,
+                    elapsed_us(apply_start),
+                    elapsed_us(total_start),
+                    true,
+                );
+                Ok(Some(root_hash))
+            }
+            Err(err) => {
+                StateRootApplyMetrics::record_apply(
+                    block_index,
+                    changes.len(),
+                    project_us,
+                    elapsed_us(apply_start),
+                    elapsed_us(total_start),
+                    false,
+                );
+                Err(err)
+            }
+        }
+    }
+
+    fn contiguous_root_before(mpt: &MptStore, block_index: u32) -> MptResult<Option<UInt256>> {
+        match mpt.current_local_root_index() {
+            None if block_index == 0 => Ok(None),
+            None => Err(MptError::invalid(format!(
+                "non-contiguous state-service MPT update: no local root exists before block {block_index}"
+            ))),
+            Some(previous_index) if previous_index.checked_add(1) == Some(block_index) => mpt
+                .current_local_root_hash()
+                .ok_or_else(|| {
+                    MptError::invalid(format!(
+                        "state-service MPT current root index {previous_index} has no root record"
+                    ))
+                })
+                .map(Some),
+            Some(previous_index) => Err(MptError::invalid(format!(
+                "non-contiguous state-service MPT update: current local root index is {previous_index}, next block is {block_index}"
+            ))),
+        }
     }
 
     fn mpt_changes_from_snapshot(snapshot: &DataCache) -> Vec<MptChange> {
@@ -237,6 +297,10 @@ impl StateStore {
         let guard = self.inner.read();
         guard.by_index.keys().next_back().copied()
     }
+}
+
+fn elapsed_us(start: std::time::Instant) -> u64 {
+    start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
 impl Clone for StateStore {

@@ -17,6 +17,10 @@ description = "Neo N3 blockchain node daemon"
 name = "neo-node"
 path = "src/main.rs"
 
+[[bin]]
+name = "neo-db-probe"
+path = "src/bin/neo-db-probe.rs"
+
 [features]
 default = []
 # Optional TEE (Trusted Execution Environment) support.
@@ -47,6 +51,7 @@ toml = { workspace = true }
 prometheus = { workspace = true }
 parking_lot = { workspace = true }
 reqwest = { workspace = true }
+base64 = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
@@ -88,6 +93,7 @@ neo-primitives = { workspace = true }
 neo-runtime = { workspace = true }
 neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
+neo-serialization = { workspace = true }
 neo-system = { workspace = true }
 neo-wallets = { workspace = true }
 neo-blockchain = { workspace = true }
@@ -97,7 +103,6 @@ hex = { workspace = true }
 neo-mempool = { workspace = true }
 
 [dev-dependencies]
-neo-serialization = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

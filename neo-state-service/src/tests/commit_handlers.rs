@@ -13,11 +13,11 @@ fn committing_updates_mpt_root() {
         StorageItem::from_bytes(vec![0x01]),
     );
 
-    assert!(handlers.on_committing(1, &snapshot));
+    assert!(handlers.on_committing(0, &snapshot));
     let mpt = store.mpt().expect("mpt backend");
-    assert_eq!(mpt.current_local_root_index(), Some(1));
+    assert_eq!(mpt.current_local_root_index(), Some(0));
     assert!(mpt.current_local_root_hash().is_some());
-    assert!(mpt.get_state_root(1).is_some());
+    assert!(mpt.get_state_root(0).is_some());
 }
 
 #[test]

@@ -96,7 +96,7 @@ pub(super) fn manifest_json(manifest: &ContractManifest) -> Vec<u8> {
         .into_bytes()
 }
 
-fn engine_for(
+pub(super) fn engine_for(
     snapshot: Arc<DataCache>,
     settings: ProtocolSettings,
     sender: UInt160,
@@ -183,6 +183,43 @@ pub(super) fn update_script(
         }
     }
     builder.emit_push_int(2);
+    builder.emit_pack();
+    builder.emit_push_int(i64::from(flags.bits()));
+    builder.emit_push("update".as_bytes());
+    builder.emit_push(&ContractManagement::script_hash().to_array());
+    builder
+        .emit_syscall("System.Contract.Call")
+        .expect("System.Contract.Call");
+    builder.to_array()
+}
+
+/// Builds the self-update entry script
+/// `System.Contract.Call(CM, "update", [nef?, manifest?, data])`.
+pub(super) fn update_script_with_data(
+    nef_bytes: Option<&[u8]>,
+    manifest_bytes: Option<&[u8]>,
+    data: &[u8],
+    flags: CallFlags,
+) -> Vec<u8> {
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push(data);
+    match manifest_bytes {
+        Some(bytes) => {
+            builder.emit_push(bytes);
+        }
+        None => {
+            builder.emit_opcode(OpCode::PUSHNULL);
+        }
+    }
+    match nef_bytes {
+        Some(bytes) => {
+            builder.emit_push(bytes);
+        }
+        None => {
+            builder.emit_opcode(OpCode::PUSHNULL);
+        }
+    }
+    builder.emit_push_int(3);
     builder.emit_pack();
     builder.emit_push_int(i64::from(flags.bits()));
     builder.emit_push("update".as_bytes());

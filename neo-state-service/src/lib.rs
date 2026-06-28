@@ -55,7 +55,9 @@ pub const STATE_SERVICE_CATEGORY: &str = "StateService";
 
 pub use keys::Keys;
 pub use message_type::MessageType;
-pub use metrics::{StateRootIngestMetrics, StateRootIngestStats};
+pub use metrics::{
+    StateRootApplyMetrics, StateRootApplyStats, StateRootIngestMetrics, StateRootIngestStats,
+};
 pub use vote::Vote;
 
 pub use mpt_store::{MptChange, MptReadSnapshot, MptStore};

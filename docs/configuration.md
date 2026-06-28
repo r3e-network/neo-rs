@@ -199,10 +199,17 @@ State-root/MPT support used by Neo's StateService RPC methods.
 |-----|------|---------|---------|
 | `enabled` | bool | `false` | Start the state-root service and register its state store. Alias: `Enabled`. |
 | `full_state` | bool | `false` | Retain historical trie nodes for old-root proofs/state reads. Alias: `FullState`. |
+| `track_during_catchup` | bool | `false` | Keep computing local MPT state roots even while the node is far behind the peer tip. Enable this for full MainNet state-root validation or bootstrap jobs that must produce every historical root. Alias: `TrackDuringCatchup`. |
 | `path` | path | `StateRoot_{0}` | State-service store directory. `{0}` is replaced with uppercase 8-digit network magic. Alias: `Path`. |
 
 The service is updated during block persistence through the daemon's commit
-handlers, so it follows the same canonical-chain lifecycle as the ledger.
+handlers, so it follows the same canonical-chain lifecycle as the ledger. By
+default, cold catch-up defers per-block MPT work for sync throughput; validation
+configs set `track_during_catchup = true` so `getstateheight` and
+`getstateroot` advance from genesis instead of only near the live tip. A
+StateService store must be contiguous with the chain store: if the chain has
+already advanced without matching MPT roots, restore a checkpoint that includes
+`StateRoot` or replay from genesis with `track_during_catchup = true`.
 
 ### `[indexer]`
 

@@ -39,7 +39,8 @@ impl BlockchainService {
             let count_before = cache.values().map(|v| v.len()).sum::<usize>();
             if count_before >= MAX_UNVERIFIED_CACHE_SIZE {
                 // Drop the top 25% of entries (highest block heights).
-                let keys_to_drop: Vec<u32> = cache.keys().rev().take(count_before / 4).copied().collect();
+                let keys_to_drop: Vec<u32> =
+                    cache.keys().rev().take(count_before / 4).copied().collect();
                 for k in keys_to_drop {
                     cache.remove(&k);
                 }

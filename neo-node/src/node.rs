@@ -34,13 +34,13 @@ mod chain_acc;
 mod config;
 mod context;
 mod indexer_runtime;
-mod sync_metrics;
 mod ledger_source;
 mod logging;
 mod observability;
 mod rpc_runtime;
 mod seeds;
 mod services;
+mod sync_metrics;
 mod tasks;
 mod telemetry;
 
@@ -93,6 +93,10 @@ pub struct NodeCli {
     /// node starts normally and continues syncing from the network.
     #[arg(long, value_name = "PATH")]
     pub import_chain: Option<PathBuf>,
+
+    /// Stop gracefully after this persisted block height is reached.
+    #[arg(long, value_name = "HEIGHT")]
+    pub stop_at_height: Option<u32>,
 }
 
 /// The composed, running node and the handles that keep it alive.
@@ -125,7 +129,7 @@ pub async fn run() -> anyhow::Result<()> {
         return Ok(());
     }
     if check_storage {
-        validate_storage(&config, cli.storage_path.as_deref())?;
+        validate_storage(&config, cli.storage_path.as_deref(), settings.network)?;
         info!(target: "neo", config = %cli.config.display(), "storage preflight passed");
         println!("storage OK: {}", cli.config.display());
         return Ok(());
@@ -141,6 +145,7 @@ pub async fn run() -> anyhow::Result<()> {
         Arc::clone(&settings),
         &config,
         cli.storage_path.as_deref(),
+        cli.stop_at_height,
         observability.clone(),
     )
     .await
@@ -262,24 +267,9 @@ pub async fn run() -> anyhow::Result<()> {
 
     // Wait for a shutdown signal, handling SIGTERM as well as Ctrl-C (SIGINT)
     // so `kill`/`pkill`, Docker, and systemd all stop the node gracefully. The
-    // graceful path drops the RocksDB handle, which flushes the memtable to
-    // disk; an ungraceful SIGTERM kill would otherwise leave recent blocks only
-    // in the un-fsync'd memtable, so the next start would resume well behind the
-    // last in-memory height.
-    #[cfg(unix)]
-    let shutdown_signalled: std::io::Result<&str> = {
-        use tokio::signal::unix::{SignalKind, signal};
-        match signal(SignalKind::terminate()) {
-            Ok(mut sigterm) => tokio::select! {
-                res = tokio::signal::ctrl_c() => res.map(|()| "Ctrl-C"),
-                _ = sigterm.recv() => Ok("SIGTERM"),
-            },
-            Err(_) => tokio::signal::ctrl_c().await.map(|()| "Ctrl-C"),
-        }
-    };
-    #[cfg(not(unix))]
-    let shutdown_signalled: std::io::Result<&str> =
-        tokio::signal::ctrl_c().await.map(|()| "Ctrl-C");
+    // validation stop-height path uses the same shutdown route after observing a
+    // committed block event, so RocksDB is dropped cleanly.
+    let shutdown_signalled = wait_for_shutdown_signal(node.blockchain(), cli.stop_at_height).await;
 
     match shutdown_signalled {
         Ok(signal_name) => {
@@ -300,18 +290,74 @@ pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn wait_for_shutdown_signal(
+    blockchain: neo_blockchain::BlockchainHandle,
+    stop_at_height: Option<u32>,
+) -> std::io::Result<String> {
+    if let Some(target_height) = stop_at_height {
+        tokio::select! {
+            res = wait_for_os_shutdown_signal() => res.map(str::to_owned),
+            res = wait_for_stop_height(blockchain.subscribe(), target_height) => res,
+        }
+    } else {
+        wait_for_os_shutdown_signal().await.map(str::to_owned)
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_os_shutdown_signal() -> std::io::Result<&'static str> {
+    use tokio::signal::unix::{SignalKind, signal};
+    match signal(SignalKind::terminate()) {
+        Ok(mut sigterm) => tokio::select! {
+            res = tokio::signal::ctrl_c() => res.map(|()| "Ctrl-C"),
+            _ = sigterm.recv() => Ok("SIGTERM"),
+        },
+        Err(_) => tokio::signal::ctrl_c().await.map(|()| "Ctrl-C"),
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_os_shutdown_signal() -> std::io::Result<&'static str> {
+    tokio::signal::ctrl_c().await.map(|()| "Ctrl-C")
+}
+
+async fn wait_for_stop_height(
+    mut events: tokio::sync::broadcast::Receiver<neo_blockchain::RuntimeEvent>,
+    target_height: u32,
+) -> std::io::Result<String> {
+    use tokio::sync::broadcast::error::RecvError;
+
+    loop {
+        match events.recv().await {
+            Ok(neo_blockchain::RuntimeEvent::Imported { height, .. })
+                if height >= target_height =>
+            {
+                return Ok(format!("stop-at-height {target_height}"));
+            }
+            Ok(_) => {}
+            Err(RecvError::Lagged(_)) => continue,
+            Err(RecvError::Closed) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "blockchain event stream closed before stop height",
+                ));
+            }
+        }
+    }
+}
+
 /// Constructs the [`neo_system::Node`] with a live blockchain service
 /// and a spawned [`neo_network::LocalNodeService`].
 async fn build_node(
     settings: Arc<ProtocolSettings>,
     config: &NodeConfig,
     storage_override: Option<&Path>,
+    stop_at_height: Option<u32>,
     observability: Option<observability::ObservabilityRuntime>,
 ) -> anyhow::Result<RunningNode> {
     use neo_blockchain::service::{BlockchainService, MempoolLike};
     use neo_blockchain::service_context::SystemContext;
     use neo_blockchain::{HeaderCache, LedgerContext};
-    use neo_storage::persistence::store::Store;
     use neo_storage::persistence::StoreCache;
     use parking_lot::Mutex;
 
@@ -382,6 +428,7 @@ async fn build_node(
         snapshot,
         store_cache,
         state_service.clone(),
+        config.state_service.track_during_catchup,
         indexer_service.clone(),
         application_logs_service.clone(),
     ));
@@ -389,12 +436,13 @@ async fn build_node(
     let mempool_like: Arc<Mutex<dyn MempoolLike + Send + Sync>> = Arc::new(Mutex::new(
         neo_blockchain::service::SharedMempool(Arc::clone(&mempool)),
     ));
-    let (service, blockchain) = BlockchainService::with_defaults(
+    let (mut service, blockchain) = BlockchainService::with_defaults(
         system_ctx,
         Arc::clone(&ledger_ctx),
         Arc::clone(&header_cache),
         mempool_like,
     );
+    service.set_stop_at_height(stop_at_height);
 
     let mut handles = Vec::new();
     spawn_daemon_task(
@@ -634,37 +682,22 @@ async fn build_node(
     }
 
     if let Some(indexer) = indexer_service {
-        // The indexer runtime processes every block commit and is expensive
-        // (indexes all transaction execution results). During catch-up it
-        // dominates sync time (measured: 25 blocks/min WITH vs 200+ WITHOUT).
-        // Gate it: only spawn when the node starts near the live tip.
-        let peer_tip = neo_runtime::sync_metrics::peer_live_tip();
-        // Start the indexer if the node is resuming from a non-zero height
-        // (already synced, just catching up a small gap). On a cold store
-        // (durable_tip=0) the node will sync millions of blocks; defer the
-        // indexer to prioritize sync throughput.
-        let indexer_should_start = durable_tip_height > 0 && (peer_tip == 0 || durable_tip_height as u64 + 10000 >= peer_tip);
-        if indexer_should_start {
-            spawn_daemon_task(
-                &mut handles,
-                observability.as_ref(),
-                "indexer_runtime",
-                indexer_runtime::run_live_indexer(
-                    blockchain.clone(),
-                    indexer,
-                    application_logs_service,
-                    config.indexer.backfill_on_startup,
-                ),
-            );
-            info!(target: "neo", "indexer runtime started (durable_tip={}, peer_tip={})", durable_tip_height, peer_tip);
-        } else {
-            info!(
-                target: "neo",
-                durable_tip = durable_tip_height,
-                peer_tip,
-                "indexer runtime DEFERRED during catch-up (will index once near tip); sync throughput prioritized"
-            );
-        }
+        // The indexer runtime is expensive during catch-up, but service
+        // provider profiles must start indexing automatically once sync is
+        // close enough to the peer tip. Keep one supervisor alive so cold-start
+        // service nodes do not require a manual restart after initial sync.
+        spawn_daemon_task(
+            &mut handles,
+            observability.as_ref(),
+            "indexer_runtime",
+            indexer_runtime::run_live_indexer_when_ready(
+                blockchain.clone(),
+                indexer,
+                application_logs_service,
+                config.indexer.backfill_on_startup,
+                u64::from(durable_tip_height),
+            ),
+        );
     }
 
     Ok(RunningNode {

@@ -65,6 +65,10 @@ def build_status_payload(
 ) -> dict:
     elapsed = max(time.time() - started_at, 0.0)
     rate = total_compared / elapsed if elapsed > 0 else 0.0
+    checkpoint_stages = build_checkpoint_stages(
+        start_block=start_block,
+        last_validated_block=last_validated_block,
+    )
     return {
         "timestamp": timestamp(),
         "status": status,
@@ -86,8 +90,32 @@ def build_status_payload(
         else 0.0,
         "rate_per_second": rate,
         "elapsed_seconds": elapsed,
+        "checkpoint_stages": checkpoint_stages,
         "recent_mismatches": mismatches,
         "recent_errors": errors,
+    }
+
+
+def build_checkpoint_stages(*, start_block: int, last_validated_block: int) -> list[dict]:
+    """Return three validated-height recovery points for long mainnet syncs."""
+    safe_start = max(start_block, 0)
+    if last_validated_block < safe_start:
+        return []
+    safe_latest = max(last_validated_block, safe_start)
+    safe_mid = safe_start + (safe_latest - safe_start) // 2
+    return [
+        checkpoint_stage("base", safe_start),
+        checkpoint_stage("mid", safe_mid),
+        checkpoint_stage("latest", safe_latest),
+    ]
+
+
+def checkpoint_stage(stage: str, height: int) -> dict:
+    return {
+        "stage": stage,
+        "height": height,
+        "label": f"{stage}-h{height}",
+        "command": f"scripts/checkpoint-on-height.sh none --once --height {height}",
     }
 
 

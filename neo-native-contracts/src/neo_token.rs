@@ -16,11 +16,13 @@ use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeEvent, NativeMethod};
 use neo_primitives::UInt160;
+use neo_runtime::sync_metrics::{self, NeoTokenOnPersistStage};
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
+use std::time::Instant;
 
 use crate::hashes::NEO_TOKEN_HASH;
 
@@ -229,6 +231,7 @@ impl NativeContract for NeoToken {
     /// `ComputeCommitteeMembers` and, from HF_Cockatrice, emit a
     /// `CommitteeChanged` notification when the member set changed.
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let total_start = Instant::now();
         let block_index = engine
             .persisting_block()
             .map(|block| block.index())
@@ -242,22 +245,54 @@ impl NativeContract for NeoToken {
             ));
         }
         if !Self::should_refresh_committee(block_index, committee_count) {
+            sync_metrics::record_neo_token_onpersist_stage(
+                NeoTokenOnPersistStage::Skip,
+                elapsed_us(total_start),
+            );
             return Ok(());
         }
+        let refresh_start = Instant::now();
         let settings = engine.protocol_settings().clone();
         let snapshot = engine.snapshot_cache();
+
         // C# `GetAndChange(Prefix_Committee)!` — a missing cache faults.
+        let stage_start = Instant::now();
         let prev_committee = self.read_committee_with_votes(&snapshot)?;
+        sync_metrics::record_neo_token_onpersist_stage(
+            NeoTokenOnPersistStage::ReadCachedCommittee,
+            elapsed_us(stage_start),
+        );
+
+        let stage_start = Instant::now();
         let new_committee = self.compute_committee_members(&snapshot, &settings)?;
+        sync_metrics::record_neo_token_onpersist_stage(
+            NeoTokenOnPersistStage::ComputeCommittee,
+            elapsed_us(stage_start),
+        );
+
+        let stage_start = Instant::now();
         snapshot.update(
             Self::committee_key(),
             StorageItem::from_bytes(Self::encode_committee(&new_committee)?),
         );
+        sync_metrics::record_neo_token_onpersist_stage(
+            NeoTokenOnPersistStage::WriteCommittee,
+            elapsed_us(stage_start),
+        );
+
         // Hardfork check for https://github.com/neo-project/neo/pull/3158.
+        let mut committee_changed = false;
+        let stage_start = Instant::now();
         if engine.is_hardfork_enabled(Hardfork::HfCockatrice) {
             let prev_keys: Vec<&ECPoint> = prev_committee.iter().map(|(point, _)| point).collect();
             let new_keys: Vec<&ECPoint> = new_committee.iter().map(|(point, _)| point).collect();
-            if prev_keys != new_keys {
+            committee_changed = prev_keys != new_keys;
+            if committee_changed {
+                sync_metrics::record_neo_token_onpersist_stage(
+                    NeoTokenOnPersistStage::CompareCommittee,
+                    elapsed_us(stage_start),
+                );
+                let stage_start = Instant::now();
                 let prev_key_item = Self::points_to_stack_item(prev_keys.iter().copied())?;
                 let new_key_item = Self::points_to_stack_item(new_keys.iter().copied())?;
                 engine
@@ -271,8 +306,22 @@ impl NativeContract for NeoToken {
                             "NeoToken::on_persist: {NEO_COMMITTEE_CHANGED_EVENT} notify: {e}"
                         ))
                     })?;
+                sync_metrics::record_neo_token_onpersist_stage(
+                    NeoTokenOnPersistStage::NotifyCommitteeChanged,
+                    elapsed_us(stage_start),
+                );
             }
         }
+        if !committee_changed {
+            sync_metrics::record_neo_token_onpersist_stage(
+                NeoTokenOnPersistStage::CompareCommittee,
+                elapsed_us(stage_start),
+            );
+        }
+        sync_metrics::record_neo_token_onpersist_stage(
+            NeoTokenOnPersistStage::RefreshTotal,
+            elapsed_us(refresh_start),
+        );
         Ok(())
     }
 
@@ -356,3 +405,7 @@ impl NativeContract for NeoToken {
 #[cfg(test)]
 #[path = "tests/neo_token.rs"]
 mod tests;
+
+fn elapsed_us(start: Instant) -> u64 {
+    start.elapsed().as_micros().min(u64::MAX as u128) as u64
+}

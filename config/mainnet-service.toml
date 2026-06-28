@@ -49,6 +49,7 @@ disabled_methods = ["openwallet"]
 [state_service]
 enabled = true
 full_state = true
+track_during_catchup = true
 path = "./data/mainnet/state-root-{0}"
 
 [indexer]

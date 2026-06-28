@@ -118,6 +118,46 @@ async fn future_inventory_block_is_parked_then_drained_after_parent_persists() {
 }
 
 #[tokio::test]
+async fn stop_height_allows_target_block_and_rejects_later_blocks() {
+    let (mut service, _handle, _snapshot) = store_fixture();
+    service.set_stop_at_height(Some(1));
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Arc::new(Block::from_parts(header1, vec![]));
+    let block1_hash = BlockchainService::try_block_hash(block1.as_ref()).expect("block1 hash");
+
+    service
+        .handle_block_inventory(block1, false, true)
+        .await
+        .expect("target stop-height block persists");
+    assert_eq!(service.ledger.current_height(), 1);
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let err = service
+        .handle_block_inventory(Arc::new(Block::from_parts(header2, vec![])), false, true)
+        .await
+        .expect_err("block after stop height must not persist");
+    assert!(
+        err.to_string().contains("stop height 1"),
+        "error should name the configured stop height: {err}"
+    );
+    assert_eq!(service.ledger.current_height(), 1);
+    assert!(service.ledger.block_hash_at(2).is_none());
+}
+
+#[tokio::test]
 async fn future_block_with_cached_header_hash_mismatch_is_rejected_not_parked() {
     let (service, _handle) = fixture();
     let mut header1 = Header::new();

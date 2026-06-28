@@ -68,6 +68,45 @@ fn on_nep17_payment_data_parser_uses_stack_value_projection() {
     assert!(!branch.contains("BinarySerializer::deserialize("));
 }
 
+#[test]
+fn neo_payment_callback_runs_before_deferred_gas_distribution_mint() {
+    let source = include_str!("../../../neo_token/transfers.rs");
+
+    let post_start = source
+        .find("pub(super) fn neo_post_transfer(")
+        .expect("neo_post_transfer exists");
+    let transfer_start = source
+        .find("pub(super) fn neo_transfer_core(")
+        .expect("neo_transfer_core exists");
+    let post_transfer = &source[post_start..transfer_start];
+    assert!(post_transfer.contains("call_from_native_contract_void"));
+    assert!(!post_transfer.contains("queue_contract_call_from_native"));
+
+    let vote_start = source
+        .find("pub(crate) fn vote_internal(")
+        .expect("vote_internal exists");
+    let transfer_core = &source[transfer_start..vote_start];
+    let callback = transfer_core
+        .find("self.neo_post_transfer")
+        .expect("transfer calls post transfer");
+    let distribution_mint = transfer_core
+        .find("for (account, datoshi) in distributions")
+        .expect("transfer mints deferred GAS distributions");
+    assert!(callback < distribution_mint);
+
+    let mint_start = source
+        .find("pub(super) fn neo_mint(")
+        .expect("neo_mint exists");
+    let mint_body = &source[mint_start..];
+    let callback = mint_body
+        .find("call_from_native_contract_void")
+        .expect("mint uses synchronous payment callback");
+    let distribution_mint = mint_body
+        .find("for (target, datoshi) in distributions")
+        .expect("mint mints deferred GAS distributions");
+    assert!(callback < distribution_mint);
+}
+
 /// Full Echidna flow (C# NeoToken.OnNEP17Payment, NeoToken.cs:374-389):
 /// `GAS.transfer(sender -> NEO, registerPrice, data = pubkey)` registers
 /// the candidate and burns the GAS from NEO's balance.

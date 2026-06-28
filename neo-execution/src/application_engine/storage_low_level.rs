@@ -84,7 +84,33 @@ impl ApplicationEngine {
         if new_data_size > 0 && context.id >= 0 {
             let fee_units = new_data_size as u64;
             let storage_price = self.get_storage_price() as u64;
-            self.add_runtime_fee(fee_units.saturating_mul(storage_price))?;
+            let fee_delta = fee_units.saturating_mul(storage_price);
+            let trace_fees = std::env::var_os("NEO_TRACE_STORAGE_FEES").is_some();
+            let fee_before = self.fee_consumed;
+            let result = self.add_runtime_fee(fee_delta);
+            if trace_fees {
+                let key_preview = key
+                    .iter()
+                    .take(32)
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                let old_len = existing.as_ref().map(|item| item.value_bytes().len());
+                eprintln!(
+                    "trace storage.fee: ctx_id={} key_len={} value_len={} old_len={:?} new_data_size={} storage_price={} fee_delta={} fee_before_pico={} fee_after_pico={} key_prefix={} result={:?}",
+                    context.id,
+                    key.len(),
+                    value_len,
+                    old_len,
+                    new_data_size,
+                    storage_price,
+                    fee_delta,
+                    fee_before,
+                    self.fee_consumed,
+                    key_preview,
+                    result.as_ref().map(|_| ()),
+                );
+            }
+            result?;
         }
 
         let item = StorageItem::from_bytes(value.to_vec());

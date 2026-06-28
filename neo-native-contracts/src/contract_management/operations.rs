@@ -161,6 +161,7 @@ impl ContractManagement {
             Self::contract_id_storage_key(contract.id),
             StorageItem::from_bytes(hash.to_bytes().to_vec()),
         );
+        engine.put_contract_cache(contract.hash, contract.clone());
 
         self.on_deploy(engine, &contract, data, false)?;
 
@@ -270,6 +271,7 @@ impl ContractManagement {
             Self::contract_storage_key(&contract.hash),
             StorageItem::from_bytes(Self::serialize_contract_record(&contract)?),
         );
+        engine.put_contract_cache(contract.hash, contract.clone());
 
         self.on_deploy(engine, &contract, data, true)?;
 

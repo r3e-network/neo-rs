@@ -189,7 +189,10 @@ For hosted RPC/indexer workloads, start from `config/mainnet-service.toml` or
 `config/testnet-service.toml`. Those presets keep RPC on loopback, enable the
 durable NeoIndexer/ApplicationLogs/TokensTracker/StateService stack, expose
 local metrics and health endpoints, and leave observability destinations
-commented until you provide real provider URLs or tokens.
+commented until you provide real provider URLs or tokens. During cold catch-up,
+the daemon keeps the expensive NeoIndexer worker deferred for sync throughput
+and automatically starts it once the durable chain height is near the peer tip,
+so service-provider nodes do not need a manual restart after initial sync.
 
 ---
 
@@ -392,6 +395,47 @@ gauges, `neo_node_indexer_blocks_behind`, `neo_node_indexer_synced`, and any
 process-wide Prometheus metrics already registered by RPC such as request and
 error counters. Keep RPC health probes too: metrics show local process state,
 while RPC probes prove the externally served JSON-RPC path answers correctly.
+During long sync or state-root replay, also watch the built-in sync pipeline
+metrics: `neo_sync_avg_verify_us`, `neo_sync_avg_persist_us`,
+`neo_sync_avg_commit_us`, the native-persistence substage gauges
+`neo_sync_native_persist_avg_onpersist_us`,
+`neo_sync_native_persist_avg_tx_us`,
+`neo_sync_native_persist_avg_postpersist_us`,
+`neo_sync_native_persist_avg_cache_commit_us`, the per-contract native hook
+series `neo_sync_native_contract_hook_avg_us{trigger=...,contract=...,id=...}`,
+the NeoToken refresh breakdown
+`neo_sync_neotoken_onpersist_stage_avg_us{stage=...}`,
+the committee recompute internals
+`neo_sync_neotoken_committee_compute_stage_avg_us{stage=...}` and
+`neo_sync_neotoken_committee_candidate_scan_avg_items{kind=...}`,
+and the StateService MPT apply gauges `neo_state_service_mpt_apply_avg_total_us`,
+`neo_state_service_mpt_apply_avg_project_us`,
+`neo_state_service_mpt_apply_avg_trie_us`, and
+`neo_state_service_mpt_apply_avg_changes`. When StateService MPT is material,
+split the apply bucket with
+`neo_state_service_mpt_apply_stage_avg_us{stage=...}` and
+`neo_state_service_mpt_apply_avg_items{kind=...}`. These are EWMA values updated
+from the block hot path, so they are lightweight enough to leave enabled and
+useful for deciding whether a throughput drop is witness verification, native
+persistence OnPersist/transaction/PostPersist work, RocksDB commit, StateService
+MPT projection/write pressure, or MPT trie internals. The StateService stage
+labels are `mutate_changes`, `root_hash`, `trie_commit`, `overlay_prepare`,
+`backing_commit`, and `publish_generation`; count labels are `changes`,
+`overlay_entries`, `overlay_puts`, and `overlay_deletes`. When OnPersist or
+PostPersist is dominant, split by the native hook labels first; on MainNet this
+quickly shows whether the pressure is in ContractManagement
+initialization/manifest refresh, GAS fee accounting, NEO committee/reward
+maintenance, or another native. If `NeoToken` dominates `OnPersist`, split again
+by the NeoToken stage labels:
+`read_cached_committee`, `compute_committee`, `write_committee`,
+`compare_committee`, `notify_committee_changed`, `refresh_total`, and `skip`.
+If `compute_committee` dominates, use the committee-compute labels
+`read_voters_count`, `standby_lookup`, `candidate_scan_total`,
+`candidate_pubkey_decode`, `candidate_state_decode`,
+`candidate_blocked_lookup`, and `top_candidate_maintenance`, plus the scan
+count labels `storage_entries`, `malformed_keys`, `decoded_entries`,
+`registered_entries`, `blocked_registered`, `eligible_candidates`, and
+`top_candidates`.
 
 | Signal | Source | What to watch |
 |--------|--------|---------------|
@@ -399,6 +443,10 @@ while RPC probes prove the externally served JSON-RPC path answers correctly.
 | Peer count | `/metrics` `neo_node_connected_peers`, `getconnectioncount`, `getpeers` | Below-threshold or churning connections |
 | Mempool | `/metrics` mempool gauges and `getrawmempool` | Size stuck at 0 or growing past a cap |
 | Indexer | `/metrics` `neo_node_service_enabled{service="indexer"}`, `neo_node_indexer_up`, `neo_node_indexer_blocks_behind`, `neo_node_indexer_synced`, `listservices`, `getindexerstatus` | Disabled unexpectedly, status read failures, height lag |
+| Native hooks | `/metrics` `neo_sync_native_contract_hook_*{trigger=...,contract=...}` | Single native contract dominating OnPersist/PostPersist latency |
+| NeoToken refresh | `/metrics` `neo_sync_neotoken_onpersist_stage_*{stage=...}` | Committee recompute, cache read/write, or notification work dominating NeoToken OnPersist |
+| NeoToken committee scan | `/metrics` `neo_sync_neotoken_committee_compute_stage_*{stage=...}` and `neo_sync_neotoken_committee_candidate_scan_*{kind=...}` | Candidate prefix scan, candidate-state decode, Policy blocked lookup, top-M maintenance, and scanned/eligible counts |
+| StateService MPT | `/metrics` `neo_state_service_mpt_apply_*`, stage/count labels, `getstateroot`, and checkpoint probes | Apply failures, increasing per-block changes/overlay entries, MPT stage hot spots, or MPT height lag vs. chain |
 | RocksDB disk | host filesystem agent | Free space, IOPS, latency on the data volume |
 | Process | host agent (`node_exporter` / cAdvisor) | Memory, CPU, file descriptors vs. `nofile` limit |
 
@@ -412,7 +460,305 @@ Suggested alerts to start with:
 | Disk pressure | RocksDB volume free space < 20% or inode pressure |
 | FD pressure | Process FD usage > 80% of `nofile`; repeated restarts |
 
-For continuous correctness assurance, the repository ships state-root parity validators (`scripts/continuous-stateroot-validation.py` and `scripts/validate-stateroot-continuous.sh`) that compare each local `getstateroot` against official Neo seed RPCs and emit a JSON status file.
+For continuous correctness assurance, the repository ships state-root parity
+validators (`scripts/continuous-stateroot-validation.py` and
+`scripts/validate-stateroot-continuous.sh`) that compare each local
+`getstateroot` against official Neo seed RPCs and emit a JSON status file. That
+status payload includes `checkpoint_stages`: three validated recovery points
+for long MainNet replays. `base` is the oldest validated point in the current
+run, `mid` is the midpoint between `base` and the latest validated block, and
+`latest` is the most recently validated block. Each stage includes `height`,
+`label`, and a `scripts/checkpoint-on-height.sh none --once --height <height>`
+command so operators can refresh the corresponding local checkpoint without
+recomputing from genesis. The list stays empty until at least one block has
+passed reference state-root validation.
+
+Before starting a long MainNet run, print the full dry-run stack plan:
+
+```bash
+python3 scripts/plan-mainnet-validation-stack.py \
+  --node-config neo_mainnet_validate.toml \
+  --status-file /tmp/stateroot-validation.json \
+  --resume-file /tmp/stateroot-last-validated
+```
+
+The plan lists the storage preflight, isolated node command, state-root validator
+command, and checkpoint maintainer command with their log paths. The preflight
+uses `neo-node --check-all`, so it catches a chain/StateService height mismatch
+before the node can serve or validate non-contiguous state roots. It does not
+start background processes; use it as the single review point before running the
+commands in separate supervised shells or service units.
+
+To run that same stack with repository-managed PID files and logs, use
+`scripts/run-mainnet-validation-stack.py`. It also defaults to dry-run output;
+only `--start` launches processes. The runner starts the node first, passes the
+real node PID into the checkpoint maintainer, and writes PID files under
+`logs/mainnet-validation/pids` by default. If preflight fails, the runner returns
+JSON with `mode = "preflight-failed"`, includes the captured command output, and
+does not start any background processes or write PID files.
+
+When preflight reports a chain/StateService height mismatch, generate a read-only
+recovery plan before moving any data:
+
+```bash
+python3 scripts/plan-stateroot-recovery.py \
+  --node-config neo_mainnet_validate.toml \
+  --probe-bin target/debug/neo-db-probe
+```
+
+The planner inspects the configured chain DB, the StateService MPT store, and
+available checkpoints. It recommends either restoring the nearest checkpoint
+that includes both `mainnet/` and `StateRoot/`, or doing a clean replay when
+only chain-only checkpoints are available.
+
+For a clean replay, prepare a fresh isolated config instead of reusing the
+mismatched directories:
+
+```bash
+python3 scripts/prepare-clean-stateroot-validation.py \
+  --base-config neo_mainnet_validate.toml \
+  --work-root data/mainnet-stateroot-clean
+```
+
+The command writes `data/mainnet-stateroot-clean/neo_mainnet_validate.toml` and
+prints the exact preflight, recovery-plan, bounded-smoke, checkpoint-smoke,
+milestone-smoke, and `run-mainnet-validation-stack` commands for that isolated
+workspace. Run the bounded smoke command first: it starts `neo-node` with
+`--stop-at-height`,
+probes both the chain Ledger height and the StateService MPT current root
+height with `neo-db-probe`, fetches `getstateroot` from the official MainNet
+seed RPCs, and fails the run unless the local height and root hash match the
+reference response. Only promote the workspace to the long-running validation
+stack after this short check reports `status = "target-reached"`,
+`stateroot_matches_chain = true`, and `reference_stateroot.matches_local =
+true`. Then run the generated checkpoint-smoke command to preserve that first
+known-good full-state recovery point. The milestone-smoke command repeats the
+same reference-checked bounded replay at three increasing heights and creates a
+full-state checkpoint after each successful milestone, which gives the clean
+workspace an immediate `base` / `mid` / `latest` recovery ladder before handing
+off to the long-running validator. Milestone results default to compact JSON
+that keeps each parsed `bounded_report` and checkpoint return code; add
+`--include-command-output` only when you need raw child stdout/stderr for a
+successful diagnostic run. The top-level `summary` reports
+`average_blocks_per_second`, `latest_height`, `latest_root`, and per-milestone
+reference-match status, so early bounded runs can double as a repeatable sync
+throughput baseline. The generated command also appends that compact summary to
+`milestone-summary.jsonl`; use the same `--summary-jsonl <path>` flag for any
+manual milestone run you want included in the performance history. Summarize the
+history periodically to find slowest intervals and any reference/state mismatch:
+
+```bash
+python3 scripts/analyze-stateroot-milestone-history.py \
+  data/mainnet-stateroot-clean/milestone-summary.jsonl \
+  --checkpoint-root data/mainnet-stateroot-clean/checkpoints
+```
+
+When `--checkpoint-root` is provided, the report includes the retained
+full-state checkpoint inventory, the latest on-disk recovery height, and any
+successful milestone checkpoints that have since been rotated out.
+The report also includes a `throughput_trend` series and
+`throughput_regressions` list. By default, any adjacent milestone drop of 25%
+or more is flagged; adjust that with `--regression-threshold-percent <N>` when
+you are comparing debug, release, or different storage devices.
+`performance_by_node_bin` groups throughput by the recorded node binary so
+debug and release runs are not averaged together; older JSONL entries without
+that field are reported as `unknown`.
+For each new milestone summary, the runner also records a compact
+`height_sample_rate_summary` derived from the bounded replay poll samples. The
+analyzer lifts those into `slowest_sample_intervals` and
+`fastest_sample_intervals`, which helps separate a uniformly slow milestone
+from a short local stall.
+When the validation config enables `[telemetry.metrics]`, pass
+`--metrics-url http://127.0.0.1:<port>/metrics` to
+`run-stateroot-milestones.py`; each height poll samples the sync and
+StateService MPT Prometheus metrics and stores a compact
+`metrics_sample_summary` in the JSONL history for hotspot analysis.
+
+```bash
+python3 scripts/run-mainnet-validation-stack.py \
+  --node-config neo_mainnet_validate.toml \
+  --status-file /tmp/stateroot-validation.json \
+  --resume-file /tmp/stateroot-last-validated
+
+python3 scripts/run-mainnet-validation-stack.py --start \
+  --node-config neo_mainnet_validate.toml \
+  --checkpoint-waiting-interval 30 \
+  --checkpoint-execute
+
+python3 scripts/run-mainnet-validation-stack.py --status
+python3 scripts/run-mainnet-validation-stack.py --stop
+```
+
+During extended MainNet sync or state-root replay, keep at least these three
+phases current: early `base`, middle `mid`, and near-tip `latest`. If parity
+diverges or an upgrade requires rollback, restore the nearest known-good
+checkpoint, rerun validation from that height, and only discard older phases
+after a newer validated phase exists.
+
+Use `scripts/maintain-stateroot-checkpoints.py` to turn the status file into a
+concrete maintenance plan. It defaults to a JSON dry-run so operators can review
+which phases will be skipped or created; add `--execute` only after confirming
+the status file reflects a healthy validator run. If a target `h<height>`
+directory already exists but is incomplete, the plan reports `blocked` so you
+can inspect or remove the partial checkpoint before creating a replacement.
+When the status file is not present yet, the plan reports `waiting` and takes no
+action. The maintainer only creates a checkpoint when the target height is the
+current durable chain/StateRoot height; it defers older historical stages
+because a live RocksDB snapshot cannot reconstruct an earlier height after the
+node has already advanced.
+
+```bash
+python3 scripts/maintain-stateroot-checkpoints.py \
+  --status-file /tmp/stateroot-validation.json \
+  --data-dir ./data \
+  --writer-pid none
+
+python3 scripts/maintain-stateroot-checkpoints.py \
+  --status-file /tmp/stateroot-validation.json \
+  --data-dir ./data \
+  --writer-pid <neo-node-pid> \
+  --watch-interval 600 \
+  --waiting-interval 30 \
+  --execute
+```
+
+For the isolated validation preset in `neo_mainnet_validate.toml`, pass its
+node config so the checkpoint maintainer derives the chain and StateRoot paths:
+
+```bash
+python3 scripts/maintain-stateroot-checkpoints.py \
+  --node-config neo_mainnet_validate.toml \
+  --status-file /tmp/stateroot-validation.json \
+  --writer-pid none \
+  --watch-interval 600 \
+  --waiting-interval 30
+```
+
+Use explicit paths when a replay uses non-configured directories:
+
+```bash
+python3 scripts/maintain-stateroot-checkpoints.py \
+  --status-file /tmp/stateroot-validation.json \
+  --data-dir ./data \
+  --chain-db ./data/mainnet-validate \
+  --stateroot-db ./Data_MPT_validate_334F454E \
+  --writer-pid none
+```
+
+When native persistence fails on a canonical block, capture the failed block
+and fee context before replacing the data directory. For example, repeated
+`GasToken::burn` insufficient-balance errors can be enriched with the reference
+block transaction whose `sysfee + netfee` matches the failed burn:
+
+```bash
+python3 scripts/diagnose-persist-failure.py \
+  --log logs/neo-node-validate.log \
+  --status-file /tmp/stateroot-validation.json
+```
+
+If the failed local node is still available on RPC, add `--local-rpc` to sample
+the matching sender's GAS account storage (`Prefix_Account ++ sender`) and
+include the decoded NEP-17 `AccountState` balance in the report:
+
+```bash
+python3 scripts/diagnose-persist-failure.py \
+  --log logs/neo-node-validate.log \
+  --status-file /tmp/stateroot-validation.json \
+  --local-rpc http://127.0.0.1:20332
+```
+
+For bounded replay workspaces only, the matching sender's GAS account can be
+copied from the official reference state root at `failed_height - 1` into the
+local replay DB. First inspect the planned repair:
+
+```bash
+python3 scripts/repair-bounded-replay-gas.py \
+  --db data/bounded-replay/v474701-to-595959-cachefix/data \
+  --log data/bounded-replay/v474701-to-595959-cachefix/neo-node.log
+```
+
+Then apply it after stopping the replay node that holds the RocksDB lock:
+
+```bash
+python3 scripts/repair-bounded-replay-gas.py \
+  --db data/bounded-replay/v474701-to-595959-cachefix/data \
+  --log data/bounded-replay/v474701-to-595959-cachefix/neo-node.log \
+  --probe-bin target/release/neo-db-probe \
+  --apply
+```
+
+When a long bounded replay needs several short attempts, use the supervisor so
+both process exits and stuck timeout windows can repair a new GAS drift from the
+just-finished run, while unrelated timeouts continue from the same DB:
+
+```bash
+python3 scripts/run-bounded-replay-with-repairs.py \
+  --config data/bounded-replay/v474701-to-595959-cachefix/neo-bounded-replay.toml \
+  --db data/bounded-replay/v474701-to-595959-cachefix/data \
+  --log data/bounded-replay/v474701-to-595959-cachefix/neo-node.log \
+  --target-height 663386 \
+  --node-bin target/release/neo-node \
+  --probe-bin target/release/neo-db-probe \
+  --max-attempts 20
+```
+
+`scripts/prepare-bounded-mainnet-replay.py` includes this command as the
+`run-node-with-repairs` step in its JSON plan. Under the hood, the supervisor
+records the log size before each attempt and passes that byte offset into
+`repair-bounded-replay-gas.py`, so an older GAS drift entry cannot be repaired
+again after an unrelated timeout. If a timeout produced no new `GasToken::burn`
+balance failure, the supervisor records that fact and starts another bounded
+attempt without mutating storage. The bounded runner also uses `neo-db-probe`
+as a local height fallback, so summaries keep reporting the durable Ledger
+height even when the replay node has not opened RPC yet.
+
+Do not use this as a production-node mutation path. It is a deterministic
+validation recovery tool for replaying from a checkpoint whose local storage has
+already been classified as divergent against the reference chain.
+
+If the node is stopped, inspect the same storage offline without starting RPC,
+P2P, or service plugins:
+
+```bash
+cargo run -p neo-node --bin neo-db-probe -- \
+  --db data/mainnet-validate \
+  --gas-address NRMrnHtDT4PENPpmuZAaEbPVaq7XvpVpQE \
+  --decode nep17-account
+```
+
+The probe also reads arbitrary contract storage keys. For example, the Ledger
+current-block pointer is `contract_id=-4`, key suffix `0c`:
+
+```bash
+cargo run -p neo-node --bin neo-db-probe -- \
+  --db data/mainnet-validate \
+  --contract-id -4 \
+  --key-hex 0c \
+  --decode hash-index
+```
+
+After restoring or replaying a checkpoint, compare selected local GAS account
+storage against the official reference state root at the DB's current Ledger
+height:
+
+```bash
+cargo build -p neo-node --bin neo-db-probe
+
+python3 scripts/compare-offline-gas-storage.py \
+  --db checkpoints/latest/data \
+  --probe-bin target/debug/neo-db-probe \
+  --address NRMrnHtDT4PENPpmuZAaEbPVaq7XvpVpQE \
+  --address NVU2QwsVdttjfTHQK7RYD6iwwfXRkSezGU
+```
+
+The report confirms the local block hash, the reference state root, each sampled
+GAS account balance, and any `delta`. Run it before promoting a checkpoint to a
+known-good recovery stage.
+
+If the report classifies the failure as `local_state_divergence`, do not
+continue loop-restarting the same DB. Restore the nearest validated checkpoint
+before the failed height, or replay from a clean data directory and rebuild the
+checkpoint phases as validation advances.
 
 ### Logging
 
@@ -513,11 +859,33 @@ Helper scripts in `scripts/` automate this:
 
 | Script | Purpose |
 |--------|---------|
+| `scripts/run-bounded-mainnet-replay.py --config <toml> --target-height <N>` | Runs `neo-node` with `--stop-at-height`; with `--db`, `--stateroot-db`, `--require-stateroot-height-match`, `--reference`, and `--require-reference-stateroot-match`, also verifies the post-run chain Ledger height matches the StateService MPT height and the local root matches reference `getstateroot`. |
+| `scripts/run-stateroot-milestones.py --config <toml> --milestone <N>` | Runs multiple reference-checked bounded replay milestones in order and creates a full chain + StateRoot checkpoint after each successful height. Defaults to compact JSON with a throughput/root summary; use `--summary-jsonl <path>` to append run history and `--include-command-output` for raw child stdout/stderr. |
+| `scripts/analyze-stateroot-milestone-history.py <milestone-summary.jsonl>` | Reads milestone history and reports latest root/height, average throughput, slowest/fastest milestones, adjacent throughput trend/regressions, and reference/state mismatch counts. Add `--checkpoint-root <dir>` to include the current on-disk full-state checkpoint inventory and rotated-out history heights. |
 | `scripts/backup-rocksdb.sh <rocksdb_path> [backup_dir]` | One-shot archive of the RocksDB directory (also via `make backup-rocksdb`). |
+| `scripts/maintain-stateroot-checkpoints.py [options]` | Reads the continuous state-root status file and keeps the reported `base`, `mid`, and `latest` checkpoints present; defaults to dry-run, use `--execute` to create missing phases. Use `--node-config` to derive paths, or `--chain-db` / `--stateroot-db` for manual validation/replay layouts. |
+| `scripts/checkpoint-on-height.sh <writer_pid or none> [options]` | Height-labelled chain + StateRoot checkpoint; use `--once --height <height>` for the `base`, `mid`, and `latest` recovery stages reported by continuous state-root validation. Accepts explicit `--chain-db` / `--stateroot-db` paths; pass `--chain-only` for bounded replay checkpoints that do not include a StateRoot DB. |
+| `scripts/restore-checkpoint.sh <height|label|latest|--at-or-below N> [options]` | Restores a height-labelled or named checkpoint. Accepts `--chain-db` / `--stateroot-db` targets for validation or bounded replay directories instead of only restoring into `data/mainnet`. |
+| `scripts/compare-offline-gas-storage.py --db <rocksdb_path> --address <ADDR>` | Uses `neo-db-probe` plus official state-root RPCs to compare selected offline GAS AccountState balances before promoting a checkpoint. |
 | `scripts/checkpoint-live-rocksdb.sh <writer_pid> <rocksdb_path> [root]` | Live checkpoint with a short pause, then resume. |
 | `scripts/checkpoint-live-rocksdb-loop.sh <writer_pid> <rocksdb_path> [interval] [max] [root]` | Periodic live checkpoints with rotation (default interval 1800s, retention 8). |
 
-To restore: stop the service, extract the archive into the configured storage path, fix ownership for the `neo` user, then start the service. Keep backups on storage separate from the live volume, and wire backup/restore failures into your alerting so you know when data protection is stale.
+`scripts/restore-checkpoint.sh` can restore a chain-only checkpoint when its
+`CHECKPOINT_INFO` contains `state_root_included=false`, or a legacy
+`mode=storage-sample` checkpoint whose chain DB is stored under `data/` and
+whose StateRoot is marked missing. In that mode it restores only the chain DB
+and removes or stashes the target StateRoot directory so an old MPT database
+cannot be mixed with the restored chain. `latest` and `--at-or-below N` consider
+both `h<height>` directories and named checkpoints with `height=<N>` in
+`CHECKPOINT_INFO`.
+
+To restore: stop any service that is writing the target chain or StateRoot DB,
+extract the archive into the configured storage path, fix ownership for the
+`neo` user, then start the service. Restoring into a separate validation or
+bounded-replay directory can run while unrelated `neo-node` processes use other
+data directories. Keep backups on storage separate from the live volume, and
+wire backup/restore failures into your alerting so you know when data
+protection is stale.
 
 ---
 
@@ -547,6 +915,7 @@ Some upgrades change how state is computed. If you previously ran a build with a
 - Unexpected transaction `FAULT`s versus TestNet/MainNet reference (e.g., before strict prefix-bound `DataCache.find`).
 - `unclaimedGas` returning `0` in live transfer paths (reverse-prefix iteration that missed NeoToken GAS-per-block records).
 - Contract-originated native transfers (e.g., GAS `transfer`) returning `false` unexpectedly (caller-hash resolution fix).
+- NEO transfers or mints to contracts running `onNEP17Payment` before deferred GAS reward distribution (native-to-contract callback ordering fix).
 - Repeated block-persistence failures such as `GasToken burn failed ... Insufficient balance for burn` on canonical blocks — treat this as divergent local state, not a recoverable network error.
 
 For breaking schema changes, check the changelog; you may need to resync from genesis or a bootstrap snapshot.

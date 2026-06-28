@@ -435,9 +435,90 @@ fn validate_indexer_config(config: &NodeConfig, network: u32) -> anyhow::Result<
 pub(in crate::node) fn validate_storage(
     config: &NodeConfig,
     storage_override: Option<&Path>,
+    network: u32,
 ) -> anyhow::Result<()> {
-    let _store = open_store(config, storage_override)?;
+    let store = open_store(config, storage_override)?;
+    let ledger_index = durable_ledger_index(&store);
+    validate_state_service_storage(config, network, ledger_index)?;
     Ok(())
+}
+
+fn durable_ledger_index(store: &Arc<dyn neo_storage::persistence::store::Store>) -> Option<u32> {
+    use neo_storage::persistence::StoreCache;
+
+    let store_cache = StoreCache::new_from_store(Arc::clone(store), false);
+    neo_native_contracts::LedgerContract::new()
+        .current_index(store_cache.data_cache())
+        .ok()
+}
+
+fn validate_state_service_storage(
+    config: &NodeConfig,
+    network: u32,
+    ledger_index: Option<u32>,
+) -> anyhow::Result<()> {
+    if !config.state_service.enabled {
+        return Ok(());
+    }
+    let Some(chain_height) = ledger_index else {
+        return Ok(());
+    };
+    let Some(path) = &config.state_service.path else {
+        return Ok(());
+    };
+
+    let path = network_scoped_path(path, network);
+    if !path.exists() {
+        anyhow::bail!(
+            "StateService MPT store {} is missing while the chain store is already at height {chain_height}; restore a matching StateRoot checkpoint or replay from genesis with [state_service].track_during_catchup = true",
+            path.display()
+        );
+    }
+
+    let state_height = read_state_service_mpt_height(&path)?;
+    match state_height {
+        Some(height) if height == chain_height => Ok(()),
+        Some(height) => anyhow::bail!(
+            "StateService MPT height {height} at {} does not match chain height {chain_height}; restore a matching StateRoot checkpoint or replay from genesis with [state_service].track_during_catchup = true",
+            path.display()
+        ),
+        None => anyhow::bail!(
+            "StateService MPT store {} has no current local root while the chain store is already at height {chain_height}; restore a matching StateRoot checkpoint or replay from genesis with [state_service].track_during_catchup = true",
+            path.display()
+        ),
+    }
+}
+
+fn read_state_service_mpt_height(path: &Path) -> anyhow::Result<Option<u32>> {
+    use neo_storage::persistence::StoreProvider;
+    use neo_storage::persistence::storage::StorageConfig;
+    use neo_storage::rocksdb::RocksDBStoreProvider;
+
+    const CURRENT_LOCAL_ROOT_INDEX_KEY: &[u8] = &[0x02];
+
+    let provider = RocksDBStoreProvider::new(StorageConfig {
+        path: path.to_path_buf(),
+        read_only: true,
+        ..StorageConfig::default()
+    });
+    let store = provider
+        .get_store("")
+        .map_err(|err| anyhow::anyhow!("failed to open StateService MPT store: {err}"))?;
+    let snapshot = store.snapshot();
+    let Some(value) = snapshot.get(&CURRENT_LOCAL_ROOT_INDEX_KEY.to_vec()) else {
+        return Ok(None);
+    };
+    if value.len() != 4 {
+        anyhow::bail!(
+            "StateService MPT current local root index at {} is malformed: expected 4 bytes, got {}",
+            path.display(),
+            value.len()
+        );
+    }
+
+    let mut bytes = [0u8; 4];
+    bytes.copy_from_slice(&value);
+    Ok(Some(u32::from_le_bytes(bytes)))
 }
 
 fn storage_backend_name(config: &NodeConfig) -> anyhow::Result<&str> {

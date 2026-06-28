@@ -1,7 +1,15 @@
 use super::*;
+use neo_runtime::sync_metrics::{
+    self, NeoTokenCommitteeCandidateCount, NeoTokenCommitteeComputeStage,
+};
 use neo_serialization::BinarySerializer;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_traits::ToPrimitive;
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+    time::Instant,
+};
 
 mod views;
 
@@ -13,9 +21,10 @@ pub(super) use views::{CandidateState, NeoAccountStateView};
 /// always deserialize to the same members), so it is correct across snapshots,
 /// heights, and reverts. Eliminates the per-block EC-point decompression of the
 /// committee pubkeys on the hot path. See [`NeoToken::read_committee_with_votes`].
-static COMMITTEE_DESERIALIZE_CACHE: std::sync::Mutex<
-    Option<(Vec<u8>, Vec<(ECPoint, BigInt)>)>,
-> = std::sync::Mutex::new(None);
+static COMMITTEE_DESERIALIZE_CACHE: std::sync::Mutex<Option<(Vec<u8>, Vec<(ECPoint, BigInt)>)>> =
+    std::sync::Mutex::new(None);
+static CANDIDATE_SIGNATURE_ACCOUNT_CACHE: OnceLock<Mutex<HashMap<Vec<u8>, UInt160>>> =
+    OnceLock::new();
 
 impl NeoToken {
     /// C# `GetRegisterPrice` = `(long)(BigInteger)snapshot[_registerPrice]`.
@@ -269,7 +278,9 @@ impl NeoToken {
         // across snapshots/heights/reverts, mirroring C#'s in-memory committee
         // cache (`GetCommitteeFromCache`).
         {
-            let cache = COMMITTEE_DESERIALIZE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+            let cache = COMMITTEE_DESERIALIZE_CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some((cached_bytes, cached_members)) = cache.as_ref() {
                 if cached_bytes.as_slice() == raw.as_ref() {
                     return Ok(cached_members.clone());
@@ -286,7 +297,9 @@ impl NeoToken {
         .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
         let members = CachedCommittee::from_stack_value(decoded)?.into_members();
 
-        let mut cache = COMMITTEE_DESERIALIZE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = COMMITTEE_DESERIALIZE_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *cache = Some((raw.into_owned(), members.clone()));
         Ok(members)
     }
@@ -335,8 +348,12 @@ impl NeoToken {
         snapshot: &DataCache,
         settings: &neo_config::ProtocolSettings,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>> {
+        let stage_start = Instant::now();
         let voters_count = self.read_voters_count(snapshot);
-        let candidates = self.read_registered_candidates(snapshot)?;
+        sync_metrics::record_neo_token_committee_compute_stage(
+            NeoTokenCommitteeComputeStage::ReadVotersCount,
+            elapsed_us(stage_start),
+        );
         let committee_count = settings.committee_members_count();
         if committee_count == 0 {
             return Err(CoreError::invalid_operation(
@@ -344,25 +361,114 @@ impl NeoToken {
             ));
         }
         let turnout_reached = voters_count * 5 >= BigInt::from(NEO_TOTAL_AMOUNT);
-        if !turnout_reached || candidates.len() < committee_count {
-            return Ok(settings
-                .standby_committee
-                .iter()
-                .map(|point| {
-                    let votes = candidates
-                        .iter()
-                        .find(|(candidate, _)| candidate == point)
-                        .map(|(_, votes)| votes.clone())
-                        .unwrap_or_else(|| BigInt::from(0));
-                    (point.clone(), votes)
-                })
-                .collect());
+        if !turnout_reached {
+            return self
+                .standby_committee_with_registered_votes(snapshot, &settings.standby_committee);
         }
-        let mut sorted = candidates;
-        // OrderByDescending(votes).ThenBy(pubkey): votes descending, pubkey ascending.
-        sorted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        sorted.truncate(committee_count);
-        Ok(sorted)
+
+        let (candidate_count, top_candidates) =
+            self.top_registered_candidates(snapshot, committee_count)?;
+        if candidate_count < committee_count {
+            return self
+                .standby_committee_with_registered_votes(snapshot, &settings.standby_committee);
+        }
+        Ok(top_candidates)
+    }
+
+    fn standby_committee_with_registered_votes(
+        &self,
+        snapshot: &DataCache,
+        standby_committee: &[ECPoint],
+    ) -> CoreResult<Vec<(ECPoint, BigInt)>> {
+        let stage_start = Instant::now();
+        let members = standby_committee
+            .iter()
+            .map(|point| {
+                let votes = match snapshot.get(&Self::candidate_key(point)) {
+                    Some(item) => {
+                        let (registered, votes) =
+                            Self::decode_candidate_state(&item.value_bytes())?;
+                        if registered && !candidate_is_blocked(snapshot, point) {
+                            votes
+                        } else {
+                            BigInt::from(0)
+                        }
+                    }
+                    None => BigInt::from(0),
+                };
+                Ok((point.clone(), votes))
+            })
+            .collect();
+        sync_metrics::record_neo_token_committee_compute_stage(
+            NeoTokenCommitteeComputeStage::StandbyLookup,
+            elapsed_us(stage_start),
+        );
+        members
+    }
+
+    fn top_registered_candidates(
+        &self,
+        snapshot: &DataCache,
+        limit: usize,
+    ) -> CoreResult<(usize, Vec<(ECPoint, BigInt)>)> {
+        let total_start = Instant::now();
+        let prefix = Self::candidate_prefix_key();
+        let mut counts = CandidateScanCounts::default();
+        let mut eligible_count = 0usize;
+        let mut top = Vec::with_capacity(limit);
+        for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
+            counts.storage_entries += 1;
+            let key_bytes = key.key();
+            if key_bytes.len() < 34 {
+                counts.malformed_keys += 1;
+                continue;
+            }
+            let stage_start = Instant::now();
+            let pubkey = ECPoint::from_bytes(&key_bytes[1..34]);
+            sync_metrics::record_neo_token_committee_compute_stage(
+                NeoTokenCommitteeComputeStage::CandidatePubkeyDecode,
+                elapsed_us(stage_start),
+            );
+            let Ok(pubkey) = pubkey else {
+                counts.malformed_keys += 1;
+                continue;
+            };
+            let stage_start = Instant::now();
+            let (registered, votes) = Self::decode_candidate_state(&item.value_bytes())?;
+            sync_metrics::record_neo_token_committee_compute_stage(
+                NeoTokenCommitteeComputeStage::CandidateStateDecode,
+                elapsed_us(stage_start),
+            );
+            counts.decoded_entries += 1;
+            if !registered {
+                continue;
+            }
+            counts.registered_entries += 1;
+            let stage_start = Instant::now();
+            let blocked = candidate_is_blocked(snapshot, &pubkey);
+            sync_metrics::record_neo_token_committee_compute_stage(
+                NeoTokenCommitteeComputeStage::CandidateBlockedLookup,
+                elapsed_us(stage_start),
+            );
+            if blocked {
+                counts.blocked_registered += 1;
+                continue;
+            }
+            eligible_count += 1;
+            counts.eligible_candidates += 1;
+            let stage_start = Instant::now();
+            push_top_committee_candidate(&mut top, limit, (pubkey, votes));
+            sync_metrics::record_neo_token_committee_compute_stage(
+                NeoTokenCommitteeComputeStage::TopCandidateMaintenance,
+                elapsed_us(stage_start),
+            );
+        }
+        counts.record(top.len() as u64);
+        sync_metrics::record_neo_token_committee_compute_stage(
+            NeoTokenCommitteeComputeStage::CandidateScanTotal,
+            elapsed_us(total_start),
+        );
+        Ok((eligible_count, top))
     }
 
     /// C# `Contract.GetBFTAddress(pubkeys)`: the script hash of the
@@ -463,13 +569,7 @@ impl NeoToken {
             // not EC-point-decompress every candidate a second time.
             let (registered, votes) = Self::decode_candidate_state(&item.value_bytes())?;
             if registered {
-                let account = UInt160::from_script(&Contract::create_signature_redeem_script(
-                    pubkey.clone(),
-                ));
-                if snapshot
-                    .get(&crate::PolicyContract::blocked_account_key(&account))
-                    .is_none()
-                {
+                if !candidate_is_blocked(snapshot, &pubkey) {
                     out.push((pubkey, votes, key, item));
                 }
             }
@@ -658,4 +758,94 @@ impl NeoToken {
         };
         Ok(Self::decode_neo_account_state(&bytes)?.balance)
     }
+}
+
+#[derive(Default)]
+struct CandidateScanCounts {
+    storage_entries: u64,
+    malformed_keys: u64,
+    decoded_entries: u64,
+    registered_entries: u64,
+    blocked_registered: u64,
+    eligible_candidates: u64,
+}
+
+impl CandidateScanCounts {
+    fn record(&self, top_candidates: u64) {
+        sync_metrics::record_neo_token_committee_candidate_count(
+            NeoTokenCommitteeCandidateCount::StorageEntries,
+            self.storage_entries,
+        );
+        sync_metrics::record_neo_token_committee_candidate_count(
+            NeoTokenCommitteeCandidateCount::MalformedKeys,
+            self.malformed_keys,
+        );
+        sync_metrics::record_neo_token_committee_candidate_count(
+            NeoTokenCommitteeCandidateCount::DecodedEntries,
+            self.decoded_entries,
+        );
+        sync_metrics::record_neo_token_committee_candidate_count(
+            NeoTokenCommitteeCandidateCount::RegisteredEntries,
+            self.registered_entries,
+        );
+        sync_metrics::record_neo_token_committee_candidate_count(
+            NeoTokenCommitteeCandidateCount::BlockedRegistered,
+            self.blocked_registered,
+        );
+        sync_metrics::record_neo_token_committee_candidate_count(
+            NeoTokenCommitteeCandidateCount::EligibleCandidates,
+            self.eligible_candidates,
+        );
+        sync_metrics::record_neo_token_committee_candidate_count(
+            NeoTokenCommitteeCandidateCount::TopCandidates,
+            top_candidates,
+        );
+    }
+}
+
+fn candidate_is_blocked(snapshot: &DataCache, pubkey: &ECPoint) -> bool {
+    let account = candidate_signature_account(pubkey);
+    snapshot
+        .get(&crate::PolicyContract::blocked_account_key(&account))
+        .is_some()
+}
+
+fn candidate_signature_account(pubkey: &ECPoint) -> UInt160 {
+    let pubkey_bytes = pubkey.to_bytes();
+    let cache = CANDIDATE_SIGNATURE_ACCOUNT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(account) = cache.get(&pubkey_bytes) {
+        return account.clone();
+    }
+    let account = UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+    cache.insert(pubkey_bytes, account.clone());
+    account
+}
+
+fn elapsed_us(start: Instant) -> u64 {
+    start.elapsed().as_micros().min(u64::MAX as u128) as u64
+}
+
+fn push_top_committee_candidate(
+    top: &mut Vec<(ECPoint, BigInt)>,
+    limit: usize,
+    candidate: (ECPoint, BigInt),
+) {
+    if limit == 0 {
+        return;
+    }
+    if top.len() < limit {
+        top.push(candidate);
+        top.sort_by(committee_candidate_order);
+        return;
+    }
+    if committee_candidate_order(&candidate, top.last().expect("top is full")).is_lt() {
+        top.pop();
+        top.push(candidate);
+        top.sort_by(committee_candidate_order);
+    }
+}
+
+fn committee_candidate_order(a: &(ECPoint, BigInt), b: &(ECPoint, BigInt)) -> std::cmp::Ordering {
+    b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0))
 }

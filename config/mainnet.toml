@@ -106,4 +106,5 @@ max_transactions = 50000
 [state_service]
 enabled = true
 full_state = true
+track_during_catchup = true
 path = "../mainnet/StateRoot"

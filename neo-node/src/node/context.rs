@@ -16,6 +16,7 @@ pub(super) struct DaemonContext {
     /// (cloned from it). `commit()` flushes block writes to durable storage.
     store_cache: Mutex<StoreCache>,
     state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
+    state_service_track_during_catchup: bool,
     indexer_service: Option<Arc<neo_indexer::IndexerService>>,
     node: RwLock<Option<Arc<neo_system::Node>>>,
     application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService>>,
@@ -36,6 +37,7 @@ impl DaemonContext {
         snapshot: Arc<DataCache>,
         store_cache: StoreCache,
         state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
+        state_service_track_during_catchup: bool,
         indexer_service: Option<Arc<neo_indexer::IndexerService>>,
         application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService>>,
     ) -> Self {
@@ -44,6 +46,7 @@ impl DaemonContext {
             snapshot,
             store_cache: Mutex::new(store_cache),
             state_service,
+            state_service_track_during_catchup,
             indexer_service,
             node: RwLock::new(None),
             application_logs_service,
@@ -98,41 +101,12 @@ impl neo_blockchain::service_context::SystemContext for DaemonContext {
         snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     ) -> bool {
-        // During catch-up, skip the expensive per-block hooks:
-        // - StateService.on_committing computes the MPT state root per block
-        //   (~24ms measured — the dominant sync bottleneck). State roots are
-        //   only needed for the state-service RPC, not for consensus.
-        // - IndexerService.index_block indexes transaction execution results.
-        // Both resume near the live tip. This mirrors C# Neo's chain.acc
-        // import which skips verification and indexing during bulk sync.
-        let block_index = block.index();
-        let live_tip = neo_runtime::sync_metrics::peer_live_tip();
-        let catching_up = live_tip > 0 && (block_index as u64) + 10000 < live_tip;
-        if catching_up {
-            return true;
-        }
-
-        if let Some(state_service) = &self.state_service {
-            if !state_service.on_committing(block.index(), snapshot) {
-                return false;
-            }
-        }
-
-        if let Some(indexer) = &self.indexer_service {
-            if let Err(error) =
-                indexer.index_block_with_application_executions(block, application_executed_list)
-            {
-                warn!(
-                    target: "neo::indexer",
-                    height = block.index(),
-                    error = %error,
-                    "failed to index block application executions"
-                );
-            }
-        }
-
-        self.commit_plugin_committing_handlers(block, snapshot, application_executed_list);
-        true
+        self.block_committing_with_live_tip(
+            block,
+            snapshot,
+            application_executed_list,
+            neo_runtime::sync_metrics::peer_live_tip(),
+        )
     }
 
     fn block_committed(&self, block: &Block) {
@@ -177,6 +151,50 @@ impl neo_blockchain::service_context::SystemContext for DaemonContext {
 }
 
 impl DaemonContext {
+    pub(super) fn block_committing_with_live_tip(
+        &self,
+        block: &Block,
+        snapshot: &DataCache,
+        application_executed_list: &[ApplicationExecuted],
+        live_tip: u64,
+    ) -> bool {
+        // During catch-up, skip the expensive per-block hooks:
+        // - StateService.on_committing computes the MPT state root per block
+        //   (~24ms measured — the dominant sync bottleneck). Validation
+        //   profiles can force it on with [state_service].track_during_catchup.
+        // - IndexerService.index_block indexes transaction execution results.
+        // Deferred hooks resume near the live tip. This mirrors C# Neo's chain.acc
+        // import which skips verification and indexing during bulk sync.
+        let block_index = block.index();
+        let catching_up = live_tip > 0 && (block_index as u64) + 10000 < live_tip;
+
+        if let Some(state_service) = &self.state_service {
+            let should_track_state = !catching_up || self.state_service_track_during_catchup;
+            if should_track_state && !state_service.on_committing(block.index(), snapshot) {
+                return false;
+            }
+        }
+
+        if catching_up {
+            return true;
+        }
+
+        if let Some(indexer) = &self.indexer_service {
+            if let Err(error) =
+                indexer.index_block_with_application_executions(block, application_executed_list)
+            {
+                warn!(
+                    target: "neo::indexer",
+                    height = block.index(),
+                    error = %error,
+                    "failed to index block application executions"
+                );
+            }
+        }
+
+        self.commit_plugin_committing_handlers(block, snapshot, application_executed_list);
+        true
+    }
     fn commit_plugin_committing_handlers(
         &self,
         block: &Block,

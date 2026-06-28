@@ -192,6 +192,43 @@ mod execution_engine_tests {
     }
 
     #[test]
+    fn pickitem_struct_out_of_range_is_catchable() {
+        let mut engine = ExecutionEngine::new(None);
+        let script_bytes = vec![
+            OpCode::TRY.byte(),
+            9,
+            0,
+            OpCode::PUSH11.byte(),
+            OpCode::NEWSTRUCT.byte(),
+            OpCode::PUSH11.byte(),
+            OpCode::PICKITEM.byte(),
+            OpCode::ENDTRY.byte(),
+            5,
+            OpCode::DROP.byte(),
+            OpCode::PUSH1.byte(),
+            OpCode::RET.byte(),
+            OpCode::PUSH2.byte(),
+            OpCode::RET.byte(),
+        ];
+
+        engine
+            .load_script(Script::new_relaxed(script_bytes), -1, 0)
+            .expect("load test script");
+
+        assert_eq!(engine.execute(), VMState::HALT);
+        assert_eq!(engine.result_stack().len(), 1);
+        assert_eq!(
+            engine
+                .result_stack()
+                .peek(0)
+                .expect("catch result")
+                .as_int()
+                .expect("integer result"),
+            num_bigint::BigInt::from(1)
+        );
+    }
+
+    #[test]
     fn test_gas_tracking_basic() {
         let mut engine = ExecutionEngine::new(None);
 

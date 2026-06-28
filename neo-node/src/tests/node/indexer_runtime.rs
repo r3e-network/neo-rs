@@ -68,6 +68,66 @@ fn notification_record(
 }
 
 #[test]
+fn live_indexer_start_mode_defers_cold_catchup_until_near_tip() {
+    assert_eq!(
+        indexer_runtime_start_mode(0, 0),
+        IndexerRuntimeStartMode::Deferred,
+        "cold service-provider nodes should not start expensive indexer work before sync begins"
+    );
+    assert_eq!(
+        indexer_runtime_start_mode(624_433, 690_000),
+        IndexerRuntimeStartMode::Deferred,
+        "nodes still far behind the peer tip should keep sync throughput prioritized"
+    );
+    assert_eq!(
+        indexer_runtime_start_mode(680_000, 690_000),
+        IndexerRuntimeStartMode::StartNow,
+        "once the node is inside the activation window, the indexer should start without restart"
+    );
+    assert_eq!(
+        indexer_runtime_start_mode(1, 0),
+        IndexerRuntimeStartMode::StartNow,
+        "private or isolated networks with no known peer tip can index once a durable tip exists"
+    );
+}
+
+#[test]
+fn deferred_live_indexer_activation_waits_for_peer_tip_after_cold_start() {
+    assert!(
+        !indexer_runtime_activation_reached(IndexerRuntimeStartMode::Deferred, 1, 0),
+        "a cold-started node should not begin expensive indexer work before observing a peer tip"
+    );
+    assert!(
+        !indexer_runtime_activation_reached(IndexerRuntimeStartMode::Deferred, 624_433, 690_000),
+        "a cold-started node should keep indexer deferred while still far behind the peer tip"
+    );
+    assert!(
+        indexer_runtime_activation_reached(IndexerRuntimeStartMode::Deferred, 680_000, 690_000),
+        "a cold-started node should activate the indexer once it is near the peer tip"
+    );
+    assert!(
+        indexer_runtime_activation_reached(IndexerRuntimeStartMode::StartNow, 1, 0),
+        "warm private or isolated networks keep the immediate-start behavior"
+    );
+}
+
+#[test]
+fn deferred_indexer_activation_forces_backfill_to_avoid_event_gap() {
+    assert!(
+        indexer_should_backfill_on_activation(false, IndexerRuntimeStartMode::Deferred),
+        "a deferred runtime missed earlier import events and must scan the canonical chain once"
+    );
+    assert!(
+        !indexer_should_backfill_on_activation(false, IndexerRuntimeStartMode::StartNow),
+        "immediate startup should honor explicit backfill_on_startup=false"
+    );
+    assert!(
+        indexer_should_backfill_on_activation(true, IndexerRuntimeStartMode::StartNow),
+        "explicit startup backfill remains honored"
+    );
+}
+
+#[test]
 fn resumable_backfill_starts_after_verified_contiguous_indexed_tip() {
     let tip_hash = hash(1);
     let status = indexer_status(Some(7), Some(tip_hash), 8);

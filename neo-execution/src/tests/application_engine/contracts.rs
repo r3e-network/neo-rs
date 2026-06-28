@@ -493,6 +493,43 @@ fn returning_call_rejects_void_method() {
     );
 }
 
+/// C# `CallFromNativeContractAsync` (void overload) passes `hasReturnValue:
+/// false`, accepts Void callees, and does not resume the native frame until the
+/// callee context has returned.
+#[test]
+fn void_call_accepts_void_method_and_runs_to_completion() {
+    let _provider_guard = lock_provider();
+    install_allowing_policy();
+
+    let target_hash = UInt160::from_bytes(&[0xD0; 20]).expect("hash");
+    let mut contracts = HashMap::new();
+    contracts.insert(
+        target_hash,
+        build_returning_mock(
+            target_hash,
+            "accept",
+            ContractParameterType::Void,
+            vec![OpCode::RET.byte()],
+        ),
+    );
+    let mut engine = engine_with_entry(contracts);
+
+    engine
+        .call_from_native_contract_void(&UInt160::zero(), &target_hash, "accept", vec![])
+        .expect("void call succeeds");
+
+    assert_eq!(engine.invocation_stack().len(), 1);
+    assert_ne!(engine.state(), VMState::FAULT);
+    assert_eq!(
+        engine
+            .current_context()
+            .expect("entry context")
+            .evaluation_stack()
+            .len(),
+        0
+    );
+}
+
 /// C# `CallFromNativeContractAsync<T>` funnels through
 /// `CallContractInternal`, so the Policy blocked-contract gate must reject
 /// native-to-contract calls before the callee context is loaded.

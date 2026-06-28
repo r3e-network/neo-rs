@@ -74,12 +74,10 @@ pub async fn import_chain_acc(
             let batch_blocks = std::mem::take(&mut batch);
             let batch_len = batch_blocks.len();
             handle
-                .tell(BlockchainCommand::Import(
-                    neo_blockchain::import::Import {
-                        blocks: batch_blocks,
-                        verify,
-                    },
-                ))
+                .tell(BlockchainCommand::Import(neo_blockchain::import::Import {
+                    blocks: batch_blocks,
+                    verify,
+                }))
                 .await
                 .map_err(|e| anyhow::anyhow!("import command send failed: {e}"))?;
             imported += batch_len as u64;
@@ -94,13 +92,15 @@ pub async fn import_chain_acc(
 }
 
 fn read_u32_le(reader: &mut MemoryReader) -> anyhow::Result<u32> {
-    let bytes = reader.read_bytes(4)
+    let bytes = reader
+        .read_bytes(4)
         .map_err(|e| anyhow::anyhow!("reading u32: {e}"))?;
     Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 
 fn read_i32_le(reader: &mut MemoryReader) -> anyhow::Result<i32> {
-    let bytes = reader.read_bytes(4)
+    let bytes = reader
+        .read_bytes(4)
         .map_err(|e| anyhow::anyhow!("reading i32: {e}"))?;
     Ok(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }

@@ -26,6 +26,7 @@ neo-storage = { workspace = true }
 neo-manifest = { workspace = true }
 neo-serialization = { workspace = true }
 neo-payloads = { workspace = true }
+neo-runtime = { workspace = true }
 # The execution layer provides the ApplicationEngine that native contracts
 # call into (and the abstract NativeContract trait they implement).
 neo-execution = { workspace = true }

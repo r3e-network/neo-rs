@@ -106,12 +106,33 @@ fn apply_snapshot_changes_updates_mpt_when_backend_exists() {
     );
 
     let root = store
-        .apply_snapshot_changes(1, &snapshot)
+        .apply_snapshot_changes(0, &snapshot)
         .expect("MPT apply succeeds")
         .expect("MPT backend returns a root");
     let mpt = store.mpt().expect("MPT backend");
     assert_eq!(mpt.current_local_root_hash(), Some(root));
-    assert!(mpt.get_state_root(1).is_some());
+    assert!(mpt.get_state_root(0).is_some());
+}
+
+#[test]
+fn apply_snapshot_changes_rejects_non_contiguous_mpt_updates() {
+    let store = StateStore::with_mpt(false);
+    let snapshot = DataCache::new(false);
+    snapshot.add(
+        StorageKey::new(5, vec![0xAA]),
+        StorageItem::from_bytes(vec![0x01]),
+    );
+
+    let err = store
+        .apply_snapshot_changes(5, &snapshot)
+        .expect_err("empty MPT cannot jump directly to block 5");
+    assert!(
+        err.to_string().contains("non-contiguous"),
+        "unexpected error: {err}"
+    );
+    let mpt = store.mpt().expect("MPT backend");
+    assert_eq!(mpt.current_local_root_index(), None);
+    assert!(mpt.get_state_root(5).is_none());
 }
 
 #[test]

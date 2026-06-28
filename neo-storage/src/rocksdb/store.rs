@@ -190,24 +190,26 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
 
-        Box::new(iter.filter_map(move |res| {
-            let (key, value) = match res {
-                Ok(entry) => entry,
+        Box::new(
+            iter.filter_map(|res| match res {
+                Ok(entry) => Some(entry),
                 Err(err) => {
                     warn!(target: "neo", error = %err, "rocksdb iterator error");
-                    return None;
+                    None
                 }
-            };
-            let key_vec: Vec<u8> = key.into();
-            if let Some(prefix) = &prefix_bytes {
-                if !key_vec.starts_with(prefix) {
-                    return None;
-                }
-            }
-            let storage_key = StorageKey::from_bytes(&key_vec);
-            let storage_item = StorageItem::from_bytes(value.into());
-            Some((storage_key, storage_item))
-        }))
+            })
+            .take_while(move |(key, _value)| {
+                prefix_bytes
+                    .as_ref()
+                    .is_none_or(|prefix| key.as_ref().starts_with(prefix.as_slice()))
+            })
+            .map(|(key, value)| {
+                let key_vec: Vec<u8> = key.into();
+                let storage_key = StorageKey::from_bytes(&key_vec);
+                let storage_item = StorageItem::from_bytes(value.into());
+                (storage_key, storage_item)
+            }),
+        )
     }
 }
 
@@ -412,22 +414,22 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             direction,
             &self.read_ahead_config,
         );
-        Box::new(iterator.filter_map(move |res| {
-            let (key, value) = match res {
-                Ok(entry) => entry,
-                Err(err) => {
-                    warn!(target: "neo", error = %err, "rocksdb iterator error");
-                    return None;
-                }
-            };
-            let key_vec = key.to_vec();
-            if let Some(prefix) = &prefix_bytes {
-                if !key_vec.starts_with(prefix) {
-                    return None;
-                }
-            }
-            Some((key_vec, value.to_vec()))
-        }))
+        Box::new(
+            iterator
+                .filter_map(|res| match res {
+                    Ok(entry) => Some(entry),
+                    Err(err) => {
+                        warn!(target: "neo", error = %err, "rocksdb iterator error");
+                        None
+                    }
+                })
+                .take_while(move |(key, _value)| {
+                    prefix_bytes
+                        .as_ref()
+                        .is_none_or(|prefix| key.as_ref().starts_with(prefix.as_slice()))
+                })
+                .map(|(key, value)| (key.to_vec(), value.to_vec())),
+        )
     }
 }
 
@@ -476,24 +478,26 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
 
-        Box::new(iter.filter_map(move |res| {
-            let (key, value) = match res {
-                Ok(entry) => entry,
+        Box::new(
+            iter.filter_map(|res| match res {
+                Ok(entry) => Some(entry),
                 Err(err) => {
                     warn!(target: "neo", error = %err, "rocksdb iterator error");
-                    return None;
+                    None
                 }
-            };
-            let key_vec: Vec<u8> = key.into();
-            if let Some(prefix) = &prefix_bytes {
-                if !key_vec.starts_with(prefix) {
-                    return None;
-                }
-            }
-            let storage_key = StorageKey::from_bytes(&key_vec);
-            let storage_item = StorageItem::from_bytes(value.into());
-            Some((storage_key, storage_item))
-        }))
+            })
+            .take_while(move |(key, _value)| {
+                prefix_bytes
+                    .as_ref()
+                    .is_none_or(|prefix| key.as_ref().starts_with(prefix.as_slice()))
+            })
+            .map(|(key, value)| {
+                let key_vec: Vec<u8> = key.into();
+                let storage_key = StorageKey::from_bytes(&key_vec);
+                let storage_item = StorageItem::from_bytes(value.into());
+                (storage_key, storage_item)
+            }),
+        )
     }
 }
 

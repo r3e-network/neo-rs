@@ -53,6 +53,7 @@
 //!   (and fully resolvable) until the last reader drops it.
 
 use crate::Keys;
+use crate::metrics::{StateRootApplyCountKind, StateRootApplyMetrics, StateRootApplyStage};
 use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Trie};
 use neo_primitives::{UINT256_SIZE, UInt256};
@@ -60,6 +61,7 @@ use neo_storage::persistence::{SeekDirection, Store};
 use parking_lot::{Mutex, RwLock};
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Size of the serialized unsigned `StateRoot` prefix:
 /// `version (1) + index (4, LE) + root_hash (32)`.
@@ -317,6 +319,7 @@ impl MptStore {
         changes: &[MptChange],
     ) -> MptResult<UInt256> {
         let _writer = self.write_gate.lock();
+        StateRootApplyMetrics::record_count(StateRootApplyCountKind::Changes, changes.len() as u64);
 
         // Stage every mutation against the current generation. The
         // writer gate guarantees the base cannot change underneath us.
@@ -326,6 +329,7 @@ impl MptStore {
         });
 
         let mut trie = Trie::new(Arc::clone(&batch), root_before, self.full_state);
+        let stage_start = Instant::now();
         for change in changes {
             match change {
                 MptChange::Put { key, value } => trie.put(key, value)?,
@@ -336,11 +340,22 @@ impl MptStore {
                 }
             }
         }
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::MutateChanges,
+            elapsed_us(stage_start),
+        );
 
         // C# reads `Trie.Root.Hash` (well-defined even for the empty
         // root, which hashes its single sentinel byte).
+        let stage_start = Instant::now();
         let new_root = trie.root().try_hash()?;
+        StateRootApplyMetrics::record_stage(StateRootApplyStage::RootHash, elapsed_us(stage_start));
+        let stage_start = Instant::now();
         trie.commit()?;
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::TrieCommit,
+            elapsed_us(stage_start),
+        );
         drop(trie);
 
         // The local (unwitnessed) state-root record and the current
@@ -348,6 +363,7 @@ impl MptStore {
         // (C# `StateSnapshot.AddLocalStateRoot` + snapshot commit), so
         // a reader can never observe the new root record without the
         // trie nodes that back it.
+        let stage_start = Instant::now();
         let root_record = StateRoot::new_current(block_index, new_root);
         let overlay = {
             let mut overlay = batch.overlay.lock();
@@ -361,13 +377,36 @@ impl MptStore {
             );
             std::mem::take(&mut *overlay)
         };
+        let overlay_entries = overlay.len() as u64;
+        let overlay_puts = overlay.values().filter(|value| value.is_some()).count() as u64;
+        let overlay_deletes = overlay_entries.saturating_sub(overlay_puts);
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::OverlayEntries,
+            overlay_entries,
+        );
+        StateRootApplyMetrics::record_count(StateRootApplyCountKind::OverlayPuts, overlay_puts);
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::OverlayDeletes,
+            overlay_deletes,
+        );
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::OverlayPrepare,
+            elapsed_us(stage_start),
+        );
         // Release the batch's base Arc before publishing so that, with
         // no reader snapshots outstanding, `make_mut` updates in place
         // instead of cloning the map.
         drop(batch);
 
-        self.commit_overlay_to_backing(&overlay)?;
+        let stage_start = Instant::now();
+        let backing_result = self.commit_overlay_to_backing(&overlay);
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::BackingCommit,
+            elapsed_us(stage_start),
+        );
+        backing_result?;
 
+        let stage_start = Instant::now();
         let mut kv = self.kv.write();
         let map = Arc::make_mut(&mut *kv);
         for (key, value) in overlay {
@@ -380,6 +419,10 @@ impl MptStore {
                 }
             }
         }
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::PublishGeneration,
+            elapsed_us(stage_start),
+        );
         Ok(new_root)
     }
 
@@ -482,6 +525,10 @@ impl MptStore {
         let root_hash = UInt256::from_bytes(&bytes[5..5 + UINT256_SIZE]).ok()?;
         Some(StateRoot::new(version, index, root_hash))
     }
+}
+
+fn elapsed_us(start: Instant) -> u64 {
+    start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
 impl std::fmt::Debug for MptStore {

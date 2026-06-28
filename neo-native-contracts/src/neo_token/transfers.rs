@@ -45,7 +45,8 @@ impl NeoToken {
     }
 
     /// C# `FungibleToken.PostTransferAsync` for NEO: emit `Transfer(from, to, amount)`
-    /// and, when `to` is a deployed contract, queue its `onNEP17Payment` callback.
+    /// and, when `to` is a deployed contract, run its `onNEP17Payment` callback
+    /// before deferred GAS distributions are minted.
     pub(super) fn neo_post_transfer(
         &self,
         engine: &mut ApplicationEngine,
@@ -65,12 +66,13 @@ impl NeoToken {
             return Ok(());
         }
         let data_item = crate::nep17_payment_data_item(data, "NeoToken::transfer data")?;
-        engine.queue_contract_call_from_native(
-            NeoToken::script_hash(),
-            *to,
+        let neo_hash = NeoToken::script_hash();
+        engine.call_from_native_contract_void(
+            &neo_hash,
+            to,
             crate::NEP17_PAYMENT_METHOD,
             crate::nep17_payment_callback_args(Some(from), amount, data_item),
-        );
+        )?;
         Ok(())
     }
 
@@ -305,7 +307,7 @@ impl NeoToken {
     /// C# `FungibleToken.Mint` specialised to NEO (`NeoAccountState` +
     /// `OnBalanceChanging` + the GAS-distribution drain of NEO's
     /// `PostTransferAsync`): credit `amount` NEO to `account`, raise the stored
-    /// total supply, emit `Transfer(null, account, amount)`, queue the recipient's
+    /// total supply, emit `Transfer(null, account, amount)`, run the recipient's
     /// `onNEP17Payment` when `call_on_payment` and the recipient is a deployed
     /// contract, then mint any GAS distribution collected by `OnBalanceChanging`.
     /// A zero amount is a no-op; a negative amount faults.
@@ -367,12 +369,13 @@ impl NeoToken {
         if call_on_payment
             && crate::ContractManagement::is_contract(&engine.snapshot_cache(), account)
         {
-            engine.queue_contract_call_from_native(
-                NeoToken::script_hash(),
-                *account,
+            let neo_hash = NeoToken::script_hash();
+            engine.call_from_native_contract_void(
+                &neo_hash,
+                account,
                 crate::NEP17_PAYMENT_METHOD,
                 crate::nep17_payment_callback_args(None, amount, StackItem::null()),
-            );
+            )?;
         }
         for (target, datoshi) in distributions {
             crate::GasToken::new().gas_mint(engine, &target, &datoshi, call_on_payment)?;

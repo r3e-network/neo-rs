@@ -3,12 +3,52 @@ use crate::contract_management::ContractManagement;
 use neo_config::ProtocolSettings;
 use neo_execution::ContractState;
 use neo_execution::native_contract::build_native_contract_state;
-use neo_manifest::NefFile;
-use neo_primitives::{CallFlags, UInt160};
-use neo_storage::StorageItem;
+use neo_manifest::{ContractMethodDescriptor, ContractParameterDefinition, NefFile};
+use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_storage::persistence::DataCache;
+use neo_storage::{StorageItem, StorageKey};
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState};
 use std::sync::Arc;
+
+fn callback_contract(name: &str, marker: u8) -> (NefFile, neo_manifest::ContractManifest) {
+    let mut script = ScriptBuilder::new();
+    script.emit_opcode(OpCode::RET);
+    let deploy_offset = script.len() as i32;
+    script.emit_instruction(OpCode::INITSLOT, &[0x00, 0x02]);
+    script.emit_push(&[marker]);
+    script.emit_push(&[0x77]);
+    script
+        .emit_syscall("System.Storage.GetContext")
+        .expect("GetContext");
+    script.emit_syscall("System.Storage.Put").expect("Put");
+    script.emit_opcode(OpCode::RET);
+
+    let mut manifest = deployable_manifest(name);
+    manifest.abi.methods.push(
+        ContractMethodDescriptor::new(
+            "_deploy".to_string(),
+            vec![
+                ContractParameterDefinition::new("data".to_string(), ContractParameterType::Any)
+                    .unwrap(),
+                ContractParameterDefinition::new(
+                    "update".to_string(),
+                    ContractParameterType::Boolean,
+                )
+                .unwrap(),
+            ],
+            ContractParameterType::Void,
+            deploy_offset,
+            false,
+        )
+        .expect("_deploy descriptor"),
+    );
+
+    (
+        NefFile::new("cache-test".to_string(), script.to_array()),
+        manifest,
+    )
+}
 
 #[test]
 fn update_bumps_counter_swaps_payloads_and_notifies() {
@@ -119,6 +159,51 @@ fn update_with_null_nef_keeps_the_old_nef() {
     assert_eq!(
         updated.manifest.supported_standards,
         vec!["NEP-17".to_string()]
+    );
+}
+
+#[test]
+fn update_refreshes_contract_cache_before_deploy_callback() {
+    crate::install();
+    let cache = DataCache::new(false);
+    put_contract_record(
+        &cache,
+        &build_native_contract_state(&ContractManagement, &ProtocolSettings::default(), 0),
+    );
+
+    let (old_nef, old_manifest) = callback_contract("CacheRefreshFixture", 0xAA);
+    let (new_nef, new_manifest) = callback_contract("CacheRefreshFixture", 0xBB);
+    let script = update_script_with_data(
+        Some(&new_nef.to_bytes()),
+        Some(&manifest_json(&new_manifest)),
+        &[0xCC],
+        CallFlags::ALL,
+    );
+    let self_hash = UInt160::from_script(&script);
+    let fixture = ContractState::new(7, self_hash, old_nef, old_manifest);
+    put_contract_record(&cache, &fixture);
+    cache.add(
+        ContractManagement::contract_id_storage_key(7),
+        StorageItem::from_bytes(self_hash.to_bytes().to_vec()),
+    );
+
+    let snapshot = Arc::new(cache);
+    let sender = UInt160::from_bytes(&SENDER).unwrap();
+    let mut engine = engine_for(Arc::clone(&snapshot), ProtocolSettings::default(), sender);
+    engine.put_contract_cache(self_hash, fixture);
+    engine
+        .load_script(script, CallFlags::ALL, Some(self_hash))
+        .expect("script loads");
+    let state = engine.execute_allow_fault();
+    assert_eq!(state, VmState::HALT, "update must HALT");
+
+    let row = snapshot
+        .get(&StorageKey::new(7, vec![0x77]))
+        .expect("updated _deploy callback wrote the marker row");
+    assert_eq!(
+        row.value_bytes().to_vec(),
+        vec![0xBB],
+        "queued _deploy must execute the updated contract state, not the cached old NEF"
     );
 }
 

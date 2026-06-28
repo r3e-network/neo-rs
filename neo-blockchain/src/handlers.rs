@@ -381,6 +381,14 @@ impl BlockchainService {
         let hash = Self::try_block_hash(block.as_ref())?;
         let current_height = self.ledger.current_height();
 
+        if let Some(stop_height) = self.stop_at_height {
+            if index > stop_height {
+                return Err(CoreError::other(format!(
+                    "validation stop height {stop_height} reached; refusing block {index}"
+                )));
+            }
+        }
+
         if index <= current_height {
             return Ok(());
         }
@@ -507,7 +515,13 @@ impl BlockchainService {
         );
         // Feed the sync metrics system for the Prometheus /metrics endpoint
         // and the rolling throughput window.
-        neo_runtime::sync_metrics::record_block(index as u64, verify_us, persist_us, commit_us, total_us);
+        neo_runtime::sync_metrics::record_block(
+            index as u64,
+            verify_us,
+            persist_us,
+            commit_us,
+            total_us,
+        );
 
         // C# Blockchain.Persist → MemPool.UpdatePoolForBlockPersisted: drop the
         // block's transactions from the pool and evict pooled conflicts, so

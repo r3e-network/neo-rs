@@ -19,6 +19,7 @@ fn commit_to_store_flushes_snapshot_writes_to_durable_store() {
         Arc::clone(&snapshot),
         store_cache,
         None,
+        false,
         None,
         None,
     );
@@ -43,6 +44,78 @@ fn commit_to_store_flushes_snapshot_writes_to_durable_store() {
     );
 }
 
+#[test]
+fn daemon_context_skips_state_service_mpt_during_default_cold_catchup() {
+    use neo_payloads::{Block, Header};
+    use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_storage::persistence::{StoreCache, store::Store};
+
+    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let state_store = Arc::new(StateStore::with_mpt(true));
+    let state_service = Arc::new(StateServiceCommitHandlers::new(Arc::clone(&state_store)));
+    let ctx = DaemonContext::new(
+        Arc::new(ProtocolSettings::default()),
+        Arc::clone(&snapshot),
+        store_cache,
+        Some(state_service),
+        false,
+        None,
+        None,
+    );
+
+    let mut header = Header::new();
+    header.set_index(0);
+    let block = Block::from_parts(header, Vec::new());
+
+    assert!(ctx.block_committing_with_live_tip(&block, &snapshot, &[], 1_000_000));
+    assert_eq!(
+        state_store
+            .mpt()
+            .expect("state store exposes MPT")
+            .current_local_root_index(),
+        None,
+        "default cold catch-up should preserve fast-sync behavior by deferring StateService MPT"
+    );
+}
+
+#[test]
+fn daemon_context_can_track_state_service_mpt_during_cold_catchup_for_validation() {
+    use neo_payloads::{Block, Header};
+    use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_storage::persistence::{StoreCache, store::Store};
+
+    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let state_store = Arc::new(StateStore::with_mpt(true));
+    let state_service = Arc::new(StateServiceCommitHandlers::new(Arc::clone(&state_store)));
+    let ctx = DaemonContext::new(
+        Arc::new(ProtocolSettings::default()),
+        Arc::clone(&snapshot),
+        store_cache,
+        Some(state_service),
+        true,
+        None,
+        None,
+    );
+
+    let mut header = Header::new();
+    header.set_index(0);
+    let block = Block::from_parts(header, Vec::new());
+
+    assert!(ctx.block_committing_with_live_tip(&block, &snapshot, &[], 1_000_000));
+    let mpt = state_store.mpt().expect("state store exposes MPT");
+    assert_eq!(mpt.current_local_root_index(), Some(0));
+    assert!(
+        mpt.get_state_root(0).is_some(),
+        "validation profiles must keep local state roots advancing during cold catch-up"
+    );
+}
+
 /// Reproduces the v3.10.0 consistency testnet failure
 /// (`Policy_getExecFeeFactor`: Python 30 vs local node 0).
 ///
@@ -55,12 +128,14 @@ fn commit_to_store_flushes_snapshot_writes_to_durable_store() {
 /// `ExecFeeFactor=30` write is visible there, the live node must return 30.
 #[test]
 fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
-    use neo_blockchain::native_persist::{chain_state_initialized, genesis_block, persist_block_natives};
+    use neo_blockchain::native_persist::{
+        chain_state_initialized, genesis_block, persist_block_natives,
+    };
     use neo_blockchain::service_context::SystemContext;
     use neo_native_contracts::PolicyContract;
+    use neo_storage::StorageKey;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::persistence::{StoreCache, store::Store};
-    use neo_storage::{StorageItem, StorageKey};
     use num_bigint::BigInt;
 
     neo_native_contracts::install();
@@ -72,6 +147,7 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
         Arc::clone(&snapshot),
         store_cache,
         None,
+        false,
         None,
         None,
     );
@@ -122,6 +198,7 @@ fn daemon_context_indexes_application_executed_notifications() {
         Arc::clone(&snapshot),
         store_cache,
         None,
+        false,
         Some(Arc::clone(&indexer)),
         None,
     );
@@ -193,6 +270,7 @@ fn daemon_context_dispatches_application_logs_handlers() {
         Arc::clone(&snapshot),
         store_cache,
         None,
+        false,
         None,
         Some(Arc::clone(&logs_service)),
     );
@@ -258,9 +336,15 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
         .expect("seed durable RocksDB tip");
 
     let config = NodeConfig::default();
-    let running = build_node(Arc::clone(&settings), &config, Some(&storage_path), None)
-        .await
-        .expect("build node over durable store");
+    let running = build_node(
+        Arc::clone(&settings),
+        &config,
+        Some(&storage_path),
+        None,
+        None,
+    )
+    .await
+    .expect("build node over durable store");
 
     running
         .network
@@ -336,9 +420,15 @@ async fn rpc_getblockcount_reads_restarted_durable_rocksdb_tip() {
     config.rpc.port = Some(rpc_port);
     config.rpc.bind_address = Some("127.0.0.1".to_string());
 
-    let running = build_node(Arc::clone(&settings), &config, Some(&storage_path), None)
-        .await
-        .expect("build node over durable store");
+    let running = build_node(
+        Arc::clone(&settings),
+        &config,
+        Some(&storage_path),
+        None,
+        None,
+    )
+    .await
+    .expect("build node over durable store");
     let server =
         start_rpc_server(&running.node, &config, settings.network).expect("start JSON-RPC server");
     assert!(server.read().is_started(), "JSON-RPC server must bind");

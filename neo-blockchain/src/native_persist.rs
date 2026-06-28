@@ -51,13 +51,10 @@
 //! records C# writes there come from [`crate::ledger_records`] when the
 //! direct native hook loop reaches the Ledger contract's canonical slot.
 //!
-//! ## Remaining gaps (documented)
-//!
-//! - C# `GasToken.OnPersist` burns each transaction's system+network
-//!   fee from its sender and mints the network fees to the primary;
-//!   the Rust `GasToken` does not override `on_persist` yet, so fee
-//!   burn/mint records are absent until `neo-native-contracts` grows
-//!   that hook.
+//! `GasToken::on_persist` lives in `neo-native-contracts` and is invoked by
+//! this pipeline through the shared native-contract provider. It burns each
+//! transaction's system+network fee from the sender and mints the block's
+//! network-fee total to the primary validator, matching C# `GasToken.OnPersist`.
 
 use std::sync::Arc;
 
@@ -65,8 +62,8 @@ use tracing::debug;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::ApplicationEngine;
 use neo_execution::native_contract_provider::NativeContractLookup;
+use neo_execution::{ApplicationEngine, ExecutionContextState};
 use neo_manifest::CallFlags;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::{Block, Header, Witness};
@@ -94,6 +91,66 @@ const NEO_TOKEN_ID: i32 = -5;
 /// C# `NeoToken.Prefix_Committee` (14): the cached-committee record —
 /// the first key genesis initialization writes.
 const NEO_PREFIX_COMMITTEE_KEY: u8 = 14;
+
+fn should_trace_tx(tx_hash: &UInt256) -> bool {
+    let Ok(raw) = std::env::var("NEO_TRACE_TX") else {
+        return false;
+    };
+    let tx_hash = tx_hash.to_string();
+    raw.split(',').any(|entry| {
+        let entry = entry.trim();
+        entry == "*" || entry.eq_ignore_ascii_case("all") || entry.eq_ignore_ascii_case(&tx_hash)
+    })
+}
+
+fn trace_tx_frames(engine: &ApplicationEngine) -> String {
+    engine
+        .invocation_stack()
+        .iter()
+        .enumerate()
+        .map(|(index, context)| {
+            let state_arc = context
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state = state_arc.lock();
+            let script_hash = state
+                .script_hash
+                .or_else(|| UInt160::from_bytes(&context.script_hash()).ok())
+                .map(|hash| hash.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let method = state.method_name.as_deref().unwrap_or("-");
+            let opcode = context
+                .current_instruction()
+                .map(|instruction| format!("{:?}", instruction.opcode()))
+                .unwrap_or_else(|_| "<none>".to_string());
+            format!(
+                "#{index}:hash={script_hash}:method={method}:ip={}:opcode={opcode}",
+                context.instruction_pointer()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+fn trace_tx_notifications(engine: &ApplicationEngine) -> String {
+    engine
+        .notifications()
+        .iter()
+        .enumerate()
+        .map(|(index, notification)| {
+            let state = notification
+                .state
+                .iter()
+                .map(|item| format!("{:?}", stack_value_snapshot(item)))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "#{index}:contract={}:event={}:state=[{}]",
+                notification.script_hash, notification.event_name, state
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
 
 /// A notification emitted by a native persistence engine, captured for
 /// the caller (C# wraps these in `ApplicationExecuted` events).
@@ -195,10 +252,20 @@ fn run_native_persist_hooks(
     block_index: u32,
 ) -> CoreResult<()> {
     let trigger = engine.trigger_type();
+    let metric_hook = match trigger {
+        TriggerType::OnPersist => neo_runtime::sync_metrics::NativePersistHook::OnPersist,
+        TriggerType::PostPersist => neo_runtime::sync_metrics::NativePersistHook::PostPersist,
+        other => {
+            return Err(CoreError::invalid_operation(format!(
+                "native persist hooks require an OnPersist/PostPersist engine, got {other:?}"
+            )));
+        }
+    };
     for contract in contracts {
         if !contract.is_active(settings, block_index) {
             continue;
         }
+        let hook_start = std::time::Instant::now();
         if contract.id() == LEDGER_CONTRACT_ID {
             let snapshot = engine.snapshot_cache();
             match trigger {
@@ -217,15 +284,17 @@ fn run_native_persist_hooks(
                 _ => {}
             }
         }
-        let result = match trigger {
-            TriggerType::OnPersist => contract.on_persist(engine),
-            TriggerType::PostPersist => contract.post_persist(engine),
-            other => {
-                return Err(CoreError::invalid_operation(format!(
-                    "native persist hooks require an OnPersist/PostPersist engine, got {other:?}"
-                )));
+        let result = match metric_hook {
+            neo_runtime::sync_metrics::NativePersistHook::OnPersist => contract.on_persist(engine),
+            neo_runtime::sync_metrics::NativePersistHook::PostPersist => {
+                contract.post_persist(engine)
             }
         };
+        neo_runtime::sync_metrics::record_native_contract_hook(
+            metric_hook,
+            contract.id(),
+            elapsed_us(hook_start),
+        );
         result.map_err(|e| {
             CoreError::invalid_operation(format!(
                 "native {} {trigger:?} hook failed at block {block_index}: {e}",
@@ -257,7 +326,7 @@ pub fn persist_block_natives(
     block: Arc<Block>,
     settings: &ProtocolSettings,
 ) -> CoreResult<NativePersistOutcome> {
-    let _total_start = std::time::Instant::now();
+    let total_start = std::time::Instant::now();
     let provider = NativeContractLookup::native_contract_provider().ok_or_else(|| {
         CoreError::invalid_operation(
             "persist_block_natives requires the native-contract provider \
@@ -320,7 +389,7 @@ pub fn persist_block_natives(
         .application_executed
         .push(application_executed(&engine, None, VMState::HALT));
     drop(engine);
-    let onpersist_us = onpersist_start.elapsed().as_micros();
+    let onpersist_us = elapsed_us(onpersist_start);
 
     // --- Transaction stage (C# Blockchain.Persist:433-453) ---
     // Each transaction runs in its own Application-trigger engine with
@@ -357,6 +426,31 @@ pub fn persist_block_natives(
         if executed.exception.is_none() {
             executed.exception = load_error;
         }
+        if should_trace_tx(&tx_hash) {
+            eprintln!(
+                "trace tx block={} hash={} vm_state={:?} current={} calling={} entry={} depth={} frames={} exception={} notifications={} notification_details={}",
+                block_index,
+                tx_hash,
+                vm_state,
+                engine
+                    .current_script_hash()
+                    .map(|hash| hash.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                engine
+                    .get_calling_script_hash()
+                    .map(|hash| hash.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                engine
+                    .entry_script_hash()
+                    .map(|hash| hash.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                engine.invocation_stack().len(),
+                trace_tx_frames(&engine),
+                executed.exception.as_deref().unwrap_or(""),
+                executed.notifications.len(),
+                trace_tx_notifications(&engine)
+            );
+        }
         outcome.application_executed.push(executed);
         drop(engine);
 
@@ -371,6 +465,7 @@ pub fn persist_block_natives(
             vm_state,
         )?;
     }
+    let tx_us = elapsed_us(tx_start);
 
     // --- PostPersist stage (C# TriggerType.PostPersist engine, gas 0) ---
     let postpersist_start = std::time::Instant::now();
@@ -396,15 +491,25 @@ pub fn persist_block_natives(
         .application_executed
         .push(application_executed(&engine, None, VMState::HALT));
     drop(engine);
+    let postpersist_us = elapsed_us(postpersist_start);
 
     // The whole sequence succeeded: merge the staged writes into the
     // caller's snapshot (C# `snapshot.Commit()`).
+    let cache_commit_start = std::time::Instant::now();
     block_cache.commit();
+    let cache_commit_us = elapsed_us(cache_commit_start);
 
-    let tx_us = tx_start.elapsed().as_micros();
-    let postpersist_us = postpersist_start.elapsed().as_micros();
-    let total_us = _total_start.elapsed().as_micros();
+    let total_us = elapsed_us(total_start);
     let n_tx = block.transactions.len();
+    neo_runtime::sync_metrics::record_native_persist(
+        block_index as u64,
+        n_tx as u64,
+        onpersist_us,
+        tx_us,
+        postpersist_us,
+        cache_commit_us,
+        total_us,
+    );
     // Per-block timing breakdown (debug-level). Visible with RUST_LOG=neo=debug.
     // Helps identify whether the bottleneck is OnPersist hooks, per-tx
     // execution, PostPersist, or the cache commit.
@@ -415,11 +520,16 @@ pub fn persist_block_natives(
         onpersist_us = onpersist_us,
         tx_stage_us = tx_us,
         postpersist_us = postpersist_us,
+        cache_commit_us = cache_commit_us,
         total_us = total_us,
         "persist_block_natives timing"
     );
 
     Ok(outcome)
+}
+
+fn elapsed_us(start: std::time::Instant) -> u64 {
+    start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
 /// Builds the C# `ApplicationExecuted` record for a finished engine.
