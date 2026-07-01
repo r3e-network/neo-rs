@@ -680,6 +680,20 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
             checkpoint_root = Path(tmp) / "checkpoints"
             (checkpoint_root / "h200" / "mainnet").mkdir(parents=True)
             (checkpoint_root / "h200" / "StateRoot").mkdir()
+            (checkpoint_root / "h200" / "CHECKPOINT_INFO").write_text(
+                "\n".join(
+                    [
+                        "height=200",
+                        "state_root_included=true",
+                        "restore_verified=true",
+                        "verified_height=200",
+                        "verified_stateroot_root=0x200",
+                        "verified_against_reference=true",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
             (checkpoint_root / "h300" / "mainnet").mkdir(parents=True)
             (checkpoint_root / "h400" / "StateRoot").mkdir(parents=True)
             legacy = checkpoint_root / "mainnet-bounded-700000-stable"
@@ -700,16 +714,198 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertEqual(inventory["total_count"], 3)
         self.assertEqual(inventory["full_state_count"], 1)
         self.assertEqual(inventory["chain_only_count"], 1)
+        self.assertEqual(inventory["structural_not_restore_verified_count"], 0)
         self.assertEqual(inventory["latest_full_state_height"], 200)
         self.assertEqual(inventory["retained_heights"], [200, 300, 400])
         self.assertEqual(inventory["full_state_heights"], [200])
         self.assertEqual(inventory["chain_only_heights"], [300])
+        self.assertEqual(inventory["structural_not_restore_verified_heights"], [])
         self.assertEqual(inventory["history_checkpoint_heights"], [100, 200])
         self.assertEqual(inventory["history_checkpoints_not_retained"], [100])
         self.assertEqual(inventory["retained_checkpoints_not_in_history"], [])
         self.assertEqual(inventory["minimum_full_state_checkpoints"], 3)
         self.assertFalse(inventory["minimum_full_state_checkpoints_met"])
         self.assertEqual(inventory["missing_full_state_checkpoint_count"], 2)
+
+    def test_analyze_history_reports_production_proof_readiness_gates(self):
+        module = load_module()
+        records = [
+            record(
+                "2026-01-01T00:00:00+00:00",
+                [
+                    {
+                        "height": 100,
+                        "last_height": 100,
+                        "blocks_per_second": 20000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x100",
+                        "reference_matches_local": True,
+                        "stateroot_matches_chain": True,
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1800.0,
+                        "empty_block_speed_proof_source": "fast-sync-empty-blocks",
+                        "empty_block_blocks_per_second": 50000.0,
+                        "empty_only_blocks": 95000,
+                        "empty_block_import_seconds": 1.9,
+                        "sync_proof": {
+                            "fast_sync_import": {
+                                "transaction_blocks": 999,
+                                "transactions": 3000,
+                                "transaction_block_import_seconds": 0.555,
+                                "transaction_blocks_per_second": 1800.0,
+                            }
+                        },
+                    },
+                    {
+                        "height": 200,
+                        "last_height": 200,
+                        "blocks_per_second": 21000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x200",
+                        "reference_matches_local": True,
+                        "stateroot_matches_chain": True,
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1900.0,
+                        "sync_proof": {
+                            "fast_sync_import": {
+                                "transaction_blocks": 1200,
+                                "transactions": 3200,
+                                "transaction_block_import_seconds": 0.632,
+                                "transaction_blocks_per_second": 1900.0,
+                            }
+                        },
+                    },
+                    {
+                        "height": 300,
+                        "last_height": 300,
+                        "blocks_per_second": 22000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x300",
+                        "reference_matches_local": True,
+                        "stateroot_matches_chain": True,
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1750.0,
+                        "sync_proof": {
+                            "fast_sync_import": {
+                                "transaction_blocks": 1500,
+                                "transactions": 3600,
+                                "transaction_block_import_seconds": 0.857,
+                                "transaction_blocks_per_second": 1750.0,
+                            }
+                        },
+                    },
+                ],
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_root = Path(tmp) / "checkpoints"
+            for height in (100, 200, 300):
+                checkpoint = checkpoint_root / f"h{height}"
+                (checkpoint / "mainnet").mkdir(parents=True)
+                (checkpoint / "StateRoot").mkdir()
+                (checkpoint / "CHECKPOINT_INFO").write_text(
+                    "state_root_included=true\n",
+                    encoding="utf-8",
+                )
+
+            report = module.analyze_history(
+                records,
+                slowest_limit=5,
+                fastest_limit=5,
+                checkpoint_root=checkpoint_root,
+            )
+
+        readiness = report["production_proof_readiness"]
+        self.assertFalse(readiness["ready"])
+        self.assertEqual(readiness["minimum_transaction_blocks"], 1000)
+        self.assertEqual(readiness["minimum_full_state_checkpoints"], 3)
+        self.assertTrue(readiness["state_roots_match_chain"])
+        self.assertTrue(readiness["references_match_local"])
+        self.assertTrue(readiness["transaction_import_speed_floor_met"])
+        self.assertFalse(readiness["transaction_import_sample_size_met"])
+        self.assertFalse(readiness["restore_verified_checkpoint_floor_met"])
+        self.assertIn(
+            "transaction import proof has fewer than 1000 transaction-bearing blocks",
+            readiness["blocking_reasons"],
+        )
+        self.assertIn(
+            "fewer than 3 restore-verified full-state checkpoints retained",
+            readiness["blocking_reasons"],
+        )
+
+    def test_analyze_history_marks_production_proof_ready_when_all_gates_pass(self):
+        module = load_module()
+        milestones = []
+        for height, bps, tx_blocks in (
+            (100, 1800.0, 1100),
+            (200, 1900.0, 1200),
+            (300, 1750.0, 1300),
+        ):
+            milestones.append(
+                {
+                    "height": height,
+                    "last_height": height,
+                    "blocks_per_second": 21000.0,
+                    "checkpoint_created": True,
+                    "local_root": f"0x{height}",
+                    "reference_matches_local": True,
+                    "stateroot_matches_chain": True,
+                    "speed_proof_source": "fast-sync-transaction-blocks",
+                    "import_window_blocks_per_second": bps,
+                    "empty_block_speed_proof_source": "fast-sync-empty-blocks",
+                    "empty_block_blocks_per_second": 80000.0,
+                    "empty_only_blocks": 90000,
+                    "empty_block_import_seconds": 1.125,
+                    "sync_proof": {
+                        "fast_sync_import": {
+                            "transaction_blocks": tx_blocks,
+                            "transactions": tx_blocks * 3,
+                            "transaction_block_import_seconds": tx_blocks / bps,
+                            "transaction_blocks_per_second": bps,
+                        }
+                    },
+                }
+            )
+        records = [record("2026-01-01T00:00:00+00:00", milestones)]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_root = Path(tmp) / "checkpoints"
+            for height in (100, 200, 300):
+                checkpoint = checkpoint_root / f"h{height}"
+                (checkpoint / "mainnet").mkdir(parents=True)
+                (checkpoint / "StateRoot").mkdir()
+                (checkpoint / "CHECKPOINT_INFO").write_text(
+                    "\n".join(
+                        [
+                            f"height={height}",
+                            "state_root_included=true",
+                            "restore_verified=true",
+                            f"verified_height={height}",
+                            f"verified_stateroot_root=0x{height}",
+                            "verified_against_reference=true",
+                            "",
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+
+            report = module.analyze_history(
+                records,
+                slowest_limit=5,
+                fastest_limit=5,
+                checkpoint_root=checkpoint_root,
+            )
+
+        readiness = report["production_proof_readiness"]
+        self.assertTrue(readiness["ready"])
+        self.assertEqual(readiness["blocking_reasons"], [])
+        self.assertTrue(readiness["state_roots_match_chain"])
+        self.assertTrue(readiness["references_match_local"])
+        self.assertTrue(readiness["transaction_import_speed_floor_met"])
+        self.assertTrue(readiness["transaction_import_sample_size_met"])
+        self.assertTrue(readiness["restore_verified_checkpoint_floor_met"])
+        self.assertEqual(readiness["restore_verified_checkpoint_count"], 3)
 
 
 if __name__ == "__main__":

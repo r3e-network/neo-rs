@@ -652,6 +652,13 @@ The report also includes a `throughput_trend` series and
 `throughput_regressions` list. By default, any adjacent milestone drop of 25%
 or more is flagged; adjust that with `--regression-threshold-percent <N>` when
 you are comparing debug, release, or different storage devices.
+Use `production_proof_readiness` as the top-level release gate summary. It is
+`ready=true` only when the history has no StateRoot/reference mismatch, at
+least one transaction-bearing fast-sync proof meets the configured BPS floor,
+each counted transaction proof has at least the minimum transaction-bearing
+block sample size, and the retained checkpoint inventory includes at least
+three restore-verified full-state checkpoints. Empty-block speed never satisfies
+this readiness gate by itself.
 Fast-sync runs now produce two distinct throughput views. The analyzer keeps
 `transaction_import_*` fields for the transaction-bearing import proof that
 backs the production BPS gate, and `empty_block_*` fields for the empty-block

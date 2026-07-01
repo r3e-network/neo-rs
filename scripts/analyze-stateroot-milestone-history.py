@@ -11,6 +11,7 @@ from typing import Any
 
 DEFAULT_SYNC_SPEED_FLOOR_BPS = 1500.0
 DEFAULT_MIN_FULL_STATE_CHECKPOINTS = 3
+DEFAULT_MIN_TRANSACTION_BLOCKS = 1000
 
 
 def load_history(path: Path) -> list[dict[str, Any]]:
@@ -126,6 +127,22 @@ def checkpoint_has_stateroot(path: Path) -> bool:
     return True
 
 
+def checkpoint_restore_metadata_reason(path: Path, height: int) -> str | None:
+    if metadata_value(path, "restore_verified") != "true":
+        return "missing restore_verified=true"
+    verified_height = metadata_value(path, "verified_height")
+    if verified_height != str(height):
+        return (
+            "verified_height does not match checkpoint height: "
+            f"verified_height={verified_height}, height={height}"
+        )
+    if not metadata_value(path, "verified_stateroot_root"):
+        return "missing verified_stateroot_root"
+    if metadata_value(path, "verified_against_reference") != "true":
+        return "missing verified_against_reference=true"
+    return None
+
+
 def scan_checkpoint_inventory(root: Path) -> dict[str, Any]:
     if not root.is_dir():
         return {
@@ -148,19 +165,35 @@ def scan_checkpoint_inventory(root: Path) -> dict[str, Any]:
             continue
         has_chain = checkpoint_has_chain(path)
         has_stateroot = checkpoint_has_stateroot(path)
+        restore_metadata_reason = (
+            checkpoint_restore_metadata_reason(path, height)
+            if has_chain and has_stateroot
+            else None
+        )
+        usable_for_state_validation = bool(
+            has_chain and has_stateroot and restore_metadata_reason is None
+        )
         checkpoints.append(
             {
                 "path": str(path),
                 "height": height,
                 "has_chain": has_chain,
                 "has_stateroot": has_stateroot,
-                "usable_for_state_validation": bool(has_chain and has_stateroot),
+                "restore_metadata_reason": restore_metadata_reason,
+                "usable_for_state_validation": usable_for_state_validation,
             }
         )
 
     checkpoints.sort(key=lambda item: int(item["height"]))
     full_state = [item for item in checkpoints if item["usable_for_state_validation"]]
     chain_only = [item for item in checkpoints if item["has_chain"] and not item["has_stateroot"]]
+    structural_not_verified = [
+        item
+        for item in checkpoints
+        if item["has_chain"]
+        and item["has_stateroot"]
+        and not item["usable_for_state_validation"]
+    ]
     latest = full_state[-1] if full_state else None
     return {
         "root": str(root),
@@ -168,6 +201,7 @@ def scan_checkpoint_inventory(root: Path) -> dict[str, Any]:
         "total_count": len(checkpoints),
         "full_state_count": len(full_state),
         "chain_only_count": len(chain_only),
+        "structural_not_restore_verified_count": len(structural_not_verified),
         "minimum_full_state_checkpoints": DEFAULT_MIN_FULL_STATE_CHECKPOINTS,
         "minimum_full_state_checkpoints_met": len(full_state)
         >= DEFAULT_MIN_FULL_STATE_CHECKPOINTS,
@@ -180,6 +214,9 @@ def scan_checkpoint_inventory(root: Path) -> dict[str, Any]:
         "retained_heights": [item["height"] for item in checkpoints],
         "full_state_heights": [item["height"] for item in full_state],
         "chain_only_heights": [item["height"] for item in chain_only],
+        "structural_not_restore_verified_heights": [
+            item["height"] for item in structural_not_verified
+        ],
     }
 
 
@@ -493,6 +530,91 @@ def summarize_empty_block_fast_path(
     }
 
 
+def transaction_import_sample_size_violations(
+    proofs: list[dict[str, Any]],
+    *,
+    minimum_transaction_blocks: int,
+) -> list[dict[str, Any]]:
+    violations: list[dict[str, Any]] = []
+    for proof in proofs:
+        try:
+            transaction_blocks = int(proof.get("transaction_blocks") or 0)
+        except (TypeError, ValueError):
+            transaction_blocks = 0
+        if transaction_blocks >= minimum_transaction_blocks:
+            continue
+        violation = dict(proof)
+        violation["minimum_transaction_blocks"] = minimum_transaction_blocks
+        violation["missing_transaction_blocks"] = (
+            minimum_transaction_blocks - transaction_blocks
+        )
+        violations.append(violation)
+    return violations
+
+
+def production_proof_readiness(
+    *,
+    reference_mismatch_count: int,
+    state_mismatch_count: int,
+    transaction_import_proofs: list[dict[str, Any]],
+    transaction_import_floor_violations: list[dict[str, Any]],
+    checkpoint_inventory: dict[str, Any] | None,
+    minimum_transaction_blocks: int = DEFAULT_MIN_TRANSACTION_BLOCKS,
+    minimum_full_state_checkpoints: int = DEFAULT_MIN_FULL_STATE_CHECKPOINTS,
+) -> dict[str, Any]:
+    sample_size_violations = transaction_import_sample_size_violations(
+        transaction_import_proofs,
+        minimum_transaction_blocks=minimum_transaction_blocks,
+    )
+    full_state_checkpoint_count = (
+        int(checkpoint_inventory.get("full_state_count") or 0)
+        if checkpoint_inventory
+        else 0
+    )
+    checkpoint_floor_met = (
+        full_state_checkpoint_count >= minimum_full_state_checkpoints
+    )
+    blocking_reasons: list[str] = []
+    if state_mismatch_count:
+        blocking_reasons.append("state root mismatch exists")
+    if reference_mismatch_count:
+        blocking_reasons.append("reference state root mismatch exists")
+    if not transaction_import_proofs:
+        blocking_reasons.append("missing transaction-bearing import speed proof")
+    if transaction_import_floor_violations:
+        blocking_reasons.append(
+            "transaction-bearing import speed is below configured floor"
+        )
+    if sample_size_violations:
+        blocking_reasons.append(
+            f"transaction import proof has fewer than {minimum_transaction_blocks} "
+            "transaction-bearing blocks"
+        )
+    if not checkpoint_floor_met:
+        blocking_reasons.append(
+            f"fewer than {minimum_full_state_checkpoints} restore-verified "
+            "full-state checkpoints retained"
+        )
+
+    return {
+        "ready": not blocking_reasons,
+        "blocking_reasons": blocking_reasons,
+        "minimum_transaction_blocks": minimum_transaction_blocks,
+        "minimum_full_state_checkpoints": minimum_full_state_checkpoints,
+        "state_roots_match_chain": state_mismatch_count == 0,
+        "references_match_local": reference_mismatch_count == 0,
+        "transaction_import_proof_count": len(transaction_import_proofs),
+        "transaction_import_speed_floor_met": not transaction_import_floor_violations
+        and bool(transaction_import_proofs),
+        "transaction_import_sample_size_met": not sample_size_violations
+        and bool(transaction_import_proofs),
+        "transaction_import_sample_size_violation_count": len(sample_size_violations),
+        "transaction_import_sample_size_violations": sample_size_violations,
+        "restore_verified_checkpoint_count": full_state_checkpoint_count,
+        "restore_verified_checkpoint_floor_met": checkpoint_floor_met,
+    }
+
+
 def sample_interval_rankings(
     completed: list[dict[str, Any]],
     *,
@@ -595,6 +717,7 @@ def analyze_history(
     regression_threshold_percent: float = 25.0,
     sync_speed_floor_bps: float = DEFAULT_SYNC_SPEED_FLOOR_BPS,
     empty_block_speed_floor_bps: float | None = None,
+    minimum_transaction_blocks: int = DEFAULT_MIN_TRANSACTION_BLOCKS,
 ) -> dict:
     milestones = flatten_milestones(records)
     completed = completed_milestones_in_history_order(milestones)
@@ -623,6 +746,10 @@ def analyze_history(
         sync_speed_floor_bps=sync_speed_floor_bps,
     )
     transaction_import_proofs = transaction_import_proof_milestones(completed)
+    transaction_import_floor_shortfalls = transaction_import_floor_violations(
+        transaction_import_proofs,
+        sync_speed_floor_bps=sync_speed_floor_bps,
+    )
     transaction_import_summary = summarize_transaction_import_proofs(
         transaction_import_proofs,
         slowest_limit=slowest_limit,
@@ -690,6 +817,7 @@ def analyze_history(
     }
     report.update(transaction_import_summary)
     report.update(empty_block_summary)
+    checkpoint_inventory_report = None
     if checkpoint_root is not None:
         inventory = scan_checkpoint_inventory(checkpoint_root)
         history_heights = sorted(
@@ -707,7 +835,16 @@ def analyze_history(
         inventory["retained_checkpoints_not_in_history"] = [
             height for height in inventory["full_state_heights"] if height not in history_heights
         ]
+        checkpoint_inventory_report = inventory
         report["checkpoint_inventory"] = inventory
+    report["production_proof_readiness"] = production_proof_readiness(
+        reference_mismatch_count=len(reference_mismatches),
+        state_mismatch_count=len(state_mismatches),
+        transaction_import_proofs=transaction_import_proofs,
+        transaction_import_floor_violations=transaction_import_floor_shortfalls,
+        checkpoint_inventory=checkpoint_inventory_report,
+        minimum_transaction_blocks=minimum_transaction_blocks,
+    )
     return report
 
 
@@ -746,6 +883,15 @@ def parse_args() -> argparse.Namespace:
             "transaction-bearing speed and has no default cap or target."
         ),
     )
+    parser.add_argument(
+        "--minimum-transaction-blocks",
+        type=int,
+        default=DEFAULT_MIN_TRANSACTION_BLOCKS,
+        help=(
+            "Minimum transaction-bearing blocks required before a fast-sync "
+            "transaction import speed proof can satisfy production readiness."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -761,6 +907,7 @@ def main() -> int:
             regression_threshold_percent=args.regression_threshold_percent,
             sync_speed_floor_bps=args.sync_speed_floor_bps,
             empty_block_speed_floor_bps=args.empty_block_speed_floor_bps,
+            minimum_transaction_blocks=args.minimum_transaction_blocks,
         )
     except Exception as exc:  # pylint: disable=broad-except
         print(f"ERROR: {exc}", file=sys.stderr)
