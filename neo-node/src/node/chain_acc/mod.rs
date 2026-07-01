@@ -290,9 +290,10 @@ where
         if pending_batch.should_flush_before_push(&block) {
             let batch_blocks = take_import_batch(&mut batch, true);
             let batch_composition = pending_batch.composition;
+            let batch_tip = pending_batch.tip;
             pending_batch.clear();
             let batch_result =
-                import_chain_acc_batch(handle, batch_blocks, batch_composition, verify)
+                import_chain_acc_batch(handle, batch_blocks, batch_composition, batch_tip, verify)
                     .await
                     .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
             progress.record_batch(batch_result.imported, batch_result.elapsed);
@@ -326,9 +327,10 @@ where
                 i + 1 < import_count && !reached_count_only_stop_height,
             );
             let batch_composition = pending_batch.composition;
+            let batch_tip = pending_batch.tip;
             pending_batch.clear();
             let batch_result =
-                import_chain_acc_batch(handle, batch_blocks, batch_composition, verify)
+                import_chain_acc_batch(handle, batch_blocks, batch_composition, batch_tip, verify)
                     .await
                     .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
             progress.record_batch(batch_result.imported, batch_result.elapsed);
@@ -479,6 +481,7 @@ where
 struct PendingChainAccBatch {
     len: usize,
     composition: ChainAccImportComposition,
+    tip: Option<LocalLedgerTip>,
 }
 
 impl PendingChainAccBatch {
@@ -488,6 +491,10 @@ impl PendingChainAccBatch {
 
     fn record_pushed(&mut self, block: &Block) {
         self.len += 1;
+        self.tip = Some(LocalLedgerTip {
+            height: block.index(),
+            hash: block.hash(),
+        });
         let tx_count = block.transactions.len() as u64;
         if tx_count == 0 {
             self.composition.empty_blocks += 1;
@@ -533,13 +540,10 @@ async fn import_chain_acc_batch(
     handle: &BlockchainHandle,
     batch_blocks: Vec<Block>,
     composition: ChainAccImportComposition,
+    tip: Option<LocalLedgerTip>,
     verify: bool,
 ) -> anyhow::Result<ChainAccBatchImportResult> {
     let len = batch_blocks.len();
-    let tip = batch_blocks.last().map(|block| LocalLedgerTip {
-        height: block.index(),
-        hash: block.hash(),
-    });
     let start = Instant::now();
     let imported = handle.import_blocks_bulk(batch_blocks, verify).await?;
     let elapsed = start.elapsed();
@@ -1936,6 +1940,24 @@ mod tests {
         assert!(
             !pending_batch.contains("has_transactions"),
             "pending chain.acc batch should not duplicate transaction-presence state once composition is tracked"
+        );
+    }
+
+    #[test]
+    fn chain_acc_batch_import_uses_tracked_tip_without_rehashing_last_block() {
+        let source = include_str!("mod.rs");
+        let batch_import = source
+            .split("async fn import_chain_acc_batch")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]")
+                    .next()
+            })
+            .expect("import_chain_acc_batch source");
+
+        assert!(
+            !batch_import.contains("batch_blocks.last().map"),
+            "chain.acc import should reuse the tip tracked while reading, not rehash the last block before dispatch"
         );
     }
 
