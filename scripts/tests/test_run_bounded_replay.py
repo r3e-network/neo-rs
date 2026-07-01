@@ -1346,7 +1346,7 @@ class RunBoundedReplayTests(unittest.TestCase):
                             "final_hash": "0x01",
                             "elapsed_seconds": 19.5,
                             "average_blocks_per_second": 5128.25,
-                            "throughput_status": "above-target",
+                            "throughput_status": "meets-floor",
                         },
                         "hot_metrics": {
                             "state_service_mpt_avg_total_us": 2000,
@@ -1378,7 +1378,7 @@ class RunBoundedReplayTests(unittest.TestCase):
         )
         self.assertEqual(
             updated["sync_proof"]["fast_sync_import"]["throughput_status"],
-            "above-target",
+            "meets-floor",
         )
         hot = updated["sync_proof"]["fast_sync_hot_metrics"]
         self.assertEqual(hot["state_service_mpt_avg_total_us"], 2000)

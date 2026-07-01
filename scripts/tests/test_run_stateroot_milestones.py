@@ -108,7 +108,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             "transaction_blocks": transaction_blocks,
             "transactions": transaction_blocks * 2,
             "transaction_blocks_per_second": transaction_bps,
-            "throughput_status": "within-target",
+            "throughput_status": "meets-floor",
         }
         if transaction_elapsed is not None:
             import_report["transaction_block_import_seconds"] = transaction_elapsed
@@ -1213,7 +1213,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "transactions": 5000,
                                 "transaction_block_import_seconds": 4.0,
                                 "transaction_blocks_per_second": 500.0,
-                                "throughput_status": "within-target",
+                                "throughput_status": "meets-floor",
                             },
                         },
                         "post_probe": {
@@ -1292,7 +1292,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "transactions": 5000,
                                 "transaction_block_import_seconds": 4.0,
                                 "transaction_blocks_per_second": 500.0,
-                                "throughput_status": "within-target",
+                                "throughput_status": "meets-floor",
                             },
                             "fast_sync_hot_metrics": {
                                 "native_persist_avg_total_us": 3000,
@@ -1501,7 +1501,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                         "transactions": 25000,
                                         "transaction_block_import_seconds": 100.0,
                                         "transaction_blocks_per_second": 100.0,
-                                        "throughput_status": "within-target",
+                                        "throughput_status": "meets-floor",
                                     },
                                     "fast_sync_hot_metrics": {
                                         "native_persist_avg_total_us": 3000,
@@ -1620,7 +1620,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "transactions": 0,
                                 "transaction_block_import_seconds": 0.0,
                                 "transaction_blocks_per_second": 0.0,
-                                "throughput_status": "above-target",
+                                "throughput_status": "meets-floor",
                             },
                             "fast_sync_hot_metrics": {
                                 "native_persist_avg_total_us": 3000,
@@ -1729,7 +1729,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "transactions": 99,
                                 "transaction_block_import_seconds": 10.0,
                                 "transaction_blocks_per_second": 9.9,
-                                "throughput_status": "within-target",
+                                "throughput_status": "meets-floor",
                             },
                             "fast_sync_hot_metrics": {
                                 "native_persist_avg_total_us": 3000,

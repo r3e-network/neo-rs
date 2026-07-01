@@ -33,8 +33,7 @@ use package::{
     FastSyncPackage, ensure_chain_acc_extracted, ensure_package_cached, fetch_latest_package,
 };
 
-const FAST_SYNC_TARGET_MIN_BPS: f64 = 1500.0;
-const FAST_SYNC_TARGET_MAX_BPS: f64 = 2000.0;
+const FAST_SYNC_FLOOR_BPS: f64 = 1500.0;
 
 pub(super) async fn run_fast_sync_report(
     blockchain: &BlockchainHandle,
@@ -274,8 +273,7 @@ pub(super) fn write_fast_sync_report_sidecar(
 pub(super) enum FastSyncThroughputStatus {
     NoImport,
     BelowTarget,
-    WithinTarget,
-    AboveTarget,
+    MeetsFloor,
 }
 
 pub(super) fn fast_sync_throughput_status(
@@ -285,12 +283,10 @@ pub(super) fn fast_sync_throughput_status(
     if imported == 0 {
         return FastSyncThroughputStatus::NoImport;
     }
-    if average_blocks_per_second < FAST_SYNC_TARGET_MIN_BPS {
+    if average_blocks_per_second < FAST_SYNC_FLOOR_BPS {
         FastSyncThroughputStatus::BelowTarget
-    } else if average_blocks_per_second > FAST_SYNC_TARGET_MAX_BPS {
-        FastSyncThroughputStatus::AboveTarget
     } else {
-        FastSyncThroughputStatus::WithinTarget
+        FastSyncThroughputStatus::MeetsFloor
     }
 }
 
@@ -306,9 +302,8 @@ fn log_fast_sync_throughput(
             imported = report.imported,
             elapsed_seconds = report.elapsed_seconds,
             average_blocks_per_second = report.average_blocks_per_second,
-            target_min_bps = FAST_SYNC_TARGET_MIN_BPS,
-            target_max_bps = FAST_SYNC_TARGET_MAX_BPS,
-            "fast-sync package import finished below target throughput"
+            floor_bps = FAST_SYNC_FLOOR_BPS,
+            "fast-sync package import finished below throughput floor"
         ),
         FastSyncThroughputStatus::NoImport => info!(
             target: "neo::fast_sync",
@@ -316,18 +311,16 @@ fn log_fast_sync_throughput(
             imported = report.imported,
             elapsed_seconds = report.elapsed_seconds,
             average_blocks_per_second = report.average_blocks_per_second,
-            target_min_bps = FAST_SYNC_TARGET_MIN_BPS,
-            target_max_bps = FAST_SYNC_TARGET_MAX_BPS,
+            floor_bps = FAST_SYNC_FLOOR_BPS,
             "fast-sync package import skipped because local ledger already covers requested range"
         ),
-        FastSyncThroughputStatus::WithinTarget | FastSyncThroughputStatus::AboveTarget => info!(
+        FastSyncThroughputStatus::MeetsFloor => info!(
             target: "neo::fast_sync",
             package = %package.filename,
             imported = report.imported,
             elapsed_seconds = report.elapsed_seconds,
             average_blocks_per_second = report.average_blocks_per_second,
-            target_min_bps = FAST_SYNC_TARGET_MIN_BPS,
-            target_max_bps = FAST_SYNC_TARGET_MAX_BPS,
+            floor_bps = FAST_SYNC_FLOOR_BPS,
             status = ?status,
             "fast-sync package import throughput summary"
         ),
@@ -842,15 +835,41 @@ data_dir = "/var/lib/neo/mainnet"
         );
         assert_eq!(
             fast_sync_throughput_status(10, 1500.0),
-            FastSyncThroughputStatus::WithinTarget
+            FastSyncThroughputStatus::MeetsFloor
         );
         assert_eq!(
             fast_sync_throughput_status(10, 2000.0),
-            FastSyncThroughputStatus::WithinTarget
+            FastSyncThroughputStatus::MeetsFloor
         );
         assert_eq!(
             fast_sync_throughput_status(10, 2000.1),
-            FastSyncThroughputStatus::AboveTarget
+            FastSyncThroughputStatus::MeetsFloor
+        );
+    }
+
+    #[test]
+    fn empty_block_dominated_fast_sync_has_no_upper_bps_cap() {
+        assert_eq!(
+            fast_sync_throughput_status(100_000, 50_000.0),
+            FastSyncThroughputStatus::MeetsFloor
+        );
+
+        let package = test_package(0, 99_999);
+        let import_tip = chain_acc::LocalLedgerTip {
+            height: 99_999,
+            hash: neo_primitives::UInt256::from([99; 32]),
+        };
+        let report = FastSyncReport::from_parts(
+            &package,
+            Path::new("/cache/chain.0.acc.zip"),
+            Path::new("/cache/chain.0.acc/chain.0.acc"),
+            import_report(100_000, Some(import_tip), 2.0, 50_000.0),
+            None,
+        );
+
+        assert_eq!(
+            report.import.throughput_status,
+            FastSyncThroughputStatus::MeetsFloor
         );
     }
 
@@ -899,7 +918,7 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(report.import.transaction_blocks_per_second, 0.0);
         assert_eq!(
             report.import.throughput_status,
-            FastSyncThroughputStatus::WithinTarget
+            FastSyncThroughputStatus::MeetsFloor
         );
         assert_eq!(report.hot_metrics.state_service_mpt_avg_total_us, 2_000);
         assert_eq!(
@@ -960,7 +979,7 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(payload["import"]["transactions"], 0);
         assert_eq!(payload["import"]["transaction_block_import_seconds"], 0.0);
         assert_eq!(payload["import"]["transaction_blocks_per_second"], 0.0);
-        assert_eq!(payload["import"]["throughput_status"], "within-target");
+        assert_eq!(payload["import"]["throughput_status"], "meets-floor");
         assert_eq!(
             payload["hot_metrics"]["state_service_mpt_avg_total_us"],
             2000
