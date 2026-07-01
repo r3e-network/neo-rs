@@ -30,8 +30,8 @@ mod format;
 mod metrics;
 use format::{read_chain_acc_header, read_next_chain_acc_block, skip_chain_acc_records};
 use metrics::{
-    ChainAccImportProgress, RocksDbBatchImportMetrics, StateServiceMptImportMetrics,
-    should_log_import_progress,
+    ChainAccImportProgress, NativePersistTxStageImportMetrics, RocksDbBatchImportMetrics,
+    StateServiceMptImportMetrics, should_log_import_progress,
 };
 
 /// The mixed-block batch size for trusted `chain.acc` Import commands.
@@ -360,6 +360,7 @@ where
                 last_imported_tip = batch_result.tip;
             }
             let state_service_metrics = StateServiceMptImportMetrics::current();
+            let native_tx_stage_metrics = NativePersistTxStageImportMetrics::current();
             let rocksdb_batch_metrics = storage
                 .as_deref()
                 .and_then(RocksDbBatchImportMetrics::from_store);
@@ -403,6 +404,9 @@ where
                     native_persist_avg_tx_count = state_service_metrics.native_persist_avg_tx_count,
                     native_persist_tx_hot_stage = state_service_metrics.native_persist_tx_hot_stage,
                     native_persist_tx_hot_stage_avg_us = state_service_metrics.native_persist_tx_hot_stage_avg_us,
+                    native_persist_tx_load_execute_avg_us = native_tx_stage_metrics.load_execute_avg_us,
+                    native_persist_tx_load_script_avg_us = native_tx_stage_metrics.load_script_avg_us,
+                    native_persist_tx_execute_avg_us = native_tx_stage_metrics.execute_avg_us,
                     native_contract_hook_hot_trigger = state_service_metrics.native_contract_hook_hot_trigger,
                     native_contract_hook_hot_contract = state_service_metrics.native_contract_hook_hot_contract,
                     native_contract_hook_hot_contract_id = state_service_metrics.native_contract_hook_hot_contract_id,

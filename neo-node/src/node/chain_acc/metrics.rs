@@ -44,6 +44,34 @@ pub(super) struct StateServiceMptImportMetrics {
     pub(super) overlay_entries_avg: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct NativePersistTxStageImportMetrics {
+    pub(super) load_execute_avg_us: u64,
+    pub(super) load_script_avg_us: u64,
+    pub(super) execute_avg_us: u64,
+}
+
+impl NativePersistTxStageImportMetrics {
+    pub(super) fn current() -> Self {
+        let stages = neo_runtime::sync_metrics::native_persist_tx_stage_stats();
+        Self::from_stats(&stages)
+    }
+
+    fn from_stats(stages: &[neo_runtime::sync_metrics::NativePersistTxStageStats]) -> Self {
+        let avg = |name: &str| -> u64 {
+            stages
+                .iter()
+                .find(|stat| stat.stage == name)
+                .map_or(0, |stat| stat.avg_us)
+        };
+        Self {
+            load_execute_avg_us: avg("load_execute"),
+            load_script_avg_us: avg("load_script"),
+            execute_avg_us: avg("execute"),
+        }
+    }
+}
+
 impl StateServiceMptImportMetrics {
     pub(super) fn current() -> Self {
         Self::from_direct_hot_snapshot(
@@ -383,6 +411,38 @@ mod tests {
         assert!(should_log_import_progress(10_000, 500, 500, 20_000));
         assert!(should_log_import_progress(10_500, 499, 500, 20_000));
         assert!(should_log_import_progress(20_000, 500, 500, 20_000));
+    }
+
+    #[test]
+    fn native_tx_stage_import_metrics_project_split_load_execute_stages() {
+        let stages = vec![
+            neo_runtime::sync_metrics::NativePersistTxStageStats {
+                stage: "load_execute",
+                calls: 5,
+                avg_us: 420,
+            },
+            neo_runtime::sync_metrics::NativePersistTxStageStats {
+                stage: "load_script",
+                calls: 5,
+                avg_us: 35,
+            },
+            neo_runtime::sync_metrics::NativePersistTxStageStats {
+                stage: "execute",
+                calls: 5,
+                avg_us: 385,
+            },
+            neo_runtime::sync_metrics::NativePersistTxStageStats {
+                stage: "ledger_vm_state",
+                calls: 5,
+                avg_us: 11,
+            },
+        ];
+
+        let metrics = NativePersistTxStageImportMetrics::from_stats(&stages);
+
+        assert_eq!(metrics.load_execute_avg_us, 420);
+        assert_eq!(metrics.load_script_avg_us, 35);
+        assert_eq!(metrics.execute_avg_us, 385);
     }
 
     #[test]
