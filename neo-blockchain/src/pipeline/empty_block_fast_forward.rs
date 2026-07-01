@@ -21,10 +21,11 @@ use crate::service_context::BlockPersistContext;
 
 /// Upper bound for a single empty-block fast-forward batch.
 ///
-/// This is a memory/fairness guard, not a throughput target. Empty blocks skip
-/// VM execution but still write per-height ledger history, so very long runs are
-/// chunked before the staged cache grows without bound.
-pub const MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS: usize = 65_536;
+/// This is a memory/fairness guard, not a throughput target. Mainnet empty
+/// bursts are normally short, while every fast-forwarded height still writes
+/// ledger history and native state effects. Long synthetic runs are chunked into
+/// bounded bursts so staged cache publication stays predictable.
+pub const MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS: usize = 128;
 
 /// Eligible contiguous empty-block interval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
