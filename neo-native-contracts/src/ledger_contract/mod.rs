@@ -262,20 +262,8 @@ impl NativeContract for LedgerContract {
         &metadata::LEDGER_CONTRACT_METHODS
     }
 
-    fn transaction_state(
-        &self,
-        snapshot: &neo_storage::DataCache,
-        tx_hash: &UInt256,
-    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
-        self.get_transaction_state(snapshot, tx_hash)
-    }
-
-    fn trimmed_block(
-        &self,
-        snapshot: &neo_storage::DataCache,
-        block_hash: &UInt256,
-    ) -> CoreResult<Option<TrimmedBlock>> {
-        self.get_trimmed_block(snapshot, block_hash)
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
     }
 
     fn invoke(
@@ -442,6 +430,22 @@ impl NativeContract for LedgerContract {
                 "LedgerContract method '{other}' is not implemented"
             ))),
         }
+    }
+
+    fn transaction_state(
+        &self,
+        snapshot: &neo_storage::DataCache,
+        tx_hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
+        self.get_transaction_state(snapshot, tx_hash)
+    }
+
+    fn trimmed_block(
+        &self,
+        snapshot: &neo_storage::DataCache,
+        block_hash: &UInt256,
+    ) -> CoreResult<Option<TrimmedBlock>> {
+        self.get_trimmed_block(snapshot, block_hash)
     }
 }
 

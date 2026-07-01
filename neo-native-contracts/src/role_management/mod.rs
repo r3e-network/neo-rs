@@ -106,6 +106,10 @@ impl NativeContract for RoleManagement {
         &metadata::ROLE_MANAGEMENT_METHODS
     }
 
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
+    }
+
     fn event_descriptors(&self) -> &[NativeEvent] {
         &metadata::ROLE_MANAGEMENT_EVENTS
     }

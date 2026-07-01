@@ -31,7 +31,9 @@ pub mod service;
 
 pub(crate) use ledger::ledger_records;
 pub use ledger::{header_cache, ledger_context};
-pub use pipeline::{block_processing, block_validation, handlers, native_persist};
+pub use pipeline::{
+    block_processing, block_validation, empty_block_fast_forward, handlers, native_persist,
+};
 pub use service::{command, handle, internal, service_context};
 
 pub use messages::{

@@ -410,6 +410,10 @@ impl NativeContract for StdLib {
         &metadata::STD_LIB_METHODS
     }
 
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
+    }
+
     fn invoke(
         &self,
         _engine: &mut ApplicationEngine,

@@ -159,8 +159,8 @@ impl NativeContract for NeoToken {
         &metadata::NEO_TOKEN_METHODS
     }
 
-    fn event_descriptors(&self) -> &[NativeEvent] {
-        &metadata::NEO_TOKEN_EVENTS
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
     }
 
     /// C# `NeoToken.OnManifestCompose` (NeoToken.cs:112-122): NEO declares
@@ -173,11 +173,8 @@ impl NativeContract for NeoToken {
         }
     }
 
-    /// C# `NEO.GetCommitteeAddress`, exposed through the native-contract seam so
-    /// the engine's `check_committee_witness` can verify committee-gated writers
-    /// without depending on `neo-native-contracts`.
-    fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
-        Ok(Some(self.compute_committee_address(snapshot)?))
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &metadata::NEO_TOKEN_EVENTS
     }
 
     /// C# `NeoToken.InitializeAsync(engine, hardfork)` for `hardfork == ActiveIn`
@@ -405,6 +402,13 @@ impl NativeContract for NeoToken {
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         self.invoke_native(engine, method, args)
+    }
+
+    /// C# `NEO.GetCommitteeAddress`, exposed through the native-contract seam so
+    /// the engine's `check_committee_witness` can verify committee-gated writers
+    /// without depending on `neo-native-contracts`.
+    fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
+        Ok(Some(self.compute_committee_address(snapshot)?))
     }
 }
 

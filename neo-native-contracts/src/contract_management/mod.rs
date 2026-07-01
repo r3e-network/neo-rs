@@ -76,6 +76,10 @@ impl NativeContract for ContractManagement {
         &metadata::CONTRACT_MANAGEMENT_METHODS
     }
 
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
+    }
+
     fn event_descriptors(&self) -> &[NativeEvent] {
         &metadata::CONTRACT_MANAGEMENT_EVENTS
     }

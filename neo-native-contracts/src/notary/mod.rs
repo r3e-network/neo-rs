@@ -82,6 +82,10 @@ impl NativeContract for Notary {
         &metadata::NOTARY_METHODS
     }
 
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
+    }
+
     /// C# `Notary.InitializeAsync(engine, hardfork)` for `hardfork == ActiveIn`
     /// (Notary.cs:52-59; ActiveIn is HF_Echidna, so this runs while persisting
     /// the Echidna activation block): seed `Prefix_MaxNotValidBeforeDelta` with

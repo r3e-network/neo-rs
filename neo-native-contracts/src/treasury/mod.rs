@@ -62,6 +62,10 @@ impl NativeContract for Treasury {
         &metadata::TREASURY_METHODS
     }
 
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
+    }
+
     fn invoke(
         &self,
         engine: &mut ApplicationEngine,

@@ -230,6 +230,17 @@ pub trait NativeContract: Any + Send + Sync {
         Ok(())
     }
 
+    /// Returns whether this contract's empty-block side effects are explicitly
+    /// modeled by the blockchain service's empty-block fast-forward path.
+    ///
+    /// The default is intentionally conservative: adding a native contract or
+    /// adding new empty-block `on_persist`/`post_persist` behavior must opt in
+    /// after the batched handler is updated and store-equivalence tests cover
+    /// it.
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        false
+    }
+
     /// Returns the contract state for a deployed contract by hash, if
     /// this contract stores contract-state records.
     ///

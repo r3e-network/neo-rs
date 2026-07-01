@@ -265,6 +265,12 @@ impl NativePersistResources {
         })?;
         Ok(Self::from_provider(provider))
     }
+
+    /// Returns the canonical native contracts captured for this persistence
+    /// batch, in C# registration order.
+    pub fn contracts(&self) -> &[Arc<dyn neo_execution::NativeContract>] {
+        self.contracts.as_ref()
+    }
 }
 
 /// A block persistence result whose storage writes are still staged in a child

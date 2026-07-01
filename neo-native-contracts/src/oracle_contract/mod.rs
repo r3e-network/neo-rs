@@ -80,6 +80,10 @@ impl NativeContract for OracleContract {
         &metadata::ORACLE_CONTRACT_METHODS
     }
 
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
+    }
+
     fn event_descriptors(&self) -> &[NativeEvent] {
         &metadata::ORACLE_CONTRACT_EVENTS
     }

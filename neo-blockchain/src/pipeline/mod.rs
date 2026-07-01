@@ -13,10 +13,12 @@
 //!
 //! - `block_processing`: block execution and persistence workflow.
 //! - `block_validation`: block validation workflow.
+//! - `empty_block_fast_forward`: guarded empty-block fast-forward eligibility.
 //! - `handlers`: service message handlers.
 //! - `native_persist`: native-contract persistence hooks.
 
 pub mod block_processing;
 pub mod block_validation;
+pub mod empty_block_fast_forward;
 pub mod handlers;
 pub mod native_persist;

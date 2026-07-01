@@ -234,6 +234,10 @@ impl NativeContract for CryptoLib {
         &metadata::CRYPTO_LIB_METHODS
     }
 
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
+    }
+
     fn invoke(
         &self,
         engine: &mut ApplicationEngine,

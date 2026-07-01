@@ -371,14 +371,62 @@ impl NativeContract for GasToken {
         &metadata::GAS_TOKEN_METHODS
     }
 
-    fn event_descriptors(&self) -> &[NativeEvent] {
-        &metadata::GAS_TOKEN_EVENTS
+    fn supports_empty_block_fast_forward(&self) -> bool {
+        true
     }
 
     /// C# `FungibleToken.OnManifestCompose` (FungibleToken.cs:68-71): every
     /// fungible token declares NEP-17 unconditionally.
     fn supported_standards(&self, _settings: &ProtocolSettings, _block_height: u32) -> Vec<String> {
         crate::native_supported_standards(&[crate::NEP17_STANDARD])
+    }
+
+    fn event_descriptors(&self) -> &[NativeEvent] {
+        &metadata::GAS_TOKEN_EVENTS
+    }
+
+    fn invoke(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        match method {
+            "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
+            "decimals" => Ok(BigInt::from(Self::DECIMALS).to_signed_bytes_le()),
+            "totalSupply" => {
+                let snapshot = engine.snapshot_cache();
+                Ok(Self::total_supply(&snapshot).to_signed_bytes_le())
+            }
+            "balanceOf" => {
+                let account = crate::args::raw_account(args, "GasToken::balanceOf")?;
+                let snapshot = engine.snapshot_cache();
+                Ok(Self::balance_of(&snapshot, &account)?.to_signed_bytes_le())
+            }
+            "transfer" => {
+                // C# FungibleToken.Transfer(from, to, amount, data).
+                let from = crate::args::raw_hash160(args, 0, "GasToken::transfer")?;
+                let to = crate::args::raw_hash160(args, 1, "GasToken::transfer")?;
+                let amount = crate::args::raw_required_integer_arg(
+                    args,
+                    2,
+                    "GasToken::transfer",
+                    "an amount",
+                )?;
+                let data = args.get(3).map(Vec::as_slice).unwrap_or(&[]);
+                // The witness bypass uses the engine's calling script hash
+                // (C# `from.Equals(CallingScriptHash)`).
+                let caller = engine
+                    .get_calling_script_hash()
+                    .unwrap_or_else(UInt160::zero);
+                Ok(vec![u8::from(Self::transfer_core(
+                    engine, caller, &from, &to, &amount, data,
+                )?)])
+            }
+            other => Err(CoreError::invalid_operation(format!(
+                "GasToken method '{other}' is not implemented"
+            ))),
+        }
     }
 
     /// C# `GasToken.InitializeAsync(engine, hardfork)` for `hardfork == ActiveIn`
@@ -473,50 +521,6 @@ impl NativeContract for GasToken {
             primary_key.clone(),
         ));
         self.gas_mint(engine, &primary, &BigInt::from(total_network_fee), false)
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        match method {
-            "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
-            "decimals" => Ok(BigInt::from(Self::DECIMALS).to_signed_bytes_le()),
-            "totalSupply" => {
-                let snapshot = engine.snapshot_cache();
-                Ok(Self::total_supply(&snapshot).to_signed_bytes_le())
-            }
-            "balanceOf" => {
-                let account = crate::args::raw_account(args, "GasToken::balanceOf")?;
-                let snapshot = engine.snapshot_cache();
-                Ok(Self::balance_of(&snapshot, &account)?.to_signed_bytes_le())
-            }
-            "transfer" => {
-                // C# FungibleToken.Transfer(from, to, amount, data).
-                let from = crate::args::raw_hash160(args, 0, "GasToken::transfer")?;
-                let to = crate::args::raw_hash160(args, 1, "GasToken::transfer")?;
-                let amount = crate::args::raw_required_integer_arg(
-                    args,
-                    2,
-                    "GasToken::transfer",
-                    "an amount",
-                )?;
-                let data = args.get(3).map(Vec::as_slice).unwrap_or(&[]);
-                // The witness bypass uses the engine's calling script hash
-                // (C# `from.Equals(CallingScriptHash)`).
-                let caller = engine
-                    .get_calling_script_hash()
-                    .unwrap_or_else(UInt160::zero);
-                Ok(vec![u8::from(Self::transfer_core(
-                    engine, caller, &from, &to, &amount, data,
-                )?)])
-            }
-            other => Err(CoreError::invalid_operation(format!(
-                "GasToken method '{other}' is not implemented"
-            ))),
-        }
     }
 }
 
