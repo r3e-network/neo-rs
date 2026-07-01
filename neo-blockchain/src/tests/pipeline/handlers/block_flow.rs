@@ -537,8 +537,9 @@ async fn import_verify_true_rejects_invalid_header_like_csharp() {
 
 #[tokio::test]
 async fn bulk_import_uses_batch_block_before_parked_duplicate_height() {
-    let (service, _handle, _snapshot) = store_fixture();
+    let (service, _handle, snapshot) = store_fixture();
     service.initialize().await;
+    fund_test_signer_gas(&snapshot, 100_0000_0000);
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -573,7 +574,10 @@ async fn bulk_import_uses_batch_block_before_parked_duplicate_height() {
     import_header2.set_prev_hash(block1_hash);
     import_header2.set_timestamp(genesis.header.timestamp() + 45_000);
     import_header2.set_next_consensus(*genesis.header.next_consensus());
-    let import_block2 = Block::from_parts(import_header2, vec![]);
+    let mut import_block2 = Block::from_parts(import_header2, vec![transaction_with_nonce(2)]);
+    import_block2
+        .try_rebuild_merkle_root()
+        .expect("transaction merkle root");
     let import_hash =
         BlockchainService::<StoreContext, TestMempool>::try_block_hash(&import_block2)
             .expect("import block2 hash");
@@ -911,7 +915,165 @@ async fn bulk_import_fast_forwards_empty_run_when_no_per_block_observers_are_act
 }
 
 #[tokio::test]
-async fn bulk_import_fast_forward_still_emits_committed_callbacks_per_block() {
+async fn bulk_import_fast_forwards_short_empty_bursts_around_transaction_blocks() {
+    let (service, _handle, snapshot, snapshot_calls, commit_calls, committed_heights) =
+        store_fixture_counting_snapshot_commits_and_committed_heights();
+    service.initialize().await;
+    fund_test_signer_gas(&snapshot, 100_0000_0000);
+    snapshot_calls.store(0, Ordering::SeqCst);
+    commit_calls.store(0, Ordering::SeqCst);
+    committed_heights.lock().clear();
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut blocks = Vec::new();
+    let mut prev_hash = genesis.hash();
+    let mut timestamp = genesis.header.timestamp();
+    let next_consensus = *genesis.header.next_consensus();
+
+    for index in 1..=65u32 {
+        timestamp += 15_000;
+        let mut header = Header::new();
+        header.set_index(index);
+        header.set_prev_hash(prev_hash);
+        header.set_timestamp(timestamp);
+        header.set_next_consensus(next_consensus);
+        let transactions = if index == 33 {
+            vec![transaction_with_nonce(index)]
+        } else {
+            Vec::new()
+        };
+        let mut block = Block::from_parts(header, transactions);
+        if !block.transactions.is_empty() {
+            block
+                .try_rebuild_merkle_root()
+                .expect("transaction merkle root");
+        }
+        prev_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block)
+            .expect("block hash");
+        blocks.push(block);
+    }
+
+    let transaction_block_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(&blocks[32])
+            .expect("transaction block hash");
+
+    let imported = service
+        .handle_import(Import {
+            blocks,
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 65);
+    assert_eq!(
+        snapshot_calls.load(Ordering::SeqCst),
+        1,
+        "short empty bursts and the transaction block should share one batch snapshot"
+    );
+    assert_eq!(
+        commit_calls.load(Ordering::SeqCst),
+        1,
+        "mixed bulk import should still flush once"
+    );
+    assert_eq!(service.ledger.current_height(), 65);
+    assert_eq!(
+        service.ledger.block_hash_at(33),
+        Some(transaction_block_hash),
+        "transaction-bearing blocks still populate the hot ledger cache"
+    );
+    assert_eq!(
+        committed_heights.lock().as_slice(),
+        &[33],
+        "transaction-bearing blocks keep the normal committed callback while surrounding empty bursts are fast-forwarded"
+    );
+    assert!(
+        service.ledger.block_hash_at(1).is_none(),
+        "fast-forwarded empty blocks should not populate the hot height hash cache"
+    );
+    assert!(
+        neo_native_contracts::LedgerContract::new()
+            .get_block_hash(&snapshot, 1)
+            .expect("empty block hash")
+            .is_some(),
+        "fast-forwarded empty block history remains queryable from durable ledger records"
+    );
+    assert!(
+        neo_native_contracts::LedgerContract::new()
+            .get_block_hash(&snapshot, 65)
+            .expect("last empty block hash")
+            .is_some(),
+        "second empty burst history remains queryable from durable ledger records"
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_fast_forward_chunks_empty_runs_beyond_one_internal_batch() {
+    let (service, _handle, snapshot, snapshot_calls, commit_calls) =
+        store_fixture_counting_snapshot_and_commits();
+    service.initialize().await;
+    snapshot_calls.store(0, Ordering::SeqCst);
+    commit_calls.store(0, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let block_count = crate::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS + 2;
+    let mut blocks = Vec::with_capacity(block_count);
+    let mut prev_hash = genesis.hash();
+    let mut timestamp = genesis.header.timestamp();
+    let next_consensus = *genesis.header.next_consensus();
+
+    for index in 1..=block_count as u32 {
+        timestamp += 15_000;
+        let mut header = Header::new();
+        header.set_index(index);
+        header.set_prev_hash(prev_hash);
+        header.set_timestamp(timestamp);
+        header.set_next_consensus(next_consensus);
+        let block = Block::from_parts(header, vec![]);
+        prev_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block)
+            .expect("empty block hash");
+        blocks.push(block);
+    }
+
+    let imported = service
+        .handle_import(Import {
+            blocks,
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, block_count);
+    assert_eq!(
+        snapshot_calls.load(Ordering::SeqCst),
+        1,
+        "multi-chunk fast-forward should keep reusing the batch snapshot"
+    );
+    assert_eq!(
+        commit_calls.load(Ordering::SeqCst),
+        1,
+        "outer bulk import should still flush the durable store once"
+    );
+    assert_eq!(service.ledger.current_height(), block_count as u32);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        block_count as u32
+    );
+    assert!(
+        neo_native_contracts::LedgerContract::new()
+            .get_block_hash(&snapshot, block_count as u32)
+            .expect("last block hash")
+            .is_some(),
+        "durable ledger history must include the final fast-forwarded block"
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_fast_forward_skips_observer_callbacks_when_fast_path_is_allowed() {
     let (service, _handle, _snapshot, committed_heights) =
         store_fixture_recording_committed_heights();
     service.initialize().await;
@@ -945,10 +1107,9 @@ async fn bulk_import_fast_forward_still_emits_committed_callbacks_per_block() {
         .await;
 
     assert_eq!(imported.imported, 2);
-    assert_eq!(
-        committed_heights.lock().as_slice(),
-        &[1, 2],
-        "fast-forward may skip committing/application replay artifacts but must preserve committed callbacks"
+    assert!(
+        committed_heights.lock().is_empty(),
+        "fast-forward is only allowed when per-block observers are inactive"
     );
 }
 

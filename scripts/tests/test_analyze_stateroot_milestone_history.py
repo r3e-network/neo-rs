@@ -379,9 +379,9 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
                         "speed_proof_source": "fast-sync-transaction-blocks",
                         "import_window_blocks_per_second": 1600.0,
                         "empty_block_speed_proof_source": "fast-sync-empty-blocks",
-                        "empty_block_blocks_per_second": 12000.0,
+                        "empty_block_blocks_per_second": 200000.0,
                         "empty_only_blocks": 96000,
-                        "empty_block_import_seconds": 8.0,
+                        "empty_block_import_seconds": 0.48,
                     },
                     {
                         "height": 200,
@@ -408,9 +408,9 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         )
 
         self.assertEqual(report["empty_block_fast_path_proof_count"], 2)
-        self.assertEqual(report["average_empty_block_blocks_per_second"], 10500.0)
+        self.assertEqual(report["average_empty_block_blocks_per_second"], 104500.0)
         self.assertEqual(report["min_empty_block_blocks_per_second"], 9000.0)
-        self.assertEqual(report["max_empty_block_blocks_per_second"], 12000.0)
+        self.assertEqual(report["max_empty_block_blocks_per_second"], 200000.0)
         self.assertEqual(report["slowest_empty_block_milestones"][0]["height"], 200)
         self.assertEqual(report["fastest_empty_block_milestones"][0]["height"], 100)
         self.assertEqual(report["fastest_empty_block_milestones"][0]["empty_only_blocks"], 96000)

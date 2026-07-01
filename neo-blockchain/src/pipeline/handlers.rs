@@ -395,24 +395,14 @@ where
                     ) {
                         Ok(staged) => {
                             staged.commit();
-                            for fast_block in &run {
-                                if let Err(error) =
-                                    self.ledger.insert_block_arc(Arc::clone(fast_block))
-                                {
-                                    warn!(
-                                        target: "neo",
-                                        %error,
-                                        height = fast_block.index(),
-                                        "failed to import fast-forwarded block into ledger cache"
-                                    );
-                                    return ImportBlocksReply::ok(imported);
-                                }
-                                imported += 1;
-                                last_imported_height = Some(fast_block.index());
-                                self.system.block_committed_with_context(
-                                    fast_block.as_ref(),
-                                    persist_context,
-                                );
+                            if let Some(last_block) = run.last() {
+                                // Fast-forward is only enabled when no component
+                                // needs the per-block observer stream. Keep
+                                // ledger history in the durable store and only
+                                // advance the hot in-memory tip for the batch.
+                                self.ledger.record_tip(last_block.index());
+                                imported += run.len();
+                                last_imported_height = Some(last_block.index());
                             }
                             position += run.len();
                             continue;

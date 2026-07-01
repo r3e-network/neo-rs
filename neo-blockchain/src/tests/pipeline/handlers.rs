@@ -8,6 +8,10 @@ use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
 use neo_payloads::Transaction;
 use neo_primitives::UInt256;
+use neo_serialization::BinarySerializer;
+use neo_storage::StorageKey;
+use neo_vm_rs::ExecutionEngineLimits;
+use num_bigint::BigInt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::oneshot;
 
@@ -320,6 +324,42 @@ fn store_fixture_counting_snapshot_and_commits() -> (
     store_fixture_counting_snapshot_and_commits_with(neo_config::ProtocolSettings::default())
 }
 
+fn store_fixture_counting_snapshot_commits_and_committed_heights() -> (
+    BlockchainService<StoreContext, TestMempool>,
+    BlockchainHandle,
+    Arc<neo_storage::DataCache>,
+    Arc<AtomicUsize>,
+    Arc<AtomicUsize>,
+    Arc<parking_lot::Mutex<Vec<u32>>>,
+) {
+    neo_native_contracts::install();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let snapshot_calls = Arc::new(AtomicUsize::new(0));
+    let commit_calls = Arc::new(AtomicUsize::new(0));
+    let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let system = Arc::new(StoreContext {
+        snapshot: Arc::clone(&snapshot),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        state_service: None,
+        committing_application_executed_lengths: None,
+        committed_heights: Some(Arc::clone(&committed_heights)),
+        store_snapshot_calls: Some(Arc::clone(&snapshot_calls)),
+        commit_to_store_calls: Some(Arc::clone(&commit_calls)),
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    (
+        service,
+        handle,
+        snapshot,
+        snapshot_calls,
+        commit_calls,
+        committed_heights,
+    )
+}
+
 fn store_fixture_counting_snapshot_and_commits_with(
     settings: neo_config::ProtocolSettings,
 ) -> (
@@ -363,7 +403,38 @@ fn transaction_with_nonce(nonce: u32) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_nonce(nonce);
     tx.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    tx.set_system_fee(1_0000_0000);
+    tx.set_signers(vec![neo_payloads::Signer::new(
+        neo_primitives::UInt160::from_bytes(&[0x33; 20]).expect("test signer"),
+        neo_primitives::WitnessScope::NONE,
+    )]);
+    tx.set_witnesses(vec![neo_payloads::Witness::empty()]);
     tx
+}
+
+fn fund_test_signer_gas(snapshot: &neo_storage::DataCache, amount: i64) {
+    let signer = neo_primitives::UInt160::from_bytes(&[0x33; 20]).expect("test signer");
+    let mut gas_key = vec![20];
+    gas_key.extend_from_slice(&signer.to_bytes());
+    let account_state =
+        neo_vm::StackItem::from_struct(vec![neo_vm::StackItem::from_int(BigInt::from(amount))]);
+    let account_bytes =
+        BinarySerializer::serialize(&account_state, &ExecutionEngineLimits::default())
+            .expect("serialize GAS account");
+    snapshot.add(
+        StorageKey::new(neo_native_contracts::GasToken::ID, gas_key),
+        neo_storage::StorageItem::from_bytes(account_bytes),
+    );
+    let supply_key = StorageKey::new(neo_native_contracts::GasToken::ID, vec![11]);
+    let supply = snapshot
+        .get(&supply_key)
+        .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
+        .unwrap_or_default()
+        + BigInt::from(amount);
+    snapshot.update(
+        supply_key,
+        neo_storage::StorageItem::from_bytes(supply.to_signed_bytes_le()),
+    );
 }
 
 fn seed_current_ledger(snapshot: &neo_storage::DataCache, index: u32) {

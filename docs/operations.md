@@ -678,12 +678,18 @@ Fast-sync runs now produce two distinct throughput views. The analyzer keeps
 `transaction_import_*` fields for the transaction-bearing import proof that
 backs the production BPS gate, and `empty_block_*` fields for the empty-block
 fast-path evaluation. Empty-block rates are reported as a correctness-preserving
-fast-path measurement with no configured ceiling: they may exceed 10,000 BPS by
-a wide margin when contiguous empty headers are folded into batch ledger
-metadata and native-state updates, and they should be driven as high as the
-validated batching algorithm, batch-size guard, disk flush policy, and hardware
-allow. Empty-block throughput is reported separately and does not satisfy the
-transaction-bearing speed proof. Operators can pass
+fast-path capacity measurement with no configured ceiling. Mainnet usually
+produces short empty bursts between transaction-bearing blocks rather than
+thousands of consecutive empty blocks, so evaluate this as many repeated
+`empty-run -> transaction block -> empty-run` transitions. Each empty run is
+folded into batch ledger metadata and native-state updates, while the hot
+in-memory ledger tip advances per internal chunk instead of replaying normal
+per-block observer/cache work. The expected number is therefore hardware-bound
+and should be driven as high as the validated batching algorithm, batch-size
+guard, disk flush policy, and hardware allow; values far above 10,000 BPS are
+not special and should be treated as normal fast-path evidence when the
+elapsed-time denominator matches. Empty-block throughput is reported separately
+and does not satisfy the transaction-bearing speed proof. Operators can pass
 `--empty-block-speed-floor-bps <N>` to flag hardware-specific empty-block floor
 misses without changing the production transaction-bearing speed gate.
 `performance_by_node_bin` groups throughput by the recorded node binary so

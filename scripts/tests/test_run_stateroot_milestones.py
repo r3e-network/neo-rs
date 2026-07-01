@@ -1404,8 +1404,8 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             transaction_elapsed=2.0,
             transaction_bps=1000.0,
             empty_only_blocks=96000,
-            empty_elapsed=8.0,
-            empty_bps=12000.0,
+            empty_elapsed=0.48,
+            empty_bps=200000.0,
         )
 
         err = module.speed_proof_error(
@@ -1420,9 +1420,9 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertEqual(summary["speed_proof_source"], "fast-sync-transaction-blocks")
         self.assertEqual(summary["import_window_blocks_per_second"], 1000.0)
         self.assertEqual(summary["empty_block_speed_proof_source"], "fast-sync-empty-blocks")
-        self.assertEqual(summary["empty_block_blocks_per_second"], 12000.0)
+        self.assertEqual(summary["empty_block_blocks_per_second"], 200000.0)
         self.assertEqual(summary["empty_only_blocks"], 96000)
-        self.assertEqual(summary["empty_block_import_seconds"], 8.0)
+        self.assertEqual(summary["empty_block_import_seconds"], 0.48)
         self.assertIsNone(summary["empty_block_speed_proof_error"])
 
     def test_empty_block_bps_does_not_satisfy_transaction_speed_gate(self):

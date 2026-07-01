@@ -31,8 +31,10 @@ pub const DEFAULT_BLOCK_CACHE_CAPACITY: usize = 1024;
 pub struct LedgerContext {
     best_height: AtomicU32,
     best_header: AtomicU32,
-    /// Full height->hash index. Cheap (32 bytes/entry); kept complete so
-    /// `block_hash_at` and `get_block_by_height` always resolve a height.
+    /// Height->hash index for blocks inserted into the hot cache. Empty-block
+    /// fast-forward can advance the tip without filling this index; service
+    /// lookups fall back to the durable `LedgerContract` store for those
+    /// heights.
     hashes_by_index: RwLock<Vec<UInt256>>,
     /// LRU of the most-recent block headers, keyed by index.
     headers_by_index: Mutex<LruCache<u32, Header>>,

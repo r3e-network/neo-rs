@@ -100,11 +100,12 @@ fn planner_accepts_contiguous_empty_bulk_sync_range_between_cut_points() {
 }
 
 #[test]
-fn planner_accepts_ten_thousand_empty_blocks_as_one_batch() {
+fn planner_accepts_maximum_empty_blocks_as_one_batch() {
     let _guard = lock_provider();
     let resources = install_resources();
     let settings = ProtocolSettings::default();
-    let blocks = (1..=10_000).map(empty_block).collect::<Vec<_>>();
+    let count = crate::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
+    let blocks = (1..=count as u32).map(empty_block).collect::<Vec<_>>();
 
     let plan = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
         current_height: 0,
@@ -114,14 +115,41 @@ fn planner_accepts_ten_thousand_empty_blocks_as_one_batch() {
         persist_options: bulk_options(),
         persist_context: bulk_context(),
     })
-    .expect("10k empty bulk-sync range should be one eligible fast-forward batch");
+    .expect("maximum empty bulk-sync range should be one eligible fast-forward batch");
 
     assert_eq!(
         plan,
         EmptyBlockFastForwardPlan {
             start: 1,
-            end: 10_000,
-            block_count: 10_000,
+            end: count as u32,
+            block_count: count,
+        }
+    );
+}
+
+#[test]
+fn planner_rejects_only_above_the_empty_block_batch_guard() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+    let count = crate::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS + 1;
+    let blocks = (1..=count as u32).map(empty_block).collect::<Vec<_>>();
+
+    let err = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
+        current_height: 0,
+        blocks: &blocks,
+        settings: &settings,
+        resources: &resources,
+        persist_options: bulk_options(),
+        persist_context: bulk_context(),
+    })
+    .expect_err("only the memory/fairness guard should cap one internal chunk");
+
+    assert_eq!(
+        err,
+        EmptyBlockFastForwardRejection::BatchTooLarge {
+            count,
+            max: crate::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS,
         }
     );
 }
