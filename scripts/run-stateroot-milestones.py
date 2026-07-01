@@ -758,6 +758,7 @@ def milestone_summary(result: dict) -> dict:
         "stateroot_matches_chain": post_probe.get("stateroot_matches_chain"),
         "reference_matches_local": reference.get("matches_local"),
         "successful_reference_samples": reference.get("successful_samples", 0),
+        "reference_sample_count": reference.get("sample_count", 0),
         "local_root": root.get("root"),
         "checkpoint_created": checkpoint.get("usable_for_state_validation") is True,
         "checkpoint_path": checkpoint.get("path"),

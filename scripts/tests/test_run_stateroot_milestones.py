@@ -2627,6 +2627,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                         "reference_stateroot": {
                             "matches_local": True,
                             "successful_samples": 5,
+                            "sample_count": 5,
                         },
                     },
                 },
@@ -2643,6 +2644,8 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertTrue(proof["sync_speed_band_met"])
         self.assertEqual(proof["fast_sync_cache"]["stage"], "extracted")
         self.assertTrue(proof["post_probe"]["stateroot_matches_chain"])
+        self.assertEqual(summary["successful_reference_samples"], 5)
+        self.assertEqual(summary["reference_sample_count"], 5)
 
     def test_run_milestones_can_include_raw_child_output_on_success(self):
         module = load_module()
