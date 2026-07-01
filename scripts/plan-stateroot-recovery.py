@@ -42,6 +42,7 @@ def load_config_paths(config_path: Path) -> dict[str, Any]:
     network = config.get("network") or {}
 
     network_magic = format_network_magic(network.get("network_magic", 0))
+    storage_provider = str(storage.get("backend") or "mdbx").lower()
     chain_db = Path(storage.get("data_dir") or storage.get("path") or DEFAULT_DATA_DIR)
     data_dir = chain_db.parent if chain_db.name else Path(DEFAULT_DATA_DIR)
     stateroot_template = str(
@@ -51,6 +52,7 @@ def load_config_paths(config_path: Path) -> dict[str, Any]:
 
     return {
         "network_magic": network_magic,
+        "storage_provider": storage_provider,
         "data_dir": data_dir,
         "chain_db": chain_db,
         "stateroot_db": stateroot_db,
@@ -68,18 +70,29 @@ def run_json_command(
     return json.loads(completed.stdout)
 
 
+def store_exists(path: Path) -> bool:
+    if not path.exists():
+        return False
+    if path.is_file():
+        return True
+    return (path / "CURRENT").exists() or (path / "mdbx.dat").exists()
+
+
 def probe_chain_height(
     *,
     probe_bin: Path,
     chain_db: Path,
+    storage_provider: str,
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
-    if not chain_db.exists():
+    if not store_exists(chain_db):
         return {"path": str(chain_db), "height": None, "found": False}
     command = [
         str(probe_bin),
         "--db",
         str(chain_db),
+        "--storage-provider",
+        storage_provider,
         "--contract-id",
         "-4",
         "--key-hex",
@@ -99,11 +112,19 @@ def probe_stateroot_height(
     *,
     probe_bin: Path,
     stateroot_db: Path,
+    storage_provider: str,
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
-    if not (stateroot_db / "CURRENT").exists():
+    if not store_exists(stateroot_db):
         return {"path": str(stateroot_db), "height": None, "found": False}
-    command = [str(probe_bin), "--db", str(stateroot_db), "--mpt-state-height"]
+    command = [
+        str(probe_bin),
+        "--db",
+        str(stateroot_db),
+        "--storage-provider",
+        storage_provider,
+        "--mpt-state-height",
+    ]
     try:
         payload = run_json_command(command, runner=runner)
         decoded = payload.get("height", {}).get("decoded") or {}
@@ -240,6 +261,9 @@ def build_recovery_plan(
     *,
     node_config: Path,
     checkpoint_root: Path | None = None,
+    chain_db: Path | None = None,
+    stateroot_db: Path | None = None,
+    storage_provider: str | None = None,
     probe_bin: Path = Path(DEFAULT_PROBE_BIN),
     restore_script: Path = Path(DEFAULT_CHECKPOINT_SCRIPT),
     stack_runner: Path = Path(DEFAULT_STACK_RUNNER),
@@ -247,16 +271,25 @@ def build_recovery_plan(
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
     paths = load_config_paths(node_config)
+    if chain_db is not None:
+        paths["chain_db"] = chain_db
+        paths["data_dir"] = chain_db.parent if chain_db.name else paths["data_dir"]
+    if stateroot_db is not None:
+        paths["stateroot_db"] = stateroot_db
+    if storage_provider is not None:
+        paths["storage_provider"] = storage_provider.lower()
     checkpoint_root = checkpoint_root or paths["data_dir"] / "checkpoints"
 
     chain = probe_chain_height(
         probe_bin=probe_bin,
         chain_db=paths["chain_db"],
+        storage_provider=paths["storage_provider"],
         runner=runner,
     )
     stateroot = probe_stateroot_height(
         probe_bin=probe_bin,
         stateroot_db=paths["stateroot_db"],
+        storage_provider=paths["storage_provider"],
         runner=runner,
     )
     checkpoints = scan_checkpoints(checkpoint_root)
@@ -357,6 +390,7 @@ def build_recovery_plan(
         "node_config": str(node_config),
         "checkpoint_root": str(checkpoint_root),
         "network_magic": paths["network_magic"],
+        "storage_provider": paths["storage_provider"],
         "chain": chain,
         "state_service": {
             **stateroot,
@@ -380,6 +414,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--node-config", default=DEFAULT_NODE_CONFIG)
     parser.add_argument("--checkpoint-root", default=None)
+    parser.add_argument(
+        "--chain-db",
+        default=None,
+        help=(
+            "Explicit chain store path. Use this for bounded replay or validation "
+            "runs that override the TOML storage path at runtime."
+        ),
+    )
+    parser.add_argument(
+        "--stateroot-db",
+        default=None,
+        help=(
+            "Explicit StateService MPT store path. Use this when the runtime "
+            "StateRoot DB differs from the TOML path."
+        ),
+    )
+    parser.add_argument(
+        "--storage-provider",
+        default=None,
+        choices=["mdbx", "rocksdb"],
+        help="Storage backend used by the chain and StateRoot stores.",
+    )
     parser.add_argument("--probe-bin", default=DEFAULT_PROBE_BIN)
     parser.add_argument("--restore-script", default=DEFAULT_CHECKPOINT_SCRIPT)
     parser.add_argument("--stack-runner", default=DEFAULT_STACK_RUNNER)
@@ -393,6 +449,9 @@ def main() -> int:
         plan = build_recovery_plan(
             node_config=Path(args.node_config),
             checkpoint_root=Path(args.checkpoint_root) if args.checkpoint_root else None,
+            chain_db=Path(args.chain_db) if args.chain_db else None,
+            stateroot_db=Path(args.stateroot_db) if args.stateroot_db else None,
+            storage_provider=args.storage_provider,
             probe_bin=Path(args.probe_bin),
             restore_script=Path(args.restore_script),
             stack_runner=Path(args.stack_runner),

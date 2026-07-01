@@ -3,6 +3,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -41,6 +42,13 @@ def create_store_dirs(*paths: Path) -> None:
     for path in paths:
         path.mkdir(parents=True)
         (path / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
+
+
+def create_mdbx_store_dirs(*paths: Path) -> None:
+    for path in paths:
+        path.mkdir(parents=True)
+        (path / "mdbx.dat").write_bytes(b"mdbx")
+        (path / "mdbx.lck").write_bytes(b"")
 
 
 def write_checkpoint(
@@ -159,6 +167,95 @@ class StateRootRecoveryPlanTests(unittest.TestCase):
         self.assertEqual(plan["mode"], "ready")
         self.assertTrue(plan["state_service"]["matches_chain"])
         self.assertEqual(plan["recommended_action"]["action"], "start-validation-stack")
+
+    def test_explicit_db_overrides_drive_probe_paths_and_restore_command(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoints = root / "checkpoints"
+            write_checkpoint(checkpoints, height=100, full_state=True)
+            config = root / "neo.toml"
+            write_config(
+                config,
+                chain_db=root / "stale-config-chain",
+                stateroot_db=root / "stale-config-state",
+            )
+            runtime_chain = root / "runtime" / "chain"
+            runtime_stateroot = root / "runtime" / "StateRoot"
+            create_mdbx_store_dirs(runtime_chain, runtime_stateroot)
+            probe_commands = []
+
+            def run(command, *, check, capture_output, text):
+                probe_commands.append([str(part) for part in command])
+                return fake_probe_runner(chain_height=250, state_height=0)(
+                    command,
+                    check=check,
+                    capture_output=capture_output,
+                    text=text,
+                )
+
+            plan = module.build_recovery_plan(
+                node_config=config,
+                checkpoint_root=checkpoints,
+                chain_db=runtime_chain,
+                stateroot_db=runtime_stateroot,
+                storage_provider="mdbx",
+                runner=run,
+            )
+
+        self.assertEqual(plan["mode"], "restore-full-state-checkpoint")
+        self.assertEqual(plan["storage_provider"], "mdbx")
+        self.assertEqual(plan["chain"]["path"], str(runtime_chain))
+        self.assertEqual(plan["state_service"]["path"], str(runtime_stateroot))
+        self.assertEqual(
+            probe_commands[0][probe_commands[0].index("--db") + 1],
+            str(runtime_chain),
+        )
+        self.assertEqual(
+            probe_commands[0][probe_commands[0].index("--storage-provider") + 1],
+            "mdbx",
+        )
+        self.assertEqual(
+            probe_commands[1][probe_commands[1].index("--db") + 1],
+            str(runtime_stateroot),
+        )
+        self.assertEqual(
+            probe_commands[1][probe_commands[1].index("--storage-provider") + 1],
+            "mdbx",
+        )
+        restore_command = plan["recommended_action"]["commands"][0]
+        self.assertEqual(
+            restore_command[restore_command.index("--chain-db") + 1],
+            str(runtime_chain),
+        )
+        self.assertEqual(
+            restore_command[restore_command.index("--stateroot-db") + 1],
+            str(runtime_stateroot),
+        )
+
+    def test_cli_accepts_explicit_db_overrides(self):
+        module = load_module()
+        with unittest.mock.patch.object(
+            module.sys,
+            "argv",
+            [
+                "plan-stateroot-recovery.py",
+                "--node-config",
+                "neo.toml",
+                "--chain-db",
+                "runtime-chain",
+                "--stateroot-db",
+                "runtime-state",
+                "--storage-provider",
+                "mdbx",
+            ],
+        ):
+            args = module.parse_args()
+
+        self.assertEqual(args.node_config, "neo.toml")
+        self.assertEqual(args.chain_db, "runtime-chain")
+        self.assertEqual(args.stateroot_db, "runtime-state")
+        self.assertEqual(args.storage_provider, "mdbx")
 
     def test_chooses_nearest_full_state_checkpoint_before_chain_height(self):
         module = load_module()
