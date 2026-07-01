@@ -664,6 +664,25 @@ mod persist_tests {
         assert!(snapshot.get(&supply_key).is_none(), "supply untouched");
     }
 
+    #[test]
+    fn fast_forward_mint_state_preserves_zero_mint_noop_rule() {
+        let cache = DataCache::new(false);
+        let account = UInt160::from_bytes(&[0x42; 20]).expect("account");
+
+        GasToken::new()
+            .fast_forward_mint_state(&cache, &account, &BigInt::from(0))
+            .expect("zero mint");
+
+        assert!(
+            cache.get(&GasToken::account_key(&account)).is_none(),
+            "zero mint must not create a GAS account"
+        );
+        assert!(
+            cache.get(&GasToken::total_supply_key()).is_none(),
+            "zero mint must not create total-supply storage"
+        );
+    }
+
     /// C# indexes `validators[block.PrimaryIndex]`: an index outside the
     /// validator set is an IndexOutOfRangeException (block fault).
     #[test]

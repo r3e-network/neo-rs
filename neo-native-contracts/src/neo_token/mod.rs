@@ -150,6 +150,88 @@ impl NeoToken {
         };
         Self::bft_address(&validators)
     }
+
+    /// Applies the state-only NEO `PostPersist` effects for an empty block run
+    /// that does not cross a committee-refresh height.
+    ///
+    /// The blockchain fast-forward gate disables replay artifacts/events before
+    /// calling this helper. This method therefore writes only consensus-visible
+    /// storage: the per-block committee GAS reward minted to
+    /// `cached_committee[height % committee_count]`. Integer division is kept at
+    /// the single-block boundary (`gasPerBlock * 10 / 100`) before multiplying by
+    /// repeated rewards for an account, matching normal `post_persist`.
+    pub fn fast_forward_empty_block_rewards(
+        &self,
+        snapshot: &DataCache,
+        settings: &neo_config::ProtocolSettings,
+        start: u32,
+        end: u32,
+    ) -> CoreResult<()> {
+        let committee_count = settings.committee_members_count();
+        if committee_count == 0 {
+            return Err(CoreError::invalid_operation(
+                "NeoToken::fast_forward_empty_block_rewards requires a non-empty standby committee",
+            ));
+        }
+        if start > end {
+            return Ok(());
+        }
+        if (start..=end).any(|height| Self::should_refresh_committee(height, committee_count)) {
+            return Err(CoreError::invalid_operation(
+                "NeoToken::fast_forward_empty_block_rewards cannot cross committee-refresh heights",
+            ));
+        }
+
+        let committee_accounts = (0..committee_count)
+            .map(|member_index| {
+                self.read_committee_member_at(snapshot, member_index)
+                    .map(|(member, _)| candidate_signature_account(&member))
+            })
+            .collect::<CoreResult<Vec<_>>>()?;
+        let gas_change_points = self
+            .sorted_gas_records(snapshot, end.saturating_add(1))
+            .into_iter()
+            .map(|(index, _)| index)
+            .filter(|index| *index > start.saturating_add(1))
+            .collect::<Vec<_>>();
+
+        let mut rewards = std::collections::BTreeMap::<UInt160, BigInt>::new();
+        let mut height = start;
+        while height <= end {
+            let gas_per_block = self.gas_per_block_at(snapshot, height.saturating_add(1));
+            let next_change = gas_change_points
+                .iter()
+                .copied()
+                .filter(|index| *index > height.saturating_add(1))
+                .min();
+            let segment_end = next_change
+                .and_then(|index| index.checked_sub(2))
+                .map_or(end, |candidate| candidate.min(end));
+            let committee_reward = &gas_per_block * COMMITTEE_REWARD_RATIO / 100;
+            if committee_reward != BigInt::from(0) {
+                for (member_index, account) in committee_accounts.iter().enumerate() {
+                    let count = count_heights_with_residue(
+                        height,
+                        segment_end,
+                        committee_count as u32,
+                        member_index as u32,
+                    );
+                    if count == 0 {
+                        continue;
+                    }
+                    *rewards.entry(*account).or_insert_with(|| BigInt::from(0)) +=
+                        &committee_reward * count;
+                }
+            }
+            height = segment_end.saturating_add(1);
+        }
+
+        let gas = crate::GasToken::new();
+        for (account, amount) in rewards {
+            gas.fast_forward_mint_state(snapshot, &account, &amount)?;
+        }
+        Ok(())
+    }
 }
 
 impl NativeContract for NeoToken {
@@ -418,4 +500,16 @@ mod tests;
 
 fn elapsed_us(start: Instant) -> u64 {
     start.elapsed().as_micros().min(u64::MAX as u128) as u64
+}
+
+fn count_heights_with_residue(start: u32, end: u32, modulus: u32, residue: u32) -> u64 {
+    if start > end || modulus == 0 {
+        return 0;
+    }
+    let offset = (residue + modulus - (start % modulus)) % modulus;
+    let first = start.saturating_add(offset);
+    if first > end {
+        return 0;
+    }
+    u64::from((end - first) / modulus + 1)
 }

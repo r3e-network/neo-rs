@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_payloads::{Block, Header, Transaction};
+use neo_storage::SeekDirection;
 
 use crate::empty_block_fast_forward::EmptyBlockFastForwardRequest;
 use crate::native_persist::{NativePersistOptions, NativePersistResources};
@@ -26,6 +27,15 @@ fn empty_block(index: u32) -> Arc<Block> {
     Arc::new(Block::from_parts(header, Vec::new()))
 }
 
+fn empty_child(prev: &Block, index: u32) -> Arc<Block> {
+    let mut header = Header::new();
+    header.set_index(index);
+    header.set_prev_hash(prev.hash());
+    header.set_timestamp(prev.header.timestamp() + 15_000);
+    header.set_next_consensus(*prev.header.next_consensus());
+    Arc::new(Block::from_parts(header, Vec::new()))
+}
+
 fn non_empty_block(index: u32) -> Arc<Block> {
     let mut header = Header::new();
     header.set_index(index);
@@ -40,6 +50,19 @@ fn bulk_options() -> NativePersistOptions {
 
 fn bulk_context() -> BlockPersistContext {
     BlockPersistContext::bulk_sync()
+}
+
+fn visible_store_dump(snapshot: &neo_storage::DataCache) -> Vec<(Vec<u8>, Vec<u8>)> {
+    snapshot
+        .find(None, SeekDirection::Forward)
+        .map(|(key, item)| (key.to_array(), item.value_bytes().into_owned()))
+        .collect()
+}
+
+fn neo_gas_per_block_key(index: u32) -> neo_storage::StorageKey {
+    let mut key = vec![29];
+    key.extend_from_slice(&index.to_be_bytes());
+    neo_storage::StorageKey::new(neo_native_contracts::NeoToken::ID, key)
 }
 
 #[test]
@@ -136,10 +159,7 @@ fn planner_rejects_native_initialization_or_manifest_refresh_height() {
     assert!(
         matches!(
             err,
-            EmptyBlockFastForwardRejection::NativeInitializationHeight {
-                height: 2,
-                ..
-            }
+            EmptyBlockFastForwardRejection::NativeInitializationHeight { height: 2, .. }
         ),
         "unexpected rejection: {err}"
     );
@@ -152,12 +172,136 @@ fn standard_natives_explicitly_opt_in_to_empty_block_fast_forward() {
     let names = resources
         .contracts()
         .iter()
-        .map(|contract| (contract.name().to_string(), contract.supports_empty_block_fast_forward()))
+        .map(|contract| {
+            (
+                contract.name().to_string(),
+                contract.supports_empty_block_fast_forward(),
+            )
+        })
         .collect::<Vec<_>>();
 
-    assert_eq!(names.len(), neo_native_contracts::STANDARD_NATIVE_CONTRACT_COUNT);
+    assert_eq!(
+        names.len(),
+        neo_native_contracts::STANDARD_NATIVE_CONTRACT_COUNT
+    );
     assert!(
         names.iter().all(|(_, supported)| *supported),
         "all active standard natives must explicitly opt in: {names:?}"
+    );
+}
+
+#[test]
+fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+
+    let normal = Arc::new(neo_storage::DataCache::new(false));
+    let fast = Arc::new(neo_storage::DataCache::new(false));
+    let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
+    let block1 = empty_child(&genesis, 1);
+    let block2 = empty_child(&block1, 2);
+    let block3 = empty_child(&block2, 3);
+    let blocks = vec![
+        Arc::clone(&block1),
+        Arc::clone(&block2),
+        Arc::clone(&block3),
+    ];
+
+    crate::native_persist::persist_block_natives(
+        Arc::clone(&normal),
+        Arc::clone(&genesis),
+        &settings,
+    )
+    .expect("normal genesis");
+    crate::native_persist::persist_block_natives(Arc::clone(&fast), genesis, &settings)
+        .expect("fast genesis baseline");
+
+    // A governance change from an earlier non-empty block can schedule a new
+    // gasPerBlock record effective inside an otherwise empty run. The fast path
+    // must keep the normal single-block integer-division boundary for each
+    // height before aggregating rewards.
+    let gas_change_key = neo_gas_per_block_key(3);
+    let gas_change_value = neo_storage::StorageItem::from_bytes(
+        num_bigint::BigInt::from(7 * 100_000_000i64).to_signed_bytes_le(),
+    );
+    normal.update(gas_change_key.clone(), gas_change_value.clone());
+    fast.update(gas_change_key, gas_change_value);
+
+    for block in &blocks {
+        crate::native_persist::persist_block_natives(
+            Arc::clone(&normal),
+            Arc::clone(block),
+            &settings,
+        )
+        .expect("normal empty block");
+    }
+
+    let staged = stage_empty_block_fast_forward(
+        Arc::clone(&fast),
+        &blocks,
+        &settings,
+        bulk_options(),
+        bulk_context(),
+        &resources,
+        0,
+    )
+    .expect("fast-forward stage");
+    staged.commit();
+
+    assert_eq!(
+        visible_store_dump(&fast),
+        visible_store_dump(&normal),
+        "fast-forward must be byte-equivalent to normal native persistence for the covered run"
+    );
+
+    for block in blocks {
+        let hash = block.hash();
+        assert!(
+            neo_native_contracts::LedgerContract::new()
+                .get_trimmed_block(&fast, &hash)
+                .expect("ledger trimmed block lookup")
+                .is_some(),
+            "ledger history must retain empty block {}",
+            block.index()
+        );
+    }
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&fast)
+            .expect("current index"),
+        3
+    );
+}
+
+#[test]
+fn fast_forward_rejects_ranges_touching_committee_refresh_height() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let committee_count = settings.committee_members_count() as u32;
+    let current_height = committee_count - 2;
+    let blocks = vec![
+        empty_block(committee_count - 1),
+        empty_block(committee_count),
+    ];
+
+    let error = match stage_empty_block_fast_forward(
+        snapshot,
+        &blocks,
+        &settings,
+        bulk_options(),
+        bulk_context(),
+        &resources,
+        current_height,
+    ) {
+        Ok(_) => panic!("committee refresh heights must fall back to normal persistence"),
+        Err(error) => error,
+    };
+
+    assert!(
+        error.to_string().contains("committee-refresh"),
+        "unexpected error: {error}"
     );
 }

@@ -19,6 +19,9 @@ use tracing::{debug, warn};
 use crate::PreverifyCompleted;
 use crate::block_processing::BatchPersistResources;
 use crate::command::ImportBlocksReply;
+use crate::empty_block_fast_forward::{
+    MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS, stage_empty_block_fast_forward,
+};
 use crate::import::Import;
 use crate::internal::ImportDisposition;
 use crate::native_persist::NativePersistOptions;
@@ -109,6 +112,50 @@ where
             resources.settings.as_ref(),
             resources.snapshot.as_ref(),
         )
+    }
+
+    fn collect_empty_fast_forward_run(
+        blocks: &[Block],
+        start_position: usize,
+        current_height: u32,
+        settings: &neo_config::ProtocolSettings,
+        resources: &crate::native_persist::NativePersistResources,
+    ) -> Vec<Arc<Block>> {
+        let committee_count = settings.committee_members_count();
+        if committee_count == 0 {
+            return Vec::new();
+        }
+
+        let mut run = Vec::new();
+        for block in blocks.iter().skip(start_position) {
+            if run.len() >= MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS {
+                break;
+            }
+            let expected = current_height.saturating_add(1 + run.len() as u32);
+            let height = block.index();
+            if height != expected {
+                break;
+            }
+            if !block.transactions.is_empty()
+                || block.header.merkle_root() != &neo_primitives::UInt256::zero()
+            {
+                break;
+            }
+            if height % (committee_count as u32) == 0 {
+                break;
+            }
+            let native_cut = resources.contracts().iter().any(|contract| {
+                let (initialize, _hardforks) = contract.is_initialize_block(settings, height);
+                initialize
+                    || (contract.is_active(settings, height)
+                        && !contract.supports_empty_block_fast_forward())
+            });
+            if native_cut {
+                break;
+            }
+            run.push(Arc::new(block.clone()));
+        }
+        run
     }
 
     fn ensure_block_matches_cached_header(
@@ -282,15 +329,19 @@ where
         } else {
             BlockPersistContext::live()
         };
+        let blocks = import.blocks;
         let mut batch_persist_resources = None;
         let mut batch_persist_resources_loaded = false;
         let mut last_imported_height = None;
-        for block in import.blocks {
+        let mut position = 0usize;
+        while position < blocks.len() {
+            let block = blocks[position].clone();
             let index = block.index();
             let current_height = self.ledger.current_height();
             match ImportDisposition::classify_import_block(current_height, index) {
                 ImportDisposition::AlreadySeen => {
                     imported += 1;
+                    position += 1;
                     continue;
                 }
                 ImportDisposition::FutureGap => {
@@ -321,6 +372,60 @@ where
                     }
                 }
                 batch_persist_resources_loaded = true;
+            }
+
+            if bulk_sync
+                && !import.verify
+                && self.system.allows_empty_block_fast_forward()
+                && let Some(resources) = &batch_persist_resources
+            {
+                let run = Self::collect_empty_fast_forward_run(
+                    &blocks,
+                    position,
+                    current_height,
+                    resources.settings.as_ref(),
+                    &resources.native_persist,
+                );
+                if !run.is_empty() {
+                    match stage_empty_block_fast_forward(
+                        Arc::clone(&resources.snapshot),
+                        &run,
+                        resources.settings.as_ref(),
+                        persist_options,
+                        persist_context,
+                        &resources.native_persist,
+                        current_height,
+                    ) {
+                        Ok(staged) => {
+                            staged.commit();
+                            for fast_block in &run {
+                                if let Err(error) =
+                                    self.ledger.insert_block_arc(Arc::clone(fast_block))
+                                {
+                                    warn!(
+                                        target: "neo",
+                                        %error,
+                                        height = fast_block.index(),
+                                        "failed to import fast-forwarded block into ledger cache"
+                                    );
+                                    return ImportBlocksReply::ok(imported);
+                                }
+                                imported += 1;
+                                last_imported_height = Some(fast_block.index());
+                            }
+                            position += run.len();
+                            continue;
+                        }
+                        Err(error) => {
+                            debug!(
+                                target: "neo::sync",
+                                height = index,
+                                error = %error,
+                                "empty-block fast-forward fell back to normal persistence"
+                            );
+                        }
+                    }
+                }
             }
 
             if import.verify {
@@ -410,6 +515,7 @@ where
             }
             imported += 1;
             last_imported_height = Some(index);
+            position += 1;
         }
         if bulk_sync {
             if imported > 0 {

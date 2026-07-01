@@ -54,6 +54,10 @@ impl SystemContext for FailingSecondCommitContext {
     fn commit_to_store(&self) {
         self.commit_to_store_calls.fetch_add(1, Ordering::SeqCst);
     }
+
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        false
+    }
 }
 
 struct FailingBulkFlushContext {
@@ -90,6 +94,10 @@ impl SystemContext for FailingBulkFlushContext {
 
     fn commit_to_store(&self) {
         self.commit_to_store_calls.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        false
     }
 }
 
@@ -830,6 +838,117 @@ async fn bulk_import_reuses_store_snapshot_for_accepted_batch() {
         commit_calls.load(Ordering::SeqCst),
         1,
         "bulk import should still flush the durable store once after the accepted batch"
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_fast_forwards_empty_run_when_no_per_block_observers_are_active() {
+    let (service, _handle, snapshot, snapshot_calls, commit_calls) =
+        store_fixture_counting_snapshot_and_commits();
+    service.initialize().await;
+    snapshot_calls.store(0, Ordering::SeqCst);
+    commit_calls.store(0, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let block2 = Block::from_parts(header2, vec![]);
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, block2],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(
+        snapshot_calls.load(Ordering::SeqCst),
+        1,
+        "fast-forward should reuse the batch snapshot"
+    );
+    assert_eq!(
+        commit_calls.load(Ordering::SeqCst),
+        1,
+        "fast-forwarded bulk import still flushes the durable store once"
+    );
+    assert_eq!(service.ledger.current_height(), 2);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        2
+    );
+    assert!(
+        neo_native_contracts::LedgerContract::new()
+            .get_block_hash(&snapshot, 1)
+            .expect("block hash 1")
+            .is_some(),
+        "fast-forward must preserve ledger history for block 1"
+    );
+    assert!(
+        neo_native_contracts::LedgerContract::new()
+            .get_block_hash(&snapshot, 2)
+            .expect("block hash 2")
+            .is_some(),
+        "fast-forward must preserve ledger history for block 2"
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_falls_back_when_per_block_committing_observer_is_active() {
+    let (service, _handle, _snapshot, lengths) =
+        store_fixture_recording_application_executed_lengths();
+    service.initialize().await;
+    lengths.lock().clear();
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let block2 = Block::from_parts(header2, vec![]);
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, block2],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(
+        lengths.lock().as_slice(),
+        &[0, 0],
+        "observer contexts must receive per-block committing calls and therefore disable fast-forward"
     );
 }
 

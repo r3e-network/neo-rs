@@ -115,6 +115,17 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         Ok(())
     }
 
+    /// Returns whether a trusted bulk-sync import may skip per-block committing
+    /// hooks for a state-equivalent empty-block fast-forward run.
+    ///
+    /// Implementations must return `false` when any active component needs the
+    /// exact per-block `Committing`/`Committed`/application-executed stream
+    /// during bulk sync (for example StateService validation, indexers, or
+    /// plugin-style observers). The default is conservative.
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        false
+    }
+
     /// Called after the block's writes have been committed to the canonical
     /// store. This mirrors the C# `ICommittedHandler` plugin hook.
     fn block_committed(&self, _block: &Block) {}

@@ -157,6 +157,9 @@ impl SystemContext for StoreContext {
             calls.fetch_add(1, Ordering::SeqCst);
         }
     }
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        self.state_service.is_none() && self.committing_application_executed_lengths.is_none()
+    }
 }
 
 fn store_fixture() -> (

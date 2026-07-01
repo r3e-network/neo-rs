@@ -74,6 +74,41 @@ impl GasToken {
         crate::read_nep17_total_supply(snapshot, Self::ID)
     }
 
+    /// State-only GAS mint used by state-equivalent empty-block fast-forward.
+    ///
+    /// This is the storage half of [`Self::gas_mint`] with `call_on_payment =
+    /// false` and without `Transfer` notifications. It is valid only for paths
+    /// that explicitly skip replay artifacts/events and have already proven that
+    /// no deployed contract callback can run. A zero amount is a no-op, matching
+    /// `FungibleToken.Mint`.
+    pub fn fast_forward_mint_state(
+        &self,
+        snapshot: &DataCache,
+        account: &UInt160,
+        amount: &BigInt,
+    ) -> CoreResult<()> {
+        if amount < &BigInt::zero() {
+            return Err(CoreError::invalid_operation(
+                "GasToken::fast_forward_mint_state: amount cannot be negative",
+            ));
+        }
+        if amount.is_zero() {
+            return Ok(());
+        }
+        let balance = self
+            .read_gas_account(snapshot, account)?
+            .unwrap_or_else(BigInt::zero)
+            + amount;
+        self.write_gas_account(snapshot, account, &balance)?;
+        let supply_key = Self::total_supply_key();
+        let supply = Self::total_supply(snapshot) + amount;
+        snapshot.update(
+            supply_key,
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
+        );
+        Ok(())
+    }
+
     /// Reads the GAS account balance, or `None` when the account has no entry. The
     /// GAS account state is the base `FungibleToken.AccountState` = `Struct[Balance]`
     /// (a single field), so `read_nep17_balance`'s field 0 is the balance.

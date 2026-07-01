@@ -10,8 +10,10 @@ use std::fmt;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
+use neo_error::{CoreError, CoreResult};
 use neo_payloads::Block;
 use neo_primitives::UInt256;
+use neo_storage::DataCache;
 
 use crate::native_persist::{NativePersistOptions, NativePersistResources};
 use crate::service_context::BlockPersistContext;
@@ -28,6 +30,26 @@ pub struct EmptyBlockFastForwardPlan {
     pub end: u32,
     /// Number of blocks in the interval.
     pub block_count: usize,
+}
+
+/// Empty-block fast-forward writes staged in an isolated child cache.
+pub struct StagedEmptyBlockFastForward {
+    /// Staged writes, isolated from the canonical snapshot until commit.
+    snapshot: Arc<DataCache>,
+    /// Eligible interval covered by this staged write.
+    pub plan: EmptyBlockFastForwardPlan,
+}
+
+impl StagedEmptyBlockFastForward {
+    /// Returns the staged snapshot for tests and committing gates.
+    pub fn snapshot(&self) -> &DataCache {
+        self.snapshot.as_ref()
+    }
+
+    /// Publishes the staged writes into the canonical parent snapshot.
+    pub fn commit(&self) {
+        self.snapshot.commit();
+    }
 }
 
 /// Reason an empty-block interval cannot be fast-forwarded.
@@ -96,7 +118,10 @@ impl fmt::Display for EmptyBlockFastForwardRejection {
             Self::EmptyCandidate => write!(f, "empty-block fast-forward candidate is empty"),
             Self::NotBulkSync => write!(f, "empty-block fast-forward requires bulk sync"),
             Self::ReplayArtifactsEnabled => {
-                write!(f, "empty-block fast-forward requires replay artifacts disabled")
+                write!(
+                    f,
+                    "empty-block fast-forward requires replay artifacts disabled"
+                )
             }
             Self::BatchTooLarge { count, max } => write!(
                 f,
@@ -110,17 +135,13 @@ impl fmt::Display for EmptyBlockFastForwardRejection {
                 f,
                 "empty-block fast-forward range is not contiguous: expected {expected}, got {actual}"
             ),
-            Self::ContainsTransactions { height, tx_count } => write!(
-                f,
-                "block {height} has {tx_count} transactions"
-            ),
+            Self::ContainsTransactions { height, tx_count } => {
+                write!(f, "block {height} has {tx_count} transactions")
+            }
             Self::NonEmptyMerkleRoot {
                 height,
                 merkle_root,
-            } => write!(
-                f,
-                "block {height} has non-empty merkle root {merkle_root}"
-            ),
+            } => write!(f, "block {height} has non-empty merkle root {merkle_root}"),
             Self::NativeInitializationHeight { height, contract } => write!(
                 f,
                 "block {height} initializes or refreshes native contract {contract}"
@@ -233,6 +254,82 @@ pub fn plan_empty_block_fast_forward(
         start,
         end: blocks.last().expect("checked non-empty").index(),
         block_count: blocks.len(),
+    })
+}
+
+/// Stages a state-equivalent fast-forward for a contiguous empty-block run.
+///
+/// This first implementation handles the common historical-sync case between
+/// committee refresh heights: Ledger history is written for every block, the
+/// current-block pointer advances to the interval end, and the NEO committee
+/// GAS rewards are aggregated through `neo-native-contracts` storage helpers.
+/// Ranges that cross a committee refresh stay on normal per-block persistence
+/// until the NEO voter-reward accumulator path is batched with full store-dump
+/// tests.
+pub fn stage_empty_block_fast_forward(
+    snapshot: Arc<DataCache>,
+    blocks: &[Arc<Block>],
+    settings: &ProtocolSettings,
+    persist_options: NativePersistOptions,
+    persist_context: BlockPersistContext,
+    resources: &NativePersistResources,
+    current_height: u32,
+) -> CoreResult<StagedEmptyBlockFastForward> {
+    let plan = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
+        current_height,
+        blocks,
+        settings,
+        resources,
+        persist_options,
+        persist_context,
+    })
+    .map_err(|error| CoreError::invalid_operation(error.to_string()))?;
+
+    let committee_count = settings.committee_members_count();
+    if committee_count == 0 {
+        return Err(CoreError::invalid_operation(
+            "empty-block fast-forward requires a non-empty committee",
+        ));
+    }
+    if (plan.start..=plan.end).any(|height| height % (committee_count as u32) == 0) {
+        return Err(CoreError::invalid_operation(
+            "empty-block fast-forward currently falls back across committee-refresh heights",
+        ));
+    }
+
+    let block_cache = Arc::new(snapshot.clone_cache());
+    for block in blocks {
+        let block_hash = block
+            .try_hash()
+            .map_err(|e| CoreError::invalid_operation(format!("empty fast-forward hash: {e}")))?;
+        crate::ledger_records::LedgerRecords::write_on_persist_records(
+            &block_cache,
+            block,
+            &block_hash,
+        )?;
+    }
+
+    let last_block = blocks
+        .last()
+        .ok_or_else(|| CoreError::invalid_operation("empty fast-forward candidate is empty"))?;
+    let last_hash = last_block
+        .try_hash()
+        .map_err(|e| CoreError::invalid_operation(format!("empty fast-forward hash: {e}")))?;
+    crate::ledger_records::LedgerRecords::write_post_persist_record(
+        &block_cache,
+        &last_hash,
+        last_block.index(),
+    )?;
+    neo_native_contracts::NeoToken::new().fast_forward_empty_block_rewards(
+        &block_cache,
+        settings,
+        plan.start,
+        plan.end,
+    )?;
+
+    Ok(StagedEmptyBlockFastForward {
+        snapshot: block_cache,
+        plan,
     })
 }
 
