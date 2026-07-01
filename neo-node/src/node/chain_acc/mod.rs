@@ -81,6 +81,7 @@ pub(super) struct ChainAccImportReport {
     pub(super) empty_blocks: u64,
     pub(super) transaction_blocks: u64,
     pub(super) transactions: u64,
+    pub(super) transaction_block_import_seconds: f64,
     pub(super) transaction_blocks_per_second: f64,
     pub(super) hot_metrics: ImportHotMetrics,
 }
@@ -305,7 +306,7 @@ where
             let batch_elapsed = batch_start.elapsed();
             progress.record_batch(batch_imported, batch_elapsed);
             imported += batch_imported as u64;
-            composition.record_imported(batch_composition, batch_imported);
+            composition.record_imported(batch_composition, batch_imported, batch_elapsed);
             if batch_imported == batch_len {
                 last_imported_tip = batch_tip;
             }
@@ -333,8 +334,9 @@ where
                     empty_blocks = composition.empty_blocks,
                     transaction_blocks = composition.transaction_blocks,
                     transactions = composition.transactions,
-                    transaction_blocks_per_second = composition
-                        .transaction_blocks_per_second(progress.elapsed()),
+                    transaction_block_import_seconds =
+                        composition.transaction_block_import_seconds(),
+                    transaction_blocks_per_second = composition.transaction_blocks_per_second(),
                     elapsed_seconds = progress_sample.elapsed_seconds,
                     sync_blocks_persisted = state_service_metrics.sync_blocks_persisted,
                     sync_avg_total_us = state_service_metrics.sync_avg_total_us,
@@ -401,8 +403,8 @@ where
 
     let elapsed_seconds = progress.elapsed_seconds();
     let average_blocks_per_second = progress.average_blocks_per_second();
-    let transaction_blocks_per_second =
-        composition.transaction_blocks_per_second(progress.elapsed());
+    let transaction_block_import_seconds = composition.transaction_block_import_seconds();
+    let transaction_blocks_per_second = composition.transaction_blocks_per_second();
     info!(
         target: "neo::import",
         imported,
@@ -411,6 +413,7 @@ where
         empty_blocks = composition.empty_blocks,
         transaction_blocks = composition.transaction_blocks,
         transactions = composition.transactions,
+        transaction_block_import_seconds,
         transaction_blocks_per_second,
         "chain.acc import complete"
     );
@@ -422,6 +425,7 @@ where
         empty_blocks: composition.empty_blocks,
         transaction_blocks: composition.transaction_blocks,
         transactions: composition.transactions,
+        transaction_block_import_seconds,
         transaction_blocks_per_second,
         hot_metrics,
     })
@@ -432,6 +436,7 @@ struct ChainAccImportComposition {
     empty_blocks: u64,
     transaction_blocks: u64,
     transactions: u64,
+    transaction_elapsed: std::time::Duration,
 }
 
 impl ChainAccImportComposition {
@@ -449,7 +454,7 @@ impl ChainAccImportComposition {
         composition
     }
 
-    fn record_imported(&mut self, batch: Self, imported: usize) {
+    fn record_imported(&mut self, batch: Self, imported: usize, elapsed: std::time::Duration) {
         if imported == 0 {
             return;
         }
@@ -459,11 +464,18 @@ impl ChainAccImportComposition {
             self.empty_blocks += batch.empty_blocks;
             self.transaction_blocks += batch.transaction_blocks;
             self.transactions += batch.transactions;
+            if batch.transaction_blocks > 0 {
+                self.transaction_elapsed += elapsed;
+            }
         }
     }
 
-    fn transaction_blocks_per_second(&self, elapsed: std::time::Duration) -> f64 {
-        let elapsed = elapsed.as_secs_f64();
+    fn transaction_block_import_seconds(&self) -> f64 {
+        self.transaction_elapsed.as_secs_f64()
+    }
+
+    fn transaction_blocks_per_second(&self) -> f64 {
+        let elapsed = self.transaction_block_import_seconds();
         if elapsed > 0.0 {
             self.transaction_blocks as f64 / elapsed
         } else {
@@ -1518,6 +1530,84 @@ mod tests {
         assert!(
             report.transaction_blocks_per_second > 0.0,
             "transaction-bearing BPS must be reported independently from empty-block throughput"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_chain_acc_report_times_only_transaction_bearing_batches_for_transaction_bps() {
+        let (handle, mut commands, _events) = BlockchainHandle::channel(2, 2);
+        let mut blocks = linked_empty_blocks(0, IMPORT_BATCH_SIZE);
+        let prev = blocks.last().expect("previous block");
+        blocks.push(non_empty_block_with_prev_hash(
+            IMPORT_BATCH_SIZE as u32,
+            prev.hash(),
+            vec![signed_test_transaction(1)],
+        ));
+        let bytes = encode_chain_acc(&blocks);
+        let mut cursor = std::io::Cursor::new(bytes);
+        let service = tokio::spawn(async move {
+            let Some(BlockchainCommand::ImportBlocks {
+                import: first,
+                reply: first_reply,
+            }) = commands.recv().await
+            else {
+                panic!("expected first import blocks command");
+            };
+            assert_eq!(first.blocks.len(), IMPORT_BATCH_SIZE);
+            assert!(
+                first
+                    .blocks
+                    .iter()
+                    .all(|block| block.transactions.is_empty())
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            first_reply
+                .send(ImportBlocksReply::ok(first.blocks.len()))
+                .expect("reply first import");
+
+            let Some(BlockchainCommand::ImportBlocks {
+                import: second,
+                reply: second_reply,
+            }) = commands.recv().await
+            else {
+                panic!("expected second import blocks command");
+            };
+            assert_eq!(second.blocks.len(), 1);
+            assert_eq!(second.blocks[0].transactions.len(), 1);
+            second_reply
+                .send(ImportBlocksReply::ok(second.blocks.len()))
+                .expect("reply second import");
+        });
+
+        let report = import_chain_acc_from_reader_report(
+            &handle,
+            &mut cursor,
+            None,
+            false,
+            Some(ChainAccExpectedRange {
+                start_height: 0,
+                end_height: IMPORT_BATCH_SIZE as u32,
+            }),
+            None,
+        )
+        .await
+        .expect("import report");
+
+        service.await.expect("service task");
+        assert_eq!(report.imported, (IMPORT_BATCH_SIZE + 1) as u64);
+        assert_eq!(report.empty_blocks, IMPORT_BATCH_SIZE as u64);
+        assert_eq!(report.transaction_blocks, 1);
+        assert_eq!(report.transactions, 1);
+        assert!(report.elapsed_seconds >= 0.02);
+        assert!(
+            report.transaction_block_import_seconds < report.elapsed_seconds,
+            "transaction elapsed must exclude empty-only batch time: {report:?}"
+        );
+        let total_elapsed_transaction_bps =
+            report.transaction_blocks as f64 / report.elapsed_seconds;
+        assert!(
+            report.transaction_blocks_per_second > total_elapsed_transaction_bps,
+            "transaction BPS should use transaction-bearing batch time instead of total import time: {report:?}"
         );
     }
 

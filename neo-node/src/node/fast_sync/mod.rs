@@ -150,6 +150,7 @@ impl FastSyncReport {
                 empty_blocks: import.empty_blocks,
                 transaction_blocks: import.transaction_blocks,
                 transactions: import.transactions,
+                transaction_block_import_seconds: import.transaction_block_import_seconds,
                 transaction_blocks_per_second: import.transaction_blocks_per_second,
                 throughput_status: fast_sync_throughput_status(
                     import.imported,
@@ -194,6 +195,7 @@ pub(super) struct FastSyncImportReport {
     pub(super) empty_blocks: u64,
     pub(super) transaction_blocks: u64,
     pub(super) transactions: u64,
+    pub(super) transaction_block_import_seconds: f64,
     pub(super) transaction_blocks_per_second: f64,
     pub(super) throughput_status: FastSyncThroughputStatus,
 }
@@ -615,6 +617,7 @@ data_dir = "/var/lib/neo/mainnet"
             empty_blocks: imported,
             transaction_blocks: 0,
             transactions: 0,
+            transaction_block_import_seconds: 0.0,
             transaction_blocks_per_second: 0.0,
             hot_metrics: chain_acc::ImportHotMetrics::default(),
         }
@@ -637,6 +640,11 @@ data_dir = "/var/lib/neo/mainnet"
             empty_blocks,
             transaction_blocks,
             transactions,
+            transaction_block_import_seconds: if transaction_blocks > 0 {
+                elapsed_seconds
+            } else {
+                0.0
+            },
             transaction_blocks_per_second: if elapsed_seconds > 0.0 {
                 transaction_blocks as f64 / elapsed_seconds
             } else {
@@ -860,6 +868,7 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(report.import.empty_blocks, 101);
         assert_eq!(report.import.transaction_blocks, 0);
         assert_eq!(report.import.transactions, 0);
+        assert_eq!(report.import.transaction_block_import_seconds, 0.0);
         assert_eq!(report.import.transaction_blocks_per_second, 0.0);
         assert_eq!(
             report.import.throughput_status,
@@ -919,6 +928,7 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(payload["import"]["empty_blocks"], 101);
         assert_eq!(payload["import"]["transaction_blocks"], 0);
         assert_eq!(payload["import"]["transactions"], 0);
+        assert_eq!(payload["import"]["transaction_block_import_seconds"], 0.0);
         assert_eq!(payload["import"]["transaction_blocks_per_second"], 0.0);
         assert_eq!(payload["import"]["throughput_status"], "within-target");
         assert_eq!(
@@ -967,6 +977,7 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(report.import.empty_blocks, 81);
         assert_eq!(report.import.transaction_blocks, 20);
         assert_eq!(report.import.transactions, 45);
+        assert_eq!(report.import.transaction_block_import_seconds, 0.25);
         assert_eq!(report.import.transaction_blocks_per_second, 80.0);
     }
 
