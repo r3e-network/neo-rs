@@ -64,6 +64,7 @@ flowchart TD
         error[neo-error]
         crypto[neo-crypto]
         storage[neo-storage]
+        static_files[neo-static-files<br/>cold finalized data]
         config[neo-config]
         vm[neo-vm]
         serialization[neo-serialization]
@@ -103,6 +104,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
 | neo-storage | Infrastructure | `Store` traits, `DataCache`, plus RocksDB and in-memory backends. |
+| neo-static-files | Infrastructure | Append-only cold files for finalized block, transaction, receipt, and archived state-root payloads. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
 | neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
@@ -126,7 +128,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-node | Application | The node daemon binary (TOML config, storage, P2P, RPC, consensus wiring). |
 | neo-gui | Application | Native desktop manager that talks to a running node over JSON-RPC. |
 
-The current workspace has 26 production workspace members plus 2 development-only members.
+The current workspace has 27 production workspace members plus 2 development-only members.
 The development-only members are not part of the running node: `tests`
 (cross-crate integration tests) and `benches-package` (Criterion benchmarks).
 The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
@@ -146,6 +148,7 @@ small-crate candidates were checked against the dependency layers above:
 | `neo-error` into another foundation crate | Small but central `CoreError` / `CoreResult` vocabulary. | **Do not merge.** It deliberately sits near the bottom of the graph so storage, crypto, execution, RPC, and node services share one error type without cycles. |
 | `neo-config` into `neo-node` or `neo-system` | TOML-backed protocol, network, storage, RPC, and service configuration shared across daemon startup and reusable node services. | **Do not merge.** It is operator-facing configuration vocabulary; merging upward would make lower services depend on process/composition concerns just to parse or validate settings. |
 | `neo-manifest` into `neo-execution` or `neo-native-contracts` | Contract ABI, NEF files, method tokens, call flags, and validator attributes shared by execution, RPC, wallets, and native-contract metadata. | **Do not merge.** Manifest/ABI data is protocol vocabulary, not execution ownership; merging it upward would make independent tools and RPC paths pull in execution or native-contract internals. |
+| `neo-static-files` into `neo-storage` or `neo-node` | Append-only cold storage provider for finalized block, transaction, receipt, and archived state-root payloads. | **Do not merge.** It is an infrastructure performance component behind provider traits; keeping it separate preserves the hot `Store` abstraction while allowing cold-file recovery and format tests to evolve without pulling node process policy into storage. |
 | `neo-system` into `neo-node` | Embeddable composition root, node lifecycle, service registry, and cross-service wiring used by the daemon and integration surfaces. | **Do not merge.** The daemon owns CLI/process policy, while `neo-system` should remain reusable node assembly that tests, RPC/indexer wiring, and future service hosts can embed without pulling in the binary. |
 | `neo-indexer` into `neo-rpc` | Query-oriented service used by RPC, but owned by the node lifecycle and optionally registered in `neo-system::ServiceRegistry`. | **Do not merge.** Keeping it as a node service allows RPC, daemon startup, and future REST/worker surfaces to share the same read model. |
 | `neo-hsm` into `neo-consensus` or `neo-node` | Optional validator signing backends for PKCS#11, Azure, and GCP HSM integrations. | **Do not merge.** HSM support is an operator/security boundary with heavyweight and feature-specific dependencies; consensus should remain about the protocol while signer providers stay replaceable. |
