@@ -144,6 +144,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertIsNone(plan["metrics_url"])
         self.assertEqual(plan["sync_speed_floor_blocks_per_second"], 1500.0)
         self.assertEqual(plan["sync_speed_ceiling_blocks_per_second"], 2000.0)
+        self.assertEqual(plan["minimum_transaction_blocks_for_speed_proof"], 1000)
         self.assertEqual(plan["milestones"], [10, 20])
         self.assertEqual(
             plan["checkpoint_plan"],
@@ -403,6 +404,35 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 "clean/logs",
                 "--sync-speed-floor-bps",
                 "1499.99",
+            ]
+            self.assertEqual(module.main(), 2)
+        finally:
+            module.sys.argv = original_argv
+
+    def test_main_rejects_minimum_transaction_blocks_below_proof_target(self):
+        module = load_module()
+        original_argv = module.sys.argv
+        try:
+            module.sys.argv = [
+                "run-stateroot-milestones.py",
+                "--config",
+                "clean/neo_mainnet_validate.toml",
+                "--milestone",
+                "10",
+                "--milestone",
+                "20",
+                "--milestone",
+                "30",
+                "--chain-db",
+                "clean/chain",
+                "--stateroot-db",
+                "clean/state-root-334F454E",
+                "--checkpoint-root",
+                "clean/checkpoints",
+                "--log-dir",
+                "clean/logs",
+                "--minimum-transaction-blocks",
+                "999",
             ]
             self.assertEqual(module.main(), 2)
         finally:
@@ -1098,6 +1128,10 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "final_height": 100000,
                                 "elapsed_seconds": 100.0,
                                 "average_blocks_per_second": 1000.0,
+                                "empty_blocks": 98001,
+                                "transaction_blocks": 2000,
+                                "transactions": 5000,
+                                "transaction_blocks_per_second": 500.0,
                                 "throughput_status": "within-target",
                             },
                         },
@@ -1172,6 +1206,10 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "final_height": 100000,
                                 "elapsed_seconds": 100.0,
                                 "average_blocks_per_second": 1000.0,
+                                "empty_blocks": 98001,
+                                "transaction_blocks": 2000,
+                                "transactions": 5000,
+                                "transaction_blocks_per_second": 500.0,
                                 "throughput_status": "within-target",
                             },
                             "fast_sync_hot_metrics": {
@@ -1434,6 +1472,114 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertEqual(result["failure"], "speed-proof")
         self.assertIn(
             "no transaction-bearing blocks",
+            result["results"][0]["speed_proof_error"],
+        )
+
+    def test_run_milestones_rejects_tiny_transaction_bearing_speed_sample(self):
+        module = load_module()
+        plan = module.build_plan(
+            config=Path("clean/neo_mainnet_validate.toml"),
+            node_bin=Path("target/debug/neo-node"),
+            rpc_url="http://127.0.0.1:21332",
+            milestones=[100000],
+            poll_interval=5.0,
+            max_seconds=120.0,
+            chain_db=Path("clean/chain"),
+            stateroot_db=Path("clean/state-root-334F454E"),
+            probe_bin=Path("target/debug/neo-db-probe"),
+            references=["http://seed1.neo.org:10332"],
+            data_dir=Path("clean"),
+            checkpoint_root=Path("clean/checkpoints"),
+            checkpoint_script=Path("scripts/checkpoint-on-height.sh"),
+            log_dir=Path("clean/logs"),
+            fast_sync=True,
+            initial_height=0,
+            minimum_checkpoint_count=1,
+            sync_speed_floor_bps=100.0,
+            sync_speed_ceiling_bps=2000.0,
+        )
+
+        def fake_run(command, **kwargs):
+            probe_result = self.fake_probe_result(command)
+            if probe_result is not None:
+                return probe_result
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "status": "target-reached",
+                        "sync_source": "fast-sync",
+                        "target_height": 100000,
+                        "last_height": 100000,
+                        "blocks_per_second": 10000.0,
+                        "height_samples": [
+                            {
+                                "elapsed_seconds": 0.0,
+                                "height": 0,
+                                "metrics": {
+                                    "neo_sync_native_persist_avg_tx_count": 0.0,
+                                },
+                            },
+                            {
+                                "elapsed_seconds": 10.0,
+                                "height": 100000,
+                                "metrics": {
+                                    "neo_sync_native_persist_avg_tx_count": 1.0,
+                                },
+                            },
+                        ],
+                        "sync_proof": {
+                            "sync_source": "fast-sync",
+                            "fast_sync_import": {
+                                "imported_blocks": 100001,
+                                "final_height": 100000,
+                                "elapsed_seconds": 10.0,
+                                "average_blocks_per_second": 10000.1,
+                                "empty_blocks": 99902,
+                                "transaction_blocks": 99,
+                                "transactions": 99,
+                                "transaction_blocks_per_second": 9.9,
+                                "throughput_status": "within-target",
+                            },
+                            "fast_sync_hot_metrics": {
+                                "native_persist_avg_total_us": 3000,
+                                "state_service_mpt_avg_total_us": 2000,
+                            },
+                            "fast_sync_reference": {
+                                "endpoint": "http://seed1.neo.org:10332",
+                                "block_height": 100000,
+                                "block_hash": "0xblock100000",
+                                "state_root_height": 100000,
+                                "state_root_hash": "0xroot100000",
+                            },
+                        },
+                        "post_probe": {
+                            "chain_height": {"ok": True, "height": 100000},
+                            "stateroot_matches_chain": True,
+                            "stateroot_height": {"ok": True, "height": 100000},
+                            "stateroot_root": {
+                                "ok": True,
+                                "height": 100000,
+                                "root": "0xroot100000",
+                            },
+                            "reference_stateroot": {
+                                "index": 100000,
+                                "matches_local": True,
+                                "successful_samples": 1,
+                                "sample_count": 1,
+                            },
+                        },
+                    }
+                ),
+                stderr="",
+            )
+
+        result = module.run_milestones(plan, runner=fake_run)
+
+        self.assertEqual(result["mode"], "failed")
+        self.assertEqual(result["failure"], "speed-proof")
+        self.assertIn(
+            "too few transaction-bearing blocks",
             result["results"][0]["speed_proof_error"],
         )
 

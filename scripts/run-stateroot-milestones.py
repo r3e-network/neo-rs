@@ -21,6 +21,7 @@ DEFAULT_RESTORE_SCRIPT = "scripts/restore-checkpoint.sh"
 DEFAULT_SYNC_SPEED_FLOOR_BPS = 1500.0
 DEFAULT_SYNC_SPEED_CEILING_BPS = 2000.0
 DEFAULT_MINIMUM_CHECKPOINT_COUNT = 3
+DEFAULT_MINIMUM_TRANSACTION_BLOCKS = 1000
 DEFAULT_REFERENCE_RPCS = [
     "http://seed1.neo.org:10332",
     "http://seed2.neo.org:10332",
@@ -620,6 +621,7 @@ def build_plan(
     sync_speed_floor_bps: float | None = DEFAULT_SYNC_SPEED_FLOOR_BPS,
     sync_speed_ceiling_bps: float | None = DEFAULT_SYNC_SPEED_CEILING_BPS,
     minimum_checkpoint_count: int = DEFAULT_MINIMUM_CHECKPOINT_COUNT,
+    minimum_transaction_blocks: int = DEFAULT_MINIMUM_TRANSACTION_BLOCKS,
     fast_sync: bool = False,
     fast_sync_cache: Path | None = None,
     initial_height: int | None = None,
@@ -686,6 +688,7 @@ def build_plan(
         "sync_speed_floor_blocks_per_second": sync_speed_floor_bps,
         "sync_speed_ceiling_blocks_per_second": sync_speed_ceiling_bps,
         "minimum_checkpoint_count": minimum_checkpoint_count,
+        "minimum_transaction_blocks_for_speed_proof": minimum_transaction_blocks,
         "checkpoint_plan": checkpoint_plan_summary(milestones, minimum_checkpoint_count),
         "steps": steps,
     }
@@ -942,6 +945,7 @@ def speed_proof_error(
     *,
     floor_bps: float | None,
     ceiling_bps: float | None,
+    minimum_transaction_blocks: int = DEFAULT_MINIMUM_TRANSACTION_BLOCKS,
 ) -> str | None:
     if floor_bps is None and ceiling_bps is None:
         return None
@@ -984,6 +988,12 @@ def speed_proof_error(
     if import_proof is not None:
         if import_proof.get("missing_transaction_blocks"):
             return "fast-sync speed proof has no transaction-bearing blocks"
+        transaction_blocks = int(import_proof.get("transaction_blocks") or 0)
+        if transaction_blocks < minimum_transaction_blocks:
+            return (
+                "fast-sync speed proof has too few transaction-bearing blocks: "
+                f"{transaction_blocks} < {minimum_transaction_blocks}"
+            )
         bps = float(import_proof["blocks_per_second"])
         if floor_bps is not None and bps < floor_bps:
             return (
@@ -1249,6 +1259,10 @@ def run_milestones(
             bounded_report,
             floor_bps=plan.get("sync_speed_floor_blocks_per_second"),
             ceiling_bps=plan.get("sync_speed_ceiling_blocks_per_second"),
+            minimum_transaction_blocks=plan.get(
+                "minimum_transaction_blocks_for_speed_proof",
+                DEFAULT_MINIMUM_TRANSACTION_BLOCKS,
+            ),
         )
         if speed_error is not None:
             result["speed_proof_error"] = speed_error
@@ -1488,6 +1502,15 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Minimum successful checkpoint count required for the milestone run to complete.",
     )
+    parser.add_argument(
+        "--minimum-transaction-blocks",
+        default=DEFAULT_MINIMUM_TRANSACTION_BLOCKS,
+        type=int,
+        help=(
+            "Minimum transaction-bearing blocks required before accepting a "
+            "fast-sync import speed proof."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1502,6 +1525,13 @@ def main() -> int:
         print(
             "ERROR: --minimum-checkpoint-count must be >= "
             f"{DEFAULT_MINIMUM_CHECKPOINT_COUNT}",
+            file=sys.stderr,
+        )
+        return 2
+    if args.minimum_transaction_blocks < DEFAULT_MINIMUM_TRANSACTION_BLOCKS:
+        print(
+            "ERROR: --minimum-transaction-blocks must be >= "
+            f"{DEFAULT_MINIMUM_TRANSACTION_BLOCKS}",
             file=sys.stderr,
         )
         return 2
@@ -1549,6 +1579,7 @@ def main() -> int:
         sync_speed_floor_bps=args.sync_speed_floor_bps,
         sync_speed_ceiling_bps=args.sync_speed_ceiling_bps,
         minimum_checkpoint_count=args.minimum_checkpoint_count,
+        minimum_transaction_blocks=args.minimum_transaction_blocks,
         fast_sync=args.fast_sync,
         fast_sync_cache=args.fast_sync_cache,
         initial_height=args.initial_height,
