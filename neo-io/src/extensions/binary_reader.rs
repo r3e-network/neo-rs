@@ -2,6 +2,10 @@ use crate::var_int::VarInt;
 use std::io::{Error, ErrorKind, Read, Result};
 
 /// Extension helpers for [`Read`] mirroring `Neo.Extensions.IO.BinaryReaderExtensions`.
+///
+/// These methods deliberately extend the standard [`Read`] trait instead of
+/// creating a second reader hierarchy. They add only Neo-specific framing
+/// helpers on top of standard Rust streams.
 pub trait BinaryReaderExtensions: Read {
     /// Reads exactly `N` bytes and returns them as a fixed-size array.
     ///
@@ -27,17 +31,7 @@ impl<T: Read> BinaryReaderExtensions for T {
 
     fn read_fixed_bytes(&mut self, size: usize) -> Result<Vec<u8>> {
         let mut data = vec![0u8; size];
-        let mut offset = 0;
-        while offset < size {
-            let read = self.read(&mut data[offset..])?;
-            if read == 0 {
-                return Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "Unexpected end of stream",
-                ));
-            }
-            offset += read;
-        }
+        self.read_exact(&mut data)?;
         Ok(data)
     }
 

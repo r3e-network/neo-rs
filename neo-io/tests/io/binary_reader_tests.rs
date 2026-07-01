@@ -9,6 +9,19 @@ use neo_io::MemoryReader;
 #[allow(dead_code)]
 mod tests {
     use super::*;
+    use neo_io::BinaryReaderExtensions;
+    use std::io::{Cursor, ErrorKind};
+
+    /// Test interoperability with Rust's standard `Read` trait extensions.
+    #[test]
+    fn test_std_read_extensions_read_exact_bytes() {
+        let mut cursor = Cursor::new([0xAA, 0xBB, 0xCC]);
+
+        assert_eq!(cursor.read_fixed_bytes(2).unwrap(), vec![0xAA, 0xBB]);
+
+        let error = cursor.read_fixed_bytes(2).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+    }
 
     /// Test reading basic integer types (matches C# BinaryReader.ReadInt32 exactly)
     #[test]

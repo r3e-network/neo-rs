@@ -2,10 +2,18 @@
 //!
 //! Deterministic binary IO primitives and serialization traits for Neo data.
 //!
+//! This crate is a Neo protocol facade over standard Rust and vetted ecosystem
+//! IO building blocks. It should delegate generic mechanics to `std::io`,
+//! `bytes`, `lz4_flex`, and similar crates, while keeping only Neo-specific
+//! rules here: compact var-int encoding, C#-compatible reader/writer method
+//! names, protocol length checks, and deterministic error mapping.
+//!
 //! ## Boundary
 //!
 //! This codec crate owns byte-level IO contracts and must not decide protocol
-//! policy, storage layout, or node orchestration.
+//! policy, storage layout, or node orchestration. Do not introduce custom
+//! compression, buffering, endian, or stream abstractions unless an existing
+//! library cannot preserve Neo wire compatibility.
 //!
 //! ## Contents
 //!

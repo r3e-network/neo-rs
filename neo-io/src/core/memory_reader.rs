@@ -1,4 +1,10 @@
-//! `MemoryReader` - matches C# Neo.IO.MemoryReader exactly
+//! Borrowed-slice reader matching C# `Neo.IO.MemoryReader` protocol semantics.
+//!
+//! `std::io::Cursor<&[u8]>` is the right generic Rust tool for stream position
+//! over memory. `MemoryReader` keeps a tiny Neo-specific facade because callers
+//! need bounded Neo var-int/string reads, C#-compatible method names, zero-copy
+//! borrowed slices for `ReadMemory`, and deterministic `IoError` mapping. It
+//! still implements [`std::io::Read`] for normal Rust interoperability.
 
 use std::io::{self, Read};
 use std::str;
@@ -45,7 +51,11 @@ macro_rules! read_buf_primitives {
     };
 }
 
-/// Memory reader matching C# Neo.IO.MemoryReader.
+/// Memory reader matching C# `Neo.IO.MemoryReader`.
+///
+/// Prefer generic [`Read`] APIs for generic byte streams. Use this type at Neo
+/// protocol boundaries where var-int bounds, zero-copy memory reads, and
+/// compatibility error semantics matter.
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryReader<'a> {
     buffer: &'a [u8],

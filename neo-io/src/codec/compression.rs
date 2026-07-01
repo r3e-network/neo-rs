@@ -1,4 +1,8 @@
 //! LZ4 compression helpers matching the C# Neo implementation.
+//!
+//! Compression itself is delegated to `lz4_flex`; this module only fixes the
+//! Neo framing contract and defensive size checks. Keep it as a thin wrapper so
+//! untrusted P2P payloads get one consistent max-size gate before allocation.
 
 use crate::IoError;
 
@@ -11,6 +15,9 @@ pub const COMPRESSION_THRESHOLD: usize = 64;
 pub type CompressionResult<T> = Result<T, IoError>;
 
 /// LZ4 compression helpers matching the C# Neo implementation.
+///
+/// This type is intentionally a namespace over `lz4_flex`, not a custom LZ4
+/// implementation.
 pub struct Lz4;
 
 impl Lz4 {

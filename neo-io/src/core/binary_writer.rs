@@ -4,8 +4,11 @@ use std::io;
 
 /// A sequential binary writer for serializing Neo protocol data in little-endian format.
 ///
-/// Wraps an internal `Vec<u8>` buffer and provides typed write methods
-/// matching the Neo C# `BinaryWriter` interface.
+/// This is not a replacement for Rust's generic writer stack. It is a small
+/// protocol facade over an internal `Vec<u8>` that implements [`io::Write`],
+/// uses `bytes` for endian-aware primitive writes, and adds the Neo-specific
+/// compact integer/string/serializable methods expected by the rest of the
+/// node.
 #[derive(Debug, Clone, Default)]
 pub struct BinaryWriter {
     buffer: Vec<u8>,
