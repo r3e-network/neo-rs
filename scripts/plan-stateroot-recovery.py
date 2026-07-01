@@ -18,6 +18,7 @@ DEFAULT_CHECKPOINT_SCRIPT = "scripts/restore-checkpoint.sh"
 DEFAULT_STACK_RUNNER = "scripts/run-mainnet-validation-stack.py"
 DEFAULT_CLEAN_PREP_SCRIPT = "scripts/prepare-clean-stateroot-validation.py"
 DEFAULT_DATA_DIR = "./data"
+DEFAULT_MINIMUM_FULL_STATE_CHECKPOINTS = 3
 
 
 def format_network_magic(value: Any) -> str:
@@ -126,28 +127,51 @@ def metadata_value(path: Path, key: str) -> str | None:
     return None
 
 
+def checkpoint_verification_reason(path: Path) -> str | None:
+    height = metadata_value(path, "height")
+    verified_height = metadata_value(path, "verified_height")
+    verified_stateroot_root = metadata_value(path, "verified_stateroot_root")
+    restore_verified = metadata_value(path, "restore_verified")
+    verified_against_reference = metadata_value(path, "verified_against_reference")
+    missing = [
+        name
+        for name, value in [
+            ("restore_verified", restore_verified),
+            ("verified_height", verified_height),
+            ("verified_stateroot_root", verified_stateroot_root),
+            ("verified_against_reference", verified_against_reference),
+        ]
+        if not value
+    ]
+    if missing:
+        return "missing restore verification metadata: " + ", ".join(missing)
+    if height is not None and verified_height != height:
+        return (
+            "restore verification height does not match checkpoint height: "
+            f"height={height}, verified_height={verified_height}"
+        )
+    if restore_verified.lower() != "true":
+        return "restore verification metadata is not marked restore_verified=true"
+    if verified_against_reference.lower() != "true":
+        return "restore verification metadata is not marked verified_against_reference=true"
+    return None
+
+
 def checkpoint_height(path: Path) -> int | None:
     name = path.name
     if name.startswith("h") and name[1:].isdigit():
         return int(name[1:])
-    value = metadata_value(path, "height")
-    if value and value.isdigit():
-        return int(value)
     return None
 
 
 def checkpoint_has_chain(path: Path) -> bool:
-    return (path / "mainnet").is_dir() or (
-        (path / "data").is_dir() and metadata_value(path, "mode") == "storage-sample"
-    )
+    return (path / "mainnet").is_dir()
 
 
 def checkpoint_has_stateroot(path: Path) -> bool:
     if not (path / "StateRoot").is_dir():
         return False
     if metadata_value(path, "state_root_included") == "false":
-        return False
-    if metadata_value(path, "mpt_dir") == "missing-mpt":
         return False
     return True
 
@@ -162,6 +186,9 @@ def scan_checkpoints(root: Path) -> list[dict[str, Any]]:
             continue
         has_chain = checkpoint_has_chain(path)
         has_stateroot = checkpoint_has_stateroot(path)
+        verification_reason = (
+            checkpoint_verification_reason(path) if has_stateroot else None
+        )
         checkpoints.append(
             {
                 "path": str(path),
@@ -169,7 +196,10 @@ def scan_checkpoints(root: Path) -> list[dict[str, Any]]:
                 "height": height,
                 "has_chain": has_chain,
                 "has_stateroot": has_stateroot,
-                "usable_for_state_validation": bool(has_chain and has_stateroot),
+                "usable_for_state_validation": bool(
+                    has_chain and has_stateroot and verification_reason is None
+                ),
+                "restore_verification_reason": verification_reason,
                 "mode": metadata_value(path, "mode") or "height-labelled",
             }
         )
@@ -187,6 +217,23 @@ def choose_full_state_checkpoint(
         and (chain_height is None or int(item["height"]) <= chain_height)
     ]
     return candidates[-1] if candidates else None
+
+
+def checkpoint_inventory_summary(
+    checkpoints: list[dict[str, Any]],
+    *,
+    minimum_full_state_checkpoints: int = DEFAULT_MINIMUM_FULL_STATE_CHECKPOINTS,
+) -> dict[str, Any]:
+    full_state = [item for item in checkpoints if item["usable_for_state_validation"]]
+    count = len(full_state)
+    missing = max(minimum_full_state_checkpoints - count, 0)
+    return {
+        "usable_full_state_count": count,
+        "minimum_full_state_count": minimum_full_state_checkpoints,
+        "minimum_full_state_count_met": count >= minimum_full_state_checkpoints,
+        "missing_full_state_count": missing,
+        "usable_full_state_heights": [int(item["height"]) for item in full_state],
+    }
 
 
 def build_recovery_plan(
@@ -221,8 +268,10 @@ def build_recovery_plan(
         and int(chain_height) == int(stateroot_height)
     )
 
+    full_state = [item for item in checkpoints if item["usable_for_state_validation"]]
     full_state_checkpoint = choose_full_state_checkpoint(checkpoints, chain_height)
     chain_only = [item for item in checkpoints if item["has_chain"] and not item["has_stateroot"]]
+    checkpoint_summary = checkpoint_inventory_summary(checkpoints)
 
     if chain_height is None and "error" not in chain:
         mode = "fresh-replay-ready"
@@ -316,9 +365,10 @@ def build_recovery_plan(
             "matches_chain": heights_match,
         },
         "checkpoints": {
-            "full_state": [item for item in checkpoints if item["usable_for_state_validation"]],
+            "full_state": full_state,
             "chain_only": chain_only,
             "all": checkpoints,
+            **checkpoint_summary,
         },
         "recommended_action": recommended_action,
     }

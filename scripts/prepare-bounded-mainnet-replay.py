@@ -18,6 +18,12 @@ DEFAULT_WORK_ROOT = "data/bounded-replay"
 DEFAULT_RPC_PORT = 21332
 DEFAULT_P2P_PORT = 21333
 DEFAULT_METRICS_PORT = 21990
+CHECKPOINT_VERIFICATION_FIELDS = (
+    "restore_verified",
+    "verified_height",
+    "verified_stateroot_root",
+    "verified_against_reference",
+)
 
 
 def parse_checkpoint_info(path: Path) -> dict[str, str]:
@@ -31,6 +37,42 @@ def parse_checkpoint_info(path: Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         info[key.strip()] = value.strip()
     return info
+
+
+def checkpoint_restore_verification_reason(
+    info: dict[str, str],
+    *,
+    expected_height: int | None = None,
+) -> str | None:
+    missing = [field for field in CHECKPOINT_VERIFICATION_FIELDS if not info.get(field)]
+    if missing:
+        return "missing restore verification metadata: " + ", ".join(missing)
+
+    height_text = info.get("height")
+    verified_height_text = info.get("verified_height")
+    if height_text is not None and verified_height_text != height_text:
+        return (
+            "restore verification height does not match checkpoint height: "
+            f"height={height_text}, verified_height={verified_height_text}"
+        )
+    if expected_height is not None:
+        expected_height_text = str(expected_height)
+        if height_text is not None and height_text != expected_height_text:
+            return (
+                "checkpoint height does not match requested start height: "
+                f"height={height_text}, start_height={expected_height_text}"
+            )
+        if verified_height_text != expected_height_text:
+            return (
+                "verified_height does not match requested start height: "
+                f"verified_height={verified_height_text}, start_height={expected_height_text}"
+            )
+
+    if info["restore_verified"].lower() != "true":
+        return "restore verification metadata is not marked restore_verified=true"
+    if info["verified_against_reference"].lower() != "true":
+        return "restore verification metadata is not marked verified_against_reference=true"
+    return None
 
 
 def resolve_state_checkpoint(checkpoint: Path, info: dict[str, str]) -> Path | None:
@@ -68,9 +110,12 @@ network_type = "MainNet"
 network_magic = 0x334F454E
 
 [storage]
-backend = "rocksdb"
-path = {toml_quote(chain_db)}
+backend = "mdbx"
+data_dir = {toml_quote(chain_db)}
 read_only = false
+mdbx_geometry_upper_gb = 512
+mdbx_geometry_growth_mb = 256
+mdbx_max_readers = 4096
 
 [p2p]
 port = {p2p_port}
@@ -180,18 +225,32 @@ def build_replay_plan(
     work_dir = (work_root / label).resolve()
     chain_source = checkpoint / "data"
     info = parse_checkpoint_info(checkpoint)
+    metadata_height = int(info["height"]) if info.get("height") else None
+    validation_height = start_height if start_height is not None else metadata_height
+    verification_reason = checkpoint_restore_verification_reason(
+        info,
+        expected_height=validation_height,
+    )
+    if verification_reason:
+        raise ValueError(f"checkpoint is not restore-verified: {verification_reason}")
     if start_height is None and info.get("height"):
-        start_height = int(info["height"])
+        start_height = metadata_height
     state_source = resolve_state_checkpoint(checkpoint, info)
     state_present = state_source is not None
-    validator_enabled = state_present and start_height is not None
+    if not state_present:
+        raise ValueError(
+            "bounded replay requires a full-state checkpoint with a StateRoot/MPT "
+            "directory; create a restore-verified checkpoint with "
+            "scripts/checkpoint-on-height.sh before preparing replay"
+        )
+    validator_enabled = start_height is not None
     chain_db = work_dir / "data"
     state_db = work_dir / "mpt"
     config_path = work_dir / "neo-bounded-replay.toml"
     log_file = work_dir / "neo-node.log"
     status_file = work_dir / "stateroot-validation.json"
     resume_file = work_dir / "stateroot-last-validated"
-    mode = "full-state" if state_present else "storage-sample"
+    mode = "full-state"
 
     address_args = []
     for address in addresses:
@@ -345,7 +404,7 @@ def state_root_validator_disabled_reason(
     start_height: int | None,
 ) -> str | None:
     if not state_present:
-        return "Checkpoint has no StateRoot/MPT directory; use storage-sample mode until a full-state checkpoint is available."
+        return "Checkpoint has no StateRoot/MPT directory."
     if start_height is None:
         return "Checkpoint start height is unknown; pass --start-height so state-root validation starts at the checkpoint height."
     return None

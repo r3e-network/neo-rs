@@ -22,10 +22,17 @@ set -euo pipefail
 #   --data-dir <path>       neo-rs data root (default ./data)
 #   --chain-db <path>       explicit chain RocksDB path (default <data-dir>/mainnet)
 #   --stateroot-db <path>   explicit StateRoot RocksDB path (default <data-dir>/Plugins/mainnet/StateRoot)
+#   --storage-provider <P>  storage backend encoded in the snapshot (default mdbx)
 #   --chain-only            snapshot only the chain DB (for bounded replay DBs without StateService)
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
 #   --once                  take a single checkpoint at current height and exit
 #   --height <N>            override RPC; use N as the height label (for --once)
+#   --restore-verified      mark snapshot as restore/probe verified
+#   --verified-height <N>   height proven by the restore/probe verification
+#   --verified-stateroot-root <HASH>
+#                           StateRoot hash proven at --verified-height
+#   --verified-against-reference
+#                           mark snapshot as checked against reference RPC state roots
 #
 # Environment overrides:
 #   NEO_CHECKPOINT_INTERVAL, NEO_CHECKPOINT_MAX, NEO_RPC_URL,
@@ -44,9 +51,14 @@ DATA_DIR="${NEO_DATA_DIR:-./data}"
 CHECKPOINT_ROOT="${NEO_CHECKPOINT_ROOT:-}"
 CHAIN_DB_OVERRIDE="${NEO_CHAIN_DB:-}"
 STATEROOT_DB_OVERRIDE="${NEO_STATEROOT_DB:-}"
+STORAGE_PROVIDER="${NEO_STORAGE_PROVIDER:-mdbx}"
 ONCE=0
 HEIGHT_OVERRIDE=""
 CHAIN_ONLY=0
+RESTORE_VERIFIED=0
+VERIFIED_HEIGHT=""
+VERIFIED_STATEROOT_ROOT=""
+VERIFIED_AGAINST_REFERENCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,12 +68,17 @@ while [[ $# -gt 0 ]]; do
     --data-dir) DATA_DIR="$2"; shift 2;;
     --chain-db) CHAIN_DB_OVERRIDE="$2"; shift 2;;
     --stateroot-db) STATEROOT_DB_OVERRIDE="$2"; shift 2;;
+    --storage-provider) STORAGE_PROVIDER="$2"; shift 2;;
     --chain-only) CHAIN_ONLY=1; shift;;
     --root)     CHECKPOINT_ROOT="$2"; shift 2;;
     --once)     ONCE=1; shift;;
     --height)   HEIGHT_OVERRIDE="$2"; shift 2;;
+    --restore-verified) RESTORE_VERIFIED=1; shift;;
+    --verified-height) VERIFIED_HEIGHT="$2"; shift 2;;
+    --verified-stateroot-root) VERIFIED_STATEROOT_ROOT="$2"; shift 2;;
+    --verified-against-reference) VERIFIED_AGAINST_REFERENCE=1; shift;;
     -h|--help)
-      sed -n '3,29p' "$0"; exit 0;;
+      sed -n '3,33p' "$0"; exit 0;;
     *) echo "unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -84,8 +101,27 @@ fi
 
 case "$INTERVAL_BLOCKS" in ''|*[!0-9]*) echo "--interval must be integer"; exit 1;; esac
 case "$MAX_CHECKPOINTS" in ''|*[!0-9]*) echo "--max must be integer"; exit 1;; esac
+if [[ -n "$VERIFIED_HEIGHT" ]]; then
+  case "$VERIFIED_HEIGHT" in ''|*[!0-9]*) echo "--verified-height must be integer" >&2; exit 1;; esac
+fi
 if [[ "$INTERVAL_BLOCKS" -lt 1 ]]; then echo "--interval must be >=1"; exit 1; fi
-if [[ "$MAX_CHECKPOINTS" -lt 1 ]]; then echo "--max must be >=1"; exit 1; fi
+if [[ "$MAX_CHECKPOINTS" -lt 3 ]]; then echo "--max must be >= 3" >&2; exit 1; fi
+if [[ "$RESTORE_VERIFIED" -eq 1 && -z "$VERIFIED_HEIGHT" ]]; then
+  echo "--restore-verified requires --verified-height" >&2
+  exit 1
+fi
+if [[ "$RESTORE_VERIFIED" -eq 1 && -z "$VERIFIED_STATEROOT_ROOT" ]]; then
+  echo "--restore-verified requires --verified-stateroot-root" >&2
+  exit 1
+fi
+if [[ -n "$VERIFIED_STATEROOT_ROOT" && "$RESTORE_VERIFIED" -ne 1 ]]; then
+  echo "--verified-stateroot-root requires --restore-verified" >&2
+  exit 1
+fi
+if [[ "$VERIFIED_AGAINST_REFERENCE" -eq 1 && "$RESTORE_VERIFIED" -ne 1 ]]; then
+  echo "--verified-against-reference requires --restore-verified" >&2
+  exit 1
+fi
 
 mkdir -p "$CHECKPOINT_ROOT"
 
@@ -128,7 +164,41 @@ take_snapshot() {
   local target="${CHECKPOINT_ROOT}/h${height}"
   local tmp="${target}.partial"
 
+  if [[ -n "$VERIFIED_HEIGHT" && "$VERIFIED_HEIGHT" != "$height" ]]; then
+    echo "--verified-height must match --height: verified=${VERIFIED_HEIGHT} height=${height}" >&2
+    return 1
+  fi
+
   if [[ -d "$target" ]]; then
+    if [[ "$RESTORE_VERIFIED" -eq 1 ]]; then
+      local info="${target}/CHECKPOINT_INFO"
+      local existing_restore_verified existing_verified_height
+      local existing_verified_stateroot_root existing_verified_against_reference
+      if [[ ! -f "$info" ]]; then
+        echo "checkpoint h${height} already exists but is missing CHECKPOINT_INFO" >&2
+        return 1
+      fi
+      existing_restore_verified=$(sed -n 's/^restore_verified=//p' "$info" | head -1)
+      existing_verified_height=$(sed -n 's/^verified_height=//p' "$info" | head -1)
+      existing_verified_stateroot_root=$(sed -n 's/^verified_stateroot_root=//p' "$info" | head -1)
+      existing_verified_against_reference=$(sed -n 's/^verified_against_reference=//p' "$info" | head -1)
+      if [[ "${existing_restore_verified,,}" != "true" ]]; then
+        echo "checkpoint h${height} already exists but restore_verified is not true" >&2
+        return 1
+      fi
+      if [[ "$existing_verified_height" != "$VERIFIED_HEIGHT" ]]; then
+        echo "checkpoint h${height} already exists with mismatched verified_height: existing=${existing_verified_height} requested=${VERIFIED_HEIGHT}" >&2
+        return 1
+      fi
+      if [[ "${existing_verified_stateroot_root,,}" != "${VERIFIED_STATEROOT_ROOT,,}" ]]; then
+        echo "checkpoint h${height} already exists with mismatched verified_stateroot_root: existing=${existing_verified_stateroot_root} requested=${VERIFIED_STATEROOT_ROOT}" >&2
+        return 1
+      fi
+      if [[ "$VERIFIED_AGAINST_REFERENCE" -eq 1 && "${existing_verified_against_reference,,}" != "true" ]]; then
+        echo "checkpoint h${height} already exists but verified_against_reference is not true" >&2
+        return 1
+      fi
+    fi
     echo "checkpoint h${height} already exists, skipping"; return 0
   fi
 
@@ -163,12 +233,23 @@ take_snapshot() {
     echo "height=${height}"
     echo "writer_pid=${WRITER_PID}"
     echo "chain_db=${CHAIN_DB}"
+    echo "storage_provider=${STORAGE_PROVIDER}"
     if [[ "$CHAIN_ONLY" -eq 0 ]]; then
       echo "stateroot_db=${STATEROOT_DB}"
       echo "state_root_included=true"
     else
       echo "stateroot_db=none"
       echo "state_root_included=false"
+    fi
+    if [[ "$RESTORE_VERIFIED" -eq 1 ]]; then
+      echo "restore_verified=true"
+      echo "verified_height=${VERIFIED_HEIGHT}"
+      if [[ -n "$VERIFIED_STATEROOT_ROOT" ]]; then
+        echo "verified_stateroot_root=${VERIFIED_STATEROOT_ROOT}"
+      fi
+    fi
+    if [[ "$VERIFIED_AGAINST_REFERENCE" -eq 1 ]]; then
+      echo "verified_against_reference=true"
     fi
   } >"${tmp}/CHECKPOINT_INFO"
   rm -f "${tmp}/CHECKPOINT_IN_PROGRESS"
@@ -181,7 +262,7 @@ prune_old() {
   dirs=()
   while IFS= read -r dir; do
     dirs+=("$dir")
-  done < <(sorted_height_checkpoints)
+  done < <(sorted_checkpoints_for_pruning)
   local count="${#dirs[@]}"
   if [[ "$count" -le "$MAX_CHECKPOINTS" ]]; then return; fi
   local to_prune=$((count - MAX_CHECKPOINTS))
@@ -190,6 +271,48 @@ prune_old() {
     echo "pruning old checkpoint: ${dirs[$i]}"
     rm -rf "${dirs[$i]}"
   done
+}
+
+checkpoint_is_restore_verified() {
+  local dir="$1"
+  local info="${dir}/CHECKPOINT_INFO"
+  local restore_verified verified_height verified_stateroot_root verified_against_reference
+  local info_height
+
+  [[ -d "${dir}/mainnet" ]] || return 1
+  [[ -d "${dir}/StateRoot" ]] || return 1
+  [[ -f "$info" ]] || return 1
+  [[ ! -e "${dir}/CHECKPOINT_IN_PROGRESS" ]] || return 1
+
+  info_height=$(sed -n 's/^height=//p' "$info" | head -1)
+  restore_verified=$(sed -n 's/^restore_verified=//p' "$info" | head -1)
+  verified_height=$(sed -n 's/^verified_height=//p' "$info" | head -1)
+  verified_stateroot_root=$(sed -n 's/^verified_stateroot_root=//p' "$info" | head -1)
+  verified_against_reference=$(sed -n 's/^verified_against_reference=//p' "$info" | head -1)
+
+  [[ -n "$info_height" ]] || return 1
+  [[ "$verified_height" == "$info_height" ]] || return 1
+  [[ -n "$verified_stateroot_root" ]] || return 1
+  [[ "${restore_verified,,}" == "true" ]] || return 1
+  [[ "${verified_against_reference,,}" == "true" ]] || return 1
+}
+
+sorted_checkpoints_for_pruning() {
+  local dir base height priority
+  find "$CHECKPOINT_ROOT" -maxdepth 1 -mindepth 1 -type d -name 'h[0-9]*' 2>/dev/null |
+    while IFS= read -r dir; do
+      base=$(basename "$dir")
+      [[ "$base" =~ ^h([0-9]+)$ ]] || continue
+      height="${BASH_REMATCH[1]}"
+      if checkpoint_is_restore_verified "$dir"; then
+        priority=1
+      else
+        priority=0
+      fi
+      printf '%s\t%s\t%s\n' "$priority" "$height" "$dir"
+    done |
+    sort -n -k1,1 -k2,2 |
+    cut -f3-
 }
 
 sorted_height_checkpoints() {

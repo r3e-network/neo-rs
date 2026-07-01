@@ -2,7 +2,7 @@
 
 Running `neo-rs` in production: deployment, storage, health checks, observability, security hardening, backups, and upgrades.
 
-This guide covers the `neo-node` daemon — the full node behind the `wip` feature. It syncs blocks over P2P, validates the chain, and optionally serves a JSON-RPC API. Storage is RocksDB (default) with an in-memory fallback. Configuration is a single TOML file plus a few CLI flags.
+This guide covers the `neo-node` daemon — the full node behind the `wip` feature. It syncs blocks over P2P, validates the chain, and optionally serves a JSON-RPC API. Storage is MDBX by default, with RocksDB available as an explicit fallback/test backend and in-memory storage for ephemeral runs. Configuration is a single TOML file plus a few CLI flags.
 
 ---
 
@@ -13,7 +13,7 @@ flowchart LR
   subgraph Host
     direction TB
     N[neo-node daemon]
-    DB[(RocksDB data dir)]
+    DB[(persistent data dir)]
     N <--> DB
   end
   P2P[(Neo P2P network)] <-->|sync / relay| N
@@ -50,10 +50,15 @@ The daemon accepts a small, fixed set of flags; everything else lives in TOML.
 |------|---------|
 | `--config`, `-c <PATH>` | Path to the TOML node configuration file. |
 | `--network-magic <U32>` | Override the network magic (must match the rest of the network). Wins over the config/preset. |
-| `--storage-path <PATH>` | Override the persistent data directory. Implies the RocksDB backend regardless of `[storage].backend`. |
+| `--storage-path <PATH>` | Override the persistent data directory for the configured/default backend. |
 | `--check-config` | Validate configuration and exit without starting services. |
 | `--check-storage` | Open the configured storage backend, confirm it is reachable/writable, and exit. |
 | `--check-all` | Run both preflight checks and exit. |
+| `--import-chain <PATH>` | Import a local `chain.acc` dump before live P2P sync. |
+| `--fast-sync` | Download, validate, cache, and import the built-in official fast-sync package before live P2P sync. |
+| `--fast-sync-cache <PATH>` | Override the fast-sync package cache directory. Requires `--fast-sync`. |
+| `--stop-at-height <HEIGHT>` | Stop gracefully after the persisted local ledger reaches the target height. |
+| `--remote-ledger-rpc <URL>` | Run without a local canonical ledger and delegate ledger/state/indexer RPC reads plus relay, wallet transaction, and oracle submission RPC calls to the upstream JSON-RPC endpoint. Cannot be combined with `--import-chain` or `--fast-sync`. |
 
 Run preflight checks before any deploy or restart:
 
@@ -61,9 +66,88 @@ Run preflight checks before any deploy or restart:
 ./target/release/neo-node --config /opt/neo/config.toml --check-all
 ```
 
+### Fast sync
+
+`--fast-sync` is the built-in bootstrap path for operators who want a local
+ledger but do not want to replay from genesis over P2P. The daemon resolves the
+official fast-sync manifest, downloads the package when it is not already cached,
+checks the package MD5, extracts the included `chain*.acc` file, imports it, then
+checks that the durable local ledger tip matches the final imported block, and
+restores durable backend write settings before continuing with live network sync.
+The in-progress marker is removed only after that local tip proof succeeds; if
+the marker remains, restore a checkpoint or remove the local ledger before
+retrying the import.
+
+```bash
+./target/release/neo-node \
+  --config neo_mainnet_node.toml \
+  --storage-path /var/neo/mainnet \
+  --fast-sync
+```
+
+Use `--fast-sync-cache /path/to/cache` when the package cache must live outside
+the main storage path.
+
+For bounded validation of the built-in package path, run the bounded replay
+wrapper with `--fast-sync` instead of validating only an already extracted
+`chain.acc` file:
+
+```bash
+python3 scripts/run-bounded-mainnet-replay.py \
+  --config data/mainnet-stateroot-clean/neo_mainnet_validate.toml \
+  --node-bin target/release/neo-node \
+  --target-height 100000 \
+  --fast-sync \
+  --fast-sync-cache data/mainnet-stateroot-clean/fast-sync-cache \
+  --initial-height 0 \
+  --db data/mainnet-stateroot-clean/mainnet \
+  --stateroot-db data/mainnet-stateroot-clean/StateRoot_334F454E \
+  --require-stateroot-height-match \
+  --require-reference-stateroot-match \
+  --sync-speed-floor-bps 1500 \
+  --sync-speed-ceiling-bps 2000
+```
+
+When the imported package already satisfies `--stop-at-height`, `neo-node` can
+shut down before RPC and telemetry are started. Treat that as expected for this
+bounded proof: rely on the post-run `--db` / `--stateroot-db` probes, reference
+`getstateroot` comparison, and `--initial-height` throughput math. Metrics can
+still be sampled when available, but do not require metrics samples for this
+fast-sync stop-height proof.
+
+### RPC-backed ledger mode
+
+`--remote-ledger-rpc <URL>` starts `neo-node` without opening or creating the
+configured local chain store directory. The node keeps only an ephemeral memory
+context for internal handles, disables replay-derived local services
+(StateService, NeoIndexer, ApplicationLogs, TokensTracker), and delegates
+ledger/state/indexer read RPC methods, service/plugin inventory, plus
+relay-style methods such as `sendrawtransaction`, `submitblock`, wallet
+transaction builders, and `submitoracleresponse` to the upstream JSON-RPC
+endpoint.
+
+```bash
+./target/release/neo-node \
+  --config neo_mainnet_node.toml \
+  --remote-ledger-rpc https://seed1.neo.org:10332
+```
+
+Process-local RPC methods such as `getpeers`, wallet open/import/list
+operations, and address validation remain local because they describe this
+process. `getversion` also keeps this node's identity fields local, but its
+dynamic protocol policy values are read from the upstream `getversion` response
+so they do not come from the ephemeral local context. In this mode seed dialing
+and inbound P2P inventory replay are disabled so the node does not silently
+build a local canonical chain in memory. The P2P listener can still serve
+remote-backed block/header requests when enabled.
+
+Do not use this mode as a validator or as an independently verifying node. It is
+an upstream-backed RPC/P2P facade for deployments that intentionally do not keep
+a local ledger.
+
 ### systemd (bare metal)
 
-Run as a dedicated non-root user with restart-on-failure and a high file-descriptor limit (RocksDB and P2P need many descriptors).
+Run as a dedicated non-root user with restart-on-failure and a high file-descriptor limit (storage backends and P2P need many descriptors).
 
 ```ini
 # /etc/systemd/system/neo-node.service
@@ -130,7 +214,7 @@ network.
 | `NEO_NETWORK` | Selects the bundled config (`mainnet` / `testnet`). | `mainnet` |
 | `NEO_PROFILE` | Empty/`node` for the standard config, or `service` for `config/<network>-service.toml`. | `service` |
 | `NEO_CONFIG` | Path to a custom TOML config (overrides `NEO_NETWORK`). | `/config/custom.toml` |
-| `NEO_STORAGE` | RocksDB directory, passed as `--storage-path`. | `/data/mainnet` |
+| `NEO_STORAGE` | Persistent storage directory, passed as `--storage-path`. | `/data/mainnet` |
 | `NEO_PLUGINS_DIR` | Plugin configuration directory. | `/data/Plugins` |
 | `NEO_RPC_BIND_ADDRESS` | Runtime RPC bind address for bundled service profiles. | `0.0.0.0` |
 | `NEO_METRICS_BIND_ADDRESS` | Runtime telemetry bind address for bundled service profiles. | `0.0.0.0` |
@@ -167,7 +251,7 @@ docker inspect --format='{{.State.Health.Status}}' neo-node
 | Section | Key keys | Notes |
 |---------|----------|-------|
 | `[network]` | `network_magic`, `network_type` | Selects the chain. `--network-magic` overrides. |
-| `[storage]` | `backend`, `data_dir` / `path`, `read_only` | `backend = "rocksdb"` for persistence; anything else is in-memory. `--storage-path` overrides and forces RocksDB. `read_only = true` opens the primary store read-only for inspection, not for normal syncing. |
+| `[storage]` | `backend`, `data_dir` / `path`, `read_only` | `backend = "mdbx"` is the production persistent default; `rocksdb` remains an explicit fallback/test backend; `memory` is ephemeral. `--storage-path` overrides the directory without changing the backend. `read_only = true` opens the primary store read-only for inspection, not for normal syncing. |
 | `[p2p]` | `port`, `bind_address`, `seed_nodes`, `max_connections`, `min_desired_connections`, `max_connections_per_address` | `bind_address` defaults to `0.0.0.0`; `max_connections = -1` means unlimited (C# parity). |
 | `[rpc]` | `enabled`, `port`, `bind_address`, `rpc_user`, `rpc_pass`, `disabled_methods`, limits | The daemon wires these into `neo-rpc` at startup. Built-in Basic auth protects HTTP RPC when credentials are configured; use a proxy for TLS and network-level policy. |
 | `[consensus]` | `enabled`, `private_key_hex`, `hsm`, `auto_start` | Off by default; consensus participation starts when `enabled` or `auto_start` is true and requires validator key material. |
@@ -198,7 +282,7 @@ so service-provider nodes do not need a manual restart after initial sync.
 
 ## Data directory & storage sizing
 
-RocksDB requires fast, durable, local storage. Avoid NAS for primary data, spinning disks (insufficient IOPS), and ephemeral/tmpfs volumes.
+Persistent node storage requires fast, durable, local storage. Avoid NAS for primary data, spinning disks (insufficient IOPS), and ephemeral/tmpfs volumes.
 
 The exact on-disk size depends on the chain height at the time you sync and on whether you enable `[state_service]` (the state-root MPT trie adds a separate `StateRoot` directory). Size the volume with comfortable headroom and monitor free space; both MainNet and TestNet grow steadily with chain height.
 
@@ -206,10 +290,10 @@ Operational guarantees and markers the node enforces at the data directory:
 
 - **Network marker** — a `NETWORK_MAGIC` file is written; use a distinct directory per network so you cannot mix MainNet and TestNet data.
 - **Version marker** — a `VERSION` file is written; if it differs from the running binary, startup fails. Use a fresh path or migrate.
-- **Fail-fast on RocksDB** — if RocksDB cannot be opened, the node aborts rather than silently falling back to memory. Check permissions and disk if startup fails.
+- **Fail-fast on persistent storage** — if the configured persistent backend cannot be opened, the node aborts rather than silently falling back to memory. Check permissions and disk if startup fails.
 - **State integrity guard** — startup validates persisted non-native contract state and aborts on malformed payloads or duplicate contract IDs. Restore from a known-good backup or resync from a clean directory if this triggers; do not keep restarting the same directory.
 
-Keep at least 20% free space on the RocksDB volume and monitor inode usage.
+Keep at least 20% free space on the storage volume and monitor inode usage.
 
 ---
 
@@ -417,7 +501,7 @@ split the apply bucket with
 `neo_state_service_mpt_apply_avg_items{kind=...}`. These are EWMA values updated
 from the block hot path, so they are lightweight enough to leave enabled and
 useful for deciding whether a throughput drop is witness verification, native
-persistence OnPersist/transaction/PostPersist work, RocksDB commit, StateService
+persistence OnPersist/transaction/PostPersist work, backend commit, StateService
 MPT projection/write pressure, or MPT trie internals. The StateService stage
 labels are `mutate_changes`, `root_hash`, `trie_commit`, `overlay_prepare`,
 `backing_commit`, and `publish_generation`; count labels are `changes`,
@@ -431,11 +515,11 @@ by the NeoToken stage labels:
 `compare_committee`, `notify_committee_changed`, `refresh_total`, and `skip`.
 If `compute_committee` dominates, use the committee-compute labels
 `read_voters_count`, `standby_lookup`, `candidate_scan_total`,
-`candidate_pubkey_decode`, `candidate_state_decode`,
-`candidate_blocked_lookup`, and `top_candidate_maintenance`, plus the scan
-count labels `storage_entries`, `malformed_keys`, `decoded_entries`,
-`registered_entries`, `blocked_registered`, `eligible_candidates`, and
-`top_candidates`.
+`candidate_blocked_prefetch`, `candidate_pubkey_decode`,
+`candidate_state_decode`, `candidate_blocked_lookup`, and
+`top_candidate_maintenance`, plus the scan count labels `storage_entries`,
+`malformed_keys`, `decoded_entries`, `registered_entries`,
+`blocked_registered`, `eligible_candidates`, and `top_candidates`.
 
 | Signal | Source | What to watch |
 |--------|--------|---------------|
@@ -445,9 +529,9 @@ count labels `storage_entries`, `malformed_keys`, `decoded_entries`,
 | Indexer | `/metrics` `neo_node_service_enabled{service="indexer"}`, `neo_node_indexer_up`, `neo_node_indexer_blocks_behind`, `neo_node_indexer_synced`, `listservices`, `getindexerstatus` | Disabled unexpectedly, status read failures, height lag |
 | Native hooks | `/metrics` `neo_sync_native_contract_hook_*{trigger=...,contract=...}` | Single native contract dominating OnPersist/PostPersist latency |
 | NeoToken refresh | `/metrics` `neo_sync_neotoken_onpersist_stage_*{stage=...}` | Committee recompute, cache read/write, or notification work dominating NeoToken OnPersist |
-| NeoToken committee scan | `/metrics` `neo_sync_neotoken_committee_compute_stage_*{stage=...}` and `neo_sync_neotoken_committee_candidate_scan_*{kind=...}` | Candidate prefix scan, candidate-state decode, Policy blocked lookup, top-M maintenance, and scanned/eligible counts |
+| NeoToken committee scan | `/metrics` `neo_sync_neotoken_committee_compute_stage_*{stage=...}` and `neo_sync_neotoken_committee_candidate_scan_*{kind=...}` | Candidate prefix scan, candidate-state decode, Policy blocked-set prefetch, per-candidate blocked membership check, top-M maintenance, and scanned/eligible counts |
 | StateService MPT | `/metrics` `neo_state_service_mpt_apply_*`, stage/count labels, `getstateroot`, and checkpoint probes | Apply failures, increasing per-block changes/overlay entries, MPT stage hot spots, or MPT height lag vs. chain |
-| RocksDB disk | host filesystem agent | Free space, IOPS, latency on the data volume |
+| Storage disk | host filesystem agent | Free space, IOPS, latency on the data volume |
 | Process | host agent (`node_exporter` / cAdvisor) | Memory, CPU, file descriptors vs. `nofile` limit |
 
 Suggested alerts to start with:
@@ -457,7 +541,7 @@ Suggested alerts to start with:
 | Height lag | Local height behind a reference by more than N blocks for M minutes |
 | Low peers | Peer count below threshold for M minutes |
 | Mempool anomaly | Size stuck at 0 or exceeding a cap |
-| Disk pressure | RocksDB volume free space < 20% or inode pressure |
+| Disk pressure | Storage volume free space < 20% or inode pressure |
 | FD pressure | Process FD usage > 80% of `nofile`; repeated restarts |
 
 For continuous correctness assurance, the repository ships state-root parity
@@ -532,7 +616,11 @@ reference response. Only promote the workspace to the long-running validation
 stack after this short check reports `status = "target-reached"`,
 `stateroot_matches_chain = true`, and `reference_stateroot.matches_local =
 true`. Then run the generated checkpoint-smoke command to preserve that first
-known-good full-state recovery point. The milestone-smoke command repeats the
+full-state recovery point. It is counted as usable only after its
+`CHECKPOINT_INFO` records restore verification metadata
+(`restore_verified=true`, `verified_height=<height>`,
+`verified_stateroot_root=<roothash>`, and `verified_against_reference=true`).
+The milestone-smoke command repeats the
 same reference-checked bounded replay at three increasing heights and creates a
 full-state checkpoint after each successful milestone, which gives the clean
 workspace an immediate `base` / `mid` / `latest` recovery ladder before handing
@@ -555,7 +643,11 @@ python3 scripts/analyze-stateroot-milestone-history.py \
 
 When `--checkpoint-root` is provided, the report includes the retained
 full-state checkpoint inventory, the latest on-disk recovery height, and any
-successful milestone checkpoints that have since been rotated out.
+successful milestone checkpoints that have since been rotated out. A checkpoint
+directory that merely contains `mainnet/`, `StateRoot/`, and `CHECKPOINT_INFO`
+is structurally present, not restore-verified; milestone and maintainer scripts
+do not count it as usable for state validation until the restore verification
+metadata is present and matches the checkpoint height.
 The report also includes a `throughput_trend` series and
 `throughput_regressions` list. By default, any adjacent milestone drop of 25%
 or more is flagged; adjust that with `--regression-threshold-percent <N>` when
@@ -572,7 +664,10 @@ When the validation config enables `[telemetry.metrics]`, pass
 `--metrics-url http://127.0.0.1:<port>/metrics` to
 `run-stateroot-milestones.py`; each height poll samples the sync and
 StateService MPT Prometheus metrics and stores a compact
-`metrics_sample_summary` in the JSONL history for hotspot analysis.
+`metrics_sample_summary` in the JSONL history for hotspot analysis. When
+`run-stateroot-milestones.py --fast-sync` is used, the bounded package import
+may reach the milestone and exit before telemetry starts, so the runner samples
+metrics opportunistically but does not require `--require-metrics-samples`.
 
 ```bash
 python3 scripts/run-mainnet-validation-stack.py \
@@ -590,22 +685,30 @@ python3 scripts/run-mainnet-validation-stack.py --stop
 ```
 
 During extended MainNet sync or state-root replay, keep at least these three
-phases current: early `base`, middle `mid`, and near-tip `latest`. If parity
-diverges or an upgrade requires rollback, restore the nearest known-good
-checkpoint, rerun validation from that height, and only discard older phases
-after a newer validated phase exists.
+restore-verified phases current: early `base`, middle `mid`, and near-tip
+`latest`. If parity diverges or an upgrade requires rollback, restore the
+nearest checkpoint whose metadata shows `restore_verified=true` and
+`verified_stateroot_root=<roothash>` plus `verified_against_reference=true`,
+rerun validation from that height, and only discard older phases after a newer
+validated phase exists.
 
 Use `scripts/maintain-stateroot-checkpoints.py` to turn the status file into a
 concrete maintenance plan. It defaults to a JSON dry-run so operators can review
 which phases will be skipped or created; add `--execute` only after confirming
 the status file reflects a healthy validator run. If a target `h<height>`
-directory already exists but is incomplete, the plan reports `blocked` so you
-can inspect or remove the partial checkpoint before creating a replacement.
-When the status file is not present yet, the plan reports `waiting` and takes no
-action. The maintainer only creates a checkpoint when the target height is the
-current durable chain/StateRoot height; it defers older historical stages
-because a live RocksDB snapshot cannot reconstruct an earlier height after the
-node has already advanced.
+directory already exists but is incomplete or lacks restore verification
+metadata, the plan reports `blocked` so you can inspect or remove the checkpoint
+before creating a replacement. When the status file is not present yet, the plan
+reports `waiting` and takes no action. The maintainer only creates a checkpoint
+when the target height is the current durable chain/StateRoot height and the
+validator status includes the matching `local_validated_height` /
+`last_validated_block` evidence; it counts an existing checkpoint as usable
+only when `CHECKPOINT_INFO` also records `restore_verified=true`,
+`verified_height=<height>`, `verified_stateroot_root=<roothash>`, and
+`verified_against_reference=true`. It defers
+older historical stages or incomplete status payloads because a live store
+snapshot cannot reconstruct an earlier height after the node has already
+advanced.
 
 ```bash
 python3 scripts/maintain-stateroot-checkpoints.py \
@@ -837,7 +940,7 @@ node TOML override those defaults before the daemon starts the server.
 | ☐ | Do not expose wallet-mutating methods (`openwallet`, `sendfrom`, `sendmany`, `sendtoaddress`, `importprivkey`, `dumpprivkey`) on untrusted networks. |
 | ☐ | Run the node as a dedicated non-root user. |
 | ☐ | Restrict P2P and RPC ports at the host/cloud firewall; limit connections per IP (`max_connections_per_address`). |
-| ☐ | Set `LimitNOFILE=65535` (or equivalent) so RocksDB and P2P have enough descriptors. |
+| ☐ | Set `LimitNOFILE=65535` (or equivalent) so storage and P2P have enough descriptors. |
 | ☐ | Configure log shipping and rotation; alert on errors and restarts. |
 | ☐ | Configure automated backups and test restores. |
 
@@ -847,7 +950,7 @@ node TOML override those defaults before the daemon starts the server.
 
 ## Backups
 
-RocksDB is the source of truth. For a consistent snapshot, stop the service, archive the data directory, and restart.
+The persistent store is the source of truth. For a consistent snapshot, stop the service, archive the data directory, and restart.
 
 ```bash
 sudo systemctl stop neo-node
@@ -859,25 +962,22 @@ Helper scripts in `scripts/` automate this:
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/run-bounded-mainnet-replay.py --config <toml> --target-height <N>` | Runs `neo-node` with `--stop-at-height`; with `--db`, `--stateroot-db`, `--require-stateroot-height-match`, `--reference`, and `--require-reference-stateroot-match`, also verifies the post-run chain Ledger height matches the StateService MPT height and the local root matches reference `getstateroot`. |
-| `scripts/run-stateroot-milestones.py --config <toml> --milestone <N>` | Runs multiple reference-checked bounded replay milestones in order and creates a full chain + StateRoot checkpoint after each successful height. Defaults to compact JSON with a throughput/root summary; use `--summary-jsonl <path>` to append run history and `--include-command-output` for raw child stdout/stderr. |
+| `scripts/run-bounded-mainnet-replay.py --config <toml> --target-height <N>` | Runs `neo-node` with `--stop-at-height`; add `--fast-sync` to validate the built-in fast-sync package path or `--import-chain <chain.acc>` to validate an extracted package. With `--db`, `--stateroot-db`, `--require-stateroot-height-match`, `--reference`, and `--require-reference-stateroot-match`, also verifies the post-run chain Ledger height matches the StateService MPT height and the local root matches reference `getstateroot`. |
+| `scripts/run-stateroot-milestones.py --config <toml> --milestone <N>` | Runs multiple reference-checked bounded replay milestones in order and creates a full chain + StateRoot checkpoint after each successful height. Add `--fast-sync --initial-height 0` when the first proof must exercise the built-in package importer. Defaults to compact JSON with a throughput/root summary; use `--summary-jsonl <path>` to append run history and `--include-command-output` for raw child stdout/stderr. |
 | `scripts/analyze-stateroot-milestone-history.py <milestone-summary.jsonl>` | Reads milestone history and reports latest root/height, average throughput, slowest/fastest milestones, adjacent throughput trend/regressions, and reference/state mismatch counts. Add `--checkpoint-root <dir>` to include the current on-disk full-state checkpoint inventory and rotated-out history heights. |
 | `scripts/backup-rocksdb.sh <rocksdb_path> [backup_dir]` | One-shot archive of the RocksDB directory (also via `make backup-rocksdb`). |
 | `scripts/maintain-stateroot-checkpoints.py [options]` | Reads the continuous state-root status file and keeps the reported `base`, `mid`, and `latest` checkpoints present; defaults to dry-run, use `--execute` to create missing phases. Use `--node-config` to derive paths, or `--chain-db` / `--stateroot-db` for manual validation/replay layouts. |
 | `scripts/checkpoint-on-height.sh <writer_pid or none> [options]` | Height-labelled chain + StateRoot checkpoint; use `--once --height <height>` for the `base`, `mid`, and `latest` recovery stages reported by continuous state-root validation. Accepts explicit `--chain-db` / `--stateroot-db` paths; pass `--chain-only` for bounded replay checkpoints that do not include a StateRoot DB. |
-| `scripts/restore-checkpoint.sh <height|label|latest|--at-or-below N> [options]` | Restores a height-labelled or named checkpoint. Accepts `--chain-db` / `--stateroot-db` targets for validation or bounded replay directories instead of only restoring into `data/mainnet`. |
+| `scripts/restore-checkpoint.sh <height|latest|--at-or-below N> [options]` | Restores a height-labelled `h<height>` checkpoint. Accepts `--chain-db` / `--stateroot-db` targets for validation or bounded replay directories instead of only restoring into `data/mainnet`. |
 | `scripts/compare-offline-gas-storage.py --db <rocksdb_path> --address <ADDR>` | Uses `neo-db-probe` plus official state-root RPCs to compare selected offline GAS AccountState balances before promoting a checkpoint. |
 | `scripts/checkpoint-live-rocksdb.sh <writer_pid> <rocksdb_path> [root]` | Live checkpoint with a short pause, then resume. |
 | `scripts/checkpoint-live-rocksdb-loop.sh <writer_pid> <rocksdb_path> [interval] [max] [root]` | Periodic live checkpoints with rotation (default interval 1800s, retention 8). |
 
 `scripts/restore-checkpoint.sh` can restore a chain-only checkpoint when its
-`CHECKPOINT_INFO` contains `state_root_included=false`, or a legacy
-`mode=storage-sample` checkpoint whose chain DB is stored under `data/` and
-whose StateRoot is marked missing. In that mode it restores only the chain DB
-and removes or stashes the target StateRoot directory so an old MPT database
-cannot be mixed with the restored chain. `latest` and `--at-or-below N` consider
-both `h<height>` directories and named checkpoints with `height=<N>` in
-`CHECKPOINT_INFO`.
+`CHECKPOINT_INFO` contains `state_root_included=false`. In that mode it restores
+only the chain DB and removes or stashes the target StateRoot directory so an
+old MPT database cannot be mixed with the restored chain. `latest` and
+`--at-or-below N` consider only production `h<height>` checkpoint directories.
 
 To restore: stop any service that is writing the target chain or StateRoot DB,
 extract the archive into the configured storage path, fix ownership for the
@@ -929,5 +1029,5 @@ For breaking schema changes, check the changelog; you may need to resync from ge
 | Out of sync / zero peers | Restart; verify P2P port reachability, network magic, and seed list. If the DB is corrupt, restore from backup and resync. |
 | Startup aborts (integrity / version / network marker) | Do not loop-restart the same directory. Move it aside, restore a backup, or resync from a clean path. |
 | RPC overloaded | Front the node with a rate-limiting reverse proxy; consider moving RPC to a dedicated instance. |
-| Disk full | Expand the volume, prune old backups/logs, keep RocksDB on fast durable storage. |
+| Disk full | Expand the volume, prune old backups/logs, keep the persistent store on fast durable storage. |
 | Persistent block-persist failures on canonical blocks | Treat as divergent state; resync from a clean directory or trusted snapshot. |

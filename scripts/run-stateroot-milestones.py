@@ -15,6 +15,11 @@ from typing import Any, Callable
 DEFAULT_NODE_BIN = "target/debug/neo-node"
 DEFAULT_PROBE_BIN = "target/debug/neo-db-probe"
 DEFAULT_RPC = "http://127.0.0.1:21332"
+DEFAULT_STORAGE_PROVIDER = "mdbx"
+DEFAULT_RESTORE_SCRIPT = "scripts/restore-checkpoint.sh"
+DEFAULT_SYNC_SPEED_FLOOR_BPS = 1500.0
+DEFAULT_SYNC_SPEED_CEILING_BPS = 2000.0
+DEFAULT_MINIMUM_CHECKPOINT_COUNT = 3
 DEFAULT_REFERENCE_RPCS = [
     "http://seed1.neo.org:10332",
     "http://seed2.neo.org:10332",
@@ -22,6 +27,12 @@ DEFAULT_REFERENCE_RPCS = [
     "http://seed4.neo.org:10332",
     "http://seed5.neo.org:10332",
 ]
+CHECKPOINT_VERIFICATION_FIELDS = (
+    "restore_verified",
+    "verified_height",
+    "verified_stateroot_root",
+    "verified_against_reference",
+)
 
 
 def parse_height_values(values: list[str]) -> list[int]:
@@ -88,7 +99,14 @@ def bounded_command(
     probe_bin: Path,
     references: list[str],
     node_output_log: Path,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     metrics_url: str | None = None,
+    sync_speed_floor_bps: float | None = DEFAULT_SYNC_SPEED_FLOOR_BPS,
+    sync_speed_ceiling_bps: float | None = DEFAULT_SYNC_SPEED_CEILING_BPS,
+    fast_sync: bool = False,
+    fast_sync_cache: Path | None = None,
+    initial_height: int | None = None,
+    require_metrics_samples: bool = True,
 ) -> list[str]:
     command = [
         "python3",
@@ -111,8 +129,20 @@ def bounded_command(
         str(stateroot_db),
         "--probe-bin",
         str(probe_bin),
+        "--storage-provider",
+        storage_provider,
         "--require-stateroot-height-match",
     ]
+    if fast_sync:
+        command.append("--fast-sync")
+        if fast_sync_cache is not None:
+            command.extend(["--fast-sync-cache", str(fast_sync_cache)])
+    if initial_height is not None:
+        command.extend(["--initial-height", str(initial_height)])
+    if sync_speed_floor_bps is not None:
+        command.extend(["--sync-speed-floor-bps", str(sync_speed_floor_bps)])
+    if sync_speed_ceiling_bps is not None:
+        command.extend(["--sync-speed-ceiling-bps", str(sync_speed_ceiling_bps)])
     if references:
         command.extend(
             [
@@ -123,6 +153,8 @@ def bounded_command(
         )
     if metrics_url:
         command.extend(["--metrics-url", metrics_url])
+        if require_metrics_samples:
+            command.append("--require-metrics-samples")
     command.extend(["--node-output-log", str(node_output_log)])
     return command
 
@@ -135,6 +167,7 @@ def checkpoint_command(
     stateroot_db: Path,
     checkpoint_root: Path,
     script: Path,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> list[str]:
     return [
         str(script),
@@ -148,9 +181,401 @@ def checkpoint_command(
         str(chain_db),
         "--stateroot-db",
         str(stateroot_db),
+        "--storage-provider",
+        storage_provider,
         "--root",
         str(checkpoint_root),
     ]
+
+
+def checkpoint_restore_root(checkpoint_root: Path, height: int) -> Path:
+    return checkpoint_root / ".restore-probe" / f"h{height}"
+
+
+def checkpoint_restore_command(
+    *,
+    height: int,
+    checkpoint_root: Path,
+    script: Path,
+) -> list[str]:
+    restore_root = checkpoint_restore_root(checkpoint_root, height)
+    return [
+        str(script),
+        str(height),
+        "--root",
+        str(checkpoint_root),
+        "--chain-db",
+        str(restore_root / "mainnet"),
+        "--stateroot-db",
+        str(restore_root / "StateRoot"),
+        "--yes",
+    ]
+
+
+def checkpoint_plan_summary(milestones: list[int], minimum_checkpoint_count: int) -> dict:
+    planned_count = len(milestones)
+    return {
+        "planned_checkpoint_count": planned_count,
+        "minimum_checkpoint_count": minimum_checkpoint_count,
+        "minimum_checkpoint_count_met": planned_count >= minimum_checkpoint_count,
+        "missing_checkpoint_count": max(minimum_checkpoint_count - planned_count, 0),
+    }
+
+
+def checkpoint_metadata_value(path: Path, key: str) -> str | None:
+    info = path / "CHECKPOINT_INFO"
+    if not info.exists():
+        return None
+    for line in info.read_text(encoding="utf-8").splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1]
+    return None
+
+
+def checkpoint_metadata(path: Path) -> dict[str, str]:
+    info = path / "CHECKPOINT_INFO"
+    if not info.exists():
+        return {}
+    fields: dict[str, str] = {}
+    for line in info.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            fields[key.strip()] = value.strip()
+    return fields
+
+
+def run_probe_json(command: list[str], runner: Callable[..., Any] = subprocess.run) -> dict:
+    completed = runner(
+        command,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return json.loads(completed.stdout)
+
+
+def probe_command_prefix(probe_bin: Path, db_path: Path, storage_provider: str) -> list[str]:
+    return [
+        str(probe_bin),
+        "--db",
+        str(db_path),
+        "--storage-provider",
+        storage_provider,
+    ]
+
+
+def read_probe_ledger_height(
+    db_path: Path,
+    probe_bin: Path,
+    runner: Callable[..., Any] = subprocess.run,
+    *,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+) -> int | None:
+    payload = run_probe_json(
+        [
+            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            "--contract-id",
+            "-4",
+            "--key-hex",
+            "0c",
+            "--decode",
+            "hash-index",
+        ],
+        runner,
+    )
+    decoded = payload.get("decoded") or {}
+    if "index" not in decoded:
+        return None
+    return int(decoded["index"])
+
+
+def read_probe_mpt_state_height(
+    db_path: Path,
+    probe_bin: Path,
+    runner: Callable[..., Any] = subprocess.run,
+    *,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+) -> int | None:
+    payload = run_probe_json(
+        [
+            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            "--mpt-state-height",
+        ],
+        runner,
+    )
+    height = payload.get("height") or {}
+    decoded = height.get("decoded") or {}
+    if "current_local_root_index" not in decoded:
+        return None
+    return int(decoded["current_local_root_index"])
+
+
+def read_probe_mpt_state_root(
+    db_path: Path,
+    probe_bin: Path,
+    index: int,
+    runner: Callable[..., Any] = subprocess.run,
+    *,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+) -> str | None:
+    payload = run_probe_json(
+        [
+            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            "--mpt-state-root",
+            str(index),
+        ],
+        runner,
+    )
+    state_root = payload.get("state_root") or {}
+    decoded = state_root.get("decoded") or {}
+    return decoded.get("roothash")
+
+
+def checkpoint_content_verification_reason(
+    path: Path,
+    *,
+    expected_verified_height: int | None,
+    expected_verified_stateroot_root: str | None,
+    probe_bin: Path | None,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+    probe_runner: Callable[..., Any],
+) -> str | None:
+    if probe_bin is None or expected_verified_height is None:
+        return None
+    metadata = checkpoint_metadata(path)
+    effective_storage_provider = metadata.get("storage_provider") or storage_provider
+    chain_db = path / "mainnet"
+    stateroot_db = path / "StateRoot"
+    try:
+        chain_height = read_probe_ledger_height(
+            chain_db,
+            probe_bin,
+            probe_runner,
+            storage_provider=effective_storage_provider,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"checkpoint chain database probe failed: {exc}"
+    if chain_height != expected_verified_height:
+        return (
+            "checkpoint chain database height does not match expected verified height: "
+            f"height={chain_height}, expected={expected_verified_height}"
+        )
+    try:
+        stateroot_height = read_probe_mpt_state_height(
+            stateroot_db,
+            probe_bin,
+            probe_runner,
+            storage_provider=effective_storage_provider,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"checkpoint StateRoot database height probe failed: {exc}"
+    if stateroot_height != expected_verified_height:
+        return (
+            "checkpoint StateRoot database height does not match expected verified height: "
+            f"height={stateroot_height}, expected={expected_verified_height}"
+        )
+    if expected_verified_stateroot_root is None:
+        return None
+    try:
+        stateroot_root = read_probe_mpt_state_root(
+            stateroot_db,
+            probe_bin,
+            expected_verified_height,
+            probe_runner,
+            storage_provider=effective_storage_provider,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"checkpoint StateRoot root probe failed: {exc}"
+    if (
+        stateroot_root is None
+        or stateroot_root.lower() != expected_verified_stateroot_root.lower()
+    ):
+        return (
+            "checkpoint StateRoot root does not match expected verified root: "
+            f"root={stateroot_root}, expected={expected_verified_stateroot_root}"
+        )
+    return None
+
+
+def checkpoint_verification_reason(
+    path: Path,
+    *,
+    expected_verified_height: int | None = None,
+    expected_verified_stateroot_root: str | None = None,
+    expected_verified_against_reference: bool | None = None,
+) -> str | None:
+    metadata = checkpoint_metadata(path)
+    missing = [field for field in CHECKPOINT_VERIFICATION_FIELDS if not metadata.get(field)]
+    if missing:
+        return "missing restore verification metadata: " + ", ".join(missing)
+
+    height_text = metadata.get("height")
+    verified_height_text = metadata.get("verified_height")
+    if height_text is not None and verified_height_text != height_text:
+        return (
+            "restore verification height does not match checkpoint height: "
+            f"height={height_text}, verified_height={verified_height_text}"
+        )
+    if metadata["restore_verified"].lower() != "true":
+        return "restore verification metadata is not marked restore_verified=true"
+    if metadata["verified_against_reference"].lower() != "true":
+        return "restore verification metadata is not marked verified_against_reference=true"
+    if expected_verified_height is not None:
+        expected_height_text = str(expected_verified_height)
+        if height_text != expected_height_text:
+            return (
+                "checkpoint height does not match expected verified height: "
+                f"height={height_text}, expected={expected_height_text}"
+            )
+        if verified_height_text != expected_height_text:
+            return (
+                "verified_height does not match expected height: "
+                f"verified_height={verified_height_text}, expected={expected_height_text}"
+            )
+    if expected_verified_stateroot_root is not None:
+        actual_root = metadata.get("verified_stateroot_root", "")
+        if actual_root.lower() != expected_verified_stateroot_root.lower():
+            return (
+                "verified_stateroot_root does not match expected root: "
+                f"verified_stateroot_root={actual_root}, "
+                f"expected={expected_verified_stateroot_root}"
+            )
+    if (
+        expected_verified_against_reference is not None
+        and (metadata["verified_against_reference"].lower() == "true")
+        != expected_verified_against_reference
+    ):
+        return (
+            "verified_against_reference does not match expected value: "
+            f"verified_against_reference={metadata['verified_against_reference']}, "
+            f"expected={str(expected_verified_against_reference).lower()}"
+        )
+    return None
+
+
+def checkpoint_inventory(
+    path: Path,
+    *,
+    expected_verified_height: int | None = None,
+    expected_verified_stateroot_root: str | None = None,
+    expected_verified_against_reference: bool | None = None,
+    probe_bin: Path | None = None,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+    probe_runner: Callable[..., Any] = subprocess.run,
+    restore_roundtrip_verified: bool | None = None,
+) -> dict[str, Any]:
+    has_chain = (path / "mainnet").is_dir()
+    has_stateroot = (path / "StateRoot").is_dir()
+    if checkpoint_metadata_value(path, "state_root_included") == "false":
+        has_stateroot = False
+    verification_reason = checkpoint_verification_reason(
+        path,
+        expected_verified_height=expected_verified_height,
+        expected_verified_stateroot_root=expected_verified_stateroot_root,
+        expected_verified_against_reference=expected_verified_against_reference,
+    )
+    content_verification_reason = None
+    if verification_reason is None and has_chain and has_stateroot:
+        content_verification_reason = checkpoint_content_verification_reason(
+            path,
+            expected_verified_height=expected_verified_height,
+            expected_verified_stateroot_root=expected_verified_stateroot_root,
+            probe_bin=probe_bin,
+            storage_provider=storage_provider,
+            probe_runner=probe_runner,
+        )
+    usable_for_state_validation = bool(
+        path.is_dir()
+        and (path / "CHECKPOINT_INFO").is_file()
+        and not (path / "CHECKPOINT_IN_PROGRESS").exists()
+        and has_chain
+        and has_stateroot
+        and verification_reason is None
+        and content_verification_reason is None
+        and restore_roundtrip_verified is not False
+    )
+    restore_verification_reason = None
+    if restore_roundtrip_verified is False:
+        restore_verification_reason = "checkpoint has not passed restore roundtrip verification"
+    reason = None if usable_for_state_validation else checkpoint_inventory_reason(
+        path,
+        has_chain=has_chain,
+        has_stateroot=has_stateroot,
+        verification_reason=(
+            verification_reason
+            or content_verification_reason
+            or restore_verification_reason
+        ),
+    )
+    return {
+        "path": str(path),
+        "exists": path.is_dir(),
+        "storage_provider": checkpoint_metadata(path).get(
+            "storage_provider",
+            storage_provider,
+        ),
+        "has_checkpoint_info": (path / "CHECKPOINT_INFO").is_file(),
+        "in_progress": (path / "CHECKPOINT_IN_PROGRESS").exists(),
+        "has_chain": has_chain,
+        "has_stateroot": has_stateroot,
+        "restore_roundtrip_verified": restore_roundtrip_verified is True,
+        "usable_for_state_validation": usable_for_state_validation,
+        "reason": reason,
+    }
+
+
+def retained_checkpoint_inventory(
+    checkpoint_root: Path,
+    milestones: list[int],
+    *,
+    expected_roots: dict[int, str] | None = None,
+    restore_roundtrip_by_height: dict[int, bool] | None = None,
+    probe_bin: Path | None = None,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+    probe_runner: Callable[..., Any] = subprocess.run,
+) -> dict[str, Any]:
+    retained = []
+    expected_roots = expected_roots or {}
+    restore_roundtrip_by_height = restore_roundtrip_by_height or {}
+    for height in milestones:
+        inventory = checkpoint_inventory(
+            checkpoint_root / f"h{height}",
+            expected_verified_height=height,
+            expected_verified_stateroot_root=expected_roots.get(height),
+            expected_verified_against_reference=True,
+            probe_bin=probe_bin,
+            storage_provider=storage_provider,
+            probe_runner=probe_runner,
+            restore_roundtrip_verified=restore_roundtrip_by_height.get(height, False),
+        )
+        if inventory["usable_for_state_validation"]:
+            retained.append(inventory)
+    return {
+        "retained_usable_checkpoint_count": len(retained),
+        "retained_missing_checkpoint_count": max(len(milestones) - len(retained), 0),
+        "retained_usable_checkpoints": retained,
+    }
+
+
+def checkpoint_inventory_reason(
+    path: Path,
+    *,
+    has_chain: bool,
+    has_stateroot: bool,
+    verification_reason: str | None,
+) -> str | None:
+    if not path.is_dir():
+        return "checkpoint directory is missing"
+    if not (path / "CHECKPOINT_INFO").is_file():
+        return "missing CHECKPOINT_INFO"
+    if (path / "CHECKPOINT_IN_PROGRESS").exists():
+        return "checkpoint is still in progress"
+    if not has_chain:
+        return "missing chain database snapshot"
+    if not has_stateroot:
+        return "missing StateRoot database snapshot"
+    return verification_reason
 
 
 def build_plan(
@@ -169,10 +594,19 @@ def build_plan(
     checkpoint_root: Path,
     checkpoint_script: Path,
     log_dir: Path,
+    restore_script: Path = Path(DEFAULT_RESTORE_SCRIPT),
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     metrics_url: str | None = None,
+    sync_speed_floor_bps: float | None = DEFAULT_SYNC_SPEED_FLOOR_BPS,
+    sync_speed_ceiling_bps: float | None = DEFAULT_SYNC_SPEED_CEILING_BPS,
+    minimum_checkpoint_count: int = DEFAULT_MINIMUM_CHECKPOINT_COUNT,
+    fast_sync: bool = False,
+    fast_sync_cache: Path | None = None,
+    initial_height: int | None = None,
 ) -> dict:
     steps = []
     for height in milestones:
+        is_first_fast_sync_step = fast_sync and height == milestones[0]
         steps.append(
             {
                 "height": height,
@@ -181,14 +615,21 @@ def build_plan(
                     node_bin=node_bin,
                     rpc_url=rpc_url,
                     target_height=height,
-                    poll_interval=poll_interval,
+                    poll_interval=1.0 if is_first_fast_sync_step else poll_interval,
                     max_seconds=max_seconds,
                     chain_db=chain_db,
                     stateroot_db=stateroot_db,
                     probe_bin=probe_bin,
+                    storage_provider=storage_provider,
                     references=references,
                     node_output_log=log_dir / f"neo-node-milestone-h{height}.log",
                     metrics_url=metrics_url,
+                    sync_speed_floor_bps=sync_speed_floor_bps,
+                    sync_speed_ceiling_bps=sync_speed_ceiling_bps,
+                    fast_sync=is_first_fast_sync_step,
+                    fast_sync_cache=(fast_sync_cache if is_first_fast_sync_step else None),
+                    initial_height=initial_height if is_first_fast_sync_step else None,
+                    require_metrics_samples=metrics_url is not None,
                 ),
                 "checkpoint_command": checkpoint_command(
                     height=height,
@@ -197,6 +638,12 @@ def build_plan(
                     stateroot_db=stateroot_db,
                     checkpoint_root=checkpoint_root,
                     script=checkpoint_script,
+                    storage_provider=storage_provider,
+                ),
+                "checkpoint_restore_command": checkpoint_restore_command(
+                    height=height,
+                    checkpoint_root=checkpoint_root,
+                    script=restore_script,
                 ),
             }
         )
@@ -205,12 +652,21 @@ def build_plan(
         "config": str(config),
         "node_bin": str(node_bin),
         "probe_bin": str(probe_bin),
+        "storage_provider": storage_provider,
         "chain_db": str(chain_db),
         "stateroot_db": str(stateroot_db),
         "checkpoint_root": str(checkpoint_root),
+        "restore_script": str(restore_script),
         "milestones": milestones,
         "reference_rpcs": references,
         "metrics_url": metrics_url,
+        "fast_sync": fast_sync,
+        "fast_sync_cache": str(fast_sync_cache) if fast_sync_cache is not None else None,
+        "initial_height": initial_height,
+        "sync_speed_floor_blocks_per_second": sync_speed_floor_bps,
+        "sync_speed_ceiling_blocks_per_second": sync_speed_ceiling_bps,
+        "minimum_checkpoint_count": minimum_checkpoint_count,
+        "checkpoint_plan": checkpoint_plan_summary(milestones, minimum_checkpoint_count),
         "steps": steps,
     }
 
@@ -295,22 +751,49 @@ def metrics_sample_summary(report: dict) -> dict:
             except (TypeError, ValueError):
                 continue
 
+    metrics = {
+        name: {
+            "sample_count": len(values),
+            "first": values[0],
+            "last": values[-1],
+            "min": min(values),
+            "max": max(values),
+            "average": sum(values) / len(values),
+        }
+        for name, values in sorted(metrics_by_name.items())
+        if values
+    }
     return {
         "sample_count": len(samples),
         "metrics_error_count": metrics_error_count,
-        "metrics": {
-            name: {
-                "sample_count": len(values),
-                "first": values[0],
-                "last": values[-1],
-                "min": min(values),
-                "max": max(values),
-                "average": sum(values) / len(values),
-            }
-            for name, values in sorted(metrics_by_name.items())
-            if values
-        },
+        "metrics": metrics,
+        "hot_metrics_by_average_us": hot_metrics_by_average_us(metrics),
     }
+
+
+def hot_metrics_by_average_us(metrics: dict[str, dict], limit: int = 5) -> list[dict[str, Any]]:
+    hot = []
+    for name, stats in metrics.items():
+        metric_name = name.split("{", 1)[0]
+        if not metric_name.endswith("_us"):
+            continue
+        try:
+            average_us = float(stats["average"])
+            last_us = float(stats["last"])
+            max_us = float(stats["max"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        hot.append(
+            {
+                "name": name,
+                "average_us": average_us,
+                "last_us": last_us,
+                "max_us": max_us,
+                "sample_count": int(stats.get("sample_count", 0)),
+            }
+        )
+    hot.sort(key=lambda item: (-item["average_us"], item["name"]))
+    return hot[:limit]
 
 
 def milestone_summary(result: dict) -> dict:
@@ -318,25 +801,383 @@ def milestone_summary(result: dict) -> dict:
     post_probe = report.get("post_probe") or {}
     root = post_probe.get("stateroot_root") or {}
     reference = post_probe.get("reference_stateroot") or {}
+    checkpoint = result.get("checkpoint_inventory") or {}
+    speed_proof = speed_proof_summary(report)
     return {
         "height": result.get("height"),
         "status": report.get("status"),
         "last_height": report.get("last_height"),
         "blocks_per_second": report.get("blocks_per_second", 0.0),
         "elapsed_seconds": report.get("elapsed_seconds", 0.0),
+        "speed_proof_source": speed_proof["source"],
+        "import_window_blocks_per_second": speed_proof["import_window_blocks_per_second"],
+        "replay_window_blocks_per_second": speed_proof["replay_window_blocks_per_second"],
         "stateroot_matches_chain": post_probe.get("stateroot_matches_chain"),
         "reference_matches_local": reference.get("matches_local"),
         "successful_reference_samples": reference.get("successful_samples", 0),
         "local_root": root.get("root"),
-        "checkpoint_created": result.get("checkpoint_returncode") == 0,
+        "checkpoint_created": checkpoint.get("usable_for_state_validation") is True,
+        "checkpoint_path": checkpoint.get("path"),
+        "sync_proof": report.get("sync_proof"),
         "height_sample_rate_summary": height_sample_rate_summary(report),
         "metrics_sample_summary": metrics_sample_summary(report),
     }
 
 
-def build_run_summary(plan: dict, results: list[dict], mode: str) -> dict:
+def post_probe_height_error(
+    post_probe: dict[str, Any],
+    *,
+    expected_height: int,
+    references: list[str],
+) -> str | None:
+    checks = [
+        ("chain_height", (post_probe.get("chain_height") or {}).get("height")),
+        ("stateroot_height", (post_probe.get("stateroot_height") or {}).get("height")),
+        ("stateroot_root", (post_probe.get("stateroot_root") or {}).get("height")),
+    ]
+    if references:
+        checks.append(
+            (
+                "reference_stateroot",
+                (post_probe.get("reference_stateroot") or {}).get("index"),
+            )
+        )
+    for name, value in checks:
+        try:
+            actual_height = int(value)
+        except (TypeError, ValueError):
+            return f"{name} height proof is missing"
+        if actual_height != expected_height:
+            return (
+                f"{name} height does not match milestone: "
+                f"{actual_height} != {expected_height}"
+            )
+    return None
+
+
+def post_probe_checkpoint_error(
+    report: dict | None,
+    *,
+    references: list[str],
+    expected_height: int | None = None,
+) -> str | None:
+    if not isinstance(report, dict):
+        return "missing-bounded-report"
+    post_probe = report.get("post_probe")
+    if not isinstance(post_probe, dict):
+        return "missing-post-probe"
+    if post_probe.get("stateroot_matches_chain") is not True:
+        return "stateroot-mismatch"
+    stateroot_root = post_probe.get("stateroot_root")
+    if not isinstance(stateroot_root, dict) or not stateroot_root.get("root"):
+        return "missing-stateroot-root"
+    if expected_height is not None:
+        height_error = post_probe_height_error(
+            post_probe,
+            expected_height=expected_height,
+            references=references,
+        )
+        if height_error is not None:
+            return height_error
+    if references:
+        reference = post_probe.get("reference_stateroot")
+        if not isinstance(reference, dict):
+            return "missing-reference-stateroot"
+        if reference.get("matches_local") is not True:
+            return "reference-stateroot-mismatch"
+        try:
+            successful_samples = int(reference.get("successful_samples"))
+        except (TypeError, ValueError):
+            return "missing-reference-samples"
+        if successful_samples <= 0:
+            return "missing-reference-samples"
+        try:
+            sample_count = int(reference.get("sample_count"))
+        except (TypeError, ValueError):
+            return "missing-reference-samples"
+        if sample_count < len(references):
+            return (
+                "reference sample count is below configured references: "
+                f"{sample_count} < {len(references)}"
+            )
+        if successful_samples < len(references):
+            return (
+                "successful reference samples are below configured references: "
+                f"{successful_samples} < {len(references)}"
+            )
+    return None
+
+
+def bounded_height_proof_error(
+    report: dict | None,
+    *,
+    expected_height: int,
+) -> str | None:
+    if not isinstance(report, dict):
+        return "missing-bounded-report"
+    try:
+        target_height = int(report.get("target_height"))
+        last_height = int(report.get("last_height"))
+    except (TypeError, ValueError):
+        return "missing bounded height proof"
+    if target_height != expected_height:
+        return (
+            "bounded target height mismatch: "
+            f"{target_height} != {expected_height}"
+        )
+    if last_height < expected_height:
+        return (
+            "bounded last height below milestone: "
+            f"{last_height} < {expected_height}"
+        )
+    return None
+
+
+def import_window_speed_proof(report: dict | None) -> dict[str, Any] | None:
+    if not isinstance(report, dict):
+        return None
+    sync_proof = report.get("sync_proof")
+    if not isinstance(sync_proof, dict):
+        return None
+    sync_source = sync_proof.get("sync_source") or report.get("sync_source")
+    if sync_source != "fast-sync":
+        return None
+    import_report = sync_proof.get("fast_sync_import")
+    if not isinstance(import_report, dict):
+        return None
+    try:
+        bps = float(import_report["average_blocks_per_second"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {
+        "source": "fast-sync-import",
+        "blocks_per_second": bps,
+        "imported_blocks": import_report.get("imported_blocks"),
+        "final_height": import_report.get("final_height"),
+        "elapsed_seconds": import_report.get("elapsed_seconds"),
+        "throughput_status": import_report.get("throughput_status"),
+    }
+
+
+def speed_proof_summary(report: dict | None) -> dict[str, Any]:
+    import_proof = import_window_speed_proof(report)
+    replay_bps = 0.0
+    if isinstance(report, dict):
+        try:
+            replay_bps = float(report.get("blocks_per_second", 0.0))
+        except (TypeError, ValueError):
+            replay_bps = 0.0
+    if import_proof is not None:
+        return {
+            "source": import_proof["source"],
+            "import_window_blocks_per_second": import_proof["blocks_per_second"],
+            "replay_window_blocks_per_second": replay_bps,
+        }
+    return {
+        "source": "height-samples",
+        "import_window_blocks_per_second": None,
+        "replay_window_blocks_per_second": replay_bps,
+    }
+
+
+def speed_proof_error(
+    report: dict | None,
+    *,
+    floor_bps: float | None,
+    ceiling_bps: float | None,
+) -> str | None:
+    if floor_bps is None and ceiling_bps is None:
+        return None
+    if not isinstance(report, dict):
+        return "missing-bounded-report"
+
+    def has_node_metrics_proof() -> bool:
+        sync_proof = report.get("sync_proof")
+        if isinstance(sync_proof, dict):
+            hot_metrics = sync_proof.get("fast_sync_hot_metrics")
+            if isinstance(hot_metrics, dict) and hot_metrics:
+                return True
+        try:
+            if int(report.get("metrics_sample_count", 0)) > 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+        summary = report.get("metrics_summary")
+        if isinstance(summary, dict) and isinstance(summary.get("metrics"), dict):
+            if summary["metrics"]:
+                return True
+        return bool(metrics_sample_summary(report)["metrics"])
+
+    def fast_sync_reference_proof_error() -> str | None:
+        sync_proof = report.get("sync_proof")
+        if not isinstance(sync_proof, dict):
+            return "missing fast-sync reference proof"
+        reference = sync_proof.get("fast_sync_reference")
+        if not isinstance(reference, dict):
+            return "missing fast-sync reference proof"
+        required = ["endpoint", "block_height", "block_hash"]
+        missing = [field for field in required if not reference.get(field)]
+        if missing:
+            return "missing fast-sync reference proof fields: " + ", ".join(missing)
+        if "state_root_height" not in reference or "state_root_hash" not in reference:
+            return "missing fast-sync reference state-root proof"
+        return None
+
+    import_proof = import_window_speed_proof(report)
+    if import_proof is not None:
+        bps = float(import_proof["blocks_per_second"])
+        if floor_bps is not None and bps < floor_bps:
+            return (
+                "fast-sync import speed below configured floor: "
+                f"{bps:g} < {floor_bps:g} blocks/s"
+            )
+        if ceiling_bps is not None and bps > ceiling_bps:
+            return (
+                "fast-sync import speed above configured ceiling: "
+                f"{bps:g} > {ceiling_bps:g} blocks/s"
+            )
+        if not has_node_metrics_proof():
+            return "missing node metrics proof for speed claim"
+        reference_error = fast_sync_reference_proof_error()
+        if reference_error is not None:
+            return reference_error
+        return None
+    sample_summary = height_sample_rate_summary(report)
+    if sample_summary["interval_count"] <= 0:
+        return "missing height-sample speed proof"
+    min_blocks_per_second = float(sample_summary["min_blocks_per_second"])
+    max_blocks_per_second = float(sample_summary["max_blocks_per_second"])
+    if floor_bps is not None and min_blocks_per_second < floor_bps:
+        return (
+            "height sample speed below configured floor: "
+            f"{min_blocks_per_second:g} < {floor_bps:g} blocks/s"
+        )
+    if ceiling_bps is not None and max_blocks_per_second > ceiling_bps:
+        return (
+            "height sample speed above configured ceiling: "
+            f"{max_blocks_per_second:g} > {ceiling_bps:g} blocks/s"
+        )
+    if not has_node_metrics_proof():
+        return "missing node metrics proof for speed claim"
+    return None
+
+
+def checkpoint_verification_command(
+    command: list[str],
+    *,
+    verified_height: int,
+    verified_stateroot_root: str,
+    verified_against_reference: bool,
+) -> list[str]:
+    verified_command = [
+        *command,
+        "--restore-verified",
+        "--verified-height",
+        str(verified_height),
+        "--verified-stateroot-root",
+        verified_stateroot_root,
+    ]
+    if verified_against_reference:
+        verified_command.append("--verified-against-reference")
+    return verified_command
+
+
+def checkpoint_restore_probe(
+    command: list[str],
+    *,
+    checkpoint_root: Path,
+    height: int,
+    expected_verified_stateroot_root: str,
+    probe_bin: Path,
+    storage_provider: str,
+    runner: Callable[..., Any],
+) -> dict[str, Any]:
+    restore = run_command(command, runner)
+    restore_root = checkpoint_restore_root(checkpoint_root, height)
+    result: dict[str, Any] = {
+        "command": command,
+        "returncode": restore.returncode,
+        "path": str(restore_root),
+        "verified": False,
+    }
+    if restore.returncode != 0:
+        result["reason"] = "restore command failed"
+        result["stdout"] = getattr(restore, "stdout", "") or ""
+        result["stderr"] = getattr(restore, "stderr", "") or ""
+        return result
+
+    content_reason = checkpoint_content_verification_reason(
+        restore_root,
+        expected_verified_height=height,
+        expected_verified_stateroot_root=expected_verified_stateroot_root,
+        probe_bin=probe_bin,
+        storage_provider=storage_provider,
+        probe_runner=runner,
+    )
+    if content_reason is not None:
+        result["reason"] = content_reason
+        result["stdout"] = getattr(restore, "stdout", "") or ""
+        result["stderr"] = getattr(restore, "stderr", "") or ""
+        return result
+
+    result["verified"] = True
+    return result
+
+
+def expected_checkpoint_roots(results: list[dict]) -> dict[int, str]:
+    roots: dict[int, str] = {}
+    for result in results:
+        try:
+            height = int(result["height"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        report = result.get("bounded_report") or {}
+        root = (
+            (report.get("post_probe") or {})
+            .get("stateroot_root", {})
+            .get("root")
+        )
+        if root:
+            roots[height] = str(root)
+    return roots
+
+
+def restore_roundtrip_by_height(results: list[dict]) -> dict[int, bool]:
+    verified: dict[int, bool] = {}
+    for result in results:
+        try:
+            height = int(result["height"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        restore_probe = result.get("checkpoint_restore_probe") or {}
+        verified[height] = restore_probe.get("verified") is True
+    return verified
+
+
+def build_run_summary(
+    plan: dict,
+    results: list[dict],
+    mode: str,
+    *,
+    probe_runner: Callable[..., Any] = subprocess.run,
+) -> dict:
     milestones = [milestone_summary(result) for result in results]
     completed = [item for item in milestones if item.get("checkpoint_created")]
+    minimum_checkpoint_count = int(
+        plan.get("minimum_checkpoint_count", DEFAULT_MINIMUM_CHECKPOINT_COUNT)
+    )
+    retained = retained_checkpoint_inventory(
+        Path(plan["checkpoint_root"]),
+        plan["milestones"],
+        expected_roots=expected_checkpoint_roots(results),
+        restore_roundtrip_by_height=restore_roundtrip_by_height(results),
+        probe_bin=Path(plan["probe_bin"]),
+        storage_provider=plan.get("storage_provider", DEFAULT_STORAGE_PROVIDER),
+        probe_runner=probe_runner,
+    )
+    retained_minimum_checkpoint_count_met = (
+        retained["retained_usable_checkpoint_count"] >= minimum_checkpoint_count
+    )
     bps_values = [
         float(item["blocks_per_second"])
         for item in milestones
@@ -347,6 +1188,14 @@ def build_run_summary(plan: dict, results: list[dict], mode: str) -> dict:
         "mode": mode,
         "requested_milestones": plan["milestones"],
         "completed_heights": [item["height"] for item in completed],
+        "completed_checkpoint_count": len(completed),
+        "minimum_checkpoint_count": minimum_checkpoint_count,
+        "minimum_checkpoint_count_met": len(completed) >= minimum_checkpoint_count,
+        "missing_checkpoint_count": max(minimum_checkpoint_count - len(completed), 0),
+        "retained_usable_checkpoint_count": retained["retained_usable_checkpoint_count"],
+        "retained_minimum_checkpoint_count_met": retained_minimum_checkpoint_count_met,
+        "retained_missing_checkpoint_count": retained["retained_missing_checkpoint_count"],
+        "retained_usable_checkpoints": retained["retained_usable_checkpoints"],
         "latest_height": latest.get("last_height"),
         "latest_root": latest.get("local_root"),
         "average_blocks_per_second": sum(bps_values) / len(bps_values) if bps_values else 0.0,
@@ -413,12 +1262,70 @@ def run_milestones(
                 "mode": "failed",
                 "failed_height": step["height"],
                 "failure": "bounded-replay",
-                "summary": build_run_summary(plan, results, "failed"),
+                "summary": build_run_summary(plan, results, "failed", probe_runner=runner),
                 "results": results,
             }
 
-        checkpoint = run_command(step["checkpoint_command"], runner)
-        result["checkpoint_command"] = step["checkpoint_command"]
+        height_proof_error = bounded_height_proof_error(
+            bounded_report,
+            expected_height=step["height"],
+        )
+        if height_proof_error is not None:
+            result["bounded_height_proof_error"] = height_proof_error
+            result["bounded_stdout"] = getattr(bounded, "stdout", "") or ""
+            result["bounded_stderr"] = getattr(bounded, "stderr", "") or ""
+            return {
+                "mode": "failed",
+                "failed_height": step["height"],
+                "failure": "bounded-height-proof",
+                "summary": build_run_summary(plan, results, "failed", probe_runner=runner),
+                "results": results,
+            }
+
+        speed_error = speed_proof_error(
+            bounded_report,
+            floor_bps=plan.get("sync_speed_floor_blocks_per_second"),
+            ceiling_bps=plan.get("sync_speed_ceiling_blocks_per_second"),
+        )
+        if speed_error is not None:
+            result["speed_proof_error"] = speed_error
+            result["bounded_stdout"] = getattr(bounded, "stdout", "") or ""
+            result["bounded_stderr"] = getattr(bounded, "stderr", "") or ""
+            return {
+                "mode": "failed",
+                "failed_height": step["height"],
+                "failure": "speed-proof",
+                "summary": build_run_summary(plan, results, "failed", probe_runner=runner),
+                "results": results,
+            }
+
+        post_probe_error = post_probe_checkpoint_error(
+            bounded_report,
+            references=plan.get("reference_rpcs") or [],
+            expected_height=step["height"],
+        )
+        if post_probe_error is not None:
+            result["post_probe_error"] = post_probe_error
+            result["bounded_stdout"] = getattr(bounded, "stdout", "") or ""
+            result["bounded_stderr"] = getattr(bounded, "stderr", "") or ""
+            return {
+                "mode": "failed",
+                "failed_height": step["height"],
+                "failure": "post-probe",
+                "summary": build_run_summary(plan, results, "failed", probe_runner=runner),
+                "results": results,
+            }
+
+        checkpoint_command_for_run = checkpoint_verification_command(
+            step["checkpoint_command"],
+            verified_height=step["height"],
+            verified_stateroot_root=str(
+                bounded_report["post_probe"]["stateroot_root"]["root"]
+            ),
+            verified_against_reference=bool(plan.get("reference_rpcs")),
+        )
+        checkpoint = run_command(checkpoint_command_for_run, runner)
+        result["checkpoint_command"] = checkpoint_command_for_run
         result["checkpoint_returncode"] = checkpoint.returncode
         if include_command_output or checkpoint.returncode != 0:
             result["checkpoint_stdout"] = getattr(checkpoint, "stdout", "") or ""
@@ -428,15 +1335,86 @@ def run_milestones(
                 "mode": "failed",
                 "failed_height": step["height"],
                 "failure": "checkpoint",
-                "summary": build_run_summary(plan, results, "failed"),
+                "summary": build_run_summary(plan, results, "failed", probe_runner=runner),
                 "results": results,
             }
+        expected_root = str(bounded_report["post_probe"]["stateroot_root"]["root"])
+        inventory = checkpoint_inventory(
+            Path(plan["checkpoint_root"]) / f"h{step['height']}",
+            expected_verified_height=step["height"],
+            expected_verified_stateroot_root=expected_root,
+            expected_verified_against_reference=bool(plan.get("reference_rpcs")),
+            probe_bin=Path(plan["probe_bin"]),
+            storage_provider=plan.get("storage_provider", DEFAULT_STORAGE_PROVIDER),
+            probe_runner=runner,
+        )
+        result["checkpoint_inventory"] = inventory
+        if not inventory["usable_for_state_validation"]:
+            result["checkpoint_stdout"] = getattr(checkpoint, "stdout", "") or ""
+            result["checkpoint_stderr"] = getattr(checkpoint, "stderr", "") or ""
+            return {
+                "mode": "failed",
+                "failed_height": step["height"],
+                "failure": "checkpoint-inventory",
+                "summary": build_run_summary(plan, results, "failed", probe_runner=runner),
+                "results": results,
+            }
+        restore_probe = checkpoint_restore_probe(
+            step["checkpoint_restore_command"],
+            checkpoint_root=Path(plan["checkpoint_root"]),
+            height=step["height"],
+            expected_verified_stateroot_root=expected_root,
+            probe_bin=Path(plan["probe_bin"]),
+            storage_provider=plan.get("storage_provider", DEFAULT_STORAGE_PROVIDER),
+            runner=runner,
+        )
+        result["checkpoint_restore_probe"] = restore_probe
+        if not restore_probe["verified"]:
+            result["checkpoint_inventory"] = {
+                **inventory,
+                "restore_roundtrip_verified": False,
+                "usable_for_state_validation": False,
+                "reason": restore_probe.get("reason")
+                or "checkpoint restore roundtrip verification failed",
+            }
+            return {
+                "mode": "failed",
+                "failed_height": step["height"],
+                "failure": "checkpoint-restore-probe",
+                "summary": build_run_summary(plan, results, "failed", probe_runner=runner),
+                "results": results,
+            }
+        inventory = {
+            **inventory,
+            "restore_roundtrip_verified": True,
+            "usable_for_state_validation": True,
+            "reason": None,
+        }
+        result["checkpoint_inventory"] = inventory
+
+    summary = build_run_summary(plan, results, "completed", probe_runner=runner)
+    if not summary["minimum_checkpoint_count_met"]:
+        return {
+            "mode": "failed",
+            "failed_height": results[-1]["height"] if results else None,
+            "failure": "minimum-checkpoints",
+            "summary": summary,
+            "results": results,
+        }
+    if summary["retained_usable_checkpoint_count"] < summary["minimum_checkpoint_count"]:
+        return {
+            "mode": "failed",
+            "failed_height": results[-1]["height"] if results else None,
+            "failure": "retained-minimum-checkpoints",
+            "summary": summary,
+            "results": results,
+        }
 
     return {
         "mode": "completed",
         "milestones": plan["milestones"],
         "checkpoint_root": plan["checkpoint_root"],
-        "summary": build_run_summary(plan, results, "completed"),
+        "summary": summary,
         "results": results,
     }
 
@@ -463,6 +1441,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stateroot-db", required=True, type=Path)
     parser.add_argument("--probe-bin", default=DEFAULT_PROBE_BIN, type=Path)
     parser.add_argument(
+        "--storage-provider",
+        default=DEFAULT_STORAGE_PROVIDER,
+        choices=["mdbx", "rocksdb"],
+        help="Storage backend used by neo-db-probe for bounded and checkpoint proof reads.",
+    )
+    parser.add_argument(
+        "--fast-sync",
+        action="store_true",
+        help=(
+            "Run the first bounded replay through neo-node's built-in fast-sync "
+            "package path. Metrics are sampled when available but not required, "
+            "because the import can satisfy --stop-at-height before telemetry starts."
+        ),
+    )
+    parser.add_argument(
+        "--fast-sync-cache",
+        default=None,
+        type=Path,
+        help="Optional cache directory for the built-in fast-sync package.",
+    )
+    parser.add_argument(
+        "--initial-height",
+        default=None,
+        type=int,
+        help="Optional starting height for import/replay BPS calculation.",
+    )
+    parser.add_argument(
         "--reference",
         action="append",
         default=[],
@@ -474,6 +1479,12 @@ def parse_args() -> argparse.Namespace:
         "--checkpoint-script",
         default=Path("scripts/checkpoint-on-height.sh"),
         type=Path,
+    )
+    parser.add_argument(
+        "--restore-script",
+        default=Path(DEFAULT_RESTORE_SCRIPT),
+        type=Path,
+        help="Restore script used for scratch restore-probe verification.",
     )
     parser.add_argument("--log-dir", required=True, type=Path)
     parser.add_argument("--dry-run", action="store_true")
@@ -493,6 +1504,27 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional Prometheus /metrics URL to sample during each bounded replay.",
     )
+    parser.add_argument(
+        "--sync-speed-floor-bps",
+        default=DEFAULT_SYNC_SPEED_FLOOR_BPS,
+        type=float,
+        help=(
+            "Required bounded replay speed floor in blocks per second. "
+            "Production proof requires at least 1500 blocks/s."
+        ),
+    )
+    parser.add_argument(
+        "--sync-speed-ceiling-bps",
+        default=DEFAULT_SYNC_SPEED_CEILING_BPS,
+        type=float,
+        help="Required bounded replay speed ceiling in blocks per second.",
+    )
+    parser.add_argument(
+        "--minimum-checkpoint-count",
+        default=DEFAULT_MINIMUM_CHECKPOINT_COUNT,
+        type=int,
+        help="Minimum successful checkpoint count required for the milestone run to complete.",
+    )
     return parser.parse_args()
 
 
@@ -502,6 +1534,34 @@ def main() -> int:
         milestones = parse_height_values(args.milestone)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if args.minimum_checkpoint_count < DEFAULT_MINIMUM_CHECKPOINT_COUNT:
+        print(
+            "ERROR: --minimum-checkpoint-count must be >= "
+            f"{DEFAULT_MINIMUM_CHECKPOINT_COUNT}",
+            file=sys.stderr,
+        )
+        return 2
+    if (
+        args.sync_speed_floor_bps is not None
+        and args.sync_speed_floor_bps < DEFAULT_SYNC_SPEED_FLOOR_BPS
+    ):
+        print(
+            "ERROR: --sync-speed-floor-bps must be >= "
+            f"{DEFAULT_SYNC_SPEED_FLOOR_BPS:g} for production proof",
+            file=sys.stderr,
+        )
+        return 2
+    if len(milestones) < args.minimum_checkpoint_count:
+        print(
+            "ERROR: requested milestone count must be >= "
+            "--minimum-checkpoint-count "
+            f"({len(milestones)} < {args.minimum_checkpoint_count})",
+            file=sys.stderr,
+        )
+        return 2
+    if args.fast_sync_cache is not None and not args.fast_sync:
+        print("ERROR: --fast-sync-cache requires --fast-sync", file=sys.stderr)
         return 2
     references = normalize_reference_urls(args.reference) or DEFAULT_REFERENCE_RPCS
     data_dir = args.data_dir or args.chain_db.parent
@@ -515,12 +1575,20 @@ def main() -> int:
         chain_db=args.chain_db,
         stateroot_db=args.stateroot_db,
         probe_bin=args.probe_bin,
+        storage_provider=args.storage_provider,
         references=references,
         data_dir=data_dir,
         checkpoint_root=args.checkpoint_root,
         checkpoint_script=args.checkpoint_script,
+        restore_script=args.restore_script,
         log_dir=args.log_dir,
         metrics_url=args.metrics_url,
+        sync_speed_floor_bps=args.sync_speed_floor_bps,
+        sync_speed_ceiling_bps=args.sync_speed_ceiling_bps,
+        minimum_checkpoint_count=args.minimum_checkpoint_count,
+        fast_sync=args.fast_sync,
+        fast_sync_cache=args.fast_sync_cache,
+        initial_height=args.initial_height,
     )
     if args.dry_run:
         print(json.dumps(plan, indent=2, sort_keys=True))

@@ -9,6 +9,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+DEFAULT_SYNC_SPEED_FLOOR_BPS = 1500.0
+DEFAULT_MIN_FULL_STATE_CHECKPOINTS = 3
+
 
 def load_history(path: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
@@ -83,24 +86,17 @@ def metadata_value(path: Path, key: str) -> str | None:
 def checkpoint_height(path: Path) -> int | None:
     if path.name.startswith("h") and path.name[1:].isdigit():
         return int(path.name[1:])
-    value = metadata_value(path, "height")
-    if value and value.isdigit():
-        return int(value)
     return None
 
 
 def checkpoint_has_chain(path: Path) -> bool:
-    return (path / "mainnet").is_dir() or (
-        (path / "data").is_dir() and metadata_value(path, "mode") == "storage-sample"
-    )
+    return (path / "mainnet").is_dir()
 
 
 def checkpoint_has_stateroot(path: Path) -> bool:
     if not (path / "StateRoot").is_dir():
         return False
     if metadata_value(path, "state_root_included") == "false":
-        return False
-    if metadata_value(path, "mpt_dir") == "missing-mpt":
         return False
     return True
 
@@ -147,6 +143,13 @@ def scan_checkpoint_inventory(root: Path) -> dict[str, Any]:
         "total_count": len(checkpoints),
         "full_state_count": len(full_state),
         "chain_only_count": len(chain_only),
+        "minimum_full_state_checkpoints": DEFAULT_MIN_FULL_STATE_CHECKPOINTS,
+        "minimum_full_state_checkpoints_met": len(full_state)
+        >= DEFAULT_MIN_FULL_STATE_CHECKPOINTS,
+        "missing_full_state_checkpoint_count": max(
+            0,
+            DEFAULT_MIN_FULL_STATE_CHECKPOINTS - len(full_state),
+        ),
         "latest_full_state_height": latest["height"] if latest else None,
         "latest_full_state_path": latest["path"] if latest else None,
         "retained_heights": [item["height"] for item in checkpoints],
@@ -261,6 +264,32 @@ def performance_by_node_bin(completed: list[dict[str, Any]]) -> list[dict[str, A
     )
 
 
+def throughput_floor_violations(
+    completed: list[dict[str, Any]],
+    *,
+    sync_speed_floor_bps: float,
+) -> list[dict[str, Any]]:
+    violations: list[dict[str, Any]] = []
+    for item in completed:
+        bps = float(item.get("blocks_per_second") or 0.0)
+        if bps >= sync_speed_floor_bps:
+            continue
+        height = milestone_height(item)
+        violations.append(
+            {
+                "run_index": item.get("run_index"),
+                "timestamp_utc": item.get("timestamp_utc"),
+                "node_bin": item.get("node_bin"),
+                "probe_bin": item.get("probe_bin"),
+                "height": height,
+                "blocks_per_second": bps,
+                "shortfall_blocks_per_second": sync_speed_floor_bps - bps,
+                "local_root": item.get("local_root"),
+            }
+        )
+    return violations
+
+
 def sample_interval_rankings(
     completed: list[dict[str, Any]],
     *,
@@ -293,6 +322,67 @@ def sample_interval_rankings(
     )[:limit]
 
 
+def hot_metrics_by_average_us(
+    completed: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for item in completed:
+        summary = item.get("metrics_sample_summary") or {}
+        hot_metrics = summary.get("hot_metrics_by_average_us") or []
+        if not isinstance(hot_metrics, list):
+            continue
+        height = milestone_height(item)
+        for metric in hot_metrics:
+            if not isinstance(metric, dict):
+                continue
+            name = metric.get("name")
+            if not name:
+                continue
+            try:
+                average_us = float(metric.get("average_us"))
+                sample_count = int(metric.get("sample_count") or 0)
+            except (TypeError, ValueError):
+                continue
+            if sample_count <= 0:
+                continue
+            group = groups.setdefault(
+                str(name),
+                {
+                    "weighted_total_us": 0.0,
+                    "sample_count": 0,
+                    "milestone_count": 0,
+                    "max_us": 0.0,
+                    "heights": [],
+                },
+            )
+            group["weighted_total_us"] += average_us * sample_count
+            group["sample_count"] += sample_count
+            group["milestone_count"] += 1
+            if height is not None:
+                group["heights"].append(height)
+            try:
+                group["max_us"] = max(float(group["max_us"]), float(metric.get("max_us")))
+            except (TypeError, ValueError):
+                group["max_us"] = max(float(group["max_us"]), average_us)
+
+    ranked = [
+        {
+            "name": name,
+            "average_us": group["weighted_total_us"] / group["sample_count"],
+            "max_us": group["max_us"],
+            "sample_count": group["sample_count"],
+            "milestone_count": group["milestone_count"],
+            "heights": group["heights"],
+        }
+        for name, group in groups.items()
+        if group["sample_count"] > 0
+    ]
+    ranked.sort(key=lambda item: (-float(item["average_us"]), item["name"]))
+    return ranked[:limit]
+
+
 def analyze_history(
     records: list[dict[str, Any]],
     *,
@@ -300,6 +390,7 @@ def analyze_history(
     fastest_limit: int,
     checkpoint_root: Path | None = None,
     regression_threshold_percent: float = 25.0,
+    sync_speed_floor_bps: float = DEFAULT_SYNC_SPEED_FLOOR_BPS,
 ) -> dict:
     milestones = flatten_milestones(records)
     completed = completed_milestones_in_history_order(milestones)
@@ -322,6 +413,10 @@ def analyze_history(
     trend, regressions = throughput_trend(
         completed,
         regression_threshold_percent=regression_threshold_percent,
+    )
+    floor_violations = throughput_floor_violations(
+        completed,
+        sync_speed_floor_bps=sync_speed_floor_bps,
     )
     report: dict[str, Any] = {
         "run_count": len(records),
@@ -350,6 +445,9 @@ def analyze_history(
         "throughput_trend": trend,
         "throughput_regression_count": len(regressions),
         "throughput_regressions": regressions,
+        "sync_speed_floor_blocks_per_second": sync_speed_floor_bps,
+        "throughput_floor_violation_count": len(floor_violations),
+        "throughput_floor_violations": floor_violations,
         "performance_by_node_bin": performance_by_node_bin(completed),
         "slowest_sample_intervals": sample_interval_rankings(
             completed,
@@ -360,6 +458,10 @@ def analyze_history(
             completed,
             limit=fastest_limit,
             fastest=True,
+        ),
+        "hot_metrics_by_average_us": hot_metrics_by_average_us(
+            completed,
+            limit=slowest_limit,
         ),
         "reference_mismatches": reference_mismatches,
         "state_mismatches": state_mismatches,
@@ -404,6 +506,12 @@ def parse_args() -> argparse.Namespace:
         default=25.0,
         help="Flag adjacent milestone throughput drops at or above this percentage.",
     )
+    parser.add_argument(
+        "--sync-speed-floor-bps",
+        type=float,
+        default=DEFAULT_SYNC_SPEED_FLOOR_BPS,
+        help="Flag completed checkpoint milestones below this blocks/second floor.",
+    )
     return parser.parse_args()
 
 
@@ -417,6 +525,7 @@ def main() -> int:
             fastest_limit=args.fastest,
             checkpoint_root=args.checkpoint_root,
             regression_threshold_percent=args.regression_threshold_percent,
+            sync_speed_floor_bps=args.sync_speed_floor_bps,
         )
     except Exception as exc:  # pylint: disable=broad-except
         print(f"ERROR: {exc}", file=sys.stderr)

@@ -159,6 +159,17 @@ the merge removes duplicated types or glue. Do not merge a shared vocabulary
 crate into a concrete implementation crate, and do not make lower layers depend
 on `neo-system`, `neo-rpc`, or `neo-node`.
 
+## Coding and abstraction guidance
+
+Layering also applies inside each crate. Public orchestration should read as
+domain flow, while protocol, storage, RPC, and runtime mechanics stay in lower
+modules that own those concerns. Fluent/chained APIs are welcome when every verb
+is a real domain operation and the chain remains testable and explicit about
+side effects.
+
+The detailed rules for this style live in
+[coding-design-architecture-guidance.md](coding-design-architecture-guidance.md).
+
 ## Key design decisions
 
 - **Two-tier VM.** `neo-vm` is a stateful *host* (execution loop, call contexts,

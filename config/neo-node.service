@@ -14,7 +14,7 @@ Group=neo
 ExecStart=/usr/local/bin/neo-node --config /etc/neo/neo_mainnet_node.toml
 Restart=on-failure
 RestartSec=5
-# RocksDB data directory (also set [storage].data_dir / .path in the TOML).
+# Persistent data directory (also set [storage].data_dir / .path in the TOML).
 StateDirectory=neo
 WorkingDirectory=/var/lib/neo
 Environment=RUST_LOG=info

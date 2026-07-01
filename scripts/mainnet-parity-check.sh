@@ -67,8 +67,83 @@ else:
 " 2>/dev/null
 }
 
+extract_state_height() {
+  python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+r=d.get('result')
+if isinstance(r, dict):
+    for key in ('localrootindex', 'validatedrootindex', 'index', 'height'):
+        value = r.get(key)
+        if isinstance(value, int):
+            print(value)
+            break
+    else:
+        print('ERROR')
+elif isinstance(r, int):
+    print(r)
+else:
+    print(d.get('error', {}).get('message', 'ERROR'))
+" 2>/dev/null
+}
+
+extract_state_root_hash() {
+  python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+r=d.get('result')
+if isinstance(r, dict):
+    print(r.get('roothash') or r.get('rootHash') or r.get('hash') or 'ERROR')
+elif isinstance(r, str):
+    print(r)
+else:
+    print(d.get('error', {}).get('message', 'ERROR'))
+" 2>/dev/null
+}
+
+record_pass() {
+  local label="$1"
+  echo "  ✓ $label"
+  ((pass+=1))
+}
+
+record_fail() {
+  local label="$1"
+  echo "  ✗ $label"
+  ((fail+=1))
+}
+
+sample_heights() {
+  local tip="$1"
+  python3 - "$tip" <<'PY'
+import sys
+tip = int(sys.argv[1])
+samples = {0, tip}
+for height in (1, 1000, 10000, 100000):
+    if height <= tip:
+        samples.add(height)
+for fraction in (0.25, 0.50, 0.75):
+    samples.add(int(tip * fraction))
+for height in sorted(h for h in samples if h >= 0):
+    print(height)
+PY
+}
+
+is_uint() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]]
+}
+
+min_u32() {
+  local a="$1" b="$2"
+  if [[ "$a" -le "$b" ]]; then
+    echo "$a"
+  else
+    echo "$b"
+  fi
+}
+
 run_check() {
-  local pass=0; local fail=0; local skip=0
+  local pass=0; local fail=0
 
   echo "=== MainNet Parity Check — $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 
@@ -87,33 +162,51 @@ run_check() {
 
   # --- 1. Block hashes at sampled heights ---
   echo "--- Block hashes ---"
-  for h in 0 1 1000 10000 100000; do
-    [[ "$h" -gt "$our_h" ]] && continue
+  local h
+  while IFS= read -r h; do
     local our_hash live_hash
     our_hash=$(rpc "$OUR_RPC" getblockhash "[$h]" | extract_result)
     live_hash=$(rpc_live getblockhash "[$h]" | extract_result)
     if [[ "$our_hash" = "$live_hash" && "$our_hash" != ERROR* ]]; then
-      echo "  ✓ block $h: $our_hash"
-      ((pass++))
+      record_pass "block $h: $our_hash"
     else
-      echo "  ✗ block $h: our=$our_hash live=$live_hash"
-      ((fail++))
+      record_fail "block $h: our=$our_hash live=$live_hash"
     fi
-  done
+  done < <(sample_heights "$our_h")
 
   # Tip hash (our node's own tip vs live's same height)
   local our_tip live_at_our_h
   our_tip=$(rpc "$OUR_RPC" getblockhash "[$our_h]" | extract_result)
   live_at_our_h=$(rpc_live getblockhash "[$our_h]" | extract_result)
   if [[ "$our_tip" = "$live_at_our_h" && "$our_tip" != ERROR* ]]; then
-    echo "  ✓ tip (h=$our_h): $our_tip"
-    ((pass++))
+    record_pass "tip (h=$our_h): $our_tip"
   else
-    echo "  ✗ tip (h=$our_h): our=$our_tip live=$live_at_our_h"
-    ((fail++))
+    record_fail "tip (h=$our_h): our=$our_tip live=$live_at_our_h"
   fi
 
-  # --- 2. Native contract state ---
+  # --- 2. State roots ---
+  echo "--- State roots ---"
+  local our_state_h live_state_h state_tip
+  our_state_h=$(rpc "$OUR_RPC" getstateheight | extract_state_height)
+  live_state_h=$(rpc_live getstateheight | extract_state_height)
+  if is_uint "$our_state_h" && is_uint "$live_state_h"; then
+    state_tip=$(min_u32 "$(min_u32 "$our_state_h" "$live_state_h")" "$our_h")
+    record_pass "state height: our=$our_state_h live=$live_state_h compare_tip=$state_tip"
+    while IFS= read -r h; do
+      local our_root live_root
+      our_root=$(rpc "$OUR_RPC" getstateroot "[$h]" | extract_state_root_hash)
+      live_root=$(rpc_live getstateroot "[$h]" | extract_state_root_hash)
+      if [[ "$our_root" = "$live_root" && "$our_root" != ERROR* ]]; then
+        record_pass "state root $h: $our_root"
+      else
+        record_fail "state root $h: our=$our_root live=$live_root"
+      fi
+    done < <(sample_heights "$state_tip")
+  else
+    record_fail "state root height unavailable: our=$our_state_h live=$live_state_h"
+  fi
+
+  # --- 3. Native contract state ---
   echo "--- Native contract state ---"
   for entry in "$NEO_HASH:totalSupply" "$GAS_HASH:totalSupply" "$POLICY_HASH:getFeePerByte" "$POLICY_HASH:getExecFeeFactor" "$POLICY_HASH:getStoragePrice"; do
     local hash="${entry%%:*}" method="${entry##*:}"
@@ -121,15 +214,13 @@ run_check() {
     our_val=$(rpc "$OUR_RPC" invokefunction "[\"$hash\",\"$method\"]" | extract_stack)
     live_val=$(rpc_live invokefunction "[\"$hash\",\"$method\"]" | extract_stack)
     if [[ "$our_val" = "$live_val" ]]; then
-      echo "  ✓ $method: $our_val"
-      ((pass++))
+      record_pass "$method: $our_val"
     else
-      echo "  ≈ $method: our=$our_val live=$live_val (may differ if hardfork boundary not yet crossed)"
-      ((skip++))
+      record_fail "$method: our=$our_val live=$live_val"
     fi
   done
 
-  # --- 3. NEO committee (consensus-critical state) ---
+  # --- 4. NEO committee (consensus-critical state) ---
   echo "--- Committee ---"
   local our_comm live_comm
   our_comm=$(rpc "$OUR_RPC" invokefunction "[\"$NEO_HASH\",\"getCommittee\"]" | python3 -c "
@@ -151,14 +242,12 @@ else:
     print('parse-fail')
 " 2>/dev/null)
   if [[ "$our_comm" = "$live_comm" ]]; then
-    echo "  ✓ committee: $our_comm"
-    ((pass++))
+    record_pass "committee: $our_comm"
   else
-    echo "  ✗ committee: our=$our_comm live=$live_comm"
-    ((fail++))
+    record_fail "committee: our=$our_comm live=$live_comm"
   fi
 
-  echo "--- Summary: $pass pass, $fail fail, $skip skip (hardfork-boundary) ---"
+  echo "--- Summary: $pass pass, $fail fail ---"
   echo ""
   return "$fail"
 }

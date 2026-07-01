@@ -9,7 +9,7 @@ set -euo pipefail
 # you ever need to re-restore).
 #
 # Usage:
-#   scripts/restore-checkpoint.sh <height|label|latest|--at-or-below N> [options]
+#   scripts/restore-checkpoint.sh <height|latest|--at-or-below N> [options]
 #
 # Options:
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
@@ -20,6 +20,7 @@ set -euo pipefail
 #                           data/mainnet.prerestore-<TS> instead of deleting
 #   --dry-run               print what would happen, do nothing
 #   -y, --yes               do not prompt for confirmation
+#   --allow-unverified      restore checkpoints without restore verification
 #
 # Refuses to run when the target RocksDB LOCK file is held by another process.
 
@@ -30,6 +31,7 @@ STATEROOT_DB_OVERRIDE="${NEO_STATEROOT_DB:-}"
 KEEP_CURRENT=0
 DRY_RUN=0
 YES=0
+ALLOW_UNVERIFIED=0
 
 TARGET="${1:-}"
 shift || true
@@ -53,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --keep-current) KEEP_CURRENT=1; shift;;
     --dry-run)      DRY_RUN=1; shift;;
     -y|--yes)       YES=1; shift;;
+    --allow-unverified) ALLOW_UNVERIFIED=1; shift;;
     *) echo "unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -76,13 +79,6 @@ dir_height() {
       return
       ;;
   esac
-  if [[ -f "$dir/CHECKPOINT_INFO" ]]; then
-    info_height=$(sed -n 's/^height=//p' "$dir/CHECKPOINT_INFO" | head -1)
-    case "$info_height" in
-      ''|*[!0-9]*) return 1;;
-      *) printf '%s\n' "$info_height"; return;;
-    esac
-  fi
   return 1
 }
 
@@ -94,6 +90,56 @@ checkpoint_dirs_by_height() {
       printf '%s\t%s\n' "$height" "$d"
     fi
   done < <(find "$CHECKPOINT_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+}
+
+metadata_value_for_dir() {
+  local dir="$1"
+  local key="$2"
+  local file="$dir/CHECKPOINT_INFO"
+  [[ -f "$file" ]] || return 1
+  sed -n "s/^${key}=//p" "$file" | head -1
+}
+
+checkpoint_has_stateroot_dir() {
+  local dir="$1"
+  if [[ -d "$dir/StateRoot" ]]; then
+    return 0
+  fi
+  if [[ -f "$dir/CHECKPOINT_INFO" ]] && {
+    grep -qx 'state_root_included=false' "$dir/CHECKPOINT_INFO"
+  }; then
+    return 1
+  fi
+  return 1
+}
+
+checkpoint_is_verified_full_state() {
+  local dir="$1"
+  local height verified_height verified_stateroot_root restore_verified verified_against_reference
+  [[ -d "$dir" ]] || return 1
+  [[ -f "$dir/CHECKPOINT_INFO" ]] || return 1
+  [[ ! -f "$dir/CHECKPOINT_IN_PROGRESS" ]] || return 1
+  [[ -d "$dir/mainnet" ]] || return 1
+  checkpoint_has_stateroot_dir "$dir" || return 1
+
+  height=$(metadata_value_for_dir "$dir" height || true)
+  verified_height=$(metadata_value_for_dir "$dir" verified_height || true)
+  verified_stateroot_root=$(metadata_value_for_dir "$dir" verified_stateroot_root || true)
+  restore_verified=$(metadata_value_for_dir "$dir" restore_verified || true)
+  verified_against_reference=$(metadata_value_for_dir "$dir" verified_against_reference || true)
+
+  [[ -n "$height" && -n "$verified_height" && "$height" == "$verified_height" ]] || return 1
+  [[ -n "$verified_stateroot_root" ]] || return 1
+  [[ "${restore_verified,,}" == "true" ]] || return 1
+  [[ "${verified_against_reference,,}" == "true" ]] || return 1
+}
+
+candidate_allowed_for_dynamic_restore() {
+  local dir="$1"
+  if [[ "$ALLOW_UNVERIFIED" -eq 1 ]]; then
+    return 0
+  fi
+  checkpoint_is_verified_full_state "$dir"
 }
 
 print_available_checkpoints() {
@@ -110,13 +156,17 @@ print_available_checkpoints() {
 pick_dir() {
   local req="$1"
   if [[ "$req" == "latest" ]]; then
-    checkpoint_dirs_by_height | sort -n -k1,1 | tail -1 | cut -f2-
+    local height d picked=""
+    while IFS=$'\t' read -r height d; do
+      if candidate_allowed_for_dynamic_restore "$d"; then picked="$d"; fi
+    done < <(checkpoint_dirs_by_height | sort -n -k1,1)
+    printf '%s\n' "$picked"
     return
   fi
   if [[ -n "$AT_OR_BELOW" ]]; then
     local height d picked=""
     while IFS=$'\t' read -r height d; do
-      if (( height <= AT_OR_BELOW )); then picked="$d"; fi
+      if (( height <= AT_OR_BELOW )) && candidate_allowed_for_dynamic_restore "$d"; then picked="$d"; fi
     done < <(checkpoint_dirs_by_height | sort -n -k1,1)
     printf '%s\n' "$picked"
     return
@@ -124,10 +174,9 @@ pick_dir() {
   # exact height
   local d
   if [[ "$req" == *[!0-9]* ]]; then
-    d="${CHECKPOINT_ROOT}/${req}"
-  else
-    d="${CHECKPOINT_ROOT}/h${req}"
+    return
   fi
+  d="${CHECKPOINT_ROOT}/h${req}"
   if [[ -d "$d" ]]; then printf '%s\n' "$d"; fi
 }
 
@@ -166,15 +215,12 @@ SOURCE_HAS_STATEROOT=1
 SOURCE_CHAIN_DIR=""
 if [[ -d "$SOURCE/mainnet" ]]; then
   SOURCE_CHAIN_DIR="$SOURCE/mainnet"
-elif [[ -d "$SOURCE/data" ]] && [[ "$(metadata_value mode || true)" == "storage-sample" ]]; then
-  SOURCE_CHAIN_DIR="$SOURCE/data"
 else
   echo "checkpoint $SOURCE is incomplete (missing mainnet/)" >&2; exit 1
 fi
 if [[ ! -d "$SOURCE/StateRoot" ]]; then
   if [[ -f "$SOURCE/CHECKPOINT_INFO" ]] && {
-    grep -qx 'state_root_included=false' "$SOURCE/CHECKPOINT_INFO" ||
-      grep -qx 'mpt_dir=missing-mpt' "$SOURCE/CHECKPOINT_INFO"
+    grep -qx 'state_root_included=false' "$SOURCE/CHECKPOINT_INFO"
   }; then
     SOURCE_HAS_STATEROOT=0
   else
@@ -183,6 +229,50 @@ if [[ ! -d "$SOURCE/StateRoot" ]]; then
 fi
 if [[ -f "$SOURCE/CHECKPOINT_IN_PROGRESS" ]]; then
   echo "checkpoint $SOURCE was not finalized (CHECKPOINT_IN_PROGRESS marker present)" >&2; exit 1
+fi
+
+verification_reason() {
+  local file="$SOURCE/CHECKPOINT_INFO"
+  local height verified_height verified_stateroot_root restore_verified verified_against_reference
+  [[ -f "$file" ]] || { echo "missing restore verification metadata: CHECKPOINT_INFO" >&2; return 1; }
+  height=$(sed -n 's/^height=//p' "$file" | head -1)
+  verified_height=$(sed -n 's/^verified_height=//p' "$file" | head -1)
+  verified_stateroot_root=$(sed -n 's/^verified_stateroot_root=//p' "$file" | head -1)
+  restore_verified=$(sed -n 's/^restore_verified=//p' "$file" | head -1)
+  verified_against_reference=$(sed -n 's/^verified_against_reference=//p' "$file" | head -1)
+
+  if [[ -z "$verified_height" || -z "$verified_stateroot_root" || -z "$restore_verified" || -z "$verified_against_reference" ]]; then
+    local missing=()
+    [[ -z "$restore_verified" ]] && missing+=("restore_verified")
+    [[ -z "$verified_height" ]] && missing+=("verified_height")
+    [[ -z "$verified_stateroot_root" ]] && missing+=("verified_stateroot_root")
+    [[ -z "$verified_against_reference" ]] && missing+=("verified_against_reference")
+    echo "missing restore verification metadata: ${missing[*]}" >&2
+    return 1
+  fi
+
+  if [[ "$height" != "$verified_height" ]]; then
+    echo "restore verification height does not match checkpoint height: height=${height}, verified_height=${verified_height}" >&2
+    return 1
+  fi
+
+  if [[ "${restore_verified,,}" != "true" ]]; then
+    echo "restore verification metadata is not marked restore_verified=true" >&2
+    return 1
+  fi
+
+  if [[ "${verified_against_reference,,}" != "true" ]]; then
+    echo "restore verification metadata is not marked verified_against_reference=true" >&2
+    return 1
+  fi
+}
+
+if [[ "$SOURCE_HAS_STATEROOT" -eq 1 && "$ALLOW_UNVERIFIED" -eq 0 ]]; then
+  if ! verification_reason; then
+    echo "refusing to restore unverified checkpoint $SOURCE" >&2
+    echo "use --allow-unverified only for internal restore-probe verification flows" >&2
+    exit 1
+  fi
 fi
 
 lock_is_held() {

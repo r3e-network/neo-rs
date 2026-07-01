@@ -17,6 +17,7 @@ Thanks for helping improve the Neo Rust node. Please follow these guidelines for
 - Prefer small, focused commits with descriptive messages.
 - Add targeted comments when behaviour is non-obvious; avoid restating the code.
 - Keep configuration defaults sensible for production where applicable (e.g., rocksdb backend, non-root containers).
+- Follow the high-level flow guidance in `docs/coding-design-architecture-guidance.md`: top-level code should read as domain intent, with protocol/storage/RPC/runtime details hidden behind lower-layer operations.
 
 ## Security
 - Do **not** open public issues for suspected vulnerabilities. Follow the process in `SECURITY.md`.

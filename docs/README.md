@@ -25,6 +25,8 @@ every page to what you will learn from it.
 | [architecture.md](./architecture.md) | The layered workspace design (Foundation → Infrastructure → Protocol → Domain service → Node service → Composition → Plugin/RPC boundary → Application), a crate reference table, and the key design decisions (two-tier VM, async services, single error type, pluggable storage, C# parity). |
 | [dataflow.md](./dataflow.md) | How data and control move at runtime: startup/composition, block ingestion, transaction lifecycle, a dBFT consensus round, RPC request handling, and the state/storage overlay model — each with a diagram. |
 | [protocol-compatibility.md](./protocol-compatibility.md) | What "byte-for-byte C# parity" means, the 11 native contracts, the 7 hardforks with MainNet/TestNet activation heights, supported subsystems (consensus, VM, NEP standards, P2P), and the cryptography stack. |
+| [coding-design-architecture-guidance.md](./coding-design-architecture-guidance.md) | Coding/design rules for high-level domain flows, fluent workflow APIs, layer-by-layer abstraction, module organization, and when to use generics versus `dyn Trait`. |
+| [style-conformance-audit.md](./style-conformance-audit.md) | Repeatable crate-by-crate audit checklist and remediation plan for enforcing the coding/design/architecture guidance. |
 
 ## Learning paths
 
@@ -44,6 +46,8 @@ live in [operations.md](./operations.md).
 2. [dataflow.md](./dataflow.md) — how blocks, transactions, and queries flow through the services.
 3. [protocol-compatibility.md](./protocol-compatibility.md) — the protocol surface, native contracts, and hardforks the node must match.
 4. [rpc-api.md](./rpc-api.md) — the external interface clients use to drive the node.
+5. [coding-design-architecture-guidance.md](./coding-design-architecture-guidance.md) — how to keep top-level code readable while hiding lower-level mechanics behind focused Rust APIs.
+6. [style-conformance-audit.md](./style-conformance-audit.md) — how to audit and phase remediation across crates without turning style work into unsafe churn.
 
 ## Documentation map
 

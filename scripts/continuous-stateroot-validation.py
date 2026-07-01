@@ -37,7 +37,12 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import ParseResult, urlparse
 
-from continuous_stateroot_status import atomic_write, timestamp, write_status
+from continuous_stateroot_status import (
+    atomic_write,
+    retain_checkpoint_stage_roots,
+    timestamp,
+    write_status,
+)
 
 
 DEFAULT_LOCAL_RPC = "http://127.0.0.1:10332"
@@ -538,6 +543,7 @@ def main() -> int:
     total_errors = 0
     recent_mismatches: list[dict] = []
     recent_errors: list[dict] = []
+    checkpoint_stage_roots: dict[int, str] = {}
     target_stop_at = args.stop_at
     started_at = time.time()
     one_shot_locked = False
@@ -575,6 +581,7 @@ def main() -> int:
                     started_at,
                     "WAITING_LOCAL_RPC",
                     target_stop_at,
+                    checkpoint_stage_roots,
                 )
                 time.sleep(args.poll_interval)
                 continue
@@ -618,6 +625,7 @@ def main() -> int:
                     started_at,
                     "COMPLETE" if total_mismatched == 0 else "COMPLETE_WITH_MISMATCHES",
                     target_stop_at,
+                    checkpoint_stage_roots,
                 )
                 break
 
@@ -654,6 +662,7 @@ def main() -> int:
                     started_at,
                     "WAITING_FOR_SYNC",
                     target_stop_at,
+                    checkpoint_stage_roots,
                 )
                 time.sleep(args.poll_interval)
                 continue
@@ -686,6 +695,7 @@ def main() -> int:
             blocked_index: int | None = None
             batch_matches = 0
             batch_mismatches = 0
+            batch_matched_roots: dict[int, str] = {}
 
             for index in range(next_block, compare_end + 1):
                 local_sample = local_roots[index]
@@ -738,6 +748,7 @@ def main() -> int:
                 if local_sample.root == reference_sample.root:
                     total_matched += 1
                     batch_matches += 1
+                    batch_matched_roots[index] = local_sample.root
                 else:
                     total_mismatched += 1
                     batch_mismatches += 1
@@ -781,6 +792,7 @@ def main() -> int:
                         started_at,
                         "FAIL",
                         target_stop_at,
+                        checkpoint_stage_roots,
                     )
                     print(
                         f"  aborting after {total_mismatched} mismatches "
@@ -791,6 +803,12 @@ def main() -> int:
 
             if last_validated_block >= 0:
                 save_resume(args.resume_file, last_validated_block)
+                retain_checkpoint_stage_roots(
+                    checkpoint_stage_roots,
+                    start_block=start_block,
+                    last_validated_block=last_validated_block,
+                    matched_roots=batch_matched_roots,
+                )
 
             next_block = last_validated_block + 1
 
@@ -823,6 +841,7 @@ def main() -> int:
                 started_at,
                 status if blocked_index is None else "PAUSED_ON_RPC_ERROR",
                 target_stop_at,
+                checkpoint_stage_roots,
             )
 
             if blocked_index is not None:
@@ -849,6 +868,7 @@ def main() -> int:
             started_at,
             "INTERRUPTED",
             target_stop_at,
+            checkpoint_stage_roots,
         )
         return 130
 

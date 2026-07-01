@@ -62,12 +62,14 @@ def build_status_payload(
     started_at: float,
     status: str,
     target_stop_at: int | None,
+    validated_roots: dict[int, str] | None = None,
 ) -> dict:
     elapsed = max(time.time() - started_at, 0.0)
     rate = total_compared / elapsed if elapsed > 0 else 0.0
     checkpoint_stages = build_checkpoint_stages(
         start_block=start_block,
         last_validated_block=last_validated_block,
+        validated_roots=validated_roots,
     )
     return {
         "timestamp": timestamp(),
@@ -96,7 +98,12 @@ def build_status_payload(
     }
 
 
-def build_checkpoint_stages(*, start_block: int, last_validated_block: int) -> list[dict]:
+def build_checkpoint_stages(
+    *,
+    start_block: int,
+    last_validated_block: int,
+    validated_roots: dict[int, str] | None = None,
+) -> list[dict]:
     """Return three validated-height recovery points for long mainnet syncs."""
     safe_start = max(start_block, 0)
     if last_validated_block < safe_start:
@@ -104,19 +111,59 @@ def build_checkpoint_stages(*, start_block: int, last_validated_block: int) -> l
     safe_latest = max(last_validated_block, safe_start)
     safe_mid = safe_start + (safe_latest - safe_start) // 2
     return [
-        checkpoint_stage("base", safe_start),
-        checkpoint_stage("mid", safe_mid),
-        checkpoint_stage("latest", safe_latest),
+        checkpoint_stage("base", safe_start, validated_roots=validated_roots),
+        checkpoint_stage("mid", safe_mid, validated_roots=validated_roots),
+        checkpoint_stage("latest", safe_latest, validated_roots=validated_roots),
     ]
 
 
-def checkpoint_stage(stage: str, height: int) -> dict:
+def checkpoint_stage_heights(*, start_block: int, last_validated_block: int) -> set[int]:
+    """Return the exact recovery heights needed by the current status payload."""
     return {
+        int(stage["height"])
+        for stage in build_checkpoint_stages(
+            start_block=start_block,
+            last_validated_block=last_validated_block,
+        )
+    }
+
+
+def retain_checkpoint_stage_roots(
+    retained_roots: dict[int, str],
+    *,
+    start_block: int,
+    last_validated_block: int,
+    matched_roots: dict[int, str],
+) -> None:
+    """Keep only roots needed to prove the current base/mid/latest stages."""
+    stage_heights = checkpoint_stage_heights(
+        start_block=start_block,
+        last_validated_block=last_validated_block,
+    )
+    for height in list(retained_roots):
+        if height not in stage_heights:
+            retained_roots.pop(height, None)
+    for height in stage_heights:
+        if height in matched_roots:
+            retained_roots[height] = matched_roots[height]
+
+
+def checkpoint_stage(
+    stage: str,
+    height: int,
+    *,
+    validated_roots: dict[int, str] | None = None,
+) -> dict:
+    payload = {
         "stage": stage,
         "height": height,
         "label": f"{stage}-h{height}",
         "command": f"scripts/checkpoint-on-height.sh none --once --height {height}",
     }
+    if validated_roots is not None and height in validated_roots:
+        payload["verified_stateroot_root"] = str(validated_roots[height])
+        payload["verified_against_reference"] = True
+    return payload
 
 
 def write_status(
@@ -138,6 +185,7 @@ def write_status(
     started_at: float,
     status: str,
     target_stop_at: int | None,
+    validated_roots: dict[int, str] | None = None,
 ) -> None:
     save_json(
         args.status_file,
@@ -159,5 +207,6 @@ def write_status(
             started_at=started_at,
             status=status,
             target_stop_at=target_stop_at,
+            validated_roots=validated_roots,
         ),
     )

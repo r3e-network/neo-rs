@@ -25,9 +25,12 @@ network_type = "MainNet"
 network_magic = 0x334F454E
 
 [storage]
-backend = "rocksdb"
-path = "./data/mainnet-validate"
+backend = "mdbx"
+data_dir = "./data/mainnet-validate"
 read_only = false
+mdbx_geometry_upper_gb = 512
+mdbx_geometry_growth_mb = 256
+mdbx_max_readers = 4096
 
 [p2p]
 port = 20333
@@ -91,8 +94,12 @@ class PrepareCleanStateRootValidationTests(unittest.TestCase):
             )
 
             config = (work_root / "neo_mainnet_validate.toml").read_text(encoding="utf-8")
-            self.assertIn(f'path = "{(work_root / "chain").resolve()}"', config)
+            self.assertIn('backend = "mdbx"', config)
             self.assertIn(f'data_dir = "{(work_root / "chain").resolve()}"', config)
+            self.assertIn("mdbx_geometry_upper_gb = 512", config)
+            self.assertIn("mdbx_geometry_growth_mb = 256", config)
+            self.assertIn("mdbx_max_readers = 4096", config)
+            self.assertNotIn(f'path = "{(work_root / "chain").resolve()}"', config)
             self.assertIn(f'path = "{(work_root / "state-root-{0}").resolve()}"', config)
             self.assertIn("port = 31332", config)
             self.assertIn("port = 31333", config)

@@ -81,9 +81,11 @@ def build_replacements(
     logs = work_root / "logs"
     return {
         "storage": {
-            "path": chain_db,
             "data_dir": chain_db,
             "read_only": False,
+            "mdbx_geometry_upper_gb": 512,
+            "mdbx_geometry_growth_mb": 256,
+            "mdbx_max_readers": 4096,
         },
         "p2p": {
             "port": p2p_port,

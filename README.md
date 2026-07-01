@@ -25,7 +25,7 @@ neo-rs is a production node implementation that speaks Neo N3's wire protocol,
 executes its virtual machine, and maintains its ledger and state exactly as the
 canonical C# node does — so the two are interchangeable on the same network. It
 is organized as a layered Rust workspace of focused crates, built on mature
-libraries (RocksDB, jsonrpsee, the RustCrypto suite) with the protocol-defining
+libraries (MDBX, RocksDB, jsonrpsee, the RustCrypto suite) with the protocol-defining
 parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
 
 ## What it supports
@@ -40,7 +40,7 @@ parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification
 | **Standards** | NEP-17 (tokens), NEP-11 (NFTs), NEP-6 (wallets), NEP-2 keys |
 | **Hardforks** | Full Neo N3 hardfork schedule through v3.10.0 |
 | **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
-| **Storage** | RocksDB (persistent) or in-memory |
+| **Storage** | MDBX by default, RocksDB fallback/test backend, or in-memory |
 | **Oracle** | HTTPS + NeoFS request fulfilment |
 
 See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the parity details.
@@ -65,8 +65,8 @@ How a block, transaction, and consensus round flow through these crates:
 
 ## Quick start
 
-Requires Rust **1.85+** and the usual build toolchain (plus `clang`/`libclang`
-and RocksDB system libs — see [getting-started.md](./docs/getting-started.md)).
+Requires Rust **1.85+** and the usual build toolchain for the bundled native
+storage backends — see [getting-started.md](./docs/getting-started.md).
 
 ```bash
 # Clone and build the node daemon (release)
@@ -131,6 +131,7 @@ you can understand the whole node without reading source.
 | [RPC API](./docs/rpc-api.md) | All JSON-RPC methods, grouped, with examples |
 | [Protocol & compatibility](./docs/protocol-compatibility.md) | Neo N3 v3.10.0 parity, native contracts, hardforks |
 | [Operations](./docs/operations.md) | Deploy, monitor, secure, back up, and upgrade |
+| [Coding/design guidance](./docs/coding-design-architecture-guidance.md) | High-level domain-flow style, fluent APIs, abstraction layers, module organization |
 
 **Learning paths:** operators → *getting-started → configuration → operations*;
 developers → *architecture → dataflow → protocol-compatibility → rpc-api*.

@@ -5,9 +5,12 @@
 network_magic = 0x334F454E  # MainNet magic number
 
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 data_dir = "./data/mainnet"
 read_only = false
+mdbx_geometry_upper_gb = 512
+mdbx_geometry_growth_mb = 256
+mdbx_max_readers = 4096
 
 [p2p]
 port = 10333

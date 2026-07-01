@@ -174,6 +174,57 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertEqual(report["throughput_regression_count"], 1)
         self.assertEqual(report["throughput_regressions"][0]["height"], 200)
 
+    def test_analyze_history_reports_sync_speed_floor_shortfalls_against_default_floor(self):
+        module = load_module()
+        records = [
+            record(
+                "2026-01-01T00:00:00+00:00",
+                [
+                    {
+                        "height": 100,
+                        "last_height": 100,
+                        "blocks_per_second": 1499.99,
+                        "checkpoint_created": True,
+                        "local_root": "0x100",
+                    },
+                    {
+                        "height": 200,
+                        "last_height": 200,
+                        "blocks_per_second": 1500.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x200",
+                    },
+                    {
+                        "height": 300,
+                        "last_height": 300,
+                        "blocks_per_second": 2000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x300",
+                    },
+                ],
+                node_bin="target/release/neo-node",
+            )
+        ]
+
+        report = module.analyze_history(
+            records,
+            slowest_limit=5,
+            fastest_limit=5,
+        )
+
+        self.assertEqual(report["sync_speed_floor_blocks_per_second"], 1500.0)
+        self.assertEqual(report["throughput_floor_violation_count"], 1)
+        self.assertEqual(report["throughput_floor_violations"][0]["height"], 100)
+        self.assertEqual(
+            report["throughput_floor_violations"][0]["blocks_per_second"],
+            1499.99,
+        )
+        self.assertAlmostEqual(
+            report["throughput_floor_violations"][0]["shortfall_blocks_per_second"],
+            0.01,
+            places=6,
+        )
+
     def test_analyze_history_groups_performance_by_node_binary(self):
         module = load_module()
         records = [
@@ -308,6 +359,101 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertEqual(report["fastest_sample_intervals"][0]["height"], 200)
         self.assertEqual(report["fastest_sample_intervals"][0]["blocks_per_second"], 10.0)
 
+    def test_analyze_history_ranks_recurring_hot_latency_metrics(self):
+        module = load_module()
+        queue_wait = 'neo_state_service_mpt_apply_stage_avg_us{stage="queue_wait"}'
+        load_execute = 'neo_sync_native_persist_tx_stage_avg_us{stage="load_execute"}'
+        ignored = 'neo_sync_native_persist_tx_stage_avg_us{stage="ignored"}'
+        records = [
+            record(
+                "2026-01-01T00:00:00+00:00",
+                [
+                    {
+                        "height": 100,
+                        "last_height": 100,
+                        "blocks_per_second": 50.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x100",
+                        "metrics_sample_summary": {
+                            "hot_metrics_by_average_us": [
+                                {
+                                    "name": queue_wait,
+                                    "average_us": 9000.0,
+                                    "last_us": 9200.0,
+                                    "max_us": 10000.0,
+                                    "sample_count": 2,
+                                },
+                                {
+                                    "name": load_execute,
+                                    "average_us": 6000.0,
+                                    "last_us": 6100.0,
+                                    "max_us": 6200.0,
+                                    "sample_count": 1,
+                                },
+                            ]
+                        },
+                    }
+                ],
+            ),
+            record(
+                "2026-01-01T00:10:00+00:00",
+                [
+                    {
+                        "height": 200,
+                        "last_height": 200,
+                        "blocks_per_second": 60.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x200",
+                        "metrics_sample_summary": {
+                            "hot_metrics_by_average_us": [
+                                {
+                                    "name": queue_wait,
+                                    "average_us": 7000.0,
+                                    "last_us": 7200.0,
+                                    "max_us": 8000.0,
+                                    "sample_count": 3,
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "height": 300,
+                        "last_height": 300,
+                        "blocks_per_second": 70.0,
+                        "checkpoint_created": False,
+                        "local_root": "0x300",
+                        "metrics_sample_summary": {
+                            "hot_metrics_by_average_us": [
+                                {
+                                    "name": ignored,
+                                    "average_us": 100000.0,
+                                    "last_us": 100000.0,
+                                    "max_us": 100000.0,
+                                    "sample_count": 1,
+                                }
+                            ]
+                        },
+                    },
+                ],
+            ),
+        ]
+
+        report = module.analyze_history(
+            records,
+            slowest_limit=5,
+            fastest_limit=5,
+        )
+
+        hot = report["hot_metrics_by_average_us"]
+        self.assertEqual([item["name"] for item in hot], [queue_wait, load_execute])
+        self.assertEqual(hot[0]["milestone_count"], 2)
+        self.assertEqual(hot[0]["sample_count"], 5)
+        self.assertEqual(hot[0]["average_us"], 7800.0)
+        self.assertEqual(hot[0]["max_us"], 10000.0)
+        self.assertEqual(hot[0]["heights"], [100, 200])
+        self.assertEqual(hot[1]["milestone_count"], 1)
+        self.assertEqual(hot[1]["sample_count"], 1)
+
     def test_analyze_history_can_include_checkpoint_inventory(self):
         module = load_module()
         records = [
@@ -336,6 +482,12 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
             (checkpoint_root / "h200" / "StateRoot").mkdir()
             (checkpoint_root / "h300" / "mainnet").mkdir(parents=True)
             (checkpoint_root / "h400" / "StateRoot").mkdir(parents=True)
+            legacy = checkpoint_root / "mainnet-bounded-700000-stable"
+            (legacy / "data").mkdir(parents=True)
+            (legacy / "CHECKPOINT_INFO").write_text(
+                "height=700000\nmode=storage-sample\nmpt_dir=missing-mpt\n",
+                encoding="utf-8",
+            )
 
             report = module.analyze_history(
                 records,
@@ -355,6 +507,9 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertEqual(inventory["history_checkpoint_heights"], [100, 200])
         self.assertEqual(inventory["history_checkpoints_not_retained"], [100])
         self.assertEqual(inventory["retained_checkpoints_not_in_history"], [])
+        self.assertEqual(inventory["minimum_full_state_checkpoints"], 3)
+        self.assertFalse(inventory["minimum_full_state_checkpoints_met"])
+        self.assertEqual(inventory["missing_full_state_checkpoint_count"], 2)
 
 
 if __name__ == "__main__":

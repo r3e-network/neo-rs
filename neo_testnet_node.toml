@@ -6,13 +6,12 @@ network_type = "TestNet"  # Must be set for correct genesis block
 network_magic = 0x3554334E  # TestNet magic number
 
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 data_dir = "./data/testnet"
 read_only = false
-cache_size = 2048
-write_buffer_size = 512
-max_open_files = 4000
-compression = "lz4"
+mdbx_geometry_upper_gb = 512
+mdbx_geometry_growth_mb = 256
+mdbx_max_readers = 4096
 
 [p2p]
 port = 20333

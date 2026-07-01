@@ -28,9 +28,11 @@ workspace = true
 Do **not** re-add `#![deny(unsafe_code)]` / `#![warn(missing_docs)]` headers to
 `lib.rs`/`main.rs` — they are inherited from the workspace.
 
-- **Unsafe:** the two crates that need it (`neo-vm`, `neo-execution`) inherit the
-  `deny` and opt out **per-site** with `#[allow(unsafe_code)]` plus a `// SAFETY:`
-  comment stating the invariant — never a blanket crate-level opt-out.
+- **Unsafe:** workspace default remains `deny`. A crate may opt out **per-site**
+  with `#[allow(unsafe_code)]` only for a measured hot path or unavoidable FFI
+  boundary. Every site needs a `// SAFETY:` invariant, a safe public wrapper, and
+  benchmark/parity evidence in the PR or commit notes. Never use a blanket
+  crate-level opt-out for convenience.
 - **Silencing a lint:** prefer `#[expect(lint, reason = "…")]` over
   `#[allow(lint)]` — `expect` warns when the suppression becomes stale. Never add
   a crate-level `#![allow(dead_code)]` / `#![allow(unused_imports)]`; delete the
@@ -115,6 +117,13 @@ hand-written.
   (a flat constants module is the one accepted exception). Tightly-coupled
   clusters (a channel-actor `Handle`+`Service`+`Command`, C#-parity nested
   sub-payloads) may co-locate.
+- Top-level orchestration should read as domain flow and push mechanics down to
+  lower modules. See `docs/coding-design-architecture-guidance.md` for the
+  chained workflow, abstraction, generics, and `dyn Trait` rules.
+- Keep runtime data out of git. Local ledgers, RocksDB state, checkpoints,
+  downloaded fast-sync archives, replay output, and logs are generated
+  artifacts; commit only source, docs, scripts, and small deterministic fixtures
+  with an explicit test purpose.
 
 ## Documentation
 

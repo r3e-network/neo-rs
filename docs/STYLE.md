@@ -19,6 +19,11 @@ This document defines the coding standards and conventions for the neo-rs projec
 
 ## Code Organization Standards
 
+High-level orchestration code should read as business/domain flow, with detailed
+protocol, storage, RPC, and runtime mechanics hidden in lower layers. The
+canonical rules for this style are in
+[coding-design-architecture-guidance.md](./coding-design-architecture-guidance.md).
+
 ### File Structure
 
 Each crate should follow this structure:

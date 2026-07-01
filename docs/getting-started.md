@@ -14,7 +14,7 @@ separate CLI client binary — you query a running node over HTTP.
 
 ```mermaid
 flowchart TD
-    A[Install Rust 1.85+ and RocksDB build deps] --> B[Clone the repository]
+    A[Install Rust 1.85+ and native storage build deps] --> B[Clone the repository]
     B --> C[cargo build --release -p neo-node]
     C --> D[Pick a TOML config<br/>TestNet or MainNet]
     D --> E[Run neo-node --config FILE]
@@ -28,8 +28,8 @@ flowchart TD
 | Requirement | Version / Notes |
 |-------------|-----------------|
 | Rust toolchain | 1.85 or newer (the workspace uses edition 2024). Install via [rustup](https://rustup.rs). |
-| RocksDB build dependencies | The default storage provider links RocksDB. On Ubuntu/Debian: `build-essential cmake clang libclang-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev`. RocksDB is compiled from source by the `rust-rocksdb` crate, so a C/C++ toolchain and `clang` are required. |
-| Disk | A full MainNet RocksDB store grows large (hundreds of GB over time). Use a durable volume. |
+| Native storage build dependencies | The production storage provider is MDBX, and RocksDB remains compiled as an explicit fallback/test backend. On Ubuntu/Debian: `build-essential cmake clang libclang-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev`. |
+| Disk | A full MainNet persistent store grows large (hundreds of GB over time). Use a durable volume. |
 | OS | Linux or macOS. |
 
 You do not need a system RocksDB library installed; the build compiles RocksDB
@@ -45,8 +45,8 @@ cd neo-rs
 cargo build --release -p neo-node
 ```
 
-This builds the full node — RocksDB storage and the RPC server are included by
-default. The only optional feature is `tee` (Trusted Execution Environment
+This builds the full node — MDBX storage, the RocksDB fallback backend, and the
+RPC server are included by default. The only optional feature is `tee` (Trusted Execution Environment
 support), enabled with `--features tee`.
 
 The resulting binary is at `target/release/neo-node`.
@@ -74,14 +74,14 @@ See [configuration.md](./configuration.md) for the full key reference.
 ## Run a TestNet node
 
 ```bash
-# RocksDB data is written to the path in [storage] (config/testnet.toml uses ./data/testnet)
+# Persistent data is written to the path in [storage] (config/testnet.toml uses ./data/testnet)
 ./target/release/neo-node --config config/testnet.toml
 ```
 
 On startup the node:
 
 1. Loads protocol settings from the TOML (or the matching built-in preset).
-2. Opens the storage backend (RocksDB or in-memory).
+2. Opens the storage backend (MDBX by default, RocksDB when explicitly configured, or in-memory).
 3. Starts the blockchain service and begins persisting blocks.
 4. Starts the P2P listener and dials the configured seed nodes.
 5. Starts the JSON-RPC server if `[rpc] enabled = true`.
@@ -115,9 +115,9 @@ internet.
 
 ## Point at a data directory
 
-The RocksDB directory comes from `[storage] data_dir` (or its alias `path`) in
-the TOML. You can override it on the command line, which also forces the RocksDB
-backend regardless of the configured backend:
+The persistent store directory comes from `[storage] data_dir` (or its alias
+`path`) in the TOML. You can override it on the command line without changing
+the configured backend:
 
 ```bash
 ./target/release/neo-node --config config/mainnet.toml --storage-path /opt/neo/data
@@ -126,9 +126,9 @@ backend regardless of the configured backend:
 Notes:
 
 - If `[storage] backend` is omitted, the node defaults to an in-memory store
-  (state is not persisted across restarts). Set `backend = "rocksdb"` and a
-  directory, or pass `--storage-path`, for a persistent node.
-- A RocksDB backend with no directory configured (and no `--storage-path`) is an
+  unless a persistent path is supplied. Set `backend = "mdbx"` and a directory,
+  or pass `--storage-path`, for a production persistent node.
+- A persistent backend with no directory configured (and no `--storage-path`) is an
   error.
 - Data directories are tagged with the network magic; only start a node against
   a directory that matches its configured network.
@@ -177,7 +177,7 @@ the node syncs. Replace `10332` with `20332` for TestNet.
 | `cargo build --workspace` | Build every crate (tests, benches, optional integrations). |
 | `./target/release/neo-node --config <FILE>` | Run the node with a TOML config. |
 | `--config / -c <FILE>` | Path to the TOML config (default `neo_testnet_node.toml`). |
-| `--storage-path <DIR>` | Override the RocksDB data directory (forces RocksDB). |
+| `--storage-path <DIR>` | Override the persistent data directory for the configured/default backend. |
 | `--network-magic <U32>` | Override the protocol network magic. |
 | `--check-config` | Validate config and exit. |
 | `--check-storage` | Validate storage access and exit. |
@@ -225,7 +225,7 @@ Key environment knobs:
 |----------|---------|
 | `NEO_NETWORK` | `testnet` (default) or `mainnet`; picks the bundled config. |
 | `NEO_PROFILE` | Empty/`node` for the standard bundled config, or `service` for the RPC/indexer service-provider preset. |
-| `NEO_STORAGE` | RocksDB path inside the container. |
+| `NEO_STORAGE` | Persistent storage path inside the container. |
 | `NEO_CONFIG` | Path to a custom config if you bind-mount your own TOML. |
 | `NEO_RPC_BIND_ADDRESS` | Runtime RPC bind address used for bundled service profiles; defaults to `0.0.0.0` in the container. |
 | `NEO_METRICS_BIND_ADDRESS` | Runtime telemetry bind address used for bundled service profiles; defaults to `NEO_RPC_BIND_ADDRESS`. |

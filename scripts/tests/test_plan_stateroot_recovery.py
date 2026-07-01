@@ -43,7 +43,13 @@ def create_store_dirs(*paths: Path) -> None:
         (path / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
 
 
-def write_checkpoint(root: Path, *, height: int, full_state: bool) -> Path:
+def write_checkpoint(
+    root: Path,
+    *,
+    height: int,
+    full_state: bool,
+    restore_verified: bool = True,
+) -> Path:
     checkpoint = root / f"h{height}"
     (checkpoint / "mainnet").mkdir(parents=True)
     (checkpoint / "mainnet" / "CURRENT").write_text("MANIFEST-chain\n", encoding="utf-8")
@@ -55,6 +61,15 @@ def write_checkpoint(root: Path, *, height: int, full_state: bool) -> Path:
             encoding="utf-8",
         )
         lines.append("state_root_included=true")
+        if restore_verified:
+            lines.extend(
+                [
+                    "restore_verified=true",
+                    f"verified_height={height}",
+                    f"verified_stateroot_root=0xroot{height}",
+                    "verified_against_reference=true",
+                ]
+            )
     else:
         lines.append("state_root_included=false")
     (checkpoint / "CHECKPOINT_INFO").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -171,6 +186,41 @@ class StateRootRecoveryPlanTests(unittest.TestCase):
         self.assertIn("--dry-run", command)
         self.assertEqual(len(plan["checkpoints"]["full_state"]), 1)
         self.assertEqual(len(plan["checkpoints"]["chain_only"]), 1)
+        self.assertEqual(plan["checkpoints"]["usable_full_state_count"], 1)
+        self.assertEqual(plan["checkpoints"]["minimum_full_state_count"], 3)
+        self.assertFalse(plan["checkpoints"]["minimum_full_state_count_met"])
+        self.assertEqual(plan["checkpoints"]["missing_full_state_count"], 2)
+        self.assertEqual(plan["checkpoints"]["usable_full_state_heights"], [100])
+
+    def test_reports_when_three_usable_full_state_checkpoints_are_available(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoints = root / "checkpoints"
+            for height in (100, 200, 300):
+                write_checkpoint(checkpoints, height=height, full_state=True)
+            config = root / "neo.toml"
+            chain_db = root / "chain"
+            stateroot_db = root / "state"
+            create_store_dirs(chain_db, stateroot_db)
+            write_config(config, chain_db=chain_db, stateroot_db=stateroot_db)
+
+            plan = module.build_recovery_plan(
+                node_config=config,
+                checkpoint_root=checkpoints,
+                runner=fake_probe_runner(chain_height=350, state_height=0),
+            )
+
+        self.assertEqual(plan["mode"], "restore-full-state-checkpoint")
+        self.assertEqual(plan["recommended_action"]["checkpoint"]["height"], 300)
+        self.assertEqual(plan["checkpoints"]["usable_full_state_count"], 3)
+        self.assertEqual(plan["checkpoints"]["minimum_full_state_count"], 3)
+        self.assertTrue(plan["checkpoints"]["minimum_full_state_count_met"])
+        self.assertEqual(plan["checkpoints"]["missing_full_state_count"], 0)
+        self.assertEqual(
+            plan["checkpoints"]["usable_full_state_heights"],
+            [100, 200, 300],
+        )
 
     def test_requires_clean_replay_when_only_chain_checkpoints_exist(self):
         module = load_module()
@@ -200,6 +250,85 @@ class StateRootRecoveryPlanTests(unittest.TestCase):
         self.assertIn("--base-config", plan["recommended_action"]["commands"][0])
         self.assertEqual(plan["checkpoints"]["full_state"], [])
         self.assertEqual(plan["checkpoints"]["chain_only"][0]["height"], 624433)
+
+    def test_ignores_legacy_storage_sample_checkpoint_directories(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoints = root / "checkpoints"
+            legacy = checkpoints / "mainnet-bounded-700000-stable"
+            (legacy / "data").mkdir(parents=True)
+            (legacy / "data" / "CURRENT").write_text(
+                "MANIFEST-chain\n",
+                encoding="utf-8",
+            )
+            (legacy / "CHECKPOINT_INFO").write_text(
+                "height=700000\nmode=storage-sample\nmpt_dir=missing-mpt\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(module.scan_checkpoints(checkpoints), [])
+
+    def test_unverified_full_state_checkpoint_is_not_usable_for_recovery(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoints = root / "checkpoints"
+            write_checkpoint(
+                checkpoints,
+                height=100,
+                full_state=True,
+                restore_verified=False,
+            )
+            config = root / "neo.toml"
+            chain_db = root / "chain"
+            stateroot_db = root / "state"
+            create_store_dirs(chain_db, stateroot_db)
+            write_config(config, chain_db=chain_db, stateroot_db=stateroot_db)
+
+            plan = module.build_recovery_plan(
+                node_config=config,
+                checkpoint_root=checkpoints,
+                runner=fake_probe_runner(chain_height=250, state_height=0),
+            )
+
+        self.assertEqual(plan["mode"], "clean-replay-required")
+        self.assertEqual(plan["checkpoints"]["full_state"], [])
+        self.assertFalse(plan["checkpoints"]["all"][0]["usable_for_state_validation"])
+        self.assertIn(
+            "restore verification",
+            plan["checkpoints"]["all"][0]["restore_verification_reason"],
+        )
+
+    def test_full_state_checkpoint_without_verified_root_is_not_usable_for_recovery(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoints = root / "checkpoints"
+            checkpoint = write_checkpoint(checkpoints, height=100, full_state=True)
+            info = (checkpoint / "CHECKPOINT_INFO").read_text(encoding="utf-8")
+            (checkpoint / "CHECKPOINT_INFO").write_text(
+                info.replace("verified_stateroot_root=0xroot100\n", ""),
+                encoding="utf-8",
+            )
+            config = root / "neo.toml"
+            chain_db = root / "chain"
+            stateroot_db = root / "state"
+            create_store_dirs(chain_db, stateroot_db)
+            write_config(config, chain_db=chain_db, stateroot_db=stateroot_db)
+
+            plan = module.build_recovery_plan(
+                node_config=config,
+                checkpoint_root=checkpoints,
+                runner=fake_probe_runner(chain_height=250, state_height=0),
+            )
+
+        self.assertEqual(plan["mode"], "clean-replay-required")
+        self.assertEqual(plan["checkpoints"]["full_state"], [])
+        self.assertIn(
+            "verified_stateroot_root",
+            plan["checkpoints"]["all"][0]["restore_verification_reason"],
+        )
 
     def test_probe_failure_is_reported_without_crashing_plan(self):
         module = load_module()

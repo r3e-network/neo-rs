@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "prepare-bounded-mainnet-replay.py"
+VERIFIED_ROOT = "0x" + "a" * 64
 
 
 def load_module():
@@ -16,7 +17,13 @@ def load_module():
     return module
 
 
-def write_checkpoint(root: Path, *, mpt: bool) -> None:
+def write_checkpoint(
+    root: Path,
+    *,
+    mpt: bool,
+    include_info: bool = True,
+    metadata: dict[str, str | None] | None = None,
+) -> None:
     data = root / "data"
     data.mkdir(parents=True)
     (data / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
@@ -27,34 +34,146 @@ def write_checkpoint(root: Path, *, mpt: bool) -> None:
         mpt_dir = "mpt"
     else:
         mpt_dir = "missing-mpt"
+    if not include_info:
+        return
+
+    info = {
+        "label": "v509k",
+        "saved_at": "2026-06-27T04:49:44Z",
+        "height": "511289",
+        "data_dir": "data/mainnet-replay",
+        "mpt_dir": mpt_dir,
+        "restore_verified": "true",
+        "verified_height": "511289",
+        "verified_stateroot_root": VERIFIED_ROOT,
+        "verified_against_reference": "true",
+    }
+    if metadata:
+        for key, value in metadata.items():
+            if value is None:
+                info.pop(key, None)
+            else:
+                info[key] = value
     (root / "CHECKPOINT_INFO").write_text(
-        f"label=v509k\nsaved_at=2026-06-27T04:49:44Z\ndata_dir=data/mainnet-replay\nmpt_dir={mpt_dir}\n",
+        "".join(f"{key}={value}\n" for key, value in info.items()),
         encoding="utf-8",
     )
 
 
 class BoundedMainnetReplayTests(unittest.TestCase):
-    def test_plan_marks_missing_state_checkpoint_as_storage_sample_only(self):
+    def test_plan_rejects_checkpoint_without_restore_verification_metadata(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint"
+            write_checkpoint(checkpoint, mpt=True, include_info=False)
+
+            with self.assertRaisesRegex(
+                ValueError, "missing restore verification metadata"
+            ):
+                module.build_replay_plan(
+                    checkpoint=checkpoint,
+                    work_root=Path(tmp) / "work",
+                    label="v509k-to-607262",
+                    start_height=511289,
+                    target_height=607262,
+                    addresses=["NVU2QwsVdttjfTHQK7RYD6iwwfXRkSezGU"],
+                )
+
+    def test_plan_rejects_checkpoint_when_restore_verified_is_false(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint"
+            write_checkpoint(
+                checkpoint,
+                mpt=True,
+                metadata={"restore_verified": "false"},
+            )
+
+            with self.assertRaisesRegex(ValueError, "restore_verified=true"):
+                module.build_replay_plan(
+                    checkpoint=checkpoint,
+                    work_root=Path(tmp) / "work",
+                    label="v509k-to-607262",
+                    start_height=511289,
+                    target_height=607262,
+                    addresses=["NVU2QwsVdttjfTHQK7RYD6iwwfXRkSezGU"],
+                )
+
+    def test_plan_rejects_checkpoint_without_reference_verification(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint"
+            write_checkpoint(
+                checkpoint,
+                mpt=True,
+                metadata={"verified_against_reference": "false"},
+            )
+
+            with self.assertRaisesRegex(ValueError, "verified_against_reference=true"):
+                module.build_replay_plan(
+                    checkpoint=checkpoint,
+                    work_root=Path(tmp) / "work",
+                    label="v509k-to-607262",
+                    start_height=511289,
+                    target_height=607262,
+                    addresses=["NVU2QwsVdttjfTHQK7RYD6iwwfXRkSezGU"],
+                )
+
+    def test_plan_rejects_checkpoint_with_mismatched_verified_height(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint"
+            write_checkpoint(
+                checkpoint,
+                mpt=True,
+                metadata={"verified_height": "511288"},
+            )
+
+            with self.assertRaisesRegex(ValueError, "height does not match"):
+                module.build_replay_plan(
+                    checkpoint=checkpoint,
+                    work_root=Path(tmp) / "work",
+                    label="v509k-to-607262",
+                    start_height=511289,
+                    target_height=607262,
+                    addresses=["NVU2QwsVdttjfTHQK7RYD6iwwfXRkSezGU"],
+                )
+
+    def test_plan_rejects_checkpoint_without_verified_stateroot_root(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint"
+            write_checkpoint(
+                checkpoint,
+                mpt=True,
+                metadata={"verified_stateroot_root": None},
+            )
+
+            with self.assertRaisesRegex(ValueError, "verified_stateroot_root"):
+                module.build_replay_plan(
+                    checkpoint=checkpoint,
+                    work_root=Path(tmp) / "work",
+                    label="v509k-to-607262",
+                    start_height=511289,
+                    target_height=607262,
+                    addresses=["NVU2QwsVdttjfTHQK7RYD6iwwfXRkSezGU"],
+                )
+
+    def test_plan_rejects_checkpoint_without_state_root(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint = Path(tmp) / "checkpoint"
             write_checkpoint(checkpoint, mpt=False)
 
-            plan = module.build_replay_plan(
-                checkpoint=checkpoint,
-                work_root=Path(tmp) / "work",
-                label="v509k-to-607262",
-                start_height=511289,
-                target_height=607262,
-                addresses=["NVU2QwsVdttjfTHQK7RYD6iwwfXRkSezGU"],
-            )
-
-        self.assertEqual(plan["mode"], "storage-sample")
-        self.assertFalse(plan["state_checkpoint"]["present"])
-        validator = module.step_by_name(plan, "state-root-validator")
-        self.assertFalse(validator["enabled"])
-        self.assertIn("StateRoot/MPT", validator["reason"])
-        self.assertIn("--address", module.step_by_name(plan, "offline-gas-compare")["command"])
+            with self.assertRaisesRegex(ValueError, "full-state checkpoint"):
+                module.build_replay_plan(
+                    checkpoint=checkpoint,
+                    work_root=Path(tmp) / "work",
+                    label="v509k-to-607262",
+                    start_height=511289,
+                    target_height=607262,
+                    addresses=["NVU2QwsVdttjfTHQK7RYD6iwwfXRkSezGU"],
+                )
 
     def test_plan_enables_state_root_validator_when_state_checkpoint_exists(self):
         module = load_module()
@@ -84,7 +203,7 @@ class BoundedMainnetReplayTests(unittest.TestCase):
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint = Path(tmp) / "checkpoint"
-            write_checkpoint(checkpoint, mpt=True)
+            write_checkpoint(checkpoint, mpt=True, metadata={"height": None})
 
             plan = module.build_replay_plan(
                 checkpoint=checkpoint,
@@ -120,7 +239,12 @@ class BoundedMainnetReplayTests(unittest.TestCase):
             config_text = Path(prepared["config_path"]).read_text(encoding="utf-8")
             self.assertTrue((work_root / "prepared" / "data" / "CURRENT").exists())
             self.assertTrue((work_root / "prepared" / "mpt" / "CURRENT").exists())
-            self.assertIn('path = "', config_text)
+            self.assertIn('backend = "mdbx"', config_text)
+            self.assertIn('data_dir = "', config_text)
+            self.assertIn("mdbx_geometry_upper_gb = 512", config_text)
+            self.assertIn("mdbx_geometry_growth_mb = 256", config_text)
+            self.assertIn("mdbx_max_readers = 4096", config_text)
+            self.assertNotIn('backend = "rocksdb"', config_text)
             self.assertIn("port = 31332", config_text)
             self.assertIn("port = 31333", config_text)
             self.assertIn("port = 31990", config_text)
