@@ -35,7 +35,7 @@ fn append_returns_stable_offsets_and_reads_payloads() {
 }
 
 #[test]
-fn static_file_factory_creates_file_provider_by_alias() {
+fn static_file_factory_creates_file_provider_by_name() {
     let temp = tempfile::tempdir().expect("tempdir");
     let store =
         StaticFileFactory::get_static_files("file", temp.path()).expect("open static files");
@@ -48,10 +48,22 @@ fn static_file_factory_creates_file_provider_by_alias() {
         b"factory-block"
     );
     assert!(
-        StaticFileFactory::get_static_file_provider("FileStaticFiles")
+        StaticFileFactory::get_static_file_provider("File")
             .expect("file static provider")
             .as_any()
             .is::<FileStaticFileProvider>()
+    );
+}
+
+#[test]
+fn static_file_factory_rejects_legacy_concrete_type_aliases() {
+    assert!(
+        StaticFileFactory::get_static_file_provider("FileStaticFiles").is_none(),
+        "legacy concrete-type aliases are not part of the production static-file provider contract"
+    );
+    assert!(
+        StaticFileFactory::get_static_file_provider("filestaticfiles").is_none(),
+        "legacy concrete-type aliases are not part of the production static-file provider contract"
     );
 }
 

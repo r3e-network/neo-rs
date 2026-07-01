@@ -270,11 +270,7 @@ static STATIC_FILE_PROVIDERS: LazyLock<RwLock<HashMap<String, Arc<dyn StaticFile
     LazyLock::new(|| {
         let mut providers = HashMap::new();
         let file_provider = Arc::new(FileStaticFileProvider::new()) as Arc<dyn StaticFileProvider>;
-        register_static_file_provider_aliases(
-            &mut providers,
-            file_provider,
-            &[FILE_PROVIDER, "filestaticfiles"],
-        );
+        register_static_file_provider_aliases(&mut providers, file_provider, &[FILE_PROVIDER]);
         RwLock::new(providers)
     });
 
