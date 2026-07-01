@@ -178,10 +178,10 @@ impl NeoToken {
             return Ok(());
         }
         let mut committee = self.read_committee_with_votes(snapshot)?;
-        let mut refreshed_committee: Option<Vec<(ECPoint, BigInt)>> = None;
         let refresh_heights = (start..=end)
             .filter(|height| Self::should_refresh_committee(*height, committee_count))
             .collect::<Vec<_>>();
+        let first_refresh = refresh_heights.first().copied();
         let gas_change_points = self
             .sorted_gas_records(snapshot, end.saturating_add(1))
             .into_iter()
@@ -192,25 +192,19 @@ impl NeoToken {
         let mut rewards = std::collections::BTreeMap::<UInt160, BigInt>::new();
         let mut height = start;
         while height <= end {
-            if refresh_heights
-                .iter()
-                .copied()
-                .any(|refresh| refresh == height)
-            {
-                let refreshed = match &refreshed_committee {
-                    Some(committee) => committee.clone(),
-                    None => {
-                        let computed = self.compute_committee_members(snapshot, settings)?;
-                        refreshed_committee = Some(computed.clone());
-                        computed
-                    }
-                };
+            if first_refresh.is_some_and(|refresh| refresh == height) {
+                let refreshed = self.compute_committee_members(snapshot, settings)?;
                 snapshot.update(
                     Self::committee_key(),
                     StorageItem::from_bytes(Self::encode_committee(&refreshed)?),
                 );
                 committee = refreshed;
-                self.fast_forward_voter_reward_refresh(snapshot, settings, &committee, height)?;
+                self.fast_forward_voter_reward_refreshes(
+                    snapshot,
+                    settings,
+                    &committee,
+                    &refresh_heights,
+                )?;
             }
             let committee_accounts = committee
                 .iter()
@@ -225,11 +219,7 @@ impl NeoToken {
             let mut segment_end = next_change
                 .and_then(|index| index.checked_sub(2))
                 .map_or(end, |candidate| candidate.min(end));
-            if let Some(refresh) = refresh_heights
-                .iter()
-                .copied()
-                .find(|refresh| *refresh > height)
-            {
+            if let Some(refresh) = first_refresh.filter(|refresh| *refresh > height) {
                 segment_end = segment_end.min(refresh - 1);
             }
             let committee_reward = &gas_per_block * COMMITTEE_REWARD_RATIO / 100;
@@ -258,27 +248,34 @@ impl NeoToken {
         Ok(())
     }
 
-    fn fast_forward_voter_reward_refresh(
+    fn fast_forward_voter_reward_refreshes(
         &self,
         snapshot: &DataCache,
         settings: &neo_config::ProtocolSettings,
         committee: &[(ECPoint, BigInt)],
-        height: u32,
+        refresh_heights: &[u32],
     ) -> CoreResult<()> {
+        if refresh_heights.is_empty() {
+            return Ok(());
+        }
         let committee_count = settings.committee_members_count();
         let validators_count = usize::try_from(settings.validators_count).unwrap_or(0);
-        let gas_per_block = self.gas_per_block_at(snapshot, height.saturating_add(1));
         let m = BigInt::from(committee_count as u64);
         let m_plus_n = BigInt::from((committee_count + validators_count) as u64);
-        let voter_reward_of_each_committee =
-            &gas_per_block * VOTER_REWARD_RATIO * VOTE_FACTOR * m / m_plus_n / 100;
         for (index, (member, votes)) in committee.iter().enumerate() {
             let factor = if index < validators_count { 2 } else { 1 };
             if *votes > BigInt::from(0) {
-                let reward_per_neo = factor * &voter_reward_of_each_committee / votes;
+                let mut accumulated_delta = BigInt::from(0);
+                for refresh_height in refresh_heights {
+                    let gas_per_block =
+                        self.gas_per_block_at(snapshot, refresh_height.saturating_add(1));
+                    let voter_reward_of_each_committee =
+                        &gas_per_block * VOTER_REWARD_RATIO * VOTE_FACTOR * &m / &m_plus_n / 100;
+                    accumulated_delta += factor * voter_reward_of_each_committee / votes;
+                }
                 let key = Self::voter_reward_per_committee_key(member);
                 let accumulated =
-                    self.voter_reward_per_committee(snapshot, member) + reward_per_neo;
+                    self.voter_reward_per_committee(snapshot, member) + accumulated_delta;
                 snapshot.update(
                     key,
                     StorageItem::from_bytes(crate::bigint_to_storage_bytes(&accumulated)),
