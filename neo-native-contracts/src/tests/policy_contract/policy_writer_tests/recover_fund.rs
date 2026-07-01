@@ -84,6 +84,78 @@ fn seed_blocked_request_time(cache: &DataCache, account: &UInt160, request_time_
     );
 }
 
+/// C# v3.10.0 marks `recoverFund` as `RequiredCallFlags = CallFlags.All`.
+/// `States|AllowNotify` is enough for storage writes and Policy's own
+/// notification, but it must still fault before dispatch because the method's
+/// descriptor requires `AllowCall` for the nested NEP-17 calls.
+#[test]
+fn recover_fund_e2e_requires_call_flags_all_before_dispatch() {
+    const REQUEST_TIME_MS: u64 = 1_000_000;
+    const BALANCE: i64 = 1234;
+    crate::install();
+    let settings = faun_settings();
+    let cache = DataCache::new(false);
+    let committee = sample_committee();
+    seed_committee(&cache, &committee);
+    deploy_native(
+        &cache,
+        &build_native_contract_state(&PolicyContract, &settings, 100),
+    );
+    deploy_native(
+        &cache,
+        &build_native_contract_state(&crate::GasToken, &settings, 100),
+    );
+
+    let account = UInt160::from_bytes(&[0x42; 20]).unwrap();
+    let gas_hash = *crate::hashes::GAS_TOKEN_HASH;
+    seed_blocked_request_time(&cache, &account, REQUEST_TIME_MS);
+    seed_gas_balance(&cache, &account, BALANCE);
+    let snapshot = Arc::new(cache);
+
+    let mut header = BlockHeader::default();
+    header.set_index(100);
+    header.set_timestamp(REQUEST_TIME_MS + REQUIRED_TIME_FOR_RECOVER_FUND);
+
+    let (state, engine) = call_policy_engine_with_flags(
+        Arc::clone(&snapshot),
+        committee_address(&committee),
+        settings,
+        Some(Block::from_parts(header, vec![])),
+        "recoverFund",
+        2,
+        CallFlags::STATES | CallFlags::ALLOW_NOTIFY,
+        |b| {
+            b.emit_push(&gas_hash.to_array());
+            b.emit_push(&account.to_array());
+        },
+    );
+
+    assert_eq!(
+        state,
+        VmState::FAULT,
+        "recoverFund must require CallFlags.All before dispatch"
+    );
+    let fault = engine.fault_exception().unwrap_or_default();
+    assert!(
+        fault.contains("required permissions") && fault.contains("recoverFund"),
+        "unexpected fault: {fault:?}"
+    );
+    assert_eq!(
+        crate::GasToken::balance_of(&snapshot, &account).unwrap(),
+        BigInt::from(BALANCE),
+        "insufficient call flags must not move funds"
+    );
+    assert_eq!(
+        crate::GasToken::balance_of(&snapshot, &crate::hashes::TREASURY_HASH).unwrap(),
+        BigInt::from(0),
+        "insufficient call flags must not credit Treasury"
+    );
+    assert!(
+        engine.notifications().is_empty(),
+        "insufficient call flags must not emit recoverFund notifications"
+    );
+}
+
 /// recoverFund happy path (C# `PolicyContract.RecoverFund`, lines 663-680):
 /// exactly one year after the blocked-account request, an almost-full
 /// committee signer sweeps the account's full GAS balance to Treasury

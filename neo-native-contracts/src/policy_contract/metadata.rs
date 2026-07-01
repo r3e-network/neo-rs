@@ -287,10 +287,10 @@ pub(super) static POLICY_CONTRACT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLoc
             "recoverFund",
             1 << 15,
             false,
-            // C# v3.10.0 `PolicyContract.RecoverFund` requires only
-            // States|AllowNotify; the native-to-native transfer below does not
-            // add an AllowCall requirement at Policy's invocation gate.
-            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            // C# v3.10.0 `PolicyContract.RecoverFund` requires CallFlags.All;
+            // the AllowCall bit gates the nested NEP-17 balanceOf/transfer
+            // calls before Policy dispatches.
+            CallFlags::ALL.bits(),
             vec![
                 ContractParameterType::Hash160,
                 ContractParameterType::Hash160,

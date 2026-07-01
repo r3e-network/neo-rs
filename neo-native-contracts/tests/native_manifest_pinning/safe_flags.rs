@@ -46,8 +46,8 @@ fn native_manifest_safe_flags_pin_csharp_attributes() {
     );
 
     // PolicyContract: all get*/isBlocked are ReadStates; every set*, both
-    // blockAccount registrations, unblockAccount, the whitelist writers and
-    // recoverFund carry States (± AllowNotify) -> not safe.
+    // blockAccount registrations, unblockAccount, the whitelist writers, and
+    // recoverFund carry write/call/notify flags beyond ReadOnly -> not safe.
     assert_eq!(
         manifest_safe_methods(&PolicyContract::new(), &settings, ALL_ACTIVE),
         vec![

@@ -63,9 +63,9 @@ fn fungible_token_transfer_fees_match_csharp_attribute() {
 
 /// C# v3.10.0 `PolicyContract.RecoverFund` is
 /// `[ContractMethod(Hardfork.HF_Faun, CpuFee = 1 << 15,
-/// RequiredCallFlags = CallFlags.States | CallFlags.AllowNotify)]`
-/// (`PolicyContract.cs:630`). Requiring `AllowCall` at the invocation gate
-/// would be stricter than C# and reject otherwise valid recoveries.
+/// RequiredCallFlags = CallFlags.All)]` (`PolicyContract.cs:630`).
+/// The `AllowCall` bit is consensus-observable because native method metadata
+/// is checked before dispatch.
 #[test]
 fn policy_recover_fund_call_flags_match_csharp_attribute() {
     let recover_fund = PolicyContract::new()
@@ -76,10 +76,7 @@ fn policy_recover_fund_call_flags_match_csharp_attribute() {
         .clone();
     assert_eq!(recover_fund.cpu_fee, 1 << 15);
     assert_eq!(recover_fund.active_in, Some(Hardfork::HfFaun));
-    assert_eq!(
-        recover_fund.required_call_flags,
-        (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
-    );
+    assert_eq!(recover_fund.required_call_flags, CallFlags::ALL.bits());
 }
 
 /// C# v3.10.0 keeps `getAttributeFee` and `setAttributeFee` as pre/post

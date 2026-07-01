@@ -53,6 +53,31 @@ fn call_policy_engine<F>(
 where
     F: FnOnce(&mut ScriptBuilder),
 {
+    call_policy_engine_with_flags(
+        snapshot,
+        signer,
+        settings,
+        block,
+        method,
+        argc,
+        CallFlags::ALL,
+        push_args_reversed,
+    )
+}
+
+fn call_policy_engine_with_flags<F>(
+    snapshot: Arc<DataCache>,
+    signer: UInt160,
+    settings: ProtocolSettings,
+    block: Option<Block>,
+    method: &str,
+    argc: i64,
+    call_flags: CallFlags,
+    push_args_reversed: F,
+) -> (VmState, ApplicationEngine)
+where
+    F: FnOnce(&mut ScriptBuilder),
+{
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
@@ -62,7 +87,7 @@ where
     push_args_reversed(&mut builder);
     builder.emit_push_int(argc);
     builder.emit_pack();
-    builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
+    builder.emit_push_int(i64::from(call_flags.bits()));
     builder.emit_push(method.as_bytes());
     builder.emit_push(&PolicyContract::script_hash().to_array());
     builder

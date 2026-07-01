@@ -42,8 +42,9 @@ Baseline ref = `neo_csharp/` @ v3.9.1. Gorgon already in Rust `HF_Gorgon` enum (
 - Rust: `contract_management.rs:881` single destroy; `:1290` delete-then-block order.
 - Fix: register destroy V0 (deprecated_in Gorgon) + V1 (active_in Gorgon); V1 does block_account+clean_whitelist BEFORE erase.
 
-### G. Policy recoverFund callflags States|AllowNotify → All (adds AllowCall) — DORMANT(HF_Faun)
-- Rust: `policy_contract.rs:1051` + assertion `:1838`.
+### G. Policy recoverFund callflags States|AllowNotify → All (adds AllowCall) — FIXED
+- Rust: `neo-native-contracts/src/policy_contract/metadata.rs` now pins
+  `recoverFund` to `CallFlags.All`, with manifest and dispatch-gate regressions.
 
 ## P1 — protocol
 - **VerifyResult.NotYetValid** enum: insert after Expired (byte 11), renumber InsufficientFunds=12/PolicyFail=13/HasConflicts=14/Unknown=15. `neo-primitives/src/verify_result.rs`. Update RPC relay match + roundtrip test.

@@ -242,7 +242,7 @@ fn native_contract_surface() {
     assert!(get_wl.safe && get_wl.parameters.is_empty());
     assert_eq!(get_wl.return_type, ContractParameterType::InteropInterface);
     assert_eq!(get_wl.required_call_flags, CallFlags::READ_STATES.bits());
-    // recoverFund: HF_Faun, not safe, States|AllowNotify, two Hash160 args.
+    // recoverFund: HF_Faun, not safe, CallFlags.All, two Hash160 args.
     let recover = c
         .methods()
         .iter()
@@ -250,10 +250,7 @@ fn native_contract_surface() {
         .unwrap();
     assert!(!recover.safe);
     assert_eq!(recover.active_in, Some(Hardfork::HfFaun));
-    assert_eq!(
-        recover.required_call_flags,
-        (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits()
-    );
+    assert_eq!(recover.required_call_flags, CallFlags::ALL.bits());
     assert_eq!(
         recover.parameters,
         vec![

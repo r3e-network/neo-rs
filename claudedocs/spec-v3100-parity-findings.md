@@ -317,10 +317,14 @@ Use the same ByteString(contract_hash) encoding the spec uses for Hash160 notifi
 - csharp: `neo_csharp/src/Neo/SmartContract/Native/PolicyContract.cs:144-150`
 - fix: Give the native initialize dispatch a hardfork parameter (mirroring C# InitializeAsync(engine, hardfork?) driven by ContractManagement.OnPersist per active hardfork). In PolicyContract: at genesis (hardfork == ActiveIn/None) seed ONLY FeePerByte/ExecFeeFactor/StoragePrice. Move the MillisecondsPerBlock/MaxValidUntilBlockIncrement/MaxTraceableBlocks seeds to an HF_Echidna-gated branch, sourcing values from engine.ProtocolSettings.{milliseconds_per_block,max_valid_until_block_increment,max_traceable_blocks} instead of DEFAULT_* constants. Add the missing seed Prefix_AttributeFee[NotaryAssisted=0x22] = DefaultNotaryAssistedAttributeFee (10000000) in that same HF_Echidna branch. (Matches PolicyContract.cs:138-150.)
 
-### [cosmetic] recoverFund RequiredCallFlags is States|AllowNotify instead of CallFlags.All
-- spec: `native/policy.py:132-138`
+### [fixed] recoverFund RequiredCallFlags is States|AllowNotify instead of CallFlags.All
+- rust: `neo-native-contracts/src/policy_contract/metadata.rs`
 - csharp: `neo_csharp/src/Neo/SmartContract/Native/PolicyContract.cs:630-631`
-- fix: Optional metadata-accuracy fix: change spec native/policy.py:136 recoverFund registration from call_flags=CallFlags.STATES | CallFlags.ALLOW_NOTIFY to call_flags=CallFlags.ALL (= STATES | ALLOW_CALL | ALLOW_NOTIFY) to match C# PolicyContract.cs:630 RequiredCallFlags = CallFlags.All. This has no effect on the serialized manifest (safe stays false) or on current execution (the spec's _invoke_nep17_method bypasses flag masking), so it is purely descriptor-value alignment. A genuine behavioral fix would additionally require the spec to route recoverFund's balanceOf/transfer calls through the engine's _call_contract_internal path so that required_call_flags actually constrains sub-calls as in C#; absent that, the flag value is inert.
+- fix: Rust now pins `recoverFund` to `CallFlags.All` and covers both the
+  manifest metadata and dispatch-gate behavior. This is not cosmetic for the
+  Rust node: native method metadata is checked before dispatch, so omitting
+  `AllowCall` let `States|AllowNotify` reach the method body and fault later at
+  the nested NEP-17 transfer instead of matching C#'s invocation gate.
 
 ## native-role-oracle
 
