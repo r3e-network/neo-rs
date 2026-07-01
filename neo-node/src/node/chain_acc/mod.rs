@@ -20,12 +20,11 @@ use std::time::Instant;
 
 #[cfg(test)]
 use neo_blockchain::command::ImportBlocksReply;
+use neo_blockchain::command::ImportBlocksStats;
 use neo_blockchain::handle::BlockchainHandle;
 use neo_payloads::block::Block;
 use neo_storage::persistence::store::Store;
 use tracing::info;
-
-use neo_blockchain::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
 
 mod format;
 mod metrics;
@@ -35,9 +34,15 @@ use metrics::{
     should_log_import_progress,
 };
 
-/// The batch size for Import commands. C# Neo uses 10; we use 500 since our
-/// per-block persist is only ~0.5ms and the batch amortizes the channel round-trip.
-const IMPORT_BATCH_SIZE: usize = 500;
+/// The mixed-block batch size for trusted `chain.acc` Import commands.
+///
+/// C# Neo uses 10 because it prioritizes simple live-import parity. This path is
+/// a trusted local fast-sync import: larger mixed batches reduce expensive
+/// StateService/durable-store finalization fences while preserving per-block
+/// native/state transitions. Empty-only runs use the same outer command
+/// boundary: the blockchain service owns the smaller internal empty
+/// fast-forward chunks while keeping one outer batch snapshot/finalization.
+const IMPORT_BATCH_SIZE: usize = 10_000;
 
 /// Import blocks from a `chain.acc` file and stop once `stop_at_height` is imported.
 pub async fn import_chain_acc_until_height(
@@ -79,6 +84,9 @@ pub(super) struct ChainAccImportReport {
     pub(super) imported: u64,
     pub(super) last_imported_tip: Option<LocalLedgerTip>,
     pub(super) elapsed_seconds: f64,
+    pub(super) driver_elapsed_seconds: f64,
+    pub(super) chain_acc_read_seconds: f64,
+    pub(super) chain_acc_validate_seconds: f64,
     pub(super) average_blocks_per_second: f64,
     pub(super) empty_blocks: u64,
     pub(super) empty_only_blocks: u64,
@@ -87,7 +95,12 @@ pub(super) struct ChainAccImportReport {
     pub(super) transaction_blocks: u64,
     pub(super) transactions: u64,
     pub(super) transaction_block_import_seconds: f64,
+    pub(super) transaction_block_clone_seconds: f64,
+    pub(super) transaction_ledger_insert_seconds: f64,
+    pub(super) transaction_committed_hook_seconds: f64,
     pub(super) transaction_blocks_per_second: f64,
+    pub(super) finalization_seconds: f64,
+    pub(super) unclassified_import_seconds: f64,
     pub(super) hot_metrics: ImportHotMetrics,
 }
 
@@ -101,8 +114,22 @@ impl ChainAccImportReport {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct ImportHotMetrics {
+    pub(super) state_service_mpt_apply_attempts: u64,
+    pub(super) state_service_mpt_apply_failures: u64,
+    pub(super) state_service_mpt_apply_height: u64,
     pub(super) state_service_mpt_avg_total_us: u64,
+    pub(super) state_service_mpt_avg_project_us: u64,
+    pub(super) state_service_mpt_avg_trie_us: u64,
+    pub(super) state_service_mpt_avg_changes: u64,
+    pub(super) state_service_mpt_enqueue_blocking_avg_us: u64,
+    pub(super) state_service_mpt_queue_wait_avg_us: u64,
+    pub(super) state_service_mpt_mutate_changes_avg_us: u64,
+    pub(super) state_service_mpt_root_hash_avg_us: u64,
     pub(super) state_service_mpt_trie_commit_avg_us: u64,
+    pub(super) state_service_mpt_backing_commit_avg_us: u64,
+    pub(super) state_service_mpt_publish_generation_avg_us: u64,
+    pub(super) state_service_mpt_overlay_entries_avg: u64,
+    pub(super) state_service_mpt_batch_blocks_avg: u64,
     pub(super) native_persist_avg_total_us: u64,
     pub(super) native_persist_tx_hot_stage: &'static str,
     pub(super) native_persist_tx_hot_stage_avg_us: u64,
@@ -230,8 +257,15 @@ async fn import_chain_acc_report_from_reader_until_height<R>(
 where
     R: Read + Seek,
 {
+    let driver_start = Instant::now();
+    let mut chain_acc_read_elapsed = std::time::Duration::ZERO;
+    let mut chain_acc_validate_elapsed = std::time::Duration::ZERO;
+
+    let read_start = Instant::now();
     let header = read_chain_acc_header(reader)?;
+    chain_acc_read_elapsed += read_start.elapsed();
     let count = header.count;
+    let validate_start = Instant::now();
     if let Some(range) = expected_range {
         validate_chain_acc_count(count, range)?;
     }
@@ -266,12 +300,18 @@ where
     let mut hot_metrics = ImportHotMetrics::default();
     let expected_first_prev_hash =
         expected_chain_acc_first_prev_hash(import_range, local_tip.as_ref())?;
+    chain_acc_validate_elapsed += validate_start.elapsed();
 
+    let read_start = Instant::now();
     skip_chain_acc_records(reader, records_to_skip)?;
+    chain_acc_read_elapsed += read_start.elapsed();
 
     for i in 0..import_count {
         let record = records_to_skip + i;
+        let read_start = Instant::now();
         let block = read_next_chain_acc_block(reader, record, &mut block_bytes)?;
+        chain_acc_read_elapsed += read_start.elapsed();
+        let validate_start = Instant::now();
         validate_chain_acc_block_height(
             i,
             block.index(),
@@ -283,37 +323,12 @@ where
         validate_chain_acc_first_prev_hash(i, &block, expected_first_prev_hash.as_ref())?;
         validate_chain_acc_internal_prev_hash(i, &block, previous_hash.as_ref())?;
         if count_only_stop_height_exceeded(expected_range, stop_at_height, block.index()) {
+            chain_acc_validate_elapsed += validate_start.elapsed();
             break;
         }
         let reached_count_only_stop_height =
             count_only_stop_height_reached(expected_range, stop_at_height, block.index());
-        if pending_batch.should_flush_before_push(&block) {
-            let batch_blocks = take_import_batch(&mut batch, true);
-            let batch_composition = pending_batch.composition;
-            let batch_tip = pending_batch.tip;
-            pending_batch.clear();
-            let batch_result =
-                import_chain_acc_batch(handle, batch_blocks, batch_composition, batch_tip, verify)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
-            progress.record_batch(batch_result.imported, batch_result.elapsed);
-            imported += batch_result.imported as u64;
-            composition.record_imported(
-                batch_result.composition,
-                batch_result.imported,
-                batch_result.elapsed,
-            );
-            if batch_result.fully_imported() {
-                last_imported_tip = batch_result.tip;
-            }
-            if !batch_result.fully_imported() {
-                anyhow::bail!(
-                    "partial chain.acc import before record {record}: imported {} of {} pending empty blocks, {imported} of {import_count} requested blocks imported",
-                    batch_result.imported,
-                    batch_result.len
-                );
-            }
-        }
+        chain_acc_validate_elapsed += validate_start.elapsed();
         previous_hash = Some(block.hash());
         pending_batch.record_pushed(&block);
         batch.push(block);
@@ -339,6 +354,7 @@ where
                 batch_result.composition,
                 batch_result.imported,
                 batch_result.elapsed,
+                batch_result.stats,
             );
             if batch_result.fully_imported() {
                 last_imported_tip = batch_result.tip;
@@ -404,12 +420,15 @@ where
                     state_service_mpt_avg_project_us = state_service_metrics.avg_project_us,
                     state_service_mpt_avg_trie_us = state_service_metrics.avg_trie_us,
                     state_service_mpt_avg_changes = state_service_metrics.avg_changes,
+                    state_service_mpt_enqueue_blocking_avg_us = state_service_metrics.enqueue_blocking_avg_us,
+                    state_service_mpt_queue_wait_avg_us = state_service_metrics.queue_wait_avg_us,
                     state_service_mpt_mutate_changes_avg_us = state_service_metrics.mutate_changes_avg_us,
                     state_service_mpt_root_hash_avg_us = state_service_metrics.root_hash_avg_us,
                     state_service_mpt_trie_commit_avg_us = state_service_metrics.trie_commit_avg_us,
                     state_service_mpt_backing_commit_avg_us = state_service_metrics.backing_commit_avg_us,
                     state_service_mpt_publish_generation_avg_us = state_service_metrics.publish_generation_avg_us,
                     state_service_mpt_overlay_entries_avg = state_service_metrics.overlay_entries_avg,
+                    state_service_mpt_batch_blocks_avg = state_service_metrics.batch_blocks_avg,
                     rocksdb_batch_pending_operations = rocksdb_batch_metrics.map_or(0, |metrics| metrics.pending_operations),
                     rocksdb_batch_batches_flushed = rocksdb_batch_metrics.map_or(0, |metrics| metrics.batches_flushed),
                     rocksdb_batch_operations_written = rocksdb_batch_metrics.map_or(0, |metrics| metrics.operations_written),
@@ -440,15 +459,26 @@ where
     }
 
     let elapsed_seconds = progress.elapsed_seconds();
+    let driver_elapsed_seconds = driver_start.elapsed().as_secs_f64();
+    let chain_acc_read_seconds = chain_acc_read_elapsed.as_secs_f64();
+    let chain_acc_validate_seconds = chain_acc_validate_elapsed.as_secs_f64();
     let average_blocks_per_second = progress.average_blocks_per_second();
     let empty_block_import_seconds = composition.empty_block_import_seconds();
     let empty_blocks_per_second = composition.empty_blocks_per_second();
     let transaction_block_import_seconds = composition.transaction_block_import_seconds();
+    let transaction_block_clone_seconds = composition.transaction_block_clone_seconds();
+    let transaction_ledger_insert_seconds = composition.transaction_ledger_insert_seconds();
+    let transaction_committed_hook_seconds = composition.transaction_committed_hook_seconds();
     let transaction_blocks_per_second = composition.transaction_blocks_per_second();
+    let finalization_seconds = composition.finalization_seconds();
+    let unclassified_import_seconds = composition.unclassified_import_seconds(progress.elapsed());
     info!(
         target: "neo::import",
         imported,
         elapsed_seconds,
+        driver_elapsed_seconds,
+        chain_acc_read_seconds,
+        chain_acc_validate_seconds,
         average_blocks_per_second,
         empty_blocks = composition.empty_blocks,
         empty_only_blocks = composition.empty_only_blocks,
@@ -457,13 +487,21 @@ where
         transaction_blocks = composition.transaction_blocks,
         transactions = composition.transactions,
         transaction_block_import_seconds,
+        transaction_block_clone_seconds,
+        transaction_ledger_insert_seconds,
+        transaction_committed_hook_seconds,
         transaction_blocks_per_second,
+        finalization_seconds,
+        unclassified_import_seconds,
         "chain.acc import complete"
     );
     Ok(ChainAccImportReport {
         imported,
         last_imported_tip,
         elapsed_seconds,
+        driver_elapsed_seconds,
+        chain_acc_read_seconds,
+        chain_acc_validate_seconds,
         average_blocks_per_second,
         empty_blocks: composition.empty_blocks,
         empty_only_blocks: composition.empty_only_blocks,
@@ -472,7 +510,12 @@ where
         transaction_blocks: composition.transaction_blocks,
         transactions: composition.transactions,
         transaction_block_import_seconds,
+        transaction_block_clone_seconds,
+        transaction_ledger_insert_seconds,
+        transaction_committed_hook_seconds,
         transaction_blocks_per_second,
+        finalization_seconds,
+        unclassified_import_seconds,
         hot_metrics,
     })
 }
@@ -504,21 +547,14 @@ impl PendingChainAccBatch {
         }
     }
 
+    #[cfg(test)]
     fn is_empty_only(&self) -> bool {
         self.len > 0 && self.composition.is_empty_only()
     }
 
-    fn should_flush_before_push(&self, next: &Block) -> bool {
-        self.len >= IMPORT_BATCH_SIZE && self.is_empty_only() && !next.transactions.is_empty()
-    }
-
     fn should_flush(&self, batch_len: usize) -> bool {
         debug_assert_eq!(self.len, batch_len);
-        if self.composition.is_empty_only() {
-            batch_len >= MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS
-        } else {
-            batch_len >= IMPORT_BATCH_SIZE
-        }
+        batch_len >= IMPORT_BATCH_SIZE
     }
 }
 
@@ -527,6 +563,7 @@ struct ChainAccBatchImportResult {
     imported: usize,
     elapsed: std::time::Duration,
     composition: ChainAccImportComposition,
+    stats: ImportBlocksStats,
     tip: Option<LocalLedgerTip>,
 }
 
@@ -545,13 +582,22 @@ async fn import_chain_acc_batch(
 ) -> anyhow::Result<ChainAccBatchImportResult> {
     let len = batch_blocks.len();
     let start = Instant::now();
-    let imported = handle.import_blocks_bulk(batch_blocks, verify).await?;
+    let reply = handle
+        .import_blocks_bulk_detailed(batch_blocks, verify)
+        .await?;
     let elapsed = start.elapsed();
+    if let Some(error) = reply.error {
+        anyhow::bail!(
+            "block import finalization failed after importing {} blocks: {error}",
+            reply.imported
+        );
+    }
     Ok(ChainAccBatchImportResult {
         len,
-        imported,
+        imported: reply.imported,
         elapsed,
         composition,
+        stats: reply.stats,
         tip,
     })
 }
@@ -564,18 +610,30 @@ struct ChainAccImportComposition {
     transactions: u64,
     empty_elapsed: std::time::Duration,
     transaction_elapsed: std::time::Duration,
+    transaction_block_clone_elapsed: std::time::Duration,
+    transaction_ledger_insert_elapsed: std::time::Duration,
+    transaction_committed_hook_elapsed: std::time::Duration,
+    finalization_elapsed: std::time::Duration,
 }
 
 impl ChainAccImportComposition {
+    #[cfg(test)]
     fn has_transaction_blocks(&self) -> bool {
         self.transaction_blocks > 0
     }
 
+    #[cfg(test)]
     fn is_empty_only(&self) -> bool {
         self.empty_blocks > 0 && !self.has_transaction_blocks()
     }
 
-    fn record_imported(&mut self, batch: Self, imported: usize, elapsed: std::time::Duration) {
+    fn record_imported(
+        &mut self,
+        batch: Self,
+        imported: usize,
+        elapsed: std::time::Duration,
+        stats: ImportBlocksStats,
+    ) {
         if imported == 0 {
             return;
         }
@@ -585,7 +643,21 @@ impl ChainAccImportComposition {
             self.empty_blocks += batch.empty_blocks;
             self.transaction_blocks += batch.transaction_blocks;
             self.transactions += batch.transactions;
-            if batch.transaction_blocks > 0 {
+            if stats.has_composition() {
+                if stats.empty_blocks > 0 {
+                    self.empty_only_blocks += stats.empty_blocks as u64;
+                    self.empty_elapsed += stats.empty_elapsed;
+                }
+                if stats.transaction_blocks > 0 {
+                    self.transaction_elapsed += stats.transaction_elapsed;
+                    self.transaction_block_clone_elapsed += stats.transaction_block_clone_elapsed;
+                    self.transaction_ledger_insert_elapsed +=
+                        stats.transaction_ledger_insert_elapsed;
+                    self.transaction_committed_hook_elapsed +=
+                        stats.transaction_committed_hook_elapsed;
+                }
+                self.finalization_elapsed += stats.finalization_elapsed;
+            } else if batch.transaction_blocks > 0 {
                 self.transaction_elapsed += elapsed;
             } else if batch.empty_blocks > 0 {
                 self.empty_only_blocks += batch.empty_blocks;
@@ -611,6 +683,18 @@ impl ChainAccImportComposition {
         self.transaction_elapsed.as_secs_f64()
     }
 
+    fn transaction_block_clone_seconds(&self) -> f64 {
+        self.transaction_block_clone_elapsed.as_secs_f64()
+    }
+
+    fn transaction_ledger_insert_seconds(&self) -> f64 {
+        self.transaction_ledger_insert_elapsed.as_secs_f64()
+    }
+
+    fn transaction_committed_hook_seconds(&self) -> f64 {
+        self.transaction_committed_hook_elapsed.as_secs_f64()
+    }
+
     fn transaction_blocks_per_second(&self) -> f64 {
         let elapsed = self.transaction_block_import_seconds();
         if elapsed > 0.0 {
@@ -618,6 +702,26 @@ impl ChainAccImportComposition {
         } else {
             0.0
         }
+    }
+
+    fn finalization_seconds(&self) -> f64 {
+        self.finalization_elapsed.as_secs_f64()
+    }
+
+    fn accounted_elapsed(&self) -> std::time::Duration {
+        self.empty_elapsed
+            + self.transaction_elapsed
+            + self.transaction_block_clone_elapsed
+            + self.transaction_ledger_insert_elapsed
+            + self.transaction_committed_hook_elapsed
+            + self.finalization_elapsed
+    }
+
+    fn unclassified_import_seconds(&self, total: std::time::Duration) -> f64 {
+        total
+            .checked_sub(self.accounted_elapsed())
+            .unwrap_or_default()
+            .as_secs_f64()
     }
 }
 
@@ -627,8 +731,22 @@ impl ImportHotMetrics {
         rocksdb: Option<RocksDbBatchImportMetrics>,
     ) -> Self {
         Self {
+            state_service_mpt_apply_attempts: state_service.apply_attempts,
+            state_service_mpt_apply_failures: state_service.apply_failures,
+            state_service_mpt_apply_height: state_service.apply_height,
             state_service_mpt_avg_total_us: state_service.avg_total_us,
+            state_service_mpt_avg_project_us: state_service.avg_project_us,
+            state_service_mpt_avg_trie_us: state_service.avg_trie_us,
+            state_service_mpt_avg_changes: state_service.avg_changes,
+            state_service_mpt_enqueue_blocking_avg_us: state_service.enqueue_blocking_avg_us,
+            state_service_mpt_queue_wait_avg_us: state_service.queue_wait_avg_us,
+            state_service_mpt_mutate_changes_avg_us: state_service.mutate_changes_avg_us,
+            state_service_mpt_root_hash_avg_us: state_service.root_hash_avg_us,
             state_service_mpt_trie_commit_avg_us: state_service.trie_commit_avg_us,
+            state_service_mpt_backing_commit_avg_us: state_service.backing_commit_avg_us,
+            state_service_mpt_publish_generation_avg_us: state_service.publish_generation_avg_us,
+            state_service_mpt_overlay_entries_avg: state_service.overlay_entries_avg,
+            state_service_mpt_batch_blocks_avg: state_service.batch_blocks_avg,
             native_persist_avg_total_us: state_service.native_persist_avg_total_us,
             native_persist_tx_hot_stage: state_service.native_persist_tx_hot_stage,
             native_persist_tx_hot_stage_avg_us: state_service.native_persist_tx_hot_stage_avg_us,
@@ -1641,7 +1759,19 @@ mod tests {
             };
             assert_eq!(import.blocks.len(), 3);
             reply
-                .send(ImportBlocksReply::ok(import.blocks.len()))
+                .send(ImportBlocksReply::ok_with_stats(
+                    import.blocks.len(),
+                    neo_blockchain::command::ImportBlocksStats {
+                        empty_blocks: 2,
+                        empty_elapsed: std::time::Duration::from_millis(2),
+                        transaction_blocks: 1,
+                        transaction_elapsed: std::time::Duration::from_millis(1),
+                        transaction_block_clone_elapsed: std::time::Duration::from_millis(3),
+                        transaction_ledger_insert_elapsed: std::time::Duration::from_millis(4),
+                        transaction_committed_hook_elapsed: std::time::Duration::from_millis(5),
+                        finalization_elapsed: std::time::Duration::from_millis(1),
+                    },
+                ))
                 .expect("reply import");
         });
 
@@ -1662,11 +1792,14 @@ mod tests {
         service.await.expect("service task");
         assert_eq!(report.imported, 3);
         assert_eq!(report.empty_blocks, 2);
-        assert_eq!(report.empty_only_blocks, 0);
-        assert_eq!(report.empty_block_import_seconds, 0.0);
-        assert_eq!(report.empty_blocks_per_second, 0.0);
+        assert_eq!(report.empty_only_blocks, 2);
+        assert!(report.empty_blocks_per_second > 0.0);
         assert_eq!(report.transaction_blocks, 1);
         assert_eq!(report.transactions, 1);
+        assert_eq!(report.transaction_block_clone_seconds, 0.003);
+        assert_eq!(report.transaction_ledger_insert_seconds, 0.004);
+        assert_eq!(report.transaction_committed_hook_seconds, 0.005);
+        assert_eq!(report.finalization_seconds, 0.001);
         assert!(
             report.transaction_blocks_per_second > 0.0,
             "transaction-bearing BPS must be reported independently from empty-block throughput"
@@ -1675,94 +1808,7 @@ mod tests {
 
     #[tokio::test]
     async fn import_chain_acc_report_times_only_transaction_bearing_batches_for_transaction_bps() {
-        let (handle, mut commands, _events) = BlockchainHandle::channel(2, 2);
-        let mut blocks = linked_empty_blocks(0, IMPORT_BATCH_SIZE);
-        let prev = blocks.last().expect("previous block");
-        blocks.push(non_empty_block_with_prev_hash(
-            IMPORT_BATCH_SIZE as u32,
-            prev.hash(),
-            vec![signed_test_transaction(1)],
-        ));
-        let bytes = encode_chain_acc(&blocks);
-        let mut cursor = std::io::Cursor::new(bytes);
-        let service = tokio::spawn(async move {
-            let Some(BlockchainCommand::ImportBlocks {
-                import: first,
-                reply: first_reply,
-            }) = commands.recv().await
-            else {
-                panic!("expected first import blocks command");
-            };
-            assert_eq!(first.blocks.len(), IMPORT_BATCH_SIZE);
-            assert!(
-                first
-                    .blocks
-                    .iter()
-                    .all(|block| block.transactions.is_empty())
-            );
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            first_reply
-                .send(ImportBlocksReply::ok(first.blocks.len()))
-                .expect("reply first import");
-
-            let Some(BlockchainCommand::ImportBlocks {
-                import: second,
-                reply: second_reply,
-            }) = commands.recv().await
-            else {
-                panic!("expected second import blocks command");
-            };
-            assert_eq!(second.blocks.len(), 1);
-            assert_eq!(second.blocks[0].transactions.len(), 1);
-            second_reply
-                .send(ImportBlocksReply::ok(second.blocks.len()))
-                .expect("reply second import");
-        });
-
-        let report = import_chain_acc_from_reader_report(
-            &handle,
-            &mut cursor,
-            None,
-            false,
-            Some(ChainAccExpectedRange {
-                start_height: 0,
-                end_height: IMPORT_BATCH_SIZE as u32,
-            }),
-            None,
-        )
-        .await
-        .expect("import report");
-
-        service.await.expect("service task");
-        assert_eq!(report.imported, (IMPORT_BATCH_SIZE + 1) as u64);
-        assert_eq!(report.empty_blocks, IMPORT_BATCH_SIZE as u64);
-        assert_eq!(report.empty_only_blocks, IMPORT_BATCH_SIZE as u64);
-        assert!(
-            report.empty_block_import_seconds >= 0.02,
-            "empty-block elapsed should include the empty-only batch time: {report:?}"
-        );
-        assert!(
-            report.empty_blocks_per_second > 0.0,
-            "empty-block BPS should be reported independently from transaction-bearing throughput"
-        );
-        assert_eq!(report.transaction_blocks, 1);
-        assert_eq!(report.transactions, 1);
-        assert!(report.elapsed_seconds >= 0.02);
-        assert!(
-            report.transaction_block_import_seconds < report.elapsed_seconds,
-            "transaction elapsed must exclude empty-only batch time: {report:?}"
-        );
-        let total_elapsed_transaction_bps =
-            report.transaction_blocks as f64 / report.elapsed_seconds;
-        assert!(
-            report.transaction_blocks_per_second > total_elapsed_transaction_bps,
-            "transaction BPS should use transaction-bearing batch time instead of total import time: {report:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn import_chain_acc_uses_fast_forward_sized_batches_for_empty_runs() {
-        let (handle, mut commands, _events) = BlockchainHandle::channel(2, 2);
+        let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
         let empty_run =
             neo_blockchain::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
         let mut blocks = linked_empty_blocks(0, empty_run);
@@ -1775,36 +1821,114 @@ mod tests {
         let bytes = encode_chain_acc(&blocks);
         let mut cursor = std::io::Cursor::new(bytes);
         let service = tokio::spawn(async move {
-            let Some(BlockchainCommand::ImportBlocks {
-                import: first,
-                reply: first_reply,
-            }) = commands.recv().await
+            let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await
             else {
-                panic!("expected first import blocks command");
+                panic!("expected import blocks command");
             };
-            assert_eq!(first.blocks.len(), empty_run);
+            assert_eq!(import.blocks.len(), empty_run + 1);
             assert!(
-                first
-                    .blocks
+                import.blocks[..empty_run]
                     .iter()
                     .all(|block| block.transactions.is_empty())
             );
-            first_reply
-                .send(ImportBlocksReply::ok(first.blocks.len()))
-                .expect("reply first import");
+            assert_eq!(import.blocks[empty_run].transactions.len(), 1);
+            reply
+                .send(ImportBlocksReply::ok_with_stats(
+                    import.blocks.len(),
+                    neo_blockchain::command::ImportBlocksStats {
+                        empty_blocks: empty_run,
+                        empty_elapsed: std::time::Duration::from_millis(20),
+                        transaction_blocks: 1,
+                        transaction_elapsed: std::time::Duration::from_millis(1),
+                        transaction_block_clone_elapsed: std::time::Duration::ZERO,
+                        transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
+                        transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                        finalization_elapsed: std::time::Duration::from_millis(1),
+                    },
+                ))
+                .expect("reply import");
+        });
 
-            let Some(BlockchainCommand::ImportBlocks {
-                import: second,
-                reply: second_reply,
-            }) = commands.recv().await
+        let report = import_chain_acc_from_reader_report(
+            &handle,
+            &mut cursor,
+            None,
+            false,
+            Some(ChainAccExpectedRange {
+                start_height: 0,
+                end_height: empty_run as u32,
+            }),
+            None,
+        )
+        .await
+        .expect("import report");
+
+        service.await.expect("service task");
+        assert_eq!(report.imported, (empty_run + 1) as u64);
+        assert_eq!(report.empty_blocks, empty_run as u64);
+        assert_eq!(report.empty_only_blocks, empty_run as u64);
+        assert!(
+            report.empty_block_import_seconds >= 0.02,
+            "empty-block elapsed should include the empty-only batch time: {report:?}"
+        );
+        assert!(
+            report.empty_blocks_per_second > 0.0,
+            "empty-block BPS should be reported independently from transaction-bearing throughput"
+        );
+        assert_eq!(report.transaction_blocks, 1);
+        assert_eq!(report.transactions, 1);
+        assert_eq!(report.transaction_block_import_seconds, 0.001);
+        assert!(
+            report.transaction_block_import_seconds < report.empty_block_import_seconds,
+            "transaction elapsed must exclude empty fast-forward service time: {report:?}"
+        );
+        assert!(
+            (report.transaction_blocks_per_second - 1000.0).abs() < f64::EPSILON,
+            "transaction BPS should use transaction-bearing service time: {report:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_chain_acc_uses_fast_forward_sized_batches_for_empty_runs() {
+        let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
+        let empty_run =
+            neo_blockchain::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
+        let mut blocks = linked_empty_blocks(0, empty_run);
+        let prev = blocks.last().expect("previous block");
+        blocks.push(non_empty_block_with_prev_hash(
+            empty_run as u32,
+            prev.hash(),
+            vec![signed_test_transaction(1)],
+        ));
+        let bytes = encode_chain_acc(&blocks);
+        let mut cursor = std::io::Cursor::new(bytes);
+        let service = tokio::spawn(async move {
+            let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await
             else {
-                panic!("expected second import blocks command");
+                panic!("expected import blocks command");
             };
-            assert_eq!(second.blocks.len(), 1);
-            assert_eq!(second.blocks[0].transactions.len(), 1);
-            second_reply
-                .send(ImportBlocksReply::ok(second.blocks.len()))
-                .expect("reply second import");
+            assert_eq!(import.blocks.len(), empty_run + 1);
+            assert!(
+                import.blocks[..empty_run]
+                    .iter()
+                    .all(|block| block.transactions.is_empty())
+            );
+            assert_eq!(import.blocks[empty_run].transactions.len(), 1);
+            reply
+                .send(ImportBlocksReply::ok_with_stats(
+                    import.blocks.len(),
+                    neo_blockchain::command::ImportBlocksStats {
+                        empty_blocks: empty_run,
+                        empty_elapsed: std::time::Duration::from_millis(20),
+                        transaction_blocks: 1,
+                        transaction_elapsed: std::time::Duration::from_millis(1),
+                        transaction_block_clone_elapsed: std::time::Duration::ZERO,
+                        transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
+                        transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                        finalization_elapsed: std::time::Duration::from_millis(1),
+                    },
+                ))
+                .expect("reply import");
         });
 
         let report = import_chain_acc_from_reader_report(
@@ -1827,31 +1951,251 @@ mod tests {
         assert_eq!(report.transaction_blocks, 1);
     }
 
+    #[tokio::test]
+    async fn import_chain_acc_keeps_short_empty_prefix_with_transaction_block() {
+        let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
+        let empty_run = 24;
+        let mut blocks = linked_empty_blocks(0, empty_run);
+        let prev = blocks.last().expect("previous block");
+        blocks.push(non_empty_block_with_prev_hash(
+            empty_run as u32,
+            prev.hash(),
+            vec![signed_test_transaction(1)],
+        ));
+        let bytes = encode_chain_acc(&blocks);
+        let mut cursor = std::io::Cursor::new(bytes);
+        let service = tokio::spawn(async move {
+            let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await
+            else {
+                panic!("expected import blocks command");
+            };
+            assert_eq!(import.blocks.len(), empty_run + 1);
+            assert_eq!(import.blocks[empty_run].transactions.len(), 1);
+            reply
+                .send(ImportBlocksReply::ok_with_stats(
+                    import.blocks.len(),
+                    neo_blockchain::command::ImportBlocksStats {
+                        empty_blocks: empty_run,
+                        empty_elapsed: std::time::Duration::from_millis(20),
+                        transaction_blocks: 1,
+                        transaction_elapsed: std::time::Duration::from_millis(1),
+                        transaction_block_clone_elapsed: std::time::Duration::ZERO,
+                        transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
+                        transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                        finalization_elapsed: std::time::Duration::from_millis(1),
+                    },
+                ))
+                .expect("reply import");
+        });
+
+        let report = import_chain_acc_from_reader_report(
+            &handle,
+            &mut cursor,
+            None,
+            false,
+            Some(ChainAccExpectedRange {
+                start_height: 0,
+                end_height: empty_run as u32,
+            }),
+            None,
+        )
+        .await
+        .expect("import report");
+
+        service.await.expect("service task");
+        assert_eq!(report.imported, (empty_run + 1) as u64);
+        assert_eq!(report.empty_blocks, empty_run as u64);
+        assert_eq!(report.empty_only_blocks, empty_run as u64);
+        assert!(
+            report.empty_block_import_seconds >= 0.02,
+            "short empty-prefix elapsed should come from service-side empty timing: {report:?}"
+        );
+        assert_eq!(report.transaction_blocks, 1);
+        assert_eq!(report.transactions, 1);
+        assert!(
+            report.transaction_block_import_seconds < report.empty_block_import_seconds,
+            "transaction elapsed must exclude short empty-prefix service time: {report:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_chain_acc_keeps_short_empty_suffix_after_transaction_block() {
+        let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
+        let genesis = empty_block(0);
+        let tx =
+            non_empty_block_with_prev_hash(1, genesis.hash(), vec![signed_test_transaction(1)]);
+        let mut blocks = vec![genesis, tx];
+        for index in 2..26 {
+            let prev = blocks.last().expect("previous block");
+            blocks.push(empty_block_with_prev_hash(index, prev.hash()));
+        }
+        let bytes = encode_chain_acc(&blocks);
+        let mut cursor = std::io::Cursor::new(bytes);
+        let service = tokio::spawn(async move {
+            let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await
+            else {
+                panic!("expected import blocks command");
+            };
+            assert_eq!(import.blocks.len(), 26);
+            assert_eq!(import.blocks[1].transactions.len(), 1);
+            reply
+                .send(ImportBlocksReply::ok_with_stats(
+                    import.blocks.len(),
+                    neo_blockchain::command::ImportBlocksStats {
+                        empty_blocks: 25,
+                        empty_elapsed: std::time::Duration::from_millis(20),
+                        transaction_blocks: 1,
+                        transaction_elapsed: std::time::Duration::from_millis(1),
+                        transaction_block_clone_elapsed: std::time::Duration::ZERO,
+                        transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
+                        transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                        finalization_elapsed: std::time::Duration::from_millis(1),
+                    },
+                ))
+                .expect("reply import");
+        });
+
+        let report = import_chain_acc_from_reader_report(
+            &handle,
+            &mut cursor,
+            None,
+            false,
+            Some(ChainAccExpectedRange {
+                start_height: 0,
+                end_height: 25,
+            }),
+            None,
+        )
+        .await
+        .expect("import report");
+
+        service.await.expect("service task");
+        assert_eq!(report.imported, 26);
+        assert_eq!(report.empty_blocks, 25);
+        assert_eq!(report.empty_only_blocks, 25);
+        assert!(
+            report.empty_block_import_seconds >= 0.02,
+            "short empty suffix elapsed should come from service-side empty timing: {report:?}"
+        );
+        assert_eq!(report.transaction_blocks, 1);
+        assert_eq!(report.transactions, 1);
+        assert!(
+            report.transaction_block_import_seconds < report.empty_block_import_seconds,
+            "transaction elapsed must exclude short empty-suffix service time: {report:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_chain_acc_uses_service_timing_without_splitting_mixed_batches() {
+        let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
+        let genesis = empty_block(0);
+        let tx =
+            non_empty_block_with_prev_hash(1, genesis.hash(), vec![signed_test_transaction(1)]);
+        let mut blocks = vec![genesis, tx];
+        for index in 2..26 {
+            let prev = blocks.last().expect("previous block");
+            blocks.push(empty_block_with_prev_hash(index, prev.hash()));
+        }
+        let bytes = encode_chain_acc(&blocks);
+        let mut cursor = std::io::Cursor::new(bytes);
+        let service = tokio::spawn(async move {
+            let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await
+            else {
+                panic!("expected import blocks command");
+            };
+            assert_eq!(
+                import.blocks.len(),
+                26,
+                "short mixed runs should stay in one bulk import command"
+            );
+            reply
+                .send(ImportBlocksReply::ok_with_stats(
+                    import.blocks.len(),
+                    neo_blockchain::command::ImportBlocksStats {
+                        empty_blocks: 25,
+                        empty_elapsed: std::time::Duration::from_millis(20),
+                        transaction_blocks: 1,
+                        transaction_elapsed: std::time::Duration::from_millis(5),
+                        transaction_block_clone_elapsed: std::time::Duration::ZERO,
+                        transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
+                        transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                        finalization_elapsed: std::time::Duration::from_millis(2),
+                    },
+                ))
+                .expect("reply import");
+        });
+
+        let report = import_chain_acc_from_reader_report(
+            &handle,
+            &mut cursor,
+            None,
+            false,
+            Some(ChainAccExpectedRange {
+                start_height: 0,
+                end_height: 25,
+            }),
+            None,
+        )
+        .await
+        .expect("import report");
+
+        service.await.expect("service task");
+        assert_eq!(report.imported, 26);
+        assert_eq!(report.empty_blocks, 25);
+        assert_eq!(report.empty_only_blocks, 25);
+        assert_eq!(report.transaction_blocks, 1);
+        assert_eq!(report.transactions, 1);
+        assert!(
+            report.empty_block_import_seconds >= 0.02,
+            "empty elapsed should come from service-side fast-forward timing: {report:?}"
+        );
+        assert!(
+            report.transaction_block_import_seconds >= 0.005,
+            "transaction elapsed should come from service-side transaction timing: {report:?}"
+        );
+        assert!(
+            report.transaction_block_import_seconds < report.empty_block_import_seconds,
+            "service timing must let transaction proof exclude empty fast-forward time: {report:?}"
+        );
+    }
+
     #[test]
-    fn chain_acc_batch_splits_normal_sized_empty_prefix_before_transaction_block() {
-        let mut small_empty_prefix = linked_empty_blocks(0, IMPORT_BATCH_SIZE - 1);
+    fn chain_acc_batch_keeps_short_mixed_runs_until_normal_boundary() {
+        let empty_limit =
+            neo_blockchain::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
+        let mut small_empty_prefix = linked_empty_blocks(0, empty_limit - 1);
         let mut pending = PendingChainAccBatch::default();
         for block in &small_empty_prefix {
             pending.record_pushed(block);
         }
         let prev = small_empty_prefix.last().expect("previous block");
         let next = non_empty_block_with_prev_hash(
-            (IMPORT_BATCH_SIZE - 1) as u32,
+            (empty_limit - 1) as u32,
             prev.hash(),
             vec![signed_test_transaction(1)],
         );
         assert!(
-            !pending.should_flush_before_push(&next),
-            "small empty prefixes can stay in the normal transaction-bearing batch"
+            !pending.should_flush(small_empty_prefix.len()),
+            "short empty prefixes should stay in the mixed bulk import; service-side stats separate their timing"
         );
         pending.record_pushed(&next);
         small_empty_prefix.push(next);
         assert!(
-            pending.should_flush(small_empty_prefix.len()),
-            "mixed transaction-bearing batches still flush at the normal boundary"
+            !pending.should_flush(small_empty_prefix.len()),
+            "transaction runs still wait for the normal import boundary until the next empty block"
+        );
+        let following_empty = empty_block_with_prev_hash(
+            small_empty_prefix.len() as u32,
+            small_empty_prefix.last().expect("previous block").hash(),
+        );
+        pending.record_pushed(&following_empty);
+        small_empty_prefix.push(following_empty);
+        assert!(
+            !pending.should_flush(small_empty_prefix.len()),
+            "short empty suffixes should not force an extra bulk finalization boundary"
         );
 
-        let empty_run = IMPORT_BATCH_SIZE;
+        let empty_run = empty_limit;
         let mut blocks = linked_empty_blocks(0, empty_run);
         let mut pending = PendingChainAccBatch::default();
         for block in &blocks {
@@ -1859,7 +2203,7 @@ mod tests {
         }
         assert!(
             !pending.should_flush(blocks.len()),
-            "empty-only batches should be allowed to grow beyond the normal transaction batch"
+            "empty-only outer chain.acc batches do not flush at the service-internal fast-forward chunk size"
         );
         let prev = blocks.last().expect("previous block");
         blocks.push(non_empty_block_with_prev_hash(
@@ -1867,10 +2211,11 @@ mod tests {
             prev.hash(),
             vec![signed_test_transaction(1)],
         ));
+        pending.record_pushed(blocks.last().expect("transaction block"));
 
         assert!(
-            pending.should_flush_before_push(blocks.last().expect("transaction block")),
-            "a normal-sized empty run should flush before the transaction block so it remains eligible for empty fast-forward"
+            !pending.should_flush(blocks.len()),
+            "transaction blocks can share the outer batch with a fast-forwardable empty prefix"
         );
     }
 
@@ -1881,7 +2226,7 @@ mod tests {
         pending.record_pushed(&empty);
 
         assert!(pending.is_empty_only());
-        assert!(!pending.should_flush_before_push(&empty));
+        assert!(!pending.should_flush(1));
 
         let tx = non_empty_block_with_prev_hash(1, empty.hash(), vec![signed_test_transaction(1)]);
         pending.record_pushed(&tx);
@@ -1896,18 +2241,23 @@ mod tests {
     }
 
     #[test]
-    fn empty_only_chain_acc_batches_do_not_flush_at_ten_thousand_blocks() {
+    fn empty_only_chain_acc_batches_flush_at_outer_import_boundary() {
         let mut pending = PendingChainAccBatch::default();
         let empty = empty_block(0);
 
-        for _ in 0..10_000 {
+        let max = neo_blockchain::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
+        for _ in 0..max {
             pending.record_pushed(&empty);
         }
 
         assert!(
-            !pending.should_flush(10_000),
-            "10k empty blocks should remain a single fast-forward batch; the guard is a memory boundary, not a throughput target"
+            !pending.should_flush(max),
+            "chain.acc owns only the outer import boundary; the blockchain service chunks empty runs internally"
         );
+        for _ in max..IMPORT_BATCH_SIZE {
+            pending.record_pushed(&empty);
+        }
+        assert!(pending.should_flush(IMPORT_BATCH_SIZE));
     }
 
     #[test]

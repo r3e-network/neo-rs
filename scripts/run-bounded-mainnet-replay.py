@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import json
 import ipaddress
+import re
 import subprocess
 import sys
 import time
@@ -204,6 +205,7 @@ def node_command(
     node_bin: Path,
     config: Path,
     target_height: int,
+    storage_path: Path | None = None,
     import_chain: Path | None = None,
     fast_sync: bool = False,
     fast_sync_cache: Path | None = None,
@@ -221,6 +223,8 @@ def node_command(
         "--stop-at-height",
         str(target_height),
     ]
+    if storage_path is not None:
+        command.extend(["--storage-path", str(storage_path)])
     if import_chain is not None:
         command.extend(["--import-chain", str(import_chain)])
     if fast_sync:
@@ -230,6 +234,58 @@ def node_command(
         if fast_sync_report is not None:
             command.extend(["--fast-sync-report", str(fast_sync_report)])
     return command
+
+
+def materialize_state_service_config(
+    config: Path,
+    stateroot_db: Path | None,
+    output_dir: Path,
+) -> Path:
+    """Return a config whose [state_service].path points at stateroot_db."""
+    if stateroot_db is None:
+        return config
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = output_dir / "bounded-replay-node.toml"
+    state_path = json.dumps(str(stateroot_db))
+    path_line = f"path = {state_path}"
+    section_pattern = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
+    path_pattern = re.compile(r"^\s*path\s*=")
+
+    lines = config.read_text(encoding="utf-8").splitlines()
+    rendered: list[str] = []
+    in_state_service = False
+    saw_state_service = False
+    wrote_path = False
+
+    for line in lines:
+        section = section_pattern.match(line)
+        if section:
+            if in_state_service and not wrote_path:
+                rendered.append(path_line)
+                wrote_path = True
+            in_state_service = section.group(1).strip() == "state_service"
+            if in_state_service:
+                saw_state_service = True
+                wrote_path = False
+            rendered.append(line)
+            continue
+
+        if in_state_service and path_pattern.match(line):
+            rendered.append(path_line)
+            wrote_path = True
+        else:
+            rendered.append(line)
+
+    if in_state_service and not wrote_path:
+        rendered.append(path_line)
+    elif not saw_state_service:
+        if rendered and rendered[-1].strip():
+            rendered.append("")
+        rendered.extend(["[state_service]", path_line])
+
+    output.write_text("\n".join(rendered) + "\n", encoding="utf-8")
+    return output
 
 
 DEFAULT_STORAGE_PROVIDER = "mdbx"
@@ -510,6 +566,7 @@ def attach_post_probe_report(
         rpc=rpc,
     )
     report["post_probe"] = post_probe
+    recover_fast_sync_status_from_import_proof(report)
     if (
         require_stateroot_height_match
         and report.get("status") == "target-reached"
@@ -556,6 +613,266 @@ def attach_fast_sync_report(report: dict, path: Path | None) -> dict:
         report["sync_proof"] = build_sync_proof(report)
         return report
     report["fast_sync_report"] = fast_sync_report
+    apply_fast_sync_import_speed_measurement(report)
+    recover_fast_sync_status_from_import_proof(report)
+    report["sync_proof"] = build_sync_proof(report)
+    return report
+
+
+def fast_sync_import_speed_measurement(report: dict) -> dict[str, Any] | None:
+    if report.get("sync_source") != "fast-sync":
+        return None
+    fast_sync_report = report.get("fast_sync_report")
+    import_report = (
+        fast_sync_report.get("import") if isinstance(fast_sync_report, dict) else None
+    )
+    if not isinstance(import_report, dict):
+        return None
+
+    try:
+        transaction_blocks = int(import_report.get("transaction_blocks") or 0)
+        transaction_bps = float(import_report["transaction_blocks_per_second"])
+    except (KeyError, TypeError, ValueError):
+        transaction_blocks = 0
+        transaction_bps = 0.0
+
+    if transaction_blocks > 0:
+        return {
+            "source": "fast-sync-transaction-blocks",
+            "blocks_per_second": transaction_bps,
+        }
+
+    try:
+        average_bps = float(import_report["average_blocks_per_second"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {
+        "source": "fast-sync-import",
+        "blocks_per_second": average_bps,
+    }
+
+
+def apply_fast_sync_import_speed_measurement(report: dict) -> None:
+    measurement = fast_sync_import_speed_measurement(report)
+    apply_import_speed_measurement(report, measurement)
+
+
+def apply_import_speed_measurement(report: dict, measurement: dict[str, Any] | None) -> None:
+    if measurement is None:
+        return
+
+    measured_bps = float(measurement["blocks_per_second"])
+    report["sync_speed_measurement_source"] = measurement["source"]
+    report["sync_speed_measured_blocks_per_second"] = measured_bps
+
+    try:
+        floor_bps = float(report["sync_speed_floor_blocks_per_second"])
+    except (KeyError, TypeError, ValueError):
+        floor_bps = None
+    if floor_bps is not None:
+        shortfall = max(floor_bps - measured_bps, 0.0)
+        report["sync_speed_shortfall_blocks_per_second"] = shortfall
+        floor_met = shortfall == 0.0
+        if shortfall > 0.0 and report.get("status") in {
+            "target-reached",
+            "sync-speed-too-slow",
+            "transaction-work-unproven",
+        }:
+            report["status"] = "sync-speed-too-slow"
+    else:
+        floor_met = True
+
+    try:
+        ceiling_bps = float(report["sync_speed_ceiling_blocks_per_second"])
+    except (KeyError, TypeError, ValueError):
+        ceiling_bps = None
+    if ceiling_bps is not None:
+        overage = max(measured_bps - ceiling_bps, 0.0)
+        report["sync_speed_overage_blocks_per_second"] = overage
+        ceiling_met = overage == 0.0
+        if overage > 0.0 and report.get("status") == "target-reached":
+            report["status"] = "sync-speed-too-fast"
+    else:
+        ceiling_met = True
+
+    if floor_bps is not None or ceiling_bps is not None:
+        report["sync_speed_band_met"] = floor_met and ceiling_met
+
+
+def chain_acc_import_speed_measurement(report: dict) -> dict[str, Any] | None:
+    if report.get("sync_source") != "import-chain":
+        return None
+    import_report = report.get("chain_acc_import_report")
+    if not isinstance(import_report, dict):
+        return None
+
+    try:
+        transaction_blocks = int(import_report.get("transaction_blocks") or 0)
+        transaction_bps = float(import_report["transaction_blocks_per_second"])
+    except (KeyError, TypeError, ValueError):
+        transaction_blocks = 0
+        transaction_bps = 0.0
+
+    if transaction_blocks > 0:
+        return {
+            "source": "import-chain-transaction-blocks",
+            "blocks_per_second": transaction_bps,
+        }
+
+    try:
+        average_bps = float(import_report["average_blocks_per_second"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {
+        "source": "import-chain",
+        "blocks_per_second": average_bps,
+    }
+
+
+def apply_chain_acc_import_speed_measurement(report: dict) -> None:
+    apply_import_speed_measurement(report, chain_acc_import_speed_measurement(report))
+
+
+def chain_acc_import_satisfies_speed_gate(report: dict) -> bool:
+    if report.get("sync_source") != "import-chain":
+        return False
+    import_report = report.get("chain_acc_import_report")
+    if not isinstance(import_report, dict):
+        return False
+
+    try:
+        transaction_blocks = int(import_report.get("transaction_blocks") or 0)
+        transaction_bps = float(import_report.get("transaction_blocks_per_second") or 0.0)
+        final_height = int(import_report.get("final_height"))
+        target_height = int(report.get("target_height"))
+        floor = report.get("sync_speed_floor_blocks_per_second")
+        floor_bps = float(floor) if floor is not None else None
+    except (TypeError, ValueError):
+        return False
+
+    return (
+        transaction_blocks > 0
+        and final_height >= target_height
+        and (floor_bps is None or transaction_bps >= floor_bps)
+    )
+
+
+def recover_chain_acc_status_from_import_proof(report: dict) -> None:
+    if report.get("status") not in {
+        "metrics-unavailable",
+        "sync-speed-too-slow",
+        "transaction-work-unproven",
+    }:
+        return
+    apply_chain_acc_import_speed_measurement(report)
+    if chain_acc_import_satisfies_speed_gate(report):
+        report["status"] = "target-reached"
+
+
+def fast_sync_import_satisfies_speed_gate(report: dict) -> bool:
+    if report.get("sync_source") != "fast-sync":
+        return False
+    fast_sync_report = report.get("fast_sync_report")
+    import_report = (
+        fast_sync_report.get("import") if isinstance(fast_sync_report, dict) else None
+    )
+    if (
+        not isinstance(import_report, dict)
+        or import_report.get("throughput_status") != "meets-floor"
+    ):
+        return False
+
+    try:
+        transaction_blocks = int(import_report.get("transaction_blocks") or 0)
+        transaction_bps = float(import_report.get("transaction_blocks_per_second") or 0.0)
+        final_height = int(import_report.get("final_height"))
+        target_height = int(report.get("target_height"))
+        floor = report.get("sync_speed_floor_blocks_per_second")
+        floor_bps = float(floor) if floor is not None else None
+    except (TypeError, ValueError):
+        return False
+
+    return (
+        transaction_blocks > 0
+        and final_height >= target_height
+        and (floor_bps is None or transaction_bps >= floor_bps)
+    )
+
+
+def recover_fast_sync_status_from_import_proof(report: dict) -> None:
+    if report.get("status") not in {"sync-speed-too-slow", "transaction-work-unproven"}:
+        return
+    apply_fast_sync_import_speed_measurement(report)
+    if fast_sync_import_satisfies_speed_gate(report):
+        report["status"] = "target-reached"
+
+
+def read_chain_acc_import_report(path: Path | None) -> dict[str, Any] | None:
+    if path is None or not path.is_file():
+        return None
+    latest: dict[str, Any] | None = None
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        fields = payload.get("fields")
+        if not isinstance(fields, dict):
+            continue
+        if fields.get("message") != "chain.acc import complete":
+            continue
+        latest = {key: value for key, value in fields.items() if key != "message"}
+    return latest
+
+
+def transaction_work_summary_from_chain_acc_import(
+    import_report: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        transaction_blocks = int(import_report.get("transaction_blocks") or 0)
+        transactions = int(import_report.get("transactions") or 0)
+        transaction_bps = float(import_report.get("transaction_blocks_per_second") or 0.0)
+    except (TypeError, ValueError):
+        transaction_blocks = 0
+        transactions = 0
+        transaction_bps = 0.0
+    observed_transaction_work = transaction_blocks > 0 and transactions > 0
+    return {
+        "required_for_speed_proof": True,
+        "observed_transaction_work": observed_transaction_work,
+        "source": "chain-acc-import-log",
+        "transaction_blocks": transaction_blocks,
+        "transactions": transactions,
+        "transaction_blocks_per_second": transaction_bps,
+        "metric_count": 1,
+        "metrics": [
+            {
+                "name": "chain_acc_import_transaction_blocks",
+                "sample_count": 1,
+                "average": transaction_blocks,
+                "last": transaction_blocks,
+                "max": transaction_blocks,
+                "observed_transaction_work": observed_transaction_work,
+            }
+        ],
+    }
+
+
+def attach_chain_acc_import_report(report: dict, path: Path | None) -> dict:
+    if report.get("sync_source") != "import-chain":
+        report["sync_proof"] = build_sync_proof(report)
+        return report
+    import_report = read_chain_acc_import_report(path)
+    if import_report is None:
+        report["sync_proof"] = build_sync_proof(report)
+        return report
+    report["chain_acc_import_report"] = import_report
+    report["transaction_work_summary"] = transaction_work_summary_from_chain_acc_import(
+        import_report
+    )
+    recover_chain_acc_status_from_import_proof(report)
     report["sync_proof"] = build_sync_proof(report)
     return report
 
@@ -823,6 +1140,10 @@ def build_sync_proof(report: dict) -> dict[str, Any]:
             "sync_speed_overage_blocks_per_second", 0.0
         ),
         "sync_speed_band_met": report.get("sync_speed_band_met"),
+        "sync_speed_measurement_source": report.get("sync_speed_measurement_source"),
+        "sync_speed_measured_blocks_per_second": report.get(
+            "sync_speed_measured_blocks_per_second"
+        ),
     }
     if proof["sync_source"] == "fast-sync":
         proof["fast_sync_cache"] = latest_fast_sync_cache_proof(samples)
@@ -840,6 +1161,10 @@ def build_sync_proof(report: dict) -> dict[str, Any]:
                 proof["fast_sync_hot_metrics"] = hot_metrics
             if isinstance(reference, dict):
                 proof["fast_sync_reference"] = reference
+    if proof["sync_source"] == "import-chain":
+        import_report = report.get("chain_acc_import_report")
+        if isinstance(import_report, dict):
+            proof["chain_acc_import"] = import_report
     post_probe = sync_post_probe_proof(report)
     if post_probe is not None:
         proof["post_probe"] = post_probe
@@ -1371,6 +1696,16 @@ def main() -> int:
         if fast_sync_cache_dir is not None
         else None
     )
+    runtime_config_dir = (
+        args.node_output_log.parent
+        if args.node_output_log is not None
+        else (args.db.parent if args.db is not None else args.config.parent)
+    )
+    runtime_config = materialize_state_service_config(
+        args.config,
+        args.stateroot_db,
+        runtime_config_dir,
+    )
     if args.node_output_log is not None:
         args.node_output_log.parent.mkdir(parents=True, exist_ok=True)
     with (
@@ -1381,8 +1716,9 @@ def main() -> int:
         report = run_until_target(
             command=node_command(
                 args.node_bin,
-                args.config,
+                runtime_config,
                 args.target_height,
+                storage_path=args.db,
                 import_chain=args.import_chain,
                 fast_sync=args.fast_sync,
                 fast_sync_cache=args.fast_sync_cache,
@@ -1404,6 +1740,7 @@ def main() -> int:
             progress_reader=progress_reader,
         )
     report = attach_fast_sync_report(report, fast_sync_report_path)
+    report = attach_chain_acc_import_report(report, args.node_output_log)
     report = attach_post_probe_report(
         report,
         chain_db=args.db,

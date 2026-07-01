@@ -40,6 +40,10 @@ rules are:
   binaries, CLI orchestration, tools, and tests.
 - Static dispatch is the default for known and hot collaborators; use
   `dyn Trait` only when runtime type erasure is the actual design.
+- Prefer maintained Rust crates for commodity algorithms and data structures.
+  Keep local wrappers only for Neo protocol byte layout, C# compatibility,
+  error mapping, framing, or storage semantics, and protect those wrappers with
+  parity tests before replacing or simplifying them.
 - Performance work starts from measurement: release builds, focused benchmarks,
   flamegraphs, sync-speed probes, or concrete allocation evidence.
 - Tests are living API documentation: descriptive names, one behavior per test,
@@ -85,6 +89,15 @@ is a broken node.
 
 Practical node rules:
 
+- Use existing crates for generic cryptography, compression, Base58/Base64/hex,
+  LRU/cache structures, byte buffers, and hash implementations whenever their
+  semantics match the required behavior.
+- Do not swap consensus-critical codecs, Merkle roots, MPT state roots, Bloom
+  filter wire behavior, native-contract serialization, or Neo binary IO to a
+  generic crate unless byte-for-byte parity is proven against Neo C# / mainnet
+  replay fixtures. The local adapter should be thin, documented, and tested;
+  the commodity algorithm beneath it should still come from a maintained crate
+  when possible.
 - Do not use nondeterministic iteration order in consensus, execution, state
   transition, serialization, or hash/root construction. Prefer ordered maps,
   explicit sorting, or C# parity order.
@@ -106,6 +119,46 @@ Practical node rules:
 - Mainnet replay, state-root parity, and reference RPC checks are authoritative
   correctness evidence. Narrow unit tests are necessary but not sufficient for
   protocol completion claims.
+
+## Commodity Primitive Policy
+
+Prefer maintained Rust crates for commodity algorithms. Local neo-rs code should
+own Neo protocol semantics, not reimplement standard algorithms under familiar
+names. A wrapper is justified only when it preserves one of these contracts:
+
+- Neo/C# byte layout, endian order, wire framing, or error mapping.
+- hardfork-gated behavior or native-contract compatibility.
+- state-root, Merkle-root, address, wallet, or storage-key parity.
+- measured hot-path adaptation behind a safe API and parity tests.
+
+“Official library” means different things in different areas. For protocol
+bytes, the authoritative reference is Neo C# / mainnet replay parity. For
+commodity math or data structures, prefer maintained crates such as RustCrypto,
+`murmur3`, `bitvec`, `hex`, `bs58`, and `base64`; keep neo-rs code as a thin
+adapter that names the Neo contract being protected. Do not replace a local
+consensus primitive merely because a generic crate has the same algorithm name.
+
+Use this matrix when reviewing `neo-crypto`, `neo-io`, storage, wallet, and
+network code:
+
+| Area | Upstream crate should own | Local neo-rs code should own |
+| --- | --- | --- |
+| Hex, Base58, Base64 | Encoding/decoding algorithms (`hex`, `bs58`, `base64`) | Neo address payload versioning, checksum error mapping, and .NET-compatible strict/lenient behavior |
+| LZ4 and compression | Compression codec implementation (`lz4_flex` or equivalent) | Neo package framing, size limits, checksum policy, and DoS guards |
+| Binary readers/writers | byte buffers, endian helpers, and `std::io` traits | Neo var-int, `ISerializable`-style contracts, max-size checks, and C# parity errors |
+| Cache containers | LRU/concurrent cache mechanics (`lru`, `dashmap`, future `moka` only with reason) | state-tracking caches such as `DataCache`, MPT overlays, transaction visibility, and commit semantics |
+| Murmur | Murmur3 hash function | Neo Bloom-filter seed schedule and error mapping |
+| Bloom filters | bit storage primitives and hash functions | Neo wire bit layout, Murmur seed schedule, and network payload compatibility |
+| Signatures | curve math and verification (`p256`, `secp256k1`/`k256`, `ed25519-dalek`, `blst`) | raw `r||s` framing, low-s/C# parity, NeoFS prefixes, hardfork gates, and native-contract error mapping |
+| BIP-32/BIP-39 | mnemonic and derivation primitives when the crate supports the required curve and serialization | Neo wallet defaults, NEP-6 account model, P-256 behavior, path policy, and zeroization boundaries |
+| Merkle tree | reusable proof helpers only if custom hash/duplication/layout is exact | Neo block/MerkleBlock root bytes: odd-leaf duplication, `Hash256(left || right)`, little-endian `UInt256`, and trim/proof shape |
+| MPT trie | reference ideas and low-level data structures only | Neo C# MPT node types, serialization, empty-node behavior, hash domain, proof shape, and state-root parity |
+
+Do not introduce project-local types named like generic utilities (`Hex`,
+`Base58`, `BinaryWriter`, `MemoryReader`, `BloomFilter`, etc.) unless the type
+name represents a real Neo protocol contract. If a thin adapter remains, its
+module rustdoc must state which upstream crate does the commodity work and which
+Neo-specific behavior the adapter protects.
 
 ## Layer Rules
 

@@ -88,6 +88,94 @@ class RunBoundedReplayTests(unittest.TestCase):
             ],
         )
 
+    def test_node_command_passes_storage_path_when_db_isolated(self):
+        module = load_module()
+
+        command = module.node_command(
+            Path("target/release/neo-node"),
+            Path("bounded.toml"),
+            665603,
+            storage_path=Path("data/bounded/mainnet"),
+        )
+
+        self.assertEqual(
+            command,
+            [
+                "target/release/neo-node",
+                "--config",
+                "bounded.toml",
+                "--stop-at-height",
+                "665603",
+                "--storage-path",
+                "data/bounded/mainnet",
+            ],
+        )
+
+    def test_materialize_state_service_config_overrides_existing_path(self):
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "node.toml"
+            config.write_text(
+                "\n".join(
+                    [
+                        "[storage]",
+                        'data_dir = "old-chain"',
+                        "",
+                        "[state_service]",
+                        "enabled = true",
+                        'path = "old-state-root"',
+                        "full_state = true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            runtime_config = module.materialize_state_service_config(
+                config,
+                root / "fresh" / "StateRoot",
+                root / "logs",
+            )
+
+            text = runtime_config.read_text(encoding="utf-8")
+            self.assertIn('[state_service]\n', text)
+            self.assertIn(f'path = {json.dumps(str(root / "fresh" / "StateRoot"))}', text)
+            self.assertNotIn("old-state-root", text)
+
+    def test_materialize_state_service_config_adds_missing_path(self):
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "node.toml"
+            config.write_text(
+                "\n".join(
+                    [
+                        "[network]",
+                        "network_magic = 0x334F454E",
+                        "",
+                        "[state_service]",
+                        "enabled = true",
+                        "full_state = true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            runtime_config = module.materialize_state_service_config(
+                config,
+                root / "StateRoot",
+                root / "runtime",
+            )
+
+            self.assertIn(
+                f'path = {json.dumps(str(root / "StateRoot"))}',
+                runtime_config.read_text(encoding="utf-8"),
+            )
+
     def test_node_command_can_import_chain_acc_before_syncing(self):
         module = load_module()
 
@@ -1394,6 +1482,68 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertEqual(reference["block_hash"], "0x01")
         self.assertEqual(reference["state_root_height"], 100000)
         self.assertEqual(reference["state_root_hash"], "0xabc123")
+
+    def test_attach_chain_acc_import_report_uses_transaction_bps_for_speed_gate(self):
+        module = load_module()
+        report = {
+            "status": "transaction-work-unproven",
+            "sync_source": "import-chain",
+            "target_height": 20000,
+            "last_height": 20000,
+            "elapsed_seconds": 11.0,
+            "blocks_per_second": 1800.0,
+            "height_samples": [
+                {"elapsed_seconds": 0.0, "height": 0},
+                {"elapsed_seconds": 11.0, "height": 20000},
+            ],
+            "sync_speed_floor_blocks_per_second": 1500.0,
+            "sync_speed_ceiling_blocks_per_second": None,
+            "sync_speed_band_met": True,
+            "sync_speed_shortfall_blocks_per_second": 0.0,
+            "sync_speed_overage_blocks_per_second": 0.0,
+            "transaction_work_summary": {
+                "required_for_speed_proof": True,
+                "observed_transaction_work": False,
+                "metric_count": 0,
+                "metrics": [],
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "neo-node.log"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "fields": {
+                            "message": "chain.acc import complete",
+                            "imported": 20001,
+                            "final_height": 20000,
+                            "average_blocks_per_second": 1946.3,
+                            "transaction_blocks": 141,
+                            "transactions": 145,
+                            "transaction_blocks_per_second": 978.9,
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            updated = module.attach_chain_acc_import_report(report, log_path)
+
+        self.assertEqual(updated["status"], "sync-speed-too-slow")
+        self.assertEqual(
+            updated["sync_speed_measurement_source"],
+            "import-chain-transaction-blocks",
+        )
+        self.assertEqual(updated["sync_speed_measured_blocks_per_second"], 978.9)
+        self.assertGreater(updated["sync_speed_shortfall_blocks_per_second"], 0.0)
+        self.assertFalse(updated["sync_speed_band_met"])
+        self.assertTrue(updated["transaction_work_summary"]["observed_transaction_work"])
+        self.assertEqual(
+            updated["sync_proof"]["chain_acc_import"]["transaction_blocks"],
+            141,
+        )
 
     def test_attach_fast_sync_report_fails_fast_sync_without_sidecar(self):
         module = load_module()
