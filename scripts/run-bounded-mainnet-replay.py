@@ -356,16 +356,33 @@ def fetch_reference_stateroots(
         samples.append(sample)
 
     unique_roots = sorted(set(roots))
-    matches_local = bool(local_root and roots and all(root == local_root for root in roots))
+    all_references_succeeded = bool(reference_urls) and len(roots) == len(reference_urls)
+    matches_local = bool(
+        local_root
+        and all_references_succeeded
+        and all(root == local_root for root in roots)
+    )
     return {
         "index": index,
         "local_root": local_root,
         "reference_roots": unique_roots,
         "matches_local": matches_local,
+        "all_references_succeeded": all_references_succeeded,
         "successful_samples": len(roots),
         "sample_count": len(samples),
         "samples": samples,
     }
+
+
+def reference_stateroot_match_is_strong(reference: dict, expected_count: int) -> bool:
+    if reference.get("matches_local") is not True:
+        return False
+    try:
+        successful_samples = int(reference.get("successful_samples"))
+        sample_count = int(reference.get("sample_count"))
+    except (TypeError, ValueError):
+        return False
+    return successful_samples >= expected_count and sample_count >= expected_count
 
 
 def collect_post_probe(
@@ -499,7 +516,10 @@ def attach_post_probe_report(
     if (
         require_reference_stateroot_match
         and report.get("status") == "target-reached"
-        and (post_probe.get("reference_stateroot") or {}).get("matches_local") is not True
+        and not reference_stateroot_match_is_strong(
+            post_probe.get("reference_stateroot") or {},
+            len(normalize_reference_urls(effective_reference_urls)),
+        )
     ):
         report["status"] = "reference-stateroot-mismatch"
     report["sync_proof"] = build_sync_proof(report)

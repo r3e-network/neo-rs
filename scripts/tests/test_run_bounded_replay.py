@@ -1603,7 +1603,31 @@ class RunBoundedReplayTests(unittest.TestCase):
 
         reference = post_probe["reference_stateroot"]
         self.assertTrue(reference["matches_local"])
+        self.assertTrue(reference["all_references_succeeded"])
         self.assertEqual(reference["successful_samples"], 2)
+        self.assertEqual(reference["reference_roots"], ["0xabc123"])
+
+    def test_reference_stateroots_require_every_configured_reference_to_succeed(self):
+        module = load_module()
+
+        def fake_rpc(url, method, params=None, timeout=5.0):
+            self.assertEqual(method, "getstateroot")
+            self.assertEqual(params, [11])
+            if url.endswith("seed1"):
+                return {"index": 11, "roothash": "0xabc123"}
+            raise RuntimeError("reference unavailable")
+
+        reference = module.fetch_reference_stateroots(
+            reference_urls=["http://seed1", "http://seed2"],
+            index=11,
+            local_root="0xabc123",
+            rpc=fake_rpc,
+        )
+
+        self.assertFalse(reference["matches_local"])
+        self.assertFalse(reference["all_references_succeeded"])
+        self.assertEqual(reference["successful_samples"], 1)
+        self.assertEqual(reference["sample_count"], 2)
         self.assertEqual(reference["reference_roots"], ["0xabc123"])
 
     def test_required_stateroot_match_marks_target_run_failed_on_mismatch(self):
@@ -1678,6 +1702,8 @@ class RunBoundedReplayTests(unittest.TestCase):
                         "matches_local": True,
                         "local_root": "0xabc123",
                         "reference_roots": ["0xabc123"],
+                        "successful_samples": len(module.DEFAULT_REFERENCE_RPCS),
+                        "sample_count": len(module.DEFAULT_REFERENCE_RPCS),
                     },
                 }
 
@@ -1695,6 +1721,44 @@ class RunBoundedReplayTests(unittest.TestCase):
 
         self.assertEqual(updated["status"], "target-reached")
         self.assertEqual(captured["reference_urls"], module.DEFAULT_REFERENCE_RPCS)
+
+    def test_required_reference_match_rejects_partial_reference_success(self):
+        module = load_module()
+        report = {"status": "target-reached", "target_height": 10}
+
+        original_collect = module.collect_post_probe
+        try:
+            module.collect_post_probe = lambda **kwargs: {
+                "chain_height": {"ok": True, "height": 10},
+                "stateroot_height": {"ok": True, "height": 10},
+                "stateroot_matches_chain": True,
+                "reference_stateroot": {
+                    "matches_local": True,
+                    "local_root": "0xabc123",
+                    "reference_roots": ["0xabc123"],
+                    "successful_samples": 1,
+                    "sample_count": 5,
+                },
+            }
+            updated = module.attach_post_probe_report(
+                report,
+                chain_db=Path("bounded/chain"),
+                stateroot_db=Path("bounded/state-root-334F454E"),
+                probe_bin=Path("target/release/neo-db-probe"),
+                require_stateroot_height_match=False,
+                reference_urls=[
+                    "http://seed1.neo.org:10332",
+                    "http://seed2.neo.org:10332",
+                    "http://seed3.neo.org:10332",
+                    "http://seed4.neo.org:10332",
+                    "http://seed5.neo.org:10332",
+                ],
+                require_reference_stateroot_match=True,
+            )
+        finally:
+            module.collect_post_probe = original_collect
+
+        self.assertEqual(updated["status"], "reference-stateroot-mismatch")
 
 
 if __name__ == "__main__":
