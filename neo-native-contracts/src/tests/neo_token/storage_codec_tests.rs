@@ -316,12 +316,16 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!candidate_encoder.contains("StackItem::from_struct"));
     assert!(!candidate_encoder.contains("BinarySerializer::serialize("));
 
+    let candidate_source = include_str!("../../neo_token/storage/candidates.rs");
     assert!(
-        source.contains("HashMap<ECPoint, UInt160>"),
+        candidate_source.contains("HashMap<ECPoint, UInt160>"),
         "signature-account cache should key by ECPoint to avoid Vec allocation on cache hits"
     );
-    let signature_account_cache =
-        slice_between(source, "fn candidate_signature_account", "fn elapsed_us");
+    let signature_account_cache = slice_between(
+        candidate_source,
+        "fn candidate_signature_account",
+        "fn elapsed_us",
+    );
     assert!(
         !signature_account_cache.contains("pubkey.to_bytes()"),
         "cache hits should borrow the ECPoint key directly"

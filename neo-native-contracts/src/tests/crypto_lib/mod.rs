@@ -77,9 +77,11 @@ fn native_contract_surface_is_consistent() {
             "ripemd160",
             "keccak256",
             "murmur32",
-            "verifyWithEd25519", // ActiveIn Echidna
+            "verifyWithECDsa",   // V2 (ActiveIn Gorgon)
+            "verifyWithEd25519", // V1 (ActiveIn Gorgon)
+            "verifyWithEd25519", // V0 (ActiveIn Echidna, DeprecatedIn Gorgon)
             "verifyWithECDsa",   // V0 (genesis, DeprecatedIn Cockatrice)
-            "verifyWithECDsa",   // V1 (ActiveIn Cockatrice)
+            "verifyWithECDsa",   // V1 (ActiveIn Cockatrice, DeprecatedIn Gorgon)
             "recoverSecp256K1",
             "bls12381Serialize",
             "bls12381Deserialize",
@@ -93,27 +95,39 @@ fn native_contract_surface_is_consistent() {
     let keccak = c.methods().iter().find(|m| m.name == "keccak256").unwrap();
     assert_eq!(keccak.active_in, Some(Hardfork::HfCockatrice));
     assert!(c.methods().iter().all(|m| m.safe));
-    // The hashes/murmur return ByteArray; verifyWithEd25519 is an Echidna
-    // Boolean with three byte-array parameters.
-    let ed = c
+    // The hashes/murmur return ByteArray; verifyWithEd25519 is a Gorgon
+    // V1 plus Echidna V0 Boolean pair with three byte-array parameters.
+    let ed: Vec<&NativeMethod> = c
         .methods()
         .iter()
-        .find(|m| m.name == "verifyWithEd25519")
-        .unwrap();
-    assert_eq!(ed.return_type, ContractParameterType::Boolean);
-    assert_eq!(ed.active_in, Some(Hardfork::HfEchidna));
-    assert_eq!(ed.parameters.len(), 3);
-    // verifyWithECDsa is a dual registration (C# v3.10.0 V0/V1): V0
+        .filter(|m| m.name == "verifyWithEd25519")
+        .collect();
+    assert_eq!(ed.len(), 2);
+    assert_eq!(ed[0].active_in, Some(Hardfork::HfGorgon));
+    assert_eq!(ed[0].deprecated_in, None);
+    assert_eq!(ed[1].active_in, Some(Hardfork::HfEchidna));
+    assert_eq!(ed[1].deprecated_in, Some(Hardfork::HfGorgon));
+    for method in &ed {
+        assert_eq!(method.return_type, ContractParameterType::Boolean);
+        assert_eq!(method.parameters.len(), 3);
+    }
+    // verifyWithECDsa is a triple registration (C# v3.10.0 V0/V1/V2): V0
     // runs from genesis until DeprecatedIn HF_Cockatrice with the fourth
-    // parameter named `curve`; V1 is ActiveIn HF_Cockatrice and renames it
-    // `curveHash`. Types are identical across versions.
+    // parameter named `curve`; V1 is ActiveIn HF_Cockatrice and DeprecatedIn
+    // HF_Gorgon; V2 is ActiveIn HF_Gorgon. Types are identical across versions.
     let ecdsa: Vec<&NativeMethod> = c
         .methods()
         .iter()
         .filter(|m| m.name == "verifyWithECDsa")
         .collect();
-    assert_eq!(ecdsa.len(), 2);
-    let (v0, v1) = (ecdsa[0], ecdsa[1]);
+    assert_eq!(ecdsa.len(), 3);
+    let (v2, v0, v1) = (ecdsa[0], ecdsa[1], ecdsa[2]);
+    assert_eq!(v2.active_in, Some(Hardfork::HfGorgon));
+    assert_eq!(v2.deprecated_in, None);
+    assert_eq!(
+        v2.parameter_names,
+        ["message", "pubkey", "signature", "curveHash"]
+    );
     assert_eq!(v0.active_in, None);
     assert_eq!(v0.deprecated_in, Some(Hardfork::HfCockatrice));
     assert_eq!(
@@ -121,7 +135,7 @@ fn native_contract_surface_is_consistent() {
         ["message", "pubkey", "signature", "curve"]
     );
     assert_eq!(v1.active_in, Some(Hardfork::HfCockatrice));
-    assert_eq!(v1.deprecated_in, None);
+    assert_eq!(v1.deprecated_in, Some(Hardfork::HfGorgon));
     assert_eq!(
         v1.parameter_names,
         ["message", "pubkey", "signature", "curveHash"]
@@ -296,19 +310,30 @@ fn verify_ecdsa_dispatch_gates_keccak_and_rejects_unknown_curve() {
     let empty = b""; // malformed key/sig -> underlying verify yields false
 
     // Undefined curve byte -> error (C# KeyNotFound/ArgumentOutOfRange faults).
-    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x00, true).is_err());
+    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x00, true, false).is_err());
 
     // SHA-256 curves (0x16/0x17) are valid at any height; malformed inputs
     // dispatch to a false result rather than faulting.
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, false).unwrap());
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x17, false).unwrap());
+    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, false, false).unwrap());
+    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x17, false, false).unwrap());
 
     // Keccak-256 curves (0x7A/0x7B) require Cockatrice: gated off -> fault.
-    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7A, false).is_err());
-    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7B, false).is_err());
+    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7A, false, false).is_err());
+    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7B, false, false).is_err());
     // Enabled -> dispatch (malformed inputs -> false).
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7A, true).unwrap());
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7B, true).unwrap());
+    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7A, true, false).unwrap());
+    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7B, true, false).unwrap());
+}
+
+#[test]
+fn verify_ecdsa_gorgon_faults_on_bad_format_like_csharp_v2() {
+    let msg = b"message";
+    let empty = b"";
+
+    // V1 catches malformed key/signature ArgumentException and returns false.
+    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, true, false).unwrap());
+    // V2 calls C# Crypto.VerifySignature, whose length/public-key checks fault.
+    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, true, true).is_err());
 }
 
 fn hex_bytes(s: &str) -> Vec<u8> {
@@ -346,4 +371,15 @@ fn verify_ed25519_matches_rfc8032_test1() {
         &pubkey,
         &signature[..63]
     ));
+}
+
+#[test]
+fn verify_ed25519_gorgon_faults_on_bad_lengths_like_csharp_v1() {
+    let pubkey = hex_bytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+    let signature = hex_bytes(
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+    );
+
+    assert!(CryptoLib::verify_ed25519_gorgon_method(b"", &pubkey[..31], &signature).is_err());
+    assert!(CryptoLib::verify_ed25519_gorgon_method(b"", &pubkey, &signature[..63]).is_err());
 }

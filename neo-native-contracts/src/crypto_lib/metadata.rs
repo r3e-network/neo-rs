@@ -59,8 +59,37 @@ pub(super) static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::ne
             byte_array,
         )
         .with_parameter_names(["data", "seed"]),
-        // verifyWithEd25519 is a single C# v3.10.0 registration:
-        // ActiveIn HF_Echidna, wrong-length sig/pubkey -> false.
+        // verifyWithECDsa: C# v3.10.0 has three registrations under one name.
+        // V2 = ActiveIn HF_Gorgon and calls `Crypto.VerifySignature`, whose
+        // wrong-length/invalid-key format errors fault instead of returning false.
+        NativeMethod::new(
+            "verifyWithECDsa",
+            CPU_FEE_HASH,
+            true,
+            0,
+            vec![
+                byte_array,
+                byte_array,
+                byte_array,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfGorgon)
+        .with_parameter_names(["message", "pubkey", "signature", "curveHash"]),
+        // verifyWithEd25519: C# v3.10.0 V1 is ActiveIn HF_Gorgon and faults
+        // on wrong-length signature/pubkey; V0 is ActiveIn HF_Echidna and
+        // DeprecatedIn HF_Gorgon, returning false for wrong lengths.
+        NativeMethod::new(
+            "verifyWithEd25519",
+            CPU_FEE_HASH,
+            true,
+            0,
+            vec![byte_array, byte_array, byte_array],
+            ContractParameterType::Boolean,
+        )
+        .with_active_in(Hardfork::HfGorgon)
+        .with_parameter_names(["message", "pubkey", "signature"]),
         NativeMethod::new(
             "verifyWithEd25519",
             CPU_FEE_HASH,
@@ -70,15 +99,14 @@ pub(super) static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::ne
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfEchidna)
+        .with_deprecated_in(Hardfork::HfGorgon)
         .with_parameter_names(["message", "pubkey", "signature"]),
-        // verifyWithECDsa: dual manifest registration under one name (C# V0/V1).
         // V0 = `[ContractMethod(true, Hardfork.HF_Cockatrice, ...)]`:
         // genesis-active, DeprecatedIn Cockatrice, SHA-256 curves only, and its
         // fourth C# parameter is named `curve`. V1 = ActiveIn HF_Cockatrice,
-        // adds the Keccak-256 curves, and renames the parameter `curveHash` -
-        // so the manifests differ across the boundary even though the types
-        // match. Exactly one is active at any height; the Keccak gate is
-        // applied in invoke via the HF_Cockatrice check.
+        // DeprecatedIn HF_Gorgon, adds the Keccak-256 curves, and renames the
+        // parameter `curveHash`. Exactly one ECDSA descriptor is active at any
+        // height.
         NativeMethod::new(
             "verifyWithECDsa",
             CPU_FEE_HASH,
@@ -108,6 +136,7 @@ pub(super) static CRYPTO_LIB_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::ne
             ContractParameterType::Boolean,
         )
         .with_active_in(Hardfork::HfCockatrice)
+        .with_deprecated_in(Hardfork::HfGorgon)
         .with_parameter_names(["message", "pubkey", "signature", "curveHash"]),
         // recoverSecp256K1(messageHash, signature) -> ByteArray? (HF_Echidna).
         // Returns the compressed pubkey, or null on failure (signaled at runtime

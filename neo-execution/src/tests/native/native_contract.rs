@@ -2,14 +2,11 @@ use super::*;
 use neo_error::CoreError;
 use std::collections::HashMap;
 
-/// Pins the vendored C# v3.10.x `NativeContract.IsActive` OR-form:
-/// a descriptor is active when no hardfork is involved, or when its
-/// `DeprecatedIn` hardfork has not activated yet, or when its `ActiveIn`
-/// hardfork has activated. This matters for latent descriptors carrying
-/// both attributes because C# keeps them active before and after the
-/// intended replacement window.
+/// Pins the vendored C# v3.10.0 `NativeContract.IsActive` predicate:
+/// a descriptor is active when its `ActiveIn` hardfork is absent or active
+/// and its `DeprecatedIn` hardfork is absent or not active.
 #[test]
-fn is_active_for_matches_v3100_or_form() {
+fn is_active_for_matches_v3100_and_form() {
     fn method(active: Option<Hardfork>, deprecated: Option<Hardfork>) -> NativeMethod {
         let mut m = NativeMethod::new("m", 0, true, 0, vec![], ContractParameterType::Void);
         if let Some(a) = active {
@@ -34,23 +31,28 @@ fn is_active_for_matches_v3100_or_form() {
     // Deprecated-only.
     assert!(is_active_for(&method(None, Some(g)), checker(vec![]), 0));
     assert!(!is_active_for(&method(None, Some(g)), checker(vec![g]), 0));
-    // Both set: active(c) -> deprecated(g).
-    assert!(is_active_for(&method(Some(c), Some(g)), checker(vec![]), 0)); // C# OR: DeprecatedIn has not passed.
+    // Both set: active(c) -> deprecated(g). It is inactive before c and
+    // after g, active only in the window [c, g).
+    assert!(!is_active_for(
+        &method(Some(c), Some(g)),
+        checker(vec![]),
+        0
+    ));
     assert!(is_active_for(
         &method(Some(c), Some(g)),
         checker(vec![c]),
         0
-    )); // active window
-    assert!(is_active_for(
+    ));
+    assert!(!is_active_for(
         &method(Some(c), Some(g)),
         checker(vec![c, g]),
         0
-    )); // C# OR: ActiveIn has passed.
+    ));
     assert!(!is_active_for(
         &method(Some(c), Some(g)),
         checker(vec![g]),
         0
-    )); // deprecated, not yet active
+    ));
 }
 
 /// A minimal native contract exercising the event/parameter-name plumbing:

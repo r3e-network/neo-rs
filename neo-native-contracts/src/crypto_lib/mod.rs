@@ -14,7 +14,9 @@
 //! - `tests`: Module-local tests and regression coverage.
 
 use neo_config::Hardfork;
-use neo_crypto::{Bls12381Point, Crypto, HashAlgorithm, Murmur3, NamedCurveHash, Secp256k1Crypto};
+use neo_crypto::{
+    Bls12381Point, Crypto, ECPoint, HashAlgorithm, Murmur3, NamedCurveHash, Secp256k1Crypto,
+};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use num_bigint::BigInt;
@@ -57,21 +59,45 @@ impl CryptoLib {
                 .unwrap_or(false)
     }
 
+    /// C# HF_Gorgon `VerifyWithEd25519V1`: wrong-length signature/public key
+    /// throws a format exception instead of returning false.
+    fn verify_ed25519_gorgon_method(
+        message: &[u8],
+        pubkey: &[u8],
+        signature: &[u8],
+    ) -> CoreResult<bool> {
+        if signature.len() != 64 {
+            return Err(CoreError::invalid_operation(
+                "CryptoLib::verifyWithEd25519: signature size should be 64 bytes",
+            ));
+        }
+        if pubkey.len() != 32 {
+            return Err(CoreError::invalid_operation(
+                "CryptoLib::verifyWithEd25519: public key size should be 32 bytes",
+            ));
+        }
+        neo_crypto::ecc::EcdsaVerify::verify_ed25519(pubkey, message, signature)
+            .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::verifyWithEd25519: {e}")))
+    }
+
     /// Pure ECDSA verification with C# `VerifyWithECDsa` semantics, split out so the
     /// curve/hash dispatch can be unit tested without an [`ApplicationEngine`].
     ///
-    /// `allow_keccak` reflects the `HF_Cockatrice` hardfork (the V0/V1 split): before
-    /// Cockatrice only the SHA-256 named curves are valid, so a Keccak-256 curve
-    /// faults (C# `VerifyWithECDsaV0` throws `ArgumentOutOfRangeException`); an
-    /// undefined `curve` byte also faults (C# `s_curves[...]` `KeyNotFoundException`).
-    /// A malformed key or signature yields `Ok(false)` (the C# `ArgumentException`
-    /// catch).
+    /// `allow_keccak` reflects the `HF_Cockatrice` hardfork (the V0/V1 split):
+    /// before Cockatrice only the SHA-256 named curves are valid, so a
+    /// Keccak-256 curve faults (C# `VerifyWithECDsaV0` throws
+    /// `ArgumentOutOfRangeException`); an undefined `curve` byte also faults
+    /// (C# `s_curves[...]` `KeyNotFoundException`). `gorgon` reflects the
+    /// `HF_Gorgon` V2 split: pre-Gorgon malformed public keys or signatures
+    /// return `Ok(false)`, while Gorgon and later propagate format errors so
+    /// the VM faults.
     fn verify_ecdsa_method(
         message: &[u8],
         pubkey: &[u8],
         signature: &[u8],
         curve: u8,
         allow_keccak: bool,
+        gorgon: bool,
     ) -> CoreResult<bool> {
         let named = NamedCurveHash::from_byte(curve).ok_or_else(|| {
             CoreError::invalid_operation(format!(
@@ -83,14 +109,40 @@ impl CryptoLib {
                 "CryptoLib::verifyWithECDsa: Keccak256 curves require the Cockatrice hardfork",
             ));
         }
-        Ok(neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
-            named.curve(),
-            pubkey,
-            message,
-            signature,
-            named.hash_algorithm(),
-        )
-        .unwrap_or(false))
+        if signature.len() != 64 {
+            return if gorgon {
+                Err(CoreError::invalid_operation(
+                    "CryptoLib::verifyWithECDsa: signature size should be 64 bytes",
+                ))
+            } else {
+                Ok(false)
+            };
+        }
+        if gorgon {
+            // HF_Gorgon switched from `Crypto.VerifySignatureV0` to
+            // `Crypto.VerifySignature`: bad signature length or invalid public
+            // key faults instead of being caught and converted to false.
+            ECPoint::decode(pubkey, named.curve()).map_err(|e| {
+                CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: {e}"))
+            })?;
+            neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
+                named.curve(),
+                pubkey,
+                message,
+                signature,
+                named.hash_algorithm(),
+            )
+            .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: {e}")))
+        } else {
+            Ok(neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
+                named.curve(),
+                pubkey,
+                message,
+                signature,
+                named.hash_algorithm(),
+            )
+            .unwrap_or(false))
+        }
     }
 
     /// Pure secp256k1 public-key recovery with C# `RecoverSecp256K1` semantics:
@@ -201,9 +253,9 @@ impl NativeContract for CryptoLib {
         }
 
         if method == "verifyWithEd25519" {
-            // C# VerifyWithEd25519(message, pubkey, signature): a wrong-length
-            // signature or pubkey returns false, as does any
-            // verification error (C# catches and returns false).
+            // C# VerifyWithEd25519(message, pubkey, signature): V0
+            // (Echidna..Gorgon) returns false for wrong lengths; V1
+            // (Gorgon+) faults on wrong lengths.
             let arg_err = || {
                 CoreError::invalid_operation(
                     "CryptoLib::verifyWithEd25519 requires (message, pubkey, signature)",
@@ -212,15 +264,19 @@ impl NativeContract for CryptoLib {
             let message = args.first().map(Vec::as_slice).ok_or_else(arg_err)?;
             let pubkey = args.get(1).map(Vec::as_slice).ok_or_else(arg_err)?;
             let signature = args.get(2).map(Vec::as_slice).ok_or_else(arg_err)?;
-            return Ok(vec![u8::from(Self::verify_ed25519_method(
-                message, pubkey, signature,
-            ))]);
+            let verified = if engine.is_hardfork_enabled(Hardfork::HfGorgon) {
+                Self::verify_ed25519_gorgon_method(message, pubkey, signature)?
+            } else {
+                Self::verify_ed25519_method(message, pubkey, signature)
+            };
+            return Ok(vec![u8::from(verified)]);
         }
 
         if method == "verifyWithECDsa" {
             // C# VerifyWithECDsa(message, pubkey, signature, curveHash): the
             // curveHash integer selects the (curve, hash) pair; Keccak-256 pairs
-            // are only valid from HF_Cockatrice (the V0/V1 split).
+            // are only valid from HF_Cockatrice. HF_Gorgon switches from
+            // VerifySignatureV0 to VerifySignature and faults on bad format.
             let arg_err = || {
                 CoreError::invalid_operation(
                     "CryptoLib::verifyWithECDsa requires (message, pubkey, signature, curveHash)",
@@ -239,12 +295,14 @@ impl NativeContract for CryptoLib {
                     )
                 })?;
             let allow_keccak = engine.is_hardfork_enabled(Hardfork::HfCockatrice);
+            let gorgon = engine.is_hardfork_enabled(Hardfork::HfGorgon);
             return Ok(vec![u8::from(Self::verify_ecdsa_method(
                 message,
                 pubkey,
                 signature,
                 curve,
                 allow_keccak,
+                gorgon,
             )?)]);
         }
 

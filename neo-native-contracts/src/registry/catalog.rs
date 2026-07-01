@@ -20,6 +20,13 @@ pub type StandardNativeContractHashes = [UInt160; STANDARD_NATIVE_CONTRACT_COUNT
 type StandardNativeContractDescriptors =
     [StandardNativeContractDescriptor; STANDARD_NATIVE_CONTRACT_COUNT];
 
+/// Exact C# `NativeContract.Activations` declaration for a native contract.
+///
+/// `None` represents C#'s nullable `Hardfork?` `null` entry, which means the
+/// contract is genesis-active. This is intentionally separate from the
+/// normalized `active_in`/`activations` view used by Rust dispatch code.
+pub type NativeContractActivationSchedule = &'static [Option<Hardfork>];
+
 /// Metadata shared by every standard native contract handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StandardNativeContractSpec {
@@ -31,8 +38,10 @@ pub struct StandardNativeContractSpec {
     pub hash: UInt160,
     /// Hardfork that activates the contract itself.
     pub active_in: Option<Hardfork>,
-    /// Hardforks that explicitly refresh the stored native contract state.
+    /// Rust-normalized hardforks that explicitly refresh stored native state.
     pub activations: &'static [Hardfork],
+    /// Exact C# `Activations` schedule, including nullable genesis entries.
+    pub csharp_activations: NativeContractActivationSchedule,
 }
 
 #[derive(Clone, Copy)]
@@ -40,19 +49,19 @@ struct StandardNativeContractDescriptor {
     id: i32,
     name: &'static str,
     hash: fn() -> UInt160,
-    active_in: Option<Hardfork>,
-    activations: &'static [Hardfork],
     construct: fn() -> Arc<dyn NativeContract>,
 }
 
 impl StandardNativeContractDescriptor {
     fn spec(self) -> StandardNativeContractSpec {
+        let contract = self.contract();
         StandardNativeContractSpec {
             id: self.id,
             name: self.name,
             hash: (self.hash)(),
-            active_in: self.active_in,
-            activations: self.activations,
+            active_in: contract.active_in(),
+            activations: contract.activations(),
+            csharp_activations: csharp_activation_schedule(self.name),
         }
     }
 
@@ -63,21 +72,10 @@ impl StandardNativeContractDescriptor {
 
 macro_rules! native_contract_descriptor {
     ($contract:ident) => {
-        native_contract_descriptor!($contract, active_in: None, activations: &[])
-    };
-    ($contract:ident, activations: $activations:expr) => {
-        native_contract_descriptor!($contract, active_in: None, activations: $activations)
-    };
-    ($contract:ident, active_in: $active_in:expr) => {
-        native_contract_descriptor!($contract, active_in: $active_in, activations: &[])
-    };
-    ($contract:ident, active_in: $active_in:expr, activations: $activations:expr) => {
         StandardNativeContractDescriptor {
             id: $contract::ID,
             name: $contract::NAME,
             hash: $contract::script_hash,
-            active_in: $active_in,
-            activations: $activations,
             construct: || Arc::new($contract::new()) as Arc<dyn NativeContract>,
         }
     };
@@ -89,22 +87,26 @@ fn standard_native_contract_descriptors() -> StandardNativeContractDescriptors {
         native_contract_descriptor!(StdLib),
         native_contract_descriptor!(CryptoLib),
         native_contract_descriptor!(LedgerContract),
-        native_contract_descriptor!(NeoToken, activations: &[Hardfork::HfEchidna]),
+        native_contract_descriptor!(NeoToken),
         native_contract_descriptor!(GasToken),
         native_contract_descriptor!(PolicyContract),
         native_contract_descriptor!(RoleManagement),
-        native_contract_descriptor!(OracleContract, activations: &[Hardfork::HfFaun]),
-        native_contract_descriptor!(
-            Notary,
-            active_in: Some(Hardfork::HfEchidna),
-            activations: &[Hardfork::HfEchidna, Hardfork::HfFaun]
-        ),
-        native_contract_descriptor!(
-            Treasury,
-            active_in: Some(Hardfork::HfFaun),
-            activations: &[Hardfork::HfFaun]
-        ),
+        native_contract_descriptor!(OracleContract),
+        native_contract_descriptor!(Notary),
+        native_contract_descriptor!(Treasury),
     ]
+}
+
+fn csharp_activation_schedule(name: &str) -> NativeContractActivationSchedule {
+    match name {
+        // OracleContract.cs: `Activations => [null, Hardfork.HF_Faun]`.
+        "OracleContract" => &[None, Some(Hardfork::HfFaun)],
+        // Notary.cs: `Activations => [Hardfork.HF_Echidna, Hardfork.HF_Faun]`.
+        "Notary" => &[Some(Hardfork::HfEchidna), Some(Hardfork::HfFaun)],
+        // Treasury.cs: `Activations => [Hardfork.HF_Faun]`.
+        "Treasury" => &[Some(Hardfork::HfFaun)],
+        _ => &[],
+    }
 }
 
 /// Returns the canonical standard native-contract catalog in C# id order.

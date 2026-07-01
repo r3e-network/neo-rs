@@ -163,18 +163,6 @@ impl NativeContract for NeoToken {
         &metadata::NEO_TOKEN_EVENTS
     }
 
-    /// C# `NeoToken._usedHardforks` contains `HF_Echidna` (via the
-    /// Echidna-gated `[ContractMethod]` registrations, NeoToken.cs:374-457),
-    /// so `IsInitializeBlock` refreshes NEO's stored manifest at the Echidna
-    /// boundary — where `OnManifestCompose` adds NEP-27. The Rust table's
-    /// `onNEP17Payment` now carries that gate, but the single-entry
-    /// registerCandidate/unregisterCandidate/vote registrations (C# dual
-    /// V0/V1 attributes) do not, so the explicit activation stays declared
-    /// here too (`used_hardforks` dedupes).
-    fn activations(&self) -> &'static [Hardfork] {
-        &[Hardfork::HfEchidna]
-    }
-
     /// C# `NeoToken.OnManifestCompose` (NeoToken.cs:112-122): NEO declares
     /// NEP-27 in addition to NEP-17 once HF_Echidna is enabled at the height.
     fn supported_standards(&self, settings: &ProtocolSettings, block_height: u32) -> Vec<String> {

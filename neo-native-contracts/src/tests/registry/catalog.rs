@@ -6,6 +6,7 @@ use neo_config::Hardfork;
 fn descriptors_match_constructed_contract_handles() {
     for descriptor in standard_native_contract_descriptors() {
         let contract = descriptor.contract();
+        let spec = descriptor.spec();
         assert_eq!(contract.id(), descriptor.id, "{} id", descriptor.name);
         assert_eq!(contract.name(), descriptor.name, "{} name", descriptor.name);
         assert_eq!(
@@ -16,13 +17,13 @@ fn descriptors_match_constructed_contract_handles() {
         );
         assert_eq!(
             contract.active_in(),
-            descriptor.active_in,
+            spec.active_in,
             "{} ActiveIn",
             descriptor.name
         );
         assert_eq!(
             contract.activations(),
-            descriptor.activations,
+            spec.activations,
             "{} activations",
             descriptor.name
         );
@@ -99,7 +100,13 @@ fn standard_contract_activation_policy_matches_neo_n3_v3100() {
         }
     }
 
-    assert_eq!(contract("NeoToken").activations(), &[Hardfork::HfEchidna]);
+    assert!(
+        contract("NeoToken")
+            .used_hardforks()
+            .contains(&Hardfork::HfEchidna),
+        "NeoToken should refresh at Echidna through method metadata"
+    );
+    assert_eq!(contract("NeoToken").activations(), &[]);
     assert_eq!(
         contract("OracleContract").activations(),
         &[Hardfork::HfFaun]
@@ -112,13 +119,56 @@ fn standard_contract_activation_policy_matches_neo_n3_v3100() {
 
     for native in &contracts {
         match native.name() {
-            "NeoToken" | "OracleContract" | "Notary" | "Treasury" => {}
+            "OracleContract" | "Notary" | "Treasury" => {}
             name => assert!(
                 native.activations().is_empty(),
-                "{name} should not declare manifest-refresh activations beyond method/event hardfork metadata"
+                "{name} should not duplicate refresh hardforks already present in method/event metadata"
             ),
         }
     }
+}
+
+#[test]
+fn standard_catalog_pins_csharp_activation_schedules() {
+    let schedules =
+        standard_native_contract_specs().map(|spec| (spec.name, spec.csharp_activations));
+    assert_eq!(
+        schedules,
+        [
+            ("ContractManagement", &[][..]),
+            ("StdLib", &[][..]),
+            ("CryptoLib", &[][..]),
+            ("LedgerContract", &[][..]),
+            ("NeoToken", &[][..]),
+            ("GasToken", &[][..]),
+            ("PolicyContract", &[][..]),
+            ("RoleManagement", &[][..]),
+            ("OracleContract", &[None, Some(Hardfork::HfFaun)][..]),
+            (
+                "Notary",
+                &[Some(Hardfork::HfEchidna), Some(Hardfork::HfFaun)][..],
+            ),
+            ("Treasury", &[Some(Hardfork::HfFaun)][..]),
+        ]
+    );
+}
+
+#[test]
+fn standard_catalog_derives_activation_policy_from_contract_handles() {
+    let source = include_str!("../../registry/catalog.rs");
+    let descriptor_list = source
+        .split("fn standard_native_contract_descriptors")
+        .nth(1)
+        .expect("catalog descriptor list");
+
+    assert!(
+        !descriptor_list.contains("active_in:"),
+        "catalog descriptors should not duplicate NativeContract::active_in"
+    );
+    assert!(
+        !descriptor_list.contains("activations:"),
+        "catalog descriptors should not duplicate NativeContract::activations"
+    );
 }
 
 #[test]
@@ -139,6 +189,7 @@ fn specs_keep_canonical_native_contract_order() {
                 spec.hash,
                 spec.active_in,
                 spec.activations,
+                spec.csharp_activations,
             )
         }),
         [
@@ -147,27 +198,44 @@ fn specs_keep_canonical_native_contract_order() {
                 -1,
                 *CONTRACT_MANAGEMENT_HASH,
                 None,
-                &[][..]
+                &[][..],
+                &[][..],
             ),
-            ("StdLib", -2, *STDLIB_HASH, None, &[][..]),
-            ("CryptoLib", -3, *CRYPTO_LIB_HASH, None, &[][..]),
-            ("LedgerContract", -4, *LEDGER_CONTRACT_HASH, None, &[][..]),
+            ("StdLib", -2, *STDLIB_HASH, None, &[][..], &[][..]),
+            ("CryptoLib", -3, *CRYPTO_LIB_HASH, None, &[][..], &[][..]),
             (
-                "NeoToken",
-                -5,
-                *NEO_TOKEN_HASH,
+                "LedgerContract",
+                -4,
+                *LEDGER_CONTRACT_HASH,
                 None,
-                &[Hardfork::HfEchidna][..],
+                &[][..],
+                &[][..],
             ),
-            ("GasToken", -6, *GAS_TOKEN_HASH, None, &[][..]),
-            ("PolicyContract", -7, *POLICY_CONTRACT_HASH, None, &[][..]),
-            ("RoleManagement", -8, *ROLE_MANAGEMENT_HASH, None, &[][..]),
+            ("NeoToken", -5, *NEO_TOKEN_HASH, None, &[][..], &[][..],),
+            ("GasToken", -6, *GAS_TOKEN_HASH, None, &[][..], &[][..]),
+            (
+                "PolicyContract",
+                -7,
+                *POLICY_CONTRACT_HASH,
+                None,
+                &[][..],
+                &[][..],
+            ),
+            (
+                "RoleManagement",
+                -8,
+                *ROLE_MANAGEMENT_HASH,
+                None,
+                &[][..],
+                &[][..],
+            ),
             (
                 "OracleContract",
                 -9,
                 *ORACLE_CONTRACT_HASH,
                 None,
                 &[Hardfork::HfFaun][..],
+                &[None, Some(Hardfork::HfFaun)][..],
             ),
             (
                 "Notary",
@@ -175,6 +243,7 @@ fn specs_keep_canonical_native_contract_order() {
                 *NOTARY_HASH,
                 Some(Hardfork::HfEchidna),
                 &[Hardfork::HfEchidna, Hardfork::HfFaun][..],
+                &[Some(Hardfork::HfEchidna), Some(Hardfork::HfFaun)][..],
             ),
             (
                 "Treasury",
@@ -182,6 +251,7 @@ fn specs_keep_canonical_native_contract_order() {
                 *TREASURY_HASH,
                 Some(Hardfork::HfFaun),
                 &[Hardfork::HfFaun][..],
+                &[Some(Hardfork::HfFaun)][..],
             ),
         ]
     );

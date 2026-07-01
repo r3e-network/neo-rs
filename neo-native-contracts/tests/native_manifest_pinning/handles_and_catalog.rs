@@ -151,6 +151,10 @@ fn standard_native_contract_catalog_matches_provider_order_and_metadata() {
         assert_eq!(contract.active_in(), spec.active_in);
         assert_eq!(contract.activations(), spec.activations);
         assert_eq!(
+            spec.csharp_activations.first().copied().flatten(),
+            spec.active_in
+        );
+        assert_eq!(
             provider
                 .get_native_contract(&spec.hash)
                 .expect("hash resolves")

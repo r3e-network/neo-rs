@@ -72,10 +72,12 @@ pub trait NativeContract: Any + Send + Sync {
         }
     }
 
-    /// Returns hardforks that should trigger a contract manifest refresh.
+    /// Returns hardforks explicitly declared by a contract-level activation schedule.
     ///
-    /// This mirrors C# `NativeContract.Activations` for manifest-only updates
-    /// such as supported standards changes.
+    /// This is the Rust `Hardfork` projection of C# `NativeContract.Activations`
+    /// with nullable genesis entries omitted. It can include the contract's
+    /// activation hardfork itself (e.g. Notary/Treasury) as well as later
+    /// manifest-refresh hardforks (e.g. Oracle/Notary Faun).
     fn activations(&self) -> &'static [Hardfork] {
         &[]
     }
@@ -582,21 +584,19 @@ impl HardforkActivable for NativeEvent {
 
 /// Checks whether a hardfork-activable item is active.
 ///
-/// Mirrors vendored C# v3.10.x `NativeContract.IsActive(...)`: a method/event
-/// is active when no hardfork is involved, when its `DeprecatedIn` hardfork has
-/// not activated yet, or when its `ActiveIn` hardfork has activated.
+/// Mirrors vendored C# v3.10.0 `NativeContract.IsActive(...)`: a method/event
+/// is active when its `ActiveIn` hardfork is absent or active, and its
+/// `DeprecatedIn` hardfork is absent or not active.
 pub fn is_active_for<T: HardforkActivable>(
     item: &T,
     hf_checker: impl Fn(Hardfork, u32) -> bool,
     block_height: u32,
 ) -> bool {
-    item.active_in().is_none() && item.deprecated_in().is_none()
-        || item
+    item.active_in()
+        .is_none_or(|hf| hf_checker(hf, block_height))
+        && item
             .deprecated_in()
-            .is_some_and(|hf| !hf_checker(hf, block_height))
-        || item
-            .active_in()
-            .is_some_and(|hf| hf_checker(hf, block_height))
+            .is_none_or(|hf| !hf_checker(hf, block_height))
 }
 
 /// Builds a [`ContractState`] for a native contract at the given

@@ -133,12 +133,11 @@ fn policy_attribute_fee_method_gates_match_csharp_v3_10() {
     );
 }
 
-/// Vendored C# v3.10.0 `CryptoLib.cs` has two `verifyWithECDsa`
-/// registrations (genesis V0 deprecated at Cockatrice, Cockatrice V1) and one
-/// `verifyWithEd25519` registration (active at Echidna). There is no
-/// `HF_Gorgon` native CryptoLib registration in the v3.10.0 reference, so
-/// Rust must not refresh CryptoLib or change its verification behavior at
-/// Gorgon.
+/// Vendored C# v3.10.0 `CryptoLib.cs` has three `verifyWithECDsa`
+/// registrations (genesis V0, Cockatrice V1, Gorgon V2) and two
+/// `verifyWithEd25519` registrations (Echidna V0, Gorgon V1). Gorgon is not
+/// scheduled on v3.10.0 MainNet/TestNet, but it is still part of the protocol
+/// descriptor table for configurations that enable it.
 #[test]
 fn crypto_lib_signature_method_gates_match_csharp_v3_10() {
     let contract = CryptoLib::new();
@@ -148,31 +147,54 @@ fn crypto_lib_signature_method_gates_match_csharp_v3_10() {
         .iter()
         .filter(|method| method.name == "verifyWithEd25519")
         .collect();
-    assert_eq!(ed25519.len(), 1);
-    assert_eq!(ed25519[0].active_in, Some(Hardfork::HfEchidna));
-    assert_eq!(ed25519[0].deprecated_in, None);
+    assert_eq!(ed25519.len(), 2);
+    assert!(
+        ed25519
+            .iter()
+            .any(|method| method.active_in == Some(Hardfork::HfEchidna)
+                && method.deprecated_in == Some(Hardfork::HfGorgon))
+    );
+    assert!(ed25519.iter().any(
+        |method| method.active_in == Some(Hardfork::HfGorgon) && method.deprecated_in.is_none()
+    ));
 
     let ecdsa: Vec<_> = contract
         .methods()
         .iter()
         .filter(|method| method.name == "verifyWithECDsa")
         .collect();
-    assert_eq!(ecdsa.len(), 2);
-    assert_eq!(ecdsa[0].active_in, None);
-    assert_eq!(ecdsa[0].deprecated_in, Some(Hardfork::HfCockatrice));
+    assert_eq!(ecdsa.len(), 3);
+    let v0 = ecdsa
+        .iter()
+        .find(|method| {
+            method.active_in.is_none() && method.deprecated_in == Some(Hardfork::HfCockatrice)
+        })
+        .expect("ECDSA V0 descriptor");
     assert_eq!(
-        ecdsa[0].parameter_names,
+        v0.parameter_names,
         ["message", "pubkey", "signature", "curve"]
     );
-    assert_eq!(ecdsa[1].active_in, Some(Hardfork::HfCockatrice));
-    assert_eq!(ecdsa[1].deprecated_in, None);
+    let v1 = ecdsa
+        .iter()
+        .find(|method| {
+            method.active_in == Some(Hardfork::HfCockatrice)
+                && method.deprecated_in == Some(Hardfork::HfGorgon)
+        })
+        .expect("ECDSA V1 descriptor");
     assert_eq!(
-        ecdsa[1].parameter_names,
+        v1.parameter_names,
+        ["message", "pubkey", "signature", "curveHash"]
+    );
+    let v2 = ecdsa
+        .iter()
+        .find(|method| {
+            method.active_in == Some(Hardfork::HfGorgon) && method.deprecated_in.is_none()
+        })
+        .expect("ECDSA V2 descriptor");
+    assert_eq!(
+        v2.parameter_names,
         ["message", "pubkey", "signature", "curveHash"]
     );
 
-    assert!(
-        !contract.used_hardforks().contains(&Hardfork::HfGorgon),
-        "CryptoLib must not gain a Rust-only Gorgon refresh"
-    );
+    assert!(contract.used_hardforks().contains(&Hardfork::HfGorgon));
 }

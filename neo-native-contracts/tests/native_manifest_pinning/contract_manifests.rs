@@ -214,8 +214,10 @@ fn crypto_lib_manifest_pins_csharp_metadata() {
     let settings = test_settings();
     let contract = CryptoLib::new();
 
-    // All hardforks active: verifyWithECDsa is the Cockatrice V1 whose
-    // fourth C# parameter is `curveHash`.
+    // All hardforks active: verifyWithECDsa is the Gorgon V2 descriptor and
+    // verifyWithEd25519 is the Gorgon V1 descriptor. Their ABI names match
+    // the earlier registrations, but the native method cache must select the
+    // hardfork-specific implementation metadata.
     assert_eq!(
         manifest_methods(&contract, &settings, ALL_ACTIVE),
         vec![
@@ -257,6 +259,58 @@ fn crypto_lib_manifest_pins_csharp_metadata() {
                 &["message", "pubkey", "signature", "curve"]
             ),
         ]
+    );
+
+    // Cockatrice active, Gorgon inactive: verifyWithECDsa is V1
+    // (ActiveIn Cockatrice, DeprecatedIn Gorgon), while Ed25519 is not active
+    // until Echidna.
+    assert_eq!(
+        manifest_methods(&contract, &settings, 30),
+        vec![
+            m("bls12381Add", &["x", "y"]),
+            m("bls12381Deserialize", &["data"]),
+            m("bls12381Equal", &["x", "y"]),
+            m("bls12381Mul", &["x", "mul", "neg"]),
+            m("bls12381Pairing", &["g1", "g2"]),
+            m("bls12381Serialize", &["g"]),
+            m("keccak256", &["data"]),
+            m("murmur32", &["data", "seed"]),
+            m("ripemd160", &["data"]),
+            m("sha256", &["data"]),
+            m(
+                "verifyWithECDsa",
+                &["message", "pubkey", "signature", "curveHash"]
+            ),
+        ]
+    );
+
+    // Echidna active, Gorgon inactive: Ed25519 V0 joins and ECDSA remains V1.
+    assert_eq!(
+        manifest_methods(&contract, &settings, 50),
+        vec![
+            m("bls12381Add", &["x", "y"]),
+            m("bls12381Deserialize", &["data"]),
+            m("bls12381Equal", &["x", "y"]),
+            m("bls12381Mul", &["x", "mul", "neg"]),
+            m("bls12381Pairing", &["g1", "g2"]),
+            m("bls12381Serialize", &["g"]),
+            m("keccak256", &["data"]),
+            m("murmur32", &["data", "seed"]),
+            m("recoverSecp256K1", &["messageHash", "signature"]),
+            m("ripemd160", &["data"]),
+            m("sha256", &["data"]),
+            m(
+                "verifyWithECDsa",
+                &["message", "pubkey", "signature", "curveHash"]
+            ),
+            m("verifyWithEd25519", &["message", "pubkey", "signature"]),
+        ]
+    );
+
+    // At Gorgon, the V2/V1 methods replace the older V1/V0 registrations.
+    assert_eq!(
+        manifest_methods(&contract, &settings, 70),
+        manifest_methods(&contract, &settings, ALL_ACTIVE)
     );
 
     // CryptoLib declares no [ContractEvent] in C# v3.10.0.
