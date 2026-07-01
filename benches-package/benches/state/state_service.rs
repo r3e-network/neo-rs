@@ -2,7 +2,8 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_state_service::StateStore;
 use neo_storage::{
-    DataCache, StorageItem, StorageKey, persistence::storage::StorageConfig,
+    DataCache, StorageItem, StorageKey,
+    persistence::{Store, storage::StorageConfig},
     rocksdb::RocksDBStoreProvider,
 };
 use std::path::PathBuf;
@@ -47,7 +48,7 @@ impl Drop for BenchTempDir {
 
 fn make_rocksdb_state_store() -> (StateStore, BenchTempDir) {
     let tempdir = BenchTempDir::new();
-    let backing = Arc::new(
+    let backing: Arc<dyn Store> = Arc::new(
         RocksDBStoreProvider::new(StorageConfig {
             path: tempdir.path.clone(),
             ..Default::default()
@@ -57,7 +58,7 @@ fn make_rocksdb_state_store() -> (StateStore, BenchTempDir) {
         .expect("open rocksdb"),
     );
     (
-        StateStore::with_mpt_rocksdb(false, backing).expect("rocksdb-backed state store"),
+        StateStore::with_mpt_store(false, backing).expect("rocksdb-backed state store"),
         tempdir,
     )
 }
