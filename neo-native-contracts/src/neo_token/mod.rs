@@ -151,15 +151,16 @@ impl NeoToken {
         Self::bft_address(&validators)
     }
 
-    /// Applies the state-only NEO `PostPersist` effects for an empty block run
-    /// that does not cross a committee-refresh height.
+    /// Applies the state-only NEO empty-block persist effects for a fast-forward
+    /// run.
     ///
     /// The blockchain fast-forward gate disables replay artifacts/events before
     /// calling this helper. This method therefore writes only consensus-visible
-    /// storage: the per-block committee GAS reward minted to
+    /// storage: committee-cache refreshes, voter reward accumulators, and the
+    /// per-block committee GAS reward minted to
     /// `cached_committee[height % committee_count]`. Integer division is kept at
-    /// the single-block boundary (`gasPerBlock * 10 / 100`) before multiplying by
-    /// repeated rewards for an account, matching normal `post_persist`.
+    /// the single-block boundary before multiplying repeated rewards, matching
+    /// normal `on_persist`/`post_persist`.
     pub fn fast_forward_empty_block_rewards(
         &self,
         snapshot: &DataCache,
@@ -176,18 +177,11 @@ impl NeoToken {
         if start > end {
             return Ok(());
         }
-        if (start..=end).any(|height| Self::should_refresh_committee(height, committee_count)) {
-            return Err(CoreError::invalid_operation(
-                "NeoToken::fast_forward_empty_block_rewards cannot cross committee-refresh heights",
-            ));
-        }
-
-        let committee_accounts = (0..committee_count)
-            .map(|member_index| {
-                self.read_committee_member_at(snapshot, member_index)
-                    .map(|(member, _)| candidate_signature_account(&member))
-            })
-            .collect::<CoreResult<Vec<_>>>()?;
+        let mut committee = self.read_committee_with_votes(snapshot)?;
+        let mut refreshed_committee: Option<Vec<(ECPoint, BigInt)>> = None;
+        let refresh_heights = (start..=end)
+            .filter(|height| Self::should_refresh_committee(*height, committee_count))
+            .collect::<Vec<_>>();
         let gas_change_points = self
             .sorted_gas_records(snapshot, end.saturating_add(1))
             .into_iter()
@@ -198,15 +192,46 @@ impl NeoToken {
         let mut rewards = std::collections::BTreeMap::<UInt160, BigInt>::new();
         let mut height = start;
         while height <= end {
+            if refresh_heights
+                .iter()
+                .copied()
+                .any(|refresh| refresh == height)
+            {
+                let refreshed = match &refreshed_committee {
+                    Some(committee) => committee.clone(),
+                    None => {
+                        let computed = self.compute_committee_members(snapshot, settings)?;
+                        refreshed_committee = Some(computed.clone());
+                        computed
+                    }
+                };
+                snapshot.update(
+                    Self::committee_key(),
+                    StorageItem::from_bytes(Self::encode_committee(&refreshed)?),
+                );
+                committee = refreshed;
+                self.fast_forward_voter_reward_refresh(snapshot, settings, &committee, height)?;
+            }
+            let committee_accounts = committee
+                .iter()
+                .map(|(member, _)| candidate_signature_account(member))
+                .collect::<Vec<_>>();
             let gas_per_block = self.gas_per_block_at(snapshot, height.saturating_add(1));
             let next_change = gas_change_points
                 .iter()
                 .copied()
                 .filter(|index| *index > height.saturating_add(1))
                 .min();
-            let segment_end = next_change
+            let mut segment_end = next_change
                 .and_then(|index| index.checked_sub(2))
                 .map_or(end, |candidate| candidate.min(end));
+            if let Some(refresh) = refresh_heights
+                .iter()
+                .copied()
+                .find(|refresh| *refresh > height)
+            {
+                segment_end = segment_end.min(refresh - 1);
+            }
             let committee_reward = &gas_per_block * COMMITTEE_REWARD_RATIO / 100;
             if committee_reward != BigInt::from(0) {
                 for (member_index, account) in committee_accounts.iter().enumerate() {
@@ -229,6 +254,36 @@ impl NeoToken {
         let gas = crate::GasToken::new();
         for (account, amount) in rewards {
             gas.fast_forward_mint_state(snapshot, &account, &amount)?;
+        }
+        Ok(())
+    }
+
+    fn fast_forward_voter_reward_refresh(
+        &self,
+        snapshot: &DataCache,
+        settings: &neo_config::ProtocolSettings,
+        committee: &[(ECPoint, BigInt)],
+        height: u32,
+    ) -> CoreResult<()> {
+        let committee_count = settings.committee_members_count();
+        let validators_count = usize::try_from(settings.validators_count).unwrap_or(0);
+        let gas_per_block = self.gas_per_block_at(snapshot, height.saturating_add(1));
+        let m = BigInt::from(committee_count as u64);
+        let m_plus_n = BigInt::from((committee_count + validators_count) as u64);
+        let voter_reward_of_each_committee =
+            &gas_per_block * VOTER_REWARD_RATIO * VOTE_FACTOR * m / m_plus_n / 100;
+        for (index, (member, votes)) in committee.iter().enumerate() {
+            let factor = if index < validators_count { 2 } else { 1 };
+            if *votes > BigInt::from(0) {
+                let reward_per_neo = factor * &voter_reward_of_each_committee / votes;
+                let key = Self::voter_reward_per_committee_key(member);
+                let accumulated =
+                    self.voter_reward_per_committee(snapshot, member) + reward_per_neo;
+                snapshot.update(
+                    key,
+                    StorageItem::from_bytes(crate::bigint_to_storage_bytes(&accumulated)),
+                );
+            }
         }
         Ok(())
     }

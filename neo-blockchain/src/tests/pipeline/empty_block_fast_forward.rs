@@ -275,33 +275,153 @@ fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes
 }
 
 #[test]
-fn fast_forward_rejects_ranges_touching_committee_refresh_height() {
+fn fast_forward_empty_blocks_matches_normal_persist_across_committee_refresh() {
     let _guard = lock_provider();
     let resources = install_resources();
     let settings = ProtocolSettings::default();
-    let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let committee_count = settings.committee_members_count() as u32;
-    let current_height = committee_count - 2;
+
+    let normal = Arc::new(neo_storage::DataCache::new(false));
+    let fast = Arc::new(neo_storage::DataCache::new(false));
+    let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
+    crate::native_persist::persist_block_natives(
+        Arc::clone(&normal),
+        Arc::clone(&genesis),
+        &settings,
+    )
+    .expect("normal genesis");
+    crate::native_persist::persist_block_natives(
+        Arc::clone(&fast),
+        Arc::clone(&genesis),
+        &settings,
+    )
+    .expect("fast genesis baseline");
+
+    let mut prev = genesis;
+    for height in 1..committee_count - 1 {
+        prev = empty_child(&prev, height);
+        crate::native_persist::persist_block_natives(
+            Arc::clone(&normal),
+            Arc::clone(&prev),
+            &settings,
+        )
+        .expect("normal pre-run block");
+        crate::native_persist::persist_block_natives(
+            Arc::clone(&fast),
+            Arc::clone(&prev),
+            &settings,
+        )
+        .expect("fast pre-run block");
+    }
+
+    let block_before_refresh = empty_child(&prev, committee_count - 1);
+    let refresh_block = empty_child(&block_before_refresh, committee_count);
+    let block_after_refresh = empty_child(&refresh_block, committee_count + 1);
     let blocks = vec![
-        empty_block(committee_count - 1),
-        empty_block(committee_count),
+        Arc::clone(&block_before_refresh),
+        Arc::clone(&refresh_block),
+        Arc::clone(&block_after_refresh),
     ];
 
-    let error = match stage_empty_block_fast_forward(
-        snapshot,
+    for block in &blocks {
+        crate::native_persist::persist_block_natives(
+            Arc::clone(&normal),
+            Arc::clone(block),
+            &settings,
+        )
+        .expect("normal empty block across refresh");
+    }
+
+    let staged = stage_empty_block_fast_forward(
+        Arc::clone(&fast),
         &blocks,
         &settings,
         bulk_options(),
         bulk_context(),
         &resources,
-        current_height,
-    ) {
-        Ok(_) => panic!("committee refresh heights must fall back to normal persistence"),
-        Err(error) => error,
-    };
+        committee_count - 2,
+    )
+    .expect("fast-forward across committee refresh");
+    staged.commit();
 
-    assert!(
-        error.to_string().contains("committee-refresh"),
-        "unexpected error: {error}"
+    assert_eq!(
+        visible_store_dump(&fast),
+        visible_store_dump(&normal),
+        "fast-forward must be byte-equivalent across a committee refresh"
+    );
+}
+
+#[test]
+fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_committee_refreshes() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+    let committee_count = settings.committee_members_count() as u32;
+
+    let normal = Arc::new(neo_storage::DataCache::new(false));
+    let fast = Arc::new(neo_storage::DataCache::new(false));
+    let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
+    crate::native_persist::persist_block_natives(
+        Arc::clone(&normal),
+        Arc::clone(&genesis),
+        &settings,
+    )
+    .expect("normal genesis");
+    crate::native_persist::persist_block_natives(
+        Arc::clone(&fast),
+        Arc::clone(&genesis),
+        &settings,
+    )
+    .expect("fast genesis baseline");
+
+    let mut prev = genesis;
+    for height in 1..committee_count - 1 {
+        prev = empty_child(&prev, height);
+        crate::native_persist::persist_block_natives(
+            Arc::clone(&normal),
+            Arc::clone(&prev),
+            &settings,
+        )
+        .expect("normal pre-run block");
+        crate::native_persist::persist_block_natives(
+            Arc::clone(&fast),
+            Arc::clone(&prev),
+            &settings,
+        )
+        .expect("fast pre-run block");
+    }
+
+    let mut blocks = Vec::new();
+    for height in committee_count - 1..=committee_count * 2 {
+        let block = empty_child(&prev, height);
+        prev = Arc::clone(&block);
+        blocks.push(block);
+    }
+
+    for block in &blocks {
+        crate::native_persist::persist_block_natives(
+            Arc::clone(&normal),
+            Arc::clone(block),
+            &settings,
+        )
+        .expect("normal empty block across refreshes");
+    }
+
+    let staged = stage_empty_block_fast_forward(
+        Arc::clone(&fast),
+        &blocks,
+        &settings,
+        bulk_options(),
+        bulk_context(),
+        &resources,
+        committee_count - 2,
+    )
+    .expect("fast-forward across multiple committee refreshes");
+    staged.commit();
+
+    assert_eq!(
+        visible_store_dump(&fast),
+        visible_store_dump(&normal),
+        "fast-forward must be byte-equivalent across multiple committee refreshes"
     );
 }

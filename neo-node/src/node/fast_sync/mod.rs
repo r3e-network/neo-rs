@@ -147,6 +147,10 @@ impl FastSyncReport {
                 final_hash: import.last_imported_tip.map(|tip| tip.hash.to_string()),
                 elapsed_seconds: import.elapsed_seconds,
                 average_blocks_per_second: import.average_blocks_per_second,
+                empty_blocks: import.empty_blocks,
+                transaction_blocks: import.transaction_blocks,
+                transactions: import.transactions,
+                transaction_blocks_per_second: import.transaction_blocks_per_second,
                 throughput_status: fast_sync_throughput_status(
                     import.imported,
                     import.average_blocks_per_second,
@@ -187,6 +191,10 @@ pub(super) struct FastSyncImportReport {
     pub(super) final_hash: Option<String>,
     pub(super) elapsed_seconds: f64,
     pub(super) average_blocks_per_second: f64,
+    pub(super) empty_blocks: u64,
+    pub(super) transaction_blocks: u64,
+    pub(super) transactions: u64,
+    pub(super) transaction_blocks_per_second: f64,
     pub(super) throughput_status: FastSyncThroughputStatus,
 }
 
@@ -604,6 +612,36 @@ data_dir = "/var/lib/neo/mainnet"
             last_imported_tip,
             elapsed_seconds,
             average_blocks_per_second,
+            empty_blocks: imported,
+            transaction_blocks: 0,
+            transactions: 0,
+            transaction_blocks_per_second: 0.0,
+            hot_metrics: chain_acc::ImportHotMetrics::default(),
+        }
+    }
+
+    fn import_report_with_composition(
+        imported: u64,
+        last_imported_tip: Option<chain_acc::LocalLedgerTip>,
+        elapsed_seconds: f64,
+        average_blocks_per_second: f64,
+        empty_blocks: u64,
+        transaction_blocks: u64,
+        transactions: u64,
+    ) -> chain_acc::ChainAccImportReport {
+        chain_acc::ChainAccImportReport {
+            imported,
+            last_imported_tip,
+            elapsed_seconds,
+            average_blocks_per_second,
+            empty_blocks,
+            transaction_blocks,
+            transactions,
+            transaction_blocks_per_second: if elapsed_seconds > 0.0 {
+                transaction_blocks as f64 / elapsed_seconds
+            } else {
+                0.0
+            },
             hot_metrics: chain_acc::ImportHotMetrics::default(),
         }
     }
@@ -819,6 +857,10 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(report.import.final_height, Some(100));
         assert_eq!(report.import.elapsed_seconds, 0.0505);
         assert_eq!(report.import.average_blocks_per_second, 2000.0);
+        assert_eq!(report.import.empty_blocks, 101);
+        assert_eq!(report.import.transaction_blocks, 0);
+        assert_eq!(report.import.transactions, 0);
+        assert_eq!(report.import.transaction_blocks_per_second, 0.0);
         assert_eq!(
             report.import.throughput_status,
             FastSyncThroughputStatus::WithinTarget
@@ -874,6 +916,10 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(payload["package"]["end_height"], 100);
         assert_eq!(payload["import"]["imported_blocks"], 101);
         assert_eq!(payload["import"]["final_height"], 100);
+        assert_eq!(payload["import"]["empty_blocks"], 101);
+        assert_eq!(payload["import"]["transaction_blocks"], 0);
+        assert_eq!(payload["import"]["transactions"], 0);
+        assert_eq!(payload["import"]["transaction_blocks_per_second"], 0.0);
         assert_eq!(payload["import"]["throughput_status"], "within-target");
         assert_eq!(
             payload["hot_metrics"]["state_service_mpt_avg_total_us"],
@@ -900,6 +946,28 @@ data_dir = "/var/lib/neo/mainnet"
             payload["hot_metrics"]["rocksdb_batch_pending_operations"],
             19
         );
+    }
+
+    #[test]
+    fn fast_sync_report_preserves_transaction_bearing_throughput_proof() {
+        let package = test_package(0, 100);
+        let import_tip = chain_acc::LocalLedgerTip {
+            height: 100,
+            hash: neo_primitives::UInt256::from([100; 32]),
+        };
+        let report = FastSyncReport::from_parts(
+            &package,
+            Path::new("/cache/chain.0.acc.zip"),
+            Path::new("/cache/chain.0.acc/chain.0.acc"),
+            import_report_with_composition(101, Some(import_tip), 0.25, 404.0, 81, 20, 45),
+            None,
+        );
+
+        assert_eq!(report.import.imported_blocks, 101);
+        assert_eq!(report.import.empty_blocks, 81);
+        assert_eq!(report.import.transaction_blocks, 20);
+        assert_eq!(report.import.transactions, 45);
+        assert_eq!(report.import.transaction_blocks_per_second, 80.0);
     }
 
     #[test]

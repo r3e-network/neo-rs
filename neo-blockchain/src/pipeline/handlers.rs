@@ -141,9 +141,6 @@ where
             {
                 break;
             }
-            if height % (committee_count as u32) == 0 {
-                break;
-            }
             let native_cut = resources.contracts().iter().any(|contract| {
                 let (initialize, _hardforks) = contract.is_initialize_block(settings, height);
                 initialize

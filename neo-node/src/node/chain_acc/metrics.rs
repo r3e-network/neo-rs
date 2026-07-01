@@ -303,6 +303,10 @@ impl ChainAccImportProgress {
         self.elapsed.as_secs_f64()
     }
 
+    pub(super) fn elapsed(&self) -> Duration {
+        self.elapsed
+    }
+
     pub(super) fn average_blocks_per_second(&self) -> f64 {
         blocks_per_second(self.imported, self.elapsed)
     }

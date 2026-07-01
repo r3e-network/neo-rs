@@ -78,6 +78,10 @@ pub(super) struct ChainAccImportReport {
     pub(super) last_imported_tip: Option<LocalLedgerTip>,
     pub(super) elapsed_seconds: f64,
     pub(super) average_blocks_per_second: f64,
+    pub(super) empty_blocks: u64,
+    pub(super) transaction_blocks: u64,
+    pub(super) transactions: u64,
+    pub(super) transaction_blocks_per_second: f64,
     pub(super) hot_metrics: ImportHotMetrics,
 }
 
@@ -248,6 +252,7 @@ where
     let mut block_bytes = Vec::new();
     let mut imported = 0u64;
     let mut progress = ChainAccImportProgress::new(import_count);
+    let mut composition = ChainAccImportComposition::default();
     let mut previous_height = None;
     let mut previous_hash = None;
     let mut last_imported_tip = None;
@@ -287,6 +292,7 @@ where
                 i + 1 < import_count && !reached_count_only_stop_height,
             );
             let batch_len = batch_blocks.len();
+            let batch_composition = ChainAccImportComposition::from_blocks(&batch_blocks);
             let batch_tip = batch_blocks.last().map(|block| LocalLedgerTip {
                 height: block.index(),
                 hash: block.hash(),
@@ -299,6 +305,7 @@ where
             let batch_elapsed = batch_start.elapsed();
             progress.record_batch(batch_imported, batch_elapsed);
             imported += batch_imported as u64;
+            composition.record_imported(batch_composition, batch_imported);
             if batch_imported == batch_len {
                 last_imported_tip = batch_tip;
             }
@@ -323,6 +330,11 @@ where
                     batch_imported = progress_sample.batch_imported,
                     batch_blocks_per_second = progress_sample.batch_blocks_per_second,
                     average_blocks_per_second = progress_sample.average_blocks_per_second,
+                    empty_blocks = composition.empty_blocks,
+                    transaction_blocks = composition.transaction_blocks,
+                    transactions = composition.transactions,
+                    transaction_blocks_per_second = composition
+                        .transaction_blocks_per_second(progress.elapsed()),
                     elapsed_seconds = progress_sample.elapsed_seconds,
                     sync_blocks_persisted = state_service_metrics.sync_blocks_persisted,
                     sync_avg_total_us = state_service_metrics.sync_avg_total_us,
@@ -389,11 +401,17 @@ where
 
     let elapsed_seconds = progress.elapsed_seconds();
     let average_blocks_per_second = progress.average_blocks_per_second();
+    let transaction_blocks_per_second =
+        composition.transaction_blocks_per_second(progress.elapsed());
     info!(
         target: "neo::import",
         imported,
         elapsed_seconds,
         average_blocks_per_second,
+        empty_blocks = composition.empty_blocks,
+        transaction_blocks = composition.transaction_blocks,
+        transactions = composition.transactions,
+        transaction_blocks_per_second,
         "chain.acc import complete"
     );
     Ok(ChainAccImportReport {
@@ -401,8 +419,57 @@ where
         last_imported_tip,
         elapsed_seconds,
         average_blocks_per_second,
+        empty_blocks: composition.empty_blocks,
+        transaction_blocks: composition.transaction_blocks,
+        transactions: composition.transactions,
+        transaction_blocks_per_second,
         hot_metrics,
     })
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ChainAccImportComposition {
+    empty_blocks: u64,
+    transaction_blocks: u64,
+    transactions: u64,
+}
+
+impl ChainAccImportComposition {
+    fn from_blocks(blocks: &[Block]) -> Self {
+        let mut composition = Self::default();
+        for block in blocks {
+            let tx_count = block.transactions.len() as u64;
+            if tx_count == 0 {
+                composition.empty_blocks += 1;
+            } else {
+                composition.transaction_blocks += 1;
+                composition.transactions += tx_count;
+            }
+        }
+        composition
+    }
+
+    fn record_imported(&mut self, batch: Self, imported: usize) {
+        if imported == 0 {
+            return;
+        }
+        let imported = imported as u64;
+        let batch_blocks = batch.empty_blocks + batch.transaction_blocks;
+        if imported >= batch_blocks {
+            self.empty_blocks += batch.empty_blocks;
+            self.transaction_blocks += batch.transaction_blocks;
+            self.transactions += batch.transactions;
+        }
+    }
+
+    fn transaction_blocks_per_second(&self, elapsed: std::time::Duration) -> f64 {
+        let elapsed = elapsed.as_secs_f64();
+        if elapsed > 0.0 {
+            self.transaction_blocks as f64 / elapsed
+        } else {
+            0.0
+        }
+    }
 }
 
 impl ImportHotMetrics {
@@ -717,6 +784,33 @@ mod tests {
     };
     use super::*;
     use neo_blockchain::BlockchainCommand;
+    use neo_payloads::{Signer, Transaction, Witness};
+    use neo_primitives::{UInt160, WitnessScope};
+
+    fn signed_test_transaction(nonce: u32) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_nonce(nonce);
+        tx.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            Vec::new(),
+            vec![neo_vm_rs::OpCode::PUSH1.byte()],
+        )]);
+        tx
+    }
+
+    fn non_empty_block_with_prev_hash(
+        index: u32,
+        prev_hash: neo_primitives::UInt256,
+        transactions: Vec<Transaction>,
+    ) -> Block {
+        let mut header = neo_payloads::Header::new();
+        header.set_index(index);
+        header.set_prev_hash(prev_hash);
+        let mut block = Block::from_parts(header, transactions);
+        block.try_rebuild_merkle_root().expect("merkle root");
+        block
+    }
 
     fn memory_store_with_ledger_tip(tip: u32, hash: neo_primitives::UInt256) -> Arc<dyn Store> {
         use neo_storage::persistence::providers::memory_store::MemoryStore;
@@ -1378,6 +1472,52 @@ mod tests {
         assert!(
             report.average_blocks_per_second > 0.0,
             "importing blocks should report a positive final BPS, got {report:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_chain_acc_report_tracks_empty_and_transaction_bearing_blocks() {
+        let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
+        let genesis = empty_block(0);
+        let block1 =
+            non_empty_block_with_prev_hash(1, genesis.hash(), vec![signed_test_transaction(1)]);
+        let block2 = empty_block_with_prev_hash(2, block1.hash());
+        let blocks = vec![genesis, block1, block2];
+        let bytes = encode_chain_acc(&blocks);
+        let mut cursor = std::io::Cursor::new(bytes);
+        let service = tokio::spawn(async move {
+            let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await
+            else {
+                panic!("expected import blocks command");
+            };
+            assert_eq!(import.blocks.len(), 3);
+            reply
+                .send(ImportBlocksReply::ok(import.blocks.len()))
+                .expect("reply import");
+        });
+
+        let report = import_chain_acc_from_reader_report(
+            &handle,
+            &mut cursor,
+            None,
+            false,
+            Some(ChainAccExpectedRange {
+                start_height: 0,
+                end_height: 2,
+            }),
+            None,
+        )
+        .await
+        .expect("import report");
+
+        service.await.expect("service task");
+        assert_eq!(report.imported, 3);
+        assert_eq!(report.empty_blocks, 2);
+        assert_eq!(report.transaction_blocks, 1);
+        assert_eq!(report.transactions, 1);
+        assert!(
+            report.transaction_blocks_per_second > 0.0,
+            "transaction-bearing BPS must be reported independently from empty-block throughput"
         );
     }
 

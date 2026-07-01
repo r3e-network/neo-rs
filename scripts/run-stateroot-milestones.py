@@ -873,16 +873,46 @@ def import_window_speed_proof(report: dict | None) -> dict[str, Any] | None:
     if not isinstance(import_report, dict):
         return None
     try:
-        bps = float(import_report["average_blocks_per_second"])
+        transaction_blocks = int(import_report.get("transaction_blocks", 0))
+        transaction_bps = float(import_report["transaction_blocks_per_second"])
+        transactions = int(import_report.get("transactions", 0))
     except (KeyError, TypeError, ValueError):
-        return None
+        try:
+            bps = float(import_report["average_blocks_per_second"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        return {
+            "source": "fast-sync-import",
+            "blocks_per_second": bps,
+            "imported_blocks": import_report.get("imported_blocks"),
+            "final_height": import_report.get("final_height"),
+            "elapsed_seconds": import_report.get("elapsed_seconds"),
+            "throughput_status": import_report.get("throughput_status"),
+        }
+    if transaction_blocks <= 0:
+        return {
+            "source": "fast-sync-transaction-blocks",
+            "blocks_per_second": 0.0,
+            "imported_blocks": import_report.get("imported_blocks"),
+            "final_height": import_report.get("final_height"),
+            "elapsed_seconds": import_report.get("elapsed_seconds"),
+            "throughput_status": import_report.get("throughput_status"),
+            "empty_blocks": import_report.get("empty_blocks"),
+            "transaction_blocks": transaction_blocks,
+            "transactions": transactions,
+            "missing_transaction_blocks": True,
+        }
     return {
-        "source": "fast-sync-import",
-        "blocks_per_second": bps,
+        "source": "fast-sync-transaction-blocks",
+        "blocks_per_second": transaction_bps,
         "imported_blocks": import_report.get("imported_blocks"),
         "final_height": import_report.get("final_height"),
         "elapsed_seconds": import_report.get("elapsed_seconds"),
         "throughput_status": import_report.get("throughput_status"),
+        "empty_blocks": import_report.get("empty_blocks"),
+        "transaction_blocks": transaction_blocks,
+        "transactions": transactions,
+        "overall_blocks_per_second": import_report.get("average_blocks_per_second"),
     }
 
 
@@ -952,6 +982,8 @@ def speed_proof_error(
 
     import_proof = import_window_speed_proof(report)
     if import_proof is not None:
+        if import_proof.get("missing_transaction_blocks"):
+            return "fast-sync speed proof has no transaction-bearing blocks"
         bps = float(import_proof["blocks_per_second"])
         if floor_bps is not None and bps < floor_bps:
             return (

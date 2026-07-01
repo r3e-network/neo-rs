@@ -259,13 +259,9 @@ pub fn plan_empty_block_fast_forward(
 
 /// Stages a state-equivalent fast-forward for a contiguous empty-block run.
 ///
-/// This first implementation handles the common historical-sync case between
-/// committee refresh heights: Ledger history is written for every block, the
-/// current-block pointer advances to the interval end, and the NEO committee
-/// GAS rewards are aggregated through `neo-native-contracts` storage helpers.
-/// Ranges that cross a committee refresh stay on normal per-block persistence
-/// until the NEO voter-reward accumulator path is batched with full store-dump
-/// tests.
+/// Ledger history is written for every block, the current-block pointer
+/// advances to the interval end, and NEO/GAS empty-block effects are aggregated
+/// through `neo-native-contracts` storage helpers.
 pub fn stage_empty_block_fast_forward(
     snapshot: Arc<DataCache>,
     blocks: &[Arc<Block>],
@@ -291,12 +287,6 @@ pub fn stage_empty_block_fast_forward(
             "empty-block fast-forward requires a non-empty committee",
         ));
     }
-    if (plan.start..=plan.end).any(|height| height % (committee_count as u32) == 0) {
-        return Err(CoreError::invalid_operation(
-            "empty-block fast-forward currently falls back across committee-refresh heights",
-        ));
-    }
-
     let block_cache = Arc::new(snapshot.clone_cache());
     for block in blocks {
         let block_hash = block
