@@ -1,7 +1,8 @@
 //! Static-file append store contract tests.
 
 use neo_static_files::{
-    FileStaticFileProvider, FileStaticFiles, Offset, Segment, StaticFileFactory, StaticFiles,
+    FileStaticFileProvider, FileStaticFiles, Offset, Segment, StaticFileConfig, StaticFileFactory,
+    StaticFiles,
 };
 use std::{fs::OpenOptions, io::Write};
 
@@ -52,6 +53,24 @@ fn static_file_factory_creates_file_provider_by_name() {
             .expect("file static provider")
             .as_any()
             .is::<FileStaticFileProvider>()
+    );
+}
+
+#[test]
+fn static_file_factory_opens_file_provider_with_config() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = StaticFileConfig::new(temp.path());
+    let store =
+        StaticFileFactory::get_static_files_with_config("file", config).expect("open static files");
+    let record = store
+        .append(Segment::Transactions, 12, b"factory-config-tx")
+        .expect("append via configured factory store");
+
+    assert_eq!(
+        store
+            .read(Segment::Transactions, record.offset)
+            .expect("read"),
+        b"factory-config-tx"
     );
 }
 

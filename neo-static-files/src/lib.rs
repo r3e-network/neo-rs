@@ -227,6 +227,22 @@ pub trait StaticFiles: Send + Sync {
     }
 }
 
+/// Configuration used to open append-only static-file stores through a provider.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StaticFileConfig {
+    /// Root directory for static-file segments.
+    pub path: PathBuf,
+}
+
+impl StaticFileConfig {
+    /// Construct static-file configuration from a root path.
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+        }
+    }
+}
+
 /// Provider that creates append-only static-file stores.
 pub trait StaticFileProvider: Send + Sync + Any {
     /// Canonical provider name.
@@ -234,6 +250,15 @@ pub trait StaticFileProvider: Send + Sync + Any {
 
     /// Open static files rooted at `path`.
     fn open(&self, path: &Path) -> StaticFileResult<Arc<dyn StaticFiles>>;
+
+    /// Open static files from a full static-file configuration.
+    ///
+    /// Providers that only need a path can rely on this default. Providers
+    /// with backend-specific segment, compression, or recovery settings should
+    /// override it so factory callers stay on the provider trait.
+    fn open_with_config(&self, config: StaticFileConfig) -> StaticFileResult<Arc<dyn StaticFiles>> {
+        self.open(&config.path)
+    }
 
     /// Downcast support for provider tests and factory diagnostics.
     fn as_any(&self) -> &dyn Any;
@@ -298,6 +323,14 @@ impl StaticFileFactory {
         static_file_provider: &str,
         path: impl AsRef<Path>,
     ) -> StaticFileResult<Arc<dyn StaticFiles>> {
+        Self::get_static_files_with_config(static_file_provider, StaticFileConfig::new(path))
+    }
+
+    /// Open a static-file store through a named provider and full configuration.
+    pub fn get_static_files_with_config(
+        static_file_provider: &str,
+        config: StaticFileConfig,
+    ) -> StaticFileResult<Arc<dyn StaticFiles>> {
         let key = static_file_provider_key(static_file_provider);
         let providers = STATIC_FILE_PROVIDERS
             .read()
@@ -306,7 +339,7 @@ impl StaticFileFactory {
             .get(&key)
             .cloned()
             .ok_or_else(|| unknown_static_file_provider_error(static_file_provider, &providers))?;
-        provider.open(path.as_ref())
+        provider.open_with_config(config)
     }
 }
 
