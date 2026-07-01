@@ -308,21 +308,6 @@ impl StaticFileFactory {
             .ok_or_else(|| unknown_static_file_provider_error(static_file_provider, &providers))?;
         provider.open(path.as_ref())
     }
-
-    /// Compatibility alias for [`StaticFileFactory::register_provider`].
-    pub fn register(provider: Arc<dyn StaticFileProvider>) -> StaticFileResult<()> {
-        Self::register_provider(provider)
-    }
-
-    /// Compatibility alias for [`StaticFileFactory::get_static_file_provider`].
-    pub fn provider(name: &str) -> Option<Arc<dyn StaticFileProvider>> {
-        Self::get_static_file_provider(name)
-    }
-
-    /// Compatibility alias for [`StaticFileFactory::get_static_files`].
-    pub fn open(provider: &str, path: impl AsRef<Path>) -> StaticFileResult<Arc<dyn StaticFiles>> {
-        Self::get_static_files(provider, path)
-    }
 }
 
 fn static_file_provider_key(name: &str) -> String {
