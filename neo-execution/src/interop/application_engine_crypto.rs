@@ -1,6 +1,7 @@
 //! ApplicationEngine.Crypto - matches C# Neo.SmartContract.ApplicationEngine.Crypto.cs
 
 use crate::ApplicationEngine;
+use neo_config::Hardfork;
 use neo_crypto::Crypto;
 use neo_crypto::{CryptoError, ECCurve, ECPoint, Secp256r1Crypto};
 use neo_error::{CoreError, CoreResult};
@@ -139,9 +140,9 @@ impl ApplicationEngine {
 
     /// Verifies a signature using secp256r1.
     ///
-    /// Mirrors C# v3.10.0 `CheckSig`: `Crypto.VerifySignature(pubkey bytes)`
-    /// decodes the public key first, then returns `false` for a non-64-byte
-    /// signature.
+    /// Mirrors C# v3.10.0 `CheckSig`: the public key is decoded before the
+    /// signature length is judged. Before Gorgon, non-64-byte signatures return
+    /// `false`; from Gorgon onward strict `VerifySignature` faults instead.
     fn verify_signature(
         &self,
         message: &[u8],
@@ -156,6 +157,9 @@ impl ApplicationEngine {
                     return Ok(false);
                 }
                 return Err(CoreError::other("Invalid public key"));
+            }
+            if self.is_hardfork_enabled(Hardfork::HfGorgon) {
+                return Err(CoreError::other("Invalid signature length"));
             }
             return Ok(false);
         }
