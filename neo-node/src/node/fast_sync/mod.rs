@@ -148,6 +148,9 @@ impl FastSyncReport {
                 elapsed_seconds: import.elapsed_seconds,
                 average_blocks_per_second: import.average_blocks_per_second,
                 empty_blocks: import.empty_blocks,
+                empty_only_blocks: import.empty_only_blocks,
+                empty_block_import_seconds: import.empty_block_import_seconds,
+                empty_blocks_per_second: import.empty_blocks_per_second,
                 transaction_blocks: import.transaction_blocks,
                 transactions: import.transactions,
                 transaction_block_import_seconds: import.transaction_block_import_seconds,
@@ -193,6 +196,9 @@ pub(super) struct FastSyncImportReport {
     pub(super) elapsed_seconds: f64,
     pub(super) average_blocks_per_second: f64,
     pub(super) empty_blocks: u64,
+    pub(super) empty_only_blocks: u64,
+    pub(super) empty_block_import_seconds: f64,
+    pub(super) empty_blocks_per_second: f64,
     pub(super) transaction_blocks: u64,
     pub(super) transactions: u64,
     pub(super) transaction_block_import_seconds: f64,
@@ -615,6 +621,9 @@ data_dir = "/var/lib/neo/mainnet"
             elapsed_seconds,
             average_blocks_per_second,
             empty_blocks: imported,
+            empty_only_blocks: imported,
+            empty_block_import_seconds: elapsed_seconds,
+            empty_blocks_per_second: average_blocks_per_second,
             transaction_blocks: 0,
             transactions: 0,
             transaction_block_import_seconds: 0.0,
@@ -638,6 +647,21 @@ data_dir = "/var/lib/neo/mainnet"
             elapsed_seconds,
             average_blocks_per_second,
             empty_blocks,
+            empty_only_blocks: if transaction_blocks > 0 {
+                0
+            } else {
+                empty_blocks
+            },
+            empty_block_import_seconds: if transaction_blocks > 0 {
+                0.0
+            } else {
+                elapsed_seconds
+            },
+            empty_blocks_per_second: if transaction_blocks > 0 || elapsed_seconds <= 0.0 {
+                0.0
+            } else {
+                empty_blocks as f64 / elapsed_seconds
+            },
             transaction_blocks,
             transactions,
             transaction_block_import_seconds: if transaction_blocks > 0 {
@@ -866,6 +890,9 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(report.import.elapsed_seconds, 0.0505);
         assert_eq!(report.import.average_blocks_per_second, 2000.0);
         assert_eq!(report.import.empty_blocks, 101);
+        assert_eq!(report.import.empty_only_blocks, 101);
+        assert_eq!(report.import.empty_block_import_seconds, 0.0505);
+        assert_eq!(report.import.empty_blocks_per_second, 2000.0);
         assert_eq!(report.import.transaction_blocks, 0);
         assert_eq!(report.import.transactions, 0);
         assert_eq!(report.import.transaction_block_import_seconds, 0.0);
@@ -926,6 +953,9 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(payload["import"]["imported_blocks"], 101);
         assert_eq!(payload["import"]["final_height"], 100);
         assert_eq!(payload["import"]["empty_blocks"], 101);
+        assert_eq!(payload["import"]["empty_only_blocks"], 101);
+        assert_eq!(payload["import"]["empty_block_import_seconds"], 0.0505);
+        assert_eq!(payload["import"]["empty_blocks_per_second"], 2000.0);
         assert_eq!(payload["import"]["transaction_blocks"], 0);
         assert_eq!(payload["import"]["transactions"], 0);
         assert_eq!(payload["import"]["transaction_block_import_seconds"], 0.0);
@@ -975,6 +1005,9 @@ data_dir = "/var/lib/neo/mainnet"
 
         assert_eq!(report.import.imported_blocks, 101);
         assert_eq!(report.import.empty_blocks, 81);
+        assert_eq!(report.import.empty_only_blocks, 0);
+        assert_eq!(report.import.empty_block_import_seconds, 0.0);
+        assert_eq!(report.import.empty_blocks_per_second, 0.0);
         assert_eq!(report.import.transaction_blocks, 20);
         assert_eq!(report.import.transactions, 45);
         assert_eq!(report.import.transaction_block_import_seconds, 0.25);

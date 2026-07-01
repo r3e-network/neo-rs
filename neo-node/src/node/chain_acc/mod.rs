@@ -79,6 +79,9 @@ pub(super) struct ChainAccImportReport {
     pub(super) elapsed_seconds: f64,
     pub(super) average_blocks_per_second: f64,
     pub(super) empty_blocks: u64,
+    pub(super) empty_only_blocks: u64,
+    pub(super) empty_block_import_seconds: f64,
+    pub(super) empty_blocks_per_second: f64,
     pub(super) transaction_blocks: u64,
     pub(super) transactions: u64,
     pub(super) transaction_block_import_seconds: f64,
@@ -332,6 +335,9 @@ where
                     batch_blocks_per_second = progress_sample.batch_blocks_per_second,
                     average_blocks_per_second = progress_sample.average_blocks_per_second,
                     empty_blocks = composition.empty_blocks,
+                    empty_only_blocks = composition.empty_only_blocks,
+                    empty_block_import_seconds = composition.empty_block_import_seconds(),
+                    empty_blocks_per_second = composition.empty_blocks_per_second(),
                     transaction_blocks = composition.transaction_blocks,
                     transactions = composition.transactions,
                     transaction_block_import_seconds =
@@ -403,6 +409,8 @@ where
 
     let elapsed_seconds = progress.elapsed_seconds();
     let average_blocks_per_second = progress.average_blocks_per_second();
+    let empty_block_import_seconds = composition.empty_block_import_seconds();
+    let empty_blocks_per_second = composition.empty_blocks_per_second();
     let transaction_block_import_seconds = composition.transaction_block_import_seconds();
     let transaction_blocks_per_second = composition.transaction_blocks_per_second();
     info!(
@@ -411,6 +419,9 @@ where
         elapsed_seconds,
         average_blocks_per_second,
         empty_blocks = composition.empty_blocks,
+        empty_only_blocks = composition.empty_only_blocks,
+        empty_block_import_seconds,
+        empty_blocks_per_second,
         transaction_blocks = composition.transaction_blocks,
         transactions = composition.transactions,
         transaction_block_import_seconds,
@@ -423,6 +434,9 @@ where
         elapsed_seconds,
         average_blocks_per_second,
         empty_blocks: composition.empty_blocks,
+        empty_only_blocks: composition.empty_only_blocks,
+        empty_block_import_seconds,
+        empty_blocks_per_second,
         transaction_blocks: composition.transaction_blocks,
         transactions: composition.transactions,
         transaction_block_import_seconds,
@@ -434,8 +448,10 @@ where
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct ChainAccImportComposition {
     empty_blocks: u64,
+    empty_only_blocks: u64,
     transaction_blocks: u64,
     transactions: u64,
+    empty_elapsed: std::time::Duration,
     transaction_elapsed: std::time::Duration,
 }
 
@@ -466,7 +482,23 @@ impl ChainAccImportComposition {
             self.transactions += batch.transactions;
             if batch.transaction_blocks > 0 {
                 self.transaction_elapsed += elapsed;
+            } else if batch.empty_blocks > 0 {
+                self.empty_only_blocks += batch.empty_blocks;
+                self.empty_elapsed += elapsed;
             }
+        }
+    }
+
+    fn empty_block_import_seconds(&self) -> f64 {
+        self.empty_elapsed.as_secs_f64()
+    }
+
+    fn empty_blocks_per_second(&self) -> f64 {
+        let elapsed = self.empty_block_import_seconds();
+        if elapsed > 0.0 {
+            self.empty_only_blocks as f64 / elapsed
+        } else {
+            0.0
         }
     }
 
@@ -1525,6 +1557,9 @@ mod tests {
         service.await.expect("service task");
         assert_eq!(report.imported, 3);
         assert_eq!(report.empty_blocks, 2);
+        assert_eq!(report.empty_only_blocks, 0);
+        assert_eq!(report.empty_block_import_seconds, 0.0);
+        assert_eq!(report.empty_blocks_per_second, 0.0);
         assert_eq!(report.transaction_blocks, 1);
         assert_eq!(report.transactions, 1);
         assert!(
@@ -1596,6 +1631,15 @@ mod tests {
         service.await.expect("service task");
         assert_eq!(report.imported, (IMPORT_BATCH_SIZE + 1) as u64);
         assert_eq!(report.empty_blocks, IMPORT_BATCH_SIZE as u64);
+        assert_eq!(report.empty_only_blocks, IMPORT_BATCH_SIZE as u64);
+        assert!(
+            report.empty_block_import_seconds >= 0.02,
+            "empty-block elapsed should include the empty-only batch time: {report:?}"
+        );
+        assert!(
+            report.empty_blocks_per_second > 0.0,
+            "empty-block BPS should be reported independently from transaction-bearing throughput"
+        );
         assert_eq!(report.transaction_blocks, 1);
         assert_eq!(report.transactions, 1);
         assert!(report.elapsed_seconds >= 0.02);

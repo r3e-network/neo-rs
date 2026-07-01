@@ -89,6 +89,86 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             )
         raise AssertionError(f"unexpected probe command: {command}")
 
+    def fast_sync_speed_report(
+        self,
+        *,
+        transaction_blocks: int,
+        transaction_elapsed: float | None,
+        transaction_bps: float,
+        empty_only_blocks: int | None = None,
+        empty_elapsed: float | None = None,
+        empty_bps: float | None = None,
+    ) -> dict:
+        import_report = {
+            "imported_blocks": 100001,
+            "final_height": 100000,
+            "elapsed_seconds": 100.0,
+            "average_blocks_per_second": 1000.0,
+            "empty_blocks": 100001 - transaction_blocks,
+            "transaction_blocks": transaction_blocks,
+            "transactions": transaction_blocks * 2,
+            "transaction_blocks_per_second": transaction_bps,
+            "throughput_status": "within-target",
+        }
+        if transaction_elapsed is not None:
+            import_report["transaction_block_import_seconds"] = transaction_elapsed
+        if empty_only_blocks is not None:
+            import_report["empty_only_blocks"] = empty_only_blocks
+        if empty_elapsed is not None:
+            import_report["empty_block_import_seconds"] = empty_elapsed
+        if empty_bps is not None:
+            import_report["empty_blocks_per_second"] = empty_bps
+        return {
+            "status": "target-reached",
+            "sync_source": "fast-sync",
+            "target_height": 100000,
+            "last_height": 100000,
+            "blocks_per_second": 10.0,
+            "height_samples": [
+                {
+                    "elapsed_seconds": 0.0,
+                    "height": 0,
+                    "metrics": {"neo_sync_native_persist_avg_tx_count": 0.0},
+                },
+                {
+                    "elapsed_seconds": 10000.0,
+                    "height": 100000,
+                    "metrics": {"neo_sync_native_persist_avg_tx_count": 1.0},
+                },
+            ],
+            "sync_proof": {
+                "sync_source": "fast-sync",
+                "fast_sync_import": import_report,
+                "fast_sync_hot_metrics": {
+                    "native_persist_avg_total_us": 3000,
+                    "state_service_mpt_avg_total_us": 2000,
+                },
+                "fast_sync_reference": {
+                    "endpoint": "http://seed1.neo.org:10332",
+                    "block_height": 100000,
+                    "block_hash": "0xblock100000",
+                    "state_root_height": 100000,
+                    "state_root_hash": "0xroot100000",
+                },
+            },
+            "post_probe": {
+                "chain_height": {"ok": True, "height": 100000},
+                "stateroot_matches_chain": True,
+                "stateroot_height": {"ok": True, "height": 100000},
+                "stateroot_root": {
+                    "ok": True,
+                    "height": 100000,
+                    "root": "0xroot100000",
+                },
+                "reference_stateroot": {
+                    "index": 100000,
+                    "matches_local": True,
+                    "successful_samples": 1,
+                    "sample_count": 1,
+                },
+            },
+        }
+
     def test_parse_height_values_requires_unique_increasing_heights(self):
         module = load_module()
 
@@ -1131,6 +1211,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "empty_blocks": 98001,
                                 "transaction_blocks": 2000,
                                 "transactions": 5000,
+                                "transaction_block_import_seconds": 4.0,
                                 "transaction_blocks_per_second": 500.0,
                                 "throughput_status": "within-target",
                             },
@@ -1209,6 +1290,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "empty_blocks": 98001,
                                 "transaction_blocks": 2000,
                                 "transactions": 5000,
+                                "transaction_block_import_seconds": 4.0,
                                 "transaction_blocks_per_second": 500.0,
                                 "throughput_status": "within-target",
                             },
@@ -1244,6 +1326,111 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertIn(
             "missing fast-sync reference proof",
             result["results"][0]["speed_proof_error"],
+        )
+
+    def test_speed_proof_rejects_transaction_bps_without_elapsed_denominator(self):
+        module = load_module()
+        report = self.fast_sync_speed_report(
+            transaction_blocks=2000,
+            transaction_elapsed=None,
+            transaction_bps=500.0,
+        )
+
+        err = module.speed_proof_error(
+            report,
+            floor_bps=100.0,
+            ceiling_bps=2000.0,
+            minimum_transaction_blocks=1000,
+        )
+
+        self.assertIn("missing transaction-bearing import elapsed", err)
+
+    def test_speed_proof_rejects_transaction_bps_that_does_not_match_elapsed_denominator(self):
+        module = load_module()
+        report = self.fast_sync_speed_report(
+            transaction_blocks=2000,
+            transaction_elapsed=4.0,
+            transaction_bps=1500.0,
+        )
+
+        err = module.speed_proof_error(
+            report,
+            floor_bps=100.0,
+            ceiling_bps=2000.0,
+            minimum_transaction_blocks=1000,
+        )
+
+        self.assertIn("does not match elapsed proof", err)
+
+    def test_speed_summary_reports_empty_block_bps_separately_from_transaction_proof(self):
+        module = load_module()
+        report = self.fast_sync_speed_report(
+            transaction_blocks=2000,
+            transaction_elapsed=2.0,
+            transaction_bps=1000.0,
+            empty_only_blocks=96000,
+            empty_elapsed=8.0,
+            empty_bps=12000.0,
+        )
+
+        err = module.speed_proof_error(
+            report,
+            floor_bps=500.0,
+            ceiling_bps=2000.0,
+            minimum_transaction_blocks=1000,
+        )
+        summary = module.milestone_summary({"height": 100000, "bounded_report": report})
+
+        self.assertIsNone(err)
+        self.assertEqual(summary["speed_proof_source"], "fast-sync-transaction-blocks")
+        self.assertEqual(summary["import_window_blocks_per_second"], 1000.0)
+        self.assertEqual(summary["empty_block_speed_proof_source"], "fast-sync-empty-blocks")
+        self.assertEqual(summary["empty_block_blocks_per_second"], 12000.0)
+        self.assertEqual(summary["empty_only_blocks"], 96000)
+        self.assertEqual(summary["empty_block_import_seconds"], 8.0)
+        self.assertIsNone(summary["empty_block_speed_proof_error"])
+
+    def test_empty_block_bps_does_not_satisfy_transaction_speed_gate(self):
+        module = load_module()
+        report = self.fast_sync_speed_report(
+            transaction_blocks=0,
+            transaction_elapsed=0.0,
+            transaction_bps=0.0,
+            empty_only_blocks=100001,
+            empty_elapsed=10.0,
+            empty_bps=10000.1,
+        )
+
+        err = module.speed_proof_error(
+            report,
+            floor_bps=500.0,
+            ceiling_bps=2000.0,
+            minimum_transaction_blocks=1000,
+        )
+        summary = module.milestone_summary({"height": 100000, "bounded_report": report})
+
+        self.assertIn("no transaction-bearing blocks", err)
+        self.assertEqual(summary["empty_block_blocks_per_second"], 10000.1)
+        self.assertEqual(summary["import_window_blocks_per_second"], 0.0)
+
+    def test_empty_block_speed_proof_rejects_bps_that_does_not_match_elapsed_denominator(self):
+        module = load_module()
+        report = self.fast_sync_speed_report(
+            transaction_blocks=2000,
+            transaction_elapsed=2.0,
+            transaction_bps=1000.0,
+            empty_only_blocks=96000,
+            empty_elapsed=8.0,
+            empty_bps=20000.0,
+        )
+
+        err = module.empty_block_speed_proof_error(report)
+        summary = module.milestone_summary({"height": 100000, "bounded_report": report})
+
+        self.assertIn("empty-block BPS does not match elapsed proof", err)
+        self.assertIn(
+            "empty-block BPS does not match elapsed proof",
+            summary["empty_block_speed_proof_error"],
         )
 
     def test_run_milestones_uses_fast_sync_import_window_for_speed_proof(self):
@@ -1312,6 +1499,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                         "empty_blocks": 90001,
                                         "transaction_blocks": 10000,
                                         "transactions": 25000,
+                                        "transaction_block_import_seconds": 100.0,
                                         "transaction_blocks_per_second": 100.0,
                                         "throughput_status": "within-target",
                                     },
@@ -1430,6 +1618,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "empty_blocks": 100001,
                                 "transaction_blocks": 0,
                                 "transactions": 0,
+                                "transaction_block_import_seconds": 0.0,
                                 "transaction_blocks_per_second": 0.0,
                                 "throughput_status": "above-target",
                             },
@@ -1538,6 +1727,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "empty_blocks": 99902,
                                 "transaction_blocks": 99,
                                 "transactions": 99,
+                                "transaction_block_import_seconds": 10.0,
                                 "transaction_blocks_per_second": 9.9,
                                 "throughput_status": "within-target",
                             },
