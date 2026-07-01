@@ -11,11 +11,21 @@ static CANDIDATE_SIGNATURE_ACCOUNT_CACHE: OnceLock<RwLock<HashMap<ECPoint, UInt1
 
 #[derive(Default)]
 pub(super) struct CandidateScanCounts {
+    /// Candidate storage rows visited under `Prefix_Candidate`.
     pub(super) storage_entries: u64,
+    /// Rows whose key is too short, or whose registered candidate public key
+    /// cannot be decompressed.
     pub(super) malformed_keys: u64,
+    /// Rows whose candidate state decoded successfully. The committee scan
+    /// decodes state before public keys so unregistered rows do not pay the
+    /// ECPoint decompression cost.
     pub(super) decoded_entries: u64,
+    /// Decoded rows flagged as registered before blocked-account filtering.
     pub(super) registered_entries: u64,
+    /// Registered candidate rows skipped because their signature account is
+    /// blocked by the policy contract.
     pub(super) blocked_registered: u64,
+    /// Registered and unblocked candidates considered for committee ranking.
     pub(super) eligible_candidates: u64,
 }
 

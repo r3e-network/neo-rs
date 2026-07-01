@@ -520,6 +520,9 @@ If `compute_committee` dominates, use the committee-compute labels
 `top_candidate_maintenance`, plus the scan count labels `storage_entries`,
 `malformed_keys`, `decoded_entries`, `registered_entries`,
 `blocked_registered`, `eligible_candidates`, and `top_candidates`.
+`decoded_entries` counts rows whose candidate state decoded successfully; public
+keys are decompressed only for registered rows so unregistered candidates do not
+pay the ECPoint decode cost on the committee scan hot path.
 
 | Signal | Source | What to watch |
 |--------|--------|---------------|

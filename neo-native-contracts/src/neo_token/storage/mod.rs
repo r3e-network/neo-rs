@@ -547,6 +547,33 @@ impl NeoToken {
                 continue;
             }
             let stage_start = Instant::now();
+            let state = Self::decode_candidate_state(&item.value_bytes());
+            sync_metrics::record_neo_token_committee_compute_stage(
+                NeoTokenCommitteeComputeStage::CandidateStateDecode,
+                elapsed_us(stage_start),
+            );
+            let (registered, votes) = match state {
+                Ok(state) => state,
+                Err(error) => {
+                    let stage_start = Instant::now();
+                    let pubkey = ECPoint::from_bytes(&key_bytes[1..34]);
+                    sync_metrics::record_neo_token_committee_compute_stage(
+                        NeoTokenCommitteeComputeStage::CandidatePubkeyDecode,
+                        elapsed_us(stage_start),
+                    );
+                    if pubkey.is_err() {
+                        counts.malformed_keys += 1;
+                        continue;
+                    }
+                    return Err(error);
+                }
+            };
+            counts.decoded_entries += 1;
+            if !registered {
+                continue;
+            }
+            counts.registered_entries += 1;
+            let stage_start = Instant::now();
             let pubkey = ECPoint::from_bytes(&key_bytes[1..34]);
             sync_metrics::record_neo_token_committee_compute_stage(
                 NeoTokenCommitteeComputeStage::CandidatePubkeyDecode,
@@ -556,17 +583,6 @@ impl NeoToken {
                 counts.malformed_keys += 1;
                 continue;
             };
-            let stage_start = Instant::now();
-            let (registered, votes) = Self::decode_candidate_state(&item.value_bytes())?;
-            sync_metrics::record_neo_token_committee_compute_stage(
-                NeoTokenCommitteeComputeStage::CandidateStateDecode,
-                elapsed_us(stage_start),
-            );
-            counts.decoded_entries += 1;
-            if !registered {
-                continue;
-            }
-            counts.registered_entries += 1;
             let stage_start = Instant::now();
             let blocked = candidate_is_blocked_in(&blocked_accounts, &pubkey);
             sync_metrics::record_neo_token_committee_compute_stage(

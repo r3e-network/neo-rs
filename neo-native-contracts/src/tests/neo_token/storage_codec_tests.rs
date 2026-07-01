@@ -330,6 +330,41 @@ fn neo_storage_codecs_use_stack_value_projection() {
         !signature_account_cache.contains("pubkey.to_bytes()"),
         "cache hits should borrow the ECPoint key directly"
     );
+
+    let top_registered_candidates = slice_between(
+        source,
+        "fn top_registered_candidates",
+        "/// C# `Contract.GetBFTAddress(pubkeys)`",
+    );
+    let candidate_scan = slice_between(
+        top_registered_candidates,
+        "for (key, item)",
+        "counts.record(top.len() as u64)",
+    );
+    let key_length_guard = candidate_scan
+        .find("key_bytes.len() < 34")
+        .expect("candidate scan keeps malformed-key length guard");
+    let state_decode = candidate_scan
+        .find("Self::decode_candidate_state")
+        .expect("candidate scan decodes CandidateState");
+    let pubkey_decode = candidate_scan
+        .find("ECPoint::from_bytes")
+        .expect("candidate scan decodes candidate public keys");
+    let blocked_lookup = candidate_scan
+        .find("candidate_is_blocked_in")
+        .expect("candidate scan checks blocked accounts");
+    assert!(
+        key_length_guard < state_decode,
+        "short malformed candidate keys should skip state decoding"
+    );
+    assert!(
+        state_decode < pubkey_decode,
+        "unregistered candidate rows should skip ECPoint decompression on the committee scan hot path"
+    );
+    assert!(
+        state_decode < blocked_lookup,
+        "candidate state should gate blocked-account lookup"
+    );
 }
 
 #[test]
