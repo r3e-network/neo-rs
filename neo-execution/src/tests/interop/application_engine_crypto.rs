@@ -30,6 +30,17 @@ fn valid_public_key() -> Vec<u8> {
         .expect("public key hex")
 }
 
+fn out_of_field_public_key() -> Vec<u8> {
+    // Compressed secp256r1 key with x = Q (the field prime). This is the
+    // C# ArgumentException boundary that CheckSig/CheckMultisig must convert to
+    // `false`, not a VM fault.
+    hex::decode(concat!(
+        "02",
+        "ffffffff00000001000000000000000000000000ffffffffffffffffffffffff"
+    ))
+    .expect("invalid public key hex")
+}
+
 fn load_test_context(engine: &mut ApplicationEngine) {
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
@@ -106,4 +117,20 @@ fn malformed_public_key_still_faults_before_and_after_gorgon() {
             .verify_signature(b"message", &malformed_public_key, &[0u8; 63])
             .is_err()
     );
+}
+
+#[test]
+fn multisig_out_of_field_public_key_returns_false_instead_of_faulting() {
+    let mut engine = engine_with_gorgon(true);
+    let public_key = out_of_field_public_key();
+    load_test_context(&mut engine);
+
+    engine
+        .push_array(vec![StackItem::from_byte_string(vec![0u8; 64])])
+        .expect("push signatures");
+    engine
+        .push_array(vec![StackItem::from_byte_string(public_key)])
+        .expect("push public keys");
+
+    assert_eq!(engine.crypto_check_multisig(), Ok(false));
 }

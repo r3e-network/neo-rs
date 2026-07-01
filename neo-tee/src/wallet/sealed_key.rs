@@ -2,7 +2,7 @@
 
 use crate::enclave::{SealedData, Sealing, TeeEnclave};
 use crate::error::{TeeError, TeeResult};
-use neo_crypto::Base58;
+use neo_crypto::base58;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use zeroize::Zeroizing;
@@ -100,7 +100,7 @@ impl SealedKey {
         // Address = Base58Check(0x35 || script_hash)
         let mut data = vec![0x35u8]; // Neo N3 address version
         data.extend_from_slice(&self.script_hash);
-        Base58::encode_check(&data)
+        base58::encode_check(&data)
     }
 }
 

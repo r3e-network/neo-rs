@@ -6,7 +6,7 @@
 use crate::wallet_helper::WalletAddress;
 use aes::Aes256;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray};
-use neo_crypto::{Base58, CryptoError, ECC, ECCurve, ECDsa, Secp256r1Crypto};
+use neo_crypto::{CryptoError, ECC, ECCurve, ECDsa, Secp256r1Crypto, base58};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::Helper;
 use neo_primitives::HASH_SIZE;
@@ -105,7 +105,7 @@ impl KeyPair {
         // C# Wallet.GetPrivateKeyFromNEP2 -> Base58.Base58CheckDecode.
         let encrypted_str = std::str::from_utf8(encrypted_key)
             .map_err(|_| CoreError::invalid_nep2_key("invalid NEP-2 encrypted key"))?;
-        let decoded = Base58::decode_check(encrypted_str)
+        let decoded = base58::decode_check(encrypted_str)
             .map_err(|_| CoreError::invalid_nep2_key("invalid NEP-2 encrypted key"))?;
 
         let private_key = Self::decrypt_nep2(&decoded, password, address_version)?;
@@ -188,12 +188,12 @@ impl KeyPair {
         // NEP-2 strings are Base58Check-encoded (C# KeyPair.Encrypt ->
         // Base58.Base58CheckEncode), yielding the standard "6P..." form. Base64
         // would produce a non-interoperable string that no other wallet accepts.
-        Ok(Base58::encode_check(&encrypted))
+        Ok(base58::encode_check(&encrypted))
     }
 
     /// Decodes a WIF string to a private key.
     fn decode_wif(wif: &str) -> CoreResult<[u8; HASH_SIZE]> {
-        let data = Base58::decode_check(wif).map_err(map_wif_decode_error)?;
+        let data = base58::decode_check(wif).map_err(map_wif_decode_error)?;
 
         if data.len() != 34 {
             return Err(CoreError::invalid_wif("invalid WIF length"));
@@ -221,7 +221,7 @@ impl KeyPair {
         data.extend_from_slice(private_key);
         data.push(0x01); // Compressed flag
 
-        Base58::encode_check(&data)
+        base58::encode_check(&data)
     }
 
     /// Encrypts a private key using NEP-2 standard.

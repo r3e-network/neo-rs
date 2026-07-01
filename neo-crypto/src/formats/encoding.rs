@@ -1,40 +1,12 @@
 //! Encoding helpers used by Neo cryptographic APIs.
+//!
+//! The module exposes free functions grouped by codec instead of wrapper
+//! structs. That keeps the public surface small while preserving Neo-specific
+//! behavior such as Base58Check error mapping and .NET-compatible Base64
+//! handling. Plain hex is provided by the upstream `hex` crate directly.
 
 use crate::error::{CryptoError, CryptoResult};
-use base64::Engine as _;
-use base64::alphabet;
-use base64::engine::DecodePaddingMode;
-use base64::engine::general_purpose::{self, GeneralPurpose, GeneralPurposeConfig};
-use neo_primitives::base58_check::{Base58Check, Base58CheckDecodeError};
-
-/// Base58 encoding/decoding utilities.
-pub struct Base58;
-
-impl Base58 {
-    /// Encodes data to a Base58 string.
-    #[must_use]
-    pub fn encode(data: &[u8]) -> String {
-        bs58::encode(data).into_string()
-    }
-
-    /// Decodes a Base58 string to bytes.
-    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
-        bs58::decode(s)
-            .into_vec()
-            .map_err(|e| CryptoError::encoding_error(format!("Base58 decode error: {e}")))
-    }
-
-    /// Encodes data to `Base58Check` with a 4-byte Neo/Bitcoin-style checksum.
-    #[must_use]
-    pub fn encode_check(data: &[u8]) -> String {
-        Base58Check::encode_check(data)
-    }
-
-    /// Decodes `Base58Check` bytes and verifies the 4-byte checksum.
-    pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
-        Base58Check::decode_check(s).map_err(map_base58_check_decode_error)
-    }
-}
+use neo_primitives::base58_check::Base58CheckDecodeError;
 
 fn map_base58_check_decode_error(error: Base58CheckDecodeError) -> CryptoError {
     match error {
@@ -50,10 +22,48 @@ fn map_base58_check_decode_error(error: Base58CheckDecodeError) -> CryptoError {
     }
 }
 
-/// Base64 encoding/decoding utilities.
-pub struct Base64;
+fn strip_whitespace(input: &str) -> String {
+    input.chars().filter(|c| !c.is_whitespace()).collect()
+}
 
-impl Base64 {
+/// Base58 encoding and decoding helpers.
+pub mod base58 {
+    use super::{CryptoError, CryptoResult, map_base58_check_decode_error};
+    use neo_primitives::base58_check::Base58Check;
+
+    /// Encodes raw bytes as a Base58 string.
+    #[must_use]
+    pub fn encode(data: &[u8]) -> String {
+        ::bs58::encode(data).into_string()
+    }
+
+    /// Decodes a Base58 string into raw bytes.
+    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
+        ::bs58::decode(s)
+            .into_vec()
+            .map_err(|e| CryptoError::encoding_error(format!("Base58 decode error: {e}")))
+    }
+
+    /// Encodes raw bytes as a Base58Check string with checksum.
+    #[must_use]
+    pub fn encode_check(data: &[u8]) -> String {
+        Base58Check::encode_check(data)
+    }
+
+    /// Decodes a Base58Check string, verifying the embedded checksum.
+    pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
+        Base58Check::decode_check(s).map_err(map_base58_check_decode_error)
+    }
+}
+
+/// Base64 encoding and decoding helpers.
+pub mod base64 {
+    use super::{CryptoError, CryptoResult, strip_whitespace};
+    use ::base64::Engine as _;
+    use ::base64::alphabet;
+    use ::base64::engine::DecodePaddingMode;
+    use ::base64::engine::general_purpose::{self, GeneralPurpose, GeneralPurposeConfig};
+
     /// Encodes data to a standard padded Base64 string.
     #[must_use]
     pub fn encode(data: &[u8]) -> String {
@@ -113,54 +123,6 @@ impl Base64 {
         engine
             .decode(s.as_bytes())
             .map_err(|e| CryptoError::encoding_error(format!("Base64Url decode error: {e}")))
-    }
-}
-
-fn strip_whitespace(input: &str) -> String {
-    input.chars().filter(|c| !c.is_whitespace()).collect()
-}
-
-/// Hex encoding/decoding utilities.
-pub struct Hex;
-
-impl Hex {
-    /// Encodes data to a lowercase hex string.
-    #[must_use]
-    pub fn encode(data: &[u8]) -> String {
-        hex::encode(data)
-    }
-
-    /// Decodes a hex string to bytes.
-    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
-        hex::decode(s).map_err(|e| CryptoError::encoding_error(format!("Hex decode error: {e}")))
-    }
-}
-
-/// Convenience functions for Base58 encoding and decoding.
-pub mod base58 {
-    use super::Base58;
-    use crate::CryptoResult;
-
-    /// Encodes raw bytes as a Base58 string.
-    #[must_use]
-    pub fn encode(data: &[u8]) -> String {
-        Base58::encode(data)
-    }
-
-    /// Decodes a Base58 string into raw bytes.
-    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
-        Base58::decode(s)
-    }
-
-    /// Encodes raw bytes as a Base58Check string with checksum.
-    #[must_use]
-    pub fn encode_check(data: &[u8]) -> String {
-        Base58::encode_check(data)
-    }
-
-    /// Decodes a Base58Check string, verifying the embedded checksum.
-    pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
-        Base58::decode_check(s)
     }
 }
 

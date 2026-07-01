@@ -1,4 +1,11 @@
-//! BIP-32 helper primitives shared by wallet implementations.
+//! Low-level BIP-32 helper primitives shared by wallet implementations.
+//!
+//! Full HD wallet orchestration should prefer a maintained BIP-32 crate when
+//! its curve and serialization behavior matches Neo wallet requirements. This
+//! module is intentionally narrow: it exposes the exact HMAC-SHA512 and
+//! modulo-curve-order child-key primitives required by existing Neo wallet code
+//! without owning derivation paths, extended-key serialization, or mnemonic
+//! handling.
 
 use crate::{CryptoError, CryptoResult, ECCurve};
 use hmac::{Hmac, Mac};

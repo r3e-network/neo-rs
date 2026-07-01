@@ -5,7 +5,7 @@
 //! - Crypto operations (sign then verify returns true)
 //! - Various hash algorithms
 
-use neo_crypto::{Base58, Crypto, Ed25519Crypto, Hex, Secp256r1Crypto};
+use neo_crypto::{Crypto, Ed25519Crypto, Secp256r1Crypto, base58};
 use proptest::prelude::*;
 
 proptest! {
@@ -84,24 +84,24 @@ proptest! {
     /// Test that Base58 encoding roundtrips correctly
     #[test]
     fn test_base58_roundtrip(data in any::<Vec<u8>>()) {
-        let encoded = Base58::encode(&data);
-        let decoded = Base58::decode(&encoded).unwrap();
+        let encoded = base58::encode(&data);
+        let decoded = base58::decode(&encoded).unwrap();
         prop_assert_eq!(data, decoded);
     }
 
     /// Test that Hex encoding roundtrips correctly
     #[test]
     fn test_hex_roundtrip(data in any::<Vec<u8>>()) {
-        let encoded = Hex::encode(&data);
-        let decoded = Hex::decode(&encoded).unwrap();
+        let encoded = hex::encode(&data);
+        let decoded = hex::decode(&encoded).unwrap();
         prop_assert_eq!(data, decoded);
     }
 
     /// Test that Base58Check encoding roundtrips correctly
     #[test]
     fn test_base58check_roundtrip(data in any::<Vec<u8>>()) {
-        let encoded = Base58::encode_check(&data);
-        let decoded = Base58::decode_check(&encoded).unwrap();
+        let encoded = base58::encode_check(&data);
+        let decoded = base58::decode_check(&encoded).unwrap();
         prop_assert_eq!(data, decoded);
     }
 

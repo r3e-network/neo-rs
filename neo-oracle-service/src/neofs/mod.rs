@@ -66,7 +66,7 @@ struct NeoFsAuth {
 }
 
 fn decode_raw_base58(value: &str, expected_len: Option<usize>) -> Option<Vec<u8>> {
-    let decoded = neo_crypto::Base58::decode(value).ok()?;
+    let decoded = neo_crypto::base58::decode(value).ok()?;
     if expected_len.is_some_and(|len| decoded.len() != len) {
         return None;
     }

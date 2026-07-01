@@ -11,8 +11,8 @@
 //! ## Contents
 //!
 //! - `hash`: Neo hash functions and adapters.
-//! - `merkle_tree`: Merkle tree construction and proof helpers.
-//! - `murmur`: Murmur hash implementation.
+//! - `merkle_tree`: Neo block/MerkleBlock tree construction and proof helpers.
+//! - `murmur`: Thin Neo error-free adapters over the upstream `murmur3` crate.
 //! - `named_curve_hash`: named-curve hash mapping helpers.
 
 pub mod hash;

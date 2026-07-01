@@ -1,4 +1,9 @@
-//! Signature and key helpers used by Neo cryptographic APIs.
+//! Signature and key adapters used by Neo cryptographic APIs.
+//!
+//! The cryptographic operations delegate to maintained curve crates (`p256`,
+//! `k256`/`secp256k1`, `ed25519-dalek`, and `blst`). This module owns only the
+//! Neo-facing details: raw `r||s` byte shapes, prehash selection, low-s parity
+//! with C# behavior, NeoFS signature framing, and crate-local error mapping.
 
 use crate::error::CryptoError;
 use crate::{Crypto, CryptoResult, ECCurve, ECPoint, HashAlgorithm};

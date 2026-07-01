@@ -13,6 +13,7 @@
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
 use super::*;
+use neo_crypto::murmur;
 use neo_primitives::ContractParameterType;
 
 fn hex(bytes: &[u8]) -> String {
@@ -42,12 +43,12 @@ fn murmur32_is_little_endian() {
     // MurmurHash3 x86 32 of empty input with seed 0 is 0 -> LE bytes 0,0,0,0
     // (C# `BinaryPrimitives.WriteUInt32LittleEndian`).
     assert_eq!(
-        Murmur3::murmur32(b"", 0).to_le_bytes().to_vec(),
+        murmur::murmur32(b"", 0).to_le_bytes().to_vec(),
         vec![0u8, 0, 0, 0]
     );
     // Deterministic and non-trivial for a non-empty input.
-    let h = Murmur3::murmur32(b"hello", 0);
-    assert_eq!(Murmur3::murmur32(b"hello", 0), h);
+    let h = murmur::murmur32(b"hello", 0);
+    assert_eq!(murmur::murmur32(b"hello", 0), h);
     assert_eq!(h.to_le_bytes().len(), 4);
 }
 
@@ -56,7 +57,7 @@ fn murmur32_seed_is_strict_uint() {
     let max_seed = BigInt::from(u32::MAX).to_signed_bytes_le();
     assert_eq!(
         CryptoLib::murmur32_method(b"hello", &max_seed).unwrap(),
-        Murmur3::murmur32(b"hello", u32::MAX).to_le_bytes()
+        murmur::murmur32(b"hello", u32::MAX).to_le_bytes()
     );
 
     let negative = BigInt::from(-1).to_signed_bytes_le();

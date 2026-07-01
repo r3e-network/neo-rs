@@ -16,7 +16,7 @@
 //!   and indexes.
 //! - `formats`: Binary and textual conversion helpers for cryptographic data.
 //! - `hashes`: Hash functions and hash-domain helpers used by protocol code.
-//! - `keys`: storage key builders and key-prefix constants.
+//! - `keys`: wallet-facing key derivation, signing, and verification helpers.
 //! - `mpt_trie`: Merkle Patricia Trie nodes, cache logic, and trie operations.
 //! - `tests`: Module-local tests and regression coverage.
 
@@ -41,14 +41,13 @@ pub use bloom_filter::BloomFilter;
 pub use bls12381::Bls12381Crypto;
 pub use bls12381_point::Bls12381Point;
 pub use ecc::{ECCurve, ECPoint};
-pub use encoding::{Base58, Base64, Hex};
+pub use encoding::{base58, base64};
 pub use error::{CryptoError, CryptoResult};
 pub use hash::{Crypto, CtCompare, HashAlgorithm, Sha256Hasher};
 pub use merkle_tree::MerkleTree;
 pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };
-pub use murmur::Murmur3;
 pub use named_curve_hash::NamedCurveHash;
 pub use signature::{
     ECC, ECDsa, Ed25519Crypto, NEOFS_ECDSA_SHA512_PREFIX, NEOFS_ECDSA_SHA512_SIGNATURE_LEN,

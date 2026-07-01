@@ -301,7 +301,7 @@ fn bench_key_generation(c: &mut Criterion) {
 }
 
 fn bench_base58(c: &mut Criterion) {
-    use neo_crypto::Base58;
+    use neo_crypto::base58;
 
     let mut group = c.benchmark_group("crypto_base58");
 
@@ -310,7 +310,7 @@ fn bench_base58(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::new("encode", size), size, |b, _| {
             b.iter(|| {
-                let result = Base58::encode(black_box(&data));
+                let result = base58::encode(black_box(&data));
                 black_box(result)
             });
         });
@@ -318,11 +318,11 @@ fn bench_base58(c: &mut Criterion) {
 
     for size in [20, 32, 64, 256].iter() {
         let data = random_data(*size);
-        let encoded = Base58::encode(&data);
+        let encoded = base58::encode(&data);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::new("decode", size), size, |b, _| {
             b.iter(|| {
-                let result = Base58::decode(black_box(&encoded)).unwrap();
+                let result = base58::decode(black_box(&encoded)).unwrap();
                 black_box(result)
             });
         });

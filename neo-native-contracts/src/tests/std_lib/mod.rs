@@ -14,7 +14,7 @@
 
 use super::*;
 use neo_config::Hardfork;
-use neo_crypto::Base58;
+use neo_crypto::base58;
 use neo_primitives::ContractParameterType;
 use neo_vm_rs::ExecutionEngineLimits;
 
@@ -212,7 +212,7 @@ fn base58_methods_respect_max_input_length() {
             .is_err()
     );
 
-    let valid_over_limit_check = Base58::encode_check(&too_long_bytes).into_bytes();
+    let valid_over_limit_check = base58::encode_check(&too_long_bytes).into_bytes();
     assert!(valid_over_limit_check.len() > MAX_INPUT_LENGTH);
     assert!(
         StdLib::dispatch("base58CheckDecode", &[valid_over_limit_check])

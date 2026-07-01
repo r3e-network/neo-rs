@@ -28,8 +28,8 @@ fn address_uses_base58_check_with_neo_n3_version() {
     let mut payload = vec![0x35];
     payload.extend_from_slice(&script_hash);
 
-    assert_eq!(address, Base58::encode_check(&payload));
-    assert_eq!(Base58::decode_check(&address).unwrap(), payload);
+    assert_eq!(address, base58::encode_check(&payload));
+    assert_eq!(base58::decode_check(&address).unwrap(), payload);
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn address_preserves_zero_script_hash_payload() {
     let mut payload = vec![0x35];
     payload.extend_from_slice(&[0; 20]);
 
-    assert_eq!(Base58::decode_check(&address).unwrap(), payload);
+    assert_eq!(base58::decode_check(&address).unwrap(), payload);
 }
 
 #[test]

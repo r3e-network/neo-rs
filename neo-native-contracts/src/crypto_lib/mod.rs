@@ -15,7 +15,7 @@
 
 use neo_config::Hardfork;
 use neo_crypto::{
-    Bls12381Point, Crypto, ECPoint, HashAlgorithm, Murmur3, NamedCurveHash, Secp256k1Crypto,
+    Bls12381Point, Crypto, ECPoint, HashAlgorithm, NamedCurveHash, Secp256k1Crypto, murmur,
 };
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
@@ -162,7 +162,7 @@ impl CryptoLib {
     }
 
     fn murmur32_method(data: &[u8], seed_bytes: &[u8]) -> CoreResult<Vec<u8>> {
-        Ok(Murmur3::murmur32(data, Self::murmur32_seed(seed_bytes)?)
+        Ok(murmur::murmur32(data, Self::murmur32_seed(seed_bytes)?)
             .to_le_bytes()
             .to_vec())
     }

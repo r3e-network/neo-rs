@@ -1,5 +1,3 @@
-use super::Murmur3;
-
 #[test]
 fn test_murmur128_vectors() {
     let hex_input = hex::decode("718f952132679baa9c5c2aa0d329fd2a").unwrap();
@@ -11,7 +9,7 @@ fn test_murmur128_vectors() {
     ];
 
     for (input, expected) in cases {
-        let hash = Murmur3::murmur128(input, 123u32);
+        let hash = super::murmur128(input, 123u32);
         assert_eq!(hex::encode(hash), expected);
     }
 }
