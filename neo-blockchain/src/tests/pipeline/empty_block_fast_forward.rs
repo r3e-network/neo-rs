@@ -42,6 +42,13 @@ fn non_empty_block(index: u32) -> Arc<Block> {
     Arc::new(Block::from_parts(header, vec![Transaction::new()]))
 }
 
+fn empty_block_with_merkle_root(index: u32, byte: u8) -> Arc<Block> {
+    let mut header = Header::new();
+    header.set_index(index);
+    header.set_merkle_root(neo_primitives::UInt256::from([byte; 32]));
+    Arc::new(Block::from_parts(header, Vec::new()))
+}
+
 fn bulk_options() -> NativePersistOptions {
     NativePersistOptions {
         capture_replay_artifacts: false,
@@ -113,6 +120,26 @@ fn planner_rejects_replay_artifact_paths() {
 }
 
 #[test]
+fn planner_rejects_non_bulk_sync_contexts() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+    let blocks = vec![empty_block(1)];
+
+    let err = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
+        current_height: 0,
+        blocks: &blocks,
+        settings: &settings,
+        resources: &resources,
+        persist_options: bulk_options(),
+        persist_context: BlockPersistContext::live(),
+    })
+    .expect_err("live import must preserve per-block persistence semantics");
+
+    assert_eq!(err, EmptyBlockFastForwardRejection::NotBulkSync);
+}
+
+#[test]
 fn planner_rejects_blocks_with_transactions() {
     let _guard = lock_provider();
     let resources = install_resources();
@@ -134,6 +161,85 @@ fn planner_rejects_blocks_with_transactions() {
         EmptyBlockFastForwardRejection::ContainsTransactions {
             height: 2,
             tx_count: 1,
+        }
+    );
+}
+
+#[test]
+fn planner_rejects_non_next_start() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+    let blocks = vec![empty_block(2)];
+
+    let err = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
+        current_height: 0,
+        blocks: &blocks,
+        settings: &settings,
+        resources: &resources,
+        persist_options: bulk_options(),
+        persist_context: bulk_context(),
+    })
+    .expect_err("fast-forward ranges must begin at CurrentIndex + 1");
+
+    assert_eq!(
+        err,
+        EmptyBlockFastForwardRejection::NonNextStart {
+            expected: 1,
+            actual: 2,
+        }
+    );
+}
+
+#[test]
+fn planner_rejects_non_contiguous_range() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+    let blocks = vec![empty_block(1), empty_block(3)];
+
+    let err = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
+        current_height: 0,
+        blocks: &blocks,
+        settings: &settings,
+        resources: &resources,
+        persist_options: bulk_options(),
+        persist_context: bulk_context(),
+    })
+    .expect_err("fast-forward ranges must be contiguous");
+
+    assert_eq!(
+        err,
+        EmptyBlockFastForwardRejection::NonContiguous {
+            expected: 2,
+            actual: 3,
+        }
+    );
+}
+
+#[test]
+fn planner_rejects_empty_blocks_with_non_zero_merkle_root() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+    let merkle_root = neo_primitives::UInt256::from([0x42; 32]);
+    let blocks = vec![empty_block(1), empty_block_with_merkle_root(2, 0x42)];
+
+    let err = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
+        current_height: 0,
+        blocks: &blocks,
+        settings: &settings,
+        resources: &resources,
+        persist_options: bulk_options(),
+        persist_context: bulk_context(),
+    })
+    .expect_err("empty fast-forward requires C# empty-block merkle roots");
+
+    assert_eq!(
+        err,
+        EmptyBlockFastForwardRejection::NonEmptyMerkleRoot {
+            height: 2,
+            merkle_root,
         }
     );
 }

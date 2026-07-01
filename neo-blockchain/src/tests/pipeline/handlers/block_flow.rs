@@ -953,6 +953,50 @@ async fn bulk_import_falls_back_when_per_block_committing_observer_is_active() {
 }
 
 #[tokio::test]
+async fn bulk_import_falls_back_when_state_service_is_loaded() {
+    let (service, _handle, _snapshot, state_store) = store_fixture_with_state_service();
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let block2 = Block::from_parts(header2, vec![]);
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, block2],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    let mpt = state_store.mpt().expect("state store exposes MPT");
+    assert!(
+        mpt.get_state_root(1).is_some(),
+        "loaded StateService must disable empty-block fast-forward and observe block 1"
+    );
+    assert!(
+        mpt.get_state_root(2).is_some(),
+        "loaded StateService must disable empty-block fast-forward and observe block 2"
+    );
+}
+
+#[tokio::test]
 async fn bulk_import_verify_true_validates_against_prior_batch_block() {
     let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
     let public_key =
