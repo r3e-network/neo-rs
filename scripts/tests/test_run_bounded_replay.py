@@ -562,6 +562,32 @@ class RunBoundedReplayTests(unittest.TestCase):
             'neo_sync_native_persist_tx_stage_avg_us{stage="load_execute"}',
         )
 
+    def test_run_until_target_uses_slowest_interval_for_sync_speed_floor(self):
+        module = load_module()
+        clock = FakeClock()
+        process = FakeProcess()
+        heights = iter([0, 3000, 3010])
+
+        report = module.run_until_target(
+            command=["neo-node"],
+            rpc_url="http://127.0.0.1:21332",
+            target_height=3010,
+            poll_interval=10,
+            max_seconds=100,
+            spawner=lambda command, **kwargs: process,
+            rpc=lambda *args, **kwargs: next(heights) + 1,
+            clock=clock,
+            min_blocks_per_second=100.0,
+        )
+
+        self.assertEqual(report["status"], "sync-speed-too-slow")
+        self.assertGreater(report["blocks_per_second"], 100.0)
+        rate_summary = report["height_sample_rate_summary"]
+        self.assertEqual(rate_summary["min_blocks_per_second"], 1.0)
+        self.assertEqual(rate_summary["slowest_interval"]["from_height"], 3000)
+        self.assertGreater(report["sync_speed_shortfall_blocks_per_second"], 0.0)
+        self.assertFalse(report["sync_speed_band_met"])
+
     def test_run_until_target_accepts_sync_speed_inside_band(self):
         module = load_module()
         clock = FakeClock()
@@ -586,6 +612,8 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertEqual(report["sync_speed_ceiling_blocks_per_second"], 2.0)
         self.assertEqual(report["blocks_per_second"], 1.0)
         self.assertTrue(report["sync_speed_band_met"])
+        self.assertEqual(report["height_sample_rate_summary"]["min_blocks_per_second"], 1.0)
+        self.assertEqual(report["height_sample_rate_summary"]["max_blocks_per_second"], 1.0)
 
     def test_run_until_target_rejects_stale_rpc_when_local_db_height_is_behind(self):
         module = load_module()
@@ -632,6 +660,32 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertEqual(report["status"], "sync-speed-too-fast")
         self.assertEqual(report["sync_speed_ceiling_blocks_per_second"], 0.5)
         self.assertGreater(report["blocks_per_second"], 0.5)
+        self.assertGreater(report["sync_speed_overage_blocks_per_second"], 0.0)
+        self.assertFalse(report["sync_speed_band_met"])
+
+    def test_run_until_target_uses_fastest_interval_for_sync_speed_ceiling(self):
+        module = load_module()
+        clock = FakeClock()
+        process = FakeProcess()
+        heights = iter([0, 10, 1010])
+
+        report = module.run_until_target(
+            command=["neo-node"],
+            rpc_url="http://127.0.0.1:21332",
+            target_height=1010,
+            poll_interval=10,
+            max_seconds=100,
+            spawner=lambda command, **kwargs: process,
+            rpc=lambda *args, **kwargs: next(heights) + 1,
+            clock=clock,
+            max_blocks_per_second=75.0,
+        )
+
+        self.assertEqual(report["status"], "sync-speed-too-fast")
+        self.assertLess(report["blocks_per_second"], 75.0)
+        rate_summary = report["height_sample_rate_summary"]
+        self.assertEqual(rate_summary["max_blocks_per_second"], 100.0)
+        self.assertEqual(rate_summary["fastest_interval"]["from_height"], 10)
         self.assertGreater(report["sync_speed_overage_blocks_per_second"], 0.0)
         self.assertFalse(report["sync_speed_band_met"])
 
@@ -1160,6 +1214,14 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertEqual(proof["average_blocks_per_second"], report["blocks_per_second"])
         self.assertEqual(proof["height_sample_count"], 2)
         self.assertEqual(proof["height_sample_sources"], ["rpc"])
+        self.assertEqual(
+            proof["height_sample_rate_summary"]["min_blocks_per_second"],
+            10000.0,
+        )
+        self.assertEqual(
+            proof["height_sample_rate_summary"]["max_blocks_per_second"],
+            10000.0,
+        )
         self.assertEqual(proof["sync_speed_floor_blocks_per_second"], 5000.0)
         self.assertEqual(proof["sync_speed_ceiling_blocks_per_second"], 20000.0)
         self.assertTrue(proof["sync_speed_band_met"])

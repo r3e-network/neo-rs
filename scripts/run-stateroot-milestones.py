@@ -701,58 +701,7 @@ def run_command(command: list[str], runner: Callable[..., Any]) -> Any:
 
 
 def height_sample_rate_summary(report: dict) -> dict:
-    samples = report.get("height_samples") or []
-    intervals: list[dict[str, Any]] = []
-    previous: dict[str, Any] | None = None
-    for sample in samples:
-        if not isinstance(sample, dict):
-            continue
-        if previous is not None:
-            try:
-                from_elapsed = float(previous.get("elapsed_seconds"))
-                to_elapsed = float(sample.get("elapsed_seconds"))
-                from_height = int(previous.get("height"))
-                to_height = int(sample.get("height"))
-            except (TypeError, ValueError):
-                previous = sample
-                continue
-            elapsed_delta = to_elapsed - from_elapsed
-            height_delta = to_height - from_height
-            if elapsed_delta > 0 and height_delta > 0:
-                intervals.append(
-                    {
-                        "from_height": from_height,
-                        "to_height": to_height,
-                        "height_delta": height_delta,
-                        "elapsed_seconds": elapsed_delta,
-                        "blocks_per_second": height_delta / elapsed_delta,
-                    }
-                )
-        previous = sample
-
-    if not intervals:
-        return {
-            "sample_count": len([sample for sample in samples if isinstance(sample, dict)]),
-            "interval_count": 0,
-            "average_blocks_per_second": 0.0,
-            "min_blocks_per_second": 0.0,
-            "max_blocks_per_second": 0.0,
-            "slowest_interval": None,
-            "fastest_interval": None,
-        }
-
-    rates = [float(interval["blocks_per_second"]) for interval in intervals]
-    slowest = min(intervals, key=lambda item: float(item["blocks_per_second"]))
-    fastest = max(intervals, key=lambda item: float(item["blocks_per_second"]))
-    return {
-        "sample_count": len([sample for sample in samples if isinstance(sample, dict)]),
-        "interval_count": len(intervals),
-        "average_blocks_per_second": sum(rates) / len(rates),
-        "min_blocks_per_second": min(rates),
-        "max_blocks_per_second": max(rates),
-        "slowest_interval": slowest,
-        "fastest_interval": fastest,
-    }
+    return bounded_replay_module().height_sample_rate_summary(report)
 
 
 def metrics_sample_summary(report: dict) -> dict:

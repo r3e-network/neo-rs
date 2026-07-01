@@ -770,6 +770,7 @@ def build_sync_proof(report: dict) -> dict[str, Any]:
         "advanced_blocks": advanced_blocks,
         "elapsed_seconds": report.get("elapsed_seconds", 0.0),
         "average_blocks_per_second": report.get("blocks_per_second", 0.0),
+        "height_sample_rate_summary": height_sample_rate_summary(report),
         "height_sample_count": len(height_samples),
         "height_sample_sources": ordered_sample_sources(samples),
         "metrics_sample_count": report.get("metrics_sample_count", 0),
@@ -803,6 +804,62 @@ def build_sync_proof(report: dict) -> dict[str, Any]:
     if post_probe is not None:
         proof["post_probe"] = post_probe
     return proof
+
+
+def height_sample_rate_summary(report: dict) -> dict[str, Any]:
+    samples = report.get("height_samples") or []
+    intervals: list[dict[str, Any]] = []
+    previous: dict[str, Any] | None = None
+    for sample in samples:
+        if not isinstance(sample, dict):
+            continue
+        if previous is not None:
+            try:
+                from_elapsed = float(previous.get("elapsed_seconds"))
+                to_elapsed = float(sample.get("elapsed_seconds"))
+                from_height = int(previous.get("height"))
+                to_height = int(sample.get("height"))
+            except (TypeError, ValueError):
+                previous = sample
+                continue
+            elapsed_delta = to_elapsed - from_elapsed
+            height_delta = to_height - from_height
+            if elapsed_delta > 0 and height_delta > 0:
+                intervals.append(
+                    {
+                        "from_height": from_height,
+                        "to_height": to_height,
+                        "height_delta": height_delta,
+                        "elapsed_seconds": elapsed_delta,
+                        "blocks_per_second": height_delta / elapsed_delta,
+                    }
+                )
+        previous = sample
+
+    sample_count = len([sample for sample in samples if isinstance(sample, dict)])
+    if not intervals:
+        return {
+            "sample_count": sample_count,
+            "interval_count": 0,
+            "average_blocks_per_second": 0.0,
+            "min_blocks_per_second": 0.0,
+            "max_blocks_per_second": 0.0,
+            "slowest_interval": None,
+            "fastest_interval": None,
+        }
+
+    rates = [float(interval["blocks_per_second"]) for interval in intervals]
+    slowest = min(intervals, key=lambda item: float(item["blocks_per_second"]))
+    fastest = max(intervals, key=lambda item: float(item["blocks_per_second"]))
+    return {
+        "sample_count": sample_count,
+        "interval_count": len(intervals),
+        "average_blocks_per_second": sum(rates) / len(rates),
+        "min_blocks_per_second": min(rates),
+        "max_blocks_per_second": max(rates),
+        "slowest_interval": slowest,
+        "fastest_interval": fastest,
+    }
 
 
 def run_until_target(
@@ -1033,22 +1090,34 @@ def run_until_target(
 
     metrics_samples = metrics_sample_count(samples)
     metrics_summary = summarize_metric_samples(samples)
+    rate_summary = height_sample_rate_summary({"height_samples": samples})
     if require_metrics_samples and metrics_url and status == "target-reached" and metrics_samples == 0:
         status = "metrics-unavailable"
     sync_speed_shortfall = 0.0
     sync_speed_overage = 0.0
+    speed_floor_value = (
+        float(rate_summary["min_blocks_per_second"])
+        if rate_summary["interval_count"] > 0
+        else 0.0
+    )
+    speed_ceiling_value = (
+        float(rate_summary["max_blocks_per_second"])
+        if rate_summary["interval_count"] > 0
+        else 0.0
+    )
     sync_speed_floor_met = (
-        min_blocks_per_second is None or blocks_per_second >= min_blocks_per_second
+        min_blocks_per_second is None or speed_floor_value >= min_blocks_per_second
     )
     sync_speed_ceiling_met = (
-        max_blocks_per_second is None or blocks_per_second <= max_blocks_per_second
+        max_blocks_per_second is None
+        or (rate_summary["interval_count"] > 0 and speed_ceiling_value <= max_blocks_per_second)
     )
-    if min_blocks_per_second is not None and blocks_per_second < min_blocks_per_second:
-        sync_speed_shortfall = min_blocks_per_second - blocks_per_second
+    if min_blocks_per_second is not None and not sync_speed_floor_met:
+        sync_speed_shortfall = min_blocks_per_second - speed_floor_value
         if status == "target-reached":
             status = "sync-speed-too-slow"
-    if max_blocks_per_second is not None and blocks_per_second > max_blocks_per_second:
-        sync_speed_overage = blocks_per_second - max_blocks_per_second
+    if max_blocks_per_second is not None and not sync_speed_ceiling_met:
+        sync_speed_overage = max(speed_ceiling_value - max_blocks_per_second, 0.0)
         if status == "target-reached":
             status = "sync-speed-too-fast"
 
@@ -1062,6 +1131,7 @@ def run_until_target(
         "elapsed_seconds": round(elapsed, 3),
         "blocks_per_second": blocks_per_second,
         "height_samples": samples,
+        "height_sample_rate_summary": rate_summary,
         "metrics_sample_count": metrics_samples,
         "metrics_summary": metrics_summary,
         "sync_speed_floor_blocks_per_second": min_blocks_per_second,
