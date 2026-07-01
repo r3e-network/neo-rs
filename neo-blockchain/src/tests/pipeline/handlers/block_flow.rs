@@ -911,6 +911,48 @@ async fn bulk_import_fast_forwards_empty_run_when_no_per_block_observers_are_act
 }
 
 #[tokio::test]
+async fn bulk_import_fast_forward_still_emits_committed_callbacks_per_block() {
+    let (service, _handle, _snapshot, committed_heights) =
+        store_fixture_recording_committed_heights();
+    service.initialize().await;
+    committed_heights.lock().clear();
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let block2 = Block::from_parts(header2, vec![]);
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, block2],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(
+        committed_heights.lock().as_slice(),
+        &[1, 2],
+        "fast-forward may skip committing/application replay artifacts but must preserve committed callbacks"
+    );
+}
+
+#[tokio::test]
 async fn bulk_import_falls_back_when_per_block_committing_observer_is_active() {
     let (service, _handle, _snapshot, lengths) =
         store_fixture_recording_application_executed_lengths();
@@ -1260,6 +1302,7 @@ async fn bulk_import_skips_per_block_mempool_maintenance() {
         settings: Arc::new(settings.clone()),
         state_service: None,
         committing_application_executed_lengths: None,
+        committed_heights: None,
         store_snapshot_calls: None,
         commit_to_store_calls: None,
     });
@@ -1396,6 +1439,7 @@ async fn persisted_inventory_block_removes_cached_header_after_mempool_update() 
         settings: Arc::new(settings.clone()),
         state_service: None,
         committing_application_executed_lengths: None,
+        committed_heights: None,
         store_snapshot_calls: None,
         commit_to_store_calls: None,
     });

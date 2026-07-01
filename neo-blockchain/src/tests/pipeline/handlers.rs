@@ -117,6 +117,7 @@ struct StoreContext {
     settings: Arc<neo_config::ProtocolSettings>,
     state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
     committing_application_executed_lengths: Option<Arc<parking_lot::Mutex<Vec<usize>>>>,
+    committed_heights: Option<Arc<parking_lot::Mutex<Vec<u32>>>>,
     store_snapshot_calls: Option<Arc<AtomicUsize>>,
     commit_to_store_calls: Option<Arc<AtomicUsize>>,
 }
@@ -157,6 +158,15 @@ impl SystemContext for StoreContext {
             calls.fetch_add(1, Ordering::SeqCst);
         }
     }
+    fn block_committed_with_context(
+        &self,
+        block: &Block,
+        _context: crate::service_context::BlockPersistContext,
+    ) {
+        if let Some(heights) = &self.committed_heights {
+            heights.lock().push(block.index());
+        }
+    }
     fn allows_empty_block_fast_forward(&self) -> bool {
         self.state_service.is_none() && self.committing_application_executed_lengths.is_none()
     }
@@ -184,6 +194,7 @@ fn store_fixture_with(
         settings: Arc::new(settings),
         state_service: None,
         committing_application_executed_lengths: None,
+        committed_heights: None,
         store_snapshot_calls: None,
         commit_to_store_calls: None,
     });
@@ -213,6 +224,7 @@ fn store_fixture_with_state_service() -> (
         settings: Arc::new(neo_config::ProtocolSettings::default()),
         state_service: Some(state_service),
         committing_application_executed_lengths: None,
+        committed_heights: None,
         store_snapshot_calls: None,
         commit_to_store_calls: None,
     });
@@ -237,6 +249,7 @@ fn store_fixture_recording_application_executed_lengths() -> (
         settings: Arc::new(neo_config::ProtocolSettings::default()),
         state_service: None,
         committing_application_executed_lengths: Some(Arc::clone(&lengths)),
+        committed_heights: None,
         store_snapshot_calls: None,
         commit_to_store_calls: None,
     });
@@ -261,6 +274,7 @@ fn store_fixture_counting_commits() -> (
         settings: Arc::new(neo_config::ProtocolSettings::default()),
         state_service: None,
         committing_application_executed_lengths: None,
+        committed_heights: None,
         store_snapshot_calls: None,
         commit_to_store_calls: Some(Arc::clone(&commit_calls)),
     });
@@ -269,6 +283,31 @@ fn store_fixture_counting_commits() -> (
     let mempool = Arc::new(TestMempool);
     let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
     (service, handle, snapshot, commit_calls)
+}
+
+fn store_fixture_recording_committed_heights() -> (
+    BlockchainService<StoreContext, TestMempool>,
+    BlockchainHandle,
+    Arc<neo_storage::DataCache>,
+    Arc<parking_lot::Mutex<Vec<u32>>>,
+) {
+    neo_native_contracts::install();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let system = Arc::new(StoreContext {
+        snapshot: Arc::clone(&snapshot),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        state_service: None,
+        committing_application_executed_lengths: None,
+        committed_heights: Some(Arc::clone(&committed_heights)),
+        store_snapshot_calls: None,
+        commit_to_store_calls: None,
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    (service, handle, snapshot, committed_heights)
 }
 
 fn store_fixture_counting_snapshot_and_commits() -> (
@@ -299,6 +338,7 @@ fn store_fixture_counting_snapshot_and_commits_with(
         settings: Arc::new(settings),
         state_service: None,
         committing_application_executed_lengths: None,
+        committed_heights: None,
         store_snapshot_calls: Some(Arc::clone(&snapshot_calls)),
         commit_to_store_calls: Some(Arc::clone(&commit_calls)),
     });
@@ -487,6 +527,7 @@ fn reverify_mempool_after_persist_skips_snapshot_when_no_unverified_transactions
         settings: Arc::new(neo_config::ProtocolSettings::default()),
         state_service: None,
         committing_application_executed_lengths: None,
+        committed_heights: None,
         store_snapshot_calls: Some(Arc::clone(&store_snapshot_calls)),
         commit_to_store_calls: None,
     });

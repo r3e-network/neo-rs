@@ -409,6 +409,10 @@ where
                                 }
                                 imported += 1;
                                 last_imported_height = Some(fast_block.index());
+                                self.system.block_committed_with_context(
+                                    fast_block.as_ref(),
+                                    persist_context,
+                                );
                             }
                             position += run.len();
                             continue;
