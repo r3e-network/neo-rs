@@ -281,6 +281,41 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:21990/metrics", bounded)
         self.assertIn("--require-metrics-samples", bounded)
 
+    def test_build_plan_does_not_cap_first_fast_sync_height_sample_bps(self):
+        module = load_module()
+
+        plan = module.build_plan(
+            config=Path("clean/neo_mainnet_validate.toml"),
+            node_bin=Path("target/debug/neo-node"),
+            rpc_url="http://127.0.0.1:21332",
+            milestones=[10, 20],
+            poll_interval=5.0,
+            max_seconds=120.0,
+            chain_db=Path("clean/chain"),
+            stateroot_db=Path("clean/state-root-334F454E"),
+            probe_bin=Path("target/debug/neo-db-probe"),
+            references=["http://seed1.neo.org:10332"],
+            data_dir=Path("clean"),
+            checkpoint_root=Path("clean/checkpoints"),
+            checkpoint_script=Path("scripts/checkpoint-on-height.sh"),
+            log_dir=Path("clean/logs"),
+            sync_speed_floor_bps=1500.0,
+            sync_speed_ceiling_bps=2000.0,
+            fast_sync=True,
+            minimum_checkpoint_count=2,
+        )
+
+        fast_sync_command = plan["steps"][0]["bounded_command"]
+        replay_command = plan["steps"][1]["bounded_command"]
+
+        self.assertIn("--fast-sync", fast_sync_command)
+        self.assertIn("--sync-speed-floor-bps", fast_sync_command)
+        self.assertNotIn("--sync-speed-ceiling-bps", fast_sync_command)
+        self.assertNotIn("2000.0", fast_sync_command)
+        self.assertNotIn("--fast-sync", replay_command)
+        self.assertIn("--sync-speed-ceiling-bps", replay_command)
+        self.assertIn("2000.0", replay_command)
+
     def test_build_plan_uses_builtin_fast_sync_only_for_first_package_validation(self):
         module = load_module()
 
@@ -1398,7 +1433,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             transaction_bps=0.0,
             empty_only_blocks=100001,
             empty_elapsed=10.0,
-            empty_bps=10000.1,
+            empty_bps=250000.0,
         )
 
         err = module.speed_proof_error(
@@ -1410,7 +1445,8 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         summary = module.milestone_summary({"height": 100000, "bounded_report": report})
 
         self.assertIn("no transaction-bearing blocks", err)
-        self.assertEqual(summary["empty_block_blocks_per_second"], 10000.1)
+        self.assertNotIn("above configured ceiling", err)
+        self.assertEqual(summary["empty_block_blocks_per_second"], 250000.0)
         self.assertEqual(summary["import_window_blocks_per_second"], 0.0)
 
     def test_empty_block_speed_proof_rejects_bps_that_does_not_match_elapsed_denominator(self):

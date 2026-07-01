@@ -678,14 +678,14 @@ Fast-sync runs now produce two distinct throughput views. The analyzer keeps
 `transaction_import_*` fields for the transaction-bearing import proof that
 backs the production BPS gate, and `empty_block_*` fields for the empty-block
 fast-path evaluation. Empty-block rates are reported as a correctness-preserving
-fast-path measurement, not as a capped target: they may exceed 10,000 BPS by a
-wide margin when contiguous empty headers are folded into batch ledger metadata
-and native-state updates. The practical limit should be the validated batching
-algorithm, disk flush policy, and hardware, not an arbitrary ceiling. Empty-block
-throughput is reported separately and does not satisfy the transaction-bearing
-speed proof. Operators can pass `--empty-block-speed-floor-bps <N>` to flag
-hardware-specific empty-block floor misses without changing the production
-transaction-bearing speed gate.
+fast-path measurement with no configured ceiling: they may exceed 10,000 BPS by
+a wide margin when contiguous empty headers are folded into batch ledger
+metadata and native-state updates, and they should be driven as high as the
+validated batching algorithm, batch-size guard, disk flush policy, and hardware
+allow. Empty-block throughput is reported separately and does not satisfy the
+transaction-bearing speed proof. Operators can pass
+`--empty-block-speed-floor-bps <N>` to flag hardware-specific empty-block floor
+misses without changing the production transaction-bearing speed gate.
 `performance_by_node_bin` groups throughput by the recorded node binary so
 debug and release runs are not averaged together; older JSONL entries without
 that field are reported as `unknown`.

@@ -647,7 +647,9 @@ def build_plan(
                     node_output_log=log_dir / f"neo-node-milestone-h{height}.log",
                     metrics_url=metrics_url,
                     sync_speed_floor_bps=sync_speed_floor_bps,
-                    sync_speed_ceiling_bps=sync_speed_ceiling_bps,
+                    sync_speed_ceiling_bps=(
+                        None if is_first_fast_sync_step else sync_speed_ceiling_bps
+                    ),
                     fast_sync=is_first_fast_sync_step,
                     fast_sync_cache=(fast_sync_cache if is_first_fast_sync_step else None),
                     initial_height=initial_height if is_first_fast_sync_step else None,
