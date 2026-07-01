@@ -657,7 +657,11 @@ Fast-sync runs now produce two distinct throughput views. The analyzer keeps
 backs the production BPS gate, and `empty_block_*` fields for the empty-block
 fast-path evaluation. Empty-block rates can legitimately exceed 10,000 BPS, but
 they are reported separately and do not satisfy the transaction-bearing speed
-proof.
+proof. There is no default empty-block ceiling or target because a correct
+empty-block fast path should batch as much state-equivalent work as possible;
+operators can pass `--empty-block-speed-floor-bps <N>` to flag hardware-specific
+empty-block floor misses without changing the production transaction-bearing
+speed gate.
 `performance_by_node_bin` groups throughput by the recorded node binary so
 debug and release runs are not averaged together; older JSONL entries without
 that field are reported as `unknown`.

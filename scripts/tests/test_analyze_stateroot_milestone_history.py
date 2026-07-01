@@ -364,6 +364,67 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertEqual(report["empty_block_speed_proof_error_count"], 1)
         self.assertEqual(report["empty_block_speed_proof_errors"][0]["height"], 200)
 
+    def test_analyze_history_treats_empty_block_fast_path_floor_as_optional(self):
+        module = load_module()
+        records = [
+            record(
+                "2026-01-01T00:00:00+00:00",
+                [
+                    {
+                        "height": 100,
+                        "last_height": 100,
+                        "blocks_per_second": 14000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x100",
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1600.0,
+                        "empty_block_speed_proof_source": "fast-sync-empty-blocks",
+                        "empty_block_blocks_per_second": 12000.0,
+                        "empty_only_blocks": 96000,
+                        "empty_block_import_seconds": 8.0,
+                    },
+                    {
+                        "height": 200,
+                        "last_height": 200,
+                        "blocks_per_second": 9000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x200",
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1700.0,
+                        "empty_block_speed_proof_source": "fast-sync-empty-blocks",
+                        "empty_block_blocks_per_second": 9500.0,
+                        "empty_only_blocks": 47500,
+                        "empty_block_import_seconds": 5.0,
+                    },
+                ],
+            )
+        ]
+
+        report = module.analyze_history(
+            records,
+            slowest_limit=5,
+            fastest_limit=5,
+        )
+
+        self.assertIsNone(report["empty_block_speed_floor_blocks_per_second"])
+        self.assertEqual(report["empty_block_speed_floor_violation_count"], 0)
+        self.assertEqual(report["empty_block_speed_floor_violations"], [])
+
+        report = module.analyze_history(
+            records,
+            slowest_limit=5,
+            fastest_limit=5,
+            empty_block_speed_floor_bps=10000.0,
+        )
+
+        self.assertEqual(report["empty_block_speed_floor_blocks_per_second"], 10000.0)
+        self.assertEqual(report["empty_block_speed_floor_violation_count"], 1)
+        violation = report["empty_block_speed_floor_violations"][0]
+        self.assertEqual(violation["height"], 200)
+        self.assertEqual(violation["empty_block_blocks_per_second"], 9500.0)
+        self.assertEqual(violation["shortfall_blocks_per_second"], 500.0)
+        self.assertEqual(violation["transaction_import_blocks_per_second"], 1700.0)
+
     def test_analyze_history_groups_performance_by_node_binary(self):
         module = load_module()
         records = [

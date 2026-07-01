@@ -454,13 +454,24 @@ def summarize_empty_block_fast_path(
     *,
     slowest_limit: int,
     fastest_limit: int,
+    empty_block_speed_floor_bps: float | None,
 ) -> dict[str, Any]:
     bps_values = [float(item["empty_block_blocks_per_second"]) for item in proofs]
     proof_errors = [
         item for item in proofs if item.get("empty_block_speed_proof_error")
     ]
+    floor_violations: list[dict[str, Any]] = []
+    if empty_block_speed_floor_bps is not None:
+        for proof in proofs:
+            bps = float(proof["empty_block_blocks_per_second"])
+            if bps >= empty_block_speed_floor_bps:
+                continue
+            violation = dict(proof)
+            violation["shortfall_blocks_per_second"] = empty_block_speed_floor_bps - bps
+            floor_violations.append(violation)
     return {
         "empty_block_fast_path_proof_count": len(proofs),
+        "empty_block_speed_floor_blocks_per_second": empty_block_speed_floor_bps,
         "average_empty_block_blocks_per_second": (
             sum(bps_values) / len(bps_values) if bps_values else 0.0
         ),
@@ -475,6 +486,8 @@ def summarize_empty_block_fast_path(
             key=lambda item: float(item["empty_block_blocks_per_second"]),
             reverse=True,
         )[:fastest_limit],
+        "empty_block_speed_floor_violation_count": len(floor_violations),
+        "empty_block_speed_floor_violations": floor_violations,
         "empty_block_speed_proof_error_count": len(proof_errors),
         "empty_block_speed_proof_errors": proof_errors,
     }
@@ -581,6 +594,7 @@ def analyze_history(
     checkpoint_root: Path | None = None,
     regression_threshold_percent: float = 25.0,
     sync_speed_floor_bps: float = DEFAULT_SYNC_SPEED_FLOOR_BPS,
+    empty_block_speed_floor_bps: float | None = None,
 ) -> dict:
     milestones = flatten_milestones(records)
     completed = completed_milestones_in_history_order(milestones)
@@ -620,6 +634,7 @@ def analyze_history(
         empty_block_proofs,
         slowest_limit=slowest_limit,
         fastest_limit=fastest_limit,
+        empty_block_speed_floor_bps=empty_block_speed_floor_bps,
     )
     report: dict[str, Any] = {
         "run_count": len(records),
@@ -721,6 +736,16 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_SYNC_SPEED_FLOOR_BPS,
         help="Flag completed checkpoint milestones below this blocks/second floor.",
     )
+    parser.add_argument(
+        "--empty-block-speed-floor-bps",
+        type=float,
+        default=None,
+        help=(
+            "Optionally flag fast-sync empty-block fast-path proofs below this "
+            "blocks/second floor. Empty-block speed is reported separately from "
+            "transaction-bearing speed and has no default cap or target."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -735,6 +760,7 @@ def main() -> int:
             checkpoint_root=args.checkpoint_root,
             regression_threshold_percent=args.regression_threshold_percent,
             sync_speed_floor_bps=args.sync_speed_floor_bps,
+            empty_block_speed_floor_bps=args.empty_block_speed_floor_bps,
         )
     except Exception as exc:  # pylint: disable=broad-except
         print(f"ERROR: {exc}", file=sys.stderr)
