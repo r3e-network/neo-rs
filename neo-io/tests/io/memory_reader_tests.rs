@@ -4,6 +4,21 @@
 //! matches the C# Neo.IO.MemoryReader exactly.
 
 use neo_io::MemoryReader;
+use std::io::Read;
+
+/// Test interoperability with Rust's standard `Read` trait.
+#[test]
+fn test_std_read_trait_reads_raw_bytes_and_advances_position() {
+    let data = [0xAA, 0xBB, 0xCC, 0xDD];
+    let mut reader = MemoryReader::new(&data);
+    let mut prefix = [0u8; 2];
+
+    reader.read_exact(&mut prefix).unwrap();
+
+    assert_eq!(prefix, [0xAA, 0xBB]);
+    assert_eq!(reader.position(), 2);
+    assert_eq!(reader.read_uint16().unwrap(), 0xDDCC);
+}
 
 /// Test ReadFixedString functionality (matches C# TestReadFixedString)
 #[test]

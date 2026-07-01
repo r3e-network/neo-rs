@@ -1,6 +1,6 @@
 //! `MemoryReader` - matches C# Neo.IO.MemoryReader exactly
 
-use std::io;
+use std::io::{self, Read};
 use std::str;
 
 use bytes::Buf;
@@ -324,6 +324,21 @@ impl<'a> MemoryReader<'a> {
 impl From<str::Utf8Error> for IoError {
     fn from(_: str::Utf8Error) -> Self {
         Self::InvalidUtf8
+    }
+}
+
+impl Read for MemoryReader<'_> {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let count = self.remaining().min(buf.len());
+        if count == 0 {
+            return Ok(0);
+        }
+
+        let end = self.position + count;
+        buf[..count].copy_from_slice(&self.buffer[self.position..end]);
+        self.position = end;
+        Ok(count)
     }
 }
 

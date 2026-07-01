@@ -9,6 +9,20 @@ use neo_io::{BinaryWriter, MemoryReader};
 #[allow(dead_code)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    /// Test interoperability with Rust's standard `Write` trait.
+    #[test]
+    fn test_std_write_trait_appends_raw_bytes() {
+        let mut writer = BinaryWriter::new();
+
+        writer.write_all(&[0xAA, 0xBB]).unwrap();
+        writer.write_u16(0xCCDD).unwrap();
+        writer.write_all(&[0xEE]).unwrap();
+
+        assert_eq!(writer.as_bytes(), &[0xAA, 0xBB, 0xDD, 0xCC, 0xEE]);
+    }
+
     /// Test writing basic integer types (matches C# BinaryWriter.Write(int) exactly)
     #[test]
     fn test_write_int32_compatibility() {

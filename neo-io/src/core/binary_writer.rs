@@ -1,5 +1,6 @@
 use crate::{IoResult, serializable::Serializable, var_int};
 use bytes::BufMut;
+use std::io;
 
 /// A sequential binary writer for serializing Neo protocol data in little-endian format.
 ///
@@ -175,6 +176,19 @@ impl BinaryWriter {
         for value in values {
             value.serialize(self)?;
         }
+        Ok(())
+    }
+}
+
+impl io::Write for BinaryWriter {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.buffer.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
