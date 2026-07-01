@@ -1,6 +1,17 @@
-//! TEE-protected wallet implementation
+//! # neo-tee::wallet
 //!
-//! Provides secure wallet storage using TEE sealing.
+//! TEE wallet custody and signing helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-tee`. This adapter crate owns TEE integration
+//! and must not define protocol bytes, consensus rules, or storage semantics.
+//!
+//! ## Contents
+//!
+//! - `provider`: Provider adapter for the surrounding trait boundary.
+//! - `sealed_key`: sealed wallet key records.
+//! - `tee_wallet`: TEE-backed wallet facade.
 
 mod provider;
 mod sealed_key;

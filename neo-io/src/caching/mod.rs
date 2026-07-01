@@ -1,4 +1,20 @@
-//! Caching module - matches C# Neo.IO.Caching exactly
+//! # neo-io::caching
+//!
+//! Read-through and write-back caching helpers for IO paths.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-io`. This codec crate owns byte-level IO
+//! contracts and must not decide protocol policy, storage layout, or node
+//! orchestration.
+//!
+//! ## Contents
+//!
+//! - `cache`: Cache state and mutation helpers.
+//! - `cache_entries`: Cache entry records and eviction metadata.
+//! - `fifo_cache`: FIFO cache implementation.
+//! - `hashset_cache`: Hash-set backed cache implementation.
+//! - `relay_cache`: Relay inventory cache implementation.
 
 macro_rules! impl_cache_wrapper_deref {
     (

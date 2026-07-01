@@ -1,4 +1,18 @@
-//! In-memory persistence provider implementations.
+//! # neo-storage::persistence::providers
+//!
+//! Provider implementations behind the crate public traits.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-storage`. This infrastructure crate owns store
+//! mechanics and must not execute contracts, import blocks, or make RPC/network
+//! policy decisions.
+//!
+//! ## Contents
+//!
+//! - `memory_snapshot`: in-memory snapshot implementation.
+//! - `memory_store`: in-memory store implementation.
+//! - `memory_store_provider`: in-memory store provider.
 
 /// Snapshot over an in-memory store.
 pub mod memory_snapshot;

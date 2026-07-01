@@ -49,47 +49,47 @@ criterion = { workspace = true }
 
 [[test]]
 name = "layer_boundary_tests"
-path = "tests/layer_boundary_tests.rs"
+path = "tests/architecture/layer_boundary_tests.rs"
 
 [[test]]
 name = "consensus_integration_tests"
-path = "tests/consensus_integration_tests.rs"
+path = "tests/consensus/consensus_integration_tests.rs"
 
 [[test]]
 name = "state_integration_tests"
-path = "tests/state_integration_tests.rs"
+path = "tests/state/state_integration_tests.rs"
 
 [[test]]
 name = "end_to_end_tests"
-path = "tests/end_to_end_tests.rs"
+path = "tests/system/end_to_end_tests.rs"
 
 [[test]]
 name = "chaos_tests"
-path = "tests/chaos_tests.rs"
+path = "tests/system/chaos_tests.rs"
 
 [[test]]
 name = "e2e_transaction_flow"
-path = "tests/e2e_transaction_flow.rs"
+path = "tests/transactions/e2e_transaction_flow.rs"
 
 [[test]]
 name = "block_persistence"
-path = "tests/block_persistence.rs"
+path = "tests/storage/block_persistence.rs"
 
 [[test]]
 name = "p2p_message_exchange"
-path = "tests/p2p_message_exchange.rs"
+path = "tests/network/p2p_message_exchange.rs"
 
 [[test]]
 name = "contract_execution"
-path = "tests/contract_execution.rs"
+path = "tests/execution/contract_execution.rs"
 
 [[test]]
 name = "csharp_compatibility_tests"
-path = "tests/csharp_compatibility_tests.rs"
+path = "tests/protocol/csharp_compatibility_tests.rs"
 
 [[bench]]
 name = "performance_benchmarks"
-path = "benches/performance_benchmarks.rs"
+path = "benches/performance/performance_benchmarks.rs"
 harness = false
 
 [lints]

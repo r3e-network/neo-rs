@@ -28,6 +28,28 @@ fn duration_to_u64_ns(duration: std::time::Duration) -> u64 {
     duration.as_nanos().min(u128::from(u64::MAX)) as u64
 }
 
+fn native_fee_trace_tx(app: &ApplicationEngine) -> String {
+    app.get_script_container()
+        .and_then(|container| container.as_any().downcast_ref::<Transaction>())
+        .and_then(|transaction| transaction.try_hash().ok())
+        .map(|hash| hash.to_string())
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn native_fee_trace_enabled(app: &ApplicationEngine) -> bool {
+    if std::env::var_os("NEO_TRACE_NATIVE_FEES").is_some() {
+        return true;
+    }
+    let Ok(raw) = std::env::var("NEO_TRACE_NATIVE_FEES_TX") else {
+        return false;
+    };
+    let tx_hash = native_fee_trace_tx(app);
+    raw.split(',').any(|entry| {
+        let entry = entry.trim();
+        entry == "*" || entry.eq_ignore_ascii_case("all") || entry.eq_ignore_ascii_case(&tx_hash)
+    })
+}
+
 impl ApplicationEngine {
     pub(crate) fn add_runtime_fee(&mut self, fee: u64) -> CoreResult<()> {
         self.add_fee_datoshi(
@@ -259,20 +281,45 @@ impl ApplicationEngine {
         if !is_whitelisted {
             // Charge native contract fees upfront (matches C# NativeContract.Invoke).
             if method_meta.cpu_fee != 0 {
+                let fee_before = self.fee_consumed;
                 self.add_cpu_fee(method_meta.cpu_fee)?;
+                if native_fee_trace_enabled(self) {
+                    eprintln!(
+                        "trace native.fee: tx={} contract={} method={} component=cpu fee_units={} exec_fee_factor={} fee_before_pico={} fee_after_pico={}",
+                        native_fee_trace_tx(self),
+                        contract_hash,
+                        method,
+                        method_meta.cpu_fee,
+                        self.exec_fee_factor,
+                        fee_before,
+                        self.fee_consumed,
+                    );
+                }
             }
             if method_meta.storage_fee != 0 {
-                // C# NativeContract.Invoke: AddFee(StoragePrice * StorageFee)
-                // where AddFee takes picoGas directly. StoragePrice *
-                // StorageFee is already in the correct pico unit (e.g.
-                // 100000 * 50 = 5,000,000 pico). Using add_fee_datoshi here
-                // would multiply by FEE_FACTOR again (5M * 10000 = 50B pico),
-                // overcharging 10000x. Use add_fee_pico to match C# exactly.
-                let storage_fee_pico = method_meta
+                // C# NativeContract.Invoke: AddFee(StoragePrice * StorageFee).
+                // ApplicationEngine.AddFee accepts GAS datoshi and converts to
+                // pico internally, so native metadata storage fees must follow
+                // the same datoshis path as dynamic Storage.Put byte fees.
+                let storage_fee_datoshi = method_meta
                     .storage_fee
                     .checked_mul(i64::from(self.storage_price))
                     .ok_or_else(|| CoreError::invalid_operation("Native storage fee overflow"))?;
-                self.add_fee_pico(storage_fee_pico)?;
+                let fee_before = self.fee_consumed;
+                self.add_fee_datoshi(storage_fee_datoshi)?;
+                if native_fee_trace_enabled(self) {
+                    eprintln!(
+                        "trace native.fee: tx={} contract={} method={} component=storage storage_fee_units={} storage_price={} fee_delta={} fee_before_pico={} fee_after_pico={}",
+                        native_fee_trace_tx(self),
+                        contract_hash,
+                        method,
+                        method_meta.storage_fee,
+                        self.storage_price,
+                        storage_fee_datoshi,
+                        fee_before,
+                        self.fee_consumed,
+                    );
+                }
             }
         }
 

@@ -1,4 +1,55 @@
 use super::*;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+
+fn serve_getversion_once(protocol: Value) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test RPC");
+    let url = format!("http://{}", listener.local_addr().expect("addr"));
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut request = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            let read = stream.read(&mut buf).expect("read request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let text = String::from_utf8_lossy(&request);
+        assert!(
+            text.contains(r#""method":"getversion""#) || text.contains(r#""method": "getversion""#),
+            "unexpected request: {text}"
+        );
+        let body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "tcpport": 10333,
+                "nonce": 1,
+                "useragent": "/remote/",
+                "rpc": {
+                    "maxiteratorresultitems": 123,
+                    "sessionenabled": true
+                },
+                "protocol": protocol
+            }
+        })
+        .to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write response");
+        stream.write_all(body.as_bytes()).expect("write body");
+    });
+    url
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_version_contains_expected_fields() {
@@ -182,6 +233,33 @@ async fn get_version_reads_policy_storage_when_echidna_active() {
 
     let result = (handler.callback())(&server, &[]).expect("get version");
     assert_eq!(version_dynamic_triple(&result), (3_000, 1_000_000, 1_024));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn remote_ledger_get_version_uses_upstream_policy_values() {
+    let system = crate::server::test_support::test_system(echidna_at_zero_settings());
+    let mut server = RpcServer::new(system, RpcServerConfig::default());
+    server
+        .set_remote_ledger_rpc(serve_getversion_once(json!({
+            "msperblock": 3_000,
+            "maxtraceableblocks": 1_000_000,
+            "maxvaliduntilblockincrement": 1_024,
+        })))
+        .expect("configure remote ledger");
+    let handlers = RpcServerNode::register_handlers();
+    let handler = find_handler(&handlers, "getversion");
+
+    let result = (handler.callback())(&server, &[]).expect("get version");
+
+    assert_eq!(version_dynamic_triple(&result), (3_000, 1_000_000, 1_024));
+    assert_ne!(
+        result
+            .get("useragent")
+            .and_then(Value::as_str)
+            .expect("local useragent"),
+        "/remote/",
+        "remote-ledger mode should keep this node's identity fields local"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

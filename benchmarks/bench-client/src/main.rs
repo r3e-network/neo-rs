@@ -1,7 +1,15 @@
-//! neo-bench — a JSON-RPC load generator for cross-implementation Neo N3 node
-//! benchmarks. Point it at any node that speaks Neo's JSON-RPC (neo-rs,
-//! neo-cli/C#, or neo-go) and it measures throughput + latency identically, so
-//! the comparison is apples-to-apples.
+//! # bench-client
+//!
+//! Benchmark client binary for driving local node performance probes.
+//!
+//! ## Boundary
+//!
+//! This binary drives benchmarks against lower crates and must not become
+//! production node orchestration.
+//!
+//! ## Contents
+//!
+//! - `bench-client`: bench-client entrypoint API.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

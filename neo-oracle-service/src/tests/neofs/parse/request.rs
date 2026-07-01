@@ -5,6 +5,10 @@ fn sample_neofs_id(byte: u8) -> String {
     bs58::encode([byte; 32]).into_string()
 }
 
+fn error_message(error: impl std::fmt::Display) -> String {
+    error.to_string()
+}
+
 #[test]
 fn parse_neofs_request_payload() {
     let container = sample_neofs_id(1);
@@ -22,7 +26,7 @@ fn parse_neofs_request_rejects_authority_urls() {
     let object = sample_neofs_id(2);
     let err = NeoFsRequest::parse_neofs_request(&format!("neofs://{}/{}", container, object))
         .expect_err("authority-style URL should fail");
-    assert!(err.contains("Invalid neofs url"));
+    assert!(error_message(err).contains("Invalid neofs url"));
 }
 
 #[test]
@@ -31,7 +35,7 @@ fn parse_neofs_request_rejects_double_slash() {
     let object = sample_neofs_id(2);
     let err = NeoFsRequest::parse_neofs_request(&format!("neofs:{container}//{object}"))
         .expect_err("double slash should fail");
-    assert!(err.contains("Invalid neofs url"));
+    assert!(error_message(err).contains("Invalid neofs url"));
 }
 
 #[test]
@@ -116,6 +120,7 @@ fn parse_neofs_request_missing_range_errors() {
     let object = sample_neofs_id(2);
     let err = NeoFsRequest::parse_neofs_request(&format!("neofs:{}/{}/range", container, object))
         .expect_err("range should error");
+    let err = error_message(err);
     assert!(
         err.contains("missing object range"),
         "unexpected error: {err}"
@@ -127,6 +132,7 @@ fn parse_neofs_request_rejects_invalid_ids() {
     let object = sample_neofs_id(2);
     let err =
         NeoFsRequest::parse_neofs_request(&format!("neofs:0/{}", object)).expect_err("invalid id");
+    let err = error_message(err);
     assert!(
         err.contains("invalid neofs container id"),
         "unexpected error: {err}"

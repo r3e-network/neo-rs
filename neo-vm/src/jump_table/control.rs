@@ -120,7 +120,7 @@ pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
 ///
 /// C# reads both operands via `StackItem.GetInteger()`, which faults on a
 /// `Buffer` (not a `PrimitiveType`, no `GetInteger` override) — so the JMP*
-/// comparison family uses [`get_integer`], NOT `into_int` (the latter coerces a
+/// comparison family uses `get_integer`, NOT `into_int` (the latter coerces a
 /// <=32-byte Buffer to an integer, diverging from C#). All JMP comparisons below
 /// follow the same rule.
 pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {

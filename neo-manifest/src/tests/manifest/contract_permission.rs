@@ -11,19 +11,13 @@ fn contract_permission_projects_to_neo_vm_rs_stack_value() {
 
     assert_eq!(
         permission.to_stack_value(),
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(hash.to_bytes()),
-                StackValue::Array(
-                    0,
-                    vec![
-                        StackValue::ByteString(b"transfer".to_vec()),
-                        StackValue::ByteString(b"balanceOf".to_vec()),
-                    ]
-                ),
-            ]
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(hash.to_bytes()),
+            StackValue::Array(vec![
+                StackValue::ByteString(b"transfer".to_vec()),
+                StackValue::ByteString(b"balanceOf".to_vec()),
+            ]),
+        ])
     );
 }
 
@@ -33,13 +27,10 @@ fn contract_permission_reads_from_neo_vm_rs_stack_value() {
     let mut permission = ContractPermission::default_wildcard();
 
     permission
-        .from_stack_value(StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(hash.to_bytes()),
-                StackValue::Array(0, vec![StackValue::ByteString(b"mint".to_vec())]),
-            ],
-        ))
+        .from_stack_value(StackValue::Struct(vec![
+            StackValue::ByteString(hash.to_bytes()),
+            StackValue::Array(vec![StackValue::ByteString(b"mint".to_vec())]),
+        ]))
         .unwrap();
 
     assert_eq!(

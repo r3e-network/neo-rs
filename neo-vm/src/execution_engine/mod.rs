@@ -1,64 +1,26 @@
-//! Execution engine module for the Neo Virtual Machine.
+//! # neo-vm::execution_engine
 //!
-//! This module provides the core execution engine implementation for the Neo VM,
-//! a stack-based virtual machine designed for smart contract execution.
+//! NeoVM execution engine loop and runtime state.
 //!
-//! # Architecture
+//! ## Boundary
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │                    ExecutionEngine                           │
-//! │  ┌─────────────────────────────────────────────────────────┐│
-//! │  │                  Invocation Stack                        ││
-//! │  │  ┌──────────────────────────────────────────────────┐   ││
-//! │  │  │ ExecutionContext (current)                        │   ││
-//! │  │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  │   ││
-//! │  │  │  │ Script     │  │ EvalStack  │  │ AltStack   │  │   ││
-//! │  │  │  │ (bytecode) │  │ (operands) │  │ (temp)     │  │   ││
-//! │  │  │  └────────────┘  └────────────┘  └────────────┘  │   ││
-//! │  │  └──────────────────────────────────────────────────┘   ││
-//! │  │  ┌──────────────────────────────────────────────────┐   ││
-//! │  │  │ ExecutionContext (caller)                         │   ││
-//! │  │  └──────────────────────────────────────────────────┘   ││
-//! │  │  ... (more contexts)                                     ││
-//! │  └─────────────────────────────────────────────────────────┘│
-//! │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-//! │  │ JumpTable    │  │ RefCounter   │  │ InteropService   │  │
-//! │  │ (opcodes)    │  │ (GC)         │  │ (syscalls)       │  │
-//! │  └──────────────┘  └──────────────┘  └──────────────────┘  │
-//! └─────────────────────────────────────────────────────────────┘
-//! ```
+//! This module belongs to `neo-vm`. This VM crate owns deterministic script
+//! execution and must not own ledger persistence, network transport, or node
+//! composition.
 //!
-//! # Key Components
+//! ## Contents
 //!
-//! - [`ExecutionEngine`]: Main VM execution loop and state management
-//! - [`ExecutionContext`]: Script execution state (instruction pointer, stacks)
-//! - [`EvaluationStack`]: Operand stack for instruction execution
-//! - [`JumpTable`]: Opcode dispatch table for instruction execution
-//! - [`ReferenceCounter`]: Garbage collection for compound stack items
-//!
-//! # VM States
-//!
-//! - `NONE`: Initial state before execution
-//! - `HALT`: Successful completion
-//! - `FAULT`: Execution error (invalid operation, stack underflow, etc.)
-//! - `BREAK`: Breakpoint hit (debugging)
-//!
-//! # Execution Model
-//!
-//! 1. Load script into new execution context
-//! 2. Push context onto invocation stack
-//! 3. Fetch instruction at current instruction pointer
-//! 4. Execute instruction via jump table
-//! 5. Update instruction pointer
-//! 6. Repeat until HALT, FAULT, or context stack empty
-//!
-//! # Stack Items
-//!
-//! The VM supports these stack item types:
-//! - `Boolean`, `Integer`, `ByteString`, `Buffer`
-//! - `Array`, `Struct`, `Map` (compound types)
-//! - `Pointer`, `InteropInterface` (special types)
+//! - `context`: Runtime context records carried through the local workflow.
+//! - `control_flow`: VM control-flow opcode handlers.
+//! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
+//! - `drop`: VM drop-stack opcode handlers.
+//! - `exception`: VM exception opcode handlers.
+//! - `execution`: Execution payload records and VM-result domain types.
+//! - `interop`: Interop host glue between NeoVM execution and native/runtime
+//!   services.
+//! - `stack`: VM stack opcode handlers.
+//! - `stubs`: placeholder opcode handlers guarded by tests.
+//! - `tests`: Module-local tests and regression coverage.
 
 use crate::error::VmError;
 use crate::error::VmResult;
@@ -270,5 +232,5 @@ mod stack;
 mod stubs;
 
 #[cfg(test)]
-#[path = "../tests/execution_engine.rs"]
+#[path = "../tests/execution_engine/core.rs"]
 mod tests;

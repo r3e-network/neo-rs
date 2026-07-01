@@ -39,5 +39,9 @@ hex = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
 
+[[test]]
+name = "native_manifest_pinning"
+path = "tests/native_manifest_pinning/mod.rs"
+
 [lints]
 workspace = true

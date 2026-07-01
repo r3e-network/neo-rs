@@ -152,11 +152,16 @@ impl InteropHost for ApplicationEngine {
         // VM's exception unwinding before any TRY below the native frame is
         // consulted, so — exactly like C# — a caller cannot catch an exception
         // that escapes a contract call issued from a native contract.
-        if let Some(exception) = engine.uncaught_exception() {
-            let boundary_id = std::sync::Arc::as_ptr(&state_arc) as usize;
-            if self.native_call_boundary_contexts.contains(&boundary_id) {
-                return Err(VmError::UnhandledException(exception.clone()));
-            }
+        let boundary_id = std::sync::Arc::as_ptr(&state_arc) as usize;
+        let is_native_call_boundary = self.native_call_boundary_contexts.contains(&boundary_id);
+        if let Some(exception) = engine.uncaught_exception()
+            && is_native_call_boundary
+        {
+            return Err(VmError::UnhandledException(exception.clone()));
+        }
+        if is_native_call_boundary {
+            self.native_call_boundary_contexts
+                .retain(|id| *id != boundary_id);
         }
 
         Ok(())

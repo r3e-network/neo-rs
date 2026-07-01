@@ -1,72 +1,25 @@
-//! Application engine core implementation aligned with Neo C# version.
+//! # neo-execution::application_engine
 //!
-//! This module implements the Neo N3 smart contract execution engine, providing
-//! the runtime environment for executing NeoVM scripts with blockchain context.
+//! ApplicationEngine interop groups and execution-facing syscall handlers.
 //!
-//! # Architecture
+//! ## Boundary
 //!
-//! ```text
-//! +-------------------------------------------------------------+
-//! |                    ApplicationEngine                         |
-//! |  +---------------------------------------------------------+|
-//! |  |                   ExecutionEngine (VM)                   ||
-//! |  |  +----------+  +----------+  +----------------------+  ||
-//! |  |  | Script   |  | Stack    |  | Execution Contexts   |  ||
-//! |  |  | Loader   |  | Manager  |  | (call stack)         |  ||
-//! |  |  +----------+  +----------+  +----------------------+  ||
-//! |  +---------------------------------------------------------+|
-//! |  +---------------------------------------------------------+|
-//! |  |                  Interop Services                        ||
-//! |  |  +----------+  +----------+  +----------+  +---------+ ||
-//! |  |  | Runtime  |  | Storage  |  | Crypto   |  | Contract| ||
-//! |  |  | Interops |  | Interops |  | Interops |  | Interops| ||
-//! |  |  +----------+  +----------+  +----------+  +---------+ ||
-//! |  +---------------------------------------------------------+|
-//! |  +---------------------------------------------------------+|
-//! |  |                  Blockchain Context                      ||
-//! |  |  +----------+  +----------+  +----------------------+  ||
-//! |  |  | DataCache|  | Settings |  | Native Contracts     |  ||
-//! |  |  | (state)  |  | (proto)  |  | (NEO, GAS, Policy)   |  ||
-//! |  |  +----------+  +----------+  +----------------------+  ||
-//! |  +---------------------------------------------------------+|
-//! +-------------------------------------------------------------+
-//! ```
+//! This module belongs to `neo-execution`. This execution crate owns VM/native
+//! interop behavior and must not own durable storage engines, P2P sync, or
+//! application startup.
 //!
-//! # Key Components
+//! ## Contents
 //!
-//! - [`ApplicationEngine`]: Main execution engine wrapping the NeoVM
-//! - [`TriggerType`]: Execution trigger (OnPersist, Application, PostPersist, Verification)
-//! - [`CallFlags`]: Permission flags for contract calls
-//! - [`NotifyEventArgs`]: Smart contract notification events
-//! - [`LogEventArgs`]: Smart contract log events
-//!
-//! # Interop Services
-//!
-//! The engine provides system call (interop) services organized by category:
-//! - **Runtime**: Block/transaction info, notifications, logging, gas management
-//! - **Storage**: Contract storage read/write/delete/find operations
-//! - **Crypto**: Hash functions, signature verification
-//! - **Contract**: Contract deployment, updates, calls, native contract access
-//! - **Iterator**: Storage iterator traversal
-//!
-//! # Execution Flow
-//!
-//! 1. Create engine with trigger type and blockchain snapshot
-//! 2. Load script and set entry point
-//! 3. Execute until completion or fault
-//! 4. Collect notifications, logs, and gas consumption
-//! 5. Commit or rollback state changes based on result
-//!
-//! # Gas Metering
-//!
-//! All operations consume GAS based on computational cost. The engine tracks:
-//! - `gas_consumed`: Total GAS used during execution
-//! - `fee_per_byte`: Network fee per transaction byte
-//! - Execution limits prevent infinite loops and resource exhaustion
-//!
-//! The `ApplicationEngine` implementation is split across multiple files in this
-//! directory to keep individual methods readable while preserving a single Rust
-//! module boundary (matching the C# layout).
+//! - `contracts`: Contract metadata, manifests, deployed-state records, and
+//!   contract parameter types.
+//! - `drop`: VM drop-stack opcode handlers.
+//! - `external_vm`: external VM execution bridge.
+//! - `fees_events_native`: fee, event, and native-contract syscall handlers.
+//! - `interop_host`: ApplicationEngine interop host.
+//! - `load_execute_storage`: load, execute, and storage syscall grouping.
+//! - `state`: domain state records for the surrounding workflow.
+//! - `storage_low_level`: low-level storage syscall handlers.
+//! - `witness_and_misc`: witness and miscellaneous syscall handlers.
 
 use neo_config::hardfork::Hardfork;
 use neo_crypto::{Crypto, ECCurve, ECPoint, Murmur3};

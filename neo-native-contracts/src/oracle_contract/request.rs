@@ -55,23 +55,20 @@ impl OracleRequest {
             Some(filter) => StackValue::ByteString(filter.as_bytes().to_vec()),
             None => StackValue::Null,
         };
-        StackValue::Array(
-            0,
-            vec![
-                StackValue::ByteString(self.original_tx_id.to_bytes()),
-                StackValue::Integer(self.gas_for_response),
-                StackValue::ByteString(self.url.as_bytes().to_vec()),
-                filter_item,
-                StackValue::ByteString(self.callback_contract.to_bytes()),
-                StackValue::ByteString(self.callback_method.as_bytes().to_vec()),
-                StackValue::ByteString(self.user_data.clone()),
-            ],
-        )
+        StackValue::Array(vec![
+            StackValue::ByteString(self.original_tx_id.to_bytes()),
+            StackValue::Integer(self.gas_for_response),
+            StackValue::ByteString(self.url.as_bytes().to_vec()),
+            filter_item,
+            StackValue::ByteString(self.callback_contract.to_bytes()),
+            StackValue::ByteString(self.callback_method.as_bytes().to_vec()),
+            StackValue::ByteString(self.user_data.clone()),
+        ])
     }
 
     /// Parses the C# `OracleRequest.FromStackItem` layout from a StackValue.
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(0, items) = stack_value else {
+        let StackValue::Array(items) = stack_value else {
             return Err(CoreError::invalid_data("OracleRequest is not an array"));
         };
         if items.len() != 7 {
@@ -88,7 +85,7 @@ impl OracleRequest {
         };
         let original_tx_id = UInt256::from_bytes(&field_bytes(0, "OriginalTxid")?)
             .map_err(|e| CoreError::invalid_data(format!("OracleRequest OriginalTxid: {e}")))?;
-        let gas_for_response = neo_vm_rs::stack_value_as_bigint(&items[1])
+        let gas_for_response = neo_vm::stack_value_as_bigint(&items[1])
             .map_err(|e| CoreError::invalid_data(format!("OracleRequest GasForResponse: {e}")))?
             .to_i64()
             .ok_or_else(|| CoreError::invalid_data("OracleRequest GasForResponse out of range"))?;
@@ -134,7 +131,6 @@ impl OracleIdList {
 
     pub(super) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
-            0,
             self.ids
                 .iter()
                 .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
@@ -143,12 +139,12 @@ impl OracleIdList {
     }
 
     pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(0, items) = stack_value else {
+        let StackValue::Array(items) = stack_value else {
             return Err(CoreError::invalid_data("Oracle IdList is not an array"));
         };
         let mut ids = Vec::with_capacity(items.len());
         for entry in &items {
-            let id = neo_vm_rs::stack_value_as_bigint(entry)
+            let id = neo_vm::stack_value_as_bigint(entry)
                 .map_err(|e| CoreError::invalid_data(format!("Oracle IdList entry: {e}")))?
                 .to_u64()
                 .ok_or_else(|| CoreError::invalid_data("Oracle IdList entry out of range"))?;

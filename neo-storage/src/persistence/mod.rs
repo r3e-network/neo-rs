@@ -1,31 +1,67 @@
-//! Persistence abstractions shared by in-memory and RocksDB storage backends.
+//! # neo-storage::persistence
+//!
+//! Persistence traits, snapshots, transactions, and cache overlays.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-storage`. This infrastructure crate owns store
+//! mechanics and must not execute contracts, import blocks, or make RPC/network
+//! policy decisions.
+//!
+//! ## Contents
+//!
+//! - `data_cache`: Write-back cache implementation and tracked-entry state.
+//! - `providers`: Provider implementations behind the crate public traits.
+//! - `read_only_store`: read-only store trait.
+//! - `seek_direction`: seek direction enum.
+//! - `storage`: Storage contexts, key builders, and storage item helpers for
+//!   execution.
+//! - `store`: Store implementation for the surrounding backend or domain.
+//! - `store_cache`: store-backed cache overlay.
+//! - `store_factory`: store factory trait.
+//! - `store_provider`: store provider trait.
+//! - `store_snapshot`: snapshot store trait.
+//! - `track_state`: tracked mutation state enum.
+//! - `transaction`: Transaction body, signer, witness, and fee records.
+//! - `write_store`: write store trait.
 
 /// Data cache with Neo-style trackable entries.
 pub mod data_cache;
 /// Built-in store providers used by tests and ephemeral nodes.
 pub mod providers;
 /// Read-only store traits.
+#[path = "traits/read_only_store.rs"]
 pub mod read_only_store;
 /// Iteration direction for seek/find operations.
+#[path = "traits/seek_direction.rs"]
 pub mod seek_direction;
+#[path = "cache/storage.rs"]
 pub mod storage;
 /// Combined read/write store traits and snapshot callbacks.
+#[path = "traits/store.rs"]
 pub mod store;
+#[path = "cache/store_cache.rs"]
 pub mod store_cache;
 /// Factory abstraction for named store providers.
+#[path = "traits/store_factory.rs"]
 pub mod store_factory;
 /// Store provider trait.
+#[path = "traits/store_provider.rs"]
 pub mod store_provider;
 /// Mutable point-in-time store snapshots.
+#[path = "traits/store_snapshot.rs"]
 pub mod store_snapshot;
 /// Track states used by cached storage entries.
+#[path = "cache/track_state.rs"]
 pub mod track_state;
+#[path = "transactions/transaction.rs"]
 pub mod transaction;
 /// Write-only store trait.
+#[path = "traits/write_store.rs"]
 pub mod write_store;
 
 pub use data_cache::{DataCache, Trackable};
-pub use read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
+pub use read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use seek_direction::SeekDirection;
 pub use store::Store;
 pub use store_cache::StoreCache;

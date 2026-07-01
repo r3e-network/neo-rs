@@ -289,8 +289,12 @@ fn build_and_sign_transaction(
     }
 
     let mut tx_clone = tx.clone();
-    let pending =
-        sign_transaction_with_wallet(&mut tx_clone, signers, &wallet, protocol_settings.network);
+    let pending = sign_transaction_with_wallet(
+        &mut tx_clone,
+        signers,
+        wallet.as_ref(),
+        protocol_settings.network,
+    );
     if pending.is_empty() {
         Ok(WalletInvocationOutcome::Signed(tx_clone.to_bytes()))
     } else {
@@ -302,14 +306,14 @@ fn build_and_sign_transaction(
 fn sign_transaction_with_wallet(
     tx: &mut Transaction,
     signers: &[Signer],
-    wallet: &Arc<dyn Wallet>,
+    wallet: &(impl Wallet + ?Sized),
     network: u32,
 ) -> Vec<PendingSignatureItem> {
     let mut pending = Vec::new();
     for signer in signers {
         match wallet.get_account(&signer.account) {
             Some(account) if account.has_key() => {
-                match build_account_witness(&account, tx, network) {
+                match build_account_witness(account.as_ref(), tx, network) {
                     Ok(witness) => tx.add_witness(witness),
                     Err(_) => pending.push(build_pending_item(signer.account, Some(account))),
                 }
@@ -322,7 +326,7 @@ fn sign_transaction_with_wallet(
 }
 
 fn build_account_witness(
-    account: &Arc<dyn WalletAccount>,
+    account: &(impl WalletAccount + ?Sized),
     tx: &Transaction,
     network: u32,
 ) -> CoreResult<Witness> {

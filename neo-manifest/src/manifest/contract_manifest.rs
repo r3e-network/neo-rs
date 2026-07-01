@@ -651,7 +651,6 @@ impl ContractManifest {
         let trusts_item = match &self.trusts {
             WildCardContainer::Wildcard => StackValue::Null,
             WildCardContainer::List(trusts) => StackValue::Array(
-                0,
                 trusts
                     .iter()
                     .map(ContractPermissionDescriptor::to_stack_value)
@@ -664,20 +663,17 @@ impl ContractManifest {
             None => b"null".to_vec(),
         };
 
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(self.name.as_bytes().to_vec()),
-                StackValue::Array(0, group_items),
-                // C# ContractManifest.ToStackItem always emits an empty features map.
-                StackValue::Map(0, Vec::new()),
-                StackValue::Array(0, standards_items),
-                self.abi.to_stack_value(),
-                StackValue::Array(0, permission_items),
-                trusts_item,
-                StackValue::ByteString(extra_bytes),
-            ],
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(self.name.as_bytes().to_vec()),
+            StackValue::Array(group_items),
+            // C# ContractManifest.ToStackItem always emits an empty features map.
+            StackValue::Map(Vec::new()),
+            StackValue::Array(standards_items),
+            self.abi.to_stack_value(),
+            StackValue::Array(permission_items),
+            trusts_item,
+            StackValue::ByteString(extra_bytes),
+        ])
     }
 
     /// Populates the manifest from the VM stack-value shape used by native interop.
@@ -685,7 +681,7 @@ impl ContractManifest {
         &mut self,
         stack_value: StackValue,
     ) -> std::result::Result<(), CoreError> {
-        let StackValue::Struct(0, items) = stack_value else {
+        let StackValue::Struct(items) = stack_value else {
             return Err(CoreError::invalid_format(
                 "ContractManifest expects Struct stack value",
             ));
@@ -705,7 +701,7 @@ impl ContractManifest {
             .map_err(|_| CoreError::invalid_format("ContractManifest name must be valid UTF-8"))?;
 
         self.groups = match &items[1] {
-            StackValue::Array(0, groups) => {
+            StackValue::Array(groups) => {
                 let mut values = Vec::with_capacity(groups.len());
                 for item in groups {
                     values.push(ContractGroup::try_from_stack_value(item.clone())?);
@@ -719,7 +715,7 @@ impl ContractManifest {
             }
         };
 
-        if let StackValue::Map(0, features) = &items[2] {
+        if let StackValue::Map(features) = &items[2] {
             if !features.is_empty() {
                 return Err(CoreError::invalid_format(
                     "ContractManifest features map must be empty",
@@ -733,7 +729,7 @@ impl ContractManifest {
         self.features.clear();
 
         self.supported_standards = match &items[3] {
-            StackValue::Array(0, standards) => {
+            StackValue::Array(standards) => {
                 let mut values = Vec::with_capacity(standards.len());
                 for item in standards {
                     if matches!(item, StackValue::Null) {
@@ -767,7 +763,7 @@ impl ContractManifest {
         self.abi = abi;
 
         self.permissions = match &items[5] {
-            StackValue::Array(0, permissions) => {
+            StackValue::Array(permissions) => {
                 let mut values = Vec::new();
                 for item in permissions {
                     let mut permission = ContractPermission::default_wildcard();
@@ -785,7 +781,7 @@ impl ContractManifest {
 
         self.trusts = match &items[6] {
             StackValue::Null => WildCardContainer::create_wildcard(),
-            StackValue::Array(0, trusts) => {
+            StackValue::Array(trusts) => {
                 let mut values = Vec::with_capacity(trusts.len());
                 for item in trusts {
                     values.push(ContractPermissionDescriptor::from_stack_value(
@@ -802,7 +798,7 @@ impl ContractManifest {
         };
 
         self.extra = match &items[7] {
-            StackValue::ByteString(bytes) | StackValue::Buffer(0, bytes) => {
+            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
                 parse_extra_bytes(bytes.as_slice())?
             }
             other => {

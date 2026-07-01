@@ -107,15 +107,16 @@ max_transactions = 321
     assert_eq!(settings.memory_pool_max_transactions, 321);
 }
 
-/// Accept C#-style / older shipped TOML aliases so operational settings are
-/// not lost when configs use names like `Engine`, `Port`, or `[dbft]`.
+/// Accept current operational aliases outside primary storage. The storage
+/// section itself is intentionally canonical (`backend`, `data_dir`,
+/// `read_only`) so production presets do not carry legacy C# spellings.
 #[test]
-fn node_config_accepts_csharp_style_operational_aliases() {
+fn node_config_accepts_non_storage_operational_aliases() {
     let toml = r#"
 [storage]
-Engine = "rocksdb"
-path = "./data/testnet"
-ReadOnly = true
+backend = "mdbx"
+data_dir = "./data/testnet"
+read_only = true
 
 [p2p]
 Port = 20333
@@ -156,7 +157,7 @@ BackfillOnStartup = false
 "#;
     let config: NodeConfig = toml::from_str(toml).expect("parses aliases");
 
-    assert_eq!(config.storage.backend.as_deref(), Some("rocksdb"));
+    assert_eq!(config.storage.backend.as_deref(), Some("mdbx"));
     assert_eq!(
         config.storage.data_directory(),
         Some(std::path::PathBuf::from("./data/testnet"))
@@ -200,6 +201,23 @@ BackfillOnStartup = false
 }
 
 #[test]
+fn storage_section_ignores_legacy_aliases() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[storage]
+Engine = "rocksdb"
+path = "./data/legacy"
+ReadOnly = true
+"#,
+    )
+    .expect("unknown storage keys are ignored by serde");
+
+    assert!(config.storage.backend.is_none());
+    assert!(config.storage.data_directory().is_none());
+    assert!(!config.storage.read_only);
+}
+
+#[test]
 fn storage_read_only_is_passed_to_rocksdb_open() {
     let temp = tempfile::tempdir().expect("temp RocksDB root");
     let missing_path = temp.path().join("missing-read-only-store");
@@ -222,6 +240,111 @@ read_only = true
     assert!(
         message.contains("failed to open RocksDB store"),
         "unexpected error: {message}"
+    );
+}
+
+#[test]
+fn mdbx_storage_backend_opens_through_store_factory() {
+    let temp = tempfile::tempdir().expect("temp MDBX root");
+    let db_path = temp.path().join("chain-mdbx");
+    let config: NodeConfig = toml::from_str(&format!(
+        r#"
+[storage]
+backend = "mdbx"
+data_dir = "{}"
+"#,
+        db_path.display()
+    ))
+    .expect("parse mdbx storage config");
+
+    let store = open_store(&config, None).expect("open MDBX store");
+
+    assert!(store.as_any().is::<neo_storage::mdbx::MdbxStore>());
+}
+
+#[test]
+fn storage_path_defaults_to_mdbx_persistent_backend() {
+    let temp = tempfile::tempdir().expect("temp MDBX root");
+    let db_path = temp.path().join("chain-default-mdbx");
+    let config = NodeConfig::default();
+
+    let store = open_store(&config, Some(&db_path)).expect("open default persistent store");
+
+    assert!(store.as_any().is::<neo_storage::mdbx::MdbxStore>());
+}
+
+#[test]
+fn storage_section_parses_mdbx_geometry_tuning() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[storage]
+backend = "mdbx"
+mdbx_geometry_upper_gb = 768
+mdbx_geometry_growth_mb = 512
+mdbx_max_readers = 8192
+"#,
+    )
+    .expect("parse mdbx geometry config");
+
+    assert_eq!(config.storage.mdbx_geometry_upper_gb, Some(768));
+    assert_eq!(config.storage.mdbx_geometry_growth_mb, Some(512));
+    assert_eq!(config.storage.mdbx_max_readers, Some(8192));
+}
+
+#[test]
+fn persistent_storage_default_has_no_non_mdbx_compile_time_fallback() {
+    let source = include_str!("../../node/config/validation.rs");
+
+    assert!(
+        !source.contains("cfg(not(feature = \"mdbx-store\"))"),
+        "persistent node storage must not compile a hidden non-MDBX fallback"
+    );
+}
+
+#[test]
+fn storage_read_only_is_passed_to_mdbx_open() {
+    let temp = tempfile::tempdir().expect("temp MDBX root");
+    let missing_path = temp.path().join("missing-read-only-store");
+    let config: NodeConfig = toml::from_str(&format!(
+        r#"
+[storage]
+backend = "mdbx"
+data_dir = "{}"
+read_only = true
+"#,
+        missing_path.display()
+    ))
+    .expect("parse read-only mdbx storage config");
+
+    let err = match open_store(&config, None) {
+        Ok(_) => panic!("read-only MDBX should not create stores"),
+        Err(err) => err,
+    };
+    let message = err.to_string();
+    assert!(
+        message.contains("failed to open mdbx store"),
+        "unexpected error: {message}"
+    );
+}
+
+#[test]
+fn open_store_rejects_unknown_storage_backend() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[storage]
+backend = "rockdb"
+"#,
+    )
+    .expect("parse config");
+
+    let err = match open_store(&config, None) {
+        Ok(_) => panic!("unknown storage backend must be rejected"),
+        Err(err) => err,
+    };
+
+    assert!(
+        err.to_string().contains("unsupported [storage].backend"),
+        "unexpected error: {err}"
     );
 }
 
@@ -377,6 +500,59 @@ fn shipped_public_configs_match_v3100_p2p_channel_defaults() {
     }
 }
 
+/// Production/public presets must make MDBX geometry explicit. MDBX is the
+/// default persistent backend, so hiding these values behind code defaults
+/// makes operator capacity and reader concurrency drift invisible.
+#[test]
+fn shipped_mdbx_configs_pin_geometry_defaults() {
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("neo-node has a workspace parent");
+    let cases = [
+        "config/mainnet.toml",
+        "config/mainnet-service.toml",
+        "config/mainnet-stateroot.toml",
+        "neo_mainnet_node.toml",
+        "neo_production_node.toml",
+        "config/testnet.toml",
+        "config/testnet-service.toml",
+        "neo_testnet_node.toml",
+    ];
+
+    for relative in cases {
+        let path = workspace.join(relative);
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+        let config: NodeConfig =
+            toml::from_str(&text).unwrap_or_else(|err| panic!("parse {}: {err}", path.display()));
+
+        assert_eq!(
+            config
+                .storage
+                .backend
+                .as_deref()
+                .map(str::to_ascii_lowercase),
+            Some("mdbx".to_string()),
+            "{relative} must use MDBX for persistent storage"
+        );
+        assert_eq!(
+            config.storage.mdbx_geometry_upper_gb,
+            Some(512),
+            "{relative} must pin MDBX map upper geometry"
+        );
+        assert_eq!(
+            config.storage.mdbx_geometry_growth_mb,
+            Some(256),
+            "{relative} must pin MDBX map growth step"
+        );
+        assert_eq!(
+            config.storage.mdbx_max_readers,
+            Some(4096),
+            "{relative} must pin MDBX reader capacity"
+        );
+    }
+}
+
 /// A missing config file falls back to the built-in defaults (the
 /// MainNet preset) rather than failing.
 #[test]
@@ -420,6 +596,8 @@ fn node_cli_accepts_preflight_flags() {
         "1234",
         "--stop-at-height",
         "665603",
+        "--remote-ledger-rpc",
+        "https://rpc.example.invalid",
         "--check-all",
     ])
     .expect("preflight args parse");
@@ -428,6 +606,10 @@ fn node_cli_accepts_preflight_flags() {
     assert_eq!(cli.storage_path, Some(PathBuf::from("./data/custom")));
     assert_eq!(cli.network_magic, Some(1234));
     assert_eq!(cli.stop_at_height, Some(665603));
+    assert_eq!(
+        cli.remote_ledger_rpc.as_deref(),
+        Some("https://rpc.example.invalid")
+    );
     assert!(cli.check_all);
     assert!(!cli.check_config);
     assert!(!cli.check_storage);

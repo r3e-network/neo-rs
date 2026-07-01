@@ -3,77 +3,54 @@
 // Licensed under the MIT License
 // See LICENSE file for details
 
-//! # Neo Execution Engine
+//! # neo-execution
 //!
-//! The canonical home for the Neo N3 smart-contract execution engine and
-//! all of the interop, storage, iterator, and contract-management helpers
-//! the engine needs to dispatch syscalls. The actual native contracts
-//! (NEO, GAS, Policy, Oracle, …) live in the [`neo_native_contracts`]
-//! crate; the seam between this crate and the native-contracts crate is
-//! the abstract [`NativeContract`] trait and the [`NativeRegistry`] type
-//! that the engine consults when dispatching `System.Contract.CallNative`.
+//! Neo application execution, interop host logic, contract state, and storage
+//! helpers.
 //!
-//! ## Layer position
+//! ## Boundary
 //!
-//! This is a **Layer 2 (Service)** crate. It depends on the foundation
-//! crates (`neo-vm`, `neo-primitives`, `neo-crypto`, `neo-config`,
-//! `neo-storage`, `neo-io`, `neo-error`, `neo-serialization`,
-//! `neo-manifest`, `neo-payloads`) and the [`neo_native_contracts`]
-//! crate provides the concrete `NativeContract` implementations.
+//! This execution crate owns VM/native interop behavior and must not own
+//! durable storage engines, P2P sync, or application startup.
+//!
+//! ## Contents
+//!
+//! - `application_engine`: ApplicationEngine interop groups and execution-
+//!   facing syscall handlers.
+//! - `contracts`: Contract metadata, manifests, deployed-state records, and
+//!   contract parameter types.
+//! - `interop`: Interop host glue between NeoVM execution and native/runtime
+//!   services.
+//! - `iterators`: Iterator adapters exposed to contract execution and storage
+//!   search.
+//! - `native`: Native contract abstractions and registries used by execution.
+//! - `runtime`: Runtime flags, execution context state, and VM-facing support
+//!   types.
+//! - `storage`: Storage contexts, key builders, and storage item helpers for
+//!   execution.
 
 // ============================================================================
 // Application engine
 // ============================================================================
 pub mod application_engine;
 
-// ============================================================================
-// Interop service modules (registered into the ApplicationEngine)
-// ============================================================================
-pub mod application_engine_contract;
-pub mod application_engine_crypto;
-pub mod application_engine_helper;
-pub mod application_engine_iterator;
-pub mod application_engine_op_code_prices;
-pub mod application_engine_runtime;
-pub mod application_engine_storage;
+/// Smart-contract model types used by the execution engine.
+pub mod contracts;
+/// NeoVM syscall handlers registered into the application engine.
+pub mod interop;
 
 // ============================================================================
 // Iterators
 // ============================================================================
 pub mod iterators;
 
-// ============================================================================
-// Native contract abstract types (trait, registry, cache, method metadata)
-// ============================================================================
-pub mod hardfork_activable;
-pub mod native_contract;
-/// Cached native-contract state used while composing native manifests and storage.
-pub mod native_contract_cache;
-pub mod native_contract_provider;
-pub mod native_registry;
+/// Native-contract traits, registries, and metadata consumed by the engine.
+pub mod native;
 
-// ============================================================================
-// Core smart-contract data types
-// ============================================================================
-/// `InteropInterface` wrapper for BLS12-381 curve points (CryptoLib).
-pub mod bls12381_interop;
-pub mod contract;
-pub mod contract_parameter;
-pub mod contract_parameters_context;
-pub mod contract_state;
-pub mod deployed_contract;
-pub mod diagnostic;
-pub mod engine_provider;
-/// Environment flag helpers used by execution diagnostics and optional profiling.
-pub mod env_flags;
-pub mod execution_context_state;
-pub mod helper;
-pub mod interoperable;
-pub mod key_builder;
-pub mod max_length_attribute;
-pub mod notify_event_args;
-pub mod storage_context;
-pub mod storage_item_ext;
+/// Runtime support types for diagnostics, helpers, and VM interop wrappers.
+pub mod runtime;
+/// Storage-key and storage-context helpers used during execution.
+pub mod storage;
 
 // ============================================================================
 // Re-exports at the crate root
@@ -101,3 +78,22 @@ pub use neo_primitives::TriggerType;
 pub use notify_event_args::NotifyEventArgs;
 pub use storage_context::StorageContext;
 pub use storage_item_ext::StorageItemExt;
+
+pub use contracts::{
+    contract, contract_parameter, contract_parameters_context, contract_state, deployed_contract,
+    max_length_attribute,
+};
+pub use interop::{
+    application_engine_contract, application_engine_crypto, application_engine_helper,
+    application_engine_iterator, application_engine_op_code_prices, application_engine_runtime,
+    application_engine_storage,
+};
+pub use native::{
+    hardfork_activable, native_contract, native_contract_cache, native_contract_provider,
+    native_registry,
+};
+pub use runtime::{
+    bls12381_interop, diagnostic, engine_provider, env_flags, execution_context_state, helper,
+    interoperable, notify_event_args,
+};
+pub use storage::{key_builder, storage_context, storage_item_ext};

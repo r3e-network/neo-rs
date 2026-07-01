@@ -1,0 +1,67 @@
+use super::super::utility::insert_optional_string;
+use neo_config::ProtocolSettings;
+use neo_error::{CoreError, CoreResult};
+use neo_payloads::Block;
+use neo_primitives::UInt256;
+use neo_serialization::json::JObject;
+use serde::{Deserialize, Serialize};
+
+/// RPC block information matching C# `RpcBlock`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcBlock {
+    /// The block data
+    pub block: Block,
+
+    /// Number of confirmations
+    pub confirmations: u32,
+
+    /// Hash of the next block
+    pub next_block_hash: Option<UInt256>,
+}
+
+impl RpcBlock {
+    /// Converts to JSON
+    /// Matches C# `ToJson`
+    #[must_use]
+    pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
+        let mut json = super::super::utility::block_to_json(&self.block, protocol_settings);
+        json.insert(
+            "confirmations".to_string(),
+            neo_serialization::json::JToken::Number(f64::from(self.confirmations)),
+        );
+
+        insert_optional_string(
+            &mut json,
+            "nextblockhash",
+            self.next_block_hash.as_ref().map(ToString::to_string),
+        );
+        json
+    }
+
+    /// Creates from JSON
+    /// Matches C# `FromJson`
+    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> CoreResult<Self> {
+        let block = super::super::utility::block_from_json(json, protocol_settings)?;
+
+        let confirmations = json
+            .get("confirmations")
+            .and_then(neo_serialization::json::JToken::as_number)
+            .ok_or_else(|| CoreError::other("Missing or invalid 'confirmations' field"))?
+            as u32;
+
+        let next_block_hash = json
+            .get("nextblockhash")
+            .and_then(neo_serialization::json::JToken::as_string)
+            .and_then(|s| UInt256::parse(&s).ok());
+
+        Ok(Self {
+            block,
+            confirmations,
+            next_block_hash,
+        })
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../tests/client/models/ledger/rpc_block.rs"]
+mod tests;

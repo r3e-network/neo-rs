@@ -1,6 +1,6 @@
 use super::error::{MptError, MptResult};
 use super::node::Node;
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_io::{MemoryReader, Serializable, SerializableExtensions};
 use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
 use std::collections::HashMap;
@@ -15,12 +15,6 @@ enum TrackState {
     Deleted,
 }
 
-fn to_array<T: Serializable>(value: &T) -> neo_io::IoResult<Vec<u8>> {
-    let mut writer = BinaryWriter::new();
-    value.serialize(&mut writer)?;
-    Ok(writer.into_bytes())
-}
-
 /// Abstraction over the persistence snapshot used by the trie cache.
 pub trait MptStoreSnapshot: Send + Sync {
     /// Retrieves the serialized node associated with the specified key.
@@ -31,6 +25,20 @@ pub trait MptStoreSnapshot: Send + Sync {
 
     /// Removes the value associated with the supplied key.
     fn delete(&self, key: Vec<u8>) -> MptResult<()>;
+
+    /// Applies a batch of serialized-node mutations.
+    ///
+    /// The default preserves the original per-entry semantics. Hot write-batch
+    /// stores can override this to merge bookkeeping/lock acquisition.
+    fn apply_overlay(&self, overlay: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> MptResult<()> {
+        for (key, value) in overlay {
+            match value {
+                Some(value) => self.put(key, value)?,
+                None => self.delete(key)?,
+            }
+        }
+        Ok(())
+    }
 }
 
 struct MptTrackable {
@@ -83,6 +91,18 @@ where
     /// Adds or updates the supplied node inside the cache.
     pub fn put_node(&mut self, node: Node) -> MptResult<()> {
         let hash = node.try_hash()?;
+        self.put_node_with_hash(node, hash)
+    }
+
+    /// Adds or updates the supplied node inside the cache while keeping the
+    /// caller's node hash cached.
+    pub(crate) fn put_node_cached(&mut self, node: &mut Node) -> MptResult<()> {
+        node.set_dirty();
+        let hash = node.try_hash()?;
+        self.put_node_with_hash(node.clone_with_cached_hash(), hash)
+    }
+
+    fn put_node_with_hash(&mut self, node: Node, hash: UInt256) -> MptResult<()> {
         let entry = self.resolve_internal(&hash)?;
 
         if let Some(ref mut existing) = entry.node {
@@ -116,6 +136,7 @@ where
 
     /// Flushes the pending changes to the underlying store.
     pub fn commit(&mut self) -> MptResult<()> {
+        let mut overlay = Vec::with_capacity(self.entries.len());
         for (hash, entry) in &self.entries {
             match entry.state {
                 TrackState::None => {}
@@ -124,14 +145,15 @@ where
                         .node
                         .as_ref()
                         .ok_or_else(|| MptError::invalid("cache entry missing node"))?;
-                    let data = to_array(node).map_err(MptError::from)?;
-                    self.store.put(self.key(hash), data)?;
+                    let data = node.to_array().map_err(MptError::from)?;
+                    overlay.push((self.key(hash), Some(data)));
                 }
                 TrackState::Deleted => {
-                    self.store.delete(self.key(hash))?;
+                    overlay.push((self.key(hash), None));
                 }
             }
         }
+        self.store.apply_overlay(overlay)?;
         self.entries.clear();
         Ok(())
     }
@@ -150,7 +172,7 @@ where
     }
 
     fn load_from_store_snapshot(store: &S, prefix: u8, hash: &UInt256) -> MptResult<Option<Node>> {
-        let key = Self::key_for(prefix, hash);
+        let key = Self::key_bytes(prefix, hash);
         let Some(bytes) = store.try_get(&key)? else {
             return Ok(None);
         };
@@ -164,9 +186,13 @@ where
     }
 
     fn key_for(prefix: u8, hash: &UInt256) -> Vec<u8> {
-        let mut buffer = Vec::with_capacity(1 + UINT256_SIZE);
-        buffer.push(prefix);
-        buffer.extend_from_slice(&hash.to_bytes());
+        Self::key_bytes(prefix, hash).to_vec()
+    }
+
+    fn key_bytes(prefix: u8, hash: &UInt256) -> [u8; 1 + UINT256_SIZE] {
+        let mut buffer = [0u8; 1 + UINT256_SIZE];
+        buffer[0] = prefix;
+        buffer[1..].copy_from_slice(&hash.to_array());
         buffer
     }
 }

@@ -4,11 +4,15 @@ use tracing::{debug, warn};
 
 use crate::command::AddTransactionReply;
 use crate::fill_memory_pool::FillMemoryPool;
-use crate::service::BlockchainService;
+use crate::service::{BlockchainService, MempoolLike};
 
 /// C# `Blockchain.MaxTxToReverifyPerIdle`.
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
-impl BlockchainService {
+impl<S, M> BlockchainService<S, M>
+where
+    S: crate::service_context::SystemContext,
+    M: MempoolLike,
+{
     fn persisted_transaction_exists(&self, hash: &neo_primitives::UInt256) -> bool {
         let Some(snapshot) = self.system.store_snapshot() else {
             return false;
@@ -76,11 +80,13 @@ impl BlockchainService {
         if block_index > 0 && self.header_cache.count() > 0 {
             return false;
         }
+        if !self.mempool.has_unverified_transactions() {
+            return false;
+        }
         let Some(snapshot) = self.system.store_snapshot() else {
             return false;
         };
         self.mempool
-            .lock()
             .reverify_top_unverified(snapshot.as_ref(), max_count)
     }
 
@@ -163,15 +169,14 @@ impl BlockchainService {
         // store snapshot so admission runs the real verification pipeline.
         // Contexts without a store (lightweight tests) fall back to an
         // empty cache, which fails state-dependent checks closed.
-        let result = {
-            let pool = self.mempool.lock();
-            let settings = self.system.settings();
-            match self.system.store_snapshot() {
-                Some(snapshot) => pool.try_add(&transaction, snapshot.as_ref(), &settings),
-                None => {
-                    let snapshot = neo_storage::DataCache::new(false);
-                    pool.try_add(&transaction, &snapshot, &settings)
-                }
+        let settings = self.system.settings();
+        let result = match self.system.store_snapshot() {
+            Some(snapshot) => self
+                .mempool
+                .try_add(&transaction, snapshot.as_ref(), &settings),
+            None => {
+                let snapshot = neo_storage::DataCache::new(false);
+                self.mempool.try_add(&transaction, &snapshot, &settings)
             }
         };
 
@@ -209,13 +214,14 @@ impl BlockchainService {
             return VerifyResult::HasConflicts;
         }
 
-        let pool = self.mempool.lock();
         let settings = self.system.settings();
         let result = match self.system.store_snapshot() {
-            Some(snapshot) => pool.try_add(transaction, snapshot.as_ref(), &settings),
+            Some(snapshot) => self
+                .mempool
+                .try_add(transaction, snapshot.as_ref(), &settings),
             None => {
                 let snapshot = neo_storage::DataCache::new(false);
-                pool.try_add(transaction, &snapshot, &settings)
+                self.mempool.try_add(transaction, &snapshot, &settings)
             }
         };
         if result == VerifyResult::Succeed {

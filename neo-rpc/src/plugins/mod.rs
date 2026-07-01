@@ -1,6 +1,17 @@
-//! Plugin implementations for the Neo RPC server.
+//! # neo-rpc::plugins
 //!
-//! Modules under this tree are feature-gated behind `#[cfg(feature = "server")]`.
+//! RPC plugin adapters and optional extension surfaces.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `tokens_tracker`: Token tracker plugin wiring and index-derived token
+//!   views.
 
 #[cfg(feature = "server")]
 pub mod tokens_tracker;

@@ -1,3 +1,18 @@
+//! # neo-rpc::server::parameter_converter
+//!
+//! RPC parameter parsing and type conversion helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `signers`: RPC signer parameter parsing helpers.
+//! - `tests`: Module-local tests and regression coverage.
+
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_execution::contract_parameter::ContractParameter;
 use neo_primitives::UInt160;
@@ -11,7 +26,7 @@ use super::rpc_exception::RpcException;
 
 mod signers;
 #[cfg(test)]
-#[path = "../../tests/server/parameter_converter.rs"]
+#[path = "../../tests/server/core/parameter_converter.rs"]
 mod tests;
 
 /// Context supplied when converting RPC parameters.

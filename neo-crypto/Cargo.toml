@@ -63,7 +63,12 @@ serde_json = { workspace = true }
 
 [[bench]]
 name = "crypto_ops"
+path = "benches/crypto/crypto_ops.rs"
 harness = false
+
+[[test]]
+name = "crypto_properties"
+path = "tests/properties/crypto_properties.rs"
 
 [features]
 default = []

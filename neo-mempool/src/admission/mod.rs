@@ -1,0 +1,24 @@
+//! # neo-mempool::admission
+//!
+//! Mempool admission, preverification, and transaction routing logic.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-mempool`. This service crate owns transaction
+//! pool policy and must not persist blocks, run consensus, or expose RPC
+//! transport details.
+//!
+//! ## Contents
+//!
+//! - `transaction_router`: mempool transaction router.
+//! - `transaction_verification_context`: transaction verification context types
+//!   and helpers.
+//! - `verification`: validation verdicts and verification coverage.
+
+pub mod transaction_router;
+pub mod transaction_verification_context;
+pub mod verification;
+
+pub use transaction_router::{PreverifyCompleted, TransactionRouter};
+pub use transaction_verification_context::TransactionVerificationContext;
+pub use verification::{verify_state_dependent, verify_state_independent, verify_transaction};

@@ -1,48 +1,25 @@
-//! # Neo Storage
+//! # neo-storage
 //!
-//! Storage traits and types for the Neo blockchain.
+//! Store traits, cache overlays, storage-domain types, and concrete backends.
 //!
-//! ## Crate Purpose
+//! ## Boundary
 //!
-//! This crate provides the **single source of truth** for all storage-related
-//! functionality in the Neo ecosystem. It includes:
+//! This infrastructure crate owns store mechanics and must not execute
+//! contracts, import blocks, or make RPC/network policy decisions.
 //!
-//! - **Storage traits**: `ReadOnlyStore`, `WriteStore`, `Store`, `StoreSnapshot`
-//! - **Storage types**: `StorageKey`, `StorageItem`, `SeekDirection`, `TrackState`
-//! - **Cache**: `DataCache`, `Trackable` for in-memory caching with tracking
-//! - **Hash utilities**: C#-compatible xxhash3 implementation for storage keys
-//! - **Key building**: Fluent API for constructing storage keys
+//! ## Contents
 //!
-//! ## Core Components
-//!
-//! - [`ReadOnlyStore`]: Read-only storage operations (`try_get`, contains)
-//! - [`WriteStore`]: Write operations (put, delete)
-//! - [`Store`]: Combined read/write interface
-//! - [`StoreSnapshot`]: Point-in-time snapshot with seek/find operations
-//! - [`StorageKey`]: Storage key with contract ID and key suffix (C# parity)
-//! - [`StorageItem`]: Storage value with constant flag support
-//! - [`DataCache`]: In-memory cache with change tracking
-//! - [`SeekDirection`]: Forward/Backward iteration direction
-//! - [`TrackState`]: Cache tracking states (None, Added, Changed, Deleted, `NotFound`)
-//!
-//! ## Example
-//!
-//! ```rust,ignore
-//! use neo_storage::{ReadOnlyStore, StorageKey, StorageItem};
-//! use neo_primitives::UInt160;
-//!
-//! fn read_value<S: ReadOnlyStore>(store: &S, key: &StorageKey) -> Option<StorageItem> {
-//!     store.try_get(key)
-//! }
-//!
-//! // Create storage key with UInt160
-//! let hash = UInt160::zero();
-//! let key = StorageKey::create_with_uint160(-1, 0x14, &hash);
-//! ```
+//! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
+//! - `errors`: Typed errors and result aliases for this crate boundary.
+//! - `persistence`: Persistence traits, snapshots, transactions, and cache
+//!   overlays.
+//! - `mdbx`: Production default MDBX provider and store adapter.
+//! - `rocksdb`: RocksDB provider, store, snapshot, and write-batch adapter.
+//! - `types`: Storage-domain types shared by store implementations.
 
-pub mod error;
-pub mod hash_utils;
-pub mod key_builder;
+mod core;
+mod errors;
+pub mod mdbx;
 /// Persistence traits, caches, snapshots, and in-memory store providers.
 pub mod persistence;
 pub mod rocksdb;
@@ -50,9 +27,9 @@ pub mod types;
 
 // Canonical cache types live in `persistence::data_cache`; re-export the common
 // surface at the crate root for ergonomic access.
-pub use error::{StorageError, StorageResult};
-pub use hash_utils::{DEFAULT_XX_HASH3_SEED, XxHash3};
-pub use key_builder::{KeyBuilder, KeyBuilderError};
+pub use core::{DEFAULT_XX_HASH3_SEED, KeyBuilder, KeyBuilderError, XxHash3};
+pub use core::{hash_utils, key_builder};
+pub use errors::{StorageError, StorageResult, error};
 pub use persistence::data_cache::{
     DataCache, DataCacheError, DataCacheResult, Trackable, TrackableEntry,
 };

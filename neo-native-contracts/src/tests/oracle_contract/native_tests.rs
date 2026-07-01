@@ -1,27 +1,11 @@
 use super::super::request::OracleIdList;
 use super::super::*;
-use crate::test_support::deploy_native as deploy_contract;
-use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;
-use neo_execution::contract_state::ContractState;
-use neo_execution::native_contract::build_native_contract_state;
-use neo_manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
-    ContractPermission, NefFile, WildCardContainer,
-};
-use neo_payloads::signer::Signer;
-use neo_payloads::witness::Witness;
-use neo_payloads::{Block, BlockHeader, OracleResponse, TransactionAttribute};
-use neo_primitives::{
-    CallFlags, ContractParameterType, OracleResponseCode, TriggerType, UInt256, Verifiable,
-    WitnessScope,
-};
+use neo_primitives::{CallFlags, ContractParameterType, UInt256};
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::Interoperable;
-use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, StackValue, VmState};
-use std::sync::Arc;
+use neo_vm_rs::StackValue;
 // ===== from oracle_native_tests.rs =====
 #[test]
 fn native_contract_surface() {
@@ -264,7 +248,7 @@ fn oracle_storage_codecs_use_stack_value_projection() {
     assert!(!id_list_decoder.contains("stack_value_as_bigint"));
     assert!(!id_list_decoder.contains("BinarySerializer::deserialize("));
 
-    let source = include_str!("../../oracle_contract.rs");
+    let source = include_str!("../../oracle_contract/mod.rs");
     // C# OracleContract.Request stores `BinarySerializer.Serialize(userData,
     // MaxUserDataLength, engine.Limits.MaxStackSize)` (OracleContract.cs:265).
     // The Rust request path only needs a value projection before reserializing
@@ -292,7 +276,7 @@ fn invoke_request_args_use_shared_raw_parsers() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("../../oracle_contract.rs");
+    let source = include_str!("../../oracle_contract/mod.rs");
     let set_price = slice_between(source, "\"setPrice\" =>", "\"request\" =>");
     assert!(set_price.contains("crate::args::raw_i64_arg"));
     assert!(!set_price.contains("BigInt::from_signed_bytes_le(args"));
@@ -352,7 +336,6 @@ fn oracle_id_list_interoperable_projection_matches_csharp_shape() {
     let ids = vec![0u64, 7, u64::MAX];
     let state = OracleIdList::new(ids.clone());
     let expected_value = StackValue::Array(
-        0,
         ids.iter()
             .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
             .collect::<Vec<_>>(),

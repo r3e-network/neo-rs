@@ -1,6 +1,17 @@
-//! Remote attestation support for TEE verification
+//! # neo-tee::attestation
 //!
-//! Provides attestation services to prove code is running inside a genuine TEE.
+//! TEE attestation evidence and verification helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-tee`. This adapter crate owns TEE integration
+//! and must not define protocol bytes, consensus rules, or storage semantics.
+//!
+//! ## Contents
+//!
+//! - `report`: TEE attestation report records.
+//! - `service`: Service loops, handles, lifecycle helpers, and command
+//!   processing.
 
 mod report;
 mod service;

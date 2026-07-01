@@ -1,7 +1,10 @@
 use super::memory_store::MemoryStore;
 use crate::persistence::{
-    read_only_store::ReadOnlyStoreGeneric, seek_direction::SeekDirection, store::Store,
-    store_snapshot::StoreSnapshot, write_store::WriteStore,
+    read_only_store::{RawReadOnlyStore, ReadOnlyStoreGeneric},
+    seek_direction::SeekDirection,
+    store::Store,
+    store_snapshot::StoreSnapshot,
+    write_store::WriteStore,
 };
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
@@ -12,14 +15,17 @@ type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
 
 /// Point-in-time snapshot over an in-memory store.
 pub struct MemorySnapshot {
-    store: Arc<dyn Store>,
+    store: Arc<MemoryStore>,
     immutable_data: BTreeMap<Vec<u8>, Vec<u8>>,
     write_batch: WriteBatch,
 }
 
 impl MemorySnapshot {
     /// Creates a new MemorySnapshot.
-    pub fn new(store: Arc<dyn Store>, inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>) -> Self {
+    pub fn new(
+        store: Arc<MemoryStore>,
+        inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
+    ) -> Self {
         let immutable_data = inner_data.read().clone();
         Self {
             store,
@@ -63,6 +69,12 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
     }
 }
 
+impl RawReadOnlyStore for MemorySnapshot {
+    fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.immutable_data.get(key).cloned()
+    }
+}
+
 impl WriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
     fn delete(&mut self, key: Vec<u8>) -> crate::error::StorageResult<()> {
         self.write_batch.write().insert(key, None);
@@ -84,19 +96,7 @@ impl StoreSnapshot for MemorySnapshot {
         {
             // Apply write batch to the store.
             let batch = self.write_batch.read();
-            // The underlying store must be a MemoryStore; otherwise the pending
-            // writes have nowhere to go. Fail loudly instead of silently
-            // discarding the batch, which would cause undetected data loss.
-            match self.store.as_any().downcast_ref::<MemoryStore>() {
-                Some(mem) => mem.apply_batch(&batch),
-                None => {
-                    return Err(crate::error::StorageError::CommitFailed(
-                        "MemorySnapshot::try_commit: underlying store is not a MemoryStore; \
-                         pending writes were not applied"
-                            .to_string(),
-                    ));
-                }
-            }
+            self.store.apply_batch(&batch);
             // drop read guard before acquiring write lock
         }
 

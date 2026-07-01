@@ -16,7 +16,7 @@ pub type OnEntryDelegate = Arc<dyn Fn(&DataCache, &StorageKey, &StorageItem) + S
 pub(crate) type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
 pub(crate) type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
-pub(crate) type CommitApplyFn = dyn Fn(&[(StorageKey, Trackable)]) + Send + Sync;
+pub(crate) type CommitApplyFn = dyn Fn(&DataCache) + Send + Sync;
 
 /// Represents a cache for the underlying storage of the NEO blockchain.
 pub struct DataCache {
@@ -39,6 +39,15 @@ pub struct DataCache {
     /// Optional commit sink used by cloned overlays to propagate tracked
     /// changes into their parent cache (mirrors Neo C# ClonedCache semantics).
     commit_apply: Option<Arc<CommitApplyFn>>,
+    /// Counts parent write passes used by cloned-cache merges in tests.
+    #[cfg(test)]
+    merge_write_passes: Arc<AtomicUsize>,
+    /// Counts tracked-item snapshot materializations in tests.
+    #[cfg(test)]
+    tracked_items_calls: Arc<AtomicUsize>,
+    /// Counts zero-copy tracked-item visits in tests.
+    #[cfg(test)]
+    tracked_item_visit_calls: Arc<AtomicUsize>,
 }
 
 fn key_matches_prefix(key: &StorageKey, prefix: Option<&[u8]>) -> bool {
@@ -75,6 +84,12 @@ impl Clone for DataCache {
             ref_count: Arc::clone(&self.ref_count),
             config: self.config,
             commit_apply: self.commit_apply.as_ref().map(Arc::clone),
+            #[cfg(test)]
+            merge_write_passes: Arc::clone(&self.merge_write_passes),
+            #[cfg(test)]
+            tracked_items_calls: Arc::clone(&self.tracked_items_calls),
+            #[cfg(test)]
+            tracked_item_visit_calls: Arc::clone(&self.tracked_item_visit_calls),
         }
     }
 }
@@ -151,6 +166,12 @@ impl DataCache {
             ref_count: Arc::new(AtomicUsize::new(1)),
             config,
             commit_apply: None,
+            #[cfg(test)]
+            merge_write_passes: Arc::new(AtomicUsize::new(0)),
+            #[cfg(test)]
+            tracked_items_calls: Arc::new(AtomicUsize::new(0)),
+            #[cfg(test)]
+            tracked_item_visit_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -183,29 +204,128 @@ impl DataCache {
 
         let mut overlay =
             Self::new_with_config(false, Some(store_get), Some(store_find), self.config);
-        overlay.commit_apply = Some(Arc::new(move |items: &[(StorageKey, Trackable)]| {
-            commit_parent.merge_tracked_items(items);
+        overlay.commit_apply = Some(Arc::new(move |cache: &DataCache| {
+            commit_parent.merge_tracked_items_from(cache);
         }));
         overlay
     }
 
-    /// Merges tracked changes from another cache into this one.
-    pub fn merge_tracked_items(&self, items: &[(StorageKey, Trackable)]) {
-        for (key, trackable) in items {
+    fn merge_tracked_items_from(&self, source: &DataCache) {
+        if self.on_update.read().is_empty() {
+            self.merge_tracked_items_without_update_callbacks(source);
+            return;
+        }
+
+        source.visit_tracked_items(|key, trackable| {
+            self.merge_tracked_item(key, trackable);
+        });
+    }
+
+    fn merge_tracked_items_without_update_callbacks(&self, source: &DataCache) {
+        let source_state = source.state.read();
+        if source_state.change_set.is_empty() {
+            return;
+        }
+
+        let mut state = self.state.write();
+        #[cfg(test)]
+        self.merge_write_passes
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        for key in &source_state.change_set {
+            let Some(trackable) = source_state.dictionary.get(key) else {
+                continue;
+            };
             log_watched_storage_event(
                 "merge",
-                "merge_tracked_items",
+                "merge_tracked_items_fast",
                 key,
                 None,
                 Some(trackable.state),
                 Some(&trackable.item),
             );
             match trackable.state {
-                TrackState::Added => self.add(key.clone(), trackable.item.clone()),
-                TrackState::Changed => self.update(key.clone(), trackable.item.clone()),
-                TrackState::Deleted => self.delete(key),
+                TrackState::Added => {
+                    let prev_state = state
+                        .dictionary
+                        .get(key)
+                        .map(|t| t.state)
+                        .unwrap_or(TrackState::NotFound);
+                    let new_state = match prev_state {
+                        TrackState::Deleted => TrackState::Changed,
+                        TrackState::NotFound => TrackState::Added,
+                        TrackState::Added | TrackState::Changed | TrackState::None => {
+                            continue;
+                        }
+                    };
+                    state.dictionary.insert(
+                        key.clone(),
+                        Trackable::new(trackable.item.clone(), new_state),
+                    );
+                    state.change_set.insert(key.clone());
+                }
+                TrackState::Changed => {
+                    let prev_state = state
+                        .dictionary
+                        .get(key)
+                        .map(|t| t.state)
+                        .unwrap_or(TrackState::NotFound);
+                    let new_state = match prev_state {
+                        TrackState::Added => TrackState::Added,
+                        TrackState::Changed | TrackState::None => TrackState::Changed,
+                        TrackState::Deleted => TrackState::Changed,
+                        TrackState::NotFound => TrackState::Changed,
+                    };
+                    state.dictionary.insert(
+                        key.clone(),
+                        Trackable::new(trackable.item.clone(), new_state),
+                    );
+                    state.change_set.insert(key.clone());
+                }
+                TrackState::Deleted => match state
+                    .dictionary
+                    .get(key)
+                    .map(|trackable| trackable.state)
+                    .unwrap_or(TrackState::NotFound)
+                {
+                    TrackState::Added => {
+                        state.dictionary.remove(key);
+                        state.change_set.remove(key);
+                    }
+                    TrackState::Changed | TrackState::None | TrackState::NotFound => {
+                        state.dictionary.insert(
+                            key.clone(),
+                            Trackable::new(StorageItem::default(), TrackState::Deleted),
+                        );
+                        state.change_set.insert(key.clone());
+                    }
+                    TrackState::Deleted => {}
+                },
                 TrackState::None | TrackState::NotFound => {}
             }
+        }
+    }
+
+    /// Merges tracked changes from another cache into this one.
+    pub fn merge_tracked_items(&self, items: &[(StorageKey, Trackable)]) {
+        for (key, trackable) in items {
+            self.merge_tracked_item(key, trackable);
+        }
+    }
+
+    fn merge_tracked_item(&self, key: &StorageKey, trackable: &Trackable) {
+        log_watched_storage_event(
+            "merge",
+            "merge_tracked_items",
+            key,
+            None,
+            Some(trackable.state),
+            Some(&trackable.item),
+        );
+        match trackable.state {
+            TrackState::Added => self.add(key.clone(), trackable.item.clone()),
+            TrackState::Changed => self.update(key.clone(), trackable.item.clone()),
+            TrackState::Deleted => self.delete(key),
+            TrackState::None | TrackState::NotFound => {}
         }
     }
 
@@ -228,6 +348,12 @@ impl DataCache {
             ref_count: Arc::new(AtomicUsize::new(1)),
             config: self.config,
             commit_apply: None,
+            #[cfg(test)]
+            merge_write_passes: Arc::new(AtomicUsize::new(0)),
+            #[cfg(test)]
+            tracked_items_calls: Arc::new(AtomicUsize::new(0)),
+            #[cfg(test)]
+            tracked_item_visit_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -542,14 +668,13 @@ impl DataCache {
 
     fn commit_writable(&self) {
         if let Some(apply) = &self.commit_apply {
-            let tracked = self.tracked_items();
-            if !tracked.is_empty() {
-                apply(&tracked);
+            if self.has_pending_changes() {
+                apply(self);
             }
         }
 
         let mut state = self.state.write();
-        let keys: Vec<StorageKey> = state.change_set.iter().cloned().collect();
+        let keys: Vec<StorageKey> = state.change_set.drain().collect();
         for key in keys {
             if let Some(trackable) = state.dictionary.get_mut(&key) {
                 match trackable.state {
@@ -563,7 +688,6 @@ impl DataCache {
                 }
             }
         }
-        state.change_set.clear();
     }
 
     /// Resets the cache for reuse.
@@ -576,6 +700,9 @@ impl DataCache {
 
     /// Gets all tracked items for persistence.
     pub fn tracked_items(&self) -> Vec<(StorageKey, Trackable)> {
+        #[cfg(test)]
+        self.tracked_items_calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let state = self.state.read();
         state
             .change_set
@@ -587,6 +714,64 @@ impl DataCache {
                     .map(|trackable| (key.clone(), trackable.clone()))
             })
             .collect()
+    }
+
+    /// Visits tracked items without cloning keys/items before the visitor needs them.
+    pub fn visit_tracked_items<F>(&self, mut visit: F)
+    where
+        F: FnMut(&StorageKey, &Trackable),
+    {
+        #[cfg(test)]
+        self.tracked_item_visit_calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let state = self.state.read();
+        for key in &state.change_set {
+            if let Some(trackable) = state.dictionary.get(key) {
+                visit(key, trackable);
+            }
+        }
+    }
+
+    /// Visits tracked items in byte-key order. This is the commit-facing path
+    /// for storage engines that benefit from sorted B+tree/LSM writes.
+    pub fn visit_tracked_items_sorted<F>(&self, mut visit: F)
+    where
+        F: FnMut(&StorageKey, &Trackable),
+    {
+        #[cfg(test)]
+        self.tracked_item_visit_calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let state = self.state.read();
+        let mut keys = state.change_set.iter().collect::<Vec<_>>();
+        keys.sort_unstable();
+        for key in keys {
+            if let Some(trackable) = state.dictionary.get(key) {
+                visit(key, trackable);
+            }
+        }
+    }
+
+    /// Visits tracked changes as raw key/value byte slices without building an
+    /// intermediate overlay vector. Entries are emitted in byte-key order so
+    /// storage engines can turn random overlays into ordered batches.
+    /// Cache-backed values may materialise into a short-lived owned buffer for
+    /// the duration of the callback.
+    pub fn visit_raw_changes<F>(&self, mut visit: F)
+    where
+        F: FnMut(&[u8], Option<&[u8]>),
+    {
+        self.visit_tracked_items_sorted(|key, trackable| match trackable.state {
+            TrackState::Added | TrackState::Changed => {
+                let key_bytes = key.as_bytes();
+                let value = trackable.item.value_bytes();
+                visit(key_bytes.as_ref(), Some(value.as_ref()));
+            }
+            TrackState::Deleted => {
+                let key_bytes = key.as_bytes();
+                visit(key_bytes.as_ref(), None);
+            }
+            TrackState::None | TrackState::NotFound => {}
+        });
     }
 
     /// Gets the change set.
@@ -678,6 +863,24 @@ impl DataCache {
         self.state.read().change_set.len()
     }
 
+    #[cfg(test)]
+    pub(crate) fn merge_write_pass_count(&self) -> usize {
+        self.merge_write_passes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tracked_items_call_count(&self) -> usize {
+        self.tracked_items_calls
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tracked_item_visit_call_count(&self) -> usize {
+        self.tracked_item_visit_calls
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Returns true if there are any pending changes.
     pub fn has_pending_changes(&self) -> bool {
         !self.state.read().change_set.is_empty()
@@ -685,23 +888,11 @@ impl DataCache {
 
     /// Extracts all tracked changes as raw key-value pairs.
     pub fn extract_raw_changes(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
-        let state = self.state.read();
-        state
-            .change_set
-            .iter()
-            .filter_map(|key| {
-                state
-                    .dictionary
-                    .get(key)
-                    .and_then(|trackable| match trackable.state {
-                        TrackState::Added | TrackState::Changed => {
-                            Some((key.to_array(), Some(trackable.item.to_value())))
-                        }
-                        TrackState::Deleted => Some((key.to_array(), None)),
-                        TrackState::None | TrackState::NotFound => None,
-                    })
-            })
-            .collect()
+        let mut changes = Vec::new();
+        self.visit_raw_changes(|key, value| {
+            changes.push((key.to_vec(), value.map(<[u8]>::to_vec)));
+        });
+        changes
     }
 }
 

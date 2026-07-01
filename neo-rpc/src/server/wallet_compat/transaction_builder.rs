@@ -27,8 +27,8 @@ use super::{WalletCompatError, WalletCompatResult, core_err};
 /// C# `Wallet.MakeTransaction(snapshot, script, sender, cosigners,
 /// attributes, maxGas)` — builds the transaction, test-executes the
 /// script for the system fee, and computes the network fee.
-pub(crate) fn make_transaction(
-    wallet: &dyn Wallet,
+pub(crate) fn make_transaction<W>(
+    wallet: &W,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     script: &[u8],
@@ -36,7 +36,10 @@ pub(crate) fn make_transaction(
     cosigners: &[Signer],
     attributes: &[TransactionAttribute],
     max_gas: i64,
-) -> WalletCompatResult<Transaction> {
+) -> WalletCompatResult<Transaction>
+where
+    W: Wallet + ?Sized,
+{
     let accounts = spendable_wallet_accounts(wallet, sender);
 
     let mut balances_gas = Vec::new();
@@ -60,8 +63,8 @@ pub(crate) fn make_transaction(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn make_transaction_with_balances(
-    wallet: &dyn Wallet,
+fn make_transaction_with_balances<W>(
+    wallet: &W,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     script: &[u8],
@@ -69,7 +72,10 @@ fn make_transaction_with_balances(
     attributes: &[TransactionAttribute],
     balances_gas: Vec<(UInt160, BigInt)>,
     max_gas: i64,
-) -> WalletCompatResult<Transaction> {
+) -> WalletCompatResult<Transaction>
+where
+    W: Wallet + ?Sized,
+{
     let current_index = LedgerContract::new()
         .current_index(snapshot)
         .map_err(core_err)?;
@@ -127,15 +133,18 @@ fn make_transaction_with_balances(
 /// C# `Wallet.MakeTransaction(snapshot, outputs, from, cosigners)` —
 /// builds the NEP-17 transfer script from the outputs and the paying
 /// accounts, then delegates to the script-based overload.
-pub(crate) fn make_transfer_transaction(
-    wallet: &dyn Wallet,
+pub(crate) fn make_transfer_transaction<W>(
+    wallet: &W,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     outputs: &[TransferOutput],
     from: Option<UInt160>,
     cosigners: Option<&[Signer]>,
     max_gas: i64,
-) -> WalletCompatResult<Transaction> {
+) -> WalletCompatResult<Transaction>
+where
+    W: Wallet + ?Sized,
+{
     let accounts = spendable_wallet_accounts(wallet, from);
 
     let mut cosigner_list: BTreeMap<UInt160, Signer> = cosigners

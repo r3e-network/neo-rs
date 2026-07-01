@@ -453,6 +453,16 @@ impl ApplicationEngine {
         (self.fee_consumed + FEE_FACTOR - 1) / FEE_FACTOR
     }
 
+    /// Returns the raw picoGAS fee consumed during execution.
+    pub const fn fee_consumed_pico(&self) -> i64 {
+        self.fee_consumed
+    }
+
+    /// Returns the raw picoGAS execution fee limit.
+    pub const fn fee_amount_pico(&self) -> i64 {
+        self.fee_amount
+    }
+
     #[must_use]
     /// Returns the raw execution fee factor cached from the Policy contract.
     pub const fn exec_fee_factor_raw(&self) -> u32 {

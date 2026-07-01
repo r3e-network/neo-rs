@@ -15,22 +15,36 @@ criterion = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-primitives = { workspace = true }
+neo-state-service = { workspace = true }
+neo-storage = { workspace = true }
 neo-vm = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-payloads = { workspace = true }
 hex = { workspace = true }
 
-
 [[bench]]
 name = "block_processing"
+path = "benches/payloads/block_processing.rs"
 harness = false
 
 [[bench]]
 name = "state_root"
+path = "benches/crypto/state_root.rs"
+harness = false
+
+[[bench]]
+name = "state_service"
+path = "benches/state/state_service.rs"
+harness = false
+
+[[bench]]
+name = "storage_commit"
+path = "benches/storage/storage_commit.rs"
 harness = false
 
 [[bench]]
 name = "vm_execution"
+path = "benches/vm/vm_execution.rs"
 harness = false
 
 [lints]

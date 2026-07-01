@@ -41,6 +41,14 @@ tracing = { workspace = true }
 [dev-dependencies]
 serde_json = { workspace = true }
 
+[[test]]
+name = "handshake"
+path = "tests/handshake/mod.rs"
+
+[[test]]
+name = "integration"
+path = "tests/service/integration.rs"
+
 [features]
 default = []
 upnp = []

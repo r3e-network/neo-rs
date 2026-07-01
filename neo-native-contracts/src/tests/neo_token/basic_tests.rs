@@ -327,8 +327,8 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
         expected_points
     );
 
-    let storage_source = include_str!("../../neo_token/storage.rs");
-    let mod_source = include_str!("../../neo_token.rs");
+    let storage_source = include_str!("../../neo_token/storage/mod.rs");
+    let mod_source = include_str!("../../neo_token/mod.rs");
     let candidate_encoder = slice_between(
         storage_source,
         "fn candidates_to_array_bytes",

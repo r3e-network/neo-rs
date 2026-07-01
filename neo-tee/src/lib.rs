@@ -1,50 +1,33 @@
-//! NEO TEE (Trusted Execution Environment) Support
+//! # neo-tee
 //!
-//! This crate provides TEE/SGX support for the Neo N3 blockchain, enabling:
-//! - Protected wallet storage with sealed keys
-//! - Fair transaction ordering to prevent MEV (Miner Extractable Value)
-//! - Remote attestation for verifiable TEE execution
+//! Trusted-execution helpers for attestation, enclave integration, and secure
+//! signing.
 //!
-//! # Features
+//! ## Boundary
 //!
-//! - `simulation` (default): Run in simulation mode without real SGX hardware
-//! - `sgx-hw`: Enable real Intel SGX hardware support
-//! - `attestation`: Enable remote attestation (requires `sgx-hw`)
+//! This adapter crate owns TEE integration and must not define protocol bytes,
+//! consensus rules, or storage semantics.
 //!
-//! # Architecture
+//! ## Contents
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │                      Untrusted Host                         │
-//! │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-//! │  │   neo-cli    │  │   neo-node   │  │   RPC Server     │  │
-//! │  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘  │
-//! │         │                 │                   │            │
-//! │         └─────────────────┼───────────────────┘            │
-//! │                           │                                │
-//! │  ┌────────────────────────┴────────────────────────────┐   │
-//! │  │                    TEE Bridge                        │   │
-//! │  └────────────────────────┬────────────────────────────┘   │
-//! ├───────────────────────────┼────────────────────────────────┤
-//! │                           │      SGX Enclave               │
-//! │  ┌────────────────────────┴────────────────────────────┐   │
-//! │  │                  Enclave Runtime                     │   │
-//! │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │   │
-//! │  │  │   Wallet    │  │   Mempool   │  │ Attestation │  │   │
-//! │  │  │  (Sealed)   │  │   (Fair)    │  │   Service   │  │   │
-//! │  │  └─────────────┘  └─────────────┘  └─────────────┘  │   │
-//! │  └─────────────────────────────────────────────────────┘   │
-//! └─────────────────────────────────────────────────────────────┘
-//! ```
+//! - `attestation`: TEE attestation evidence and verification helpers.
+//! - `enclave`: Trusted-enclave boundary types and host-call helpers.
+//! - `error`: Typed error definitions and conversions.
+//! - `mempool`: TEE-facing mempool request helpers.
+//! - `nitro`: AWS Nitro enclave integration helpers.
+//! - `sgx`: Intel SGX integration.
+//! - `wallet`: wallet RPC client methods.
 
 pub mod attestation;
 pub mod enclave;
+#[path = "errors/error.rs"]
 pub mod error;
 pub mod mempool;
 /// AWS Nitro Enclaves backend (EXPERIMENTAL, `nitro` feature, off by default).
 #[cfg(feature = "nitro")]
 pub mod nitro;
 #[cfg(feature = "sgx-hw")]
+#[path = "hardware/sgx.rs"]
 pub(crate) mod sgx;
 pub mod wallet;
 

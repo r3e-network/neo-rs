@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use tracing::{debug, error, trace};
 
 use crate::{StorageError, StorageResult};
@@ -119,7 +119,7 @@ impl WriteBatchStatsSnapshot {
 }
 
 /// Configuration for write batch buffering.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteBatchConfig {
     /// Maximum number of operations before flush
     pub max_batch_size: usize,
@@ -152,10 +152,10 @@ impl WriteBatchConfig {
     /// Creates configuration for high-throughput scenarios.
     pub fn high_throughput() -> Self {
         Self {
-            max_batch_size: 5000,
-            max_delay_ms: 50,
-            min_operations: 50,
-            max_batch_bytes: 16 * 1024 * 1024, // 16MB
+            max_batch_size: 50_000,
+            max_delay_ms: 250,
+            min_operations: 5_000,
+            max_batch_bytes: 64 * 1024 * 1024, // 64MB
             sync_on_flush: false,
             disable_wal: true,
         }
@@ -188,14 +188,29 @@ impl WriteBatchConfig {
 
 /// Buffered write batch for RocksDB.
 pub struct WriteBatchBuffer {
-    config: WriteBatchConfig,
+    config: RwLock<WriteBatchConfig>,
     stats: Arc<WriteBatchStats>,
     db: Arc<DB>,
-    batch: Mutex<WriteBatch>,
-    pending_count: AtomicUsize,
-    pending_bytes: AtomicUsize,
+    pending: Mutex<PendingWriteBatch>,
+    flush_gate: Mutex<()>,
     last_flush: Mutex<Instant>,
     last_flush_time_ms: AtomicU64,
+}
+
+#[derive(Default)]
+struct PendingWriteBatch {
+    batch: WriteBatch,
+    config: Option<WriteBatchConfig>,
+    count: usize,
+    bytes: usize,
+}
+
+impl PendingWriteBatch {
+    fn capture_config(&mut self, config: WriteBatchConfig) {
+        if self.config.is_none() {
+            self.config = Some(config);
+        }
+    }
 }
 
 impl WriteBatchBuffer {
@@ -203,12 +218,11 @@ impl WriteBatchBuffer {
     pub fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
         let stats = Arc::new(WriteBatchStats::new());
         Self {
-            config,
+            config: RwLock::new(config),
             stats,
             db,
-            batch: Mutex::new(WriteBatch::default()),
-            pending_count: AtomicUsize::new(0),
-            pending_bytes: AtomicUsize::new(0),
+            pending: Mutex::new(PendingWriteBatch::default()),
+            flush_gate: Mutex::new(()),
             last_flush: Mutex::new(Instant::now()),
             last_flush_time_ms: AtomicU64::new(0),
         }
@@ -230,26 +244,33 @@ impl WriteBatchBuffer {
     }
 
     /// Gets the configuration.
-    pub fn config(&self) -> &WriteBatchConfig {
-        &self.config
+    pub fn config(&self) -> WriteBatchConfig {
+        *self.config.read()
+    }
+
+    /// Updates the configuration used by future buffered writes.
+    pub fn set_config(&self, config: WriteBatchConfig) -> StorageResult<()> {
+        let _flush_guard = self.flush_gate.lock();
+        let mut current_config = self.config.write();
+        self.flush_locked(*current_config)?;
+        *current_config = config;
+        Ok(())
     }
 
     /// Adds a put operation to the batch.
     pub fn put(&self, key: &[u8], value: &[u8]) {
+        let config = self.config.read();
         let key_len = key.len();
         let value_len = value.len();
 
-        {
-            let mut batch = self.batch.lock();
-            batch.put(key, value);
-        }
-
-        let new_count = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let new_bytes = self
-            .pending_bytes
-            .fetch_add(key_len + value_len, Ordering::Relaxed)
-            + key_len
-            + value_len;
+        let (new_count, new_bytes) = {
+            let mut pending = self.pending.lock();
+            pending.capture_config(*config);
+            pending.batch.put(key, value);
+            pending.count += 1;
+            pending.bytes += key_len + value_len;
+            (pending.count, pending.bytes)
+        };
 
         self.stats.set_pending(new_count);
 
@@ -270,15 +291,17 @@ impl WriteBatchBuffer {
 
     /// Adds a delete operation to the batch.
     pub fn delete(&self, key: &[u8]) {
+        let config = self.config.read();
         let key_len = key.len();
 
-        {
-            let mut batch = self.batch.lock();
-            batch.delete(key);
-        }
-
-        let new_count = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let new_bytes = self.pending_bytes.fetch_add(key_len, Ordering::Relaxed) + key_len;
+        let (new_count, new_bytes) = {
+            let mut pending = self.pending.lock();
+            pending.capture_config(*config);
+            pending.batch.delete(key);
+            pending.count += 1;
+            pending.bytes += key_len;
+            (pending.count, pending.bytes)
+        };
 
         self.stats.set_pending(new_count);
 
@@ -296,25 +319,88 @@ impl WriteBatchBuffer {
         }
     }
 
+    /// Adds multiple put/delete operations to the batch with one lock and one
+    /// flush-threshold check.
+    pub fn extend<'a, I>(&self, operations: I)
+    where
+        I: IntoIterator<Item = (&'a [u8], Option<&'a [u8]>)>,
+    {
+        let mut iter = operations.into_iter();
+        self.extend_from(|sink| {
+            for (key, value) in iter.by_ref() {
+                sink(key, value);
+            }
+        });
+    }
+
+    /// Adds multiple put/delete operations produced by a visitor with one lock
+    /// and one flush-threshold check.
+    pub fn extend_from<F>(&self, mut visit: F)
+    where
+        F: FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
+    {
+        let config = self.config.read();
+        let (added_count, added_bytes, new_count, new_bytes) = {
+            let mut pending = self.pending.lock();
+            let mut added_count = 0usize;
+            let mut added_bytes = 0usize;
+            let mut sink = |key: &[u8], value: Option<&[u8]>| {
+                pending.capture_config(*config);
+                added_count += 1;
+                added_bytes += key.len();
+                match value {
+                    Some(value) => {
+                        added_bytes += value.len();
+                        pending.batch.put(key, value);
+                    }
+                    None => pending.batch.delete(key),
+                }
+            };
+            visit(&mut sink);
+            if added_count == 0 {
+                return;
+            }
+            pending.count += added_count;
+            pending.bytes += added_bytes;
+            (added_count, added_bytes, pending.count, pending.bytes)
+        };
+
+        self.stats.set_pending(new_count);
+
+        trace!(
+            target: "neo",
+            operations = added_count,
+            bytes = added_bytes,
+            pending_ops = new_count,
+            pending_bytes = new_bytes,
+            "write batch extend"
+        );
+
+        if self.should_flush(new_count, new_bytes) {
+            let _ = self.flush();
+        }
+    }
+
     /// Checks if the batch should be flushed.
     fn should_flush(&self, pending_count: usize, pending_bytes: usize) -> bool {
+        let config = self.config();
         // Check size-based flush
-        if pending_count >= self.config.max_batch_size {
+        if pending_count >= config.max_batch_size {
             return true;
         }
 
         // Check bytes-based flush
-        if pending_bytes >= self.config.max_batch_bytes {
+        if pending_bytes >= config.max_batch_bytes {
             return true;
         }
 
         // Check time-based flush (only if we have minimum operations)
-        if pending_count >= self.config.min_operations {
+        if pending_count >= config.min_operations {
             let last_flush = self.last_flush.lock();
             let elapsed = last_flush.elapsed();
             drop(last_flush);
 
-            if elapsed.as_millis() as u64 >= self.config.max_delay_ms {
+            if elapsed.as_millis() as u64 >= config.max_delay_ms {
                 return true;
             }
         }
@@ -324,36 +410,44 @@ impl WriteBatchBuffer {
 
     /// Flushes the batch to the database.
     pub fn flush(&self) -> StorageResult<()> {
-        let mut batch = self.batch.lock();
+        let _flush_guard = self.flush_gate.lock();
+        let default_config = self.config();
+        self.flush_locked(default_config)
+    }
 
-        if batch.is_empty() {
-            return Ok(());
-        }
+    fn flush_locked(&self, default_config: WriteBatchConfig) -> StorageResult<()> {
+        let (batch_to_write, config, count, bytes, batch_data) = {
+            let mut pending = self.pending.lock();
+            if pending.batch.is_empty() {
+                return Ok(());
+            }
 
-        let count = self.pending_count.load(Ordering::Relaxed);
-        let bytes = self.pending_bytes.load(Ordering::Relaxed);
+            let config = pending.config.unwrap_or(default_config);
+            let count = pending.count;
+            let bytes = pending.bytes;
+            let batch_data = pending.batch.data().to_vec();
+            let batch_to_write = std::mem::take(&mut pending.batch);
+            pending.config = None;
+            pending.count = 0;
+            pending.bytes = 0;
+            self.stats.set_pending(0);
+            (batch_to_write, config, count, bytes, batch_data)
+        };
 
         let start = Instant::now();
 
         // Build write options
         let mut write_opts = WriteOptions::default();
-        write_opts.set_sync(self.config.sync_on_flush);
-        if self.config.disable_wal {
+        write_opts.set_sync(config.sync_on_flush);
+        if config.disable_wal {
             write_opts.disable_wal(true);
         }
-
-        // Take ownership of the batch and create a new one
-        let batch_to_write = std::mem::take(&mut *batch);
 
         // Write the batch
         match self.db.write_opt(batch_to_write, &write_opts) {
             Ok(()) => {
                 let duration = start.elapsed();
                 let duration_ms = duration.as_millis() as u64;
-
-                // Reset counters
-                self.pending_count.store(0, Ordering::Relaxed);
-                self.pending_bytes.store(0, Ordering::Relaxed);
 
                 // Update last flush time
                 *self.last_flush.lock() = Instant::now();
@@ -362,9 +456,6 @@ impl WriteBatchBuffer {
 
                 // Update statistics
                 self.stats.record_flush(count, bytes, duration_ms);
-
-                self.stats.set_pending(0);
-
                 debug!(
                     target: "neo",
                     operations = count,
@@ -376,12 +467,46 @@ impl WriteBatchBuffer {
                 Ok(())
             }
             Err(e) => {
+                self.restore_failed_flush_batch(&batch_data, config, count, bytes);
                 error!(target: "neo", error = %e, "write batch flush failed");
                 Err(StorageError::Io {
                     message: format!("RocksDB write batch flush failed: {}", e),
                 })
             }
         }
+    }
+
+    fn restore_failed_flush_batch(
+        &self,
+        batch_data: &[u8],
+        config: WriteBatchConfig,
+        count: usize,
+        bytes: usize,
+    ) {
+        let mut pending = self.pending.lock();
+        if pending.batch.is_empty() {
+            pending.batch = WriteBatch::from_data(batch_data);
+            pending.config = Some(config);
+            pending.count = count;
+            pending.bytes = bytes;
+        } else {
+            let current_data = pending.batch.data().to_vec();
+            let current_count = pending.count;
+            let current_bytes = pending.bytes;
+            // rocksdb 0.21 does not expose WriteBatch append. Preserve the failed
+            // batch and then replay newer operations after it by rebuilding from
+            // serialized batches.
+            let mut combined = WriteBatch::from_data(batch_data);
+            let newer = WriteBatch::from_data(&current_data);
+            newer.iterate(&mut ReplayIntoBatch {
+                target: &mut combined,
+            });
+            pending.batch = combined;
+            pending.config = Some(config);
+            pending.count = count + current_count;
+            pending.bytes = bytes + current_bytes;
+        }
+        self.stats.set_pending(pending.count);
     }
 
     /// Forces a flush regardless of batch size or time.
@@ -392,17 +517,17 @@ impl WriteBatchBuffer {
 
     /// Returns the number of pending operations.
     pub fn pending_count(&self) -> usize {
-        self.pending_count.load(Ordering::Relaxed)
+        self.pending.lock().count
     }
 
     /// Returns the number of pending bytes.
     pub fn pending_bytes(&self) -> usize {
-        self.pending_bytes.load(Ordering::Relaxed)
+        self.pending.lock().bytes
     }
 
     /// Returns true if there are pending operations.
     pub fn has_pending(&self) -> bool {
-        self.pending_count.load(Ordering::Relaxed) > 0
+        self.pending.lock().count > 0
     }
 
     /// Returns the time since last flush.
@@ -417,12 +542,24 @@ impl WriteBatchBuffer {
 
     /// Clears all pending operations without flushing.
     pub fn clear(&self) {
-        let mut batch = self.batch.lock();
-        *batch = WriteBatch::default();
-        self.pending_count.store(0, Ordering::Relaxed);
-        self.pending_bytes.store(0, Ordering::Relaxed);
+        let mut pending = self.pending.lock();
+        *pending = PendingWriteBatch::default();
         self.stats.set_pending(0);
         debug!(target: "neo", "write batch cleared");
+    }
+}
+
+struct ReplayIntoBatch<'a> {
+    target: &'a mut WriteBatch,
+}
+
+impl rocksdb::WriteBatchIterator for ReplayIntoBatch<'_> {
+    fn put(&mut self, key: Box<[u8]>, value: Box<[u8]>) {
+        self.target.put(&*key, &*value);
+    }
+
+    fn delete(&mut self, key: Box<[u8]>) {
+        self.target.delete(&*key);
     }
 }
 

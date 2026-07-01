@@ -1,8 +1,6 @@
-use super::super::request::OracleIdList;
 use super::super::*;
 use crate::test_support::deploy_native as deploy_contract;
 use neo_config::ProtocolSettings;
-use neo_crypto::Crypto;
 use neo_execution::contract_state::ContractState;
 use neo_execution::native_contract::build_native_contract_state;
 use neo_manifest::{
@@ -18,9 +16,8 @@ use neo_primitives::{
 };
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::Interoperable;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, StackValue, VmState};
+use neo_vm_rs::{OpCode, VmState};
 use std::sync::Arc;
 
 /// Builds a tiny deployed contract with one `method(params)` descriptor,

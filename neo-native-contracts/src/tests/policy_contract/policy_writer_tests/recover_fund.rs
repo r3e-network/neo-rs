@@ -30,7 +30,7 @@ fn recover_fund_e2e_requires_request_and_committee() {
         Some(Block::from_parts(header.clone(), vec![])),
         "recoverFund",
         2,
-        &|b| {
+        |b| {
             b.emit_push(&gas_hash.to_array()); // token (arg 1, deeper)
             b.emit_push(&account.to_array()); // account (arg 0, top)
         },
@@ -51,7 +51,7 @@ fn recover_fund_e2e_requires_request_and_committee() {
         Some(Block::from_parts(header, vec![])),
         "recoverFund",
         2,
-        &|b| {
+        |b| {
             b.emit_push(&gas_hash.to_array());
             b.emit_push(&account.to_array());
         },
@@ -138,7 +138,7 @@ fn recover_fund_e2e_sweeps_balance_to_treasury_and_notifies() {
         Some(Block::from_parts(header, vec![])),
         "recoverFund",
         2,
-        &|b| {
+        |b| {
             b.emit_push(&gas_hash.to_array()); // token (arg 1, deeper)
             b.emit_push(&account.to_array()); // account (arg 0, top)
         },
@@ -232,7 +232,7 @@ fn recover_fund_e2e_zero_balance_returns_false() {
         Some(Block::from_parts(header, vec![])),
         "recoverFund",
         2,
-        &|b| {
+        |b| {
             b.emit_push(&gas_hash.to_array());
             b.emit_push(&account.to_array());
         },
@@ -294,7 +294,7 @@ fn recover_fund_e2e_rejects_recent_request() {
         Some(Block::from_parts(header, vec![])),
         "recoverFund",
         2,
-        &|b| {
+        |b| {
             b.emit_push(&gas_hash.to_array());
             b.emit_push(&account.to_array());
         },
@@ -343,7 +343,7 @@ fn recover_fund_e2e_requires_nep17_standard() {
         Some(Block::from_parts(header, vec![])),
         "recoverFund",
         2,
-        &|b| {
+        |b| {
             b.emit_push(&treasury.to_array());
             b.emit_push(&account.to_array());
         },

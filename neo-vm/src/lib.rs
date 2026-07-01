@@ -3,140 +3,35 @@
 // Licensed under the MIT License
 // See LICENSE file for details
 
-//! # Neo Virtual Machine (`NeoVM`)
+//! # neo-vm
 //!
-//! An embedded Neo Virtual Machine runtime for `neo-core`.
+//! NeoVM execution engine, opcode dispatch, stack items, and runtime types.
 //!
-//! This module contains the remaining stateful execution pieces that are not yet
-//! provided by `neo-vm-rs`: execution contexts, reference-counted local stack
-//! identity, gas hooks, exception handling, and the smart-contract host boundary.
-//! Opcode metadata and ABI-level semantics are imported directly from `neo-vm-rs`
-//! wherever the behavior matches.
+//! ## Boundary
 //!
-//! ## Architecture
+//! This VM crate owns deterministic script execution and must not own ledger
+//! persistence, network transport, or node composition.
 //!
-//! The module follows an adapter-oriented architecture. Canonical opcode
-//! metadata, instruction parsing, and ABI-level value semantics live in
-//! `neo-vm-rs`; `neo_core::neo_vm` keeps the stateful host surface needed by
-//! neo-rs.
+//! ## Contents
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │                    ExecutionEngine                               │
-//! │              (Core VM: stack, contexts, execution loop)          │
-//! ├─────────────────────────────────────────────────────────────────┤
-//! │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────┐    │
-//! │  │ Evaluation  │  │   Context    │  │    Reference         │    │
-//! │  │   Stack     │  │   Stack      │  │    Counter           │    │
-//! │  │             │  │              │  │   (GC support)       │    │
-//! │  └─────────────┘  └──────────────┘  └──────────────────────┘    │
-//! └─────────────────────────────────────────────────────────────────┘
-//!                              │
-//!                              ▼
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │                    JumpTable                                     │
-//! │      (Stateful dispatch adapters over neo-vm-rs semantics)       │
-//! └─────────────────────────────────────────────────────────────────┘
-//! ```
-//!
-//! ## Layer Position
-//!
-//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
-//!
-//! ```text
-//! Layer 2 (Service): Application layer
-//!            │
-//!            ▼
-//! Layer 1 (Core):   neo_core::neo_vm embedded runtime
-//!            │
-//!            ▼
-//! Layer 0 (Foundation): neo-primitives, neo-io
-//! ```
-//!
-//! ## Key Components
-//!
-//! | Component | Purpose | Key Type |
-//! |-----------|---------|----------|
-//! | [`ExecutionEngine`] | Core VM execution loop | `ExecutionEngine` |
-//! | [`EvaluationStack`] | Operand stack | `EvaluationStack` |
-//! | [`ExecutionContext`] | Script execution context | `ExecutionContext` |
-//! | [`JumpTable`] | Stateful opcode dispatch adapters | `JumpTable` |
-//! | [`StackItem`] | VM value types | `StackItem` |
-//!
-//! ## Features
-//!
-//! - **Shared NeoVM Semantics**: Opcode metadata and ABI-level behavior come from `neo-vm-rs`
-//! - **Stack-Based Execution**: Type-safe evaluation stack with reference counting
-//! - **Gas Metering**: Precise execution cost tracking
-//! - **Exception Handling**: Comprehensive try-catch-finally support
-//! - **Reference Counting**: Efficient memory management without GC pauses
-//!
-//! ## Quick Start
-//!
-//! ```rust,ignore
-//! use neo_core::neo_vm::{ExecutionEngine, Script, VmResult};
-//! use neo_vm_rs::VmState as VMState;
-//! use neo_vm_rs::OpCode;
-//!
-//! # fn example() -> VmResult<()> {
-//! // Create a script that pushes 1 + 2 and returns
-//! let script = Script::new(
-//!     vec![
-//!         OpCode::PUSH1.byte(),
-//!         OpCode::PUSH2.byte(),
-//!         OpCode::ADD.byte(),
-//!         OpCode::RET.byte(),
-//!     ],
-//!     false,
-//! )?;
-//!
-//! // Create and run the VM
-//! let mut engine = ExecutionEngine::new(None);
-//! engine.load_script(script, -1, 0)?;
-//!
-//! let state = engine.execute();
-//! assert_eq!(state, VMState::HALT);
-//!
-//! // Get the result
-//! let result = engine.result_stack().peek(0)?;
-//! println!("1 + 2 = {}", result.as_int()?);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## Gas Model
-//!
-//! The VM implements precise gas metering:
-//!
-//! | Operation | Base Cost |
-//! |-----------|-----------|
-//! | Simple opcode | 1 |
-//! | PUSH int | 1 |
-//! | PUSH data (per byte) | 1 |
-//! | CALL | 1024 |
-//! | SYSCALL | 256 |
-//! | Storage read | 100 |
-//! | Storage write | 1000 |
-//!
-//! ## Error Handling
-//!
-//! All fallible operations return [`VmResult`]:
-//!
-//! ```rust,ignore
-//! use neo_core::neo_vm::{VmError, VmResult};
-//!
-//! fn may_fail() -> VmResult<i64> {
-//!     // Returns Err(VmError::StackUnderflow) if stack is empty
-//!     engine.pop()?.as_int()
-//! }
-//! ```
+//! - `types`: Storage-domain types shared by store implementations.
+//! - `script_builder`: Helpers for constructing NeoVM scripts
+//!   deterministically.
+//! - `runtime`: Runtime flags, execution context state, and VM-facing support
+//!   types.
+//! - `execution_context`: NeoVM execution context frames and instruction-
+//!   pointer state.
+//! - `execution_engine`: NeoVM execution engine loop and runtime state.
+//! - `jump_table`: Opcode dispatch tables and instruction implementations.
+//! - `stack_item`: NeoVM stack item representations and conversion helpers.
 
 // ============================================================================
 // Core VM Modules
 // ============================================================================
 
 /// VM error types and result handling.
-pub mod error;
+mod types;
+pub use types::error;
 
 /// Script builder for programmatic VM script construction.
 pub mod script_builder;
@@ -145,7 +40,8 @@ pub mod script_builder;
 ///
 /// The [`EvaluationStack`] is the primary operand stack for VM operations.
 /// It provides type-safe operations and automatic reference counting.
-pub mod evaluation_stack;
+mod runtime;
+pub use runtime::evaluation_stack;
 
 /// Script execution context with local variables.
 ///
@@ -166,12 +62,12 @@ pub mod execution_context;
 pub mod execution_engine;
 
 /// Interoperable trait for smart contract state round-tripping.
-pub mod interoperable;
+pub use runtime::interoperable;
 
 /// Interop service registry.
 ///
 /// [`InteropService`] manages native contract methods accessible via SYSCALL.
-pub mod interop_service;
+pub use runtime::interop_service;
 
 /// Stateful opcode dispatch adapters.
 ///
@@ -180,16 +76,16 @@ pub mod interop_service;
 pub mod jump_table;
 
 /// Reference counting for garbage collection.
-pub mod reference_counter;
+pub use runtime::reference_counter;
 
 /// VM script representation and validation.
-pub mod script;
+pub use types::script;
 
 /// JSON-RPC envelope rendering for VM stack items.
-pub mod rpc_json;
+pub use types::rpc_json;
 
 /// Slot storage for locals, arguments, and static fields.
-pub mod slot;
+pub use runtime::slot;
 
 /// Stateful, reference-counted host stack item used by the local execution
 /// engine. The pure value type lives upstream in the `neo_vm_rs` crate; this
@@ -210,17 +106,34 @@ pub mod stack_item;
 // ============================================================================
 
 pub use error::{VmError, VmResult};
-pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
-pub use interop_service::InteropService;
-pub use interoperable::{Interoperable, InteroperableError};
 pub use jump_table::JumpTable;
-pub use reference_counter::{CompoundId, ReferenceCounter};
-pub use rpc_json::StackItemRpcJson;
-pub use script::Script;
-pub use slot::Slot;
+pub use runtime::{
+    CompoundId, EvaluationStack, InteropService, Interoperable, InteroperableError,
+    ReferenceCounter, Slot,
+};
 pub use stack_item::{InteropInterface, StackItem};
+pub use types::rpc_json::StackItemRpcJson;
+pub use types::script::Script;
+
+/// Decode a VM stack value as a NeoVM integer.
+///
+/// This preserves the compatibility surface older workspace crates used from
+/// `neo-vm-rs` while keeping the 32-byte integer bound enforced by the local
+/// stateful `StackItem` conversion rules.
+pub fn stack_value_as_bigint(value: &neo_vm_rs::StackValue) -> Result<num_bigint::BigInt, VmError> {
+    match value {
+        neo_vm_rs::StackValue::Integer(value) => Ok(num_bigint::BigInt::from(*value)),
+        neo_vm_rs::StackValue::BigInteger(bytes) | neo_vm_rs::StackValue::ByteString(bytes) => {
+            stack_item::stack_item::decode_integer_bytes(bytes)
+        }
+        neo_vm_rs::StackValue::Boolean(value) => Ok(num_bigint::BigInt::from(u8::from(*value))),
+        _ => Err(VmError::invalid_type_simple(
+            "Stack value is not integer-compatible",
+        )),
+    }
+}
 
 // ============================================================================
 // I/O Abstraction

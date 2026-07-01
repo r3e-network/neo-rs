@@ -36,5 +36,9 @@ indexmap = { workspace = true }
 zstd = "0.13"
 bincode = { workspace = true }
 
+[[test]]
+name = "json"
+path = "tests/json/mod.rs"
+
 [lints]
 workspace = true

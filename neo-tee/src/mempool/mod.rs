@@ -1,6 +1,16 @@
-//! TEE-protected mempool with fair transaction ordering
+//! # neo-tee::mempool
 //!
-//! This module implements a fair ordering policy to prevent MEV attacks.
+//! TEE-facing mempool request helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-tee`. This adapter crate owns TEE integration
+//! and must not define protocol bytes, consensus rules, or storage semantics.
+//!
+//! ## Contents
+//!
+//! - `fair_ordering`: fair-ordering mempool policy.
+//! - `tee_mempool`: TEE-backed mempool facade.
 
 // `fair_ordering` and `tee_mempool` are crate-visible (not just module-private)
 // so the feature-gated `nitro` backend can reference `OrderingProof`,

@@ -1,4 +1,21 @@
-use super::{
+//! # neo-payloads::transaction
+//!
+//! Transaction body, signer, witness, and fee records.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-payloads`. This protocol crate owns payload
+//! records and validation helpers and must not perform IO, storage commits, or
+//! service orchestration.
+//!
+//! ## Contents
+//!
+//! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
+//! - `json`: JSON models and codecs for external service integration.
+//! - `traits`: transaction trait implementations.
+//! - `serialization`: serialization codecs and compatibility checks.
+
+use crate::{
     InventoryType, TransactionAttributeType, inventory::Inventory, signer::Signer,
     transaction_attribute::TransactionAttribute, witness::Witness,
 };
@@ -65,6 +82,9 @@ pub struct Transaction {
 
 impl Clone for Transaction {
     fn clone(&self) -> Self {
+        let cached_hash = *self._hash.lock();
+        let cached_size = *self._size.lock();
+
         Self {
             version: self.version,
             nonce: self.nonce,
@@ -75,8 +95,8 @@ impl Clone for Transaction {
             attributes: self.attributes.clone(),
             script: self.script.clone(),
             witnesses: self.witnesses.clone(),
-            _hash: Mutex::new(None),
-            _size: Mutex::new(None),
+            _hash: Mutex::new(cached_hash),
+            _size: Mutex::new(cached_size),
         }
     }
 }
@@ -98,14 +118,11 @@ mod traits;
 
 impl neo_primitives::Verifiable for Transaction {
     fn hash(&self) -> neo_primitives::error::PrimitiveResult<neo_primitives::UInt256> {
-        let data = self.try_get_hash_data().map_err(|e| {
+        self.try_hash().map_err(|e| {
             neo_primitives::error::PrimitiveError::invalid_data(format!(
-                "transaction unsigned serialization failed: {e}"
+                "transaction hash failed: {e}"
             ))
-        })?;
-        Ok(neo_primitives::UInt256::from(neo_crypto::Crypto::sha256(
-            &data,
-        )))
+        })
     }
 
     fn hash_data(&self) -> Vec<u8> {

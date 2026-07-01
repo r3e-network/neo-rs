@@ -1,4 +1,16 @@
-//! Node-related RPC handlers (port of `RpcServer.Node.cs`).
+//! # neo-rpc::server::rpc_server_node
+//!
+//! Node and network RPC endpoint handlers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{
@@ -22,7 +34,7 @@ use num_traits::ToPrimitive;
 use serde_json::{Map, Value, json};
 
 #[cfg(test)]
-#[path = "../../tests/server/rpc_server_node.rs"]
+#[path = "../../tests/server/handlers/rpc_server_node.rs"]
 mod tests;
 
 /// C# `LedgerContract.Prefix_CurrentBlock` — the current-block pointer
@@ -84,6 +96,65 @@ fn dynamic_policy_value(
         }
         None => Ok(fallback),
     }
+}
+
+fn dynamic_policy_values(server: &RpcServer) -> Result<(u32, u32, u32), RpcException> {
+    if let Some(remote) = server.remote_ledger_rpc() {
+        let version = remote.call("getversion", &[]).map_err(RpcException::from)?;
+        return remote_version_dynamic_policy_values(&version);
+    }
+
+    let system = server.system();
+    let protocol = system.settings();
+    let store = system.store_cache();
+    let snapshot = store.data_cache();
+    Ok((
+        dynamic_policy_value(
+            snapshot,
+            &protocol,
+            POLICY_PREFIX_MILLISECONDS_PER_BLOCK,
+            protocol.milliseconds_per_block,
+        )?,
+        dynamic_policy_value(
+            snapshot,
+            &protocol,
+            POLICY_PREFIX_MAX_TRACEABLE_BLOCKS,
+            protocol.max_traceable_blocks,
+        )?,
+        dynamic_policy_value(
+            snapshot,
+            &protocol,
+            POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
+            protocol.max_valid_until_block_increment,
+        )?,
+    ))
+}
+
+fn remote_version_dynamic_policy_values(version: &Value) -> Result<(u32, u32, u32), RpcException> {
+    let protocol = version
+        .get("protocol")
+        .and_then(Value::as_object)
+        .ok_or_else(|| internal_error("remote getversion response missing protocol object"))?;
+    Ok((
+        remote_protocol_u32(protocol, "msperblock")?,
+        remote_protocol_u32(protocol, "maxtraceableblocks")?,
+        remote_protocol_u32(protocol, "maxvaliduntilblockincrement")?,
+    ))
+}
+
+fn remote_protocol_u32(
+    protocol: &Map<String, Value>,
+    field: &'static str,
+) -> Result<u32, RpcException> {
+    let value = protocol
+        .get(field)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| internal_error(format!("remote getversion protocol.{field} is missing")))?;
+    u32::try_from(value).map_err(|_| {
+        internal_error(format!(
+            "remote getversion protocol.{field} is out of u32 range: {value}"
+        ))
+    })
 }
 
 /// RPC handler group for node status and relay methods.
@@ -152,32 +223,7 @@ impl RpcServerNode {
         // maxvaliduntilblockincrement through the `NeoSystemExtensions`
         // dynamic readers (Policy storage post-Echidna, static settings
         // before), not from `ProtocolSettings` directly.
-        let dynamic_settings = {
-            let system = server.system();
-            let protocol = system.settings();
-            let store = system.store_cache();
-            let snapshot = store.data_cache();
-            (
-                dynamic_policy_value(
-                    snapshot,
-                    &protocol,
-                    POLICY_PREFIX_MILLISECONDS_PER_BLOCK,
-                    protocol.milliseconds_per_block,
-                )?,
-                dynamic_policy_value(
-                    snapshot,
-                    &protocol,
-                    POLICY_PREFIX_MAX_TRACEABLE_BLOCKS,
-                    protocol.max_traceable_blocks,
-                )?,
-                dynamic_policy_value(
-                    snapshot,
-                    &protocol,
-                    POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
-                    protocol.max_valid_until_block_increment,
-                )?,
-            )
-        };
+        let dynamic_settings = dynamic_policy_values(server)?;
         Self::with_local_node(server, |node| {
             let system = server.system();
             let protocol = system.settings();

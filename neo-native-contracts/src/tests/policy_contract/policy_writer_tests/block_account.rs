@@ -87,7 +87,7 @@ fn block_account_e2e_pre_faun_blocks_then_double_block_returns_false() {
         persisting_block,
         "blockAccount",
         1,
-        &|b| {
+        |b| {
             b.emit_push(&account.to_array());
         },
     );
@@ -109,7 +109,7 @@ fn block_account_e2e_pre_faun_blocks_then_double_block_returns_false() {
         None,
         "blockAccount",
         1,
-        &|b| {
+        |b| {
             b.emit_push(&account.to_array());
         },
     );
@@ -140,7 +140,7 @@ fn block_account_e2e_requires_committee_witness() {
         None,
         "blockAccount",
         1,
-        &|b| {
+        |b| {
             b.emit_push(&account.to_array());
         },
     );
@@ -179,7 +179,7 @@ fn block_account_e2e_rejects_native_contract_hash() {
         None,
         "blockAccount",
         1,
-        &|b| {
+        |b| {
             b.emit_push(&gas_hash.to_array());
         },
     );
@@ -255,7 +255,7 @@ fn block_account_e2e_faun_clears_vote_and_stamps_time() {
         Some(block),
         "blockAccount",
         1,
-        &|b| {
+        |b| {
             b.emit_push(&voter.to_array());
         },
     );

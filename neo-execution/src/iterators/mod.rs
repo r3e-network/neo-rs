@@ -1,4 +1,18 @@
-//! Iterators module - matches C# Neo.SmartContract.Iterators exactly
+//! # neo-execution::iterators
+//!
+//! Iterator adapters exposed to contract execution and storage search.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-execution`. This execution crate owns VM/native
+//! interop behavior and must not own durable storage engines, P2P sync, or
+//! application startup.
+//!
+//! ## Contents
+//!
+//! - `iterator`: contract iterator records.
+//! - `iterator_interop`: iterator interop syscall handlers.
+//! - `storage_iterator`: storage-backed iterator implementation.
 
 /// Iterator trait definition.
 pub mod iterator;

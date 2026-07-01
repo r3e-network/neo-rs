@@ -37,7 +37,7 @@ neo-node --config custom.toml --network-magic 123456
 
 Notes:
 - Storage backend, P2P, RPC, and consensus settings live in TOML.
-- `--storage-path` implies the RocksDB backend and overrides `[storage].data_dir` / `[storage].path`.
+- `--storage-path` uses the configured persistent backend, defaulting to MDBX in production builds, and overrides `[storage].data_dir` / `[storage].path`.
 - When dBFT is enabled, the validator key comes from the `[consensus]` configuration.
 
 ## Command-line Options
@@ -45,7 +45,7 @@ Notes:
 | Option | Description | Default |
 |--------|-------------|--------|
 | `-c, --config <PATH>` | Path to TOML configuration file | `neo_testnet_node.toml` |
-| `--storage-path <PATH>` | Override storage path and use RocksDB | (from config) |
+| `--storage-path <PATH>` | Override storage path for the configured/default persistent backend | (from config) |
 | `--network-magic <N>` | Override network magic | (from config) |
 | `--check-config` | Validate configuration and exit | false |
 | `--check-storage` | Validate storage can be opened and exit | false |
@@ -66,7 +66,7 @@ seed_nodes = ["seed1.neo.org:10333", "seed2.neo.org:10333"]
 
 [storage]
 path = "./data/chain"
-backend = "rocksdb"
+backend = "mdbx"
 
 [rpc]
 enabled = true

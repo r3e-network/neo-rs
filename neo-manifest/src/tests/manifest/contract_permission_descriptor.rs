@@ -53,7 +53,7 @@ fn permission_descriptor_reads_from_neo_vm_rs_stack_value() {
         ContractPermissionDescriptor::Hash(hash)
     );
     assert_eq!(
-        ContractPermissionDescriptor::from_stack_value(StackValue::Buffer(0, group_bytes)).unwrap(),
+        ContractPermissionDescriptor::from_stack_value(StackValue::Buffer(group_bytes)).unwrap(),
         ContractPermissionDescriptor::Group(group)
     );
 }

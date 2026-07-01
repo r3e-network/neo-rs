@@ -15,13 +15,10 @@ fn contract_group_projects_to_neo_vm_rs_stack_value() {
 
     assert_eq!(
         group.to_stack_value(),
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(pub_key_bytes),
-                StackValue::ByteString(vec![0xAB; 64]),
-            ]
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(pub_key_bytes),
+            StackValue::ByteString(vec![0xAB; 64]),
+        ])
     );
 }
 
@@ -30,13 +27,10 @@ fn contract_group_reads_from_neo_vm_rs_stack_value() {
     let group = sample_group();
     let pub_key_bytes = group.pub_key.encode_point(true).expect("compressed key");
 
-    let decoded = ContractGroup::try_from_stack_value(StackValue::Struct(
-        0,
-        vec![
-            StackValue::ByteString(pub_key_bytes),
-            StackValue::ByteString(vec![0xCD; 64]),
-        ],
-    ))
+    let decoded = ContractGroup::try_from_stack_value(StackValue::Struct(vec![
+        StackValue::ByteString(pub_key_bytes),
+        StackValue::ByteString(vec![0xCD; 64]),
+    ]))
     .unwrap();
 
     assert_eq!(decoded.pub_key, group.pub_key);

@@ -1,6 +1,25 @@
-//! Jump table module for the Neo Virtual Machine.
+//! # neo-vm::jump_table
 //!
-//! This module provides the jump table implementation used in the Neo VM.
+//! Opcode dispatch tables and instruction implementations.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-vm`. This VM crate owns deterministic script
+//! execution and must not own ledger persistence, network transport, or node
+//! composition.
+//!
+//! ## Contents
+//!
+//! - `bitwisee`: bitwise opcode handlers.
+//! - `compound`: compound opcode handlers.
+//! - `control`: control-flow opcode handlers.
+//! - `numeric`: Fixed-size numeric wrappers and byte-order conversion helpers.
+//! - `push`: push opcode handlers.
+//! - `slot`: VM slot records and helpers.
+//! - `splice`: splice opcode handlers.
+//! - `stack`: VM stack opcode handlers.
+//! - `types`: Storage-domain types shared by store implementations.
+//! - `tests`: Module-local tests and regression coverage.
 
 pub mod bitwisee; // Matches JumpTable.Bitwisee.cs
 pub mod compound; // Matches JumpTable.Compound.cs
@@ -338,5 +357,5 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
 }
 
 #[cfg(test)]
-#[path = "../tests/jump_table.rs"]
+#[path = "../tests/jump_table/mod.rs"]
 mod tests;

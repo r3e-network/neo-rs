@@ -1,4 +1,20 @@
-//! JSON-RPC server parameter model helpers.
+//! # neo-rpc::server::model
+//!
+//! RPC request parameter models and conversion helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `address`: RPC address parameter models.
+//! - `block_hash_or_index`: RPC block selector model.
+//! - `contract_name_or_hash_or_id`: contract name or hash or id types and
+//!   helpers.
+//! - `signers_and_witnesses`: RPC signer and witness models.
 
 /// Address parameter model.
 pub mod address;

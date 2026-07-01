@@ -1,87 +1,36 @@
 //! # neo-hsm
 //!
-//! Cloud-HSM-backed validator key management for the Neo N3 consensus node.
+//! Hardware security module configuration and signing-provider adapters.
 //!
-//! ## Overview
+//! ## Boundary
 //!
-//! This crate provides implementations of [`neo_consensus::ConsensusSigner`]
-//! that keep the validator private key inside a hardware security module,
-//! never exposing it to the host process.  Three cloud providers are
-//! supported:
+//! This adapter crate owns signing-provider integration and must not own
+//! consensus, ledger persistence, or node orchestration.
 //!
-//! | Provider            | Path           | Feature   | Sig format   |
-//! |---------------------|----------------|-----------|--------------|
-//! | AWS CloudHSM        | PKCS#11        | `pkcs11`  | raw `r‖s`    |
-//! | Azure Cloud HSM     | PKCS#11        | `pkcs11`  | raw `r‖s`    |
-//! | Azure Dedicated HSM | PKCS#11        | `pkcs11`  | raw `r‖s`    |
-//! | GCP Cloud KMS       | PKCS#11 (kmsp11)| `pkcs11` | DER → `r‖s`  |
-//! | Azure Managed HSM   | REST (native)  | `azure`   | raw `r‖s`    |
-//! | GCP Cloud KMS       | REST (native)  | `gcp`     | DER → `r‖s`  |
+//! ## Contents
 //!
-//! ## Cryptographic contract
-//!
-//! Neo N3 consensus requires a **64-byte raw `r‖s` secp256r1 ECDSA**
-//! signature over `SHA-256(data)`.  All signers in this crate:
-//!
-//! 1. Hash the input with `Crypto::sha256` before calling the HSM (`CKM_ECDSA`
-//!    signs a pre-hashed digest, not raw data).
-//! 2. Decode DER if necessary (GCP paths only).
-//! 3. Apply low-s normalization (`Signature::normalize_s`) for C# parity.
-//!
-//! ## `!Send` / `!Sync` session confinement
-//!
-//! The PKCS#11 `Session` is `Send` but `!Sync`.  [`Pkcs11Signer`] confines
-//! the session and the `Pkcs11` context to a single dedicated worker thread
-//! reached via an `mpsc::Sender`.  The public struct is `Send + Sync` with
-//! zero `unsafe` code.
-//!
-//! ## Usage (PKCS#11 path)
-//!
-//! ```rust,no_run
-//! # #[cfg(feature = "pkcs11")]
-//! # {
-//! use neo_hsm::{HsmConfig, HsmProvider, Pkcs11Signer};
-//! use std::path::PathBuf;
-//!
-//! let cfg = HsmConfig {
-//!     provider: HsmProvider::Aws,
-//!     library_path: PathBuf::from("/opt/cloudhsm/lib/libcloudhsm_pkcs11.so"),
-//!     slot: Some(0),
-//!     token_label: None,
-//!     key_label: "neo-validator-1".to_string(),
-//!     key_id: None,
-//!     user_pin: "CryptoUser:s3cr3t".to_string(), // load from env in production
-//! };
-//! let signer = Pkcs11Signer::connect(&cfg).expect("HSM connect failed");
-//! println!("validator pubkey: {}", hex::encode(signer.public_key()));
-//! # }
-//! ```
+//! - `errors`: Typed errors and result aliases for this crate boundary.
+//! - `providers`: Provider implementations behind the crate public traits.
+//! - `settings`: Protocol settings, hardfork gates, and node configuration
+//!   records.
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 
-pub mod config;
-pub mod error;
-
-#[cfg(feature = "pkcs11")]
-pub mod pkcs11;
-
-#[cfg(feature = "azure")]
-pub mod azure;
-
-#[cfg(feature = "gcp")]
-pub mod gcp;
+mod errors;
+mod providers;
+mod settings;
 
 // ── Convenient re-exports ────────────────────────────────────────────────────
 
-pub use config::{HsmConfig, HsmProvider, ProviderProfile, SigFormat, profile};
-pub use error::{HsmError, HsmResult};
+pub use errors::{HsmError, HsmResult, error};
+pub use settings::{HsmConfig, HsmProvider, ProviderProfile, SigFormat, config, profile};
 
 #[cfg(feature = "pkcs11")]
-pub use pkcs11::Pkcs11Signer;
+pub use providers::{Pkcs11Signer, pkcs11};
 
 #[cfg(feature = "azure")]
-pub use azure::{AzureKeyVaultConfig, AzureKeyVaultSigner};
+pub use providers::{AzureKeyVaultConfig, AzureKeyVaultSigner, azure};
 
 #[cfg(feature = "gcp")]
-pub use gcp::{GcpKmsConfig, GcpKmsSigner};
+pub use providers::{GcpKmsConfig, GcpKmsSigner, gcp};

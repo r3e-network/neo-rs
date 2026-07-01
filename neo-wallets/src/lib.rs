@@ -5,68 +5,43 @@
 
 //! # neo-wallets
 //!
-//! Canonical home for the Neo wallet layer: keypair, BIP-32/BIP-39 helpers,
-//! NEP-6 wallets, wallet accounts, the `Wallet` trait, the wallet manager and
-//! factory registry, plus the witness-script helpers used by all wallet
-//! implementations.
+//! Wallet models, key derivation, accounts, scripts, and transfer helpers.
 //!
-//! Mirrors `Neo.Wallets` for the wallet data model and the helpers any
-//! concrete wallet (software, HSM, TEE) needs. The stateful runtime
-//! (transaction signing against the ledger, RPC client, fee calculation
-//! against `PolicyContract`) lives in `neo-core`; this crate stays
-//! pure-data and pure-crypto so it can be embedded in wallets that do
-//! not want the full node runtime.
+//! ## Boundary
 //!
-//! ## Layering
+//! This wallet crate owns account and signing helpers and must not import
+//! blocks, run services, or mutate node storage directly.
 //!
-//! Sits in **Layer 1 (protocol)**. Depends on:
+//! ## Contents
 //!
-//! - `neo-primitives`, `neo-error`, `neo-io`, `neo-crypto` (Layer 0)
-//! - `neo-config`, `neo-script-builder`, `neo-storage`,
-//!   `neo-payloads`, `neo-execution`,
-//!   `neo-manifest` (Layer 1)
-//!
-//! Must **not** depend on `neo-core` (Layer 2 runtime) or any Layer 2+
-//! crate. This matches the rule polkadot-sdk and reth apply to their
-//! `*-wallets` crates: keep the wallet data model and signing
-//! primitives independent of the node runtime that consumes them.
+//! - `model`: wallet model records, NEP-6 files, and account helpers.
+//! - `assets`: Wallet asset descriptors and transfer output records.
+//! - `bip32`: BIP-32 derivation helpers for wallet keys.
+//! - `crypto`: Wallet key pairs, signing, and address helpers.
+//! - `scripting`: Wallet script construction and verification helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-wallets/0.8.0")]
+#![doc(html_root_url = "https://docs.rs/neo-wallets/0.9.0")]
 
 // ============================================================================
 // Wallet data model
 // ============================================================================
 
-/// Wallet account abstraction and the standard in-memory implementation.
-pub mod wallet_account;
-
-/// NEP-6 wallet standard.
-pub mod nep6;
-/// Base `Wallet` trait and shared error type.
-pub mod wallet;
-/// Address / script-hash conversion helpers used by the wallet layer.
-pub mod wallet_helper;
-/// Wallet provider (lifecycle notifications).
-pub mod wallet_provider;
+pub mod model;
 
 // ============================================================================
 // Wallet crypto + scripting
 // ============================================================================
 
-/// NEP-17 asset descriptor (name / symbol / decimals lookup).
-pub mod asset_descriptor;
+pub mod assets;
 /// BIP-32 extended keys and derivation paths.
 pub mod bip32;
-/// BIP-39 mnemonics.
-pub mod bip39;
-/// ECDSA key pair (private + public key, encryption round-trips).
-pub mod key_pair;
-/// Witness-script helpers (signature invocation script, etc.).
-pub mod scripts;
-/// NEP-17 transfer output descriptor.
-pub mod transfer_output;
-/// Three-component wallet `Version`.
-pub mod version;
+pub mod crypto;
+pub mod scripting;
+
+pub use assets::{asset_descriptor, transfer_output};
+pub use crypto::{bip39, key_pair};
+pub use model::{nep6, version, wallet, wallet_account, wallet_helper, wallet_provider};
+pub use scripting::scripts;
 
 // ============================================================================
 // Public re-exports

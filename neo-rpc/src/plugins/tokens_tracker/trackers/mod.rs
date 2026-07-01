@@ -1,7 +1,21 @@
-//! Token tracker implementations.
+//! # neo-rpc::plugins::tokens_tracker::trackers
 //!
-//! This module contains the base tracker infrastructure and
-//! standard-specific implementations for NEP-11 and NEP-17.
+//! Token tracker implementations grouped by token standard.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `nep_11`: NEP-11 token tracking helpers.
+//! - `nep_17`: NEP-17 token tracking helpers.
+//! - `token_balance`: token balance projection records.
+//! - `token_transfer`: token transfer projection records.
+//! - `token_transfer_key`: token transfer key records.
+//! - `tracker_base`: shared token tracker base behavior.
 
 macro_rules! impl_token_transfer_key_as_ref {
     ($type:ty, $field:tt) => {

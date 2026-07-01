@@ -1,8 +1,21 @@
-//! Merkle Patricia Trie implementation ported from the C# Neo node.
+//! # neo-crypto::mpt_trie
 //!
-//! This module mirrors `Neo.Cryptography.MPTTrie` providing the `Node`, `MptCache`
-//! and `Trie` types together with the supporting serialization logic used
-//! throughout the Neo stack.
+//! Merkle Patricia Trie nodes, cache logic, and trie operations.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-crypto`. This foundation crate owns
+//! cryptographic primitives and must not depend on node services, RPC, storage
+//! engines, or UI crates.
+//!
+//! ## Contents
+//!
+//! - `cache`: Cache state and mutation helpers.
+//! - `error`: Typed error definitions and conversions.
+//! - `node`: Daemon composition, CLI modes, and long-running node startup.
+//! - `node_type`: MPT node type identifiers.
+//! - `trie`: MPT trie operations and state-root helpers.
+//! - `tests`: Module-local tests and regression coverage.
 
 mod cache;
 mod error;

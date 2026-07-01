@@ -45,5 +45,9 @@ tracing = ["dep:tracing"]
 [dev-dependencies]
 tempfile = { workspace = true }
 
+[[test]]
+name = "io"
+path = "tests/io/mod.rs"
+
 [lints]
 workspace = true

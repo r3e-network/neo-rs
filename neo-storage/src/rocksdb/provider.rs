@@ -8,7 +8,10 @@ use rocksdb::{
     BlockBasedOptions, Cache, DB, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
     PrefixRange, ReadOptions, Snapshot as DbSnapshot,
 };
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use super::store::RocksDbStore;
 
@@ -77,27 +80,21 @@ impl RocksDBStoreProvider {
         Arc::clone(&self.batch_stats)
     }
 
-    fn resolved_path(&self, override_path: &str) -> PathBuf {
-        if override_path.is_empty() {
+    fn resolved_path(&self, override_path: &Path) -> PathBuf {
+        if override_path.as_os_str().is_empty() {
             self.base_config.path.clone()
         } else {
-            PathBuf::from(override_path)
+            override_path.to_path_buf()
         }
     }
-}
 
-impl StoreProvider for RocksDBStoreProvider {
-    fn name(&self) -> &str {
-        "RocksDBStore"
-    }
-
-    fn get_store(&self, path: &str) -> crate::StorageResult<Arc<dyn Store>> {
+    fn build_store(&self, path: &Path) -> crate::StorageResult<RocksDbStore> {
         let resolved = self.resolved_path(path);
         let config = StorageConfig {
             path: resolved,
             ..self.base_config.clone()
         };
-        let store = RocksDbStore::open(
+        RocksDbStore::open(
             &config,
             self.batch_config,
             self.enable_bloom_filters,
@@ -108,8 +105,50 @@ impl StoreProvider for RocksDBStoreProvider {
                 "failed to open RocksDB store at {}: {err}",
                 config.path.display()
             ),
-        })?;
-        Ok(Arc::new(store))
+        })
+    }
+
+    /// Opens a store without erasing it behind `dyn Store`.
+    pub fn get_rocksdb_store<P>(&self, path: P) -> crate::StorageResult<RocksDbStore>
+    where
+        P: AsRef<Path>,
+    {
+        self.build_store(path.as_ref())
+    }
+
+    /// Opens a store erased behind the common store trait.
+    pub fn get_store<P>(&self, path: P) -> crate::StorageResult<Arc<dyn Store>>
+    where
+        P: AsRef<Path>,
+    {
+        self.build_store(path.as_ref())
+            .map(|store| Arc::new(store) as Arc<dyn Store>)
+    }
+}
+
+impl StoreProvider for RocksDBStoreProvider {
+    fn name(&self) -> &str {
+        "rocksdb"
+    }
+
+    fn get_store(&self, path: &Path) -> crate::StorageResult<Arc<dyn Store>> {
+        self.build_store(path)
+            .map(|store| Arc::new(store) as Arc<dyn Store>)
+    }
+
+    fn get_store_with_config(&self, config: StorageConfig) -> crate::StorageResult<Arc<dyn Store>> {
+        let provider = Self {
+            base_config: config,
+            batch_config: self.batch_config,
+            batch_stats: Arc::clone(&self.batch_stats),
+            enable_bloom_filters: self.enable_bloom_filters,
+            enable_read_ahead: self.enable_read_ahead,
+        };
+        provider.get_store(Path::new(""))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

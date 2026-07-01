@@ -7,6 +7,7 @@ use anyhow::Context;
 use hyper::{Body, Response};
 use prometheus::{Encoder, Gauge, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 
+use super::super::remote_ledger::RemoteLedgerStatus;
 use super::readiness::{ReadinessSnapshot, indexer_readiness, readiness_response};
 
 pub(super) struct MetricsExporter {
@@ -179,12 +180,73 @@ impl MetricsExporter {
         // Append the sync-pipeline metrics (lock-free atomics, not Prometheus
         // collectors) so /metrics exposes per-stage timing + throughput.
         buffer.extend_from_slice(crate::node::sync_metrics::render_prometheus().as_bytes());
+        buffer.extend_from_slice(self.render_rocksdb_metrics().as_bytes());
 
         Ok(buffer)
     }
 
+    fn render_rocksdb_metrics(&self) -> String {
+        let storage = self.node.storage();
+        let Some(store) = storage
+            .as_any()
+            .downcast_ref::<neo_storage::rocksdb::RocksDbStore>()
+        else {
+            return String::new();
+        };
+
+        let stats = store.batch_commit_stats();
+        let config = store.write_batch_config();
+        format!(
+            "# HELP neo_storage_rocksdb_batch_pending_operations Current write operations buffered before RocksDB flush\n\
+             # TYPE neo_storage_rocksdb_batch_pending_operations gauge\n\
+             neo_storage_rocksdb_batch_pending_operations {}\n\
+             # HELP neo_storage_rocksdb_batch_batches_flushed_total Total RocksDB write batches flushed by fast-sync buffering\n\
+             # TYPE neo_storage_rocksdb_batch_batches_flushed_total counter\n\
+             neo_storage_rocksdb_batch_batches_flushed_total {}\n\
+             # HELP neo_storage_rocksdb_batch_operations_written_total Total put/delete operations flushed through RocksDB write batches\n\
+             # TYPE neo_storage_rocksdb_batch_operations_written_total counter\n\
+             neo_storage_rocksdb_batch_operations_written_total {}\n\
+             # HELP neo_storage_rocksdb_batch_bytes_written_total Approximate payload bytes flushed through RocksDB write batches\n\
+             # TYPE neo_storage_rocksdb_batch_bytes_written_total counter\n\
+             neo_storage_rocksdb_batch_bytes_written_total {}\n\
+             # HELP neo_storage_rocksdb_batch_flush_timeouts_total Total RocksDB write-batch flush timeout observations\n\
+             # TYPE neo_storage_rocksdb_batch_flush_timeouts_total counter\n\
+             neo_storage_rocksdb_batch_flush_timeouts_total {}\n\
+             # HELP neo_storage_rocksdb_batch_avg_ops_per_flush Average write operations per flushed RocksDB batch\n\
+             # TYPE neo_storage_rocksdb_batch_avg_ops_per_flush gauge\n\
+             neo_storage_rocksdb_batch_avg_ops_per_flush {}\n\
+             # HELP neo_storage_rocksdb_batch_avg_bytes_per_flush Average payload bytes per flushed RocksDB batch\n\
+             # TYPE neo_storage_rocksdb_batch_avg_bytes_per_flush gauge\n\
+             neo_storage_rocksdb_batch_avg_bytes_per_flush {}\n\
+             # HELP neo_storage_rocksdb_batch_avg_flush_duration_ms Average RocksDB write-batch flush duration in milliseconds\n\
+             # TYPE neo_storage_rocksdb_batch_avg_flush_duration_ms gauge\n\
+             neo_storage_rocksdb_batch_avg_flush_duration_ms {}\n\
+             # HELP neo_storage_rocksdb_batch_max_batch_size Active RocksDB write-batch operation threshold\n\
+             # TYPE neo_storage_rocksdb_batch_max_batch_size gauge\n\
+             neo_storage_rocksdb_batch_max_batch_size {}\n\
+             # HELP neo_storage_rocksdb_batch_max_batch_bytes Active RocksDB write-batch byte threshold\n\
+             # TYPE neo_storage_rocksdb_batch_max_batch_bytes gauge\n\
+             neo_storage_rocksdb_batch_max_batch_bytes {}\n\
+             # HELP neo_storage_rocksdb_batch_disable_wal Whether RocksDB WAL is disabled for fast-sync batch writes\n\
+             # TYPE neo_storage_rocksdb_batch_disable_wal gauge\n\
+             neo_storage_rocksdb_batch_disable_wal {}\n",
+            stats.pending_operations,
+            stats.batches_flushed,
+            stats.operations_written,
+            stats.bytes_written,
+            stats.flush_timeouts,
+            stats.avg_ops_per_flush(),
+            stats.avg_bytes_per_flush(),
+            stats.avg_flush_duration_ms(),
+            config.max_batch_size,
+            config.max_batch_bytes,
+            bool_to_i64(config.disable_wal),
+        )
+    }
+
     pub(super) fn readiness_response(&self) -> Response<Body> {
         let ledger_height = self.ledger_height();
+        let remote_ledger = self.remote_ledger_status();
         let indexer = indexer_readiness(ledger_height, self.indexer_status());
         let ready = ledger_height.is_some() && indexer.ready;
         let local_info = self.node.network().local_node_info();
@@ -193,6 +255,13 @@ impl MetricsExporter {
         readiness_response(ReadinessSnapshot {
             ready,
             network_label: self.network_label.clone(),
+            ledger_source: if remote_ledger.is_some() {
+                "remote_rpc"
+            } else {
+                "local"
+            },
+            remote_ledger_rpc: remote_ledger.as_ref().map(|status| status.endpoint.clone()),
+            remote_ledger_error: remote_ledger.and_then(|status| status.tip_error.clone()),
             ledger_height,
             connected_peers: local_info.connected_peers_count(),
             mempool_transactions: mempool.total_count(),
@@ -234,10 +303,17 @@ impl MetricsExporter {
     }
 
     fn ledger_height(&self) -> Option<u32> {
+        if let Some(remote_ledger) = self.remote_ledger_status() {
+            return remote_ledger.advertised_height;
+        }
         let cache = self.node.store_cache();
         neo_native_contracts::LedgerContract::new()
             .current_index(cache.data_cache())
             .ok()
+    }
+
+    fn remote_ledger_status(&self) -> Option<Arc<RemoteLedgerStatus>> {
+        self.node.get_service::<RemoteLedgerStatus>()
     }
 
     fn refresh_service_metrics(&self, ledger_height: Option<u32>) {

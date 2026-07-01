@@ -401,6 +401,8 @@ impl ApplicationEngine {
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
+        let boundary_id = Arc::as_ptr(&state_arc) as usize;
+        self.native_call_boundary_contexts.push(boundary_id);
 
         // Refresh cached hashes so `GetCallingScriptHash` sees the native caller.
         self.refresh_context_tracking()?;
@@ -682,6 +684,9 @@ impl ApplicationEngine {
         }
 
         let pending = std::mem::take(&mut self.pending_native_calls);
+        // Contract calls are loaded as VM contexts on a LIFO invocation stack.
+        // Loading queued calls in reverse order makes execution observe the
+        // queue in FIFO order.
         for call in pending.into_iter().rev() {
             self.call_from_native_contract_dynamic(
                 &call.calling_script_hash,

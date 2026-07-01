@@ -24,6 +24,7 @@ use neo_payloads::p2p_payloads::{
     GetBlockByIndexPayload, NodeCapability, PingPayload, VersionPayload,
 };
 
+#[path = "session/messages.rs"]
 mod messages;
 
 /// Why the per-peer session ended. Carried only for logging; every
@@ -143,7 +144,7 @@ impl PeerSession {
         // Block-sync runs on its own fast cadence (decoupled from the 30 s
         // keepalive ping): each tick pipelines the next batch forward while the
         // ledger trails the peer, instead of one batch per keepalive interval.
-        let sync_interval = Duration::from_millis(500);
+        let sync_interval = Duration::from_millis(100);
         let mut sync_timer =
             tokio::time::interval_at(Instant::now() + sync_interval, sync_interval);
         loop {
@@ -267,6 +268,15 @@ impl PeerSession {
             return Ok(());
         }
 
+        // MAX_HASHES=500 matches the C# protocol limit (MaxHashesCount);
+        // requesting more in one message causes peers to reset the connection.
+        const MAX_HASHES: u32 = 500;
+        /// How far ahead of local_height the sync cursor can be before we
+        /// reset it. Keep two protocol-sized request windows in flight so the
+        /// peer and transport do not sit idle while the first window is being
+        /// persisted.
+        const MAX_HASHES_AHEAD: u32 = 1000;
+
         // Stall detection: if the persisted height has not advanced across
         // several ticks while we still trail the peer, the in-flight batch was
         // lost — rewind the cursor to re-request the gap (C# `TaskManager`
@@ -282,7 +292,7 @@ impl PeerSession {
         // when the back-pressure window is exhausted (sync_requested_to is far
         // ahead of local_height but no new blocks have arrived — the requested
         // range was lost or evicted from the cache).
-        const STALL_LIMIT: u32 = 3;
+        const STALL_LIMIT: u32 = 15;
         if self.sync_stall_ticks >= STALL_LIMIT
             || self.sync_requested_to > local_height + MAX_HASHES_AHEAD
         {
@@ -300,22 +310,17 @@ impl PeerSession {
         }
 
         // Pipeline forward from the in-flight high-water mark (C# `TaskManager.
-        // RequestTasks`, TaskManager.cs:400-409): request the next contiguous run
-        // the peer holds. MAX_HASHES=500 matches the C# protocol limit
-        // (MaxHashesCount); requesting more causes peers to reset the connection.
-        // The 100ms sync interval keeps multiple batches in-flight from multiple
-        // peers, so aggregate throughput is N_peers × 500/batch × 10 batches/sec.
-        const MAX_HASHES: u32 = 500;
-        /// How far ahead of local_height the sync cursor can be before we
-        /// reset it. If sync_requested_to is more than this many blocks ahead
-        /// of the persisted tip, the requested range was likely lost (evicted
-        /// from cache, peer didn't respond, etc.) — reset and re-request.
-        const MAX_HASHES_AHEAD: u32 = 1000;
+        // RequestTasks`, TaskManager.cs:400-409): request the next contiguous
+        // run the peer holds while preserving the per-message protocol cap.
+        // The ahead window keeps two batches queued per peer, so aggregate
+        // throughput can reach N_peers x 1000 blocks of in-flight work without
+        // sending an invalid over-sized request.
         let start = (local_height + 1).max(self.sync_requested_to + 1);
-        if start > peer_height || start >= local_height.saturating_add(MAX_HASHES) {
+        let request_window_end = local_height.saturating_add(MAX_HASHES_AHEAD);
+        if start > peer_height || start > request_window_end {
             return Ok(());
         }
-        let upper = peer_height.min(local_height.saturating_add(MAX_HASHES));
+        let upper = peer_height.min(request_window_end);
         let count = (upper - start + 1).min(MAX_HASHES);
         let payload = GetBlockByIndexPayload::create(start, count as i16);
         let message = Message::create(

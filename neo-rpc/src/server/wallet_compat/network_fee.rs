@@ -27,13 +27,16 @@ use super::{WalletCompatError, WalletCompatResult, core_err};
 /// contract script (C# `wallet.GetAccount(hash)?.Contract?.Script`);
 /// pass a closure returning `None` for wallet-less calls so the
 /// transaction's own witnesses are consulted instead.
-pub(crate) fn calculate_network_fee(
+pub(crate) fn calculate_network_fee<F>(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
-    account_script: &dyn Fn(&UInt160) -> Option<Vec<u8>>,
+    account_script: &F,
     mut max_execution_cost: i64,
-) -> WalletCompatResult<i64> {
+) -> WalletCompatResult<i64>
+where
+    F: Fn(&UInt160) -> Option<Vec<u8>> + ?Sized,
+{
     let hashes: Vec<UInt160> = tx.signers().iter().map(|signer| signer.account).collect();
 
     // Base size: header + signers + attributes + script + witness count.

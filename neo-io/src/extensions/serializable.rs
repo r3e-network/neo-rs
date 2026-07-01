@@ -10,7 +10,7 @@ pub trait SerializableExtensions {
 
 impl<T: Serializable> SerializableExtensions for T {
     fn to_array(&self) -> IoResult<Vec<u8>> {
-        let mut writer = BinaryWriter::new();
+        let mut writer = BinaryWriter::with_capacity(self.size());
         self.serialize(&mut writer)?;
         Ok(writer.into_bytes())
     }

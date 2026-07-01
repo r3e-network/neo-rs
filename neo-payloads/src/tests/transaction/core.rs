@@ -62,6 +62,36 @@ fn serializable_payload_hash_is_single_sha256_of_unsigned_transaction() {
 }
 
 #[test]
+fn cloned_transaction_preserves_cached_hash_and_size() {
+    let tx = transaction_with_script(vec![OpCode::RET.byte()]);
+    let expected_hash = tx.try_hash().expect("transaction hash");
+    let expected_size = <Transaction as Serializable>::size(&tx);
+
+    let mut cloned = tx.clone();
+
+    assert_eq!(*cloned._hash.lock(), Some(expected_hash));
+    assert_eq!(*cloned._size.lock(), Some(expected_size));
+
+    cloned.set_script(vec![OpCode::NOP.byte()]);
+    assert_eq!(*cloned._hash.lock(), None);
+    assert_eq!(*cloned._size.lock(), None);
+    assert_eq!(*tx._hash.lock(), Some(expected_hash));
+    assert_eq!(*tx._size.lock(), Some(expected_size));
+}
+
+#[test]
+fn verifiable_hash_uses_transaction_hash_cache() {
+    let tx = transaction_with_script(vec![OpCode::RET.byte()]);
+    assert_eq!(*tx._hash.lock(), None);
+
+    let expected_hash = <Transaction as neo_primitives::Verifiable>::hash(&tx)
+        .expect("verifiable transaction hash");
+
+    assert_eq!(*tx._hash.lock(), Some(expected_hash));
+    assert_eq!(tx.try_hash().expect("transaction hash"), expected_hash);
+}
+
+#[test]
 fn try_get_hash_data_rejects_oversized_script() {
     let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
 

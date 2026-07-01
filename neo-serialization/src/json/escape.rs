@@ -16,7 +16,8 @@
 //! string containing non-ASCII data (token names, symbols, manifests,
 //! notification arguments, error data, ...) or the HTML-sensitive characters.
 //! Because RPC responses are consensus/interop-sensitive, this module provides a
-//! [`Formatter`] wrapper that reproduces the C# byte-for-byte output.
+//! [`serde_json::ser::Formatter`] wrapper that reproduces the C# byte-for-byte
+//! output.
 //!
 //! Short escape forms match `Utf8JsonWriter` exactly: `\b` `\t` `\n` `\f` `\r`
 //! and `\\`. Note that the quote character is emitted as `"` (not `\"`),
@@ -55,7 +56,7 @@ const fn is_html_sensitive(byte: u8) -> bool {
     matches!(byte, b'<' | b'>' | b'&' | b'\'' | b'+' | b'`')
 }
 
-/// A [`Formatter`] that escapes output exactly like C#
+/// A [`serde_json::ser::Formatter`] that escapes output exactly like C#
 /// `JavaScriptEncoder.Default` while delegating all structural formatting
 /// (indentation, separators, numbers) to an inner formatter.
 #[derive(Clone, Debug)]

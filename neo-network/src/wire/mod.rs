@@ -1,29 +1,22 @@
 //! # neo-network::wire
 //!
-//! Canonical home for Neo's P2P wire envelope inside the network service crate. Provides:
+//! Wire encoders, decoders, and deterministic network framing helpers.
 //!
-//! - [`Message`] — the on-the-wire frame (flags | command | var-length payload).
-//! - [`MessageHeader`] — the per-message metadata header.
-//! - [`MessageCommand`] — the command discriminator (from `crate::proto`).
-//! - [`MessageFlags`] — the per-message flag bitfield (from `crate::proto`).
-//! - [`NetworkMessage`] — the top-level envelope (header + flags + typed payload).
-//! - [`ProtocolMessage`] — the strongly-typed payload enum covering every Neo P2P command.
-//! - [`MessageCodec`] — Tokio framed codec for splitting a byte stream into `Message` frames.
-//! - [`capabilities`] — node-capability descriptors used during the version handshake.
-//! - [`ChannelsConfig`] — P2P channel configuration (from `crate::proto`).
-//! - [`timeouts`] — P2P time-constants module (from `crate::proto`).
+//! ## Boundary
 //!
-//! ## Layering
+//! This module belongs to `neo-network`. This service crate owns P2P transport
+//! and peer behavior and must not execute blocks, own consensus rules, or
+//! mutate storage directly.
 //!
-//! Sits inside `neo-network`, but remains the protocol-only wire surface. Depends only on:
+//! ## Contents
 //!
-//! - `neo-primitives` (Layer 0) — for `UInt160` / `UInt256`.
-//! - `crate::proto` — for local P2P command / flag / channel primitives.
-//! - `neo-payloads` (Layer 2) — for `Block`, `Transaction`, `ExtensiblePayload`.
-//! - `neo-io` (Layer 1) — for `BinaryWriter`, `MemoryReader`, `Serializable`, and LZ4 helpers.
-//! - `neo-error` (Layer 1) — for shared error types.
-//!
-//! Must **not** depend on any stateful runtime crate.
+//! - `capabilities`: Node capability records advertised on the P2P wire.
+//! - `error`: Typed error definitions and conversions.
+//! - `message`: P2P message records and validation helpers.
+//! - `network_message`: Network message envelope codec and validation helpers.
+//! - `protocol_message`: Protocol message payload traits and routing helpers.
+//! - `codec`: Deterministic byte codecs and compression helpers used by Neo
+//!   wire data.
 
 pub mod capabilities;
 pub mod error;

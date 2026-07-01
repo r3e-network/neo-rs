@@ -7,6 +7,29 @@ pub(super) fn test_node() -> neo_system::Node {
     neo_system::Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("node")
 }
 
+pub(super) fn remote_ledger_node(height: u32) -> neo_system::Node {
+    remote_ledger_node_with_height(Some(height))
+}
+
+pub(super) fn remote_ledger_node_with_height(height: Option<u32>) -> neo_system::Node {
+    let node = test_node();
+    node.register_service(Arc::new(
+        crate::node::remote_ledger::RemoteLedgerStatus::new("https://rpc.example.invalid", height),
+    ));
+    node
+}
+
+pub(super) fn remote_ledger_node_with_error(error: &str) -> neo_system::Node {
+    let node = test_node();
+    node.register_service(Arc::new(
+        crate::node::remote_ledger::RemoteLedgerStatus::unavailable(
+            "https://rpc.example.invalid",
+            error,
+        ),
+    ));
+    node
+}
+
 pub(super) fn seed_ledger_height(node: &neo_system::Node, height: u32) {
     let pointer = neo_native_contracts::LedgerContract::new()
         .serialize_hash_index_state(&UInt256::zero(), height)

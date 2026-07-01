@@ -15,11 +15,14 @@ use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::RpcServer;
 
 impl RpcServerWallet {
-    pub(super) fn calculate_nep17_balance(
+    pub(super) fn calculate_nep17_balance<W>(
         server: &RpcServer,
-        wallet: &Arc<dyn CoreWallet>,
+        wallet: &W,
         asset: &UInt160,
-    ) -> Result<BigDecimal, RpcException> {
+    ) -> Result<BigDecimal, RpcException>
+    where
+        W: CoreWallet + ?Sized,
+    {
         let accounts: Vec<UInt160> = wallet
             .get_accounts()
             .into_iter()

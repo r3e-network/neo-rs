@@ -56,7 +56,7 @@ fn runtime_error_report_is_provider_payload_compatible() {
 
 #[test]
 fn node_runtime_sources_report_seed_connection_failures_to_observability() {
-    let seeds_source = include_str!("../../../node/seeds.rs");
+    let seeds_source = include_str!("../../../node/seeds/mod.rs");
     let seed_dial_branch = seeds_source
         .split("seed dial failed")
         .nth(1)
@@ -84,15 +84,15 @@ fn node_runtime_sources_report_seed_connection_failures_to_observability() {
 
 #[test]
 fn node_runtime_sources_report_shutdown_signal_failures_to_observability() {
-    let node_source = include_str!("../../../node.rs");
+    let node_source = include_str!("../../../node/mod.rs");
     let shutdown_signal_branch = node_source
-        .split("ctrl-c handler failed")
+        .split("shutdown-signal handler failed")
         .nth(1)
-        .expect("node source should contain ctrl-c failure branch");
+        .expect("node source should contain shutdown-signal failure branch");
 
     assert!(
         shutdown_signal_branch.contains("report_runtime_error")
             && shutdown_signal_branch.contains("\"shutdown_signal\""),
-        "Ctrl-C handler failures should notify configured observability error endpoints"
+        "shutdown-signal handler failures should notify configured observability error endpoints"
     );
 }

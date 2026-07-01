@@ -85,7 +85,10 @@ impl ApplicationEngine {
             let fee_units = new_data_size as u64;
             let storage_price = self.get_storage_price() as u64;
             let fee_delta = fee_units.saturating_mul(storage_price);
-            let trace_fees = std::env::var_os("NEO_TRACE_STORAGE_FEES").is_some();
+            let trace_fees = crate::interop::application_engine_storage::storage_trace_enabled(
+                self,
+                "NEO_TRACE_STORAGE_FEES",
+            );
             let fee_before = self.fee_consumed;
             let result = self.add_runtime_fee(fee_delta);
             if trace_fees {

@@ -1,12 +1,20 @@
-//! Neo Node - Neo N3 node daemon (server).
+//! # neo-node
 //!
-//! `neo-node` is the binary entry point for a Neo N3 node: a `tokio`-based
-//! daemon that parses CLI arguments, loads a TOML configuration file, builds a
-//! [`neo_system::Node`] via [`neo_system::NodeBuilder`], spawns the
-//! blockchain/network/RPC service tasks, and waits for `Ctrl-C` before shutting
-//! down gracefully.
+//! Runnable Neo N3 node daemon and operator-facing modes.
+//!
+//! ## Boundary
+//!
+//! This application crate may compose lower layers but must not define protocol
+//! bytes, storage formats, consensus rules, or VM semantics.
+//!
+//! ## Contents
+//!
+//! - `consensus`: Consensus-facing node adapters and startup helpers.
+//! - `node`: Daemon composition, CLI modes, and long-running node startup.
 
+#[path = "consensus/mod.rs"]
 mod consensus;
+#[path = "node/mod.rs"]
 mod node;
 
 // Use mimalloc as the global allocator. The node is allocation-heavy on the

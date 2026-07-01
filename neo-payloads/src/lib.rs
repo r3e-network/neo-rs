@@ -1,68 +1,29 @@
 //! # neo-payloads
 //!
-//! Canonical home for the Neo P2P payload and ledger-lifecycle data types:
-//! `Block`, `Header`, `Transaction`, `Signer`, witness conditions/rules,
-//! transaction attributes, extensible payloads, `ApplicationExecuted`,
-//! `NotifyEventArgs`, and `TransactionState`, together with their pure
-//! serialization helpers and structural verification.
+//! Protocol payload records for blocks, transactions, witnesses, and P2P
+//! messages.
 //!
-//! Mirrors `Neo.Network.P2P.Payloads` for the heavyweight payload types
-//! that historically needed a stateful verification context. The
-//! ApplicationEngine-backed execution lives in `neo-execution` and native
-//! contract state lookups live in `neo-native-contracts`; this crate carries
-//! the data types plus the structural, state-independent checks.
+//! ## Boundary
 //!
-//! ## Layering
+//! This protocol crate owns payload records and validation helpers and must not
+//! perform IO, storage commits, or service orchestration.
 //!
-//! Sits in **Layer 1 (protocol)**. Depends on:
+//! ## Contents
 //!
-//! - `neo-primitives`, `neo-error`, `neo-crypto`, `neo-io`,
-//!   `neo-vm-rs`, `neo-vm` (Layer 0)
-//! - `neo-storage`, `neo-serialization`, `neo-manifest`,
-//!   `neo-script-builder` (Layer 1)
-//! - `neo-config` (Layer 1) — for `ProtocolSettings`
-//! - `neo-native-contracts` (Layer 1) — for the
-//!   `GasToken`/`PolicyContract`/`LedgerContract` types used by the
-//!   attribute-level helpers
-//!
-//! Must not depend on node/runtime composition crates.
-//!
-//! ## Status (Stage 2)
-//!
-//! The data types (`Block`, `Header`, `Transaction`, `Signer`,
-//! `TransactionAttribute`, `Conflicts`, `HighPriorityAttribute`,
-//! `NotValidBefore`, `NotaryAssisted`, `OracleResponse`,
-//! `ExtensiblePayload`, `MerkleBlockPayload`, `Inventory`,
-//! `HeadersPayload`, `ApplicationExecuted`, `NotifyEventArgs`, and
-//! `TransactionState`) live in this crate with their serialization impls and
-//! structural `Verifiable` trait impls.
-//!
-//! ## Module map (C# parity)
-//!
-//! | C# Type | Rust module |
-//! |---------|-------------|
-//! | `Block` | `block` |
-//! | `Header` | `header` |
-//! | `Transaction` | `transaction` |
-//! | `Signer` | `signer` |
-//! | `WitnessCondition` / `WitnessRule` | `witness_rule` |
-//! | `ExtensiblePayload` | `extensible_payload` |
-//! | `MerkleBlockPayload` | `merkle_block_payload` |
-//! | `HeadersPayload` | `headers_payload` |
-//! | `HighPriorityAttribute` | `high_priority_attribute` |
-//! | `OracleResponse` | `oracle_response` |
-//! | `NotValidBefore` | `not_valid_before` |
-//! | `NotaryAssisted` | `notary_assisted` |
-//! | `Conflicts` | `conflicts` |
-//! | `TransactionAttribute` | `transaction_attribute` |
-//! | `Verifiable` / `VerifiableExt` | `verifiable_ext` |
-//! | `Inventory` | `inventory` |
-//! | `Neo.Builder` transaction helpers | `tx_builder` |
-//! | `ApplicationExecuted` | `application_executed` |
-//! | `NotifyEventArgs` | `notify_event_args` |
-//! | `TransactionState` | `transaction_state` |
+//! - `p2p_payloads`: P2P payload records and network inventory message types.
+//! - `execution`: Execution payload records and VM-result domain types.
+//! - `ledger`: Ledger caches, lookup context, and persisted record helpers used
+//!   by block import.
+//! - `protocol`: Protocol enums, versioned records, and chain-level domain
+//!   constants.
+//! - `signing`: Witness, signer, and signature validation helpers.
+//! - `validation`: Validation routines and typed verdicts for protocol data.
+//! - `transaction`: Transaction body, signer, witness, and fee records.
+//! - `transaction_attribute`: Transaction attribute records and validation
+//!   helpers.
+//! - `tx_builder`: Transaction builder helpers for constructing Neo payloads.
 
-#![doc(html_root_url = "https://docs.rs/neo-payloads/0.8.0")]
+#![doc(html_root_url = "https://docs.rs/neo-payloads/0.9.0")]
 
 // ── P2P wire payload types (relocated from neo-p2p) ───────────────────
 
@@ -92,64 +53,39 @@ pub use p2p_payloads::version_payload;
 
 // ── Local modules: data types and structural verification ─────────────
 
-/// Per-transaction execution record emitted when a block is processed.
-pub mod application_executed;
-/// Block structure and structural verification.
-pub mod block;
-/// Conflicts transaction attribute.
-pub mod conflicts;
-/// Event payloads and handler traits used by Neo plugins and services.
-pub mod event_handlers;
-/// Extensible payload for consensus.
-pub mod extensible_payload;
-/// Block header structure and structural verification.
-pub mod header;
-/// Headers response payload.
-pub mod headers_payload;
-/// Helper utilities for signing / computing the sign-data buffer.
-pub mod helper;
-/// High priority transaction attribute.
-pub mod high_priority_attribute;
-/// Inventory interface trait.
-pub mod inventory;
-/// Merkle block payload for SPV.
-pub mod merkle_block_payload;
-/// Not valid before transaction attribute.
-pub mod not_valid_before;
-/// Notary assisted transaction attribute.
-pub mod notary_assisted;
-/// Contract notification event arguments.
-pub mod notify_event_args;
-/// Oracle response transaction attribute.
-pub mod oracle_response;
-/// Strict VM script validation helpers re-exported from `neo-vm-rs`.
-pub mod script_validation;
-/// Transaction signer structure.
-pub mod signer;
+/// Execution-result and notification payloads emitted by block processing.
+pub mod execution;
+/// Ledger payloads such as blocks, headers, and transaction state records.
+pub mod ledger;
+/// P2P protocol payload traits and consensus extension payloads.
+pub mod protocol;
+/// Transaction signing, witness, and verification helper types.
+pub mod signing;
+/// Structural validation constants and VM script validation helpers.
+pub mod validation;
+
 /// Transaction structure and structural verification.
 pub mod transaction;
 /// Transaction attribute base.
+#[path = "transaction_attribute/mod.rs"]
 pub mod transaction_attribute;
-/// Ledger transaction state record used by `LedgerContract` storage.
-pub mod transaction_state;
-/// Trimmed block (header + transaction hashes) used by LedgerContract storage.
-pub mod trimmed_block;
 /// Fluent builders for transactions, signers, witnesses, and witness rules.
 pub mod tx_builder;
-/// Block validation constants (block-size / tx-count caps, merkle checks).
-pub mod validation;
-/// Extension of [`neo_primitives::Verifiable`] with payload-level helpers.
-pub mod verifiable_ext;
-/// VerifyResult re-export from `neo-primitives`.
-pub mod verify_result;
-/// Witness attached to verifiable payloads.
-pub mod witness;
-/// Witness rules and conditions used by transaction signers.
-pub mod witness_rule;
 /// Witness scope flags (re-exported from `neo-primitives`).
 pub mod witness_scope {
     pub use neo_primitives::{InvalidWitnessScopeError, WitnessScope};
 }
+
+pub use execution::{application_executed, event_handlers, notify_event_args};
+pub use ledger::{
+    block, header, headers_payload, merkle_block_payload, transaction_state, trimmed_block,
+};
+pub use protocol::{extensible_payload, inventory};
+pub use signing::{helper, signer, verifiable_ext, witness, witness_rule};
+pub use transaction_attribute::{
+    conflicts, high_priority_attribute, not_valid_before, notary_assisted, oracle_response,
+};
+pub use validation::{script_validation, verify_result};
 
 // ── Public re-exports ─────────────────────────────────────────────────
 

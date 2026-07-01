@@ -10,8 +10,10 @@ members = [
     "neo-config",
     # Cryptography: hashing, ECC, signatures, BLS12-381.
     "neo-crypto",
-    # Storage traits, `DataCache`, RocksDB, and in-memory stores.
+    # Storage traits, `DataCache`, MDBX, RocksDB, and in-memory stores.
     "neo-storage",
+    # Append-only finalized block/transaction/receipt cold files.
+    "neo-static-files",
     # Binary IO helpers (matches C# Neo.IO).
     "neo-io",
     # Stateful NeoVM host over the sibling `neo-vm-rs` semantics crate.
@@ -120,8 +122,8 @@ msrv = "1.85"
 # Centralized lint policy. Every member opts in with `[lints] workspace = true`
 # in its own Cargo.toml, so the rules live in exactly one place (replacing the
 # per-crate `#![deny(...)]` / `#![warn(...)]` headers). Crates that genuinely
-# need unsafe (neo-vm, neo-execution) keep the deny and opt out per-site with
-# `#[allow(unsafe_code)]` + a `// SAFETY:` comment.
+# need unsafe for measured hot paths or unavoidable FFI keep the deny and opt
+# out per-site with `#[allow(unsafe_code)]` + a `// SAFETY:` comment.
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"
@@ -158,6 +160,7 @@ neo-primitives = { path = "neo-primitives", version = "0.9.0" }
 neo-config = { path = "neo-config", version = "0.9.0" }
 neo-crypto = { path = "neo-crypto", version = "0.9.0" }
 neo-storage = { path = "neo-storage", version = "0.9.0" }
+neo-static-files = { path = "neo-static-files", version = "0.9.0" }
 neo-io = { path = "neo-io", version = "0.9.0" }
 neo-vm = { path = "neo-vm", version = "0.9.0" }
 neo-vm-rs = { path = "../neo-vm-rs" }
@@ -264,6 +267,7 @@ memchr = "2.8"
 
 # === Storage ===
 rocksdb = { version = "0.21", default-features = false, features = ["snappy", "lz4", "zlib"] }
+libmdbx = { version = "0.5.3", default-features = false }
 
 # === Network ===
 # HTTP and JSON-RPC

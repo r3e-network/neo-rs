@@ -6,10 +6,10 @@ use neo_wallets::Wallet;
 use num_bigint::BigInt;
 use num_traits::Zero;
 
-pub(super) fn spendable_wallet_accounts(
-    wallet: &dyn Wallet,
-    sender: Option<UInt160>,
-) -> Vec<UInt160> {
+pub(super) fn spendable_wallet_accounts<W>(wallet: &W, sender: Option<UInt160>) -> Vec<UInt160>
+where
+    W: Wallet + ?Sized,
+{
     match sender {
         Some(sender) => vec![sender],
         None => wallet

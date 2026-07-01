@@ -1,9 +1,17 @@
-//! Oracle-contract test suite, split for file-size hygiene.
+//! # neo-native-contracts::tests::oracle_contract
 //!
-//! - [`native_tests`]: native-contract surface, storage codecs, request/id-list
-//!   record layout, manifest-standards activation.
-//! - [`request_finish_tests`]: the `request`/`finish` lifecycle (record writes,
-//!   GAS minting, callback queuing, post-persist cleanup, validation faults).
+//! Test module grouping Native Oracle contract request, response, and fee
+//! behavior. coverage for neo-native-contracts.
+//!
+//! ## Boundary
+//!
+//! This is test/benchmark-only code for neo-native-contracts; it may assemble
+//! fixtures but must not introduce production behavior.
+//!
+//! ## Contents
+//!
+//! - `native_tests`: oracle native-contract coverage.
+//! - `request_finish_tests`: oracle request-finish coverage.
 
 mod native_tests;
 mod request_finish_tests;

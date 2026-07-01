@@ -100,7 +100,7 @@ impl RedeemScript {
     }
 
     /// Checks whether `script` is a multi-signature verification script (C#
-    /// `Helper.IsMultiSigContract`). Delegates to [`parse_multi_sig_contract`] so
+    /// `Helper.IsMultiSigContract`). Delegates to [`Self::parse_multi_sig_contract`] so
     /// the same `PUSHINT8`/`PUSHINT16`/`PUSH1..16` `m`/`n` decode and `1 <= m <= n
     /// <= 1024` bounds apply (committee-sized multisigs are recognized).
     pub fn is_multi_sig_contract(script: &[u8]) -> bool {
@@ -165,7 +165,7 @@ impl RedeemScript {
     /// Creates a multi-sig redeem script from raw (compressed) public-key bytes.
     ///
     /// Raw-bytes wrapper: parses each key to an [`ECPoint`], then delegates to
-    /// [`multi_sig_redeem_script_from_points`], which enforces C#
+    /// [`Self::multi_sig_redeem_script_from_points`], which enforces C#
     /// `Contract.CreateMultiSigRedeemScript`'s bounds (`1 <= m <= n <= 1024`).
     ///
     /// # Errors
@@ -189,7 +189,8 @@ impl RedeemScript {
 
     /// Parses a multi-signature verification script, returning `(m, ordered public
     /// keys)` when the script matches the canonical Neo multi-sig format. The
-    /// inverse of [`multi_sig_redeem_script_from_keys`] / [`is_multi_sig_contract`].
+    /// inverse of [`Self::multi_sig_redeem_script_from_keys`] /
+    /// [`Self::is_multi_sig_contract`].
     ///
     /// Mirrors C# `Helper.IsMultiSigContract`: `m` and `n` are decoded as integer
     /// pushes (`PUSHINT8`/`PUSHINT16`/`PUSH1..16`) and bounded by `1 <= m <= n <=

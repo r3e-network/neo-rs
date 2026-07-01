@@ -9,13 +9,10 @@ fn parameter_definition_projects_to_neo_vm_rs_stack_value() {
 
     assert_eq!(
         definition.to_stack_value(),
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(b"owner".to_vec()),
-                StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
-            ]
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(b"owner".to_vec()),
+            StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
+        ])
     );
 }
 
@@ -24,13 +21,10 @@ fn parameter_definition_reads_from_neo_vm_rs_stack_value() {
     let mut definition = ContractParameterDefinition::default();
 
     definition
-        .from_stack_value(StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(b"flag".to_vec()),
-                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-            ],
-        ))
+        .from_stack_value(StackValue::Struct(vec![
+            StackValue::ByteString(b"flag".to_vec()),
+            StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+        ]))
         .unwrap();
 
     assert_eq!(definition.name, "flag");
@@ -45,46 +39,34 @@ fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
 
     assert!(
         definition
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(b"changed".to_vec()),
-                    StackValue::Integer(0x7f),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"changed".to_vec()),
+                StackValue::Integer(0x7f),
+            ]))
             .is_err()
     );
     assert!(
         definition
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::Null,
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::Null,
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+            ]))
             .is_err()
     );
     assert!(
         definition
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(vec![0xff]),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(vec![0xff]),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+            ]))
             .is_err()
     );
     assert!(
         definition
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(b"changed".to_vec()),
-                    StackValue::Integer(-1),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"changed".to_vec()),
+                StackValue::Integer(-1),
+            ]))
             .is_err()
     );
 }

@@ -1,70 +1,47 @@
 //! # neo-state-service
 //!
-//! Canonical home for the Neo state-service plugin: state-root wire
-//! types, persisted MPT storage, and the optional verification/cache
-//! surfaces used by the StateService payload flow.
+//! State-root service, MPT persistence, validation, and state-root protocol
+//! types.
 //!
-//! ## Modules
+//! ## Boundary
 //!
-//! - [`state_root::StateRoot`] - a state-root snapshot for a single
-//!   block.
-//! - [`mpt_store::MptStore`] - persisted MPT-node + local-state-root
-//!   storage (the C# `StateService` plugin's `Storage` layer) with the
-//!   block-changeset application seam
-//!   [`mpt_store::MptStore::apply_block_changes`].
-//! - [`state_store::StateStore`] / [`state_store::StateStoreTransaction`]
-//!   - verification-cache storage for locally known state roots and
-//!   pending candidates.
-//! - [`commit_handlers::StateServiceCommitHandlers`] - optional block
-//!   lifecycle adapter over the local MPT state-root store.
-//! - [`root_cache::StateRootCache`] and [`verification::Verifier`] -
-//!   optional StateService payload verification helpers.
+//! This service crate owns state-root and MPT service behavior and must not own
+//! block download, consensus, RPC transport, or UI composition.
 //!
-//! ## Layering
+//! ## Contents
 //!
-//! Sits in **Layer 3 (Domain services)**. Depends on:
-//!
-//! - Local wire-protocol modules (`Keys`, `MessageType`, `Vote`,
-//!   `StateRootIngestStats`) for the state-service payload surface.
-//! - `neo-storage` (Layer 1) - for the `DataCache` used during
-//!   MPT computation.
-//! - `neo-payloads` (Layer 2) - for the `ExtensiblePayload` used to
-//!   transport state-root messages.
-//! - `neo-payloads` (Layer 2) - for the typed block lifecycle handler traits.
-//!
-//! Must **not** depend on node-service, composition, plugin/RPC, or application
-//! crates.
+//! - `protocol`: Protocol enums, versioned records, and chain-level domain
+//!   constants.
+//! - `service`: Service loops, handles, lifecycle helpers, and command
+//!   processing.
+//! - `storage`: Storage contexts, key builders, and storage item helpers for
+//!   execution.
+//! - `validation`: Validation routines and typed verdicts for protocol data.
 
-#![doc(html_root_url = "https://docs.rs/neo-state-service/0.8.0")]
+#![doc(html_root_url = "https://docs.rs/neo-state-service/0.9.0")]
 
-pub mod commit_handlers;
-pub mod keys;
-pub mod message_type;
-/// Lightweight state-root ingestion counters.
-pub mod metrics;
-pub mod mpt_store;
-pub mod root_cache;
-pub mod state_root;
-pub mod state_store;
-pub mod verification;
-pub mod vote;
+mod protocol;
+mod service;
+mod storage;
+mod validation;
 
 /// Extensible payload category for state service messages
 /// (matches C# `StateService.StatePayloadCategory`).
 pub const STATE_SERVICE_CATEGORY: &str = "StateService";
 
-pub use keys::Keys;
-pub use message_type::MessageType;
-pub use metrics::{
-    StateRootApplyMetrics, StateRootApplyStats, StateRootIngestMetrics, StateRootIngestStats,
+pub use protocol::{
+    CURRENT_VERSION, Keys, MessageType, StateRoot, StateRootApplyMetrics, StateRootApplyStats,
+    StateRootIngestMetrics, StateRootIngestStats, Vote, keys, message_type, metrics, state_root,
+    vote,
 };
-pub use vote::Vote;
 
-pub use mpt_store::{MptChange, MptReadSnapshot, MptStore};
-pub use root_cache::{
+pub use service::commit_handlers;
+pub use storage::{
     DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
     StateRootCacheStatsSnapshot,
 };
-pub use state_root::{CURRENT_VERSION, StateRoot};
-pub use state_store::{StateStore, StateStoreLookup, StateStoreTransaction};
-pub use verification::{StateRootCalculator, Verifier, VerifyOutcome};
+pub use storage::{
+    MptChange, MptReadSnapshot, MptStore, StateStore, StateStoreLookup, StateStoreTransaction,
+    mpt_store, root_cache, state_store,
+};
+pub use validation::{StateRootCalculator, Verifier, VerifyOutcome, verification};

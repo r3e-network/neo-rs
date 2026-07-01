@@ -9,7 +9,7 @@ use tokio::sync::oneshot;
 
 #[test]
 fn node_long_running_background_tasks_are_spawned_under_observability_monitoring() {
-    let node_source = include_str!("../../../node.rs");
+    let node_source = include_str!("../../../node/mod.rs");
     assert!(
         node_source.contains("spawn_daemon_task"),
         "node composition should centralize long-running task spawning so observability can monitor exits and panics"

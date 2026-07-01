@@ -1,5 +1,6 @@
 //! Buffer stack item implementation for the Neo Virtual Machine.
 
+use crate::stack_item::stack_item::decode_integer_bytes;
 use crate::{VmError, VmResult};
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::next_stack_item_id;
@@ -118,9 +119,7 @@ impl Buffer {
 
     /// Converts the buffer to an integer.
     pub fn to_integer(&self) -> VmResult<BigInt> {
-        self.with_data(|data| {
-            neo_vm_rs::decode_integer_bytes(data).map_err(VmError::invalid_type_simple)
-        })
+        self.with_data(decode_integer_bytes)
     }
 
     /// Converts the buffer to a boolean.

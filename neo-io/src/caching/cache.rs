@@ -11,8 +11,8 @@ use std::sync::Arc;
 /// Abstract cache base class matching C# Cache<`TKey`, `TValue`>.
 ///
 /// This is a thread-safe cache implementation that supports configurable eviction
-/// policy. LRU behavior is implemented by [`crate::caching::lru_cache::LRUCache`]
-/// using the upstream `lru` crate.
+/// policy. LRU behavior is implemented by the specialised cache wrappers using
+/// the upstream `lru` crate.
 ///
 /// # Type Parameters
 ///

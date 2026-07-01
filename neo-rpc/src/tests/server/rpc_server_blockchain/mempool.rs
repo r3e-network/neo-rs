@@ -1,4 +1,49 @@
 use super::*;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::Arc;
+use std::thread;
+
+fn serve_rpc_once(expected_method: &'static str, result: Value) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test RPC");
+    let url = format!("http://{}", listener.local_addr().expect("addr"));
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut request = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            let read = stream.read(&mut buf).expect("read request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let text = String::from_utf8_lossy(&request);
+        assert!(
+            text.contains(&format!(r#""method":"{expected_method}""#))
+                || text.contains(&format!(r#""method": "{expected_method}""#)),
+            "unexpected request: {text}"
+        );
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": result,
+        })
+        .to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write response");
+    });
+    url
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_raw_mem_pool_defaults_to_verified_hashes() {
@@ -24,6 +69,35 @@ async fn get_raw_mem_pool_verbose_roundtrips_into_client_model() {
     let parsed = RpcRawMemPool::from_json(&parse_object(&result)).expect("parse mempool");
     assert!(parsed.verified.is_empty());
     assert!(parsed.unverified.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_raw_mem_pool_uses_remote_ledger_rpc_when_configured() {
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let mut server = RpcServer::new(system, RpcServerConfig::default());
+    server
+        .set_remote_ledger_rpc(serve_rpc_once(
+            "getrawmempool",
+            serde_json::json!({
+                "height": 321,
+                "verified": ["0xremote"],
+                "unverified": []
+            }),
+        ))
+        .expect("configure remote ledger RPC");
+    let handlers = RpcServerBlockchain::register_handlers();
+    let handler = find_handler(&handlers, "getrawmempool");
+
+    let callback = handler.callback();
+    let server = Arc::new(server);
+    let result = tokio::task::spawn_blocking(move || {
+        (callback)(&server, &[Value::Bool(true)]).expect("remote getrawmempool")
+    })
+    .await
+    .expect("blocking handler task");
+
+    assert_eq!(result["height"], 321);
+    assert_eq!(result["verified"], serde_json::json!(["0xremote"]));
 }
 
 #[tokio::test(flavor = "multi_thread")]

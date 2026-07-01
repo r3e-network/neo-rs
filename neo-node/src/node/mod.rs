@@ -1,0 +1,1179 @@
+//! # neo-node::node
+//!
+//! Daemon composition, CLI modes, and long-running node startup.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-node`. This application crate may compose lower
+//! layers but must not define protocol bytes, storage formats, consensus rules,
+//! or VM semantics.
+//!
+//! ## Contents
+//!
+//! - `chain_acc`: chain.acc import, reporting, and throughput accounting
+//!   helpers.
+//! - `config`: HSM provider configuration and signing profile records.
+//! - `context`: Runtime context records carried through the local workflow.
+//! - `fast_sync`: Built-in fast-sync package discovery, download, verification,
+//!   and import flow.
+//! - `indexer_runtime`: Indexer runtime wiring used by the node daemon.
+//! - `ledger_source`: Local and remote ledger source abstractions used by node
+//!   modes.
+//! - `logging`: Logging, tracing, and operator diagnostics setup.
+//! - `observability`: Metrics and observability endpoint wiring.
+//! - `remote_ledger`: RPC-backed ledger source used when the node runs without
+//!   a local ledger.
+//! - `rpc_runtime`: RPC server runtime wiring and shutdown handling.
+//! - `seeds`: Seed-node selection and network bootstrap helpers.
+//! - `services`: Auxiliary service startup and handles used by the daemon.
+//! - `sync_metrics`: Sync-speed counters, summaries, and operator-facing
+//!   throughput status.
+//! - `tasks`: Task supervision, shutdown wiring, and background-service
+//!   handles.
+//! - `telemetry`: Telemetry startup and reporting helpers.
+//! - `tests`: Module-local tests and regression coverage.
+
+use clap::Parser;
+use neo_config::ProtocolSettings;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tracing::{info, warn};
+
+mod chain_acc;
+mod config;
+mod context;
+mod fast_sync;
+mod indexer_runtime;
+mod ledger_source;
+mod logging;
+mod observability;
+mod remote_ledger;
+mod rpc_runtime;
+mod seeds;
+mod services;
+mod sync_metrics;
+mod tasks;
+mod telemetry;
+
+#[cfg(test)]
+use config::validate_config;
+use config::{
+    NodeConfig, default_p2p_port, load_config, open_memory_store, open_store,
+    service_store_provider, validate_config_for_ledger_mode, validate_state_service_storage,
+    validate_storage,
+};
+use context::DaemonContext;
+use ledger_source::{LedgerBlockSource, RpcLedgerBlockSource};
+use remote_ledger::RemoteLedgerStatus;
+use rpc_runtime::start_rpc_server;
+use services::OperationalServices;
+use tasks::{spawn_daemon_task, spawn_daemon_task_result};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LedgerMode<'a> {
+    Local,
+    RemoteRpc { endpoint: &'a str },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StoragePreflightMode {
+    None,
+    ValidateLocal,
+    SkipRemoteLedger,
+}
+
+impl<'a> LedgerMode<'a> {
+    fn from_cli(cli: &'a NodeCli) -> Self {
+        cli.remote_ledger_rpc
+            .as_deref()
+            .map(|endpoint| Self::RemoteRpc { endpoint })
+            .unwrap_or(Self::Local)
+    }
+
+    fn remote_endpoint(self) -> Option<&'a str> {
+        match self {
+            Self::Local => None,
+            Self::RemoteRpc { endpoint } => Some(endpoint),
+        }
+    }
+
+    fn uses_local_replay_services(self) -> bool {
+        matches!(self, Self::Local)
+    }
+}
+
+fn storage_preflight_mode(cli: &NodeCli, ledger_mode: LedgerMode<'_>) -> StoragePreflightMode {
+    if !(cli.check_storage || cli.check_all) {
+        return StoragePreflightMode::None;
+    }
+    if ledger_mode.uses_local_replay_services() {
+        StoragePreflightMode::ValidateLocal
+    } else {
+        StoragePreflightMode::SkipRemoteLedger
+    }
+}
+
+/// Default path to the node configuration file.
+pub const DEFAULT_SETTINGS_PATH: &str = "neo_testnet_node.toml";
+const FAST_SYNC_BURST_CAPACITY: usize = 4096;
+const FAST_SYNC_BLOCK_BATCH_SIZE: usize = 500;
+const FAST_SYNC_BLOCK_BATCH_FLUSH_MS: u64 = 5;
+
+fn flush_state_service_for_shutdown(node: &neo_system::Node) -> anyhow::Result<()> {
+    if let Some(state_service) =
+        node.get_service::<neo_state_service::commit_handlers::StateServiceCommitHandlers>()
+    {
+        flush_state_service(&state_service)?;
+    }
+    Ok(())
+}
+
+fn flush_state_service(
+    state_service: &neo_state_service::commit_handlers::StateServiceCommitHandlers,
+) -> anyhow::Result<()> {
+    state_service
+        .flush_result()
+        .map_err(|err| anyhow::anyhow!("state service MPT worker failed during flush: {err}"))
+}
+
+fn validate_cli_mode(cli: &NodeCli) -> anyhow::Result<()> {
+    if cli.remote_ledger_rpc.is_some() && (cli.import_chain.is_some() || cli.fast_sync) {
+        anyhow::bail!(
+            "--remote-ledger-rpc runs without a local canonical ledger; do not combine it with --import-chain or --fast-sync"
+        );
+    }
+    Ok(())
+}
+
+fn restore_durable_store_mode(
+    chain_store: &dyn neo_storage::persistence::store::Store,
+    service_stores: &[Arc<dyn neo_storage::persistence::store::Store>],
+) -> anyhow::Result<()> {
+    chain_store.disable_fast_sync_mode();
+    chain_store
+        .flush()
+        .map_err(|err| anyhow::anyhow!("flushing chain store after fast-sync mode: {err}"))?;
+    for store in service_stores {
+        store.disable_fast_sync_mode();
+        store
+            .flush()
+            .map_err(|err| anyhow::anyhow!("flushing service store after fast-sync mode: {err}"))?;
+    }
+    Ok(())
+}
+
+fn abort_fast_sync_store_mode(
+    chain_store: &dyn neo_storage::persistence::store::Store,
+    service_stores: &[Arc<dyn neo_storage::persistence::store::Store>],
+) {
+    chain_store.discard_pending_fast_sync_writes();
+    chain_store.disable_fast_sync_mode();
+    for store in service_stores {
+        store.discard_pending_fast_sync_writes();
+        store.disable_fast_sync_mode();
+    }
+}
+
+fn abort_startup_after_import_failure(
+    node: &neo_system::Node,
+    durable_service_stores: &[Arc<dyn neo_storage::persistence::store::Store>],
+    handles: Vec<tokio::task::JoinHandle<()>>,
+    observability: Option<&observability::ObservabilityRuntime>,
+    operation: &'static str,
+    err: anyhow::Error,
+) -> anyhow::Error {
+    let mut cleanup_errors = Vec::new();
+    if let Err(cleanup_err) = flush_state_service_for_shutdown(node) {
+        cleanup_errors.push(format!("state-service flush failed: {cleanup_err:#}"));
+    }
+    abort_fast_sync_store_mode(node.storage().as_ref(), durable_service_stores);
+    for handle in handles {
+        handle.abort();
+    }
+
+    let mut message = format!(
+        "{operation} failed; startup aborted to avoid continuing with a partial local ledger"
+    );
+    if !cleanup_errors.is_empty() {
+        message.push_str("; cleanup errors: ");
+        message.push_str(&cleanup_errors.join("; "));
+    }
+    let failure = err.context(message);
+    if let Some(observability) = observability {
+        observability.report_startup_error(&failure);
+    }
+    failure
+}
+
+async fn flush_inventory_block_batch(
+    blockchain: &neo_blockchain::BlockchainHandle,
+    pending_blocks: &mut Vec<Arc<neo_payloads::Block>>,
+) {
+    if pending_blocks.is_empty() {
+        return;
+    }
+    let blocks = std::mem::take(pending_blocks);
+    let _ = blockchain
+        .tell(neo_blockchain::BlockchainCommand::InventoryBlocks {
+            blocks,
+            relay: true,
+            pre_verified: false,
+        })
+        .await;
+}
+
+async fn handle_inbound_inventory_item(
+    item: neo_network::InboundInventory,
+    blockchain: &neo_blockchain::BlockchainHandle,
+    relay: &neo_network::NetworkHandle,
+    consensus_decode: &Option<(
+        Arc<parking_lot::RwLock<Vec<neo_consensus::ValidatorInfo>>>,
+        u32,
+    )>,
+    consensus_inbound_tx: &Option<
+        tokio::sync::mpsc::Sender<neo_consensus::messages::ConsensusPayload>,
+    >,
+    pending_blocks: &mut Vec<Arc<neo_payloads::Block>>,
+) {
+    use neo_network::InboundInventory;
+
+    match item {
+        InboundInventory::Block(block) => {
+            pending_blocks.push(block);
+            if pending_blocks.len() >= FAST_SYNC_BLOCK_BATCH_SIZE {
+                flush_inventory_block_batch(blockchain, pending_blocks).await;
+            }
+        }
+        InboundInventory::Transaction(tx) => {
+            flush_inventory_block_batch(blockchain, pending_blocks).await;
+            // Admit the peer's transaction to the mempool; the C# `Transaction.Verify`
+            // pipeline runs inside the blockchain service. On a fresh accept (Succeed),
+            // re-announce it to peers via `Inv` so it propagates.
+            if let Ok(reply) = blockchain.add_transaction((*tx).clone()).await {
+                if reply.result.is_success() {
+                    let _ = relay
+                        .broadcast_inv(neo_network::InventoryType::Transaction, vec![reply.hash])
+                        .await;
+                }
+            }
+        }
+        InboundInventory::Extensible(payload) => {
+            flush_inventory_block_batch(blockchain, pending_blocks).await;
+            // dBFT consensus messages: when this node is a validator, decode +
+            // authenticate the payload and feed it to the consensus driver.
+            // (`extensible_to_consensus` returns `None` for non-dBFT or spoofed payloads.)
+            if let (Some((validators, network_magic)), Some(tx)) =
+                (consensus_decode, consensus_inbound_tx)
+            {
+                let cp = {
+                    let validators = validators.read();
+                    crate::consensus::extensible_to_consensus(&payload, *network_magic, &validators)
+                };
+                if let Some(cp) = cp {
+                    let _ = tx.send(cp).await;
+                }
+            }
+            // Cache + relay through the blockchain service regardless
+            // (peers that are validators consume it; we relay it on).
+            let _ = blockchain
+                .tell(neo_blockchain::BlockchainCommand::InventoryExtensible {
+                    payload: (*payload).clone(),
+                    relay: true,
+                })
+                .await;
+        }
+    }
+}
+
+fn import_tip_reaches_stop_height(imported_tip: u32, stop_at_height: Option<u32>) -> bool {
+    stop_at_height.is_some_and(|target| imported_tip >= target)
+}
+
+/// Command-line arguments for the `neo-node` daemon.
+#[derive(Debug, Parser)]
+#[command(name = "neo-node", version, about = "Neo N3 node daemon")]
+pub struct NodeCli {
+    /// Path to the TOML node configuration file.
+    #[arg(long, short = 'c', default_value = DEFAULT_SETTINGS_PATH)]
+    pub config: PathBuf,
+
+    /// Override the network magic advertised in the protocol settings
+    /// (must match the rest of the network).
+    #[arg(long)]
+    pub network_magic: Option<u32>,
+
+    /// Override the persistent storage directory. Uses the configured
+    /// persistent backend, or the build's default persistent backend.
+    #[arg(long)]
+    pub storage_path: Option<PathBuf>,
+
+    /// Validate the node configuration and exit without starting services.
+    #[arg(long)]
+    pub check_config: bool,
+
+    /// Validate the configured storage backend can be opened and exit.
+    #[arg(long)]
+    pub check_storage: bool,
+
+    /// Run all preflight checks and exit.
+    #[arg(long)]
+    pub check_all: bool,
+
+    /// Import blocks from a chain.acc dump file before starting the node.
+    /// The file is the C# Neo block-dump format (u32 count, then repeated
+    /// i32-size + serialized-Block). Blocks are imported with verify=false
+    /// (trusted source, like C# Neo's chain.acc import). After import, the
+    /// node starts normally and continues syncing from the network.
+    #[arg(long, value_name = "PATH")]
+    pub import_chain: Option<PathBuf>,
+
+    /// Download and import the official NGD N3 fast-sync package before
+    /// starting network sync. The package URL is resolved from the built-in
+    /// official manifest URL and cached locally after MD5 validation.
+    #[arg(long)]
+    pub fast_sync: bool,
+
+    /// Override the directory used to cache the official fast-sync package.
+    #[arg(long, value_name = "PATH", requires = "fast_sync")]
+    pub fast_sync_cache: Option<PathBuf>,
+
+    /// Validate the imported fast-sync block tip against an upstream JSON-RPC
+    /// endpoint before clearing the fast-sync import marker.
+    #[arg(long, value_name = "URL", requires = "fast_sync")]
+    pub fast_sync_reference_rpc: Option<String>,
+
+    /// Write a machine-readable fast-sync import proof JSON after a successful
+    /// package import.
+    #[arg(long, value_name = "PATH", requires = "fast_sync")]
+    pub fast_sync_report: Option<PathBuf>,
+
+    /// Stop gracefully after this persisted block height is reached.
+    #[arg(long, value_name = "HEIGHT")]
+    pub stop_at_height: Option<u32>,
+
+    /// Run without a local canonical ledger and delegate ledger/state/indexer
+    /// reads plus relay-style RPC calls to an upstream JSON-RPC endpoint.
+    #[arg(long, value_name = "URL")]
+    pub remote_ledger_rpc: Option<String>,
+}
+
+/// The composed, running node and the handles that keep it alive.
+struct RunningNode {
+    node: Arc<neo_system::Node>,
+    network: neo_network::NetworkHandle,
+    handles: Vec<tokio::task::JoinHandle<()>>,
+    durable_service_stores: Vec<Arc<dyn neo_storage::persistence::store::Store>>,
+}
+
+/// Entry point: parse CLI, load config, build the node, start P2P +
+/// RPC, and wait for `Ctrl-C`.
+pub async fn run() -> anyhow::Result<()> {
+    let cli = NodeCli::parse();
+    validate_cli_mode(&cli)?;
+    let ledger_mode = LedgerMode::from_cli(&cli);
+    let (settings, config) = load_config(&cli.config, cli.network_magic)?;
+    let _logging_guards = logging::init_tracing(&config.logging)?;
+    let settings = Arc::new(settings);
+    info!(
+        target: "neo",
+        network = format_args!("0x{:08X}", settings.network),
+        config = %cli.config.display(),
+        "loaded protocol settings"
+    );
+    validate_config_for_ledger_mode(&config, settings.network, ledger_mode)?;
+
+    let check_config = cli.check_config || cli.check_all;
+    let storage_preflight = storage_preflight_mode(&cli, ledger_mode);
+    if check_config && storage_preflight == StoragePreflightMode::None {
+        info!(target: "neo", config = %cli.config.display(), "configuration preflight passed");
+        println!("configuration OK: {}", cli.config.display());
+        return Ok(());
+    }
+    match storage_preflight {
+        StoragePreflightMode::None => {}
+        StoragePreflightMode::ValidateLocal => {
+            validate_storage(&config, cli.storage_path.as_deref(), settings.network)?;
+            info!(target: "neo", config = %cli.config.display(), "storage preflight passed");
+            println!("storage OK: {}", cli.config.display());
+            return Ok(());
+        }
+        StoragePreflightMode::SkipRemoteLedger => {
+            info!(
+                target: "neo::remote_ledger",
+                config = %cli.config.display(),
+                "storage preflight skipped; remote-ledger mode does not open a local canonical ledger"
+            );
+            println!(
+                "storage skipped for remote ledger: {}",
+                cli.config.display()
+            );
+            return Ok(());
+        }
+    }
+
+    if check_config {
+        info!(target: "neo", config = %cli.config.display(), "configuration preflight passed");
+        println!("configuration OK: {}", cli.config.display());
+        return Ok(());
+    }
+
+    let observability =
+        observability::ObservabilityRuntime::from_config(&config.observability, settings.network)?;
+    if let Some(observability) = &observability {
+        observability.install_panic_hook();
+    }
+
+    let running_node = match build_node(
+        Arc::clone(&settings),
+        &config,
+        cli.storage_path.as_deref(),
+        cli.stop_at_height,
+        ledger_mode,
+        cli.import_chain.is_some() || cli.fast_sync,
+        observability.clone(),
+    )
+    .await
+    {
+        Ok(running_node) => running_node,
+        Err(err) => {
+            let err = err.context("failed to construct neo-system Node");
+            if let Some(observability) = &observability {
+                observability.report_startup_error(&err);
+            }
+            return Err(err);
+        }
+    };
+    let RunningNode {
+        node,
+        network,
+        mut handles,
+        durable_service_stores,
+    } = running_node;
+    info!(target: "neo", "neo-system Node built; blockchain service running");
+
+    // Optional: import blocks from a chain.acc file before starting live sync.
+    if let Some(import_path) = &cli.import_chain {
+        let blockchain = node.blockchain();
+        match chain_acc::import_chain_acc_until_height(
+            &blockchain,
+            import_path,
+            false,
+            cli.stop_at_height,
+            Some(node.storage()),
+        )
+        .await
+        {
+            Ok(count) => {
+                restore_durable_store_mode(node.storage().as_ref(), &durable_service_stores)?;
+                info!(
+                    target: "neo",
+                    imported = count,
+                    "chain.acc import completed successfully; continuing with network sync"
+                );
+                match blockchain.get_height().await {
+                    Ok(height) if import_tip_reaches_stop_height(height, cli.stop_at_height) => {
+                        info!(
+                            target: "neo",
+                            height,
+                            stop_at_height = cli.stop_at_height.unwrap_or_default(),
+                            imported = count,
+                            "chain.acc import reached stop height; shutting down"
+                        );
+                        flush_state_service_for_shutdown(&node)?;
+                        restore_durable_store_mode(
+                            node.storage().as_ref(),
+                            &durable_service_stores,
+                        )?;
+                        for handle in handles {
+                            handle.abort();
+                        }
+                        return Ok(());
+                    }
+                    Ok(_) => {}
+                    Err(err) => {
+                        warn!(
+                            target: "neo",
+                            error = %err,
+                            "failed to read chain height after chain.acc import; continuing with network sync"
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                return Err(abort_startup_after_import_failure(
+                    &node,
+                    &durable_service_stores,
+                    std::mem::take(&mut handles),
+                    observability.as_ref(),
+                    "chain.acc import",
+                    err,
+                ));
+            }
+        }
+    }
+    if cli.fast_sync {
+        let blockchain = node.blockchain();
+        match fast_sync::run_fast_sync_report(
+            &blockchain,
+            node.storage(),
+            &config,
+            cli.storage_path.as_deref(),
+            cli.fast_sync_cache.as_deref(),
+            settings.network,
+            cli.stop_at_height,
+            cli.fast_sync_reference_rpc.as_deref(),
+            node.state_store().as_ref(),
+            node.get_service::<neo_state_service::commit_handlers::StateServiceCommitHandlers>()
+                .as_ref(),
+        )
+        .await
+        {
+            Ok(report) => {
+                if let Some(path) = &cli.fast_sync_report {
+                    fast_sync::write_fast_sync_report_sidecar(path, &report)?;
+                }
+                restore_durable_store_mode(node.storage().as_ref(), &durable_service_stores)?;
+                let count = report.import.imported_blocks;
+                info!(
+                    target: "neo::fast_sync",
+                    imported = count,
+                    package = %report.package.filename,
+                    end_height = report.package.end_height,
+                    average_blocks_per_second = report.import.average_blocks_per_second,
+                    throughput_status = ?report.import.throughput_status,
+                    "fast-sync package import completed successfully; continuing with network sync"
+                );
+                match blockchain.get_height().await {
+                    Ok(height) if import_tip_reaches_stop_height(height, cli.stop_at_height) => {
+                        info!(
+                            target: "neo::fast_sync",
+                            height,
+                            stop_at_height = cli.stop_at_height.unwrap_or_default(),
+                            imported = count,
+                            "fast-sync import reached stop height; shutting down"
+                        );
+                        flush_state_service_for_shutdown(&node)?;
+                        restore_durable_store_mode(
+                            node.storage().as_ref(),
+                            &durable_service_stores,
+                        )?;
+                        for handle in handles {
+                            handle.abort();
+                        }
+                        return Ok(());
+                    }
+                    Ok(_) => {}
+                    Err(err) => {
+                        warn!(
+                            target: "neo::fast_sync",
+                            error = %err,
+                            "failed to read chain height after fast-sync import; continuing with network sync"
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                return Err(abort_startup_after_import_failure(
+                    &node,
+                    &durable_service_stores,
+                    std::mem::take(&mut handles),
+                    observability.as_ref(),
+                    "fast-sync package import",
+                    err,
+                ));
+            }
+        }
+    }
+
+    match telemetry::metrics_server_task(&config.telemetry.metrics, Arc::clone(&node)) {
+        Ok(Some(task)) => spawn_daemon_task_result(
+            &mut handles,
+            observability.as_ref(),
+            "telemetry_metrics",
+            task,
+        ),
+        Ok(None) => {}
+        Err(err) => {
+            let err = err.context("failed to start metrics endpoint");
+            if let Some(observability) = &observability {
+                observability.report_startup_error(&err);
+            }
+            for handle in handles {
+                handle.abort();
+            }
+            return Err(err);
+        }
+    }
+
+    // ----- P2P listener -----
+    let p2p_port = config
+        .p2p
+        .port
+        .unwrap_or(default_p2p_port(settings.network));
+    let p2p_bind = config.p2p.bind_address.as_deref().unwrap_or("0.0.0.0");
+    match format!("{p2p_bind}:{p2p_port}").parse::<SocketAddr>() {
+        Ok(bind_addr) => match network.start(bind_addr).await {
+            Ok(()) => info!(target: "neo", %bind_addr, "P2P listener started"),
+            Err(err) => {
+                warn!(target: "neo", %bind_addr, error = %err, "failed to start P2P listener");
+                if let Some(observability) = &observability {
+                    observability.report_runtime_error("p2p_listener", &err);
+                }
+            }
+        },
+        Err(err) => {
+            warn!(target: "neo", addr = %format!("{p2p_bind}:{p2p_port}"), error = %err, "invalid P2P bind address");
+            if let Some(observability) = &observability {
+                observability.report_runtime_error("p2p_bind_address", &err);
+            }
+        }
+    }
+
+    if ledger_mode.uses_local_replay_services() {
+        let seed_nodes = if config.p2p.seed_nodes.is_empty() {
+            settings.seed_list.clone()
+        } else {
+            config.p2p.seed_nodes.clone()
+        };
+        if let Some(handle) =
+            seeds::spawn_seed_dialing(seed_nodes, network.clone(), observability.clone())
+        {
+            handles.push(handle);
+        }
+    } else {
+        info!(
+            target: "neo::remote_ledger",
+            "seed dialing disabled; remote-ledger mode does not sync blocks into a local canonical ledger"
+        );
+    }
+
+    // ----- RPC server -----
+    let _rpc_keepalive = if config.rpc.enabled {
+        match start_rpc_server(
+            &node,
+            &config,
+            settings.network,
+            ledger_mode.remote_endpoint(),
+        ) {
+            Ok(server) => Some(server),
+            Err(err) => {
+                let err = err.context("failed to start RPC server");
+                if let Some(observability) = &observability {
+                    observability.report_startup_error(&err);
+                }
+                for handle in handles {
+                    handle.abort();
+                }
+                return Err(err);
+            }
+        }
+    } else {
+        info!(target: "neo", "RPC server disabled in config");
+        None
+    };
+    if let Some(observability) = &observability {
+        handles.extend(observability.spawn_heartbeat_tasks(Arc::clone(&node)));
+    }
+
+    // Wait for a shutdown signal, handling SIGTERM as well as Ctrl-C (SIGINT)
+    // so `kill`/`pkill`, Docker, and systemd all stop the node gracefully. The
+    // validation stop-height path uses the same shutdown route after observing a
+    // committed block event, so the persistent store is dropped cleanly.
+    let shutdown_signalled = wait_for_shutdown_signal(node.blockchain(), cli.stop_at_height).await;
+
+    match shutdown_signalled {
+        Ok(signal_name) => {
+            info!(target: "neo", signal = signal_name, "shutdown signal received; shutting down")
+        }
+        Err(err) => {
+            warn!(target: "neo", error = %err, "shutdown-signal handler failed; falling back to pending forever");
+            if let Some(observability) = &observability {
+                observability.report_runtime_error("shutdown_signal", &err);
+            }
+            std::future::pending::<()>().await;
+        }
+    }
+
+    for handle in handles {
+        handle.abort();
+    }
+    flush_state_service_for_shutdown(&node)?;
+    restore_durable_store_mode(node.storage().as_ref(), &durable_service_stores)?;
+    Ok(())
+}
+
+async fn wait_for_shutdown_signal(
+    blockchain: neo_blockchain::BlockchainHandle,
+    stop_at_height: Option<u32>,
+) -> std::io::Result<String> {
+    if let Some(target_height) = stop_at_height {
+        tokio::select! {
+            res = wait_for_os_shutdown_signal() => res.map(str::to_owned),
+            res = wait_for_stop_height(blockchain.subscribe(), target_height) => res,
+        }
+    } else {
+        wait_for_os_shutdown_signal().await.map(str::to_owned)
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_os_shutdown_signal() -> std::io::Result<&'static str> {
+    use tokio::signal::unix::{SignalKind, signal};
+    match signal(SignalKind::terminate()) {
+        Ok(mut sigterm) => tokio::select! {
+            res = tokio::signal::ctrl_c() => res.map(|()| "Ctrl-C"),
+            _ = sigterm.recv() => Ok("SIGTERM"),
+        },
+        Err(_) => tokio::signal::ctrl_c().await.map(|()| "Ctrl-C"),
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_os_shutdown_signal() -> std::io::Result<&'static str> {
+    tokio::signal::ctrl_c().await.map(|()| "Ctrl-C")
+}
+
+async fn wait_for_stop_height(
+    mut events: tokio::sync::broadcast::Receiver<neo_blockchain::RuntimeEvent>,
+    target_height: u32,
+) -> std::io::Result<String> {
+    use tokio::sync::broadcast::error::RecvError;
+
+    loop {
+        match events.recv().await {
+            Ok(neo_blockchain::RuntimeEvent::Imported { height, .. })
+                if height >= target_height =>
+            {
+                return Ok(format!("stop-at-height {target_height}"));
+            }
+            Ok(_) => {}
+            Err(RecvError::Lagged(_)) => continue,
+            Err(RecvError::Closed) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "blockchain event stream closed before stop height",
+                ));
+            }
+        }
+    }
+}
+
+/// Constructs the [`neo_system::Node`] with a live blockchain service
+/// and a spawned [`neo_network::LocalNodeService`].
+async fn build_node(
+    settings: Arc<ProtocolSettings>,
+    config: &NodeConfig,
+    storage_override: Option<&Path>,
+    stop_at_height: Option<u32>,
+    ledger_mode: LedgerMode<'_>,
+    startup_bulk_import: bool,
+    observability: Option<observability::ObservabilityRuntime>,
+) -> anyhow::Result<RunningNode> {
+    use neo_blockchain::service::BlockchainService;
+    use neo_blockchain::{HeaderCache, LedgerContext};
+    use neo_storage::persistence::StoreCache;
+
+    // ----- storage backend -----
+    let store: Arc<dyn neo_storage::persistence::store::Store> = match ledger_mode {
+        LedgerMode::Local => open_store(config, storage_override)?,
+        LedgerMode::RemoteRpc { .. } => {
+            info!(
+                target: "neo::remote_ledger",
+                "using ephemeral in-memory chain context; configured local ledger store will not be opened"
+            );
+            open_memory_store()?
+        }
+    };
+
+    // Enable backend-specific fast-sync optimizations during initial catch-up
+    // for higher write throughput. The node re-enables durable mode once it
+    // approaches the live tip.
+    let durable_tip_index = {
+        let probe = StoreCache::new_from_store(Arc::clone(&store), false);
+        neo_native_contracts::LedgerContract::new()
+            .current_index(probe.data_cache())
+            .ok()
+    };
+    let service_storage_provider = service_store_provider(config)?;
+    validate_state_service_storage(
+        config,
+        settings.network,
+        durable_tip_index,
+        &service_storage_provider,
+    )?;
+    let durable_tip_height = durable_tip_index.unwrap_or(0);
+    let use_fast_sync_store_mode = ledger_mode.uses_local_replay_services()
+        && (durable_tip_height == 0 || startup_bulk_import);
+    if use_fast_sync_store_mode {
+        info!(
+            target: "neo::sync",
+            startup_bulk_import,
+            durable_tip_height,
+            "enabling fast-sync store mode for initial catch-up (WAL disabled, auto-compaction off)"
+        );
+        store.enable_fast_sync_mode();
+    }
+
+    // Natives are dispatched through the global provider.
+    neo_native_contracts::install();
+
+    let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    // The consensus driver reads the ledger tip from this startup snapshot for
+    // its first round only; subsequent rounds restart off RuntimeEvent::Imported.
+    let consensus_snapshot = Arc::clone(&snapshot);
+    // The durable tip at startup, read before the snapshot is moved into the
+    // service contexts; used to seed the advertised height / sync cursor.
+    let durable_tip = neo_native_contracts::LedgerContract::new()
+        .current_index(&snapshot)
+        .unwrap_or(0);
+
+    let mempool = Arc::new(neo_mempool::MemoryPool::new(&settings));
+    let header_cache = Arc::new(HeaderCache::default());
+    // Seed the in-memory ledger tip from the durable store so a node restarted
+    // on a populated chain accepts the next block (`index == current_height + 1`)
+    // instead of parking every incoming block as "ahead of tip" (which would
+    // stall sync at the persisted height after a restart).
+    let ledger_ctx = Arc::new(LedgerContext::default());
+    if durable_tip > 0 {
+        ledger_ctx.record_tip(durable_tip);
+    }
+
+    let OperationalServices {
+        state_store,
+        state_service,
+        indexer_service,
+        application_logs_service,
+        tokens_tracker_service,
+        tokens_tracker_runtime,
+        durable_stores,
+    } = services::build_operational_services(
+        config,
+        settings.network,
+        ledger_mode.uses_local_replay_services(),
+        use_fast_sync_store_mode,
+    )?;
+
+    // A second handle on the shared snapshot serves peers' block requests, and
+    // the shared mempool answers `Inv`/`Mempool`/`GetData` for unconfirmed txs.
+    let mut advertised_tip = durable_tip;
+    let mut remote_advertised_tip = None;
+    let mut remote_tip_error = None;
+    let block_source: Arc<dyn neo_network::BlockSource> = match ledger_mode {
+        LedgerMode::RemoteRpc { endpoint } => {
+            let source = RpcLedgerBlockSource::new(endpoint.to_string(), Arc::clone(&mempool))?;
+            match source.remote_tip_height() {
+                Ok(height) => {
+                    advertised_tip = height;
+                    remote_advertised_tip = Some(height);
+                }
+                Err(err) => {
+                    remote_tip_error = Some(err.to_string());
+                    warn!(
+                        target: "neo::remote_ledger",
+                        endpoint,
+                        error = %err,
+                        "failed to read remote ledger tip height; advertising local height"
+                    );
+                }
+            }
+            info!(
+                target: "neo::remote_ledger",
+                endpoint,
+                height = advertised_tip,
+                "using remote RPC endpoint as ledger source"
+            );
+            Arc::new(source)
+        }
+        LedgerMode::Local => Arc::new(LedgerBlockSource::new(
+            Arc::clone(&snapshot),
+            Arc::clone(&ledger_ctx),
+            Arc::clone(&mempool),
+        )),
+    };
+    let daemon_ctx = Arc::new(DaemonContext::new(
+        Arc::clone(&settings),
+        snapshot,
+        store_cache,
+        state_service.clone(),
+        config.state_service.track_during_catchup,
+        indexer_service.clone(),
+        application_logs_service.clone(),
+    ));
+    let system_ctx = Arc::clone(&daemon_ctx);
+    let (mut service, blockchain) = BlockchainService::with_defaults(
+        system_ctx,
+        Arc::clone(&ledger_ctx),
+        Arc::clone(&header_cache),
+        Arc::clone(&mempool),
+    );
+    service.set_stop_at_height(stop_at_height);
+
+    let mut handles = Vec::new();
+    spawn_daemon_task(
+        &mut handles,
+        observability.as_ref(),
+        "blockchain_service",
+        service.run(),
+    );
+
+    if ledger_mode.uses_local_replay_services() {
+        // C# Blockchain.OnInitialize: persist genesis on an empty store.
+        blockchain
+            .tell(neo_blockchain::BlockchainCommand::Initialize)
+            .await
+            .map_err(|_| anyhow::anyhow!("blockchain service command loop closed during init"))?;
+    } else {
+        info!(
+            target: "neo::remote_ledger",
+            "local ledger initialization disabled; JSON-RPC ledger reads are delegated upstream"
+        );
+    }
+
+    // ----- dBFT consensus participation -----
+    // Build the validator set + this node's role from the protocol settings and
+    // the `[consensus]` config. The driver itself is spawned after the network
+    // exists (it needs the outbound relay handle); the inbound channel is set up
+    // here so the forwarder can feed it decoded dBFT payloads.
+    let consensus_enabled = config.consensus.enabled || config.consensus.auto_start;
+    let consensus_setup = crate::consensus::build_consensus_setup(
+        &settings,
+        consensus_enabled,
+        config.consensus.private_key_hex.as_deref(),
+        config.consensus.hsm.as_ref(),
+    )?;
+    let consensus_configured = consensus_setup.is_some();
+    let consensus_validators = consensus_setup
+        .as_ref()
+        .map(|s| Arc::new(parking_lot::RwLock::new(s.validators.clone())));
+    // Validators + network magic the forwarder uses to decode/authenticate
+    // inbound dBFT extensible payloads.
+    let consensus_decode = consensus_setup
+        .as_ref()
+        .zip(consensus_validators.as_ref())
+        .map(|(s, validators)| (Arc::clone(validators), s.network));
+    let (consensus_inbound_tx, consensus_inbound_rx) = if consensus_configured {
+        let (tx, rx) =
+            tokio::sync::mpsc::channel::<neo_consensus::messages::ConsensusPayload>(1024);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
+    // ----- inbound inventory relay: peer blocks/transactions -> ledger -----
+    // The network layer is decoupled from the blockchain (C# `NeoSystem`
+    // mediator), so each per-peer task forwards decoded inventory over this
+    // channel; the forwarder hands blocks to the blockchain service, which
+    // applies the C# `Blockchain.OnNewBlock` sequencing. The forwarder is
+    // spawned *after* the network exists so it can re-announce accepted
+    // transactions to peers via `Inv` (C# `LocalNode.RelayDirectly`).
+    let (inv_tx, mut inv_rx) =
+        tokio::sync::mpsc::channel::<neo_network::InboundInventory>(FAST_SYNC_BURST_CAPACITY);
+
+    // ----- P2P service -----
+    let channels_config = config.p2p.channels_config()?;
+    let (net_service, network) =
+        neo_network::LocalNodeService::with_config(Arc::clone(&settings), channels_config);
+    let net_service = if ledger_mode.uses_local_replay_services() {
+        net_service.with_inventory_sink(inv_tx)
+    } else {
+        info!(
+            target: "neo::remote_ledger",
+            "inbound P2P inventory disabled; peer blocks and transactions will not populate local state"
+        );
+        net_service
+    };
+    let net_service = net_service.with_block_source(block_source);
+    spawn_daemon_task(
+        &mut handles,
+        observability.as_ref(),
+        "p2p_service",
+        net_service.run(),
+    );
+
+    if ledger_mode.uses_local_replay_services() {
+        let blockchain = blockchain.clone();
+        let relay = network.clone();
+        let consensus_decode = consensus_decode.clone();
+        let consensus_inbound_tx = consensus_inbound_tx.clone();
+        spawn_daemon_task(
+            &mut handles,
+            observability.as_ref(),
+            "inventory_relay",
+            async move {
+                use tokio::time::{Duration, MissedTickBehavior};
+
+                let mut pending_blocks: Vec<Arc<neo_payloads::Block>> =
+                    Vec::with_capacity(FAST_SYNC_BLOCK_BATCH_SIZE);
+                let mut flush_timer =
+                    tokio::time::interval(Duration::from_millis(FAST_SYNC_BLOCK_BATCH_FLUSH_MS));
+                flush_timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+                loop {
+                    tokio::select! {
+                        maybe_item = inv_rx.recv() => {
+                            let Some(item) = maybe_item else {
+                                flush_inventory_block_batch(&blockchain, &mut pending_blocks).await;
+                                break;
+                            };
+                            handle_inbound_inventory_item(
+                                item,
+                                &blockchain,
+                                &relay,
+                                &consensus_decode,
+                                &consensus_inbound_tx,
+                                &mut pending_blocks,
+                            ).await;
+                        }
+                        _ = flush_timer.tick() => {
+                            flush_inventory_block_batch(&blockchain, &mut pending_blocks).await;
+                        }
+                    }
+                }
+            },
+        );
+    } else {
+        drop(inv_rx);
+    }
+
+    // ----- dBFT consensus driver -----
+    // Spawn the round-driving task now that the network relay handle exists.
+    // A configured key that is not in the current validator set stays idle but
+    // keeps tracking imports so it can participate after a committee change.
+    if let (Some(setup), Some(inbound_rx)) = (
+        consensus_setup.filter(|_| ledger_mode.uses_local_replay_services()),
+        consensus_inbound_rx,
+    ) {
+        if let Some(task) = crate::consensus::consensus_driver_task(
+            setup,
+            blockchain.clone(),
+            Arc::clone(&mempool),
+            network.clone(),
+            Arc::clone(&settings),
+            consensus_validators.expect("configured consensus has validators"),
+            consensus_snapshot,
+            inbound_rx,
+        ) {
+            info!(target: "neo", "dBFT consensus driver started (validator node)");
+            spawn_daemon_task(
+                &mut handles,
+                observability.as_ref(),
+                "consensus_driver",
+                task,
+            );
+        }
+    }
+
+    // ----- ledger height -> network advertisement -----
+    // Seed the advertised height from the DURABLE tip before P2P sync starts,
+    // so a node restarted on a populated store advertises its real height and
+    // the block-sync cursor (`local_height + 1`) resumes from the persisted tip
+    // instead of re-requesting the entire chain from block 1.
+    let _ = network.set_block_height(advertised_tip).await;
+    info!(target: "neo", height = advertised_tip, "advertised ledger tip to peers");
+
+    // As the ledger persists blocks, advertise the new height to peers
+    // (version + ping) so block-sync requests advance their cursor and
+    // peers learn our progress (C# `LocalNode` reads `Ledger.CurrentIndex`).
+    {
+        let mut events = blockchain.subscribe();
+        let network = network.clone();
+        spawn_daemon_task(
+            &mut handles,
+            observability.as_ref(),
+            "network_height_advertiser",
+            async move {
+                use neo_blockchain::RuntimeEvent;
+                use tokio::sync::broadcast::error::RecvError;
+                loop {
+                    match events.recv().await {
+                        Ok(RuntimeEvent::Imported { height, .. }) => {
+                            let _ = network.set_block_height(height).await;
+                        }
+                        Ok(_) => {}
+                        Err(RecvError::Lagged(_)) => continue,
+                        Err(RecvError::Closed) => break,
+                    }
+                }
+            },
+        );
+    }
+
+    let service_registry = neo_system::ServiceRegistry::new();
+    if let LedgerMode::RemoteRpc { endpoint } = ledger_mode {
+        let status = match remote_tip_error {
+            Some(error) => RemoteLedgerStatus::unavailable(endpoint.to_string(), error),
+            None => RemoteLedgerStatus::new(endpoint.to_string(), remote_advertised_tip),
+        };
+        service_registry.register(Arc::new(status));
+    }
+    if let Some(state_store) = &state_store {
+        service_registry.register(Arc::clone(state_store));
+    }
+    if let Some(state_service) = &state_service {
+        service_registry.register(Arc::clone(state_service));
+    }
+    if let Some(indexer) = &indexer_service {
+        service_registry.register(Arc::clone(indexer));
+    }
+    if let Some(application_logs) = &application_logs_service {
+        service_registry.register(Arc::clone(application_logs));
+    }
+    if let Some(tokens_tracker) = &tokens_tracker_service {
+        service_registry.register(Arc::clone(tokens_tracker));
+    }
+
+    let node = Arc::new(
+        neo_system::Node::builder()
+            .with_settings(settings)
+            .with_storage(store)
+            .with_blockchain(blockchain.clone())
+            .with_network(network.clone())
+            .with_mempool(mempool)
+            .with_header_cache(header_cache)
+            .with_services(service_registry)
+            .build()
+            .map_err(|e| anyhow::anyhow!("node build failed: {e}"))?,
+    );
+    daemon_ctx.set_node(Arc::clone(&node));
+    if let Some((tracker_settings, tracker_store)) = tokens_tracker_runtime {
+        daemon_ctx.set_tokens_tracker(Some(Arc::new(
+            neo_rpc::plugins::tokens_tracker::TokensTracker::new(
+                tracker_settings,
+                tracker_store,
+                Arc::clone(&node),
+            ),
+        )));
+    }
+
+    if let Some(indexer) = indexer_service {
+        // The indexer runtime is expensive during catch-up, but service
+        // provider profiles must start indexing automatically once sync is
+        // close enough to the peer tip. Keep one supervisor alive so cold-start
+        // service nodes do not require a manual restart after initial sync.
+        spawn_daemon_task(
+            &mut handles,
+            observability.as_ref(),
+            "indexer_runtime",
+            indexer_runtime::run_live_indexer_when_ready(
+                blockchain.clone(),
+                indexer,
+                application_logs_service,
+                config.indexer.backfill_on_startup,
+                u64::from(durable_tip_height),
+            ),
+        );
+    }
+
+    Ok(RunningNode {
+        node,
+        network,
+        handles,
+        durable_service_stores: durable_stores,
+    })
+}
+
+#[cfg(test)]
+#[path = "../tests/node/mod.rs"]
+mod tests;

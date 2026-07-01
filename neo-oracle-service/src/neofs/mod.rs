@@ -1,4 +1,22 @@
-//! NeoFS oracle protocol implementation (parity with Neo.Plugins.OracleService).
+//! # neo-oracle-service::neofs
+//!
+//! NeoFS request signing, authentication, JSON, and response helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-oracle-service`. This service crate owns oracle
+//! request handling and must not decide block import, consensus, or storage
+//! backend policy.
+//!
+//! ## Contents
+//!
+//! - `auth`: NeoFS authentication and authorization helpers.
+//! - `grpc`: NeoFS gRPC client helpers.
+//! - `http`: NeoFS HTTP client helpers.
+//! - `json`: JSON models and codecs for external service integration.
+//! - `parse`: NeoFS response parsing helpers.
+//! - `proto`: Protocol message definitions and network payload framing.
+//! - `tests`: Module-local tests and regression coverage.
 
 mod auth;
 #[cfg(feature = "neofs-grpc")]
@@ -10,7 +28,7 @@ mod parse;
 mod proto;
 
 #[cfg(test)]
-#[path = "../tests/neofs.rs"]
+#[path = "../tests/neofs/mod.rs"]
 mod tests;
 
 use super::OracleServiceSettings;

@@ -1,3 +1,20 @@
+//! # neo-oracle-service::neofs::json
+//!
+//! JSON models and codecs for external service integration.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-oracle-service`. This service crate owns oracle
+//! request handling and must not decide block import, consensus, or storage
+//! backend policy.
+//!
+//! ## Contents
+//!
+//! - `headers`: HTTP header helpers for NeoFS JSON requests.
+//! - `helpers`: Shared helper functions for the surrounding module.
+//! - `object`: NeoFS JSON object models.
+//! - `session`: NeoFS JSON session token models.
+
 #![allow(dead_code)]
 
 mod headers;

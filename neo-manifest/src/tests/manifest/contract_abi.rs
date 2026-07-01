@@ -23,34 +23,19 @@ fn contract_abi_projects_to_neo_vm_rs_stack_value() {
 
     assert_eq!(
         abi.to_stack_value(),
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::Array(
-                    0,
-                    vec![StackValue::Struct(
-                        0,
-                        vec![
-                            StackValue::ByteString(b"main".to_vec()),
-                            StackValue::Array(0, Vec::new()),
-                            StackValue::Integer(ContractParameterType::Void as u8 as i64),
-                            StackValue::Integer(7),
-                            StackValue::Boolean(true),
-                        ]
-                    )]
-                ),
-                StackValue::Array(
-                    0,
-                    vec![StackValue::Struct(
-                        0,
-                        vec![
-                            StackValue::ByteString(b"Notify".to_vec()),
-                            StackValue::Array(0, Vec::new()),
-                        ]
-                    )]
-                ),
-            ]
-        )
+        StackValue::Struct(vec![
+            StackValue::Array(vec![StackValue::Struct(vec![
+                StackValue::ByteString(b"main".to_vec()),
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(ContractParameterType::Void as u8 as i64),
+                StackValue::Integer(7),
+                StackValue::Boolean(true),
+            ])]),
+            StackValue::Array(vec![StackValue::Struct(vec![
+                StackValue::ByteString(b"Notify".to_vec()),
+                StackValue::Array(Vec::new()),
+            ])]),
+        ])
     );
 }
 
@@ -59,13 +44,10 @@ fn contract_abi_reads_from_neo_vm_rs_stack_value_and_clears_method_cache() {
     let mut abi = ContractAbi::new(vec![method("old")], Vec::new());
     assert!(abi.get_method("old", 0).is_some());
 
-    abi.from_stack_value(StackValue::Struct(
-        0,
-        vec![
-            StackValue::Array(0, vec![method("new").to_stack_value()]),
-            StackValue::Array(0, vec![event("Updated").to_stack_value()]),
-        ],
-    ))
+    abi.from_stack_value(StackValue::Struct(vec![
+        StackValue::Array(vec![method("new").to_stack_value()]),
+        StackValue::Array(vec![event("Updated").to_stack_value()]),
+    ]))
     .unwrap();
 
     assert!(abi.get_method("old", 0).is_none());
@@ -78,23 +60,17 @@ fn contract_abi_rejects_struct_sequences_like_csharp() {
     let mut abi = ContractAbi::default();
 
     assert!(
-        abi.from_stack_value(StackValue::Struct(
-            0,
-            vec![
-                StackValue::Struct(0, vec![method("main").to_stack_value()]),
-                StackValue::Array(0, vec![event("Notify").to_stack_value()]),
-            ]
-        ))
+        abi.from_stack_value(StackValue::Struct(vec![
+            StackValue::Struct(vec![method("main").to_stack_value()]),
+            StackValue::Array(vec![event("Notify").to_stack_value()]),
+        ]))
         .is_err()
     );
     assert!(
-        abi.from_stack_value(StackValue::Struct(
-            0,
-            vec![
-                StackValue::Array(0, vec![method("main").to_stack_value()]),
-                StackValue::Struct(0, vec![event("Notify").to_stack_value()]),
-            ]
-        ))
+        abi.from_stack_value(StackValue::Struct(vec![
+            StackValue::Array(vec![method("main").to_stack_value()]),
+            StackValue::Struct(vec![event("Notify").to_stack_value()]),
+        ]))
         .is_err()
     );
 }

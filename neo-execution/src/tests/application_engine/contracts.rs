@@ -5,6 +5,7 @@ use neo_manifest::{
     ContractPermission, NefFile, WildCardContainer,
 };
 use neo_primitives::ContractParameterType;
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use parking_lot::Mutex as PlMutex;
 use std::collections::HashMap;
@@ -113,6 +114,90 @@ impl NativeContractProvider for EmptyProvider {
     }
 }
 
+struct MeteredNativeContract {
+    hash: UInt160,
+    methods: Vec<crate::NativeMethod>,
+}
+
+impl MeteredNativeContract {
+    fn new(storage_fee: i64) -> Self {
+        Self {
+            hash: UInt160::from_bytes(&[0xA5; 20]).expect("metered native hash"),
+            methods: vec![
+                crate::NativeMethod::new(
+                    "metered",
+                    0,
+                    false,
+                    CallFlags::ALL.bits(),
+                    Vec::new(),
+                    ContractParameterType::Void,
+                )
+                .with_storage_fee(storage_fee),
+            ],
+        }
+    }
+}
+
+impl NativeContract for MeteredNativeContract {
+    fn id(&self) -> i32 {
+        -99
+    }
+
+    fn hash(&self) -> UInt160 {
+        self.hash
+    }
+
+    fn name(&self) -> &str {
+        "MeteredNative"
+    }
+
+    fn methods(&self) -> &[crate::NativeMethod] {
+        &self.methods
+    }
+
+    fn invoke(
+        &self,
+        _engine: &mut ApplicationEngine,
+        method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        if method == "metered" {
+            Ok(Vec::new())
+        } else {
+            Err(CoreError::invalid_operation(format!(
+                "unexpected method {method}"
+            )))
+        }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct SingleNativeProvider {
+    native: Arc<MeteredNativeContract>,
+}
+
+impl NativeContractProvider for SingleNativeProvider {
+    fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+        (&self.native.hash() == hash).then(|| self.native.clone() as Arc<dyn NativeContract>)
+    }
+
+    fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
+        name.eq_ignore_ascii_case(self.native.name())
+            .then(|| self.native.clone() as Arc<dyn NativeContract>)
+    }
+
+    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+        vec![self.native.clone() as Arc<dyn NativeContract>]
+    }
+
+    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
+        vec![self.native.hash()]
+    }
+}
+
 /// Builds a small synthetic contract with a single `balanceOf(account)`
 /// method that returns immediately. Used by the dynamic-call tests so
 /// they do not depend on the GAS native contract being installed via
@@ -148,6 +233,35 @@ fn build_mock_contract(hash: UInt160) -> ContractState {
     };
 
     ContractState::new(1, hash, nef, manifest)
+}
+
+#[test]
+fn native_method_storage_fee_is_charged_in_datoshi() {
+    let _provider_guard = lock_provider();
+    let native = Arc::new(MeteredNativeContract::new(50));
+    let native_hash = native.hash();
+    NativeContractLookup::install_provider(Arc::new(SingleNativeProvider { native }));
+
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        None,
+    )
+    .expect("engine");
+
+    engine
+        .call_native_contract(native_hash, "metered", &[])
+        .expect("native method succeeds");
+
+    assert_eq!(
+        engine.fee_consumed(),
+        50 * 100_000,
+        "C# NativeContract.Invoke charges StoragePrice * StorageFee through AddFee, in datoshi"
+    );
 }
 
 #[test]
@@ -464,6 +578,66 @@ fn returning_call_yields_result_and_native_calling_hash() {
     );
 }
 
+#[test]
+fn queued_native_calls_run_in_enqueue_order() {
+    let _provider_guard = lock_provider();
+    install_allowing_policy();
+
+    let calling_hash = UInt160::from_bytes(&[0xAB; 20]).expect("hash");
+    let first_hash = UInt160::from_bytes(&[0xD1; 20]).expect("hash");
+    let second_hash = UInt160::from_bytes(&[0xD2; 20]).expect("hash");
+
+    let mut first_script = ScriptBuilder::new();
+    first_script.emit_push_string("first");
+    first_script
+        .emit_syscall("System.Runtime.Log")
+        .expect("emit Runtime.Log");
+    first_script.emit_opcode(OpCode::RET);
+
+    let mut second_script = ScriptBuilder::new();
+    second_script.emit_push_string("second");
+    second_script
+        .emit_syscall("System.Runtime.Log")
+        .expect("emit Runtime.Log");
+    second_script.emit_opcode(OpCode::RET);
+
+    let mut contracts = HashMap::new();
+    contracts.insert(
+        first_hash,
+        build_returning_mock(
+            first_hash,
+            "marker",
+            ContractParameterType::Void,
+            first_script.to_array(),
+        ),
+    );
+    contracts.insert(
+        second_hash,
+        build_returning_mock(
+            second_hash,
+            "marker",
+            ContractParameterType::Void,
+            second_script.to_array(),
+        ),
+    );
+    let mut engine = engine_with_entry(contracts);
+
+    engine.queue_contract_call_from_native(calling_hash, first_hash, "marker", vec![]);
+    engine.queue_contract_call_from_native(calling_hash, second_hash, "marker", vec![]);
+    engine
+        .process_pending_native_calls()
+        .expect("queued calls load");
+    let state = engine.execute_allow_fault();
+
+    assert_eq!(state, VMState::HALT, "{:?}", engine.fault_exception());
+    let messages = engine
+        .logs()
+        .iter()
+        .map(|event| event.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(messages, ["first", "second"]);
+}
+
 /// C# `CallFromNativeContractAsync<T>` passes `hasReturnValue: true`, so a
 /// `Void` callee is rejected with "The return value type does not match."
 #[test]
@@ -605,6 +779,7 @@ fn returning_call_propagates_callee_throw_as_engine_fault() {
 /// Hash for the test-only interop the boundary test uses to invoke the
 /// primitive from inside a script (standing in for a native method).
 const BOUNDARY_TEST_SYSCALL: &str = "Test.NativeCallReturning";
+const QUEUED_BOUNDARY_TEST_SYSCALL: &str = "Test.QueueNativeCall";
 
 fn boundary_test_handler(
     app: &mut ApplicationEngine,
@@ -618,6 +793,17 @@ fn boundary_test_handler(
         )),
         Err(err) => Err(neo_vm::VmError::invalid_operation_msg(err.to_string())),
     }
+}
+
+fn queued_boundary_test_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut neo_vm::ExecutionEngine,
+) -> neo_vm::VmResult<()> {
+    let calling_hash = UInt160::from_bytes(&[0xAB; 20]).expect("hash");
+    let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
+    app.queue_contract_call_from_native(calling_hash, target_hash, "explode", vec![]);
+    app.process_pending_native_calls()
+        .map_err(|err| neo_vm::VmError::invalid_operation_msg(err.to_string()))
 }
 
 /// A TRY armed below the native frame cannot catch an exception escaping a
@@ -689,6 +875,83 @@ fn returning_call_exception_cannot_be_caught_below_native_frame() {
         state,
         VMState::FAULT,
         "the exception must fault the engine, not reach the CATCH"
+    );
+    assert_eq!(
+        engine.result_stack().len(),
+        0,
+        "the CATCH handler must not have produced a result"
+    );
+}
+
+/// The queued native-call path used by NEP-17 `onNEP17Payment` must enforce
+/// the same boundary as the synchronous native-call helpers. C# registers
+/// `CallFromNativeContractAsync` contexts in `contractTasks`, so a callback
+/// exception crossing that native boundary faults the whole engine and cannot
+/// be caught by a TRY in the caller below `System.Contract.CallNative`.
+#[test]
+fn queued_native_call_exception_cannot_be_caught_below_native_frame() {
+    let _provider_guard = lock_provider();
+    install_allowing_policy();
+
+    let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
+    let mut contracts = HashMap::new();
+    contracts.insert(
+        target_hash,
+        build_returning_mock(
+            target_hash,
+            "explode",
+            ContractParameterType::Void,
+            vec![OpCode::PUSH1.byte(), OpCode::THROW.byte()],
+        ),
+    );
+
+    let snapshot = Arc::new(DataCache::new(false));
+    let mut engine = ApplicationEngine::new_with_preloaded_native(
+        TriggerType::Application,
+        None,
+        snapshot,
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        contracts,
+        Arc::new(PlMutex::new(NativeContractsCache::default())),
+        None,
+    )
+    .expect("engine");
+    engine
+        .register_host_service(
+            QUEUED_BOUNDARY_TEST_SYSCALL,
+            0,
+            CallFlags::NONE,
+            queued_boundary_test_handler,
+        )
+        .expect("register test interop");
+
+    // ip0: TRY catch=+10 (-> ip10), no finally
+    // ip3: SYSCALL Test.QueueNativeCall
+    // ip8: ENDTRY +4 (-> ip12)
+    // ip10: PUSH2; RET            <- catch handler (must NOT run)
+    // ip12: PUSH1; RET
+    let mut script = vec![OpCode::TRY.byte(), 10, 0, OpCode::SYSCALL.byte()];
+    script.extend_from_slice(&neo_vm_rs::interop_hash(QUEUED_BOUNDARY_TEST_SYSCALL).to_le_bytes());
+    script.extend_from_slice(&[
+        OpCode::ENDTRY.byte(),
+        4,
+        OpCode::PUSH2.byte(),
+        OpCode::RET.byte(),
+        OpCode::PUSH1.byte(),
+        OpCode::RET.byte(),
+    ]);
+
+    engine
+        .load_script(script, CallFlags::ALL, None)
+        .expect("load entry script");
+    let state = engine.execute_allow_fault();
+
+    assert_eq!(
+        state,
+        VMState::FAULT,
+        "the queued callback exception must fault the engine, not reach the CATCH"
     );
     assert_eq!(
         engine.result_stack().len(),

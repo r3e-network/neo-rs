@@ -51,6 +51,113 @@ fn payment_args(from: &UInt160, amount: i64, data: &StackItem) -> Vec<Vec<u8>> {
     ]
 }
 
+fn seed_registration_payment_snapshot(
+    sender: UInt160,
+    candidate_account: UInt160,
+    pubkey: &ECPoint,
+) -> (
+    Arc<DataCache>,
+    Arc<dyn Verifiable>,
+    ProtocolSettings,
+    Vec<u8>,
+) {
+    let price = BigInt::from(DEFAULT_REGISTER_PRICE);
+
+    crate::install();
+    let cache = DataCache::new(false);
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    deploy_native(
+        &cache,
+        &build_native_contract_state(&NeoToken, &settings, 0),
+    );
+    deploy_native(
+        &cache,
+        &build_native_contract_state(&crate::GasToken, &settings, 0),
+    );
+    seed_register_price(&cache);
+    seed_gas(&cache, &sender, &price);
+    let snapshot = Arc::new(cache);
+
+    let mut tx = Transaction::new();
+    tx.set_signers(vec![
+        Signer::new(sender, WitnessScope::GLOBAL),
+        Signer::new(candidate_account, WitnessScope::GLOBAL),
+    ]);
+    tx.set_witnesses(vec![Witness::empty(), Witness::empty()]);
+    let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+    (
+        snapshot,
+        container,
+        settings,
+        gas_transfer_register_candidate_script(sender, pubkey),
+    )
+}
+
+fn gas_transfer_register_candidate_script(sender: UInt160, pubkey: &ECPoint) -> Vec<u8> {
+    let mut b = ScriptBuilder::new();
+    b.emit_push(&pubkey.to_bytes());
+    b.emit_push_int(DEFAULT_REGISTER_PRICE);
+    b.emit_push(&NeoToken::script_hash().to_array());
+    b.emit_push(&sender.to_array());
+    b.emit_push_int(4);
+    b.emit_pack();
+    b.emit_push_int(i64::from(CallFlags::ALL.bits()));
+    b.emit_push("transfer".as_bytes());
+    b.emit_push(&crate::GasToken::script_hash().to_array());
+    b.emit_syscall("System.Contract.Call").expect("call");
+    b.to_array()
+}
+
+fn gas_transfer_register_then_get_candidates_script(sender: UInt160, pubkey: &ECPoint) -> Vec<u8> {
+    let mut b = ScriptBuilder::new();
+    b.emit_push(&pubkey.to_bytes());
+    b.emit_push_int(DEFAULT_REGISTER_PRICE);
+    b.emit_push(&NeoToken::script_hash().to_array());
+    b.emit_push(&sender.to_array());
+    b.emit_push_int(4);
+    b.emit_pack();
+    b.emit_push_int(i64::from(CallFlags::ALL.bits()));
+    b.emit_push("transfer".as_bytes());
+    b.emit_push(&crate::GasToken::script_hash().to_array());
+    b.emit_syscall("System.Contract.Call")
+        .expect("transfer call");
+    b.emit_opcode(neo_vm_rs::OpCode::DROP);
+
+    b.emit_push_int(0);
+    b.emit_pack();
+    b.emit_push_int(i64::from(CallFlags::ALL.bits()));
+    b.emit_push("getCandidates".as_bytes());
+    b.emit_push(&NeoToken::script_hash().to_array());
+    b.emit_syscall("System.Contract.Call")
+        .expect("getCandidates call");
+    b.to_array()
+}
+
+fn registration_payment_engine(
+    snapshot: Arc<DataCache>,
+    container: Arc<dyn Verifiable>,
+    settings: ProtocolSettings,
+    script: Vec<u8>,
+    gas_limit: i64,
+) -> ApplicationEngine {
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        Some(container),
+        snapshot,
+        None,
+        settings,
+        gas_limit,
+        None,
+    )
+    .expect("engine builds");
+    engine
+        .load_script(script, CallFlags::ALL, None)
+        .expect("loads");
+    engine
+}
+
 #[test]
 fn on_nep17_payment_data_parser_uses_stack_value_projection() {
     let source = include_str!("../../../neo_token/invoke.rs");
@@ -116,57 +223,16 @@ fn on_nep17_payment_registers_candidate_and_burns_gas() {
     let candidate_account =
         UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
     let sender = UInt160::from_bytes(&[0x07; 20]).unwrap();
-    let price = BigInt::from(DEFAULT_REGISTER_PRICE);
+    let (snapshot, container, settings, script) =
+        seed_registration_payment_snapshot(sender, candidate_account, &pubkey);
 
-    crate::install();
-    let cache = DataCache::new(false);
-    let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
-    deploy_native(
-        &cache,
-        &build_native_contract_state(&NeoToken, &settings, 0),
-    );
-    deploy_native(
-        &cache,
-        &build_native_contract_state(&crate::GasToken, &settings, 0),
-    );
-    seed_register_price(&cache);
-    seed_gas(&cache, &sender, &price);
-    let snapshot = Arc::new(cache);
-
-    let mut tx = Transaction::new();
-    tx.set_signers(vec![
-        Signer::new(sender, WitnessScope::GLOBAL),
-        Signer::new(candidate_account, WitnessScope::GLOBAL),
-    ]);
-    tx.set_witnesses(vec![Witness::empty(), Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
-
-    let mut b = ScriptBuilder::new();
-    b.emit_push(&pubkey.to_bytes());
-    b.emit_push_int(DEFAULT_REGISTER_PRICE);
-    b.emit_push(&NeoToken::script_hash().to_array());
-    b.emit_push(&sender.to_array());
-    b.emit_push_int(4);
-    b.emit_pack();
-    b.emit_push_int(i64::from(CallFlags::ALL.bits()));
-    b.emit_push("transfer".as_bytes());
-    b.emit_push(&crate::GasToken::script_hash().to_array());
-    b.emit_syscall("System.Contract.Call").expect("call");
-
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        Some(container),
+    let mut engine = registration_payment_engine(
         Arc::clone(&snapshot),
-        None,
+        container,
         settings,
+        script,
         2000_00000000,
-        None,
-    )
-    .expect("engine builds");
-    engine
-        .load_script(b.to_array(), CallFlags::ALL, None)
-        .expect("loads");
+    );
     assert_eq!(
         engine.execute_allow_fault(),
         VmState::HALT,
@@ -197,6 +263,87 @@ fn on_nep17_payment_registers_candidate_and_burns_gas() {
     assert_eq!(
         BigInt::from_signed_bytes_le(&supply.value_bytes()),
         BigInt::from(0)
+    );
+}
+
+#[test]
+fn gas_payment_registration_is_visible_before_next_contract_call() {
+    let pubkey = candidate_pubkey();
+    let candidate_account =
+        UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+    let sender = UInt160::from_bytes(&[0x07; 20]).unwrap();
+    let (snapshot, container, settings, _) =
+        seed_registration_payment_snapshot(sender, candidate_account, &pubkey);
+    let script = gas_transfer_register_then_get_candidates_script(sender, &pubkey);
+
+    let mut engine = registration_payment_engine(
+        Arc::clone(&snapshot),
+        container,
+        settings,
+        script,
+        2000_00000000,
+    );
+
+    assert_eq!(
+        engine.execute_allow_fault(),
+        VmState::HALT,
+        "GAS.transfer and immediate NEO.getCandidates must HALT: {:?}",
+        engine.fault_exception(),
+    );
+
+    let candidates = engine
+        .result_stack()
+        .peek(0)
+        .expect("getCandidates result")
+        .as_array()
+        .expect("candidate array");
+    let registered_pubkeys = candidates
+        .iter()
+        .map(|entry| {
+            let fields = entry.as_array().expect("Struct[pubkey, votes]");
+            fields[0].as_bytes().expect("candidate pubkey")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        registered_pubkeys
+            .iter()
+            .any(|candidate| candidate.as_slice() == pubkey.to_bytes().as_slice()),
+        "candidate registered by GAS payment must be visible to the next contract call"
+    );
+}
+
+#[test]
+fn gas_transfer_to_neo_faults_when_native_transfer_fee_exceeds_transaction_gas_limit() {
+    let pubkey = candidate_pubkey();
+    let candidate_account =
+        UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));
+    let sender = UInt160::from_bytes(&[0x07; 20]).unwrap();
+    let (snapshot, container, settings, script) =
+        seed_registration_payment_snapshot(sender, candidate_account, &pubkey);
+
+    let mut engine = registration_payment_engine(
+        Arc::clone(&snapshot),
+        container,
+        settings,
+        script,
+        3_932_159,
+    );
+
+    assert_eq!(
+        engine.execute_allow_fault(),
+        VmState::FAULT,
+        "GAS.transfer to NEO must fault when its native transfer fee exceeds the transaction gas limit",
+    );
+    let fault = engine
+        .fault_exception()
+        .expect("insufficient gas fault captured");
+    assert!(
+        fault.contains("Insufficient gas"),
+        "unexpected fault: {fault}"
+    );
+    assert!(
+        snapshot.get(&NeoToken::candidate_key(&pubkey)).is_none(),
+        "candidate registration must not commit after an insufficient GAS fault"
     );
 }
 

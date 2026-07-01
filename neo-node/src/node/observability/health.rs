@@ -2,8 +2,16 @@
 
 use serde_json::{Value, json};
 
+use super::super::remote_ledger::RemoteLedgerStatus;
+
 pub(super) fn node_health_payload(node: &neo_system::Node) -> Value {
     let ledger_height = ledger_height(node);
+    let remote_ledger = node.get_service::<RemoteLedgerStatus>();
+    let ledger_source = if remote_ledger.is_some() {
+        "remote_rpc"
+    } else {
+        "local"
+    };
     let (indexer_payload, indexer_ready) = indexer_health_payload(node, ledger_height);
     let ready = ledger_height.is_some() && indexer_ready;
     let local_info = node.network().local_node_info();
@@ -12,6 +20,9 @@ pub(super) fn node_health_payload(node: &neo_system::Node) -> Value {
     json!({
         "status": if ready { "ready" } else { "starting" },
         "ready": ready,
+        "ledger_source": ledger_source,
+        "remote_ledger_rpc": remote_ledger.as_ref().map(|status| status.endpoint.as_str()),
+        "remote_ledger_error": remote_ledger.as_ref().and_then(|status| status.tip_error.as_deref()),
         "ledger_height": ledger_height,
         "connected_peers": local_info.connected_peers_count(),
         "mempool": {
@@ -34,6 +45,9 @@ pub(super) fn node_health_payload(node: &neo_system::Node) -> Value {
 }
 
 fn ledger_height(node: &neo_system::Node) -> Option<u32> {
+    if let Some(remote_ledger) = node.get_service::<RemoteLedgerStatus>() {
+        return remote_ledger.advertised_height;
+    }
     let cache = node.store_cache();
     neo_native_contracts::LedgerContract::new()
         .current_index(cache.data_cache())

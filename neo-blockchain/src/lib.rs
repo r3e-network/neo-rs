@@ -1,84 +1,43 @@
 //! # neo-blockchain
 //!
-//! Reth-style blockchain service for the Neo node.
+//! Concrete block import, validation, persistence, and hot ledger context for
+//! Neo N3.
 //!
-//! The blockchain is the only subsystem in the node that is *command-shaped*
-//! rather than *method-shaped*: a single async command loop owns every
-//! state transition, the rest of the node talks to it through a typed
-//! [`BlockchainHandle`] that wraps a `tokio::sync::mpsc::Sender<BlockchainCommand>`
-//! and a `tokio::sync::broadcast::Sender<BlockchainEvent>`.
+//! ## Boundary
 //!
-//! The service pattern keeps the ordering guarantees Neo needs without hiding
-//! protocol state behind a framework. The public surface is:
+//! This node-service crate owns the concrete block-import path and must not
+//! depend upward on composition, RPC, GUI, or binaries.
 //!
-//! 1. A plain `struct BlockchainService` that owns the command channel and
-//!    the broadcast channel.
-//! 2. An `async fn BlockchainService::run(self)` that loops over
-//!    `cmd_rx.recv().await` and dispatches to `async fn` handler methods on
-//!    the struct (no trait objects, no `Box<dyn Any>` downcasting).
-//! 3. A cheap-to-clone [`BlockchainHandle`] that other subsystems store in
-//!    their state. The handle is the only public surface of the service —
-//!    the [`BlockchainService`] is constructed once and immediately
-//!    `tokio::spawn`'d by the node binary.
+//! ## Contents
 //!
-//! ## Module layout
-//!
-//! | Module | Purpose |
-//! |--------|---------|
-//! | [`blockchain`] | Re-exports of the runtime's [`BlockchainCommand`] / [`BlockchainEvent`] / [`BlockchainHandle`] |
-//! | [`command`]    | The internal command enum consumed by the single service loop |
-//! | [`handle`]     | The service handle — `BlockchainHandle::new()` returns a fresh `(handle, cmd_rx, event_tx)` triple |
-//! | [`internal`]   | Internal types: `UnverifiedBlocksList`, `ImportDisposition`, classify helpers |
-//! | [`block_processing`] | Block verification + persistence loop |
-//! | [`handlers`]   | The `impl BlockchainService` block that wires command variants to async fn handlers |
-//! | [`import`], [`import_completed`], [`fill_memory_pool`], [`fill_completed`], [`persist_completed`], [`relay_result`], [`reverify`], [`inventory_payload`] | Per-message types used by the command enum |
-//! | [`ledger_context`], [`header_cache`] | The in-memory ledger caches the service uses for hot lookups |
-//!
-//! ## Layering
-//!
-//! `neo-blockchain` is a Layer 4 node-service crate. It may orchestrate
-//! lower protocol/infrastructure crates (`neo-primitives`, `neo-payloads`,
-//! `neo-storage`, `neo-vm`, `neo-io`, `neo-crypto`) and domain services
-//! (`neo-runtime`, `neo-mempool`, `neo-state-service`, `neo-execution`,
-//! `neo-native-contracts`). It must not depend on application or adapter
-//! layers such as `neo-system`, RPC, plugins, or node binaries.
-//!
-//! ## Service contract
-//!
-//! ```text
-//! ┌──────────────────┐  mpsc::Sender<BlockchainCommand>   ┌────────────────────┐
-//! │  Other node      │ ────────────────────────────────▶  │  BlockchainService │
-//! │  subsystems      │ ◀── broadcast::Receiver<Event> ──  │  (tokio::spawn)    │
-//! └──────────────────┘                                    └────────────────────┘
-//! ```
-//!
-//! The `BlockchainService` is a *single* owner of the command channel. All
-//! state mutations (block import, mempool fill, reverify, …) are processed
-//! sequentially by the `run()` loop, expressed in plain `async` / `await`
-//! over typed channels.
+//! - `ledger`: Ledger caches, lookup context, and persisted record helpers used
+//!   by block import.
+//! - `messages`: Typed service commands, events, and payload wrappers for the
+//!   crate boundary.
+//! - `pipeline`: Ordered validation, execution, native-hook, and persistence
+//!   steps for block import.
+//! - `service`: Service loops, handles, lifecycle helpers, and command
+//!   processing.
 
-#![doc(html_root_url = "https://docs.rs/neo-blockchain/0.8.0")]
+#![doc(html_root_url = "https://docs.rs/neo-blockchain/0.9.0")]
 
-pub mod block_processing;
-pub mod block_validation;
-pub mod command;
-pub mod fill_completed;
-pub mod fill_memory_pool;
-pub mod handle;
-pub mod handlers;
-pub mod header_cache;
-pub mod import;
-pub mod import_completed;
-pub mod internal;
-pub mod inventory_payload;
-pub mod ledger_context;
-pub(crate) mod ledger_records;
-pub mod native_persist;
-pub mod persist_completed;
-pub mod relay_result;
-pub mod reverify;
+/// Ledger caches and persisted ledger-record helpers used by the service loop.
+pub mod ledger;
+pub mod messages;
+/// Block import, validation, handler, and native-persistence pipeline.
+pub mod pipeline;
+/// Command-loop service, handle, and context traits.
 pub mod service;
-pub mod service_context;
+
+pub(crate) use ledger::ledger_records;
+pub use ledger::{header_cache, ledger_context};
+pub use pipeline::{block_processing, block_validation, handlers, native_persist};
+pub use service::{command, handle, internal, service_context};
+
+pub use messages::{
+    fill_completed, fill_memory_pool, import, import_completed, inventory_payload,
+    persist_completed, relay_result, reverify,
+};
 
 // Re-exports for the public surface of the crate.
 //
@@ -106,8 +65,8 @@ pub use import_completed::ImportCompleted;
 pub use internal::{ImportDisposition, UnverifiedBlocksList};
 pub use inventory_payload::InventoryPayload;
 pub use native_persist::{
-    NativePersistNotification, NativePersistOutcome, chain_state_initialized, genesis_block,
-    persist_block_natives,
+    NativePersistNotification, NativePersistOptions, NativePersistOutcome, chain_state_initialized,
+    genesis_block, persist_block_natives, stage_block_natives_with_options,
 };
 pub use neo_runtime::BlockchainEvent;
 pub use persist_completed::PersistCompleted;
@@ -118,7 +77,7 @@ pub use command::AddTransactionReply;
 pub use neo_mempool::PreverifyCompleted;
 pub use relay_result::RelayResult;
 pub use reverify::{Reverify, ReverifyItem};
-pub use service::BlockchainService;
+pub use service::service::BlockchainService;
 
 pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 

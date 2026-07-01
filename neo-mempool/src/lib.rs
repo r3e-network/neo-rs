@@ -1,60 +1,36 @@
 //! # neo-mempool
 //!
-//! Canonical home for the Neo transaction memory pool,
-//! [`PoolItem`](pool_item), [`TransactionRouter`](transaction_router),
-//! and the per-block [`TransactionVerificationContext`].
+//! Transaction memory-pool admission, indexing, events, and routing.
 //!
-//! ## Modules
+//! ## Boundary
 //!
-//! - [`memory_pool::MemoryPool`] — the two-queue (verified / unverified)
-//!   priority mempool.
-//! - [`pool_item::PoolItem`] — a `Transaction` wrapper holding
-//!   mempool-side metadata.
-//! - [`pool_index::PoolIndex`] — the BTreeMap-backed priority queue used
-//!   by the mempool.
-//! - [`transaction_verification_context::TransactionVerificationContext`]
-//!   — the per-block set of confirmed-transaction hashes used to prune
-//!   the pool on commit.
-//! - [`transaction_router::TransactionRouter`] — the entry point that
-//!   runs state-independent pre-verification before a transaction is
-//!   admitted into the pool.
-//! - [`new_transaction_event_args::NewTransactionEventArgs`] /
-//!   [`transaction_removed_event_args::TransactionRemovedEventArgs`] —
-//!   event payloads raised by the pool's subscriber callbacks.
+//! This service crate owns transaction pool policy and must not persist blocks,
+//! run consensus, or expose RPC transport details.
 //!
-//! ## Layering
+//! ## Contents
 //!
-//! Sits in **Layer 3 (Domain services)**. Depends on:
-//!
-//! - `neo-payloads` (Layer 2) — for the `Transaction` data type.
-//! - `neo-storage` (Layer 1) — for the `DataCache` used during
-//!   state-dependent verification.
-//! - `neo-execution` / `neo-native-contracts` (Layer 3) — for native state
-//!   readers and verification helpers used during transaction admission.
-//! - `neo-config` (Layer 1) — for `ProtocolSettings`.
-//!
-//! Must **not** depend on `neo-network` (Layer 4), `neo-system` (Layer 5), or
-//! any plugin/RPC/application crate.
+//! - `admission`: Mempool admission, preverification, and transaction routing
+//!   logic.
+//! - `events`: Mempool event records emitted to subscribers.
+//! - `pool`: Memory-pool indexes, items, and mutation helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-mempool/0.8.0")]
+#![doc(html_root_url = "https://docs.rs/neo-mempool/0.9.0")]
 
-pub mod memory_pool;
-pub mod new_transaction_event_args;
-pub mod pool_index;
-pub mod pool_item;
-pub mod transaction_removed_event_args;
-pub mod transaction_router;
-pub mod transaction_verification_context;
-pub mod verification;
+mod admission;
+mod events;
+mod pool;
 
-pub use memory_pool::{
-    MemoryPool, NewTransactionCallback, SharedMemoryPool, TransactionAddedCallback,
-    TransactionRelayCallback, TransactionRemovedCallback,
+pub use admission::{
+    PreverifyCompleted, TransactionRouter, TransactionVerificationContext, transaction_router,
+    transaction_verification_context, verification, verify_state_dependent,
+    verify_state_independent, verify_transaction,
 };
-pub use new_transaction_event_args::NewTransactionEventArgs;
-pub use pool_index::PoolIndex;
-pub use pool_item::PoolItem;
-pub use transaction_removed_event_args::TransactionRemovedEventArgs;
-pub use transaction_router::{PreverifyCompleted, TransactionRouter};
-pub use transaction_verification_context::TransactionVerificationContext;
-pub use verification::{verify_state_dependent, verify_state_independent, verify_transaction};
+pub use events::{
+    NewTransactionEventArgs, TransactionRemovedEventArgs, new_transaction_event_args,
+    transaction_removed_event_args,
+};
+pub use pool::{
+    MemoryPool, NewTransactionCallback, PoolIndex, PoolItem, SharedMemoryPool,
+    TransactionAddedCallback, TransactionRelayCallback, TransactionRemovedCallback, memory_pool,
+    pool_index, pool_item,
+};

@@ -1,78 +1,55 @@
-//! # Neo Primitives
+//! # neo-primitives
 //!
-//! Fundamental types for the Neo blockchain implementation.
+//! Foundational hashes, integers, addresses, and protocol primitive types.
 //!
-//! This crate provides the core primitive types used throughout the Neo ecosystem:
-//! - `UInt160`: 160-bit unsigned integer (script hashes, addresses)
-//! - `UInt256`: 256-bit unsigned integer (transaction/block hashes)
-//! - `BigDecimal`: Arbitrary precision decimal for financial calculations
+//! ## Boundary
 //!
-//! ## Design Principles
+//! This foundation crate must stay free of node-service, storage-backend, RPC,
+//! and network orchestration dependencies.
 //!
-//! - **Zero dependencies on other neo-* crates** (except neo-io for serialization traits)
-//! - **C# Neo compatibility**: Matches the behavior of Neo C# implementation
-//! - **Efficient**: Optimized for blockchain operations
+//! ## Contents
 //!
-//! ## Example
-//!
-//! ```rust
-//! use neo_primitives::{UInt160, UInt256};
-//!
-//! // Create from bytes
-//! let hash = UInt256::zero();
-//! assert!(hash.is_zero());
-//!
-//! // Parse from hex string
-//! let address_hash = UInt160::parse("0x0000000000000000000000000000000000000001").unwrap();
-//! ```
+//! - `errors`: Typed errors and result aliases for this crate boundary.
+//! - `numeric`: Fixed-size numeric wrappers and byte-order conversion helpers.
+//! - `payload`: Payload-domain primitives shared by protocol and network
+//!   crates.
+//! - `protocol`: Protocol enums, versioned records, and chain-level domain
+//!   constants.
+//! - `utils`: Small utility helpers shared within the crate.
+//! - `blockchain`: Blockchain-domain primitive records used across crates.
+//! - `macros`: Crate-local macros that keep protocol declarations compact.
+//! - `tests`: Module-local tests and regression coverage.
 
 #[doc(hidden)]
 pub use bitflags;
 
-pub mod base58_check;
-pub mod big_decimal;
+mod errors;
+mod numeric;
+mod payload;
+mod protocol;
+mod utils;
+
+pub use errors::{error, network_error, rpc_exception};
+pub(crate) use numeric::uint_hex;
+pub use numeric::{base58_check, big_decimal, uint160, uint256};
+pub use payload::{
+    inventory, log_event_args, serializable_payload, storage, verifiable, verification,
+};
+pub use protocol::{
+    call_flags, contains_transaction_type, contract_basic_method, contract_parameter_type,
+    contract_task, find_options, hardfork, inventory_type, log_level, node_capability_type,
+    oracle_response_code, transaction_attribute_type, transaction_removal_reason, trigger_type,
+    unhandled_exception_policy, verify_result, witness_condition_type, witness_rule_action,
+    witness_scope,
+};
+pub use utils::{constants, time};
+
 pub mod blockchain;
-pub mod call_flags;
-pub mod constants;
-pub mod contains_transaction_type;
-pub mod contract_basic_method;
-pub mod contract_parameter_type;
-pub mod contract_task;
-pub mod error;
-pub mod find_options;
-pub mod hardfork;
-pub mod inventory;
-pub mod inventory_type;
-pub mod log_event_args;
-/// Log-level primitives used by Neo diagnostics and extension utilities.
-pub mod log_level;
 /// Macro helpers for compact protocol enum declarations.
+#[path = "macros/mod.rs"]
 pub mod macros;
-pub mod network_error;
-pub mod node_capability_type;
-pub mod oracle_response_code;
-/// JSON-RPC exception codes and helpers shared by RPC-facing crates.
-pub mod rpc_exception;
-/// Data-only serialization and hashing interface for blockchain payloads.
-pub mod serializable_payload;
-pub mod storage;
-/// Testable process-wide time provider.
-pub mod time;
-pub mod transaction_attribute_type;
-pub mod transaction_removal_reason;
-pub mod trigger_type;
-pub mod uint160;
-pub mod uint256;
-mod uint_hex;
 
 pub use uint_hex::strip_hex_prefix;
-pub mod unhandled_exception_policy;
-pub mod verifiable;
-pub mod verification;
-pub mod verify_result;
-pub mod witness_condition_type;
-pub mod witness_rule_action;
-pub mod witness_scope;
 
 pub use big_decimal::BigDecimal;
 pub use witness_rule_action::WitnessRuleAction;

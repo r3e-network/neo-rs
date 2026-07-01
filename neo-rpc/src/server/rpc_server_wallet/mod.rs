@@ -1,4 +1,19 @@
-//! RPC wallet endpoints mirroring RpcServer.Wallet.cs.
+//! # neo-rpc::server::rpc_server_wallet
+//!
+//! Wallet compatibility RPC endpoint handlers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `balance`: wallet balance RPC handlers.
+//! - `support`: Shared support helpers that keep domain modules focused.
+//! - `transfers`: wallet transfer RPC handlers.
+//! - `tests`: Module-local tests and regression coverage.
 
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
@@ -113,7 +128,7 @@ impl RpcServerWallet {
         // (Wallet.GetAvailable). The engine-script path below invokes the
         // same native `balanceOf` / `decimals` methods for every NEP-17
         // asset, NEO and GAS included.
-        let balance = Self::calculate_nep17_balance(server, &wallet, &asset)?;
+        let balance = Self::calculate_nep17_balance(server, wallet.as_ref(), &asset)?;
         Ok(json!({"balance": balance.to_string()}))
     }
 
@@ -160,14 +175,14 @@ impl RpcServerWallet {
             wallet_clone.import_wif(&privkey_value).await
         }))?;
         Self::save_wallet(&wallet)?;
-        Ok(Self::account_to_json(&account))
+        Ok(Self::account_to_json(account.as_ref()))
     }
 
     fn list_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
         let mut entries = Vec::new();
         for account in wallet.get_accounts() {
-            entries.push(Self::account_to_json(&account));
+            entries.push(Self::account_to_json(account.as_ref()));
         }
         Ok(Value::Array(entries))
     }
@@ -321,7 +336,7 @@ impl RpcServerWallet {
         }
     }
 
-    fn account_to_json(account: &Arc<dyn WalletAccount>) -> Value {
+    fn account_to_json(account: &(impl WalletAccount + ?Sized)) -> Value {
         let has_key = account.has_key();
         let mut map = Map::new();
         map.insert("address".to_string(), Value::String(account.address()));
@@ -344,5 +359,5 @@ impl RpcServerWallet {
 }
 
 #[cfg(test)]
-#[path = "../../tests/server/rpc_server_wallet.rs"]
+#[path = "../../tests/server/handlers/rpc_server_wallet.rs"]
 mod tests;

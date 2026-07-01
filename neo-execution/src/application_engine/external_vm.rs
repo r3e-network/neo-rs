@@ -207,7 +207,6 @@ impl ExternalVmHost<'_> {
                 };
 
                 stack.push(VmStackValue::Array(
-                    0,
                     transaction
                         .signers()
                         .iter()

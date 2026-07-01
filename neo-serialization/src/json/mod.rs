@@ -1,4 +1,23 @@
-//! Neo JSON library - matches C# Neo.Json exactly
+//! # neo-serialization::json
+//!
+//! JSON models and codecs for external service integration.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-serialization`. This codec crate owns
+//! serialization adapters and must not run services, import blocks, or mutate
+//! ledger state.
+//!
+//! ## Contents
+//!
+//! - `error`: Typed error definitions and conversions.
+//! - `escape`: JSON string escape helpers.
+//! - `j_array`: JSON array model.
+//! - `j_object`: JSON object model.
+//! - `j_path_token`: JSON path token model.
+//! - `j_path_token_type`: JSON path token identifiers.
+//! - `j_token`: JSON token model.
+//! - `ordered_dictionary`: ordered JSON object map.
 
 /// Error types for the Neo JSON library.
 pub mod error;

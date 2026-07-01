@@ -1,31 +1,33 @@
 //! # neo-serialization
 //!
-//! Canonical home for Neo's pure serialization helpers: compression
-//! (`compress_lz4` / `decompress_lz4`), C#-compatible binary stack-item
-//! codec (`BinarySerializer`), JSON stack-item codec (`JsonSerializer`), and
-//! the in-memory storage providers (`MemoryStore` etc.).
+//! Binary, JSON, compression, and provider serialization helpers.
 //!
-//! ## Layering
+//! ## Boundary
 //!
-//! Sits at **Layer 1 (protocol)**. Depends on:
-//! - `neo-primitives`, `neo-error` (Layer 0)
-//! - `neo-storage` (Layer 0) — `ReadOnlyStore` / `WriteStore` / `StoreProvider` for `providers`
-//! - `neo-vm`, `neo-vm-rs` (Layer 0) — `StackItem` round-trip and opcode metadata
-//! - `neo-io` (Layer 0) — `BinaryWriter` / `MemoryReader` for wire encoding
+//! This codec crate owns serialization adapters and must not run services,
+//! import blocks, or mutate ledger state.
 //!
-//! Must **not** depend on `neo-core` or anything that needs a stateful
-//! consensus engine: this is the pure wire/storage serializer set, exactly
-//! the role `parity-scale-codec` and `ssz` play in their respective stacks.
+//! ## Contents
+//!
+//! - `binary_serializer`: binary serializer implementation.
+//! - `compression`: Compression codecs and deterministic envelope helpers.
+//! - `json`: JSON models and codecs for external service integration.
+//! - `json_serializer`: JSON serializer implementation.
+//! - `providers`: Provider implementations behind the crate public traits.
+//! - `serialization`: serialization codecs and compatibility checks.
 
-#![doc(html_root_url = "https://docs.rs/neo-serialization/0.8.0")]
+#![doc(html_root_url = "https://docs.rs/neo-serialization/0.9.0")]
 
+#[path = "codec/binary_serializer.rs"]
 pub mod binary_serializer;
 pub mod compression;
 /// C#-compatible JSON token model and JSONPath support.
 pub mod json;
+#[path = "codec/json_serializer.rs"]
 pub mod json_serializer;
 /// In-memory storage provider implementations used by serialization tests and fixtures.
 pub mod providers;
+#[path = "codec/serialization.rs"]
 pub mod serialization;
 
 pub use binary_serializer::BinarySerializer;

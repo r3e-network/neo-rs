@@ -33,6 +33,13 @@ pub trait InteropInterface: fmt::Debug + Send + Sync {
 
 const VM_INTEGER_MAX_SIZE: usize = 32;
 
+pub(crate) fn decode_integer_bytes(data: &[u8]) -> VmResult<BigInt> {
+    if data.len() > VM_INTEGER_MAX_SIZE {
+        return Err(VmError::invalid_type_simple("integer size exceeds maximum"));
+    }
+    Ok(BigInt::from_signed_bytes_le(data))
+}
+
 #[inline]
 fn stack_value_truthy(value: StackValue) -> bool {
     neo_vm_rs::semantics::comparison::boolean_value(&value)
@@ -303,7 +310,7 @@ impl StackItem {
 
     /// Shared helper: convert byte slice to BigInt with NeoVM integer rules.
     fn bytes_to_bigint(data: &[u8]) -> VmResult<BigInt> {
-        neo_vm_rs::decode_integer_bytes(data).map_err(VmError::invalid_type_simple)
+        decode_integer_bytes(data)
     }
 
     /// Shared helper: convert ByteString (Vec<u8>) to BigInt.
@@ -655,28 +662,27 @@ impl TryFrom<neo_vm_rs::StackValue> for StackItem {
         match value {
             neo_vm_rs::StackValue::Integer(value) => Ok(Self::from_i64(value)),
             neo_vm_rs::StackValue::BigInteger(bytes) => {
-                let value = neo_vm_rs::decode_integer_bytes(&bytes)
-                    .map_err(VmError::invalid_type_simple)?;
+                let value = decode_integer_bytes(&bytes)?;
                 Ok(Self::from_int(value))
             }
             neo_vm_rs::StackValue::ByteString(bytes) => Ok(Self::from_byte_string(bytes)),
-            neo_vm_rs::StackValue::Buffer(_, bytes) => Ok(Self::from_buffer(bytes)),
+            neo_vm_rs::StackValue::Buffer(bytes) => Ok(Self::from_buffer(bytes)),
             neo_vm_rs::StackValue::Boolean(value) => Ok(Self::from_bool(value)),
-            neo_vm_rs::StackValue::Array(_, items) => {
+            neo_vm_rs::StackValue::Array(items) => {
                 let items = items
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
                 Ok(Self::from_array(items))
             }
-            neo_vm_rs::StackValue::Struct(_, items) => {
+            neo_vm_rs::StackValue::Struct(items) => {
                 let items = items
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
                 Ok(Self::from_struct(items))
             }
-            neo_vm_rs::StackValue::Map(_, entries) => {
+            neo_vm_rs::StackValue::Map(entries) => {
                 let mut map = VmOrderedDictionary::with_capacity(entries.len());
                 for (key, value) in entries {
                     map.insert(Self::try_from(key)?, Self::try_from(value)?);
@@ -706,14 +712,14 @@ impl TryFrom<StackItem> for neo_vm_rs::StackValue {
                 None => Ok(Self::BigInteger(value.to_signed_bytes_le())),
             },
             StackItem::ByteString(bytes) => Ok(Self::ByteString(bytes)),
-            StackItem::Buffer(buffer) => Ok(Self::Buffer(0, buffer.data())),
+            StackItem::Buffer(buffer) => Ok(Self::Buffer(buffer.data())),
             StackItem::Array(array) => {
                 let items = array
                     .items()
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Array(0, items))
+                Ok(Self::Array(items))
             }
             StackItem::Struct(structure) => {
                 let items = structure
@@ -721,14 +727,14 @@ impl TryFrom<StackItem> for neo_vm_rs::StackValue {
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Struct(0, items))
+                Ok(Self::Struct(items))
             }
             StackItem::Map(map) => {
                 let entries = map
                     .iter()
                     .map(|(key, value)| Ok((Self::try_from(key)?, Self::try_from(value)?)))
                     .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Map(0, entries))
+                Ok(Self::Map(entries))
             }
             StackItem::Pointer(pointer) => {
                 let position = i64::try_from(pointer.position()).map_err(|_| {

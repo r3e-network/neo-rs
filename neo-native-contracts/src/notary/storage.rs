@@ -25,23 +25,20 @@ impl DepositState {
     }
 
     pub(in crate::notary) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::BigInteger(self.amount.to_signed_bytes_le()),
-                StackValue::Integer(i64::from(self.till)),
-            ],
-        )
+        StackValue::Struct(vec![
+            StackValue::BigInteger(self.amount.to_signed_bytes_le()),
+            StackValue::Integer(i64::from(self.till)),
+        ])
     }
 
     pub(in crate::notary) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(0, items) = stack_value else {
+        let StackValue::Struct(items) = stack_value else {
             return Err(CoreError::invalid_data("Notary deposit is not a struct"));
         };
         let amount_value = items
             .first()
             .ok_or_else(|| CoreError::invalid_data("Notary deposit Amount missing"))?;
-        let amount = neo_vm_rs::stack_value_as_bigint(amount_value)
+        let amount = neo_vm::stack_value_as_bigint(amount_value)
             .map_err(|e| CoreError::invalid_data(format!("Notary deposit Amount: {e}")))?;
         let till = items
             .get(1)
@@ -170,7 +167,7 @@ impl Notary {
             limits.max_stack_size as usize,
         )
         .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment data: {e}")))?;
-        let StackValue::Array(0, items) = item else {
+        let StackValue::Array(items) = item else {
             return Err(CoreError::invalid_operation(
                 "Notary::onNEP17Payment data must be an array of 2 elements",
             ));

@@ -1,0 +1,1599 @@
+use super::*;
+
+fn sign_header_for_test(
+    header: &Header,
+    network: u32,
+    private_key: &[u8; 32],
+    verification: &[u8],
+) -> neo_payloads::Witness {
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&header.hash().to_bytes());
+    let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, private_key).expect("sign");
+    let mut invocation = vec![0x0C, 64];
+    invocation.extend_from_slice(&signature);
+    neo_payloads::Witness::new_with_scripts(invocation, verification.to_vec())
+}
+
+struct FailingSecondCommitContext {
+    snapshot: Arc<neo_storage::DataCache>,
+    settings: Arc<neo_config::ProtocolSettings>,
+    commit_attempts: Arc<AtomicUsize>,
+    commit_to_store_calls: Arc<AtomicUsize>,
+}
+
+impl std::fmt::Debug for FailingSecondCommitContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FailingSecondCommitContext")
+            .finish_non_exhaustive()
+    }
+}
+
+impl SystemContext for FailingSecondCommitContext {
+    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+        Arc::clone(&self.settings)
+    }
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        Some(Arc::clone(&self.snapshot))
+    }
+
+    fn block_committing(
+        &self,
+        _block: &Block,
+        _snapshot: &neo_storage::DataCache,
+        _application_executed_list: &[neo_payloads::ApplicationExecuted],
+    ) -> bool {
+        self.commit_attempts.fetch_add(1, Ordering::SeqCst) == 0
+    }
+
+    fn commit_to_store(&self) {
+        self.commit_to_store_calls.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+struct FailingBulkFlushContext {
+    snapshot: Arc<neo_storage::DataCache>,
+    settings: Arc<neo_config::ProtocolSettings>,
+    flush_calls: Arc<AtomicUsize>,
+    commit_to_store_calls: Arc<AtomicUsize>,
+}
+
+impl std::fmt::Debug for FailingBulkFlushContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FailingBulkFlushContext")
+            .finish_non_exhaustive()
+    }
+}
+
+impl SystemContext for FailingBulkFlushContext {
+    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+        Arc::clone(&self.settings)
+    }
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        Some(Arc::clone(&self.snapshot))
+    }
+
+    fn flush_bulk_sync_commit_handlers(&self) -> Result<(), String> {
+        self.flush_calls.fetch_add(1, Ordering::SeqCst);
+        Err("state-root worker reported a failed operation".to_string())
+    }
+
+    fn commit_to_store(&self) {
+        self.commit_to_store_calls.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn initialize_bootstraps_genesis_once_and_inventory_runs_native_hooks() {
+    let (service, _handle, snapshot, state_store) = store_fixture_with_state_service();
+
+    // C# Blockchain.OnInitialize: an uninitialized store gets the
+    // genesis block persisted (native deploy seeds + mints).
+    service.initialize().await;
+    assert!(crate::native_persist::chain_state_initialized(&snapshot));
+    assert_eq!(
+        neo_total_supply(&snapshot),
+        Some(num_bigint::BigInt::from(100_000_000)),
+        "genesis minted the NEO total supply"
+    );
+    assert!(
+        service.ledger.block_hash_at(0).is_some(),
+        "genesis cached in the ledger"
+    );
+    assert!(
+        state_store
+            .mpt()
+            .expect("state store exposes MPT")
+            .get_state_root(0)
+            .is_some(),
+        "genesis writes the local state-root record for block 0"
+    );
+
+    // Re-initializing must NOT re-persist (the initialized probe
+    // guards the C# `Ledger.Initialized` branch): the supply stays
+    // 100M instead of doubling.
+    service.initialize().await;
+    assert_eq!(
+        neo_total_supply(&snapshot),
+        Some(num_bigint::BigInt::from(100_000_000))
+    );
+
+    // An inventory block at the next height runs the OnPersist /
+    // PostPersist native hooks over the same store: block 1 mints
+    // the 0.5-GAS committee reward to standby_committee[1 % 21].
+    // The synthetic header carries no real consensus witness, so it goes
+    // through the pre-verified path (the consensus-driver submission route);
+    // witness verification of peer-relayed blocks has its own tests below.
+    let mut header = Header::new();
+    header.set_index(1);
+    let block = Arc::new(Block::from_parts(header, vec![]));
+    service
+        .handle_block_inventory(block, false, true)
+        .await
+        .expect("inventory block persists");
+    assert_eq!(service.ledger.current_height(), 1);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let member = &settings.standby_committee[1];
+    let script = neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+        &member.to_bytes(),
+    );
+    let account = neo_primitives::UInt160::from_script(&script);
+    let mut key = vec![20u8]; // shared NEP-17 Prefix_Account
+    key.extend_from_slice(&account.to_bytes());
+    assert!(
+        snapshot
+            .get(&neo_storage::StorageKey::new(
+                neo_native_contracts::GasToken::ID,
+                key
+            ))
+            .is_some(),
+        "block-1 PostPersist minted the rotating committee reward"
+    );
+}
+
+#[tokio::test]
+async fn state_service_failure_aborts_before_chain_tip_advances() {
+    let (service, _handle, snapshot, state_store) = store_fixture_with_state_service();
+    service.initialize().await;
+    assert_eq!(service.ledger.current_height(), 0);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("genesis ledger current index"),
+        0
+    );
+
+    state_store
+        .mpt()
+        .expect("state store exposes MPT")
+        .revert_local_roots(0, 0)
+        .expect("revert current root pointer");
+    assert_eq!(
+        state_store
+            .mpt()
+            .expect("state store exposes MPT")
+            .current_local_root_index(),
+        None,
+        "state-service root is intentionally invalidated before the next block"
+    );
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let err = service
+        .handle_block_inventory(Arc::new(Block::from_parts(header, vec![])), false, true)
+        .await
+        .expect_err("non-contiguous StateService root must abort block persistence");
+
+    assert!(
+        err.to_string()
+            .contains("native persistence pipeline failed"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(
+        service.ledger.current_height(),
+        0,
+        "in-memory chain height must not advance after StateService failure"
+    );
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("durable ledger current index"),
+        0,
+        "durable ledger height must not advance after StateService failure"
+    );
+    let mpt = state_store.mpt().expect("state store exposes MPT");
+    assert_eq!(mpt.current_local_root_index(), None);
+    assert!(mpt.get_state_root(5).is_none());
+}
+
+#[tokio::test]
+async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
+    neo_native_contracts::install();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let flush_calls = Arc::new(AtomicUsize::new(0));
+    let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
+    let system = Arc::new(FailingBulkFlushContext {
+        snapshot: Arc::clone(&snapshot),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        flush_calls: Arc::clone(&flush_calls),
+        commit_to_store_calls: Arc::clone(&commit_to_store_calls),
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, _handle) =
+        BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    service.initialize().await;
+    flush_calls.store(0, Ordering::SeqCst);
+    commit_to_store_calls.store(0, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, Block::from_parts(header2, vec![])],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(
+        imported.imported, 2,
+        "bulk importer should preserve the accepted prefix count when finalization fails"
+    );
+    assert!(
+        imported
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("state-root worker")),
+        "bulk import should return the StateService finalization error, got {:?}",
+        imported.error
+    );
+    assert_eq!(
+        flush_calls.load(Ordering::SeqCst),
+        1,
+        "bulk import should flush pending async commit handlers at the batch boundary"
+    );
+    assert_eq!(
+        commit_to_store_calls.load(Ordering::SeqCst),
+        0,
+        "durable chain store must not commit after StateService MPT flush failure"
+    );
+}
+
+#[tokio::test]
+async fn future_inventory_block_is_parked_then_drained_after_parent_persists() {
+    let (service, _handle, snapshot) = store_fixture();
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Arc::new(Block::from_parts(header1, vec![]));
+    let block1_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(block1.as_ref())
+            .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let block2 = Arc::new(Block::from_parts(header2, vec![]));
+
+    service
+        .handle_block_inventory(Arc::clone(&block2), false, true)
+        .await
+        .expect("future block is parked, not rejected");
+    assert_eq!(service.ledger.current_height(), 0);
+    assert_eq!(service.unverified_block_count(), 1);
+    assert!(service.ledger.block_hash_at(2).is_none());
+
+    service
+        .handle_block_inventory(block1, false, true)
+        .await
+        .expect("parent block persists and drains child");
+
+    assert_eq!(service.ledger.current_height(), 2);
+    assert_eq!(service.unverified_block_count(), 0);
+    assert!(service.ledger.block_hash_at(1).is_some());
+    assert!(service.ledger.block_hash_at(2).is_some());
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        2
+    );
+}
+
+#[tokio::test]
+async fn inventory_block_batch_persists_consecutive_blocks_through_inventory_path() {
+    let (service, _handle, snapshot) = store_fixture();
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Arc::new(Block::from_parts(header1, vec![]));
+    let block1_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(block1.as_ref())
+            .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let block2 = Arc::new(Block::from_parts(header2, vec![]));
+
+    let imported = service
+        .handle_block_inventory_batch(vec![block1, block2], false, true)
+        .await;
+
+    assert_eq!(imported, 2);
+    assert_eq!(service.ledger.current_height(), 2);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        2
+    );
+}
+
+#[tokio::test]
+async fn inventory_block_batch_continues_after_rejected_block_like_individual_commands() {
+    let (service, _handle, snapshot) = store_fixture();
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut bad_header = Header::new();
+    bad_header.set_index(1);
+    bad_header.set_prev_hash(neo_primitives::UInt256::from([0xAB; 32]));
+    bad_header.set_timestamp(genesis.header.timestamp() + 15_000);
+    bad_header.set_next_consensus(*genesis.header.next_consensus());
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = service
+        .handle_block_inventory_batch(
+            vec![
+                Arc::new(Block::from_parts(bad_header, vec![])),
+                Arc::new(Block::from_parts(header1, vec![])),
+            ],
+            false,
+            true,
+        )
+        .await;
+
+    assert_eq!(imported, 1);
+    assert_eq!(service.ledger.current_height(), 1);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        1
+    );
+}
+
+#[tokio::test]
+async fn stop_height_allows_target_block_and_rejects_later_blocks() {
+    let (mut service, _handle, _snapshot) = store_fixture();
+    service.set_stop_at_height(Some(1));
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Arc::new(Block::from_parts(header1, vec![]));
+    let block1_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(block1.as_ref())
+            .expect("block1 hash");
+
+    service
+        .handle_block_inventory(block1, false, true)
+        .await
+        .expect("target stop-height block persists");
+    assert_eq!(service.ledger.current_height(), 1);
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let err = service
+        .handle_block_inventory(Arc::new(Block::from_parts(header2, vec![])), false, true)
+        .await
+        .expect_err("block after stop height must not persist");
+    assert!(
+        err.to_string().contains("stop height 1"),
+        "error should name the configured stop height: {err}"
+    );
+    assert_eq!(service.ledger.current_height(), 1);
+    assert!(service.ledger.block_hash_at(2).is_none());
+}
+
+#[tokio::test]
+async fn future_block_with_cached_header_hash_mismatch_is_rejected_not_parked() {
+    let (service, _handle) = fixture();
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    service.handle_headers(vec![header1, header2.clone()]);
+    assert_eq!(service.header_cache.count(), 2, "headers cached first");
+
+    let mut competing = header2;
+    competing.set_nonce(0xAA55_AA55_AA55_AA55);
+    let err = service
+        .handle_block_inventory(Arc::new(Block::from_parts(competing, vec![])), false, true)
+        .await
+        .expect_err("future block hash must match an existing cached header");
+    assert!(
+        err.to_string().contains("cached header"),
+        "rejection should name cached header mismatch: {err}"
+    );
+    assert_eq!(
+        service.unverified_block_count(),
+        0,
+        "mismatched future block must not be parked"
+    );
+}
+
+#[tokio::test]
+async fn import_verify_true_rejects_invalid_header_like_csharp() {
+    let (service, _handle, snapshot) = store_fixture();
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp());
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    service
+        .handle_import(Import {
+            blocks: vec![Block::from_parts(header, vec![])],
+            verify: true,
+            bulk_sync: false,
+        })
+        .await;
+
+    assert_eq!(
+        service.ledger.current_height(),
+        0,
+        "C# OnImport(verify: true) stops before persisting an invalid header"
+    );
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        0
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_uses_batch_block_before_parked_duplicate_height() {
+    let (service, _handle, _snapshot) = store_fixture();
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut parked_header2 = Header::new();
+    parked_header2.set_index(2);
+    parked_header2.set_prev_hash(block1_hash);
+    parked_header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    parked_header2.set_next_consensus(*genesis.header.next_consensus());
+    let parked_block2 = Arc::new(Block::from_parts(parked_header2, vec![]));
+    let parked_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(parked_block2.as_ref())
+            .expect("parked block2 hash");
+
+    service
+        .handle_block_inventory(Arc::clone(&parked_block2), false, true)
+        .await
+        .expect("future block is parked");
+    assert_eq!(service.unverified_block_count(), 1);
+
+    let mut import_header2 = Header::new();
+    import_header2.set_index(2);
+    import_header2.set_prev_hash(block1_hash);
+    import_header2.set_timestamp(genesis.header.timestamp() + 45_000);
+    import_header2.set_next_consensus(*genesis.header.next_consensus());
+    let import_block2 = Block::from_parts(import_header2, vec![]);
+    let import_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(&import_block2)
+            .expect("import block2 hash");
+    assert_ne!(
+        parked_hash, import_hash,
+        "fixture must distinguish the parked peer block from the trusted bulk block"
+    );
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, import_block2],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(service.ledger.current_height(), 2);
+    assert_eq!(
+        service.ledger.block_hash_at(2),
+        Some(import_hash),
+        "trusted bulk import batch must win over a parked duplicate-height peer block"
+    );
+    assert_eq!(
+        service.unverified_block_count(),
+        0,
+        "bulk import should discard stale parked blocks at or below the imported tip"
+    );
+}
+
+#[tokio::test]
+async fn import_verify_false_skips_header_verification_like_csharp() {
+    let (service, _handle, snapshot) = store_fixture();
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp());
+    header.set_next_consensus(*genesis.header.next_consensus());
+    assert!(
+        service.header_cache.add(header.clone()),
+        "test starts with a header-first cached block"
+    );
+
+    service
+        .handle_import(Import {
+            blocks: vec![Block::from_parts(header, vec![])],
+            verify: false,
+            bulk_sync: false,
+        })
+        .await;
+
+    assert_eq!(
+        service.ledger.current_height(),
+        1,
+        "C# OnImport(verify: false) bypasses Block.Verify and persists the next block"
+    );
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        1
+    );
+    assert_eq!(
+        service.header_cache.count(),
+        0,
+        "C# Persist removes the first cached header after committing the block"
+    );
+}
+
+#[tokio::test]
+async fn explicit_bulk_import_skips_replay_artifacts_but_normal_import_keeps_them() {
+    let (normal_service, _normal_handle, _normal_snapshot, normal_lengths) =
+        store_fixture_recording_application_executed_lengths();
+    normal_service.initialize().await;
+    normal_lengths.lock().clear();
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut normal_header = Header::new();
+    normal_header.set_index(1);
+    normal_header.set_prev_hash(genesis.hash());
+    normal_header.set_timestamp(genesis.header.timestamp());
+    normal_header.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = normal_service
+        .handle_import(Import {
+            blocks: vec![Block::from_parts(normal_header, vec![])],
+            verify: false,
+            bulk_sync: false,
+        })
+        .await;
+    assert_eq!(imported.imported, 1);
+    assert_eq!(
+        normal_lengths.lock().as_slice(),
+        &[2],
+        "normal import must keep OnPersist/PostPersist ApplicationExecuted replay records"
+    );
+
+    let (bulk_service, _bulk_handle, _bulk_snapshot, bulk_lengths) =
+        store_fixture_recording_application_executed_lengths();
+    bulk_service.initialize().await;
+    bulk_lengths.lock().clear();
+
+    let mut bulk_header = Header::new();
+    bulk_header.set_index(1);
+    bulk_header.set_prev_hash(genesis.hash());
+    bulk_header.set_timestamp(genesis.header.timestamp());
+    bulk_header.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = bulk_service
+        .handle_import(Import {
+            blocks: vec![Block::from_parts(bulk_header, vec![])],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+    assert_eq!(imported.imported, 1);
+    assert_eq!(
+        bulk_lengths.lock().as_slice(),
+        &[0],
+        "bulk import should skip replay-only ApplicationExecuted artifacts"
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_flushes_store_once_per_accepted_batch() {
+    let (normal_service, _normal_handle, _normal_snapshot, normal_commits) =
+        store_fixture_counting_commits();
+    normal_service.initialize().await;
+    normal_commits.store(0, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut normal_header1 = Header::new();
+    normal_header1.set_index(1);
+    normal_header1.set_prev_hash(genesis.hash());
+    normal_header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    normal_header1.set_next_consensus(*genesis.header.next_consensus());
+    let normal_block1 = Block::from_parts(normal_header1, vec![]);
+    let normal_block1_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(&normal_block1)
+            .expect("normal block1 hash");
+
+    let mut normal_header2 = Header::new();
+    normal_header2.set_index(2);
+    normal_header2.set_prev_hash(normal_block1_hash);
+    normal_header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    normal_header2.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = normal_service
+        .handle_import(Import {
+            blocks: vec![normal_block1, Block::from_parts(normal_header2, vec![])],
+            verify: false,
+            bulk_sync: false,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(
+        normal_commits.load(Ordering::SeqCst),
+        2,
+        "normal imports keep per-block durable flush behavior"
+    );
+
+    let (bulk_service, _bulk_handle, _bulk_snapshot, bulk_commits) =
+        store_fixture_counting_commits();
+    bulk_service.initialize().await;
+    bulk_commits.store(0, Ordering::SeqCst);
+
+    let mut bulk_header1 = Header::new();
+    bulk_header1.set_index(1);
+    bulk_header1.set_prev_hash(genesis.hash());
+    bulk_header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    bulk_header1.set_next_consensus(*genesis.header.next_consensus());
+    assert!(
+        bulk_service.header_cache.add(bulk_header1.clone()),
+        "bulk import test starts with cached header 1"
+    );
+    let bulk_block1 = Block::from_parts(bulk_header1, vec![]);
+    let bulk_block1_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(&bulk_block1)
+            .expect("bulk block1 hash");
+
+    let mut bulk_header2 = Header::new();
+    bulk_header2.set_index(2);
+    bulk_header2.set_prev_hash(bulk_block1_hash);
+    bulk_header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    bulk_header2.set_next_consensus(*genesis.header.next_consensus());
+    assert!(
+        bulk_service.header_cache.add(bulk_header2.clone()),
+        "bulk import test starts with cached header 2"
+    );
+
+    let imported = bulk_service
+        .handle_import(Import {
+            blocks: vec![bulk_block1, Block::from_parts(bulk_header2, vec![])],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(
+        bulk_commits.load(Ordering::SeqCst),
+        1,
+        "bulk import should flush the durable store once for the accepted batch"
+    );
+    assert_eq!(
+        bulk_service.header_cache.count(),
+        0,
+        "bulk import should clear consumed cached headers after the accepted batch"
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_reuses_store_snapshot_for_accepted_batch() {
+    let (service, _handle, _snapshot, snapshot_calls, commit_calls) =
+        store_fixture_counting_snapshot_and_commits();
+    service.initialize().await;
+    snapshot_calls.store(0, Ordering::SeqCst);
+    commit_calls.store(0, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, Block::from_parts(header2, vec![])],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(
+        snapshot_calls.load(Ordering::SeqCst),
+        1,
+        "bulk import should reuse the shared store snapshot across accepted blocks"
+    );
+    assert_eq!(
+        commit_calls.load(Ordering::SeqCst),
+        1,
+        "bulk import should still flush the durable store once after the accepted batch"
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_verify_true_validates_against_prior_batch_block() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+
+    let (service, _handle, snapshot, snapshot_calls, commit_calls) =
+        store_fixture_counting_snapshot_and_commits_with(settings.clone());
+    service.initialize().await;
+    snapshot_calls.store(0, Ordering::SeqCst);
+    commit_calls.store(0, Ordering::SeqCst);
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_primary_index(0);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    header1.witness = sign_header_for_test(&header1, network, &private_key, &verification);
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_primary_index(0);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    header2.witness = sign_header_for_test(&header2, network, &private_key, &verification);
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, Block::from_parts(header2, vec![])],
+            verify: true,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(service.ledger.current_height(), 2);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        2,
+        "block 2 verification must see block 1 committed into the shared snapshot"
+    );
+    assert_eq!(
+        snapshot_calls.load(Ordering::SeqCst),
+        1,
+        "verified bulk import should still reuse the parent snapshot across the batch"
+    );
+    assert_eq!(commit_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn bulk_import_keeps_accepted_prefix_when_second_block_committing_fails() {
+    neo_native_contracts::install();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let commit_attempts = Arc::new(AtomicUsize::new(0));
+    let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
+    let system = Arc::new(FailingSecondCommitContext {
+        snapshot: Arc::clone(&snapshot),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        commit_attempts: Arc::clone(&commit_attempts),
+        commit_to_store_calls: Arc::clone(&commit_to_store_calls),
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, _handle) =
+        BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    service.initialize().await;
+    commit_attempts.store(0, Ordering::SeqCst);
+    commit_to_store_calls.store(0, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, Block::from_parts(header2, vec![])],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(
+        imported.imported, 1,
+        "bulk import should keep the accepted prefix and stop at the failing block"
+    );
+    assert_eq!(service.ledger.current_height(), 1);
+    assert_eq!(commit_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        commit_to_store_calls.load(Ordering::SeqCst),
+        0,
+        "bulk imports durably flush only after the full accepted batch finalizes"
+    );
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        1,
+        "accepted block 1 must stay committed to the canonical snapshot"
+    );
+    assert!(
+        snapshot
+            .get(&neo_storage::StorageKey::new(
+                neo_native_contracts::LedgerContract::ID,
+                vec![12]
+            ))
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn inventory_block_batch_flushes_store_once_for_contiguous_accepted_burst() {
+    let (service, _handle, snapshot, commit_calls) = store_fixture_counting_commits();
+    service.initialize().await;
+    commit_calls.store(0, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Arc::new(Block::from_parts(header1, vec![]));
+    let block1_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(block1.as_ref())
+            .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let block2 = Arc::new(Block::from_parts(header2, vec![]));
+
+    let imported = service
+        .handle_block_inventory_batch(vec![block1, block2], false, true)
+        .await;
+
+    assert_eq!(imported, 2);
+    assert_eq!(service.ledger.current_height(), 2);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        2
+    );
+    assert_eq!(
+        commit_calls.load(Ordering::SeqCst),
+        1,
+        "contiguous inventory bursts should commit the shared store once after the accepted batch"
+    );
+}
+
+#[tokio::test]
+async fn inventory_block_batch_counts_and_flushes_drained_parked_children() {
+    let (service, _handle, snapshot, commit_calls) = store_fixture_counting_commits();
+    service.initialize().await;
+    commit_calls.store(0, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Arc::new(Block::from_parts(header1, vec![]));
+    let block1_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(block1.as_ref())
+            .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    let block2 = Arc::new(Block::from_parts(header2, vec![]));
+    let block2_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(block2.as_ref())
+            .expect("block2 hash");
+
+    let mut header3 = Header::new();
+    header3.set_index(3);
+    header3.set_prev_hash(block2_hash);
+    header3.set_timestamp(genesis.header.timestamp() + 45_000);
+    header3.set_next_consensus(*genesis.header.next_consensus());
+    let block3 = Arc::new(Block::from_parts(header3, vec![]));
+
+    service
+        .handle_block_inventory(Arc::clone(&block3), false, true)
+        .await
+        .expect("future child is parked before parents arrive");
+    assert_eq!(service.unverified_block_count(), 1);
+    commit_calls.store(0, Ordering::SeqCst);
+
+    let imported = service
+        .handle_block_inventory_batch(vec![block1, block2], false, true)
+        .await;
+
+    assert_eq!(
+        imported, 3,
+        "batch result should include direct imports and parked children drained by the batch"
+    );
+    assert_eq!(service.ledger.current_height(), 3);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        3
+    );
+    assert_eq!(service.unverified_block_count(), 0);
+    assert_eq!(
+        commit_calls.load(Ordering::SeqCst),
+        2,
+        "direct burst flushes once; drained parked children keep the normal per-block flush path"
+    );
+}
+
+#[tokio::test]
+async fn bulk_import_skips_per_block_mempool_maintenance() {
+    neo_native_contracts::install();
+    let settings = neo_config::ProtocolSettings::default();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let system = Arc::new(StoreContext {
+        snapshot,
+        settings: Arc::new(settings.clone()),
+        state_service: None,
+        committing_application_executed_lengths: None,
+        store_snapshot_calls: None,
+        commit_to_store_calls: None,
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let reverify_calls = Arc::new(AtomicUsize::new(0));
+    let block_persisted_calls = Arc::new(AtomicUsize::new(0));
+    let mempool = Arc::new(RecordingMempool {
+        reverify_calls: Arc::clone(&reverify_calls),
+        has_unverified_transactions: true,
+        block_persisted_calls: Some(Arc::clone(&block_persisted_calls)),
+    });
+    let (service, _handle) =
+        BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    service.initialize().await;
+
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, vec![]);
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, Block::from_parts(header2, vec![])],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 2);
+    assert_eq!(service.ledger.current_height(), 2);
+    assert_eq!(
+        block_persisted_calls.load(Ordering::SeqCst),
+        0,
+        "trusted bulk sync should not run per-block mempool eviction in the cold-import hot loop"
+    );
+    assert_eq!(
+        reverify_calls.load(Ordering::SeqCst),
+        0,
+        "trusted bulk sync should not reverify mempool transactions while importing a local chain.acc package"
+    );
+}
+
+#[tokio::test]
+async fn import_blocks_handle_waits_until_batch_is_processed() {
+    let (service, handle, snapshot) = store_fixture();
+    service.initialize().await;
+    let service_task = tokio::spawn(service.run());
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp());
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = handle
+        .import_blocks(vec![Block::from_parts(header, vec![])], false)
+        .await
+        .expect("batch import command completes");
+
+    assert_eq!(imported, 1, "reply reports the processed block count");
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        1,
+        "import_blocks must not resolve before the durable import is visible"
+    );
+
+    drop(handle);
+    service_task.await.expect("service task joins");
+}
+
+#[tokio::test]
+async fn import_blocks_counts_duplicate_prefix_as_processed() {
+    let (service, handle, snapshot) = store_fixture();
+    service.initialize().await;
+    let service_task = tokio::spawn(service.run());
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp());
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let processed = handle
+        .import_blocks(
+            vec![genesis.clone(), Block::from_parts(header, vec![])],
+            false,
+        )
+        .await
+        .expect("batch import command completes");
+
+    assert_eq!(
+        processed, 2,
+        "duplicate genesis is a processed prefix item and must not stop chain.acc import"
+    );
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        1,
+        "only block 1 advances the durable tip"
+    );
+
+    drop(handle);
+    service_task.await.expect("service task joins");
+}
+
+#[tokio::test]
+async fn persisted_inventory_block_removes_cached_header_after_mempool_update() {
+    neo_native_contracts::install();
+    let settings = neo_config::ProtocolSettings::default();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let system = Arc::new(StoreContext {
+        snapshot: Arc::clone(&snapshot),
+        settings: Arc::new(settings.clone()),
+        state_service: None,
+        committing_application_executed_lengths: None,
+        store_snapshot_calls: None,
+        commit_to_store_calls: None,
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let reverify_calls = Arc::new(AtomicUsize::new(0));
+    let mempool = Arc::new(RecordingMempool {
+        reverify_calls: Arc::clone(&reverify_calls),
+        has_unverified_transactions: true,
+        block_persisted_calls: None,
+    });
+    let (service, _handle) =
+        BlockchainService::with_defaults(system, ledger, Arc::clone(&header_cache), mempool);
+
+    service.initialize().await;
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_next_consensus(*genesis.header.next_consensus());
+    assert!(header_cache.add(header.clone()));
+
+    service
+        .handle_block_inventory(Arc::new(Block::from_parts(header, vec![])), false, true)
+        .await
+        .expect("cached-header block persists");
+
+    assert_eq!(service.ledger.current_height(), 1);
+    assert_eq!(
+        reverify_calls.load(Ordering::SeqCst),
+        0,
+        "C# MemoryPool.UpdatePoolForBlockPersisted skips reverify while future headers are still cached"
+    );
+    assert_eq!(
+        service.header_cache.count(),
+        0,
+        "C# Blockchain.Persist removes the consumed header after mempool update"
+    );
+}
+
+/// End-to-end consensus-witness verification of a peer-relayed block: a
+/// block signed by the network's validator (1-of-1 multisig over the C#
+/// sign data = network magic LE + header hash) is accepted, and the same
+/// block with a tampered signature is rejected. Proves the whole
+/// `Header.Verify` path (prev-block lookup, timestamp/primary checks,
+/// script-hash match against prev `NextConsensus`, CheckMultisig over the
+/// header sign data) so live sync cannot be stalled by a broken verifier.
+#[tokio::test]
+async fn peer_block_witness_verification_accepts_valid_and_rejects_tampered() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+
+    let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await;
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    // Block 1 over genesis (no transactions; merkle root stays zero).
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_primary_index(0);
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    // C# sign data: network magic (LE) + header hash (witness excluded).
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&header.hash().to_bytes());
+    let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+    let invocation = |sig: &[u8]| {
+        let mut script = vec![0x0C, 64]; // PUSHDATA1 64
+        script.extend_from_slice(sig);
+        script
+    };
+
+    // Tampered signature -> rejected, nothing persisted.
+    let mut tampered_sig = signature;
+    tampered_sig[10] ^= 0xFF;
+    let mut tampered = header.clone();
+    tampered.witness =
+        neo_payloads::Witness::new_with_scripts(invocation(&tampered_sig), verification.clone());
+    let err = service
+        .handle_block_inventory(Arc::new(Block::from_parts(tampered, vec![])), false, false)
+        .await
+        .expect_err("tampered consensus witness must be rejected");
+    assert!(
+        err.to_string().contains("witness"),
+        "rejection names the witness: {err}"
+    );
+    assert_eq!(service.ledger.current_height(), 0);
+
+    // Valid signature -> accepted and persisted.
+    header.witness = neo_payloads::Witness::new_with_scripts(invocation(&signature), verification);
+    service
+        .handle_block_inventory(Arc::new(Block::from_parts(header, vec![])), false, false)
+        .await
+        .expect("validly signed peer block is accepted");
+    assert_eq!(service.ledger.current_height(), 1);
+}
+
+#[tokio::test]
+async fn peer_block_witness_verification_does_not_trust_catchup_peer_tip() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+
+    let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await;
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    neo_runtime::sync_metrics::set_peer_live_tip(1_000_000);
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_primary_index(0);
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&header.hash().to_bytes());
+    let mut signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+    signature[10] ^= 0xFF;
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+    let mut invocation = vec![0x0C, 64];
+    invocation.extend_from_slice(&signature);
+    header.witness = neo_payloads::Witness::new_with_scripts(invocation, verification);
+
+    let err = service
+        .handle_block_inventory(Arc::new(Block::from_parts(header, vec![])), false, false)
+        .await
+        .expect_err("catch-up peer tip must not bypass consensus witness verification");
+    assert!(
+        err.to_string().contains("witness"),
+        "rejection names the witness: {err}"
+    );
+    assert_eq!(
+        service.ledger.current_height(),
+        0,
+        "tampered peer block must not be persisted during catch-up"
+    );
+}
+
+/// C# `Blockchain.OnNewBlock` rejects a full block whose height is already
+/// represented in `HeaderCache` unless its hash equals the cached header
+/// (`Blockchain.cs:241-243`).
+#[tokio::test]
+async fn peer_block_must_match_cached_header_hash() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+
+    let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await;
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+
+    let sign_header = |header: &Header| {
+        let mut sign_data = Vec::with_capacity(36);
+        sign_data.extend_from_slice(&network.to_le_bytes());
+        sign_data.extend_from_slice(&header.hash().to_bytes());
+        let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let mut invocation = vec![0x0C, 64];
+        invocation.extend_from_slice(&signature);
+        neo_payloads::Witness::new_with_scripts(invocation, verification.clone())
+    };
+
+    let mut cached = Header::new();
+    cached.set_index(1);
+    cached.set_prev_hash(genesis.hash());
+    cached.set_timestamp(genesis.header.timestamp() + 15_000);
+    cached.set_primary_index(0);
+    cached.set_next_consensus(*genesis.header.next_consensus());
+    cached.witness = sign_header(&cached);
+    service.handle_headers(vec![cached.clone()]);
+    assert_eq!(service.header_cache.count(), 1, "header cached first");
+
+    let mut competing = cached;
+    competing.set_nonce(0xAA55_AA55_AA55_AA55);
+    competing.witness = sign_header(&competing);
+
+    let err = service
+        .handle_block_inventory(Arc::new(Block::from_parts(competing, vec![])), false, false)
+        .await
+        .expect_err("block hash must match the cached header at the same height");
+    assert!(
+        err.to_string().contains("cached header"),
+        "rejection should name cached header mismatch: {err}"
+    );
+    assert_eq!(
+        service.ledger.current_height(),
+        0,
+        "mismatched block must not be persisted"
+    );
+}
+
+/// Public `BlockchainHandle::import_block` is the RPC/user-submitted block
+/// path, so it must wait for the service verdict and verify the consensus
+/// witness instead of reporting success after merely queueing the command.
+#[tokio::test]
+async fn handle_import_block_reports_rejection_and_verifies_witness() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+
+    let (service, handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await;
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_primary_index(0);
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&header.hash().to_bytes());
+    let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+    let invocation = |sig: &[u8]| {
+        let mut script = vec![0x0C, 64];
+        script.extend_from_slice(sig);
+        script
+    };
+
+    let mut tampered_signature = signature;
+    tampered_signature[10] ^= 0xFF;
+    let mut tampered_header = header.clone();
+    tampered_header.witness = neo_payloads::Witness::new_with_scripts(
+        invocation(&tampered_signature),
+        verification.clone(),
+    );
+
+    header.witness = neo_payloads::Witness::new_with_scripts(invocation(&signature), verification);
+
+    let runner = tokio::spawn(service.run());
+
+    let rejected = handle
+        .import_block(Block::from_parts(tampered_header, vec![]))
+        .await
+        .expect("import command reply");
+    assert!(
+        !rejected,
+        "tampered witness must not be reported as imported"
+    );
+    assert_eq!(handle.get_height().await.expect("height reply"), 0);
+
+    let imported = handle
+        .import_block(Block::from_parts(header, vec![]))
+        .await
+        .expect("import command reply");
+    assert!(imported, "validly signed block advances the tip");
+    assert_eq!(handle.get_height().await.expect("height reply"), 1);
+
+    drop(handle);
+    runner
+        .await
+        .expect("service exits after command channel closes");
+}
+
+/// Sync and consensus should be able to use the shared runtime import
+/// contract without depending on the concrete blockchain command enum.
+#[tokio::test]
+async fn handle_implements_runtime_block_import_contract() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+
+    let (service, handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await;
+    let runner = tokio::spawn(service.run());
+
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_primary_index(0);
+    header.set_next_consensus(*genesis.header.next_consensus());
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&header.hash().to_bytes());
+    let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+    let mut invocation = vec![0x0C, 64];
+    invocation.extend_from_slice(&signature);
+    header.witness = neo_payloads::Witness::new_with_scripts(invocation, verification);
+    let block = Block::from_parts(header, vec![]);
+    let expected_tip = neo_runtime::ImportedTip::from_block(&block).expect("block hash");
+
+    let importer: &dyn neo_runtime::BlockImport = &handle;
+    importer.check(&block).await.expect("check");
+    let outcome = importer
+        .import(block, neo_runtime::BlockOrigin::Sync)
+        .await
+        .expect("import through runtime contract");
+
+    assert_eq!(
+        outcome,
+        neo_runtime::BlockImportOutcome::Imported(expected_tip)
+    );
+
+    drop(handle);
+    runner
+        .await
+        .expect("service exits after command channel closes");
+}

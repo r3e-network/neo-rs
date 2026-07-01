@@ -1,6 +1,6 @@
 const RUNTIME_SOURCES: &[(&str, &str)] = &[
-    ("indexer.rs", include_str!("../indexer.rs")),
-    ("service.rs", include_str!("../service.rs")),
+    ("indexer/mod.rs", include_str!("../indexer/mod.rs")),
+    ("service/mod.rs", include_str!("../service/mod.rs")),
 ];
 
 #[test]

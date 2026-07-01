@@ -159,6 +159,36 @@ fn test_size() {
 }
 
 #[test]
+fn node_without_reference_serialization_allocates_exact_size() {
+    for node in [
+        Node::new(),
+        prepare_mpt_node1(),
+        prepare_mpt_node2(),
+        Node::new_extension(vec![0x01, 0x02], prepare_mpt_node2()).unwrap(),
+        prepare_mpt_node3(),
+    ] {
+        let data = node.to_array_without_reference().unwrap();
+        assert_eq!(
+            data.capacity(),
+            data.len(),
+            "node type {:?} should preallocate the exact hash payload size",
+            node.node_type
+        );
+    }
+}
+
+#[test]
+fn sizing_embedded_child_does_not_compute_hash() {
+    let node = prepare_mpt_node2();
+
+    assert_eq!(node.byte_size_as_child(), 1 + neo_primitives::UINT256_SIZE);
+    assert!(
+        !node.hash_is_cached(),
+        "child size estimation should not force hash serialization"
+    );
+}
+
+#[test]
 fn test_from_replica() {
     let original = prepare_mpt_node3();
     let data = original.to_array().unwrap();

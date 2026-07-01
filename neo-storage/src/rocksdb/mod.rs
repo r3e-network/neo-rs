@@ -1,8 +1,19 @@
-//! RocksDB storage backend for the Neo blockchain node.
+//! # neo-storage::rocksdb
 //!
-//! Implements this crate's `Store`/`ReadOnlyStore`/`WriteStore`/`StoreProvider`
-//! traits over RocksDB. Lifted out of `neo-core` so the heavyweight `rocksdb`
-//! dependency stays optional and confined to nodes that select this backend.
+//! RocksDB provider, store, snapshot, and write-batch adapter.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-storage`. This infrastructure crate owns store
+//! mechanics and must not execute contracts, import blocks, or make RPC/network
+//! policy decisions.
+//!
+//! ## Contents
+//!
+//! - `provider`: Provider adapter for the surrounding trait boundary.
+//! - `store`: Store implementation for the surrounding backend or domain.
+//! - `write_batch_buffer`: RocksDB write-batch staging buffer.
+//! - `tests`: Module-local tests and regression coverage.
 
 /// RocksDB store provider and tuning options.
 pub mod provider;
@@ -11,7 +22,7 @@ pub mod store;
 pub mod write_batch_buffer;
 
 #[cfg(test)]
-#[path = "../tests/rocksdb.rs"]
+#[path = "../tests/rocksdb/mod.rs"]
 mod tests;
 
 pub use provider::{

@@ -19,31 +19,19 @@ fn event_descriptor_projects_to_neo_vm_rs_stack_value() {
 
     assert_eq!(
         event.to_stack_value(),
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(b"Transfer".to_vec()),
-                StackValue::Array(
-                    0,
-                    vec![
-                        StackValue::Struct(
-                            0,
-                            vec![
-                                StackValue::ByteString(b"from".to_vec()),
-                                StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
-                            ]
-                        ),
-                        StackValue::Struct(
-                            0,
-                            vec![
-                                StackValue::ByteString(b"amount".to_vec()),
-                                StackValue::Integer(ContractParameterType::Integer as u8 as i64),
-                            ]
-                        ),
-                    ]
-                ),
-            ]
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(b"Transfer".to_vec()),
+            StackValue::Array(vec![
+                StackValue::Struct(vec![
+                    StackValue::ByteString(b"from".to_vec()),
+                    StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
+                ]),
+                StackValue::Struct(vec![
+                    StackValue::ByteString(b"amount".to_vec()),
+                    StackValue::Integer(ContractParameterType::Integer as u8 as i64),
+                ]),
+            ]),
+        ])
     );
 }
 
@@ -52,22 +40,13 @@ fn event_descriptor_reads_from_neo_vm_rs_stack_value() {
     let mut event = ContractEventDescriptor::default();
 
     event
-        .from_stack_value(StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(b"Approval".to_vec()),
-                StackValue::Array(
-                    0,
-                    vec![StackValue::Struct(
-                        0,
-                        vec![
-                            StackValue::ByteString(b"spender".to_vec()),
-                            StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
-                        ],
-                    )],
-                ),
-            ],
-        ))
+        .from_stack_value(StackValue::Struct(vec![
+            StackValue::ByteString(b"Approval".to_vec()),
+            StackValue::Array(vec![StackValue::Struct(vec![
+                StackValue::ByteString(b"spender".to_vec()),
+                StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
+            ])]),
+        ]))
         .unwrap();
 
     assert_eq!(event.name, "Approval");
@@ -83,22 +62,13 @@ fn event_descriptor_rejects_struct_parameter_sequence_like_csharp() {
 
     assert!(
         event
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(b"Vote".to_vec()),
-                    StackValue::Struct(
-                        0,
-                        vec![StackValue::Struct(
-                            0,
-                            vec![
-                                StackValue::ByteString(b"candidate".to_vec()),
-                                StackValue::Integer(ContractParameterType::PublicKey as u8 as i64),
-                            ]
-                        )]
-                    ),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"Vote".to_vec()),
+                StackValue::Struct(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"candidate".to_vec()),
+                    StackValue::Integer(ContractParameterType::PublicKey as u8 as i64),
+                ])]),
+            ]))
             .is_err()
     );
 }
@@ -109,21 +79,18 @@ fn event_descriptor_rejects_invalid_name_like_csharp() {
 
     assert!(
         event
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![StackValue::Null, StackValue::Array(0, Vec::new()),]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::Null,
+                StackValue::Array(Vec::new()),
+            ]))
             .is_err()
     );
     assert!(
         event
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(vec![0xff]),
-                    StackValue::Array(0, Vec::new()),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(vec![0xff]),
+                StackValue::Array(Vec::new()),
+            ]))
             .is_err()
     );
 }

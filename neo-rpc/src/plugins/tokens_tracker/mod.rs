@@ -1,9 +1,24 @@
-//! Token tracker plugin (merged from the standalone `neo-tokens-tracker` crate).
+//! # neo-rpc::plugins::tokens_tracker
 //!
-//! Exposes NEP-11 and NEP-17 balance/transfer indexing. Lives under
-//! `neo_rpc::plugins::tokens_tracker`; enabled by the `server` feature.
+//! Token tracker plugin wiring and index-derived token views.
 //!
-//! Original C# reference: `RpcServer.Plugins.TokensTracker`.
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `extensions`: Extension traits layered over the core IO primitives.
+//! - `runtime`: Runtime flags, execution context state, and VM-facing support
+//!   types.
+//! - `service`: Service loops, handles, lifecycle helpers, and command
+//!   processing.
+//! - `settings`: Protocol settings, hardfork gates, and node configuration
+//!   records.
+//! - `trackers`: Token tracker implementations grouped by token standard.
+
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 

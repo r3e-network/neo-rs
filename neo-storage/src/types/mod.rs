@@ -1,10 +1,19 @@
-//! Storage types for Neo blockchain.
+//! # neo-storage::types
 //!
-//! This module provides the core storage types that match the C# Neo implementation:
-//! - `StorageKey`: Keys for contract storage with contract ID and key bytes
-//! - `StorageItem`: Values stored in contract storage
-//! - `SeekDirection`: Direction for storage iteration
-//! - `TrackState`: Cache tracking states for storage entries
+//! Storage-domain types shared by store implementations.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-storage`. This infrastructure crate owns store
+//! mechanics and must not execute contracts, import blocks, or make RPC/network
+//! policy decisions.
+//!
+//! ## Contents
+//!
+//! - `seek`: seek direction re-exports.
+//! - `storage_item`: storage item records.
+//! - `storage_key`: storage key records and encoders.
+//! - `track`: tracked mutation state re-exports.
 
 /// Storage iteration direction.
 pub mod seek;

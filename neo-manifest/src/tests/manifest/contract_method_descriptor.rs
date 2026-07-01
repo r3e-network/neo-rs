@@ -18,25 +18,16 @@ fn method_descriptor_projects_to_neo_vm_rs_stack_value() {
 
     assert_eq!(
         method.to_stack_value(),
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(b"balanceOf".to_vec()),
-                StackValue::Array(
-                    0,
-                    vec![StackValue::Struct(
-                        0,
-                        vec![
-                            StackValue::ByteString(b"account".to_vec()),
-                            StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
-                        ]
-                    )]
-                ),
-                StackValue::Integer(ContractParameterType::Integer as u8 as i64),
-                StackValue::Integer(42),
-                StackValue::Boolean(true),
-            ]
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(b"balanceOf".to_vec()),
+            StackValue::Array(vec![StackValue::Struct(vec![
+                StackValue::ByteString(b"account".to_vec()),
+                StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
+            ])]),
+            StackValue::Integer(ContractParameterType::Integer as u8 as i64),
+            StackValue::Integer(42),
+            StackValue::Boolean(true),
+        ])
     );
 }
 
@@ -45,25 +36,16 @@ fn method_descriptor_reads_from_neo_vm_rs_stack_value() {
     let mut method = ContractMethodDescriptor::default();
 
     method
-        .from_stack_value(StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(b"symbol".to_vec()),
-                StackValue::Array(
-                    0,
-                    vec![StackValue::Struct(
-                        0,
-                        vec![
-                            StackValue::ByteString(b"format".to_vec()),
-                            StackValue::Integer(ContractParameterType::String as u8 as i64),
-                        ],
-                    )],
-                ),
+        .from_stack_value(StackValue::Struct(vec![
+            StackValue::ByteString(b"symbol".to_vec()),
+            StackValue::Array(vec![StackValue::Struct(vec![
+                StackValue::ByteString(b"format".to_vec()),
                 StackValue::Integer(ContractParameterType::String as u8 as i64),
-                StackValue::Integer(12),
-                StackValue::Boolean(true),
-            ],
-        ))
+            ])]),
+            StackValue::Integer(ContractParameterType::String as u8 as i64),
+            StackValue::Integer(12),
+            StackValue::Boolean(true),
+        ]))
         .unwrap();
 
     assert_eq!(method.name, "symbol");
@@ -82,25 +64,16 @@ fn method_descriptor_rejects_struct_parameter_sequence_like_csharp() {
 
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(b"verify".to_vec()),
-                    StackValue::Struct(
-                        0,
-                        vec![StackValue::Struct(
-                            0,
-                            vec![
-                                StackValue::ByteString(b"signature".to_vec()),
-                                StackValue::Integer(ContractParameterType::Signature as u8 as i64),
-                            ]
-                        )]
-                    ),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                    StackValue::Integer(5),
-                    StackValue::Boolean(false),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"verify".to_vec()),
+                StackValue::Struct(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"signature".to_vec()),
+                    StackValue::Integer(ContractParameterType::Signature as u8 as i64),
+                ])]),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(5),
+                StackValue::Boolean(false),
+            ]))
             .is_err()
     );
 }
@@ -118,58 +91,46 @@ fn method_descriptor_rejects_invalid_stack_fields_like_csharp() {
 
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(b"changed".to_vec()),
-                    StackValue::Array(0, Vec::new()),
-                    StackValue::Integer(0x7f),
-                    StackValue::Integer(3),
-                    StackValue::Boolean(true),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"changed".to_vec()),
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(0x7f),
+                StackValue::Integer(3),
+                StackValue::Boolean(true),
+            ]))
             .is_err()
     );
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::Null,
-                    StackValue::Array(0, Vec::new()),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                    StackValue::Integer(3),
-                    StackValue::Boolean(true),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::Null,
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(3),
+                StackValue::Boolean(true),
+            ]))
             .is_err()
     );
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(vec![0xff]),
-                    StackValue::Array(0, Vec::new()),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                    StackValue::Integer(3),
-                    StackValue::Boolean(true),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(vec![0xff]),
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(3),
+                StackValue::Boolean(true),
+            ]))
             .is_err()
     );
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                0,
-                vec![
-                    StackValue::ByteString(b"changed".to_vec()),
-                    StackValue::Array(0, Vec::new()),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                    StackValue::Integer(i64::MAX),
-                    StackValue::Boolean(true),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"changed".to_vec()),
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(i64::MAX),
+                StackValue::Boolean(true),
+            ]))
             .is_err()
     );
 }

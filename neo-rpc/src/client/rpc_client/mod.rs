@@ -1,3 +1,25 @@
+//! # neo-rpc::client::rpc_client
+//!
+//! HTTP JSON-RPC client implementation and request hooks for neo-rpc.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `blockchain`: Blockchain-domain primitive records used across crates.
+//! - `builder`: RPC client builder.
+//! - `client`: Client-side adapters for remote services and RPC access.
+//! - `helpers`: Shared helper functions for the surrounding module.
+//! - `hooks`: RPC client hook helpers.
+//! - `tokens`: RPC token API helpers.
+//! - `transactions`: RPC transaction submission and lookup methods.
+//! - `wallet`: wallet RPC client methods.
+//! - `tests`: Module-local tests and regression coverage.
+
 mod blockchain;
 mod builder;
 mod client;

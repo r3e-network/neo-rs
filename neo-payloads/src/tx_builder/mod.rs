@@ -1,7 +1,20 @@
-//! Minimal builder helpers mirroring the C# `Neo.Builder` utilities used by
-//! the test suite. These builders intentionally expose only the functionality
-//! currently required by the tests while keeping the API ergonomic for future
-//! extensions.
+//! # neo-payloads::tx_builder
+//!
+//! Transaction builder helpers for constructing Neo payloads.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-payloads`. This protocol crate owns payload
+//! records and validation helpers and must not perform IO, storage commits, or
+//! service orchestration.
+//!
+//! ## Contents
+//!
+//! - `signer`: signer configuration and signing helpers.
+//! - `transaction`: Transaction body, signer, witness, and fee records.
+//! - `transaction_attributes`: transaction attribute builder helpers.
+//! - `witness`: witness records and serialization helpers.
+//! - `witness_condition`: witness condition builder helpers.
 
 mod signer;
 mod transaction;

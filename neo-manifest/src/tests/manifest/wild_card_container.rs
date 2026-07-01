@@ -15,13 +15,10 @@ fn string_list_projects_to_neo_vm_rs_byte_string_array() {
 
     assert_eq!(
         container.to_stack_value(),
-        StackValue::Array(
-            0,
-            vec![
-                StackValue::ByteString(b"transfer".to_vec()),
-                StackValue::ByteString(b"balanceOf".to_vec()),
-            ]
-        )
+        StackValue::Array(vec![
+            StackValue::ByteString(b"transfer".to_vec()),
+            StackValue::ByteString(b"balanceOf".to_vec()),
+        ])
     );
 }
 
@@ -44,13 +41,10 @@ fn string_wildcard_reads_from_neo_vm_rs_null() {
 #[test]
 fn string_list_reads_from_neo_vm_rs_array() {
     assert_eq!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Array(
-            0,
-            vec![
-                StackValue::ByteString(b"mint".to_vec()),
-                StackValue::ByteString(b"burn".to_vec()),
-            ]
-        ))
+        WildCardContainer::<String>::from_stack_value(StackValue::Array(vec![
+            StackValue::ByteString(b"mint".to_vec()),
+            StackValue::ByteString(b"burn".to_vec()),
+        ]))
         .unwrap(),
         WildCardContainer::create(vec!["mint".to_string(), "burn".into()])
     );
@@ -59,24 +53,20 @@ fn string_list_reads_from_neo_vm_rs_array() {
 #[test]
 fn string_list_rejects_struct_and_invalid_strings_like_csharp() {
     assert!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(b"verify".to_vec()),
-                StackValue::ByteString(b"onNEP17Payment".to_vec()),
-            ]
-        ))
+        WildCardContainer::<String>::from_stack_value(StackValue::Struct(vec![
+            StackValue::ByteString(b"verify".to_vec()),
+            StackValue::ByteString(b"onNEP17Payment".to_vec()),
+        ]))
         .is_err()
     );
     assert!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Array(0, vec![StackValue::Null]))
+        WildCardContainer::<String>::from_stack_value(StackValue::Array(vec![StackValue::Null]))
             .is_err()
     );
     assert!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Array(
-            0,
-            vec![StackValue::ByteString(vec![0xff])]
-        ))
+        WildCardContainer::<String>::from_stack_value(StackValue::Array(vec![
+            StackValue::ByteString(vec![0xff])
+        ]))
         .is_err()
     );
 }

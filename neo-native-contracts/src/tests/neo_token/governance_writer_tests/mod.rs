@@ -1,3 +1,21 @@
+//! # neo-native-contracts::tests::neo_token::governance_writer_tests
+//!
+//! Test module grouping governance writer tests behavior coverage for neo-
+//! native-contracts.
+//!
+//! ## Boundary
+//!
+//! This is test/benchmark-only code for neo-native-contracts; it may assemble
+//! fixtures but must not introduce production behavior.
+//!
+//! ## Contents
+//!
+//! - `candidate_registration`: NEO candidate registration coverage.
+//! - `candidates`: NEO candidate storage codecs.
+//! - `payments`: governance payment coverage.
+//! - `transfers`: wallet transfer RPC handlers.
+//! - `voting`: NEO voting coverage.
+
 use super::*;
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract::build_native_contract_state;

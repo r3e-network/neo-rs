@@ -1,15 +1,47 @@
-//! Screen routing and the individual views.
+//! # neo-gui::screens
+//!
+//! Operator UI screens grouped by workflow area.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-gui`. This application crate owns UI composition
+//! and must call lower service/RPC APIs instead of reimplementing protocol
+//! logic.
+//!
+//! ## Contents
+//!
+//! - `configuration`: node configuration screen.
+//! - `dashboard`: operator dashboard screen.
+//! - `integrations`: integration status screen.
+//! - `monitoring`: monitoring and metrics screen.
+//! - `network`: operator network status and peer view screen.
+//! - `node_control`: node control screen.
+//! - `plugins`: RPC plugin adapters and optional extension surfaces.
+//! - `rpc_explorer`: RPC explorer screen.
+//! - `settings`: Protocol settings, hardfork gates, and node configuration
+//!   records.
+//! - `signer`: signer configuration and signing helpers.
+//! - `wallet`: wallet interaction screen and account actions.
 
+#[path = "operate/configuration.rs"]
 mod configuration;
 mod dashboard;
+#[path = "observe/integrations.rs"]
 mod integrations;
+#[path = "observe/monitoring.rs"]
 mod monitoring;
+#[path = "observe/network.rs"]
 mod network;
+#[path = "operate/node_control.rs"]
 mod node_control;
+#[path = "operate/plugins.rs"]
 mod plugins;
+#[path = "interact/rpc_explorer.rs"]
 mod rpc_explorer;
 mod settings;
+#[path = "secure/signer.rs"]
 mod signer;
+#[path = "interact/wallet.rs"]
 mod wallet;
 
 use egui::Ui;

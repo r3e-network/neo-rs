@@ -45,6 +45,37 @@ fn seed_committee_cache(cache: &DataCache, committee: &[ECPoint]) {
 }
 
 #[test]
+fn blocked_candidate_accounts_are_collected_once_from_policy_prefix() {
+    let all = points(5);
+    let cache = DataCache::new(false);
+    let blocked_a = UInt160::from_script(&Contract::create_signature_redeem_script(all[1].clone()));
+    let blocked_b = UInt160::from_script(&Contract::create_signature_redeem_script(all[3].clone()));
+    cache.add(
+        crate::PolicyContract::blocked_account_key(&blocked_a),
+        StorageItem::from_bytes(Vec::new()),
+    );
+    cache.add(
+        crate::PolicyContract::blocked_account_key(&blocked_b),
+        StorageItem::from_bytes(Vec::new()),
+    );
+    cache.add(
+        crate::PolicyContract::storage_price_key(),
+        StorageItem::from_bytes(vec![0x2a]),
+    );
+    let blocked_prefix = crate::PolicyContract::blocked_account_key(&blocked_a).suffix()[0];
+    cache.add(
+        crate::keys::prefixed_key(crate::PolicyContract::ID, blocked_prefix, &[0x01]),
+        StorageItem::from_bytes(Vec::new()),
+    );
+
+    let blocked = crate::PolicyContract::blocked_accounts_snapshot(&cache);
+
+    assert_eq!(blocked.len(), 2);
+    assert!(blocked.contains(&blocked_a));
+    assert!(blocked.contains(&blocked_b));
+}
+
+#[test]
 fn should_refresh_committee_matches_csharp_modulo() {
     // C# `height % committeeMembersCount == 0`.
     assert!(NeoToken::should_refresh_committee(0, 21));

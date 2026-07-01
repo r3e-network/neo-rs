@@ -19,7 +19,12 @@ pub(in crate::node) use services::{
     TELEMETRY_HEALTH_PATH, TELEMETRY_READY_PATH, TelemetryMetricsSection, TelemetrySection,
     TokensTrackerSection,
 };
-pub(super) use validation::{open_store, validate_config, validate_storage};
+#[cfg(test)]
+pub(super) use validation::validate_config;
+pub(super) use validation::{
+    open_memory_store, open_store, service_store_provider, validate_config_for_ledger_mode,
+    validate_state_service_storage, validate_storage,
+};
 
 /// The daemon's TOML configuration surface.
 #[derive(Debug, Default, Deserialize)]
@@ -68,25 +73,52 @@ pub(super) struct NetworkSection {
 /// `[storage]`: persistence backend.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct StorageSection {
-    /// `"rocksdb"` for a persistent store, anything else for in-memory.
-    #[serde(default, alias = "Engine")]
+    /// Storage provider name. Supported values are `memory`, `mdbx`, and
+    /// `rocksdb`; production builds default persistent stores to `mdbx`.
+    #[serde(default)]
     pub(super) backend: Option<String>,
-    /// Database directory for the RocksDB backend.
+    /// Database directory for persistent storage backends.
     #[serde(default)]
     pub(super) data_dir: Option<PathBuf>,
-    /// Alias for `data_dir` accepted by the shipped mainnet/production presets
-    /// (which use `[storage] path = "..."`).
+    /// Open the primary persistent store in read-only mode.
     #[serde(default)]
-    path: Option<PathBuf>,
-    /// Open the primary RocksDB store in read-only mode.
-    #[serde(default, alias = "ReadOnly")]
     pub(super) read_only: bool,
+    /// MDBX maximum map geometry in GiB.
+    #[serde(default)]
+    pub(super) mdbx_geometry_upper_gb: Option<u32>,
+    /// MDBX map growth step in MiB.
+    #[serde(default)]
+    pub(super) mdbx_geometry_growth_mb: Option<u32>,
+    /// Maximum concurrent MDBX readers.
+    #[serde(default)]
+    pub(super) mdbx_max_readers: Option<u32>,
 }
 
 impl StorageSection {
-    /// The configured RocksDB directory, accepting either `data_dir` or `path`.
+    /// The configured persistent store directory, accepting either `data_dir`
+    /// from the primary storage section.
     pub(super) fn data_directory(&self) -> Option<PathBuf> {
-        self.data_dir.clone().or_else(|| self.path.clone())
+        self.data_dir.clone()
+    }
+
+    /// Builds the provider-neutral storage configuration for a persistent
+    /// backend path.
+    pub(super) fn storage_config_for_path(
+        &self,
+        path: PathBuf,
+    ) -> neo_storage::persistence::storage::StorageConfig {
+        neo_storage::persistence::storage::StorageConfig {
+            path,
+            read_only: self.read_only,
+            mdbx_geometry_upper_bytes: self
+                .mdbx_geometry_upper_gb
+                .map(|gb| gb as isize * 1024 * 1024 * 1024),
+            mdbx_geometry_growth_bytes: self
+                .mdbx_geometry_growth_mb
+                .map(|mb| mb as isize * 1024 * 1024),
+            mdbx_max_readers: self.mdbx_max_readers,
+            ..Default::default()
+        }
     }
 }
 

@@ -25,8 +25,9 @@ pub fn bigint_var_size(value: &BigInt) -> usize {
 }
 
 /// Finds entries whose keys start with the given prefix.
-pub fn find_prefix<TKey, TValue>(db: &dyn Store, prefix: &[u8]) -> CoreResult<Vec<(TKey, TValue)>>
+pub fn find_prefix<S, TKey, TValue>(db: &S, prefix: &[u8]) -> CoreResult<Vec<(TKey, TValue)>>
 where
+    S: Store + ?Sized,
     TKey: Serializable,
     TValue: Serializable,
 {
@@ -54,12 +55,13 @@ where
 }
 
 /// Finds entries in the inclusive range [start_key, end_key].
-pub fn find_range<TKey, TValue>(
-    db: &dyn Store,
+pub fn find_range<S, TKey, TValue>(
+    db: &S,
     start_key: &[u8],
     end_key: &[u8],
 ) -> CoreResult<Vec<(TKey, TValue)>>
 where
+    S: Store + ?Sized,
     TKey: Serializable,
     TValue: Serializable,
 {

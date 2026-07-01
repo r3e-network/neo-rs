@@ -253,11 +253,12 @@ where
                         cache.delete_node(old_hash)?;
                     }
                     *node = val;
-                    cache.put_node(node.clone())?;
+                    cache.put_node_cached(node)?;
                     return Ok(());
                 }
                 let mut branch = Node::new_branch();
-                let old_leaf = std::mem::replace(node, Node::new());
+                let mut old_leaf = std::mem::replace(node, Node::new());
+                cache.put_node_cached(&mut old_leaf)?;
                 branch.set_child(BRANCH_VALUE_INDEX, old_leaf);
                 let index = path[0] as usize;
 
@@ -267,7 +268,7 @@ where
                     .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
                 Self::put_internal(cache, full_state, child, &path[1..], val)?;
 
-                cache.put_node(branch.clone())?;
+                cache.put_node_cached(&mut branch)?;
                 *node = branch;
             }
             NodeType::ExtensionNode => {
@@ -284,8 +285,7 @@ where
                     if !full_state {
                         cache.delete_node(old_hash)?;
                     }
-                    node.set_dirty();
-                    cache.put_node(node.clone())?;
+                    cache.put_node_cached(node)?;
                     return Ok(());
                 }
 
@@ -295,7 +295,7 @@ where
                     cache.delete_node(old_hash)?;
                 }
 
-                let original_key = node.key.clone();
+                let original_key = std::mem::take(&mut node.key);
                 let prefix = original_key[..prefix_len].to_vec();
                 let key_remain = original_key[prefix_len..].to_vec();
                 let path_remain = path[prefix_len..].to_vec();
@@ -308,8 +308,8 @@ where
                 if key_remain.len() == 1 {
                     child_branch.set_child(key_remain[0] as usize, next_node);
                 } else {
-                    let ext_child = Node::new_extension(key_remain[1..].to_vec(), next_node)?;
-                    cache.put_node(ext_child.clone())?;
+                    let mut ext_child = Node::new_extension(key_remain[1..].to_vec(), next_node)?;
+                    cache.put_node_cached(&mut ext_child)?;
                     child_branch.set_child(key_remain[0] as usize, ext_child);
                 }
 
@@ -329,13 +329,13 @@ where
                     child_branch.set_child(path_remain[0] as usize, value_child);
                 }
 
-                cache.put_node(child_branch.clone())?;
+                cache.put_node_cached(&mut child_branch)?;
 
                 if prefix.is_empty() {
                     *node = child_branch;
                 } else {
-                    let ext = Node::new_extension(prefix, child_branch)?;
-                    cache.put_node(ext.clone())?;
+                    let mut ext = Node::new_extension(prefix, child_branch)?;
+                    cache.put_node_cached(&mut ext)?;
                     *node = ext;
                 }
             }
@@ -356,8 +356,7 @@ where
                 if !full_state {
                     cache.delete_node(old_hash)?;
                 }
-                node.set_dirty();
-                cache.put_node(node.clone())?;
+                cache.put_node_cached(node)?;
             }
             NodeType::Empty => {
                 if path.is_empty() {
@@ -365,13 +364,14 @@ where
                 } else {
                     // C# uses extension node to store the remaining path,
                     // pointing to the leaf which stores only the value.
-                    cache.put_node(val.clone())?;
-                    let ext = Node::new_extension(path.to_vec(), val)?;
-                    cache.put_node(ext.clone())?;
+                    let mut leaf = val;
+                    cache.put_node_cached(&mut leaf)?;
+                    let mut ext = Node::new_extension(path.to_vec(), leaf)?;
+                    cache.put_node_cached(&mut ext)?;
                     *node = ext;
                 }
                 if node.node_type == NodeType::LeafNode {
-                    cache.put_node(node.clone())?;
+                    cache.put_node_cached(node)?;
                 }
             }
             NodeType::HashNode => {
@@ -452,8 +452,7 @@ where
                         node.next = next_node.next;
                     }
 
-                    node.set_dirty();
-                    cache.put_node(node.clone())?;
+                    cache.put_node_cached(node)?;
                     Ok(true)
                 } else {
                     Ok(false)
@@ -480,24 +479,25 @@ where
                     cache.delete_node(old_hash)?;
                 }
 
-                // Collect non-empty child indexes
-                let mut indexes = Vec::with_capacity(2);
+                // Track up to two non-empty children; more than one keeps the branch.
+                let mut first_index = None;
+                let mut multiple_children = false;
                 for i in 0..BRANCH_CHILD_COUNT {
                     if !node.children[i].is_empty() {
-                        indexes.push(i as u8);
-                        if indexes.len() > 1 {
-                            break; // Early exit if more than one child
+                        if first_index.is_some() {
+                            multiple_children = true;
+                            break;
                         }
+                        first_index = Some(i as u8);
                     }
                 }
 
-                if indexes.len() > 1 {
-                    node.set_dirty();
-                    cache.put_node(node.clone())?;
+                if multiple_children {
+                    cache.put_node_cached(node)?;
                     return Ok(true);
                 }
 
-                let last_index = indexes.first().copied().unwrap_or(BRANCH_VALUE_INDEX as u8);
+                let last_index = first_index.unwrap_or(BRANCH_VALUE_INDEX as u8);
                 let last_child_arc = Arc::clone(&node.children[last_index as usize]);
 
                 if last_index as usize == BRANCH_VALUE_INDEX {
@@ -530,13 +530,12 @@ where
                     let mut key = vec![last_index];
                     key.extend_from_slice(&last_child.key);
                     last_child.key = key;
-                    last_child.set_dirty();
-                    cache.put_node(last_child.clone())?;
+                    cache.put_node_cached(&mut last_child)?;
                     *node = last_child;
                     Ok(true)
                 } else {
-                    let ext = Node::new_extension(vec![last_index], last_child)?;
-                    cache.put_node(ext.clone())?;
+                    let mut ext = Node::new_extension(vec![last_index], last_child)?;
+                    cache.put_node_cached(&mut ext)?;
                     *node = ext;
                     Ok(true)
                 }

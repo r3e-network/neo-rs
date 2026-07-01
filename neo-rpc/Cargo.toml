@@ -17,6 +17,32 @@ description = "RPC server and client for Neo blockchain"
 # gated behind the (non-default) `server` feature.
 [[test]]
 name = "ws_events"
+path = "tests/server/ws_events.rs"
+required-features = ["server"]
+
+[[test]]
+name = "jsonrpsee_adapter"
+path = "tests/server/jsonrpsee_adapter.rs"
+required-features = ["server"]
+
+[[test]]
+name = "rate_limiter_governor"
+path = "tests/server/rate_limiter_governor.rs"
+required-features = ["server"]
+
+[[test]]
+name = "rpc_blockchain_getrawtransaction_vmstate"
+path = "tests/server/rpc_blockchain_getrawtransaction_vmstate.rs"
+required-features = ["server"]
+
+[[test]]
+name = "rpc_handler_registration"
+path = "tests/server/rpc_handler_registration.rs"
+required-features = ["server"]
+
+[[test]]
+name = "validate_address"
+path = "tests/server/validate_address.rs"
 required-features = ["server"]
 
 [dependencies]

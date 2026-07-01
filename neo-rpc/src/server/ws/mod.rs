@@ -1,16 +1,17 @@
-//! WebSocket subscription support for real-time events
+//! # neo-rpc::server::ws
 //!
-//! Provides WebSocket endpoint for subscribing to blockchain events:
-//! - `block_added` - New block committed
-//! - `transaction_added` - Transaction added to mempool
-//! - `transaction_removed` - Transaction removed from mempool
-//! - `notification` - Contract notification events
+//! WebSocket events, bridges, and notification models.
 //!
-//! The legacy per-connection WebSocket loop was removed in the
-//! `2026-06-13-comprehensive-refactoring` change (Phase C1). This module now
-//! retains the event-broadcast primitives used by higher-level services;
-//! per-client JSON-RPC subscription routing belongs in the active `jsonrpsee`
-//! transport layer.
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `bridge`: WebSocket event bridge implementation.
+//! - `events`: Mempool event records emitted to subscribers.
 
 mod bridge;
 mod events;

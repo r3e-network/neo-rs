@@ -1,6 +1,19 @@
-//! Serializable trait and helpers mirroring C# Neo.IO serialization contracts.
+//! # neo-io::serializable
+//!
+//! Serializable traits and compatibility helpers for Neo binary data.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-io`. This codec crate owns byte-level IO
+//! contracts and must not decide protocol policy, storage layout, or node
+//! orchestration.
+//!
+//! ## Contents
+//!
+//! - `helper`: shared helper functions.
+//! - `primitives`: Primitive serialization implementations.
 
-use crate::{IoResult, MemoryReader, binary_writer::BinaryWriter};
+use crate::{BinaryWriter, IoResult, MemoryReader};
 
 pub mod helper;
 pub mod primitives;

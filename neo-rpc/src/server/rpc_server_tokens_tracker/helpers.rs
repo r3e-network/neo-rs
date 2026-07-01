@@ -55,7 +55,7 @@ pub(super) fn parse_token_id_param(
 }
 
 pub(super) fn collect_transfers(
-    store: &dyn neo_storage::persistence::Store,
+    store: &(impl neo_storage::persistence::Store + ?Sized),
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -63,7 +63,7 @@ pub(super) fn collect_transfers(
     address_version: u8,
     max_results: usize,
 ) -> Result<Value, RpcException> {
-    collect_transfer_entries::<Nep17TransferKey, _>(
+    collect_transfer_entries::<Nep17TransferKey, _, _>(
         store,
         prefix,
         script_hash,
@@ -76,7 +76,7 @@ pub(super) fn collect_transfers(
 }
 
 pub(super) fn collect_nep11_transfers(
-    store: &dyn neo_storage::persistence::Store,
+    store: &(impl neo_storage::persistence::Store + ?Sized),
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -84,7 +84,7 @@ pub(super) fn collect_nep11_transfers(
     address_version: u8,
     max_results: usize,
 ) -> Result<Value, RpcException> {
-    collect_transfer_entries::<Nep11TransferKey, _>(
+    collect_transfer_entries::<Nep11TransferKey, _, _>(
         store,
         prefix,
         script_hash,
@@ -101,8 +101,8 @@ pub(super) fn collect_nep11_transfers(
     )
 }
 
-fn collect_transfer_entries<K, F>(
-    store: &dyn neo_storage::persistence::Store,
+fn collect_transfer_entries<K, S, F>(
+    store: &S,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -113,6 +113,7 @@ fn collect_transfer_entries<K, F>(
 ) -> Result<Value, RpcException>
 where
     K: Serializable + TokenTransferKeyView,
+    S: neo_storage::persistence::Store + ?Sized,
     F: Fn(&K, &mut Map<String, Value>),
 {
     let mut prefix_bytes = Vec::with_capacity(1 + UInt160::LENGTH);
@@ -123,7 +124,7 @@ where
     let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
 
     let pairs =
-        find_range::<K, TokenTransfer>(store, &start_key, &end_key).map_err(internal_error)?;
+        find_range::<_, K, TokenTransfer>(store, &start_key, &end_key).map_err(internal_error)?;
 
     let mut limited = pairs
         .into_iter()

@@ -199,6 +199,18 @@ impl Node {
         *self.hash.write() = None;
     }
 
+    #[cfg(test)]
+    pub(crate) fn hash_is_cached(&self) -> bool {
+        self.hash.read().is_some()
+    }
+
+    pub(crate) fn clone_with_cached_hash(&self) -> Self {
+        let cached_hash = *self.hash.read();
+        let cloned = self.clone();
+        *cloned.hash.write() = cached_hash;
+        cloned
+    }
+
     /// Computes the node hash (Hash256 of the serialized payload without the reference).
     pub fn hash(&self) -> UInt256 {
         match self.try_hash() {
@@ -250,16 +262,14 @@ impl Node {
     /// Returns the serialized size when used as a child of another node.
     pub fn byte_size_as_child(&self) -> usize {
         match self.node_type {
-            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                Self::new_hash(self.hash()).byte_size()
-            }
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => 1 + UINT256_SIZE,
             NodeType::HashNode | NodeType::Empty => self.byte_size(),
         }
     }
 
     /// Serializes the node without the `reference` field.
     pub fn to_array_without_reference(&self) -> MptResult<Vec<u8>> {
-        let mut writer = BinaryWriter::new();
+        let mut writer = BinaryWriter::with_capacity(self.byte_size_without_reference());
         self.serialize_without_reference(&mut writer)?;
         Ok(writer.into_bytes())
     }
@@ -268,8 +278,11 @@ impl Node {
     pub fn serialize_as_child(&self, writer: &mut BinaryWriter) -> MptResult<()> {
         match self.node_type {
             NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                let hashed = Self::new_hash(self.hash());
-                Serializable::serialize(&hashed, writer).map_err(MptError::from)
+                writer
+                    .write_u8(NodeType::HashNode.to_byte())
+                    .map_err(MptError::from)?;
+                let hash = self.hash();
+                writer.write_bytes(&hash.to_array()).map_err(MptError::from)
             }
             NodeType::HashNode | NodeType::Empty => {
                 Serializable::serialize(self, writer).map_err(MptError::from)
@@ -325,6 +338,18 @@ impl Node {
             .iter()
             .map(|c| Self::byte_size_as_child(c))
             .sum()
+    }
+
+    fn byte_size_without_reference(&self) -> usize {
+        let mut size = 1; // node type byte
+        match self.node_type {
+            NodeType::BranchNode => size += self.branch_size(),
+            NodeType::ExtensionNode => size += self.extension_size(),
+            NodeType::LeafNode => size += self.leaf_size(),
+            NodeType::HashNode => size += self.hash_size(),
+            NodeType::Empty => {}
+        }
+        size
     }
 
     fn extension_size(&self) -> usize {
@@ -392,7 +417,7 @@ impl Node {
         let Some(hash) = *self.hash.read() else {
             return Err(IoError::invalid_data("hash node without cached hash"));
         };
-        writer.write_bytes(&hash.to_bytes())
+        writer.write_bytes(&hash.to_array())
     }
 
     fn deserialize_branch(reader: &mut MemoryReader, depth: usize) -> IoResult<Vec<Arc<Self>>> {

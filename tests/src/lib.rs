@@ -1,4 +1,15 @@
-//! Shared support types for workspace integration tests.
+//! # tests
+//!
+//! Workspace integration-test harness and shared test support.
+//!
+//! ## Boundary
+//!
+//! This harness depends on workspace crates under test and must not expose
+//! production APIs.
+//!
+//! ## Contents
+//!
+//! - `tests`: shared integration-test fixtures and compatibility shims.
 
 /// Lightweight mempool test doubles used by integration tests.
 pub mod mempool {

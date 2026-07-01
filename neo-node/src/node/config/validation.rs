@@ -7,11 +7,34 @@ use tracing::info;
 
 use super::*;
 
+#[cfg(test)]
 pub(in crate::node) fn validate_config(config: &NodeConfig, network: u32) -> anyhow::Result<()> {
+    validate_config_with_local_replay_services(config, network, true)
+}
+
+pub(in crate::node) fn validate_config_for_ledger_mode(
+    config: &NodeConfig,
+    network: u32,
+    ledger_mode: super::super::LedgerMode<'_>,
+) -> anyhow::Result<()> {
+    validate_config_with_local_replay_services(
+        config,
+        network,
+        ledger_mode.uses_local_replay_services(),
+    )
+}
+
+fn validate_config_with_local_replay_services(
+    config: &NodeConfig,
+    network: u32,
+    validate_local_replay_services: bool,
+) -> anyhow::Result<()> {
     let _ = storage_backend_name(config)?;
     let _ = config.p2p.channels_config()?;
-    validate_indexer_config(config, network)?;
-    validate_service_store_paths(config, network)?;
+    if validate_local_replay_services {
+        validate_indexer_config(config, network)?;
+        validate_service_store_paths(config, network)?;
+    }
     validate_telemetry_config(&config.telemetry)?;
     validate_logging_config(&config.logging)?;
     validate_observability_config(&config.observability)?;
@@ -389,7 +412,7 @@ fn validate_indexer_config(config: &NodeConfig, network: u32) -> anyhow::Result<
     }
     if config.indexer.path.is_some() && config.indexer.store_path.is_some() {
         anyhow::bail!(
-            "[indexer].path and [indexer].store_path are mutually exclusive; use store_path for the RocksDB-backed service indexer"
+            "[indexer].path and [indexer].store_path are mutually exclusive; use store_path for the service-store indexer"
         );
     }
     if let Some(path) = &config.indexer.store_path {
@@ -437,9 +460,10 @@ pub(in crate::node) fn validate_storage(
     storage_override: Option<&Path>,
     network: u32,
 ) -> anyhow::Result<()> {
+    let state_service_provider = service_store_provider(config)?;
     let store = open_store(config, storage_override)?;
     let ledger_index = durable_ledger_index(&store);
-    validate_state_service_storage(config, network, ledger_index)?;
+    validate_state_service_storage(config, network, ledger_index, &state_service_provider)?;
     Ok(())
 }
 
@@ -452,10 +476,11 @@ fn durable_ledger_index(store: &Arc<dyn neo_storage::persistence::store::Store>)
         .ok()
 }
 
-fn validate_state_service_storage(
+pub(in crate::node) fn validate_state_service_storage(
     config: &NodeConfig,
     network: u32,
     ledger_index: Option<u32>,
+    storage_provider: &str,
 ) -> anyhow::Result<()> {
     if !config.state_service.enabled {
         return Ok(());
@@ -464,7 +489,9 @@ fn validate_state_service_storage(
         return Ok(());
     };
     let Some(path) = &config.state_service.path else {
-        return Ok(());
+        anyhow::bail!(
+            "StateService is enabled while the chain store is already at height {chain_height}, but [state_service].path is not configured; set a persisted StateRoot path, restore a matching checkpoint, or replay from genesis with [state_service].track_during_catchup = true"
+        );
     };
 
     let path = network_scoped_path(path, network);
@@ -475,7 +502,7 @@ fn validate_state_service_storage(
         );
     }
 
-    let state_height = read_state_service_mpt_height(&path)?;
+    let state_height = read_state_service_mpt_height(storage_provider, &path)?;
     match state_height {
         Some(height) if height == chain_height => Ok(()),
         Some(height) => anyhow::bail!(
@@ -489,21 +516,26 @@ fn validate_state_service_storage(
     }
 }
 
-fn read_state_service_mpt_height(path: &Path) -> anyhow::Result<Option<u32>> {
-    use neo_storage::persistence::StoreProvider;
+fn read_state_service_mpt_height(
+    storage_provider: &str,
+    path: &Path,
+) -> anyhow::Result<Option<u32>> {
+    use neo_storage::persistence::StoreFactory;
     use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
 
     const CURRENT_LOCAL_ROOT_INDEX_KEY: &[u8] = &[0x02];
 
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: path.to_path_buf(),
-        read_only: true,
-        ..StorageConfig::default()
-    });
-    let store = provider
-        .get_store("")
-        .map_err(|err| anyhow::anyhow!("failed to open StateService MPT store: {err}"))?;
+    let store = StoreFactory::get_store_with_config(
+        storage_provider,
+        StorageConfig {
+            path: path.to_path_buf(),
+            read_only: true,
+            ..StorageConfig::default()
+        },
+    )
+    .map_err(|err| {
+        anyhow::anyhow!("failed to open StateService MPT {storage_provider} store: {err}")
+    })?;
     let snapshot = store.snapshot();
     let Some(value) = snapshot.get(&CURRENT_LOCAL_ROOT_INDEX_KEY.to_vec()) else {
         return Ok(None);
@@ -524,51 +556,84 @@ fn read_state_service_mpt_height(path: &Path) -> anyhow::Result<Option<u32>> {
 fn storage_backend_name(config: &NodeConfig) -> anyhow::Result<&str> {
     let backend = config.storage.backend.as_deref().unwrap_or("memory");
     if backend.eq_ignore_ascii_case("memory") || backend.eq_ignore_ascii_case("rocksdb") {
-        Ok(backend)
-    } else {
-        anyhow::bail!(
-            "unsupported [storage].backend {backend:?}; expected \"memory\" or \"rocksdb\""
-        );
+        return Ok(backend);
     }
+    if backend.eq_ignore_ascii_case("mdbx") {
+        mdbx_backend_name(backend)
+    } else {
+        anyhow::bail!("{}", unsupported_storage_backend_message(backend));
+    }
+}
+
+pub(in crate::node) fn default_persistent_storage_provider() -> &'static str {
+    "mdbx"
+}
+
+fn persistent_store_provider(
+    config: &NodeConfig,
+    storage_override: Option<&Path>,
+) -> anyhow::Result<Option<String>> {
+    let backend = storage_backend_name(config)?;
+    let persistent_path = storage_override.is_some()
+        || config.storage.data_directory().is_some()
+        || config.storage.read_only;
+    if backend.eq_ignore_ascii_case("memory") {
+        return Ok(persistent_path.then(|| default_persistent_storage_provider().to_string()));
+    }
+    Ok(Some(backend.to_ascii_lowercase()))
+}
+
+pub(in crate::node) fn service_store_provider(config: &NodeConfig) -> anyhow::Result<String> {
+    let backend = storage_backend_name(config)?;
+    if backend.eq_ignore_ascii_case("memory") {
+        Ok(default_persistent_storage_provider().to_string())
+    } else {
+        Ok(backend.to_ascii_lowercase())
+    }
+}
+
+fn mdbx_backend_name(backend: &str) -> anyhow::Result<&str> {
+    Ok(backend)
+}
+
+fn unsupported_storage_backend_message(backend: &str) -> String {
+    let expected = "\"memory\", \"rocksdb\", or \"mdbx\"";
+    format!("unsupported [storage].backend {backend:?}; expected {expected}")
 }
 
 pub(in crate::node) fn open_store(
     config: &NodeConfig,
     storage_override: Option<&Path>,
 ) -> anyhow::Result<Arc<dyn neo_storage::persistence::store::Store>> {
-    use neo_storage::persistence::StoreProvider;
-    use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::persistence::store::Store;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
+    use neo_storage::persistence::{StoreFactory, store::Store};
 
-    let backend = storage_backend_name(config)?;
-    let use_rocksdb = storage_override.is_some()
-        || backend.eq_ignore_ascii_case("rocksdb")
-        || config.storage.read_only;
-    let store: Arc<dyn Store> = if use_rocksdb {
+    let provider = persistent_store_provider(config, storage_override)?;
+    let store: Arc<dyn Store> = if let Some(provider) = provider {
         let path = storage_override
             .map(Path::to_path_buf)
             .or_else(|| config.storage.data_directory())
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "storage backend 'rocksdb' requires a data directory \
+                    "storage backend '{provider}' requires a data directory \
                      (set [storage].data_dir or [storage].path, or pass --storage-path)"
                 )
             })?;
-        info!(target: "neo", path = %path.display(), "opening RocksDB store");
-        let cfg = StorageConfig {
-            path,
-            read_only: config.storage.read_only,
-            ..Default::default()
-        };
-        RocksDBStoreProvider::new(cfg)
-            .get_store("")
-            .map_err(|e| anyhow::anyhow!("failed to open RocksDB store: {e}"))?
+        info!(target: "neo", backend = provider, path = %path.display(), "opening persistent store");
+        let cfg = config.storage.storage_config_for_path(path.clone());
+        StoreFactory::get_store_with_config(&provider, cfg)
+            .map_err(|e| anyhow::anyhow!("failed to open {provider} store: {e}"))?
     } else {
         info!(target: "neo", "using in-memory store (state is not persisted across restarts)");
-        Arc::new(MemoryStore::new())
+        open_memory_store()?
     };
 
     Ok(store)
+}
+
+pub(in crate::node) fn open_memory_store()
+-> anyhow::Result<Arc<dyn neo_storage::persistence::store::Store>> {
+    use neo_storage::persistence::StoreFactory;
+
+    StoreFactory::get_store("memory", "")
+        .map_err(|e| anyhow::anyhow!("failed to open in-memory store: {e}"))
 }

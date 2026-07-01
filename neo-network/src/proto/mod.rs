@@ -1,10 +1,21 @@
-//! P2P protocol primitives — message commands, flags, channels config,
-//! timeouts, and the low-level protocol error vocabulary.
+//! # neo-network::proto
 //!
-//! These types were previously in a standalone P2P shim crate, which has been
-//! folded into `neo-network` (it was almost entirely a re-export layer over
-//! `neo-primitives`). They are collected here under a `proto` submodule and
-//! re-exported from the crate root.
+//! Protocol message definitions and network payload framing.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-network`. This service crate owns P2P transport
+//! and peer behavior and must not execute blocks, own consensus rules, or
+//! mutate storage directly.
+//!
+//! ## Contents
+//!
+//! - `channels_config`: P2P channel configuration records.
+//! - `error`: Typed error definitions and conversions.
+//! - `inventory_type`: P2P inventory-type identifiers.
+//! - `message_command`: P2P message command identifiers.
+//! - `message_flags`: P2P message flag records.
+//! - `timeouts`: Network timeout constants and policy helpers.
 
 /// Channel configuration for P2P node bootstrap.
 pub mod channels_config;

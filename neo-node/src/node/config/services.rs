@@ -31,7 +31,7 @@ pub(in crate::node) struct IndexerSection {
     /// Optional JSON snapshot path for the indexer.
     #[serde(default, alias = "Path")]
     pub(in crate::node) path: Option<PathBuf>,
-    /// Optional RocksDB/service-store path for the indexer.
+    /// Optional persistent service-store path for the indexer.
     #[serde(default, alias = "StorePath", alias = "DBPath", alias = "DbPath")]
     pub(in crate::node) store_path: Option<PathBuf>,
     /// Whether to rebuild the in-memory index from the current canonical chain

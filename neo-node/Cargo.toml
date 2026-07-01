@@ -105,5 +105,9 @@ neo-mempool = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 
+[[test]]
+name = "block_assembly_test"
+path = "tests/consensus/block_assembly_test.rs"
+
 [lints]
 workspace = true

@@ -777,6 +777,9 @@ impl ApplicationEngine {
         if let Some(policy) = self.policy_contract() {
             let mut got_pico = false;
             let block_height = self.current_block_index();
+            let faun_storage_migrated = self
+                .protocol_settings
+                .is_hardfork_enabled(Hardfork::HfFaun, block_height);
             // Native contract method getExecPicoFeeFactor exists since activeIn Hardfork::HfFaun
             // But we should check if hardfork is enabled to call it safely/logically.
             if self.is_hardfork_enabled(Hardfork::HfFaun) {
@@ -785,7 +788,12 @@ impl ApplicationEngine {
                         let mut buffer = [0u8; 4];
                         let len = raw.len().min(4);
                         buffer[..len].copy_from_slice(&raw[..len]);
-                        self.exec_fee_factor = u32::from_le_bytes(buffer);
+                        let raw_factor = u32::from_le_bytes(buffer);
+                        self.exec_fee_factor = if faun_storage_migrated {
+                            raw_factor
+                        } else {
+                            raw_factor.saturating_mul(FEE_FACTOR as u32)
+                        };
                         got_pico = true;
                     }
                 }

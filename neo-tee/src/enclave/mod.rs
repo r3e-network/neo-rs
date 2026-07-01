@@ -1,7 +1,17 @@
-//! TEE Enclave abstraction
+//! # neo-tee::enclave
 //!
-//! Provides a unified interface for TEE operations, supporting both
-//! simulation mode and real SGX hardware.
+//! Trusted-enclave boundary types and host-call helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-tee`. This adapter crate owns TEE integration
+//! and must not define protocol bytes, consensus rules, or storage semantics.
+//!
+//! ## Contents
+//!
+//! - `runtime`: Runtime flags, execution context state, and VM-facing support
+//!   types.
+//! - `sealing`: enclave sealing helpers.
 
 mod runtime;
 mod sealing;

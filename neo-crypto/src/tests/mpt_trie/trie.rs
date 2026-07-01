@@ -4,6 +4,26 @@ use super::*;
 // UT_Trie.cs Tests (40+ tests)
 // ============================================================================
 
+fn trie_root_after(entries: &[(&[u8], &[u8])]) -> UInt256 {
+    let store = Arc::new(MockStore::new());
+    let mut trie = Trie::new(store, None, false);
+    for (key, value) in entries {
+        trie.put(key, value).unwrap();
+    }
+    trie.root_hash().expect("non-empty trie has a root hash")
+}
+
+fn assert_trie_contains(trie: &mut Trie<MockStore>, entries: &[(&[u8], &[u8])]) {
+    for (key, value) in entries {
+        assert_eq!(
+            trie.get(key).unwrap(),
+            Some(value.to_vec()),
+            "key {} should resolve to expected value",
+            hex::encode(key)
+        );
+    }
+}
+
 #[test]
 fn test_try_get() {
     let store = Arc::new(MockStore::new());
@@ -115,6 +135,25 @@ fn test_delete_same_value() {
 }
 
 #[test]
+fn test_mutations_keep_root_hash_cached() {
+    let store = Arc::new(MockStore::new());
+    let mut trie = Trie::new(store, None, false);
+
+    trie.put(b"key1", b"value1").unwrap();
+    trie.put(b"key2", b"value2").unwrap();
+    assert!(
+        trie.root().hash_is_cached(),
+        "put should cache the resulting root hash"
+    );
+
+    trie.delete(b"key1").unwrap();
+    assert!(
+        trie.root().hash_is_cached(),
+        "delete should cache the resulting root hash"
+    );
+}
+
+#[test]
 fn test_branch_node_remain_value() {
     let store = Arc::new(MockStore::new());
     let mut trie = Trie::new(store, None, false);
@@ -177,6 +216,112 @@ fn test_reference2() {
 
     assert_eq!(trie.get(&[0xac, 0x01]).unwrap(), None);
     assert_eq!(trie.get(&[0xac, 0x02]).unwrap(), Some(b"abcd".to_vec()));
+}
+
+#[test]
+fn insertion_order_does_not_change_extension_branch_root() {
+    let entries: &[(&[u8], &[u8])] = &[
+        (&[0x12], b"prefix"),
+        (&[0x12, 0x30], b"left"),
+        (&[0x12, 0x34], b"middle"),
+        (&[0x12, 0x35], b"right"),
+        (&[0x12, 0x35, 0x01], b"deeper"),
+    ];
+    let expected_root = trie_root_after(entries);
+
+    let permutations: &[&[(&[u8], &[u8])]] = &[
+        &[
+            (&[0x12, 0x35, 0x01], b"deeper"),
+            (&[0x12, 0x35], b"right"),
+            (&[0x12, 0x34], b"middle"),
+            (&[0x12, 0x30], b"left"),
+            (&[0x12], b"prefix"),
+        ],
+        &[
+            (&[0x12, 0x34], b"middle"),
+            (&[0x12], b"prefix"),
+            (&[0x12, 0x35, 0x01], b"deeper"),
+            (&[0x12, 0x30], b"left"),
+            (&[0x12, 0x35], b"right"),
+        ],
+        &[
+            (&[0x12, 0x30], b"left"),
+            (&[0x12, 0x35], b"right"),
+            (&[0x12], b"prefix"),
+            (&[0x12, 0x34], b"middle"),
+            (&[0x12, 0x35, 0x01], b"deeper"),
+        ],
+    ];
+
+    for permutation in permutations {
+        assert_eq!(
+            trie_root_after(permutation),
+            expected_root,
+            "same final key/value set must have one canonical root"
+        );
+    }
+}
+
+#[test]
+fn delete_compression_matches_fresh_remaining_trie() {
+    let store = Arc::new(MockStore::new());
+    let mut trie = Trie::new(store, None, false);
+    let starting_entries: &[(&[u8], &[u8])] = &[
+        (&[0x12], b"prefix"),
+        (&[0x12, 0x30], b"left"),
+        (&[0x12, 0x34], b"middle"),
+        (&[0x12, 0x35], b"right"),
+    ];
+    for (key, value) in starting_entries {
+        trie.put(key, value).unwrap();
+    }
+
+    assert!(trie.delete(&[0x12]).unwrap());
+    assert!(trie.delete(&[0x12, 0x30]).unwrap());
+    assert!(trie.delete(&[0x12, 0x34]).unwrap());
+
+    let remaining_entries: &[(&[u8], &[u8])] = &[(&[0x12, 0x35], b"right")];
+    assert_trie_contains(&mut trie, remaining_entries);
+    assert_eq!(
+        trie.root_hash(),
+        Some(trie_root_after(remaining_entries)),
+        "branch-to-single-child compression must match a fresh trie"
+    );
+}
+
+#[test]
+fn reopened_history_then_followup_delete_matches_fresh_trie() {
+    let store = Arc::new(MockStore::new());
+    let mut historical = Trie::new(store.clone(), None, false);
+    let initial_entries: &[(&[u8], &[u8])] = &[
+        (&[0x12], b"prefix"),
+        (&[0x12, 0x30], b"left"),
+        (&[0x12, 0x34], b"middle"),
+        (&[0x12, 0x35], b"right"),
+        (&[0x12, 0x35, 0x01], b"deeper"),
+    ];
+    for (key, value) in initial_entries {
+        historical.put(key, value).unwrap();
+    }
+    historical.commit().unwrap();
+
+    let root = historical.root_hash();
+    let mut reopened = Trie::new(store, root, false);
+    assert!(reopened.delete(&[0x12, 0x34]).unwrap());
+    reopened.put(&[0x12, 0x35], b"right-updated").unwrap();
+
+    let remaining_entries: &[(&[u8], &[u8])] = &[
+        (&[0x12], b"prefix"),
+        (&[0x12, 0x30], b"left"),
+        (&[0x12, 0x35], b"right-updated"),
+        (&[0x12, 0x35, 0x01], b"deeper"),
+    ];
+    assert_trie_contains(&mut reopened, remaining_entries);
+    assert_eq!(
+        reopened.root_hash(),
+        Some(trie_root_after(remaining_entries)),
+        "commit/reopen refcounts must not make later mutations history-dependent"
+    );
 }
 
 #[test]

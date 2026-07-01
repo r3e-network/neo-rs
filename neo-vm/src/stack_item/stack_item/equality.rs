@@ -98,7 +98,7 @@ impl StackItem {
     /// - `Struct` → `Struct.cs:91-132`: iterative two-stack structural walk bounded by
     ///   `MaxStackSize` (item count) and `MaxComparableSize` (comparable budget); FAULTS
     ///   on overflow of either budget.
-    /// - everything else → base `StackItem.Equals(other)` ([`equals_plain`]): value
+    /// - everything else → base `StackItem.Equals(other)` (`equals_plain`): value
     ///   equality for `Integer`/`Boolean`/`ByteString`/`Pointer`, `other is Null` for
     ///   `Null`, and REFERENCE equality for `Array`/`Map`/`Buffer`/`InteropInterface`.
     ///

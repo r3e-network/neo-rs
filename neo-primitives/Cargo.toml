@@ -48,6 +48,10 @@ parking_lot = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 
+[[test]]
+name = "primitives_properties"
+path = "tests/properties/primitives_properties.rs"
+
 [features]
 default = []
 

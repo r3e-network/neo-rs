@@ -60,7 +60,12 @@ fn snapshot_reads_ignore_pending_writes_until_reopened_after_commit() {
     }
 
     assert_eq!(snapshot.try_get(&existing_key), Some(vec![0xAA]));
+    assert_eq!(
+        snapshot.try_get_bytes(existing_key.as_slice()),
+        Some(vec![0xAA])
+    );
     assert_eq!(snapshot.try_get(&added_key), None);
+    assert_eq!(snapshot.try_get_bytes(added_key.as_slice()), None);
     let entries: Vec<_> = snapshot.find(None, SeekDirection::Forward).collect();
     assert_eq!(entries, vec![(existing_key.clone(), vec![0xAA])]);
 
@@ -70,11 +75,39 @@ fn snapshot_reads_ignore_pending_writes_until_reopened_after_commit() {
         .expect("snapshot commit");
 
     assert_eq!(snapshot.try_get(&existing_key), Some(vec![0xAA]));
+    assert_eq!(
+        snapshot.try_get_bytes(existing_key.as_slice()),
+        Some(vec![0xAA])
+    );
     assert_eq!(snapshot.try_get(&added_key), None);
+    assert_eq!(snapshot.try_get_bytes(added_key.as_slice()), None);
 
     let reopened = store.snapshot();
     assert_eq!(reopened.try_get(&existing_key), None);
+    assert_eq!(reopened.try_get_bytes(existing_key.as_slice()), None);
     assert_eq!(reopened.try_get(&added_key), Some(vec![0xBB]));
+    assert_eq!(
+        reopened.try_get_bytes(added_key.as_slice()),
+        Some(vec![0xBB])
+    );
+}
+
+#[test]
+fn snapshot_commit_applies_batch_without_runtime_parent_downcast() {
+    let store = MemoryStore::new();
+    let key = b"typed-parent".to_vec();
+    let mut snapshot = store.snapshot();
+
+    Arc::get_mut(&mut snapshot)
+        .expect("exclusive snapshot")
+        .put(key.clone(), vec![0xCA])
+        .expect("stage put");
+    Arc::get_mut(&mut snapshot)
+        .expect("exclusive snapshot")
+        .try_commit()
+        .expect("commit snapshot");
+
+    assert_eq!(store.try_get(&key), Some(vec![0xCA]));
 }
 
 #[test]

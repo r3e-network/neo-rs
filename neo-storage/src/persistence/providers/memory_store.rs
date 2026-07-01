@@ -1,6 +1,6 @@
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
-    read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
+    read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     store::{OnNewSnapshotDelegate, Store},
     store_snapshot::StoreSnapshot,
@@ -60,6 +60,12 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
         } else {
             Box::new(iter.into_iter()) as Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>
         }
+    }
+}
+
+impl RawReadOnlyStore for MemoryStore {
+    fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.inner_data.read().get(key).cloned()
     }
 }
 

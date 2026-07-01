@@ -320,6 +320,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "bindgen"
+version = "0.72.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
+dependencies = [
+ "bitflags 2.13.0",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.12.1",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash 2.1.2",
+ "shlex 1.3.0",
+ "syn",
+]
+
+[[package]]
 name = "bip39"
 version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -661,6 +679,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "convert_case"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -911,6 +938,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 dependencies = [
  "powerfmt",
+]
+
+[[package]]
+name = "derive_more"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d751e9e49156b02b44f9c1815bcb94b984cdcc4396ecc32521c739452808b134"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "799a97264921d8623a957f6c3b9011f3b5492f557bbb7a5a19b7fa6d06ba8dcb"
+dependencies = [
+ "convert_case",
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "syn",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -2006,6 +2056,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "libmdbx"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bdbe549c5c60774987d735684f962e0128fcafd2b57a2d2d961fa8c8e3d1662"
+dependencies = [
+ "bitflags 2.13.0",
+ "derive_more",
+ "indexmap 2.8.0",
+ "libc",
+ "mdbx-sys",
+ "parking_lot",
+ "sealed",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "libmimalloc-sys"
 version = "0.1.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2020,7 +2086,7 @@ version = "0.11.0+8.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3386f101bcb4bd252d8e9d2fb41ec3b0862a15a62b478c355b2982efa469e3e"
 dependencies = [
- "bindgen",
+ "bindgen 0.65.1",
  "bzip2-sys",
  "cc",
  "glob",
@@ -2109,6 +2175,17 @@ name = "matchit"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
+
+[[package]]
+name = "mdbx-sys"
+version = "12.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8a48a6848ed86abfc103afff61a88317f7b142e46da580936936d6f3e514707"
+dependencies = [
+ "bindgen 0.72.1",
+ "cc",
+ "libc",
+]
 
 [[package]]
 name = "memchr"
@@ -2222,6 +2299,8 @@ dependencies = [
  "neo-io",
  "neo-payloads",
  "neo-primitives",
+ "neo-state-service",
+ "neo-storage",
  "neo-vm",
  "neo-vm-rs",
 ]
@@ -2594,6 +2673,7 @@ version = "0.9.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "bs58",
  "futures",
  "hex",
  "neo-blockchain",
@@ -2793,11 +2873,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-static-files"
+version = "0.9.0"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "neo-storage"
 version = "0.9.0"
 dependencies = [
  "fastbloom",
  "hashbrown 0.14.5",
+ "libmdbx",
  "lru",
  "neo-error",
  "neo-io",
@@ -4015,6 +4104,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sealed"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22f968c5ea23d555e670b449c1c5e7b2fc399fdaec1d304a17cd48e288abc107"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "sec1"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4975,10 +5075,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicode-segmentation"
+version = "1.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
+
+[[package]]
 name = "unicode-width"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
+
+[[package]]
+name = "unicode-xid"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "universal-hash"

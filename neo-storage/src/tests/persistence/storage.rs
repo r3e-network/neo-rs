@@ -33,40 +33,6 @@ fn compaction_strategy_equality() {
 }
 
 // ============================================================================
-// BatchOperation Tests
-// ============================================================================
-
-#[test]
-fn batch_operation_put_equality() {
-    let op1 = BatchOperation::Put {
-        key: vec![1, 2, 3],
-        value: vec![4, 5, 6],
-    };
-    let op2 = BatchOperation::Put {
-        key: vec![1, 2, 3],
-        value: vec![4, 5, 6],
-    };
-    assert_eq!(op1, op2);
-}
-
-#[test]
-fn batch_operation_delete_equality() {
-    let op1 = BatchOperation::Delete { key: vec![1, 2, 3] };
-    let op2 = BatchOperation::Delete { key: vec![1, 2, 3] };
-    assert_eq!(op1, op2);
-}
-
-#[test]
-fn batch_operation_different_types_not_equal() {
-    let put = BatchOperation::Put {
-        key: vec![1],
-        value: vec![2],
-    };
-    let delete = BatchOperation::Delete { key: vec![1] };
-    assert_ne!(put, delete);
-}
-
-// ============================================================================
 // StorageConfig Tests
 // ============================================================================
 
@@ -76,9 +42,20 @@ fn storage_config_default_values() {
     assert_eq!(config.path, PathBuf::from("./data"));
     assert_eq!(config.compression_algorithm, CompressionAlgorithm::Lz4);
     assert_eq!(config.compaction_strategy, CompactionStrategy::Level);
-    assert_eq!(config.max_open_files, Some(1000));
+    assert_eq!(config.max_open_files, None);
+    assert_eq!(config.cache_size, None);
+    assert_eq!(config.write_buffer_size, None);
     assert!(!config.enable_statistics);
     assert!(!config.read_only);
+}
+
+#[test]
+fn storage_config_exposes_mdbx_geometry_knobs() {
+    let config = StorageConfig::default();
+
+    assert_eq!(config.mdbx_geometry_upper_bytes, None);
+    assert_eq!(config.mdbx_geometry_growth_bytes, None);
+    assert_eq!(config.mdbx_max_readers, None);
 }
 
 #[test]
@@ -87,6 +64,10 @@ fn storage_config_clone() {
     let cloned = config.clone();
     assert_eq!(config.path, cloned.path);
     assert_eq!(config.compression_algorithm, cloned.compression_algorithm);
+    assert_eq!(
+        config.mdbx_geometry_upper_bytes,
+        cloned.mdbx_geometry_upper_bytes
+    );
 }
 
 // ============================================================================

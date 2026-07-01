@@ -281,3 +281,135 @@ async fn node_pipelines_block_requests_as_height_advances() {
 
     handle.shutdown().await.expect("shutdown");
 }
+
+/// Sync throughput: a far-ahead peer should keep the per-peer request pipeline
+/// two protocol-sized windows ahead of the durable tip. Each
+/// `GetBlockByIndex` still respects Neo's 500-block wire limit, but the node
+/// should not leave the transport idle while the first window is being
+/// persisted.
+#[tokio::test]
+async fn node_keeps_two_block_request_windows_in_flight() {
+    let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
+    let network = ProtocolSettings::default().network;
+    let mut fake = fake_dial(port).await;
+
+    let _node_version = recv_frame(&mut fake).await.expect("node version");
+    let capabilities = vec![
+        NodeCapability::full_node(5000),
+        NodeCapability::tcp_server(20333),
+    ];
+    let payload = VersionPayload::create(
+        network,
+        0xfa4e_000e,
+        "/fake-peer:0.0.1/".to_string(),
+        capabilities,
+    );
+    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
+        .await
+        .expect("send version");
+    let verack = recv_frame(&mut fake).await.expect("verack");
+    assert_eq!(verack.command, MessageCommand::Verack);
+    fake.send(verack_message()).await.expect("send verack");
+
+    let first = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(first.index_start, 1);
+    assert_eq!(first.count, 500);
+
+    let second = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(
+        second.index_start, 501,
+        "sync should keep a second request window in flight"
+    );
+    assert_eq!(
+        second.count, 500,
+        "each request must still obey the protocol request cap"
+    );
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// Sync cadence: the second in-flight window must be requested quickly enough
+/// to support a 1000 BPS target on a single responsive peer. The request still
+/// waits for the periodic sync tick, but that tick should be sub-250ms rather
+/// than the old half-second cadence.
+#[tokio::test]
+async fn node_requests_second_sync_window_without_half_second_idle() {
+    let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
+    let network = ProtocolSettings::default().network;
+    let mut fake = fake_dial(port).await;
+
+    let _node_version = recv_frame(&mut fake).await.expect("node version");
+    let capabilities = vec![
+        NodeCapability::full_node(5000),
+        NodeCapability::tcp_server(20333),
+    ];
+    let payload = VersionPayload::create(
+        network,
+        0xfa4e_000f,
+        "/fake-peer:0.0.1/".to_string(),
+        capabilities,
+    );
+    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
+        .await
+        .expect("send version");
+    let verack = recv_frame(&mut fake).await.expect("verack");
+    assert_eq!(verack.command, MessageCommand::Verack);
+    fake.send(verack_message()).await.expect("send verack");
+
+    let first = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(first.index_start, 1);
+    assert_eq!(first.count, 500);
+
+    let second = tokio::time::timeout(Duration::from_millis(250), recv_getblockbyindex(&mut fake))
+        .await
+        .expect("second sync request should not wait for a half-second timer");
+    assert_eq!(second.index_start, 501);
+    assert_eq!(second.count, 500);
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// Recovery should not mistake a full pipeline for a dropped response. With a
+/// 100ms sync cadence, a three-tick stall threshold would rewind in about
+/// 300ms and duplicate the first request window before a real node has had a
+/// fair chance to persist the in-flight blocks.
+#[tokio::test]
+async fn node_does_not_rewind_sync_cursor_before_stall_timeout() {
+    let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
+    let network = ProtocolSettings::default().network;
+    let mut fake = fake_dial(port).await;
+
+    let _node_version = recv_frame(&mut fake).await.expect("node version");
+    let capabilities = vec![
+        NodeCapability::full_node(5000),
+        NodeCapability::tcp_server(20333),
+    ];
+    let payload = VersionPayload::create(
+        network,
+        0xfa4e_0010,
+        "/fake-peer:0.0.1/".to_string(),
+        capabilities,
+    );
+    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
+        .await
+        .expect("send version");
+    let verack = recv_frame(&mut fake).await.expect("verack");
+    assert_eq!(verack.command, MessageCommand::Verack);
+    fake.send(verack_message()).await.expect("send verack");
+
+    let first = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(first.index_start, 1);
+    assert_eq!(first.count, 500);
+    let second = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(second.index_start, 501);
+    assert_eq!(second.count, 500);
+
+    let duplicate =
+        tokio::time::timeout(Duration::from_millis(500), recv_getblockbyindex(&mut fake)).await;
+    assert!(
+        duplicate.is_err(),
+        "sync should not duplicate an in-flight request window before the stall timeout"
+    );
+
+    handle.shutdown().await.expect("shutdown");
+}

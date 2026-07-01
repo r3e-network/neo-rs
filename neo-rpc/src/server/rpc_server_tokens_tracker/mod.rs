@@ -1,3 +1,18 @@
+//! # neo-rpc::server::rpc_server_tokens_tracker
+//!
+//! Token tracker RPC endpoint handlers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `helpers`: Shared helper functions for the surrounding module.
+//! - `tests`: Module-local tests and regression coverage.
+
 use crate::plugins::tokens_tracker::{
     Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance, find_prefix,
 };
@@ -20,7 +35,7 @@ use std::sync::Arc;
 
 mod helpers;
 #[cfg(test)]
-#[path = "../../tests/server/rpc_server_tokens_tracker.rs"]
+#[path = "../../tests/server/handlers/rpc_server_tokens_tracker.rs"]
 mod tests;
 
 use helpers::*;
@@ -57,7 +72,7 @@ impl RpcServerTokensTracker {
         prefix.extend_from_slice(&script_hash.to_bytes());
 
         let balances =
-            find_prefix::<Nep11BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
+            find_prefix::<_, Nep11BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
                 .map_err(internal_error)?;
 
         let store_cache = server.system().store_cache();
@@ -281,7 +296,7 @@ impl RpcServerTokensTracker {
         prefix.extend_from_slice(&script_hash.to_bytes());
 
         let balances =
-            find_prefix::<Nep17BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
+            find_prefix::<_, Nep17BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
                 .map_err(internal_error)?;
 
         let store_cache = server.system().store_cache();

@@ -1,4 +1,4 @@
-//! Offline RocksDB storage probe for Neo node databases.
+//! Offline storage probe for Neo node databases.
 
 use std::{
     collections::VecDeque,
@@ -12,21 +12,20 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use clap::{Parser, ValueEnum};
 use neo_config::ProtocolSettings;
 use neo_execution::{ApplicationEngine, ContractState, Diagnostic, ExecutionContextState};
+use neo_io::Serializable;
 use neo_manifest::CallFlags;
 use neo_native_contracts::GasToken;
-use neo_payloads::{Block, TransactionState};
+use neo_payloads::{Block, Transaction, TransactionState};
 use neo_primitives::{TriggerType, UInt160, UInt256, Verifiable};
 use neo_serialization::BinarySerializer;
-use neo_storage::StorageKey;
-use neo_storage::persistence::SeekDirection;
-use neo_storage::persistence::StoreCache;
+use neo_state_service::MptStore;
 use neo_storage::persistence::storage::StorageConfig;
-use neo_storage::persistence::store_provider::StoreProvider;
-use neo_storage::rocksdb::RocksDBStoreProvider;
-use neo_vm::ExecutionContext;
+use neo_storage::persistence::store::Store;
+use neo_storage::persistence::{SeekDirection, StoreCache, StoreFactory};
+use neo_storage::{DataCache, StorageKey};
+use neo_vm::{ExecutionContext, stack_value_as_bigint};
 use neo_vm_rs::{
-    ExecutionEngineLimits, Instruction, StackValue, VmState as VMState, stack_value_as_bigint,
-    stack_value_as_u32,
+    ExecutionEngineLimits, Instruction, StackValue, VmState as VMState, stack_value_as_u32,
 };
 use num_bigint::BigInt;
 use parking_lot::Mutex;
@@ -35,11 +34,14 @@ use serde_json::{Value, json};
 #[derive(Debug, Parser)]
 #[command(
     name = "neo-db-probe",
-    about = "Read Neo contract storage from a RocksDB database without starting a node"
+    about = "Read Neo contract storage from an offline database without starting a node"
 )]
 struct Cli {
     #[arg(long, value_name = "PATH")]
     db: PathBuf,
+
+    #[arg(long, value_enum, default_value_t = default_storage_provider_arg())]
+    storage_provider: StorageProviderArg,
 
     #[arg(long, value_name = "ADDRESS")]
     gas_address: Option<String>,
@@ -53,6 +55,12 @@ struct Cli {
     #[arg(long, value_name = "HASH")]
     replay_tx: Option<String>,
 
+    #[arg(long, value_name = "BASE64")]
+    replay_raw_tx_base64: Option<String>,
+
+    #[arg(long, value_name = "BASE64")]
+    replay_block_base64: Option<String>,
+
     #[arg(long)]
     dump_contract_storage: bool,
 
@@ -61,6 +69,15 @@ struct Cli {
 
     #[arg(long, value_name = "HEIGHT")]
     mpt_state_root: Option<u32>,
+
+    #[arg(long, value_name = "HEIGHT")]
+    mpt_key_root: Option<u32>,
+
+    #[arg(long, value_name = "HEIGHT")]
+    mpt_dump_contract_root: Option<u32>,
+
+    #[arg(long, value_name = "HEIGHT")]
+    mpt_dump_root: Option<u32>,
 
     #[arg(long, default_value_t = 200)]
     dump_limit: usize,
@@ -86,10 +103,30 @@ enum DecodeMode {
     Hex,
     Base64,
     RawBigint,
+    NeoAccount,
     Nep17Account,
     HashIndex,
     TransactionState,
     ContractState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum StorageProviderArg {
+    Mdbx,
+    Rocksdb,
+}
+
+impl StorageProviderArg {
+    fn as_provider_name(self) -> &'static str {
+        match self {
+            StorageProviderArg::Mdbx => "mdbx",
+            StorageProviderArg::Rocksdb => "rocksdb",
+        }
+    }
+}
+
+fn default_storage_provider_arg() -> StorageProviderArg {
+    StorageProviderArg::Mdbx
 }
 
 #[derive(Debug)]
@@ -102,6 +139,14 @@ struct ProbeRequest {
 struct HashIndexState {
     hash_hex_le: String,
     index: u32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct NeoAccountStateProbe {
+    balance: BigInt,
+    balance_height: u32,
+    vote_to_hex: Option<String>,
+    last_gas_per_vote: BigInt,
 }
 
 #[derive(Debug, Clone)]
@@ -203,10 +248,28 @@ impl Diagnostic for ReplayInstructionTracer {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    if cli.mpt_state_height || cli.mpt_state_root.is_some() {
+    if cli.mpt_state_height
+        || cli.mpt_state_root.is_some()
+        || cli.mpt_key_root.is_some()
+        || cli.mpt_dump_contract_root.is_some()
+        || cli.mpt_dump_root.is_some()
+    {
         ensure_mpt_probe_args(&cli)?;
-        let output = probe_mpt_state(&cli.db, cli.mpt_state_height, cli.mpt_state_root)
-            .with_context(|| format!("read StateService MPT store {}", cli.db.display()))?;
+        let output = probe_mpt_state(
+            cli.storage_provider,
+            &cli.db,
+            cli.mpt_state_height,
+            cli.mpt_state_root,
+            cli.mpt_key_root,
+            cli.mpt_dump_contract_root,
+            cli.mpt_dump_root,
+            cli.contract_id,
+            cli.key_base64.as_deref(),
+            cli.key_hex.as_deref(),
+            cli.dump_limit,
+            cli.decode,
+        )
+        .with_context(|| format!("read StateService MPT store {}", cli.db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -216,13 +279,36 @@ fn main() -> Result<()> {
             cli.gas_address.is_none()
                 && cli.ledger_tx.is_none()
                 && cli.contract_state.is_none()
+                && cli.replay_raw_tx_base64.is_none()
+                && cli.replay_block_base64.is_none()
                 && cli.contract_id.is_none()
                 && cli.key_base64.is_none()
                 && cli.key_hex.is_none(),
             "--replay-tx cannot be combined with storage probe arguments"
         );
-        let output = replay_transaction(&cli.db, tx_hash)
+        let output = replay_transaction(cli.storage_provider, &cli.db, tx_hash)
             .with_context(|| format!("replay transaction {tx_hash} from {}", cli.db.display()))?;
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
+    if let Some(raw_tx) = cli.replay_raw_tx_base64.as_deref() {
+        ensure!(
+            cli.gas_address.is_none()
+                && cli.ledger_tx.is_none()
+                && cli.contract_state.is_none()
+                && cli.replay_tx.is_none()
+                && cli.contract_id.is_none()
+                && cli.key_base64.is_none()
+                && cli.key_hex.is_none()
+                && cli.write_value_base64.is_none(),
+            "--replay-raw-tx-base64 cannot be combined with storage probe arguments"
+        );
+        let block = cli.replay_block_base64.as_deref().ok_or_else(|| {
+            anyhow!("--replay-block-base64 is required with --replay-raw-tx-base64")
+        })?;
+        let output = replay_raw_transaction(cli.storage_provider, &cli.db, raw_tx, block)
+            .with_context(|| format!("replay raw transaction against {}", cli.db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -233,6 +319,8 @@ fn main() -> Result<()> {
                 && cli.ledger_tx.is_none()
                 && cli.contract_state.is_none()
                 && cli.replay_tx.is_none()
+                && cli.replay_raw_tx_base64.is_none()
+                && cli.replay_block_base64.is_none()
                 && cli.key_base64.is_none()
                 && cli.key_hex.is_none()
                 && cli.write_value_base64.is_none(),
@@ -241,8 +329,9 @@ fn main() -> Result<()> {
         let contract_id = cli
             .contract_id
             .ok_or_else(|| anyhow!("--contract-id is required with --dump-contract-storage"))?;
-        let output = dump_contract_storage(&cli.db, contract_id, cli.dump_limit)
-            .with_context(|| format!("dump contract storage from {}", cli.db.display()))?;
+        let output =
+            dump_contract_storage(cli.storage_provider, &cli.db, contract_id, cli.dump_limit)
+                .with_context(|| format!("dump contract storage from {}", cli.db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -252,21 +341,40 @@ fn main() -> Result<()> {
     let written_len = if let Some(value) = cli.write_value_base64.as_deref() {
         let value = base64_decode(value).context("decode --write-value-base64")?;
         write_storage_value(
+            cli.storage_provider,
             &cli.db,
             request.contract_id,
             request.key_suffix.clone(),
             value.clone(),
         )
-        .with_context(|| format!("write RocksDB at {}", cli.db.display()))?;
+        .with_context(|| {
+            format!(
+                "write {} at {}",
+                cli.storage_provider.as_provider_name(),
+                cli.db.display()
+            )
+        })?;
         Some(value.len())
     } else {
         None
     };
-    let value = read_storage_value(&cli.db, request.contract_id, request.key_suffix.clone())
-        .with_context(|| format!("read RocksDB at {}", cli.db.display()))?;
+    let value = read_storage_value(
+        cli.storage_provider,
+        &cli.db,
+        request.contract_id,
+        request.key_suffix.clone(),
+    )
+    .with_context(|| {
+        format!(
+            "read {} at {}",
+            cli.storage_provider.as_provider_name(),
+            cli.db.display()
+        )
+    })?;
 
     let mut output = json!({
         "db": cli.db,
+        "storage_provider": cli.storage_provider.as_provider_name(),
         "contract_id": request.contract_id,
         "key_base64": base64_encode(&request.key_suffix),
         "key_hex": hex::encode(&request.key_suffix),
@@ -288,15 +396,43 @@ fn main() -> Result<()> {
 }
 
 fn ensure_mpt_probe_args(cli: &Cli) -> Result<()> {
+    if cli.mpt_key_root.is_some() {
+        ensure!(
+            cli.contract_id.is_some(),
+            "--contract-id is required with --mpt-key-root"
+        );
+        ensure!(
+            cli.key_base64.is_some() ^ cli.key_hex.is_some(),
+            "use exactly one of --key-base64 or --key-hex with --mpt-key-root"
+        );
+    } else if cli.mpt_dump_contract_root.is_some() {
+        ensure!(
+            cli.contract_id.is_some(),
+            "--contract-id is required with --mpt-dump-contract-root"
+        );
+        ensure!(
+            cli.key_base64.is_none() && cli.key_hex.is_none(),
+            "--mpt-dump-contract-root cannot be combined with --key-base64 or --key-hex"
+        );
+    } else if cli.mpt_dump_root.is_some() {
+        ensure!(
+            cli.contract_id.is_none() && cli.key_base64.is_none() && cli.key_hex.is_none(),
+            "--mpt-dump-root cannot be combined with chain storage probe arguments"
+        );
+    } else {
+        ensure!(
+            cli.contract_id.is_none() && cli.key_base64.is_none() && cli.key_hex.is_none(),
+            "--mpt-state-height/--mpt-state-root cannot be combined with chain storage probe arguments"
+        );
+    }
     ensure!(
         cli.gas_address.is_none()
             && cli.ledger_tx.is_none()
             && cli.contract_state.is_none()
             && cli.replay_tx.is_none()
+            && cli.replay_raw_tx_base64.is_none()
+            && cli.replay_block_base64.is_none()
             && !cli.dump_contract_storage
-            && cli.contract_id.is_none()
-            && cli.key_base64.is_none()
-            && cli.key_hex.is_none()
             && cli.write_value_base64.is_none(),
         "--mpt-state-height/--mpt-state-root cannot be combined with chain storage probe arguments"
     );
@@ -407,16 +543,25 @@ fn mpt_current_local_root_index_key() -> Vec<u8> {
     vec![0x02]
 }
 
-fn probe_mpt_state(db_path: &Path, include_height: bool, root_index: Option<u32>) -> Result<Value> {
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: db_path.to_path_buf(),
-        read_only: true,
-        ..StorageConfig::default()
-    });
-    let store = provider.get_store("")?;
+fn probe_mpt_state(
+    storage_provider: StorageProviderArg,
+    db_path: &Path,
+    include_height: bool,
+    root_index: Option<u32>,
+    key_root_index: Option<u32>,
+    dump_contract_root_index: Option<u32>,
+    dump_root_index: Option<u32>,
+    contract_id: Option<i32>,
+    key_base64: Option<&str>,
+    key_hex: Option<&str>,
+    dump_limit: usize,
+    decode: DecodeMode,
+) -> Result<Value> {
+    let store = open_store(storage_provider, db_path, true)?;
     let snapshot = store.snapshot();
     let mut output = json!({
         "db": db_path,
+        "storage_provider": storage_provider.as_provider_name(),
         "mode": "state-service-mpt",
     });
 
@@ -453,17 +598,139 @@ fn probe_mpt_state(db_path: &Path, include_height: bool, root_index: Option<u32>
         output["state_root"] = root;
     }
 
+    if let Some(index) = key_root_index {
+        let contract_id = contract_id.ok_or_else(|| anyhow!("--contract-id is required"))?;
+        let key_suffix = match (key_base64, key_hex) {
+            (Some(_), Some(_)) => bail!("use either --key-base64 or --key-hex, not both"),
+            (Some(encoded), None) => base64_decode(encoded).context("decode --key-base64")?,
+            (None, Some(encoded)) => {
+                hex::decode(encoded).with_context(|| format!("decode --key-hex {encoded}"))?
+            }
+            (None, None) => bail!("--key-base64 or --key-hex is required with --mpt-key-root"),
+        };
+        let storage_key = storage_key_bytes(contract_id, &key_suffix);
+        let mpt = MptStore::from_store(Arc::clone(&store), true)
+            .map_err(|err| anyhow!("open StateService MPT view: {err}"))?;
+        let root = mpt
+            .get_state_root(index)
+            .ok_or_else(|| anyhow!("state root {index} was not found in local MPT store"))?;
+        let mut trie = mpt.open_trie(Some(*root.root_hash()));
+        let value = trie
+            .get(&storage_key)
+            .map_err(|err| anyhow!("read MPT key at root {index}: {err}"))?;
+        let mut mpt_value = json!({
+            "index": index,
+            "contract_id": contract_id,
+            "key_base64": base64_encode(&key_suffix),
+            "key_hex": hex::encode(&key_suffix),
+            "storage_key_hex": hex::encode(&storage_key),
+            "root_hash": root.root_hash().to_string(),
+            "found": value.is_some(),
+        });
+        if let Some(bytes) = value {
+            mpt_value["value_base64"] = json!(base64_encode(&bytes));
+            mpt_value["value_hex"] = json!(hex::encode(&bytes));
+            mpt_value["decoded"] = decode_value(decode, &bytes)?;
+        }
+        output["mpt_value"] = mpt_value;
+    }
+
+    if let Some(index) = dump_contract_root_index {
+        ensure!(dump_limit > 0, "--dump-limit must be greater than zero");
+        let contract_id = contract_id.ok_or_else(|| anyhow!("--contract-id is required"))?;
+        let mpt = MptStore::from_store(Arc::clone(&store), true)
+            .map_err(|err| anyhow!("open StateService MPT view: {err}"))?;
+        let root = mpt
+            .get_state_root(index)
+            .ok_or_else(|| anyhow!("state root {index} was not found in local MPT store"))?;
+        let mut trie = mpt.open_trie(Some(*root.root_hash()));
+        let prefix = storage_key_prefix_bytes(contract_id);
+        let mut entries = trie
+            .find_limited(&prefix, None, dump_limit + 1)
+            .map_err(|err| anyhow!("dump MPT contract storage at root {index}: {err}"))?;
+        let truncated = entries.len() > dump_limit;
+        entries.truncate(dump_limit);
+        let entries = entries
+            .into_iter()
+            .map(|entry| {
+                let key_suffix = entry.key.get(std::mem::size_of::<i32>()..).unwrap_or(&[]);
+                json!({
+                    "key_base64": base64_encode(key_suffix),
+                    "key_hex": hex::encode(key_suffix),
+                    "storage_key_hex": hex::encode(&entry.key),
+                    "value_base64": base64_encode(&entry.value),
+                    "value_hex": hex::encode(&entry.value),
+                })
+            })
+            .collect::<Vec<_>>();
+        output["mpt_contract_storage"] = json!({
+            "index": index,
+            "contract_id": contract_id,
+            "storage_prefix_hex": hex::encode(prefix),
+            "root_hash": root.root_hash().to_string(),
+            "entry_count": entries.len(),
+            "truncated": truncated,
+            "entries": entries,
+        });
+    }
+
+    if let Some(index) = dump_root_index {
+        ensure!(dump_limit > 0, "--dump-limit must be greater than zero");
+        let mpt = MptStore::from_store(Arc::clone(&store), true)
+            .map_err(|err| anyhow!("open StateService MPT view: {err}"))?;
+        let root = mpt
+            .get_state_root(index)
+            .ok_or_else(|| anyhow!("state root {index} was not found in local MPT store"))?;
+        let mut trie = mpt.open_trie(Some(*root.root_hash()));
+        let mut entries = trie
+            .find_limited(&[], None, dump_limit + 1)
+            .map_err(|err| anyhow!("dump MPT root {index}: {err}"))?;
+        let truncated = entries.len() > dump_limit;
+        entries.truncate(dump_limit);
+        let mut contract_counts = std::collections::BTreeMap::<i32, usize>::new();
+        let entries = entries
+            .into_iter()
+            .map(|entry| {
+                let contract_id = entry
+                    .key
+                    .get(..std::mem::size_of::<i32>())
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .map(i32::from_le_bytes);
+                if let Some(contract_id) = contract_id {
+                    *contract_counts.entry(contract_id).or_default() += 1;
+                }
+                let key_suffix = entry.key.get(std::mem::size_of::<i32>()..).unwrap_or(&[]);
+                json!({
+                    "contract_id": contract_id,
+                    "key_base64": base64_encode(key_suffix),
+                    "key_hex": hex::encode(key_suffix),
+                    "storage_key_hex": hex::encode(&entry.key),
+                    "value_base64": base64_encode(&entry.value),
+                    "value_hex": hex::encode(&entry.value),
+                })
+            })
+            .collect::<Vec<_>>();
+        output["mpt_root_storage"] = json!({
+            "index": index,
+            "root_hash": root.root_hash().to_string(),
+            "entry_count": entries.len(),
+            "truncated": truncated,
+            "contract_counts": contract_counts,
+            "entries": entries,
+        });
+    }
+
     Ok(output)
 }
 
-fn dump_contract_storage(db_path: &Path, contract_id: i32, limit: usize) -> Result<Value> {
+fn dump_contract_storage(
+    storage_provider: StorageProviderArg,
+    db_path: &Path,
+    contract_id: i32,
+    limit: usize,
+) -> Result<Value> {
     ensure!(limit > 0, "--dump-limit must be greater than zero");
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: db_path.to_path_buf(),
-        read_only: true,
-        ..StorageConfig::default()
-    });
-    let store = provider.get_store("")?;
+    let store = open_store(storage_provider, db_path, true)?;
     let prefix = StorageKey::new(contract_id, Vec::new());
     let mut entries = Vec::new();
     let mut truncated = false;
@@ -485,6 +752,7 @@ fn dump_contract_storage(db_path: &Path, contract_id: i32, limit: usize) -> Resu
 
     Ok(json!({
         "db": db_path,
+        "storage_provider": storage_provider.as_provider_name(),
         "contract_id": contract_id,
         "storage_prefix_hex": hex::encode(storage_key_prefix_bytes(contract_id)),
         "entry_count": entries.len(),
@@ -494,51 +762,62 @@ fn dump_contract_storage(db_path: &Path, contract_id: i32, limit: usize) -> Resu
 }
 
 fn read_storage_value(
+    storage_provider: StorageProviderArg,
     db_path: &Path,
     contract_id: i32,
     key_suffix: Vec<u8>,
 ) -> Result<Option<Vec<u8>>> {
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: db_path.to_path_buf(),
-        read_only: true,
-        ..StorageConfig::default()
-    });
-    let store = provider.get_store("")?;
+    let store = open_store(storage_provider, db_path, true)?;
     let key = StorageKey::new(contract_id, key_suffix);
     Ok(store.try_get(&key).map(|item| item.to_value()))
 }
 
 fn write_storage_value(
+    storage_provider: StorageProviderArg,
     db_path: &Path,
     contract_id: i32,
     key_suffix: Vec<u8>,
     value: Vec<u8>,
 ) -> Result<()> {
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: db_path.to_path_buf(),
-        read_only: false,
-        ..StorageConfig::default()
-    });
-    let store = provider.get_store("")?;
+    let store = open_store(storage_provider, db_path, false)?;
     let mut snapshot = store.snapshot();
-    let snapshot = Arc::get_mut(&mut snapshot)
-        .ok_or_else(|| anyhow!("RocksDB snapshot is unexpectedly shared"))?;
+    let snapshot = Arc::get_mut(&mut snapshot).ok_or_else(|| {
+        anyhow!(
+            "{} snapshot is unexpectedly shared",
+            storage_provider.as_provider_name()
+        )
+    })?;
     snapshot.put_sync(storage_key_bytes(contract_id, &key_suffix), value)?;
     snapshot.try_commit()?;
     Ok(())
 }
 
-fn open_store_cache(db_path: &Path) -> Result<StoreCache> {
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: db_path.to_path_buf(),
-        read_only: true,
-        ..StorageConfig::default()
-    });
-    let store = provider.get_store("")?;
+fn open_store(
+    storage_provider: StorageProviderArg,
+    db_path: &Path,
+    read_only: bool,
+) -> Result<Arc<dyn Store>> {
+    StoreFactory::get_store_with_config(
+        storage_provider.as_provider_name(),
+        StorageConfig {
+            path: db_path.to_path_buf(),
+            read_only,
+            ..StorageConfig::default()
+        },
+    )
+    .map_err(|err| anyhow!("open {} store: {err}", storage_provider.as_provider_name()))
+}
+
+fn open_store_cache(storage_provider: StorageProviderArg, db_path: &Path) -> Result<StoreCache> {
+    let store = open_store(storage_provider, db_path, true)?;
     Ok(StoreCache::new_from_store(store, false))
 }
 
-fn replay_transaction(db_path: &Path, tx_hash: &str) -> Result<Value> {
+fn replay_transaction(
+    storage_provider: StorageProviderArg,
+    db_path: &Path,
+    tx_hash: &str,
+) -> Result<Value> {
     let tx_hash =
         UInt256::from_str(tx_hash).map_err(|err| anyhow!("invalid transaction hash: {err}"))?;
     neo_native_contracts::install();
@@ -554,7 +833,7 @@ fn replay_transaction(db_path: &Path, tx_hash: &str) -> Result<Value> {
         },
     );
 
-    let store_cache = open_store_cache(db_path)?;
+    let store_cache = open_store_cache(storage_provider, db_path)?;
     let ledger = neo_native_contracts::LedgerContract::new();
     let snapshot = store_cache.data_cache();
     let tx_state = ledger
@@ -589,6 +868,99 @@ fn replay_transaction(db_path: &Path, tx_hash: &str) -> Result<Value> {
         .find(|tx| tx.try_hash().ok().as_ref() == Some(&tx_hash))
         .cloned()
         .ok_or_else(|| anyhow!("transaction {tx_hash} was not found in block {block_index}"))?;
+
+    execute_transaction_probe(
+        db_path,
+        snapshot,
+        block,
+        transaction,
+        Some(tx_state.state),
+        diagnostic,
+        trace_events,
+    )
+}
+
+fn replay_raw_transaction(
+    storage_provider: StorageProviderArg,
+    db_path: &Path,
+    raw_tx_base64: &str,
+    block_base64: &str,
+) -> Result<Value> {
+    neo_native_contracts::install();
+    let trace_instruction_limit = std::env::var("NEO_DB_PROBE_TRACE_INSTRUCTIONS")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|limit| *limit > 0);
+    let trace_events = trace_instruction_limit
+        .map(|limit| Arc::new(Mutex::new(VecDeque::with_capacity(limit.saturating_add(1)))));
+    let diagnostic = trace_instruction_limit.zip(trace_events.as_ref()).map(
+        |(limit, events)| -> Box<dyn Diagnostic> {
+            Box::new(ReplayInstructionTracer::new(limit, Arc::clone(events)))
+        },
+    );
+
+    let transaction = decode_raw_transaction(raw_tx_base64)?;
+    let tx_hash = transaction.try_hash()?;
+    let block = Arc::new(decode_raw_block(block_base64)?);
+    ensure!(
+        block
+            .transactions
+            .iter()
+            .any(|tx| tx.try_hash().ok().as_ref() == Some(&tx_hash)),
+        "raw transaction {tx_hash} is not included in supplied block"
+    );
+
+    let store_cache = open_store_cache(storage_provider, db_path)?;
+    let snapshot = store_cache.data_cache();
+    execute_transaction_probe(
+        db_path,
+        snapshot,
+        block,
+        transaction,
+        None,
+        diagnostic,
+        trace_events,
+    )
+}
+
+fn decode_raw_transaction(raw_tx_base64: &str) -> Result<Transaction> {
+    let bytes = base64_decode(raw_tx_base64).context("decode raw transaction base64")?;
+    let mut reader = neo_io::MemoryReader::new(&bytes);
+    let transaction = <Transaction as Serializable>::deserialize(&mut reader)
+        .map_err(|err| anyhow!("decode raw transaction: {err}"))?;
+    ensure!(
+        reader.remaining() == 0,
+        "raw transaction has {} trailing byte(s)",
+        reader.remaining()
+    );
+    Ok(transaction)
+}
+
+fn decode_raw_block(block_base64: &str) -> Result<Block> {
+    let bytes = base64_decode(block_base64).context("decode raw block base64")?;
+    let mut reader = neo_io::MemoryReader::new(&bytes);
+    let block = <Block as Serializable>::deserialize(&mut reader)
+        .map_err(|err| anyhow!("decode raw block: {err}"))?;
+    ensure!(
+        reader.remaining() == 0,
+        "raw block has {} trailing byte(s)",
+        reader.remaining()
+    );
+    Ok(block)
+}
+
+fn execute_transaction_probe(
+    db_path: &Path,
+    snapshot: &DataCache,
+    block: Arc<Block>,
+    transaction: Transaction,
+    stored_vm_state: Option<VMState>,
+    diagnostic: Option<Box<dyn Diagnostic>>,
+    trace_events: Option<Arc<Mutex<VecDeque<Value>>>>,
+) -> Result<Value> {
+    let tx_hash = transaction.try_hash()?;
+    let block_hash = block.hash();
+    let block_index = block.header.index();
 
     let block_cache = Arc::new(snapshot.clone_cache());
     let tx_cache = Arc::new(block_cache.clone_cache());
@@ -629,7 +1001,7 @@ fn replay_transaction(db_path: &Path, tx_hash: &str) -> Result<Value> {
         "tx_hash": tx_hash.to_string(),
         "block_index": block_index,
         "block_hash": block_hash.to_string(),
-        "stored_vm_state": vm_state_name(tx_state.state),
+        "stored_vm_state": stored_vm_state.map(vm_state_name),
         "replayed_vm_state": vm_state_name(vm_state),
         "gas_consumed": engine.fee_consumed().to_string(),
         "exception": exception,
@@ -688,6 +1060,16 @@ fn decode_value(mode: DecodeMode, value: &[u8]) -> Result<Value> {
             "format": "raw-bigint",
             "value": decode_raw_bigint(value).to_string(),
         }),
+        DecodeMode::NeoAccount => {
+            let state = decode_neo_account_state(value)?;
+            json!({
+                "format": "neo-account",
+                "balance": state.balance.to_string(),
+                "balance_height": state.balance_height,
+                "vote_to": state.vote_to_hex,
+                "last_gas_per_vote": state.last_gas_per_vote.to_string(),
+            })
+        }
         DecodeMode::Nep17Account => json!({
             "format": "nep17-account",
             "balance": decode_nep17_account_balance(value)?.to_string(),
@@ -765,7 +1147,7 @@ fn vm_state_name(state: VMState) -> &'static str {
 
 fn decode_hash_index_state(bytes: &[u8]) -> Result<HashIndexState> {
     let value = deserialize_stack_value(bytes).context("deserialize HashIndexState")?;
-    let StackValue::Struct(_, items) = value else {
+    let StackValue::Struct(items) = value else {
         bail!("expected HashIndexState struct");
     };
     ensure!(
@@ -787,6 +1169,45 @@ fn decode_hash_index_state(bytes: &[u8]) -> Result<HashIndexState> {
     Ok(HashIndexState {
         hash_hex_le: hex::encode(hash_bytes),
         index,
+    })
+}
+
+fn decode_neo_account_state(bytes: &[u8]) -> Result<NeoAccountStateProbe> {
+    let value = deserialize_stack_value(bytes).context("deserialize NEO account state")?;
+    let StackValue::Struct(items) = value else {
+        bail!("expected NEO account state struct");
+    };
+    ensure!(
+        items.len() >= 4,
+        "NEO account state struct is shorter than expected"
+    );
+
+    let balance =
+        stack_value_as_bigint(&items[0]).map_err(|err| anyhow!("decode NEO balance: {err}"))?;
+    let balance_height = stack_value_as_u32(&items[1])
+        .ok_or_else(|| anyhow!("NEO account balance_height is not u32"))?;
+    let vote_to_hex = match &items[2] {
+        StackValue::Null => None,
+        item => {
+            let bytes = item
+                .to_byte_string_bytes()
+                .ok_or_else(|| anyhow!("NEO account vote_to is not byte-like"))?;
+            ensure!(
+                bytes.len() == 33,
+                "NEO account vote_to has {} bytes, expected 33",
+                bytes.len()
+            );
+            Some(hex::encode(bytes))
+        }
+    };
+    let last_gas_per_vote = stack_value_as_bigint(&items[3])
+        .map_err(|err| anyhow!("decode NEO last_gas_per_vote: {err}"))?;
+
+    Ok(NeoAccountStateProbe {
+        balance,
+        balance_height,
+        vote_to_hex,
+        last_gas_per_vote,
     })
 }
 
@@ -827,7 +1248,7 @@ fn decode_nep17_account_balance(bytes: &[u8]) -> Result<BigInt> {
     }
     let value = deserialize_stack_value(bytes).context("deserialize NEP-17 account state")?;
 
-    let StackValue::Struct(_, items) = value else {
+    let StackValue::Struct(items) = value else {
         bail!("expected NEP-17 account state struct");
     };
     let balance = items
@@ -933,6 +1354,28 @@ mod tests {
     }
 
     #[test]
+    fn decode_neo_account_state_reads_reward_markers() {
+        let vote_to = [0x02u8; 33];
+        let value = StackValue::Struct(vec![
+            StackValue::Integer(100),
+            StackValue::Integer(151_116),
+            StackValue::ByteString(vote_to.to_vec()),
+            StackValue::BigInteger(BigInt::from(123456789u64).to_signed_bytes_le()),
+        ]);
+        let bytes = BinarySerializer::serialize_stack_value_default(&value).expect("serialize");
+
+        let state = decode_neo_account_state(&bytes).expect("decode NEO account state");
+
+        assert_eq!(state.balance, BigInt::from(100));
+        assert_eq!(state.balance_height, 151_116);
+        assert_eq!(
+            state.vote_to_hex.as_deref(),
+            Some(hex::encode(vote_to).as_str())
+        );
+        assert_eq!(state.last_gas_per_vote, BigInt::from(123456789u64));
+    }
+
+    #[test]
     fn decode_raw_bigint_uses_storage_integer_format() {
         let bytes = base64_decode("n0YM").expect("base64");
 
@@ -1025,6 +1468,45 @@ mod tests {
     }
 
     #[test]
+    fn cli_defaults_to_mdbx_storage_provider_in_production_build() {
+        let cli = Cli::try_parse_from(["neo-db-probe", "--db", "data/mainnet"]).expect("parse cli");
+
+        assert_eq!(cli.storage_provider, StorageProviderArg::Mdbx);
+    }
+
+    #[test]
+    fn cli_accepts_explicit_rocksdb_storage_provider() {
+        let cli = Cli::try_parse_from([
+            "neo-db-probe",
+            "--db",
+            "data/mainnet",
+            "--storage-provider",
+            "rocksdb",
+        ])
+        .expect("parse cli");
+
+        assert_eq!(cli.storage_provider, StorageProviderArg::Rocksdb);
+    }
+
+    #[test]
+    fn cli_accepts_neo_account_decode_mode() {
+        let cli = Cli::try_parse_from([
+            "neo-db-probe",
+            "--db",
+            "data/mainnet",
+            "--contract-id",
+            "-5",
+            "--key-hex",
+            "14",
+            "--decode",
+            "neo-account",
+        ])
+        .expect("parse cli");
+
+        assert!(matches!(cli.decode, DecodeMode::NeoAccount));
+    }
+
+    #[test]
     fn cli_accepts_contract_storage_dump_without_key() {
         let cli = Cli::try_parse_from([
             "neo-db-probe",
@@ -1041,6 +1523,23 @@ mod tests {
     }
 
     #[test]
+    fn cli_accepts_raw_transaction_replay_with_block_context() {
+        let cli = Cli::try_parse_from([
+            "neo-db-probe",
+            "--db",
+            "data/mainnet",
+            "--replay-raw-tx-base64",
+            "AQID",
+            "--replay-block-base64",
+            "BAUG",
+        ])
+        .expect("parse cli");
+
+        assert_eq!(cli.replay_raw_tx_base64.as_deref(), Some("AQID"));
+        assert_eq!(cli.replay_block_base64.as_deref(), Some("BAUG"));
+    }
+
+    #[test]
     fn cli_accepts_mpt_state_probe_without_contract_key() {
         let cli = Cli::try_parse_from([
             "neo-db-probe",
@@ -1054,6 +1553,96 @@ mod tests {
 
         assert!(cli.mpt_state_height);
         assert_eq!(cli.mpt_state_root, Some(474_701));
+    }
+
+    #[test]
+    fn cli_accepts_mpt_key_probe_with_contract_key() {
+        let cli = Cli::try_parse_from([
+            "neo-db-probe",
+            "--db",
+            "Data_MPT_validate_334F454E",
+            "--mpt-key-root",
+            "5549",
+            "--contract-id",
+            "-6",
+            "--key-hex",
+            "14",
+            "--decode",
+            "nep17-account",
+        ])
+        .expect("parse cli");
+
+        assert_eq!(cli.mpt_key_root, Some(5549));
+        assert_eq!(cli.contract_id, Some(-6));
+        assert!(matches!(cli.decode, DecodeMode::Nep17Account));
+        ensure_mpt_probe_args(&cli).expect("valid mpt key probe");
+    }
+
+    #[test]
+    fn mpt_key_probe_requires_exactly_one_key_argument() {
+        let missing_key = Cli::try_parse_from([
+            "neo-db-probe",
+            "--db",
+            "Data_MPT_validate_334F454E",
+            "--mpt-key-root",
+            "5549",
+            "--contract-id",
+            "-6",
+        ])
+        .expect("parse cli");
+        let err = ensure_mpt_probe_args(&missing_key).expect_err("missing key should fail");
+        assert!(err.to_string().contains("exactly one"));
+
+        let missing_contract = Cli::try_parse_from([
+            "neo-db-probe",
+            "--db",
+            "Data_MPT_validate_334F454E",
+            "--mpt-key-root",
+            "5549",
+            "--key-hex",
+            "14",
+        ])
+        .expect("parse cli");
+        let err =
+            ensure_mpt_probe_args(&missing_contract).expect_err("missing contract should fail");
+        assert!(err.to_string().contains("--contract-id is required"));
+    }
+
+    #[test]
+    fn cli_accepts_mpt_contract_dump_with_contract_id() {
+        let cli = Cli::try_parse_from([
+            "neo-db-probe",
+            "--db",
+            "Data_MPT_validate_334F454E",
+            "--mpt-dump-contract-root",
+            "5549",
+            "--contract-id",
+            "-1",
+            "--dump-limit",
+            "20",
+        ])
+        .expect("parse cli");
+
+        assert_eq!(cli.mpt_dump_contract_root, Some(5549));
+        assert_eq!(cli.contract_id, Some(-1));
+        ensure_mpt_probe_args(&cli).expect("valid mpt contract dump");
+    }
+
+    #[test]
+    fn cli_accepts_mpt_root_dump_without_contract_id() {
+        let cli = Cli::try_parse_from([
+            "neo-db-probe",
+            "--db",
+            "Data_MPT_validate_334F454E",
+            "--mpt-dump-root",
+            "5549",
+            "--dump-limit",
+            "100",
+        ])
+        .expect("parse cli");
+
+        assert_eq!(cli.mpt_dump_root, Some(5549));
+        ensure_mpt_probe_args(&cli).expect("valid mpt root dump");
     }
 
     #[test]

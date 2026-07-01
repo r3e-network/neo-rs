@@ -500,7 +500,7 @@ fn stack_item_parses_array_and_struct() {
     array_obj.insert("value".to_string(), JToken::Array(array.clone()));
 
     let item_array = RpcUtility::stack_item_from_json(&array_obj).unwrap();
-    let StackValue::Array(_, array_items) = item_array else {
+    let StackValue::Array(array_items) = item_array else {
         panic!("expected array");
     };
     assert_eq!(array_items.len(), 1);
@@ -509,7 +509,7 @@ fn stack_item_parses_array_and_struct() {
     struct_obj.insert("type".to_string(), JToken::String("Struct".to_string()));
     struct_obj.insert("value".to_string(), JToken::Array(array));
     let item_struct = RpcUtility::stack_item_from_json(&struct_obj).unwrap();
-    let StackValue::Struct(_, struct_items) = item_struct else {
+    let StackValue::Struct(struct_items) = item_struct else {
         panic!("expected struct");
     };
     assert_eq!(struct_items.len(), 1);
@@ -538,7 +538,7 @@ fn stack_item_parses_map() {
     map_obj.insert("value".to_string(), JToken::Array(map_array));
 
     let item_map = RpcUtility::stack_item_from_json(&map_obj).unwrap();
-    let StackValue::Map(_, map) = item_map else {
+    let StackValue::Map(map) = item_map else {
         panic!("expected map");
     };
     assert_eq!(map.len(), 1);
@@ -546,19 +546,16 @@ fn stack_item_parses_map() {
 
 #[test]
 fn stack_item_to_json_emits_array_and_map_shapes() {
-    let array = StackValue::Array(0, vec![StackValue::Integer(5)]);
+    let array = StackValue::Array(vec![StackValue::Integer(5)]);
     assert_eq!(
         RpcUtility::stack_item_to_json(&array).unwrap().to_string(),
         r#"{"type":"Array","value":[{"type":"Integer","value":"5"}]}"#
     );
 
-    let map = StackValue::Map(
-        0,
-        vec![(
-            StackValue::ByteString(b"k".to_vec()),
-            StackValue::Boolean(true),
-        )],
-    );
+    let map = StackValue::Map(vec![(
+        StackValue::ByteString(b"k".to_vec()),
+        StackValue::Boolean(true),
+    )]);
     let expected_map = concat!(
         r#"{"type":"Map","value":[{"key":{"type":"ByteString","value":"aw=="},"#,
         r#""value":{"type":"Boolean","value":true}}]}"#,

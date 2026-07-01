@@ -101,7 +101,7 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     let result = splice_rules::cat_values(&x1, &x2).map_err(VmError::invalid_operation_msg)?;
     let result_len = match &result {
-        neo_vm_rs::StackValue::Buffer(_, bytes) => bytes.len(),
+        neo_vm_rs::StackValue::Buffer(bytes) => bytes.len(),
         _ => 0,
     };
     if result_len > max_item_size {

@@ -1,3 +1,19 @@
+//! # neo-native-contracts::tests::policy_contract::policy_writer_tests
+//!
+//! Test module grouping policy writer tests behavior coverage for neo-native-
+//! contracts.
+//!
+//! ## Boundary
+//!
+//! This is test/benchmark-only code for neo-native-contracts; it may assemble
+//! fixtures but must not introduce production behavior.
+//!
+//! ## Contents
+//!
+//! - `block_account`: blocked-account policy coverage.
+//! - `recover_fund`: fund recovery policy coverage.
+//! - `whitelist`: policy whitelist coverage.
+
 use super::*;
 use crate::test_support::{committee_address, deploy_native, sample_committee, seed_committee};
 use neo_config::ProtocolSettings;
@@ -25,15 +41,18 @@ fn faun_settings() -> ProtocolSettings {
 /// must push the call arguments in REVERSE order (deepest first). Returns
 /// the final VM state and the finished engine (for result-stack and
 /// notification assertions).
-fn call_policy_engine(
+fn call_policy_engine<F>(
     snapshot: Arc<DataCache>,
     signer: UInt160,
     settings: ProtocolSettings,
     block: Option<Block>,
     method: &str,
     argc: i64,
-    push_args_reversed: &dyn Fn(&mut ScriptBuilder),
-) -> (VmState, ApplicationEngine) {
+    push_args_reversed: F,
+) -> (VmState, ApplicationEngine)
+where
+    F: FnOnce(&mut ScriptBuilder),
+{
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
@@ -69,15 +88,18 @@ fn call_policy_engine(
 
 /// [`call_policy_engine`] reduced to the final VM state and the boolean on
 /// top of the result stack (if any).
-fn call_policy(
+fn call_policy<F>(
     snapshot: Arc<DataCache>,
     signer: UInt160,
     settings: ProtocolSettings,
     block: Option<Block>,
     method: &str,
     argc: i64,
-    push_args_reversed: &dyn Fn(&mut ScriptBuilder),
-) -> (VmState, Option<bool>) {
+    push_args_reversed: F,
+) -> (VmState, Option<bool>)
+where
+    F: FnOnce(&mut ScriptBuilder),
+{
     let (state, engine) = call_policy_engine(
         snapshot,
         signer,

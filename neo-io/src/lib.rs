@@ -1,25 +1,35 @@
-//! Neo.IO - matches C# Neo.IO exactly
-//! This crate provides IO functionality matching C# Neo.IO namespace
+//! # neo-io
+//!
+//! Deterministic binary IO primitives and serialization traits for Neo data.
+//!
+//! ## Boundary
+//!
+//! This codec crate owns byte-level IO contracts and must not decide protocol
+//! policy, storage layout, or node orchestration.
+//!
+//! ## Contents
+//!
+//! - `caching`: Read-through and write-back caching helpers for IO paths.
+//! - `codec`: Deterministic byte codecs and compression helpers used by Neo
+//!   wire data.
+//! - `extensions`: Extension traits layered over the core IO primitives.
+//! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
+//! - `serializable`: Serializable traits and compatibility helpers for Neo
+//!   binary data.
 
 pub mod caching;
-pub mod compression;
+mod codec;
+pub use codec::compression;
 /// Extension traits that mirror the C# `Neo.Extensions.IO` helpers.
 pub mod extensions;
 
-mod binary_writer;
-/// Generic derive-style macros and IO helper traits (OptionExt, ValidateLength).
-/// Relocated from neo-core so layered crates (e.g. neo-p2p chain types) can use
-/// them without depending on neo-core.
 #[macro_use]
-pub mod macros;
-// Core interfaces
-mod memory_reader;
+mod core;
+pub use core::macros;
 pub mod serializable;
-pub mod var_int;
+pub use core::var_int;
 
-pub use binary_writer::BinaryWriter;
-pub use macros::{OptionExt, ValidateLength};
-pub use memory_reader::{IoError, IoResult, MemoryReader};
+pub use core::{BinaryWriter, IoError, IoResult, MemoryReader, OptionExt, ValidateLength};
 pub use serializable::Serializable;
 
 // Extension traits

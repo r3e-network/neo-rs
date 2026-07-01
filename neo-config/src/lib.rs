@@ -1,34 +1,28 @@
-//! # Neo Config
+//! # neo-config
 //!
-//! Configuration management for Neo N3 blockchain node.
+//! Network, protocol, and hardfork configuration records for Neo N3 nodes.
 //!
-//! This crate provides:
-//! - Node settings (network, storage, logging)
-//! - Protocol parameters (block time, validators, fees)
-//! - Network configuration (`MainNet`, `TestNet`, private networks)
-//! - Genesis block configuration
+//! ## Boundary
 //!
-//! ## Example
+//! This configuration crate owns typed settings and must not open storage,
+//! start services, or run protocol workflows.
 //!
-//! ```rust,ignore
-//! use neo_config::{NetworkType, ProtocolSettings};
+//! ## Contents
 //!
-//! // Use the built-in defaults, or load from a config file / JSON value.
-//! let settings = ProtocolSettings::default();
-//! let network = NetworkType::MainNet;
-//! ```
+//! - `errors`: Typed errors and result aliases for this crate boundary.
+//! - `network`: operator network status and peer view screen.
+//! - `settings`: Protocol settings, hardfork gates, and node configuration
+//!   records.
 
-mod error;
-mod genesis;
-pub mod hardfork;
-mod network_type;
-mod protocol;
+mod errors;
+mod network;
+mod settings;
 
-pub use error::{ConfigError, ConfigResult};
-pub use genesis::{GenesisConfig, GenesisValidator};
-pub use hardfork::{Hardfork, HardforkManager, HardforkParseError};
-pub use network_type::NetworkType;
-pub use protocol::ProtocolSettings;
+pub use errors::{ConfigError, ConfigResult, error};
+pub use network::genesis::{GenesisConfig, GenesisValidator};
+pub use network::network_type::NetworkType;
+pub use network::{genesis, network_type};
+pub use settings::{Hardfork, HardforkManager, HardforkParseError, ProtocolSettings, hardfork};
 
 /// Current configuration version for migration support
 pub const CONFIG_VERSION: u32 = 1;

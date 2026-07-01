@@ -1,6 +1,22 @@
-//! Stack item module for the Neo Virtual Machine.
+//! # neo-vm::stack_item
 //!
-//! This module provides the stack item types used in the Neo VM.
+//! NeoVM stack item representations and conversion helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-vm`. This VM crate owns deterministic script
+//! execution and must not own ledger persistence, network transport, or node
+//! composition.
+//!
+//! ## Contents
+//!
+//! - `array`: VM array stack item implementation.
+//! - `buffer`: VM buffer stack item implementation.
+//! - `map`: VM map stack item implementation.
+//! - `pointer`: VM pointer stack item implementation.
+//! - `stack_item`: NeoVM stack item representations and conversion helpers.
+//! - `struct_item`: VM struct stack item implementation.
+//! - `vm_integer`: VM integer stack item implementation.
 
 /// Array stack item type.
 pub mod array;

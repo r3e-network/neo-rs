@@ -39,7 +39,7 @@ fn whitelist_fee_contract_e2e_set_then_remove() {
         None,
         "setWhitelistFeeContract",
         4,
-        &|b| {
+        |b| {
             b.emit_push_int(12345); // fixedFee (arg 3, deepest)
             b.emit_push_int(1); // argCount (arg 2)
             b.emit_push("balanceOf".as_bytes()); // method (arg 1)
@@ -100,7 +100,7 @@ fn whitelist_fee_contract_e2e_set_then_remove() {
         None,
         "removeWhitelistFeeContract",
         3,
-        &|b| {
+        |b| {
             b.emit_push_int(1); // argCount (arg 2, deepest)
             b.emit_push("balanceOf".as_bytes()); // method (arg 1)
             b.emit_push(&neo_hash.to_array()); // contractHash (arg 0, top)
@@ -121,7 +121,7 @@ fn whitelist_fee_contract_e2e_set_then_remove() {
         None,
         "removeWhitelistFeeContract",
         3,
-        &|b| {
+        |b| {
             b.emit_push_int(1);
             b.emit_push("balanceOf".as_bytes());
             b.emit_push(&neo_hash.to_array());
@@ -164,7 +164,7 @@ fn whitelist_fee_contract_e2e_validation_faults() {
         None,
         "setWhitelistFeeContract",
         4,
-        &|b| {
+        |b| {
             b.emit_push_int(-1);
             b.emit_push_int(1);
             b.emit_push("balanceOf".as_bytes());
@@ -181,7 +181,7 @@ fn whitelist_fee_contract_e2e_validation_faults() {
         None,
         "setWhitelistFeeContract",
         4,
-        &|b| {
+        |b| {
             b.emit_push_int(5);
             b.emit_push_int(0);
             b.emit_push("noexists".as_bytes());

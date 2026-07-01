@@ -1,4 +1,18 @@
-//! Blockchain RPC endpoints (`RpcServer.Blockchain.cs`).
+//! # neo-rpc::server::rpc_server_blockchain
+//!
+//! Blockchain RPC endpoint handlers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `request_helpers`: RPC request parsing helpers.
+//! - `responses`: RPC response construction helpers.
+//! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
 use crate::server::rpc_error::RpcError;
@@ -50,6 +64,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_best_block_hash(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getbestblockhash", &[])
+                .map_err(RpcException::from);
+        }
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
         let hash = ledger
@@ -59,6 +78,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_block_count(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getblockcount", &[])
+                .map_err(RpcException::from);
+        }
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
         let count = ledger
@@ -72,6 +96,11 @@ impl RpcServerBlockchain {
         server: &RpcServer,
         _params: &[Value],
     ) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getblockheadercount", &[])
+                .map_err(RpcException::from);
+        }
         let system = server.system();
         let header_cache = system.header_cache();
         let cache_height = header_cache.last().map(|header| header.index());
@@ -88,6 +117,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_block_hash(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getblockhash", params)
+                .map_err(RpcException::from);
+        }
         let height = Self::expect_u32_param(params, 0, "getblockhash")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
@@ -106,6 +140,9 @@ impl RpcServerBlockchain {
     }
 
     fn get_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote.call("getblock", params).map_err(RpcException::from);
+        }
         let identifier = Self::parse_block_identifier(params, "getblock")?;
         let verbose = Self::parse_verbose(params.get(1))?;
         let store = server.system().store_cache();
@@ -125,6 +162,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_block_header(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getblockheader", params)
+                .map_err(RpcException::from);
+        }
         let identifier = Self::parse_block_identifier(params, "getblockheader")?;
         let verbose = Self::parse_verbose(params.get(1))?;
         let store = server.system().store_cache();
@@ -145,6 +187,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_block_sys_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getblocksysfee", params)
+                .map_err(RpcException::from);
+        }
         let height = Self::expect_u32_param(params, 0, "getblocksysfee")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
@@ -169,6 +216,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_raw_mem_pool(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getrawmempool", params)
+                .map_err(RpcException::from);
+        }
         let include_unverified = match params.first() {
             None => false,
             Some(Value::Bool(value)) => *value,
@@ -222,6 +274,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getrawtransaction", params)
+                .map_err(RpcException::from);
+        }
         let hash = Self::expect_hash_param(params, 0, "getrawtransaction")?;
         let verbose = Self::parse_verbose(params.get(1))?;
         let system = server.system();
@@ -289,6 +346,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_contract_state(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getcontractstate", params)
+                .map_err(RpcException::from);
+        }
         let identifier = Self::parse_contract_identifier(params, "getcontractstate")?;
         let store = server.system().store_cache();
         let contract = Self::load_contract_state(&store, &identifier)?
@@ -297,6 +359,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_storage(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getstorage", params)
+                .map_err(RpcException::from);
+        }
         let identifier = Self::parse_contract_identifier(params, "getstorage")?;
         let key_bytes = expect_base64_param_with_messages(
             params,
@@ -315,6 +382,11 @@ impl RpcServerBlockchain {
     }
 
     fn find_storage(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("findstorage", params)
+                .map_err(RpcException::from);
+        }
         let identifier = Self::parse_contract_identifier(params, "findstorage")?;
         let prefix_bytes = expect_base64_param_with_messages(
             params,
@@ -375,6 +447,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_native_contracts(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getnativecontracts", &[])
+                .map_err(RpcException::from);
+        }
         let system = server.system();
         let store = system.store_cache();
         let settings = system.settings();
@@ -410,6 +487,11 @@ impl RpcServerBlockchain {
         server: &RpcServer,
         _params: &[Value],
     ) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getnextblockvalidators", &[])
+                .map_err(RpcException::from);
+        }
         let system = server.system();
         let store = system.store_cache();
         let snapshot = std::sync::Arc::new(store.data_cache().clone());
@@ -442,6 +524,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_candidates(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("getcandidates", &[])
+                .map_err(RpcException::from);
+        }
         let system = server.system();
         let store = system.store_cache();
         let snapshot = std::sync::Arc::new(store.data_cache().clone());
@@ -476,6 +563,11 @@ impl RpcServerBlockchain {
     }
 
     fn get_transaction_height(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("gettransactionheight", params)
+                .map_err(RpcException::from);
+        }
         let hash = Self::expect_hash_param(params, 0, "gettransactionheight")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
@@ -487,6 +579,9 @@ impl RpcServerBlockchain {
     }
 
     fn get_committee(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote.call("getcommittee", &[]).map_err(RpcException::from);
+        }
         let store = server.system().store_cache();
         let snapshot = std::sync::Arc::new(store.data_cache().clone());
         let neo_hash = neo_native_contracts::NeoToken::script_hash();
@@ -506,5 +601,5 @@ impl RpcServerBlockchain {
 }
 
 #[cfg(test)]
-#[path = "../../tests/server/rpc_server_blockchain.rs"]
+#[path = "../../tests/server/handlers/rpc_server_blockchain.rs"]
 mod tests;

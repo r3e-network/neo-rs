@@ -1,41 +1,19 @@
-//! AWS Nitro Enclaves backend (EXPERIMENTAL, feature-gated).
+//! # neo-tee::nitro
 //!
-//! This module is an **experimental skeleton** for running a Neo N3 validator's
-//! signing key and fair-ordering sequencer inside an AWS Nitro Enclave. It is
-//! gated behind the `nitro` cargo feature and is **off by default**. It is NOT
-//! wired into `neo-node`; selecting a Nitro signer is a deliberate, separate
-//! node-level change.
+//! AWS Nitro enclave integration helpers.
 //!
-//! Design reference: `claudedocs/aws-hsm-nitro-tee-design.md` (§2 Architecture,
-//! §3.2 module plan, §4 integration).
+//! ## Boundary
 //!
-//! # Module map
+//! This module belongs to `neo-tee`. This adapter crate owns TEE integration
+//! and must not define protocol bytes, consensus rules, or storage semantics.
 //!
-//! | Module | Responsibility |
-//! | --- | --- |
-//! | [`platform`] | [`platform::TeePlatform`] seam shared by Nitro / future SGX. |
-//! | [`attestation`] | NSM document model + pure COSE/CBOR parser + structural validation. |
-//! | [`vsock`] | host<->enclave wire types, length-framed codec, transports. |
-//! | [`signer`] | [`signer::NitroEnclaveSigner`] implementing `ConsensusSigner`. |
-//! | [`ordering`] | verifiable fair-ordering proofs over the existing sequencer. |
+//! ## Contents
 //!
-//! # What is real vs experimental
-//!
-//! REAL + tested (no hardware needed):
-//! - The COSE_Sign1 / CBOR attestation parser and structural validation.
-//! - The vsock wire types and length-framed codec.
-//! - The `NitroEnclaveSigner` `sign`/`can_sign` logic over a transport.
-//! - Ordering-proof construction (reusing the existing sequencer) and the
-//!   internal-consistency verifier (merkle root + sequencer signature).
-//!
-//! EXPERIMENTAL — every site below is marked
-//! `// EXPERIMENTAL: validate in a Nitro environment before production`:
-//! - Real AF_VSOCK connect/transport ([`vsock::RealVsockTransport`]).
-//! - NSM ioctl-based attestation generation (not present; belongs in the
-//!   enclave binary which requires the NSM driver).
-//! - COSE ES384 signature + X.509 chain verification to the pinned Nitro Root
-//!   G1 ([`attestation::verify_pki_chain`]).
-//! - KMS attested-decrypt key import (not implemented; design doc §5.2).
+//! - `attestation`: TEE attestation evidence and verification helpers.
+//! - `ordering`: Nitro ordering helpers.
+//! - `platform`: Nitro platform adapter.
+//! - `signer`: signer configuration and signing helpers.
+//! - `vsock`: Nitro vsock transport adapter.
 
 pub mod attestation;
 pub mod ordering;

@@ -1,38 +1,19 @@
 //! # neo-error
 //!
-//! Authoritative error type for the Neo workspace.
+//! Shared error categories and conversions used by workspace crates.
 //!
-//! This is the **single** crate that owns `CoreError` and `CoreResult`. Every
-//! other `neo-*` crate (Layer ≥ 1) returns or accepts `CoreError` at its
-//! public API boundary, so the workspace has exactly one error vocabulary.
+//! ## Boundary
 //!
-//! ## Layering
+//! This foundation crate owns shared error vocabulary and must not depend on
+//! higher-level services or binaries.
 //!
-//! Sits in the infrastructure layer, directly above `neo-primitives` and
-//! `neo-io`. It depends on `neo-primitives` for `PrimitiveError` conversion and
-//! on `neo-io` for `IoError` conversion, but must not depend on storage,
-//! execution, networking, RPC, or node-composition crates.
+//! ## Contents
 //!
-//! ## Why a low-level error crate
-//!
-//! A low infrastructure crate is the right home for the error type because
-//! every higher layer needs to talk about errors, and pulling an error enum from
-//! a service-layer crate (for example the blockchain service) into
-//! infrastructure crates would invert the dependency order. Putting
-//! `CoreError` in its own `neo-error` crate keeps the layering clean and
-//! matches the polkadot-sdk and reth convention of a top-level `errors` /
-//! `error` crate.
-//!
-//! ## Cross-crate `From` impls
-//!
-//! This crate is the *only* place that may implement `From<X> for CoreError`
-//! for a lower-layer or external type `X`. Add new impls here when you need to
-//! lift a lower-layer error into `CoreError`; higher-layer crates must implement
-//! their local conversions in their own crate so `neo-error` does not grow
-//! upward dependencies.
+//! - `error`: Typed error definitions and conversions.
 
-#![doc(html_root_url = "https://docs.rs/neo-error/0.8.0")]
+#![doc(html_root_url = "https://docs.rs/neo-error/0.9.0")]
 
+#[path = "errors/error.rs"]
 pub mod error;
 
 pub use error::{CoreError, CoreResult, Result};

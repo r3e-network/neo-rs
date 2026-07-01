@@ -557,6 +557,39 @@ fn validate_config_rejects_empty_state_service_path() {
 }
 
 #[test]
+fn validate_config_skips_local_replay_service_paths_for_remote_ledger_mode() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[state_service]
+enabled = true
+path = ""
+
+[indexer]
+enabled = true
+store_path = ""
+
+[application_logs]
+enabled = true
+path = ""
+
+[tokens_tracker]
+enabled = true
+DBPath = ""
+"#,
+    )
+    .expect("parse remote-ledger service config");
+
+    validate_config_for_ledger_mode(
+        &config,
+        0x004F_454E,
+        LedgerMode::RemoteRpc {
+            endpoint: "https://rpc.example.invalid",
+        },
+    )
+    .expect("remote-ledger mode must ignore disabled local replay service paths");
+}
+
+#[test]
 fn validate_config_rejects_service_store_paths_that_are_files() {
     let temp = tempfile::tempdir().expect("temp dir");
 
@@ -659,7 +692,6 @@ backend = "rocksdb"
 
 #[test]
 fn validate_storage_rejects_state_service_mpt_height_mismatch() {
-    use neo_storage::persistence::StoreProvider;
     use neo_storage::persistence::storage::StorageConfig;
     use neo_storage::rocksdb::RocksDBStoreProvider;
 
@@ -698,6 +730,24 @@ fn validate_storage_rejects_state_service_mpt_height_mismatch() {
     );
 }
 
+#[test]
+fn validate_storage_rejects_state_service_without_path_for_populated_chain() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let chain_path = temp.path().join("chain");
+    let settings = ProtocolSettings::default();
+    seed_rocksdb_tip(&chain_path, &settings, 1).expect("seed chain tip");
+
+    let mut config = NodeConfig::default();
+    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.data_dir = Some(chain_path);
+    config.state_service.enabled = true;
+    config.state_service.path = None;
+
+    let err = validate_storage(&config, None, settings.network)
+        .expect_err("populated chain requires durable StateService path");
+    assert!(err.to_string().contains("[state_service].path"), "{err}");
+}
+
 /// Default P2P ports follow the network magic.
 #[test]
 fn default_p2p_port_matches_network() {
@@ -706,15 +756,20 @@ fn default_p2p_port_matches_network() {
     assert_eq!(default_p2p_port(0xDEAD_BEEF), 0);
 }
 
-/// The shipped mainnet/production presets use `[storage] path = "..."`;
-/// the parser must accept it as an alias for `data_dir`.
+/// Primary chain storage uses canonical `data_dir`; legacy `[storage].path`
+/// must not configure the persistent store.
 #[test]
-fn storage_section_accepts_path_alias() {
-    let toml = "[storage]\nbackend = \"rocksdb\"\npath = \"./data/mainnet\"\n";
+fn storage_section_requires_data_dir_for_primary_path() {
+    let toml = "[storage]\nbackend = \"mdbx\"\ndata_dir = \"./data/mainnet\"\n";
     let config: NodeConfig = toml::from_str(toml).expect("parses");
-    assert_eq!(config.storage.backend.as_deref(), Some("rocksdb"));
+    assert_eq!(config.storage.backend.as_deref(), Some("mdbx"));
     assert_eq!(
         config.storage.data_directory(),
         Some(std::path::PathBuf::from("./data/mainnet"))
     );
+
+    let legacy: NodeConfig =
+        toml::from_str("[storage]\nbackend = \"mdbx\"\npath = \"./data/mainnet\"\n")
+            .expect("parses unknown path key");
+    assert!(legacy.storage.data_directory().is_none());
 }

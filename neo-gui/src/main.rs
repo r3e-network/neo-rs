@@ -1,18 +1,34 @@
-//! neo-gui — a native desktop manager for the neo-rs Neo N3 node.
+//! # neo-gui
 //!
-//! The GUI is a pure client: it talks to a running node over JSON-RPC and (for
-//! local nodes) controls the `neo-node` process. It links no node-internal
-//! crates, so it builds and ships independently of the workspace.
+//! Operator GUI for interacting with local or remote Neo nodes.
+//!
+//! ## Boundary
+//!
+//! This application crate owns UI composition and must call lower service/RPC
+//! APIs instead of reimplementing protocol logic.
+//!
+//! ## Contents
+//!
+//! - `client`: Client-side adapters for remote services and RPC access.
+//! - `runtime`: Runtime flags, execution context state, and VM-facing support
+//!   types.
+//! - `screens`: Operator UI screens grouped by workflow area.
+//! - `shell`: GUI application shell, event loop, and top-level window
+//!   composition.
+//! - `ui`: Reusable GUI theme and widget helpers.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app;
-mod node;
-mod rpc;
-mod theme;
-mod widgets;
-
+mod client;
+mod runtime;
 mod screens;
+mod shell;
+mod ui;
+
+use client::rpc;
+use runtime::node;
+use shell::app;
+use ui::{theme, widgets};
 
 use app::NeoGuiApp;
 

@@ -52,19 +52,16 @@ impl Transaction {
             })?
             .to_bytes();
 
-        Ok(StackValue::Array(
-            0,
-            vec![
-                StackValue::ByteString(self.try_hash()?.to_bytes()),
-                StackValue::Integer(i64::from(self.version)),
-                StackValue::Integer(i64::from(self.nonce)),
-                StackValue::ByteString(sender),
-                StackValue::Integer(self.system_fee),
-                StackValue::Integer(self.network_fee),
-                StackValue::Integer(i64::from(self.valid_until_block)),
-                StackValue::ByteString(self.script.clone()),
-            ],
-        ))
+        Ok(StackValue::Array(vec![
+            StackValue::ByteString(self.try_hash()?.to_bytes()),
+            StackValue::Integer(i64::from(self.version)),
+            StackValue::Integer(i64::from(self.nonce)),
+            StackValue::ByteString(sender),
+            StackValue::Integer(self.system_fee),
+            StackValue::Integer(self.network_fee),
+            StackValue::Integer(i64::from(self.valid_until_block)),
+            StackValue::ByteString(self.script.clone()),
+        ]))
     }
 }
 

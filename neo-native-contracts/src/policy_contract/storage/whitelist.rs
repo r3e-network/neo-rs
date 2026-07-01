@@ -129,7 +129,7 @@ pub(in crate::policy_contract) struct WhitelistedContractView {
 
 impl WhitelistedContractView {
     pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(_, items) = stack_value else {
+        let StackValue::Struct(items) = stack_value else {
             return Err(CoreError::invalid_data(
                 "whitelisted contract is not a struct",
             ));
@@ -163,15 +163,12 @@ impl WhitelistedContractView {
     }
 
     pub(super) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            0,
-            vec![
-                StackValue::ByteString(self.contract_hash.to_bytes()),
-                StackValue::ByteString(self.method.as_bytes().to_vec()),
-                StackValue::Integer(i64::from(self.arg_count)),
-                StackValue::Integer(self.fixed_fee),
-            ],
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(self.contract_hash.to_bytes()),
+            StackValue::ByteString(self.method.as_bytes().to_vec()),
+            StackValue::Integer(i64::from(self.arg_count)),
+            StackValue::Integer(self.fixed_fee),
+        ])
     }
 }
 

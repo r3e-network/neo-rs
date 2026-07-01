@@ -19,6 +19,7 @@ use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
+use std::collections::HashSet;
 
 impl PolicyContract {
     pub(super) fn setting_key(prefix: u8) -> StorageKey {
@@ -421,6 +422,23 @@ impl PolicyContract {
     /// storage layout as the native contract rather than duplicating the prefix.
     pub fn is_blocked_snapshot(snapshot: &DataCache, account: &UInt160) -> bool {
         snapshot.get(&Self::blocked_account_key(account)).is_some()
+    }
+
+    /// Collects the blocked account hashes from the current snapshot once, for
+    /// hot paths that need many blocked-account membership checks.
+    pub(crate) fn blocked_accounts_snapshot(snapshot: &DataCache) -> HashSet<UInt160> {
+        let prefix_key = Self::blocked_account_prefix_key();
+        snapshot
+            .find(Some(&prefix_key), SeekDirection::Forward)
+            .filter_map(|(key, _)| {
+                let suffix = key.suffix();
+                if suffix.len() == 1 + UInt160::LENGTH {
+                    UInt160::from_bytes(&suffix[1..]).ok()
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Collects the `Prefix_BlockedAccount` storage entries in forward-seek order,

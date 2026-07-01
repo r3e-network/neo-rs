@@ -1,7 +1,8 @@
 /// Generates a fixed-width unsigned integer type with common boilerplate.
 ///
 /// Generates: struct, new/zero/is_zero, byte conversions, Display/Debug/FromStr,
-/// Ord (big-endian), From<[u8; N]>, TryFrom<&[u8]>, TryFrom<String>.
+/// Ord (big-endian), `From<[u8; N]>`, `TryFrom<&[u8]>`, and
+/// `TryFrom<String>`.
 /// Optional: AsRef (set `as_ref = true` when struct size == byte size, i.e. no padding).
 #[macro_export]
 macro_rules! uint_type {

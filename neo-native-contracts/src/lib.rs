@@ -1,23 +1,34 @@
-//! # Neo Native Contracts
+//! # neo-native-contracts
 //!
-//! Canonical home for the 11 standard Neo native contracts (NEO, GAS,
-//! Policy, Oracle, Ledger, ContractManagement, CryptoLib, Notary,
-//! RoleManagement, StdLib, Treasury) and the shared
-//! `NativeContract` infrastructure.
+//! Neo N3 native contract implementations and storage codecs.
 //!
-//! Each native-contract submodule provides a Rust handle type
-//! (`NeoToken`, `GasToken`, …) that exposes:
+//! ## Boundary
 //!
-//! - the well-known script hash ([`hashes`])
-//! - a stable integer id (`Self::ID`)
-//! - a stable contract name (`Self::NAME`)
-//! - the storage-query surface needed by external plugins and
-//!   services (`get_request`, `get_designated_by_role_at`, …)
+//! This execution-domain crate owns native contract logic and storage codecs
+//! and must not own node startup, RPC transport, or P2P sync.
 //!
-//! The implementations mirror the C# `Neo.SmartContract.Native.*`
-//! storage layout (prefix bytes, account-hash encoding, value
-//! serialization) so the Rust native-contract surface is
-//! byte-compatible with the canonical C# node.
+//! ## Contents
+//!
+//! - `registry`: Native contract registry and dispatch helpers.
+//! - `support`: Shared support helpers that keep domain modules focused.
+//! - `text`: Text segmentation and compatibility helpers for native contracts.
+//! - `contract_management`: Native ContractManagement state, storage, and
+//!   lifecycle operations.
+//! - `crypto_lib`: Native CryptoLib interop surface and verification helpers.
+//! - `gas_token`: Native GAS token state, accounting, and transfer behavior.
+//! - `ledger_contract`: Native Ledger contract storage and query behavior.
+//! - `neo_token`: Native NEO token governance, voting, and committee behavior.
+//! - `notary`: Native Notary contract state and request verification behavior.
+//! - `oracle_contract`: Native Oracle contract request, response, and fee
+//!   behavior.
+//! - `policy_contract`: Native Policy contract fee, account, and storage policy
+//!   behavior.
+//! - `role_management`: Native RoleManagement state and designated-node
+//!   behavior.
+//! - `std_lib`: Native StdLib string, memory, and serialization helpers.
+//! - `test_support`: crate-local test support fixtures.
+//! - `treasury`: Native treasury accounting and fund recovery behavior.
+//! - `tests`: Module-local tests and regression coverage.
 
 pub use neo_execution::{
     HardforkActivable, NativeContract, NativeContractsCache, NativeContractsCacheEntry,
@@ -84,32 +95,28 @@ macro_rules! native_contract_identity {
     };
 }
 
-mod catalog;
+/// Native-contract catalog, hashes, provider, and role definitions.
+pub mod registry;
+pub(crate) mod support;
+mod text;
+
 pub mod contract_management;
 pub mod crypto_lib;
-mod dotnet_graphemes;
-mod dotnet_text_segmentation;
 pub mod gas_token;
-pub mod hashes;
 pub mod ledger_contract;
-pub mod native_contract;
 pub mod neo_token;
 pub mod notary;
 pub mod oracle_contract;
 pub mod policy_contract;
-pub mod provider;
-
-pub(crate) mod args;
-pub(crate) mod committee;
-pub(crate) mod keys;
-
-pub mod role;
 pub mod role_management;
 pub mod std_lib;
 #[cfg(test)]
 #[path = "tests/test_support.rs"]
 pub(crate) mod test_support;
 pub mod treasury;
+
+pub use registry::{catalog, hashes, native_contract, provider, role};
+pub(crate) use support::{args, committee, keys};
 
 pub use catalog::{
     STANDARD_NATIVE_CONTRACT_COUNT, StandardNativeContractHashes, StandardNativeContractSpec,
@@ -358,14 +365,13 @@ impl AccountState {
     }
 
     pub(crate) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            0,
-            vec![StackValue::BigInteger(self.balance.to_signed_bytes_le())],
-        )
+        StackValue::Struct(vec![StackValue::BigInteger(
+            self.balance.to_signed_bytes_le(),
+        )])
     }
 
     pub(crate) fn from_stack_value(stack_value: StackValue) -> neo_error::CoreResult<Self> {
-        let StackValue::Struct(0, items) = stack_value else {
+        let StackValue::Struct(items) = stack_value else {
             return Err(neo_error::CoreError::invalid_data(
                 "NEP-17 account state is not a struct",
             ));
@@ -373,7 +379,7 @@ impl AccountState {
         let balance = items
             .first()
             .ok_or_else(|| neo_error::CoreError::invalid_data("NEP-17 account state is empty"))?;
-        let balance = neo_vm_rs::stack_value_as_bigint(balance)
+        let balance = neo_vm::stack_value_as_bigint(balance)
             .map_err(|e| neo_error::CoreError::invalid_data(format!("NEP-17 balance: {e}")))?;
         Ok(Self { balance })
     }

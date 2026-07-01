@@ -55,6 +55,13 @@ fn signature_address(pubkey: &ECPoint) -> UInt160 {
     UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()))
 }
 
+fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+    let start_idx = source.find(start).expect("start marker exists");
+    let tail = &source[start_idx..];
+    let end_idx = tail.find(end).expect("end marker exists");
+    &tail[..end_idx]
+}
+
 #[test]
 fn on_persist_refresh_recomputes_committee_and_emits_committee_changed() {
     // Single-member committee (every block refreshes); HF_Cockatrice at 0
@@ -331,6 +338,24 @@ fn post_persist_off_refresh_blocks_only_mints_the_rotating_reward() {
         read_voter_reward(&snapshot, &members[0].0),
         None,
         "no accrual off refresh blocks"
+    );
+}
+
+#[test]
+fn post_persist_uses_cached_signature_account_for_rotating_committee_reward() {
+    let source = include_str!("../../neo_token/mod.rs");
+    let post_persist = slice_between(source, "fn post_persist", "fn invoke");
+    assert!(
+        post_persist.contains("candidate_signature_account(&member)"),
+        "per-block committee reward should reuse cached signature accounts"
+    );
+    assert!(
+        post_persist.contains("read_committee_member_at(&snapshot, member_index)"),
+        "off-refresh blocks should read only the rotating committee member"
+    );
+    assert!(
+        !post_persist.contains("create_signature_redeem_script(member.clone())"),
+        "post_persist should not rebuild the same redeem script on every block"
     );
 }
 

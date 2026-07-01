@@ -11,18 +11,15 @@ use neo_vm::Interoperable;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 
-#[path = "style.rs"]
+#[path = "style/mod.rs"]
 mod style;
 
 #[test]
 fn account_state_interoperable_projection_matches_csharp_shape() {
     let state = AccountState::new(BigInt::from(12345));
-    let expected_value = StackValue::Struct(
-        0,
-        vec![StackValue::BigInteger(
-            BigInt::from(12345).to_signed_bytes_le(),
-        )],
-    );
+    let expected_value = StackValue::Struct(vec![StackValue::BigInteger(
+        BigInt::from(12345).to_signed_bytes_le(),
+    )]);
 
     assert_eq!(state.to_stack_value(), expected_value);
 
@@ -33,8 +30,8 @@ fn account_state_interoperable_projection_matches_csharp_shape() {
     Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 
-    assert!(AccountState::from_stack_value(StackValue::Array(0, vec![])).is_err());
-    assert!(AccountState::from_stack_value(StackValue::Struct(0, vec![])).is_err());
+    assert!(AccountState::from_stack_value(StackValue::Array(vec![])).is_err());
+    assert!(AccountState::from_stack_value(StackValue::Struct(vec![])).is_err());
 }
 
 #[test]

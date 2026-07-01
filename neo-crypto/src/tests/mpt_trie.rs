@@ -97,6 +97,8 @@ mod cache;
 mod diagnostics;
 #[path = "mpt_trie/find_limited.rs"]
 mod find_limited;
+#[path = "mpt_trie/mainnet_vectors.rs"]
+mod mainnet_vectors;
 #[path = "mpt_trie/node.rs"]
 mod node;
 #[path = "mpt_trie/trie.rs"]

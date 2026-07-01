@@ -1,6 +1,7 @@
 #![allow(unsafe_code)]
 
 use crate::persistence::{
+    read_only_store::RawReadOnlyStore,
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     storage::StorageConfig,
@@ -14,7 +15,15 @@ use parking_lot::{Mutex, RwLock};
 use rocksdb::{
     DB, DBIteratorWithThreadMode, ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions,
 };
-use std::{collections::BTreeMap, fs, mem, sync::Arc, time::Instant};
+use std::{
+    collections::BTreeMap,
+    fs, mem,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
+};
 use tracing::{debug, error, warn};
 
 use super::provider::{self, BatchCommitter, ReadAheadConfig};
@@ -25,6 +34,8 @@ pub struct RocksDbStore {
     pub(crate) on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
     pub(crate) batch_committer: Arc<BatchCommitter>,
     pub(crate) batch_config: RwLock<WriteBatchConfig>,
+    pub(crate) fast_sync_buffering: Arc<AtomicBool>,
+    pub(crate) pending_fast_sync_overlay: Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>,
     pub(crate) read_ahead_config: ReadAheadConfig,
 }
 
@@ -67,8 +78,99 @@ impl RocksDbStore {
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer,
             batch_config: RwLock::new(batch_config),
+            fast_sync_buffering: Arc::new(AtomicBool::new(false)),
+            pending_fast_sync_overlay: Arc::new(RwLock::new(BTreeMap::new())),
             read_ahead_config,
         })
+    }
+
+    fn has_pending_fast_sync_overlay(&self) -> bool {
+        !self.pending_fast_sync_overlay.read().is_empty()
+    }
+
+    fn pending_fast_sync_value(&self, key: &[u8]) -> Option<Option<Vec<u8>>> {
+        self.pending_fast_sync_overlay.read().get(key).cloned()
+    }
+
+    fn record_pending_fast_sync_overlay(&self, entries: &[(Vec<u8>, Option<Vec<u8>>)]) {
+        if entries.is_empty() {
+            return;
+        }
+        let mut overlay = self.pending_fast_sync_overlay.write();
+        for (key, value) in entries {
+            overlay.insert(key.clone(), value.clone());
+        }
+    }
+
+    fn clear_pending_fast_sync_overlay(&self) {
+        self.pending_fast_sync_overlay.write().clear();
+    }
+
+    fn buffer_fast_sync_overlay_entries(&self, entries: &[(Vec<u8>, Option<Vec<u8>>)]) {
+        if entries.is_empty() {
+            return;
+        }
+        self.batch_committer.buffer.extend(
+            entries
+                .iter()
+                .map(|(key, value)| (key.as_slice(), value.as_deref())),
+        );
+        self.record_pending_fast_sync_overlay(entries);
+        if self.batch_committer.buffer.pending_count() == 0 {
+            self.clear_pending_fast_sync_overlay();
+        }
+    }
+
+    fn raw_key_matches_prefix(key: &[u8], prefix: Option<&[u8]>) -> bool {
+        prefix.is_none_or(|prefix| key.starts_with(prefix))
+    }
+
+    fn collect_raw_db_entries(&self, prefix: Option<&[u8]>) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let start = prefix.unwrap_or(&[]);
+        provider::iterator_from(
+            self.db.as_ref(),
+            None,
+            start,
+            SeekDirection::Forward,
+            &self.read_ahead_config,
+        )
+        .filter_map(|res| match res {
+            Ok(entry) => Some(entry),
+            Err(err) => {
+                warn!(target: "neo", error = %err, "rocksdb iterator error");
+                None
+            }
+        })
+        .take_while(|(key, _value)| Self::raw_key_matches_prefix(key.as_ref(), prefix))
+        .map(|(key, value)| (key.to_vec(), value.to_vec()))
+        .collect()
+    }
+
+    fn merge_pending_fast_sync_overlay(
+        &self,
+        prefix: Option<&[u8]>,
+        direction: SeekDirection,
+        db_entries: Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let mut merged = db_entries.into_iter().collect::<BTreeMap<_, _>>();
+        for (key, value) in self.pending_fast_sync_overlay.read().iter() {
+            if !Self::raw_key_matches_prefix(key, prefix) {
+                continue;
+            }
+            match value {
+                Some(value) => {
+                    merged.insert(key.clone(), value.clone());
+                }
+                None => {
+                    merged.remove(key);
+                }
+            }
+        }
+        let mut entries = merged.into_iter().collect::<Vec<_>>();
+        if direction == SeekDirection::Backward {
+            entries.reverse();
+        }
+        entries
     }
 
     fn iterator_from(
@@ -84,10 +186,60 @@ impl RocksDbStore {
             &self.read_ahead_config,
         )
     }
+
+    /// Commits raw byte-key overlay entries directly to RocksDB.
+    ///
+    /// This is for callers that already own a complete write overlay and do not
+    /// need a snapshot read view or rollbackable pending-change map. It uses the
+    /// same write options as [`RocksDbSnapshot::try_commit`] but avoids the
+    /// snapshot allocation and duplicate BTreeMap bookkeeping on large batches.
+    pub fn commit_raw_overlay<'a, I>(&self, overlay: I) -> StorageResult<()>
+    where
+        I: IntoIterator<Item = (&'a [u8], Option<&'a [u8]>)>,
+    {
+        let mut entries = overlay.into_iter().collect::<Vec<_>>();
+        entries.sort_unstable_by_key(|(key, _)| *key);
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        if self.fast_sync_buffering.load(Ordering::Relaxed) {
+            let buffered_entries = entries
+                .iter()
+                .map(|(key, value)| ((*key).to_vec(), (*value).map(<[u8]>::to_vec)))
+                .collect::<Vec<_>>();
+            self.buffer_fast_sync_overlay_entries(&buffered_entries);
+            return Ok(());
+        }
+
+        let mut batch = WriteBatch::default();
+        for (key, value) in entries {
+            match value {
+                Some(value) => batch.put(key, value),
+                None => batch.delete(key),
+            }
+        }
+
+        let mut write_opts = WriteOptions::default();
+        let batch_config = self.batch_config.read();
+        write_opts.set_sync(batch_config.sync_on_flush);
+        if batch_config.disable_wal {
+            write_opts.disable_wal(true);
+        }
+        drop(batch_config);
+
+        self.db.write_opt(batch, &write_opts).map_err(|err| {
+            error!(target: "neo", error = %err, "rocksdb raw overlay commit failed");
+            crate::StorageError::CommitFailed(format!("RocksDB raw overlay commit failed: {err}"))
+        })
+    }
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
+        if let Some(value) = self.pending_fast_sync_value(key) {
+            return value;
+        }
         match self.db.get(key) {
             Ok(value) => value,
             Err(err) => {
@@ -103,6 +255,14 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
         let prefix_bytes = key_prefix.cloned();
+        if self.has_pending_fast_sync_overlay() {
+            let entries = self.merge_pending_fast_sync_overlay(
+                prefix_bytes.as_deref(),
+                direction,
+                self.collect_raw_db_entries(prefix_bytes.as_deref()),
+            );
+            return Box::new(entries.into_iter());
+        }
 
         if direction == SeekDirection::Backward {
             if let Some(prefix) = prefix_bytes.as_ref() {
@@ -150,9 +310,27 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
     }
 }
 
+impl RawReadOnlyStore for RocksDbStore {
+    fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
+        if let Some(value) = self.pending_fast_sync_value(key) {
+            return value;
+        }
+        match self.db.get(key) {
+            Ok(value) => value,
+            Err(err) => {
+                warn!(target: "neo", error = %err, "rocksdb get failed");
+                None
+            }
+        }
+    }
+}
+
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw = key.to_array();
+        if let Some(value) = self.pending_fast_sync_value(&raw) {
+            return value.map(StorageItem::from_bytes);
+        }
         self.db.get(raw).ok().flatten().map(StorageItem::from_bytes)
     }
 
@@ -162,6 +340,16 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
+        if self.has_pending_fast_sync_overlay() {
+            let entries = self.merge_pending_fast_sync_overlay(
+                prefix_bytes.as_deref(),
+                direction,
+                self.collect_raw_db_entries(prefix_bytes.as_deref()),
+            );
+            return Box::new(entries.into_iter().map(|(key, value)| {
+                (StorageKey::from_bytes(&key), StorageItem::from_bytes(value))
+            }));
+        }
 
         if direction == SeekDirection::Backward {
             if let Some(prefix) = prefix_bytes.as_ref() {
@@ -278,12 +466,81 @@ impl Store for RocksDbStore {
         RocksDbStore::disable_fast_sync_mode(self);
     }
 
+    fn discard_pending_fast_sync_writes(&self) {
+        RocksDbStore::discard_pending_fast_sync_writes(self);
+    }
+
+    fn has_pending_fast_sync_writes(&self) -> bool {
+        RocksDbStore::has_pending_fast_sync_writes(self)
+    }
+
     fn flush(&self) -> StorageResult<()> {
         // Propagate batch-write failures so callers can react to durability loss.
         self.flush_batch_writes()?;
         // flush_memtables logs WAL/memtable errors internally (best-effort).
         self.flush_memtables();
         Ok(())
+    }
+
+    fn supports_raw_overlay_commit(&self) -> bool {
+        true
+    }
+
+    fn try_commit_raw_overlay(
+        &self,
+        overlay: &[(Vec<u8>, Option<Vec<u8>>)],
+    ) -> StorageResult<bool> {
+        self.commit_raw_overlay(
+            overlay
+                .iter()
+                .map(|(key, value)| (key.as_slice(), value.as_deref())),
+        )?;
+        Ok(true)
+    }
+
+    fn try_commit_borrowed_raw_overlay(
+        &self,
+        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
+    ) -> StorageResult<bool> {
+        if self.fast_sync_buffering.load(Ordering::Relaxed) {
+            let mut entries = Vec::new();
+            visit(&mut |key, value| {
+                entries.push((key.to_vec(), value.map(Vec::from)));
+            });
+            self.buffer_fast_sync_overlay_entries(&entries);
+            return Ok(true);
+        }
+
+        let mut batch = WriteBatch::default();
+        let mut has_entries = false;
+        let mut sink = |key: &[u8], value: Option<&[u8]>| {
+            has_entries = true;
+            match value {
+                Some(value) => batch.put(key, value),
+                None => batch.delete(key),
+            }
+        };
+        visit(&mut sink);
+
+        if !has_entries {
+            return Ok(true);
+        }
+
+        let mut write_opts = WriteOptions::default();
+        let batch_config = self.batch_config.read();
+        write_opts.set_sync(batch_config.sync_on_flush);
+        if batch_config.disable_wal {
+            write_opts.disable_wal(true);
+        }
+        drop(batch_config);
+
+        self.db.write_opt(batch, &write_opts).map_err(|err| {
+            error!(target: "neo", error = %err, "rocksdb borrowed raw overlay commit failed");
+            crate::StorageError::CommitFailed(format!(
+                "RocksDB borrowed raw overlay commit failed: {err}"
+            ))
+        })?;
+        Ok(true)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -298,6 +555,8 @@ impl Clone for RocksDbStore {
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer: Arc::clone(&self.batch_committer),
             batch_config: RwLock::new(*self.batch_config.read()),
+            fast_sync_buffering: Arc::clone(&self.fast_sync_buffering),
+            pending_fast_sync_overlay: Arc::clone(&self.pending_fast_sync_overlay),
             read_ahead_config: self.read_ahead_config,
         }
     }
@@ -317,9 +576,12 @@ impl Drop for RocksDbStore {
 
 /// Mutable point-in-time snapshot over a RocksDB store.
 pub struct RocksDbSnapshot {
-    store: Arc<RocksDbStore>,
-    db: Arc<DB>,
+    // This field must be declared before the Arc<DB> fields so it is dropped
+    // first. The RocksDB snapshot lifetime is widened to 'static in
+    // create_snapshot while the DB Arcs below keep the database alive.
     snapshot: DbSnapshot<'static>,
+    db: Arc<DB>,
+    store: Arc<RocksDbStore>,
     write_batch: Mutex<WriteBatch>,
     pending_changes: Mutex<BTreeMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Read-ahead configuration
@@ -430,6 +692,12 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
                 })
                 .map(|(key, value)| (key.to_vec(), value.to_vec())),
         )
+    }
+}
+
+impl RawReadOnlyStore for RocksDbSnapshot {
+    fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.db.get_opt(key, &self.read_options()).ok().flatten()
     }
 }
 
@@ -575,7 +843,17 @@ impl RocksDbStore {
     /// Enables fast sync mode optimizations (disable WAL, reduce fsync).
     pub fn enable_fast_sync_mode(&self) {
         // Switch to high-throughput batch config (disable WAL, no fsync)
-        *self.batch_config.write() = WriteBatchConfig::high_throughput();
+        let config = WriteBatchConfig::high_throughput();
+        if let Err(err) = self.batch_committer.buffer.set_config(config) {
+            warn!(
+                target: "neo",
+                error = %err,
+                "failed to flush pending batch writes before enabling fast-sync mode"
+            );
+            return;
+        }
+        *self.batch_config.write() = config;
+        self.fast_sync_buffering.store(true, Ordering::Relaxed);
 
         if let Err(err) = self.db.set_options(&[("disable_auto_compactions", "true")]) {
             warn!(target: "neo", error = %err, "failed to disable auto compactions");
@@ -586,7 +864,24 @@ impl RocksDbStore {
     /// Disables fast sync mode optimizations.
     pub fn disable_fast_sync_mode(&self) {
         // Restore balanced batch config (WAL enabled)
-        *self.batch_config.write() = WriteBatchConfig::balanced();
+        let config = WriteBatchConfig::balanced();
+        if let Err(err) = self.flush_batch_writes() {
+            warn!(
+                target: "neo",
+                error = %err,
+                "failed to flush pending fast-sync batch writes before restoring WAL"
+            );
+        }
+        if let Err(err) = self.batch_committer.buffer.set_config(config) {
+            warn!(
+                target: "neo",
+                error = %err,
+                "failed to switch batch writer to balanced mode"
+            );
+            return;
+        }
+        *self.batch_config.write() = config;
+        self.fast_sync_buffering.store(false, Ordering::Relaxed);
 
         if let Err(err) = self
             .db
@@ -595,6 +890,14 @@ impl RocksDbStore {
             warn!(target: "neo", error = %err, "failed to enable auto compactions");
         }
         debug!(target: "neo", "disabled fast sync mode optimizations (WAL restored)");
+    }
+
+    /// Abandons buffered writes that were accepted into the fast-sync batch
+    /// writer but never finalized. This is the failure-path counterpart to
+    /// [`Self::flush_batch_writes`]: use it only before aborting a failed import.
+    pub fn discard_pending_fast_sync_writes(&self) {
+        self.batch_committer.buffer.clear();
+        self.clear_pending_fast_sync_overlay();
     }
 
     /// Force flush all memtables to disk.
@@ -629,8 +932,21 @@ impl RocksDbStore {
         self.batch_committer.buffer.stats_snapshot()
     }
 
+    /// Returns whether fast-sync writes have been accepted but are not yet
+    /// guaranteed visible through RocksDB snapshots.
+    pub fn has_pending_fast_sync_writes(&self) -> bool {
+        self.has_pending_fast_sync_overlay() || self.batch_committer.buffer.has_pending()
+    }
+
+    /// Returns the active write-batch configuration.
+    pub fn write_batch_config(&self) -> WriteBatchConfig {
+        *self.batch_config.read()
+    }
+
     /// Forces a flush of pending batch writes.
     pub fn flush_batch_writes(&self) -> StorageResult<()> {
-        self.batch_committer.buffer.force_flush()
+        self.batch_committer.buffer.force_flush()?;
+        self.clear_pending_fast_sync_overlay();
+        Ok(())
     }
 }

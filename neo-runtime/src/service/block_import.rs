@@ -1,0 +1,146 @@
+//! Shared block-import contract for sync, consensus, and RPC submission.
+//!
+//! `neo-blockchain` owns the concrete command loop and persistence pipeline.
+//! This module owns the narrow domain trait that higher layers should depend
+//! on when they only need to submit blocks to the canonical import path.
+
+use async_trait::async_trait;
+use neo_payloads::Block;
+use neo_primitives::UInt256;
+use serde::{Deserialize, Serialize};
+
+use crate::error::ServiceError;
+use crate::services::Service;
+
+/// Where a block import request came from.
+///
+/// The origin is deliberately semantic rather than transport-specific. The
+/// concrete blockchain service may use it for metrics, policy, or validation
+/// modes, while callers avoid depending on `BlockchainCommand` internals.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BlockOrigin {
+    /// A peer-relayed or sync-downloaded block.
+    Sync,
+    /// A block proposed or committed by the local consensus engine.
+    Consensus,
+    /// A user or tool submitted the block through RPC/CLI.
+    Rpc,
+    /// Local trusted bulk import, such as a validated `chain.acc` package.
+    TrustedLocal,
+}
+
+/// Canonical tip after a successful block import.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportedTip {
+    /// Hash of the imported block.
+    pub hash: UInt256,
+    /// Height of the imported block.
+    pub height: u32,
+    /// Block timestamp in milliseconds since Unix epoch.
+    pub timestamp: u64,
+}
+
+impl ImportedTip {
+    /// Build the imported-tip summary from a block.
+    pub fn from_block(block: &Block) -> Result<Self, ServiceError> {
+        let hash = block.try_hash().map_err(|error| {
+            ServiceError::invalid_input(format!("block hash serialization failed: {error}"))
+        })?;
+        Ok(Self {
+            hash,
+            height: block.index(),
+            timestamp: block.timestamp(),
+        })
+    }
+}
+
+/// Result of submitting one block to the canonical import path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BlockImportOutcome {
+    /// The block advanced the canonical tip.
+    Imported(ImportedTip),
+    /// The service accepted the request but did not advance the tip.
+    ///
+    /// This includes duplicate blocks, parked out-of-order blocks, or blocks
+    /// rejected by validation in legacy boolean import paths. Future
+    /// implementations can split this outcome into narrower variants without
+    /// changing the trait call shape.
+    NotImported {
+        /// Hash of the submitted block.
+        hash: UInt256,
+        /// Height declared by the submitted block.
+        height: u32,
+    },
+}
+
+impl BlockImportOutcome {
+    /// Convert the legacy `true == imported` response into a typed outcome.
+    pub fn from_legacy_imported(block: &Block, imported: bool) -> Result<Self, ServiceError> {
+        if imported {
+            return Ok(Self::Imported(ImportedTip::from_block(block)?));
+        }
+
+        let hash = block.try_hash().map_err(|error| {
+            ServiceError::invalid_input(format!("block hash serialization failed: {error}"))
+        })?;
+        Ok(Self::NotImported {
+            hash,
+            height: block.index(),
+        })
+    }
+}
+
+/// Result of submitting a consecutive block batch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockBatchImportOutcome {
+    /// Number of input blocks processed by the canonical import path.
+    pub processed: usize,
+}
+
+impl BlockBatchImportOutcome {
+    /// Construct a batch-import outcome from a processed count.
+    #[must_use]
+    pub fn new(processed: usize) -> Self {
+        Self { processed }
+    }
+}
+
+/// Canonical block-import API shared by consensus and sync.
+///
+/// Implementations must route every successful import through the same
+/// validation, execution, native-persist, state-root, and durable-store path.
+/// This keeps consensus, P2P sync, fast-sync replay, and RPC submission from
+/// growing separate block acceptance rules.
+#[async_trait]
+pub trait BlockImport: Service {
+    /// Cheap preflight for a block before committing to the full import path.
+    async fn check(&self, block: &Block) -> Result<(), ServiceError>;
+
+    /// Submit one block to the canonical import path.
+    async fn import(
+        &self,
+        block: Block,
+        origin: BlockOrigin,
+    ) -> Result<BlockImportOutcome, ServiceError>;
+
+    /// Submit a consecutive batch to the canonical import path.
+    async fn import_many(
+        &self,
+        blocks: Vec<Block>,
+        origin: BlockOrigin,
+    ) -> Result<BlockBatchImportOutcome, ServiceError> {
+        let mut processed = 0;
+        for block in blocks {
+            match self.import(block, origin).await? {
+                BlockImportOutcome::Imported(_) | BlockImportOutcome::NotImported { .. } => {
+                    processed += 1;
+                }
+            }
+        }
+        Ok(BlockBatchImportOutcome::new(processed))
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/service/block_import.rs"]
+mod tests;

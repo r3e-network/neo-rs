@@ -2,9 +2,10 @@
 //!
 //! `ProtocolMessage` is the typed view of the wire-level
 //! [`crate::wire::Message`]: it carries a `command` discriminator plus the
-//! decoded payload of the relevant kind. The wire-format conversion
-//! handled by [`Self::from_bytes`] / [`Self::to_bytes`] mirrors the
-//! C# `Neo.Network.P2P.Message` round-trip.
+//! decoded payload of the relevant kind. Payload conversion is handled by
+//! [`ProtocolMessage::deserialize_payload`] and
+//! [`ProtocolMessage::serialize_payload`], mirroring the C#
+//! `Neo.Network.P2P.Message` round-trip.
 
 use super::error::{WireError, WireResult};
 use crate::MessageCommand;

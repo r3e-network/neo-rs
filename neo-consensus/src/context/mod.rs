@@ -1,4 +1,21 @@
-//! Consensus context - tracks the current consensus state.
+//! # neo-consensus::context
+//!
+//! Runtime context records carried through the local workflow.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-consensus`. This protocol/service crate owns
+//! dBFT state and messages and must not own ledger persistence, RPC transport,
+//! or application startup.
+//!
+//! ## Contents
+//!
+//! - `persistence`: Persistence traits, snapshots, transactions, and cache
+//!   overlays.
+//! - `state`: domain state records for the surrounding workflow.
+//! - `timer`: consensus timer policy and scheduling helpers.
+//! - `validator_info`: validator metadata records.
+//! - `tests`: Module-local tests and regression coverage.
 
 use crate::{ChangeViewReason, ConsensusError, ConsensusResult};
 use lru::LruCache;
@@ -750,5 +767,5 @@ impl ConsensusContext {
 }
 
 #[cfg(test)]
-#[path = "../tests/context.rs"]
+#[path = "../tests/context/mod.rs"]
 mod tests;

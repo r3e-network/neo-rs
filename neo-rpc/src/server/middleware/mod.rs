@@ -1,6 +1,16 @@
-//! Tower middleware integration for RPC server
+//! # neo-rpc::server::middleware
 //!
-//! Provides rate limiting (via Governor), compression (gzip), and request timeout.
+//! RPC middleware for transport-level policy and observability.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `rate_limiter`: RPC rate-limiter middleware.
 
 mod rate_limiter;
 

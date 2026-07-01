@@ -1,4 +1,19 @@
-//! NEP-11 token tracker.
+//! # neo-rpc::plugins::tokens_tracker::trackers::nep_11
+//!
+//! NEP-11 token tracking helpers.
+//!
+//! ## Boundary
+//!
+//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
+//! transport adapters and must not implement consensus, VM semantics, or
+//! storage engines.
+//!
+//! ## Contents
+//!
+//! - `nep11_balance_key`: NEP-11 balance key records.
+//! - `nep11_tracker`: NEP-11 tracker implementation.
+//! - `nep11_transfer_key`: NEP-11 transfer key records.
+//! - `tests`: Module-local tests and regression coverage.
 
 pub mod nep11_balance_key;
 pub mod nep11_tracker;

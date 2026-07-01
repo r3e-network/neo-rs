@@ -1,4 +1,5 @@
 use super::*;
+use crate::neo_token::storage::candidate_signature_account;
 use crate::test_support::{sample_committee, seed_committee};
 use neo_vm::Interoperable;
 
@@ -78,6 +79,50 @@ fn candidate_state_interoperable_projection_matches_csharp_shape() {
     let mut parsed = CandidateState::new(false, BigInt::from(0));
     Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
+}
+
+#[test]
+fn candidate_state_fast_decode_accepts_canonical_shape_and_falls_back() {
+    let canonical = NeoToken::encode_candidate_state(true, &BigInt::from(123)).unwrap();
+    assert_eq!(
+        NeoToken::decode_canonical_candidate_state(&canonical).unwrap(),
+        Some((true, BigInt::from(123)))
+    );
+    assert_eq!(
+        NeoToken::decode_candidate_state(&canonical).unwrap(),
+        (true, BigInt::from(123))
+    );
+
+    let noncanonical = BinarySerializer::serialize(
+        &StackItem::from_struct(vec![
+            StackItem::from_int(BigInt::from(1)),
+            StackItem::from_int(BigInt::from(123)),
+        ]),
+        &ExecutionEngineLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        NeoToken::decode_canonical_candidate_state(&noncanonical).unwrap(),
+        None
+    );
+    assert_eq!(
+        NeoToken::decode_candidate_state(&noncanonical).unwrap(),
+        (true, BigInt::from(123)),
+        "generic decoder should preserve boolean-compatible historical records"
+    );
+}
+
+#[test]
+fn candidate_signature_account_cache_is_reusable() {
+    let points = sample_committee();
+    let first = candidate_signature_account(&points[0]);
+    let second = candidate_signature_account(&points[0]);
+
+    assert_eq!(first, second);
+    assert_eq!(
+        first,
+        UInt160::from_script(&Contract::create_signature_redeem_script(points[0].clone()))
+    );
 }
 
 #[test]
@@ -185,6 +230,18 @@ fn neo_storage_codecs_match_csharp_stackitem_bytes() {
         NeoToken::new().read_committee_with_votes(&cache).unwrap(),
         members
     );
+    assert_eq!(
+        NeoToken::new().read_committee_member_at(&cache, 1).unwrap(),
+        members[1]
+    );
+
+    let mut malformed_committee = NeoToken::encode_committee(&members).unwrap();
+    malformed_committee.push(0xff);
+    assert_eq!(
+        NeoToken::decode_canonical_committee_member_at(&malformed_committee, 1).unwrap(),
+        None,
+        "indexed committee fast path must not accept trailing malformed bytes"
+    );
 }
 
 #[test]
@@ -198,7 +255,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("../../neo_token/storage.rs");
+    let source = include_str!("../../neo_token/storage/mod.rs");
     let account_decoder = slice_between(
         source,
         "fn decode_neo_account_state",
@@ -258,6 +315,17 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!candidate_encoder.contains("StackValue::Struct"));
     assert!(!candidate_encoder.contains("StackItem::from_struct"));
     assert!(!candidate_encoder.contains("BinarySerializer::serialize("));
+
+    assert!(
+        source.contains("HashMap<ECPoint, UInt160>"),
+        "signature-account cache should key by ECPoint to avoid Vec allocation on cache hits"
+    );
+    let signature_account_cache =
+        slice_between(source, "fn candidate_signature_account", "fn elapsed_us");
+    assert!(
+        !signature_account_cache.contains("pubkey.to_bytes()"),
+        "cache hits should borrow the ECPoint key directly"
+    );
 }
 
 #[test]
