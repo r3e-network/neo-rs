@@ -1,5 +1,10 @@
 use super::*;
 
+// Neo N3 v3.10 registers 37 base host syscalls plus 4 Faun storage-local
+// syscalls. Every transaction engine rebuilds this table, so pre-sizing avoids
+// allocator churn without changing the registered protocol surface.
+const HOST_SYSCALL_REGISTRATION_CAPACITY: usize = 41;
+
 impl ApplicationEngine {
     /// Selects the VM jump table for the persisting block, mirroring C#
     /// `ApplicationEngine.Create`: `index = persistingBlock?.Index ??
@@ -78,7 +83,7 @@ impl ApplicationEngine {
             storage_price: 100_000u32,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
-            interop_handlers: HashMap::new(),
+            interop_handlers: HashMap::with_capacity(HOST_SYSCALL_REGISTRATION_CAPACITY),
             snapshot_cache,
             original_snapshot_cache,
             notifications: Vec::new(),
@@ -95,7 +100,7 @@ impl ApplicationEngine {
             invocation_counter: HashMap::new(),
             pending_native_calls: Vec::new(),
             native_call_boundary_contexts: Vec::new(),
-            host_syscall_registrations: Vec::new(),
+            host_syscall_registrations: Vec::with_capacity(HOST_SYSCALL_REGISTRATION_CAPACITY),
             nonce_data,
             random_times: 0,
             diagnostic,
@@ -155,7 +160,7 @@ impl ApplicationEngine {
             storage_price: 100_000u32,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
-            interop_handlers: HashMap::new(),
+            interop_handlers: HashMap::with_capacity(HOST_SYSCALL_REGISTRATION_CAPACITY),
             snapshot_cache,
             original_snapshot_cache,
             notifications: Vec::new(),
@@ -172,7 +177,7 @@ impl ApplicationEngine {
             invocation_counter: HashMap::new(),
             pending_native_calls: Vec::new(),
             native_call_boundary_contexts: Vec::new(),
-            host_syscall_registrations: Vec::new(),
+            host_syscall_registrations: Vec::with_capacity(HOST_SYSCALL_REGISTRATION_CAPACITY),
             nonce_data,
             random_times: 0,
             diagnostic,
