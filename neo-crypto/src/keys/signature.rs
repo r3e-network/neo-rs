@@ -8,6 +8,7 @@ use ed25519_dalek::{
     VerifyingKey as Ed25519VerifyingKey,
 };
 use ed25519_dalek::{Signer as _, Verifier as _};
+use k256::SecretKey as K256SecretKey;
 use p256::{
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
     ecdsa::{
@@ -15,38 +16,24 @@ use p256::{
         signature::hazmat::{PrehashSigner, PrehashVerifier},
     },
 };
-use rand::{RngCore, rngs::OsRng};
+use rand::rngs::OsRng;
 use secp256k1::{
     Message, PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey,
     ecdsa::{RecoverableSignature, RecoveryId},
 };
 use sha2::{Digest, Sha256};
-use zeroize::Zeroizing;
 
 /// ECDSA operations for secp256k1 (Bitcoin's curve).
 pub struct Secp256k1Crypto;
 
-/// Maximum attempts for key generation to prevent infinite loops in case of RNG failure.
-const MAX_KEY_GEN_ATTEMPTS: usize = 1000;
-
 impl Secp256k1Crypto {
     /// Generates a new random private key.
-    ///
-    /// # Errors
-    /// Returns an error if a valid key cannot be generated after `MAX_KEY_GEN_ATTEMPTS` attempts.
-    /// This should only occur if the system RNG is misbehaving.
     pub fn generate_private_key() -> CryptoResult<[u8; 32]> {
-        let mut rng = OsRng;
-        for _ in 0..MAX_KEY_GEN_ATTEMPTS {
-            let mut candidate = Zeroizing::new([0u8; 32]);
-            rng.fill_bytes(candidate.as_mut());
-            if let Ok(secret_key) = Secp256k1SecretKey::from_slice(candidate.as_ref()) {
-                return Ok(secret_key.secret_bytes());
-            }
-        }
-        Err(CryptoError::key_generation_failed(format!(
-            "Failed to generate valid secp256k1 private key after {MAX_KEY_GEN_ATTEMPTS} attempts"
-        )))
+        let secret_key = K256SecretKey::random(&mut OsRng);
+        let bytes = secret_key.to_bytes();
+        let mut key = [0u8; 32];
+        key.copy_from_slice(bytes.as_slice());
+        Ok(key)
     }
 
     /// Derives public key from private key.
