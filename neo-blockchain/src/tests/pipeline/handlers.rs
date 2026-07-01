@@ -616,3 +616,18 @@ fn reverify_mempool_after_persist_skips_snapshot_when_no_unverified_transactions
     assert_eq!(store_snapshot_calls.load(Ordering::SeqCst), 0);
     assert_eq!(reverify_calls.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn empty_fast_forward_run_collection_borrows_import_batch_blocks() {
+    let source = include_str!("../../pipeline/handlers.rs");
+    let collector = source
+        .split("fn collect_empty_fast_forward_run")
+        .nth(1)
+        .and_then(|tail| tail.split("fn ensure_block_matches_cached_header").next())
+        .expect("collect_empty_fast_forward_run source");
+
+    assert!(
+        !collector.contains("Arc::new(block.clone())"),
+        "empty-block fast-forward run collection must not clone full blocks from the import batch"
+    );
+}

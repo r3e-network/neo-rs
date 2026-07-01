@@ -114,13 +114,13 @@ where
         )
     }
 
-    fn collect_empty_fast_forward_run(
-        blocks: &[Block],
+    fn collect_empty_fast_forward_run<'a>(
+        blocks: &'a [Block],
         start_position: usize,
         current_height: u32,
         settings: &neo_config::ProtocolSettings,
         resources: &crate::native_persist::NativePersistResources,
-    ) -> Vec<Arc<Block>> {
+    ) -> Vec<&'a Block> {
         let committee_count = settings.committee_members_count();
         if committee_count == 0 {
             return Vec::new();
@@ -150,7 +150,7 @@ where
             if native_cut {
                 break;
             }
-            run.push(Arc::new(block.clone()));
+            run.push(block);
         }
         run
     }

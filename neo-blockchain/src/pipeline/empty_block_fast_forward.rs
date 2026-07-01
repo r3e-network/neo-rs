@@ -6,6 +6,7 @@
 //! with contiguous zero-merkle blocks, outside native initialization/hardfork
 //! heights, and after every active native contract explicitly opts in.
 
+use std::borrow::Borrow;
 use std::fmt;
 use std::sync::Arc;
 
@@ -161,11 +162,11 @@ impl fmt::Display for EmptyBlockFastForwardRejection {
 impl std::error::Error for EmptyBlockFastForwardRejection {}
 
 /// Inputs for [`plan_empty_block_fast_forward`].
-pub struct EmptyBlockFastForwardRequest<'a> {
+pub struct EmptyBlockFastForwardRequest<'a, B> {
     /// Current canonical chain height before the interval.
     pub current_height: u32,
     /// Candidate blocks, expected to start at `current_height + 1`.
-    pub blocks: &'a [Arc<Block>],
+    pub blocks: &'a [B],
     /// Protocol settings used for native activation checks.
     pub settings: &'a ProtocolSettings,
     /// Reusable native persistence resources for this import batch.
@@ -178,9 +179,12 @@ pub struct EmptyBlockFastForwardRequest<'a> {
 
 /// Validates whether `blocks` may be persisted by a state-equivalent
 /// empty-block fast-forward writer.
-pub fn plan_empty_block_fast_forward(
-    request: EmptyBlockFastForwardRequest<'_>,
-) -> Result<EmptyBlockFastForwardPlan, EmptyBlockFastForwardRejection> {
+pub fn plan_empty_block_fast_forward<B>(
+    request: EmptyBlockFastForwardRequest<'_, B>,
+) -> Result<EmptyBlockFastForwardPlan, EmptyBlockFastForwardRejection>
+where
+    B: Borrow<Block>,
+{
     let EmptyBlockFastForwardRequest {
         current_height,
         blocks,
@@ -205,7 +209,7 @@ pub fn plan_empty_block_fast_forward(
         });
     }
 
-    let start = blocks[0].index();
+    let start = blocks[0].borrow().index();
     let expected_start = current_height.saturating_add(1);
     if start != expected_start {
         return Err(EmptyBlockFastForwardRejection::NonNextStart {
@@ -215,6 +219,7 @@ pub fn plan_empty_block_fast_forward(
     }
 
     for (offset, block) in blocks.iter().enumerate() {
+        let block = block.borrow();
         let expected = start.saturating_add(offset as u32);
         let height = block.index();
         if height != expected {
@@ -256,7 +261,7 @@ pub fn plan_empty_block_fast_forward(
 
     Ok(EmptyBlockFastForwardPlan {
         start,
-        end: blocks.last().expect("checked non-empty").index(),
+        end: blocks.last().expect("checked non-empty").borrow().index(),
         block_count: blocks.len(),
     })
 }
@@ -266,15 +271,18 @@ pub fn plan_empty_block_fast_forward(
 /// Ledger history is written for every block, the current-block pointer
 /// advances to the interval end, and NEO/GAS empty-block effects are aggregated
 /// through `neo-native-contracts` storage helpers.
-pub fn stage_empty_block_fast_forward(
+pub fn stage_empty_block_fast_forward<B>(
     snapshot: Arc<DataCache>,
-    blocks: &[Arc<Block>],
+    blocks: &[B],
     settings: &ProtocolSettings,
     persist_options: NativePersistOptions,
     persist_context: BlockPersistContext,
     resources: &NativePersistResources,
     current_height: u32,
-) -> CoreResult<StagedEmptyBlockFastForward> {
+) -> CoreResult<StagedEmptyBlockFastForward>
+where
+    B: Borrow<Block>,
+{
     let plan = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
         current_height,
         blocks,
@@ -293,6 +301,7 @@ pub fn stage_empty_block_fast_forward(
     }
     let block_cache = Arc::new(snapshot.clone_cache());
     for block in blocks {
+        let block = block.borrow();
         let block_hash = block
             .try_hash()
             .map_err(|e| CoreError::invalid_operation(format!("empty fast-forward hash: {e}")))?;
@@ -306,6 +315,7 @@ pub fn stage_empty_block_fast_forward(
     let last_block = blocks
         .last()
         .ok_or_else(|| CoreError::invalid_operation("empty fast-forward candidate is empty"))?;
+    let last_block = last_block.borrow();
     let last_hash = last_block
         .try_hash()
         .map_err(|e| CoreError::invalid_operation(format!("empty fast-forward hash: {e}")))?;
