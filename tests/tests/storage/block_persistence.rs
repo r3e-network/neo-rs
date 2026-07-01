@@ -12,8 +12,7 @@ use neo_blockchain::{genesis_block, persist_block_natives};
 use neo_config::ProtocolSettings;
 use neo_native_contracts::LedgerContract;
 use neo_payloads::{Block, Header, Witness};
-use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::{StoreCache, store::Store};
+use neo_storage::persistence::{StoreCache, StoreFactory, store::Store};
 
 fn empty_child_block(parent: &Block, index: u32) -> Block {
     let mut header = Header::new();
@@ -30,7 +29,7 @@ fn native_ledger_records_survive_store_cache_reopen() {
     neo_native_contracts::install();
 
     let settings = ProtocolSettings::default();
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store: Arc<dyn Store> = StoreFactory::get_store("memory", "").expect("memory store");
     let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(writer.data_cache().clone());
 
