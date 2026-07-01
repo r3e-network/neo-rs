@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -27,6 +29,33 @@ def record(timestamp, milestones, **extra):
     }
     payload.update(extra)
     return payload
+
+
+def write_history(path: Path, records):
+    path.write_text(
+        "".join(json.dumps(item) + "\n" for item in records),
+        encoding="utf-8",
+    )
+
+
+def create_restore_verified_checkpoint(checkpoint_root: Path, height: int) -> None:
+    checkpoint = checkpoint_root / f"h{height}"
+    (checkpoint / "mainnet").mkdir(parents=True)
+    (checkpoint / "StateRoot").mkdir()
+    (checkpoint / "CHECKPOINT_INFO").write_text(
+        "\n".join(
+            [
+                f"height={height}",
+                "state_root_included=true",
+                "restore_verified=true",
+                f"verified_height={height}",
+                f"verified_stateroot_root=0x{height}",
+                "verified_against_reference=true",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
@@ -872,23 +901,7 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint_root = Path(tmp) / "checkpoints"
             for height in (100, 200, 300):
-                checkpoint = checkpoint_root / f"h{height}"
-                (checkpoint / "mainnet").mkdir(parents=True)
-                (checkpoint / "StateRoot").mkdir()
-                (checkpoint / "CHECKPOINT_INFO").write_text(
-                    "\n".join(
-                        [
-                            f"height={height}",
-                            "state_root_included=true",
-                            "restore_verified=true",
-                            f"verified_height={height}",
-                            f"verified_stateroot_root=0x{height}",
-                            "verified_against_reference=true",
-                            "",
-                        ]
-                    ),
-                    encoding="utf-8",
-                )
+                create_restore_verified_checkpoint(checkpoint_root, height)
 
             report = module.analyze_history(
                 records,
@@ -906,6 +919,112 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertTrue(readiness["transaction_import_sample_size_met"])
         self.assertTrue(readiness["restore_verified_checkpoint_floor_met"])
         self.assertEqual(readiness["restore_verified_checkpoint_count"], 3)
+
+    def test_main_require_production_proof_exits_nonzero_when_gate_is_not_ready(self):
+        module = load_module()
+        records = [
+            record(
+                "2026-01-01T00:00:00+00:00",
+                [
+                    {
+                        "height": 100,
+                        "last_height": 100,
+                        "blocks_per_second": 60000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x100",
+                        "reference_matches_local": True,
+                        "stateroot_matches_chain": True,
+                        "empty_block_speed_proof_source": "fast-sync-empty-blocks",
+                        "empty_block_blocks_per_second": 60000.0,
+                        "empty_only_blocks": 95000,
+                    }
+                ],
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            history = tmp_path / "history.jsonl"
+            checkpoint_root = tmp_path / "checkpoints"
+            write_history(history, records)
+            original_argv = module.sys.argv
+            try:
+                module.sys.argv = [
+                    "analyze-stateroot-milestone-history.py",
+                    str(history),
+                    "--checkpoint-root",
+                    str(checkpoint_root),
+                    "--require-production-proof",
+                ]
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    result = module.main()
+            finally:
+                module.sys.argv = original_argv
+
+        self.assertEqual(result, 2)
+        self.assertIn('"production_proof_readiness"', stdout.getvalue())
+        self.assertIn("production proof readiness gate failed", stderr.getvalue())
+        self.assertIn("missing transaction-bearing import speed proof", stderr.getvalue())
+
+    def test_main_require_production_proof_exits_zero_when_gate_is_ready(self):
+        module = load_module()
+        milestones = []
+        for height, bps, tx_blocks in (
+            (100, 1800.0, 1100),
+            (200, 1900.0, 1200),
+            (300, 1750.0, 1300),
+        ):
+            milestones.append(
+                {
+                    "height": height,
+                    "last_height": height,
+                    "blocks_per_second": 20000.0,
+                    "checkpoint_created": True,
+                    "local_root": f"0x{height}",
+                    "reference_matches_local": True,
+                    "stateroot_matches_chain": True,
+                    "speed_proof_source": "fast-sync-transaction-blocks",
+                    "import_window_blocks_per_second": bps,
+                    "sync_proof": {
+                        "fast_sync_import": {
+                            "transaction_blocks": tx_blocks,
+                            "transactions": tx_blocks * 3,
+                            "transaction_block_import_seconds": tx_blocks / bps,
+                            "transaction_blocks_per_second": bps,
+                        }
+                    },
+                }
+            )
+        records = [record("2026-01-01T00:00:00+00:00", milestones)]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            history = tmp_path / "history.jsonl"
+            checkpoint_root = tmp_path / "checkpoints"
+            write_history(history, records)
+            for height in (100, 200, 300):
+                create_restore_verified_checkpoint(checkpoint_root, height)
+            original_argv = module.sys.argv
+            try:
+                module.sys.argv = [
+                    "analyze-stateroot-milestone-history.py",
+                    str(history),
+                    "--checkpoint-root",
+                    str(checkpoint_root),
+                    "--require-production-proof",
+                ]
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    result = module.main()
+            finally:
+                module.sys.argv = original_argv
+
+        self.assertEqual(result, 0)
+        self.assertIn('"ready": true', stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
 
 
 if __name__ == "__main__":

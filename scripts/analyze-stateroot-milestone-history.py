@@ -892,6 +892,14 @@ def parse_args() -> argparse.Namespace:
             "transaction import speed proof can satisfy production readiness."
         ),
     )
+    parser.add_argument(
+        "--require-production-proof",
+        action="store_true",
+        help=(
+            "Exit with status 2 unless production_proof_readiness.ready is true. "
+            "Use this in CI or release scripts after a full milestone run."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -913,6 +921,15 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(report, indent=2, sort_keys=True))
+    readiness = report.get("production_proof_readiness") or {}
+    if args.require_production_proof and readiness.get("ready") is not True:
+        reasons = readiness.get("blocking_reasons") or ["production proof is not ready"]
+        print(
+            "ERROR: production proof readiness gate failed: "
+            + "; ".join(str(reason) for reason in reasons),
+            file=sys.stderr,
+        )
+        return 2
     return 0
 
 

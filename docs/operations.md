@@ -658,7 +658,16 @@ least one transaction-bearing fast-sync proof meets the configured BPS floor,
 each counted transaction proof has at least the minimum transaction-bearing
 block sample size, and the retained checkpoint inventory includes at least
 three restore-verified full-state checkpoints. Empty-block speed never satisfies
-this readiness gate by itself.
+this readiness gate by itself. Add `--require-production-proof` to make the
+analyzer exit with status `2` when that readiness gate is false:
+
+```bash
+python3 scripts/analyze-stateroot-milestone-history.py \
+  data/mainnet-stateroot-clean/milestone-summary.jsonl \
+  --checkpoint-root data/mainnet-stateroot-clean/checkpoints \
+  --require-production-proof
+```
+
 Fast-sync runs now produce two distinct throughput views. The analyzer keeps
 `transaction_import_*` fields for the transaction-bearing import proof that
 backs the production BPS gate, and `empty_block_*` fields for the empty-block
